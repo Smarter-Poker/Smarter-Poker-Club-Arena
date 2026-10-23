@@ -62,9 +62,14 @@
     position: relative;
     padding: 8px 3px;
     text-align: center;
-    font-size: 10px;
-    font-weight: 600;
-    color: #b6bdc5;
+    /* Dan 2026-10-23: "THE GAMES STAKES PLAYERS AND STATUS FONT NEED TO BE
+       LARGER." */
+    font-family: 'Roboto Condensed', Inter, sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #e4e7ec;
     background: linear-gradient(180deg, #14161c 0%, #0e1014 100%);
     border-top: 1px solid rgb(217 222 229 / 35%);
     border-right: 1px solid rgb(255 255 255 / 8%);
@@ -73,6 +78,11 @@
       inset 0 1px 0 rgb(255 255 255 / 12%),
       0 3px 7px rgb(0 0 0 / 70%);
     text-shadow: 0 1px 1px #000;
+  }
+  .compact-lobby th[aria-sort='ascending'],
+  .compact-lobby th[aria-sort='descending'] {
+    color: #45adff;
+    text-shadow: 0 0 6px rgb(69 173 255 / 45%);
   }
   .compact-lobby th:first-child {
     width: 42%;
@@ -189,5 +199,178 @@
   .compact-lobby .lt-mono {
     font-size: 11px;
     white-space: normal;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENT ROWS THAT LOOK ALIVE (Dan 2026-10-23)
+   Badges for the bounty family, freerolls, satellites and guarantees of 2.5K
+   or more, plus a live clock: "Starts In" before the cards fly and "Late Reg
+   Ends In" while late registration is open. Inks are the schema's own:
+   green for free, gold for a guarantee, red for a bounty, blue for a mystery
+   draw, silver for a satellite.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.lt-signals {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.lt-signals__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lt-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 2px 5px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #161c25 0%, #07090d 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    0 1px 2px rgb(0 0 0 / 80%);
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px #000;
+}
+
+.lt-signal svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+
+.lt-signal--freeroll {
+  border-color: rgb(53 217 90 / 65%);
+  background: linear-gradient(180deg, rgb(53 217 90 / 24%), rgb(53 217 90 / 6%)), #050607;
+  color: #c8ffd2;
+  box-shadow:
+    inset 0 1px 0 rgb(200 255 210 / 18%),
+    0 0 8px rgb(53 217 90 / 45%);
+}
+
+.lt-signal--hot-gtd {
+  border-color: rgb(255 215 0 / 70%);
+  background: linear-gradient(180deg, rgb(255 215 0 / 22%), rgb(255 215 0 / 5%)), #050607;
+  color: #ffd700;
+  box-shadow:
+    inset 0 1px 0 rgb(255 235 120 / 22%),
+    0 0 8px rgb(255 215 0 / 40%);
+}
+
+.lt-signal--pko,
+.lt-signal--bounty {
+  border-color: rgb(240 40 73 / 65%);
+  background: linear-gradient(180deg, rgb(240 40 73 / 24%), rgb(240 40 73 / 6%)), #050607;
+  color: #ff5b6e;
+  box-shadow:
+    inset 0 1px 0 rgb(255 140 155 / 16%),
+    0 0 7px rgb(240 40 73 / 38%);
+}
+
+.lt-signal--mystery {
+  border-color: rgb(69 173 255 / 70%);
+  background: linear-gradient(180deg, rgb(69 173 255 / 26%), rgb(69 173 255 / 6%)), #050607;
+  color: #a8ddff;
+  box-shadow:
+    inset 0 1px 0 rgb(168 221 255 / 18%),
+    0 0 8px rgb(69 173 255 / 42%);
+}
+
+.lt-signal--satellite {
+  border-color: rgb(228 231 236 / 45%);
+  color: #e4e7ec;
+}
+
+.lt-signal--gtd {
+  color: #9aa5b3;
+}
+
+.lt-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  color: #45adff;
+  text-shadow: 0 0 6px rgb(69 173 255 / 45%);
+  white-space: nowrap;
+}
+
+.lt-clock__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: lt-clock-pulse 1.4s ease-in-out infinite;
+}
+
+.lt-clock--soon {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgb(255 215 0 / 45%);
+}
+
+.lt-clock--late {
+  color: #ff5b6e;
+  text-shadow: 0 0 6px rgb(240 40 73 / 45%);
+}
+
+@keyframes lt-clock-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+
+@media (max-width: 900px) {
+  /* The rail on the row's left edge carries its best fact at a glance. */
+  .compact-lobby tbody tr.is-freeroll td:first-child {
+    box-shadow:
+      inset 3px 0 0 #35d95a,
+      inset 14px 0 18px -14px rgb(53 217 90 / 55%);
+  }
+  .compact-lobby tbody tr.is-hot-gtd td:first-child {
+    box-shadow:
+      inset 3px 0 0 #ffd700,
+      inset 14px 0 18px -14px rgb(255 215 0 / 50%);
+  }
+  .compact-lobby tbody tr.is-bounty td:first-child {
+    box-shadow:
+      inset 3px 0 0 #f02849,
+      inset 14px 0 18px -14px rgb(240 40 73 / 45%);
+  }
+  .compact-lobby tbody tr.is-freeroll td {
+    background: linear-gradient(180deg, rgb(53 217 90 / 9%), rgb(53 217 90 / 2%)), #080b11;
+  }
+  .compact-lobby tbody tr.is-hot-gtd td {
+    background: linear-gradient(180deg, rgb(255 215 0 / 8%), rgb(255 215 0 / 2%)), #080b11;
+  }
+  .compact-lobby tbody tr.compact-lobby__row--tourney.is-urgent .lt-status {
+    color: #ffd700;
+    text-shadow: 0 0 6px rgb(255 215 0 / 45%);
   }
 }

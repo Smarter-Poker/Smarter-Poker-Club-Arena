@@ -15,8 +15,11 @@ import { useSharedSecondTick } from './useSharedSecondTick';
 import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
+import { compactChips } from '../../utils/format';
 import {
   cashTitleLines,
+  formatClock,
+  lateRegEndMs,
   levelSpeedLabel,
   mttPhaseText,
   mttTitleLine,
@@ -222,6 +225,194 @@ const PLAYER_STATE_LABEL: Record<Exclude<PlayerState, null>, string> = {
   waitlisted: 'You Are Waitlisted',
   registered: 'You Are Registered',
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A TOURNAMENT ROW THAT LOOKS ALIVE (Dan 2026-10-23)
+   ---------------------------------------------------------------------------
+   "THE TOURNAMENTS NEED TO LOOK COOLER, MAYBE HAVE SOME SPECIAL ICONS NEXT TO
+   EACH GAME FOR LIKE BOUNTY, HIGHLIGHT ALL GUARANTEES OVER 2.5K, ADD TIMERS
+   FOR STARTING IN... OR LATE REG ENDS IN... (FREE ROLLS SHOULD ALSO BE
+   HIGHLIGHTED)".
+
+   Every fact here is read from the entry the row already carries: the bounty
+   family and the freeroll deal from the same medallions the game panel prints
+   (tournamentMedallions decides them from the trait columns), the guarantee
+   from guaranteeValue, and the clocks from the start time and lateRegEndMs,
+   the same window the server enforces. Seat-first games (Spins, Heads-Up)
+   start on their last seat, so they get no clock.
+   ═══════════════════════════════════════════════════════════════════════════ */
+export const HOT_GUARANTEE_THRESHOLD = 2500;
+
+export type TournamentSignal = 'freeroll' | 'pko' | 'mystery' | 'bounty' | 'satellite' | 'hot-gtd';
+
+export function tournamentSignals(entry: LobbyEntry): TournamentSignal[] {
+  if (entry.kind === 'cash') return [];
+  const keys = new Set(entry.rules.map((r) => r.key));
+  const out: TournamentSignal[] = [];
+  if (keys.has('freeroll') || (entry.kind !== 'unknown' && entry.buyInValue <= 0))
+    out.push('freeroll');
+  if (keys.has('pko')) out.push('pko');
+  else if (keys.has('mystery')) out.push('mystery');
+  else if (keys.has('bounty')) out.push('bounty');
+  if (keys.has('satellite')) out.push('satellite');
+  if (entry.guaranteeValue >= HOT_GUARANTEE_THRESHOLD) out.push('hot-gtd');
+  return out;
+}
+
+/** The live clock line: "Starts In 4:31" or "Late Reg Ends In 12:03". */
+export function tournamentClockLine(
+  entry: LobbyEntry,
+  now: number
+): { tone: 'start' | 'soon' | 'late'; text: string } | null {
+  if (entry.kind !== 'mtt') return null;
+  if (entry.status === 'registering' || entry.status === 'starting_soon') {
+    const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
+    if (!Number.isFinite(startMs)) return null;
+    const left = Math.max(0, startMs - now);
+    return {
+      tone: entry.status === 'starting_soon' ? 'soon' : 'start',
+      text: `Starts In ${formatClock(left)}`,
+    };
+  }
+  if (entry.status === 'late_reg' || entry.status === 'running') {
+    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
+    if (end == null || end <= now) return null;
+    return { tone: 'late', text: `Late Reg Ends In ${formatClock(end - now)}` };
+  }
+  return null;
+}
+
+function SignalIcon({ kind }: { kind: TournamentSignal }) {
+  /* Drawn strokes, sized by the badge, coloured by currentColor. */
+  const common = {
+    viewBox: '0 0 16 16',
+    width: 12,
+    height: 12,
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+    focusable: false,
+  };
+  switch (kind) {
+    case 'pko':
+    case 'bounty':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.2" />
+          <circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none" />
+          <path d="M8 1v3M8 12v3M1 8h3M12 8h3" />
+        </svg>
+      );
+    case 'mystery':
+      return (
+        <svg {...common}>
+          <rect x="2.2" y="5.5" width="11.6" height="8.3" rx="1.2" />
+          <path d="M1.6 5.5h12.8M8 5.5v8.3M8 5.5C6.6 3 4.4 2.6 4.4 4.1 4.4 5.2 8 5.5 8 5.5s3.6-.3 3.6-1.4c0-1.5-2.2-1.1-3.6 1.4" />
+        </svg>
+      );
+    case 'freeroll':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="6" />
+          <circle cx="8" cy="8" r="3.4" />
+          <path d="M8 2v2M8 12v2M2 8h2M12 8h2" />
+        </svg>
+      );
+    case 'satellite':
+      return (
+        <svg {...common}>
+          <path d="M8 2.2l1.7 3.6 3.9.5-2.9 2.7.7 3.9L8 11l-3.4 1.9.7-3.9-2.9-2.7 3.9-.5z" />
+        </svg>
+      );
+    case 'hot-gtd':
+    default:
+      return (
+        <svg {...common}>
+          <path d="M3 5.2l2.6 2.4L8 3.2l2.4 4.4L13 5.2l-1.2 6.6H4.2z" />
+          <path d="M4.2 13.6h7.6" />
+        </svg>
+      );
+  }
+}
+
+function signalLabel(kind: TournamentSignal, entry: LobbyEntry): string {
+  switch (kind) {
+    case 'freeroll':
+      return 'Freeroll';
+    case 'pko':
+      return 'PKO';
+    case 'mystery':
+      return 'Mystery Bounty';
+    case 'bounty':
+      return 'Bounty';
+    case 'satellite':
+      return 'Satellite';
+    case 'hot-gtd':
+    default:
+      return `${compactChips(entry.guaranteeValue)} GTD`;
+  }
+}
+
+/** Row-level accents: the rail colour says the best thing about the game. */
+function compactRowClass(entry: LobbyEntry): string | undefined {
+  const signals = tournamentSignals(entry);
+  if (signals.length === 0 && entry.kind === 'cash') return undefined;
+  const cls: string[] = [];
+  if (entry.kind !== 'cash') cls.push('compact-lobby__row--tourney');
+  if (signals.includes('freeroll')) cls.push('is-freeroll');
+  else if (signals.includes('hot-gtd')) cls.push('is-hot-gtd');
+  else if (signals.some((k) => k === 'pko' || k === 'mystery' || k === 'bounty'))
+    cls.push('is-bounty');
+  if (entry.status === 'starting_soon' || entry.status === 'late_reg') cls.push('is-urgent');
+  return cls.join(' ') || undefined;
+}
+
+function TournamentRowSignals({
+  entry,
+  badgesOnly = false,
+}: {
+  entry: LobbyEntry;
+  /** The wide board already prints its clock in the title's second line. */
+  badgesOnly?: boolean;
+}) {
+  const signals = tournamentSignals(entry);
+  const hasClock =
+    !badgesOnly && entry.kind === 'mtt' && tournamentClockLine(entry, Date.now()) !== null;
+  /* One shared 1Hz tick for every clock on the board, and none at all for a
+     row with nothing to count. */
+  const now = useSharedSecondTick(hasClock);
+  const clock = hasClock ? tournamentClockLine(entry, now) : null;
+  /* A guarantee under the highlight threshold still says what it is, quietly. */
+  const plainGtd =
+    !badgesOnly && !signals.includes('hot-gtd') && entry.guaranteeValue > 0
+      ? `${compactChips(entry.guaranteeValue)} GTD`
+      : null;
+  if (signals.length === 0 && !clock && !plainGtd) return null;
+  return (
+    <span className="lt-signals">
+      {signals.length > 0 || plainGtd ? (
+        <span className="lt-signals__badges">
+          {signals.map((kind) => (
+            <span key={kind} className={`lt-signal lt-signal--${kind}`}>
+              <SignalIcon kind={kind} />
+              <span>{signalLabel(kind, entry)}</span>
+            </span>
+          ))}
+          {plainGtd && <span className="lt-signal lt-signal--gtd">{plainGtd}</span>}
+        </span>
+      ) : null}
+      {clock && (
+        <span className={`lt-clock lt-clock--${clock.tone}`} data-motion="keep">
+          <i className="lt-clock__dot" aria-hidden="true" />
+          <span className="lt-clock__text">{clock.text}</span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 function PlayerStateChip({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
   const state = playerStateOf(entry, ctx);
@@ -440,6 +631,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <TournamentRowSignals entry={e} badgesOnly />
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>
@@ -1633,6 +1825,14 @@ export default function LobbyTable({
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
+  /* A HEADING THE PLAYER CHOSE IS OBEYED (Dan 2026-10-23: "PLAYERS AND STATUS
+     DON'T CHANGE WHEN THEY ARE CLICKED"). The featured pin used to float the
+     club's featured games above every ordering, so on a board whose first
+     rows were featured a Players or Status tap reordered only the rows under
+     them and the top of the list never moved. The pin now decorates the
+     default order only; once the player picks a heading, that heading decides
+     the whole list. Dead seat-first games and empty cash tables still sink. */
+  const [sortChosen, setSortChosen] = useState<boolean>(() => readSort(clubId, category) != null);
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
   /* Which row the keyboard is on. Deliberately separate from `selectedId`:
@@ -1658,6 +1858,7 @@ export default function LobbyTable({
     if (lastCategoryRef.current === category) return;
     lastCategoryRef.current = category;
     setSort(readSort(clubId, category) ?? defaultSortFor(category));
+    setSortChosen(readSort(clubId, category) != null);
   }, [category, clubId]);
 
   /* Dan 2026-08-25: a Spin or Heads-Up with every seat gone "NEEDS TO BE
@@ -1696,13 +1897,13 @@ export default function LobbyTable({
         r.status !== 'closed' &&
         r.status !== 'completed';
       if (!seatFirstJoinable(r)) gone.push(r);
-      else if (r.featured && enterable) pinned.push(r);
+      else if (r.featured && enterable && !sortChosen) pinned.push(r);
       else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
       else open.push(r);
     }
     if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
     return pinned.concat(open, empty, gone);
-  }, []);
+  }, [sortChosen]);
 
   const sorted = useMemo(() => {
     /* GAMES ARE NEVER MIXED (Dan 2026-09-03). On the cash tabs every ordering
@@ -1737,7 +1938,17 @@ export default function LobbyTable({
         const aBad = !Number.isFinite(va);
         const bBad = !Number.isFinite(vb);
         if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
-        return (va - vb) * dir;
+        if (va !== vb) return (va - vb) * dir;
+        /* Equal status: the sooner start leads, then the busier game, so a
+           Status tap always produces a deliberate order rather than leaving
+           ties in whatever order the rows arrived. */
+        if (col?.key === 'status') {
+          const sa = Number.isFinite(a.startValue) ? a.startValue : Infinity;
+          const sb = Number.isFinite(b.startValue) ? b.startValue : Infinity;
+          if (sa !== sb) return sa === Infinity ? 1 : sb === Infinity ? -1 : sa - sb;
+          return (b.players || 0) - (a.players || 0);
+        }
+        return 0;
       }
       return String(va).localeCompare(String(vb)) * dir;
     };
@@ -1774,6 +1985,7 @@ export default function LobbyTable({
     if (!col.sortable) return;
     const next = { key: col.key, dir };
     setSort(next);
+    setSortChosen(true);
     writeSort(clubId, category, next);
   };
 
@@ -1809,6 +2021,7 @@ export default function LobbyTable({
           ? { key: col.key, dir: 'asc' }
           : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
       setSort(next);
+      setSortChosen(true);
       writeSort(clubId, category, next);
     }
   };
@@ -1991,6 +2204,7 @@ export default function LobbyTable({
                 data-capacity={entry.capacity}
                 data-target={entry.game ? 'game' : 'table'}
                 data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
+                className={compactRowClass(entry)}
                 onClick={() => onSelect(entry)}
               >
                 <td>
@@ -2021,6 +2235,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />
                   </button>
                 </td>

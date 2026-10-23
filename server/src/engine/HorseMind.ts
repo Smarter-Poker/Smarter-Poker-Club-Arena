@@ -1,3 +1,12 @@
+import {
+  MEMORY_VARIANTS,
+  memoryVariant,
+  opponentMemoryKey,
+  validOpponentProfile,
+  type DurableOpponentProfile,
+  type MemoryMode,
+  type MemorySize,
+} from './HorseOpponentMemory.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -48,6 +57,7 @@ import {
   barrelNarrowingScale,
   callDownRespectShift,
   exploitHandIncrements,
+  freshExploitCounters,
   looseCallerWidth,
   maniacRaiseWidth,
   mergeExploitRows,
@@ -421,6 +431,9 @@ export class HorseMind {
   private static exploitCounters = new Map<string, ExploitCounters>();
   /** 2026-10-16: the game variant of the decision in flight; it picks the
    *  population envelope the exploit read is judged against. */
+  private static decisionMode: MemoryMode = 'cash';
+  private static durableOpponentMemory = false;
+  private static durableOpponentVersions = new Map<string, number>();
   private static decisionVariant: string | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
@@ -753,11 +766,69 @@ export class HorseMind {
    * envelope. Null is the neutrality contract: callers run their exact
    * pre-existing code. Pure: no random draws, no writes.
    */
+  static enableDurableOpponentMemory(): void {
+    this.durableOpponentMemory = true;
+  }
+
+  static hasDurableOpponentProfile(
+    userId: string,
+    variant: string,
+    mode: MemoryMode,
+    size: MemorySize
+  ): boolean {
+    const v = memoryVariant(variant);
+    return !!v && this.exploitCounters.has(opponentMemoryKey(userId, v, mode, size));
+  }
+
+  static importDurableOpponentProfiles(rows: readonly DurableOpponentProfile[]): number {
+    if (this.sandboxDepth > 0 || this.decisionEffectSink)
+      throw new Error('durable profile import outside live boundary');
+    if (
+      !Array.isArray(rows) ||
+      rows.length > 10 ||
+      rows.some((p) => !validOpponentProfile(p) || !p.initialized)
+    )
+      throw new Error('invalid durable opponent profile');
+    // A later validated request can activate a worker whose startup probe
+    // preceded installation or the PostgREST cache reload.
+    if (rows.length > 0) this.enableDurableOpponentMemory();
+    let applied = 0;
+    for (const p of rows) {
+      const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
+      const known = this.durableOpponentVersions.get(key);
+      if (this.exploitCounters.has(key) && known !== undefined && known >= p.observed_hands)
+        continue;
+      this.exploitCounters.delete(key);
+      this.exploitCounters.set(key, { ...p.counters });
+      this.durableOpponentVersions.set(key, p.observed_hands);
+      applied++;
+    }
+    while (this.exploitCounters.size > EXPLOIT_ROW_CAP) {
+      const key = this.exploitCounters.keys().next().value!;
+      this.exploitCounters.delete(key);
+      this.durableOpponentVersions.delete(key);
+    }
+    if (this.durableOpponentVersions.size > EXPLOIT_ROW_CAP)
+      for (const key of this.durableOpponentVersions.keys()) {
+        if (!this.exploitCounters.has(key)) this.durableOpponentVersions.delete(key);
+        if (this.durableOpponentVersions.size <= EXPLOIT_ROW_CAP) break;
+      }
+    return applied;
+  }
+
   static opponentRead(userId: string): OpponentExploitRead | null {
     const scope = this.decisionScope;
     if (!scope) return null;
+    const variant = memoryVariant(this.decisionVariant);
+    const size = scope.split(':')[1] as MemorySize;
+    const durable = variant
+      ? this.exploitCounters.get(opponentMemoryKey(userId, variant, this.decisionMode, size))
+      : undefined;
     return opponentExploitRead(
-      this.exploitCounters.get(`${scope}|${userId}`),
+      durable ??
+        (this.durableOpponentMemory && variant
+          ? undefined
+          : this.exploitCounters.get(`${scope}|${userId}`)),
       scope,
       this.decisionVariant
     );
@@ -804,7 +875,12 @@ export class HorseMind {
   // ── V45 SCOPED READS ────────────────────────────────────────────────────
 
   /** Set by HorseLogic.decide for the decision in flight; null outside one. */
-  static setDecisionScope(scope: ReadScope | null, variant: string | null = null): void {
+  static setDecisionScope(
+    scope: ReadScope | null,
+    variant: string | null = null,
+    mode: MemoryMode = 'cash'
+  ): void {
+    this.decisionMode = mode;
     this.decisionScope = scope;
     this.decisionVariant = scope ? variant : null;
   }
@@ -933,6 +1009,9 @@ export class HorseMind {
     this.scoped.clear();
     this.dirtyScoped.clear();
     this.exploitCounters.clear();
+    this.durableOpponentVersions.clear();
+    this.durableOpponentMemory = false;
+    this.decisionMode = 'cash';
     this.decisionScope = null;
     this.decisionVariant = null;
   }
@@ -1202,7 +1281,8 @@ export class HorseMind {
    */
   static snapshotDecisionReads(
     players: readonly SeatPlayer[],
-    handKey: string | null
+    handKey: string | null,
+    memoryContext?: { variant: string; mode: MemoryMode; size: MemorySize }
   ): HorseMindSandbox {
     const ids = players.map((player) => player.user_id);
     if (
@@ -1227,6 +1307,22 @@ export class HorseMind {
           if (exploit) view.exploit.set(key, { ...exploit });
         }
       }
+      const game = memoryContext ? memoryVariant(memoryContext.variant) : null;
+      const variants = memoryContext ? (game ? [game] : []) : MEMORY_VARIANTS;
+      const modes: readonly MemoryMode[] = memoryContext
+        ? [memoryContext.mode]
+        : ['cash', 'tournament'];
+      const sizes: readonly MemorySize[] = memoryContext
+        ? [memoryContext.size]
+        : ['hu', 'short', 'full'];
+      for (const variant of variants)
+        for (const mode of modes)
+          for (const size of sizes) {
+            const key = opponentMemoryKey(id, variant, mode, size);
+            const row = this.exploitCounters.get(key);
+            if (row) view.exploit.set(key, { ...row });
+            else if (this.durableOpponentMemory) view.exploit.set(key, freshExploitCounters());
+          }
       for (const other of ids) {
         const key = `${id}|${other}`;
         const pair = this.pairs.get(key);
@@ -1261,6 +1357,9 @@ export class HorseMind {
     }
     const liveScope = this.decisionScope;
     const liveVariant = this.decisionVariant;
+    const liveMode = this.decisionMode;
+    const liveDurable = this.durableOpponentMemory;
+    this.durableOpponentMemory = false;
     const live = {
       stats: this.stats,
       seenActions: this.seenActions,
@@ -1310,6 +1409,8 @@ export class HorseMind {
       this.sandboxDepth = 0;
       this.decisionScope = liveScope;
       this.decisionVariant = liveVariant;
+      this.decisionMode = liveMode;
+      this.durableOpponentMemory = liveDurable;
     }
   }
 
@@ -2037,7 +2138,8 @@ export class HorseMind {
     showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null,
     /** V45: the hand's scope (variant family x dealt count), so the deep
      *  reads land in the scoped bucket too. Absent = pooled only. */
-    scope?: ReadScope | null
+    scope?: ReadScope | null,
+    durableExploit = false
   ): void {
     // V45: settlement runs outside any decision; the scope travels with the
     // hand and is cleared on the way out.
@@ -2185,7 +2287,7 @@ export class HorseMind {
       // 2026-10-16 OPPONENT EXPLOIT: one completed hand decays and feeds the
       // per-(scope, player) counters the exploit read is built from. Scoped
       // hands only: a read is always for the game it was learned in.
-      if (scope) this.observeExploitHand(actions, scope);
+      if (scope && !durableExploit) this.observeExploitHand(actions, scope);
     } catch {
       /* full-hand observation is best-effort by contract */
     } finally {

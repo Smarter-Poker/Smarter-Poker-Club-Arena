@@ -358,9 +358,8 @@ update public.ca_declared_money_triggers
    set note = 'Refuses a NEW live cash seat for a horse off ca_horse_active_roster, or a PLO cash seat above 0.50 big blind for a horse off ca_horse_plo_roster (Dan 2026-10-23: benched horses play tournaments, not cash; 0.10/0.25 and 0.25/0.50 PLO are open to every cash horse). Exempt clubs, tournament seats and same-game moves pass. Moves no chips and writes nothing: it only raises insufficient_privilege before the row exists. Any other failure fails open.'
  where table_name = 'table_seats' and trigger_name = 'zzzzzz_horse_roster_seat_guard';
 
-COMMIT;
-
--- DATA (outside the DDL transaction, as in 20261023160921).
+-- DATA, inside the same transaction: the applier sends one file as one
+-- transaction and refuses anything after COMMIT.
 select cron.alter_job(
   (select jobid from cron.job where jobname = 'ca-horse-roster-refresh'),
   command := 'select public.fn_ca_horse_roster_refresh(50, 5000, 2000, 1.0, 90)'
@@ -394,3 +393,5 @@ update public.cash_games
     '533ac199-6dad-4f55-abc1-3e4e16fa08d7',
     'c8544ea9-6f25-447e-89dd-dd21dfb73928'
    );
+
+COMMIT;

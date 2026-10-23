@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 231218,
-      "sha256": "3b29c50a4cf6aa5665f6d91cca4fc1ad7af56a1216ac8adddceaf77fa442db8c"
+      "bytes": 231613,
+      "sha256": "e3cd10b8bd9d9af519a1a09bd7601efc0e84260eb2737e627f92164fdd615088"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -503,6 +503,24 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "opponentMemoryWorkflowInput20261023": {
+    "reason": "Current workflow source identity for the added required PostgreSQL opponent-memory suite and typecheck. Financial sources, fixtures, assertions, deadlines and historical evidence remain unchanged; fresh hosted qualification is still required.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 231107,
+      "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
+    }
+  },
+  "opponentMemoryAwardLayoutIntegration20261023": {
+    "reason": "Merge both independent additive verification steps: durable opponent-memory PostgreSQL suite/typecheck and the existing hand-review award geometry suite. Record only the actual combined CI workflow input identity. Financial source/fixtures/assertions and historical evidence are preserved; fresh hosted checks remain required.",
+    "current": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
     }
   }
 }

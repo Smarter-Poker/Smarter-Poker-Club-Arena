@@ -206,6 +206,14 @@ describe('the chase is honest', () => {
       expect(winner?.textContent, `server drew ${tier.multiplier}x`).toBe(
         Math.round(SPIN.buyIn * tier.multiplier).toLocaleString('en-US')
       );
+      const orbit = container.querySelector('.sw__selector-orbit') as HTMLElement;
+      const order = buildWheelOrder(SPIN.tiers);
+      const target = order.findIndex((entry) => entry.multiplier === tier.multiplier);
+      expect(parseFloat(orbit.style.getPropertyValue('--sw-turn')) % 360).toBeCloseTo(
+        (target * 360) / order.length,
+        6
+      );
+      expect(container.querySelector('.sw__light--winner')).not.toBeNull();
       // The hub shows the same answer.
       expect(container.querySelector('.sw__hub-mult')?.textContent).toBe(`${tier.multiplier}×`);
       unmount();
@@ -256,7 +264,7 @@ describe('the chase is honest', () => {
 });
 
 describe('sequence', () => {
-  it('uses the Diamond Spins housing and rotates the server winner beneath the pointer', () => {
+  it('keeps the prize disc fixed and rotates the bright selector to the server winner', () => {
     const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} playSounds={false} />);
     act(() => {
       vi.advanceTimersByTime(LEAD_IN_MS + COUNTDOWN_MS + 50);
@@ -267,11 +275,13 @@ describe('sequence', () => {
     expect(container.querySelector('.sw__selector')?.getAttribute('src')).toContain(
       'wheel-selector-pointer-v2.webp'
     );
-    const rotor = container.querySelector('.sw__svg') as SVGElement;
+    const rotor = container.querySelector('.sw__selector-orbit') as HTMLElement;
+    expect(container.querySelector('.sw__svg')?.getAttribute('style')).toBeNull();
+    expect(container.querySelector('.sw__light')).not.toBeNull();
     const turn = parseFloat(rotor.style.getPropertyValue('--sw-turn'));
     const order = buildWheelOrder(SPIN.tiers);
     const target = order.findIndex((t) => t.multiplier === SPIN.multiplier);
-    expect((turn + (target * 360) / order.length) % 360).toBeCloseTo(0, 6);
+    expect((turn - (target * 360) / order.length) % 360).toBeCloseTo(0, 6);
     expect(parseFloat(rotor.style.getPropertyValue('--sw-spin-ms'))).toBe(CHASE_MS);
   });
 
@@ -565,6 +575,17 @@ describe('locked tiers and payout splits', () => {
 });
 
 describe('CSS hygiene', () => {
+  it('animates only the selector orbit and keeps both selection states bright', () => {
+    const css = readFileSync(
+      resolve(__dirname, '../../src/components/tournament/SpinWheel.css'),
+      'utf8'
+    );
+    expect(css).toMatch(/\.sw--chase \.sw__selector-orbit\s*\{\s*animation: swSelectorTurn/);
+    expect(css).not.toMatch(/\.sw--chase \.sw__svg\s*\{/);
+    expect(css).toMatch(/\.sw__selector\s*\{[^}]*brightness\(2\.8\)/);
+    expect(css).toMatch(/\.sw__light\s*\{[^}]*fill-opacity: 0\.4/);
+  });
+
   it('namespaces every keyframe (global @keyframes namespace)', () => {
     const css = readFileSync(
       resolve(__dirname, '../../src/components/tournament/SpinWheel.css'),

@@ -37,7 +37,7 @@ on:
         required: true
         type: string
       recover_index:
-        description: 'Opt-in recovery: exact public.managed_game_contract_versions_game_id_id_idx only'
+        description: 'Opt-in recovery: exact qualified contract or Chicago cash index only'
         required: false
         default: ''
         type: string

@@ -7,8 +7,9 @@
  * decision to stamp `data-bbj-mini` on the page root. Two copies of the
  * condition would drift; this is the one copy.
  *
- * The rule (2026-08-18): hidden for variants the server never pays (PLO6,
- * Short Deck), and never on tournaments, spins or heads-up.
+ * Owner update (2026-10-23): persistent jackpot readouts belong in the lobby,
+ * never over a live game. Celebration eligibility remains independent so
+ * hiding the banners cannot suppress an owed jackpot animation.
  */
 import { getBBJQualifyingInfo } from '../../config/RakeConfig';
 
@@ -19,7 +20,11 @@ export interface BbjPlateContext {
   maxPlayers: number;
 }
 
-export function isBbjPlateShown(ctx: BbjPlateContext): boolean {
+export function isBbjPlateShown(_ctx: BbjPlateContext): boolean {
+  return false;
+}
+
+export function isBbjCelebrationEligible(ctx: BbjPlateContext): boolean {
   const gameType = ctx.gameType ?? '';
   if (!getBBJQualifyingInfo(gameType).eligible) return false;
   if (ctx.isTournament || ctx.tournamentId) return false;

@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  CHICAGO_FILE,
+  CHICAGO_INDEX,
+  recoveryCatalog,
   cleanupStatement,
   validateRecoveryPair,
   RECOVERY_SNAPSHOTS,
@@ -382,4 +385,50 @@ test('current admission cannot filter readers using the historical failed-operat
       source.indexOf('await sendOnce(recoveryStatement(recovery))')
   );
   assert.ok(source.includes('recoverySent ? EXIT_UNKNOWN : EXIT_REFUSED'));
+});
+
+test('Chicago cash recovery binds exact source, predicate, OID and sole index', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + CHICAGO_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = recoveryRequest(CHICAGO_FILE, sql, CHICAGO_INDEX, '232930889', '2026-10-23T22:25:14Z');
+  assert.equal(recoveryStatement(r), 'REINDEX INDEX CONCURRENTLY ' + CHICAGO_INDEX);
+  assert.match(recoveryCatalog(r), /ca_hand_facts_cash_member_time_idx/);
+  const cash = {
+    ...row,
+    oid: r.oid,
+    name: 'ca_hand_facts_cash_member_time_idx',
+    table_name: 'ca_hand_facts',
+    definition:
+      'CREATE INDEX ca_hand_facts_cash_member_time_idx ON public.ca_hand_facts USING btree (user_id, played_at) WHERE (tournament_id IS NULL)',
+    no_predicate: false,
+  };
+  assert.equal(validateRecoveryCatalog([cash], r), cash);
+  for (const patch of [
+    { no_predicate: true },
+    { definition: cash.definition.replace('NULL', 'NOT NULL') },
+    { valid: true },
+    { oid: '232930890' },
+    { no_builder: false },
+    { no_transients: false },
+    { no_constraints: false },
+  ])
+    assert.throws(() => validateRecoveryCatalog([{ ...cash, ...patch }], r));
+  assert.throws(() => validateRecoveryCatalog([{ ...cash, valid: true }], r, true));
+  assert.doesNotThrow(() =>
+    validateRecoveryCatalog([{ ...cash, oid: '232930890', valid: true }], r, true)
+  );
+  assert.throws(() => recoveryRequest(CHICAGO_FILE, sql + ' ', CHICAGO_INDEX, r.oid, r.before));
+  assert.throws(() =>
+    recoveryRequest(CHICAGO_FILE, sql, CHICAGO_INDEX, r.oid, r.before, '232930890')
+  );
+  assert.throws(() => cleanupStatement(r));
+});
+test('installer binds and verifies backend identity after pool startup replacement', () => {
+  const s = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  const connected = s.indexOf('await client.connect()');
+  const bound = s.indexOf(`SET application_name = 'apply-recorded-migration'`, connected);
+  const checked = s.indexOf(`identity.rows[0]?.name !== 'apply-recorded-migration'`, bound);
+  assert.ok(connected < bound && bound < checked && checked < s.indexOf('let already;'));
 });

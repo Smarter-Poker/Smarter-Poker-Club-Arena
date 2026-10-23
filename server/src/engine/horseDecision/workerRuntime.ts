@@ -1,3 +1,4 @@
+import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
 import {
@@ -311,6 +312,8 @@ export async function startOwnedServices(shard?: {
     // is not the brain the packs qualified with (client.ts,
     // horseDecisionWorkerEnv). Refuse readiness rather than decide with it.
     assertDecisionWorkerRunsFullSample();
+    const opponentSchema = await horseOpponentMemorySchema();
+    noteFire(`horse_opponent_memory_schema_${opponentSchema}`);
     // Persistence starts before hydration, matching the production invariant:
     // a slow read may never prevent newly learned rows from becoming flushable.
     startHorseMindPersistence();
@@ -319,6 +322,7 @@ export async function startOwnedServices(shard?: {
     equityGovernor.startSampling();
     startSolverPolicyArtifactLoader();
 
+    if (opponentSchema === 'installed') HorseMind.enableDurableOpponentMemory();
     const lastFlush = await hydrateHorseMindFromDb();
     await Promise.all([
       hydrateHorseMind(lastFlush),
@@ -443,7 +447,8 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       request.actions,
       request.bigBlind,
       request.showdown,
-      request.scope
+      request.scope,
+      request.durableOpponentProfiles !== undefined
     );
   },
   noteDecision: noteDecisionMs,
@@ -2025,6 +2030,14 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
+    if (request.durableOpponentProfiles !== undefined) {
+      try {
+        if (HorseMind.importDurableOpponentProfiles(request.durableOpponentProfiles) > 0)
+          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
+      } catch {
+        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
+      }
+    }
     const planBinding = horsePlanBatchBindingFromRequest(request);
     const planContext = planBinding.planContext;
     const canonicalRng = this.deps.saveRng();
@@ -2110,7 +2123,20 @@ export class HorseDecisionWorkerRuntime {
       readFrame = encodeHorseDecisionReads(
         (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
           request.gameState.players,
-          handKey
+          handKey,
+          {
+            variant: request.gameState.gameVariant ?? 'nlh',
+            mode:
+              request.gameState.gameMode === 'tournament' || request.gameState.tournament
+                ? 'tournament'
+                : 'cash',
+            size:
+              (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 2
+                ? 'hu'
+                : (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 5
+                  ? 'short'
+                  : 'full',
+          }
         ),
         request.gameState.players,
         handKey,
@@ -2367,6 +2393,14 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
+    if (received.durableOpponentProfiles !== undefined) {
+      try {
+        if (HorseMind.importDurableOpponentProfiles(received.durableOpponentProfiles) > 0)
+          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
+      } catch {
+        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
+      }
+    }
     // ONE FLOOR, ONE READ (2026-10-16): a hand another shard owns is only
     // learned. Its owner journals it, binds its roster and settles its plans;
     // here it touches nothing but this worker's opponent memory.

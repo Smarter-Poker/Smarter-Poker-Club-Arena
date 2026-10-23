@@ -27,6 +27,31 @@ function put(p: string, text: string) {
 }
 const cases = [
   {
+    name: 'valid_daily_window_is_queued_without_claiming_installation',
+    prior: '-- baseline',
+    now: '-- @install-window: daily-maintenance\nBEGIN;\nCREATE TABLE public.future_game(id int);\nCOMMIT;\n',
+    tables: [],
+    columns: {},
+    expected: 0,
+    output: 'QUEUED, NOT INSTALLED',
+  },
+  {
+    name: 'unknown_window_is_not_an_exemption',
+    prior: '-- baseline',
+    now: '-- @install-window: nightly\nBEGIN;\nCREATE TABLE public.future_game(id int);\nCOMMIT;\n',
+    tables: [],
+    columns: {},
+    expected: 2,
+  },
+  {
+    name: 'unsafe_daily_window_is_not_an_exemption',
+    prior: '-- baseline',
+    now: '-- @install-window: daily-maintenance\nBEGIN;\nSELECT pg_sleep(30);\nCREATE TABLE public.future_game(id int);\nCOMMIT;\n',
+    tables: [],
+    columns: {},
+    expected: 2,
+  },
+  {
     name: 'unsupported_changed_drop_still_fails_closed',
     prior: '-- baseline',
     now: 'DROP TABLE other.x;',
@@ -322,6 +347,12 @@ for (const c of cases)
       ]);
       const result = cli(dir, process.execPath, [gate, before]);
       expect(result.status, result.stdout + '\n' + result.stderr).toBe(c.expected);
+      if ('output' in c) {
+        expect(result.stdout).toContain(c.output);
+        expect(result.stdout).not.toContain(
+          'every object these migrations declare exists in the live schema'
+        );
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -344,6 +375,8 @@ test('pre-push checks earlier branch migrations on a follow-up push', () => {
       // missing it does not exercise a narrower gate, it crashes on an
       // unresolved import - which is a gate that did not run at all.
       'recording-only.mjs',
+      'maintenance-window-migrations.mjs',
+      'owner-window-migration.mjs',
     ]) {
       put(
         path.join(dir, 'scripts/ci', name),

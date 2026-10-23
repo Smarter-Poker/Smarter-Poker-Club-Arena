@@ -3050,3 +3050,111 @@ export function pineapplePreflopScore(cards: Card[], shortDeck: boolean): number
   }
   return clamp01(best + second * 0.12);
 }
+
+export interface RangeAdvantageEstimate {
+  equity: number;
+  standardError: number;
+  samples: number;
+  advantage: boolean;
+  disadvantage: boolean;
+}
+const rangeAdvantageCache = new Map<string, RangeAdvantageEstimate>();
+/** Public range versus public range on this board. Hero's actual holding and
+ * every opponent's private cards are deliberately absent. The same physical
+ * deck supplies both ranges and the runout; exact Omaha 2+3 / split-low rules
+ * use the same evaluators as hand equity. A local deterministic stream is
+ * saved/restored, so a cache hit and a cold second look consume no decision RNG.
+ * This bounded approximation is not a solver range or a guaranteed nut edge. */
+export function estimateRangeAdvantage(
+  board: Card[],
+  heroBand: [number, number],
+  oppBand: [number, number],
+  vi: VariantInfo
+): RangeAdvantageEstimate | null {
+  if (
+    board.length < 3 ||
+    board.length > 5 ||
+    new Set(board.map(cardKey)).size !== board.length ||
+    board.some((c) => !FULL_DECK.some((d) => cardKey(c) === cardKey(d))) ||
+    (!vi.isOmaha && vi.holeCount !== 2) ||
+    vi.isFixedLimit ||
+    vi.isShortDeck
+  )
+    return null;
+  if (
+    [heroBand, oppBand].some(
+      (b) => !b.every(Number.isFinite) || b[0] < 0 || b[1] > 1 || b[0] >= b[1]
+    )
+  )
+    return null;
+  const key = JSON.stringify([
+    vi.holeCount,
+    vi.isHiLo,
+    board.map(cardKey).sort(),
+    heroBand,
+    oppBand,
+  ]);
+  const cached = rangeAdvantageCache.get(key);
+  if (cached) return { ...cached };
+  const saved = saveFastRandom();
+  let seed = 2166136261;
+  for (let i = 0; i < key.length; i++) seed = Math.imul(seed ^ key.charCodeAt(i), 16777619);
+  const known = new Set(board.map(cardKey));
+  const available = FULL_DECK.filter((c) => !known.has(cardKey(c)));
+  const h = vi.holeCount,
+    n = available.length;
+  let total = 0,
+    sum = 0,
+    sum2 = 0;
+  seedFastRandom(seed);
+  try {
+    for (let sample = 0; sample < 128; sample++) {
+      const deck = available.slice();
+      const place = (start: number, band: [number, number]) =>
+        vi.isOmaha
+          ? placeOmahaBandCombo(deck, start, n, band, h, vi.isHiLo)
+          : placeBandCombo(deck, start, n, band, false);
+      if (!place(0, heroBand) || !place(h, oppBand)) continue;
+      for (let j = 2 * h; j < 2 * h + 5 - board.length; j++) {
+        const k = j + Math.floor(fastRandom() * (n - j));
+        [deck[j], deck[k]] = [deck[k], deck[j]];
+      }
+      const hero = deck.slice(0, h),
+        opp = deck.slice(h, 2 * h),
+        runout = [...board, ...deck.slice(2 * h, 2 * h + 5 - board.length)];
+      const high = (hole: Card[]) =>
+        vi.isOmaha ? scoreOmahaHi(hole, runout) : scoreHoldem([...hole, ...runout], 7, false);
+      const hs = high(hero),
+        os = high(opp);
+      let share = hs > os ? 1 : hs === os ? 0.5 : 0;
+      if (vi.isHiLo) {
+        const hl = scoreOmahaLow(hero, runout),
+          ol = scoreOmahaLow(opp, runout);
+        if (Number.isFinite(hl) || Number.isFinite(ol)) {
+          const low =
+            Number.isFinite(hl) && hl < ol ? 1 : Number.isFinite(hl) && hl === ol ? 0.5 : 0;
+          share = (share + low) / 2;
+        }
+      }
+      total++;
+      sum += share;
+      sum2 += share * share;
+    }
+  } finally {
+    restoreFastRandom(saved);
+  }
+  if (total < 96) return null;
+  const equity = sum / total,
+    se = Math.sqrt(Math.max(0, sum2 / total - equity * equity) / total);
+  const read = {
+    equity,
+    standardError: se,
+    samples: total,
+    advantage: equity - 1.96 * se > 0.5,
+    disadvantage: equity + 1.96 * se < 0.5,
+  };
+  rangeAdvantageCache.set(key, read);
+  while (rangeAdvantageCache.size > 512)
+    rangeAdvantageCache.delete(rangeAdvantageCache.keys().next().value!);
+  return { ...read };
+}

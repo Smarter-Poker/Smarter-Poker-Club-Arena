@@ -93,14 +93,17 @@ describe('an unproved hand is handed to a successor generation', () => {
     manager.tableEngines.set('live', live);
 
     await manager.performManagedTableEngineRecovery('dead', dead, {}, 'unreachable', false);
-    expect(live.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
+    expect(live.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
     expect(handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
-    expect(manager.scheduleManagedTableEngineRecovery).toHaveBeenCalledTimes(1);
+    expect(manager.scheduleManagedTableEngineRecovery).not.toHaveBeenCalled();
 
     between.value = true;
-    await manager.performManagedTableEngineRecovery('dead', dead, {}, 'unreachable', false);
+    manager.completeSuccessorDrain();
     expect(handTournamentToSuccessorGeneration).toHaveBeenCalledTimes(1);
-    expect(manager.scheduleManagedTableEngineRecovery).toHaveBeenCalledTimes(1);
+    expect(manager.scheduleManagedTableEngineRecovery).not.toHaveBeenCalled();
   });
 
   it('keeps the ordinary causal retry for every permit this generation can still resolve', async () => {

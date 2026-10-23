@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230712,
-      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+      "bytes": 230753,
+      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3630,6 +3630,17 @@
     "current": {
       "bytes": 41349,
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    }
+  },
+  "handReviewAwardLayoutCiInput20261023": {
+    "reason": "Add the real HandDetailModal award-row geometry regression to the existing required CSS Beat command. Refresh only current workflow input identity; preserve financial inputs, assertions, historical pins and qualification statuses. This is not a financial execution certificate.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 230753,
+      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
     }
   },
   "cashierRealtimeFixtureEnforcement20261023": {

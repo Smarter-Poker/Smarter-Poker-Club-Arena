@@ -814,7 +814,7 @@ export function HandDetailModal({
                   />
                 ) : null}
 
-                <RecordedPotAwards model={model} />
+                <RecordedPotAwards model={model} variant="summary" />
                 {showdownRows.length === 0 ? (
                   <div className="hdm-empty hdm-empty--inline">
                     No Showdown{takenBy ? ` · Pot Taken By ${takenBy}` : ''}

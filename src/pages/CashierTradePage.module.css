@@ -2090,6 +2090,58 @@
   outline-offset: 2px;
 }
 
+/* CASH OUT REQUESTS (Dan 2026-10-23): management's queue sits directly below
+   Request Cash Out, on the slimmer action bar from the same cashier art set so
+   the two read as one family without repeating one plate. The pending count is
+   lit blue only while something is waiting. */
+.cashoutQueueButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 300px;
+  max-width: 100%;
+  aspect-ratio: 1916 / 256;
+  margin: 8px auto 0;
+  padding: 0 8%;
+  border: 0;
+  background: url('/images/cashier-actions/cashier-action-bar-v1.png') center / 100% 100% no-repeat;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cashoutQueueButton:active {
+  filter: brightness(1.2);
+}
+.cashoutQueueButton:focus-visible {
+  outline: 2px solid var(--ink-blue);
+  outline-offset: 2px;
+}
+.cashoutQueueCount {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+.cashoutQueueLive .cashoutQueueCount {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+/* The roster row of a player who is waiting on a cash out. */
+.rowCashoutRequested {
+  display: block;
+  color: var(--ink-blue);
+  font-size: min(2.4cqw, 12px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-shadow: var(--ink-blue-glow);
+  text-transform: uppercase;
+}
+
 /* Dan 2026-10-16: "Tap A Player To Select" (and the selection count that
    replaces it) is centred in the dock frame; Clear keeps the right edge. */
 .console .actionBar .selBar,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import GameLobbyPanel from '../../../src/components/lobby/GameLobbyPanel';
@@ -38,24 +38,37 @@ const entry =
         kind as any
       );
 const noop = () => undefined;
+function Fixture() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open Game Lobby
+      </button>
+      {open && (
+        <GameLobbyPanel
+          entry={entry}
+          clubId="fixture"
+          currentUserId={null}
+          waitlisted={false}
+          seated={false}
+          registered={false}
+          busy={false}
+          onClose={() => setOpen(false)}
+          onJoinTable={noop}
+          onWaitlistToggle={noop}
+          onRegister={noop}
+          onUnregister={noop}
+          onSpinJoin={noop}
+        />
+      )}
+    </>
+  );
+}
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter>
     <ToastProvider>
-      <GameLobbyPanel
-        entry={entry}
-        clubId="fixture"
-        currentUserId={null}
-        waitlisted={false}
-        seated={false}
-        registered={false}
-        busy={false}
-        onClose={noop}
-        onJoinTable={noop}
-        onWaitlistToggle={noop}
-        onRegister={noop}
-        onUnregister={noop}
-        onSpinJoin={noop}
-      />
+      <Fixture />
     </ToastProvider>
   </MemoryRouter>
 );

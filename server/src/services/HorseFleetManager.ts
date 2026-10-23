@@ -3112,16 +3112,12 @@ export class HorseFleetManager {
               pilotElsewhereDropped++;
               return false;
             }
-            /* A LIGHTNING FILL HORSE PLAYS ITS OWN TEST GAME (Dan 2026-10-23:
-               "make sure the horses are all playing 50 horses need to join
-               both holdem and plo"). No new cash seat anywhere else - the
-               database seat guard refuses one - and at its own game it is
-               outside both roster rules below. See lightningFillVerdict. */
+            /* A LIGHTNING FILL HORSE IS OUTSIDE BOTH ROSTER RULES AT ITS OWN
+               TEST GAME (Dan 2026-10-23: "make sure the horses are all playing
+               50 horses"), and free like any horse everywhere else (16:50:
+               "remove any and all restrictions that are on the horses for
+               playing games"). See lightningFillVerdict. */
             const fillVerdict = lightningFillVerdict(h.id, table.cluster_id);
-            if (fillVerdict === 'elsewhere') {
-              pilotElsewhereDropped++;
-              return false;
-            }
             const rosterExempt = rosterExemptClub(table.club_id) || fillVerdict === 'fill';
 
             /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low

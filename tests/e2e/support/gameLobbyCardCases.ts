@@ -74,7 +74,7 @@ export function registerGameLobbyCardCases() {
       { width: 812, height: 375 },
     ]) {
       await page.setViewportSize(viewport);
-      for (const kind of ['cash', 'mtt', 'spin', 'sng']) {
+      for (const kind of ['cash', 'cash-full', 'mtt', 'spin', 'sng']) {
         await page.goto(`http://game-card.fixture/?kind=${kind}`);
         await page.addScriptTag({
           content: bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
@@ -86,6 +86,29 @@ export function registerGameLobbyCardCases() {
           before!.height,
           `${kind} selected card collapsed into its flex scroll body`
         ).toBeGreaterThan(200);
+        if (kind === 'cash-full') {
+          const originalUrl = page.url();
+          await expect(card.getByText('Full', { exact: true }).first()).toBeVisible();
+          const primary = page.getByRole('dialog').locator('button[data-zone="primaryAction"]');
+          await expect(primary).toHaveAccessibleName('Join Waitlist');
+          await expect(primary).toBeEnabled();
+          await primary.click();
+          await expect(primary).toHaveAccessibleName('Leave Waitlist');
+          await expect(page).toHaveURL(originalUrl);
+          await expect(page.getByTestId('fixture-waitlist-calls')).toHaveText(
+            JSON.stringify([{ tableId: 'fixture-cash-full', joining: true }])
+          );
+          await primary.click();
+          await expect(primary).toHaveAccessibleName('Join Waitlist');
+          await expect(page).toHaveURL(originalUrl);
+          await expect(page.getByTestId('fixture-waitlist-calls')).toHaveText(
+            JSON.stringify([
+              { tableId: 'fixture-cash-full', joining: true },
+              { tableId: 'fixture-cash-full', joining: false },
+            ])
+          );
+          await expect(page.getByTestId('fixture-join-table-calls')).toHaveText('[]');
+        }
         const scroll = page.locator('.glp__scroll');
         await scroll.evaluate((el) => {
           el.scrollTop = el.scrollHeight;

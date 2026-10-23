@@ -15,10 +15,14 @@
  * the horses with 2,000+ PLO cash hands in 30 days and a net profit at PLO.
  * This module is the engine's read of that list.
  *
- * Every PLO variant (plo4, plo5, plo6, plo8, any later plo*) is gated, in cash
- * and in tournaments. A horse not on the list is never offered a PLO seat or
- * entry, and a horse already sitting at a PLO cash table is walked out at the
- * end of the hand by HorseSessionRotator.
+ * Every PLO variant (plo4, plo5, plo6, plo8, any later plo*) is gated at CASH
+ * tables. A horse not on the list is never offered a PLO cash seat, and one
+ * already sitting at a PLO cash table is walked out at the end of the hand by
+ * HorseSessionRotator. Tournaments are open to every horse (Dan 2026-10-23
+ * 11:06: "THEY CAN PLAY TOURNAMENTS, JUST NOT CASH GAMES.").
+ *
+ * The same read carries `ca_horse_active_roster`, the 45 horses that are the
+ * only ones to sit at cash at all (`cashRosterAllows`).
  *
  * FAILING CLOSED FOR PLO ONLY: the last good list is kept across failed reads.
  * Before any good read, `ploRosterAllows` answers `undefined` for a PLO
@@ -35,6 +39,8 @@ import { reportError } from './errorReporter.js';
 export const PLO_ROSTER_TTL_MS = 60_000;
 
 let roster: Set<string> | null = null;
+/** ca_horse_active_roster: the only horses that sit at CASH (Dan 2026-10-23). */
+let cashRoster: Set<string> | null = null;
 let loadedAt = 0;
 let inflight: Promise<void> | null = null;
 
@@ -56,7 +62,21 @@ async function load(): Promise<void> {
       );
       return;
     }
+    const cash = await supabase.from('ca_horse_active_roster').select('horse_id').limit(5000);
+    if (cash.error || !Array.isArray(cash.data)) {
+      reportError(
+        new Error(`[HorsePloRoster] cash roster read failed: ${cash.error?.message ?? 'no rows'}`),
+        'HorsePloRoster.cash_read_failed'
+      );
+      return;
+    }
     roster = new Set(data.map((r: { horse_id: string }) => String(r.horse_id)));
+    // The refresh never commits an empty roster, so zero rows is a read we
+    // cannot trust, not "nobody plays cash": keep no verdict.
+    const cashIds = cash.data
+      .map((r: { horse_id?: unknown }) => (typeof r.horse_id === 'string' ? r.horse_id : ''))
+      .filter((id: string) => id.length > 0);
+    cashRoster = cashIds.length > 0 ? new Set(cashIds) : null;
     loadedAt = Date.now();
   } catch (err) {
     reportError(err, 'HorsePloRoster.read_threw');
@@ -84,6 +104,22 @@ export function ploRosterAllows(horseId: string, variant: unknown): boolean | un
   if (!isPloVariant(variant)) return true;
   if (!roster) return undefined;
   return roster.has(horseId);
+}
+
+/**
+ * May this horse sit at a CASH table at all? Dan 2026-10-23: "THEY CAN PLAY
+ * TOURNAMENTS, JUST NOT CASH GAMES." Only the 45-horse active roster plays
+ * cash; every horse plays tournaments. `undefined` before any good read (the
+ * callers keep their own rule; the database seat door is the backstop).
+ */
+export function cashRosterAllows(horseId: string): boolean | undefined {
+  if (!cashRoster) return undefined;
+  return cashRoster.has(horseId);
+}
+
+/** Test seam for the cash roster. */
+export function __setCashRosterForTest(ids: string[] | null): void {
+  cashRoster = ids ? new Set(ids) : null;
 }
 
 /** Test seam. */

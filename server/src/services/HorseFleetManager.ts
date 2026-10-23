@@ -139,7 +139,12 @@ import {
 } from './HorseFleetPolicy.js';
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
 import { DEALABLE_MINIMUM, refusesLoneSeat, seatsToDealable } from './HorseLoneTable.js';
-import { isPloVariant, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
+import {
+  cashRosterAllows,
+  isPloVariant,
+  ploRosterAllows,
+  refreshPloRoster,
+} from './HorsePloRoster.js';
 
 /**
  * Everything `resolveSeatClub` needs to answer "which wallet pays for this
@@ -1016,8 +1021,6 @@ export class HorseFleetManager {
     if (isMaintenanceFrozen()) return;
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
-    /* The PLO roster is read once per cycle (cached 60 s, never throws). */
-    await refreshPloRoster();
     const cycleStartedAt = Date.now();
     this.cycleSittingSeed = String(cycleStartedAt);
     /* THE PULSE (Phase 3). Filled in as the cycle learns things and published
@@ -2169,6 +2172,9 @@ export class HorseFleetManager {
          every 30 s with no regard to whether the lane could serve them. Now
          the lane is read ONCE per cycle and a lane that is behind, or not
          ready, withholds every new seat exactly as the pause does. */
+      /* The PLO and cash rosters are read once per cycle, here, after the
+         room is read (cached 60 s, never throws). */
+      await refreshPloRoster();
       const lane = liveHorseDecisionWorkerStatus();
       const cycleWithheld = withheldReason(globalPolicy, {
         nowUTCHour: hourUTC,
@@ -3173,6 +3179,15 @@ export class HorseFleetManager {
               isPloVariant(table.game_variant) &&
               ploRosterAllows(h.id, table.game_variant) !== true
             ) {
+              tagDropped++;
+              return false;
+            }
+
+            /* THE CASH ROSTER (Dan 2026-10-23: "THEY CAN PLAY TOURNAMENTS,
+               JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
+               cash. Their tags already say so; this is the belt, and the
+               database seat door is the braces. */
+            if (cashRosterAllows(h.id) === false) {
               tagDropped++;
               return false;
             }

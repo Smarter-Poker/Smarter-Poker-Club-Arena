@@ -411,7 +411,11 @@ export async function witnessAdmission({
     const user = must(await bound(admin.auth.admin.getUserById(pin.playerId))).user;
     if (
       user?.id !== pin.playerId ||
-      !user.email?.endsWith('@bot.smarter.poker') ||
+      // The exact consented witness identity is already pinned by id (WITNESS_PLAYERS);
+      // house accounts use several domains, so the email only has to exist, as in
+      // the player witness's own sign-in.
+      typeof user.email !== 'string' ||
+      !user.email.trim() ||
       (user.banned_until &&
         (!Number.isFinite(Date.parse(user.banned_until)) ||
           Date.parse(user.banned_until) > Date.now()))

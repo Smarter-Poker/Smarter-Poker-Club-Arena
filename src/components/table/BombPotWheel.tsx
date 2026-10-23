@@ -267,6 +267,12 @@ export function BombPotWheel({
                     fill={`url(#bpwGlass-${artId})`}
                     className={`bpw__wedge${isLit ? ' is-lit' : ''}${isWinner ? ' is-winner' : ''}${phase === 'result' && !isWinner ? ' is-dimmed' : ''}`}
                   />
+                  {(isLit || isWinner) && (
+                    <path
+                      d={wedgePath(i, SEGMENTS, 112)}
+                      className={`bpw__light${isWinner ? ' bpw__light--winner' : ''}`}
+                    />
+                  )}
                   <circle cx={peg.x} cy={peg.y} r={3.2} className="bpw__peg" />
                   <g>
                     <text x={p.x} y={p.y} className="bpw__label" textAnchor="middle" dy="0.15em">

@@ -29,5 +29,10 @@ it('runs the checked cashier lifecycle before the native image is removed', () =
   );
   expect(run).toBeGreaterThan(0);
   expect(run).toBeLessThan(source.indexOf("['docker', 'image', 'rm', tag]"));
-  expect(source.slice(run, run + 180)).toContain('timeout=600');
+  const invocation = source
+    .split('\n')
+    .find((line) =>
+      line.includes("run(['python3', 'tests/fixtures/cashier-realtime-lifecycle/run-native.py'")
+    );
+  expect(invocation).toMatch(/, timeout=600\)$/);
 });

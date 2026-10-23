@@ -19,7 +19,10 @@ They contain definitions, constraints, RLS, ACLs and trigger metadata, not playe
 rows or credentials. `registry.json` contains only ledger store/mode configuration.
 The composer preserves captured function bodies/owners and effective execution
 rights for the three application roles, table privileges, policies and affected
-triggers. Native GoTrue owns Auth schema creation. Synthetic baseline rows are
+triggers. Native GoTrue owns Auth schema creation. A fresh read of production auth.users
+privileges confirms postgres has SELECT and REFERENCES; native setup grants
+only those required rights to the non-superuser application owner. Synthetic
+baseline seeding uses the separate initdb connection, never a financial caller. Synthetic baseline rows are
 seeded before financial execution; application triggers remain active for all
 cashout commands. This is scoped qualification, not complete production parity
 or a product-wide certificate. Production publication and live proof remain

@@ -173,6 +173,9 @@ try {
   });
   await sealFixtureAuthMigrationLedger(bootstrap);
   await alignFixtureAuthPlatformHelperGrants(bootstrap);
+  // Read-only production ACL capture confirms postgres already has both rights.
+  // Keep Auth-owned tables native; grant only the application owner's needed boundary.
+  await bootstrap.query('GRANT SELECT, REFERENCES ON auth.users TO postgres');
   const db = await connect('postgres');
   assertFixtureAuthMigrations(
     (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((r) => r.version)
@@ -213,7 +216,8 @@ try {
     seed = seed.replaceAll('{{' + key + '}}', id);
   }
   assert.ok(!seed.includes('{{'));
-  await db.query(seed);
+  // Baseline-only replication mode belongs to initdb, never an application caller.
+  await bootstrap.query(seed);
   await db.query(
     `UPDATE public.profiles SET onboarding_complete=true,age_verified=true,age_verified_at=now(),over_18_attested_at=now(),club_arena_tos_accepted_at=now(),jurisdiction_country='US',jurisdiction_region='IL',jurisdiction_acknowledged_at=now(),arena_avatar_url='/avatars/table/free_samurai@2x.webp' WHERE id=ANY($1::uuid[])`,
     [[owner.id, player.id]]

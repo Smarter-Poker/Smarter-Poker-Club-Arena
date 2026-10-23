@@ -60,3 +60,9 @@ crypto was pending. The legacy test now holds its first real digest behind a
 controlled promise, verifies the dialog opens before import, releases that gate,
 and joins the actual hydration promises before resetting mocks. This both
 reproduces the ordering and proves completion without a polling deadline.
+
+Integration retained current main's broader Cashier test teardown fix, which
+tracks every real hydration promise and drains it after unmount before mocks
+reset. That maintained fix supersedes this branch's single-case alternative.
+Current main's Club Data performance and unfinished-entry labeling changes are
+also preserved alongside the midnight rollover correction.

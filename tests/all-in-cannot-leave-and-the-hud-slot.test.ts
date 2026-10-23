@@ -335,10 +335,22 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
         HALF_SEAT_DESKTOP
       );
     }
-    // And the phone reserve is still the proportional clamp, not a flat number
-    // sized to the tile.
-    // October 15: six pixels retain clearance for the compact player plate, not HUD tiles.
-    // The existing browser checks retain both reserve/plate bounds.
-    expect(TABLE_CSS).toMatch(/--sp-hero-clear:\s*clamp\(56px,\s*calc\(14\.6vw \+ 6px\),\s*74px\)/);
+    // Dan 2026-10-22, desktop: "the bottom user display gets cut off by the
+    // action bar." A flat 60px only covered the smallest felt, so the desktop
+    // strip is SOLVED from the hero plate's own overhang (a tenth of the felt's
+    // width plus 27px) with 60px as its floor. It is still the hero's half seat
+    // and nothing else: no tile or HUD term may enter it.
+    const desk = TABLE_CSS.match(/--sp-hero-clear:\s*max\(\s*(\d+)px,\s*min\(([\s\S]*?)\)\s*\);/);
+    expect(desk, 'the desktop --sp-hero-clear derivation is missing').toBeTruthy();
+    expect(Number(desk![1]), 'the desktop floor moved off the half seat').toBe(HALF_SEAT_DESKTOP);
+    expect(desk![2]).toContain(
+      '0.0605 * (var(--sp-page-h) - var(--sp-table-top) - var(--sp-action-reserve))'
+    );
+    expect(desk![2]).toContain('calc(10vw + 33px)');
+    expect(desk![2]).not.toMatch(/tile|tdock|hud/i);
+    // And the phone reserve is still proportional to the width, not a flat
+    // number sized to the tile. Dan 2026-10-22: the phone plate hangs a tenth
+    // of the width plus 27px below the felt; 6px of air on top of that.
+    expect(TABLE_CSS).toMatch(/--sp-hero-clear:\s*max\(\s*56px,\s*min\(\s*calc\(10vw \+ 33px\),/);
   });
 });

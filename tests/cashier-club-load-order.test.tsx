@@ -1,10 +1,9 @@
 import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../src/lib/supabase';
 import CashierTradePage from '../src/pages/CashierTradePage';
-import * as cashierResilience from '../src/services/CashierResilience';
 import {
   CASHIER_REQUEST_RECOVERY_PREFIX,
   writeCashierTransferRecovery,
@@ -14,6 +13,46 @@ const CLUB_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const PLAYER_ID = '33333333-3333-4333-8333-333333333333';
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+const recoveryHydrations = vi.hoisted(() => new Set<Promise<unknown>>());
+
+vi.mock('../src/services/CashierResilience', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/services/CashierResilience')>();
+  return {
+    ...actual,
+    restoreDurableCashierTransfers: (
+      ...args: Parameters<typeof actual.restoreDurableCashierTransfers>
+    ) => {
+      const task = actual.restoreDurableCashierTransfers(...args);
+      recoveryHydrations.add(task);
+      void task.then(
+        () => recoveryHydrations.delete(task),
+        () => recoveryHydrations.delete(task)
+      );
+      return task;
+    },
+  };
+});
+
+let releaseRecoveryDigest: (() => void) | undefined;
+let restoreRecoveryDigest: (() => void) | undefined;
+
+afterEach(async () => {
+  cleanup();
+  releaseRecoveryDigest?.();
+  releaseRecoveryDigest = undefined;
+  try {
+    // Unmount stops UI updates, but deliberately does not discard a durable
+    // financial journal. Finish its original promise before resetting the
+    // next test's server model and RPC call history.
+    await act(async () => {
+      await Promise.allSettled([...recoveryHydrations]);
+    });
+    expect(recoveryHydrations.size).toBe(0);
+  } finally {
+    restoreRecoveryDigest?.();
+    restoreRecoveryDigest = undefined;
+  }
+});
 
 function LocationProbe() {
   const location = useLocation();
@@ -56,6 +95,10 @@ function installRpc(implementation: (...args: any[]) => any) {
 
 describe('CashierTradePage club load ordering', () => {
   beforeEach(() => {
+    expect(
+      recoveryHydrations.size,
+      'The prior cashier recovery must finish before mocks reset'
+    ).toBe(0);
     vi.clearAllMocks();
     localStorage.clear();
     recoveryRpc.clear();
@@ -576,151 +619,120 @@ describe('CashierTradePage club load ordering', () => {
   });
 
   it('hydrates an unresolved batch after a reload and reopens the exact unchanged intent', async () => {
-    const hydration = vi.spyOn(cashierResilience, 'restoreDurableCashierTransfers');
-    const digestGate = deferred<void>();
-    const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
-    const digest = vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(async (...args) => {
-      await digestGate.promise;
-      return originalDigest(...args);
-    });
-    try {
-      expect(
-        writeCashierTransferRecovery({
-          version: 1,
-          userId: USER_ID,
-          clubId: CLUB_ID,
-          kind: 'send',
-          amount: 42.5,
-          targetIds: [PLAYER_ID],
-          failures: [
-            {
-              userId: PLAYER_ID,
-              name: 'Recovered Player',
-              message: 'Outcome Not Yet Confirmed',
-            },
-          ],
-          submissionId: '44444444-4444-4444-8444-444444444444',
-          opIds: { [PLAYER_ID]: '55555555-5555-4555-8555-555555555555' },
-          createdAt: Date.now(),
-        })
-      ).toBe(true);
+    // The local journal can render before its server migration/hash finishes.
+    // Hold that real work through unmount to exercise test teardown ownership.
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const held = deferred<void>();
+    releaseRecoveryDigest = () => held.resolve();
+    const digestSpy = vi
+      .spyOn(crypto.subtle, 'digest')
+      .mockImplementationOnce((...args) => held.promise.then(() => digest(...args)));
+    restoreRecoveryDigest = () => digestSpy.mockRestore();
+    expect(
+      writeCashierTransferRecovery({
+        version: 1,
+        userId: USER_ID,
+        clubId: CLUB_ID,
+        kind: 'send',
+        amount: 42.5,
+        targetIds: [PLAYER_ID],
+        failures: [
+          {
+            userId: PLAYER_ID,
+            name: 'Recovered Player',
+            message: 'Outcome Not Yet Confirmed',
+          },
+        ],
+        submissionId: '44444444-4444-4444-8444-444444444444',
+        opIds: { [PLAYER_ID]: '55555555-5555-4555-8555-555555555555' },
+        createdAt: Date.now(),
+      })
+    ).toBe(true);
 
-      vi.mocked(supabase.from).mockImplementation((table: string) => {
-        let columns = '';
-        const builder: Record<string, unknown> = {};
-        const chain = () => builder;
-        for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
-          builder[method] = vi.fn(chain);
-        }
-        builder.select = vi.fn((value: string) => {
-          columns = value;
-          return builder;
-        });
-        builder.maybeSingle = vi.fn(() =>
-          Promise.resolve(
-            table === 'club_members'
-              ? { data: { role: 'owner', chip_balance: 250 }, error: null }
-              : table === 'agents'
-                ? { data: { agent_wallet_balance: 500 }, error: null }
-                : { data: null, error: null }
-          )
-        );
-        builder.then = (resolve: (value: unknown) => unknown) => {
-          const value =
-            table === 'club_members' && columns.includes('clubs:club_id')
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      let columns = '';
+      const builder: Record<string, unknown> = {};
+      const chain = () => builder;
+      for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
+        builder[method] = vi.fn(chain);
+      }
+      builder.select = vi.fn((value: string) => {
+        columns = value;
+        return builder;
+      });
+      builder.maybeSingle = vi.fn(() =>
+        Promise.resolve(
+          table === 'club_members'
+            ? { data: { role: 'owner', chip_balance: 250 }, error: null }
+            : table === 'agents'
+              ? { data: { agent_wallet_balance: 500 }, error: null }
+              : { data: null, error: null }
+        )
+      );
+      builder.then = (resolve: (value: unknown) => unknown) => {
+        const value =
+          table === 'club_members' && columns.includes('clubs:club_id')
+            ? {
+                data: [
+                  {
+                    club_id: CLUB_ID,
+                    role: 'owner',
+                    chip_balance: 250,
+                    clubs: { name: 'Recovery Club', club_id: 101, logo_url: null },
+                  },
+                ],
+                error: null,
+              }
+            : { data: [], error: null, count: 0 };
+        return Promise.resolve(value).then(resolve);
+      };
+      return builder as never;
+    });
+    installRpc(
+      (name: string) =>
+        Promise.resolve(
+          name === 'fn_cashier_recovery_receipts'
+            ? { data: { operations: [], tickets: [] }, error: null }
+            : name === 'fn_club_cashier_members_page_v3'
               ? {
                   data: [
                     {
-                      club_id: CLUB_ID,
-                      role: 'owner',
-                      chip_balance: 250,
-                      clubs: { name: 'Recovery Club', club_id: 101, logo_url: null },
+                      user_id: PLAYER_ID,
+                      name: 'Recovered Player',
+                      username: 'recovered_player',
+                      avatar_url: null,
+                      role: 'player',
+                      role_rank: 0,
+                      chip_balance: 75,
+                      is_horse: false,
+                      depth: 1,
+                      player_number: 'P-1',
                     },
                   ],
                   error: null,
                 }
-              : { data: [], error: null, count: 0 };
-          return Promise.resolve(value).then(resolve);
-        };
-        return builder as never;
-      });
-      installRpc(
-        (name: string) =>
-          Promise.resolve(
-            name === 'fn_cashier_recovery_receipts'
-              ? { data: { operations: [], tickets: [] }, error: null }
-              : name === 'fn_club_cashier_members_page_v3'
-                ? {
-                    data: [
-                      {
-                        user_id: PLAYER_ID,
-                        name: 'Recovered Player',
-                        username: 'recovered_player',
-                        avatar_url: null,
-                        role: 'player',
-                        role_rank: 0,
-                        chip_balance: 75,
-                        is_horse: false,
-                        depth: 1,
-                        player_number: 'P-1',
-                      },
-                    ],
-                    error: null,
-                  }
-                : { data: [], error: null }
-          ) as never
-      );
+              : { data: [], error: null }
+        ) as never
+    );
 
-      render(
-        <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
-          <Routes>
-            <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
-          </Routes>
-        </MemoryRouter>
-      );
+    render(
+      <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+        <Routes>
+          <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+        </Routes>
+      </MemoryRouter>
+    );
 
-      await waitFor(() =>
-        expect(screen.getByText('Transfer Recovery Required')).toBeInTheDocument()
-      );
-      await waitFor(() => expect(screen.getByText('Recovered Player')).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: 'Review And Retry' }));
+    await waitFor(() => expect(screen.getByText('Transfer Recovery Required')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Recovered Player')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Review And Retry' }));
 
-      await waitFor(() =>
-        expect(screen.getByRole('dialog', { name: /Send Out/ })).toBeInTheDocument()
-      );
-      expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('42.5');
-      expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
-      expect(localStorage.length).toBe(1);
-      // The dialog uses the local journal while native crypto and its server
-      // import are still pending. Join the real hydration instead of polling a
-      // timing assumption, before the next test resets the shared RPC model.
-      expect(hydration).toHaveBeenCalled();
-      expect(
-        vi
-          .mocked(supabase.rpc)
-          .mock.calls.some(([name]) => name === 'fn_cashier_browser_recovery_reserve')
-      ).toBe(false);
-      digestGate.resolve();
-      await act(async () => {
-        await Promise.all(hydration.mock.results.map((result) => result.value));
-      });
-      const calls = vi.mocked(supabase.rpc).mock.calls;
-      const reserved = calls.findIndex(
-        ([name, args]) =>
-          name === 'fn_cashier_browser_recovery_reserve' &&
-          (args as any).p_envelope.submissionId === '44444444-4444-4444-8444-444444444444'
-      );
-      expect(reserved).toBeGreaterThanOrEqual(0);
-      expect(
-        calls.findIndex(
-          ([name], index) => index > reserved && name === 'fn_cashier_browser_recovery_read'
-        )
-      ).toBeGreaterThan(reserved);
-    } finally {
-      digestGate.resolve();
-      digest.mockRestore();
-      hydration.mockRestore();
-    }
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: /Send Out/ })).toBeInTheDocument()
+    );
+    expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('42.5');
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
+    expect(localStorage.length).toBe(1);
   });
 
   it.each([false, true])(

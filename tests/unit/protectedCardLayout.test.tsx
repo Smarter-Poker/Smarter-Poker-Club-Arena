@@ -65,7 +65,9 @@ it('a child reveal after the parent commit is positioned clear of the real board
   const h = render(<Fixture revealed={false} />);
   const head = h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect();
   const mini = h.container.querySelector('.bbj-mini-plate')!.getBoundingClientRect();
-  expect(head.top).toBe(mini.bottom + 4);
+  // Dan 2026-10-22: "pull the table down so the top player isn't scrunched up" -
+  // the top pod keeps 8px of air below the jackpot plate, not 4px.
+  expect(head.top).toBe(mini.bottom + 8);
   await act(async () => h.rerender(<Fixture revealed />));
   const row = h.container.querySelector<HTMLElement>('.seat__cards--revealed')!;
   await waitFor(() => expect(row.style.translate).not.toBe(''));

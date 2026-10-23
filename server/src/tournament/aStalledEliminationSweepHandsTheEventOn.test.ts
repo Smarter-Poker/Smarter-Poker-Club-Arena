@@ -39,7 +39,30 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
       msInFlight: 180_000,
       msBustWaiting: 0,
       stage: -1,
+      step: null,
+      msInStep: 0,
     });
+  });
+
+  it('names the step a stalled sweep is stuck in, and for how long', () => {
+    const m = manager([], true, 1_000);
+    m.eliminationSweepStep = 'recoverPendingBountyObligations';
+    m.eliminationSweepStepAt = 61_000;
+    expect(m.getStalledEliminationSweep(181_000)).toEqual({
+      msInFlight: 180_000,
+      msBustWaiting: 0,
+      stage: -1,
+      step: 'recoverPendingBountyObligations',
+      msInStep: 120_000,
+    });
+  });
+
+  it('records each step the sweep enters', () => {
+    const m = manager([], true, 1);
+    const before = Date.now();
+    m.noteEliminationSweepStep('eliminatePlayer');
+    expect(m.eliminationSweepStep).toBe('eliminatePlayer');
+    expect(m.eliminationSweepStepAt).toBeGreaterThanOrEqual(before);
   });
 
   it('reports nothing while no sweep is in flight', () => {
@@ -83,6 +106,8 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
       msInFlight: 0,
       msBustWaiting: 120_000,
       stage: -1,
+      step: null,
+      msInStep: 0,
     });
   });
 

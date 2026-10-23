@@ -77,23 +77,19 @@ test('desktop keeps the complete selector at the top of its game scrollport', as
   await expect(controls).toHaveCSS('position', 'sticky');
 });
 
-test('mobile pins the selector below the measured header while the page scrolls', async ({
-  page,
-}) => {
+test('mobile filters return only at their original position', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.setContent(fixture(true));
 
   const controls = page.locator('.club-lobby-command-top__controls');
+  const original = await controls.boundingBox();
   await page.evaluate(() => window.scrollTo(0, 620));
-  const box = await controls.boundingBox();
-
-  expect(box).not.toBeNull();
-  expect(
-    Math.abs(box!.y - 64),
-    'selector must sit immediately below the measured header'
-  ).toBeLessThan(2);
-  await expect(controls).toHaveCSS('position', 'sticky');
-  await expect(controls).toHaveCSS('top', '64px');
+  expect((await controls.boundingBox())!.y).toBeLessThan(-100);
+  await page.evaluate(() => window.scrollTo(0, 500));
+  expect((await controls.boundingBox())!.y).toBeLessThan(-50);
+  await expect(controls).toHaveCSS('position', 'relative');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(Math.abs((await controls.boundingBox())!.y - original!.y)).toBeLessThan(2);
 
   for (const selector of ['.game-bar__type', '.game-bar__filter-btn', '.quickprefs__chip']) {
     const target = await page.locator(selector).boundingBox();

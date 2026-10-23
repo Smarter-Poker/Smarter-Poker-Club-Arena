@@ -107,7 +107,14 @@ test.describe('Production Create A Club Certificate', () => {
     clubLocation.searchParams.delete('invite');
     const createdClubUrl = clubLocation.toString();
     const defaults = await defaultResponse;
-    expect(defaults.ok(), 'default opening RPC must succeed').toBe(true);
+    const openingReceipt = await defaults.json();
+    expect(
+      defaults.ok(),
+      `default opening RPC must succeed: ${JSON.stringify(openingReceipt)}`
+    ).toBe(true);
+    expect(defaults.request().postDataJSON().p_operation_id).not.toBe(
+      response.request().postDataJSON().p_request_id
+    );
     expect(defaults.request().postDataJSON()).toMatchObject({
       p_rake_percent: -1,
       p_rake_cap_bb: -1,
@@ -119,7 +126,6 @@ test.describe('Production Create A Club Certificate', () => {
       p_leaderboard_prize_budget: 0,
       p_leaderboard_overlay_enabled: false,
     });
-    const openingReceipt = await defaults.json();
     expect(openingReceipt.success).toBe(true);
     expect(Number(openingReceipt.club_bank_after)).toBe(99700);
     const invite = page.getByRole('dialog', { name: 'Your Club Is Created', exact: true });

@@ -40,7 +40,9 @@
 .lightning-room-tools {
   position: fixed;
   left: 12px;
-  bottom: calc(var(--sp-bottom-row-h, 64px) + env(safe-area-inset-bottom, 0px) + 6px);
+  bottom: calc(
+    var(--sp-bottom-row-h, 64px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) + 6px
+  );
   z-index: var(--z-action-panel, 100);
   display: flex;
   flex-wrap: wrap;
@@ -72,7 +74,9 @@
 .lightning-panel {
   position: fixed;
   left: 12px;
-  bottom: calc(var(--sp-bottom-row-h, 64px) + env(safe-area-inset-bottom, 0px) + 52px);
+  bottom: calc(
+    var(--sp-bottom-row-h, 64px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) + 52px
+  );
   z-index: calc(var(--z-action-panel, 100) + 1);
   width: min(340px, calc(100vw - 24px));
   max-height: min(60vh, 460px);

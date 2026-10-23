@@ -135,7 +135,11 @@ export function portraitBoardWidthOfFeltPct(): number {
  * (2px on a phone, 4px to 1024px, 6px above - TablePage.css), and the felt is
  * FELT_WINDOW.width of the scaler.
  */
-export function boardCardWidthPx(scalerW: number, viewportW: number, portraitTaper: boolean): number {
+export function boardCardWidthPx(
+  scalerW: number,
+  viewportW: number,
+  portraitTaper: boolean
+): number {
   if (!(scalerW > 0)) return 0;
   const felt = (scalerW * FELT_WINDOW.width) / 100;
   const rowPct = portraitTaper ? portraitBoardWidthOfFeltPct() : 95;
@@ -401,7 +405,32 @@ export const SEAT_POD_LADDER: ReadonlyArray<{
  * `outboardCardSide` gives in tableSeatGeometry.ts: an index means a different
  * chair on every ring.
  */
-export function seatPodPx(viewportWidthPx: number, isHero: boolean, canvasWidthPx?: number): Size {
+export function seatPodPx(
+  viewportWidthPx: number,
+  isHero: boolean,
+  canvasWidthPx?: number,
+  ring?: { seats?: number; canvasHeightPx?: number }
+): Size {
+  /* DENSE RINGS ON A PHONE (Dan 2026-10-22) - mirrors the rule of the same
+     name at the foot of SeatSlot.css: a 7-9 max villain pod on a portrait
+     phone is sized from the smaller of the felt's width and its height. */
+  if (
+    !isHero &&
+    viewportWidthPx <= 480 &&
+    canvasWidthPx &&
+    Number.isFinite(canvasWidthPx) &&
+    (ring?.seats ?? 0) >= 7
+  ) {
+    const h = ring?.canvasHeightPx && ring.canvasHeightPx > 0 ? ring.canvasHeightPx : 600;
+    const avatar = Math.min(52, Math.max(34, Math.min(canvasWidthPx * 0.14, h * 0.085)));
+    const minWidth = Math.min(112, Math.max(66, canvasWidthPx * 0.235));
+    // 11px name + 13px stack at 1.3 line height, 2px pads, 1.5px borders.
+    const plateHeight = Math.max(36, (11 + 13) * 1.3 + 4 + 3);
+    return {
+      w: Math.max(minWidth, avatar * 1.143),
+      h: avatar + plateHeight - Math.max(3, avatar * 0.0714),
+    };
+  }
   const rung =
     SEAT_POD_LADDER.find((r) => viewportWidthPx <= r.maxViewportWidthPx) ??
     SEAT_POD_LADDER[SEAT_POD_LADDER.length - 1];
@@ -431,7 +460,8 @@ export function fitSeatToViewport(
   canvas: Size,
   viewportWidthPx: number,
   pod: Size,
-  canvasLeftPx = (viewportWidthPx - canvas.w) / 2
+  canvasLeftPx = (viewportWidthPx - canvas.w) / 2,
+  maxPlayers = 0
 ): Pos {
   if (!Number.isFinite(canvas.w) || canvas.w <= 0 || viewportWidthPx <= 0) return seat;
   const edge = pod.w / 2 + 2;
@@ -452,12 +482,18 @@ export function fitSeatToViewport(
   // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
   // cap keeps 4px of air beyond it (only binds on the narrowest phones).
   const capClearX = ((2 + pod.w + 4 + pod.w / 2 - canvasLeftPx) / canvas.w) * 100;
+  // The 320px nine-seat ring needs separate cap and side lanes.
+  const compactNine = portraitPhone && viewportWidthPx <= 340 && maxPlayers === 9;
   const targetX =
     portraitPhone && seat.y >= 20 && seat.y < 100
       ? seat.x < 50
         ? minX
         : maxX
-      : portraitPhone && seat.y < 20 && seat.x !== 50 && canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX
+      : portraitPhone &&
+          seat.y < 20 &&
+          seat.x !== 50 &&
+          canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
+          !compactNine
         ? seat.x < 50
           ? 15
           : 85
@@ -474,14 +510,22 @@ export function fitSeatToViewport(
   // On a phone the side pods live in the screen's outboard lanes, clear of the
   // board, so the board's band does not bind there and the chair can move up
   // to even the column.
+  // Equal 29.75-point gaps between the three side chairs leave room for
+  // each existing avatar, plate and action label on the 324px canvas.
   const y =
-    portraitPhone &&
-    canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
-    seat.x !== 50 &&
-    seat.y > 50 &&
-    seat.y < 70
-      ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
-      : seat.y;
+    compactNine && canvas.h <= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX && seat.y >= 20 && seat.y < 100
+      ? seat.y < 35
+        ? 23
+        : seat.y < 70
+          ? 52.75
+          : 82.5
+      : portraitPhone &&
+          canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
+          seat.x !== 50 &&
+          seat.y > 50 &&
+          seat.y < 70
+        ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
+        : seat.y;
   return x === seat.x && y === seat.y ? seat : { ...seat, x, y };
 }
 
@@ -492,9 +536,11 @@ export const PORTRAIT_LOW_SIDE_SEAT_LIFT = 4;
 /** The smallest phone felts (an iPhone SE table is about 262 x 324px) need
  * every wager slot the original layout gives them: nine bets only fit around
  * the outer lanes there. Below these sizes the top caps keep the outboard
- * 15/85 lanes and the lower side chair is not lifted. */
-export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 290;
-export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 400;
+ * 15/85 lanes and the lower side chair is not lifted. Every notched iPhone
+ * (a 375px-wide felt is ~307 x 450 after the safe areas) is above both, so
+ * gets the spread-out ring (Dan 2026-10-22). */
+export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 270;
+export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 360;
 
 /**
  * Clear felt between a chip's edge and its own pod, as a percentage of the

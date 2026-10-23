@@ -1,0 +1,5 @@
+{
+  "_owner": "perf/club-data-reads-once. Migration 20261022165130_club_data_and_union_data_read_each_window_once: installed after merge through apply-merged-migration; the one-pass window reader, the per-club listing it feeds and the newest-games walk.",
+  "tables": [],
+  "functions": ["fn_ca_rake_windows_v3", "fn_ca_rake_by_club_from", "fn_ca_club_game_recent_rows"]
+}

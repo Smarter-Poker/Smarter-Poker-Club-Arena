@@ -40,8 +40,28 @@ export async function assertDefaultClubOpeningReady() {
   if (error || data !== true) throw new Error('Default Club Setup Is Not Available Yet');
 }
 
-/** Read durable setup before a replay; the creation request owns the same setup key. */
-export async function completeDefaultClubOpening(clubId: string, operationId: string) {
+/** Creation already publishes the welcome leaderboard with its own retry key. */
+export async function defaultClubOpeningOperationId(clubId: string, creationRequestId: string) {
+  if (!clubId || !creationRequestId) throw new Error('Club Opening Request Is Required');
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(
+      JSON.stringify([
+        'club-opening-defaults:v1',
+        clubId.toLowerCase(),
+        creationRequestId.toLowerCase(),
+      ])
+    )
+  );
+  const bytes = new Uint8Array(digest).slice(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Read durable setup before replay; a separate stable key owns the opening. */
+export async function completeDefaultClubOpening(clubId: string, creationRequestId: string) {
   const existing = await clubOpeningSetupService.getState(clubId);
   if (existing?.completed_at) return;
   await assertDefaultClubOpeningReady();
@@ -54,6 +74,6 @@ export async function completeDefaultClubOpening(clubId: string, operationId: st
     throw new Error('Starter Games Have Not Been Confirmed');
   return clubOpeningSetupService.complete(
     defaultClubOpeningInput(clubId, applied.tagline, welcome),
-    operationId
+    await defaultClubOpeningOperationId(clubId, creationRequestId)
   );
 }

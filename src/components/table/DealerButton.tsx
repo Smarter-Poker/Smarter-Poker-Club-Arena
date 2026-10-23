@@ -537,6 +537,10 @@ export function DealerButton({
     <div
       ref={elRef}
       className="dealer-button"
+      // The seat this puck belongs to, so the painted-layout pass in
+      // useProtectedCardLayout can keep it nearer its own player than any other.
+      data-owner-x={pos.x}
+      data-owner-y={pos.y}
       style={{
         left: `${btnX}%`,
         top: `${btnY}%`,

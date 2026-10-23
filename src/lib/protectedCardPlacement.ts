@@ -15,7 +15,8 @@ export function placeProtectedCardRow(
   row: CardBox,
   protectedBoxes: CardBox[],
   bounds: CardBox,
-  gap = 4
+  gap = 4,
+  accept: (box: CardBox) => boolean = () => true
 ) {
   const xs = [row.left, bounds.left, bounds.left + bounds.width - row.width];
   const ys = [row.top, bounds.top, bounds.top + bounds.height - row.height];
@@ -28,7 +29,8 @@ export function placeProtectedCardRow(
     box.top >= bounds.top &&
     box.left + box.width <= bounds.left + bounds.width &&
     box.top + box.height <= bounds.top + bounds.height &&
-    protectedBoxes.every((other) => !intersects(box, other, gap));
+    protectedBoxes.every((other) => !intersects(box, other, gap)) &&
+    accept(box);
   if (fits(row)) return row;
   let best: CardBox | null = null;
   let distance = Infinity;

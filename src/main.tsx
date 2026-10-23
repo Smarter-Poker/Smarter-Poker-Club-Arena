@@ -284,6 +284,12 @@ function bootReactTree(): void {
         reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking')
       );
 
+    // PHASE 4.5: device sighting for the multi-account detector (2026-10-22).
+    // Fire-and-forget; reports this install's id once per signed-in session.
+    void importWithRetry(() => import('./lib/deviceSighting'))
+      .then(({ startDeviceSighting }) => startDeviceSighting())
+      .catch((err) => reportDeferredImportFailure(err, 'main.DeviceSighting_init_non_blocking'));
+
     // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
     // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline
     // Banner that gracefully handle degraded state. Blocking rendering for

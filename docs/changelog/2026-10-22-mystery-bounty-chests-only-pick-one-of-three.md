@@ -93,3 +93,17 @@ cent by the serving engine is sealed as 500 + 500 and reported as 1,000.00; a
 whole-chip cut is sealed as given. The first combined
 attempt timed out twice on `DROP TRIGGER IF EXISTS`, whose ACCESS EXCLUSIVE
 lock queues behind every reader; new triggers need no drop.
+
+## Follow-Up: Every Surface Says The Same Thing (#7744)
+
+- The chest reveal names the chest that held the prize for every seat, and
+  labels each of the other chests by number.
+- The Create Tournament form shows the half-entry bounty (read only) and that
+  chests open at the money, instead of activation and pool settings the
+  database would replace.
+- The Rewards rule, the detail tab, the sign-up dialog and the seat badges no
+  longer describe a flat bounty per knockout on a chests-only event.
+- `20261022223610`: `fn_mystery_bounty_pick` refuses once the award is
+  revealed (or void), so the record of which chest was picked cannot move
+  after the chest has opened. Proved on production: a pick against a
+  completed award answers `already_revealed`.

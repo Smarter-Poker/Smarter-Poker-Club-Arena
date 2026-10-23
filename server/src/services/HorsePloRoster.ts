@@ -41,6 +41,12 @@ export const PLO_ROSTER_TTL_MS = 60_000;
 let roster: Set<string> | null = null;
 /** ca_horse_active_roster: the only horses that sit at CASH (Dan 2026-10-23). */
 let cashRoster: Set<string> | null = null;
+/**
+ * ca_horse_roster_exempt_clubs: clubs whose cash tables are outside both
+ * roster rules (Dan 2026-10-23: "EXEMPT LIGHTNING PILOT"). Kept across a
+ * failed read; empty until the first good one.
+ */
+let exemptClubs: Set<string> = new Set();
 let loadedAt = 0;
 let inflight: Promise<void> | null = null;
 
@@ -69,6 +75,24 @@ async function load(): Promise<void> {
         'HorsePloRoster.cash_read_failed'
       );
       return;
+    }
+    const exempt = await supabase
+      .from('ca_horse_roster_exempt_clubs')
+      .select('club_id')
+      .limit(1000);
+    if (!exempt.error && Array.isArray(exempt.data)) {
+      exemptClubs = new Set(
+        exempt.data
+          .map((r: { club_id?: unknown }) => (typeof r.club_id === 'string' ? r.club_id : ''))
+          .filter((id: string) => id.length > 0)
+      );
+    } else {
+      reportError(
+        new Error(
+          `[HorsePloRoster] exempt club read failed: ${exempt.error?.message ?? 'no rows'}`
+        ),
+        'HorsePloRoster.exempt_read_failed'
+      );
     }
     roster = new Set(data.map((r: { horse_id: string }) => String(r.horse_id)));
     // The refresh never commits an empty roster, so zero rows is a read we
@@ -115,6 +139,19 @@ export function ploRosterAllows(horseId: string, variant: unknown): boolean | un
 export function cashRosterAllows(horseId: string): boolean | undefined {
   if (!cashRoster) return undefined;
   return cashRoster.has(horseId);
+}
+
+/**
+ * Is this club's cash floor outside the roster rules? The Lightning private
+ * pilot is: any of its horses sits at its tables, PLO included.
+ */
+export function rosterExemptClub(clubId: unknown): boolean {
+  return typeof clubId === 'string' && exemptClubs.has(clubId);
+}
+
+/** Test seam for the exempt clubs. */
+export function __setRosterExemptClubsForTest(ids: string[]): void {
+  exemptClubs = new Set(ids);
 }
 
 /** Test seam for the cash roster. */

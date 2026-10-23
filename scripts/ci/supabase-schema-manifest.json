@@ -243,6 +243,7 @@
     "ca_horse_plo_roster",
     "ca_horse_roster_bench",
     "ca_horse_roster_cash_tag_backup",
+    "ca_horse_roster_exempt_clubs",
     "ca_idx_every_seat_state",
     "ca_incident_events",
     "ca_incident_file_failures",

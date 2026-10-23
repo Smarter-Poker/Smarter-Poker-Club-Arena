@@ -73,7 +73,12 @@ import {
   type CommittedCashSeat,
   type ImminentBooking,
 } from './HorseTournamentCommitment.js';
-import { cashRosterAllows, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
+import {
+  cashRosterAllows,
+  ploRosterAllows,
+  refreshPloRoster,
+  rosterExemptClub,
+} from './HorsePloRoster.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -940,8 +945,10 @@ export class HorseSessionRotator {
         const uid = String(seat.user_id ?? '');
         if (!uid || !horseIds.has(uid)) continue;
         if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
-        const benched = benchedIds.has(uid) || cashRosterAllows(uid) === false;
-        const offPlo = ploRosterAllows(uid, t?.game_variant) === false;
+        /* The Lightning pilot club is outside both roster rules (Dan 2026-10-23). */
+        const exempt = rosterExemptClub((seat as { club_id?: unknown }).club_id);
+        const benched = benchedIds.has(uid) || (!exempt && cashRosterAllows(uid) === false);
+        const offPlo = !exempt && ploRosterAllows(uid, t?.game_variant) === false;
         if (!benched && !offPlo) continue;
         try {
           const result = await engine.leaveTable(uid);

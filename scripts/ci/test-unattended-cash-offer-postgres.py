@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PG = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin' if sys.platform == 'darwin' else '/usr/lib/postgresql/17/bin'))
 MIGRATION = ROOT / 'supabase/migrations/20261020201931_unattended_cash_game_offers.sql'
 LAPSED_MIGRATION = ROOT / 'supabase/migrations/20261023094000_a_lapsed_game_seat_offer_leaves_the_waitlist.sql'
+SEATED_MIGRATION = ROOT / 'supabase/migrations/20261023124157_a_seated_players_stranded_game_offer_reads_seated.sql'
 work = Path(tempfile.mkdtemp(prefix='uoffer-', dir=os.environ['TMPDIR']))
 socket = work / 's'
 socket.mkdir()
@@ -222,6 +223,12 @@ try:
     check(offer()['user_id']==U4,'and the one after that')
     check(q("SELECT has_function_privilege('authenticated','fn_offer_open_seat(uuid,interval,interval)','EXECUTE')")=='f','offer remains service-only after the lapsed offer migration')
     check(q("SELECT prosecdef::text||array_to_string(proconfig,',') FROM pg_proc WHERE proname='fn_cash_game_join'")=='truesearch_path=public, pg_temp','join keeps SECURITY DEFINER and search_path')
+    # A stranded row whose player sat down again reads 'seated' (20261023124157).
+    seed(); q(f"UPDATE cash_game_waitlist SET status='notified' WHERE user_id IN ('{U}','{U2}')")
+    q(f"INSERT INTO table_seats(table_id,user_id) VALUES('{T}','{U}')")
+    marked=subprocess.run([str(x) for x in [PG/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',socket,'-p',port,'-U','postgres','-d','postgres']],input=SEATED_MIGRATION.read_text(),text=True,capture_output=True)
+    check(marked.returncode==0 and 'seated_game_offers_marked=1' in marked.stderr,'seated sweep marks exactly the seated stranded row')
+    check(game_status(U)=='seated' and game_status(U2)=='notified','seated sweep leaves a row whose player is not seated')
     print(json.dumps({'passed':count,'productionWrites':0,'fixture':'native PG17 admission/offer transactions'}))
 finally:
     if not started and (work/'server.log').exists():

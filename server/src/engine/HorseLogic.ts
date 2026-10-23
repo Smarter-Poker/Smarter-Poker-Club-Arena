@@ -2266,21 +2266,22 @@ function maniacCallDown(
         ? HorseMind.bandFor(p.user_id, preflopOnly, bb, false, null)
         : HorseMind.bandFor(p.user_id, hist, bb, true, gs.communityCards ?? null)
     );
-    const eq =
+    const iterations = Math.max(240, Math.floor(vi.iterations * 0.8));
+    const betSelectionPenalty = (1 - betRate) * 0.15;
+    let eq =
       simulateEquity(
         player.cards,
         gs.communityCards ?? [],
         live.length,
         vi,
-        Math.max(240, Math.floor(vi.iterations * 0.8)),
+        iterations,
         bands,
         false,
         undefined,
         undefined,
         undefined,
         player.knownDeadCards ?? []
-      ) -
-      (1 - betRate) * 0.15;
+      ) - betSelectionPenalty;
     const call = Math.min(toCall, player.stack);
     const pot = Number.isFinite(gs.contestablePot)
       ? Math.max(0, gs.contestablePot as number)
@@ -2303,6 +2304,34 @@ function maniacCallDown(
         Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
         (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0))
     );
+    // A 240-deal estimate close to the price can reject a profitable call
+    // through sampling noise (retained PLO4 potter hand 74 after full-pot
+    // sizing). Refine that boundary once, with a fixed bounded sample; do
+    // not lower the price, survival premium or realization requirement.
+    const uncertainty = 2 * Math.sqrt(Math.max(0.01, eq * (1 - eq)) / iterations);
+    if (
+      street !== 'preflop' &&
+      live.length === 1 &&
+      eq < required &&
+      required - eq <= uncertainty
+    ) {
+      const extra = iterations * 4;
+      const refined =
+        simulateEquity(
+          player.cards,
+          gs.communityCards ?? [],
+          live.length,
+          vi,
+          extra,
+          bands,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          player.knownDeadCards ?? []
+        ) - betSelectionPenalty;
+      eq = (eq * iterations + refined * extra) / (iterations + extra);
+    }
     if (telemetryOn(opts)) {
       noteFire('maniac_call_down_checked');
       if (postflopOnly) noteFire('postflop_maniac_call_down_checked');
@@ -8096,7 +8125,13 @@ export class HorseLogic {
       gs,
       vi
     );
-    return enforceAuthoritativeDecision(structurallyLegal, player, gs);
+    // Canonical candidate pricing and final execution must agree on exact pot
+    // sizes, including cents that the older chip-step snap would round down.
+    return fullPotNearPotWager(
+      enforceAuthoritativeDecision(structurallyLegal, player, gs),
+      player,
+      gs
+    );
   }
 
   /**

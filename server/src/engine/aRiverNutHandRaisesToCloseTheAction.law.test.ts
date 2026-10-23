@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card, GameVariant, GameState } from '../types.js';
 import { HorseLogic } from './HorseLogic.js';
-import { seedFastRandom } from './HorseEval.js';
+import { seedFastRandom, variantInfo } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import { hasRiverNuts, riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { HandController } from './HandController.js';
@@ -287,6 +287,25 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
 });
 
 describe('near-pot wagers use full pot when the authoritative menu allows it', () => {
+  it('keeps a fractional full pot unchanged through the canonical legalizer', () => {
+    const { hero, state } = incident();
+    Object.assign(state, {
+      stage: 'flop',
+      pot: 100.37,
+      currentBet: 0,
+      toCall: 0,
+      minRaise: 2,
+      minRaiseTo: 2,
+      maxRaiseTo: 100.37,
+      legalActions: ['check', 'bet'],
+    });
+    const wager = { action: 'bet' as const, amount: 100.37, thinkTime: 0 };
+    const legalize = (HorseLogic as any).legalize.bind(HorseLogic);
+    const legal = legalize(wager, hero, state, variantInfo('plo5'));
+    expect(legal).toMatchObject({ action: 'bet', amount: 100.37 });
+    expect(legalize(legal, hero, state, variantInfo('plo5'))).toEqual(legal);
+  });
+
   it.each([90, 95.88, 99.99, 100])('rounds a %s percent bet to full pot', (amount) => {
     const { hero, state } = incident();
     Object.assign(state, {

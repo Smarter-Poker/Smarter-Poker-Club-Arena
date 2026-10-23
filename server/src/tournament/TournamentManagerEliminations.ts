@@ -565,6 +565,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     this.isProcessingEliminations = true;
     this.eliminationSweepStartedAt = Date.now();
+    this.noteEliminationSweepStep('admitted');
     // A bust that arrived while a later stage held the continuation takes its
     // turn here, before that stage is admitted again (see bustAwaitsItsStage).
     this.eliminationSweepCursor.beginAdmission();
@@ -584,6 +585,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // latch: a prior engine/channel cleanup failure left tournamentFinished
       // true, so falling through to checkFinalTableDeal would otherwise return
       // forever without retrying the retained normal or satellite receipt.
+      this.noteEliminationSweepStep('resumeCommittedTerminalCleanup');
       if (await this.resumeCommittedTerminalCleanup()) return;
       if (sweepStopped()) return;
 
@@ -597,10 +599,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.tournamentEntryRepricePending ||
         [...durableWakes.values()].some((reason) => reason === 'late_registration')
       ) {
+        this.noteEliminationSweepStep('reconcileTournamentEntryWindow');
         if (!(await this.reconcileTournamentEntryWindow('engine.manager_wake'))) return;
         if (sweepStopped()) return;
         // The same wake carries entries accepted after a launch cohort was
         // captured. Keep it pending until every one of them holds a chair.
+        this.noteEliminationSweepStep('seatAcceptedEntrantsAwaitingChairs');
         if (
           [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
           !(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))
@@ -616,18 +620,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // capLevelToTournamentChips knows how many chips the event has issued.
         // Throttled to once a minute — the cap only needs to be roughly right,
         // and it is a high-water mark so a slow refresh can never tighten it.
+        this.noteEliminationSweepStep('refreshChipCapInputs');
         await this.refreshChipCapInputs();
         if (sweepStopped()) return;
 
         // Settle earlier durable obligations before admitting another bust.
         // In a PKO an earlier collection can add value to the next busted
         // player's head, so proceeding on a failed recovery would underpay it.
+        this.noteEliminationSweepStep('recoverPendingBountyObligations');
         if (!(await this.recoverPendingBountyObligations(this.tournamentCache))) return;
         if (sweepStopped()) return;
 
         // A persisted chop owns the COMPLETING tail. Resume it before the
         // generic remaining-player logic can see only its already-stamped
         // winner and incorrectly enter the normal payout-structure finish.
+        this.noteEliminationSweepStep('checkFinalTableDeal');
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
         if (this.finalTableDealHandled || this.tournamentFinished) {
@@ -642,6 +649,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       bustStage: {
         if (this.eliminationSweepCursor.nextStage > 1) break bustStage;
         // Find ALL busted players (0 chips) in a single query
+        this.noteEliminationSweepStep('db:tournament_players');
         // eslint-disable-next-line prefer-const
         let { data: busted, error: bustedErr } = await supabase
           .from('tournament_players')
@@ -718,6 +726,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * again - the fail-closed direction the second read already took.
            */
           // Get current remaining count BEFORE processing any eliminations
+          this.noteEliminationSweepStep('db:tournament_players');
           const { count: playingCount, error: playingErr } = await supabase
             .from('tournament_players')
             .select('*', { count: 'exact', head: true })
@@ -885,6 +894,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             bustBatchHasMore = true;
           }
 
+          this.noteEliminationSweepStep('tryTournamentRebuys');
           const { rebought } = await this.tryTournamentRebuys(
             busted.map((b) => b.user_id),
             bustHandNumbers
@@ -926,6 +936,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * deadline for a zero written by an old pod during rolling deploy.
            */
           {
+            this.noteEliminationSweepStep('db:fn_open_tournament_rebuy_decisions');
             const { data: decisionsRaw, error: decisionsErr } = await supabase.rpc(
               'fn_open_tournament_rebuy_decisions',
               {
@@ -1122,6 +1133,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * Both are still checked, in the same order, before anybody is
            * placed; sequential reads were never a consistent snapshot either.
            */
+          this.noteEliminationSweepStep('db:tournament_players');
           const [takenRead, unplacedRead] = await Promise.all([
             supabase
               .from('tournament_players')
@@ -1255,6 +1267,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 );
               }
 
+              this.noteEliminationSweepStep('eliminatePlayer');
               const eliminated = await this.eliminatePlayer(bustedOrdered[i].user_id, place);
               if (sweepStopped()) return;
               // False includes both a deliberate evidence defer and a CAS miss
@@ -1393,6 +1406,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       finishStage: {
         if (this.eliminationSweepCursor.nextStage > FINISH_STAGE) break finishStage;
+        this.noteEliminationSweepStep('checkSatelliteQualifierCompletion');
         const satelliteFinish = await this.checkSatelliteQualifierCompletion();
         if (sweepStopped() || satelliteFinish === 'complete') return;
         if (satelliteFinish === 'pending') {
@@ -1407,6 +1421,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           break finishStage;
         }
         // Check remaining players AFTER all eliminations processed
+        this.noteEliminationSweepStep('db:tournament_players');
         const { count: remainingCount, error: remainingErr } = await supabase
           .from('tournament_players')
           .select('*', { count: 'exact', head: true })
@@ -1445,6 +1460,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // inventory. Guarded on `> 1` so the phase can never open on the
           // heads-up hand that ends the event.
           try {
+            this.noteEliminationSweepStep('maybeActivateMysteryBounty');
             const awaitingBoundary = await this.maybeActivateMysteryBounty(remainingCount);
             if (sweepStopped()) return;
             // Hold the parked boundary only while a hand is still in the air;
@@ -1465,6 +1481,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         ) {
           try {
             // Use maybeSingle to handle edge case where 0 players remain
+            this.noteEliminationSweepStep('db:tournament_players');
             const { data: winner, error: winnerErr } = await supabase
               .from('tournament_players')
               .select('user_id')
@@ -1482,6 +1499,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             }
 
             if (winner) {
+              this.noteEliminationSweepStep('finishTournament');
               await this.finishTournament(winner.user_id);
               if (sweepStopped()) return;
               this.rearmIfTheFinishWasRefused();
@@ -1493,6 +1511,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // used to see zero live players and hand the runner-up in as its
               // observed winner. The database then refused every replay of that
               // contradiction. Ask for the witness that was there first.
+              this.noteEliminationSweepStep('db:tournament_players');
               const { data: durableWinner, error: durableWinnerErr } = await supabase
                 .from('tournament_players')
                 .select('user_id')
@@ -1509,6 +1528,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 return;
               }
               if (durableWinner) {
+                this.noteEliminationSweepStep('finishTournament');
                 await this.finishTournament(durableWinner.user_id);
                 if (sweepStopped()) return;
                 this.rearmIfTheFinishWasRefused();
@@ -1530,6 +1550,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                    question the database asks, and name nobody. The field only
                    changes when a recovery restores or sequences those rows, so
                    the re-check runs at a slow cadence instead of every 5 s. */
+                this.noteEliminationSweepStep('db:tournament_players');
                 const { count: unsequencedCount, error: unsequencedErr } = await supabase
                   .from('tournament_players')
                   .select('*', { count: 'exact', head: true })
@@ -1562,6 +1583,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                   );
                   return;
                 }
+                this.noteEliminationSweepStep('db:tournament_players');
                 const { data: lastEliminated, error: lastEliminatedErr } = await supabase
                   .from('tournament_players')
                   .select('user_id')
@@ -1585,6 +1607,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                   console.log(
                     `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor - final durable elimination submitted to terminal authority`
                   );
+                  this.noteEliminationSweepStep('finishTournament');
                   await this.finishTournament(lastEliminated.user_id);
                   if (sweepStopped()) return;
                   this.rearmIfTheFinishWasRefused();
@@ -1618,6 +1641,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // table and the feature is on, an explicit review parks the dealer.
         // Consent then refers to the stable post-hand proposal; the shared
         // scheduler keeps that bounded review reachable until it closes.
+        this.noteEliminationSweepStep('checkFinalTableDeal');
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
         if (completedStage(4)) return;
@@ -1650,6 +1674,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           const nowMs = Date.now();
           if (nowMs - this.lastAddOnOfferAt >= TournamentManagerBase.ADD_ON_RETRY_MS) {
             this.lastAddOnOfferAt = nowMs;
+            this.noteEliminationSweepStep('tryTournamentAddOns');
             await this.tryTournamentAddOns();
             if (sweepStopped()) return;
           }
@@ -1670,6 +1695,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // because a field spread one player to a table cannot deal until
         // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
         const redrivesBeforeBalance = this.urgentRedrivesRequested;
+        this.noteEliminationSweepStep('checkTableBalance');
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
           do {
@@ -1719,6 +1745,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       expansionStage: {
         if (this.eliminationSweepCursor.nextStage > 6) break expansionStage;
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
+        this.noteEliminationSweepStep('checkDynamicTableExpansion');
         if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
         if (completedStage(7)) return;
@@ -1733,6 +1760,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.tournamentCache.variant === 'spin' ||
             this.tournamentCache.tournament_type === 'SPIN';
           if (!isSpin) {
+            this.noteEliminationSweepStep('db:tournament_players');
             const { count: playingNow, error: playingNowErr } = await supabase
               .from('tournament_players')
               .select('*', { count: 'exact', head: true })
@@ -1779,6 +1807,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // do not turn the whole open window into a polling loop.
               if (!this.prizePoolFinalized) break handForHandStage;
 
+              this.noteEliminationSweepStep('db:fn_get_tournament_satellite_entitlement_depth');
               const { data: entitlementRaw, error: entitlementErr } = await supabase.rpc(
                 'fn_get_tournament_satellite_entitlement_depth',
                 { p_tournament_id: this.tournamentId }
@@ -1825,6 +1854,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 if (this.handForHandActive) {
                   this.handForHandActive = false;
                   this.stopHandForHandSync();
+                  this.noteEliminationSweepStep('broadcast');
                   await this.broadcast('bubble_burst', {
                     playersRemaining: playingNow,
                     paidPositions: 0,
@@ -1856,6 +1886,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 }
               }
               if (this.prizePoolFinalized && paidPlaces === null) {
+                this.noteEliminationSweepStep('reconcileTournamentEntryWindow');
                 const repaired = await this.reconcileTournamentEntryWindow(
                   'engine.payout_structure_repair'
                 );
@@ -1885,6 +1916,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 console.log(
                   `[Tournament:${this.tournamentId.slice(0, 8)}] HAND-FOR-HAND - ${playingNow} players, paid through place ${payoutCount}`
                 );
+                this.noteEliminationSweepStep('broadcast');
                 await this.broadcast('hand_for_hand', {
                   active: true,
                   playersRemaining: playingNow,
@@ -1907,6 +1939,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               console.log(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE BURST - ${playingNow} players ITM`
               );
+              this.noteEliminationSweepStep('broadcast');
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               if (sweepStopped()) return;
               // Ending the bubble cannot release an overlapping tournament break.
@@ -1984,6 +2017,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;
       this.eliminationSweepStartedAt = 0;
+      this.eliminationSweepStep = null;
       eliminationSweepsInflight.dec();
       eliminationSweepMs.observe(Date.now() - sweepStartedAt);
       // Multi-day: busts in the day's final hands are recorded before the

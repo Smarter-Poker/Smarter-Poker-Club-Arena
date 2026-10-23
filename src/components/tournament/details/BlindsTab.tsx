@@ -75,6 +75,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Tournament } from '../../../types/database.types';
+import { mayTakeSynchronizedBreak } from '../../../../server/src/tournament/breakEligibility';
 import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
 import { chips, clockText, type NormalisedBlindLevel, type TournamentTabProps } from './types';
@@ -213,24 +214,10 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
   const onBreakStart = useCallback(
     (payload: BreakPayload) => {
       if (!payload || payload.tournamentId !== tournament.id) return;
-      const minutes = Number(payload.durationMinutes);
-      const endsAtMs =
-        epoch(payload.resumeAt) ??
-        epoch(payload.breakEndsAt) ??
-        (Number.isFinite(minutes) && minutes > 0 ? Date.now() + minutes * 60000 : null);
-      /**
-       * ONE BREAK, TWO EVENTS, ONE ANSWER.
-       *
-       * tournamentEventBridge emits TOURNAMENT_BREAK and BREAK_START from the
-       * same branch, and both are subscribed below (deliberately — either
-       * spelling may be the one that arrives). So this handler runs twice per
-       * break, and the `Date.now() + minutes` fallback computed a DIFFERENT end
-       * time on the second call, milliseconds later. Keeping the first answer
-       * makes the duplicate delivery a no-op instead of a small backwards jump
-       * in the break clock. A payload that carries a real end time is idempotent
-       * anyway; this only matters for the fallback.
-       */
-      setBusBreak((prev) => prev ?? { endsAtMs });
+      // A duration announces the break, not its start. The server publishes
+      // the deadline only after every active hand has finished.
+      const endsAtMs = epoch(payload.resumeAt) ?? epoch(payload.breakEndsAt);
+      setBusBreak((prev) => (endsAtMs !== null ? { endsAtMs } : (prev ?? { endsAtMs: null })));
     },
     [tournament.id]
   );
@@ -381,27 +368,27 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
       ? null
       : Math.max(0, Math.floor((breakEndsAtMs - nowMs) / 1000));
 
-  /** Time until the next scheduled break: rest of this level + whole levels between. */
-  const nextBreak: { seconds: number | null; scheduled: boolean; unknown: boolean } = (() => {
-    let target = -1;
-    for (let i = index + 1; i < blindLevels.length; i += 1) {
-      if (blindLevels[i].isBreak) {
-        target = i;
-        break;
-      }
+  // Hourly breaks are independent of blind levels. The engine skips the
+  // legacy isBreak rows, so searching them falsely advertised no MTT breaks.
+  const nextBreak = (() => {
+    try {
+      if (!mayTakeSynchronizedBreak(row))
+        return { seconds: null, scheduled: false, unknown: false };
+    } catch {
+      return { seconds: null, scheduled: false, unknown: true };
     }
-    if (target < 0) return { seconds: null, scheduled: false, unknown: false };
-    if (remainingSec === null) return { seconds: null, scheduled: true, unknown: true };
-    let total = remainingSec;
-    for (let i = index + 1; i < target; i += 1) {
-      const minutes = Number(blindLevels[i]?.duration);
-      if (!Number.isFinite(minutes) || minutes <= 0) {
-        return { seconds: null, scheduled: true, unknown: true };
-      }
-      total += minutes * 60;
-    }
-    return { seconds: total, scheduled: true, unknown: false };
+    // A registering tournament cannot take a break before it starts.
+    const anchor = !hasStarted && startTimeMs !== null ? Math.max(nowMs, startTimeMs) : nowMs;
+    const next = new Date(anchor);
+    next.setUTCMinutes(55, 0, 0);
+    if (next.getTime() < anchor) next.setUTCHours(next.getUTCHours() + 1);
+    return {
+      seconds: Math.max(0, Math.ceil((next.getTime() - nowMs) / 1000)),
+      scheduled: true,
+      unknown: false,
+    };
   })();
+  const finishingHands = onBreak && !structureBreak && breakEndsAtMs === null;
 
   if (levelCount === 0) {
     return (
@@ -519,7 +506,9 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
       {onBreak ? (
         <section className="tl-panel blinds-tab__card blinds-tab__card--break">
           <div className="tl-section-head">
-            <h3 className="tl-section-title">On Break</h3>
+            <h3 className="tl-section-title">
+              {finishingHands ? 'Finishing Current Hands' : 'On Break'}
+            </h3>
             <span className="tl-badge tl-badge--action">Break</span>
           </div>
           <div className="blinds-tab__level">
@@ -533,7 +522,13 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
               {breakRemainingSec === null ? '--:--' : clockText(breakRemainingSec)}
             </span>
             <span className="blinds-tab__clock-key">
-              {breakRemainingSec === null ? 'Break Length Not Published' : 'Until Play Resumes'}
+              {finishingHands
+                ? '5 Minutes After All Hands Finish'
+                : breakRemainingSec === null
+                  ? 'Break Length Not Published'
+                  : breakRemainingSec === 0
+                    ? 'Waiting For Play To Resume'
+                    : 'Until Play Resumes'}
             </span>
           </div>
           {next && !next.isBreak ? (
@@ -622,24 +617,19 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
       </section>
 
       {/* 3 / 4 — TIME UNTIL THE NEXT BREAK. Hidden while a break is running. */}
-      {!onBreak ? (
+      {!onBreak && !isFinished && !isBagged ? (
         <section className="tl-panel blinds-tab__card">
           <div className="tl-section-head">
             <h3 className="tl-section-title">Next Break</h3>
           </div>
 
-          {!nextBreak.scheduled ? (
+          {nextBreak.unknown ? (
             <div className="tl-empty">
-              No Further Breaks Scheduled
-              <span className="tl-empty__hint">This Structure Runs Straight Through</span>
+              Break Schedule Unavailable
+              <span className="tl-empty__hint">Tournament Format Not Published</span>
             </div>
-          ) : nextBreak.unknown ? (
-            <div className="tl-empty">
-              Break Time Not Published
-              <span className="tl-empty__hint">
-                A Level Between Here And The Break Has No Length
-              </span>
-            </div>
+          ) : !nextBreak.scheduled ? (
+            <div className="tl-empty">No Hourly Breaks</div>
           ) : (
             <div className="blinds-tab__clockwrap">
               <span
@@ -655,6 +645,8 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
                 {clockText(nextBreak.seconds ?? 0)}
               </span>
               <span className="blinds-tab__clock-key">Until The Next Break</span>
+              <span className="tl-empty__hint">Hourly At :55</span>
+              <span className="tl-empty__hint">5 Minutes After All Hands Finish</span>
             </div>
           )}
         </section>

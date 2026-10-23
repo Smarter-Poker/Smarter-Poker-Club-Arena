@@ -1,0 +1,153 @@
+/* Compact desktop-style browsing on phones. The approved game card is shown
+   only after selection, in GameLobbyPanel. Rows never commit a buy-in. */
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    display: block;
+    padding: 0 0 var(--bottom-nav-clearance, 74px);
+  }
+  .compact-lobby {
+    width: 100%;
+    display: table;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-family: var(--font-primary, 'Inter', sans-serif);
+    font-size: 12px;
+    color: #e4e7ec;
+    background: #03070a;
+  }
+  .compact-lobby thead {
+    display: table-header-group;
+  }
+  .compact-lobby tbody {
+    display: table-row-group;
+  }
+  .compact-lobby tr {
+    display: table-row;
+  }
+  .compact-lobby th,
+  .compact-lobby td {
+    display: table-cell;
+  }
+  .club-lobby-machine .lobby-sortbar {
+    display: none;
+  }
+  .compact-lobby__sort {
+    min-height: 44px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .compact-lobby__sort:focus-visible {
+    outline: 2px solid #45adff;
+  }
+  .compact-lobby__menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 190px;
+    z-index: 5;
+  }
+  .compact-lobby th:first-child .compact-lobby__menu {
+    left: 0;
+    right: auto;
+  }
+  .compact-lobby th {
+    position: relative;
+    padding: 8px 3px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: #9aa5b3;
+    border-bottom: 1px solid rgb(255 255 255 / 12%);
+  }
+  .compact-lobby th:first-child {
+    width: 43%;
+    text-align: left;
+    padding-left: 6px;
+  }
+  .compact-lobby th:nth-child(2) {
+    width: 22%;
+  }
+  .compact-lobby th:nth-child(3) {
+    width: 13%;
+  }
+  .compact-lobby th:nth-child(4) {
+    width: 22%;
+  }
+  .compact-lobby td {
+    padding: 4px 3px;
+    text-align: center;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+    font-variant-numeric: tabular-nums;
+  }
+  .compact-lobby td:first-child {
+    padding: 0;
+    text-align: left;
+  }
+  .compact-lobby tr {
+    cursor: pointer;
+  }
+  .compact-lobby tr:focus-within {
+    outline: 2px solid #45adff;
+    outline-offset: -2px;
+  }
+  .compact-lobby__open {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+    min-height: 48px;
+    padding: 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .compact-lobby__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .compact-lobby__meta {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 11px;
+    color: #9aa5b3;
+    line-height: 1.25;
+  }
+  .compact-lobby .lt-seats {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .compact-lobby .lt-seats__tables {
+    font-size: 9px;
+  }
+  .compact-lobby .lt-status {
+    display: inline;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    color: #45adff;
+    font-size: 10px;
+    white-space: normal;
+  }
+  .compact-lobby .lt-mono {
+    font-size: 11px;
+    white-space: normal;
+  }
+}

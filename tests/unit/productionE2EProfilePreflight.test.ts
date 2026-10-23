@@ -454,7 +454,9 @@ describe('authenticated production account preflight', () => {
 
   it('keeps production lobby and mobile audits aligned with the shipped surfaces', () => {
     const lobby = source('tests/e2e/club-lobby.spec.ts');
-    expect(lobby).toContain("if (kind === 'cash')");
+    expect(lobby).not.toContain("locator('.cplaque')");
+    expect(lobby).toContain("await expect(panel.locator('.arena-game-card')).toBeVisible()");
+    expect(lobby).toContain("panel.getByRole('button', { name: 'Details', exact: true }).click()");
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
     expect(lobby).toContain("locator('.agc-action--primary')");

@@ -654,10 +654,21 @@ export default function DetailOverviewTab({
       /* THE HEAD AT THE EVENT'S UNIT (2026-09-21): `money` at a chip event,
          exactly as before, and whole Diamonds that say so at a Diamond one. */
       const head = Number(t.bounty_amount) || 0;
-      const parts = [
+      const headFigure =
         normalizeUnitCents(overviewUnitCents) === CHIP_UNIT_CENTS
-          ? `${money(head)} per KO`
-          : `${formatPrizeAtUnit(head, overviewUnitCents)}${moneySuffixAtUnit(overviewUnitCents)} per KO`,
+          ? money(head)
+          : `${formatPrizeAtUnit(head, overviewUnitCents)}${moneySuffixAtUnit(overviewUnitCents)}`;
+      /* CHESTS ONLY (Dan 2026-10-22): a knockout before the money pays
+         nothing, so the head is what each entry puts in the mystery pool,
+         never a flat figure "per KO". An unknown split keeps the old words. */
+      const regular = (t as { mystery_bounty_regular_pool_percent?: unknown })
+        .mystery_bounty_regular_pool_percent;
+      const chestsOnly =
+        !!t.is_mystery_bounty && regular != null && regular !== '' && Number(regular) === 0;
+      const parts = [
+        chestsOnly
+          ? `${headFigure} Per Entry To The Mystery Pool - No Bounty Before The Money`
+          : `${headFigure} per KO`,
       ];
       if (t.is_pko) parts.push('50% to knocker, 50% to bounty');
       /* `mystery_bounty_min` / `mystery_bounty_max` used to be appended here.

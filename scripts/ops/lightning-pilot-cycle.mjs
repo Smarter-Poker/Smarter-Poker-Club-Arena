@@ -195,6 +195,7 @@ export async function witnessCycle({
     controlsQualified: false,
     requests: { timebank: 0, preaction: 0 },
     appRequests: { timebank: 0 },
+    staleRefusals: { timebank: 0, preaction: 0 },
     foldWatch: { accepted: 0, refused: 0, unknown: 0 },
     preactionRequestHandId: null,
     timebankContextHandId: null,
@@ -301,7 +302,7 @@ export async function witnessCycle({
     report.cause = 'first_render_unobserved';
     while (!rendered) await page.waitForTimeout(Math.min(100, remaining()));
     // Optional single clicks only while the maintained UI already offers them.
-    for (const [key, requested, selector, path] of [
+    const controls = [
       // A pre-action is offered while others act, so it is tried first; the
       // Time Bank needs the player's own turn and comes second.
       ['preaction', preaction, '.pre-action-btn.check', '/preaction'],
@@ -311,7 +312,10 @@ export async function witnessCycle({
         '.control-strip button[title="Time Bank"], .control-strip button[title="Unlimited Lifetime VIP Time Banks"]',
         '/timebank',
       ],
-    ]) {
+    ];
+    const retried = new Set();
+    for (let ci = 0; ci < controls.length; ci++) {
+      const [key, requested, selector, path] = controls[ci];
       if (!requested) continue;
       const control = page.locator(selector);
       // Observe the ordinary UI for one short opportunity; never repeat a click.
@@ -374,7 +378,27 @@ export async function witnessCycle({
       const answer = await bound(response.json());
       report[key] = response.ok() && answer.success === true ? 'accepted' : 'refused';
       if (key === 'preaction' && report[key] === 'accepted') report.preaction = 'armed';
-      if (report[key] === 'refused') throw new Error('Optional Action Refused');
+      if (report[key] === 'refused') {
+        // A hand that ended between the offer and the click is refused with no
+        // effect. That one case is tried once more on the next hand; any other
+        // refusal, or a second one, stops the witness as before.
+        const stale =
+          answer?.code === 'STALE_HAND' ||
+          /hand is over|left this hand|no active hand/i.test(String(answer?.error ?? ''));
+        if (!stale || retried.has(key)) throw new Error('Optional Action Refused');
+        retried.add(key);
+        report.staleRefusals[key]++;
+        report[key] = 'not_available';
+        if (key === 'preaction') {
+          armedHandId = null;
+          armedHandNumber = null;
+        }
+        const staleHand = clock.hand_id;
+        const nextHandBy = Date.now() + Math.min(20000, remaining());
+        while (Date.now() < nextHandBy && clock.hand_id === staleHand)
+          await page.waitForTimeout(Math.min(100, remaining()));
+        controls.splice(ci + 1, 0, controls[ci]);
+      }
     }
     report.subphase = 'natural_cycle';
     report.cause = 'natural_showdown_history_unobserved';
@@ -487,8 +511,8 @@ export async function witnessCycle({
       }
     }
     report.controlsQualified =
-      report.requests.timebank === 1 &&
-      report.requests.preaction === 1 &&
+      report.requests.timebank - report.staleRefusals.timebank === 1 &&
+      report.requests.preaction - report.staleRefusals.preaction === 1 &&
       report.timebank === 'accepted' &&
       report.timebankExecution === 'activated_and_deadline_extended' &&
       report.preaction === 'armed' &&

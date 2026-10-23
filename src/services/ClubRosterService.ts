@@ -548,6 +548,8 @@ export const ClubRosterService = {
             ? null
             : String(row.player_number),
         role: row.role ? normaliseRole(row.role) : null,
+        // The owner fallback is display-only, not club_members.agent_id.
+        assigned: typeof row.assigned === 'boolean' ? row.assigned : undefined,
       }))
       .sort((a, b) => a.depth - b.depth);
   },

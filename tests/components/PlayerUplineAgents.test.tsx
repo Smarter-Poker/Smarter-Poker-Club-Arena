@@ -10,6 +10,7 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ClubRosterService, { type MemberUplineLevel } from '../../src/services/ClubRosterService';
 import MemberUplineCard from '../../src/components/club/MemberUplineCard';
+import { supabase } from '../../src/lib/supabase';
 
 // The assignment control has its own suite (PlayerAssignAgent.test.tsx).
 vi.mock('../../src/components/club/MemberAssignAgent', () => ({
@@ -85,6 +86,29 @@ describe('Player Record: Upline Agents card', () => {
     expect(control.getAttribute('data-current')).toBe('');
     expect(control.getAttribute('data-owner')).toBe('true');
   });
+
+  it.each([false, true])(
+    'preserves assigned=%s through the real RPC adapter into the assignment control',
+    async (assigned) => {
+      const row = {
+        depth: 1,
+        user_id: 'owner-1',
+        name: 'KingFish',
+        player_number: '1',
+        role: 'owner',
+        assigned,
+      };
+      vi.spyOn(supabase, 'rpc').mockReturnValue({
+        abortSignal: () => Promise.resolve({ data: [row], error: null }),
+      } as any);
+      const actual = ClubRosterService.getMemberUplineChain;
+      const decoded = await actual('club-1', 'player-1');
+      expect(decoded?.[0].assigned).toBe(assigned);
+      render(<MemberUplineCard clubId="club-1" userId="player-1" />);
+      const control = await screen.findByTestId('assign-agent');
+      expect(control.getAttribute('data-current')).toBe(assigned ? 'owner-1' : '');
+    }
+  );
 
   it('says so when the player has no upline', async () => {
     vi.spyOn(ClubRosterService, 'getMemberUplineChain').mockResolvedValue([]);

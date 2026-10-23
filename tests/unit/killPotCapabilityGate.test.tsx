@@ -17,8 +17,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { join, resolve } from 'node:path';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -330,8 +331,24 @@ describe('the kill write goes through the door the database honours (20260924034
     // No migration teaches fn_cash_game_create to read a kill override, so a
     // kill_mode in p_overrides would be dropped (20260921025523: no unknown-key
     // rejection, an unrecognised key is silently dropped).
-    for (const name of readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql'))) {
-      const sql = readFileSync(join(MIGRATIONS, name), 'utf8');
+    // Every forbidden expression contains the literal 'kill'. Native Git
+    // scans all working files (including untracked SQL), then the exact
+    // existing multiline regex inspects every possible match. Avoid decoding
+    // and assertion-wrapping the entire migration history in JavaScript.
+    const candidates = spawnSync(
+      'git',
+      ['grep', '--no-index', '--no-exclude-standard', '-l', '-z', '-F', 'kill', '--', MIGRATIONS],
+      { encoding: 'utf8' }
+    );
+    if (candidates.error || ![0, 1].includes(candidates.status ?? -1))
+      throw candidates.error ?? new Error(candidates.stderr || 'Could Not Read Migration Inputs');
+    const names = candidates.stdout
+      .split('\0')
+      .filter((n) => n.endsWith('.sql'))
+      .map((n) => resolve(n));
+    expect(names).toContain(join(MIGRATIONS, '20260924034010_kill_pot_table_settings.sql'));
+    for (const name of names) {
+      const sql = readFileSync(name, 'utf8');
       expect(sql, name).not.toMatch(/v_oo?\s*(\?|->>?)\s*'{1,2}kill/);
     }
   });

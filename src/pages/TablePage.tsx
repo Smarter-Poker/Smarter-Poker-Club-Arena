@@ -27731,7 +27731,7 @@ function LiveTablePage({
             {lightningHandoff.readyPoolSessionId && !lightningRoom && !lightningHandoff.joining ? (
               <LightningEndedNotice
                 eyebrow="Lightning Games"
-                text="Your Game Is Now Lightning. Your Seat And Chips Are Ready."
+                text="Your Game Is Now Lightning. Your Seat Is Ready."
                 onViewGame={lightningHandoff.viewReady}
               />
             ) : null}

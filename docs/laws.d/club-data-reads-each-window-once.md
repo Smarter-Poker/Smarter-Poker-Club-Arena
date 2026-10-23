@@ -1,0 +1,3 @@
+# tests/club-data-reads-each-window-once.law.test.ts
+
+Migration 20261022165130 makes Union Data read a window's per-game rows once for the union and every club together (not once per club), sums the series from the per-game rows, plans the Club Data hand count with its values, and serves the Club Data page's newest games by walking the newest tournaments, falling back to the page core whenever it cannot prove its rows. The law pins those shapes, the pinned preimages, the fallback order, that the new internal readers are callable by no client, and that no horse filter was added; the native qualification proves every figure identical.

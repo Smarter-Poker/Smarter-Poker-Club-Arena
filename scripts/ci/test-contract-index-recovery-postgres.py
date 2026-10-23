@@ -47,7 +47,7 @@ def wait(sql,seconds=15):
  raise AssertionError('condition not observed: '+sql)
 def api(action,**kw):
  # Dynamic import keeps the maintained module authoritative, not a copied validator.
- script="import {pathToFileURL} from 'node:url';const m=await import(pathToFileURL(process.argv[1]));let s='';for await(const c of process.stdin)s+=c;const x=JSON.parse(s);let y;if(x.action==='queries')y={catalog:m.RECOVERY_CATALOG,snapshots:m.RECOVERY_SNAPSHOTS,transient:m.RECOVERY_TRANSIENT_CATALOG};else {const r=m.recoveryRequest(x.file,x.sql,x.index,x.oid,x.before,x.transientOid);if(x.action==='pair'){try{m.validateRecoveryPair(x.rows,x.transientRows,r);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else if(x.action==='cleanup')y=m.cleanupStatement(r);else if(x.action==='catalog'){m.validateRecoveryCatalog(x.rows,r,x.recovered);y=true;}else if(x.action==='snapshots'){try{m.validateRecoverySnapshots(x.rows);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else y=m.recoveryStatement(r);}console.log(JSON.stringify(y));"
+ script="import {pathToFileURL} from 'node:url';const m=await import(pathToFileURL(process.argv[1]));let s='';for await(const c of process.stdin)s+=c;const x=JSON.parse(s);let y;if(x.action==='queries')y={catalog:m.recoveryCatalog({index:x.index}),snapshots:m.RECOVERY_SNAPSHOTS,transient:m.RECOVERY_TRANSIENT_CATALOG};else {const r=m.recoveryRequest(x.file,x.sql,x.index,x.oid,x.before,x.transientOid);if(x.action==='pair'){try{m.validateRecoveryPair(x.rows,x.transientRows,r);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else if(x.action==='cleanup')y=m.cleanupStatement(r);else if(x.action==='catalog'){m.validateRecoveryCatalog(x.rows,r,x.recovered);y=true;}else if(x.action==='snapshots'){try{m.validateRecoverySnapshots(x.rows);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else y=m.recoveryStatement(r);}console.log(JSON.stringify(y));"
  payload={'action':action,'before':observed,'file':migration.name,'sql':migration.read_text(),'index':'public.managed_game_contract_versions_game_id_id_idx',**kw}
  return json.loads(run([node,'--input-type=module','-e',script,str(module)],json.dumps(payload)))
 def rows(sql):return json.loads(q('SELECT coalesce(json_agg(x),\'[]\'::json) FROM ('+sql+')x'))
@@ -135,6 +135,26 @@ try:
  q('BEGIN;'+migration.read_text().split('\nBEGIN;',1)[1])
  assert q("SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.managed_game_contract_versions t WHERE id<=2000")==baseline
  assert q('SELECT count(*) FROM public.managed_game_contract_versions')=='2001'
+ # Same maintained recovery with the exact partial cash index. A real old
+ # snapshot interrupts CREATE; REINDEX must replace its OID without data loss.
+ original_migration=migration
+ migration=root/'supabase/migrations/20261023213635_today_win_loss_resets_at_chicago_midnight.sql'
+ cash_index='public.ca_hand_facts_cash_member_time_idx'
+ q("CREATE TABLE public.ca_hand_facts(user_id uuid, played_at timestamptz, tournament_id uuid, net numeric); INSERT INTO public.ca_hand_facts VALUES('00000000-0000-0000-0000-000000000001',now(),NULL,7);")
+ cash_rows=q('SELECT jsonb_agg(t) FROM public.ca_hand_facts t')
+ hold=child("BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT * FROM public.ca_hand_facts;\n")
+ wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND state='idle in transaction' AND query LIKE '%SELECT * FROM public.ca_hand_facts%')")
+ b=child("SET lock_timeout='1s'; CREATE INDEX CONCURRENTLY ca_hand_facts_cash_member_time_idx ON public.ca_hand_facts(user_id,played_at) WHERE tournament_id IS NULL;\n")
+ assert finish(b,'cash-interrupted-build')[0]!=0
+ cq=api('queries',index=cash_index)['catalog']; cr=rows(cq); coid=cr[0]['oid']
+ api('catalog',index=cash_index,oid=coid,rows=cr,recovered=False)
+ send(hold,'ROLLBACK;\n');assert finish(hold,'cash-snapshot-release')[0]==0
+ cs=api('statement',index=cash_index,oid=coid)
+ q("SET application_name='Supavisor'; SET application_name='apply-recorded-migration';")
+ q("SET statement_timeout='30s'; "+cs+';')
+ api('catalog',index=cash_index,oid=coid,rows=rows(cq),recovered=True)
+ assert q('SELECT jsonb_agg(t) FROM public.ca_hand_facts t')==cash_rows
+ migration=original_migration
  passed=True
  (output/'RESULT.json').write_text(json.dumps({'passed':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'short_snapshot_admitted':True,'old_snapshot_refused':True,'old_transaction_without_snapshot_refused':True,'prepared_transaction_refused':True,'max_snapshot_age_seconds':60,'interrupted_reindex_transient_oid':transient_oid,'exact_transient_removed':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
 finally:

@@ -26,6 +26,53 @@ const MAX_RELOADS = 2; // Max full-page reloads before giving up
 let recoveryStarted = false;
 
 /**
+ * A PAGE THAT IS LEAVING IS NOT A STALE PAGE (2026-10-23, production
+ * post-deploy: "Navigation to /hub/club-arena/ is interrupted by another
+ * navigation to /clubs/kings-club?_cb=..."). When a player navigates away,
+ * the browser cancels the old document's in-flight requests, its lazy chunks
+ * and preloads included. Those cancellations reject exactly like a retired
+ * chunk ("Importing a module script failed", "Load failed"), and recovery
+ * answered them with a cache-busted reload of the page being LEFT, which
+ * hijacked the navigation the player had just started and sent them back.
+ *
+ * While a navigation is under way, recovery waits. If the page is still here
+ * once the grace period ends, the navigation was cancelled or never happened
+ * and the failure was real, so recovery runs then. If the navigation
+ * completed, this document no longer exists and nothing runs.
+ */
+export const NAVIGATION_GRACE_MS = 10_000;
+let leavingAt = Number.NEGATIVE_INFINITY;
+let deferredRecovery: ReturnType<typeof setTimeout> | null = null;
+
+function markLeaving(): void {
+  leavingAt = Date.now();
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('beforeunload', markLeaving);
+  window.addEventListener('pagehide', markLeaving);
+  // Restored from the back/forward cache: this document is in use again.
+  window.addEventListener('pageshow', (event) => {
+    if ((event as PageTransitionEvent).persisted) leavingAt = Number.NEGATIVE_INFINITY;
+  });
+}
+
+/** True while this document is being navigated away from. */
+export function documentIsNavigatingAway(now = Date.now()): boolean {
+  return now - leavingAt < NAVIGATION_GRACE_MS;
+}
+
+/** Run `recover` once the current navigation has had its chance to finish. */
+function afterNavigationGrace(recover: () => void): void {
+  if (deferredRecovery !== null) return;
+  const wait = Math.max(0, leavingAt + NAVIGATION_GRACE_MS - Date.now());
+  deferredRecovery = setTimeout(() => {
+    deferredRecovery = null;
+    recover();
+  }, wait);
+}
+
+/**
  * Retry a deferred, non-render-blocking module during an atomic publish.
  * Unlike lazyWithRetry, this never reloads the page: callers use it for boot
  * warmers and telemetry that must not interrupt a usable route.
@@ -107,6 +154,10 @@ export function isChunkLoadError(error: unknown): boolean {
  * query so the browser and the edge are both forced to fetch a fresh document.
  */
 export async function hardReload(): Promise<void> {
+  if (documentIsNavigatingAway()) {
+    afterNavigationGrace(() => void hardReload());
+    return;
+  }
   try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -122,6 +173,11 @@ export async function hardReload(): Promise<void> {
     }
   } catch {
     /* ignore — best effort */
+  }
+  // The purge above is asynchronous; a navigation may have started meanwhile.
+  if (documentIsNavigatingAway()) {
+    afterNavigationGrace(() => void hardReload());
+    return;
   }
   try {
     const url = new URL(window.location.href);
@@ -145,6 +201,11 @@ function canOwnChunkRecovery(error: unknown): boolean {
 export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
   if (!canOwnChunkRecovery(error)) return false;
   if (recoveryStarted) return true;
+  // A cancelled load during navigation spends no reload budget.
+  if (documentIsNavigatingAway()) {
+    afterNavigationGrace(() => void recoverFromStaleChunk(error));
+    return true;
+  }
 
   recoveryStarted = true;
   incrementReloadCount();
@@ -234,7 +295,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
         // suspended until navigation, instead of handing it an invalid module
         // that crashes in React's lazy initializer on module.default.
         if (module == null || module.default == null) {
-          if (recoveryStarted) return new Promise<never>(() => {});
+          if (recoveryStarted || documentIsNavigatingAway()) return new Promise<never>(() => {});
           throw new Error('Lazy route module has no default export');
         }
         // Another lazy module succeeding does not prove the failed route

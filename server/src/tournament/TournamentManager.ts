@@ -713,6 +713,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           throw new Error('f06_movement_proof_changed');
       }
     );
+    if (this.successorDrainRequested) this.prepareManagedTableEngineForPlay(engine);
     await engine.start();
   }
 

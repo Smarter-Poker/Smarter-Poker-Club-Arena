@@ -188,10 +188,7 @@ import {
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
 import { levelResumeRemainingMs } from './levelClockOutage.js';
-import {
-  everyOtherTableIsAtAHandBoundary,
-  unprovedHandNeedsSuccessorGeneration,
-} from './unprovedHandSuccessor.js';
+import { unprovedHandNeedsSuccessorGeneration } from './unprovedHandSuccessor.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -1799,6 +1796,7 @@ export abstract class TournamentManagerBase {
    */
   protected releaseManagedTablePauseIfUnowned(engine: ServerTableEngine): void {
     if (!this.running || !engine.requiresExplicitPauseResume()) return;
+    if (this.successorDrainRequested) return;
     // Every authority that may still own this hold, in the order the arm
     // considered them. While one of these is true the pause has a living
     // owner and a release here would deal through it.
@@ -1816,6 +1814,10 @@ export abstract class TournamentManagerBase {
   /** A replacement inherits every pause authority before it can deal. */
   protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
+    if (this.successorDrainRequested) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      return;
+    }
     // The day is ending: a replacement dealer inherits the stage-end pause
     // before it can deal, exactly as it inherits a synchronized break.
     if (this.stageEndPause || this.addOnDrainPending) {
@@ -2144,19 +2146,44 @@ export abstract class TournamentManagerBase {
     return -1;
   }
 
-  requestSuccessorForStalledEliminationSweep(): boolean {
-    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+  // A successor request owns its pause until this exact manager retires.
+  // Otherwise onPauseReady treats it as an abandoned tournament-break hold
+  // and resumes each dealer before the rest of the field can finish draining.
+  protected successorDrainRequested = false;
+  private successorHandoffIssued = false;
+
+  private requestSuccessorDrain(): boolean {
+    if (!this.isRunning() || this.successorDrainRequested) return false;
+    this.successorDrainRequested = true;
     for (const table of this.tableEngines.values()) {
-      if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
+      if (table.isRunning())
+        table.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
     }
+    this.completeSuccessorDrain();
+    // Acceptance reserves the caller's existing bounded handoff allowance.
+    // The last park edge completes it; repeated requests spend no allowance.
+    return true;
+  }
+
+  private completeSuccessorDrain(): boolean {
+    if (!this.successorDrainRequested || this.successorHandoffIssued || !this.isRunning())
+      return false;
     for (const table of this.tableEngines.values()) {
       if (table.isRunning() && !table.isBetweenHands()) return false;
     }
+    // Mark before calling the owner: a synchronous callback or duplicate park
+    // edge must never submit another handoff of this generation.
+    this.successorHandoffIssued = true;
     console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination sweep stalled - no bust can be recorded; handing the event to a successor generation`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Every live table drained; handing the event to a successor generation`
     );
     this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
     return true;
+  }
+
+  requestSuccessorForStalledEliminationSweep(): boolean {
+    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+    return this.requestSuccessorDrain();
   }
 
   requestSuccessorForStuckTable(tableId: string): boolean {
@@ -2164,19 +2191,7 @@ export abstract class TournamentManagerBase {
       return false;
     const stuck = this.tableEngines.get(tableId);
     if (stuck?.isRunning()) return false;
-    for (const other of this.tableEngines.values()) {
-      if (other !== stuck && other.isRunning())
-        other.pauseAfterHand(undefined, { untilResumed: true });
-    }
-    for (const other of this.tableEngines.values()) {
-      if (other === stuck || !other.isRunning()) continue;
-      if (!other.isBetweenHands()) return false;
-    }
-    console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for too long - handing the event to a successor generation`
-    );
-    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
-    return true;
+    return this.requestSuccessorDrain();
   }
 
   private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
@@ -2188,18 +2203,8 @@ export abstract class TournamentManagerBase {
       })
     )
       return false;
-    for (const other of this.tableEngines.values()) {
-      // No table of this generation deals another hand: the event is leaving it.
-      if (other !== engine && other.isRunning())
-        other.pauseAfterHand(undefined, { untilResumed: true });
-    }
-    if (!everyOtherTableIsAtAHandBoundary(this.tableEngines.values(), engine)) return false;
-    console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] A stopped table holds a hand this lease generation cannot resolve - handing the event to a successor generation`
-    );
     // Not awaited: the manager's stop drains this very recovery job.
-    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
-    return true;
+    return this.requestSuccessorDrain();
   }
 
   private async performManagedTableEngineRecovery(
@@ -2633,6 +2638,7 @@ export abstract class TournamentManagerBase {
       });
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
+      if (this.successorDrainRequested) this.prepareManagedTableEngineForPlay(engine);
       await engine.start();
     })().catch(async (error) => {
       reportError(error, errorContext, metadata);
@@ -3059,6 +3065,10 @@ export abstract class TournamentManagerBase {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
+      if (this.successorDrainRequested) {
+        if (this.tableIdForManagedEngine(engine)) this.completeSuccessorDrain();
+        return;
+      }
       // The last parked dealer starts the actual paid add-on minute. This is
       // the original hand-boundary event, not a timer or repair poll.
       if (this.addOnDrainPending && !this.addOnPeriodOpening && !this.lifecycleOperation) {
@@ -4043,7 +4053,12 @@ export abstract class TournamentManagerBase {
     }
     // A day-ending event keeps its tables held: the break was never the
     // stage-end pause's owner and may not lift it.
-    if (!this.handForHandActive && !addOnBreakStillActive && !this.stageEndPause) {
+    if (
+      !this.successorDrainRequested &&
+      !this.handForHandActive &&
+      !addOnBreakStillActive &&
+      !this.stageEndPause
+    ) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -4583,7 +4598,7 @@ export abstract class TournamentManagerBase {
     for (const engine of engines) {
       if (![...this.tableEngines.values()].includes(engine)) continue;
       try {
-        engine.resumeDealing();
+        if (!this.successorDrainRequested) engine.resumeDealing();
       } catch (err) {
         reportError(err, 'Tournament.mystery_activation_boundary_release_failed', {
           tournamentId: this.tournamentId,
@@ -5049,6 +5064,7 @@ export abstract class TournamentManagerBase {
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
     );
+    if (this.successorDrainRequested) return;
     for (const engine of engines) engine!.resumeDealing();
 
     if (this.handForHandRePauseTimer) {
@@ -11075,7 +11091,12 @@ export abstract class TournamentManagerBase {
     // Hand-for-hand may have ended while the add-on owned this shared gate.
     // With neither tournament pause remaining, release it even when the
     // add-on originally inherited the parked table from hand-for-hand.
-    if (!this.onBreak && !this.handForHandActive && !this.stageEndPause) {
+    if (
+      !this.successorDrainRequested &&
+      !this.onBreak &&
+      !this.handForHandActive &&
+      !this.stageEndPause
+    ) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -11140,7 +11161,11 @@ export abstract class TournamentManagerBase {
     this.addOnBreakOwnsPause = false;
     if (!this.running) return;
 
-    const releasePause = !this.onBreak && !this.handForHandActive && !this.stageEndPause;
+    const releasePause =
+      !this.successorDrainRequested &&
+      !this.onBreak &&
+      !this.handForHandActive &&
+      !this.stageEndPause;
     for (const engine of this.tableEngines.values()) {
       try {
         // The absolute hold was placed for the deadline that no longer exists.

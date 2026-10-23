@@ -21,6 +21,8 @@ function eng(running: boolean, betweenHands: boolean) {
 
 function manager(engines: [string, any][], failing: string[] = []) {
   const m = Object.create(TournamentManagerBase.prototype) as any;
+  m.running = true;
+  m.tournamentLeaseAuthorityIsCurrent = () => true;
   m.tournamentId = 'eeeeeeee-0000-4000-8000-000000000001';
   m.tableEngines = new Map(engines);
   m.tableAdmissionFailingSince = new Map(failing.map((id) => [id, 0]));
@@ -38,8 +40,14 @@ describe('a stuck table hands the event to a fresh generation', () => {
       [B, b],
     ]);
     expect(m.requestSuccessorForStuckTable(STUCK)).toBe(true);
-    expect(a.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
-    expect(b.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
+    expect(a.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
+    expect(b.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
     expect(m.gameServer.handTournamentToSuccessorGeneration).toHaveBeenCalledWith(
       m.tournamentId,
       m
@@ -52,7 +60,7 @@ describe('a stuck table hands the event to a fresh generation', () => {
       [STUCK, eng(false, true)],
       [A, a],
     ]);
-    expect(m.requestSuccessorForStuckTable(STUCK)).toBe(false);
+    expect(m.requestSuccessorForStuckTable(STUCK)).toBe(true);
     expect(a.pauseAfterHand).toHaveBeenCalled();
     expect(m.gameServer.handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
   });

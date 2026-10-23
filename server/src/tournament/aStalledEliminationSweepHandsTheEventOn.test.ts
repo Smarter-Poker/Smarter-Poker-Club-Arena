@@ -23,6 +23,8 @@ function eng(running: boolean, betweenHands: boolean) {
 
 function manager(engines: [string, any][], processing: boolean, startedAt: number, bustSince = 0) {
   const m = Object.create(TournamentManagerBase.prototype) as any;
+  m.running = true;
+  m.tournamentLeaseAuthorityIsCurrent = () => true;
   m.bustAwaitingSinceMs = bustSince;
   m.tournamentId = 'eeeeeeee-0000-4000-8000-000000000001';
   m.tableEngines = new Map(engines);
@@ -82,8 +84,14 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
       1
     );
     expect(m.requestSuccessorForStalledEliminationSweep()).toBe(true);
-    expect(a.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
-    expect(b.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
+    expect(a.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
+    expect(b.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
     expect(m.gameServer.handTournamentToSuccessorGeneration).toHaveBeenCalledWith(
       m.tournamentId,
       m
@@ -93,7 +101,7 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
   it('never cuts a hand short: waits while a table still has cards in the air', () => {
     const a = eng(true, false);
     const m = manager([[A, a]], true, 1);
-    expect(m.requestSuccessorForStalledEliminationSweep()).toBe(false);
+    expect(m.requestSuccessorForStalledEliminationSweep()).toBe(true);
     expect(a.pauseAfterHand).toHaveBeenCalled();
     expect(m.gameServer.handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
   });

@@ -1053,8 +1053,10 @@ export default function CreateTournamentModal({
       ? Math.max(0, Math.min(Math.floor(split.total / 2), split.prize))
       : 0;
   useEffect(() => {
-    if (format !== 'mystery_bounty' || mysteryHalfEntry <= 0) return;
-    setBountyAmount(String(mysteryHalfEntry));
+    if (format !== 'mystery_bounty') return;
+    // An entry too small to fund a whole-chip half reads 0, which the bounty
+    // validation refuses, rather than leaving an old figure nobody can edit.
+    setBountyAmount(String(Math.max(0, mysteryHalfEntry)));
   }, [format, mysteryHalfEntry]);
 
   const bountySplit = (() => {

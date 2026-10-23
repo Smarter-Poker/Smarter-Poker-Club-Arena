@@ -1801,8 +1801,21 @@ function LiveTablePage({
      from, which one was picked, and, once the award is revealed, what every
      one of them held. Read from fn_mystery_bounty_offer, never inferred. */
   const [chestOffers, setChestOffers] = useState<
-    Record<string, { slots: number; pickedSlot: number | null; choices?: MysteryChestChoice[] }>
+    Record<
+      string,
+      {
+        slots: number;
+        pickedSlot: number | null;
+        chosen?: boolean;
+        revealed?: boolean;
+        choices?: MysteryChestChoice[];
+      }
+    >
   >({});
+  /* The slot the revealer's tap broadcast, per award: the rest of the table
+     shows it until the server's offer (with every chest's amount) arrives. */
+  const [chestRemoteSlots, setChestRemoteSlots] = useState<Record<string, number>>({});
+  const loadChestOfferRef = useRef<(awardId: string) => Promise<void>>(async () => {});
   const loadChestOffer = useCallback(async (awardId: string) => {
     if (!awardId) return;
     try {
@@ -1812,11 +1825,16 @@ function LiveTablePage({
       if (error) return;
       const offer = parseMysteryChestOffer(data);
       if (!offer) return;
-      setChestOffers((prev) => ({ ...prev, [awardId]: offer }));
+      // A slow read from before the reveal must never replace the revealed
+      // answer that already arrived (it would wipe what the chests held).
+      setChestOffers((prev) =>
+        prev[awardId]?.revealed && !offer.revealed ? prev : { ...prev, [awardId]: offer }
+      );
     } catch (err) {
       reportError(err, 'TablePage.loadChestOffer');
     }
   }, []);
+  loadChestOfferRef.current = loadChestOffer;
   /* THE CHESTS ARE LIVE (2026-10-05). Read from the tournament row on load and
      flipped by the engine's `mystery_bounty_activated`; drives the seat badges
      and the one popup per event per table. See utils/mysteryBountyTable. */
@@ -1841,11 +1859,13 @@ function LiveTablePage({
   const mysteryChest = useMemo<MysteryChestData | null>(() => {
     if (!queuedChest) return null;
     const offer = queuedChest.awardId ? chestOffers[queuedChest.awardId] : undefined;
+    const remoteSlot = queuedChest.awardId ? chestRemoteSlots[queuedChest.awardId] : undefined;
     const offered: MysteryChestData = offer
       ? {
           ...queuedChest,
           offerSlots: offer.slots,
-          pickedSlot: offer.pickedSlot,
+          pickedSlot: offer.pickedSlot ?? remoteSlot ?? null,
+          chosen: offer.revealed ? offer.chosen : remoteSlot != null ? true : undefined,
           choices: offer.choices,
         }
       : queuedChest;
@@ -1860,7 +1880,10 @@ function LiveTablePage({
       isJackpot: revealed.isJackpot ?? queuedChest.isJackpot,
       recipients: revealed.recipients ?? queuedChest.recipients,
     };
-  }, [queuedChest, chestReveals, chestOffers]);
+  }, [queuedChest, chestReveals, chestOffers, chestRemoteSlots]);
+  /* The chest on screen, for the tap broadcast (whose callback stays stable). */
+  const currentChestAwardRef = useRef<string | null>(null);
+  currentChestAwardRef.current = queuedChest?.awardId ?? null;
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
@@ -1921,13 +1944,14 @@ function LiveTablePage({
    */
   const broadcastChestOpen = useCallback(
     (slot?: number) => {
+      const awardId = currentChestAwardRef.current;
       const chan = chestChannelRef.current;
       if (!chan) return;
       try {
         chan.send({
           type: 'broadcast',
           event: 'mystery_chest_opened',
-          payload: { tableId, at: Date.now(), slot: slot ?? null },
+          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId },
         });
       } catch (err) {
         // A failed broadcast degrades to each spectator's own failsafe timer.
@@ -2114,8 +2138,22 @@ function LiveTablePage({
     if (!tableId) return;
     const chan = masterBus.getOrCreateChannel(`mystery-chest-${tableId}`);
     chestChannelRef.current = chan;
-    chan.on('broadcast', { event: 'mystery_chest_opened' }, () => {
+    chan.on('broadcast', { event: 'mystery_chest_opened' }, (msg: { payload?: unknown }) => {
       setChestRemoteOpened(true);
+      /* PICK 1 OF 3: the tap carries the chest the revealer picked. Show it at
+         once, then read the offer as soon as the reveal can have landed, so
+         every seat sees what the other chests held before its overlay closes. */
+      const p = (msg?.payload ?? {}) as { awardId?: unknown; slot?: unknown };
+      const awardId = typeof p.awardId === 'string' ? p.awardId : '';
+      if (!awardId) return;
+      const slot = Math.floor(Number(p.slot));
+      if (slot >= 1 && slot <= 3) {
+        setChestRemoteSlots((prev) => ({ ...prev, [awardId]: slot }));
+      }
+      for (const wait of [1500, 4000]) {
+        const t = setTimeout(() => void loadChestOfferRef.current(awardId), wait);
+        (t as unknown as { unref?: () => void }).unref?.();
+      }
     });
     if (chan.state !== 'joined') {
       try {

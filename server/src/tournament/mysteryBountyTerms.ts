@@ -74,12 +74,13 @@ export function withMysteryBountyTerms(row: Record<string, unknown>): Record<str
   const oldBounty = num(row.bounty_amount);
   const bounty = half > 0 ? half : oldBounty;
   const scale = oldBounty > 0 && bounty > 0 ? bounty / oldBounty : 1;
-  const round2 = (v: unknown) => Math.round(num(v) * scale * 100) / 100;
+  // The advertised range is whole chips too (Dan: never fractions).
+  const whole = (v: unknown) => Math.max(1, Math.round(num(v) * scale));
   return {
     ...row,
     bounty_amount: bounty,
-    mystery_bounty_min: scale === 1 ? row.mystery_bounty_min : round2(row.mystery_bounty_min),
-    mystery_bounty_max: scale === 1 ? row.mystery_bounty_max : round2(row.mystery_bounty_max),
+    mystery_bounty_min: scale === 1 ? row.mystery_bounty_min : whole(row.mystery_bounty_min),
+    mystery_bounty_max: scale === 1 ? row.mystery_bounty_max : whole(row.mystery_bounty_max),
     mystery_bounty_pool_percent: 100,
     mystery_bounty_regular_pool_percent: 0,
     mystery_bounty_activation: 'at_the_money',

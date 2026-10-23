@@ -3773,6 +3773,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       reportError(err, 'Tournament.mystery_bounty_pending_broadcast_failed');
     }
 
+    // A HORSE PICKS LIKE A PERSON (Dan's law 10.5, 2026-10-22). A horse has no
+    // browser, so without this its chest always sat locked until the deadline
+    // while a person taps within seconds: the rhythm told the table which seat
+    // was a horse. The engine supplies the tap a browser would: a human-like
+    // wait, one of the offered chests, and the same open broadcast.
+    void this.horseMysteryChestTap(next.awardId, next.tableId, next.designatedRevealer);
+
     // The reveal, on the deadline. The designated revealer's own tap normally
     // gets there first (from the browser, which is the drama); this call is
     // idempotent and returns the identical payload, so section 54's "auto
@@ -3812,6 +3819,67 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       })();
     }, MYSTERY_BOUNTY_REVEAL_DELAY_MS);
     (timer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * The designated revealer is a horse: pick and open its chest the way a
+   * browser does (fn_mystery_bounty_pick, then `mystery_chest_opened` on the
+   * table's chest channel). The engine's own deadline reveal still settles and
+   * pays the award exactly as for a person, so nothing here touches money.
+   */
+  protected async horseMysteryChestTap(
+    awardId: string,
+    tableId: string | null,
+    revealerId: string | null | undefined
+  ): Promise<void> {
+    if (!awardId || !tableId || !revealerId) return;
+    try {
+      const { data: horse } = await supabase
+        .from('profiles')
+        .select('is_horse')
+        .eq('id', revealerId)
+        .maybeSingle();
+      if (!(horse as { is_horse?: boolean } | null)?.is_horse) return;
+      // Inside the window a person has: 1.8 s to 6 s after the chest lands.
+      const waitMs = 1800 + nodeCrypto.randomInt(0, 4200);
+      const timer = this.setLifecycleTimeout(() => {
+        // setLifecycleTimeout drops this if the tournament's lifecycle moved on.
+        return (async () => {
+          const { data: offer } = await supabase.rpc('fn_mystery_bounty_offer', {
+            p_award_id: awardId,
+          });
+          const slots = Math.max(
+            1,
+            Math.min(3, Math.floor(Number((offer as { slots?: unknown } | null)?.slots) || 1))
+          );
+          const slot = 1 + nodeCrypto.randomInt(0, slots);
+          if (slots > 1) {
+            await supabase.rpc('fn_mystery_bounty_pick', { p_award_id: awardId, p_slot: slot });
+          }
+          let channel: ReturnType<typeof supabase.channel> | undefined;
+          try {
+            channel = supabase.channel(`mystery-chest-${tableId}`);
+            await channel.httpSend('mystery_chest_opened', {
+              tableId,
+              at: Date.now(),
+              slot: slots > 1 ? slot : null,
+              awardId,
+            });
+          } finally {
+            if (channel) {
+              try {
+                await supabase.removeChannel(channel);
+              } catch {
+                /* never joined; nothing to release */
+              }
+            }
+          }
+        })().catch((err) => reportError(err, 'Tournament.mystery_horse_chest_tap_failed'));
+      }, waitMs);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_horse_chest_tap_failed');
+    }
   }
 
   /**

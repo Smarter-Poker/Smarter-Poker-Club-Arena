@@ -139,6 +139,7 @@ import {
 } from './HorseFleetPolicy.js';
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
 import { DEALABLE_MINIMUM, refusesLoneSeat, seatsToDealable } from './HorseLoneTable.js';
+import { isPloVariant, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
 
 /**
  * Everything `resolveSeatClub` needs to answer "which wallet pays for this
@@ -1015,6 +1016,8 @@ export class HorseFleetManager {
     if (isMaintenanceFrozen()) return;
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
+    /* The PLO roster is read once per cycle (cached 60 s, never throws). */
+    await refreshPloRoster();
     const cycleStartedAt = Date.now();
     this.cycleSittingSeed = String(cycleStartedAt);
     /* THE PULSE (Phase 3). Filled in as the cycle learns things and published
@@ -3157,6 +3160,19 @@ export class HorseFleetManager {
                board trimmed to two. */
             const variantOk = tagAllowsVariant(laneTag, String(table.game_variant ?? ''));
             if (variantOk === false && !humanNeedsRescue) {
+              tagDropped++;
+              return false;
+            }
+
+            /* THE PLO ROSTER (Dan 2026-10-23: "ONLY ALLOW THE HORSES THAT HAVE
+               SHOWN TO BE PROFITABLE PLAYING PLO PLAY THOSE GAMES"). Unlike
+               the tag above there is NO rescue exception: a person waiting at
+               a PLO table is not a reason to seat a losing PLO horse. An
+               unread roster seats nobody at PLO (see HorsePloRoster). */
+            if (
+              isPloVariant(table.game_variant) &&
+              ploRosterAllows(h.id, table.game_variant) !== true
+            ) {
               tagDropped++;
               return false;
             }

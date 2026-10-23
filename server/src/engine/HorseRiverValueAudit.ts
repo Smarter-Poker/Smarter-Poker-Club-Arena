@@ -215,7 +215,7 @@ function finding(
 
 // ── Alarm state (process-wide; one alert per fingerprint) ──────────────────
 export const RIVER_VALUE_ALERT = 'HorseRiverValueLeak';
-export const RIVER_VALUE_COMPONENT = 'horses';
+export const RIVER_VALUE_COMPONENT = 'horse_policy';
 const QUIET_RESOLVE_MS = 24 * 60 * 60 * 1000;
 
 const alarm = {

@@ -1580,6 +1580,37 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // POST-HAND TASKS
   // ═════════════════════════════════════════════════════════════════════════════
 
+  /** Horse river value alarm (2026-10-23): pure in-memory audit of a committed
+   * hand's horse actions from its settled snapshot, scheduled after the
+   * current turn. No database reads; never throws (HorseRiverValueAudit). */
+  protected observeHorseRiverValueAfterCommit(
+    snap: {
+      handNumber: number;
+      variant?: string | null;
+      holeCards: RiverValueAuditInput['holeCards'];
+      actions: unknown;
+    },
+    tableInfo: {
+      game_variant?: string | null;
+      cap_enabled?: boolean | null;
+      cap_bb?: unknown;
+      big_blind?: unknown;
+    }
+  ): void {
+    const handNumber = snap.handNumber;
+    const input: RiverValueAuditInput = {
+      variant: snap.variant || tableInfo.game_variant || 'nlh',
+      holeCards: snap.holeCards,
+      actions: snap.actions as RiverValueAuditInput['actions'],
+      capEnabled: tableInfo.cap_enabled === true,
+      capBb: Number(tableInfo.cap_bb) || 0,
+      bigBlind: Number(tableInfo.big_blind) || 0,
+    };
+    setImmediate(() =>
+      observeCommittedHandRiverValue({ tableId: this.tableId, handNumber }, input)
+    );
+  }
+
   protected async postHandTasks(
     players: SeatedPlayer[],
     persistenceGeneration: number
@@ -2576,25 +2607,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
           }
-          // HORSE RIVER VALUE ALARM (2026-10-23): audit the committed hand's
-          // horse actions from the settled snapshot, after this turn, never
-          // on the settlement path. Pure in-memory; no database reads.
-          {
-            const auditHand = snap.handNumber;
-            const auditInput = {
-              variant: snap.variant || tableInfo.game_variant || 'nlh',
-              holeCards: snap.holeCards,
-              actions: snap.actions as RiverValueAuditInput['actions'],
-              capEnabled: tableInfo.cap_enabled === true,
-              capBb: Number(tableInfo.cap_bb) || 0,
-              bigBlind: Number(tableInfo.big_blind) || 0,
-            };
-            setImmediate(() =>
-              observeCommittedHandRiverValue(
-                { tableId: this.tableId, handNumber: auditHand },
-                auditInput
-              )
-            );
+          // HORSE RIVER VALUE ALARM (2026-10-23): audit the committed hand after
+          // this turn. Guarded: the alarm can never touch settlement.
+          try {
+            this.observeHorseRiverValueAfterCommit(snap, tableInfo);
+          } catch {
+            /* the alarm never affects a committed hand */
           }
         } catch (err) {
           const message = describeError(err);

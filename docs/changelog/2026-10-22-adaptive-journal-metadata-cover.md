@@ -1,0 +1,7 @@
+# Adaptive journal metadata covering index
+
+The bounded retirement verifier needs the journal's actual observation ID, hand UUID and observation timestamp. Existing indexes do not cover those three columns, so verification reads the bloated 25.8 GB heap. The additive concurrent B-tree index on `observation_id`, including `hand_id` and `observed_at_ms`, permits bounded metadata index-only pages without deriving a UUID from untrusted text. Existing primary, retention and scope indexes, rows, writers, RLS and financial rules remain unchanged.
+
+The maintained decoder and append RPC restrict supported IDs to a canonical UUID and an ordinal from 0 through 4095, at most 41 ASCII bytes. A native PostgreSQL 17 fixture verifies that maximum, exact metadata preservation, original index identities, concurrent installation, index-only planning and refusals for incompatible named indexes. It also demonstrates that an arbitrary near-B-tree-limit direct ID can exceed the additional INCLUDE tuple width; such a build failure must be inspected, never hidden by filtering records or adding an unrelated constraint.
+
+The existing migration installer handles the concurrent preamble and exact guarded history transaction. The focused fixture runs through the existing retirement-index CI entrypoint. Source qualification is separate from production installation, visibility-map effectiveness and complete global retirement verification; this change alone certifies none of those production outcomes.

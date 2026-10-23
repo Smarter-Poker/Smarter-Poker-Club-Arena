@@ -109,11 +109,12 @@ try {
  const sourceRoster=await req('/rest/v1/rpc/ca_club_members_page',{method:'POST',token:sourceToken,body:{p_club_id:club,p_search:playerSearch,p_limit:80}});
  const browserPlayer=sourceRoster.items.find(row=>row.user_id===player.account.id);assert.ok(browserPlayer?.alias);
  browserProof=await startAssignmentBrowserProof({account:source.account,session:loginSessions.get(source.account.id),clubId:club,playerId:player.account.id,playerAlias:browserPlayer.alias,evidenceDir:join(process.cwd(),'e2e-report','agent-assignment')});
- const preview=await req('/rest/v1/rpc/fn_preview_club_assignment',{method:'POST',token,body:{p_club_id:club,p_member_user_ids:move.p_member_user_ids,p_agent_user_id:move.p_agent_user_id,p_expected_agent_user_id:move.p_expected_agent_user_id}});
- assert.equal(preview.selected_count,1);assert.equal(preview.affected_count,1);assert.match(preview.review_token,/^[a-f0-9]{32}$/);
- move.p_review_token=preview.review_token;
- writeFileSync(join(root,'agent-assignment-operations.json'),JSON.stringify({first,move}),{mode:0o600});
- const transfer=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(transfer.success,true);assert.equal(transfer.moved,1);
+ const applied=await browserProof.saveFromPlayerRecord(staff,loginSessions.get(staff.id),destination.account.id,body=>{
+  assert.equal(body.p_expected_agent_user_id,source.account.id);
+  Object.assign(move,body);
+  writeFileSync(join(root,'agent-assignment-operations.json'),JSON.stringify({first,move}),{mode:0o600});
+ });
+ assert.deepEqual(applied,move);
  assert.equal((await membership(player.account.id)).agent_id,destination.account.id);
  await Promise.all([sourceEvent(),destinationEvent()]);
  await browserProof.verifyAfterTransfer();
@@ -122,7 +123,7 @@ try {
  const replay=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(replay.replayed,true);
  assert.deepEqual((await req(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,{token:destinationToken})).map(r=>r.user_id).sort(),[destination.account.id,player.account.id].sort());
  const history=await req('/rest/v1/rpc/fn_club_assignment_history',{method:'POST',token,body:{p_club_id:club,p_search:move.p_op_id,p_limit:25}});
- assert.equal(history.rows.length,1);assert.equal(history.rows[0].operation_id,move.p_op_id);assert.equal(history.rows[0].review.review_token,preview.review_token);
+ assert.equal(history.rows.length,1);assert.equal(history.rows[0].operation_id,move.p_op_id);assert.equal(history.rows[0].review.review_token,move.p_review_token);
  for(const [viewer,viewerToken,expected] of [[source.account.id,sourceToken,false],[destination.account.id,destinationToken,true]]) {
   const page=await req('/rest/v1/rpc/ca_club_members_page',{method:'POST',token:viewerToken,body:{p_club_id:club,p_search:playerSearch,p_limit:80}});
   assert.ok(Array.isArray(page.items));assert.equal(page.items.some(row=>row.user_id===player.account.id),expected);
@@ -160,4 +161,4 @@ try {
  if(errors.length) throw new AggregateError(errors,'Assignment fixture cleanup incomplete');
 }
 assert.equal(passed,true);
-console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRetired:owned.length}));
+console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,playerRecordSave:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRetired:owned.length}));

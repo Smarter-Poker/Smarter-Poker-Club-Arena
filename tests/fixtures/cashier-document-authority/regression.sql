@@ -127,8 +127,12 @@ SELECT pg_temp.cashier_receipt_check(receipt,'hold') FROM cashier_receipts WHERE
 RESET ROLE;
 SET CONSTRAINTS ALL IMMEDIATE;
 SET CONSTRAINTS ALL DEFERRED;
-SELECT pg_temp.cashier_check((SELECT count(*)=3 FROM public.push_outbox o JOIN public.accounting_invoice_deliveries d ON d.notification_id=o.accounting_notification_id
- WHERE d.invoice_id=(SELECT (receipt->>'invoice_id')::uuid FROM cashier_receipts WHERE label='hold_approval')),'durable deferred outbox for all three actual participants');
+-- Dan 2026-10-23: a cash out REQUEST reaches the player and their agent only;
+-- the club owner (and every admin) sees it in the cashier queue, unnotified.
+SELECT pg_temp.cashier_check((SELECT count(*)=2 FROM public.push_outbox o JOIN public.accounting_invoice_deliveries d ON d.notification_id=o.accounting_notification_id
+ WHERE d.invoice_id=(SELECT (receipt->>'invoice_id')::uuid FROM cashier_receipts WHERE label='hold_approval')),'durable deferred outbox for the player and their agent only');
+SELECT pg_temp.cashier_check(NOT EXISTS(SELECT 1 FROM public.notifications WHERE user_id='e6470000-0000-4000-8000-000000000001'
+ AND data->>'invoice_id'=(SELECT receipt->>'invoice_id' FROM cashier_receipts WHERE label='hold_approval')),'the club owner is not notified of a cash out request');
 SELECT pg_temp.cashier_check(NOT EXISTS(SELECT 1 FROM public.notifications WHERE user_id='e6470000-0000-4000-8000-000000000005'
  AND data->>'invoice_id'=(SELECT receipt->>'invoice_id' FROM cashier_receipts WHERE label='hold_approval')),'unrelated admin gets no cashier invoice');
 SET LOCAL ROLE authenticated;

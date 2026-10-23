@@ -3351,8 +3351,12 @@ function CashierContent() {
                     </div>
                   )}
 
-                  {/* Presets */}
-                  <div className={styles.presetGrid} hidden={tableRouteOnly}>
+                  {/* Presets. A player's cashout carries none (Dan 2026-10-23): the
+                      player types the amount they want to cash out. */}
+                  <div
+                    className={styles.presetGrid}
+                    hidden={tableRouteOnly || action === 'cashout'}
+                  >
                     {preset.map((val) => (
                       <button
                         key={val}

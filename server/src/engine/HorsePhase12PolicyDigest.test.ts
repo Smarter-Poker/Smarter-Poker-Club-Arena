@@ -81,8 +81,9 @@ describe('P12.2 Phase 12 policy digest', () => {
       'src/engine/remainingVariants/RemainingVariantSampler.ts',
       'src/engine/remainingVariants/RemainingVariantPolicyPack.ts',
     ]);
-    // 28 since 2026-10-16: HorseMind reads HorseOpponentExploit.
-    expect(closure).toHaveLength(28);
+    // 29 since 2026-10-23: HorseMind also reads HorseOpponentMemory.
+    expect(closure).toHaveLength(29);
+    expect(closure).toContain('src/engine/HorseOpponentMemory.ts');
     const hashed = new Set(HORSE_PHASE12_POLICY_SOURCE_FILES);
     const excluded = new Set(Object.keys(HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES));
     for (const file of closure)

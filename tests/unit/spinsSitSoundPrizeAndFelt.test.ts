@@ -159,18 +159,12 @@ describe('the badge outlives the wheel', () => {
    4. "YOUR RESULT CARD SHOULD ONLY DISPLAY ON THE ... LOBBY TAB YOU ARE IN,
        NOT EVERY SINGLE PAGE INSIDE THE CLUB ARENA."
    ───────────────────────────────────────────────────────────────────────── */
-describe('the result card belongs to the page it landed on', () => {
-  it('anchors on a route and clears when the player leaves it', () => {
-    expect(RANKING_HOST).toContain('useLocation');
-    expect(RANKING_HOST).toContain('cardRouteRef');
-    expect(RANKING_HOST).toContain('clearSessionSummary()');
-  });
-
-  it('never anchors on the table route it was published from', () => {
-    /* TablePage publishes and THEN navigates, so the card's first render is
-       on /table/<id>. Anchoring there would clear it on the exit navigation
-       and Dan would never see the card at all. */
-    expect(RANKING_HOST).toContain("location.pathname.includes('/table/')");
+describe('a finish report survives the exit route changes', () => {
+  it('requires its own acknowledgement rather than treating navigation as dismissal', () => {
+    // October22 owner direction: every finisher must receive the report.
+    // /tables -> club -> lobby can happen without a user gesture.
+    expect(RANKING_HOST).not.toContain('cardRouteRef');
+    expect(RANKING_HOST).toContain('const close = useCallback(() => dismissSessionSummary()');
   });
 
   it('is not on a timer - Dan 2026-08-30: it never auto-closes', () => {

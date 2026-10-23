@@ -117,6 +117,8 @@ export async function getClub(identifier: string): Promise<Club | null> {
  */
 export interface CreateClubData {
   request_id?: string;
+  expectedOwnerId?: string;
+  isCurrent?: () => boolean;
   name: string;
   description?: string;
   color_theme?: string;
@@ -140,6 +142,18 @@ export const MEMBERSHIP_CAP_MESSAGE = /only be a member of up to (\d+) clubs/i;
 export async function createClub(clubData: CreateClubData): Promise<Club> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
+  const ownerId = clubData.expectedOwnerId || user.user.id;
+  const assertCurrent = () => {
+    if (user.user!.id !== ownerId || clubData.isCurrent?.() === false)
+      throw new Error('Club Creation Account Changed. Return To The Original Account.');
+  };
+  assertCurrent();
+  const assertOwner = async () => {
+    const { data: current, error } = await getAuthUser();
+    if (error || current.user?.id !== ownerId)
+      throw new Error('Club Creation Account Changed. Return To The Original Account.');
+    assertCurrent();
+  };
 
   // Sanitize inputs
   const safeName = sanitizeInput(clubData.name.trim());
@@ -204,6 +218,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
 
   // The RPC serializes this user's creates and commits the club, owner row,
   // and idempotency key as one transaction.
+  await assertOwner();
   const { data: rpcData, error: createError } = await supabase.rpc('fn_create_club_atomic', {
     p_request_id: requestId,
     p_name: safeName,
@@ -213,6 +228,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     p_requires_approval: clubData.requires_approval ?? false,
     p_logo_url: logoUrl,
   });
+  await assertOwner();
   if (createError || !rpcData) {
     reportError(createError, 'ClubsService.Club_creation_failed');
     const definitiveRejection = new Set(['22023', '23505', '23514', '28000', 'P0001']).has(
@@ -267,6 +283,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
       const contentType = format === 'webp' ? 'image/webp' : 'image/png';
       const cardFileName = `club-cards/${data.club_id}-card-v2.${ext}`;
 
+      await assertOwner();
       const { data: cardUploadData, error: cardUploadError } = await supabase.storage
         .from('club-assets')
         .upload(cardFileName, cardBlob, { contentType, upsert: true });
@@ -274,6 +291,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
       if (!cardUploadError && cardUploadData) {
         const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(cardFileName);
         if (urlData?.publicUrl) {
+          await assertOwner();
           const { error: cardUpdateError } = await supabase
             .from('clubs')
             .update({ card_image_url: urlData.publicUrl })
@@ -290,9 +308,11 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     }
   }
 
+  await assertOwner();
   // Creation already committed the owner membership. Notify every live view.
   try {
     const { masterBus } = await import('../core/MasterBus');
+    assertCurrent();
     masterBus.emit('CLUB_JOINED', {
       clubId: data.id,
       clubName: data.name,
@@ -303,6 +323,39 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
   }
 
   return data;
+}
+
+/** Read an existing request before mutable name/allowance admission can block recovery. */
+export async function resolveClubCreationRequest(
+  requestId: string,
+  ownerId: string
+): Promise<Club | null> {
+  const assertOwner = async () => {
+    const { data, error } = await getAuthUser();
+    if (error || data.user?.id !== ownerId)
+      throw new Error('Club Creation Account Changed. Return To The Original Account.');
+  };
+  await assertOwner();
+  const { data: receipt, error } = await supabase
+    .from('club_creation_requests')
+    .select('club_id')
+    .eq('user_id', ownerId)
+    .eq('request_id', requestId)
+    .maybeSingle();
+  if (error) {
+    reportError(error, 'ClubsService.CreationReceipt');
+    throw new Error('Previous Club Creation Could Not Be Confirmed. Retry Its Status.');
+  }
+  if (!receipt) {
+    await assertOwner();
+    return null;
+  }
+  // getClub uses the explicit public projection supported by column grants.
+  const club = await getClub(receipt.club_id);
+  await assertOwner();
+  if (!club || club.id !== receipt.club_id || club.owner_id !== ownerId)
+    throw new Error('Previous Club Creation Could Not Be Confirmed. Retry Its Status.');
+  return club;
 }
 
 export async function checkClubNameAvailability(name: string): Promise<boolean> {
@@ -1359,6 +1412,7 @@ export const ClubsService = {
   get: getClub,
   create: createClub,
   checkNameAvailability: checkClubNameAvailability,
+  resolveCreationRequest: resolveClubCreationRequest,
   getCreationEligibility: getClubCreationEligibility,
   update: updateClub,
   join: joinClub,

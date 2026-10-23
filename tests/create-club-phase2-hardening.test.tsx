@@ -27,6 +27,8 @@ const state = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
   optimizeLogo: vi.fn(),
   create: vi.fn(),
+  resolveCreationRequest: vi.fn(),
+  completeOpening: vi.fn(),
   checkNameAvailability: vi.fn(),
   getCreationEligibility: vi.fn(),
   search: vi.fn(),
@@ -34,7 +36,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/services/ClubQuickStartService', () => ({
-  completeDefaultClubOpening: vi.fn().mockResolvedValue(undefined),
+  completeDefaultClubOpening: state.completeOpening,
 }));
 
 vi.mock('../src/utils/clubLogoImage', () => ({ optimizeClubLogo: state.optimizeLogo }));
@@ -48,6 +50,7 @@ vi.mock('../src/services/ClubEntryTrustService', () => ({
 vi.mock('../src/services/ClubsService', () => ({
   ClubsService: {
     create: state.create,
+    resolveCreationRequest: state.resolveCreationRequest,
     checkNameAvailability: state.checkNameAvailability,
     getCreationEligibility: state.getCreationEligibility,
     search: state.search,
@@ -80,6 +83,8 @@ beforeEach(() => {
   for (const spy of Object.values(state.toast)) spy.mockReset();
   state.optimizeLogo.mockReset();
   state.create.mockReset();
+  state.resolveCreationRequest.mockReset().mockResolvedValue(null);
+  state.completeOpening.mockReset().mockResolvedValue(undefined);
   state.search.mockReset();
   state.checkNameAvailability.mockReset().mockResolvedValue(true);
   state.getCreationEligibility
@@ -671,5 +676,222 @@ describe('quick club creation', () => {
     await waitFor(() => expect(state.create).toHaveBeenCalledTimes(2));
     expect(state.create.mock.calls[0][0].request_id).toBe(state.create.mock.calls[1][0].request_id);
     expect(state.create.mock.calls[0][0].name).toBe(state.create.mock.calls[1][0].name);
+  });
+});
+
+describe('committed creation recovery and account ownership', () => {
+  it('recovers the original club after a lost response and remount even when its name and last slot are taken', async () => {
+    const user = userEvent.setup();
+    state.create.mockRejectedValueOnce(new Error('Connection Lost'));
+    const first = render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(state.toast.error).toHaveBeenCalledWith('Connection Lost'));
+    const request = state.create.mock.calls[0][0].request_id;
+    first.unmount();
+
+    state.checkNameAvailability.mockResolvedValue(false);
+    state.getCreationEligibility.mockResolvedValue({
+      canCreate: false,
+      membershipCount: 4,
+      maxClubs: 4,
+      remaining: 0,
+    });
+    state.resolveCreationRequest.mockResolvedValue({
+      id: 'club-original',
+      owner_id: 'user-a',
+      name: 'Original Room',
+    });
+    const onSuccess = vi.fn();
+    render(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    await screen.findByText('Your Created Club Is Ready To Open');
+    expect(screen.queryByText('Name Already In Use')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Membership Limit Reached/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Club' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('club-original'));
+    expect(state.create).toHaveBeenCalledTimes(1);
+    expect(state.resolveCreationRequest).toHaveBeenCalledWith(request, 'user-a');
+    expect(state.completeOpening).toHaveBeenCalledWith('club-original', request);
+    expect(window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`)).toBeNull();
+  });
+
+  it('rejects malformed draft fields without losing a valid committed request identity', async () => {
+    const requestId = '22222222-2222-4222-8222-222222222222';
+    window.localStorage.setItem(
+      `${DRAFT_PREFIX}:user-a`,
+      JSON.stringify({
+        name: { unexpected: true },
+        description: { unexpected: true },
+        isPublic: 'false',
+        requiresApproval: 'true',
+        logoPresetId: { id: 'crown' },
+        requestId,
+      })
+    );
+    state.resolveCreationRequest.mockResolvedValue({
+      id: 'club-original',
+      owner_id: 'user-a',
+      name: 'Original Room',
+    });
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    expect(screen.getByLabelText('Club Name')).toHaveValue('');
+    expect(screen.getByLabelText('Description (Optional)')).toHaveValue('');
+    expect(screen.getByRole('switch', { name: 'Discoverable In Club Arena' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Review Join Requests' })).not.toBeChecked();
+    await waitFor(() =>
+      expect(state.resolveCreationRequest).toHaveBeenCalledWith(requestId, 'user-a')
+    );
+    expect(JSON.parse(window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`)!).requestId).toBe(
+      requestId
+    );
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Club' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('club-original'));
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.completeOpening).toHaveBeenCalledWith('club-original', requestId);
+  });
+
+  it('does not dispatch when the creation intent cannot be persisted', async () => {
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota Exceeded', 'QuotaExceededError');
+    });
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() =>
+      expect(state.toast.error).toHaveBeenCalledWith(
+        'Club Creation Could Not Be Saved On This Device. Please Try Again.'
+      )
+    );
+    const name = (screen.getByText(/Your Default Name Is/).textContent || '').match(
+      /Poker Club ([a-f0-9]{8})/i
+    )?.[1];
+    expect(name).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    expect(screen.getByText(/Your Default Name Is/)).toHaveTextContent(new RegExp(name!, 'i'));
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.completeOpening).not.toHaveBeenCalled();
+  });
+
+  it('refuses a fresh write while a previous request receipt is unreadable and permits an explicit status retry', async () => {
+    const requestId = '22222222-2222-4222-8222-222222222222';
+    window.localStorage.setItem(
+      `${DRAFT_PREFIX}:user-a`,
+      JSON.stringify({ name: 'Alpha Room', requestId })
+    );
+    state.resolveCreationRequest.mockRejectedValue(new Error('Receipt Unavailable'));
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    const retry = await screen.findByRole('button', { name: 'Retry Club Creation Status' });
+    expect(screen.getByRole('button', { name: 'Create Club' })).toBeDisabled();
+    expect(state.create).not.toHaveBeenCalled();
+    expect(JSON.parse(window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`)!).requestId).toBe(
+      requestId
+    );
+    state.resolveCreationRequest.mockResolvedValue(null);
+    await user.click(retry);
+    await screen.findByText('Name Available');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Club' })).toBeEnabled());
+  });
+
+  it('recovers a committed request in the mounted form after a lost response and refreshed preflight', async () => {
+    state.create.mockRejectedValueOnce(new Error('Connection Lost'));
+    state.resolveCreationRequest.mockResolvedValue({
+      id: 'club-original',
+      owner_id: 'user-a',
+      name: 'Original Room',
+    });
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    render(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(state.resolveCreationRequest).toHaveBeenCalled());
+    state.checkNameAvailability.mockResolvedValue(false);
+    state.getCreationEligibility.mockResolvedValue({
+      canCreate: false,
+      membershipCount: 4,
+      maxClubs: 4,
+      remaining: 0,
+    });
+    await user.click(screen.getByRole('button', { name: 'Customize Club (Optional)' }));
+    await user.clear(screen.getByLabelText('Club Name'));
+    await user.type(screen.getByLabelText('Club Name'), 'Original Room');
+    await screen.findByText('Your Created Club Is Ready To Open');
+    expect(screen.queryByText('Name Already In Use')).not.toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Club Name'));
+    await user.type(screen.getByLabelText('Club Name'), 'xx');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Club' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('club-original'));
+    expect(state.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the old UI guard after sign-out and same-account return while preserving the request', async () => {
+    state.create.mockImplementationOnce(() => new Promise(() => {}));
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    const view = render(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(state.create).toHaveBeenCalledTimes(1));
+    const request = state.create.mock.calls[0][0].request_id;
+    state.user = null;
+    view.rerender(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    state.user = { id: 'user-a' };
+    state.resolveCreationRequest.mockResolvedValue({
+      id: 'club-original',
+      owner_id: 'user-a',
+      name: 'Original Room',
+    });
+    view.rerender(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Club' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('club-original'));
+    expect(state.completeOpening).toHaveBeenCalledWith('club-original', request);
+    expect(state.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not apply an earlier account creation result or clear its intent after an account switch', async () => {
+    let settle!: (club: { id: string; name: string }) => void;
+    state.create.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const view = render(<CreateClubModal isOpen onClose={onClose} onSuccess={onSuccess} />);
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(state.create).toHaveBeenCalledTimes(1));
+    const originalIntent = window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`);
+    state.user = { id: 'user-b' };
+    view.rerender(<CreateClubModal isOpen onClose={onClose} onSuccess={onSuccess} />);
+    await waitFor(() => expect(screen.getByRole('checkbox')).not.toBeChecked());
+    settle({ id: 'club-a', name: 'Alpha Room' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create Club' })).toHaveTextContent('Create Club')
+    );
+    expect(state.completeOpening).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(state.toast.success).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`)).toBe(originalIntent);
+    expect(window.localStorage.getItem(`${DRAFT_PREFIX}:user-b`)).toBeNull();
   });
 });

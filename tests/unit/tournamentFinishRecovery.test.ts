@@ -1,5 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { canRestoreFinishedTournamentReport } from '../../src/services/tournamentResult';
+it('initial completion recovery marks the report as result-only at its producer', () => {
+  const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
+  const exit = page.slice(
+    page.indexOf('const goToLobbyWithResult ='),
+    page.indexOf('let durableCompletionLookupInFlight')
+  );
+  expect(exit).toMatch(
+    /resultOnly:\s*loadedFinishedReportReady\s*\|\|\s*loadedTournamentStatus === 'COMPLETED'/
+  );
+});
+
 describe('initial load restores a finished participant without ending a rebuy decision', () => {
   it.each(['mtt', 'spin', 'sng'])(
     'restores a sealed %s entrant while the event is still running',

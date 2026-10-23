@@ -9,9 +9,6 @@ test.describe('Club Operations', () => {
   test('should navigate to club detail when clicking a club', async ({ page }) => {
     await page.goto('clubs');
 
-    // Wait for clubs to load
-    await page.waitForTimeout(1000);
-
     /* `[class*="club"]` matched layout chrome, not a card - on a signed-in run
        its first match is a full-page container sitting under the header, so the
        click was intercepted and burned the whole 30s timeout. Signed out the
@@ -26,7 +23,10 @@ test.describe('Club Operations', () => {
     const clubCard = page
       .locator('.sp-carousel__item.is-active')
       .getByRole('button', { name: /Click to enter lobby/i });
-    if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
+    await expect(clubCard, 'The active club must render before navigation proof').toBeVisible({
+      timeout: 10000,
+    });
+    {
       // Returning members start with Club Options collapsed. Open the real
       // disclosure before measuring its controls so hidden content cannot
       // turn the overlap check into a locator timeout.
@@ -49,12 +49,14 @@ test.describe('Club Operations', () => {
               const r = el.getBoundingClientRect();
               return { top: r.top, bottom: r.bottom };
             });
-            const actionsBox = await page
-              .getByRole('navigation', { name: 'Poker Arena Actions', exact: true })
-              .evaluate((el) => {
-                const r = el.getBoundingClientRect();
-                return { top: r.top, bottom: r.bottom };
-              });
+            const actions = page.getByRole('navigation', {
+              name: 'Poker Arena Actions',
+              exact: true,
+            });
+            const actionsBox = await actions.evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              return { top: r.top, bottom: r.bottom };
+            });
             return cardBox.bottom <= actionsBox.top + 1 || actionsBox.bottom <= cardBox.top + 1;
           },
           { timeout: 8000, message: 'Club card must not overlap the Poker Arena actions' }

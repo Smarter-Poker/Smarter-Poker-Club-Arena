@@ -1,4 +1,4 @@
-import { readHorseOpponentProfiles } from '../HorseOpponentMemory.js';
+import { horseOpponentMemorySchema, readHorseOpponentProfiles } from '../HorseOpponentMemory.js';
 import { memoryVariant, type DurableOpponentProfile } from '../../engine/HorseOpponentMemory.js';
 /**
  * Supabase helpers — the 4-tier hand history writer (Bible V8 §2.18).
@@ -888,7 +888,7 @@ export async function logHandHistory(params: {
     const variant = memoryVariant(params.gameVariant);
     const dealt = params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0;
     let durableOpponentProfiles: DurableOpponentProfile[] | undefined;
-    if (variant) {
+    if (variant && (await horseOpponentMemorySchema()) === 'installed') {
       durableOpponentProfiles = [];
       try {
         const actors = [

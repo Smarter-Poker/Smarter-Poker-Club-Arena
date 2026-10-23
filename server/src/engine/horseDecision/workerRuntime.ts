@@ -1,3 +1,4 @@
+import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
 import {
@@ -311,6 +312,8 @@ export async function startOwnedServices(shard?: {
     // is not the brain the packs qualified with (client.ts,
     // horseDecisionWorkerEnv). Refuse readiness rather than decide with it.
     assertDecisionWorkerRunsFullSample();
+    const opponentSchema = await horseOpponentMemorySchema();
+    noteFire(`horse_opponent_memory_schema_${opponentSchema}`);
     // Persistence starts before hydration, matching the production invariant:
     // a slow read may never prevent newly learned rows from becoming flushable.
     startHorseMindPersistence();
@@ -319,7 +322,7 @@ export async function startOwnedServices(shard?: {
     equityGovernor.startSampling();
     startSolverPolicyArtifactLoader();
 
-    HorseMind.enableDurableOpponentMemory();
+    if (opponentSchema === 'installed') HorseMind.enableDurableOpponentMemory();
     const lastFlush = await hydrateHorseMindFromDb();
     await Promise.all([
       hydrateHorseMind(lastFlush),

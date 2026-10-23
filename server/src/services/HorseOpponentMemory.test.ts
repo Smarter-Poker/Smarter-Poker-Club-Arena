@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 import type { LiveHorseDecisionSnapshot } from '../engine/horseDecision/protocol.js';
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), report: vi.fn() }));
-vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc } }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), report: vi.fn(), from: vi.fn() }));
+vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }));
 vi.mock('./errorReporter.js', () => ({ reportError: mocks.report }));
 import {
+  createOpponentMemorySchemaProbe,
   createDecisionOpponentProfileReader,
   readHorseOpponentProfiles,
 } from './HorseOpponentMemory.js';
@@ -32,8 +33,21 @@ beforeEach(() => {
   }));
 });
 describe('opponent memory request receipts', () => {
+  it('distinguishes installed, absent and unreadable schema without repeated probes', async () => {
+    const abortSignal = vi.fn(async () => ({ data: [], error: null as unknown }));
+    mocks.from.mockReturnValue({ select: () => ({ limit: () => ({ abortSignal }) }) });
+    const ready = createOpponentMemorySchemaProbe();
+    expect(await ready()).toBe('installed');
+    expect(await ready()).toBe('installed');
+    expect(abortSignal).toHaveBeenCalledTimes(1);
+    abortSignal.mockResolvedValueOnce({ data: [], error: { code: '42P01' } });
+    expect(await createOpponentMemorySchemaProbe()()).toBe('unavailable');
+    abortSignal.mockResolvedValueOnce({ data: [], error: { code: '42501' } });
+    expect(await createOpponentMemorySchemaProbe()()).toBe('unknown');
+  });
+
   it('deduplicates concurrent reads for a hand and refreshes for the next hand', async () => {
-    const read = createDecisionOpponentProfileReader();
+    const read = createDecisionOpponentProfileReader(async () => 'installed');
     const [a, b] = await Promise.all([read(request()), read(request('table:1:3:lease:other'))]);
     expect(a).toEqual(b);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
@@ -59,7 +73,7 @@ describe('opponent memory request receipts', () => {
     );
   });
   it('reports a failed read, does not cache failure, and accepts a later direct request', async () => {
-    const read = createDecisionOpponentProfileReader();
+    const read = createDecisionOpponentProfileReader(async () => 'installed');
     mocks.rpc.mockImplementationOnce(() => ({
       abortSignal: async () => ({ data: null, error: { code: '57014' } }),
     }));
@@ -69,18 +83,18 @@ describe('opponent memory request receipts', () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
   it('separates variants and cash/tournament context in its cache', async () => {
-    const read = createDecisionOpponentProfileReader();
+    const read = createDecisionOpponentProfileReader(async () => 'installed');
     await read(request());
     mocks.rpc.mockImplementation(() => ({
       abortSignal: async () => ({ data: [{ ...row(), variant: 'plo4' }], error: null }),
     }));
-    expect((await read(request(undefined, 'plo4')))[0].variant).toBe('plo4');
+    expect(await read(request(undefined, 'plo4'))).toMatchObject([{ variant: 'plo4' }]);
     const tournament = request();
     tournament.gameState.gameMode = 'tournament';
     mocks.rpc.mockImplementation(() => ({
       abortSignal: async () => ({ data: [{ ...row(), mode: 'tournament' }], error: null }),
     }));
-    expect((await read(tournament))[0].mode).toBe('tournament');
+    expect(await read(tournament)).toMatchObject([{ mode: 'tournament' }]);
     expect(mocks.rpc).toHaveBeenCalledTimes(3);
   });
 });

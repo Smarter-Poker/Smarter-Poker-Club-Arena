@@ -8,6 +8,34 @@ import {
   type MemorySize,
 } from '../engine/HorseOpponentMemory.js';
 
+export type OpponentMemorySchema = 'installed' | 'unavailable' | 'unknown';
+/** One schema read per process/worker lifetime. This permits an unrelated
+ * engine release before the declared schema window while keeping the new
+ * feature explicitly inactive. It never polls or repairs the database. */
+export function createOpponentMemorySchemaProbe() {
+  let state: Promise<OpponentMemorySchema> | null = null;
+  return (): Promise<OpponentMemorySchema> =>
+    (state ??= (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('horse_exploit_profiles')
+          .select('user_id,variant,mode,size,counters,observed_hands,initialized')
+          .limit(0)
+          .abortSignal(AbortSignal.timeout(5000));
+        if (!error && Array.isArray(data)) return 'installed';
+        reportError(
+          new Error(`opponent schema unavailable: ${error?.code ?? 'invalid_receipt'}`),
+          'HorseOpponentMemory.schema'
+        );
+        return ['42P01', 'PGRST205'].includes(error?.code ?? '') ? 'unavailable' : 'unknown';
+      } catch (error) {
+        reportError(error, 'HorseOpponentMemory.schema');
+        return 'unknown';
+      }
+    })());
+}
+export const horseOpponentMemorySchema = createOpponentMemorySchemaProbe();
+
 /** One bounded read in the original hand/decision path. The database owns
  * persistence and duplicate protection; there is no flush timer or repair job. */
 export async function readHorseOpponentProfiles(
@@ -50,11 +78,12 @@ export async function readHorseOpponentProfiles(
 /** Fetch once per table hand, before enqueueing compute. Database latency on
  * one table must never block the process-wide decision FIFO. Each new client
  * (including a restarted worker) owns a fresh bounded cache. */
-export function createDecisionOpponentProfileReader() {
+export function createDecisionOpponentProfileReader(schema = horseOpponentMemorySchema) {
   const pending = new Map<string, Promise<DurableOpponentProfile[]>>();
   return async (
     request: import('../engine/horseDecision/protocol.js').LiveHorseDecisionSnapshot
-  ): Promise<DurableOpponentProfile[]> => {
+  ): Promise<DurableOpponentProfile[] | undefined> => {
+    if ((await schema()) !== 'installed') return undefined;
     const gs = request.gameState,
       variant = memoryVariant(gs.gameVariant);
     if (!variant) return [];

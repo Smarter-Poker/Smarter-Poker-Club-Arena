@@ -986,6 +986,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase14'
   ),
   table(
+    'horse_exploit_profiles',
+    'per_hand',
+    'HorseOpponentMemory via fn_horse_exploit_profiles_read; worker prerequisite read and monotonic import',
+    'private public-action counters, retained across sessions by exact variant, cash/tournament and dealt size; accepted hand trigger owns persistence',
+    'V50',
+    { dayColumn: 'updated_at', freshnessDays: 1 }
+  ),
+  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',

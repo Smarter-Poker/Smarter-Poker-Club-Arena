@@ -27,8 +27,8 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog,public AS
  +coalesce((p_delta->>f)::double precision,0)) FROM jsonb_object_keys('{"hands": 0, "vpip": 0, "pfr": 0, "rfiOpp": 0, "rfi": 0, "threeBetOpp": 0, "threeBet": 0, "foldTo3BetOpp": 0, "foldTo3Bet": 0, "betCheckedToOpp": 0, "betCheckedTo": 0, "foldToBetOpp": 0, "foldToBet": 0, "riverCallOpp": 0, "riverCall": 0, "fHands": 0, "fPfr": 0, "fRfiOpp": 0, "fRfi": 0, "fThreeBetOpp": 0, "fThreeBet": 0, "fBetCheckedToOpp": 0, "fBetCheckedTo": 0, "fFoldToBetOpp": 0, "fFoldToBet": 0, "fRiverCallOpp": 0, "fRiverCall": 0}'::jsonb) f
 $fn$;
 
-CREATE FUNCTION public.fn_horse_exploit_increments(p_actions jsonb)
-RETURNS jsonb LANGUAGE plpgsql IMMUTABLE STRICT SET search_path=pg_catalog,public AS $fn$
+CREATE FUNCTION public.fn_horse_exploit_increments(p_actions jsonb,p_actor text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog,public AS $fn$
 DECLARE a jsonb; r jsonb; result jsonb:='{}'; id text; act text; st text; ag boolean;
  raises integer:=0; opener text; bettor text; street text:='preflop';
  acted jsonb:='{}'; vp jsonb:='{}'; pf jsonb:='{}'; tb jsonb:='{}'; responded boolean:=false;
@@ -38,9 +38,20 @@ BEGIN
  FOR a IN SELECT x FROM jsonb_array_elements(p_actions) x LOOP
   id:=a->>'userId'; act:=a->>'action'; st:=a->>'stage';
   IF id IS NULL OR id='' OR act NOT IN ('fold','check','call','bet','raise','all_in') THEN CONTINUE; END IF;
+  ag:=act IN ('bet','raise') OR (act='all_in' AND a->>'isFullRaise'='true');
+  -- Legacy recovery needs one actor. Preserve the other actors' range
+  -- context without constructing every other actor's counters 1024 times.
+  IF p_actor IS NOT NULL AND id<>p_actor THEN
+   IF st='preflop' AND ag THEN
+    IF raises=0 THEN opener:=id; END IF; raises:=raises+1;
+   ELSIF st IN ('flop','turn','river') THEN
+    IF st IS DISTINCT FROM street THEN street:=st; bettor:=NULL; END IF;
+    IF ag THEN bettor:=id; END IF;
+   END IF;
+   CONTINUE;
+  END IF;
   r:=coalesce(result->id,'{"hands": 0, "vpip": 0, "pfr": 0, "rfiOpp": 0, "rfi": 0, "threeBetOpp": 0, "threeBet": 0, "foldTo3BetOpp": 0, "foldTo3Bet": 0, "betCheckedToOpp": 0, "betCheckedTo": 0, "foldToBetOpp": 0, "foldToBet": 0, "riverCallOpp": 0, "riverCall": 0, "fHands": 0, "fPfr": 0, "fRfiOpp": 0, "fRfi": 0, "fThreeBetOpp": 0, "fThreeBet": 0, "fBetCheckedToOpp": 0, "fBetCheckedTo": 0, "fFoldToBetOpp": 0, "fFoldToBet": 0, "fRiverCallOpp": 0, "fRiverCall": 0}'::jsonb);
   r:=jsonb_set(r,'{hands}','1');
-  ag:=act IN ('bet','raise') OR (act='all_in' AND a->>'isFullRaise'='true');
   IF st='preflop' THEN
    IF NOT acted ? id THEN
     acted:=acted||jsonb_build_object(id,true);
@@ -158,7 +169,7 @@ BEGIN
        AND players @> jsonb_build_array(jsonb_build_object('userId',uid))
       ORDER BY created_at DESC,id DESC LIMIT 1024
     ) recent ORDER BY created_at,id LOOP
-     inc:=public.fn_horse_exploit_increments(h.actions)->uid;
+     inc:=public.fn_horse_exploit_increments(h.actions,uid)->uid;
      IF inc IS NOT NULL THEN base:=public.fn_horse_exploit_add(base,inc); n:=n+1; END IF;
     END LOOP;
     -- Concurrent accepted hands accumulated in counters during the scan.
@@ -175,6 +186,6 @@ BEGIN
  END LOOP;
  RETURN QUERY SELECT * FROM public.horse_exploit_profiles WHERE user_id=ANY(p_user_ids) AND variant=p_variant AND mode=p_mode AND size=p_size ORDER BY user_id;
 END $fn$;
-REVOKE ALL ON FUNCTION public.fn_horse_exploit_add(jsonb,jsonb,bigint),public.fn_horse_exploit_increments(jsonb),public.fn_horse_exploit_accept_hand(),public.fn_horse_exploit_mark_hand(),public.fn_horse_exploit_profiles_read(text[],text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_exploit_add(jsonb,jsonb,bigint),public.fn_horse_exploit_increments(jsonb,text),public.fn_horse_exploit_accept_hand(),public.fn_horse_exploit_mark_hand(),public.fn_horse_exploit_profiles_read(text[],text,text,text) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_horse_exploit_profiles_read(text[],text,text,text) TO service_role;
 COMMIT;

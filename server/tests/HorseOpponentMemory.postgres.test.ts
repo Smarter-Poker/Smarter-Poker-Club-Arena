@@ -114,6 +114,23 @@ beforeAll(async () => {
       ]
     );
   }
+  const capacityIds = Array.from(
+    { length: 10 },
+    (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+  );
+  const capacityActions = capacityIds.flatMap((userId) =>
+    ['preflop', 'flop', 'turn', 'river'].map((stage) => ({
+      userId,
+      stage,
+      action: stage === 'preflop' ? 'raise' : 'bet',
+    }))
+  );
+  await client.query(
+    `insert into hand_history
+    select ('a0000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+    now()-n*interval '1 minute','plo5',null,$1,$2 from generate_series(1,1024)n`,
+    [JSON.stringify(capacityIds.map((userId) => ({ userId }))), JSON.stringify(capacityActions)]
+  );
   const path = join(process.cwd(), '../supabase/migrations');
   const migration = readdirSync(path).find((f) =>
     f.endsWith('_durable_variant_scoped_horse_opponent_memory.sql')
@@ -187,6 +204,37 @@ describe('durable opponent memory with real PostgreSQL', () => {
       for (const f of Object.keys(counters) as (keyof typeof counters)[])
         expect(row.counters[f], `${key}/${f}`).toBeCloseTo(counters[f], 9);
     }
+  });
+
+  it('recovers a full ten-player legacy horizon inside the decision read budget', async () => {
+    const ids = Array.from(
+      { length: 10 },
+      (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+    );
+    await client.query("set statement_timeout='1500ms'");
+    try {
+      const rows = (
+        await client.query(
+          "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
+          [ids]
+        )
+      ).rows;
+      expect(rows).toHaveLength(10);
+      expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
+    } finally {
+      await client.query('reset statement_timeout');
+    }
+  });
+
+  it('actor-targeted legacy parsing matches every public-action actor', async () => {
+    const result = await client.query(
+      `with hands as (select x from jsonb_array_elements($1) x),
+      counted as (select x,fn_horse_exploit_increments(x) counts from hands)
+      select bool_and(fn_horse_exploit_increments(x,k) = jsonb_build_object(k,counts->k)) matched
+      from counted cross join lateral jsonb_object_keys(counts) k`,
+      [JSON.stringify(publicActions.hands.map((h) => h.actions))]
+    );
+    expect(result.rows[0].matched).toBe(true);
   });
 
   it('reconstructs old sessions and survives new connections without forgetting or double counting', async () => {

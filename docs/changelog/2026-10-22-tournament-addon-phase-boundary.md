@@ -1,0 +1,11 @@
+# Entry Cutoff, Add-On Pause And Horse Participation
+
+Nightly 10K closed admission at 01:30 UTC on October 23, but the transition function ignored its minutes limit when a level cap existed. A 35-chip rebuy committed at 01:32:21 UTC; add-ons opened only at the level edge, 01:36:47. The preimage-guarded database correction now uses the existing earliest-deadline admission predicate and returns a database-relative clock delay through the serving engine's existing timer contract. Rebuy eligibility is bounded by both level and clock while preserving the owner's existing entitlement during the persisted add-on minute.
+
+Migration installation is recorded as provider-assigned version 20261023014339. Both function ACLs remain postgres/service_role only. Isolated PostgreSQL qualification reproduces both old failures and passes 16 corrected and boundary cases; the existing required late-registration qualification runs these cases too.
+
+The add-on offer previously started its one-minute timer while existing hands finished. Live hand history proves zero new starts in Nightly's offer, but the last old hand finished only two seconds before expiry. Paid add-on opening now first parks every dealer at its existing hand-boundary gate, then persists and offers the full configured minute. The existing pause-ready event opens the window; replacements inherit the hold, competing pause owners retain it, and no new repair poll is introduced.
+
+Owner update October 22: a stable 90% horse cohort takes an add-on when still live and funded. The canonical RPC retains funding checks, the one-add-on entitlement, receipts and chip accounting; the existing early timing split is applied inside that cohort.
+
+Validation includes real manager and dealer pause gates, configured window duration, maintenance/hand-for-hand ownership, receipt durability, deterministic participation, compiler and PostgreSQL qualification. This engine correction requests the existing urgent release route because the observed live offer consumes almost the whole purchase minute while hands still play; activation still requires the normal certified drain and transaction safeguards.

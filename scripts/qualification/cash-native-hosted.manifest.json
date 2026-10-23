@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230210,
-      "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41349,
-      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+      "bytes": 41566,
+      "sha256": "0a5fa87b7aead24cde0fa3dab6e66d76d7175cb38b9424a54791e70f594efe57"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3630,6 +3630,17 @@
     "current": {
       "bytes": 41349,
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    }
+  },
+  "ubuntuAptMirrorSelection20261023": {
+    "reason": "Select the existing browser and accounting checks when the adopted maintained Ubuntu mirror helper or its tests change. Current classifier input identity only; no financial or historical qualification restamp.",
+    "previousClassifierPin": {
+      "bytes": 41349,
+      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    },
+    "currentClassifierPin": {
+      "bytes": 41566,
+      "sha256": "0a5fa87b7aead24cde0fa3dab6e66d76d7175cb38b9424a54791e70f594efe57"
     }
   }
 }

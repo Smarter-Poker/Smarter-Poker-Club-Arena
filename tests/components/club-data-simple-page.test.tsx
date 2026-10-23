@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Club Data counts America/Chicago days (20261022120121): today is the Chicago date.
@@ -129,6 +129,70 @@ describe('helpers', () => {
 });
 
 describe('ClubDataSimplePage', () => {
+  it('follows Chicago midnight even when the 15 second refresh renders first', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-23T04:59:50Z'));
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    await act(async () => {
+      render(<ClubDataSimplePage />);
+    });
+    expect(rpcMock.mock.calls.at(-1)?.[1].p_end).toBe('2026-10-22');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(rpcMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      p_start: '2026-10-23',
+      p_end: '2026-10-23',
+    });
+  });
+
+  it.each([
+    ['2026-03-08T06:00:00Z', '2026-03-09T05:00:00Z'],
+    ['2026-11-01T05:00:00Z', '2026-11-02T06:00:00Z'],
+    ['2026-10-22T20:00:00Z', '2026-10-25T20:00:00Z'],
+  ])('follows the calendar after returning from %s to %s', async (before, after) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(before));
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    await act(async () => {
+      render(<ClubDataSimplePage />);
+    });
+    vi.setSystemTime(new Date(after));
+    await act(async () => {
+      fireEvent(document, new Event('visibilitychange'));
+    });
+    expect(rpcMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      p_start: chicagoToday(),
+      p_end: chicagoToday(),
+    });
+  });
+
+  it('keeps a deliberately selected historical day after returning later', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-22T20:00:00Z'));
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    await act(async () => {
+      render(<ClubDataSimplePage />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Previous Period' }));
+    });
+    vi.setSystemTime(new Date('2026-10-25T20:00:00Z'));
+    await act(async () => {
+      fireEvent(document, new Event('visibilitychange'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(rpcMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      p_start: '2026-10-21',
+      p_end: '2026-10-21',
+    });
+  });
+
   it('identifies an authorized union aggregate and its Chicago money-flow basis', async () => {
     rpcMock.mockResolvedValue({
       data: { ...live, reporting_scope: 'union', accounting_basis: 'chicago_net_money_flow' },
@@ -150,13 +214,13 @@ describe('ClubDataSimplePage', () => {
     expect(await screen.findByText(/Unfinished Event Entries Included/)).toBeTruthy();
   });
 
-  it('shows Running MTT Entries beside finished MTT Winnings', async () => {
+  it('shows Unfinished MTT Entries beside finished MTT Winnings', async () => {
     rpcMock.mockResolvedValue({
       data: { ...live, summary: { ...live.summary, running_mtt_entries: -3_570 } },
       error: null,
     });
     render(<ClubDataSimplePage />);
-    expect(await screen.findByText('Running MTT Entries')).toBeTruthy();
+    expect(await screen.findByText('Unfinished MTT Entries')).toBeTruthy();
     expect(screen.getByText('-3,570.00')).toBeTruthy();
     expect(screen.getByText('210.00')).toBeTruthy();
   });

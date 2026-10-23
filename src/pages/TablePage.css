@@ -141,7 +141,12 @@
   overscroll-behavior: none;
 }
 
-/* ─── THERE IS NO SPECTATOR SIZE. THERE IS ONE SIZE. (Dan 2026-08-28) ───────
+/* ─── STATIC RESERVES / HISTORICAL ONE-SIZE PRESENTATION (2026-08-28) ─────
+ *
+ * October 22 owner update: portrait mobile spectating now has the full-width
+ * desktop-preview canvas defined at the foot of this file. This supersedes
+ * the historical same-size observer/player presentation below for phones only.
+ * The fixed reserves and prohibition on hand/action-driven resizing remain.
  *
  * A `.table-page[data-hero='false']` rule used to sit here, shrinking the
  * reserve to the 22px spectator line, with a matching
@@ -5172,5 +5177,31 @@ button.post-bb-overlay-button {
   }
   .table-page .table-brand__line--identity {
     font-size: 6px;
+  }
+}
+
+/* Owner October 22: a phone spectator sees the broad, tall desktop preview,
+   rather than the compact playing layout. Reclaim only the unused hero-card
+   band; 34px still clears the bottom observer seat. Hand/action/dock changes
+   never feed these dimensions. Taking a seat enters the existing player view. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page[data-hero='false'] .table-scaler {
+    width: 100%;
+    /* Small rings retain their declared downward offset; it cannot also
+       consume the bottom observer seat's clearance. */
+    height: calc(
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px - var(--sp-short-table-drop, 0px)
+    );
+    max-height: none;
+    flex-shrink: 0;
+  }
+  /* The wider painted rail must not widen five board cards into the
+     screen-edge action labels. Keep the live board in the centre lane. */
+  .table-page[data-hero='false'] .community-area {
+    max-width: 52vw;
+  }
+  /* Six-seat pods have wider plates than the dense ring. */
+  .table-page[data-hero='false'][data-seats='6'] .community-area {
+    max-width: 48vw;
   }
 }

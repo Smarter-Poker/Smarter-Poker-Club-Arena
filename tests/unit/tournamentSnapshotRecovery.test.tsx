@@ -98,6 +98,12 @@ vi.mock('../../src/core/MasterBus', () => ({
       return channel;
     },
     removeRegisteredChannel: vi.fn(),
+    subscribe: (name: string, cb: (event: any) => void) => {
+      const listeners = fixture.bus.get(name) ?? new Set();
+      fixture.bus.set(name, listeners);
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
     subscribeDebounced: (name: string, cb: (event: any) => void) => {
       const listeners = fixture.bus.get(name) ?? new Set();
       fixture.bus.set(name, listeners);
@@ -113,7 +119,7 @@ vi.mock('../../src/lib/supabase', () => ({
       const response =
         result >= 0 ? fixture.queries.splice(result, 1)[0].response : { data: [], error: null };
       const chain: any = { then: (yes: any, no: any) => Promise.resolve(response).then(yes, no) };
-      for (const method of ['select', 'eq', 'order', 'not', 'in', 'maybeSingle'])
+      for (const method of ['select', 'eq', 'order', 'not', 'in', 'range', 'maybeSingle'])
         chain[method] = () => chain;
       return chain;
     },

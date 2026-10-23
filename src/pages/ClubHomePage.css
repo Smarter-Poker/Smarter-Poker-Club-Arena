@@ -3180,3 +3180,81 @@
   display: block;
   font-size: 0.65em;
 }
+
+/* Two browsing rows: game types, then status shortcuts and the existing sheet.
+   Scroll each row locally rather than expanding the phone header into grids. */
+.club-home .club-lobby-command-top .lobby-controls {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.club-home .club-lobby-command-top .lobby-controls .game-bar {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .game-bar__types {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  min-width: 0;
+  padding-bottom: 4px;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .game-bar__type {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 52px;
+  padding-inline: 9px;
+  white-space: nowrap;
+}
+
+.lobby-refinements {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 12px 12px 16px;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__row--status {
+  display: flex;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  padding: 4px;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__chip {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 48px;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .lobby-refinements .game-bar__filter-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 44px;
+  height: 44px;
+  min-width: 62px;
+  padding-inline: 8px;
+}
+
+@media (max-width: 600px) {
+  .lobby-refinements {
+    padding: 0 8px 10px 11px;
+  }
+}

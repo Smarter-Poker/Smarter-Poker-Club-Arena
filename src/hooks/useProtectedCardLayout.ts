@@ -274,7 +274,8 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         if (boardCard) scaler.style.setProperty('--sp-board-card-w', `${boardCard / scale}px`);
         placeRows(false);
         const canvas = scaler.getBoundingClientRect();
-        const size = { w: canvas.width, h: canvas.height };
+        const portraitTaper = page.getAttribute('data-hero') === 'false' ? 0 : undefined;
+        const size = { w: canvas.width, h: canvas.height, portraitTaper };
         const inset = (chipRadiusWidthPct(size) * canvas.width) / 100 + 3;
         const radius = (FELT_WINDOW.width * canvas.width) / 200 - inset;
         const cx = ((FELT_WINDOW.left + FELT_WINDOW.width / 2) * canvas.width) / 100;
@@ -286,10 +287,13 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         const points: { x: number; y: number; depth: number }[] = [];
         let depth = 0;
         const add = (x: number, y: number) => {
-          const projected = projectPortraitTable({
-            x: (x / canvas.width) * 100,
-            y: (y / canvas.height) * 100,
-          });
+          const projected = projectPortraitTable(
+            {
+              x: (x / canvas.width) * 100,
+              y: (y / canvas.height) * 100,
+            },
+            portraitTaper
+          );
           points.push({
             x: canvas.left + (projected.x * canvas.width) / 100,
             y: canvas.top + (projected.y * canvas.height) / 100,
@@ -312,10 +316,13 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             [box.left, box.top + box.height],
             [box.left + box.width, box.top + box.height],
           ].every(([x, y]) => {
-            const flat = unprojectPortraitTable({
-              x: ((x - canvas.left) / canvas.width) * 100,
-              y: ((y - canvas.top) / canvas.height) * 100,
-            });
+            const flat = unprojectPortraitTable(
+              {
+                x: ((x - canvas.left) / canvas.width) * 100,
+                y: ((y - canvas.top) / canvas.height) * 100,
+              },
+              portraitTaper
+            );
             const px = (flat.x * canvas.width) / 100;
             const py = (flat.y * canvas.height) / 100;
             const spineY = Math.min(Math.max(py, upper), lower);

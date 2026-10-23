@@ -1,3 +1,4 @@
+import { readTournamentStandings } from '../../services/readTournamentStandings';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT INFO PANEL (2026-08-23)
@@ -41,6 +42,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { subscribeTournamentStandings } from '../../services/tournamentStandingsUpdates';
+import { tournamentChipRanks } from '../../utils/tournamentChipRanks';
 import { reportError } from '../../utils/errorReporter';
 import { money } from '../../utils/buyIn';
 import { compactChips } from '../../utils/format';
@@ -152,52 +155,83 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
    */
   const [failed, setFailed] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [tRes, pRes] = await Promise.all([
-        supabase
-          .from('tournaments')
-          .select(
-            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, blind_structure, payout_structure, is_bounty, start_time, arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)'
-          )
-          .eq('id', tournamentId)
-          .maybeSingle(),
-        supabase
-          .from('tournament_players')
-          .select(
-            'user_id, username, chips, status, position, prize, rebuys, bounties_collected, table_id',
-            { count: 'exact' }
-          )
-          .eq('tournament_id', tournamentId)
-          .limit(500),
-      ]);
+  const load = useCallback(
+    async (owner: { active: boolean }) => {
+      try {
+        const [tRes, pRes] = await Promise.all([
+          supabase
+            .from('tournaments')
+            .select(
+              'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, blind_structure, payout_structure, is_bounty, start_time, arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)'
+            )
+            .eq('id', tournamentId)
+            .maybeSingle(),
+          readTournamentStandings(
+            tournamentId,
+            'user_id, username, chips, status, position, prize, rebuys, bounties_collected, table_id'
+          ),
+        ]);
 
-      if (tRes.error || pRes.error) {
-        reportError(tRes.error ?? pRes.error, 'TournamentInfoPanel.load');
-        // Keep whatever was already on screen. A refresh tick that fails must
-        // not blank a panel that was correct a moment ago.
+        if (!owner.active) return;
+        if (tRes.error || pRes.error) {
+          reportError(tRes.error ?? pRes.error, 'TournamentInfoPanel.load');
+          // Keep whatever was already on screen. A refresh tick that fails must
+          // not blank a panel that was correct a moment ago.
+          setFailed(true);
+          return;
+        }
+
+        setFailed(false);
+        if (tRes.data) setT(tRes.data as TournamentRow);
+        setRows((pRes.data as unknown as Row[]) ?? []);
+        setFieldSize(pRes.count);
+      } catch (err) {
+        if (!owner.active) return;
+        reportError(err, 'TournamentInfoPanel.load');
         setFailed(true);
-        return;
+      } finally {
+        if (owner.active) setLoading(false);
       }
-
-      setFailed(false);
-      if (tRes.data) setT(tRes.data as TournamentRow);
-      setRows((pRes.data as Row[]) ?? []);
-      setFieldSize(typeof pRes.count === 'number' ? pRes.count : (pRes.data?.length ?? 0));
-    } catch (err) {
-      reportError(err, 'TournamentInfoPanel.load');
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [tournamentId]);
+    },
+    [tournamentId]
+  );
 
   useEffect(() => {
-    void load();
-    // Light refresh while open — the panel is a lobby view, not a live feed.
-    const id = setInterval(() => void load(), 10_000);
-    return () => clearInterval(id);
-  }, [load]);
+    const owner = { active: true };
+    let inFlight = false;
+    let pending = false;
+    const refresh = async () => {
+      if (!owner.active) return;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      try {
+        do {
+          pending = false;
+          await load(owner);
+        } while (pending && owner.active);
+      } finally {
+        inFlight = false;
+      }
+    };
+    setT(null);
+    setRows([]);
+    setFieldSize(null);
+    setLoading(true);
+    void refresh();
+    const stop = subscribeTournamentStandings(tournamentId, () => void refresh());
+    const onVisible = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      owner.active = false;
+      stop();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [load, tournamentId]);
 
   // Close on Escape, the way every other dismissible surface here behaves.
   useEffect(() => {
@@ -213,7 +247,8 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
     const stacks = alive.map((r) => num(r.chips)).filter((n) => n > 0);
     const mine = heroUserId ? rows.find((r) => r.user_id === heroUserId) : undefined;
     const ranked = [...alive].sort((a, b) => num(b.chips) - num(a.chips));
-    const myRank = mine ? ranked.findIndex((r) => r.user_id === mine.user_id) + 1 : 0;
+    const ranks = tournamentChipRanks(alive);
+    const myRank = mine ? (ranks.get(mine.user_id) ?? 0) : 0;
     const pool = Math.max(num(t?.prize_pool), num(t?.guaranteed_prize));
     return {
       entriesAlive: alive.length,
@@ -228,6 +263,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
       myPosition: mine?.position ?? null,
       myStatus: mine?.status ?? null,
       ranked,
+      ranks,
     };
   }, [rows, t, heroUserId, fieldSize]);
 
@@ -397,12 +433,12 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.ranked.map((r, i) => (
+                  {stats.ranked.map((r) => (
                     <tr
                       key={r.user_id}
                       className={heroUserId && r.user_id === heroUserId ? 'is-me' : ''}
                     >
-                      <td>{i + 1}</td>
+                      <td>{stats.ranks.get(r.user_id)}</td>
                       <td className="tip__name">{r.username || 'Player'}</td>
                       <td className="tip__num">{compactChips(num(r.chips))}</td>
                       {t?.is_bounty && <td className="tip__num">{num(r.bounties_collected)}</td>}

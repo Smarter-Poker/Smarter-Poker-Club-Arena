@@ -2010,7 +2010,16 @@ export default function LobbyTable({
                       {entry.kind === 'cash' ? cashTitleLines(entry).headline : entry.name}
                     </span>
                     <span className="compact-lobby__meta">
-                      {entry.kind === 'cash' ? cashTitleLines(entry).subtitle : entry.variantLabel}
+                      {entry.kind === 'cash' ? (
+                        <>
+                          {cashTitleLines(entry).subtitle}
+                          {cashTemplateNote(entry.game?.template) && (
+                            <> | {cashTemplateNote(entry.game?.template)}</>
+                          )}
+                        </>
+                      ) : (
+                        entry.variantLabel
+                      )}
                     </span>
                     <PlayerStateChip entry={entry} ctx={rowCtx} />
                   </button>

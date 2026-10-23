@@ -1,0 +1,58 @@
+name: Club Data and Union Data read each window once
+
+# Migration 20261022165130. Runs
+# scripts/ci/test-club-data-reads-each-window-once.py against a throwaway
+# PostgreSQL 17 cluster, never production: every Club Data migration is
+# installed in order, each replaced reader is proved to be the production text
+# (pg_get_functiondef md5), every reader's output is recorded for union and
+# club scope, and after 20261022165130 every output must be identical.
+# No timer (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261022165130_club_data_and_union_data_read_each_window_once.sql
+      - tests/fixtures/club-data-fact-db/**
+      - tests/fixtures/club-data-report-db/**
+      - scripts/ci/test-club-data-reads-each-window-once.py
+      - .github/workflows/club-data-reads-each-window-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: club-data-reads-each-window-once-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  club-data-reads-each-window-once:
+    name: Club Data and Union Data read each window once
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Club Data and Union Data read each window once
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-data-reads-each-window-once.py

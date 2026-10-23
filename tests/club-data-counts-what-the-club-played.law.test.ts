@@ -290,7 +290,8 @@ describe('the Report tables are written by the club the money moved through', ()
     // the filtered form counts players for the page's rows by exact day lookups
     expect(b).toContain('AND f.game_id IN (SELECT tp.game_id FROM top tp)');
     expect(b).toContain(
-      'WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date = ANY (v_days) AND f.user_id <>'
+      // 20261022200354 / 20261022165130: the same days, probed as a range.
+      'WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date BETWEEN v_start AND v_end AND f.user_id <>'
     );
     // tournaments are described for every game only when a filter reads them
     expect(b).toContain("v_attrs := v_game IN ('MTT', 'SNG') OR v_q IS NOT NULL;");

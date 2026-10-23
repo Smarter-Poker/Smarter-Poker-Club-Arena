@@ -1,3 +1,5 @@
+import { registerCompactLobbyRowsCases } from './support/compactLobbyRowsCases';
+registerCompactLobbyRowsCases();
 import { registerGameLobbyCardCases } from './support/gameLobbyCardCases';
 registerGameLobbyCardCases();
 import { registerDiamondJackpotReadoutCases } from './helpers/diamond-jackpot-readout-cases';
@@ -656,8 +658,8 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
                     )
                     .join('')}
                 </div>
-                <button type="button" class="game-bar__filter-btn"><span>Filters</span></button>
               </div>
+              <div class="lobby-refinements">
               <div class="quickprefs"><div class="quickprefs__row quickprefs__row--status">
                 ${['All', 'Full', 'Empty', 'Open Seats', 'Favorites']
                   .map(
@@ -666,6 +668,8 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
                   )
                   .join('')}
               </div></div>
+              <button type="button" class="game-bar__filter-btn"><span>Filters</span></button>
+              </div>
             </section>
           </div>
           <div class="club-lobby-command-top__campaign"><div class="fx-plaque"></div></div>
@@ -787,6 +791,39 @@ async function measureChrome(page: Page) {
       frameBottom: r('.bottomNav .artwork').bottom,
       viewportBottom: edgeBottom,
     };
+  });
+}
+
+for (const width of [320, 393]) {
+  test(`simplified filter rows stay contained and reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 852 });
+    await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
+    await settle(page);
+    const metrics = await page.locator('.lobby-controls').evaluate((controls) => {
+      const types = controls.querySelector<HTMLElement>('.game-bar__types')!;
+      const status = controls.querySelector<HTMLElement>('.quickprefs__row--status')!;
+      const filter = controls.querySelector<HTMLElement>('.game-bar__filter-btn')!;
+      const box = filter.getBoundingClientRect();
+      const tops = [...types.children].map((el) => el.getBoundingClientRect().top);
+      types.scrollLeft = types.scrollWidth;
+      const lastType = types.lastElementChild!.getBoundingClientRect();
+      status.scrollLeft = status.scrollWidth;
+      const lastStatus = status.lastElementChild!.getBoundingClientRect();
+      return {
+        oneTypeRow: Math.max(...tops) - Math.min(...tops),
+        filter: { left: box.left, right: box.right, height: box.height },
+        typeReachable: lastType.left >= 0 && lastType.right <= innerWidth,
+        statusReachable: lastStatus.left >= 0 && lastStatus.right <= box.left,
+        pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      };
+    });
+    expect(metrics.oneTypeRow).toBeLessThanOrEqual(1);
+    expect(metrics.filter.left).toBeGreaterThanOrEqual(0);
+    expect(metrics.filter.right).toBeLessThanOrEqual(width);
+    expect(metrics.filter.height).toBeGreaterThanOrEqual(44);
+    expect(metrics.typeReachable).toBe(true);
+    expect(metrics.statusReachable).toBe(true);
+    expect(metrics.pageOverflow).toBeLessThanOrEqual(1);
   });
 }
 

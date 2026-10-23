@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MysteryBountyChest, {
   parseMysteryChestOffer,
+  winnerAutoOpenMs,
   type MysteryChestData,
 } from '../../src/components/tournament/MysteryBountyChest';
 import { CHIP_UNIT_CENTS } from '../../server/src/tournament/tournamentUnit';
@@ -164,6 +165,54 @@ describe('pick 1 of 3', () => {
     expect(container.querySelectorAll('button.mbc__pick')).toHaveLength(0);
     expect(container.querySelector('button.mbc__chest')).toBeTruthy();
     expect(screen.getByText('Tap The Chest To Open')).toBeTruthy();
+  });
+});
+
+describe('the chest is honest about who chose', () => {
+  it('says which chest held the prize when nobody picked', () => {
+    const { container } = render(
+      view(
+        {
+          ...offered,
+          amount: 50,
+          amountPending: false,
+          pickedSlot: 2,
+          chosen: false,
+          choices: [
+            { slot: 1, amount: 12, picked: false },
+            { slot: 2, amount: 50, picked: true },
+            { slot: 3, amount: 400, picked: false },
+          ],
+        },
+        'spectator',
+        { remoteOpened: true }
+      )
+    );
+    act(() => vi.advanceTimersByTime(700));
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(container.querySelector('.mbc__picked-slot')?.textContent).toBe(
+      'Chest 2 Held The Prize'
+    );
+  });
+
+  it('closes the winner window inside the engine deadline at any animation speed', () => {
+    for (const speed of [0.5, 1, 1.5, 2, 3]) {
+      expect(winnerAutoOpenMs(speed)).toBeLessThanOrEqual(8200);
+    }
+    expect(winnerAutoOpenMs(0.5)).toBe(4500);
+  });
+
+  it('keeps one auto-open timer while the table re-renders', () => {
+    const onRequestReveal = vi.fn();
+    const { rerender } = render(view(offered, 'winner', { onRequestReveal }));
+    act(() => vi.advanceTimersByTime(700));
+    // TablePage hands a fresh arrow every render; the deadline must not move.
+    for (let i = 0; i < 8; i += 1) {
+      act(() => vi.advanceTimersByTime(1_000));
+      rerender(view(offered, 'winner', { onRequestReveal: (s?: number) => onRequestReveal(s) }));
+    }
+    act(() => vi.advanceTimersByTime(400));
+    expect(onRequestReveal).toHaveBeenCalledTimes(1);
   });
 });
 

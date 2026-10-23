@@ -1,4 +1,4 @@
-# An MTT certificate funds a proven replacement
+# Current Club Arena certification repairs
 
 Production verification 39891421377 observed MTT board 13166aaf close normally:
 every selected player had a durable relocation or elimination. The closure
@@ -22,3 +22,16 @@ and the job's worst-case proof/maintenance-wait/cleanup arithmetic.
 The reserved fixture stale cutoff is 157 minutes: the longest 143-minute
 owning lane plus its existing 14-minute safety margin. An active verifier's
 account must never become eligible for another run's fixture cleanup.
+
+The broader production run 39894918466 also exposed two outdated verification
+contracts. The Financial Admin guard now quarantines the exact global
+`ca_record_device_sighting` POST, just as it already quarantines the login
+achievement write. Both remain aborted; neither is admitted as a read or
+forwarded to production. The regression retains refusals for money RPCs,
+ledger inserts, method changes and lookalike endpoint names.
+
+Returning players intentionally see Club Options collapsed. Its hidden action
+navigation has no accessible box to measure. The operations route now applies
+the same non-overlap calculation to rendered navigation and checks normal
+pointer reachability before entering the club. Isolated browser coverage pins
+collapsed options, open options and refusal of a real visible overlap.

@@ -25,7 +25,7 @@ function panel(kind: 'spin' | 'sng', status: string, registered = false) {
   const entry = tournamentEntry(raw, kind);
   const onSpinJoin = vi.fn();
   const onRegister = vi.fn();
-  render(
+  const view = render(
     <MemoryRouter>
       <GameLobbyPanel
         entry={entry}
@@ -44,7 +44,7 @@ function panel(kind: 'spin' | 'sng', status: string, registered = false) {
       />
     </MemoryRouter>
   );
-  return { raw, onSpinJoin, onRegister };
+  return { raw, onSpinJoin, onRegister, view };
 }
 
 describe.each(['spin', 'sng'] as const)('%s full game observer entry', (kind) => {
@@ -74,4 +74,16 @@ describe.each(['spin', 'sng'] as const)('%s full game observer entry', (kind) =>
     panel(kind, 'COMPLETED');
     expect(screen.getByRole('button', { name: 'Game Over' })).toBeDisabled();
   });
+});
+
+it('portals the drawer out of page stacking contexts and removes it on unmount', () => {
+  const previous = document.body.style.overflow;
+  const { view } = panel('spin', 'RUNNING');
+  const dialog = screen.getByRole('dialog');
+  expect(view.container.contains(dialog)).toBe(false);
+  expect(dialog.parentElement?.parentElement).toBe(document.body);
+  expect(document.body.style.overflow).toBe('hidden');
+  view.unmount();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.body.style.overflow).toBe(previous);
 });

@@ -1,5 +1,51 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { expectRoute, assertRendered } from './utils';
+
+async function clubCardClearOfVisibleActions(page: Page, clubCard: Locator): Promise<boolean> {
+  const actions = page.getByRole('navigation', { name: 'Poker Arena Actions', exact: true });
+  // Returning players keep Club Options collapsed. Its unrendered navigation
+  // cannot cover a card and is absent from the accessible-role locator.
+  if (!(await actions.isVisible())) return true;
+  const cardBox = await clubCard.boundingBox();
+  const actionsBox = await actions.boundingBox();
+  if (!cardBox || !actionsBox) return false;
+  return (
+    cardBox.y + cardBox.height <= actionsBox.y + 1 ||
+    actionsBox.y + actionsBox.height <= cardBox.y + 1
+  );
+}
+
+test.describe('Club entry reachability guard', () => {
+  for (const open of [false, true]) {
+    test(`accepts a clear card with Club Options ${open ? 'open' : 'collapsed'}`, async ({
+      page,
+    }) => {
+      await page.setContent(`
+        <details ${open ? 'open' : ''}>
+          <summary>Club Options</summary>
+          <nav aria-label="Poker Arena Actions" style="height:40px">Create Find Join</nav>
+        </details>
+        <button style="margin-top:20px" aria-label="Click to enter lobby">Club</button>
+      `);
+      const card = page.getByRole('button', { name: 'Click to enter lobby', exact: true });
+      expect(await clubCardClearOfVisibleActions(page, card)).toBe(true);
+      await card.click({ trial: true, timeout: 1000 });
+    });
+  }
+
+  test('refuses visible actions covering the club card', async ({ page }) => {
+    await page.setContent(`
+      <button style="position:absolute;top:20px;height:50px" aria-label="Click to enter lobby">Club</button>
+      <nav aria-label="Poker Arena Actions" style="position:absolute;top:30px;height:40px">Create Find Join</nav>
+    `);
+    expect(
+      await clubCardClearOfVisibleActions(
+        page,
+        page.getByRole('button', { name: 'Click to enter lobby', exact: true })
+      )
+    ).toBe(false);
+  });
+});
 
 test.describe('Club Operations', () => {
   test('should show clubs list', async ({ page }) => {
@@ -31,23 +77,13 @@ test.describe('Club Operations', () => {
          replaced the retired bottom Quick actions row; keep the overlap
          guard against the navigation that is actually rendered. */
       await expect
-        .poll(
-          async () => {
-            const cardBox = await clubCard.evaluate((el) => {
-              const r = el.getBoundingClientRect();
-              return { top: r.top, bottom: r.bottom };
-            });
-            const actionsBox = await page
-              .getByRole('navigation', { name: 'Poker Arena Actions', exact: true })
-              .evaluate((el) => {
-                const r = el.getBoundingClientRect();
-                return { top: r.top, bottom: r.bottom };
-              });
-            return cardBox.bottom <= actionsBox.top + 1 || actionsBox.bottom <= cardBox.top + 1;
-          },
-          { timeout: 8000, message: 'Club card must not overlap the Poker Arena actions' }
-        )
+        .poll(() => clubCardClearOfVisibleActions(page, clubCard), {
+          timeout: 8000,
+          message: 'Club card must not overlap the Poker Arena actions',
+        })
         .toBe(true);
+      // Check all actual pointer occluders as well as the rendered action row.
+      await clubCard.click({ trial: true, timeout: 8000 });
       await clubCard.click({ timeout: 8000 });
       await expect(page).toHaveURL(/.*clubs\/.+/, { timeout: 10000 });
     }

@@ -46,6 +46,10 @@ export const FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS = Object.freeze([
   // may award achievement diamonds. Abort it during read-only certification;
   // it is a genuine write, never a reviewed Financial-page read.
   '/rest/v1/rpc/fn_achievement_record_login',
+  // Session restore/sign-in also records this install for anti-cheat. The
+  // RPC upserts a device sighting, so abort this background write rather
+  // than admitting it as a Financial-page read or forwarding it to production.
+  '/rest/v1/rpc/ca_record_device_sighting',
 ] as const);
 
 /** Reviewed read-only RPCs mounted by the Financial Admin hub and its linked consoles. */

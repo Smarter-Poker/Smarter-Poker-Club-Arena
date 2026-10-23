@@ -6,7 +6,7 @@ import { resolve, dirname } from 'node:path';
 export function registerGameLobbyCardCases() {
   test('selected cash, tournament, spin and heads-up cards survive overflowing details', async ({
     page,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(60_000);
     const bundled = buildSync({
       entryPoints: ['tests/e2e/support/gameLobbyCardFixture.tsx'],
@@ -56,7 +56,7 @@ export function registerGameLobbyCardCases() {
       if (url.hostname === 'game-card.fixture' && url.pathname === '/')
         return route.fulfill({
           contentType: 'text/html',
-          body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div></body></html>`,
+          body: `<html data-kind="${url.searchParams.get('kind')}" data-stacked="${url.searchParams.get('stacked') === '1'}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div></body></html>`,
         });
       const file = resolve(
         'public',
@@ -92,6 +92,63 @@ export function registerGameLobbyCardCases() {
         `${kind} details remain scrollable`
       ).toBe(true);
       await expect(page.locator('.glp__close')).toBeVisible();
+      // The real drawer must escape the page's stacking context and cover the
+      // actual global-header layer. Click normally: forced clicks hide this bug.
+      for (const viewport of [
+        { width: 393, height: 852 },
+        { width: 852, height: 393 },
+      ]) {
+        await page.setViewportSize(viewport);
+        await page.goto(`http://game-card.fixture/?kind=${kind}&stacked=1`);
+        await page.addScriptTag({
+          content: bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
+        });
+        const trigger = page.getByRole('button', { name: 'Open Game Lobby', exact: true });
+        await trigger.click();
+        const close = page.getByRole('button', { name: 'Close Game Lobby', exact: true });
+        await expect(close).toBeFocused();
+        await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+        await expect
+          .poll(() =>
+            close.evaluate((el) => {
+              const rect = el.getBoundingClientRect();
+              return el.contains(
+                document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+              );
+            })
+          )
+          .toBe(true);
+        if (kind === 'cash') {
+          await testInfo.attach(`game-lobby-header-layer-${viewport.width}`, {
+            body: await page.screenshot({
+              path: testInfo.outputPath(`game-lobby-header-layer-${viewport.width}.png`),
+            }),
+            contentType: 'image/png',
+          });
+        }
+        await close.click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
+        // A native pointer click need not focus a button (Safari leaves BODY
+        // focused). Keyboard opening gives the trap a known return target.
+        await trigger.focus();
+        await trigger.press('Enter');
+        await expect(close).toBeFocused();
+        await close.click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(trigger).toBeFocused();
+        await trigger.press('Enter');
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(trigger).toBeFocused();
+        if (viewport.width > 720) {
+          await trigger.click();
+          await page.locator('.glp-backdrop').click({ position: { x: 10, y: 150 } });
+          await expect(page.getByRole('dialog')).toHaveCount(0);
+        }
+      }
+      // Keep each format's original overflow proof at its existing viewport.
+      await page.setViewportSize({ width: 393, height: 700 });
     }
     expect(errors).toEqual([]);
   });

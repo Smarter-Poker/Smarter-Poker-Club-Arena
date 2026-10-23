@@ -15,7 +15,10 @@
 .glp-backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 500);
+  /* Match the full-screen tournament lobby layer: above the persistent felt
+     (1100) and its table menu (2000), with the header (390) behind the dialog.
+     The body portal keeps page stacking contexts from trapping this layer. */
+  z-index: 2100;
   background: rgb(2 4 7 / 70%);
   backdrop-filter: blur(2px);
   display: flex;

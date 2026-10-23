@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import GameLobbyPanel from '../../../src/components/lobby/GameLobbyPanel';
@@ -38,24 +38,68 @@ const entry =
         kind as any
       );
 const noop = () => undefined;
+function Fixture() {
+  const stacked = document.documentElement.dataset.stacked === 'true';
+  const [open, setOpen] = useState(!stacked);
+  return (
+    <>
+      {stacked && (
+        <header
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 76,
+            zIndex: 390,
+            background: '#000',
+          }}
+        >
+          <button
+            type="button"
+            style={{ position: 'absolute', right: 0, top: 0, width: 100, height: 76 }}
+          >
+            Messages
+          </button>
+        </header>
+      )}
+      <main
+        style={
+          stacked
+            ? { position: 'relative', isolation: 'isolate', zIndex: 0, paddingTop: 100 }
+            : undefined
+        }
+      >
+        {stacked && (
+          <button type="button" onClick={() => setOpen(true)}>
+            Open Game Lobby
+          </button>
+        )}
+        {open && (
+          <GameLobbyPanel
+            entry={entry}
+            clubId="fixture"
+            currentUserId={null}
+            waitlisted={false}
+            seated={false}
+            registered={false}
+            busy={false}
+            onClose={stacked ? () => setOpen(false) : noop}
+            onJoinTable={noop}
+            onWaitlistToggle={noop}
+            onRegister={noop}
+            onUnregister={noop}
+            onSpinJoin={noop}
+          />
+        )}
+      </main>
+    </>
+  );
+}
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter>
     <ToastProvider>
-      <GameLobbyPanel
-        entry={entry}
-        clubId="fixture"
-        currentUserId={null}
-        waitlisted={false}
-        seated={false}
-        registered={false}
-        busy={false}
-        onClose={noop}
-        onJoinTable={noop}
-        onWaitlistToggle={noop}
-        onRegister={noop}
-        onUnregister={noop}
-        onSpinJoin={noop}
-      />
+      <Fixture />
     </ToastProvider>
   </MemoryRouter>
 );

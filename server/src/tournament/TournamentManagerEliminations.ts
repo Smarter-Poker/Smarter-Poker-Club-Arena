@@ -65,6 +65,7 @@ import {
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
+import { horseChoosesTournamentRebuy } from './horseTournamentRebuyChoice.js';
 import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
 /** A verified close and exact engine retirement, never an attempted move. */
@@ -894,7 +895,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           this.noteEliminationSweepStep('tryTournamentRebuys');
-          const { rebought } = await this.tryTournamentRebuys(busted.map((b) => b.user_id));
+          const { rebought } = await this.tryTournamentRebuys(
+            busted.map((b) => b.user_id),
+            bustHandNumbers
+          );
           if (sweepStopped()) return;
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
@@ -2073,7 +2077,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   private async tryTournamentRebuys(
-    bustedUserIds: string[]
+    bustedUserIds: string[],
+    bustHandNumbers: ReadonlyMap<string, number>
   ): Promise<{ rebought: Set<string>; answered: Set<string> }> {
     const rebought = new Set<string>();
     /** Players whose rebuy decision is FINAL this pass: horses that were asked
@@ -2167,6 +2172,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       for (const h of horseRows) {
         if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        const bustHandNumber = bustHandNumbers.get(h.id);
+        if (!Number.isSafeInteger(bustHandNumber) || Number(bustHandNumber) <= 0) {
+          // Unknown identity is not a decline or permission to charge. Keep
+          // the normal durable decision grace until the bust can be read.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          continue;
+        }
+        if (!horseChoosesTournamentRebuy(this.tournamentId, h.id, bustHandNumber)) {
+          answered.add(h.id);
+          continue;
+        }
         if (freeBuyReloads) {
           const used = freeBuyReloads.get(h.id);
           if (used === undefined) {

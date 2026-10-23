@@ -42,8 +42,11 @@ vi.mock('../../src/core/MasterBus', () => ({
     }),
     subscribeDebounced: () => () => {},
     removeRegisteredChannel: vi.fn(),
+    registerChannelFactory: vi.fn(),
+    removeChannelFactory: vi.fn(),
   },
 }));
+vi.mock('../../src/lib/subscribeRealtime', () => ({ subscribeRealtime: vi.fn(async () => {}) }));
 vi.mock('../../src/utils/retryAsync', () => ({ retryAsync: (fn: any) => fn() }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/utils/strictClubIdResolver', () => ({
@@ -529,9 +532,22 @@ it('an unknown lookup cannot reach settlement preflight or payment from the moun
   expect(rpc).not.toHaveBeenCalled();
   expect(complete).not.toHaveBeenCalled();
 });
-it('never starts a background status refresh subscription', async () => {
+it('refreshes scoped pending status from another session without replacing the draft', async () => {
   realtime.subs.length = 0;
-  await mount();
+  const amount = await mount();
   await waitFor(() => expect(cashoutService.getPlayerCashouts).toHaveBeenCalledOnce());
-  expect(realtime.subs).toHaveLength(0);
+  fireEvent.change(amount, { target: { value: '12.75' } });
+  const note = screen.getByLabelText('Note (Optional)');
+  fireEvent.change(note, { target: { value: 'Keep this draft' } });
+  expect(realtime.subs).toHaveLength(1);
+  expect(realtime.subs[0].filter).toEqual({ event: '*', schema: 'public', table: 'cashout_requests', filter: `player_id=eq.${ID.player}` });
+  await act(async () => realtime.subs[0].handler({ new: { status: 'approved' } }));
+  await waitFor(() => expect(cashoutService.getPlayerCashouts).toHaveBeenCalledTimes(2));
+  expect(cashoutService.getPlayerCashouts).toHaveBeenLastCalledWith(ID.player, ID.club, 'pending');
+  expect((amount as HTMLInputElement).value).toBe('12.75');
+  expect((note as HTMLTextAreaElement).value).toBe('Keep this draft');
+  const retired = realtime.subs[0];
+  cleanup();
+  await act(async () => retired.handler({ new: { status: 'rejected' } }));
+  expect(cashoutService.getPlayerCashouts).toHaveBeenCalledTimes(2);
 });

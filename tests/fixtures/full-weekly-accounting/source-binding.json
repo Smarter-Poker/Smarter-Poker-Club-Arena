@@ -193,7 +193,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
-    "tests/unit/CashoutRequestModal.test.tsx": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486",
+    "tests/unit/CashoutRequestModal.test.tsx": "d42781e0e5577e62d029cb2ec952e7cfe8dccd71f907588c216b13e11246b030",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea",
@@ -465,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
+    "scripts/ci/classify-ci-changes.mjs": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "3566e880847285d36976c3f881f0ae679197a2d517e9bfdb178cd64ce2fcc9e3",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "03abd3c7db6bd545448d57da8819b0b96dc3909fe96004a2c30dea3c1b7fbfbc",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "3c2f66444d8edcaaae03a4c0ee0c95b7f23106dade4cfe127d89ecba7c40f45a",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "b7ef9d3da7766c3e43fa18cc892af633accee06b9169ccecf459a5c4aea338dc",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5261,6 +5261,35 @@
         "path": "tests/unit/CashoutRequestModal.test.tsx",
         "previous": "49072c272d04e3ddbfd7220c8b7e92a463872550538004f21ddc92226281f1c5",
         "current": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486"
+      }
+    ]
+  },
+  "cashierRealtimeLifecycle20261023": {
+    "reason": "Reviewed additive native cashier enforcement and the player-scoped status subscription regression. The former no-background-refresh test is replaced under the current explicit realtime end-to-end request; drafts and late-owner isolation remain asserted. Classifier only adds required fixture execution. Captured financial sources, historical evidence/statuses and existing transaction assertions are unchanged. Current source identity only; not a qualification restamp.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/unit/CashoutRequestModal.test.tsx",
+        "previous": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486",
+        "current": "d42781e0e5577e62d029cb2ec952e7cfe8dccd71f907588c216b13e11246b030"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
+        "current": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "3566e880847285d36976c3f881f0ae679197a2d517e9bfdb178cd64ce2fcc9e3",
+        "current": "03abd3c7db6bd545448d57da8819b0b96dc3909fe96004a2c30dea3c1b7fbfbc"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "3c2f66444d8edcaaae03a4c0ee0c95b7f23106dade4cfe127d89ecba7c40f45a",
+        "current": "b7ef9d3da7766c3e43fa18cc892af633accee06b9169ccecf459a5c4aea338dc"
       }
     ]
   }

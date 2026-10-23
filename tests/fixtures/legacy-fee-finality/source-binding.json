@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
+    "scripts/ci/classify-ci-changes.mjs": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1099,5 +1099,16 @@
     "file": "scripts/ci/classify-ci-changes.mjs",
     "previous_sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6",
     "current_sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+  },
+  "cashierRealtimeLifecycle20261023": {
+    "reason": "Reviewed additive native cashier enforcement and the player-scoped status subscription regression. The former no-background-refresh test is replaced under the current explicit realtime end-to-end request; drafts and late-owner isolation remain asserted. Classifier only adds required fixture execution. Captured financial sources, historical evidence/statuses and existing transaction assertions are unchanged. Current source identity only; not a qualification restamp.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
+        "current": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95"
+      }
+    ]
   }
 }

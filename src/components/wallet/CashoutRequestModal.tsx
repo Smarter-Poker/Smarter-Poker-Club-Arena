@@ -16,6 +16,7 @@ import {
   useCashoutReceiptChecks,
 } from './CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import {
   runCashoutOperation,
   recoverCashoutOperation,
@@ -366,8 +367,18 @@ function CashoutRequestContent({
     }
   }, [isOpen, playerId, clubId, loadPendingCashouts]);
 
-  // Pending requests load on open and after this user's completed command.
-  // Background status/balance events never refresh a working Cashier form.
+  // Another device may decide a pending request while this sheet stays open.
+  // Refresh only the scoped pending rows; never replace the amount/note draft
+  // or the parent Cashier's working form. The existing read gate queues an
+  // event received during receipt recovery until the owned command finishes.
+  useMasterBusChannel({
+    channelName: isOpen && playerId ? `cashout-request-status:${playerId}:${clubId}` : null,
+    table: 'cashout_requests',
+    filter: playerId ? `player_id=eq.${playerId}` : null,
+    event: '*',
+    enabled: isOpen && !!playerId && !!clubId,
+    onPayload: () => void loadPendingCashouts(),
+  });
 
   const handleSubmit = async () => {
     if (submitLockRef.current || !isCurrent()) return;

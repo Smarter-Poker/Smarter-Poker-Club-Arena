@@ -209,6 +209,10 @@ class RunnerTests(unittest.TestCase):
                     if fault == 'ev-lifecycle': raise RuntimeError('PRIVATE EV LOG MUST NOT LEAK')
                     (root / 'evidence/ev-cashout-lifecycle.json').write_text(json.dumps(dict(status='passed', product_certificate=False, container_absent=True)))
                     return ''
+                if args[:2] == ['python3', 'tests/fixtures/cashier-realtime-lifecycle/run-native.py']:
+                    if fault == 'cashier-lifecycle': raise RuntimeError('PRIVATE CASHIER LOG MUST NOT LEAK')
+                    (root / 'evidence/cashier-realtime-lifecycle.json').write_text(json.dumps(dict(status='passed', product_certificate=False, container_absent=True)))
+                    return ''
                 if args[:3] == ['docker', 'container', 'ls']:
                     owned = args[-1].removeprefix('name=^/').removesuffix('$')
                     return 'container-id' if owned in present else ''
@@ -234,6 +238,11 @@ class RunnerTests(unittest.TestCase):
         code, receipt, _ = self.exercise()
         self.assertEqual(code, 0)
         self.assertFalse(receipt['product_certificate'])
+        self.assertTrue(all(receipt['cleanup'].values()))
+
+    def test_cashier_failure_remains_failed(self):
+        code, receipt, calls = self.exercise('cashier-lifecycle')
+        self.assertNotEqual(code, 0)
         self.assertTrue(all(receipt['cleanup'].values()))
 
     def test_ev_failure_remains_failed_and_native_cleanup_still_runs(self):

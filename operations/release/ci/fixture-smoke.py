@@ -503,6 +503,9 @@ def execute(repo, output, expected, run=command):
         receipt['stage'] = 'authenticated-ev-cashout'
         run(['python3', 'tests/fixtures/ev-cashout-lifecycle/run-native.py', str(repo), image_id, str(output)], repo, env, timeout=240)
         receipt['ev_cashout'] = json.loads((output / 'ev-cashout-lifecycle.json').read_text())
+        receipt['stage'] = 'authenticated-realtime-cashier'
+        run(['python3', 'tests/fixtures/cashier-realtime-lifecycle/run-native.py', str(repo), image_id, str(output)], repo, env, timeout=600)
+        receipt['cashier_realtime'] = json.loads((output / 'cashier-realtime-lifecycle.json').read_text())
     except Exception as error:
         # Never serialize command output, environment, service logs, or tokens.
         if isinstance(error, NativeSmokeFailure):

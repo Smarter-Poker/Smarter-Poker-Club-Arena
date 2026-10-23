@@ -7,10 +7,6 @@ const root = resolve(import.meta.dirname, '..');
 const page = readFileSync(resolve(root, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const home = readFileSync(resolve(root, 'src/pages/HomePage.tsx'), 'utf8');
 const union = readFileSync(resolve(root, 'src/pages/UnionDashboardPage.tsx'), 'utf8');
-const quickLinkTile = readFileSync(
-  resolve(root, 'src/components/home/ClubQuickLinkTile.tsx'),
-  'utf8'
-);
 const cashierStyles = readFileSync(resolve(root, 'src/pages/CashierTradePage.module.css'), 'utf8');
 const modal = readFileSync(resolve(root, 'src/components/wallet/WalletCashierModal.tsx'), 'utf8');
 const sql = readFileSync(
@@ -51,18 +47,14 @@ describe('cashier integrity and wallet launcher', () => {
     expect(home).not.toMatch(/UnionService\.getOwnedUnions\(authUser\.id\)\.catch/);
     expect(page).not.toMatch(/UnionService\.getOwnedUnions\(user\.id\)\.catch/);
     expect(home).toContain('setLoadFailed(true)');
-    expect(home).toContain(
-      'loadFailed ? [] : mergeCashierWalletDirectory(userClubs, ownedUnionWallets)'
-    );
+    expect(home).toContain('const target = loadFailed');
     expect(home).toContain("toast.info('Retrying Cashier Directory')");
     expect(home).toContain('void fetchUserData(false, () => isMountedRef.current)');
     expect(page).toContain("setMembershipsError('Could not load your club cashiers.')");
   });
 
-  it('preloads the exact Trade cashier chunk used by the lobby destination', () => {
-    expect(home).toContain(
-      "preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}"
-    );
+  it('keeps canonical cashier preload route identities after retiring the home tiles', () => {
+    expect(home).not.toContain('ClubQuickLinkTile');
     expect(resolvePreloadRouteKey('/cashier/trade')).toBe('/cashier/trade');
     expect(resolvePreloadRouteKey('/cashier')).toBe('/cashier');
   });
@@ -78,10 +70,7 @@ describe('cashier integrity and wallet launcher', () => {
     expect(union).toContain("setError('You are not a union admin or owner.')");
   });
 
-  it('exposes recoverable balance reads and safe mobile cashier sheets', () => {
-    expect(quickLinkTile).toContain('Wallet Balances Unavailable.');
-    expect(quickLinkTile).toContain('clearClubChipBalanceCache();');
-    expect(quickLinkTile).toContain("aria-keyshortcuts={hasSwitch ? 'ArrowDown Shift+F10'");
+  it('keeps safe mobile cashier sheets', () => {
     expect(cashierStyles).toContain('100dvh');
     expect(cashierStyles).toContain('env(safe-area-inset-bottom, 0px)');
     expect(cashierStyles).toMatch(/\.modalActions\s*\{[\s\S]*position:\s*sticky/);

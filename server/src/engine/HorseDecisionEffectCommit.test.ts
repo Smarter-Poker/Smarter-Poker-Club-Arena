@@ -357,6 +357,53 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it('rechecks the river nuts against the fresh controller menu before committing a passive worker result', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    Object.assign(engine.tableInfo, { game_variant: 'plo5' });
+    const parse = (s: string) =>
+      s.split(' ').map((c) => ({
+        rank: c[0],
+        suit: ({ c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' } as any)[c[1]],
+      }));
+    Object.assign(enginePlayer, { cards: parse('7c 5d Ac Kh Qh'), stack: 275.5 });
+    player.stack = 275.5;
+    Object.assign(state, {
+      stage: 'river',
+      communityCards: parse('2d 3s 6s Jh 4d'),
+      currentBet: 50,
+      minRaise: 50,
+      pot: 169,
+    });
+    Object.assign(state.players[1], { bet: 50, stack: 690.7 });
+    engine.handController.getAuthoritativeActionState = () => ({
+      schemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      canAct: true,
+      legalActions: ['fold', 'call', 'raise'],
+      toCall: 50,
+      minRaiseTo: 100,
+      maxRaiseTo: 269,
+      structure: 'pot_limit',
+      fixedBetSize: null,
+      wagersCapped: false,
+    });
+    const worker = decisionWorker.decideFast.getMockImplementation()!;
+    const passive = async (snapshot: any) => ({
+      ...(await worker(snapshot)),
+      decision: { action: 'call', amount: 50, thinkTime: 1 },
+      effects: [],
+    });
+    decisionWorker.decideFast.mockImplementationOnce(passive as any);
+    decisionWorker.worker.decideDeep.mockImplementationOnce(async (snapshot: any) => ({
+      ...(await passive(snapshot)),
+      type: 'DEEP_RESULT',
+    }));
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(performAction).toHaveBeenCalledOnce();
+    expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['raise', 269, 'horse_policy']);
+  });
   it.each([undefined, 2, 20])(
     'reconciles the actual call price through the scheduled executor (selected %s)',
     async (amount) => {

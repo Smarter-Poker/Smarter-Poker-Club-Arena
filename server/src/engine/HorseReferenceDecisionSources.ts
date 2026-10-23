@@ -19,6 +19,8 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseRiverNuts.ts':
+      'the final exact river-nuts raise invariant after all variant, tournament and joint policies',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':

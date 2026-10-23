@@ -65,10 +65,11 @@ export function registerCompactLobbyRowsCases() {
     for (const width of [320, 393, 1024]) {
       await page.setViewportSize({ width, height: 800 });
       await page.setContent(
-        `<style>html,body{margin:0;background:#000}*{box-sizing:border-box}${sheets}</style><div id="root"></div>`
+        `<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;background:#000}*{box-sizing:border-box}${sheets}</style><div id="root"></div>`
       );
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       const table = page.locator(width <= 900 ? '.compact-lobby' : '.lobby-table');
+      await expect(table).toBeVisible();
       await expect(table.locator('.lt-seats--game')).toHaveCount(3);
       const geometry = await table.evaluate((root) => {
         const header = [...root.querySelectorAll('th')].find((el) =>

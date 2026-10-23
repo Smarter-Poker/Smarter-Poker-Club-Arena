@@ -2906,6 +2906,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
     'V43'
   ),
+  receipt(
+    'wager_rules_commit_correction',
+    'ServerTableEngineTurns (final wager rules at commit)',
+    'the fresh commit-time menu turned a passive river-nuts action into a legal raise, or a 90-100% pot wager into full pot',
+    'RiverNuts'
+  ),
 
   // TAGS. Every leak tag the review system emits, with its reader.
   ...RETIRED_RECEIPTS,

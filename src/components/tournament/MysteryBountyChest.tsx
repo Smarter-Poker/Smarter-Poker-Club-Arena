@@ -1009,6 +1009,16 @@ export default function MysteryBountyChest({
         {/* ── Reveal ── */}
         {phase === 'revealed' && (
           <div className="mbc__reveal">
+            {/* PICK 1 OF 3: which chest held this prize. The server's record
+                (the slot picked, or the one the self-opened chest stood in) is
+                what every seat shows; the revealer's own tap fills the gap
+                until it arrives. */}
+            {choosing && (data.pickedSlot ?? localPick) != null && (
+              <div className="mbc__picked-slot">
+                {isWinner ? 'You Picked' : `${data.knockerName} Picked`} Chest{' '}
+                {data.pickedSlot ?? localPick}
+              </div>
+            )}
             <div className="mbc__tier" style={{ color: tier.color }}>
               {tier.label}
             </div>
@@ -1047,6 +1057,7 @@ export default function MysteryBountyChest({
                     .filter((c) => !c.picked)
                     .map((c) => (
                       <span className="mbc__other" key={c.slot}>
+                        <span className="mbc__other-slot">Chest {c.slot}</span>
                         <span className="mbc__other-amount">{figure(c.amount)}</span>
                         {c.tierLabel && <span className="mbc__other-tier">{c.tierLabel}</span>}
                       </span>

@@ -51,6 +51,12 @@ interface RoomInfo {
   sockets: number;
   /** The device class the room's latest socket reported (Lightning Phase 8). */
   platform?: LightningDevicePlatform | null;
+  /**
+   * The room owner's own client claimed the seat in this socket session (a
+   * RENDER_ACK, an action, a pre-action or a time bank request through the
+   * room). Cleared when the last socket closes. See isClientControlling.
+   */
+  clientClaimed?: boolean;
 }
 
 /**
@@ -272,6 +278,9 @@ export class LightningRegistry {
    * carries a hand id and nothing else of the hand.
    */
   renderAck(roomId: string, userId: string, handId: unknown): boolean {
+    // The owner's client rendering its hand is a control claim, whatever the
+    // latency leg below makes of it.
+    this.noteClientClaim(roomId, userId);
     const p = this.renderPending.get(roomId);
     if (!p || typeof handId !== 'string' || p.handId !== handId || p.userId !== userId)
       return false;
@@ -417,9 +426,12 @@ export class LightningRegistry {
   connect(roomId: string, userId: string, platform: LightningDevicePlatform | null = null): void {
     const info = this.rooms.get(roomId);
     if (!info || info.userId !== userId) return;
+    const controlledBefore = this.isClientControlling(userId, roomId);
     info.sockets++;
     if (platform) info.platform = platform;
     this.hostByRoom.get(roomId)?.notePresence(userId, true);
+    if (!controlledBefore && this.isClientControlling(userId, roomId))
+      this.hostByRoom.get(roomId)?.noteClientControl(userId);
     // FIRST socket back: a transition, told once (Lightning Phase 9). A second
     // socket in the same room changes nothing the database should hear.
     if (info.sockets === 1 && info.clusterId) {
@@ -439,7 +451,12 @@ export class LightningRegistry {
     const had = info.sockets;
     info.sockets = Math.max(0, info.sockets - 1);
     if (info.sockets === 0) {
+      const wasControlling = info.clientClaimed === true && had > 0;
+      info.clientClaimed = false;
       this.hostByRoom.get(roomId)?.notePresence(userId, false);
+      // After the ordinary disconnect handling: a horse seat its own client
+      // was driving goes back to the brain.
+      if (wasControlling) this.hostByRoom.get(roomId)?.noteClientReleased(userId);
       // LAST socket gone: the transition the DB reaper's clock starts on -
       // unless an anchor engine still has the player connected.
       if (had > 0 && info.clusterId && !this.connectedAtAnchor(info.clusterId, userId))
@@ -475,6 +492,27 @@ export class LightningRegistry {
   isConnected(playerId: string, roomId: string): boolean {
     const info = this.rooms.get(roomId);
     return !!info && info.userId === playerId && info.sockets > 0;
+  }
+
+  /**
+   * A HORSE ACCOUNT'S OWN CLIENT DRIVES ITS SEAT (2026-10-22). The room is
+   * the player's own pool session and admits only its owner's authenticated
+   * client, so: a live socket in the room AND a claim from that client since
+   * the socket session began (RENDER_ACK, action, pre-action, time bank). The
+   * host keeps the brain off such a seat's turns (LightningHandHost.onTurn).
+   */
+  isClientControlling(playerId: string, roomId: string): boolean {
+    const info = this.rooms.get(roomId);
+    return this.isConnected(playerId, roomId) && info?.clientClaimed === true;
+  }
+
+  /** The room owner's client acted through the room (or acknowledged its hand). */
+  noteClientClaim(roomId: string, userId: string): void {
+    const info = this.rooms.get(roomId);
+    if (!info || info.userId !== userId || info.clientClaimed === true) return;
+    info.clientClaimed = true;
+    if (this.isClientControlling(userId, roomId))
+      this.hostByRoom.get(roomId)?.noteClientControl(userId);
   }
 
   /**
@@ -860,6 +898,7 @@ export class LightningHosting {
         return { fastFold: r?.fastFold !== false, foldWatch: r?.foldWatch !== false };
       },
       isConnected: (playerId, roomId) => registry.isConnected(playerId, roomId),
+      isClientControlling: (playerId, roomId) => registry.isClientControlling(playerId, roomId),
       onPlayerReleased: (playerId, why) => {
         // A FOLDED player is free while the hand plays on: match them now.
         // Everyone released at the hand's end waits for onFinished, which

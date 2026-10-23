@@ -254,7 +254,7 @@ export function createFixtureGateway({
       res.setHeader('access-control-allow-methods', 'GET,HEAD,POST,PATCH,PUT,DELETE,OPTIONS');
       res.setHeader(
         'access-control-allow-headers',
-        'authorization,apikey,content-type,x-client-info,prefer,range,x-supabase-api-version,x-supabase-client-platform,x-supabase-client-platform-version'
+        'authorization,apikey,content-type,accept-profile,content-profile,x-client-info,prefer,range,x-supabase-api-version,x-supabase-client-platform,x-supabase-client-platform-version'
       );
       res.setHeader('access-control-expose-headers', 'content-range');
     }

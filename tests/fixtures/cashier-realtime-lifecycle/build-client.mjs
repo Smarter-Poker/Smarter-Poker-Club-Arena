@@ -5,6 +5,12 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const root = 'dist-cashier-fixture';
+// Generate the same approved media variants that the maintained application build uses.
+for (const script of [
+  'scripts/generate-webp-media.mjs',
+  'scripts/generate-customization-thumbnails.mjs',
+])
+  execFileSync(process.execPath, [script], { stdio: 'inherit' });
 execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', root], {
   stdio: 'inherit',
   env: {

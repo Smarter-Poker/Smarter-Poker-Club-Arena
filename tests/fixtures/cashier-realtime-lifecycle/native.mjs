@@ -44,6 +44,12 @@ let stage = 'initialize',
 let browser;
 let observedPages = [];
 const resourceFailures = [];
+const networkFailures = [];
+const safeUiText = (value) =>
+  value
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/[A-Za-z0-9_-]{32,}/g, '[opaque]')
+    .slice(0, 2500);
 const restFailures = [];
 function setStage(value) {
   assert.match(value, /^[a-zA-Z0-9_.-]{1,100}$/);
@@ -345,6 +351,12 @@ try {
   function observe(page, topic) {
     const state = { joins: 0, changes: [] };
     page.on('pageerror', (e) => errors.push(e.name));
+    page.on('requestfailed', (r) =>
+      networkFailures.push({
+        path: new URL(r.url()).pathname.replace(/[a-f0-9-]{36}/g, ':id').slice(0, 160),
+        code: /\bERR_[A-Z_]+\b/.exec(r.failure()?.errorText || '')?.[0] ?? null,
+      })
+    );
     page.on('response', async (r) => {
       if (r.status() < 400) return;
       const url = new URL(r.url());
@@ -615,7 +627,19 @@ try {
       product_certificate: false,
       stage,
       rest_failures: restFailures.slice(-20),
-      resources: resourceFailures.slice(-20),
+      resources: [...resourceFailures.slice(0, 15), ...resourceFailures.slice(-15)],
+      network_failures: networkFailures.slice(0, 20),
+      ui_states: await Promise.all(
+        observedPages.map(async (p) => {
+          try {
+            return safeUiText(
+              (await p.locator('h1,h2,[role=alert],[role=status]').allTextContents()).join(' | ')
+            );
+          } catch {
+            return 'unavailable';
+          }
+        })
+      ),
       page_paths: observedPages.map((p) => {
         try {
           return new URL(p.url()).pathname

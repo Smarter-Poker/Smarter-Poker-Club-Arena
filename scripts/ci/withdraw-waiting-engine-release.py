@@ -107,13 +107,17 @@ def health_pair(request):
 
 
 def container_identity(request):
-    d = json.loads(command(['docker', 'container', 'inspect', 'club-arena-engine']))
-    require(isinstance(d, list) and len(d) == 1)
-    d = d[0]
-    require(d['State']['Running'] is True)
-    require(d['Config']['Labels']['sp.release.sha'] == request['desiredSha'])
-    require(re.fullmatch(r'[0-9a-f]{64}', d['Id']) is not None)
-    return {'id': d['Id'], 'startedAt': d['State']['StartedAt'], 'image': d['Image']}
+    # Inspect only immutable identity fields. A full Docker inspect would also
+    # read runtime environment values, which this operation never needs.
+    template = ('{"id":{{json .Id}},"startedAt":{{json .State.StartedAt}},'
+                '"running":{{json .State.Running}},"image":{{json .Image}},'
+                '"releaseSha":{{json (index .Config.Labels "sp.release.sha")}}}')
+    d = json.loads(command(['docker', 'container', 'inspect', '--format', template, 'club-arena-engine']))
+    require(set(d) == {'id', 'startedAt', 'running', 'image', 'releaseSha'})
+    require(d['running'] is True and d['releaseSha'] == request['desiredSha'])
+    require(re.fullmatch(r'[0-9a-f]{64}', d['id']) is not None)
+    require(re.fullmatch(r'sha256:[0-9a-f]{64}', d['image']) is not None)
+    return {'id': d['id'], 'startedAt': d['startedAt'], 'image': d['image']}
 
 
 def terminal(request, invocation=None):

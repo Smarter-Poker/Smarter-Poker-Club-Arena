@@ -60,6 +60,17 @@ class Withdrawal(unittest.TestCase):
                      ['bash', '/managed/engine-release-unit-wrapper-v1.sh', 'start', '39902613436-2']]:
             self.assertFalse(module.bash_command(args, expected))
 
+    def test_container_read_never_selects_runtime_environment(self):
+        value = {'id': 'a' * 64, 'image': 'sha256:' + 'c' * 64,
+                 'running': True, 'startedAt': 'original', 'releaseSha': self.request['desiredSha']}
+        with patch.object(module, 'command', return_value=json.dumps(value)) as command:
+            self.assertEqual(module.container_identity(self.request)['id'], 'a' * 64)
+            args = command.call_args.args[0]
+            self.assertEqual(args[:4], ['docker', 'container', 'inspect', '--format'])
+            self.assertNotIn('Env', args[4])
+            self.assertNotIn('{{json .Config}}', args[4])
+            self.assertEqual(args[-1], 'club-arena-engine')
+
     def test_lost_ack_reads_terminal_without_a_second_signal(self):
         with patch.object(os.path, 'lexists', return_value=True), \
              patch.object(os, 'getuid', return_value=0), \

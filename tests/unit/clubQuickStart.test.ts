@@ -3,6 +3,7 @@ import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { matchesClubParam } from '../../src/utils/clubScopedPath';
+import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 const mocks = vi.hoisted(() => ({
   state: vi.fn(),
   applied: vi.fn(),
@@ -44,6 +45,15 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe('club default opening', () => {
+  it.each([
+    'src/services/ClubQuickStartService.ts',
+    'src/services/ClubOpeningSetupService.ts',
+    'src/services/ClubWelcomePackageService.ts',
+    'scripts/ci/test-quick-club-opening.py',
+    'tests/unit/clubQuickStart.test.ts',
+  ])('requires the hosted native accounting proof when %s changes', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
   it('reuses funded principals and never opts into new transfers or paid programs', () => {
     expect(defaultClubOpeningInput('club', '', welcome)).toMatchObject({
       tagline: 'Good Friends. Great Poker.',

@@ -498,7 +498,7 @@ export async function logHandHistory(params: {
    * recorded as "Two Pair"; a split was two totals with no board on either
    * (Dan, hand #6145364: "results that weren't accurate"). This is the
    * per-board record the felt reads off pot_win, persisted. Amounts are the
-   * engine's pre-rake board shares. Written as NULL when there is one board,
+   * engine's exact post-rake board shares. Written as NULL when there is one board,
    * so ordinary rows are unchanged. Column: hand_history.winners_by_board.
    */
   winnersByBoard?: {
@@ -508,6 +508,8 @@ export async function logHandHistory(params: {
     handName?: string;
     /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
     low?: boolean;
+    /** Exact post-deduction shares, main pot first, summing to amount. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
@@ -522,7 +524,7 @@ export async function logHandHistory(params: {
    * fold-around hand look the same to a reader.
    */
   pots?: { index: number; amount: number; eligible: string[] }[];
-  /** Exact tournament pot/half awards; merged winner totals lose later pots. */
+  /** Exact paid pot/board/half awards; merged winner totals lose later pots. */
   perPotAwards?: {
     userId: string;
     amount: number;

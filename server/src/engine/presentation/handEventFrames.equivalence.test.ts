@@ -397,3 +397,47 @@ describe('every hand-event frame matches the frozen engine literal', () => {
     }
   });
 });
+
+it('preserves optional paid pot slices and hi-lo identity in the board winner wire contract', () => {
+  const winnersByBoard = [
+    {
+      board: 2,
+      userId: 'u1',
+      amount: 19.01,
+      handName: 'Flush',
+      pots: [
+        { index: 0, amount: 10 },
+        { index: 1, amount: 9.01 },
+      ],
+    },
+    {
+      board: 2,
+      userId: 'u2',
+      amount: 8,
+      handName: 'Low: 8-6-4-3-2',
+      low: true,
+      pots: [{ index: 1, amount: 8 }],
+    },
+  ];
+  const frame = potWinFrame({
+    tableId: 't',
+    emitHandNumber: 3,
+    capturedWinnerIds: ['u1', 'u2'],
+    capturedPotSize: 30,
+    capturedBoard: [],
+    capturedWinners: [],
+    capturedShowdownResults: [],
+    capturedWinnersByBoard: winnersByBoard,
+    capturedPotAwards: [],
+  });
+  expect(frame.winners_by_board).toEqual(
+    winnersByBoard.map((w) => ({
+      board: w.board,
+      user_id: w.userId,
+      amount: w.amount,
+      hand_name: w.handName,
+      ...('low' in w ? { low: w.low } : {}),
+      pots: w.pots,
+    }))
+  );
+});

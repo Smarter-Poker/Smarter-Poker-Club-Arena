@@ -697,6 +697,8 @@ export type HandEvent =
          * half - `winners` merges the halves and names only the high hand.
          */
         low?: boolean;
+        /** Exact post-deduction shares, main pot first, summing to amount. */
+        pots?: Array<{ index: number; amount: number }>;
       }>;
       /**
        * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)

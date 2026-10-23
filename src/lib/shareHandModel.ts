@@ -318,9 +318,9 @@ export function shareableFromModel(
         board: r.boardIndex + 1,
         low: r.low || undefined,
         hand: r.handName || undefined,
-        /* The pot axis travels only when it says more than "the main pot",
-           so an ordinary link is byte-identical to before. */
-        ...(r.potSlices && (r.potSlices.length > 1 || r.potSlices.some((s) => s.index > 0))
+        /* Explicit main-only allocations are recorded facts too. Legacy rows
+           without slices still travel without an invented allocation. */
+        ...(r.potSlices?.length
           ? { pots: r.potSlices.map((s) => ({ index: s.index, amount: s.amount })) }
           : {}),
       }))

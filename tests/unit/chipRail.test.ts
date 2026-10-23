@@ -783,6 +783,12 @@ describe('the mobile painted chassis and marker projection share one perspective
         expect(projectPortraitTable(point, 0)).toEqual(point);
         expect(unprojectPortraitTable(point, 0)).toEqual(point);
       }
+    for (const x of [20.5, 27, 73, 79.5]) {
+      const cap = { x, y: 6 };
+      expect(
+        fitSeatToViewport(cap, { w: 393, h: 640, portraitTaper: 0 }, 393, { w: 92, h: 80 }, 0, 9).x
+      ).toBe(x);
+    }
     const matrix = portraitTableTransform({ w: 393, h: 640, portraitTaper: 0 })
       .slice(9, -1)
       .split(',')

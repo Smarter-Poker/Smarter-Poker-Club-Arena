@@ -30,6 +30,7 @@ export function Review() {
   const [armed, setArmed] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
   const action = document.documentElement.dataset.action || 'preflop';
   const spectator = document.documentElement.dataset.spectator === 'true';
+  const tournament = document.documentElement.dataset.tournament === 'true';
   const heroCards = Number(document.documentElement.dataset.cards || 4);
   const n = Number(
     document.documentElement.dataset.seats || new URLSearchParams(location.search).get('seats') || 9
@@ -67,7 +68,7 @@ export function Review() {
   const seats = seatLayoutFor(n).map((p) =>
     fitSeatToViewport(
       p,
-      size,
+      { ...size, portraitTaper: spectator ? 0 : undefined },
       width,
       seatPodPx(width, p.y === 100 && !spectator, size.w, { seats: n, canvasHeightPx: size.h }),
       ref.current?.getBoundingClientRect().left,
@@ -96,7 +97,11 @@ export function Review() {
       >
         <div className="multi-table-page__table-slot multi-table-page__table-slot--active">
           <div
-            className="table-page table-page--embedded"
+            className={
+              tournament
+                ? 'table-page table-page--embedded table-page--tournament'
+                : 'table-page table-page--embedded'
+            }
             data-seats={n}
             data-hero={spectator ? 'false' : 'true'}
             data-hero-action={action === 'active' ? 'active' : 'waiting'}
@@ -191,7 +196,7 @@ export function Review() {
                   return (
                     <div
                       key={i}
-                      className={`seat-wrapper${i === 0 && !spectator ? ' seat-wrapper--hero' : ''}${p.y < 20 ? ' seat-wrapper--top seat-wrapper--cap' : ''}`}
+                      className={`seat-wrapper${i === 0 && !spectator ? ' seat-wrapper--hero' : ''}${p.y < 20 && !tournament ? ' seat-wrapper--top' : ''}${p.y < 20 ? ' seat-wrapper--cap' : ''}`}
                       style={
                         {
                           left: `${p.x}%`,

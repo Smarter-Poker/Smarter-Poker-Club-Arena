@@ -5187,7 +5187,11 @@ button.post-bb-overlay-button {
 @media (max-width: 480px) and (orientation: portrait) {
   .table-page[data-hero='false'] .table-scaler {
     width: 100%;
-    height: calc(var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px);
+    /* Small rings retain their declared downward offset; it cannot also
+       consume the bottom observer seat's clearance. */
+    height: calc(
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px - var(--sp-short-table-drop, 0px)
+    );
     max-height: none;
     flex-shrink: 0;
   }
@@ -5195,5 +5199,9 @@ button.post-bb-overlay-button {
      screen-edge action labels. Keep the live board in the centre lane. */
   .table-page[data-hero='false'] .community-area {
     max-width: 52vw;
+  }
+  /* Six-seat pods have wider plates than the dense ring. */
+  .table-page[data-hero='false'][data-seats='6'] .community-area {
+    max-width: 48vw;
   }
 }

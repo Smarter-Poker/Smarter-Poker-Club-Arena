@@ -1551,6 +1551,7 @@ for (const [width, height] of [
 test('mobile spectators fill the desktop-reference canvas through hand and dock states', async ({
   page,
 }, testInfo) => {
+  test.setTimeout(150_000);
   const { buildSync } = await import('esbuild');
   const built = buildSync({
     entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
@@ -1592,6 +1593,7 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
       'src/components/table/TableTabBar.css',
       'src/pages/TablePage.css',
       'src/components/table/ActionPanel.css',
+      'src/components/tournament/TournamentHUD.css',
       ...Object.keys(built.metafile!.inputs).filter((f) => f.endsWith('.css')),
       'src/components/table/TableVisualHotfix.css',
     ]),
@@ -1624,7 +1626,7 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
       contentType: existsSync(original) && original.endsWith('.webp') ? 'image/webp' : 'image/png',
     });
   });
-  for (const [width, height, insetTop = 0, insetBottom = 0] of [
+  const viewports = [
     [320, 568],
     [375, 667],
     [393, 852],
@@ -1632,19 +1634,29 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
     [480, 975],
     [393, 852, 47, 34],
     [430, 932, 59, 34],
-  ]) {
+  ];
+  const cases = [2, 3, 4, 5, 6, 7, 8, 9].flatMap((seats) =>
+    viewports.map((viewport) => [seats, ...viewport])
+  );
+  cases.push(
+    [8, 393, 852, 47, 34, 1],
+    [9, 393, 852, 47, 34, 1],
+    [8, 430, 932, 59, 34, 1],
+    [9, 430, 932, 59, 34, 1]
+  );
+  for (const [seats, width, height, insetTop = 0, insetBottom = 0, tournament = 0] of cases) {
     await page.setViewportSize({ width, height });
     await page.route('http://spectator.fixture/', (route) =>
       route.fulfill({
         contentType: 'text/html',
-        body: `<html data-seats="9" data-spectator="true" data-revealed="false" data-jackpot="none"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${applyInsets(realCss, insetTop, insetBottom)}</style></head><body><div id="root"></div></body></html>`,
+        body: `<html data-seats="${seats}" data-tournament="${tournament === 1}" data-spectator="true" data-revealed="false" data-jackpot="none"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${applyInsets(realCss, insetTop, insetBottom)}</style></head><body><div id="root"></div></body></html>`,
       })
     );
     await page.goto('http://spectator.fixture/');
     await page.addScriptTag({
       content: built.outputFiles.find((f) => f.path.endsWith('.js'))!.text,
     });
-    await expect(page.locator('.seat__info')).toHaveCount(9);
+    await expect(page.locator('.seat__info')).toHaveCount(seats);
     await page.waitForFunction(() => {
       const e = document.querySelector<HTMLElement>('.table-scaler')!;
       return (
@@ -1688,9 +1700,9 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
     });
     expect(perspective).toEqual({ x: 1, y: 1, w: 1, perspective: 0 });
     expect(
-      canvas!.height,
-      `${width}px spectator uses the available vertical canvas`
-    ).toBeGreaterThan(height * 0.64);
+      canvas!.y + canvas!.height,
+      `${seats}-seat spectator reaches the lower screen`
+    ).toBeGreaterThan(height * 0.7);
     for (const state of ['none', 'waiting', 'active']) {
       await page.locator('.table-page').evaluate((el, value) => {
         el.setAttribute('data-hero-action', value);
@@ -1706,7 +1718,7 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
     if (width === 393) {
       const screenshot = await page.screenshot({
         path: testInfo.outputPath(
-          insetTop ? 'mobile-spectator-real-insets.png' : 'mobile-spectator-after.png'
+          `mobile-spectator-${seats}-${insetTop ? 'real-insets' : 'after'}.png`
         ),
       });
       await testInfo.attach('mobile-spectator-after', {

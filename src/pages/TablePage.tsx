@@ -20522,7 +20522,7 @@ function LiveTablePage({
     return seatRotationMap.map(({ pos }) =>
       fitSeatToViewport(
         pos,
-        scalerSize,
+        { ...scalerSize, portraitTaper: tablePerspectiveTaper },
         seatViewportWidth,
         seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w, {
           seats: seatRotationMap.length,
@@ -20532,7 +20532,7 @@ function LiveTablePage({
         seatRotationMap.length
       )
     );
-  }, [seatRotationMap, scalerSize, seatViewportWidth]);
+  }, [seatRotationMap, scalerSize, seatViewportWidth, tablePerspectiveTaper]);
   // Published for the deferred chip flights; the ref is declared far above
   // (see seatPositionsRef) so the event handlers can read it.
   seatPositionsRef.current = seatPositions;

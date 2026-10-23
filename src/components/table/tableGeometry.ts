@@ -482,6 +482,9 @@ export function fitSeatToViewport(
   // tag and bounty. They now keep their ring x (27/73 on 7-9 max), which puts
   // them over the top of the rail, clear of both side columns.
   const portraitPhone = viewportWidthPx <= 480 && canvas.h > canvas.w;
+  // Full-width spectator caps keep their desktop ring positions. The very
+  // shortest phones retain the separate compact cap lanes.
+  const desktopCaps = portraitPhone && canvas.portraitTaper === 0 && viewportWidthPx > 340;
   // A top cap also stays inboard of the side column, which on a phone is a
   // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
   // cap keeps 4px of air beyond it (only binds on the narrowest phones).
@@ -494,6 +497,7 @@ export function fitSeatToViewport(
         ? minX
         : maxX
       : portraitPhone &&
+          !desktopCaps &&
           seat.y < 20 &&
           seat.x !== 50 &&
           canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
@@ -501,7 +505,7 @@ export function fitSeatToViewport(
         ? seat.x < 50
           ? 15
           : 85
-        : portraitPhone && seat.y < 20 && seat.x !== 50
+        : portraitPhone && !desktopCaps && seat.y < 20 && seat.x !== 50
           ? seat.x < 50
             ? Math.min(50, Math.max(seat.x, capClearX))
             : Math.max(50, Math.min(seat.x, 100 - capClearX))

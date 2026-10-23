@@ -25,6 +25,7 @@ import { isAuthzError } from '../utils/clubDashboard';
 import { adminRemovePlayerFromClubTables } from '../services/IntegrityActionService';
 import { reportError } from '../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { describeFlagReason } from '../utils/antiCheatFlagReason';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -198,6 +199,8 @@ export default function AntiCheatPage() {
 
   // Flags
   const [flags, setFlags] = useState<AntiCheatFlag[]>([]);
+  /** Names of every account a flag mentions, the flagged player and the others. */
+  const [flagNames, setFlagNames] = useState<Record<string, string>>({});
   const [flagsLoaded, setFlagsLoaded] = useState(false);
   const [flagFilter, setFlagFilter] = useState('open');
 
@@ -288,7 +291,11 @@ export default function AntiCheatPage() {
         // Batch-fetch player profiles (no FK hint needed)
         if (data && data.length > 0) {
           const playerIds = [
-            ...new Set(data.map((f: AntiCheatFlag) => f.player_id).filter(Boolean)),
+            ...new Set(
+              (data as AntiCheatFlag[])
+                .flatMap((f) => [f.player_id, ...describeFlagReason(f.reason).otherIds])
+                .filter(Boolean)
+            ),
           ];
           const playerNames: Record<string, string> = {};
           if (playerIds.length > 0) {
@@ -306,6 +313,7 @@ export default function AntiCheatPage() {
             }
           }
           if (mountedRef.current) {
+            setFlagNames(playerNames);
             setFlags(
               data.map((f: AntiCheatFlag) => ({
                 ...f,
@@ -908,7 +916,15 @@ export default function AntiCheatPage() {
                   '-'}
               </p>
               <pre className={styles.detailsBlock}>
-                {reviewTarget.reason || 'This Flag Was Raised Without A Stated Reason'}
+                {reviewTarget.reason
+                  ? (() => {
+                      const view = describeFlagReason(reviewTarget.reason);
+                      const others = view.otherIds
+                        .map((id) => flagNames[id] || id.substring(0, 8))
+                        .join(', ');
+                      return others ? `${view.summary} With ${others}` : view.summary;
+                    })()
+                  : 'This Flag Was Raised Without A Stated Reason'}
               </pre>
             </div>
             <div className={styles.formGroup}>
@@ -1107,7 +1123,35 @@ export default function AntiCheatPage() {
                       </td>
                       <td style={{ fontWeight: 600 }}>{f.flag_type}</td>
                       <td>{f.player?.display_name || f.player_id?.substring(0, 8) || '-'}</td>
-                      <td className={styles.detailsCell}>{f.reason || 'No Reason Recorded'}</td>
+                      <td className={styles.detailsCell} title={f.reason || undefined}>
+                        {(() => {
+                          const view = describeFlagReason(f.reason);
+                          return (
+                            <>
+                              <span>{view.summary}</span>
+                              {view.otherIds.length > 0 && (
+                                <span className={styles.reasonAccounts}>
+                                  {' With '}
+                                  {view.otherIds.map((id, i) => (
+                                    <span key={id}>
+                                      {i > 0 ? ', ' : ''}
+                                      <Link to={`/profile/${id}`} className={styles.reasonLink}>
+                                        {flagNames[id] || id.substring(0, 8)}
+                                      </Link>
+                                    </span>
+                                  ))}
+                                </span>
+                              )}
+                              {view.handNumbers.length > 0 && (
+                                <span className={styles.reasonHands}>
+                                  {' Hands #'}
+                                  {view.handNumbers.slice(0, 5).join(', #')}
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </td>
                       <td className={styles.timeCell}>{timeAgo(f.flagged_at)}</td>
                       <td>
                         <span

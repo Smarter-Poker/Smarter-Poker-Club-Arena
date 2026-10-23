@@ -549,7 +549,7 @@ describe('the Stakes menu counts styles', () => {
         />
       </MemoryRouter>
     );
-    const bar = screen.getByRole('toolbar', { name: 'Sort Games' });
+    const bar = document.querySelector('.arena-lobby-card-list') as HTMLElement;
     fireEvent.click(within(bar).getByRole('button', { name: /stakes/i }));
     const menu = within(bar).getByRole('group', { name: 'Stakes' });
     expect(within(menu).getByTestId('lt-style-counts').textContent).toBe(
@@ -575,7 +575,7 @@ describe('the Stakes menu counts styles', () => {
         />
       </MemoryRouter>
     );
-    const bar2 = screen.getByRole('toolbar', { name: 'Sort Games' });
+    const bar2 = document.querySelector('.arena-lobby-card-list') as HTMLElement;
     fireEvent.click(within(bar2).getByRole('button', { name: /stakes/i }));
     const menu2 = within(bar2).getByRole('group', { name: 'Stakes' });
     expect(within(menu2).queryByTestId('lt-style-counts')).toBeNull();

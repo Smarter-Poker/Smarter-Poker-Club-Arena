@@ -46,7 +46,8 @@
   /* The same sum TablePage.css declares, plus the dock. Restated here rather
      than patched there so a cash table never evaluates a dock term at all. */
   --sp-action-reserve: calc(
-    var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px) + var(--sp-tdock-reserve)
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) +
+      var(--sp-tdock-reserve)
   );
 }
 
@@ -64,18 +65,22 @@
 .table-page--tournament .action-panel,
 .table-page--tournament .pre-action-bar,
 .table-page--tournament .action-panel-wrapper {
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--sp-tdock-now)) !important;
+  padding-bottom: calc(
+    var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) + var(--sp-tdock-now)
+  ) !important;
 }
 
 .table-page--tournament .action-panel-wrapper {
   min-height: calc(
-    var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px) + var(--sp-tdock-now)
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) +
+      var(--sp-tdock-now)
   );
 }
 
 .table-page--tournament.ca-raising .action-panel-wrapper {
   height: calc(
-    var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px) + var(--sp-tdock-now)
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) +
+      var(--sp-tdock-now)
   );
 }
 
@@ -92,11 +97,11 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   /* Above the two bottom rows (--z-action-panel, 100) it sits beneath, below
      every sheet and modal on the page. */
   z-index: 101;
-  height: calc(var(--sp-tdock-now, 50px) + env(safe-area-inset-bottom, 0px));
+  height: calc(var(--sp-tdock-now, 50px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)));
   display: flex;
   flex-direction: column;
   box-sizing: border-box;

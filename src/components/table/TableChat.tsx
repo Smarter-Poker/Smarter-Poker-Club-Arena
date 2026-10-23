@@ -474,12 +474,10 @@ export function TableChat({
         <span className="chat-collapsed__icon">
           <ChatBubbleIcon />
         </span>
-        {/* The badge is an 18px circle. Beyond two digits the number stops
-            fitting and starts stretching the pill across the chat glyph, and
-            "how many exactly" was never the point past that. */}
-        {unreadCount > 0 && (
-          <span className="chat-collapsed__badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
-        )}
+        {/* No unread badge (Dan 2026-10-22: "the 1 on top of the chat box
+            should just be removed"). What a player says appears on the table
+            as a bubble at their seat and stays in the chat history; the
+            count is still announced to assistive technology above. */}
       </button>
     );
   }

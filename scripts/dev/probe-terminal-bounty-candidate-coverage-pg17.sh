@@ -4,7 +4,7 @@ BIN="${POKER_AUDIT_PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FIX="$ROOT/scripts/dev/fixtures/terminal-bounty-candidate-coverage"
 MIG="$ROOT/supabase/migrations/20260914135625_terminal_bounty_residual_requires_complete_candidate_coverage.sql"
-TMP=$(mktemp -d /tmp/ca-r38-terminal.XXXXXX)
+TMP=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:?Set TMPDIR to owned scratch}}/ca-r38-terminal.XXXXXX")
 cluster_start_attempted=false
 cleanup() {
   local original_status=$? cleanup_failed=0 status_code=0
@@ -112,3 +112,7 @@ for role in anon authenticated; do
 done
 P -f "$MIG"
 echo 'PASS: terminal source/metadata guards, exact replay and seven private role refusals'
+
+P -f "$ROOT/supabase/migrations/20261022234954_chests_only_pre_money_knockouts_do_not_block_terminal_comple.sql"
+P -f "$FIX/chests-only-pre-money.sql"
+P -f "$ROOT/supabase/migrations/20261022234954_chests_only_pre_money_knockouts_do_not_block_terminal_comple.sql"

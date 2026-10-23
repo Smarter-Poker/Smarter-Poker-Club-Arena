@@ -180,7 +180,7 @@ import { FaceDeckContext } from '../components/table/faceDeckContext';
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
-import { useButtonImage } from '../hooks/useButtonImage';
+import { useButtonImage, useTimebankIcon } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
@@ -488,7 +488,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
+import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { NATIVE_PAUSE_EVENT, NATIVE_RESUME_EVENT, isNativeAppActive } from '../lib/nativeResume';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import { useTableArt } from '../hooks/useTableArt';
@@ -1598,7 +1598,7 @@ function LiveTablePage({
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
-  const timebankIconPage = useButtonImage('icon-timebank');
+  const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const requestedTableId = embeddedTableId || routeTableId;
   // Every table effect receives a database ID or no scope. A URL segment
@@ -1942,22 +1942,25 @@ function LiveTablePage({
    * locally the instant they tap, so their tap feels immediate. This send
    * exists purely so the other seats open at the same moment.
    */
-  const broadcastChestOpen = useCallback((slot?: number) => {
-    const awardId = currentChestAwardRef.current;
-    const chan = chestChannelRef.current;
-    if (!chan) return;
-    try {
-      chan.send({
-        type: 'broadcast',
-        event: 'mystery_chest_opened',
-        payload: { tableId, at: Date.now(), slot: slot ?? null, awardId },
-      });
-    } catch (err) {
-      // A failed broadcast degrades to each spectator's own failsafe timer.
-      // It must never stop the winner from seeing their prize.
-      reportError(err, 'TablePage.broadcastChestOpen');
-    }
-  }, [tableId]);
+  const broadcastChestOpen = useCallback(
+    (slot?: number) => {
+      const awardId = currentChestAwardRef.current;
+      const chan = chestChannelRef.current;
+      if (!chan) return;
+      try {
+        chan.send({
+          type: 'broadcast',
+          event: 'mystery_chest_opened',
+          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId },
+        });
+      } catch (err) {
+        // A failed broadcast degrades to each spectator's own failsafe timer.
+        // It must never stop the winner from seeing their prize.
+        reportError(err, 'TablePage.broadcastChestOpen');
+      }
+    },
+    [tableId]
+  );
 
   /**
    * THE TAP (Dan sections 19, 51-54).
@@ -6748,8 +6751,7 @@ function LiveTablePage({
       isFixedLimit,
       fixedBetSize: flBetSize,
     });
-    const canRaise =
-      heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
+    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
     if (!canRaise || maxRaiseTo < minRaiseTo) return '';
     const r = (n: number) => Math.round(n * 100) / 100;
     return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
@@ -20558,8 +20560,12 @@ function LiveTablePage({
         pos,
         scalerSize,
         seatViewportWidth,
-        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
-        canvasLeft
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w, {
+          seats: seatRotationMap.length,
+          canvasHeightPx: scalerSize.h,
+        }),
+        canvasLeft,
+        seatRotationMap.length
       )
     );
   }, [seatRotationMap, scalerSize, seatViewportWidth]);
@@ -22473,19 +22479,6 @@ function LiveTablePage({
       bigBlindsWon: s?.bigBlindsWon ?? null,
     };
   })();
-
-  /**
-   * The Table tab's inline switches (2026-08-30). Derived from the SAME meta
-   * list that drives the full settings panel, filtered by its `quick` flag —
-   * so adding or removing one is a single edit next to the setting itself,
-   * and this can never drift into a second hand-maintained list of keys.
-   */
-  const heroHubQuickSettings = TABLE_SETTINGS_META.filter((m) => m.quick).map((m) => ({
-    key: m.key as string,
-    label: m.label,
-    description: m.description,
-    value: !!v8Settings[m.key as keyof typeof v8Settings],
-  }));
 
   /**
    * Dan 2026-09-05: "IT NEEDS A DISABLE OR HIDE OPTION IN THE TABLE SETTINGS
@@ -25479,6 +25472,9 @@ function LiveTablePage({
           style={
             {
               '--table-w': `${scalerSize.w}px`,
+              /* The dense-ring pods (SeatSlot.css) size from the felt's
+                 height as well as its width. */
+              '--table-h': `${scalerSize.h}px`,
               '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
               /* A shown hand is drawn at the board's own card size (Dan
                  2026-10-22). SeatSlot.css reads it on the revealed row. */
@@ -26585,7 +26581,8 @@ function LiveTablePage({
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
               pos.y >= 100 && pos.x === 50,
-              scalerSize.w
+              scalerSize.w,
+              { seats: seatPositions.length, canvasHeightPx: scalerSize.h }
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
@@ -27981,7 +27978,10 @@ function LiveTablePage({
                            The engine refuses a raise there; the button must not
                            offer one. */
                         canRaise={
-                          heroStack > callAmount && allInTo >= minRaise && !wagersCapped && mayReopen
+                          heroStack > callAmount &&
+                          allInTo >= minRaise &&
+                          !wagersCapped &&
+                          mayReopen
                         }
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
@@ -29399,7 +29399,6 @@ function LiveTablePage({
           onOpenProfileView={() => setShowProfileModal(true)}
           onOpenAvatarPicker={() => avatarService.openAvatarSelector()}
           onOpenIdentity={() => setShowIdentityModal(true)}
-          onOpenTableSettings={() => setShowSettings(true)}
           /* 2026-08-29: the hub knows who it belongs to, shows the figures
              inline instead of one tap away, and hands the felt back the
              moment the turn arrives (a menu must never time out a hand). */
@@ -29407,14 +29406,6 @@ function LiveTablePage({
           heroAvatarUrl={heroAvatarUrl || undefined}
           stats={heroHubStats}
           isHeroTurn={isHeroTurnContext}
-          /* 2026-08-30: the quick toggles come from TABLE_SETTINGS_META's
-             `quick` flag — one list, beside the settings' single owner — and
-             write through the same toggleSetting the full panel uses. The hub
-             adds a surface, never a second owner. */
-          quickSettings={heroHubQuickSettings}
-          onToggleQuickSetting={(key) => {
-            void toggleV8Setting(key as keyof typeof v8Settings);
-          }}
         />
       )}
       {/* AUDIT 2026-08-25 — A MENU ITEM THAT DID NOTHING.

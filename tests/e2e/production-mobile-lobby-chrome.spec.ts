@@ -239,81 +239,53 @@ test.describe('the mobile lobby chrome on production', () => {
     expect(m.offCentreByPct, `${printed} is off the painted title's centre`).toBeLessThan(1);
   });
 
-  test('the filter row locks under Find Your Game when the lobby scrolls', async ({ page }) => {
+  test('Play Poker opens an eligible club without opening setup options', async ({ page }) => {
     await openLobby(page);
-    // The remembered MTT tab can legitimately be empty. Select the populated
-    // aggregate through the same UI a player uses before measuring its sort row.
+    await page.goto('./', { waitUntil: 'domcontentloaded' });
+    const play = page.getByRole('button', { name: /^Play Poker In / });
+    await expect(play).toBeVisible({ timeout: 45_000 });
+    const options = page
+      .locator('details')
+      .filter({ has: page.getByText('Club Options', { exact: true }) });
+    await expect(options).not.toHaveAttribute('open', '');
+    await play.click();
+    await expect(page).toHaveURL(/\/clubs\/[^/?#]+/);
+    await expect(page.locator('.club-home')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('compact rows open details and filters stay at their original position', async ({
+    page,
+  }) => {
+    await openLobby(page);
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     await allGames.click();
     await expect(allGames).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('arena-lobby-game-card').first()).toBeVisible({
-      timeout: 45_000,
-    });
-    const sortbar = page.locator('.lobby-sortbar');
-    await expect(sortbar).toBeVisible({ timeout: 45_000 });
-    await expect(sortbar).toHaveCSS('position', 'sticky');
-
-    // Reach the end, then use actual upward input. A programmatic scroll
-    // whose distance matches a concurrent height change has no user intent
-    // to distinguish it from the browser preserving its anchor.
+    const row = page.getByTestId('lobby-game-row').first();
+    await expect(row).toBeVisible({ timeout: 45_000 });
+    await expect(page.locator('.compact-lobby')).toBeVisible();
+    await expect(page.locator('.lobby-sortbar')).toBeHidden();
+    const deck = page.locator('.club-lobby-command-top__controls');
+    await expect(deck).toHaveCSS('position', 'relative');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const home = await deck.evaluate((el) => el.getBoundingClientRect().top);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.evaluate(() => window.scrollBy(0, -64));
     await expect
-      .poll(() =>
-        page.evaluate(() => {
-          window.scrollTo(0, document.documentElement.scrollHeight);
-          return window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 1;
-        })
-      )
-      .toBe(true);
-    const viewport = page.viewportSize()!;
-    await page.mouse.move(viewport.width / 2, viewport.height / 2);
-    // Mobile emulation (WebKit and Chromium) rejects mouse.wheel. There the
-    // same upward user scroll is issued as a relative scroll, which reaches
-    // the hook through the identical document scroll event a finger produces.
-    try {
-      await page.mouse.wheel(0, -64);
-    } catch (error) {
-      if (!/Mouse wheel is not supported/i.test(String(error))) throw error;
-      // A bare programmatic scroll carries no input evidence, so the hook
-      // rightly reads a coincident lobby re-render as the page keeping its
-      // place (WebKit run 39699204267). Supply the finger: an upward touch
-      // in the same frame as the scroll it produces.
-      await page.evaluate(() => {
-        const target = document.documentElement;
-        const touch = (type: string, y: number | null) => {
-          const event = new Event(type, { bubbles: true });
-          Object.defineProperty(event, 'touches', {
-            value: y === null ? [] : [{ clientY: y }],
-          });
-          target.dispatchEvent(event);
-        };
-        touch('touchstart', window.innerHeight / 2);
-        touch('touchmove', window.innerHeight / 2 + 64);
-        window.scrollBy(0, -64);
-        touch('touchend', null);
-      });
-    }
+      .poll(() => deck.evaluate((el) => el.getBoundingClientRect().bottom))
+      .toBeLessThan(0);
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const controls = document.querySelector('.club-lobby-command-top');
-            const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
-            const deck = document
-              .querySelector('.club-lobby-command-top__controls')!
-              .getBoundingClientRect();
-            if (
-              controls?.getAttribute('data-filters-hidden') !== 'false' ||
-              window.scrollY <= 0 ||
-              row.bottom <= 0
-            )
-              return Number.POSITIVE_INFINITY;
-            return Math.abs(row.top - deck.bottom);
-          }),
-        {
-          message: 'upward input reveals the pinned filters directly under Find Your Game',
-        }
-      )
-      .toBeLessThan(1);
+      .poll(() => deck.evaluate((el) => el.getBoundingClientRect().top))
+      .toBeCloseTo(home, 0);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
+      .toBeLessThanOrEqual(1);
+    const cash = page.locator('[data-testid="lobby-game-row"][data-kind="cash"]').first();
+    await expect(cash).toBeVisible();
+    await cash.getByRole('button', { name: /^Details:/ }).click();
+    await expect(page.getByRole('dialog').locator('.arena-game-card')).toBeVisible();
+    await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
+    await expect(page.getByRole('dialog').locator('.arena-game-card')).toHaveCount(0);
   });
 
   test('the footer frame sits on the bottom edge with nothing under it', async ({ page }) => {

@@ -222,7 +222,13 @@ while True:
             'ENGINE_LOCK_FILE': str(temp / 'engine.lock'), 'ENGINE_DRILL_LOCK_FILE': str(temp / 'drill.lock'),
             'ENGINE_DRILL_STATE_DIR': str(state_dir), 'ENGINE_DRILL_POLL_SECONDS': '1',
             'ENGINE_DRILL_RESTART_SECONDS': str(restart_seconds),
-            'ENGINE_DRILL_HEALTH_SECONDS': '12',
+            # The real drill reserves at least 10s for database leadership.
+            # A 12s fixture left only 2s for supervisor/public-health checks;
+            # Python subprocess startup on the loaded Mac consumed that before
+            # the delayed-adoption assertion could run. Keep the same guards
+            # and negative outcomes with a bounded 30s fixture recovery budget.
+            # Production still owns its separate 180s ceiling.
+            'ENGINE_DRILL_HEALTH_SECONDS': '30',
             'DRILL_TEST_STATE': str(state), 'DRILL_TEST_EVENTS': str(events),
             'DRILL_TEST_DESIRED_SHA': desired, 'DRILL_TEST_BUSY_UNIT': busy_unit,
             'DRILL_TEST_PENDING': pending, 'DRILL_TEST_LEADER_RC': str(leader_rc),

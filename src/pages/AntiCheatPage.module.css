@@ -252,10 +252,23 @@
 .detailsCell {
   font-size: 12px;
   color: var(--realism-muted);
-  max-width: 250px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 340px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.4;
+}
+.reasonAccounts {
+  color: var(--realism-muted);
+}
+.reasonLink {
+  color: var(--realism-gold);
+  font-weight: 600;
+  text-decoration: underline;
+}
+.reasonHands {
+  display: block;
+  font-size: 11px;
+  opacity: 0.8;
 }
 .handRank {
   font-weight: 700;

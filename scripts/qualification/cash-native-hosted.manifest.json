@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41071,
-      "sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6"
+      "bytes": 41349,
+      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3618,6 +3618,18 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "quickClubOpeningInputRouting20261023": {
+    "reason": "Route default opening services and their native regression through the existing required accounting lane. Current classifier identity only; historical financial inputs, assertions and qualification states unchanged. Not an execution or installation certificate.",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous": {
+      "bytes": 41071,
+      "sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6"
+    },
+    "current": {
+      "bytes": 41349,
+      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
     }
   }
 }

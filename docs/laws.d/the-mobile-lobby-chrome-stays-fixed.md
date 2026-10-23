@@ -23,3 +23,8 @@ sticky at the deck's measured height, and that
 the footer strip is CLOSED rather than covered - a black skirt was written
 first and thrown away, because `footer-clearance.test.ts` forbids an opaque
 backdrop there under Dan's 2026-09-04 clipping rule.
+
+Owner update October 22, 2026: selector and sort controls stay in natural page
+flow and return only at their original positions. This supersedes the old
+sticky and scroll-direction reappearance requirement; wallet and footer
+assertions remain unchanged.

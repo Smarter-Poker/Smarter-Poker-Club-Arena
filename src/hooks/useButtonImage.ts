@@ -23,3 +23,16 @@ export function useButtonImage(iconName: string) {
     import.meta.env.VITE_SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co';
   return `${supabaseUrl}/storage/v1/object/public/assets/buttons/${color}/${iconName}.webp`;
 }
+
+/**
+ * The time-bank stopwatch, centred in its frame (Dan 2026-10-22: "the stop
+ * watch icon should be centered to its frame"). The approved storage art draws
+ * the glyph 28px (of 256) above the frame's centre; these bundled copies are
+ * the same black and blue masters with only the glyph re-seated, so the frame,
+ * its gutters and TableToolIconSizing.css's normalisation are unchanged.
+ */
+export function useTimebankIcon(): string {
+  const { user } = useAuthUser();
+  const color = useBlueButtonsEnabled(user?.id) ? 'blue' : 'black';
+  return `${import.meta.env.BASE_URL}assets/club-buttons/timebank-centered-${color}-v1.webp`;
+}

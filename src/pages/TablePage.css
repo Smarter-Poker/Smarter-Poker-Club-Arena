@@ -5211,6 +5211,11 @@ button.post-bb-overlay-button {
    six-seat oval shorter than nine seats while reserving this space for every
    hand, so an all-in cannot change the table geometry. */
 @media (max-width: 375px) and (max-height: 700px) and (orientation: portrait) {
+  .table-page[data-seats='6'] .table-container {
+    /* The normal 60px hero strip misses the ticker case by 2.2px.
+       Four permanent pixels keep the plate clear, including safe areas. */
+    --sp-hero-clear: 64px;
+  }
   .table-page[data-seats='6'] .table-scaler {
     --sp-seat-h-scale: 0.96;
     margin-top: calc(var(--sp-table-h, 100svh) * 0.02);

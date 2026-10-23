@@ -557,7 +557,7 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
     return { w: r.width, h: r.height, top: r.top - cr.top, bottomGap: cr.bottom - r.bottom };
   };
 
-  test('6-max is twelve percent shorter and centered on phones, retains desktop drop, and is as wide', async ({
+  test('6-max stays shorter and centered with permanent short-phone card lanes, retains desktop drop, and is as wide', async ({
     page,
   }) => {
     const offenders: string[] = [];
@@ -575,9 +575,14 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
       const short = await page.evaluate(probeBox);
       const label = `${device} (${width}x${height})`;
       const phonePortrait = width <= 480 && height > width;
-      const expectedDrop = phonePortrait ? full.h * 0.06 : SHORT_DROP_PX;
-      if (phonePortrait && Math.abs(short.h - full.h * 0.88) > 0.5)
-        offenders.push(`${label}: six-max height ${short.h} must be 88% of nine-max ${full.h}`);
+      const shortPhone = phonePortrait && width <= 375 && height <= 700;
+      const heightShare = shortPhone ? 0.96 : 0.88;
+      const heightBudget = full.h - (shortPhone ? 4 : 0);
+      const expectedDrop = phonePortrait ? heightBudget * ((1 - heightShare) / 2) : SHORT_DROP_PX;
+      if (phonePortrait && Math.abs(short.h - heightBudget * heightShare) > 0.5)
+        offenders.push(
+          `${label}: six-max height ${short.h} must be ${heightShare * 100}% of nine-max ${full.h}`
+        );
       if (Math.abs(short.top - full.top - expectedDrop) > 0.5) {
         offenders.push(
           `${label}: 6-max starts ${(short.top - full.top).toFixed(1)}px below 9-max, not ${expectedDrop}px`
@@ -1159,7 +1164,11 @@ for (const width of [320, 375, 393, 430, 480])
           // and the button is right in front of me". A wager and the dealer
           // button each stand nearer their own player than any other. The first
           // generation SE now carries the same ownership guarantee in PLO6.
-          if (innerWidth >= 375 || compactPlo6) {
+          if (
+            innerWidth >= 375 ||
+            compactPlo6 ||
+            Number(document.documentElement.dataset.villainCards) >= 5
+          ) {
             const centreOf = (e: Element) => {
               const r = box(e);
               return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -1207,7 +1216,7 @@ for (const width of [320, 375, 393, 430, 480])
               const shown = [...row.querySelectorAll('.seat__card')].map(box);
               const name = row.closest('.seat')?.querySelector('.seat__name')?.textContent;
               for (const card of shown)
-                if (card.width < (compactPlo6 ? 20 : 22))
+                if (card.width < (innerWidth <= 340 ? 20 : 22))
                   violations.push(`Tabled Card Too Small: ${name} ${card.width}`);
               const ordered = [...shown].sort((a, b) => a.left - b.left);
               for (let i = 1; i < ordered.length; i++)

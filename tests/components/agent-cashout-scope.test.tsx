@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   approve: vi.fn(),
   reject: vi.fn(),
   lock: vi.fn(),
+  recover: vi.fn(),
   listeners: [] as Array<() => void>,
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -37,7 +38,7 @@ vi.mock('../../src/services/CashoutOperation', () => ({
   }),
   recoverCashoutOperation: async (intent: any) => {
     if (!intent.isCurrent()) throw new Error('Cashout Changed');
-    return { found: false };
+    return state.recover(intent);
   },
   runCashoutOperation: async (intent: any) => {
     if (!intent.isCurrent()) throw new Error('Cashout Changed');
@@ -113,7 +114,8 @@ beforeEach(() => {
   state.prepare.mockReset().mockImplementation(async (intent) => intent);
   state.approve.mockReset().mockResolvedValue(true);
   state.reject.mockReset().mockResolvedValue(true);
-  state.lock.mockReset().mockResolvedValue({ locked: false });
+  state.lock.mockReset().mockResolvedValue({ locked: true });
+  state.recover.mockReset().mockResolvedValue({ found: false });
 });
 afterEach(cleanup);
 async function readyApprove() {
@@ -177,16 +179,16 @@ it('retire old rows and callbacks immediately when a reused panel changes club',
   expect(await readyApprove()).not.toBeDisabled();
 });
 
-it('does not dispatch after an account change while the settlement check is pending', async () => {
-  const gate = deferred<{ locked: boolean }>();
-  state.lock.mockReturnValue(gate.promise);
+it('does not dispatch after an account change while receipt recovery is pending', async () => {
+  const gate = deferred<{ found: false }>();
+  state.recover.mockReturnValue(gate.promise);
   const view = render(<AgentCashoutPanel clubId="club-a" />);
   fireEvent.click(await readyApprove());
   state.userId = 'cashier-b';
   state.read.mockResolvedValue([]);
   view.rerender(<AgentCashoutPanel clubId="club-a" />);
   await act(async () => {
-    gate.resolve({ locked: false });
+    gate.resolve({ found: false });
     await gate.promise;
   });
   expect(state.approve).not.toHaveBeenCalled();
@@ -224,12 +226,12 @@ it('a refresh started before acceptance retires the prior prepared row immediate
 });
 
 it('defers ordinary refreshes during the accepted action and drains one after its receipt', async () => {
-  const gate = deferred<{ locked: boolean }>();
-  state.lock.mockReturnValueOnce(gate.promise);
+  const gate = deferred<{ found: false }>();
+  state.recover.mockReturnValueOnce(gate.promise);
   const done = vi.fn();
   render(<AgentCashoutPanel clubId="club-a" onCashoutProcessed={done} />);
   fireEvent.click(await readyApprove());
-  await waitFor(() => expect(state.lock).toHaveBeenCalledOnce());
+  await waitFor(() => expect(state.recover).toHaveBeenCalledOnce());
   const oldIntent = state.prepare.mock.calls[0][0];
   act(() => {
     state.listeners[0]();
@@ -237,8 +239,16 @@ it('defers ordinary refreshes during the accepted action and drains one after it
   });
   expect(oldIntent.isCurrent()).toBe(true);
   expect(state.read).toHaveBeenCalledOnce();
-  await act(async () => gate.resolve({ locked: false }));
+  await act(async () => gate.resolve({ found: false }));
   await waitFor(() => expect(done).toHaveBeenCalledOnce());
   expect(state.approve).toHaveBeenCalledOnce();
   expect(state.read).toHaveBeenCalledTimes(2);
+});
+
+it.each(['approve', 'reject'] as const)('processes %s immediately despite an unrelated settlement lock', async (action) => {
+  render(<AgentCashoutPanel clubId="club-a" />);
+  await readyApprove();
+  fireEvent.click(screen.getByRole('button', { name: action === 'approve' ? 'Approve Cashout' : 'Reject' }));
+  await waitFor(() => expect(action === 'approve' ? state.approve : state.reject).toHaveBeenCalledOnce());
+  expect(state.lock).not.toHaveBeenCalled();
 });

@@ -31,7 +31,6 @@ import {
   usePreparedCashoutOperations,
   isCashoutStartCurrent,
 } from '../../hooks/usePreparedCashoutOperations';
-import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort } from '@/lib/date';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './CashoutRequestModal.css';
@@ -410,9 +409,6 @@ function CashoutRequestContent({
           throw new Error('Your Club Balance Is Unavailable. Refresh Before Requesting A Cashout.');
         if (cashoutAmount > currentBalance)
           throw new Error('That Is More Than Your Available Balance');
-        const lock = await checkSettlementLock(accepted.clubId);
-        assertCashoutStartCurrent(start);
-        if (lock.locked) throw new Error('Settlement In Progress. Cashout Requests Are Frozen');
       }
       const result = recovery.found ? recovery.result : await runCashoutOperation(accepted);
       assertCashoutStartCurrent(start);

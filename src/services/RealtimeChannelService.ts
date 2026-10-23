@@ -91,6 +91,7 @@ export interface TournamentEvent {
     | 'payout'
     | 'hand_for_hand'
     | 'tournament_presentation'
+    | 'standings_changed'
     | 'prize_pool_finalized'
     | 'bubble_burst'
     | 'BREAK_START'

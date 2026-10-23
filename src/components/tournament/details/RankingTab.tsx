@@ -65,6 +65,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { masterBus } from '../../../core/MasterBus';
+import { tournamentChipRanks } from '../../../utils/tournamentChipRanks';
 import { useToast } from '../../common/Toast';
 import { useIsMounted } from '../../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
@@ -696,6 +697,13 @@ export default function RankingTab({
    * an agent reading "3rd" needs it to mean third of the field, never third of
    * the four rows their filter happens to leave on screen.
    */
+  const activeRanks = useMemo(
+    () =>
+      tournamentChipRanks(
+        ordered.filter((entry) => !isOut(entry) && !isRecordedSatelliteQualifier(tournament, entry))
+      ),
+    [ordered, tournament]
+  );
   const ranked = useMemo(
     () =>
       ordered.map((entry, index) => {
@@ -705,10 +713,14 @@ export default function RankingTab({
           entry,
           out,
           qualified,
-          rank: qualified ? null : out ? entry.position || index + 1 : index + 1,
+          rank: qualified
+            ? null
+            : out
+              ? entry.position || index + 1
+              : (activeRanks.get(entry.user_id) ?? null),
         };
       }),
-    [ordered, tournament]
+    [ordered, tournament, activeRanks]
   );
 
   /* The previous stack for every player on the board, refreshed AFTER each
@@ -976,7 +988,7 @@ export default function RankingTab({
                 ? 'Qualified'
                 : heroOut
                   ? ordinal(hero.position || heroIndex + 1)
-                  : ordinal(heroIndex + 1)}
+                  : ordinal(activeRanks.get(hero.user_id) ?? heroIndex + 1)}
             </span>
           </div>
           <div className="rk-hero__figures">

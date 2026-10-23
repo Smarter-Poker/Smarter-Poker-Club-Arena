@@ -245,7 +245,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const addOnKey = `addon:${this.tableId}:${userId}:${opId || randomUUID()}`;
     const recover = async (replayed: boolean): Promise<AddChipsResult | null> => {
       const receipt = await this.readCashAddonReceipt(this.tableId, userId, addOnKey);
-      if (!this.lifecycleCanMutate())
+      if (isMaintenanceFrozen() && !replayed) {
+        if (!midHand) this.killForRestart('addon_direct_frozen_after_commit');
+        else this.requestPendingAddOnSweep();
+      }
+      if (!this.lifecycleCanMutate() || isMaintenanceFrozen())
         return {
           success: false,
           error: 'The Table State Changed. Check Your Stack Before Trying Again.',
@@ -333,13 +337,20 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     let lastError: { message?: string } | null = null;
     let debited = false;
     for (let attempt = 1; attempt <= 2 && !debited; attempt++) {
-      const { error } = await supabase.rpc('atomic_table_addon', {
-        p_user_id: userId,
-        p_table_id: this.tableId,
-        p_amount: applied,
-        p_apply_to_seat: !midHand,
-        p_idempotency_key: addOnKey,
-      });
+      if (isMaintenanceFrozen()) break;
+      let error: { message?: string } | null;
+      try {
+        const result = await supabase.rpc('atomic_table_addon', {
+          p_user_id: userId,
+          p_table_id: this.tableId,
+          p_amount: applied,
+          p_apply_to_seat: !midHand,
+          p_idempotency_key: addOnKey,
+        });
+        error = result.error;
+      } catch (thrown) {
+        error = { message: thrown instanceof Error ? thrown.message : String(thrown) };
+      }
       if (!error) {
         debited = true;
         break;
@@ -393,6 +404,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: false, error: clean };
     }
 
+    if (isMaintenanceFrozen()) {
+      if (!midHand) this.killForRestart('addon_direct_frozen_after_commit');
+      else this.requestPendingAddOnSweep();
+      return {
+        success: false,
+        error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      };
+    }
     if (!this.lifecycleCanMutate())
       return {
         success: false,
@@ -468,7 +488,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     );
     const recover = async (replayed: boolean): Promise<AddChipsResult | null> => {
       const receipt = await this.readDiamondAddonReceipt(this.tableId, userId, requestId);
-      if (!this.lifecycleCanMutate())
+      if (isMaintenanceFrozen() && !replayed && !midHand)
+        this.killForRestart('diamond_direct_frozen_after_commit');
+      if (!this.lifecycleCanMutate() || isMaintenanceFrozen())
         return {
           success: false,
           error: 'The Table State Changed. Check Your Stack Before Trying Again.',
@@ -540,14 +562,33 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
     let lastError: { message?: string } | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
-        p_user_id: userId,
-        p_table_id: this.tableId,
-        p_amount: applied,
-        p_expected_stack: stack,
-        p_request_id: requestId,
-      });
+      if (isMaintenanceFrozen()) break;
+      let result: { data: unknown; error: { message?: string } | null };
+      try {
+        const response = await supabase.rpc('fn_poker_diamond_top_up', {
+          p_user_id: userId,
+          p_table_id: this.tableId,
+          p_amount: applied,
+          p_expected_stack: stack,
+          p_request_id: requestId,
+        });
+        result = { data: response.data, error: response.error };
+      } catch (thrown) {
+        result = {
+          data: null,
+          error: { message: thrown instanceof Error ? thrown.message : String(thrown) },
+        };
+      }
+      const { data, error } = result;
       if (!error) {
+        if (isMaintenanceFrozen()) {
+          this.killForRestart('diamond_direct_frozen_after_commit');
+          return {
+            success: false,
+            error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+            code: 'TRANSPORT',
+          };
+        }
         if (!this.lifecycleCanMutate())
           return {
             success: false,
@@ -557,8 +598,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         /* The seat row and its custody moved together in that transaction, so
            the in-memory copy is the only one still behind. Take the number the
            database wrote rather than the one we asked for. */
-        const written = Number((data as { stack?: number } | null)?.stack);
-        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        const rawStack = (data as { stack?: unknown } | null)?.stack;
+        const written = typeof rawStack === 'number' ? rawStack : NaN;
+        if (!Number.isSafeInteger(written) || written < 0) break;
+        player.stack = written;
         this.broadcastCurrentState();
         return { success: true, applied };
       }
@@ -626,7 +669,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * so: an unresolved chip row is money already taken and must be left open.
    */
   protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
-    if (this.diamondTopUpIntents.size === 0) return;
+    if (isMaintenanceFrozen() || this.diamondTopUpIntents.size === 0) return;
     // Not while a hand is dealt, and not while the last one is still settling:
     // the settler checks the seat's opening stack, and a top-up landing under it
     // would make that stack wrong. The next sweep lands it.
@@ -645,42 +688,121 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     try {
       if (this.handController || this.hasSettlementInFlight()) return;
       const maxBuyIn = Math.floor(this.getMaxBuyIn());
+      const complete = (requestId: string, userId: string, amount: number, status: string) => {
+        this.diamondTopUpIntents.delete(requestId);
+        this.hub?.sendToUser(this.tableId, userId, {
+          kind: 'diamond_top_up_completed',
+          table_id: this.tableId,
+          user_id: userId,
+          request_id: requestId,
+          amount,
+          status,
+        });
+      };
       for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
         const player = players.find((p) => p.user_id === intent.userId);
-        const stack = Number(player?.stack ?? 0);
+        const stack = Number(player?.stack);
         if (!player || !Number.isSafeInteger(stack) || stack < 0) {
           this.diamondTopUpIntents.delete(requestId);
           continue;
         }
+        try {
+          const existing = await this.readDiamondAddonReceipt(
+            this.tableId,
+            intent.userId,
+            requestId
+          );
+          if (!this.lifecycleCanMutate() || isMaintenanceFrozen()) return;
+          if (existing) {
+            player.stack = existing.stack;
+            complete(requestId, intent.userId, existing.amount, 'applied');
+            this.broadcastCurrentState();
+            continue;
+          }
+        } catch (error) {
+          reportError(
+            error,
+            `ServerTableEngine.${this.tableId}.diamond_intent_receipt_read_failed`
+          );
+          return;
+        }
         const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
         if (applied < 1) {
-          this.diamondTopUpIntents.delete(requestId);
+          complete(requestId, intent.userId, 0, 'capped');
           continue;
         }
-        const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
-          p_user_id: intent.userId,
-          p_table_id: this.tableId,
-          p_amount: applied,
-          p_expected_stack: stack,
-          p_request_id: requestId,
-        });
-        /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
-           hand. Nothing was taken and the intent is still good, so it is KEPT
-           and landed on a later pass - the one refusal here that is a "not
-           now" rather than an intent that can no longer be honoured. */
-        if (error && isLightningHandInProgress(error)) continue;
-        this.diamondTopUpIntents.delete(requestId);
-        if (error) {
-          reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
-            userId: intent.userId,
-            amount: applied,
-            requestId,
-          });
+        let outcome: { data: unknown; error: { message?: string } | null } = {
+          data: null,
+          error: null,
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (isMaintenanceFrozen()) break;
+          try {
+            const result = await supabase.rpc('fn_poker_diamond_top_up', {
+              p_user_id: intent.userId,
+              p_table_id: this.tableId,
+              p_amount: applied,
+              p_expected_stack: stack,
+              p_request_id: requestId,
+            });
+            outcome = { data: result.data, error: result.error };
+          } catch (thrown) {
+            outcome = {
+              data: null,
+              error: { message: thrown instanceof Error ? thrown.message : String(thrown) },
+            };
+          }
+          if (
+            !outcome.error ||
+            isLightningHandInProgress(outcome.error) ||
+            /insufficient|stale_seat|exceeds_max_buy_in|not_open|required|mismatch/i.test(
+              String(outcome.error.message || '')
+            )
+          )
+            break;
+        }
+        if (!this.lifecycleCanMutate() || isMaintenanceFrozen()) return;
+        if (outcome.error && isLightningHandInProgress(outcome.error)) continue;
+        const rawStack = (outcome.data as { stack?: unknown } | null)?.stack;
+        const written = typeof rawStack === 'number' ? rawStack : NaN;
+        if (!outcome.error && Number.isSafeInteger(written) && written >= 0) {
+          player.stack = written;
+          complete(requestId, intent.userId, applied, 'applied');
+          this.broadcastCurrentState();
           continue;
         }
-        const written = Number((data as { stack?: number } | null)?.stack);
-        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
-        this.broadcastCurrentState();
+        try {
+          const committed = await this.readDiamondAddonReceipt(
+            this.tableId,
+            intent.userId,
+            requestId
+          );
+          if (!this.lifecycleCanMutate() || isMaintenanceFrozen()) return;
+          if (committed) {
+            player.stack = committed.stack;
+            complete(requestId, intent.userId, committed.amount, 'applied');
+            this.broadcastCurrentState();
+            continue;
+          }
+        } catch (error) {
+          reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_outcome_unknown`);
+          this.killForRestart('diamond_intent_outcome_unknown');
+          return;
+        }
+        const message = String(outcome.error?.message || '');
+        if (
+          /insufficient|stale_seat|exceeds_max_buy_in|not_open|required|mismatch/i.test(message)
+        ) {
+          complete(requestId, intent.userId, 0, 'refused');
+          reportError(outcome.error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`);
+          continue;
+        }
+        reportError(
+          outcome.error || new Error('Diamond intent returned no stack'),
+          `ServerTableEngine.${this.tableId}.diamond_intent_outcome_unknown`
+        );
+        this.killForRestart('diamond_intent_outcome_unknown');
+        return;
       }
     } finally {
       releaseSeatBoundary();

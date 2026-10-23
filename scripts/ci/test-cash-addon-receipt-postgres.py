@@ -57,6 +57,8 @@ jsonb_build_object('door','atomic_table_addon','table_id','{t}','user_id','{u}',
         q(f"UPDATE public.table_pending_addons SET resolved_at=now(),applied_to_stack=3 WHERE id='{t}';")
         assert q(f"SELECT {call}->>'queued'") == 'false'
         assert q(f"SELECT {call}->>'amount'") == '3', 'A settled replay must report actual landing after refund'
+        q(f"UPDATE public.table_pending_addons SET applied_to_stack=0 WHERE id='{t}';")
+        assert q(f"SELECT {call}->>'amount'") == '0', 'A fully refunded operation is not another purchase'
         q("UPDATE public.entry_purchase_idempotency_receipts SET response=NULL;")
         q(f'SELECT {call};',fail=True)
         diamond=f"public.fn_diamond_top_up_receipt('{t}','{u}','{t}')"

@@ -1,3 +1,4 @@
+import { useTopUpAccounting, readTopUpAccounting } from '../hooks/useTopUpAccounting';
 import { autoTopUpRequest, type AutoTopUpRequest } from '../utils/autoTopUpRequest';
 import {
   usePreActionBoundary,
@@ -317,7 +318,7 @@ import { useLightningFundingArena } from '../lightning/useLightningFundingArena'
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
-import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
+import { mergeSessionFacts } from '../utils/sessionBuyInTotal';
 import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy, seatUnits } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
@@ -2538,7 +2539,6 @@ function LiveTablePage({
   const pendingSeatStackRef = useRef<number>(0);
 
   // A roster arriving during restoration supplies a placeholder, not a top-up.
-  const sessionBuyInSeedRef = useRef(0);
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
   // the feature flag is on. This one effect replaces the entire Supabase-
   // Realtime-as-game-state path (which PR-5 deletes). The mapping is pure
@@ -2577,7 +2577,6 @@ function LiveTablePage({
     if (mappedHero && mappedHero.stack > 0) {
       if (totalBuyInRef.current === 0) {
         totalBuyInRef.current = mappedHero.stack;
-        sessionBuyInSeedRef.current = mappedHero.stack;
       }
       if (peakStackRef.current === 0) peakStackRef.current = mappedHero.stack;
     }
@@ -4545,10 +4544,6 @@ function LiveTablePage({
     const askedKey = sessionRestoreKey;
     const heroStack = tableState.players[tableState.heroSeat - 1]?.stack ?? heroRowStack ?? 0;
     if (totalBuyInRef.current === 0 && heroStack > 0) totalBuyInRef.current = heroStack;
-    // Existing placeholders are covered by totalAtAsk. Track only a seed
-    // that arrives after this ask, so it cannot masquerade as a new buy-in.
-    sessionBuyInSeedRef.current = 0;
-    const totalAtAsk = totalBuyInRef.current;
     const factsAtAsk = {
       startMs: sessionStartRef.current,
       handsPlayed: handsPlayedRef.current,
@@ -4576,18 +4571,6 @@ function LiveTablePage({
       .catch(() => {
         /* the page's own counts stand */
       });
-    void Promise.resolve(supabase.rpc('fn_my_cash_session_baseline', { p_table_id: askedFor }))
-      .then(({ data, error }) => {
-        if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
-        totalBuyInRef.current = sessionBuyInTotal({
-          serverBaseline: data,
-          totalAtAsk: totalAtAsk + sessionBuyInSeedRef.current,
-          totalNow: totalBuyInRef.current,
-        });
-      })
-      .catch(() => {
-        /* the placeholder stands */
-      });
     return () => {
       active = false;
     };
@@ -4608,13 +4591,14 @@ function LiveTablePage({
       if (tableState.pot > biggestPotRef.current) {
         biggestPotRef.current = tableState.pot;
       }
-      const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
-      if (heroStack > peakStackRef.current) {
-        peakStackRef.current = heroStack;
+      const heroStack = Number(tableState.players[tableState.heroSeat - 1]?.stack);
+      if (Number.isFinite(heroStack) && heroStack >= 0) {
+        if (heroStack > peakStackRef.current) peakStackRef.current = heroStack;
+        if (tableId) sessionStatsService.updateStack(tableId, heroStack);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableState.pot, tableState.players, tableState.heroSeat]);
+  }, [tableState.pot, tableState.players, tableState.heroSeat, tableId]);
 
   // Previous hand tracking for bottom-left HUD card
   const [prevHandResult, setPrevHandResult] = useState<{
@@ -8271,10 +8255,8 @@ function LiveTablePage({
   /** What the last add-on request actually did, for callers that only get
    *  the boolean (the auto top-up's toast). */
   const lastAddChipsResultRef = useRef<{ applied: number; queued: boolean } | null>(null);
-  /** Mid-hand add-ons this mount queued (debited locally at request time)
-   *  whose landing it has not yet been told about (add_on_adjusted). */
-  const queuedAddOnsThisMountRef = useRef(0);
   const recordedTopUpsRef = useRef(new Set<string>());
+  const [fundingRevision, setFundingRevision] = useState(0);
   const addChipsScope = `${tableId}/${userId}/${tableState.arenaAsset}`;
   const addChipsOwnerRef = useRef({ scope: addChipsScope });
   if (addChipsOwnerRef.current.scope !== addChipsScope)
@@ -8379,7 +8361,7 @@ function LiveTablePage({
              to a double top-up. Say which case this is. */
           if (res.code === 'TRANSPORT') {
             toast.error(
-              `The Connection Dropped Before The Table Answered. Your ${topUpUnits} May Have Been Added. Check Your Stack Before Trying Again.`
+              `The Table Did Not Confirm This Top Up. Your ${topUpUnits} May Have Been Added. Check Your Stack Before Trying Again.`
             );
           } else {
             toast.error(res.error || `Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
@@ -8397,7 +8379,6 @@ function LiveTablePage({
       const recordKey = opId ? `${tableId}/${userId}/${opId}` : null;
       if (recordKey && recordedTopUpsRef.current.has(recordKey)) return true;
       if (recordKey) recordedTopUpsRef.current.add(recordKey);
-      if (res.queued) queuedAddOnsThisMountRef.current += 1;
       if (typeof window !== 'undefined') {
         if (applied < amount) {
           toast.info(
@@ -8437,44 +8418,30 @@ function LiveTablePage({
          purchase nobody made. The landing broadcasts the real stack and the
          balance is re-read from it. */
       if (res.queued && topUpAsset === 'diamonds') return true;
-      // Engine ack'd the single debit -- reflect it locally + in session trackers.
-      /* A local delta on an UNKNOWN balance would invent a number. Stay
-         unknown until a real read lands (see the accountBalance decl). */
-      if (res.replayed) {
-        // The wallet may already have refreshed after the original commit.
-        // Recover absolute balance; subtracting again would invent a second debit.
-        const revision = readBalanceRevision();
-        try {
-          const funding = await readTableFundingBalance(userId, { tableId });
-          if (!ownScopeCurrent() || (opts?.isScopeCurrent && !opts.isScopeCurrent())) return true;
-          if (funding.balance !== null) setBalanceIfCurrent(revision, funding.balance);
-        } catch (error) {
-          reportError(error, 'TablePage.top_up_replay_balance_read_failed');
-        }
+      // A snapshot or wallet refresh may have beaten this reply. Invalidate the
+      // pre-purchase balance and read the recorded wallet; never subtract twice.
+      applyBalanceDelta(() => null);
+      const revision = readBalanceRevision();
+      try {
+        const funding = await readTableFundingBalance(userId, { tableId });
         if (!ownScopeCurrent() || (opts?.isScopeCurrent && !opts.isScopeCurrent())) return true;
-      } else {
-        applyBalanceDelta((prev) => (prev === null ? null : Math.max(0, prev - applied)));
+        setBalanceIfCurrent(revision, funding.balance);
+      } catch (error) {
+        reportError(error, 'TablePage.top_up_balance_read_failed');
       }
-      totalBuyInRef.current += applied; // Track for session P/L
-      totalRebuysRef.current += 1; // Track rebuy count for session summary
-      // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
-      // its buyInTotal never moves and P&L reads as pure profit after a rebuy.
-      sessionStatsService.recordRebuy(tableId, applied);
-      // Update peak stack if rebuy pushes hero above previous peak
-      const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + applied;
-      if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
+      if (!ownScopeCurrent() || (opts?.isScopeCurrent && !opts.isScopeCurrent())) return true;
+      if (topUpAsset === 'chips') totalRebuysRef.current += 1;
+      setFundingRevision((value) => value + 1);
 
       // We do NOT optimistic update tableState anymore. The next WebSocket broadcast
       // from the engine (either immediately or at start of next hand) will give
       // us the authoritative stack size.
 
       // Emit bus event so other pages (Dashboard, Profile) know about the chip change
-      const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + applied;
       masterBus.emit('CHIPS_ADDED', {
         tableId,
         userId,
         amount: applied,
-        newStack: estimatedNewStack,
       });
       return true;
     } catch (error) {
@@ -11276,6 +11243,15 @@ function LiveTablePage({
       handleHoleCardPayload({ new: ev.row });
       return;
     }
+    if (
+      ev.kind === 'diamond_top_up_completed' &&
+      ev.status === 'refused' &&
+      ev.table_id === tableId &&
+      ev.user_id === userId
+    ) {
+      toast.error('The Queued Top Up Could Not Be Added. Your Diamonds Were Not Charged.');
+      return;
+    }
     if (ev.kind === 'add_on_adjusted') {
       /* THE ADD-ON ADJUSTED ITSELF, AND THE PLAYER IS TOLD (Dan 2026-09-04).
          "I ADDED ON FOR $49.95 BUT THEN WON THE VERY SMALL POT, MY ADD ON
@@ -11304,17 +11280,9 @@ function LiveTablePage({
          refund here would invent balance. The player is still told. */
       const clientDebited = ev.addon_kind === 'addon' || ev.addon_kind === undefined;
       if (refunded > 0) {
-        /* And only when THIS mount made the debit it is correcting. A
-           reloaded page reads its balance absolutely (refund included) and
-           seeds its session from the stack; crediting the refund there
-           would invent chips. `queuedAddOnsThisMountRef` counts add-ons this
-           mount queued mid-hand and has not yet heard back about. */
-        if (clientDebited && queuedAddOnsThisMountRef.current > 0) {
-          queuedAddOnsThisMountRef.current -= 1;
-          applyBalanceDelta((prev) => (prev === null ? null : prev + refunded));
-          totalBuyInRef.current = Math.max(0, totalBuyInRef.current - refunded);
-          if (tableId) sessionStatsService.recordRebuy(tableId, -refunded);
-        }
+        // The refund is already recorded. Refresh absolute funding and wallet
+        // truth even if its acknowledgement arrived before the purchase reply.
+        setFundingRevision((value) => value + 1);
         if (typeof window !== 'undefined') {
           /* Name what it actually was. A bust REBUY rides the same ledger
              (kind 'rebuy') and calling it an "Add-On" contradicted the
@@ -20257,6 +20225,55 @@ function LiveTablePage({
     tableState.arenaAsset,
   ]);
 
+  const readRecordedTopUpFunding = useCallback(
+    async (askedTable: string, askedUser: string, asset: 'chips' | 'diamonds') => {
+      const room = lightningRoomRef.current;
+      if (!room) return readTopUpAccounting(askedTable, askedUser, asset);
+      const anchor = await fetchLightningAnchorSeat(room.clusterId, room.poolSessionId);
+      if (!anchor) throw new Error('Could Not Read The Original Funding Seat');
+      return readTopUpAccounting(anchor.anchorTableId, askedUser, asset);
+    },
+    []
+  );
+  useTopUpAccounting({
+    asset: tableState.arenaAsset === 'diamonds' ? 'diamonds' : 'chips',
+    tableEvent: engineLastEvent as Record<string, unknown> | null,
+    tableId,
+    userId,
+    seat: tableState.heroSeat,
+    enabled:
+      !tableState.isTournament && (tableState.heroSeat > 0 || lightningRoomRef.current !== null),
+    read: readRecordedTopUpFunding,
+    connected: engineWsStatus === 'connected',
+    revision: fundingRevision,
+    event: engineLastUserEvent,
+    onFunding: (facts, isCurrent) => {
+      if (!tableId || !userId) return;
+      totalBuyInRef.current = facts.totalBuyIn;
+      if (facts.totalRebuys !== undefined) totalRebuysRef.current = facts.totalRebuys;
+      if (!sessionStatsService.getStats(tableId)) {
+        sessionStatsService.startSession(
+          tableId,
+          userId,
+          facts.totalBuyIn,
+          safeBB(tableStateRef.current.blinds),
+          tableStateRef.current.arenaAsset!
+        );
+        sessionStartedForRef.current = `${tableId}:${userId}`;
+      }
+      sessionStatsService.restoreFunding(tableId, facts.totalBuyIn);
+      const live = tableStateRef.current;
+      sessionStatsService.updateStack(tableId, Number(live.players[live.heroSeat - 1]?.stack));
+      const revision = readBalanceRevision();
+      void readTableFundingBalance(userId, { tableId })
+        .then((funding) => {
+          if (isCurrent() && funding.balance !== null)
+            setBalanceIfCurrent(revision, funding.balance);
+        })
+        .catch((error) => reportError(error, 'TablePage.top_up_balance_read_failed'));
+    },
+  });
+
   // End the session on unmount too (navigating away, or MultiTablePage
   // closing this tab) so the session_history row is written.
   useEffect(() => {
@@ -24232,7 +24249,7 @@ function LiveTablePage({
      through, so this tab follows their chair into the pool-session room. */
   const lightningHandoff = useLightningAnchorHandoff({
     tableId,
-    isPoolSession: lightningRoom !== null,
+    isPoolSession: lightningRoomRef.current !== null,
     heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
     follow: (poolSessionId) => {
       if (embeddedTableId) {

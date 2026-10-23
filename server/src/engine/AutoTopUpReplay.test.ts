@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
-afterEach(() => vi.restoreAllMocks());
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
+afterEach(() => {
+  vi.restoreAllMocks();
+  setMaintenanceFrozen(false);
+});
 
 describe('top-up HTTP replay reflects the funded chips once', () => {
   it('does not credit the in-memory seat twice when the durable debit replays', async () => {
@@ -173,5 +177,71 @@ describe('Diamond top-up retries preserve the original reservation', () => {
     });
     expect(e.seatedPlayers[0].stack).toBe(50);
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('queued Diamond completion reaches its recorded-funding consumer', () => {
+  function queued() {
+    const e = new ServerTableEngine('dddddddd-dddd-dddd-dddd-dddddddddddd') as any;
+    e.lifecycleCanMutate = () => true;
+    e.handController = null;
+    e.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    e.getMaxBuyIn = () => 50;
+    e.broadcastCurrentState = vi.fn();
+    e.hub = { sendToUser: vi.fn() };
+    e.killForRestart = vi.fn();
+    e.readDiamondAddonReceipt = vi.fn(async () => null);
+    const id = '11111111-1111-4111-8111-111111111111';
+    e.diamondTopUpIntents.set(id, { userId: 'hero', amount: 10 });
+    return { e, id };
+  }
+  it('retains an unfunded intent without a write during maintenance', async () => {
+    const { e } = queued();
+    setMaintenanceFrozen(true);
+    const rpc = vi.spyOn(supabase, 'rpc');
+    await e.applyDiamondTopUpIntents(e.seatedPlayers);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(e.diamondTopUpIntents.size).toBe(1);
+    expect(e.hub.sendToUser).not.toHaveBeenCalled();
+  });
+  it('emits one private completion only after the original command commits', async () => {
+    const { e, id } = queued();
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: { stack: 50 }, error: null } as any);
+    await e.applyDiamondTopUpIntents(e.seatedPlayers);
+    expect(e.seatedPlayers[0].stack).toBe(50);
+    expect(e.hub.sendToUser).toHaveBeenCalledWith(
+      e.tableId,
+      'hero',
+      expect.objectContaining({
+        kind: 'diamond_top_up_completed',
+        request_id: id,
+        amount: 10,
+        status: 'applied',
+      })
+    );
+    await e.applyDiamondTopUpIntents(e.seatedPlayers);
+    expect(e.hub.sendToUser).toHaveBeenCalledTimes(1);
+  });
+  it('recovers the original committed intent after thrown acknowledgements are lost', async () => {
+    const { e, id } = queued();
+    e.readDiamondAddonReceipt
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ amount: 10, appliedToSeat: true, stack: 50, pending: 0, queued: false });
+    const rpc = vi.spyOn(supabase, 'rpc').mockRejectedValue(new Error('network failed'));
+    await e.applyDiamondTopUpIntents(e.seatedPlayers);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    for (const args of rpc.mock.calls)
+      expect(args[1]).toMatchObject({ p_request_id: id, p_expected_stack: 40, p_amount: 10 });
+    expect(e.seatedPlayers[0].stack).toBe(50);
+    expect(e.hub.sendToUser).toHaveBeenCalledTimes(1);
+    expect(e.killForRestart).not.toHaveBeenCalled();
+  });
+  it('does not manufacture a landing from a malformed success response', async () => {
+    const { e } = queued();
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error: null } as any);
+    await e.applyDiamondTopUpIntents(e.seatedPlayers);
+    expect(e.seatedPlayers[0].stack).toBe(40);
+    expect(e.hub.sendToUser).not.toHaveBeenCalled();
+    expect(e.killForRestart).toHaveBeenCalledWith('diamond_intent_outcome_unknown');
   });
 });

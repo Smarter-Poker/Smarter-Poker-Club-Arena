@@ -39,6 +39,7 @@
  * here, add it to the `css-beats-e2e` command too or it cannot fail anything.
  */
 
+import { certifyMobileLiveTableLayout } from './support/mobileLiveTableLayout';
 import { test, expect } from '@playwright/test';
 import { chromium } from 'playwright';
 import { resolve, dirname } from 'node:path';
@@ -1284,6 +1285,11 @@ for (const width of [320, 375, 393, 430, 480])
           }));
           return { violations, tools, canvas: { width: canvas.width, height: canvas.height } };
         });
+        if (width === 320 && count === 9 && state === 'all-in')
+          await certifyMobileLiveTableLayout(page, testInfo, {
+            widths: [320],
+            seatChangeToggle: false,
+          });
         expect(
           result.violations,
           `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`

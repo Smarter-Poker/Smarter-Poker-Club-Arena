@@ -290,8 +290,12 @@ describe('the tournament row reviews every lobby-admitted status', () => {
       expect(row, 'the actual lobby did not render the synthetic admitted event').not.toBeNull();
       fireEvent.click(row!);
       await flush();
+      expect(screen.queryByTestId('tournament-destination')).toBeNull();
+      const panel = screen.getByRole('dialog');
+      expect(panel.querySelector('.glp__arena-card')).not.toBeNull();
+      fireEvent.click(within(panel).getByRole('button', { name: 'Details', exact: true }));
+      await flush();
       expect(screen.getByTestId('tournament-destination')).toBeTruthy();
-      expect(document.querySelector('.glp')).toBeNull();
       expect(h.register).not.toHaveBeenCalled();
       expect(
         h.rpc.mock.calls.some(([name]) => /register|buyin|buy_in|purchase/i.test(String(name)))

@@ -448,7 +448,7 @@ export function CashierModal({
               </strong>
             </React.Fragment>,
             <React.Fragment key="balance">
-              <span>Your Balance</span>
+              <span>Wallet Balance</span>
               <strong>
                 <PurchaseText>
                   {balanceKnown ? `${balanceValue} ${unit}` : balanceValue}

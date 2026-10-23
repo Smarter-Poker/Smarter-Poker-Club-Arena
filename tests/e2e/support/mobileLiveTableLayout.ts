@@ -25,8 +25,8 @@ export async function certifyMobileLiveTableLayout(
   const proofTag = `mobile-live-table-${capacity || 'unknown'}max`;
   const originalViewport = page.viewportSize();
   try {
-    for (const width of options.widths || [375, 393, 430]) {
-      await page.setViewportSize({ width, height: 852 });
+    for (const width of options.widths || [320, 375, 393, 430]) {
+      await page.setViewportSize({ width, height: width === 320 ? 568 : 852 });
       // Commit the resize and its observer-driven layout before measuring.
       await page.evaluate(
         () =>
@@ -70,6 +70,54 @@ export async function certifyMobileLiveTableLayout(
             for (const node of protectedNodes)
               if (intersects(rect, box(node))) violations.push(`Card Covers ${node.className}`);
           }
+          const markers = Array.from(table.querySelectorAll('.seat__allin-puck')).filter(visible);
+          if (table.querySelector('.seat__action--all_in'))
+            violations.push('ALL IN Label Is Above A Player Head');
+          const avatars = Array.from(table.querySelectorAll('.seat__avatar-img')).filter(visible);
+          const centre = (element: Element) => {
+            const r = box(element);
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          };
+          for (const marker of markers) {
+            const owner = marker.closest('.seat-wrapper');
+            const point = centre(marker);
+            const nearest = [...avatars].sort((a, b) => {
+              const x = centre(a),
+                y = centre(b);
+              return (
+                Math.hypot(point.x - x.x, point.y - x.y) - Math.hypot(point.x - y.x, point.y - y.y)
+              );
+            })[0];
+            if (!owner || nearest?.closest('.seat-wrapper') !== owner)
+              violations.push('ALL IN Marker Reads As Another Player');
+            const canvas = table.querySelector('.table-scaler');
+            const felt = table.querySelector('.table-surface');
+            const art = table.querySelector('.table-art');
+            if (!canvas || !felt || !art) {
+              violations.push('ALL IN Marker Has No Painted Felt');
+              continue;
+            }
+            const c = box(canvas),
+              f = box(felt),
+              r = box(marker);
+            const inverse = new DOMMatrixReadOnly(getComputedStyle(art).transform).inverse();
+            const radius = f.width / 2;
+            const x0 = f.left - c.left + radius;
+            const upper = f.top - c.top + radius;
+            const lower = f.bottom - c.top - radius;
+            for (const [x, y] of [
+              [r.left, r.top],
+              [r.right, r.top],
+              [r.right, r.bottom],
+              [r.left, r.bottom],
+            ]) {
+              const raw = new DOMPoint(x - c.left, y - c.top).matrixTransform(inverse);
+              const px = raw.x / raw.w,
+                py = raw.y / raw.w;
+              if (Math.hypot(px - x0, py - Math.min(Math.max(py, upper), lower)) > radius - 0.5)
+                violations.push('ALL IN Marker Is Outside Painted Felt');
+            }
+          }
           const board = table.querySelector('.community-area');
           if (board && visible(board)) {
             for (const node of table.querySelectorAll(
@@ -89,6 +137,8 @@ export async function certifyMobileLiveTableLayout(
             width: innerWidth,
             plateWidths: plates.map((plate) => box(plate).width),
             revealedCards: cards.length,
+            allInMarkers: markers.length,
+            height: innerHeight,
             topGap,
             boards: table.querySelectorAll('.community-cards__card').length,
           };

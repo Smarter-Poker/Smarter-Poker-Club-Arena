@@ -99,6 +99,12 @@
   line-height: 1;
   cursor: pointer;
 }
+/* Layered cards have absolute children. Preserve their native aspect height
+   while the selected game's details overflow this flex-column scroll body. */
+.glp .glp__arena-card {
+  flex: 0 0 auto;
+}
+
 .glp__scroll {
   flex: 1;
   overflow-y: auto;

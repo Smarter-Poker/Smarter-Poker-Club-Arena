@@ -488,7 +488,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
+import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { NATIVE_PAUSE_EVENT, NATIVE_RESUME_EVENT, isNativeAppActive } from '../lib/nativeResume';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import { useTableArt } from '../hooks/useTableArt';
@@ -22443,19 +22443,6 @@ function LiveTablePage({
   })();
 
   /**
-   * The Table tab's inline switches (2026-08-30). Derived from the SAME meta
-   * list that drives the full settings panel, filtered by its `quick` flag —
-   * so adding or removing one is a single edit next to the setting itself,
-   * and this can never drift into a second hand-maintained list of keys.
-   */
-  const heroHubQuickSettings = TABLE_SETTINGS_META.filter((m) => m.quick).map((m) => ({
-    key: m.key as string,
-    label: m.label,
-    description: m.description,
-    value: !!v8Settings[m.key as keyof typeof v8Settings],
-  }));
-
-  /**
    * Dan 2026-09-05: "IT NEEDS A DISABLE OR HIDE OPTION IN THE TABLE SETTINGS
    * FOR USERS THAT DON'T WANT IT POPPING UP." `rabbit_hunt_button` defaults to
    * ON, so nobody loses an offer they had yesterday, and turning it off hides
@@ -29374,7 +29361,6 @@ function LiveTablePage({
           onOpenProfileView={() => setShowProfileModal(true)}
           onOpenAvatarPicker={() => avatarService.openAvatarSelector()}
           onOpenIdentity={() => setShowIdentityModal(true)}
-          onOpenTableSettings={() => setShowSettings(true)}
           /* 2026-08-29: the hub knows who it belongs to, shows the figures
              inline instead of one tap away, and hands the felt back the
              moment the turn arrives (a menu must never time out a hand). */
@@ -29382,14 +29368,6 @@ function LiveTablePage({
           heroAvatarUrl={heroAvatarUrl || undefined}
           stats={heroHubStats}
           isHeroTurn={isHeroTurnContext}
-          /* 2026-08-30: the quick toggles come from TABLE_SETTINGS_META's
-             `quick` flag — one list, beside the settings' single owner — and
-             write through the same toggleSetting the full panel uses. The hub
-             adds a surface, never a second owner. */
-          quickSettings={heroHubQuickSettings}
-          onToggleQuickSetting={(key) => {
-            void toggleV8Setting(key as keyof typeof v8Settings);
-          }}
         />
       )}
       {/* AUDIT 2026-08-25 — A MENU ITEM THAT DID NOTHING.

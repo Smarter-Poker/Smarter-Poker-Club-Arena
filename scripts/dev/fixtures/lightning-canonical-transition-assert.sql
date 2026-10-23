@@ -29,11 +29,15 @@ BEGIN
  PERFORM fn_cash_apply_ruleset(g);
  IF (SELECT auto_start_players FROM tables WHERE id=t)<>6 THEN RAISE EXCEPTION 'projection did not restore anchor minimum'; END IF;
  UPDATE cash_games SET enabled=false WHERE id=g;
- IF fn_cash_lightning_always_on(g) THEN RAISE EXCEPTION 'disabled canonical policy still always_on'; END IF;
+ UPDATE cash_games SET cluster_mode='must_move' WHERE id=g;
+ result:=fn_cash_cluster_lightning_drive(g);
+ IF result->>'ok'<>'true' OR result->>'action'<>'hold' THEN RAISE EXCEPTION 'disabled canonical policy still always_on: %',result; END IF;
  UPDATE cash_games SET enabled=true,template_name='classic' WHERE id=g;
- IF fn_cash_lightning_always_on(g) THEN RAISE EXCEPTION 'Classic incorrectly always_on'; END IF;
+ result:=fn_cash_cluster_lightning_drive(g);
+ IF result->>'ok'<>'true' OR result->>'action'<>'hold' THEN RAISE EXCEPTION 'Classic incorrectly always_on: %',result; END IF;
  UPDATE cash_games SET template_name='madness' WHERE id=g;
  INSERT INTO lightning_cluster_drain(cluster_id,completed_at) VALUES(g,NULL);
- IF fn_cash_lightning_always_on(g) THEN RAISE EXCEPTION 'explicit drain overridden by always_on'; END IF;
+ result:=fn_cash_cluster_lightning_drive(g);
+ IF result->>'ok'<>'true' OR result->>'action'<>'hold' THEN RAISE EXCEPTION 'explicit drain overridden by always_on: %',result; END IF;
 END $transition$;
 

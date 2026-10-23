@@ -56,6 +56,7 @@ import { isEightOrBetterVariant } from '../../utils/handEvaluator';
 import { getRakeConfig } from '../../config/RakeConfig';
 import { formatCurrency } from '../../lib/utils';
 import ArenaGameCard from '../lobby/game-cards/ArenaGameCard';
+import { rulesLineFor } from './CashGameCard';
 import {
   CASH_TEMPLATES,
   CASH_VARIANTS,
@@ -712,6 +713,15 @@ export default function CashGameCreateFlow({
                 primaryDisabled: true,
               }}
             />
+            <p className="cash-create__note">
+              {rulesLineFor({
+                ...snapshot,
+                seats: handedness ?? snapshot.seats,
+                min_buyin_bb: overrides.min_buyin_bb,
+                max_buyin_bb: overrides.max_buyin_bb,
+                kill: killChoice,
+              })}
+            </p>
           </div>
         </section>
       )}

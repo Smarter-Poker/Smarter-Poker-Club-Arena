@@ -15,31 +15,30 @@ BEGIN
  IF (SELECT stack FROM table_seats WHERE occupancy_id=occ)<>57.35 THEN RAISE EXCEPTION 'OFF transition changed custody'; END IF;
  PERFORM set_config('fixture.engine','false',true);
  BEGIN
-  PERFORM fn_cash_retire_lightning_occupancies(g,ARRAY[occ]);
+  PERFORM pg_temp.retire_lightning_occupancies(g,ARRAY[occ]);
   RAISE EXCEPTION 'nonengine retirement accepted';
  EXCEPTION WHEN insufficient_privilege THEN NULL;
  END;
  PERFORM set_config('fixture.engine','true',true);
- result:=fn_cash_retire_lightning_occupancies(g,ARRAY[occ]);
+ result:=pg_temp.retire_lightning_occupancies(g,ARRAY[occ]);
  IF result->>'reason'<>'halt_not_observed' THEN RAISE EXCEPTION 'retirement bypassed observed halt: %',result; END IF;
  UPDATE tables SET dealing_halt_observed_at=clock_timestamp() WHERE id=t;
  INSERT INTO hand_state_snapshots(table_id,is_complete,updated_at) VALUES(t,false,now());
- result:=fn_cash_retire_lightning_occupancies(g,ARRAY[occ]);
+ result:=pg_temp.retire_lightning_occupancies(g,ARRAY[occ]);
  IF result->>'reason'<>'settlement_in_flight' THEN RAISE EXCEPTION 'retirement bypassed active hand: %',result; END IF;
  UPDATE hand_state_snapshots SET is_complete=true WHERE table_id=t;
  INSERT INTO lightning_reservation(cluster_id,state) VALUES(g,'committed');
- result:=fn_cash_retire_lightning_occupancies(g,ARRAY[occ]);
+ result:=pg_temp.retire_lightning_occupancies(g,ARRAY[occ]);
  IF result->>'reason'<>'settlement_in_flight' THEN RAISE EXCEPTION 'retirement bypassed reservation: %',result; END IF;
  UPDATE lightning_reservation SET state='released' WHERE cluster_id=g;
  IF (SELECT balance FROM fixture_wallet WHERE user_id=u)<>1000 OR EXISTS(SELECT 1 FROM fixture_credits) THEN RAISE EXCEPTION 'waiting retirement moved funds'; END IF;
- result:=fn_cash_retire_lightning_occupancies(g,ARRAY[occ,occ]);
+ result:=pg_temp.retire_lightning_occupancies(g,ARRAY[occ,occ]);
  IF result->>'departed'<>'1' OR result->>'credited_this_call'<>'57.35' OR result->>'remaining_seats'<>'0' THEN RAISE EXCEPTION 'normal retirement wrong: %',result; END IF;
  IF (SELECT balance FROM fixture_wallet WHERE user_id=u)<>1057.35 OR (SELECT count(*) FROM fixture_credits)<>1 THEN RAISE EXCEPTION 'normal original credit wrong'; END IF;
  IF (SELECT key FROM fixture_credits)<>'cashout:occupancy:'||occ::text THEN RAISE EXCEPTION 'original occupancy key lost'; END IF;
  IF (SELECT count(*) FROM fixture_session_closes WHERE user_id=u AND stack=57.35 AND reason='system')<>1 THEN RAISE EXCEPTION 'original session close lost'; END IF;
- result:=fn_cash_retire_lightning_occupancies(g,ARRAY[occ]);
+ result:=pg_temp.retire_lightning_occupancies(g,ARRAY[occ]);
  IF result->>'replayed'<>'1' OR result->>'credited_this_call'<>'0' OR (SELECT balance FROM fixture_wallet WHERE user_id=u)<>1057.35 THEN RAISE EXCEPTION 'retirement replay paid twice: %',result; END IF;
- IF has_function_privilege('authenticated','fn_cash_retire_lightning_occupancies(uuid,uuid[])','execute')
-    OR has_function_privilege('anon','fn_cash_retire_lightning_occupancies(uuid,uuid[])','execute') THEN RAISE EXCEPTION 'retirement ACL exposed'; END IF;
+ IF to_regprocedure('public.fn_cash_retire_lightning_occupancies(uuid,uuid[])') IS NOT NULL THEN RAISE EXCEPTION 'retirement installed a public API'; END IF;
 END $retirement$;
 

@@ -8,40 +8,13 @@
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';
-CREATE OR REPLACE FUNCTION public.fn_cash_canonical_lightning_game(p_game_id uuid)
-RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path TO public,pg_temp AS $resolve$
- SELECT coalesce((
-  SELECT target.id FROM public.cash_games source
-  JOIN public.cash_games target
-   ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
-   AND target.club_id=source.club_id AND target.variant=source.variant
-   AND target.sb=source.sb AND target.bb=source.bb
-   AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
-  WHERE source.id=p_game_id AND source.template_name IN ('action','madness')
- ),p_game_id);
-$resolve$;
-REVOKE ALL ON FUNCTION public.fn_cash_canonical_lightning_game(uuid) FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.fn_cash_canonical_lightning_game(uuid) TO authenticated,service_role;
-
--- This is the format's population policy, not an authorization bypass.
--- All original freeze, hand-boundary, seat/session and conservation checks
--- remain inside the original begin/commit owners below.
-CREATE OR REPLACE FUNCTION public.fn_cash_lightning_always_on(p_game_id uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path TO public,pg_temp AS $policy$
- SELECT coalesce((SELECT g.enabled AND g.closed_at IS NULL AND g.must_move
-   AND g.lightning_enabled AND g.handedness=6
-   AND g.template_name IN ('action','madness')
-   AND g.ruleset_snapshot#>'{lightning,always_on}'='true'::jsonb
-   AND NOT EXISTS(SELECT 1 FROM public.lightning_cluster_drain d
-     WHERE d.cluster_id=g.id AND d.completed_at IS NULL)
-  FROM public.cash_games g WHERE g.id=p_game_id),false);
-$policy$;
-REVOKE ALL ON FUNCTION public.fn_cash_lightning_always_on(uuid) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_cash_lightning_always_on(uuid) TO service_role;
-
-DO $transition$ DECLARE r record; s text; n text; BEGIN
+DO $transition$ DECLARE r record; s text; n text; policy_sql text:=$always$EXISTS(SELECT 1 FROM public.cash_games policy
+ WHERE policy.id=g.id AND policy.enabled AND policy.closed_at IS NULL
+ AND policy.must_move AND policy.lightning_enabled AND policy.handedness=6
+ AND policy.template_name IN ('action','madness')
+ AND policy.ruleset_snapshot#>'{lightning,always_on}'='true'::jsonb
+ AND NOT EXISTS(SELECT 1 FROM public.lightning_cluster_drain d
+   WHERE d.cluster_id=policy.id AND d.completed_at IS NULL))$always$; BEGIN
  FOR r IN SELECT * FROM (VALUES
   ('public.fn_cash_cluster_begin_pending_on(uuid,uuid)','a6af3d59f2b6e46a06cca79a12fe24fc'),
   ('public.fn_cash_cluster_commit_lightning(uuid,uuid)','894ef4788a1f2fdcd9d05bf273a802e7')
@@ -49,19 +22,21 @@ DO $transition$ DECLARE r record; s text; n text; BEGIN
   s:=pg_get_functiondef(r.sig::regprocedure);
   IF md5(s)<>r.want THEN RAISE EXCEPTION 'Lightning conversion source changed: %',r.sig; END IF;
   n:=replace(s,'IF NOT coalesce((v_state -> ''verdict'' ->> ''would_turn_on'')::boolean, false) THEN',
-   'IF NOT public.fn_cash_lightning_always_on(g.id) AND NOT coalesce((v_state -> ''verdict'' ->> ''would_turn_on'')::boolean, false) THEN');
+   'IF NOT __LIGHTNING_ALWAYS_ON__ AND NOT coalesce((v_state -> ''verdict'' ->> ''would_turn_on'')::boolean, false) THEN');
   IF n=s THEN RAISE EXCEPTION 'Lightning conversion population anchor changed: %',r.sig; END IF;
+  n:=replace(n,'__LIGHTNING_ALWAYS_ON__',policy_sql);
   EXECUTE n;
  END LOOP;
  s:=pg_get_functiondef('public.fn_cash_cluster_lightning_drive(uuid)'::regprocedure);
  IF md5(s)<>'488f0de79cd381b1afd4a9f93dbc237b' THEN RAISE EXCEPTION 'Lightning drive source changed'; END IF;
  n:=replace(s,'v_on_ok  := coalesce((v_state -> ''verdict'' ->> ''would_turn_on'')::boolean, false);',
-  'v_on_ok := public.fn_cash_lightning_always_on(g.id) OR coalesce((v_state -> ''verdict'' ->> ''would_turn_on'')::boolean, false);');
+  'v_on_ok := __LIGHTNING_ALWAYS_ON__ OR coalesce((v_state -> ''verdict'' ->> ''would_turn_on'')::boolean, false);');
  n:=replace(n,'v_off_ok := coalesce((v_state -> ''verdict'' ->> ''would_turn_off'')::boolean, false);',
-  'v_off_ok := NOT public.fn_cash_lightning_always_on(g.id) AND coalesce((v_state -> ''verdict'' ->> ''would_turn_off'')::boolean, false);');
+  'v_off_ok := NOT __LIGHTNING_ALWAYS_ON__ AND coalesce((v_state -> ''verdict'' ->> ''would_turn_off'')::boolean, false);');
  n:=replace(n,'ELSIF v_live_ok AND v_live > v_off THEN',
-  'ELSIF v_live_ok AND (public.fn_cash_lightning_always_on(g.id) OR v_live > v_off) THEN');
- IF n=s OR n NOT LIKE '%NOT public.fn_cash_lightning_always_on(g.id)%' THEN RAISE EXCEPTION 'Lightning drive population anchors changed'; END IF;
+  'ELSIF v_live_ok AND (__LIGHTNING_ALWAYS_ON__ OR v_live > v_off) THEN');
+ IF n=s OR n NOT LIKE '%NOT __LIGHTNING_ALWAYS_ON__%' THEN RAISE EXCEPTION 'Lightning drive population anchors changed'; END IF;
+ n:=replace(n,'__LIGHTNING_ALWAYS_ON__',policy_sql);
  EXECUTE n;
 END $transition$;
 
@@ -76,12 +51,24 @@ BEGIN
  -- waitlist and seat-offer transaction executes against the canonical game.
  n:=replace(s,'  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR NO KEY UPDATE;',
   $join$
-  IF public.fn_cash_canonical_lightning_game(p_game_id) IS DISTINCT FROM p_game_id
+  IF coalesce((SELECT target.id FROM public.cash_games source
+ JOIN public.cash_games target
+  ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
+  AND target.club_id=source.club_id AND target.variant=source.variant
+  AND target.sb=source.sb AND target.bb=source.bb
+  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
+ WHERE source.id=p_game_id AND source.template_name IN ('action','madness')),p_game_id) IS DISTINCT FROM p_game_id
      AND public.fn_cash_game_barred_seconds(p_game_id,v_uid) IS NOT NULL THEN
     RAISE EXCEPTION 'GAME_BARRED:%',public.fn_cash_game_barred_seconds(p_game_id,v_uid)
       USING ERRCODE='check_violation';
   END IF;
-  p_game_id := public.fn_cash_canonical_lightning_game(p_game_id);
+  p_game_id := coalesce((SELECT target.id FROM public.cash_games source
+ JOIN public.cash_games target
+  ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
+  AND target.club_id=source.club_id AND target.variant=source.variant
+  AND target.sb=source.sb AND target.bb=source.bb
+  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
+ WHERE source.id=p_game_id AND source.template_name IN ('action','madness')),p_game_id);
   SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR NO KEY UPDATE;$join$);
  IF n=s THEN RAISE EXCEPTION 'Cash join canonical anchor changed'; END IF;
  EXECUTE n;
@@ -153,7 +140,13 @@ DO $physical$ DECLARE s text; n text; BEGIN
   -- Replaced sources park through this original projection owner.
   -- Preserve foreign holds; original OFF conversion already keeps all
   -- holds when disabled, so current settlement can finish safely.
-  IF NOT g.enabled AND public.fn_cash_canonical_lightning_game(g.id)<>g.id THEN
+  IF NOT g.enabled AND coalesce((SELECT target.id FROM public.cash_games source
+ JOIN public.cash_games target
+  ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
+  AND target.club_id=source.club_id AND target.variant=source.variant
+  AND target.sb=source.sb AND target.bb=source.bb
+  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
+ WHERE source.id=g.id AND source.template_name IN ('action','madness')),g.id)<>g.id THEN
     UPDATE public.tables t SET dealing_halted_at=clock_timestamp(),
       dealing_halted_reason='lightning_retired'
      WHERE t.cluster_id=g.id AND coalesce(t.lifecycle,'')<>'closed'
@@ -218,52 +211,6 @@ END $wake$;
 -- opens pending_off on game_disabled and settles before committing must_move.
 -- No new timer, watcher, wallet write, cashout or recurring repair.
 
--- Explicit finite retirement after the original drain, never a background
--- repair. Occupancy IDs are operational inputs; every player uses one path.
-CREATE OR REPLACE FUNCTION public.fn_cash_retire_lightning_occupancies(p_source_game_id uuid,p_occupancy_ids uuid[])
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public,pg_temp
-SET lock_timeout TO '1s' SET statement_timeout TO '8s' AS $retire$
-DECLARE g record; requested uuid[]; actor uuid; seat record; receipt jsonb;
- outcomes jsonb:='[]'::jsonb; credited numeric:=0; departed int:=0; replayed int:=0;
-BEGIN
- IF NOT coalesce(public.fn_caller_is_engine(),false) THEN RAISE EXCEPTION 'Engine authority required' USING ERRCODE='42501'; END IF;
- IF p_source_game_id IS NULL OR p_occupancy_ids IS NULL OR cardinality(p_occupancy_ids) NOT BETWEEN 1 AND 100
-    OR array_position(p_occupancy_ids,NULL) IS NOT NULL THEN RAISE EXCEPTION 'RETIREMENT_INVALID_REQUEST' USING ERRCODE='22023'; END IF;
- SELECT array_agg(DISTINCT x ORDER BY x) INTO requested FROM unnest(p_occupancy_ids) x;
- IF public.fn_platform_frozen() OR public.fn_entry_purchases_frozen() THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','platform_frozen'); END IF;
- -- Original cashout/buyin/move lock order: user before game and seat.
- FOR actor IN SELECT DISTINCT ts.user_id FROM public.table_seats ts JOIN public.tables t ON t.id=ts.table_id
-  WHERE t.cluster_id=p_source_game_id AND ts.occupancy_id=ANY(requested) AND ts.user_id IS NOT NULL ORDER BY ts.user_id LOOP
-  IF NOT pg_try_advisory_xact_lock(hashtextextended('table_cap:'||actor::text,0)) THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','player_transaction_busy'); END IF;
- END LOOP;
- SELECT * INTO g FROM public.cash_games WHERE id=p_source_game_id FOR UPDATE;
- IF NOT FOUND OR g.enabled OR g.cluster_mode<>'must_move' OR public.fn_cash_canonical_lightning_game(g.id)=g.id THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','retired_source_not_drained'); END IF;
- IF EXISTS(SELECT 1 FROM unnest(requested) q(occ) WHERE NOT EXISTS(SELECT 1 FROM public.table_seats ts JOIN public.tables t ON t.id=ts.table_id WHERE ts.occupancy_id=q.occ AND t.cluster_id=g.id)) THEN RAISE EXCEPTION 'RETIREMENT_OCCUPANCY_SCOPE_MISMATCH' USING ERRCODE='23514'; END IF;
- IF EXISTS(SELECT 1 FROM public.tables t WHERE t.cluster_id=g.id AND coalesce(t.lifecycle,'')<>'closed' AND NOT coalesce(t.is_deleted,false)
-   AND (t.dealing_halted_at IS NULL OR t.dealing_halt_observed_at IS NULL OR t.dealing_halt_observed_at<t.dealing_halted_at)) THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','halt_not_observed'); END IF;
- IF EXISTS(SELECT 1 FROM public.hand_state_snapshots h JOIN public.tables t ON t.id=h.table_id WHERE t.cluster_id=g.id AND NOT h.is_complete AND coalesce(t.lifecycle,'')<>'closed')
- OR EXISTS(SELECT 1 FROM public.lightning_instance i WHERE i.cluster_id=g.id AND i.state IN ('forming','reserved','dealing','settling'))
- OR EXISTS(SELECT 1 FROM public.lightning_pool_session ps WHERE ps.cluster_id=g.id AND ps.exited_at IS NULL)
- OR EXISTS(SELECT 1 FROM public.lightning_reservation r WHERE r.cluster_id=g.id AND r.state IN ('pending','committed')) THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','settlement_in_flight'); END IF;
- FOR seat IN SELECT ts.* FROM public.table_seats ts JOIN public.tables t ON t.id=ts.table_id
-  WHERE t.cluster_id=g.id AND ts.occupancy_id=ANY(requested) ORDER BY ts.user_id,ts.id FOR UPDATE OF ts LOOP
-  IF seat.left_at IS NOT NULL THEN replayed:=replayed+1;
-  ELSE
-   -- Original service exit declares table_cashout and performs the original
-   -- per-occupancy idempotent credit, session close and authoritative receipt.
-   PERFORM public.player_leave_table(seat.table_id,seat.user_id);
-   departed:=departed+1;
-  END IF;
-  SELECT cr.receipt INTO receipt FROM public.seat_cashout_receipts cr WHERE cr.occupancy_id=seat.occupancy_id;
-  IF receipt IS NULL OR EXISTS(SELECT 1 FROM public.table_seats ts WHERE ts.occupancy_id=seat.occupancy_id AND ts.left_at IS NULL) THEN RAISE EXCEPTION 'RETIREMENT_CASHOUT_RECEIPT_MISSING' USING ERRCODE='23514'; END IF;
-  IF seat.left_at IS NULL THEN credited:=credited+coalesce((receipt->>'stack')::numeric,0); END IF;
-  outcomes:=outcomes||jsonb_build_array(receipt);
- END LOOP;
- RETURN jsonb_build_object('ok',true,'pending',false,'source_game_id',g.id,'canonical_game_id',public.fn_cash_canonical_lightning_game(g.id),
-  'departed',departed,'replayed',replayed,'credited_this_call',credited,'receipts',outcomes,
-  'remaining_seats',(SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id=ts.table_id WHERE t.cluster_id=g.id AND ts.left_at IS NULL));
-END $retire$;
-REVOKE ALL ON FUNCTION public.fn_cash_retire_lightning_occupancies(uuid,uuid[]) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_cash_retire_lightning_occupancies(uuid,uuid[]) TO service_role;
-
+-- Finite retirement is an explicit pg_temp operation in
+-- scripts/dev/lightning-retire-occupancies.sql, using the existing cashout API.
 COMMIT;

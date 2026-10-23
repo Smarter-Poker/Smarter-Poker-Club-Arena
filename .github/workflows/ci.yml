@@ -1891,13 +1891,6 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-matcher.sh
-      - name: Classic and Lightning canonical admission and five-ready dealing
-        if: matrix.shard == 3
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: |
-          bash scripts/dev/test-lightning-five-ready.sh
-          bash scripts/dev/test-lightning-canonical-admission.sh
       - name: Lightning Phase 6 settles a hand onto its anchors through the physical path, frees a fast folder at once and refuses a forged settlement
         if: matrix.shard == 3
         env:

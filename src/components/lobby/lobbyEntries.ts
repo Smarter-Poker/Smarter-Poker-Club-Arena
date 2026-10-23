@@ -63,7 +63,7 @@ import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { tournamentRowUnitCents, type TournamentArenaEmbed } from '../tournament/details/types';
 import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
-import { CASH_TEMPLATES } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -1865,7 +1865,7 @@ const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\
 export function cashTemplateLabel(template: string | null | undefined): string | null {
   if (!template) return null;
   const id = String(template).toLowerCase();
-  return CASH_TEMPLATES.find((t) => t.id === (id === 'action' ? 'madness' : id))?.label ?? null;
+  return CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(id))?.label ?? null;
 }
 
 /**

@@ -26,6 +26,6 @@ psql=("$pgbin/psql" -X -q -h "$scratch" -p 55621 -d postgres -v ON_ERROR_STOP=1)
 "${psql[@]}" -f "$root/supabase/migrations/20261023230807_lightning_aliases_retire_duplicate_pools_without_moving_custody.sql"
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-admission-assert.sql"
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-transition-assert.sql"
-"${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-retirement-assert.sql"
+"${psql[@]}" -f "$root/scripts/dev/lightning-retire-occupancies.sql" -f "$root/scripts/dev/fixtures/lightning-canonical-retirement-assert.sql"
 echo 'PASS: exact-source canonical admission; actual zero-population conversion; active-hand and halt-observation barriers; committed replay; always-on population hold; physical six-player guard; explicit drain preserved; source VPIP/private authorization; unchanged occupied source custody'
 

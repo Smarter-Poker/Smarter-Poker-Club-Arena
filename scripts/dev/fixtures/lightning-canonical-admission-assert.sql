@@ -4,11 +4,12 @@ DECLARE a uuid:='10000000-0000-4000-8000-000000000001'; m uuid:='20000000-0000-4
 BEGIN
  IF (SELECT enabled FROM cash_games WHERE id=a) THEN RAISE EXCEPTION 'duplicate Action still enabled'; END IF;
  IF NOT (SELECT enabled FROM cash_games WHERE id=m) THEN RAISE EXCEPTION 'canonical disabled'; END IF;
- IF fn_cash_canonical_lightning_game(a)<>m OR fn_cash_canonical_lightning_game(m)<>m THEN RAISE EXCEPTION 'canonical lookup failed'; END IF;
+ IF to_regprocedure('public.fn_cash_canonical_lightning_game(uuid)') IS NOT NULL
+ OR to_regprocedure('public.fn_cash_lightning_always_on(uuid)') IS NOT NULL
+ OR to_regprocedure('public.fn_cash_retire_lightning_occupancies(uuid,uuid[])') IS NOT NULL THEN RAISE EXCEPTION 'unneeded public API introduced'; END IF;
  IF (SELECT count(*) FROM table_seats WHERE stack=57.35 AND left_at IS NULL AND table_id='50000000-0000-4000-8000-000000000001')<>1 THEN RAISE EXCEPTION 'existing custody changed'; END IF;
  IF (SELECT name FROM tables WHERE id='50000000-0000-4000-8000-000000000001') NOT LIKE '%Lightning Games' THEN RAISE EXCEPTION 'retiring table still named old format'; END IF;
  IF (SELECT auto_start_players FROM tables WHERE id='50000000-0000-4000-8000-000000000001')<>6 THEN RAISE EXCEPTION 'retiring source lost physical minimum'; END IF;
- IF has_function_privilege('anon','fn_cash_canonical_lightning_game(uuid)','execute') THEN RAISE EXCEPTION 'anonymous resolver exposed'; END IF;
  BEGIN
   PERFORM fn_cash_game_join(a);
   RAISE EXCEPTION 'anonymous join accepted';
@@ -56,7 +57,13 @@ BEGIN
  result:=fn_cash_game_create_impl_20260905(c,'classic','nlh',2,4,9,'{}');
  IF result->>'lightning_enabled'<>'false' OR result#>>'{snapshot,regular_ante}'<>'none' THEN RAISE EXCEPTION 'Classic changed'; END IF;
  UPDATE cash_games SET ruleset_snapshot=jsonb_set(ruleset_snapshot,'{canonical_lightning_game_id}',to_jsonb('30000000-0000-4000-8000-000000000001'::text)) WHERE id=a;
- IF fn_cash_canonical_lightning_game(a)<>a THEN RAISE EXCEPTION 'cross-stake alias accepted'; END IF;
+ INSERT INTO club_members(club_id,user_id,status) VALUES(c,'60000000-0000-4000-8000-000000000001','active');
+ BEGIN
+  PERFORM fn_cash_game_join(a);
+  RAISE EXCEPTION 'cross-stake alias accepted';
+ EXCEPTION WHEN check_violation THEN GET STACKED DIAGNOSTICS msg=MESSAGE_TEXT;
+  IF msg NOT LIKE 'GAME_CLOSED:%' THEN RAISE; END IF;
+ END;
  UPDATE cash_games SET ruleset_snapshot=jsonb_set(ruleset_snapshot,'{canonical_lightning_game_id}',to_jsonb(m::text)) WHERE id=a;
 END $test$;
 

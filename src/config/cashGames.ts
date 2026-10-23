@@ -192,7 +192,7 @@ export function overridesFromSnapshot(s: CashRulesetSnapshot): CashGameOverrides
 
 /** The template's name as a host reads it in a readout. */
 export function templateLabel(t: CashTemplate | string | null | undefined): string {
-  const hit = CASH_TEMPLATES.find((x) => x.id === (t === 'action' ? 'madness' : t));
+  const hit = CASH_TEMPLATES.find((x) => x.id === cashTemplateKey(String(t ?? '')));
   return hit ? hit.label : 'Classic';
 }
 

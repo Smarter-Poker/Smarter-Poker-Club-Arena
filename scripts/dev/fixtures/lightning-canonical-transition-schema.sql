@@ -186,4 +186,8 @@ CREATE FUNCTION fn_cash_cluster_lightning_state(uuid) RETURNS jsonb LANGUAGE sql
  SELECT '{"verdict":{"would_turn_on":false,"would_turn_off":true,"live_eligible":0},"thresholds":{"on":5,"off":4}}'::jsonb
 $$;
 CREATE FUNCTION fn_engine_lease_stale_seconds() RETURNS int LANGUAGE sql AS $$ SELECT 30 $$;
+-- The emergency-drain owner is outside the canonical population policy.
+-- Keep that boundary explicit; the exact OFF-commit body is exercised in
+-- retirement assertions, and this primitive moves no seat or money.
+CREATE FUNCTION fn_lightning_drain_advance(uuid,timestamptz DEFAULT NULL) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{"ok":true,"fixture":"drain_boundary_only"}'::jsonb $$;
 

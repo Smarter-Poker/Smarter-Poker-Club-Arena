@@ -165,85 +165,21 @@
     "raiser": "a6df5f2eef07aa3f606db79d93944590"
   },
   "files": {
-    "scripts/qualification/fixtures/cash-native-pgcron/pg_cron-heap-tables.patch": {
-      "bytes": 912,
-      "sha256": "47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c"
-    },
-    "scripts/qualification/cash-pot-failed-run-intake.sql": {
-      "bytes": 19643,
-      "sha256": "1d1651261bd34b5c9ce6e12e91139fcfb47f718d3791675fec36f6412418c7b8"
-    },
-    "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
-      "bytes": 6379,
-      "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
-    },
-    "supabase/components/cash-pot-check-evidence.rollback.sql": {
-      "bytes": 50461,
-      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca"
-    },
-    "scripts/qualification/cash-pot-check-evidence.md": {
-      "bytes": 16263,
-      "sha256": "56ed6bd6ce7f38fa60414da0e018dc4a176c0705e84e457495d5908855219988"
-    },
-    "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114286,
-      "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
-    },
-    "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
-      "bytes": 1677,
-      "sha256": "f3ffb2bc3a19c46d4b73ec9807dd468f4ce63a0957334328a4ace32b8334a64a"
+    ".github/workflows/ci.yml": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
-    "scripts/qualification/fixtures/cash-pot-check-evidence/original-40538.sql": {
-      "bytes": 2324,
-      "sha256": "cf691185d04b52be799a122d9c0ecfa1df76f10701c76a6f111e677350458142"
-    },
-    "supabase/components/cash-failed-run-intake.sql": {
-      "bytes": 31019,
-      "sha256": "6f5b33b06b6ff5dcfcfa3368970938b26c77cb965e5ea7ed711688066ed854fb"
-    },
-    "scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql": {
-      "bytes": 25281,
-      "sha256": "9c551cddfe93d80df1b28d91fa65dffc801f8f3deff38a61a01640d84f4d3d52"
-    },
     "scripts/ci/classify-ci-changes.mjs": {
       "bytes": 41349,
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
     },
-    "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 31582,
-      "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
-    },
-    "scripts/qualification/fixtures/cash-pot-failed-run-intake/reader-source.sql": {
-      "bytes": 11784,
-      "sha256": "0db1a08ceb7aef5b151cef28bdd02cc94947593364d9293c29821007f3c6b242"
-    },
-    "scripts/qualification/cash-pot-check-evidence.manifest.json": {
-      "bytes": 15491,
-      "sha256": "b4a5c6cdde99bbf9f0b33472bc9beff507ec4c5e0453b28e0508be6741fd1a08"
-    },
-    "scripts/qualification/cash-pot-check-connected.sql": {
-      "bytes": 18817,
-      "sha256": "9e270f4bccbacdcf4c650509937d87a7798bf925faf837ed51b47eb38594191a"
-    },
-    "scripts/qualification/cash-pot-check-evidence-concurrency.spec": {
-      "bytes": 7637,
-      "sha256": "0c465d42787dacb497578030a25e434de240546de18e4fb4b89ce805faf710cf"
-    },
-    "scripts/qualification/cash-pot-check-evidence.sql": {
-      "bytes": 29023,
-      "sha256": "16a42a635eb0e1376798727772520065234d96a5849d1deac384865ca4156a02"
-    },
-    "scripts/ci/test_cash_native_pgcron.py": {
-      "bytes": 3454,
-      "sha256": "032a0942d016fcd97f763e000da4666caa14f464920cb04ef0f243de4cb6d3c8"
-    },
-    "scripts/qualification/fixtures/cash-pot-failed-run-intake/writer.sql": {
-      "bytes": 957,
-      "sha256": "ce860cf1066ec51dcfaaccaef8cb03c07282c2cef2d766edfa3afc7757e362a8"
+    "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
+      "bytes": 6379,
+      "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
       "bytes": 12859,
@@ -253,25 +189,89 @@
       "bytes": 30584,
       "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
+    "scripts/ci/test-production-alert-core-postgres.py": {
+      "bytes": 31582,
+      "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
+    },
+    "scripts/ci/test_cash_native_pgcron.py": {
+      "bytes": 3454,
+      "sha256": "032a0942d016fcd97f763e000da4666caa14f464920cb04ef0f243de4cb6d3c8"
+    },
     "scripts/ci/test_production_alert_core_postgres.py": {
       "bytes": 7903,
       "sha256": "868cf2000502522cf1374bf4bd3763763e56172d2fb9f8672b885b0970d00589"
     },
-    ".github/workflows/ci.yml": {
-      "bytes": 231451,
-      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
+    "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
+      "bytes": 1677,
+      "sha256": "f3ffb2bc3a19c46d4b73ec9807dd468f4ce63a0957334328a4ace32b8334a64a"
     },
-    "supabase/components/cash-pot-check-evidence.sql": {
-      "bytes": 50456,
-      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
+    "scripts/operational-alerts/cash-pot-failed-run-intake.sql": {
+      "bytes": 11540,
+      "sha256": "a8526d6955533b95318f575c3486e475a6a0e926f63685b00741366ab047c750"
+    },
+    "scripts/qualification/cash-pot-check-connected.sql": {
+      "bytes": 18817,
+      "sha256": "9e270f4bccbacdcf4c650509937d87a7798bf925faf837ed51b47eb38594191a"
+    },
+    "scripts/qualification/cash-pot-check-evidence-concurrency.spec": {
+      "bytes": 7637,
+      "sha256": "0c465d42787dacb497578030a25e434de240546de18e4fb4b89ce805faf710cf"
+    },
+    "scripts/qualification/cash-pot-check-evidence.manifest.json": {
+      "bytes": 15491,
+      "sha256": "b4a5c6cdde99bbf9f0b33472bc9beff507ec4c5e0453b28e0508be6741fd1a08"
+    },
+    "scripts/qualification/cash-pot-check-evidence.md": {
+      "bytes": 16263,
+      "sha256": "56ed6bd6ce7f38fa60414da0e018dc4a176c0705e84e457495d5908855219988"
+    },
+    "scripts/qualification/cash-pot-check-evidence.sql": {
+      "bytes": 29023,
+      "sha256": "16a42a635eb0e1376798727772520065234d96a5849d1deac384865ca4156a02"
+    },
+    "scripts/qualification/cash-pot-failed-run-intake.sql": {
+      "bytes": 19643,
+      "sha256": "1d1651261bd34b5c9ce6e12e91139fcfb47f718d3791675fec36f6412418c7b8"
+    },
+    "scripts/qualification/fixtures/cash-native-pgcron/pg_cron-heap-tables.patch": {
+      "bytes": 912,
+      "sha256": "47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c"
+    },
+    "scripts/qualification/fixtures/cash-pot-check-evidence/original-40538.sql": {
+      "bytes": 2324,
+      "sha256": "cf691185d04b52be799a122d9c0ecfa1df76f10701c76a6f111e677350458142"
+    },
+    "scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql": {
+      "bytes": 25281,
+      "sha256": "9c551cddfe93d80df1b28d91fa65dffc801f8f3deff38a61a01640d84f4d3d52"
+    },
+    "scripts/qualification/fixtures/cash-pot-failed-run-intake/reader-source.sql": {
+      "bytes": 11784,
+      "sha256": "0db1a08ceb7aef5b151cef28bdd02cc94947593364d9293c29821007f3c6b242"
+    },
+    "scripts/qualification/fixtures/cash-pot-failed-run-intake/writer.sql": {
+      "bytes": 957,
+      "sha256": "ce860cf1066ec51dcfaaccaef8cb03c07282c2cef2d766edfa3afc7757e362a8"
     },
     "supabase/components/cash-failed-run-intake.rollback.sql": {
       "bytes": 31018,
       "sha256": "7782ab1c7d07a8884092ab98c936417b7301b86b6cd2328f6a8b40f1eb3b29ea"
     },
-    "scripts/operational-alerts/cash-pot-failed-run-intake.sql": {
-      "bytes": 11540,
-      "sha256": "a8526d6955533b95318f575c3486e475a6a0e926f63685b00741366ab047c750"
+    "supabase/components/cash-failed-run-intake.sql": {
+      "bytes": 31019,
+      "sha256": "6f5b33b06b6ff5dcfcfa3368970938b26c77cb965e5ea7ed711688066ed854fb"
+    },
+    "supabase/components/cash-pot-check-evidence.rollback.sql": {
+      "bytes": 50461,
+      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca"
+    },
+    "supabase/components/cash-pot-check-evidence.sql": {
+      "bytes": 50456,
+      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
+    },
+    "tests/unit/fixtureNativeCi.test.ts": {
+      "bytes": 114286,
+      "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
     }
   },
   "nativePgCron": {
@@ -3632,28 +3632,6 @@
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
     }
   },
-  "handReviewAwardLayoutCiInput20261023": {
-    "reason": "Add the real HandDetailModal award-row geometry regression to the existing required CSS Beat command. Refresh only current workflow input identity; preserve financial inputs, assertions, historical pins and qualification statuses. This is not a financial execution certificate.",
-    "previous": {
-      "bytes": 230712,
-      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
-    },
-    "current": {
-      "bytes": 230753,
-      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
-    }
-  },
-  "lightningFiveReadyCiInput20261023": {
-    "reason": "Add source-bound five/six-ready Lightning transition qualification to required accounting shard3. Only current workflow input identity changes; preserve financial inputs, assertions, historical pins and qualification statuses. This is not an execution certificate.",
-    "previous": {
-      "bytes": 230753,
-      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
-    },
-    "current": {
-      "bytes": 231056,
-      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
-    }
-  },
   "opponentMemoryPostgresGate20261023": {
     "reason": "Add one PostgreSQL 17 regression step for durable opponent memory to accounting shard 2. Existing suites, financial source pins, assertions, timeouts and required joins are unchanged. This updates workflow input identity only, not a financial qualification certificate.",
     "previous": {
@@ -3676,26 +3654,22 @@
       "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
     }
   },
+  "handReviewAwardLayoutCiInput20261023": {
+    "reason": "Add the real HandDetailModal award-row geometry regression to the existing required CSS Beat command. Refresh only current workflow input identity; preserve financial inputs, assertions, historical pins and qualification statuses. This is not a financial execution certificate.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 230753,
+      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
+    }
+  },
   "opponentMemoryAwardLayoutIntegration20261023": {
     "reason": "Merge both independent additive verification steps: durable opponent-memory PostgreSQL suite/typecheck and the existing hand-review award geometry suite. Record only the actual combined CI workflow input identity. Financial source/fixtures/assertions and historical evidence are preserved; fresh hosted checks remain required.",
     "current": {
       "bytes": 231148,
       "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
-    }
-  },
-  "lightningIntegratedCiInput20261023": {
-    "reason": "Preserve both protected-main opponent-memory qualification and canonical Lightning native qualification. Refresh current integrated workflow identity only; historical fingerprints, financial assertions and qualification statuses are unchanged.",
-    "previousLightning": {
-      "bytes": 231056,
-      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
-    },
-    "previousMain": {
-      "bytes": 231148,
-      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
-    },
-    "current": {
-      "bytes": 231451,
-      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
     }
   }
 }

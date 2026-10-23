@@ -1,41 +1,77 @@
 {
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
-    "supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql": {
-      "bytes": 523621,
-      "sha256": "900ab93898c39d4adc77b1377be5a0d5d7394190776c4c6d37b241c8c59fbf9d"
-    },
-    "scripts/qualification/weekly-initial-selector/after-global-selector.sql": {
-      "bytes": 5193,
-      "sha256": "fd7a16962fae6f19c94ba6e202996afd33246dd03948dc3aa989c8dffb867ae2"
-    },
-    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
-      "bytes": 13791,
-      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
-    },
-    "scripts/qualification/weekly-initial-selector/after-scope.sql": {
-      "bytes": 49925,
-      "sha256": "121aa0fe56ccc45d69ea1849d67726c437921cdab582146c112c7e434eaf4848"
-    },
-    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
-      "bytes": 23314,
-      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
+    ".github/workflows/ci.yml": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
       "sha256": "db2ebf5e85815431fb0296762de6f8aeaa7c01a36047e2dca389ec082fe39e70"
     },
+    "docs/laws.d/weekly-initial-selector-reads-cutoff-once.md": {
+      "bytes": 247,
+      "sha256": "58bb5ab0921cfce5e3fda311f23a310f2b6c2fd00a244d368ae31152c06559ab"
+    },
+    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
+      "bytes": 13791,
+      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
+    },
+    "scripts/qualification/original-flow-eligibility/after-matcher.sql": {
+      "bytes": 4695,
+      "sha256": "23500f930abec49800679c72d52e7895f58f7e23ad30e7af1b1bc6652d6b9244"
+    },
+    "scripts/qualification/original-flow-eligibility/current-source40.json": {
+      "bytes": 238578,
+      "sha256": "b380a519e6c17e5b4c1793974c56213c1a7932c6a0dfda2db7528dd43d6c4ea3"
+    },
+    "scripts/qualification/original-flow-eligibility/maintenance-type-source.sql": {
+      "bytes": 5127,
+      "sha256": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311"
+    },
     "scripts/qualification/weekly-initial-selector/README.md": {
       "bytes": 1731,
       "sha256": "50d6ef58f0ca35d60941bc8c0ab7c268d9bc1acbb6c5a4f5b8bbfc4d32ad931a"
+    },
+    "scripts/qualification/weekly-initial-selector/after-global-selector.sql": {
+      "bytes": 5193,
+      "sha256": "fd7a16962fae6f19c94ba6e202996afd33246dd03948dc3aa989c8dffb867ae2"
+    },
+    "scripts/qualification/weekly-initial-selector/after-scope.sql": {
+      "bytes": 49925,
+      "sha256": "121aa0fe56ccc45d69ea1849d67726c437921cdab582146c112c7e434eaf4848"
+    },
+    "scripts/qualification/weekly-initial-selector/authorities.json": {
+      "bytes": 4621,
+      "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
+    },
+    "scripts/qualification/weekly-initial-selector/before-global-selector.sql": {
+      "bytes": 4258,
+      "sha256": "fd278d2105c8e64606b98435fadf48fa376ca389ad461c8d090d15479acea048"
     },
     "scripts/qualification/weekly-initial-selector/before-scope.sql": {
       "bytes": 49054,
       "sha256": "5c558147ae14f82134348f9fa5edcfc56aa63ab20a3b8ef8298ddc6c50c6de18"
     },
+    "scripts/qualification/weekly-initial-selector/calendar-support.sql": {
+      "bytes": 676,
+      "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
+    },
     "scripts/qualification/weekly-initial-selector/run-native.py": {
       "bytes": 15351,
       "sha256": "ca86ae1fb80800934809d7726ff29124129facb7f82b40ba13c2f9a859e281b9"
+    },
+    "scripts/qualification/weekly-initial-selector/selector-fixture.sql": {
+      "bytes": 5040,
+      "sha256": "86db879763fe7c0b67548a94366c7954590fbb0921a7f2c5df80110c60f65b6b"
+    },
+    "supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql": {
+      "bytes": 523621,
+      "sha256": "900ab93898c39d4adc77b1377be5a0d5d7394190776c4c6d37b241c8c59fbf9d"
+    },
+    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
+      "bytes": 23314,
+      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
     },
     "supabase/migrations/20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql": {
       "bytes": 6255,
@@ -48,42 +84,6 @@
     "supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql": {
       "bytes": 56447,
       "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
-    },
-    "scripts/qualification/original-flow-eligibility/current-source40.json": {
-      "bytes": 238578,
-      "sha256": "b380a519e6c17e5b4c1793974c56213c1a7932c6a0dfda2db7528dd43d6c4ea3"
-    },
-    "scripts/qualification/weekly-initial-selector/authorities.json": {
-      "bytes": 4621,
-      "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
-    },
-    "scripts/qualification/weekly-initial-selector/before-global-selector.sql": {
-      "bytes": 4258,
-      "sha256": "fd278d2105c8e64606b98435fadf48fa376ca389ad461c8d090d15479acea048"
-    },
-    "scripts/qualification/original-flow-eligibility/after-matcher.sql": {
-      "bytes": 4695,
-      "sha256": "23500f930abec49800679c72d52e7895f58f7e23ad30e7af1b1bc6652d6b9244"
-    },
-    "scripts/qualification/weekly-initial-selector/selector-fixture.sql": {
-      "bytes": 5040,
-      "sha256": "86db879763fe7c0b67548a94366c7954590fbb0921a7f2c5df80110c60f65b6b"
-    },
-    "scripts/qualification/original-flow-eligibility/maintenance-type-source.sql": {
-      "bytes": 5127,
-      "sha256": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311"
-    },
-    ".github/workflows/ci.yml": {
-      "bytes": 231451,
-      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
-    },
-    "scripts/qualification/weekly-initial-selector/calendar-support.sql": {
-      "bytes": 676,
-      "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
-    },
-    "docs/laws.d/weekly-initial-selector-reads-cutoff-once.md": {
-      "bytes": 247,
-      "sha256": "58bb5ab0921cfce5e3fda311f23a310f2b6c2fd00a244d368ae31152c06559ab"
     }
   },
   "diamondOwnHistoryCiInput20261015": {
@@ -233,17 +233,6 @@
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
     }
   },
-  "lightningFiveReadyCiInput20261023": {
-    "reason": "Add source-bound five/six-ready Lightning transition qualification to required accounting shard3. Only current workflow input identity changes; preserve financial inputs, assertions, historical pins and qualification statuses. This is not an execution certificate.",
-    "previous": {
-      "bytes": 230753,
-      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
-    },
-    "current": {
-      "bytes": 231056,
-      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
-    }
-  },
   "opponentMemoryWorkflowInput20261023": {
     "reason": "Current workflow source identity for the added required PostgreSQL opponent-memory suite and typecheck. Financial sources, fixtures, assertions, deadlines and historical evidence remain unchanged; fresh hosted qualification is still required.",
     "previous": {
@@ -260,21 +249,6 @@
     "current": {
       "bytes": 231148,
       "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
-    }
-  },
-  "lightningIntegratedCiInput20261023": {
-    "reason": "Preserve both protected-main opponent-memory qualification and canonical Lightning native qualification. Refresh current integrated workflow identity only; historical fingerprints, financial assertions and qualification statuses are unchanged.",
-    "previousLightning": {
-      "bytes": 231056,
-      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
-    },
-    "previousMain": {
-      "bytes": 231148,
-      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
-    },
-    "current": {
-      "bytes": 231451,
-      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
     }
   }
 }

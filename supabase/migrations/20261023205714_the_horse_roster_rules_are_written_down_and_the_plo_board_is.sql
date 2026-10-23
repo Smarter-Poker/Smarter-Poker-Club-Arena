@@ -38,6 +38,11 @@
 BEGIN;
 set local lock_timeout = '5s';
 
+-- The four-argument refresh (20261023175910 on main) is retired in production
+-- already; drop it here too so a rebuild never ends with two overloads and an
+-- ambiguous fn_ca_horse_roster_refresh() call.
+drop function if exists public.fn_ca_horse_roster_refresh(integer, integer, integer, integer);
+
 create or replace function public.fn_ca_horse_roster_refresh(
   p_size integer default null::integer,
   p_min_hands integer default 5000,

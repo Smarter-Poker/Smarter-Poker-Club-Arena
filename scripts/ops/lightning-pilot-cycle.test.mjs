@@ -417,3 +417,31 @@ test('an armed Time Bank turn waits for the bank before Fold & Watch; the pre-ac
   assert.match(watch, /!\(bankActivated && deadlineExtended\)/);
   assert.match(src, /key === 'preaction' \? 60000 : 20000/);
 });
+
+test('an unknown control acknowledgment records a fixed cause, never a message', async () => {
+  const page = {
+    waitForResponse: async () => {
+      throw Object.assign(new Error('SECRET'), { name: 'TimeoutError' });
+    },
+  };
+  for (const [err, cause] of [
+    [new Error('Selected Pool Unverified'), 'selected_pool_unverified'],
+    [Object.assign(new Error('x'), { name: 'TimeoutError' }), 'control_not_clickable'],
+    [new Error('SECRET_DOM'), 'click_failed'],
+  ]) {
+    const why = {};
+    const r = await clickCycleControlOnce(
+      page,
+      {
+        click: async () => {
+          throw err;
+        },
+      },
+      () => false,
+      () => 60000,
+      why
+    );
+    assert.equal(r, null);
+    assert.deepEqual(why, { click: cause, response: 'no_matching_response' });
+  }
+});

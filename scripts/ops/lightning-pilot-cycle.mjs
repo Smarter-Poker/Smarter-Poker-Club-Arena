@@ -104,14 +104,27 @@ export function recordCycleEvent(hands, e, armedHandNumber = null) {
 /** A disappearing optional control cannot consume the remaining natural-cycle witness.
  * One click only. An unknown acknowledgment is retained and never re-clicked.
  */
-export async function clickCycleControlOnce(page, control, matches, remaining) {
+export async function clickCycleControlOnce(page, control, matches, remaining, why = {}) {
   const timeout = Math.min(5000, remaining());
   const responseP = page.waitForResponse(matches, { timeout });
-  const [response] = await Promise.allSettled([
+  const [response, click] = await Promise.allSettled([
     responseP,
     control.click({ timeout: Math.min(2500, remaining()) }),
   ]);
-  if (response.status !== 'fulfilled') return null;
+  // Why an acknowledgment is unknown, from fixed categories only (no messages).
+  if (click.status === 'rejected') {
+    const m = String(click.reason?.message ?? '');
+    why.click = /Selected Pool|Pool Tab/.test(m)
+      ? 'selected_pool_unverified'
+      : click.reason?.name === 'TimeoutError' || /Timeout/i.test(m)
+        ? 'control_not_clickable'
+        : 'click_failed';
+  } else why.click = 'clicked';
+  if (response.status !== 'fulfilled') {
+    why.response = 'no_matching_response';
+    return null;
+  }
+  why.response = 'observed';
   return response.value;
 }
 
@@ -196,6 +209,7 @@ export async function witnessCycle({
     requests: { timebank: 0, preaction: 0 },
     appRequests: { timebank: 0 },
     staleRefusals: { timebank: 0, preaction: 0 },
+    clickOutcomes: { timebank: [], preaction: [] },
     foldWatch: { accepted: 0, refused: 0, unknown: 0 },
     preactionRequestHandId: null,
     timebankContextHandId: null,
@@ -346,6 +360,7 @@ export async function witnessCycle({
       report.subphase = key;
       report.cause = 'optional_action_unverified';
       clicking = key;
+      const why = {};
       const response = await clickCycleControlOnce(
         page,
         { click: (options) => clickSelectedPoolControl(page, pin, control, remaining, options) },
@@ -370,9 +385,11 @@ export async function witnessCycle({
             return false;
           }
         },
-        remaining
+        remaining,
+        why
       );
       clicking = null;
+      report.clickOutcomes[key].push(why);
       if (!response) {
         report[key] = 'click_or_response_unknown';
         continue;

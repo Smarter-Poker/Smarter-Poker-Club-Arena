@@ -209,6 +209,7 @@ describe('the same private hand survives every review game family', () => {
         { player_id: 'hero', action: 'fold', street: 'flop', timestamp: 5 },
       ];
       const hand = adaptServiceHandToPanel(row, 'hero');
+      expect(hand.replay.reconciles).toBe(true);
       const replay = vi.fn();
       render(
         <HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId="hero" onReplay={replay} />
@@ -282,16 +283,28 @@ describe('forced money and multiple boards keep the viewer and the exact pot', (
           ];
           row.players[0].result = -550;
           row.players[1].result = 550;
-        } else row.rit_boards = [second];
+        } else {
+          row.rit_boards = [second];
+          row.actions = [
+            { player_id: 'hero', action: 'sb', amount: 1, street: 'preflop', timestamp: 1 },
+            { player_id: 'villain', action: 'bb', amount: 2, street: 'preflop', timestamp: 2 },
+            { player_id: 'hero', action: 'all_in', amount: 550, street: 'preflop', timestamp: 3 },
+            { player_id: 'villain', action: 'call', amount: 548, street: 'preflop', timestamp: 4 },
+          ];
+          row.players[0].showdown_reveal = { mucked: true };
+          row.players[0].result = -550;
+          row.players[1].result = 550;
+        }
         row.winners_by_board = [1, 2].map((board) => ({ board, user_id: 'villain', amount: 550 }));
       }
       const hand = adaptServiceHandToPanel(row, 'hero');
+      expect(hand.replay.reconciles).toBe(true);
       const replay = vi.fn();
       render(
         <HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId="hero" onReplay={replay} />
       );
       expect(screen.getByRole('region', { name: 'Your Cards' }).textContent).toContain(
-        mode === 'bomb' ? '-550.00' : '-400.00'
+        mode === 'tournament' ? '-400.00' : '-550.00'
       );
       expect(
         within(screen.getByRole('region', { name: 'Your Cards' })).getAllByRole('img')
@@ -309,7 +322,7 @@ describe('forced money and multiple boards keep the viewer and the exact pot', (
           0
         )
       ).toBe(1100);
-      expect(replay.mock.calls[0][0].heroResult).toBe(mode === 'bomb' ? -550 : -400);
+      expect(replay.mock.calls[0][0].heroResult).toBe(mode === 'tournament' ? -400 : -550);
     }
   );
 });

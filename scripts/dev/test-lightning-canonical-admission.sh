@@ -23,7 +23,11 @@ psql=("$pgbin/psql" -X -q -h "$scratch" -p 55621 -d postgres -v ON_ERROR_STOP=1)
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-reversion-preimage.sql"
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-projection-preimages.sql"
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-transition-preimages.sql"
-"${psql[@]}" -f "$root/supabase/migrations/20261023230807_lightning_aliases_retire_duplicate_pools_without_moving_custody.sql"
+"${psql[@]}" -f "$root/supabase/migrations/20261023230807_canonical_lightning_pools_preserve_custody.sql"
+# Exercise the same durable proof consumed by the installed-migration reader.
+proof=$(sed -n 's/^-- @live-proof: //p' "$root/supabase/migrations/20261023230807_canonical_lightning_pools_preserve_custody.sql")
+[ -n "$proof" ] || { echo 'FAIL: canonical migration has no live proof'; exit 1; }
+"${psql[@]}" -Atc "SELECT ($proof)" | grep -qx t
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-admission-assert.sql"
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-transition-assert.sql"
 "${psql[@]}" -f "$root/scripts/dev/lightning-retire-occupancies.sql" -f "$root/scripts/dev/fixtures/lightning-canonical-retirement-assert.sql"

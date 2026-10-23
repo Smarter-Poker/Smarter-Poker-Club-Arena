@@ -45,9 +45,10 @@ async function mountTable(page: Page) {
       <div class="deal-animation" id="dealLayer" style="--da-flight-duration:320ms"></div>
       <div class="seat-wrapper" id="sw" style="position:absolute;left:50%;top:80%">
         <div class="seat" id="seat">
+          <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
           <div class="seat__info" id="info"></div>
           <div class="seat__bet-chips"><div class="chip-physics cp--compact cp--none" id="chips"><div class="cp-stacks"><div class="cp-stack"><div class="cp-chip"></div></div></div></div></div>
-          <div class="seat__cards seat__cards--hero" id="cards"><div class="seat__card"></div><div class="seat__card"></div></div>
+          <div class="seat__cards seat__cards--hero" id="cards"><div class="seat__card"><div class="card-image"></div></div><div class="seat__card"><div class="card-image"></div></div></div>
         </div>
       </div>
       <div class="community-area"><div class="community-cards" id="board"><div class="community-cards__container" id="bc"></div></div></div>

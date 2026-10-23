@@ -1,4 +1,4 @@
-import { useLayoutEffect, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type RefObject } from 'react';
 import { placeProtectedCardRow, type CardBox } from '../lib/protectedCardPlacement';
 import {
   assignProtectedWagers,
@@ -13,11 +13,41 @@ import {
 } from '../components/table/tableGeometry';
 
 /** Layout belongs to the table that paints it; no global selectors or game-state writes. */
-export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, revision: string) {
+export function useProtectedCardLayout(
+  root: RefObject<HTMLDivElement | null>,
+  revision: string,
+  handKey = 'current'
+) {
+  // A runout changes the board, pot and highlights, never the hand's slot.
+  // Retain placements across effect revisions; only a new hand or viewport
+  // geometry may allocate a new slot. Removed DOM rows expire naturally.
+  const settled = useRef({
+    key: '',
+    rows: new WeakMap<HTMLElement, string>(),
+    pods: new WeakMap<HTMLElement, string>(),
+  });
   useLayoutEffect(() => {
     const scaler = root.current;
     const page = scaler?.closest('.table-page');
     if (!scaler || !page) return;
+    const refreshGeometry = () => {
+      const box = scaler.getBoundingClientRect();
+      const key = [
+        handKey,
+        Math.round(box.width),
+        Math.round(box.height),
+        Math.round(page.getBoundingClientRect().width),
+        window.innerHeight,
+        scaler.style.getPropertyValue('--table-w'),
+        scaler.style.getPropertyValue('--table-h'),
+        scaler.style.getPropertyValue('--sp-board-card-w'),
+        scaler.style.getPropertyValue('--sp-tabled-card-w'),
+      ].join(':');
+      if (settled.current.key !== key) {
+        settled.current = { key, rows: new WeakMap(), pods: new WeakMap() };
+      }
+    };
+    refreshGeometry();
     const topPods = () => Array.from(scaler.querySelectorAll<HTMLElement>('.seat-wrapper--top'));
     const wagers = () => Array.from(scaler.querySelectorAll<HTMLElement>('.seat__bet-chips'));
     const resetWagers = () =>
@@ -29,20 +59,43 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
        dealer button (Dan 2026-10-22: a shown hand must be clearly displayed at
        its own player), which are then placed round them; elsewhere, after. */
     const placeRows = (withMarkers: boolean) => {
-      const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed'));
+      const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed')).sort(
+        (a, b) =>
+          Number(Boolean(b.closest('.seat-wrapper--top'))) -
+          Number(Boolean(a.closest('.seat-wrapper--top')))
+      );
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
       const visibleBox = (element: Element): CardBox | null => {
         const box = element.getBoundingClientRect();
         return box.width > 0 && box.height > 0 ? box : null;
       };
-      const protectedBoxes = Array.from(
+      const protectedEntries = Array.from(
         page.querySelectorAll(
           (withMarkers ? '.seat__bet-chips, ' : '') +
-            '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-widget, .bbj-mini-plate, .cch-column, .chat-collapsed'
+            '.community-area, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-widget, .bbj-mini-plate, .cch-column, .chat-collapsed'
         )
-      )
-        .map(visibleBox)
-        .filter((box): box is CardBox => box !== null);
+      ).flatMap((element) => {
+        const box = visibleBox(element);
+        return box ? [{ element, box }] : [];
+      });
+      const protectedBoxes = protectedEntries.map(({ box }) => box);
+      // A later seat can reveal before an earlier DOM sibling. Reserve every
+      // already-settled hand before allocating any new one, regardless of order.
+      for (const fixedRow of rows) {
+        if (!settled.current.rows.has(fixedRow)) continue;
+        const boxes = Array.from(fixedRow.querySelectorAll('.seat__card'))
+          .map(visibleBox)
+          .filter((box): box is CardBox => box !== null);
+        if (!boxes.length) continue;
+        const left = Math.min(...boxes.map((box) => box.left));
+        const top = Math.min(...boxes.map((box) => box.top));
+        protectedBoxes.push({
+          left,
+          top,
+          width: Math.max(...boxes.map((box) => box.left + box.width)) - left,
+          height: Math.max(...boxes.map((box) => box.top + box.height)) - top,
+        });
+      }
       const dealer = withMarkers ? scaler.querySelector<HTMLElement>('.dealer-button') : null;
       if (dealer) {
         const settled = dealerSettledBox(scaler, dealer);
@@ -50,6 +103,24 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       }
       const bounds = page.getBoundingClientRect();
       for (const row of rows) {
+        const fixed = settled.current.rows.get(row);
+        if (fixed !== undefined) {
+          row.style.translate = fixed;
+          const cards = Array.from(row.querySelectorAll('.seat__card'))
+            .map(visibleBox)
+            .filter((box): box is CardBox => box !== null);
+          if (cards.length) {
+            const left = Math.min(...cards.map((card) => card.left));
+            const top = Math.min(...cards.map((card) => card.top));
+            protectedBoxes.push({
+              left,
+              top,
+              width: Math.max(...cards.map((card) => card.left + card.width)) - left,
+              height: Math.max(...cards.map((card) => card.top + card.height)) - top,
+            });
+          }
+          continue;
+        }
         // Hero containers span the reserved bottom strip; only the painted
         // cards are obstacles, not that transparent flex alignment space.
         const cards = Array.from(row.querySelectorAll('.seat__card'))
@@ -71,27 +142,21 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         // owner instead of being pushed across the table to the first empty
         // patch of felt.
         const seat = row.classList.contains('seat__cards--opponent') ? row.closest('.seat') : null;
-        const own = seat
-          ? Array.from(
-              seat.querySelectorAll(
-                '.seat__avatar-img, .seat__action, .seat__bounty, .seat__position-badge'
-              )
-            )
-              .map(visibleBox)
-              .filter((mine): mine is CardBox => mine !== null)
-          : [];
-        const others = own.length
-          ? protectedBoxes.filter(
-              (other) =>
-                !own.some(
-                  (mine) =>
-                    mine.left === other.left &&
-                    mine.top === other.top &&
-                    mine.width === other.width &&
-                    mine.height === other.height
+        // Keep DOM ownership, not a second animated rectangle measurement:
+        // equal boxes are not identity, and one avatar/action can change its
+        // painted box between layout reads without becoming another player.
+        const ownBoxes = new Set(
+          protectedEntries
+            .filter(
+              ({ element }) =>
+                seat?.contains(element) &&
+                element.matches(
+                  '.seat__avatar-img, .seat__action, .seat__bounty, .seat__position-badge'
                 )
             )
-          : protectedBoxes;
+            .map(({ box }) => box)
+        );
+        const others = protectedBoxes.filter((other) => !ownBoxes.has(other));
         // The hand stands nearer its own player than any other (avatar
         // centres), whenever any such spot exists.
         const mineAt = seat?.querySelector('.seat__avatar-img')?.getBoundingClientRect();
@@ -114,22 +179,22 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
               Math.hypot(
                 c.x - (mineAt.left + mineAt.width / 2),
                 c.y - (mineAt.top + mineAt.height / 2)
-              ) < 1 || own < Math.hypot(x - c.x, y - c.y)
+              ) < 1 || own + 4 < Math.hypot(x - c.x, y - c.y)
           );
         };
         const place = (candidate: CardBox) =>
-          placeProtectedCardRow(candidate, others, bounds, 4, ownsIt) ??
+          placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
           placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
         let next = place(box);
-        // A tabled row (two to six cards) that cannot stay at its own player
+        // Shorter tabled rows that cannot stay at their own player
         // at full spacing closes up, a step at a time, before it is allowed to
         // leave: every card keeps the board's size and its rank and suit
         // corner, the row just overlaps more. Only when no spacing is this
         // player's does it drop to 85 percent of the board's size. Widths are
         // computed rather than measured, because cards glide over 0.2s.
         const count = cards.length;
-        if (seat && count >= 2) {
+        if (seat && count >= 2 && count < 5) {
           // The spacing and card size this hand was drawn at, and the ones the
           // stylesheet gives it, so a closed-up hand can be judged at full size.
           const inlineStep = parseFloat(row.style.getPropertyValue('--vh-step-f'));
@@ -203,20 +268,27 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         if (next) {
           // translate is independent of the deal/flip transform and preserves animations.
           row.style.translate = `${(next.left - natural.left) / scale}px ${(next.top - natural.top) / scale}px`;
+          if (cards.length >= 5) settled.current.rows.set(row, row.style.translate);
           protectedBoxes.push(next);
         }
       }
     };
     const place = () => {
+      refreshGeometry();
       resetWagers();
       scaler.querySelector<HTMLElement>('.dealer-button')?.style.removeProperty('translate');
       const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed'));
-      rows.forEach((row) => row.style.removeProperty('translate'));
+      rows.forEach((row) => {
+        const fixed = settled.current.rows.get(row);
+        if (fixed === undefined) row.style.removeProperty('translate');
+        else row.style.translate = fixed;
+      });
       // A closed-up spacing belongs to one tabled hand; the same element holds
       // the next hand face down.
       scaler
         .querySelectorAll<HTMLElement>('.seat__cards:not(.seat__cards--revealed)')
         .forEach((cluster) => {
+          settled.current.rows.delete(cluster);
           cluster.style.removeProperty('--vh-step-f');
           cluster.style.removeProperty('--vh-card-w');
           delete cluster.dataset.baseStep;
@@ -224,8 +296,14 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         });
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
       topPods().forEach((pod) => {
-        pod.style.removeProperty('translate');
-        pod.style.removeProperty('--sp-top-seat-shift');
+        const shift = settled.current.pods.get(pod);
+        if (shift === undefined) {
+          pod.style.removeProperty('translate');
+          pod.style.removeProperty('--sp-top-seat-shift');
+        } else {
+          pod.style.translate = `0px ${shift}px`;
+          pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
+        }
       });
       const pageBox = page.getBoundingClientRect();
       const chrome = Array.from(page.querySelectorAll('.bbj-widget, .bbj-mini-plate'))
@@ -241,6 +319,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         : pageBox.top + plateHeight;
       if (pageBox.width <= 768) {
         for (const pod of topPods()) {
+          if (settled.current.pods.has(pod)) continue;
           const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
           if (image && image.height > 0) {
             // Dan 2026-10-22: "pull the table down so the top player isn't
@@ -249,11 +328,30 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             // plate rather than 4px against it.
             const badge = pod.querySelector('.seat__position-badge')?.getBoundingClientRect();
             const highest = Math.min(image.top, badge && badge.height > 0 ? badge.top : Infinity);
-            const shift = (chromeBottom + 8 * scale - highest) / scale;
+            // On the shortest nine-seat phones a board-sized PLO hand needs
+            // a full card-height lane between the jackpot and its own plate.
+            const largeHand = scaler.querySelector(
+              ".seat__cards:is([data-card-count='5'], [data-card-count='6'])"
+            );
+            const cardHeight =
+              ((parseFloat(
+                scaler.style.getPropertyValue('--sp-tabled-card-w') ||
+                  scaler.style.getPropertyValue('--sp-board-card-w')
+              ) || 0) *
+                92) /
+              64;
+            const plateTop =
+              pod.querySelector('.seat__info')?.getBoundingClientRect().top ?? highest;
+            const clearance =
+              largeHand && window.innerHeight > window.innerWidth
+                ? Math.max(8, cardHeight + 9 - (plateTop - highest))
+                : 8;
+            const shift = (chromeBottom + clearance * scale - highest) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.
             pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
+            settled.current.pods.set(pod, String(shift));
           }
         }
       }
@@ -265,13 +363,9 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       if (phoneMarkers) {
         // Dan 2026-10-22: a tabled hand is the SAME SIZE AS THE BOARD's cards,
         // overlapped but never covered. The board is drawn through the felt's
-        // perspective, so its painted card width is measured, not derived.
-        const boardCard = Array.from(
-          scaler.querySelectorAll('.community-cards__card:not(.community-cards__card--rabbit)')
-        )
-          .map((card) => card.getBoundingClientRect().width)
-          .find((width) => width > 0);
-        if (boardCard) scaler.style.setProperty('--sp-board-card-w', `${boardCard / scale}px`);
+        // perspective. TablePage publishes the settled board width from table geometry.
+        // Measuring an animated board card here fed its transient scale back
+        // into every shown hand's dimensions during the runout.
         placeRows(false);
         const canvas = scaler.getBoundingClientRect();
         const portraitTaper = page.getAttribute('data-hero') === 'false' ? 0 : undefined;
@@ -309,7 +403,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
            only eligible when the WHOLE wager box is on the painted felt with
            daylight to spare (see `wagerOnFelt`). */
         const feltMarginPx = Math.max(8, canvas.width * 0.025);
-        const wagerOnFelt = (box: CardBox): boolean =>
+        const wagerOnFeltWithMargin = (box: CardBox, margin: number): boolean =>
           [
             [box.left, box.top],
             [box.left + box.width, box.top],
@@ -326,8 +420,9 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             const px = (flat.x * canvas.width) / 100;
             const py = (flat.y * canvas.height) / 100;
             const spineY = Math.min(Math.max(py, upper), lower);
-            return Math.hypot(px - cx, py - spineY) <= radius + inset - feltMarginPx;
+            return Math.hypot(px - cx, py - spineY) <= radius + inset - margin;
           });
+        const wagerOnFelt = (box: CardBox) => wagerOnFeltWithMargin(box, feltMarginPx);
         for (const extra of [0, 10, 20, 28, 36, 44, 52, 64, 76, 88, 100]) {
           depth = extra;
           const band = radius - extra;
@@ -382,140 +477,148 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
           })
           .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
-        const entries = wagers().flatMap((bet) => {
-          const box = visibleBox(bet);
-          const owner = bet
-            .closest('.seat-wrapper')
-            ?.querySelector('.seat__avatar-img')
-            ?.getBoundingClientRect();
-          if (!box || !owner) return [];
-          const desired = { x: owner.left + owner.width / 2, y: owner.top + owner.height / 2 };
-          const hasAllInMarker = Boolean(bet.querySelector('.seat__allin-puck'));
-          const placed = points.map((point) => ({
-            left: point.x - box.width / 2,
-            top: point.y - box.height / 2,
-            width: box.width,
-            height: box.height,
-            depth: point.depth,
-          }));
-          // The 320px PLO6 cap lane is narrower than a sampled oval band.
-          // Include exact obstacle-edge intersections so a clear 23px slot
-          // between two plates is not missed by the radial sampling grid.
-          if (
-            page.getAttribute('data-seats') === '9' &&
-            window.innerWidth <= 340 &&
-            page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(6)')
-          ) {
-            const xs = new Set([desired.x - box.width / 2]);
-            const ys = new Set([desired.y - box.height / 2]);
-            for (const obstacle of hardObstacles) {
-              xs.add(obstacle.left - box.width - 3);
-              xs.add(obstacle.left + obstacle.width + 3);
-              ys.add(obstacle.top - box.height - 3);
-              ys.add(obstacle.top + obstacle.height + 3);
-            }
-            for (const left of xs)
-              for (const top of ys) {
-                const candidate = { left, top, width: box.width, height: box.height, depth: 20 };
-                if (
-                  left >= pageBox.left &&
-                  top >= chromeBottom &&
-                  left + box.width <= pageBox.right &&
-                  top + box.height <= canvas.bottom
-                )
-                  placed.push(candidate);
+        const entries = wagers()
+          .flatMap((bet) => {
+            const box = visibleBox(bet);
+            const owner = bet
+              .closest('.seat-wrapper')
+              ?.querySelector('.seat__avatar-img')
+              ?.getBoundingClientRect();
+            if (!box || !owner) return [];
+            const desired = { x: owner.left + owner.width / 2, y: owner.top + owner.height / 2 };
+            const hasAllInMarker = Boolean(bet.querySelector('.seat__allin-puck'));
+            const placed = points.map((point) => ({
+              left: point.x - box.width / 2,
+              top: point.y - box.height / 2,
+              width: box.width,
+              height: box.height,
+              depth: point.depth,
+            }));
+            // Short-phone PLO cap lanes can be narrower than a sampled oval band.
+            // Include exact obstacle-edge intersections so a clear 23px slot
+            // between two plates is not missed by the radial sampling grid.
+            if (
+              window.innerWidth <= 375 &&
+              page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)')
+            ) {
+              const xs = new Set([desired.x - box.width / 2]);
+              const ys = new Set([desired.y - box.height / 2]);
+              for (const obstacle of hardObstacles) {
+                xs.add(obstacle.left - box.width - 3);
+                xs.add(obstacle.left + obstacle.width + 3);
+                ys.add(obstacle.top - box.height - 3);
+                ys.add(obstacle.top + obstacle.height + 3);
               }
-          }
-          // ALL IN is a felt marker, never a label in the avatar lane. Even
-          // crowded-table fallbacks must keep its entire wager slot on felt.
-          const eligible = hasAllInMarker ? placed.filter(wagerOnFelt) : placed;
-          const clearOfTable = eligible.filter(
-            (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
-          );
-          // Wholly on the felt whenever every wager fits there together. On a
-          // small, crowded phone they may not, and then the nearest spots that
-          // still clear every player, the board, the pot and each other are
-          // used, rail band included, rather than leaving a wager on a player.
-          const byCost = (a: (typeof clearOfTable)[number], b: (typeof clearOfTable)[number]) =>
-            Math.hypot(a.left + a.width / 2 - desired.x, a.top + a.height / 2 - desired.y) +
-            2 * a.depth -
-            (Math.hypot(b.left + b.width / 2 - desired.x, b.top + b.height / 2 - desired.y) +
-              2 * b.depth);
-          const distinct = (list: typeof clearOfTable, cap: number): CardBox[] => {
-            const kept: CardBox[] = [];
-            for (const candidate of list) {
-              if (
-                kept.every(
-                  (other) => Math.hypot(candidate.left - other.left, candidate.top - other.top) >= 4
-                )
-              )
-                kept.push(candidate);
-              if (kept.length >= cap) break;
+              for (const left of xs)
+                for (const top of ys) {
+                  const candidate = { left, top, width: box.width, height: box.height, depth: 20 };
+                  if (
+                    left >= pageBox.left &&
+                    top >= chromeBottom &&
+                    left + box.width <= pageBox.right &&
+                    top + box.height <= canvas.bottom
+                  )
+                    placed.push(candidate);
+                }
             }
-            return kept;
-          };
-          const ownedBy = (candidate: (typeof clearOfTable)[number]): boolean => {
-            const cx0 = candidate.left + candidate.width / 2;
-            const cy0 = candidate.top + candidate.height / 2;
-            const own = Math.hypot(cx0 - desired.x, cy0 - desired.y);
-            return playerCentres.every(
-              (other) =>
-                Math.hypot(other.x - desired.x, other.y - desired.y) < 1 ||
-                own < Math.hypot(cx0 - other.x, cy0 - other.y)
+            // ALL IN is a felt marker, never a label in the avatar lane. Even
+            // crowded-table fallbacks must keep its entire wager slot on felt.
+            // A marker's entire disc stays on felt. On a crowded cap lane,
+            // one pixel of edge clearance fits where the chips' eight-pixel
+            // decoration margin does not; never fall back off felt or to a neighbour.
+            const eligible = hasAllInMarker
+              ? placed.filter((candidate) => wagerOnFeltWithMargin(candidate, 1))
+              : placed;
+            const clearOfTable = eligible.filter(
+              (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
             );
-          };
-          const nearest = [...clearOfTable].sort(byCost);
-          const owned = nearest.filter(ownedBy);
-          const overPrinting = eligible
-            .filter(
-              (candidate) =>
-                !hardObstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
-            )
-            .sort(byCost)
-            .filter(ownedBy);
-          return [
-            {
-              bet,
-              box,
-              felt: distinct(owned.filter(wagerOnFelt), 96),
-              // Exactly the rail-band slots this placer has always offered.
-              candidates: distinct(
-                owned.filter((candidate) => candidate.depth <= 20),
-                96
-              ),
-              wide: distinct(owned, 160),
-              any: distinct(nearest, 160),
-              printing: distinct(overPrinting, 160),
-              // Last resort on the smallest felts: this player's own spots, the
-              // least covered first, so two players' wagers never share one.
-              least: distinct(
-                eligible
-                  .filter(ownedBy)
-                  .map((candidate) => ({
-                    candidate,
-                    covered: hardObstacles.reduce(
-                      (sum, o) =>
-                        sum +
-                        Math.max(
-                          0,
-                          Math.min(candidate.left + candidate.width, o.left + o.width) -
-                            Math.max(candidate.left, o.left)
-                        ) *
+            // Wholly on the felt whenever every wager fits there together. On a
+            // small, crowded phone they may not, and then the nearest spots that
+            // still clear every player, the board, the pot and each other are
+            // used, rail band included, rather than leaving a wager on a player.
+            const byCost = (a: (typeof clearOfTable)[number], b: (typeof clearOfTable)[number]) =>
+              Math.hypot(a.left + a.width / 2 - desired.x, a.top + a.height / 2 - desired.y) +
+              2 * a.depth -
+              (Math.hypot(b.left + b.width / 2 - desired.x, b.top + b.height / 2 - desired.y) +
+                2 * b.depth);
+            const distinct = (list: typeof clearOfTable, cap: number): CardBox[] => {
+              const kept: CardBox[] = [];
+              for (const candidate of list) {
+                if (
+                  kept.every(
+                    (other) =>
+                      Math.hypot(candidate.left - other.left, candidate.top - other.top) >= 4
+                  )
+                )
+                  kept.push(candidate);
+                if (kept.length >= cap) break;
+              }
+              return kept;
+            };
+            const ownedBy = (candidate: (typeof clearOfTable)[number]): boolean => {
+              const cx0 = candidate.left + candidate.width / 2;
+              const cy0 = candidate.top + candidate.height / 2;
+              const own = Math.hypot(cx0 - desired.x, cy0 - desired.y);
+              return playerCentres.every(
+                (other) =>
+                  Math.hypot(other.x - desired.x, other.y - desired.y) < 1 ||
+                  own + 1.5 < Math.hypot(cx0 - other.x, cy0 - other.y)
+              );
+            };
+            const nearest = [...clearOfTable].sort(byCost);
+            const owned = nearest.filter(ownedBy);
+            const overPrinting = eligible
+              .filter(
+                (candidate) =>
+                  !hardObstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
+              )
+              .sort(byCost)
+              .filter(ownedBy);
+            return [
+              {
+                bet,
+                box,
+                hasAllInMarker,
+                felt: distinct(owned.filter(wagerOnFelt), 96),
+                // Exactly the rail-band slots this placer has always offered.
+                candidates: distinct(
+                  owned.filter((candidate) => candidate.depth <= 20),
+                  96
+                ),
+                wide: distinct(owned, 160),
+                any: distinct(hasAllInMarker ? nearest.filter(ownedBy) : nearest, 160),
+                printing: distinct(overPrinting, 160),
+                // Last resort on the smallest felts: this player's own spots, the
+                // least covered first, so two players' wagers never share one.
+                least: distinct(
+                  eligible
+                    .filter(ownedBy)
+                    .map((candidate) => ({
+                      candidate,
+                      covered: hardObstacles.reduce(
+                        (sum, o) =>
+                          sum +
                           Math.max(
                             0,
-                            Math.min(candidate.top + candidate.height, o.top + o.height) -
-                              Math.max(candidate.top, o.top)
-                          ),
-                      0
-                    ),
-                  }))
-                  .sort((a, b) => a.covered - b.covered || byCost(a.candidate, b.candidate))
-                  .map((entry) => entry.candidate),
-                160
-              ),
-            },
-          ];
-        });
+                            Math.min(candidate.left + candidate.width, o.left + o.width) -
+                              Math.max(candidate.left, o.left)
+                          ) *
+                            Math.max(
+                              0,
+                              Math.min(candidate.top + candidate.height, o.top + o.height) -
+                                Math.max(candidate.top, o.top)
+                            ),
+                        0
+                      ),
+                    }))
+                    .sort((a, b) => a.covered - b.covered || byCost(a.candidate, b.candidate))
+                    .map((entry) => entry.candidate),
+                  160
+                ),
+              },
+            ];
+          })
+          .sort((a, b) => Number(b.hasAllInMarker) - Number(a.hasAllInMarker));
         // Every wager on the felt at once when the table allows it. A crowded
         // short phone (three players all in on one side) can leave no joint
         // solution; then each wager still takes its own best clear spot in
@@ -524,7 +627,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
           page.getAttribute('data-seats') === '9' &&
           window.innerWidth <= 340 &&
           Boolean(
-            page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(6)')
+            page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)')
           );
         const placements =
           assignProtectedWagers(entries.map((entry) => entry.felt)) ??
@@ -618,7 +721,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         .querySelectorAll<HTMLElement>('.seat__cards--revealed')
         .forEach((row) => row.style.removeProperty('translate'));
     };
-  }, [root, revision]);
+  }, [root, revision, handKey]);
 }
 
 /**

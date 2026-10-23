@@ -150,6 +150,20 @@ export function boardCardWidthPx(
   const gap = viewportW <= 480 ? 2 : viewportW <= 1024 ? 4 : 6;
   return Math.max(0, Math.round((((felt * rowPct) / 100 - 4 * gap) / 5) * 10) / 10);
 }
+/** Dense mobile rings and the narrowest phones reserve a fixed side lane beside the board. At 7.8%
+ * of the canvas, a six-card half-step row clears that lane's four-pixel
+ * gutter at every phone width. Every player shares it, with a 20px legibility
+ * floor; roomy rings use the board size. No hand-dependent resizing. */
+export function tabledCardWidthPx(
+  scalerW: number,
+  viewportW: number,
+  portrait: boolean,
+  seats: number
+): number {
+  return viewportW <= 340 || (viewportW <= 480 && seats >= 8)
+    ? Math.min(boardCardWidthPx(scalerW, viewportW, portrait), Math.max(20, scalerW * 0.078))
+    : boardCardWidthPx(scalerW, viewportW, portrait);
+}
 export function portraitTableTransform(size: Size): string {
   if (!(size.w > 0 && size.h > 0)) return 'none';
   const k = size.portraitTaper ?? PORTRAIT_TABLE_TAPER;

@@ -202,9 +202,24 @@ describe('the felt reserves stay fixed through hand and action states', () => {
     const offenders: string[] = [];
     for (const prop of GEOMETRY_PROPS) {
       for (const d of declarationsOf(prop)) {
-        if (STATE.test(d.selector)) offenders.push(`${prop} declared on "${d.selector}"`);
+        // Seat count is fixed table configuration. This exact narrow-phone
+        // reserve clears the permanent hero plate, independent of hand state.
+        const fixedShortRing =
+          prop === '--sp-hero-clear' &&
+          d.selector === ".table-page[data-seats='6'] .table-container" &&
+          d.value === '64px';
+        if (!fixedShortRing && STATE.test(d.selector))
+          offenders.push(`${prop} declared on "${d.selector}"`);
       }
     }
+    expect(
+      declarationsOf('--sp-hero-clear').filter(
+        (d) => d.selector === ".table-page[data-seats='6'] .table-container"
+      )
+    ).toEqual([{ selector: ".table-page[data-seats='6'] .table-container", value: '64px' }]);
+    expect(ALL_CSS).toMatch(
+      /@media\s*\(max-width:\s*375px\)\s*and\s*\(max-height:\s*700px\)\s*and\s*\(orientation:\s*portrait\)\s*\{\s*\.table-page\[data-seats='6'\]\s+\.table-container\s*\{\s*--sp-hero-clear:\s*64px;/
+    );
     expect(
       offenders,
       'a property the felt sizes itself from is declared behind a state selector. ' +

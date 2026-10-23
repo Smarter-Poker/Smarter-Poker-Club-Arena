@@ -2955,6 +2955,7 @@ export const SeatSlot = memo(
             isMucking) && (
             <div
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              data-card-count={opponentCardCount}
               style={
                 {
                   /* PHASE 3 2026-08-31: the flying card still counts toward
@@ -2982,7 +2983,7 @@ export const SeatSlot = memo(
                      they are not the same number. */
                   displayHoleCards.map(({ card, dealtIndex }, row) => (
                     <HoleCard
-                      key={dealtIndex}
+                      key={row}
                       card={card}
                       /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
@@ -3443,6 +3444,7 @@ export const SeatSlot = memo(
                   ? ' seat__cards--squeeze-open'
                   : '')
             }
+            data-card-count={player.holeCards.length}
             ref={squeezeRowRef}
             role={squeezeDown ? 'button' : undefined}
             tabIndex={squeezeDown ? 0 : undefined}
@@ -3494,6 +3496,7 @@ export const SeatSlot = memo(
                  nothing is exposed at the table until the hand ends. */
               <span
                 key={i}
+                style={{ zIndex: i + 1 }}
                 className={
                   'seat__card-pick' +
                   /* THE BADGE FOLLOWS THE CLICK. `--marked` draws a gold eye on

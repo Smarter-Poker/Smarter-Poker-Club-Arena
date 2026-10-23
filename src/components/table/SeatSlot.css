@@ -3479,27 +3479,27 @@
    SHOWDOWN CARD FLIP — 3D card reveal animation
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.seat__cards--showdown .seat__card {
+.seat__cards--showdown .seat__card > .card-image {
   animation: cardShowdownFlip calc(0.35s * var(--animation-speed, 1)) ease-out forwards;
   perspective: 600px;
 }
 
-.seat__cards--showdown .seat__card:nth-child(2) {
+.seat__cards--showdown .seat__card:nth-child(2) > .card-image {
   /* 2026-08-27: scaled — see the folding delay note above. */
   animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 
 @keyframes cardShowdownFlip {
   0% {
-    transform: rotateY(180deg) scale(0.9);
+    transform: rotateY(180deg);
     opacity: 0.5;
   }
   50% {
-    transform: rotateY(90deg) scale(1.05);
+    transform: rotateY(90deg);
     opacity: 0.8;
   }
   100% {
-    transform: rotateY(0deg) scale(1);
+    transform: rotateY(0deg);
     opacity: 1;
   }
 }
@@ -3723,7 +3723,7 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* Winner pop — scale bounce triggered by TSX */
-.seat--winner-pop {
+.seat--winner-pop > .seat__avatar-wrap {
   /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
   animation: seatWinnerPop calc(0.6s * var(--animation-speed, 1))
     var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
@@ -3748,7 +3748,7 @@
    2026-08-27: now scales with --animation-speed like its JS removal window
    (SeatSlot.tsx removed the class at 400ms * speed while this ran a fixed
    0.4s — at Fast the shake was cut at 50% and the seat snapped back). */
-.seat--allin-shake {
+.seat--allin-shake > .seat__avatar-wrap {
   animation: seatAllinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
@@ -4957,12 +4957,12 @@
    between the side columns and the pot. Wrap the full label, never clip it. */
 @media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
   .table-page[data-seats='9'] .seat-wrapper--top .seat__action {
-    width: 36px;
+    width: 42px;
     height: auto;
-    min-height: 26px;
+    min-height: 13px;
     min-width: 0;
-    white-space: normal;
-    line-height: 1.05;
+    white-space: nowrap;
+    line-height: 1;
     padding: 2px;
     left: calc(50% - 12px);
   }
@@ -4972,7 +4972,7 @@
 }
 
 @media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
-  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(6))
+  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(5))
     .seat-wrapper--top
     .seat__bet-chips
     .chip-physics {
@@ -4982,7 +4982,7 @@
 }
 
 @media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
-  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(6))
+  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(5))
     .seat-wrapper--top
     .seat__bet-chips
     .cp-amount {
@@ -5021,4 +5021,29 @@
     position: static;
     transform: none;
   }
+}
+
+/* PLO5/PLO6 tabled hands keep board-sized cards and a fixed readable index
+   lane. The placement owner must never shrink or close these lanes mid-runout.
+   Hero and opponents use the same table token, independent of avatar caps. */
+.seat .seat__cards.seat__cards--revealed:is([data-card-count='5'], [data-card-count='6']) {
+  --vh-card-w: var(
+    --sp-tabled-card-w,
+    var(--sp-board-card-w, max(24px, calc(var(--table-w, 320px) * 0.088)))
+  );
+  --vh-card-h: calc(var(--vh-card-w) * 92 / 64);
+  --vh-step-f: 0.5;
+  --sp-hero-card-w: var(--vh-card-w);
+  --sp-hero-card-h: var(--vh-card-h);
+  --sp-hero-card-step: calc(var(--sp-hero-card-w) * 0.5);
+  transition: none;
+}
+.seat .seat__cards.seat__cards--revealed:is([data-card-count='5'], [data-card-count='6']) > *,
+.seat
+  .seat__cards.seat__cards--revealed:is([data-card-count='5'], [data-card-count='6'])
+  .seat__card {
+  transition:
+    box-shadow 0.3s ease,
+    filter 0.3s ease;
+  transform: none;
 }

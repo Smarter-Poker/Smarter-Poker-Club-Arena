@@ -809,3 +809,43 @@ describe('chip contributions do not animate a negative amount', () => {
     expect(container.querySelector('.seat__stack-delta')).toBeNull();
   });
 });
+
+for (const count of [5, 6]) {
+  it(`PLO${count} keeps the same card slots from hidden cards through all-in reveal and winner highlighting`, () => {
+    const cards: Card[] = [...DEALT, { rank: 'K', suit: 'h' }, { rank: '2', suit: 's' }].slice(
+      0,
+      count
+    );
+    const view = (revealed: boolean, winning = false) => (
+      <SeatSlot
+        seatNumber={3}
+        holeCardCount={count}
+        handNumber={42}
+        player={villain({
+          status: 'all_in',
+          showCards: revealed,
+          holeCards: revealed ? cards : undefined,
+        })}
+        position={null}
+        isActive={false}
+        lastAction="all_in"
+        isWinner={winning}
+        winnerDisplayActive={winning}
+        winningHoleCardIndexes={winning ? [1] : undefined}
+      />
+    );
+    const { container, rerender } = render(view(false));
+    const slots = [...container.querySelectorAll('.seat__cards--opponent .seat__card')];
+    expect(slots).toHaveLength(count);
+    rerender(view(true));
+    const row = container.querySelector('.seat__cards--opponent')!;
+    expect(row.getAttribute('data-card-count')).toBe(String(count));
+    for (const [i, slot] of [...row.querySelectorAll('.seat__card')].entries())
+      expect(slot).toBe(slots[i]);
+    rerender(view(true, true));
+    for (const [i, slot] of [...row.querySelectorAll('.seat__card')].entries())
+      expect(slot).toBe(slots[i]);
+    expect(row.querySelectorAll('.seat__card--winner')).toHaveLength(1);
+    expect(row.querySelector('.seat__card--winner')).toBe(slots[0]);
+  });
+}

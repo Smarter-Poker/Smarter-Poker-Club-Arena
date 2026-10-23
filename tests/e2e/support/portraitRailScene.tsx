@@ -4,6 +4,8 @@ import CommunityCards from '../../../src/components/table/CommunityCards';
 import DealerButton from '../../../src/components/table/DealerButton';
 import { seatLayoutFor } from '../../../src/lib/tableSeatGeometry';
 import {
+  boardCardWidthPx,
+  tabledCardWidthPx,
   fitSeatToViewport,
   portraitTableTransform,
   portraitBoardWidthOfFeltPct,
@@ -27,6 +29,12 @@ import skin from '../../../src/assets/tables/skin_carbon_red.png';
 export function Review() {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 300, h: 650 });
+  const [layoutRevision, setLayoutRevision] = useState(0);
+  useLayoutEffect(() => {
+    const advance = () => setLayoutRevision((revision) => revision + 1);
+    document.addEventListener('fixture-runout', advance);
+    return () => document.removeEventListener('fixture-runout', advance);
+  }, []);
   const [armed, setArmed] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
   const action = document.documentElement.dataset.action || 'preflop';
   const spectator = document.documentElement.dataset.spectator === 'true';
@@ -42,7 +50,7 @@ export function Review() {
     ro.observe(ref.current!);
     return () => ro.disconnect();
   }, []);
-  useProtectedCardLayout(ref, JSON.stringify(size));
+  useProtectedCardLayout(ref, JSON.stringify([size, layoutRevision]), 'fixture:4283505');
   const jackpot = document.documentElement.dataset.jackpot || 'mini';
   const revealed = document.documentElement.dataset.revealed !== 'false';
   // A tabled PLO6 hand at every seat (Dan 2026-10-22: a player could not see
@@ -149,6 +157,8 @@ export function Review() {
                   {
                     '--table-w': `${size.w}px`,
                     '--table-h': `${size.h}px`,
+                    '--sp-tabled-card-w': `${tabledCardWidthPx(size.w, width, width <= 480 && size.h > size.w && !spectator, n)}px`,
+                    '--sp-board-card-w': `${boardCardWidthPx(size.w, width, width <= 480 && size.h > size.w && !spectator)}px`,
                     '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct(spectator ? 0 : undefined)}%`,
                     '--sp-table-taper': portraitTableTransform({
                       ...size,

@@ -89,7 +89,9 @@ export async function certifyMobileLiveTableLayout(
               );
             })[0];
             if (!owner || nearest?.closest('.seat-wrapper') !== owner)
-              violations.push('ALL IN Marker Reads As Another Player');
+              violations.push(
+                `ALL IN Marker Reads As Another Player: owner=${owner?.querySelector('.seat__name')?.textContent} nearest=${nearest?.closest('.seat')?.querySelector('.seat__name')?.textContent} marker=${JSON.stringify(point)} bet=${JSON.stringify(centre(marker.parentElement!))}`
+              );
             const canvas = table.querySelector('.table-scaler');
             const felt = table.querySelector('.table-surface');
             const art = table.querySelector('.table-art');
@@ -129,7 +131,22 @@ export async function certifyMobileLiveTableLayout(
           const mini = table.querySelector('.bbj-mini-plate');
           const head = table.querySelector('.seat-wrapper--top .seat__avatar-img');
           const topGap = mini && head && visible(head) ? box(head).top - box(mini).bottom : null;
-          if (topGap !== null && (topGap < -1 || topGap > 12))
+          // A PLO5/PLO6 hand reserves a full card-height lane above the
+          // top plate; keep its player close beneath that lane and the BBJ.
+          const capPlate = head?.closest('.seat-wrapper')?.querySelector('.seat__info');
+          const largeHand = table.querySelector(
+            ".seat__cards:is([data-card-count='5'],[data-card-count='6'])"
+          );
+          const cardWidth = parseFloat(
+            table
+              .querySelector<HTMLElement>('.table-scaler')
+              ?.style.getPropertyValue('--sp-tabled-card-w') || '0'
+          );
+          const gapLimit =
+            largeHand && capPlate && head
+              ? Math.max(12, (cardWidth * 92) / 64 + 10 - (box(capPlate).top - box(head).top))
+              : 12;
+          if (topGap !== null && (topGap < -1 || topGap > gapLimit))
             violations.push('Top Player Does Not Sit Immediately Below Mini BBJ');
           return {
             violations,

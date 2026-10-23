@@ -23,7 +23,7 @@ class Boundaries(unittest.TestCase):
     self.assertEqual(source.stat().st_mode&0o777,0o600)
     self.assertEqual(context['phase'],'pending-schema-restore');calls.append(args)
    v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,entries)
-   self.assertEqual(len(calls),3)
+   self.assertEqual(len(calls),4)
    with self.assertRaises(FileExistsError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,entries)
    with self.assertRaises(ValueError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[dict(entries[0],sha256='0'*64),*entries[1:]])
  def test_event_triggers_restore_as_captured_owners(self):

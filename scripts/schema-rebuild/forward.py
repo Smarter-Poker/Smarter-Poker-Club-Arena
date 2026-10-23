@@ -1,4 +1,4 @@
-"""Three exact schema transitions, after independent baseline equality."""
+"""Four exact schema transitions, after independent baseline equality."""
 import copy,hashlib,json
 from pathlib import Path
 PATH='supabase/migrations/20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql'
@@ -13,10 +13,13 @@ OPENING_DELTA_SHA='5fe7191aa269effeb7916c9343f39c905225ae748e768dbe5340dda58eff8
 JOURNAL_PATH='supabase/migrations/20261022223439_adaptive_journal_metadata_cover.sql'
 JOURNAL_SHA='1922ecbde6a5cfa600e21d0e48aae8941036bcc08db12af5b263710dee3c6696'
 JOURNAL_DELTA_SHA='eae9ee3e9dcc55b84fbb36dadc6175edfc9ab6e2b184da948ce906773b99275f'
+PICK_PATH='supabase/migrations/20261022223610_mystery_bounty_pick_refuses_after_the_reveal.sql'
+PICK_SHA='93e0b63ef3e7196ac09e41456bc2ce2cd851cd6648d52ec9d318d14425b5238d'
+PICK_DELTA_SHA='54b4585fcf3443abb6d1b3d76f36170d8ee9a4720fb8a4c5815edb5b05a44bac'
 def entries():
- return [dict(path=PATH,sha256=SOURCE_SHA,state='pending-at-capture'),dict(path=OPENING_PATH,sha256=OPENING_SHA,state='installed-after-capture'),dict(path=JOURNAL_PATH,sha256=JOURNAL_SHA,state='pending-after-capture')]
+ return [dict(path=PATH,sha256=SOURCE_SHA,state='pending-at-capture'),dict(path=OPENING_PATH,sha256=OPENING_SHA,state='installed-after-capture'),dict(path=JOURNAL_PATH,sha256=JOURNAL_SHA,state='pending-after-capture'),dict(path=PICK_PATH,sha256=PICK_SHA,state='installed-after-capture')]
 def validate(root,provided):
- if provided!=entries():raise ValueError('Only the exact ordered hourly-sweep, opening and journal-index transitions are admitted')
+ if provided!=entries():raise ValueError('Only the exact ordered hourly-sweep, opening, journal-index and bounty-pick transitions are admitted')
  for entry in provided:
   if hashlib.sha256((Path(root)/entry['path']).read_bytes()).hexdigest()!=entry['sha256']:raise ValueError('Schema transition source bytes differ')
  return provided
@@ -71,4 +74,15 @@ def journal_expected(reference,base):
  if any(i['name']==index['name'] for r in reference['relations'] for i in r.get('indexes') or []):raise ValueError('Journal index already exists')
  result=copy.deepcopy(reference);relation=next(r for r in result['relations'] if r['schema']=='public' and r['name']==before['name'])
  relation['indexes'].append(copy.deepcopy(index));relation['indexes'].sort(key=lambda i:i['name'])
+ return result
+
+def pick_expected(reference,base):
+ source=(Path(base)/'post-capture-pick-catalog.json').read_bytes()
+ if hashlib.sha256(source).hexdigest()!=PICK_DELTA_SHA:raise ValueError('Independent pick routine contract differs')
+ delta=json.loads(source);before=delta['before'];after=delta['routine']
+ if before['schema']!='public' or before['name']!='fn_mystery_bounty_pick' or after['name']!=before['name'] or delta['source']['sha256']!=PICK_SHA:raise ValueError('Pick routine delta scope differs')
+ matches=[r for r in reference['routines'] if r['schema']=='public' and r['name']==before['name']]
+ if matches!=[before]:raise ValueError('Pick full routine preimage differs')
+ if {k:v for k,v in before.items() if k!='definition_md5'}!={k:v for k,v in after.items() if k!='definition_md5'}:raise ValueError('Pick routine security metadata differs')
+ result=copy.deepcopy(reference);position=result['routines'].index(before);result['routines'][position]=copy.deepcopy(after)
  return result

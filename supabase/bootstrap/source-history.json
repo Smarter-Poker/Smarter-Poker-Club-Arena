@@ -6596,7 +6596,7 @@
       ]
     },
     "arena": {
-      "revision": "a3bf961d0a9f142ea2be79b4133f8068fe8034e7",
+      "revision": "ffa19fa61761da13c73b4442558a477704cbccca",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",

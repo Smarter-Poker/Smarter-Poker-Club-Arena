@@ -1,0 +1,99 @@
+{
+  "ledger": [
+    {
+      "md5": "a28112ac25e4f5f892231f5067dbe9aa",
+      "count": 1,
+      "version": "20261022223610"
+    }
+  ],
+  "routine": {
+    "acl": [
+      {
+        "grantee": "authenticated",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      },
+      {
+        "grantee": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      }
+    ],
+    "args": "p_award_id uuid, p_slot integer",
+    "cost": 100,
+    "kind": "f",
+    "name": "fn_mystery_bounty_pick",
+    "rows": 0,
+    "owner": "postgres",
+    "result": "jsonb",
+    "schema": "public",
+    "strict": false,
+    "definer": true,
+    "support": null,
+    "language": "plpgsql",
+    "parallel": "u",
+    "settings": ["search_path=public, pg_temp"],
+    "aggregate": null,
+    "leakproof": false,
+    "volatility": "v",
+    "definition_md5": "ef7d498ea77ff3ffdab52f185cd4be87"
+  },
+  "before": {
+    "acl": [
+      {
+        "grantee": "authenticated",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      },
+      {
+        "grantee": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      }
+    ],
+    "args": "p_award_id uuid, p_slot integer",
+    "cost": 100,
+    "kind": "f",
+    "name": "fn_mystery_bounty_pick",
+    "rows": 0,
+    "owner": "postgres",
+    "result": "jsonb",
+    "schema": "public",
+    "strict": false,
+    "definer": true,
+    "support": null,
+    "language": "plpgsql",
+    "parallel": "u",
+    "settings": ["search_path=public, pg_temp"],
+    "aggregate": null,
+    "leakproof": false,
+    "volatility": "v",
+    "definition_md5": "a0a7ba254c175cfbbbf8061e611f1a0c"
+  },
+  "snapshotLedgerAbsent": true,
+  "source": {
+    "frozenMain": "ffa19fa61761da13c73b4442558a477704cbccca",
+    "path": "supabase/migrations/20261022223610_mystery_bounty_pick_refuses_after_the_reveal.sql",
+    "sha256": "93e0b63ef3e7196ac09e41456bc2ce2cd851cd6648d52ec9d318d14425b5238d",
+    "md5": "624f94bd290d4ba1e10ef639b31498af",
+    "bodyMD5": "d7e21f5ea886dce238a905ff9fd7f3f2"
+  },
+  "sourceBodyMatchesInstalled": true,
+  "sourceBytesMatchLedger": false
+}

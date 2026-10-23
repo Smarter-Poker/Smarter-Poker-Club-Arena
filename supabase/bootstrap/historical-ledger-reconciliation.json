@@ -1873,5 +1873,15 @@
     "snapshotIndexAbsent": true,
     "currentReadOnlyIndexAndLedgerAbsent": true,
     "scope": "Exact original concurrent index and read-only shape guard run only on isolated empty reconstruction after the first two transitions. Independent one-index descriptor/full parent preimage and all other catalog/role checks required. No production installation/build/performance claim."
+  },
+  "postCaptureMysteryPickScope": {
+    "revision": "ffa19fa61761da13c73b4442558a477704cbccca",
+    "path": "supabase/migrations/20261022223610_mystery_bounty_pick_refuses_after_the_reveal.sql",
+    "sourceSHA256": "93e0b63ef3e7196ac09e41456bc2ce2cd851cd6648d52ec9d318d14425b5238d",
+    "installedAfterSnapshot": true,
+    "sourceSQLMD5": "624f94bd290d4ba1e10ef639b31498af",
+    "ledgerSQLMD5": "a28112ac25e4f5f892231f5067dbe9aa",
+    "sourceAndInstalledBodyMD5": "d7e21f5ea886dce238a905ff9fd7f3f2",
+    "scope": "Current full routine body/security metadata independently match exact source intent despite historical ledger/source byte mismatch. Exact source function-only DDL runs locally as fourth transition; no routine/business call, application data or production write."
   }
 }

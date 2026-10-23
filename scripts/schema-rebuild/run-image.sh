@@ -28,6 +28,7 @@ PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-reb
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-forward-schema.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-opening-schema.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-journal-index-schema.py"
+PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-pick-schema.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-invalid-index.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" SCHEMA_PROVIDER_TEST=1 python3 "$root/scripts/schema-rebuild/test-role-bootstrap.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-lock-budget.py"

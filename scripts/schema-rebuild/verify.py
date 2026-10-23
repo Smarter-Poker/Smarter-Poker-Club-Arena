@@ -245,11 +245,11 @@ def main():
   if differences:
    output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent source catalog comparison differs before pending schema application: '+json.dumps(differences))
-  # Three exact reviewed DDL files follow baseline fidelity; no business routine
+  # Four exact reviewed DDL files follow baseline fidelity; no business routine
   # is invoked. The hourly-sweep concurrent-index preamble stays outside its
-  # original transaction, followed by opening DDL and the exact concurrent index.
+  # original transaction; opening, concurrent index and bounty-pick DDL follow.
   pending=forward.validate(ROOT,json.loads((BASE/'forward-schema.json').read_text())['arena'])
-  proposed=forward.journal_expected(forward.opening_expected(forward.expected_catalog(expected,forward.load_delta(BASE)),BASE),BASE)
+  proposed=forward.pick_expected(forward.journal_expected(forward.opening_expected(forward.expected_catalog(expected,forward.load_delta(BASE)),BASE),BASE),BASE)
   restored_governance=[]
   def prepare(entry):
    if entry['path']==forward.OPENING_PATH:restored_governance.append(governance.restore(sql,BASE,ROOT))

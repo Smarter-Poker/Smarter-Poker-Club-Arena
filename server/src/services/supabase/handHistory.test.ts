@@ -1020,6 +1020,52 @@ describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
   });
 });
 
+describe('cash multi-board history keeps exact paid pot slices', () => {
+  it.each(['bomb', 'RIT'] as const)(
+    'writes %s board/pot shares in the same immutable hand payload',
+    async (kind) => {
+      acceptAtomicHand();
+      const awards = [
+        { userId: 'u1', amount: 10.01, potIndex: 0, board: 1, low: false },
+        { userId: 'u1', amount: 5, potIndex: 1, board: 1, low: false },
+        { userId: 'u2', amount: 7.99, potIndex: 1, board: 2, low: true },
+      ];
+      const byBoard = [
+        {
+          board: 1,
+          userId: 'u1',
+          amount: 15.01,
+          pots: [
+            { index: 0, amount: 10.01 },
+            { index: 1, amount: 5 },
+          ],
+        },
+        { board: 2, userId: 'u2', amount: 7.99, low: true, pots: [{ index: 1, amount: 7.99 }] },
+      ];
+      const input = {
+        ...atomicParams(),
+        tournamentId: undefined,
+        ...(kind === 'bomb'
+          ? {
+              bombPot: { variant: 'plo8', board_count: 2, ante_amount: 4, trigger_reason: 'timed' },
+            }
+          : { ritBoards: [['2c', '3d', '4h', '5s', '6c']] }),
+        pots: [
+          { index: 0, amount: 11, eligible: ['u1', 'u2'] },
+          { index: 1, amount: 14, eligible: ['u1', 'u2'] },
+        ],
+        perPotAwards: awards,
+        winnersByBoard: byBoard,
+      };
+      await logHandHistory(input);
+      const row = rpcCalls[0].args.p_hand_row as any;
+      expect(row.winners_by_board).toEqual(byBoard);
+      expect(row.pots.flatMap((p: any) => p.awards)).toEqual(awards);
+      expect(row.winners).toEqual(input.winners);
+    }
+  );
+});
+
 describe('tournament bounty history keeps each winning pot', () => {
   it('persists the exact side-pot winner even when the paid total is merged into the main pot', async () => {
     const input = {

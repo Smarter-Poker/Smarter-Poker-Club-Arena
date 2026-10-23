@@ -2516,7 +2516,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     {
       const byRunWinner = new Map<
         string,
-        { board: number; userId: string; amount: number; handName?: string; low?: boolean }
+        {
+          board: number;
+          userId: string;
+          amount: number;
+          handName?: string;
+          low?: boolean;
+          pots: Array<{ index: number; amount: number }>;
+        }
       >();
       for (const a of this.currentHandPerPotAwards) {
         // One entry per (run, winner, half): a PLO8 scoop on a run is two.
@@ -2529,17 +2536,26 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           // written verbatim into hand_history.winners_by_board (jsonb,
           // no scale).
           existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
+          const slice = existing.pots.find((p) => p.index === a.potIndex);
+          if (slice) slice.amount = Math.round((slice.amount + a.amount) * 100) / 100;
+          else existing.pots.push({ index: a.potIndex, amount: a.amount });
         } else {
           byRunWinner.set(key, {
             board: a.board ?? 1,
             userId: a.userId,
             amount: a.amount,
             handName: a.hand?.name,
+            pots: [{ index: a.potIndex, amount: a.amount }],
             ...(low ? { low: true } : {}),
           });
         }
       }
-      this.currentHandWinnersByBoard = [...byRunWinner.values()].sort((x, y) => x.board - y.board);
+      this.currentHandWinnersByBoard = [...byRunWinner.values()]
+        .map((w) => ({
+          ...w,
+          pots: w.pots.sort((x, y) => x.index - y.index),
+        }))
+        .sort((x, y) => x.board - y.board);
     }
 
     // Apply distributions to player stacks

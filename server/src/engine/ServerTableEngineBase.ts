@@ -1808,6 +1808,8 @@ export abstract class ServerTableEngineBase {
     handName?: string;
     /** HI-LO: the low half's entry (2026-09-04). */
     low?: boolean;
+    /** Exact post-deduction shares, main pot first, summing to amount. */
+    pots?: Array<{ index: number; amount: number }>;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)

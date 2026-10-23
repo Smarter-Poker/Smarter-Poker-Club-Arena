@@ -12,6 +12,7 @@ import {
   projectThemeBucketEvidence,
 } from './support/appearanceRealtimeObservation';
 import { GAMEPLAY_CERTIFICATE_BOARD } from './support/gameplayCertificateBoard';
+import { completeCustomizationSignIn } from './support/completeCustomizationSignIn';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { OneShotRequestGate, runWithOneShotRequestGate } from './support/oneShotRequestGate';
@@ -489,7 +490,7 @@ async function signIn(page: Page, baseURL: string, account: TemporaryCustomizati
     ? titled
     : page.locator('form button[type="submit"], button[type="submit"]').first();
   await submit.click();
-  await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
+  await completeCustomizationSignIn(page, protectedURL);
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
   await ensureAcceptedTerms(page);
   await ensurePlayableProfile(page);

@@ -20,4 +20,6 @@ covers exact-source/mode/endpoint rejection, backend identity and setting refusa
 no index send on binding failure, and the maintained applier's invocation order.
 Local Node tests pass 14/14; syntax and diff checks pass. The explicit authenticated
 read-only session preflight separately verified worker zero and stable backend.
+The new module is included in the existing accounting CI input classification;
+its routing regression fails before that input is registered and passes afterward.
 Source preparation is not migration installation or completed cleanup proof.

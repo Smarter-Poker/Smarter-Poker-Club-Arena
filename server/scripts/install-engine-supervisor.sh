@@ -499,7 +499,9 @@ NEXT_RELEASE_UNIT=''
 fsync_paths /etc/systemd/system
 systemctl daemon-reload || retry 'systemd daemon-reload failed'
 
-if [ "$ACTIVE_IS_CURRENT_GENERATION" != 1 ]; then
+# A canonical, validated active directory can still be an older generation.
+# Keep same-SHA installs inert; forward upgrades must publish the new link.
+if [ "$ACTIVE_IS_CURRENT_GENERATION" != 1 ] || [ "$ACTIVE_CONTROL_SHA" != "$CONTROL_SHA" ]; then
   NEXT_LINK="$CONTROL_PARENT/.engine-control.next.$$"
   rm -f -- "$NEXT_LINK"
   ln -s "$GENERATION_DIR" "$NEXT_LINK"

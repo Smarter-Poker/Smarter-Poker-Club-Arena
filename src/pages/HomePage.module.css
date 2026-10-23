@@ -2357,23 +2357,3 @@
     0 2px 0 #050607,
     0 3px 4px rgb(0 0 0 / 90%);
 }
-
-/* Returning players lead with Play Poker; club setup stays one disclosure away. */
-.clubOptions {
-  width: 100%;
-  margin: 8px auto;
-  color: #e4e7ec;
-}
-.clubOptions > summary {
-  min-height: 44px;
-  padding: 12px 8px;
-  font:
-    600 14px/20px 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  cursor: pointer;
-}
-.clubOptions > summary:focus-visible {
-  outline: 2px solid #45adff;
-  outline-offset: -2px;
-}

@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/arena-header-cashout-flow",
+  "_comment": "Cashout requests ask the agent to accept or cancel (20261023173104, installed 2026-10-23).",
+  "tables": [],
+  "functions": [
+    "fn_cashier_notice_copy",
+    "fn_cashier_event_messenger_thread",
+    "fn_cashout_request_card"
+  ],
+  "columns": {}
+}

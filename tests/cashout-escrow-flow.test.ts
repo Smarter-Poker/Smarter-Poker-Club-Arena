@@ -168,8 +168,9 @@ describe('a player cannot ask for an amount the server is bound to refuse', () =
     expect(MODAL.replace(/\s+/g, ' ')).toContain(
       "if (cashoutAmount > currentBalance) throw new Error('That Is More Than Your Available Balance')"
     );
-    // Presets select an explicitly displayed amount at the cent quantum.
-    expect(MODAL).toContain('cashoutPercentage(currentBalance ?? NaN, pct)');
+    // Dan 2026-10-23: the player types the amount; no suggested amounts.
+    expect(MODAL).not.toContain('cashoutPercentage');
+    expect(MODAL).not.toContain('Quick Amounts');
   });
 });
 

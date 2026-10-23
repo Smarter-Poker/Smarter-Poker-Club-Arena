@@ -631,6 +631,22 @@
       0 0 9px rgb(38 202 109 / 78%);
   }
 
+  /* A GAME THAT HAS TURNED LIGHTNING WEARS A BOLT WHERE THE DOT WAS (Dan
+     2026-10-23: "a lightning bolt icon should be added to it where the blue
+     dot is now"). The row is marked from the same cluster mode that makes
+     its door JOIN LIGHTNING, so the bolt and the door can never disagree.
+     After the seated (green) rule so a seated player still sees the bolt. */
+  .club-lobby-machine .lobby-table tr.is-lightning td.lt-col-name::before {
+    left: 1.05cqw;
+    width: clamp(9px, 1.15cqw, 13px);
+    height: clamp(12px, 1.55cqw, 17px);
+    border-radius: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 18'%3E%3Cpath fill='%23ffd23f' stroke='%23fff3b0' stroke-width='0.6' stroke-linejoin='round' d='M7.4 0.6 1 10.2h4.3L4.1 17.4 11 7.2H6.6L7.4 0.6Z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    box-shadow: none;
+    filter: drop-shadow(0 0 3px rgb(255 210 63 / 90%));
+  }
+
   .club-lobby-machine .lobby-table .lt-live {
     display: none;
   }

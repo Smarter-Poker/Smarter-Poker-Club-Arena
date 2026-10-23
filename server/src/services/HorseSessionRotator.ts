@@ -76,6 +76,7 @@ import {
 } from './HorseTournamentCommitment.js';
 import {
   cashRosterAllows,
+  lightningFillVerdict,
   ploRosterAllows,
   refreshPloRoster,
   rosterExemptClub,
@@ -993,7 +994,11 @@ export class HorseSessionRotator {
         if (!uid || !horseIds.has(uid)) continue;
         if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
         /* The Lightning pilot club is outside both roster rules (Dan 2026-10-23). */
-        const exempt = rosterExemptClub((seat as { club_id?: unknown }).club_id);
+        /* So is a Lightning fill horse at its own test game (Dan 2026-10-23:
+           "make sure the horses are all playing"). */
+        const exempt =
+          rosterExemptClub((seat as { club_id?: unknown }).club_id) ||
+          lightningFillVerdict(uid, t?.cluster_id) === 'fill';
         const benched = benchedIds.has(uid) || (!exempt && cashRosterAllows(uid) === false);
         const offPlo = !exempt && ploRosterAllows(uid, t?.game_variant, t?.big_blind) === false;
         if (!benched && !offPlo && !offGame) continue;

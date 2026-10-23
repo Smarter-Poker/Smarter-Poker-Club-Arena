@@ -150,6 +150,8 @@ import {
   ploRosterAllows,
   refreshPloRoster,
   rosterExemptClub,
+  lightningFillVerdict,
+  isLightningFillCluster,
 } from './HorsePloRoster.js';
 
 /**
@@ -3030,6 +3032,12 @@ export class HorseFleetManager {
           if (openingFeeder || seedToDealable) {
             seatTarget = Math.min(table.max_players, Math.max(seatTarget, DEALABLE_MINIMUM));
           }
+          /* A LIGHTNING FILL GAME IS FILLED FULL (Dan 2026-10-23: "make sure
+             the horses are all playing 50 horses"). Its Main has to fill for
+             the tick to open the next table, so a drifting vibe target that
+             leaves one chair open would hold the game at one table. */
+          const lightningFillGame = isLightningFillCluster(table.cluster_id);
+          if (lightningFillGame) seatTarget = table.max_players;
           const seatsAllowed = capBySeatedCount(seatTarget, currentCount, policy.maxPerTable);
           if (seatsAllowed <= 0) {
             if (!table.cluster_id) continue;
@@ -3047,7 +3055,7 @@ export class HorseFleetManager {
              to be full are filled now and the pacing stays where it still
              reads as human: the sparse quarter, and a human's rescue. */
           const humanNeedsRescue = humanAtTable && currentCount < 4;
-          if (fill !== 'full' && !humanNeedsRescue) {
+          if (fill !== 'full' && !humanNeedsRescue && !lightningFillGame) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
           }
           /* ...except the two that make a cluster table dealable (see
@@ -3120,6 +3128,13 @@ export class HorseFleetManager {
               pilotElsewhereDropped++;
               return false;
             }
+            /* A LIGHTNING FILL HORSE IS OUTSIDE BOTH ROSTER RULES AT ITS OWN
+               TEST GAME (Dan 2026-10-23: "make sure the horses are all playing
+               50 horses"), and free like any horse everywhere else (16:50:
+               "remove any and all restrictions that are on the horses for
+               playing games"). See lightningFillVerdict. */
+            const fillVerdict = lightningFillVerdict(h.id, table.cluster_id);
+            const rosterExempt = rosterExemptClub(table.club_id) || fillVerdict === 'fill';
 
             /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
                VPIP is not a candidate for it - the database would refuse the
@@ -3195,7 +3210,7 @@ export class HorseFleetManager {
                low stakes, 0.50 big blind and under, are open to every horse
                (Dan 2026-10-23 12:59), so the gate reads the table's blind. */
             if (
-              !rosterExemptClub(table.club_id) &&
+              !rosterExempt &&
               isPloVariant(table.game_variant) &&
               ploRosterAllows(h.id, table.game_variant, table.big_blind) !== true
             ) {
@@ -3207,7 +3222,7 @@ export class HorseFleetManager {
                JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
                cash. Their tags already say so; this is the belt, and the
                database seat door is the braces. */
-            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id) === false) {
+            if (!rosterExempt && cashRosterAllows(h.id) === false) {
               tagDropped++;
               return false;
             }

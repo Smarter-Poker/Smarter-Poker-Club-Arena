@@ -1,10 +1,6 @@
 import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
 import { formatWalletChips } from '../../utils/format';
-import {
-  CASHOUT_AMOUNT_LIMIT,
-  cashoutPercentage,
-  validateCashoutAmount,
-} from '../../utils/cashoutAmount';
+import { CASHOUT_AMOUNT_LIMIT, validateCashoutAmount } from '../../utils/cashoutAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASHOUT REQUEST MODAL — Player Chip Cashout UI
@@ -41,18 +37,6 @@ import { fireVibration } from '../../utils/vibrationGate';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { titleCase } from '../../utils/titleCase';
 
-/**
- * A preset's figure, for its label only. `cashoutPercentage` hands back the
- * exact cent string the field is set to ("125.00"); on the glass a whole
- * amount prints whole ("125", "3,125") and a fractional one keeps its cents
- * ("0.31"). The value sent to the field is unchanged.
- */
-const presetFigure = (cents: string): string => {
-  const n = Number(cents);
-  return Number.isInteger(n)
-    ? n.toLocaleString('en-US')
-    : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
 /**
  * The exact figures on this sheet (the balance and each pending request) print
  * whole when they are whole and to two places when they are not: a bare
@@ -679,44 +663,8 @@ function CashoutRequestContent({
                   />
                   <span className="sc-label sc-ink--muted cro-unit">Chips</span>
                 </div>
-                {/* Lit numerals on the glass, divided by an engraved rule, not
-                    four drawn pills. Each preset says the cent value it will
-                    select (cashoutPercentage rounds down at the cent) and is
-                    dead when the balance cannot produce one. */}
-                <div className="cro-quick" role="group" aria-label="Quick Amounts">
-                  {([25, 50, 100] as const).map((pct) => {
-                    const selected = cashoutPercentage(currentBalance ?? NaN, pct);
-                    return (
-                      <button
-                        key={pct}
-                        type="button"
-                        className="cro-preset sc-ink--blue"
-                        disabled={isSubmitting || selected === null}
-                        onClick={() => {
-                          if (selected !== null) editAmount(selected);
-                        }}
-                      >
-                        {pct}%{selected !== null ? ` · ${presetFigure(selected)}` : ''}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="cro-preset sc-ink--blue"
-                    disabled={
-                      isSubmitting || cashoutPercentage(currentBalance ?? NaN, 100) === null
-                    }
-                    onClick={() => {
-                      const selected = cashoutPercentage(currentBalance ?? NaN, 100);
-                      if (selected !== null) editAmount(selected);
-                    }}
-                  >
-                    Max
-                    {cashoutPercentage(currentBalance ?? NaN, 100) !== null
-                      ? ` · ${presetFigure(cashoutPercentage(currentBalance ?? NaN, 100)!)}`
-                      : ''}
-                  </button>
-                </div>
+                {/* Dan 2026-10-23: no suggested amounts. The player types the
+                    figure into the framed field; nothing is prefilled for them. */}
               </div>
 
               <div className="cro-field">

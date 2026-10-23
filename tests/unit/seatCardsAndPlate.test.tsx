@@ -80,6 +80,19 @@ const rulesFor = (selector: string) => RULES.filter((r) => r.selector === select
 // 1. A REVEALED HAND IS LAID OUT LEFT TO RIGHT, WHATEVER SEAT IT IS IN
 // ═══════════════════════════════════════════════════════════════════════════
 
+describe('the all-in wager preserves the hero felt offset on wider tables', () => {
+  it('keeps the original hero lift when puck and chips share one assembly', () => {
+    const transform = (selector: string) =>
+      rulesFor(selector)
+        .map((r) => r.body.match(/transform:\s*([^;]+);/)?.[1])
+        .find(Boolean)
+        ?.replace(/\s/g, '');
+    const original = transform('.seat--hero .seat__bet-chips');
+    expect(original).toContain('-30px');
+    expect(transform('.seat--hero .seat__wager-group:has(.seat__allin-puck)')).toBe(original);
+  });
+});
+
 describe('a revealed hand reads left to right at every seat', () => {
   /** Every rule that positions a card inside a REVEALED opponent cluster. */
   const revealedCardRules = () =>

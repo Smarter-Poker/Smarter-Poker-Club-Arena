@@ -66,7 +66,7 @@ vi.mock('../../src/services/HapticService', () => ({
 }));
 vi.mock('../../src/utils/playPremiumSfx', () => ({ playPremiumSfx: vi.fn() }));
 
-// Keep HomePage, ClubQuickLinkTile and the directory resolver mounted. These
+// Keep HomePage and the directory resolver mounted. These
 // sibling surfaces have their own contracts and do not decide Cashier readiness.
 vi.mock('../../src/components/navigation/GlobalHeader', () => ({ default: () => null }));
 vi.mock('../../src/components/home/FloatingOrbs', () => ({ default: () => null }));
@@ -109,11 +109,7 @@ const mount = () =>
     </MemoryRouter>
   );
 const flush = () => act(async () => {});
-const cashier = () => screen.getByRole('button', { name: /^Cashier(?: For| \()/ });
-const invoke = (input: 'tile' | 'shortcut') => {
-  if (input === 'tile') fireEvent.click(cashier());
-  else fireEvent.keyDown(window, { key: '4' });
-};
+const invoke = () => fireEvent.keyDown(window, { key: '4' });
 function expectNoFalseJoin() {
   expect(screen.queryByRole('dialog', { name: 'Join A Club' })).not.toBeInTheDocument();
   expect(h.toast.info.mock.calls.some(([message]) => /join.*club.*cashier/i.test(message))).toBe(
@@ -146,38 +142,50 @@ afterEach(() => {
 });
 
 describe('mounted home Cashier directory readiness', () => {
-  it.each(['tile', 'shortcut'] as const)(
-    'keeps %s honest after the spinner timeout and opens the resolved wallet',
-    async (input) => {
-      const pending = holdDirectory();
-      mount();
-      await flush();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(6_000);
-      });
-      expect(screen.queryByText('Loading Arena')).not.toBeInTheDocument();
-
-      invoke(input);
-      expectNoFalseJoin();
-      expect(h.toast.info).toHaveBeenCalledWith('Loading Cashier Directory');
-      expect(h.memberships).toHaveBeenCalledTimes(1);
-      expect(h.ownedUnions).toHaveBeenCalledTimes(1);
-
-      await act(async () => {
-        pending.memberships.resolve([member()]);
-        pending.unions.resolve([]);
-      });
-      invoke(input);
-      expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
+  it('removes the five-card Quick Actions row while keeping the arena home', async () => {
+    mount();
+    await flush();
+    expect(screen.getByRole('main', { name: 'Poker Arena Home' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Quick Actions' })).not.toBeInTheDocument();
+    for (const label of [
+      'Daily Challenges',
+      'Leaderboards',
+      'Player Stats',
+      'Cashier',
+      'Marketplace',
+    ]) {
+      expect(screen.queryByRole('button', { name: new RegExp(label) })).not.toBeInTheDocument();
     }
-  );
+  });
+  it('keeps the shortcut honest after the spinner timeout and opens the resolved wallet', async () => {
+    const pending = holdDirectory();
+    mount();
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(screen.queryByText('Loading Arena')).not.toBeInTheDocument();
+
+    invoke();
+    expectNoFalseJoin();
+    expect(h.toast.info).toHaveBeenCalledWith('Loading Cashier Directory');
+    expect(h.memberships).toHaveBeenCalledTimes(1);
+    expect(h.ownedUnions).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pending.memberships.resolve([member()]);
+      pending.unions.resolve([]);
+    });
+    invoke();
+    expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
+  });
 
   it('waits for canonical union ownership even after memberships are confirmed empty', async () => {
     const pending = holdDirectory();
     mount();
     await flush();
     await act(async () => pending.memberships.resolve([]));
-    fireEvent.click(cashier());
+    invoke();
     expectNoFalseJoin();
     expect(h.toast.info).toHaveBeenCalledWith('Loading Cashier Directory');
 
@@ -192,18 +200,18 @@ describe('mounted home Cashier directory readiness', () => {
         },
       ])
     );
-    fireEvent.click(cashier());
+    invoke();
     expect(h.navigate).toHaveBeenCalledWith('/unions/owned-union/operations?tab=wallet');
   });
 
   it('keeps Join guidance for a successfully confirmed empty directory', async () => {
     mount();
     await flush();
-    invoke('shortcut');
+    invoke();
     expect(h.toast.info).toHaveBeenCalledWith(expect.stringMatching(/join.*club.*cashier/i));
-    fireEvent.click(cashier());
+    invoke();
     await flush();
-    expect(screen.getByRole('dialog', { name: 'Join A Club' })).toBeInTheDocument();
+    expect(h.toast.info).toHaveBeenCalledWith(expect.stringMatching(/join.*club.*cashier/i));
     expect(h.navigate).not.toHaveBeenCalled();
   });
 
@@ -216,11 +224,11 @@ describe('mounted home Cashier directory readiness', () => {
       first.unions.reject(new Error('Directory unavailable'));
     });
     const retry = holdDirectory();
-    fireEvent.click(cashier());
+    invoke();
     await flush();
     expect(h.toast.info).toHaveBeenCalledWith('Retrying Cashier Directory');
-    invoke('shortcut');
-    fireEvent.click(cashier());
+    invoke();
+    invoke();
     await flush();
     expectNoFalseJoin();
     expect(h.memberships).toHaveBeenCalledTimes(2);
@@ -230,7 +238,7 @@ describe('mounted home Cashier directory readiness', () => {
       retry.memberships.resolve([member()]);
       retry.unions.resolve([]);
     });
-    fireEvent.click(cashier());
+    invoke();
     expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
   });
 
@@ -246,7 +254,7 @@ describe('mounted home Cashier directory readiness', () => {
       first.unions.resolve([]);
       await vi.advanceTimersByTimeAsync(6_000);
     });
-    fireEvent.click(cashier());
+    invoke();
     expectNoFalseJoin();
     expect(h.toast.info).toHaveBeenCalledWith('Loading Cashier Directory');
 
@@ -254,7 +262,7 @@ describe('mounted home Cashier directory readiness', () => {
       second.memberships.resolve([member('Second Club', 'second-club')]);
       second.unions.resolve([]);
     });
-    fireEvent.click(cashier());
+    invoke();
     expect(h.navigate).toHaveBeenCalledWith('/clubs/second-club/cashier');
   });
 
@@ -270,12 +278,12 @@ describe('mounted home Cashier directory readiness', () => {
       pending.memberships.resolve([member()]);
       pending.unions.resolve([]);
     });
-    invoke('shortcut');
+    invoke();
     expect(h.toast.info).not.toHaveBeenCalledWith('Loading Cashier Directory');
     expect(h.toast.info).toHaveBeenCalledWith(expect.stringMatching(/join.*club.*cashier/i));
-    fireEvent.click(cashier());
+    invoke();
     await flush();
-    expect(screen.getByRole('dialog', { name: 'Join A Club' })).toBeInTheDocument();
+    expect(h.toast.info).toHaveBeenCalledWith(expect.stringMatching(/join.*club.*cashier/i));
     expect(h.navigate).not.toHaveBeenCalled();
   });
 
@@ -285,40 +293,8 @@ describe('mounted home Cashier directory readiness', () => {
     holdDirectory();
     mount();
     await flush();
-    fireEvent.click(cashier());
+    invoke();
     expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
     expect(h.toast.info).not.toHaveBeenCalledWith('Loading Cashier Directory');
-  });
-
-  it('keeps cached direct tap fast but withholds the all-wallet menu until owned unions settle', async () => {
-    writeCachedQuickLinkClubs('viewer-a', [member().club]);
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
-    const pending = holdDirectory();
-    mount();
-    await flush();
-
-    fireEvent.click(cashier());
-    expect(h.navigate).toHaveBeenCalledWith('/clubs/first-club/cashier');
-    h.navigate.mockClear();
-
-    fireEvent.contextMenu(cashier());
-    expect(screen.getByRole('status')).toHaveTextContent(/Refreshing Wallet Directory/i);
-    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
-
-    await act(async () => {
-      pending.memberships.resolve([member()]);
-      pending.unions.resolve([
-        {
-          id: '22222222-2222-4222-8222-222222222222',
-          slug: 'owned-union',
-          name: 'Owned Union',
-          ownerId: 'viewer-a',
-          memberCount: 2,
-        },
-      ]);
-    });
-
-    expect(screen.getByRole('menuitem', { name: /First Club/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Owned Union Union Wallet/i })).toBeInTheDocument();
   });
 });

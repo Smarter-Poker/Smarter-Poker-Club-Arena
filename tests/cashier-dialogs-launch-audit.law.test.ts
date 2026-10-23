@@ -25,7 +25,6 @@ const DWT = 'src/components/wallet/DiamondWalletTransfer.tsx';
 const DW = 'src/components/wallet/DynamicWallet.tsx';
 const DW_CSS = 'src/components/wallet/DynamicWallet.css';
 const STATEMENT = 'src/components/wallet/ChipStatement.tsx';
-const TILE = 'src/components/home/ClubQuickLinkTile.tsx';
 const TABLE = 'src/components/table/CashierModal.tsx';
 const TABLE_CSS = 'src/components/table/CashierModal.css';
 const PURCHASE = 'src/components/table/PurchaseConsole.tsx';
@@ -284,19 +283,7 @@ describe('D-12 (kept flat, see below) / D-13 / R-04: the Diamond Wallet', () => 
   });
 });
 
-describe('D-14 / R-01: the Cashier card directory on the shark master', () => {
-  it('labels the one painted plate and fills the pill slot', () => {
-    const tile = read(TILE);
-    const [tag] = consoleTags(tile);
-    expect(tag).toContain('family="shark"');
-    expect(tag).toMatch(/plates=\{\{\s*primary: \{\s*label: 'Close'/);
-    expect(tag).toContain('pill="Wallets"');
-    // The 2026-10-03 ruling stands: no invented mark for a club without a logo,
-    // but the slot is kept so every name starts on the same line.
-    expect(tile).not.toContain('cashierSwitchLogoFallback');
-    expect(tile).toContain('<span className={styles.cashierSwitchLogo} aria-hidden="true" />');
-  });
-});
+// October 22: D-14 / R-01 retired with the owner's home-card removal.
 
 describe('R-03 / R-07 / R-13: DynamicWallet', () => {
   it('prints "-" for every figure when the first read fails', () => {

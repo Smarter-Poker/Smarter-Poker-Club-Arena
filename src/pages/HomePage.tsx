@@ -3,7 +3,7 @@
  * CLUB ARENA — Home Page (World Hub Cinematic Design)
  * ═══════════════════════════════════════════════════════════════════════════════
  * Phase 4: 16 Advanced Enhancements
- * - Architecture: Extracted DailyChallenges, ClubContextMenu, lobbyTiles config
+ * - Architecture: Extracted ClubContextMenu and club selection
  * - Core UX: Keyboard shortcuts, pin favorites, leave confirmation, timestamps
  * - Polish: Card entrance, prefetch, search, haptic, sound, seasonal, tooltip
  * - Accessibility: ARIA, focus traps, keyboard nav, offline indicator
@@ -41,11 +41,7 @@ import haptic from '../services/HapticService';
 import { playPremiumSfx } from '../utils/playPremiumSfx';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import ClubContextMenu from '../components/home/ClubContextMenu';
-import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
-import LOBBY_TILES from '../config/lobbyTiles.config';
-import { preloadRoute } from '../utils/ChunkPreloader';
 import {
-  eligibleQuickLinkClubs,
   mergeCashierWalletDirectory,
   isUnionEntity,
   resolveCashierWallet,
@@ -270,7 +266,7 @@ function HomePageInner() {
   }, [leaveClubId]);
 
   // Club quick links (Cashier/Marketplace tiles) — target club selection
-  const [quickLinkClubId, setQuickLinkClubId] = useState<string | null>(() => readLastClubId());
+  const [quickLinkClubId] = useState<string | null>(() => readLastClubId());
 
   // #12: Seasonal theme
   const seasonalTheme = useMemo(() => getSeasonalTheme(), []);
@@ -713,11 +709,11 @@ function HomePageInner() {
           break;
         case '2':
           haptic.light();
-          navigate('/leaderboard'); // Leaderboards (tile 2, matches lobbyTiles.config)
+          navigate('/leaderboard'); // Leaderboards
           break;
         case '3':
           haptic.light();
-          navigate('/stats'); // Player Stats (tile 3, matches lobbyTiles.config)
+          navigate('/stats'); // Player Stats
           break;
         case '4': {
           haptic.light();
@@ -1240,69 +1236,6 @@ function HomePageInner() {
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
 
-  // Marketplace remains club-only. Cashier additionally exposes an owned
-  // union treasury from its right-click / long-press wallet launcher.
-  const quickLinkClubs = useMemo(() => eligibleQuickLinkClubs(userClubs), [userClubs]);
-  const quickLinkClub = useMemo(
-    () => resolveTargetClub(quickLinkClubs, quickLinkClubId),
-    [quickLinkClubs, quickLinkClubId]
-  );
-  const cashierWallets = useMemo(
-    () => (loadFailed ? [] : mergeCashierWalletDirectory(userClubs, ownedUnionWallets)),
-    [loadFailed, ownedUnionWallets, userClubs]
-  );
-  const cashierWallet = useMemo(
-    () => resolveCashierWallet(cashierWallets, quickLinkClubId),
-    [cashierWallets, quickLinkClubId]
-  );
-
-  const openClubCashier = useCallback(
-    (club: UserClub) => {
-      rememberLastClub(club.id);
-      setQuickLinkClubId(club.id);
-      haptic.light();
-      playPremiumSfx('navigate');
-      navigate(
-        isUnionEntity(club)
-          ? `/unions/${club.slug || unionRouteRef(String(club.union_id || club.id))}/operations?tab=wallet`
-          : `/clubs/${club.slug || club.id}/cashier`
-      );
-    },
-    [navigate]
-  );
-
-  const openClubMarketplace = useCallback(
-    (club: UserClub) => {
-      rememberLastClub(club.id);
-      setQuickLinkClubId(club.id);
-      haptic.light();
-      playPremiumSfx('navigate');
-      navigate(`/marketplace?club=${club.id}`);
-    },
-    [navigate]
-  );
-
-  const cashierEmpty = useCallback(() => {
-    haptic.light();
-    if (directoryPending) {
-      toast.info('Loading Cashier Directory');
-      return;
-    }
-    if (loadFailed) {
-      toast.info('Retrying Cashier Directory');
-      void fetchUserData(false, () => isMountedRef.current);
-      return;
-    }
-    toast.info('Join a club to access the cashier');
-    setShowJoinModal(true);
-  }, [directoryPending, fetchUserData, loadFailed, toast]);
-
-  const marketplaceEmpty = useCallback(() => {
-    haptic.light();
-    playPremiumSfx('navigate');
-    navigate('/marketplace');
-  }, [navigate]);
-
   return (
     <div
       className={styles.container}
@@ -1358,7 +1291,11 @@ function HomePageInner() {
             >
               <div className={styles.shortcutGrid}>
                 {[
-                  ['1-5', 'Navigate Bottom Tiles'],
+                  ['1', 'Daily Challenges'],
+                  ['2', 'Leaderboards'],
+                  ['3', 'Player Stats'],
+                  ['4', 'Cashier'],
+                  ['5', 'Marketplace'],
                   ['J', 'Join A Club'],
                   ['C', 'Create A Club'],
                   ['F', 'Find A Player'],
@@ -1521,82 +1458,6 @@ function HomePageInner() {
         )}
 
         {/* Welcome message for new users is handled as a toast popup (auto-dismiss) */}
-
-        {/* ═══════════════════════════════════════════════════════════════════════
-                    DAILY CHALLENGES — Extracted Component (#16)
-                ═══════════════════════════════════════════════════════════════════════ */}
-        {/* P4-2: Presence section removed — was the blue bar */}
-        {/* P4-4: Section separator removed */}
-
-        {/* ═══════════════════════════════════════════════════════════════════════
-                    BOTTOM ROW — from lobbyTiles.config.ts (#18)
-                ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.bottomRow} role="navigation" aria-label="Quick Actions">
-          {LOBBY_TILES.map((tile) =>
-            tile.alt === 'Cashier' || tile.alt === 'Marketplace' ? (
-              /* Club-aware quick links — club name on the tile, quick-switch
-                 popover (tap the corner button or long-press) for multi-club users */
-              <ClubQuickLinkTile
-                key={tile.alt}
-                tile={tile}
-                clubs={tile.alt === 'Cashier' ? cashierWallets : quickLinkClubs}
-                targetClub={tile.alt === 'Cashier' ? cashierWallet : quickLinkClub}
-                menuTitle={tile.alt === 'Cashier' ? 'Open Cashier For' : 'Open Marketplace For'}
-                onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
-                onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
-                preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}
-                directoryPending={tile.alt === 'Cashier' ? directoryPending : false}
-                directoryError={tile.alt === 'Cashier' ? loadFailed : false}
-                onDirectoryRetry={
-                  tile.alt === 'Cashier'
-                    ? () => void fetchUserData(false, () => isMountedRef.current)
-                    : undefined
-                }
-              />
-            ) : (
-              <button
-                key={tile.alt}
-                className={styles.tileCard}
-                onClick={() => {
-                  if (tile.route) {
-                    haptic.light();
-                    navigate(tile.route);
-                  }
-                }}
-                /* PERF PASS 2026-08-22 (handoff item 8): warm the destination
-                   chunk on first intent, exactly like the quick-link tiles
-                   above. Matters most for Player Stats, whose recharts chunk
-                   (~314KB) is deliberately not in the boot-time preload list.
-                   preloadRoute is idempotent — a repeated dynamic import of a
-                   loaded module resolves from cache — so no dedupe ref. */
-                onMouseEnter={() => tile.route && preloadRoute(tile.route)}
-                onTouchStart={() => tile.route && preloadRoute(tile.route)}
-                onFocus={() => tile.route && preloadRoute(tile.route)}
-                aria-label={`${tile.alt} (Press ${tile.shortcutKey})`}
-              >
-                <div className={styles.tilePedestal}></div>
-                <div className={styles.tileImageWrapper}>
-                  <img
-                    src={tile.img}
-                    alt={tile.alt}
-                    className={`${styles.tileImage} ${
-                      tile.preserveNativeRatio ? styles.tileImageNative : ''
-                    }`}
-                    loading="eager"
-                    width={tile.width || 640}
-                    height={tile.height || 1024}
-                  />
-                  {tile.portalStatus ? (
-                    <span className={styles.tileLabel} aria-hidden="true">
-                      <strong>{tile.alt}</strong>
-                      <small>{tile.portalStatus}</small>
-                    </span>
-                  ) : null}
-                </div>
-              </button>
-            )
-          )}
-        </div>
       </div>
 
       {/* #17: Extracted Context Menu Component */}

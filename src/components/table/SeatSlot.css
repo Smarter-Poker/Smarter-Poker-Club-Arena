@@ -5010,6 +5010,13 @@
     gap: 3px;
     z-index: 5;
   }
+  /* Preserve the same hero lift as the ordinary wager above. */
+  .seat--hero .seat__wager-group:has(.seat__allin-puck) {
+    transform: translate(
+      calc(-50% + var(--bet-offset-x, 0px)),
+      calc(-50% + var(--bet-offset-y, 0px) - 30px)
+    );
+  }
   .seat__wager-group:has(.seat__allin-puck) > .seat__bet-chips {
     position: static;
     transform: none;

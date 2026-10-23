@@ -107,8 +107,11 @@ describe('the render acknowledgement (hand creation → first client render)', (
       'sendRenderAck(handId: string, deltaMs: number, resumed = false): void {'
     );
     expect(body).toContain('this.ws?.readyState !== 1');
-    expect(body).toMatch(
-      /JSON\.stringify\(\s*lightningRenderAckFrame\(this\.opts\.tableId, handId, deltaMs, resumed\)\s*\)/
+    expect(body).toContain(
+      "{ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d, r: 1 }"
+    );
+    expect(body).toContain(
+      "{ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d }"
     );
     expect(body).not.toMatch(/card|hole|seat|stack/i);
     expect(read('src/hooks/useEngineTableState.ts')).toContain(

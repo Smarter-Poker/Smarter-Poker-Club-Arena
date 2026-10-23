@@ -36,7 +36,6 @@ import type { Operation } from 'fast-json-patch';
 import { NATIVE_RESUME_EVENT } from '../lib/nativeResume';
 import { withLightningDevice } from '../lightning/lightningDeviceReport';
 import { noteLightningUserEvent } from '../lightning/lightningDecisionQueue';
-import { lightningRenderAckFrame } from '../lightning/lightningRenderAck';
 const { applyPatch } = jsonPatch;
 
 /** The socket watchdog cannot run until authentication has returned a token. */
@@ -1431,10 +1430,16 @@ export class EngineStateClient {
    */
   sendRenderAck(handId: string, deltaMs: number, resumed = false): void {
     if (!handId || this.ws?.readyState !== 1) return;
+    const d = Number.isFinite(deltaMs) ? Math.max(0, Math.min(60_000, Math.round(deltaMs))) : 0;
     try {
       // `r: 1` (a hand painted only after a hidden tab came back) is a resume.
+      // Built inline: lightningRenderAck stays out of the entry chunk.
       this.ws.send(
-        JSON.stringify(lightningRenderAckFrame(this.opts.tableId, handId, deltaMs, resumed))
+        JSON.stringify(
+          resumed
+            ? { type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d, r: 1 }
+            : { type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d }
+        )
       );
     } catch {
       /* onclose will reconnect; a lost ack is no sample */

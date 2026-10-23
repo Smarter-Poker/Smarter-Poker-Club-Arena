@@ -3,8 +3,29 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 describe('Ubuntu browser dependency mirror', () => {
+  it('selects the primary mirror before both browser and native package installs', () => {
+    const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+    const native = workflow.jobs.accounting_postgres.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Install PostgreSQL 17 tools without a default database service'
+    ).run;
+    const selection = 'sudo python3 scripts/ci/ubuntu-apt-mirror.py';
+    expect(native).toContain(selection);
+    expect(native.indexOf(selection)).toBeLessThan(
+      native.indexOf('cp /etc/apt/sources.list.d/ubuntu.sources')
+    );
+    const browsers = workflow.jobs['css-beats-e2e'].steps;
+    const selected = browsers.findIndex((step: { run?: string }) => step.run === selection);
+    const install = browsers.findIndex(
+      (step: { run?: string }) => step.run === 'npx playwright install chromium webkit --with-deps'
+    );
+    expect(selected).toBeGreaterThanOrEqual(0);
+    expect(selected).toBeLessThan(install);
+  });
+
   it('changes only active Azure Ubuntu URIs, preserves trust and is idempotent', () => {
     const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
     try {

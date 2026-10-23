@@ -31,3 +31,11 @@ now selects Ubuntu's primary HTTPS archive before the unchanged Chromium and
 WebKit installer. Fixture tests cover both APT source formats, unchanged signing
 keys and other repositories, idempotence, and refusal of absent sources. Browser
 versions, test assertions and job limits remain unchanged.
+
+The PostgreSQL installer encountered the same mirror stall: one runner spent
+18m35s installing packages while three identical successful runners took
+26-38 seconds, exhausting the job during passing native tests. A targeted retry
+passed with a 30-second install, but integration qualification encountered the
+stall again. Apply the same tested mirror selection before the existing isolated
+Ubuntu/PGDG source copy. Keep package versions, signature verification, all native
+cases and job limits intact.

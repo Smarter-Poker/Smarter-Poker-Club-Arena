@@ -966,7 +966,7 @@ export abstract class TournamentManagerBase {
   /** Horses already offered the current add-on window in this process. */
   protected addOnAttemptedHorseIds = new Set<string>();
   /** Round-robin cursor keeps one transient refusal from starving the field. */
-  protected addOnBatchCursor = 0;
+  protected addOnBatchCursor: string | null = null;
   protected pendingAddOnPeriod: boolean = false;
   // Hand-for-hand bubble
   protected handForHandActive: boolean = false;
@@ -4346,6 +4346,20 @@ export abstract class TournamentManagerBase {
     // add-on chips keep the pool mutable until the persisted add-on deadline.
     if (result.finalization_deferred === true && result.reason === 'addon_required') {
       this.tournamentEntryRepricePending = false;
+      if (
+        this.addOnPeriodTriggered &&
+        this.tournamentCache?.addon_from_start === true &&
+        Date.parse(String(this.tournamentCache.addon_period_ends_at)) -
+          Date.parse(String(this.tournamentCache.addon_period_started_at)) >
+          this.addOnBreakDurationMs()
+      ) {
+        // The database's earliest entry boundary also ends FreeBuy's early
+        // purchase phase. A thaw-shifted offer deadline must not leave play
+        // running after registration has closed. The existing drain still
+        // waits for every hand and owns the one full closing minute.
+        await this.continueFreeBuyClosingDrain();
+        if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      }
       if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
         if (this.onBreak) {
           this.pendingAddOnPeriod = true;
@@ -11232,6 +11246,8 @@ export abstract class TournamentManagerBase {
     ) {
       return;
     }
+    let pendingHorseIds: string[] = [];
+    let completedOffers = 0;
     try {
       if (
         this.addOnDrainPending &&
@@ -11341,42 +11357,57 @@ export abstract class TournamentManagerBase {
       const pendingHorseRows = eligibleHorseRows
         .filter((horse) => !this.addOnAttemptedHorseIds.has(horse.id))
         .sort((a, b) => a.id.localeCompare(b.id));
-      const start = Math.min(this.addOnBatchCursor, Math.max(0, pendingHorseRows.length - 1));
+      pendingHorseIds = pendingHorseRows.map((horse) => horse.id);
+      // The pending list shrinks after every receipt. A numeric offset into
+      // that new list skips players; retain the last identity instead.
+      const next = this.addOnBatchCursor
+        ? pendingHorseRows.findIndex((horse) => horse.id > this.addOnBatchCursor!)
+        : 0;
+      const start = Math.max(0, next);
       const horseRows = pendingHorseRows.slice(
         start,
         start + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE
       );
       if (horseRows.length === 0) return;
-      this.addOnBatchCursor =
-        start + horseRows.length >= pendingHorseRows.length ? 0 : start + horseRows.length;
-      if (pendingHorseRows.length > horseRows.length) this.requestEliminationSweep();
 
       let taken = 0;
       const declined = new Map<string, number>();
-      for (const h of horseRows) {
+      // Bound concurrent requests as well as total work per admission. The
+      // canonical RPC still owns the wallet, seat, price and receipt checks.
+      for (let offset = 0; offset < horseRows.length; offset += 4) {
         if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: h.id,
-          p_rebuy_type: 'addon',
-          // null: let the server price it (add-ons are charged at face value).
-          p_cost: null,
-          p_chips: null,
-          p_current_level: this.currentLevel,
-        });
-        if (!this.eliminationMutationAllowed()) return;
-        if (error) {
-          declined.set(error.message, (declined.get(error.message) || 0) + 1);
-          // Ambiguous transport failure can follow a committed idempotent
-          // purchase. Keep it retryable inside this same offer window; the
-          // canonical RPC safely answers already-taken on replay.
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          continue;
+        const group = horseRows.slice(offset, offset + 4);
+        const replies = await Promise.allSettled(
+          group.map(async (h) => {
+            if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return null;
+            return supabase.rpc('process_tournament_rebuy', {
+              p_tournament_id: this.tournamentId,
+              p_user_id: h.id,
+              p_rebuy_type: 'addon',
+              p_cost: null,
+              p_chips: null,
+              p_current_level: this.currentLevel,
+            });
+          })
+        );
+        if (!this.running || this.eliminationSweepSignal?.aborted) return;
+        for (let index = 0; index < group.length; index++) {
+          const h = group[index];
+          const reply = replies[index];
+          this.addOnBatchCursor = h.id;
+          if (reply.status === 'rejected' || reply.value?.error) {
+            const message =
+              reply.status === 'rejected' ? String(reply.reason) : reply.value!.error!.message;
+            declined.set(message, (declined.get(message) || 0) + 1);
+            // A lost response may follow a committed receipt. Retain this
+            // identity for the same idempotent RPC on its next admission.
+            continue;
+          }
+          if (!reply.value) continue;
+          this.addOnAttemptedHorseIds.add(h.id);
+          completedOffers++;
+          if ((reply.value.data as { success?: boolean } | null)?.success === true) taken++;
         }
-        // A clean grant or semantic refusal has made a final decision for this
-        // window, so later bounded batches can reach the rest of the field.
-        this.addOnAttemptedHorseIds.add(h.id);
-        if ((data as { success?: boolean } | null)?.success === true) taken++;
       }
 
       // Quiet when nothing happened: this is called repeatedly across the
@@ -11391,6 +11422,19 @@ export abstract class TournamentManagerBase {
       }
     } catch (err) {
       reportError(err, 'Tournament.tournament_addon_threw');
+    } finally {
+      const more = pendingHorseIds.some((id) => !this.addOnAttemptedHorseIds.has(id));
+      if (more && this.running && !isMaintenanceFrozen() && !this.prizePoolFinalized) {
+        // Twenty seconds is the retry cadence once the field has been served,
+        // not a cooldown between pieces of its first offer. Yield each bounded
+        // batch to the existing scheduler and continue the same offer now.
+        // An entirely ambiguous batch retains the ordinary short retry.
+        this.requestAddOnDeadlineRetry(
+          completedOffers > 0 || this.eliminationWorkBudgetExpired()
+            ? 0
+            : TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+        );
+      }
     }
   }
 
@@ -11541,7 +11585,7 @@ export abstract class TournamentManagerBase {
       this.addOnPeriodTriggered = true;
       durableWindowProven = true;
       this.addOnAttemptedHorseIds.clear();
-      this.addOnBatchCursor = 0;
+      this.addOnBatchCursor = null;
       if (this.tournamentCache) {
         this.tournamentCache.addon_period_started_at = startedAt;
         this.tournamentCache.addon_period_ends_at = endsAt;

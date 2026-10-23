@@ -362,9 +362,11 @@ describe('authoritative horse action effect commit', () => {
     { capped: true, discarded: false },
     { capped: false, discarded: true },
     { capped: false, discarded: false, nearPot: true },
+    { capped: false, discarded: false, checkedTo: true },
+    { capped: false, discarded: false, underRaise: true },
   ])(
     'rechecks river nuts against the fresh menu and own discard: %s',
-    async ({ capped, discarded, nearPot = false }) => {
+    async ({ capped, discarded, nearPot = false, checkedTo = false, underRaise = false }) => {
       const { engine, player, enginePlayer, state, performAction } = harness(true);
       Object.assign(engine.tableInfo, { game_variant: discarded ? 'pineapple' : 'plo5' });
       if (capped) Object.assign(engine.tableInfo, { cap_enabled: true, cap_bb: 40 });
@@ -417,6 +419,23 @@ describe('authoritative horse action effect commit', () => {
           wagersCapped: false,
         });
       }
+      if (checkedTo) {
+        Object.assign(state, { currentBet: 0 });
+        state.players[1].bet = 0;
+        engine.handController.getAuthoritativeActionState = () => ({
+          schemaVersion: 1,
+          heroSeat: 1,
+          currentPlayerSeat: 1,
+          canAct: true,
+          legalActions: ['fold', 'check', 'bet', 'all_in'],
+          toCall: 0,
+          minRaiseTo: 2,
+          maxRaiseTo: 169,
+          structure: 'pot_limit',
+          fixedBetSize: null,
+          wagersCapped: false,
+        });
+      }
       const passive = async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
         requestId: 1,
@@ -424,7 +443,11 @@ describe('authoritative horse action effect commit', () => {
         fence: snapshot.fence,
         planIssueDisposition: 'no_effects' as const,
         planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
-        decision: { action: nearPot ? 'bet' : 'call', amount: nearPot ? 95 : 50, thinkTime: 1 },
+        decision: checkedTo
+          ? { action: 'check', thinkTime: 1 }
+          : underRaise
+            ? { action: 'raise', amount: 125, thinkTime: 1 }
+            : { action: nearPot ? 'bet' : 'call', amount: nearPot ? 95 : 50, thinkTime: 1 },
         rngBefore: 11,
         rngAfter: 22,
         computeMs: 1,
@@ -442,9 +465,11 @@ describe('authoritative horse action effect commit', () => {
       expect(performAction.mock.calls[0].slice(1, 4)).toEqual(
         nearPot
           ? ['bet', 100, 'horse_policy']
-          : capped
-            ? ['call', 50, 'horse_policy']
-            : ['raise', 269, 'horse_policy']
+          : checkedTo
+            ? ['bet', 169, 'horse_policy']
+            : capped
+              ? ['call', 50, 'horse_policy']
+              : ['raise', 269, 'horse_policy']
       );
     }
   );

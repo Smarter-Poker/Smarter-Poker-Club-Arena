@@ -62,29 +62,64 @@ export function hasRiverNuts(hero: SeatPlayer, state: HorseGameStateV2): boolean
   return true;
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** The size a river nut wager should be (Dan 2026-10-23: never under-size the
+ * nuts). Pot limit and fixed limit: the controller's maximum, which is the
+ * full pot (or the fixed size). No limit: at least a full pot, up to the
+ * maximum; a larger policy size is kept by the caller. The controller menu,
+ * hero's stack and any host cap (already folded into maxRaiseTo) bound it.
+ */
+export function riverNutWagerTarget(
+  action: 'bet' | 'raise',
+  hero: SeatPlayer,
+  state: HorseGameStateV2
+): number | null {
+  const min = state.minRaiseTo;
+  const max = state.maxRaiseTo;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max! < min!) return null;
+  if (max! > hero.bet + hero.stack + 0.005) return null;
+  if (action === 'raise' && min! <= state.currentBet) return null;
+  const vi = variantInfo(state.gameVariant ?? 'nlh');
+  const structure =
+    state.bettingStructure ??
+    (vi.isFixedLimit ? 'fixed_limit' : vi.isPotLimit ? 'pot_limit' : 'no_limit');
+  if (structure !== 'no_limit') return round2(max!);
+  if (!Number.isFinite(state.pot) || state.pot < 0) return null;
+  const base = action === 'bet' ? 0 : state.currentBet;
+  const potTarget = base + state.pot + (action === 'raise' ? state.toCall! : 0);
+  return round2(Math.min(max!, Math.max(min!, potTarget)));
+}
+
 /** Final strategy invariant, after every variant/joint/tournament owner.
  * Includes closing calls out of position and multiway nut-flush calls
  * with another responder still behind (production hand 44867615).
  * Only the controller's immutable menu may grant reopening or a short raise.
+ *
+ * 2026-10-23 extension: with the exact river nuts and an opponent still able
+ * to act, a horse never checks (it bets), and a nut bet or raise is never
+ * smaller than riverNutWagerTarget (production hand 45000112 raised to 92 of a
+ * legal 113 in pot limit).
  */
 export function riverNutsRaise(
   decision: HorseDecision,
   hero: SeatPlayer,
   state: HorseGameStateV2
 ): HorseDecision {
-  // Preserve an already selected wager and its sizing. This rule repairs a
-  // passive decision; it does not replace sound value-raise sizing.
-  if (decision.action !== 'call' && decision.action !== 'fold') return decision;
+  const act = decision.action;
+  if (act !== 'call' && act !== 'fold' && act !== 'check' && act !== 'bet' && act !== 'raise')
+    return decision;
   if (
     state.stage !== 'river' ||
     state.wagersCapped === true ||
     state.stateSchemaVersion !== 1 ||
     !Array.isArray(state.legalActions) ||
     !Number.isFinite(state.toCall) ||
-    state.toCall! <= 0 ||
+    state.toCall! < 0 ||
     !Number.isFinite(state.currentBet) ||
     !Number.isFinite(hero.stack) ||
-    hero.stack <= state.toCall! ||
+    !Number.isFinite(hero.bet) ||
+    hero.stack <= 0 ||
     hero.is_folded ||
     hero.is_all_in ||
     hero.is_sitting_out
@@ -94,6 +129,29 @@ export function riverNutsRaise(
     (p) => p.seat !== hero.seat && !p.is_folded && !p.is_sitting_out
   );
   if (!opponents.some((p) => !p.is_all_in && p.stack > 0)) return decision;
+  const facing = state.toCall! > 0;
+
+  if (!facing) {
+    // Checked to, or first to act: the nuts bet (never check) and are never under-sized.
+    if (act !== 'check' && act !== 'bet') return decision;
+    if (!state.legalActions.includes('bet')) return decision;
+    const target = riverNutWagerTarget('bet', hero, state);
+    if (target === null) return decision;
+    if (act === 'bet' && Number.isFinite(decision.amount) && decision.amount! >= target - 0.005)
+      return decision;
+    if (!hasRiverNuts(hero, state)) return decision;
+    return { ...decision, action: 'bet', amount: target };
+  }
+
+  if (act === 'raise') {
+    if (!state.legalActions.includes('raise') || !Number.isFinite(decision.amount)) return decision;
+    const target = riverNutWagerTarget('raise', hero, state);
+    if (target === null || decision.amount! >= target - 0.005) return decision;
+    if (!hasRiverNuts(hero, state)) return decision;
+    return { ...decision, amount: target };
+  }
+  if (act !== 'call' && act !== 'fold') return decision;
+  if (hero.stack <= state.toCall!) return decision;
   const min = state.minRaiseTo;
   const max = state.maxRaiseTo;
   // Fixed limit also advertises all_in when its structure clamp would only
@@ -123,7 +181,7 @@ export function riverNutsRaise(
   ) {
     raise = {
       action: 'raise',
-      amount: Math.round(max! * 100) / 100,
+      amount: round2(max!),
       thinkTime: decision.thinkTime,
     };
   } else if (

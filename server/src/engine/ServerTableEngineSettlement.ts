@@ -1,4 +1,8 @@
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
+import {
+  observeCommittedHandRiverValue,
+  type RiverValueAuditInput,
+} from './HorseRiverValueAudit.js';
 import { publishSettledTournamentHand } from './settledTournamentStandings.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
 import { diamondCashJackpotVerdict } from './diamondCashJackpot.js';
@@ -2571,6 +2575,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           result = await commitAuthoritativeHand();
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
+          }
+          // HORSE RIVER VALUE ALARM (2026-10-23): audit the committed hand's
+          // horse actions from the settled snapshot, after this turn, never
+          // on the settlement path. Pure in-memory; no database reads.
+          {
+            const auditHand = snap.handNumber;
+            const auditInput = {
+              variant: snap.variant || tableInfo.game_variant || 'nlh',
+              holeCards: snap.holeCards,
+              actions: snap.actions as RiverValueAuditInput['actions'],
+              capEnabled: tableInfo.cap_enabled === true,
+              capBb: Number(tableInfo.cap_bb) || 0,
+              bigBlind: Number(tableInfo.big_blind) || 0,
+            };
+            setImmediate(() =>
+              observeCommittedHandRiverValue(
+                { tableId: this.tableId, handNumber: auditHand },
+                auditInput
+              )
+            );
           }
         } catch (err) {
           const message = describeError(err);

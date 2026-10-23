@@ -12,13 +12,23 @@ name: Agent Autopilot
 on:
   pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize]
+  # RE-ARM (2026-10-23). GitHub can withdraw auto-merge right after this job
+  # arms it: PR #7780 was armed at 06:39:18 and withdrawn at 06:39:35, and
+  # nothing armed it again, so a fully green urgent engine fix sat unmerged for
+  # 43 minutes until it was merged by hand. When the required CI run for a
+  # same-repository PR completes successfully, re-evaluate that PR through the
+  # same queue script (it leaves an armed PR alone and merges a clean one only
+  # after proving the base still requires checks). Native event, no schedule.
+  workflow_run:
+    workflows: ['CI — Build & Type Safety']
+    types: [completed]
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: agent-autopilot-${{ github.event.pull_request.number }}
+  group: agent-autopilot-${{ github.event.pull_request.number || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
@@ -28,8 +38,12 @@ jobs:
     # ownership is the authorization boundary. A fork may run ordinary CI but
     # can never mint merge authority, even when every check passes.
     if: >-
-      github.event.pull_request.draft == false
-      && github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name == 'pull_request_target'
+      && github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name == 'workflow_run'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -56,8 +70,22 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
+          if [ -z "$PR" ]; then
+            # Re-arm path: the open, non-draft PR whose head is exactly the
+            # commit CI just passed. Anything else (a newer push, a closed PR,
+            # a fork) is not this run's to touch.
+            MATCH=$(gh pr list --repo "$REPO" --head "$RUN_HEAD_BRANCH" --state open \
+              --json number,isDraft,headRefOid,labels \
+              --jq "[.[] | select(.headRefOid == \"$RUN_HEAD_SHA\" and .isDraft == false)][0] // empty")
+            [ -n "$MATCH" ] || { echo "No open PR at $RUN_HEAD_SHA; nothing to re-arm."; exit 0; }
+            PR=$(jq -r '.number' <<<"$MATCH")
+            LABELS=$(jq -r '[.labels[].name] | join(",")' <<<"$MATCH")
+            echo "Re-evaluating #$PR after its CI passed at $RUN_HEAD_SHA."
+          fi
           case ",$LABELS," in
             *,do-not-merge,*|*,hold,*|*,wip,*)
               echo "PR #$PR carries a hold label ($LABELS); leaving it alone."

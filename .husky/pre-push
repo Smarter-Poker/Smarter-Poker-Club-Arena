@@ -912,6 +912,23 @@ if [ -f server/package.json ]; then
     fi
   fi
 
+  # SOURCE CONTRACTS (2026-10-23). `vitest related` only finds tests that
+  # IMPORT a changed file. Some laws read server source as TEXT instead: the
+  # Horse data ledger scans every noteFire('...') literal in server/src, so a
+  # changed file that fires a new telemetry key imports nothing it tests and
+  # `related` never selected it. PR #7780 found that out in hosted CI, 35
+  # minutes after a green local push. Select those laws here by what the
+  # changed file actually contains, so they fail locally first.
+  SRV_CONTRACTS=$(bash "$CA_TREE_TOP/scripts/server-source-contracts.sh" $SRV_SRC)
+  if [ "$SERVER_DEPENDENCY_MODE" = local ] && [ -n "$SRV_CONTRACTS" ] && [ -x "$SERVER_VITEST" ]; then
+    echo "[club-arena pre-push] running the source-contract laws your server changes touch..."
+    if ! ( cd server && "$SERVER_VITEST" run $SRV_CONTRACTS ); then
+      echo ""
+      echo "[club-arena pre-push] BLOCKED: a source-contract law over your server change failed."
+      FAIL=1
+    fi
+  fi
+
   if [ "$SERVER_DEPENDENCY_MODE" = local ] && [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
     echo "[club-arena pre-push] running the server tests that cover your changes..."
     if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC ); then

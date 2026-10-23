@@ -1,0 +1,299 @@
+{
+  "sourceSHA256": "1922ecbde6a5cfa600e21d0e48aae8941036bcc08db12af5b263710dee3c6696",
+  "before": {
+    "acl": [
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "DELETE"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "INSERT"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "SELECT"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "UPDATE"
+      }
+    ],
+    "rls": true,
+    "kind": "r",
+    "name": "horse_adaptive_observation_journal",
+    "view": null,
+    "owner": "postgres",
+    "rules": null,
+    "schema": "public",
+    "columns": [
+      {
+        "acl": [],
+        "name": "observation_id",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "p",
+        "identity": "",
+        "collation": null,
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "session_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "observed_at_ms",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "p",
+        "identity": "",
+        "collation": null,
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "partition",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "scope_key",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "origin",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "payload",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "options": [],
+        "storage": "x",
+        "identity": "",
+        "collation": "\"default\"",
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      },
+      {
+        "acl": [],
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "notnull": true,
+        "options": [],
+        "storage": "p",
+        "identity": "",
+        "collation": null,
+        "generated": "",
+        "statistics": null,
+        "compression": ""
+      }
+    ],
+    "indexes": [
+      {
+        "name": "horse_adaptive_journal_retention",
+        "ready": true,
+        "valid": true,
+        "options": [],
+        "clustered": false,
+        "definition": "CREATE INDEX horse_adaptive_journal_retention ON public.horse_adaptive_observation_journal USING btree (recorded_at, observation_id)",
+        "tablespace": null,
+        "replica_identity": false
+      },
+      {
+        "name": "horse_adaptive_journal_scope_window",
+        "ready": true,
+        "valid": true,
+        "options": [],
+        "clustered": false,
+        "definition": "CREATE INDEX horse_adaptive_journal_scope_window ON public.horse_adaptive_observation_journal USING btree (actor_key, scope_key, partition, origin, observed_at_ms, observation_id)",
+        "tablespace": null,
+        "replica_identity": false
+      },
+      {
+        "name": "horse_adaptive_observation_journal_pkey",
+        "ready": true,
+        "valid": true,
+        "options": [],
+        "clustered": false,
+        "definition": "CREATE UNIQUE INDEX horse_adaptive_observation_journal_pkey ON public.horse_adaptive_observation_journal USING btree (observation_id)",
+        "tablespace": null,
+        "replica_identity": false
+      }
+    ],
+    "options": ["autovacuum_vacuum_scale_factor=0.02", "autovacuum_vacuum_threshold=20000"],
+    "parents": [],
+    "policies": null,
+    "triggers": [
+      {
+        "name": "horse_adaptive_raw_retirement_fence",
+        "enabled": "O",
+        "definition": "CREATE TRIGGER horse_adaptive_raw_retirement_fence BEFORE INSERT ON public.horse_adaptive_observation_journal FOR EACH ROW EXECUTE FUNCTION smarter_private.horse_adaptive_raw_retirement_fence()"
+      }
+    ],
+    "force_rls": false,
+    "tablespace": null,
+    "constraints": [
+      {
+        "name": "horse_adaptive_observation_journal_origin_check",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK ((origin = ANY (ARRAY['player'::text, 'pre_action'::text, 'horse_policy'::text])))",
+        "no_inherit": false
+      },
+      {
+        "name": "horse_adaptive_observation_journal_partition_check",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK ((partition = ANY (ARRAY['training'::text, 'holdout'::text])))",
+        "no_inherit": false
+      },
+      {
+        "name": "horse_adaptive_observation_journal_payload_check",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK ((octet_length(payload) <= 16384))",
+        "no_inherit": false
+      },
+      {
+        "name": "horse_adaptive_observation_journal_pkey",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (observation_id)",
+        "no_inherit": true
+      }
+    ],
+    "partitioned": false,
+    "persistence": "p",
+    "access_method": "heap",
+    "partition_key": null,
+    "partition_bound": null,
+    "replica_identity": "d"
+  },
+  "index": {
+    "name": "horse_adaptive_journal_metadata_cover",
+    "ready": true,
+    "valid": true,
+    "options": [],
+    "clustered": false,
+    "definition": "CREATE INDEX horse_adaptive_journal_metadata_cover ON public.horse_adaptive_observation_journal USING btree (observation_id) INCLUDE (hand_id, observed_at_ms)",
+    "tablespace": null,
+    "replica_identity": false
+  },
+  "observedState": "Absent in independent20:08snapshot and current read-onlyindex/ledger checks; local qualification only, no production installation/performance claim."
+}

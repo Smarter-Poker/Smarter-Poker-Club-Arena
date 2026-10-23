@@ -32,15 +32,18 @@ installed byte-for-byte. `historical-ledger-reconciliation.json` preserves the
 known source/ledger differences and descriptive aliases. The independently
 captured native schema is the authoritative current-snapshot reconstruction.
 Historical financial transformations and trigger-registry rows are not replayed.
-The former two pending schema migrations are now installed. Exactly one new
-pending input, `20261022162545`, is admitted by its fixed path and SHA256. After
+The former two pending schema migrations are now installed. Three exact inputs
+are admitted by fixed paths and SHA256: pending hourly-sweep `20261022162545`,
+post-capture installed opening `20261022201306`, and pending journal-index
+`20261022223439`. After
 independent baseline catalog equality, the runner executes its unchanged SQL as
 `postgres`, preserving the concurrent-index preamble outside its original
 transaction. It never calls the created business routines. An independently
 retained native metadata fixture specifies three new tables, three explicit
 indexes, seven routine postimages and three comments; every other catalog field,
-role capability and membership must remain equal. The second exact post-capture opening transition is described below; no other
-forward SQL is admitted. The seven installed mystery-bounty source/ledger discrepancies are
+role capability and membership must remain equal. The second opening and third
+journal-index transitions are described below; no other forward SQL is admitted.
+The seven installed mystery-bounty source/ledger discrepancies are
 recorded separately and never replayed.
 
 Native PostgreSQL parses independently captured and restored CHECK, trigger, and
@@ -62,3 +65,5 @@ This preserves observed metadata; it does not repair a production index.
 The frozen a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb source audit adds the already captured hourly-slot schema postimage without replaying its historical updates. The exact 20261022201306 opening reserve-reuse migration was installed after the snapshot and is applied locally as the second hash-bound DDL transition after 162545. Independent two-routine postmetadata and every other catalog field, role and membership are compared; no business routine is called. The prior 672c full-image pass remains evidence for its earlier inputs; the expanded candidate needs its own full-image qualification.
 
 The post-capture opening DDL requires its original money-RPC authorization registry entry. Schema-only dumps omit that configuration row. The isolated verifier restores only the exact source-declared and independently read-back opening authorization (one governance configuration row, no application or financial rows), with the actual captured writer detector and event guard enabled. It verifies exact empty/one-row state before and after unchanged DDL; the full catalog and role checks remain mandatory.
+
+Frozen a3bf961d0a9f142ea2be79b4133f8068fe8034e7 adds exactly one further schema input: 20261022223439, the adaptive journal metadata cover. It is absent from the retained snapshot and current read-only index/ledger checks. Only its exact original concurrent DDL and read-only shape assertion are applied as the third local transition. A source-derived one-index descriptor and full parent preimage define the expected delta; every other catalog field and role remains checked. This neither builds nor certifies an index in production, nor claims production scan performance.

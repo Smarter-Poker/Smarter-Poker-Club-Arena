@@ -23,9 +23,9 @@ class Boundaries(unittest.TestCase):
     self.assertEqual(source.stat().st_mode&0o777,0o600)
     self.assertEqual(context['phase'],'pending-schema-restore');calls.append(args)
    v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,entries)
-   self.assertEqual(len(calls),2)
+   self.assertEqual(len(calls),3)
    with self.assertRaises(FileExistsError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,entries)
-   with self.assertRaises(ValueError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[dict(entries[0],sha256='0'*64),entries[1]])
+   with self.assertRaises(ValueError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[dict(entries[0],sha256='0'*64),*entries[1:]])
  def test_event_triggers_restore_as_captured_owners(self):
   source=(v.BASE/'pokeriq-20261020.sql').read_text();reference=json.loads((v.BASE/'pokeriq-catalog-reference.json').read_text());contract=json.loads((v.BASE/'pokeriq-role-contract.json').read_text())
   rendered=v.render_event_trigger_owners(source,reference,contract)

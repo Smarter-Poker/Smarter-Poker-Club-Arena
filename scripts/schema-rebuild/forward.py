@@ -1,4 +1,4 @@
-"""Two exact schema transitions, after independent baseline equality."""
+"""Three exact schema transitions, after independent baseline equality."""
 import copy,hashlib,json
 from pathlib import Path
 PATH='supabase/migrations/20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql'
@@ -10,10 +10,13 @@ INDEX_TABLES={'idx_wallet_tx_credit_user_created_amount':'wallet_transactions','
 OPENING_PATH='supabase/migrations/20261022201306_restore_welcome_reserve_reuse_for_quick_club_opening.sql'
 OPENING_SHA='c3be2d8375c2aa0c2c20718e4a9a01361b09635c63546b73ef20bfd9a2832a67'
 OPENING_DELTA_SHA='5fe7191aa269effeb7916c9343f39c905225ae748e768dbe5340dda58eff88d4'
+JOURNAL_PATH='supabase/migrations/20261022223439_adaptive_journal_metadata_cover.sql'
+JOURNAL_SHA='1922ecbde6a5cfa600e21d0e48aae8941036bcc08db12af5b263710dee3c6696'
+JOURNAL_DELTA_SHA='eae9ee3e9dcc55b84fbb36dadc6175edfc9ab6e2b184da948ce906773b99275f'
 def entries():
- return [dict(path=PATH,sha256=SOURCE_SHA,state='pending-at-capture'),dict(path=OPENING_PATH,sha256=OPENING_SHA,state='installed-after-capture')]
+ return [dict(path=PATH,sha256=SOURCE_SHA,state='pending-at-capture'),dict(path=OPENING_PATH,sha256=OPENING_SHA,state='installed-after-capture'),dict(path=JOURNAL_PATH,sha256=JOURNAL_SHA,state='pending-after-capture')]
 def validate(root,provided):
- if provided!=entries():raise ValueError('Only the exact ordered hourly-sweep and post-capture opening schema transitions are admitted')
+ if provided!=entries():raise ValueError('Only the exact ordered hourly-sweep, opening and journal-index transitions are admitted')
  for entry in provided:
   if hashlib.sha256((Path(root)/entry['path']).read_bytes()).hexdigest()!=entry['sha256']:raise ValueError('Schema transition source bytes differ')
  return provided
@@ -56,4 +59,16 @@ def expected_catalog(reference,delta):
  result['routines']=[r for r in result['routines'] if not(r['schema']=='public' and r['name'] in names)]+copy.deepcopy(delta['routines'])
  result['comments']+=copy.deepcopy(delta['comments'])
  result['relations'].sort(key=lambda r:(r['schema'],r['name']));result['routines'].sort(key=lambda r:(r['schema'],r['name'],r['args']));result['comments'].sort(key=lambda r:r['object'])
+ return result
+
+def journal_expected(reference,base):
+ source=(Path(base)/'pending-journal-index-catalog.json').read_bytes()
+ if hashlib.sha256(source).hexdigest()!=JOURNAL_DELTA_SHA:raise ValueError('Independent journal index contract differs')
+ delta=json.loads(source);before=delta['before'];index=delta['index']
+ if delta['sourceSHA256']!=JOURNAL_SHA or index['name']!='horse_adaptive_journal_metadata_cover':raise ValueError('Journal index scope differs')
+ matches=[r for r in reference['relations'] if r['schema']=='public' and r['name']=='horse_adaptive_observation_journal']
+ if matches!=[before]:raise ValueError('Journal full table preimage differs')
+ if any(i['name']==index['name'] for r in reference['relations'] for i in r.get('indexes') or []):raise ValueError('Journal index already exists')
+ result=copy.deepcopy(reference);relation=next(r for r in result['relations'] if r['schema']=='public' and r['name']==before['name'])
+ relation['indexes'].append(copy.deepcopy(index));relation['indexes'].sort(key=lambda i:i['name'])
  return result

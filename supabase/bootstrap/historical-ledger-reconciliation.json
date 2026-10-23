@@ -1865,5 +1865,13 @@
     "installedAfterSnapshot": true,
     "independentCatalogContract": "post-capture-opening-catalog.json",
     "scope": "Exact source function-only DDL installed after20:08snapshot; applied only in isolated reconstruction after hourly-sweep delta. No business functions/data/cron invoked."
+  },
+  "postCaptureJournalIndexScope": {
+    "revision": "a3bf961d0a9f142ea2be79b4133f8068fe8034e7",
+    "path": "supabase/migrations/20261022223439_adaptive_journal_metadata_cover.sql",
+    "sourceSHA256": "1922ecbde6a5cfa600e21d0e48aae8941036bcc08db12af5b263710dee3c6696",
+    "snapshotIndexAbsent": true,
+    "currentReadOnlyIndexAndLedgerAbsent": true,
+    "scope": "Exact original concurrent index and read-only shape guard run only on isolated empty reconstruction after the first two transitions. Independent one-index descriptor/full parent preimage and all other catalog/role checks required. No production installation/build/performance claim."
   }
 }

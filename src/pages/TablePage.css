@@ -282,34 +282,46 @@
   z-index: 1;
 }
 
-/* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
-.table-page--hero-turn {
+/* The same breathing glows, painted once on their own layer. Animating the
+   page's blur/box-shadow repaints the full phone surface every frame. Opacity
+   keeps the two-second cue while the compositor reuses its static pixels. */
+.table-page--hero-turn::before,
+.table-page--allin-mode::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.table-page--hero-turn::before {
+  box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
   animation: heroTurnPulse 2s ease-in-out infinite;
 }
 
 @keyframes heroTurnPulse {
   0%,
   100% {
-    box-shadow: inset 0 0 0 0 transparent;
+    opacity: 0;
   }
   50% {
-    box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
+    opacity: 1;
   }
 }
 
-/* ─── All-In Dramatic Mode — darken non-essential UI ─── */
-.table-page--allin-mode {
-  /* Tension border glow */
+.table-page--allin-mode::before {
+  box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
   animation: allInTensionGlow 2s ease-in-out infinite;
 }
 
 @keyframes allInTensionGlow {
   0%,
   100% {
-    box-shadow: inset 0 0 0 0 transparent;
+    opacity: 0;
   }
   50% {
-    box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
+    opacity: 1;
   }
 }
 
@@ -3737,6 +3749,9 @@
    BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+.table-page--backgrounded,
+.table-page--backgrounded::before,
+.table-page--backgrounded::after,
 .table-page--backgrounded *,
 .table-page--backgrounded *::before,
 .table-page--backgrounded *::after {

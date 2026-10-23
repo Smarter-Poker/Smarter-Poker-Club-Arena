@@ -21,6 +21,8 @@ export interface BadBeatJackpotProps {
   /** Stakes-tiered payout percent (15-85) — this table's actual slice of the pool. */
   payoutPercent?: number;
   isHit?: boolean; // Trigger for the hit animation
+  /** Persistent readouts are lobby-only; table hit animations remain independent. */
+  showBanners?: boolean;
   /** Tap handler — opens the last-5-jackpots view (Dan, 2026-08-18). */
   onOpenDetails?: () => void;
   onClaimed?: () => void;
@@ -44,6 +46,7 @@ export function BadBeatJackpot({
   subText = 'Both hole cards must play.',
   payoutPercent,
   isHit = false,
+  showBanners = true,
   onOpenDetails,
   miniAmount = null,
   miniQualifyingHand = null,
@@ -126,29 +129,31 @@ export function BadBeatJackpot({
   return (
     <>
       {/* Jackpot plates stay in the left corner beneath the table menu. */}
-      <div className="bbj-widget">
-        <button
-          type="button"
-          className="bbj-widget__details"
-          aria-label="Bad Beat Jackpot - View Recent Jackpots"
-          title={hoverSummary}
-          onClick={() => onOpenDetails?.()}
-        >
-          <span className="bbj-widget__label">BAD BEAT JACKPOT</span>
-          <span className={`bbj-widget__amount${bump ? ' bbj-widget__amount--bump' : ''}`}>
-            {currency}
-            {asset === 'diamonds' || displayAmount >= 1000
-              ? Math.trunc(displayAmount).toLocaleString('en-US')
-              : (Math.trunc(displayAmount * 100) / 100).toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-          </span>
-        </button>
-      </div>
+      {showBanners && (
+        <div className="bbj-widget">
+          <button
+            type="button"
+            className="bbj-widget__details"
+            aria-label="Bad Beat Jackpot - View Recent Jackpots"
+            title={hoverSummary}
+            onClick={() => onOpenDetails?.()}
+          >
+            <span className="bbj-widget__label">BAD BEAT JACKPOT</span>
+            <span className={`bbj-widget__amount${bump ? ' bbj-widget__amount--bump' : ''}`}>
+              {currency}
+              {asset === 'diamonds' || displayAmount >= 1000
+                ? Math.trunc(displayAmount).toLocaleString('en-US')
+                : (Math.trunc(displayAmount * 100) / 100).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* Only show a mini jackpot that can pay at these stakes. */}
-      {showMini && (
+      {showBanners && showMini && (
         <div className="bbj-mini-plate">
           <button
             type="button"

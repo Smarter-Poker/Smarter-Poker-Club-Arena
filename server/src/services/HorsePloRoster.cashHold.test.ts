@@ -53,7 +53,9 @@ describe('TournamentRecurringService wires the hold into both fill paths', () =>
   it('pickFreeHorses treats a roster horse as busy', () => {
     const body = src.slice(src.indexOf('private async pickFreeHorses('));
     const head = body.slice(0, body.indexOf('selectHorseCandidates('));
-    expect(head).toContain('for (const id of await this.cashRosterHeldFor(tournamentId)) busy.add(id);');
+    expect(head).toContain(
+      'for (const id of await this.cashRosterHeldFor(tournamentId)) busy.add(id);'
+    );
   });
 
   it('registerHorses drops a roster horse after letting ticket holders through', () => {

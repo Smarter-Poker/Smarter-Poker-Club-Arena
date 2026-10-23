@@ -146,7 +146,7 @@ describe('the MTT add-on is one persisted deadline', () => {
     expect(offerGate).toBeGreaterThanOrEqual(0);
     expect(offerGate).toBeLessThan(offer.indexOf(".from('tournament_players')"));
     expect(offer).toMatch(
-      /for \(const h of horseRows\) \{[\s\S]*?if \(isMaintenanceFrozen\(\) \|\| !this\.eliminationMutationAllowed\(\)\) return;[\s\S]*?process_tournament_rebuy/
+      /group\.map\(async \(h\) => \{[\s\S]*?if \(isMaintenanceFrozen\(\) \|\| !this\.eliminationMutationAllowed\(\)\) return null;[\s\S]*?process_tournament_rebuy/
     );
     const finalFreeze = finalize.indexOf('if (isMaintenanceFrozen()) return false;');
     const closeRpc = finalize.indexOf("supabase.rpc('fn_close_tournament_addon_period'");

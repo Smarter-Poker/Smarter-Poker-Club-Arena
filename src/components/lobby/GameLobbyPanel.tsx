@@ -10,15 +10,15 @@
  *
  * Desktop: right-side drawer. Small screens: full-width sheet. Esc closes.
  *
- * #ClubArenaConsole (2026-09-14): the cash variant is Dan's approved shark
- * console (PremiumGameLobbyPanel.css, 2026-09-03) and is untouched here. The
- * tournament variant's sections - Overview / Details, Blind Structure,
- * Payouts, Format - each print on a SpadeConsole (flat crest, flat cap):
- * figures as rows on the black glass, tables with engraved rules, the tabs
- * and links as lit words. Nothing under the plaque is drawn in CSS any more.
+ * ONE FRAME: THE GAME CARD (Dan 2026-10-23): "ONLY THE 'GAME CARD' SHOULD
+ * HAVE A FRAME, ALL THE REST OF THE INFO SHOULD BE DISPLAYED IN ITS REGULAR
+ * WEB PAGE LAYOUT, NOT THE BULKY FRAME BELOW IT." The approved game card keeps
+ * its art; every section under it (Game Information, Seat Map, Rules, Waiting
+ * List, and the tournament Overview / Blind Structure / Payouts / Format) is a
+ * plain PanelSection: a lit heading, rows on hairline rules, no chassis.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import ArenaGameCard from './game-cards/ArenaGameCard';
@@ -46,7 +46,6 @@ import {
 } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
-import { SpadeConsole } from '../console/SpadeConsole';
 import { titleCase } from '../../utils/titleCase';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
@@ -127,6 +126,34 @@ function RuleLine({ r, lit }: { r: RuleMedallion; lit?: boolean }) {
       </b>
       <span>{r.tip}</span>
     </li>
+  );
+}
+
+/** A section under the game card, laid out as an ordinary page section. */
+function PanelSection({
+  title,
+  pill,
+  pillInk = 'blue',
+  children,
+  ...rest
+}: {
+  title: string;
+  pill?: string;
+  pillInk?: 'blue' | 'green';
+  children?: ReactNode;
+  id?: string;
+  role?: string;
+  'aria-labelledby'?: string;
+  tabIndex?: number;
+}) {
+  return (
+    <section className="glp__section glp__console" {...rest}>
+      <div className="glp__section-head">
+        <h3 className="glp__h">{title}</h3>
+        {pill && <span className={`glp__pill glp__pill--${pillInk}`}>{pill}</span>}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -979,11 +1006,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               )}
 
               {(entry.kind !== 'mtt' || tab === 'overview') && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
+                <PanelSection
                   title={entry.kind === 'mtt' ? 'Overview' : 'Details'}
                   pill={entry.statusLabel}
                   pillInk={entry.live ? 'green' : 'blue'}
@@ -1094,15 +1117,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       Full Details Could Not Be Loaded. The Figures Above Come From The Lobby.
                     </p>
                   )}
-                </SpadeConsole>
+                </PanelSection>
               )}
 
               {entry.kind === 'mtt' && tab === 'structure' && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
+                <PanelSection
                   title="Blind Structure"
                   pill={
                     panelBlindLevels.some((l) => !l.isBreak)
@@ -1154,15 +1173,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'Loading Structure'}
                     </p>
                   )}
-                </SpadeConsole>
+                </PanelSection>
               )}
 
               {entry.kind === 'mtt' && tab === 'payouts' && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
+                <PanelSection
                   title="Payouts"
                   pill={panelPayouts.length ? `${panelPayouts.length} Paid` : entry.gameLabel}
                   id="glp-panel-payouts"
@@ -1229,7 +1244,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'Loading Payouts'}
                     </p>
                   )}
-                </SpadeConsole>
+                </PanelSection>
               )}
 
               {/* NO TAB CONDITION (2026-08-26). The board's Rules column is
@@ -1239,11 +1254,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   title attribute needs a hover this panel's traffic does not
                   have. It renders under all three tabs, as the plaque does. */}
               {entry.rules.length > 0 && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
+                <PanelSection
                   title="Format"
                   pill={entry.gameLabel}
                 >
@@ -1252,7 +1263,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       <RuleLine key={r.key} r={titleCaseRule(r)} lit />
                     ))}
                   </ul>
-                </SpadeConsole>
+                </PanelSection>
               )}
 
               {entry.kind === 'mtt' && (

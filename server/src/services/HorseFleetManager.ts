@@ -3175,11 +3175,13 @@ export class HorseFleetManager {
                SHOWN TO BE PROFITABLE PLAYING PLO PLAY THOSE GAMES"). Unlike
                the tag above there is NO rescue exception: a person waiting at
                a PLO table is not a reason to seat a losing PLO horse. An
-               unread roster seats nobody at PLO (see HorsePloRoster). */
+               unread roster seats nobody at PLO (see HorsePloRoster). The
+               low stakes, 0.50 big blind and under, are open to every horse
+               (Dan 2026-10-23 12:59), so the gate reads the table's blind. */
             if (
               !rosterExemptClub(table.club_id) &&
               isPloVariant(table.game_variant) &&
-              ploRosterAllows(h.id, table.game_variant) !== true
+              ploRosterAllows(h.id, table.game_variant, table.big_blind) !== true
             ) {
               tagDropped++;
               return false;

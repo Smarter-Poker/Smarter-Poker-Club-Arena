@@ -35,6 +35,7 @@
  */
 
 import { useMemo } from 'react';
+import RecordedPotAwards from './RecordedPotAwards';
 import CardImage, { CardBack } from '../table/CardImage';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
@@ -564,6 +565,7 @@ export function HandDetailView({
 
       {viewerFacts && <AllInFacts facts={viewerFacts} arenaAsset={model.arenaAsset} />}
 
+      <RecordedPotAwards model={model} />
       {model.showdown.length > 0 && (
         <section className="hdv__showdown">
           <header className="hdv__section-head">Showdown</header>

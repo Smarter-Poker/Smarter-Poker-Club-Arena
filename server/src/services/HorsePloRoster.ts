@@ -123,13 +123,34 @@ export async function refreshPloRoster(force = false): Promise<void> {
 }
 
 /**
- * May this horse play THIS variant?
- *   true      - not a PLO variant, or the horse is on the PLO roster
+ * THE LOW STAKES ARE OPEN TO EVERY HORSE (Dan 2026-10-23 12:59: "all horses
+ * can play the lower stakes plo games under .10-.25 and .25-.50. make sure
+ * thats enabled"). The PLO roster gates 0.50/1 and up only; a PLO cash table
+ * whose big blind is 0.50 or less is open to every horse on the cash roster.
+ * An unknown big blind is NOT open (the roster decides), so a missing read
+ * never widens the gate. Mirrored in `fn_ca_horse_roster_seat_guard`.
+ */
+export const PLO_OPEN_MAX_BIG_BLIND = 0.5;
+
+export function isOpenStakePlo(bigBlind: unknown): boolean {
+  const bb = Number(bigBlind);
+  return Number.isFinite(bb) && bb > 0 && bb <= PLO_OPEN_MAX_BIG_BLIND;
+}
+
+/**
+ * May this horse play THIS variant at THIS big blind?
+ *   true      - not a PLO variant, a PLO table at 0.50 big blind or less,
+ *               or the horse is on the PLO roster
  *   false     - a PLO variant and the horse is not on the roster
  *   undefined - a PLO variant and no roster has ever been read (callers: not allowed)
  */
-export function ploRosterAllows(horseId: string, variant: unknown): boolean | undefined {
+export function ploRosterAllows(
+  horseId: string,
+  variant: unknown,
+  bigBlind?: unknown
+): boolean | undefined {
   if (!isPloVariant(variant)) return true;
+  if (isOpenStakePlo(bigBlind)) return true;
   if (!roster) return undefined;
   return roster.has(horseId);
 }

@@ -319,7 +319,9 @@ export async function witnessCycle({
       if (!requested) continue;
       const control = page.locator(selector);
       // Observe the ordinary UI for one short opportunity; never repeat a click.
-      const offeredUntil = Date.now() + Math.min(20000, remaining());
+      // A check pre-action is offered only while the player faces no bet, so it
+      // gets a longer window than the Time Bank, which is offered every turn.
+      const offeredUntil = Date.now() + Math.min(key === 'preaction' ? 60000 : 20000, remaining());
       while (Date.now() < offeredUntil) {
         if ((await bound(control.isVisible())) && (await bound(control.isEnabled()))) break;
         await page.waitForTimeout(Math.min(100, offeredUntil - Date.now(), remaining()));
@@ -411,6 +413,16 @@ export async function witnessCycle({
     const watchOwnTurn = async () => {
       const hand = clock.hand_id;
       if (!UUID.test(hand) || foldedHands.has(hand)) return;
+      // An armed Time Bank opens only when the clock runs out on that same turn:
+      // that turn waits for the bank to open and extend the deadline first.
+      if (
+        report.timebank === 'accepted' &&
+        !(bankActivated && deadlineExtended) &&
+        bankBefore &&
+        hand === bankBefore.hand_id &&
+        clock.action_context === bankBefore.action_context
+      )
+        return;
       if (!(await bound(foldWatch.isVisible())) || !(await bound(foldWatch.isEnabled()))) return;
       foldedHands.add(hand);
       const response = await clickCycleControlOnce(

@@ -36,13 +36,16 @@ describe('a fuller table fills first', () => {
 
   it('is wired into the seeding walk after the existing ranks and before the id', () => {
     expect(FLEET).toMatch(
-      /clusterRank\(a\) - clusterRank\(b\) \|\|\s*fillFirstRank\(seatedAt\(a\), seatedAt\(b\)\) \|\|\s*String\(a\.id\)\.localeCompare\(String\(b\.id\)\)/
+      /clusterRank\(a\) - clusterRank\(b\) \|\|\s*compareCashPopulation\(\s*\{ \.\.\.a, occupied: seatsByTable\.get\(a\.id\)\?\.length \?\? 0 \},\s*\{ \.\.\.b, occupied: seatsByTable\.get\(b\.id\)\?\.length \?\? 0 \}\s*\) \|\|\s*fillFirstRank\(seatedAt\(a\), seatedAt\(b\)\) \|\|\s*String\(a\.id\)\.localeCompare\(String\(b\.id\)\)/
     );
     expect(FLEET).toContain(
       'const seatedAt = (t: { id: string }) => (seatsByTable.get(t.id) ?? []).length;'
     );
     // The short-handed human and the opening feeder still come first.
-    const sort = FLEET.slice(FLEET.indexOf('const orderedTables'), FLEET.indexOf('fillFirstRank(seatedAt(a)'));
+    const sort = FLEET.slice(
+      FLEET.indexOf('const orderedTables'),
+      FLEET.indexOf('fillFirstRank(seatedAt(a)')
+    );
     expect(sort).toContain('Number(humanShort(b)) - Number(humanShort(a))');
     expect(sort).toContain('clusterRank(a) - clusterRank(b)');
   });

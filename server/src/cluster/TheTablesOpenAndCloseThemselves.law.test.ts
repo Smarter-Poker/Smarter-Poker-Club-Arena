@@ -383,7 +383,9 @@ describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UT
     );
     // The 1-2 trickle for a sparse table cannot leave the feeder at one.
     const trickle = FLEET.slice(
-      FLEET.indexOf("if (fill !== 'full' && !humanNeedsRescue) {"),
+      FLEET.indexOf(
+        "if (fill !== 'full' && !humanNeedsRescue && !isHoldemOrPlo(table.game_variant)) {"
+      ),
       FLEET.indexOf('seatsNeeded = Math.min(seatsNeeded, seatBudget);')
     );
     expect(trickle).toMatch(

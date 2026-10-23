@@ -281,9 +281,9 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
 }
 
 /**
- * Vite emits this before a failed preload rejects. Installing the listener at
- * boot prevents its default uncaught-error path and gives the cache-busting
- * recovery above ownership of the stale document.
+ * Vite emits this before a failed preload rejects. The importer owns retry
+ * and recovery: a speculative or optional import must never replace a usable
+ * document. This listener only removes failed CSS dependencies for retry.
  */
 /**
  * A STYLESHEET THAT FAILED IS NOT A STYLESHEET THAT LOADED (Dan 2026-10-14,
@@ -317,15 +317,12 @@ export function dropFailedStylesheet(error: unknown): boolean {
 export function installVitePreloadErrorRecovery(): () => void {
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
-    // A failed stylesheet must be fetched again by whatever retries next.
-    const cssFailed = dropFailedStylesheet(payload);
-    // Vite propagates the original import error only if this event remains
-    // uncancelled. An exhausted budget must reach the route's retry/error
-    // boundary. A CSS failure is never cancelled: cancelling makes Vite hand
-    // back the module anyway, and the route renders with no styles.
-    if (!canOwnChunkRecovery(payload)) return;
-    if (!cssFailed) event.preventDefault();
-    void recoverFromStaleChunk(payload);
+    // Let Vite reject into the importing caller. Cancelling here resolves its
+    // import to undefined and skips both importWithRetry's non-disruptive
+    // retries and lazyWithRetry's bounded retries. Recovering here also reloads
+    // active tables for optional warmers that already handle their own errors.
+    // Critical lazy imports still request recovery after exhausting retries.
+    dropFailedStylesheet(payload);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => window.removeEventListener('vite:preloadError', onPreloadError);
@@ -357,10 +354,9 @@ export function lazyWithRetry<T extends ComponentType<any>>(
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const module = await importFn();
-        // Vite resolves a cancelled preloadError to undefined. Our listener
-        // cancels it only when document recovery owns the failure. Keep React
-        // suspended until navigation, instead of handing it an invalid module
-        // that crashes in React's lazy initializer on module.default.
+        // Another preload listener can cancel Vite's event and resolve to
+        // undefined. If recovery or navigation already owns that failure,
+        // keep React suspended instead of passing it an invalid module.
         if (module == null || module.default == null) {
           if (recoveryStarted || documentIsNavigatingAway()) return new Promise<never>(() => {});
           throw new Error('Lazy route module has no default export');

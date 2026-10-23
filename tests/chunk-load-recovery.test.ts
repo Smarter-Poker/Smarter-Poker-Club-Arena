@@ -8,13 +8,12 @@ import {
 } from '../src/utils/lazyWithRetry';
 
 describe('stale deployment chunk recovery', () => {
-  it('never resolves a cancelled Vite preload into an undefined React lazy module', async () => {
+  it('lets an optional Safari preload failure retry without replacing the active table document', async () => {
     vi.resetModules();
-    vi.doMock('react', () => ({ lazy: (load: () => Promise<unknown>) => load }));
     const browser = new EventTarget();
     const replace = vi.fn();
     Object.assign(browser, {
-      location: { href: 'https://example.test/clubs/diamond-arena', replace },
+      location: { href: 'https://example.test/table/observer', replace, reload: replace },
     });
     vi.stubGlobal('window', browser);
     vi.stubGlobal('navigator', {});
@@ -22,29 +21,65 @@ describe('stale deployment chunk recovery', () => {
     sessionStorage.clear();
     const recovery = await import('../src/utils/lazyWithRetry');
     const uninstall = recovery.installVitePreloadErrorRecovery();
-    // This is Vite's runtime contract: cancelling preloadError resolves the
-    // import to undefined rather than rejecting with its original error.
-    const load = recovery.lazyWithRetry(async () => {
+    const module = { warmTable: vi.fn() };
+    let attempts = 0;
+    const load = vi.fn(async () => {
+      attempts += 1;
+      if (attempts > 1) return module;
       const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
         payload?: unknown;
       };
-      event.payload = new TypeError(
-        'Failed to fetch dynamically imported module: /assets/ClubHome.js'
-      );
+      event.payload = new TypeError('Importing a module script failed.');
+      browser.dispatchEvent(event);
+      // Vite resolves a cancelled event to undefined instead of rejecting.
+      if (event.defaultPrevented) return undefined;
+      throw event.payload;
+    });
+    await expect(recovery.importWithRetry(load, 2, 0)).resolves.toBe(module);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(replace).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(recovery.chunkReloadGuardKey())).toBeNull();
+    uninstall();
+  });
+
+  it('recovers a critical lazy import only after its bounded preload retries', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    vi.doMock('react', () => ({ lazy: (load: () => Promise<unknown>) => load }));
+    const browser = new EventTarget();
+    const replace = vi.fn();
+    Object.assign(browser, {
+      location: { href: 'https://example.test/table/observer', replace, reload: replace },
+    });
+    vi.stubGlobal('window', browser);
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('caches', undefined);
+    sessionStorage.clear();
+    const recovery = await import('../src/utils/lazyWithRetry');
+    const uninstall = recovery.installVitePreloadErrorRecovery();
+    const importFn = vi.fn(async () => {
+      const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
+        payload?: unknown;
+      };
+      event.payload = new TypeError('Importing a module script failed.');
       browser.dispatchEvent(event);
       if (!event.defaultPrevented) throw event.payload;
       return undefined as never;
-    }) as unknown as () => Promise<unknown>;
+    });
+    const load = recovery.lazyWithRetry(importFn) as unknown as () => Promise<unknown>;
     let state = 'pending';
     void load().then(
-      () => {
-        state = 'resolved';
-      },
-      () => {
-        state = 'rejected';
-      }
+      () => (state = 'resolved'),
+      () => (state = 'rejected')
     );
-    for (let i = 0; i < 10; i++) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(importFn).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(importFn).toHaveBeenCalledTimes(2);
+    expect(replace).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(importFn).toHaveBeenCalledTimes(3);
     expect(replace).toHaveBeenCalledTimes(1);
     expect(state).toBe('pending');
     uninstall();
@@ -95,17 +130,19 @@ describe('stale deployment chunk recovery', () => {
         'Failed to fetch dynamically imported module: /assets/route.js'
       );
       browser.dispatchEvent(event);
+      void recovery.recoverFromStaleChunk(event.payload);
       // Concurrent preload failures in this same document share one recovery.
       const concurrent = new Event('vite:preloadError', { cancelable: true }) as typeof event;
       concurrent.payload = event.payload;
       browser.dispatchEvent(concurrent);
+      void recovery.recoverFromStaleChunk(concurrent.payload);
       await Promise.resolve();
 
       // One guarded hard reload per build: the second document of the same
       // build does not reload again, so a broken build cannot loop.
       expect(navigations).toHaveBeenCalledTimes(1);
-      expect(event.defaultPrevented).toBe(documentIndex < 1);
-      expect(concurrent.defaultPrevented).toBe(documentIndex < 1);
+      expect(event.defaultPrevented).toBe(false);
+      expect(concurrent.defaultPrevented).toBe(false);
       uninstall();
     }
     expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
@@ -150,6 +187,7 @@ describe('stale deployment chunk recovery', () => {
       browser.dispatchEvent(new Event('beforeunload'));
       const event = cancelledLoad();
       browser.dispatchEvent(event);
+      void recovery.recoverFromStaleChunk(event.payload);
       await flush();
       expect(replace).not.toHaveBeenCalled();
       expect(recovery.documentIsNavigatingAway()).toBe(true);
@@ -160,7 +198,9 @@ describe('stale deployment chunk recovery', () => {
     it('still recovers a real stale chunk when no navigation is under way', async () => {
       const { browser, replace, recovery } = await freshDocument();
       const uninstall = recovery.installVitePreloadErrorRecovery();
-      browser.dispatchEvent(cancelledLoad());
+      const event = cancelledLoad();
+      browser.dispatchEvent(event);
+      void recovery.recoverFromStaleChunk(event.payload);
       await flush();
       expect(replace).toHaveBeenCalledTimes(1);
       expect(String(replace.mock.calls[0][0])).toContain('_cb=');
@@ -172,8 +212,11 @@ describe('stale deployment chunk recovery', () => {
       const { browser, replace, recovery } = await freshDocument();
       const uninstall = recovery.installVitePreloadErrorRecovery();
       browser.dispatchEvent(new Event('beforeunload'));
+      const event = cancelledLoad();
+      browser.dispatchEvent(event);
+      void recovery.recoverFromStaleChunk(event.payload);
       browser.dispatchEvent(cancelledLoad());
-      browser.dispatchEvent(cancelledLoad());
+      void recovery.recoverFromStaleChunk(event.payload);
       await flush();
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
@@ -218,6 +261,7 @@ describe('stale deployment chunk recovery', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     clearChunkRecoveryState();
     sessionStorage.clear();
     vi.doUnmock('react');

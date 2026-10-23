@@ -19,3 +19,6 @@ minutes), including the optional multirun lane, without changing normal test
 duration. Regression coverage retains the production 60,237 ms failure shape,
 the replacement-count limit, finite clock caps, refusal of unproven failures,
 and the job's worst-case proof/maintenance-wait/cleanup arithmetic.
+The reserved fixture stale cutoff is 157 minutes: the longest 143-minute
+owning lane plus its existing 14-minute safety margin. An active verifier's
+account must never become eligible for another run's fixture cleanup.

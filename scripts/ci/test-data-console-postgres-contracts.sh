@@ -56,6 +56,11 @@ echo 'DATA_CONSOLE_POSTGRES RUN Member Record'
 bash "$repo/scripts/dev/test-member-record-live-postgres.sh"
 echo 'DATA_CONSOLE_POSTGRES PASS Member Record'
 
+# A redeemed fee total must reach Member Record and Player Statistics together.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  FEE_REDEMPTION_SCRATCH="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
+  bash "$repo/scripts/ci/test-player-fee-redemption.sh"
+
 # Exercise the maintained installer identity through a proxy-shaped session.
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \

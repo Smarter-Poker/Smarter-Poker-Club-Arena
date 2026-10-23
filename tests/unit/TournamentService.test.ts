@@ -844,10 +844,23 @@ describe('Tournament Purchase Confirmation', () => {
 
     it.each([0, 2500])('returns the exact confirmed ' + kind + ' stack %s', async (stack) => {
       mockRpc.mockResolvedValue({
-        data: { success: true, new_stack: stack, rebuy_type: kind, idempotent: true },
+        data: {
+          success: true,
+          new_stack: stack,
+          rebuy_type: kind,
+          idempotent: true,
+          atomic_tournament_chip_purchase: 'v1',
+          seated: true,
+          table_id: 'paid-table',
+          seat_number: 9,
+        },
         error: null,
       });
-      await expect(purchase(kind)).resolves.toEqual({ success: true, newStack: stack });
+      await expect(purchase(kind)).resolves.toEqual(
+        kind === 'addon'
+          ? { success: true, newStack: stack }
+          : { success: true, newStack: stack, tableId: 'paid-table', seatNumber: 9 }
+      );
       expect(mockEmit).toHaveBeenCalledExactlyOnceWith('BALANCE_UPDATED', {
         source: kind === 'addon' ? 'tournament_addon' : 'tournament_rebuy',
         userId: 'player',
@@ -864,14 +877,27 @@ describe('Tournament Purchase Confirmation', () => {
         levelIndex: 99,
       } as never);
       mockRpc.mockResolvedValueOnce({
-        data: { success: true, new_stack: 0, rebuy_type: kind, idempotent: true },
+        data: {
+          success: true,
+          new_stack: 0,
+          rebuy_type: kind,
+          idempotent: true,
+          atomic_tournament_chip_purchase: 'v1',
+          seated: true,
+          table_id: 'paid-table',
+          seat_number: 9,
+        },
         error: null,
       });
       const result =
         kind === 'addon'
           ? await tournamentService.processAddOn('event', 'player')
           : await tournamentService.processRebuy('event', 'player', 'original-prompt');
-      expect(result).toEqual({ success: true, newStack: 0 });
+      expect(result).toEqual(
+        kind === 'addon'
+          ? { success: true, newStack: 0 }
+          : { success: true, newStack: 0, tableId: 'paid-table', seatNumber: 9 }
+      );
       expect(mockRpc.mock.calls[1][1]).toEqual(original);
       expect(mockEmit).toHaveBeenCalledTimes(1);
     });

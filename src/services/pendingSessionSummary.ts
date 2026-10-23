@@ -31,8 +31,8 @@
  *    producer and a single consumer; a small subscribe-able module keeps it
  *    obvious. Same shape as confirmDialog's module-level bridge.
  *
- * Deliberately in-memory: a session summary is not worth restoring after a hard
- * refresh, and persisting it risks showing a stale one days later.
+ * Cash summaries stay in memory. Unacknowledged tournament reports survive a
+ * reload in this browser session, scoped to their authenticated owner.
  */
 
 /**
@@ -48,10 +48,17 @@
  * language for that, so when this block is present the summary renders a
  * different modal entirely rather than filling chip tiles with zeroes.
  */
+import { readLocalSession } from '../lib/authUtils';
 import type { Card } from '../components/table/CardImage';
 import type { DiamondRecapTarget } from './diamondCashSessionRecap';
 
 export interface TournamentResult {
+  /** Owner of the cached display report, never payment authorization. */
+  userId?: string;
+  /** Durable elimination generation; another entry may finish in the same event. */
+  finishSequence?: string;
+  /** Entry price including its fee, in the event currency. */
+  buyInAmount?: number;
   /** Tournament name for the header, e.g. "Early Bird Freeroll". */
   name?: string;
   /** Finishing position. null while still in play or if the row is unreadable. */
@@ -121,6 +128,8 @@ export interface TournamentResult {
 }
 
 export interface SessionSummaryPayload {
+  /** A seat rebuild knows the durable finish, not this device session counters. */
+  resultOnly?: boolean;
   arenaAsset?: 'chips' | 'diamonds';
   /** Read the finished custody, never the counters from this page's mount. */
   diamondRecap?: DiamondRecapTarget;
@@ -182,6 +191,7 @@ let pending: SessionSummaryPayload | null = null;
 const listeners = new Set<Listener>();
 
 function emit(): void {
+  persistTournamentReports();
   for (const l of listeners) {
     try {
       l(pending);
@@ -200,9 +210,89 @@ function emit(): void {
  * clears the card in front of them.
  */
 let heldQueue: SessionSummaryPayload[] = [];
+const acknowledgedTournamentIds = new Set<string>();
+let loadedReportUserId: string | null = null;
+function tournamentReportKey(
+  result: Pick<TournamentResult, 'tournamentId' | 'userId' | 'finishSequence'> | undefined
+): string | null {
+  return result?.tournamentId
+    ? `${result.userId ?? 'unknown'}:${result.tournamentId}:${result.finishSequence ?? 'unknown'}`
+    : null;
+}
+
+function reportStorageKey(): string | null {
+  const userId = readLocalSession()?.userId;
+  return userId ? `club-arena-finish-reports-v1:${userId}` : null;
+}
+function persistTournamentReports(): void {
+  try {
+    const key = reportStorageKey();
+    if (!key) return;
+    const userId = readLocalSession()?.userId;
+    const reports = [pending, ...heldQueue].filter(
+      (p): p is SessionSummaryPayload =>
+        !!p?.tournament?.tournamentId && p.tournament.userId === userId
+    );
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({ version: 1, reports, acknowledged: [...acknowledgedTournamentIds] })
+    );
+  } catch {
+    /* Storage failure must not interrupt an in-memory report. */
+  }
+}
+function restoreTournamentReports(): void {
+  const owner = readLocalSession()?.userId ?? null;
+  if (owner !== loadedReportUserId) {
+    pending = null;
+    heldQueue = [];
+    acknowledgedTournamentIds.clear();
+    loadedReportUserId = owner;
+  }
+  if (pending) return;
+  try {
+    const key = reportStorageKey();
+    if (!key) return;
+    const stored = JSON.parse(sessionStorage.getItem(key) || 'null');
+    if (stored?.version !== 1 || !Array.isArray(stored.reports)) return;
+    const userId = readLocalSession()?.userId;
+    const reports = stored.reports.filter(
+      (p: SessionSummaryPayload) =>
+        !!p?.tournament &&
+        p.tournament.userId === userId &&
+        typeof p.tournament.tournamentId === 'string'
+    );
+    pending = reports.shift() ?? null;
+    heldQueue = reports;
+    for (const id of stored.acknowledged ?? [])
+      if (typeof id === 'string') acknowledgedTournamentIds.add(id);
+  } catch {
+    /* A corrupt cache cannot manufacture a result. */
+  }
+}
+
+export function hasAcknowledgedTournamentReport(
+  tournamentId: string,
+  userId: string,
+  finishSequence?: string
+): boolean {
+  restoreTournamentReports();
+  const key = tournamentReportKey({ tournamentId, userId, finishSequence });
+  return key !== null && acknowledgedTournamentIds.has(key);
+}
+
+/** A delayed elimination callback must not reopen an acknowledged report. */
+export function dismissSessionSummary(): void {
+  const id = tournamentReportKey(pending?.tournament);
+  if (id) acknowledgedTournamentIds.add(id);
+  clearSessionSummary();
+}
 
 /** Publish a finished session. Called by TablePage immediately before it navigates. */
 export function publishSessionSummary(payload: SessionSummaryPayload): void {
+  restoreTournamentReports();
+  const id = tournamentReportKey(payload.tournament);
+  if (id && acknowledgedTournamentIds.has(id)) return;
   if (pending?.tournament) {
     if (payload.tournament?.tournamentId === pending.tournament.tournamentId) {
       /* Same event re-publishing (the bust path fires once early, once with
@@ -220,7 +310,15 @@ export function publishSessionSummary(payload: SessionSummaryPayload): void {
       return;
     }
     /* A different session finished while the ranking card is up: hold it. */
-    heldQueue = [...heldQueue.filter((q) => q.tableName !== payload.tableName), payload];
+    heldQueue = [
+      ...heldQueue.filter((q) =>
+        payload.tournament?.tournamentId
+          ? q.tournament?.tournamentId !== payload.tournament.tournamentId
+          : q.tableName !== payload.tableName
+      ),
+      payload,
+    ];
+    persistTournamentReports();
     return;
   }
   pending = payload;
@@ -229,6 +327,7 @@ export function publishSessionSummary(payload: SessionSummaryPayload): void {
 
 /** Read without consuming (used for the host's initial state). */
 export function peekSessionSummary(): SessionSummaryPayload | null {
+  restoreTournamentReports();
   return pending;
 }
 

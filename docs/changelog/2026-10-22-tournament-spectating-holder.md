@@ -1,0 +1,21 @@
+# Tournament Spectating Holder And Rebuy Seat Recovery
+
+Tournament spectators now see the approved two-compartment holder with a live registration-close countdown on the left and Tap Here To Enter on the right. The existing tournament entry page remains the purchase owner. Expired clicks are refused; tournament switches and failed reads cannot paint a stale offer.
+
+The bottom tournament dock now uses a dedicated painted metal chassis, larger live figures and its existing collapse/close controls. The final rebuy level carries a persistent flashing top notice, including when the bottom dock is closed.
+
+The rebuy display now bounds level-based eligibility by the configured clock as well. A confirmed rebuy retains its atomic receipt's table and seat instead of discarding them; the table marks that seat, updates table-tab ownership and requests a fresh engine snapshot immediately. A purchase assigned to another table follows its confirmed seat without another purchase. Pending receipt recovery and duplicate-request serialization remain intact.
+
+Validation: focused service, receipt, countdown, cutoff, stale-owner, dock and rebuy-prompt tests; compiler and copy gates. Publication and database/engine phase corrections are tracked separately in the task evidence checkpoint.
+
+## Finish Reports And Call Pre-Actions
+
+Owner follow-up: every MTT, Spin and Sit & Go finisher must receive a report. The seat rebuild could prune TablePage before its delayed elimination report published. It now reads the durable entrant result before removal and publishes through the same app-root host; playing/moved or rebought entrants receive no finish, and unreadable outcomes retain their tab. The existing result reader is shared, with buy-in plus fee and rebuy/add-on counts printed on the approved card. Unknown device hand/duration counters are omitted. Exit route changes no longer acknowledge a report, and an explicitly dismissed event cannot reopen from a delayed callback. Distinct tournament IDs queue separately even when names match.
+
+Call Any and fixed-price Call were cleared when the hero's displayed action label changed during same-street snapshot/presentation updates. Clearing now belongs to the accepted hero action or the hand/street boundary, with old-hand/old-timestamp echoes excluded. The decision gate still controls visibility, while fixed-price call caps and server-only single execution remain unchanged. Real PreActionBar and PreActionEngine tests preserve both call choices through a label repaint, execute once and clear at the street boundary. Replaying the old label-clear rule fails both cases. Report route reproduction also fails against the previous host and passes the corrected host for MTT/Spin/SNG.
+
+Artwork qualification: the matte detector was removing structural chrome from the cropped bottom rail, confirmed by a before/after picture and a non-converging cleaned copy. The recorded asset baseline now preserves those approved rails; the full matte check passes.
+
+A missed elimination is also recovered by the existing initial entrant read: a finished player gets the durable report when the entry pool is sealed, the event completed, or it is a known freezeout. Open rebuy/re-entry decisions are preserved. Acknowledgement follows the durable elimination sequence so a later entry can finish again without inheriting the previous acknowledgement, while an acknowledged finisher may keep spectating. The existing SSO auth event restores cached reports after token refresh and clears another account's view. This adds no polling or financial write.
+
+The newer main mobile-spectator browser matrix was integrated with its standings and geometry changes intact. Its single 60-combination test used roughly136of150seconds in its earlier successful hosted run and timed out near the end under the integrated run. The matrix is now eight seat-count tests, each retaining the seven viewports and the dense-ring tournament/inset cases, every geometry assertion and all three dock/action states. Per-test timeout is reduced to60seconds; no assertion or case is removed. The same60combinations pass locally without retries as eight tests in30.8seconds. This is a required-check blocker correction; product geometry is unchanged.

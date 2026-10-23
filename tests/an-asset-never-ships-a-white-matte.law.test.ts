@@ -158,7 +158,7 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
     }
   });
 
-  it('retains the original six and the measured matte wheel artwork', () => {
+  it('retains the original six, measured wheel artwork and inspected tournament rails', () => {
     // If one of these leaves the baseline it means somebody cleaned it. That
     // is a decision about Dan's art, not a refactor, and it should be read as
     // one - the reasons above say what cleaning each of them destroys.
@@ -167,6 +167,8 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
       'public/assets/club-buttons/club/club-identity-icon-player-v1.png',
       'public/assets/club-buttons/console/spade-console-v1/mid.png',
       'public/assets/club-buttons/game-cards/plo/shark-four-bay-v1/live-dot.png',
+      'public/assets/club-buttons/tournament-info-dock-v1/bottom.webp',
+      'public/assets/club-buttons/tournament-info-dock-v1/middle.webp',
       'public/assets/club-buttons/wallets/mobile/wallet-union-bank-v1.webp',
       'public/assets/club-buttons/wallets/square/wallet-promo-wallet-square-v1.png',
       'public/assets/diamond-spins/wheel-matte-controls-v1.png',
@@ -189,6 +191,8 @@ describe('the port agrees with the Python the artists run', () => {
     ['public/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp', 0.3],
     ['public/assets/club-buttons/club/club-identity-icon-club-v1.png', 7.8],
     ['public/assets/club-buttons/console/spade-console-v1/mid.png', 4.2],
+    ['public/assets/club-buttons/tournament-info-dock-v1/bottom.webp', 4.0],
+    ['public/assets/club-buttons/tournament-info-dock-v1/middle.webp', 0.5],
   ];
 
   // Written out rather than `it.each`: its printf titles render this set as

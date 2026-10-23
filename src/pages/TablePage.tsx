@@ -1,3 +1,8 @@
+import {
+  usePreActionBoundary,
+  acceptedActionSpendsPreAction,
+  latestHeroActionTimestamp,
+} from '../hooks/usePreActionBoundary';
 import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
 import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
@@ -99,7 +104,14 @@ import {
   useMemo,
   useSyncExternalStore,
 } from 'react';
-import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
+import {
+  publishSessionSummary,
+  hasAcknowledgedTournamentReport,
+} from '../services/pendingSessionSummary';
+import {
+  fetchTournamentResult,
+  canRestoreFinishedTournamentReport,
+} from '../services/tournamentResult';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { heroMayReopenBetting } from '../lib/raiseReopen';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
@@ -636,7 +648,6 @@ import {
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
 import { MastheadGameLine } from '../components/table/MastheadGameLine';
-import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RESULT — what the Session Complete popup shows instead of chips
@@ -657,125 +668,6 @@ import { MysteryBountyService, playerTotalsFromAwards } from '../services/Myster
  * that would be actively wrong. The exit caller also gives this optional read
  * a deadline because a stalled browser transport may never report a failure.
  */
-async function fetchTournamentResult(
-  tournamentId: string,
-  userId: string
-): Promise<TournamentResult> {
-  const empty: TournamentResult = {
-    finishPlace: null,
-    entrants: null,
-    prize: 0,
-    bountyWinnings: 0,
-    knockouts: 0,
-    rebuys: 0,
-    addOns: 0,
-    isSpin: false,
-  };
-
-  try {
-    /* AUDIT 2026-08-20 — entrants is COUNTED, not read off the tournament row.
-
-       `tournaments.current_players` is an entry counter incremented on register
-       and decremented only on UNregister; no elimination path touches it. It is
-       close to the field size and drifts from it, which is why TournamentClock
-       already stopped trusting it ("the clock showed the starting field for the
-       whole tournament"). Counting tournament_players is the same source the
-       clock uses, so the two agree, and it stays right for re-entry events.
-       current_players remains the fallback if the count cannot be read. */
-    /* A FAILED READ MAY NOT BE REPORTED AS A PRIZE OF ZERO (2026-08-28 audit).
-       These three destructured `data`/`count` and discarded `error`. This
-       function's own header promises that "on any failure it returns a result
-       with nulls, so the summary shows '—' … rather than falling back to a
-       chip panel that would be actively wrong" — but that only held for the
-       outer catch, which a Supabase query-level error never reaches (it
-       RESOLVES with `{data: null, error}`). So winning a 100x Spin and hitting
-       a transient error on the entry read told the player they finished
-       nowhere and won 0, with the Spin branding stripped off the card too.
-       Throwing hands the failure to the outer catch, which already returns
-       the honest all-nulls result. */
-    const [entryRes, tourneyRes, countRes] = await Promise.all([
-      supabase
-        .from('tournament_players')
-        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status')
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', userId)
-        .maybeSingle(),
-      supabase
-        .from('tournaments')
-        /* format_contract identifies a known settled format. Unmarked historical
-           rows keep their results without claiming a Spin format.
-
-           is_mystery_bounty gates the second read below, so an ordinary
-           freezeout makes no extra RPC calls on the way out of the table. */
-        .select(
-          'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty'
-        )
-        .eq('id', tournamentId)
-        .maybeSingle(),
-      supabase
-        .from('tournament_players')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId),
-    ]);
-
-    if (entryRes.error) throw entryRes.error;
-    if (tourneyRes.error) throw tourneyRes.error;
-    if (countRes.error) throw countRes.error;
-    const entry = entryRes.data;
-    const tourney = tourneyRes.data;
-    const entryCount = countRes.count;
-
-    /* MYSTERY BOUNTY (sections 43, 44). The chest half of what this player won,
-       from the RPCs - `tournament_bounty_awards` has RLS on with no select
-       policy, so reading the table directly returns nothing and no error. */
-    let mystery: { bounties: number; cents: number; largestCents: number } | null = null;
-    if ((tourney as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty) {
-      const [board, awards] = await Promise.all([
-        MysteryBountyService.getLeaderboard(tournamentId),
-        MysteryBountyService.getAllAwards(tournamentId),
-      ]);
-      const boardRow = board.find((r) => r.userId === userId);
-      const fromAwards = playerTotalsFromAwards(awards.rows).get(userId);
-      const bounties = boardRow?.bountiesWon ?? fromAwards?.bountiesWon ?? 0;
-      const cents = boardRow?.earningsCents ?? fromAwards?.earningsCents ?? 0;
-      if (bounties > 0 || cents > 0) {
-        mystery = { bounties, cents, largestCents: fromAwards?.largestCents ?? 0 };
-      }
-    }
-
-    const qualification =
-      entry?.status === 'winner' && entry.position === null
-        ? await readMySatelliteQualifierResult(tournamentId, userId)
-        : null;
-    return {
-      satelliteQualification: qualification?.qualified
-        ? {
-            targetId: qualification.targetId,
-            deliveryKind: qualification.deliveryKind as 'seat' | 'ticket' | 'cash',
-            amount: qualification.amount,
-          }
-        : undefined,
-      name: tourney?.name || undefined,
-      finishPlace: entry?.position ?? null,
-      entrants: entryCount ?? tourney?.current_players ?? null,
-      prize: Number(entry?.prize) || 0,
-      bountyWinnings: Number(entry?.bounty_winnings) || 0,
-      knockouts: Number(entry?.bounties_collected) || 0,
-      mysteryBounties: mystery?.bounties,
-      mysteryBountyCents: mystery?.cents,
-      largestMysteryBountyCents: mystery?.largestCents,
-      rebuys: Number(entry?.rebuys) || 0,
-      // add_on is a count on some rows and a boolean on older ones; both mean
-      // "how many add-ons", so coerce rather than trusting the column type.
-      addOns:
-        typeof entry?.add_on === 'boolean' ? (entry.add_on ? 1 : 0) : Number(entry?.add_on) || 0,
-      isSpin: getTournamentFormatKind(tourney) === 'spin',
-    };
-  } catch (err) {
-    reportError(err, 'TablePage.fetchTournamentResult');
-    return empty;
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -3242,6 +3134,7 @@ function LiveTablePage({
    * as it stood when the handler closed over it.
    */
   const preActionArmedRef = useRef<typeof preAction>(null);
+  const preActionPriorHeroActionAtRef = useRef(0);
   useEffect(() => {
     preActionArmedRef.current = preAction;
   }, [preAction]);
@@ -13256,6 +13149,7 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
+        let loadedFinishedReportReady = false;
         let durableParticipantWitnessed = false;
         setTableState((prev) => {
           if (!isMounted) return prev;
@@ -13732,7 +13626,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time, is_rebuy, is_reentry'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13962,7 +13856,7 @@ function LiveTablePage({
             if (userId && isUUID(userId)) {
               const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
-                .select('status, table_id')
+                .select('status, table_id, elimination_sequence')
                 .eq('tournament_id', table.tournament_id)
                 .eq('user_id', userId)
                 .maybeSingle();
@@ -13978,7 +13872,24 @@ function LiveTablePage({
                   tournamentId: table.tournament_id,
                 });
               } else {
-                if (myEntry) durableParticipantWitnessed = true;
+                if (myEntry) {
+                  durableParticipantWitnessed = true;
+                  loadedFinishedReportReady =
+                    canRestoreFinishedTournamentReport({
+                      entryStatus: myEntry.status,
+                      tournamentStatus: tournData?.status,
+                      prizePoolFinalized: tournData?.prize_pool_finalized,
+                      isRebuy: tournData?.is_rebuy,
+                      isReentry: tournData?.is_reentry,
+                    }) &&
+                    !hasAcknowledgedTournamentReport(
+                      table.tournament_id,
+                      userId,
+                      myEntry.elimination_sequence == null
+                        ? undefined
+                        : String(myEntry.elimination_sequence)
+                    );
+                }
                 const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
                 // "Seated" is table_seats, NEVER tournament_players.table_id.
                 // createTablesAndSeatPlayers historically wrote the seat row and
@@ -14571,7 +14482,7 @@ function LiveTablePage({
             scheduleDurableCompletionRetry();
           }
 
-          if (loadedTournamentStatus === 'COMPLETED') {
+          if (loadedTournamentStatus === 'COMPLETED' || loadedFinishedReportReady) {
             void exitFromDurableCompletion();
           }
 
@@ -17123,6 +17034,15 @@ function LiveTablePage({
         const actionSeat = (data.seat as number) || 0;
         const actionAmount = (data.amount as number) || 0;
         const seatIdx = actionSeat - 1;
+        if (
+          acceptedActionSpendsPreAction({
+            heroSeat: tableStateRef.current.heroSeat,
+            handNumber: tableStateRef.current.handNumber,
+            knownHeroActionAtArm: preActionPriorHeroActionAtRef.current,
+            event: data,
+          })
+        )
+          setPreAction(null);
 
         // DEAD-WIRING FIX 2026-08-15: record the action for Share Hand.
         // handActionsRef was declared 2,000 lines up and had ZERO writers and
@@ -22401,15 +22321,9 @@ function LiveTablePage({
     // values below are exactly what it is built from.
   }, [preAction, preActionCallDue]);
 
-  /* Dan 2026-10-18: a pre-action armed for a decision that is no longer
-     coming is spent. Once the hero has answered the street and owes nothing
-     the bar is down, so nothing on screen could show it armed - clear it
-     rather than leave an invisible arm for a later bet to inherit. Not while
-     the engine is mid-beat executing it (suppressPanelForPreAction). */
-  useEffect(() => {
-    if (preAction === null) return;
-    if (!heroFacesADecision && !suppressPanelForPreAction) setPreAction(null);
-  }, [preAction, heroFacesADecision, suppressPanelForPreAction]);
+  // The decision gate controls visibility only. An intermediate snapshot can
+  // temporarily owe zero while labels catch up; it cannot cancel a user's
+  // arm. Accepted hero actions and hand/street boundaries own cancellation.
 
   /**
    * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
@@ -24012,15 +23926,14 @@ function LiveTablePage({
   // boardStageKey is gone with the key itself (see the state declaration).
   // CommunityCards owns all per-street animation and sound.
 
-  // Clear pre-action if game state changes significantly (new hand, new street, or hero acts)
-  // Dan 2026-08-24: "THE CHECK FOLD BUTTON SHOULD ONLY APPLY FOR ONE ACTION AND ONE STREET"
-  const heroLastAction =
-    tableState.heroSeat > 0 ? tableState.lastActions?.[tableState.heroSeat - 1] : null;
-  useEffect(() => {
-    // If the hand ended, the street advanced, or the hero successfully acted (meaning the pre-action
-    // executed or they manually acted), clear the armed pre-action.
-    setPreAction(null);
-  }, [tableState.boardStage, tableState.isHandInProgress, heroLastAction]);
+  // One tap owns one hand/street. A display label changing is not another
+  // accepted action; the discrete hero PLAYER_ACTION above spends the choice.
+  usePreActionBoundary(
+    tableState.handNumber,
+    tableState.boardStage,
+    tableState.isHandInProgress,
+    useCallback(() => setPreAction(null), [])
+  );
 
   /* ═══ LIGHTNING PHASE 6: ONE ROOM, MANY HANDS ══════════════════════════════
      Everything in this block runs only in a Lightning room (a pool session)
@@ -27320,7 +27233,7 @@ function LiveTablePage({
           bottom rows pad themselves by its height (TournamentHUD.css). On
           every MTT, Spin and heads-up match alike (isTournament covers all
           three). Never render it on the felt again. */}
-      {tableState.isTournament && tableState.tournamentId && !tournamentDockClosed && (
+      {tableState.isTournament && tableState.tournamentId && (
         <TournamentHUD
           tournamentId={tableState.tournamentId}
           spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
@@ -27328,6 +27241,7 @@ function LiveTablePage({
              its dock must know it is off screen and stop asking. */
           hidden={!isVisible}
           collapsed={tournamentDockCollapsed}
+          closed={tournamentDockClosed}
           onToggleCollapsed={toggleTournamentDock}
           onClose={() => setTournamentDockClosed(true)}
         />
@@ -28160,6 +28074,12 @@ function LiveTablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={(next) => {
+                    preActionPriorHeroActionAtRef.current = next
+                      ? latestHeroActionTimestamp(
+                          engineSnapshotRef.current?.action_history,
+                          tableStateRef.current.heroSeat
+                        )
+                      : 0;
                     // Snapshot whether checking was free at arm time so the
                     // effect above can send auto_check_fold vs auto_fold.
                     preActionCanCheckRef.current =
@@ -29219,6 +29139,20 @@ function LiveTablePage({
                stack out of the tournament they just paid to stay in. */
             bustHoldRef.current.pendingExit = null;
             releaseBustHold();
+            // The atomic receipt owns the paid seat. Do not wait for a later
+            // broadcast, another hand, or a page refresh to restore the player.
+            masterBus.emit('TABLE_SEATED', {
+              tableId: purchase.tableId,
+              userId,
+              tableName: tableState.tableName,
+            });
+            if (purchase.tableId !== tableId) {
+              navigate(`/table/${purchase.tableId}`);
+            } else {
+              heroSeatRef.current = purchase.seatNumber;
+              setTableState((prev) => ({ ...prev, heroSeat: purchase.seatNumber }));
+              requestEngineSnapshot();
+            }
           } catch (error) {
             if (!isCurrentPurchase()) return;
             if (error instanceof TournamentPurchaseNotSubmittedError) {

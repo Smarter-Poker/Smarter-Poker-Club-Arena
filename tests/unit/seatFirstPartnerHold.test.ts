@@ -64,7 +64,7 @@ describe('the table wires it', () => {
     expect(TABLE_PAGE).toContain(
       'startTimeMs: parseStartTimeMs((row as { start_time?: unknown }).start_time)'
     );
-    expect(TABLE_PAGE).toMatch(/prize_pool_finalized, start_time'/);
+    expect(TABLE_PAGE).toMatch(/prize_pool_finalized, start_time, is_rebuy, is_reentry'/);
     expect(TABLE_PAGE).toMatch(/buy_in_fee, starting_chips, start_time'/);
   });
   it('the footer shows the hold, and the stall alarm starts only after it', () => {

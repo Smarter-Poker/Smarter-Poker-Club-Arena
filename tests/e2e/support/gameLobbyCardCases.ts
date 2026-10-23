@@ -43,20 +43,23 @@ export function registerGameLobbyCardCases() {
       ...new Set([
         'src/styles/club-engine.css',
         'src/styles/metallic-popups.css',
+        'src/components/layouts/AppLayout.module.css',
+        'src/components/navigation/GlobalHeader.module.css',
         ...Object.keys(bundled.metafile!.inputs).filter((file) => file.endsWith('.css')),
       ]),
     ];
     const css = sheets.map(readStyle).join('\n');
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.setViewportSize({ width: 393, height: 700 });
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname.startsWith('/rest/v1/')) return route.fulfill({ json: null });
       if (url.hostname === 'game-card.fixture' && url.pathname === '/')
         return route.fulfill({
           contentType: 'text/html',
-          body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div></body></html>`,
+          // The real shell isolates route content beneath persistent chrome.
+          // A dialog can be visible yet have its Close control covered by it.
+          body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body style="overflow:auto"><header class="header"><button style="width:100%;height:44px">Messages</button></header><main class="casinoStage"><div id="root"></div></main><nav aria-label="Fixture Footer" style="position:fixed;bottom:0;width:100%;height:60px;z-index:1000">Footer</nav></body></html>`,
         });
       const file = resolve(
         'public',
@@ -66,32 +69,57 @@ export function registerGameLobbyCardCases() {
         return route.fulfill({ body: readFileSync(file) });
       return route.fulfill({ status: 404, body: '' });
     });
-    for (const kind of ['cash', 'mtt', 'spin', 'sng']) {
-      await page.goto(`http://game-card.fixture/?kind=${kind}`);
-      await page.addScriptTag({
-        content: bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
-      });
-      const card = page.locator('.glp__arena-card');
-      await expect(card, kind).toBeVisible();
-      const before = await card.boundingBox();
-      expect(
-        before!.height,
-        `${kind} selected card collapsed into its flex scroll body`
-      ).toBeGreaterThan(200);
-      const scroll = page.locator('.glp__scroll');
-      await scroll.evaluate((el) => {
-        el.scrollTop = el.scrollHeight;
-      });
-      const after = await card.boundingBox();
-      expect(after!.height, `${kind} card shrank while scrolling details`).toBeCloseTo(
-        before!.height,
-        1
-      );
-      expect(
-        await scroll.evaluate((el) => el.scrollHeight > el.clientHeight),
-        `${kind} details remain scrollable`
-      ).toBe(true);
-      await expect(page.locator('.glp__close')).toBeVisible();
+    for (const viewport of [
+      { width: 375, height: 812 },
+      { width: 812, height: 375 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const kind of ['cash', 'mtt', 'spin', 'sng']) {
+        await page.goto(`http://game-card.fixture/?kind=${kind}`);
+        await page.addScriptTag({
+          content: bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
+        });
+        const card = page.locator('.glp__arena-card');
+        await expect(card, kind).toBeVisible();
+        const before = await card.boundingBox();
+        expect(
+          before!.height,
+          `${kind} selected card collapsed into its flex scroll body`
+        ).toBeGreaterThan(200);
+        const scroll = page.locator('.glp__scroll');
+        await scroll.evaluate((el) => {
+          el.scrollTop = el.scrollHeight;
+        });
+        const after = await card.boundingBox();
+        expect(after!.height, `${kind} card shrank while scrolling details`).toBeCloseTo(
+          before!.height,
+          1
+        );
+        expect(
+          await scroll.evaluate((el) => el.scrollHeight > el.clientHeight),
+          `${kind} details remain scrollable`
+        ).toBe(true);
+        await expect(page.locator('.glp__close')).toBeVisible();
+        await page
+          .getByRole('button', { name: 'Close Game Lobby', exact: true })
+          .click({ timeout: 2000 });
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('auto');
+        const reopen = page.getByRole('button', { name: 'Open Game Lobby', exact: true });
+        await reopen.click();
+        await expect(
+          page.getByRole('button', { name: 'Close Game Lobby', exact: true })
+        ).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(reopen).toBeFocused();
+        await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('auto');
+        await reopen.click();
+        await page
+          .getByRole('link', { name: 'Back To All Games', exact: true })
+          .click({ timeout: 2000 });
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+      }
     }
     expect(errors).toEqual([]);
   });

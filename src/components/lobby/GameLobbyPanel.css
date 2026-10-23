@@ -15,7 +15,9 @@
 .glp-backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 500);
+  /* Same layer as TournamentLobbyModal: above persistent navigation (1000)
+     and the table stage (1100), below the toast layer. */
+  z-index: 2100;
   background: rgb(2 4 7 / 70%);
   backdrop-filter: blur(2px);
   display: flex;

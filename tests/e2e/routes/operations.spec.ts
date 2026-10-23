@@ -27,6 +27,18 @@ test.describe('Club Operations', () => {
       .locator('.sp-carousel__item.is-active')
       .getByRole('button', { name: /Click to enter lobby/i });
     if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
+      // Returning members start with Club Options collapsed. Open the real
+      // disclosure before measuring its controls so hidden content cannot
+      // turn the overlap check into a locator timeout.
+      const clubOptions = page.locator('details').filter({
+        has: page.getByText('Club Options', { exact: true }),
+      });
+      if (!(await clubOptions.evaluate((el) => (el as HTMLDetailsElement).open))) {
+        await clubOptions.locator('summary').click();
+      }
+      await expect(
+        page.getByRole('navigation', { name: 'Poker Arena Actions', exact: true })
+      ).toBeVisible();
       /* Visibility alone cannot detect occlusion. The approved top actions
          replaced the retired bottom Quick actions row; keep the overlap
          guard against the navigation that is actually rendered. */

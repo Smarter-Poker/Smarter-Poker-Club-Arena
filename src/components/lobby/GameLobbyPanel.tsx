@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
@@ -728,7 +729,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   // ── Detailed rules list (complete explanations under the plaque) ──
   const settings = isCash ? parseTableSettings(cashRaw?.settings) : null;
 
-  return (
+  // Route content is an isolated stacking context beneath the global chrome.
+  // The modal must leave that context so its Close control remains tappable.
+  return createPortal(
     <div className="glp-backdrop" onClick={onClose} role="presentation">
       <aside
         ref={panelRef}
@@ -1300,6 +1303,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           </div>
         </div>
       </aside>
-    </div>
+    </div>,
+    document.body
   );
 }

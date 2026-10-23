@@ -11,8 +11,8 @@
  * tab, so locking the phone on your own turn froze the clock that decides
  * whether to spend a time bank.
  *
- * The countdown is now `(deadline - serverNow()) / 1000`, evaluated by two
- * drivers (RAF while visible, a plain interval always) and published only when
+ * The countdown is now `(deadline - serverNow()) / 1000`, evaluated by one
+ * deadline-aligned timeout and published only when
  * the WHOLE SECOND changes — into an external store, NOT into React state, so
  * the caller does not render for it at all. (The render count that proves that
  * lives in actionClockDoesNotRenderTheTable.test.tsx; what is pinned here is
@@ -203,7 +203,7 @@ describe('the hero timeout', () => {
       })
     );
 
-    expect(rafSpy).toHaveBeenCalled(); // it asked; nothing answered
+    expect(rafSpy).not.toHaveBeenCalled(); // no display-frame work is needed
     expect(onTimeout).not.toHaveBeenCalled();
 
     act(() => void vi.advanceTimersByTime(15_000));

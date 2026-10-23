@@ -1531,7 +1531,7 @@ function LiveTablePage({
      mounted and laid out at once. */
   const pageRootRef = useRef<HTMLDivElement | null>(null);
 
-  // Prevent Chrome from throttling this tab (keeps horse timers alive)
+  // Own bounded decision-timer cleanup; game decisions run on the server.
   useTabKeepAlive();
   /* ONCE. This read `useTableEnvironment(tableId);` on two consecutive lines,
      and the duplicate was not harmless: the hook's viewport effect saves the

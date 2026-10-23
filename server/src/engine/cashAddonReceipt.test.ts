@@ -36,6 +36,8 @@ describe('cash add-on original operation readback', () => {
     { amount: -1 },
     { amount: 'NaN' },
     { stack: null },
+    { stack: '' },
+    { pending: '' },
     { stack: 'Infinity' },
     { pending: -1 },
     { pending: null },

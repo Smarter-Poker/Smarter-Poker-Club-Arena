@@ -24414,7 +24414,7 @@ function LiveTablePage({
         !autoTopUpInFlightRef.current
       ) {
         const maxBuyIn = tableState.maxBuyIn;
-        const currentStack = Number(heroSeatData.stack || 0);
+        const currentStack = Number(heroSeatData.stack);
 
         /* An unknown balance never auto-tops-up: spending on a number we
            could not read is exactly the risk the null now expresses. */

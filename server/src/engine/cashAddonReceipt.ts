@@ -53,6 +53,9 @@ function parseReceipt(data: unknown, tableId: string, userId: string): CashAddon
     !['number', 'string'].includes(typeof receipt.amount) ||
     !['number', 'string'].includes(typeof receipt.stack) ||
     !['number', 'string'].includes(typeof receipt.pending) ||
+    String(receipt.amount).trim() === '' ||
+    String(receipt.stack).trim() === '' ||
+    String(receipt.pending).trim() === '' ||
     !Number.isFinite(amount) ||
     amount < 0 ||
     !Number.isFinite(stack) ||

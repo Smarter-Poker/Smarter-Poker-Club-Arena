@@ -198,18 +198,19 @@ afterEach(() => {
 });
 
 describe('P15-A exact historical replay', () => {
-  it('records a PLO4 decision under the selected generation 5 and replays it exactly', async () => {
-    // Generation 5 (2026-10-22) requalified the maniac-pressure source, so the
-    // round-3 PLO4 pack is the cash candidate again and its receipt replays.
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION?.approvalGeneration).toBe(5);
+  it('records a PLO4 decision as shadow while Phase 10 is unselected and replays it exactly', async () => {
+    // Maniac pressure (2026-10-22) returned the round-3 PLO4 pack to shadow
+    // until its locked matrix requalifies the exact new source (as the VPIP
+    // floor call-down did on 2026-10-17).
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
     const { record, result } = await liveOriginal(IDS.cashPlo4Preflop);
-    expect(result.phase10Authority?.state).toBe('usable');
-    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).toBe('candidate');
+    expect(result.phase10Authority?.state).toBe('unselected');
+    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).not.toBe('candidate');
     const verdict = await exactReplayHorseDecisionRecord(record, { runningSource: SOURCE });
     expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
   });
 
-  it('a fresh process replays a selected PLO4 original exactly and refuses a recorded authority the release cannot qualify', async () => {
+  it('a fresh process replays an unselected PLO4 original exactly and refuses a recorded authority the release cannot qualify', async () => {
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     let original: Awaited<ReturnType<typeof liveOriginal>>;
     try {
@@ -245,7 +246,7 @@ describe('P15-A exact historical replay', () => {
     }
     expect(
       (original.result.decision.plo4Policy as { applied?: boolean } | undefined)?.applied
-    ).toBe(true);
+    ).not.toBe(true);
     const verdict = freshProcess(
       { record: original.record, execution: original.execution },
       SOURCE
@@ -253,8 +254,8 @@ describe('P15-A exact historical replay', () => {
     expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
     expect(verdict.isolation.networkAttempts).toEqual({ fetch: 0, socket: 0 });
     // A record claiming a usable owner receipt (well formed, from a genuine
-    // test qualification of another generation) cannot stand in for the
-    // release's generation 5: ordinary qualification refuses it by name.
+    // test qualification) cannot turn the pack on: the release selection is
+    // null, so ordinary qualification refuses it by name.
     const holder = new HorseQualifiedAuthorityHolder(randomUUID(), PLO4_POLICY_PACK.version);
     holder.apply(qualifiedPhase10TestAdmission());
     const receipt = holder.receipt();
@@ -267,7 +268,7 @@ describe('P15-A exact historical replay', () => {
     const before = drainFires();
     restoreFires(before);
     const refused = await exactReplayHorseDecisionRecord(forged, { runningSource: SOURCE });
-    expect(refused.outcome).toBe('non_replayable:authority:phase10:identity_approvalGeneration');
+    expect(refused.outcome).toBe('non_replayable:authority:phase10:unselected');
     expect(refused.replayVerified).toBe(false);
     const after = drainFires();
     expect(after).toEqual(before);

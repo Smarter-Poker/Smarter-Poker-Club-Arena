@@ -2865,6 +2865,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
    * job failed or expired) from the client.
    */
   receipt(
+    'horse_continuation_*',
+    'HorseLogic premium 3-bet, terminal flop and call-side barrel budget',
+    'real-card value raise, funded short-stack flop wager or next-street call budget; no holdings or player identifiers',
+    'V50'
+  ),
+  receipt(
     'horse_opponent_memory_*',
     'HorseDecisionWorkerRuntime durable profile import',
     'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',

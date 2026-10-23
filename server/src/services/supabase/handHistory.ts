@@ -916,7 +916,7 @@ export async function logHandHistory(params: {
       }
     }
     const observation = getLiveHorseDecisionWorker().observeCompletedHand({
-      ...(durableOpponentProfiles !== undefined ? { durableOpponentProfiles } : {}),
+      durableOpponentProfiles,
       generation: params.handNumber,
       fence: [
         params.tableId,

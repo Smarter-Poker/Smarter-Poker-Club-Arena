@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
+import { HorseMind } from './HorseMind.js';
+import * as Continuation from './HorseContinuation.js';
+import * as EvEngine from './HorseEvEngine.js';
+import type { SeatPlayer } from '../types.js';
 import {
   estimateRangeAdvantage,
   saveFastRandom,
@@ -54,4 +59,64 @@ describe('public range advantage across Holdem and Omaha', () => {
     expect(estimateRangeAdvantage(cards('AsKh7d'), [1, 0], [0, 1], variantInfo('nlh'))).toBeNull();
     expect(estimateRangeAdvantage(cards('AsKh'), [0, 1], [0, 1], variantInfo('nlh'))).toBeNull();
   });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  HorseMind.reset();
+});
+describe('the live reference consumes public range advantage', () => {
+  for (const variant of variants)
+    it(`${variant} sends both public ranges to the estimator`, () => {
+      const hero = {
+        seat: 2,
+        user_id: 'hero',
+        username: 'Hero',
+        totalInvested: 7,
+        stack: 1000,
+        bet: 0,
+        is_folded: false,
+        cards: cards(
+          variant === 'nlh'
+            ? 'QhQd'
+            : '3s4cThJd' + (variant === 'plo5' ? '9h' : variant === 'plo6' ? '9h6d' : '')
+        ),
+      } as SeatPlayer;
+      const gs = {
+        players: [
+          { seat: 1, user_id: 'opponent', stack: 1000, bet: 0, is_folded: false, cards: [] },
+          hero,
+        ],
+        communityCards: cards('Kc8d2h'),
+        pot: 100,
+        currentBet: 0,
+        minRaise: 2,
+        lastRaise: 2,
+        stage: 'flop',
+        gameVariant: variant,
+        bigBlind: 2,
+        smallBlind: 1,
+        dealerSeat: 2,
+        actionHistory: [
+          { stage: 'preflop', seat: 2, userId: 'hero', action: 'raise', amount: 7 },
+          { stage: 'preflop', seat: 1, userId: 'opponent', action: 'call', amount: 7 },
+          { stage: 'flop', seat: 1, userId: 'opponent', action: 'check', amount: 0 },
+        ],
+      } as unknown as HorseGameStateV2;
+      const range = vi.spyOn(Continuation, 'rangeAdvantageFor');
+      const ev = vi.spyOn(EvEngine, 'evaluateSpot');
+      seedFastRandom(10);
+      HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false });
+      expect(range).toHaveBeenCalledTimes(1);
+      expect(range.mock.calls[0][0]).toEqual(gs.communityCards);
+      expect(range.mock.calls[0]).toHaveLength(4);
+      expect(range.mock.calls[0][1]).toHaveLength(2);
+      expect(range.mock.calls[0][2]).toHaveLength(2);
+      const result = range.mock.results[0].value;
+      expect(result?.samples).toBeGreaterThanOrEqual(96);
+      if (variant !== 'nlh') {
+        expect(ev).toHaveBeenCalled();
+        expect(ev.mock.calls.at(-1)![0].initiative).toBe(!result!.disadvantage);
+      }
+    });
 });

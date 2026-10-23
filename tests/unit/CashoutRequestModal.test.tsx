@@ -193,23 +193,14 @@ it.each([
   expect(rpc).not.toHaveBeenCalled();
   expect(checkSettlementLock).not.toHaveBeenCalled();
 });
-it('Max and percentage selection retain cents and display the resulting request', async () => {
+it('offers no suggested amounts; a typed cent amount is sent exactly (Dan 2026-10-23)', async () => {
   const input = await mount(1.25);
   expect(input.getAttribute('min')).toBe('0.01');
   expect(input.getAttribute('step')).toBe('0.01');
   expect(input.getAttribute('inputmode')).toBe('decimal');
-  fireEvent.click(screen.getByRole('button', { name: '25% · 0.31' }));
-  expect((input as HTMLInputElement).value).toBe('0.31');
-  fireEvent.click(screen.getByRole('button', { name: 'Max · 1.25' }));
-  expect((input as HTMLInputElement).value).toBe('1.25');
-  await submit();
-  await waitFor(() => expect(rpc).toHaveBeenCalledOnce());
-  expect(rpc.mock.calls[0][1].p_amount).toBe('1.25');
-  await waitFor(() => expect(complete).toHaveBeenCalledOnce());
-});
-it('a fractional percentage request uses the displayed rounded-down cent value', async () => {
-  await mount(1.25);
-  fireEvent.click(screen.getByRole('button', { name: '50% · 0.62' }));
+  expect(screen.queryByRole('group', { name: 'Quick Amounts' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^(25%|50%|100%|Max)/ })).toBeNull();
+  fireEvent.change(input, { target: { value: '0.62' } });
   await submit();
   await waitFor(() => expect(rpc).toHaveBeenCalledOnce());
   expect(rpc.mock.calls[0][1].p_amount).toBe('0.62');

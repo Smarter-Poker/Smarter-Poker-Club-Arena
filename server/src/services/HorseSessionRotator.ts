@@ -941,7 +941,7 @@ export class HorseSessionRotator {
         if (!uid || !horseIds.has(uid)) continue;
         if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
         const benched = benchedIds.has(uid) || cashRosterAllows(uid) === false;
-        const offPlo = ploRosterAllows(uid, t?.game_variant) === false;
+        const offPlo = ploRosterAllows(uid, t?.game_variant, t?.big_blind) === false;
         if (!benched && !offPlo) continue;
         try {
           const result = await engine.leaveTable(uid);

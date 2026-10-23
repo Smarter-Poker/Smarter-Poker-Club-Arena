@@ -4972,6 +4972,14 @@
 }
 
 @media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
+  /* Two full-size lines plus the existing 2px padding on each edge. The
+     unrelated 26px minimum consumed the adjacent player's only on-felt
+     all-in lane once a six-card showdown and the measured pot shared it. */
+  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(6))
+    .seat-wrapper--top
+    .seat__action {
+    min-height: calc(2lh + 4px);
+  }
   .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(6))
     .seat-wrapper--top
     .seat__bet-chips

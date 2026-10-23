@@ -965,7 +965,7 @@ for (const width of [320, 375, 393, 430, 480])
       '\n' +
       (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
     for (const count of [6, 9])
-      for (const [revealed, jackpot, villainCards = 2, state = 'normal'] of [
+      for (const [revealed, jackpot, villainCards = 2, state = 'normal', potWidth = 0] of [
         [false, 'mini'],
         [true, 'mini'],
         [false, 'main'],
@@ -974,6 +974,10 @@ for (const width of [320, 375, 393, 430, 480])
         [true, 'none'],
         [true, 'mini', 6],
         [true, 'mini', 6, 'all-in'],
+        // Retain the native-font scene and replay CI's wider measured pot too.
+        // At 83.46875px the old 26px top action minimum forced the adjacent
+        // all-in puck onto the pot, with no clear owner-preserving felt slot.
+        [true, 'mini', 6, 'all-in', 83.46875],
         [true, 'mini', 6, 'all-shown'],
       ] as const) {
         // The narrow nine-seat PLO6 ring is a required regression, not an
@@ -987,7 +991,7 @@ for (const width of [320, 375, 393, 430, 480])
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-cards="${villainCards === 6 ? 6 : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-seats="${count}" data-cards="${villainCards === 6 ? 6 : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}${potWidth ? `.pot-display{box-sizing:border-box;width:${potWidth}px;}` : ''}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
@@ -1053,6 +1057,27 @@ for (const width of [320, 375, 393, 430, 480])
             innerWidth <= 340 &&
             document.querySelector('.table-page')?.getAttribute('data-seats') === '9' &&
             Number(document.documentElement.dataset.villainCards) > 2;
+          // Glyph metrics may exceed their line box; preserve the full-size
+          // type and padding, and require all ink to remain inside the tag.
+          if (compactPlo6) {
+            for (const tag of document.querySelectorAll('.seat-wrapper--top .seat__action')) {
+              const bounds = box(tag);
+              const text = document.createRange();
+              text.selectNodeContents(tag);
+              const ink = text.getBoundingClientRect();
+              const style = getComputedStyle(tag);
+              if (
+                parseFloat(style.fontSize) !== 9 ||
+                parseFloat(style.paddingTop) !== 2 ||
+                parseFloat(style.paddingBottom) !== 2 ||
+                ink.left < bounds.left ||
+                ink.right > bounds.right ||
+                ink.top < bounds.top ||
+                ink.bottom > bounds.bottom
+              )
+                violations.push(`Top Action Label Does Not Fit At Full Size: ${tag.textContent}`);
+            }
+          }
           // On the 320px PLO6 showdown only, the existing narrow-felt
           // printing fallback may use the watermark lane. Player facts,
           // shown cards, the board and the pot remain protected.
@@ -1292,7 +1317,7 @@ for (const width of [320, 375, 393, 430, 480])
           });
         expect(
           result.violations,
-          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`
+          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} pot-width=${potWidth || 'native'} canvas=${JSON.stringify(result.canvas)}}`
         ).toEqual([]);
         for (const tool of result.tools) {
           expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);

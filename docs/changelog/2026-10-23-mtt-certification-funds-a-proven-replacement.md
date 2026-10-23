@@ -35,3 +35,23 @@ navigation has no accessible box to measure. The operations route now applies
 the same non-overlap calculation to rendered navigation and checks normal
 pointer reachability before entering the club. Isolated browser coverage pins
 collapsed options, open options and refusal of a real visible overlap.
+
+Run 39900848437 exposed a separate qualification defect. The selected Night Owl
+level was due at 04:56:36 UTC, inside its legitimate synchronized tournament
+break. The engine paused the clock correctly; the witness had ignored the
+upcoming break. The shared clock reader now reads `synchronized_breaks` and
+refuses a transition whose observation and existing delivery reserve reach
+`:55`, as well as the active break. Explicitly opted-out tournaments retain
+their continuous clocks. The existing finite selection and observation limits
+are unchanged. Regression coverage uses the recorded 191,096 ms remainder,
+the exact reserve boundary, active-break admission and the next hour.
+
+Required browser run 39901610194 reproduced a crowded 320px, nine-seat PLO6
+showdown where the top action tag's fixed 26px minimum left an adjacent all-in
+puck no clear position on its owner's felt. Its two full-size text lines and
+existing padding need less height. Only that compact rule now derives the
+minimum from `2lh + 4px`; fonts, padding, chip sizes and action text stay intact.
+The existing browser regression retains the native scene and adds the exact
+83.46875px pot width from the failed run, plus full-size action-text containment.
+Pot clearance, wager ownership, felt containment and pairwise clearance remain
+unchanged assertions.

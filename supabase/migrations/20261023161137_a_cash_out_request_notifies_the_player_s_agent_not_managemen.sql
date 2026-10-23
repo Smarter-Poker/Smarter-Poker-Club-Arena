@@ -38,6 +38,8 @@
 -- Messenger visibility (fn_messenger_invoice_visible_to) reads the same array.
 --
 -- No table is locked. One function is replaced in one transaction.
+--
+-- @live-proof: (SELECT position('THEN ARRAY[r.player_id] ELSE ARRAY[club.owner_id,r.player_id] END' IN pg_get_functiondef('public.fn_cashier_cashout_transition(text,uuid,uuid,numeric,uuid,uuid,text)'::regprocedure)) > 0)
 
 BEGIN;
 

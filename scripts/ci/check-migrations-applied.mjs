@@ -87,6 +87,7 @@ import {
 } from "./sql-manifest-identifiers.mjs";
 import { loadSchemaManifest, loadColumnsManifest } from "./schema-manifest.mjs";
 import { classifyMigration } from "./recording-only.mjs";
+import { windowDeclaration, validateWindowMigration } from "./maintenance-window-migrations.mjs";
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, "scripts/ci/supabase-schema-manifest.json");
@@ -607,11 +608,21 @@ function main() {
 
   const problems = [];
   const promises = [];
+  let queued = 0;
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
     const sql = readFileSync(join(REPO, file), "utf8");
     const now = declaredObjects(sql);
     droppedObjects(sql); // Preserve strict schema validation for changed drops.
+    // Current hot-table policy requires protected merge BEFORE the existing
+    // daily installer can act. Validate its exact contract, report QUEUED,
+    // and never restamp the live manifest or suggest a forbidden daytime apply.
+    if (windowDeclaration(sql) === "daily-maintenance") {
+      validateWindowMigration(file, sql, { preamble: [] });
+      queued++;
+      console.log(`[check-migrations-applied] QUEUED, NOT INSTALLED: ${file}; requires the existing daily-maintenance installer and installed/live verification.`);
+      continue;
+    }
 
     /* WHAT THIS BRANCH ACTUALLY ADDS (2026-08-22).
      *
@@ -719,7 +730,9 @@ function main() {
 
   if (problems.length === 0) {
     console.log(
-      promises.length
+      queued
+        ? `OK — ${queued} validated daily-maintenance migration(s) queued; remaining declarations checked separately. No installation inferred.`
+        : promises.length
         ? "OK — nothing this branch declares is missing from the manifest."
         : "OK — every object these migrations declare exists in the live schema.",
     );

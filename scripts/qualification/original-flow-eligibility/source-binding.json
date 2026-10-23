@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230712,
-      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+      "bytes": 230971,
+      "sha256": "b5141dafd9e67779d7566bef7a5c965aaacee39bc35d4e809064345bc16fe533"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -282,6 +282,17 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "autoTopUpReadOnlyReceiptCi20261023": {
+    "reason": "Add the isolated read-only top-up receipt qualifier to existing accounting shard 1. Current workflow input identity only; historical financial evidence, assertions and qualification status remain unchanged. No financial certificate restamp.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 230971,
+      "sha256": "b5141dafd9e67779d7566bef7a5c965aaacee39bc35d4e809064345bc16fe533"
     }
   }
 }

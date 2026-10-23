@@ -445,8 +445,9 @@ try {
     assert.equal(hold.event_kind, 'hold');
     const holdBody = response.request().postDataJSON();
     const start = performance.now();
-    await ready(() =>
-      agentEvents.changes.some((r) => r.id === hold.cashout_id && r.status === 'pending'), 5000
+    await ready(
+      () => agentEvents.changes.some((r) => r.id === hold.cashout_id && r.status === 'pending'),
+      5000
     );
     const approve = agentPage.getByRole('button', { name: 'Approve Cashout', exact: true });
     await approve.waitFor({ state: 'visible', timeout: 5000 });
@@ -483,6 +484,8 @@ try {
     await playerPage
       .getByRole('button', { name: 'Cancel', exact: true })
       .waitFor({ state: 'visible', timeout: 5000 });
+    await playerPage.getByLabel('Amount', { exact: true }).fill('80');
+    await playerPage.getByLabel('Note (Optional)', { exact: true }).fill('Keep the decision draft');
     setStage('browser-' + decision + '-decision');
     const rpcName = decision === 'approval' ? 'fn_cashout_approve_v2' : 'fn_cashout_release_v2';
     const decisionWire = agentPage.waitForResponse(
@@ -501,12 +504,14 @@ try {
     assert.equal(receipt.success, true);
     assert.equal(receipt.event_kind, decision);
     const changed = performance.now();
-    await ready(() =>
-      playerEvents.changes.some(
-        (r) =>
-          r.id === hold.cashout_id &&
-          r.status === (decision === 'approval' ? 'approved' : 'rejected')
-      ), 5000
+    await ready(
+      () =>
+        playerEvents.changes.some(
+          (r) =>
+            r.id === hold.cashout_id &&
+            r.status === (decision === 'approval' ? 'approved' : 'rejected')
+        ),
+      5000
     );
     await agentPage
       .getByText('No Pending Cashout Requests', { exact: true })
@@ -518,6 +523,30 @@ try {
     assert.ok(performance.now() - changed < 5000, 'decision status exceeded realtime budget');
     observations.push({
       stage: decision + '.decision_cross_browser',
+      latency_ms: Math.round(performance.now() - changed),
+    });
+    await ready(
+      async () =>
+        (await playerPage.locator('#cashier-cashout-balance').textContent())?.includes(
+          expectedPlayer.toFixed(2)
+        ),
+      Math.max(1, 5000 - (performance.now() - changed))
+    );
+    assert.ok(performance.now() - changed < 5000, 'returned balance exceeded realtime budget');
+    assert.equal(await playerPage.getByLabel('Amount', { exact: true }).inputValue(), '80');
+    assert.equal(
+      await playerPage.getByLabel('Note (Optional)', { exact: true }).inputValue(),
+      'Keep the decision draft'
+    );
+    await ready(
+      async () =>
+        await playerPage
+          .getByRole('button', { name: 'Check Or Request Cashout', exact: true })
+          .isEnabled(),
+      5000
+    );
+    observations.push({
+      stage: decision + '.balance_cross_browser',
       latency_ms: Math.round(performance.now() - changed),
     });
     await assertMoney(expectedPlayer, 10.25, 0, decision === 'approval' ? 2 : 4);

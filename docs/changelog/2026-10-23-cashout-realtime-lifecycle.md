@@ -4,7 +4,10 @@ Settlement admission was removed from cashout requests and decisions in #7824.
 Follow-up end-to-end inspection found the open player request dialog did not
 subscribe to decisions made by the agent in another session. It now subscribes
 to that player's cashout rows and reloads only pending status. Amount/note drafts,
-club/account generations and the receipt-recovery read gate remain intact.
+club/account generations and the receipt-recovery read gate remain intact. A
+verified decision also invokes the callers' existing balance-only/quiet read
+so a rejected hold immediately becomes available again in the displayed balance.
+That read waits behind an owned command and does not reset the working draft.
 
 The mounted regression fails without the subscription and passes with it,
 including draft preservation and retired-owner events. The existing required

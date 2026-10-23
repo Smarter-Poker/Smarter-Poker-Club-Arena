@@ -175,6 +175,11 @@ function CashoutRequestContent({
   const submitLockRef = useRef(false);
   const cancelLockRef = useRef(false);
   const queuedPendingReload = useRef(false);
+  const queuedBalanceReload = useRef(false);
+  const completeRef = useRef(onComplete);
+  useEffect(() => {
+    completeRef.current = onComplete;
+  }, [onComplete]);
 
   /**
    * Declared HERE, above the effects that list it as a dependency. It used to be
@@ -200,6 +205,11 @@ function CashoutRequestContent({
         rowsCurrent.current = current;
         rowsScope.current = isCurrent;
         setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
+        if (queuedBalanceReload.current) {
+          queuedBalanceReload.current = false;
+          // Both Cashier callers read balances without replacing the working form.
+          completeRef.current?.();
+        }
       }
     } catch (err) {
       reportError(err, 'CashoutRequestModal.Failed_to_load_pending_cashouts');
@@ -377,7 +387,15 @@ function CashoutRequestContent({
     filter: playerId ? `player_id=eq.${playerId}` : null,
     event: '*',
     enabled: isOpen && !!playerId && !!clubId,
-    onPayload: () => void loadPendingCashouts(),
+    onPayload: (payload) => {
+      const decided = payload.new;
+      if (
+        (decided?.status === 'approved' || decided?.status === 'rejected') &&
+        visiblePendingCashouts.some((row) => row.id === decided.id)
+      )
+        queuedBalanceReload.current = true;
+      void loadPendingCashouts();
+    },
   });
 
   const handleSubmit = async () => {

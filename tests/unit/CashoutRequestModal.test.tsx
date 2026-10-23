@@ -551,3 +551,21 @@ it('refreshes scoped pending status from another session without replacing the d
   await act(async () => retired.handler({ new: { status: 'rejected' } }));
   expect(cashoutService.getPlayerCashouts).toHaveBeenCalledTimes(2);
 });
+
+it('reads the returned balance after a verified cross-session rejection and preserves its draft', async () => {
+  realtime.subs.length = 0;
+  vi.mocked(cashoutService.getPlayerCashouts).mockResolvedValueOnce([
+    { id: ID.cashout, clubId: ID.club, playerId: ID.player, amount: 10.25, status: 'pending' } as never,
+  ]).mockResolvedValue([]);
+  const amount = await mount();
+  await screen.findByRole('button', { name: 'Cancel', exact: true });
+  fireEvent.change(amount, { target: { value: '80' } });
+  const note = screen.getByLabelText('Note (Optional)');
+  fireEvent.change(note, { target: { value: 'Keep the balance-read draft' } });
+  await act(async () => realtime.subs[0].handler({ new: { id: ID.cashout, status: 'rejected' } }));
+  await waitFor(() => expect(complete).toHaveBeenCalledOnce());
+  expect(cashoutService.getPlayerCashouts).toHaveBeenCalledTimes(2);
+  expect((amount as HTMLInputElement).value).toBe('80');
+  expect((note as HTMLTextAreaElement).value).toBe('Keep the balance-read draft');
+  expect(rpc).not.toHaveBeenCalled();
+});

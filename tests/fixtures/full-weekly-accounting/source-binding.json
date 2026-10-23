@@ -193,7 +193,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
-    "tests/unit/CashoutRequestModal.test.tsx": "d42781e0e5577e62d029cb2ec952e7cfe8dccd71f907588c216b13e11246b030",
+    "tests/unit/CashoutRequestModal.test.tsx": "db05f20a050a63a4b85f274544374238d41d1d85e14405f41b8bc4938e8b424d",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea",
@@ -5315,5 +5315,11 @@
         "current": "ca22800606e7fd57d7008bb7172096661c559602996c68bd10e99c15abd71f4a"
       }
     ]
+  },
+  "cashoutDecisionBalanceRead20261023": {
+    "reason": "Add a mounted rejection regression proving a verified external decision reads the returned available balance through the callers existing quiet/balance-only callback while preserving amount/note and making no financial RPC. Existing transaction, receipt, generation and duplicate assertions are unchanged. The new case fails without that read and passes with it. Current test source identity only; historical qualification statuses and SQL are unchanged.",
+    "path": "tests/unit/CashoutRequestModal.test.tsx",
+    "previous": "d42781e0e5577e62d029cb2ec952e7cfe8dccd71f907588c216b13e11246b030",
+    "current": "db05f20a050a63a4b85f274544374238d41d1d85e14405f41b8bc4938e8b424d"
   }
 }

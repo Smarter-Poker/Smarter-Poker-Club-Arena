@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95",
+    "scripts/ci/classify-ci-changes.mjs": "b3804f5be17238d676688005f635523dbc6b2b98e7bcfad1a7ba73692deaaded",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1108,6 +1108,17 @@
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
         "current": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95"
+      }
+    ]
+  },
+  "cashierSharedRealtimeInputs20261023": {
+    "reason": "Extend the required native cashier lifecycle to its shared transaction, receipt, identity and realtime input boundaries. This only adds qualification execution; no existing selection, financial assertion or historical evidence/status changes. Source identity only, not an execution certificate.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95",
+        "current": "b3804f5be17238d676688005f635523dbc6b2b98e7bcfad1a7ba73692deaaded"
       }
     ]
   }

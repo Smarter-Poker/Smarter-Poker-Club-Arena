@@ -223,3 +223,52 @@ it('cached media older than six hours revalidates genuinely and persists in the 
   expect(f.requestConstructor).toHaveBeenCalledWith(expect.anything(), { cache: 'no-cache' });
   expect(f.cache.put).toHaveBeenCalledTimes(1);
 });
+
+it('uses the original shell read if it completes while a failed network request is pending', async () => {
+  vi.useFakeTimers();
+  const f = fixture({
+    cache: {
+      match: vi.fn(async (key) => {
+        if (key === '/hub/club-arena') {
+          return new Promise((resolve) =>
+            setTimeout(() => resolve(new Response('saved shell')), 350)
+          );
+        }
+        return new Response('offline page');
+      }),
+    },
+    fetch: vi.fn(
+      () => new Promise((_, reject) => setTimeout(() => reject(new Error('network lost')), 100))
+    ),
+  });
+  const { response } = f.request(shell);
+  await vi.advanceTimersByTimeAsync(400);
+  expect(await (await response).text()).toBe('saved shell');
+  expect(f.fetch).toHaveBeenCalledTimes(1);
+  expect(f.cache.match).toHaveBeenCalledTimes(1);
+});
+
+it('keeps a shell delivered during the offline-cache lookup ahead of the offline document', async () => {
+  vi.useFakeTimers();
+  const f = fixture({
+    cache: {
+      match: vi.fn(
+        async (key) =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve(new Response(key === '/hub/club-arena' ? 'saved shell' : 'offline page')),
+              key === '/hub/club-arena' ? 350 : 60
+            )
+          )
+      ),
+    },
+    fetch: vi.fn(async () => {
+      throw new Error('offline');
+    }),
+  });
+  const { response } = f.request(shell);
+  await vi.advanceTimersByTimeAsync(360);
+  expect(await (await response).text()).toBe('saved shell');
+  expect(f.fetch).toHaveBeenCalledTimes(1);
+});

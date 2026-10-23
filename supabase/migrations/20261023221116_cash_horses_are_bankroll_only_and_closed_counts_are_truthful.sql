@@ -1,4 +1,4 @@
--- 20261023215853_cash_horses_play_by_bankroll_and_closed_tables_report_no_pha.sql
+-- 20261023221116_cash_horses_are_bankroll_only_and_closed_counts_are_truthful.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -23,7 +23,7 @@ SET LOCAL statement_timeout='60s';
 do $baseline$
 begin
   if md5(pg_get_functiondef('public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer)'::regprocedure)) <> '0ef7d304fb604d7c4df5d2a9b05078d9'
-     or md5(pg_get_functiondef('public.fn_ca_horse_roster_seat_guard()'::regprocedure)) <> '667b2d8ef026e218848813636576ee95'
+     or md5(pg_get_functiondef('public.fn_ca_horse_roster_seat_guard()'::regprocedure)) <> '793c4d45b9674e518f3b39308957b486'
      or md5(pg_get_functiondef('public.trg_auto_cashout_on_table_close()'::regprocedure)) <> 'a936bf2b604a14a6ae620e6b3db852f0' then
     raise exception 'Cash horse/lifecycle source changed since qualification; inspect before applying';
   end if;
@@ -277,7 +277,6 @@ declare
   v_bb       numeric;
   v_club     uuid;
   v_cluster  uuid;
-  v_fill     uuid;
 begin
   if new.left_at is not null then
     return new;
@@ -301,15 +300,11 @@ begin
     return new;  -- every horse plays tournaments
   end if;
 
-  -- A Lightning fill horse (Dan 2026-10-23) plays its own test game and no
-  -- other cash game, roster or not.
-  select f.cluster_id into v_fill from public.lightning_horse_fill f where f.horse_id = new.user_id;
-  if v_fill is not null and not exists (select 1 from public.ca_horse_active_roster a where a.horse_id=new.user_id) then
-    if v_cluster is not distinct from v_fill then
-      return new;
-    end if;
-    raise exception using errcode = '42501',
-      message = 'horse_in_lightning_fill: this horse plays only its Lightning test game';
+  -- A Lightning game takes any horse (Dan 2026-10-23 16:50 CT: "remove any
+  -- and all restrictions that are on the horses for playing games").
+  if v_cluster is not null and exists (select 1 from public.cash_games g
+                                        where g.id = v_cluster and g.lightning_enabled) then
+    return new;
   end if;
 
   if exists (select 1 from public.ca_horse_roster_exempt_clubs x where x.club_id = v_club) then
@@ -329,8 +324,7 @@ begin
     raise exception using errcode = '42501',
       message = 'horse_not_on_cash_roster: only the active horse roster plays cash games';
   end if;
-  -- Variant, fixed stake and past profit are not eligibility rules.
-  -- Atomic buy-in and exposure rules remain the bankroll authority.
+  -- All cash-roster variants/stakes are eligible by bankroll, not PLO profit.
   return new;
 exception
   when insufficient_privilege then raise;
@@ -342,6 +336,10 @@ REVOKE ALL ON FUNCTION public.fn_ca_horse_roster_refresh(integer,integer,integer
 GRANT EXECUTE ON FUNCTION public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_ca_horse_roster_seat_guard() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_horse_roster_seat_guard() TO service_role;
+
+UPDATE public.ca_declared_money_triggers
+ SET note='Cash-roster boundary only for ordinary cash seats; all PLO variants/stakes use bankroll admission. Lightning, exempt clubs, tournaments and same-game moves retain their admission. No chips or seats are written by this guard.'
+ WHERE table_name='table_seats' AND trigger_name='zzzzzz_horse_roster_seat_guard';
 
 CREATE OR REPLACE FUNCTION public.trg_auto_cashout_on_table_close()
 RETURNS trigger LANGUAGE plpgsql SET search_path TO 'public','pg_temp'

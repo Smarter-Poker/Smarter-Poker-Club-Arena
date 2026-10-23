@@ -2,10 +2,11 @@
 CREATE ROLE service_role;
 CREATE ROLE anon;
 CREATE ROLE authenticated;
+CREATE TABLE ca_declared_money_triggers(table_name text,trigger_name text,note text);
 CREATE TABLE profiles(id uuid primary key,is_horse boolean,status text,horse_status text,horse_profile jsonb,updated_at timestamptz);
 CREATE TABLE clubs(id uuid primary key);
 CREATE TABLE club_members(user_id uuid,club_id uuid,status text,chip_balance numeric);
-CREATE TABLE cash_games(id uuid primary key,enabled boolean,closed_at timestamptz,state text,club_id uuid);
+CREATE TABLE cash_games(id uuid primary key,enabled boolean,closed_at timestamptz,state text,club_id uuid,lightning_enabled boolean default false);
 CREATE TABLE tables(id uuid primary key,tournament_id uuid,game_type text,game_variant text,big_blind numeric,status text,current_players integer,club_id uuid,cluster_id uuid);
 CREATE TABLE table_seats(id uuid primary key,user_id uuid,table_id uuid,left_at timestamptz,active_game_scope text,stack numeric);
 CREATE TABLE ca_horse_active_roster(horse_id uuid primary key,rank integer,hands bigint,bb100 numeric,chosen_at timestamptz default now());
@@ -35,7 +36,7 @@ INSERT INTO tables VALUES('00000000-0000-0000-0000-000000000002',null,'cash','pl
 INSERT INTO tables VALUES('00000000-0000-0000-0000-000000000003',null,'cash','plo5',5,'running',2,'00000000-0000-0000-0000-000000000001',null);
 INSERT INTO tables VALUES('00000000-0000-0000-0000-000000000004',null,'cash','nlh',2,'running',3,'00000000-0000-0000-0000-000000000001',null);
 
--- 20261023215853_cash_horses_play_by_bankroll_and_closed_tables_report_no_pha.sql
+-- 20261023221116_cash_horses_are_bankroll_only_and_closed_counts_are_truthful.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -307,7 +308,6 @@ declare
   v_bb       numeric;
   v_club     uuid;
   v_cluster  uuid;
-  v_fill     uuid;
 begin
   if new.left_at is not null then
     return new;
@@ -331,15 +331,11 @@ begin
     return new;  -- every horse plays tournaments
   end if;
 
-  -- A Lightning fill horse (Dan 2026-10-23) plays its own test game and no
-  -- other cash game, roster or not.
-  select f.cluster_id into v_fill from public.lightning_horse_fill f where f.horse_id = new.user_id;
-  if v_fill is not null and not exists (select 1 from public.ca_horse_active_roster a where a.horse_id=new.user_id) then
-    if v_cluster is not distinct from v_fill then
-      return new;
-    end if;
-    raise exception using errcode = '42501',
-      message = 'horse_in_lightning_fill: this horse plays only its Lightning test game';
+  -- A Lightning game takes any horse (Dan 2026-10-23 16:50 CT: "remove any
+  -- and all restrictions that are on the horses for playing games").
+  if v_cluster is not null and exists (select 1 from public.cash_games g
+                                        where g.id = v_cluster and g.lightning_enabled) then
+    return new;
   end if;
 
   if exists (select 1 from public.ca_horse_roster_exempt_clubs x where x.club_id = v_club) then
@@ -359,8 +355,7 @@ begin
     raise exception using errcode = '42501',
       message = 'horse_not_on_cash_roster: only the active horse roster plays cash games';
   end if;
-  -- Variant, fixed stake and past profit are not eligibility rules.
-  -- Atomic buy-in and exposure rules remain the bankroll authority.
+  -- All cash-roster variants/stakes are eligible by bankroll, not PLO profit.
   return new;
 exception
   when insufficient_privilege then raise;
@@ -372,6 +367,10 @@ REVOKE ALL ON FUNCTION public.fn_ca_horse_roster_refresh(integer,integer,integer
 GRANT EXECUTE ON FUNCTION public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_ca_horse_roster_seat_guard() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_horse_roster_seat_guard() TO service_role;
+
+UPDATE public.ca_declared_money_triggers
+ SET note='Cash-roster boundary only for ordinary cash seats; all PLO variants/stakes use bankroll admission. Lightning, exempt clubs, tournaments and same-game moves retain their admission. No chips or seats are written by this guard.'
+ WHERE table_name='table_seats' AND trigger_name='zzzzzz_horse_roster_seat_guard';
 
 CREATE OR REPLACE FUNCTION public.trg_auto_cashout_on_table_close()
 RETURNS trigger LANGUAGE plpgsql SET search_path TO 'public','pg_temp'
@@ -436,6 +435,12 @@ BEGIN
   RAISE EXCEPTION 'cash pool exceeded';
  EXCEPTION WHEN insufficient_privilege THEN NULL;
  END;
+ -- Preserve the newer owner instruction: Lightning accepts every horse.
+ INSERT INTO cash_games(id,enabled,state,club_id,lightning_enabled)
+ VALUES(md5('lightning')::uuid,true,'live','00000000-0000-0000-0000-000000000001',true);
+ UPDATE tables SET cluster_id=md5('lightning')::uuid WHERE id='00000000-0000-0000-0000-000000000003';
+ INSERT INTO table_seats SELECT md5('lightning-seat')::uuid,p.id,'00000000-0000-0000-0000-000000000003',null,null,200
+   FROM profiles p WHERE NOT EXISTS(SELECT 1 FROM ca_horse_active_roster a WHERE a.horse_id=p.id) LIMIT 1;
  IF EXISTS(SELECT 1 FROM ca_horse_active_roster WHERE bb100>=0) THEN RAISE EXCEPTION 'fixture must prove loss history does not block'; END IF;
 END $$;
 SELECT 'cash roster, unrestricted PLO, closed-empty counts and occupied-seat protection PASS' AS result;

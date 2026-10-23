@@ -302,7 +302,7 @@ describe('Phase 8.3 qualified authority on the actual candidate receipt', () => 
         expect(client.status().phase).toBe('ready');
       } else {
         await expect(pending).rejects.toThrow('invalid policy receipt: phase7_foreign_opponent');
-        expect(client.status().phase).toBe('failed');
+        expect(client.status().phase).toBe('ready');
       }
     }
   );

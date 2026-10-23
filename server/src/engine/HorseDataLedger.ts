@@ -1291,6 +1291,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // so a healthy day never trips them and a dead layer always does.
   // ─────────────────────────────────────────────────────────────────────────
   receipt('decide', 'HorseLogic.decide', 'every live decision', 'V15'),
+  receipt(
+    'horse_decision_refused_isolated',
+    'LiveHorseDecisionWorkerClient.refuseDecision',
+    'a worker decision whose receipt or effects the client refused; isolated to its own seat (check or fold), never engine-fatal',
+    '2026-10-22'
+  ),
   receipt('decide_tournament', 'HorseLogic.decide', 'every live tournament decision', 'Phase6'),
   receipt(
     'decide_tournament_preflop',

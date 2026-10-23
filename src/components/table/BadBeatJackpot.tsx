@@ -150,7 +150,7 @@ export function BadBeatJackpot({
           </button>
           <button
             type="button"
-            className="bbj-dismiss"
+            className="bbj-banner-close"
             aria-label="Hide Bad Beat Jackpot"
             title="Hide Bad Beat Jackpot"
             onClick={() => setMainHidden(true)}
@@ -179,7 +179,7 @@ export function BadBeatJackpot({
           </button>
           <button
             type="button"
-            className="bbj-dismiss"
+            className="bbj-banner-close"
             aria-label="Hide Mini Bad Beat Jackpot"
             title="Hide Mini Bad Beat Jackpot"
             onClick={() => setMiniHidden(true)}

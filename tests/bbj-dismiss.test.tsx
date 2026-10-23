@@ -1,11 +1,23 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import BadBeatJackpot from '../src/components/table/BadBeatJackpot';
 
 const props = { amount: 36802, qualifyingHand: 'Aces Full Or Better', miniAmount: 700 };
 
 describe('BBJ banner close controls', () => {
+  it('does not share the celebration dismiss button skin', () => {
+    const celebrationCss = readFileSync('src/components/table/BBJCelebration.css', 'utf8');
+    render(<BadBeatJackpot {...props} />);
+    for (const name of ['Hide Bad Beat Jackpot', 'Hide Mini Bad Beat Jackpot']) {
+      const button = screen.getByRole('button', { name, exact: true });
+      for (const className of button.classList) {
+        expect(celebrationCss).not.toMatch(new RegExp(`\\.${className}(?![\\w-])`));
+      }
+    }
+  });
+
   it('uses matching X buttons and hides each banner independently', () => {
     const open = vi.fn();
     const { container, rerender } = render(<BadBeatJackpot {...props} onOpenDetails={open} />);

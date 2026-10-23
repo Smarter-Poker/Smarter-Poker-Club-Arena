@@ -848,7 +848,7 @@
   flex-direction: column;
 }
 
-.bbj-dismiss {
+.bbj-banner-close {
   position: absolute;
   top: 0;
   right: 1px;
@@ -871,7 +871,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.bbj-dismiss:focus-visible,
+.bbj-banner-close:focus-visible,
 .bbj-widget__details:focus-visible,
 .bbj-mini-plate__details:focus-visible {
   outline: 2px solid #8fd4ff;

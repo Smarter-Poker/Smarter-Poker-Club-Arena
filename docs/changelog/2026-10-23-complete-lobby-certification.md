@@ -7,3 +7,5 @@ Run the eight production lobby cases against the maintained Diamond catalog thro
 The directly invoked production coverage check refuses missing, skipped, duplicate, retried or erroneous lobby evidence. Existing exact-client/engine brackets, customization journeys, account cleanup and guarded cutover seal remain unchanged.
 
 CI exposed that ten independent card/viewport scenarios shared one 60-second deadline and exhausted it in Linux WebKit (no assertion mismatch). Register each scenario separately with the existing deadline and every assertion retained, so failures name their exact card and viewport.
+
+The required gameplay customization journey could land on World Hub's phone welcome screen after public sign-in and then wait for an Arena-only terms marker. Match both passing companion journeys: verify the persisted intended account before writes, explicitly return to the protected Arena route, and then run unchanged terms/profile/runtime assertions. A source contract fails the old helper and enforces this order for all three journeys.

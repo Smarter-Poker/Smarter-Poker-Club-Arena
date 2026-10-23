@@ -145,6 +145,7 @@ import {
   ploRosterAllows,
   refreshPloRoster,
   rosterExemptClub,
+  lightningFillVerdict,
 } from './HorsePloRoster.js';
 
 /**
@@ -3104,6 +3105,17 @@ export class HorseFleetManager {
               pilotElsewhereDropped++;
               return false;
             }
+            /* A LIGHTNING FILL HORSE PLAYS ITS OWN TEST GAME (Dan 2026-10-23:
+               "make sure the horses are all playing 50 horses need to join
+               both holdem and plo"). No new cash seat anywhere else - the
+               database seat guard refuses one - and at its own game it is
+               outside both roster rules below. See lightningFillVerdict. */
+            const fillVerdict = lightningFillVerdict(h.id, table.cluster_id);
+            if (fillVerdict === 'elsewhere') {
+              pilotElsewhereDropped++;
+              return false;
+            }
+            const rosterExempt = rosterExemptClub(table.club_id) || fillVerdict === 'fill';
 
             /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
                VPIP is not a candidate for it - the database would refuse the
@@ -3179,7 +3191,7 @@ export class HorseFleetManager {
                low stakes, 0.50 big blind and under, are open to every horse
                (Dan 2026-10-23 12:59), so the gate reads the table's blind. */
             if (
-              !rosterExemptClub(table.club_id) &&
+              !rosterExempt &&
               isPloVariant(table.game_variant) &&
               ploRosterAllows(h.id, table.game_variant, table.big_blind) !== true
             ) {
@@ -3191,7 +3203,7 @@ export class HorseFleetManager {
                JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
                cash. Their tags already say so; this is the belt, and the
                database seat door is the braces. */
-            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id) === false) {
+            if (!rosterExempt && cashRosterAllows(h.id) === false) {
               tagDropped++;
               return false;
             }

@@ -1314,7 +1314,7 @@ const LobbyRow = memo(function LobbyRow({
     <tr
       data-id={entry.id}
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
-      className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
+      className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}${entry.game?.lightning ? ' is-lightning' : ''}`}
       data-kind={entry.kind}
       role="row"
       aria-selected={selected}
@@ -1867,43 +1867,46 @@ export default function LobbyTable({
      seats or status should ever float a game nobody can enter back up between
      two they can. Array.prototype.sort is stable in every engine we ship to,
      so the chosen order survives inside each partition. */
-  const sink = useCallback((rows: LobbyEntry[]) => {
-    /* ONE pass. The previous version called seatFirstJoinable once per row for
+  const sink = useCallback(
+    (rows: LobbyEntry[]) => {
+      /* ONE pass. The previous version called seatFirstJoinable once per row for
        `.some` and then ~2 n log n more times inside a comparator, on an array
        that had just been copied — and copied it again. Partitioning is O(n),
        preserves the incoming order inside each half (which is what the stable
        sort was there for), and evaluates the predicate exactly once per row.
        The identical array reference is returned when nothing needs to sink, so
        the memo below still sees no change. */
-    const pinned: LobbyEntry[] = [];
-    const open: LobbyEntry[] = [];
-    /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
+      const pinned: LobbyEntry[] = [];
+      const open: LobbyEntry[] = [];
+      /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
        cash table with nobody seated sinks below every table with a game on,
        whatever the chosen sort - and, because the sink runs per variant group
        (see `sorted`), below the tables of ITS OWN game, never into another's. */
-    const empty: LobbyEntry[] = [];
-    const gone: LobbyEntry[] = [];
-    for (const r of rows) {
-      /* FEATURED floats and a dead seat-first game sinks, in one pass.
+      const empty: LobbyEntry[] = [];
+      const gone: LobbyEntry[] = [];
+      for (const r of rows) {
+        /* FEATURED floats and a dead seat-first game sinks, in one pass.
 
          A featured game nobody can enter does NOT float. The host meant "look
          at this game", not "look at this result", and a full table pinned above
          forty joinable ones is worse than not pinning it at all. seatFirstJoinable
          alone is not that test - it returns true for every cash row by design,
          so the status has to be checked here too. */
-      const enterable =
-        seatFirstJoinable(r) &&
-        r.status !== 'full' &&
-        r.status !== 'closed' &&
-        r.status !== 'completed';
-      if (!seatFirstJoinable(r)) gone.push(r);
-      else if (r.featured && enterable && !sortChosen) pinned.push(r);
-      else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
-      else open.push(r);
-    }
-    if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
-    return pinned.concat(open, empty, gone);
-  }, [sortChosen]);
+        const enterable =
+          seatFirstJoinable(r) &&
+          r.status !== 'full' &&
+          r.status !== 'closed' &&
+          r.status !== 'completed';
+        if (!seatFirstJoinable(r)) gone.push(r);
+        else if (r.featured && enterable && !sortChosen) pinned.push(r);
+        else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
+        else open.push(r);
+      }
+      if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
+      return pinned.concat(open, empty, gone);
+    },
+    [sortChosen]
+  );
 
   const sorted = useMemo(() => {
     /* GAMES ARE NEVER MIXED (Dan 2026-09-03). On the cash tabs every ordering

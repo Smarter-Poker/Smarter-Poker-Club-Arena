@@ -47,6 +47,14 @@ let cashRoster: Set<string> | null = null;
  * failed read; empty until the first good one.
  */
 let exemptClubs: Set<string> = new Set();
+/**
+ * lightning_horse_fill: horse -> the one Lightning test game it plays (Dan
+ * 2026-10-23: "make sure the horses are all playing 50 horses need to join
+ * both holdem and plo"). At its own game a fill horse is outside both roster
+ * rules; it takes no new cash seat anywhere else. Mirrored in
+ * `fn_ca_horse_roster_seat_guard`. Kept across a failed read.
+ */
+let fillByHorse: Map<string, string> = new Map();
 let loadedAt = 0;
 let inflight: Promise<void> | null = null;
 
@@ -92,6 +100,27 @@ async function load(): Promise<void> {
           `[HorsePloRoster] exempt club read failed: ${exempt.error?.message ?? 'no rows'}`
         ),
         'HorsePloRoster.exempt_read_failed'
+      );
+    }
+    const fill = await supabase
+      .from('lightning_horse_fill')
+      .select('horse_id,cluster_id')
+      .limit(5000);
+    if (!fill.error && Array.isArray(fill.data)) {
+      fillByHorse = new Map(
+        fill.data
+          .filter(
+            (r: { horse_id?: unknown; cluster_id?: unknown }) =>
+              typeof r.horse_id === 'string' && typeof r.cluster_id === 'string'
+          )
+          .map((r: { horse_id: string; cluster_id: string }) => [r.horse_id, r.cluster_id])
+      );
+    } else {
+      reportError(
+        new Error(
+          `[HorsePloRoster] lightning fill read failed: ${fill.error?.message ?? 'no rows'}`
+        ),
+        'HorsePloRoster.lightning_fill_read_failed'
       );
     }
     roster = new Set(data.map((r: { horse_id: string }) => String(r.horse_id)));
@@ -168,6 +197,28 @@ export function cashRosterAllows(horseId: string): boolean | undefined {
  */
 export function rosterExemptClub(clubId: unknown): boolean {
   return typeof clubId === 'string' && exemptClubs.has(clubId);
+}
+
+/**
+ * A Lightning fill horse and a cash table's game:
+ *   'free'      not a fill horse (every other rule decides, unchanged)
+ *   'fill'      a fill horse at its own Lightning test game: outside the roster rules
+ *   'elsewhere' a fill horse at any other cash game: no new seat there
+ * A table with no game (`cluster_id` unknown) is 'elsewhere' for a fill
+ * horse, the same answer the database seat guard gives.
+ */
+export function lightningFillVerdict(
+  horseId: string,
+  clusterId: unknown
+): 'free' | 'fill' | 'elsewhere' {
+  const game = fillByHorse.get(horseId);
+  if (!game) return 'free';
+  return typeof clusterId === 'string' && clusterId === game ? 'fill' : 'elsewhere';
+}
+
+/** Test seam for the Lightning fill list. */
+export function __setLightningFillForTest(rows: Array<[horseId: string, clusterId: string]>): void {
+  fillByHorse = new Map(rows);
 }
 
 /** Test seam for the exempt clubs. */

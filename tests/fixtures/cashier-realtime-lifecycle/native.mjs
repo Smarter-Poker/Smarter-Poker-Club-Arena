@@ -330,7 +330,7 @@ try {
     );
   const [agentPage, playerPage] = await Promise.all(contexts.map((c) => c.newPage()));
   const errors = [];
-  function observe(page) {
+  function observe(page, topic) {
     const state = { joins: 0, changes: [] };
     page.on('pageerror', (e) => errors.push(e.name));
     page.on('response', async (r) => {
@@ -353,6 +353,9 @@ try {
         } catch {
           return;
         }
+        // Only this rendered component's binding can admit its action.
+        // A parent queue subscription cannot stand in for the open dialog.
+        if (m.topic !== topic) return;
         if (
           m.event === 'phx_reply' &&
           m.payload?.status === 'ok' &&
@@ -370,8 +373,8 @@ try {
     );
     return state;
   }
-  const agentEvents = observe(agentPage),
-    playerEvents = observe(playerPage);
+  const agentEvents = observe(agentPage, `realtime:agent-cashouts-${owner.id}-${club}`),
+    playerEvents = observe(playerPage, `realtime:cashout-request-status:${player.id}:${club}`);
   await Promise.all(
     [agentPage, playerPage].map((p) =>
       p.goto(`https://smarter.poker/hub/club-arena/clubs/${club}/cashier`, {
@@ -421,7 +424,9 @@ try {
     ['decline', '12.75', 89.75],
   ]) {
     setStage('browser-' + decision + '-request');
+    const requestJoins = playerEvents.joins;
     await openRequest.click();
+    await ready(() => playerEvents.joins > requestJoins);
     await playerPage.getByLabel('Amount', { exact: true }).fill(amount);
     const submit = playerPage.getByRole('button', {
       name: 'Check Or Request Cashout',

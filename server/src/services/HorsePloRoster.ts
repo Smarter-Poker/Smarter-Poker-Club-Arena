@@ -10,9 +10,11 @@
  * GAMES."
  *
  * The database owns the choice. `fn_ca_horse_roster_refresh` (migration
- * 20261023072007, daily at 04:15 Chicago) keeps 45 horses active, benches the
- * rest (horse_status 'disabled'), and writes into `ca_horse_plo_roster` only
- * the horses with 2,000+ PLO cash hands in 30 days and a net profit at PLO.
+ * 20261023182203, four times a day) sizes the cash roster to the live cash
+ * floor (held between 35 and 50 horses), and writes into `ca_horse_plo_roster`
+ * only the horses with 5,000+ PLO cash hands in 30 days AND at least 1.0 big
+ * blind won per 100 PLO hands. Nobody is benched: every horse plays
+ * tournaments.
  * This module is the engine's read of that list.
  *
  * Every PLO variant (plo4, plo5, plo6, plo8, any later plo*) is gated at CASH
@@ -21,8 +23,10 @@
  * HorseSessionRotator. Tournaments are open to every horse (Dan 2026-10-23
  * 11:06: "THEY CAN PLAY TOURNAMENTS, JUST NOT CASH GAMES.").
  *
- * The same read carries `ca_horse_active_roster`, the 45 horses that are the
- * only ones to sit at cash at all (`cashRosterAllows`).
+ * The same read carries `ca_horse_active_roster`, the 35 to 50 horses that are
+ * the only ones to sit at cash at all (`cashRosterAllows`). Those horses are
+ * kept OUT of tournament fills (`cashRosterHeldFromTournaments`) so they are
+ * free for the cash floor; the rest of the fleet fills the events.
  *
  * FAILING CLOSED FOR PLO ONLY: the last good list is kept across failed reads.
  * Before any good read, `ploRosterAllows` answers `undefined` for a PLO
@@ -41,6 +45,12 @@ export const PLO_ROSTER_TTL_MS = 60_000;
 let roster: Set<string> | null = null;
 /** ca_horse_active_roster: the only horses that sit at CASH (Dan 2026-10-23). */
 let cashRoster: Set<string> | null = null;
+/**
+ * ca_horse_roster_exempt_clubs: clubs whose cash tables are outside both
+ * roster rules (Dan 2026-10-23: "EXEMPT LIGHTNING PILOT"). Kept across a
+ * failed read; empty until the first good one.
+ */
+let exemptClubs: Set<string> = new Set();
 let loadedAt = 0;
 let inflight: Promise<void> | null = null;
 
@@ -69,6 +79,24 @@ async function load(): Promise<void> {
         'HorsePloRoster.cash_read_failed'
       );
       return;
+    }
+    const exempt = await supabase
+      .from('ca_horse_roster_exempt_clubs')
+      .select('club_id')
+      .limit(1000);
+    if (!exempt.error && Array.isArray(exempt.data)) {
+      exemptClubs = new Set(
+        exempt.data
+          .map((r: { club_id?: unknown }) => (typeof r.club_id === 'string' ? r.club_id : ''))
+          .filter((id: string) => id.length > 0)
+      );
+    } else {
+      reportError(
+        new Error(
+          `[HorsePloRoster] exempt club read failed: ${exempt.error?.message ?? 'no rows'}`
+        ),
+        'HorsePloRoster.exempt_read_failed'
+      );
     }
     roster = new Set(data.map((r: { horse_id: string }) => String(r.horse_id)));
     // The refresh never commits an empty roster, so zero rows is a read we
@@ -129,13 +157,48 @@ export function ploRosterAllows(
 
 /**
  * May this horse sit at a CASH table at all? Dan 2026-10-23: "THEY CAN PLAY
- * TOURNAMENTS, JUST NOT CASH GAMES." Only the 45-horse active roster plays
+ * TOURNAMENTS, JUST NOT CASH GAMES." Only the active roster (35 to 50) plays
  * cash; every horse plays tournaments. `undefined` before any good read (the
  * callers keep their own rule; the database seat door is the backstop).
  */
 export function cashRosterAllows(horseId: string): boolean | undefined {
   if (!cashRoster) return undefined;
   return cashRoster.has(horseId);
+}
+
+/**
+ * Is this club's cash floor outside the roster rules? The Lightning private
+ * pilot is: any of its horses sits at its tables, PLO included.
+ */
+export function rosterExemptClub(clubId: unknown): boolean {
+  return typeof clubId === 'string' && exemptClubs.has(clubId);
+}
+
+/**
+ * The roster horses a tournament fill must leave alone, for an event hosted by
+ * `clubId`. Dan 2026-10-23 asked for 35 to 50 horses at cash; measured that
+ * afternoon, 38 of the 45 roster horses were tied up in tournaments and only 18
+ * sat at cash across 43 live games. Every other horse fills events, so the
+ * roster is held back for the cash floor.
+ *
+ * Empty (hold nobody) when the roster has never been read, and for an event in
+ * an exempt club (the Lightning pilot keeps every one of its horses). A
+ * ticket holder is not held: the caller lets a returned ticket through first.
+ */
+export function cashRosterHeldFromTournaments(clubId: unknown): Set<string> {
+  if (!cashRoster || cashRoster.size === 0) return new Set();
+  if (rosterExemptClub(clubId)) return new Set();
+  return new Set(cashRoster);
+}
+
+/** Is there a cash roster to hold back at all? (Skips a club lookup when not.) */
+export function hasCashRoster(): boolean {
+  return !!cashRoster && cashRoster.size > 0;
+}
+
+/** Test seam for the exempt clubs. */
+export function __setRosterExemptClubsForTest(ids: string[]): void {
+  exemptClubs = new Set(ids);
 }
 
 /** Test seam for the cash roster. */

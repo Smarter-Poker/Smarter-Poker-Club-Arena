@@ -46,6 +46,7 @@ import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { getFleetPolicy } from './HorseFleetPolicy.js';
+import { cashRosterHeldFromTournaments, hasCashRoster } from './HorsePloRoster.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
@@ -5661,6 +5662,38 @@ export class TournamentRecurringService {
    * partial read is not an empty club, and refusing to register on a failed
    * read starves every event on the platform.
    */
+  /** tournament id -> host club id. A tournament never changes club. */
+  private readonly tournamentHostClub = new Map<string, string | null>();
+
+  /**
+   * THE CASH ROSTER STAYS AT CASH (Dan 2026-10-23: 35 to 50 horses at cash).
+   * The roster horses this event's fill must leave alone; see
+   * cashRosterHeldFromTournaments. Fails open: an unreadable host club holds
+   * nobody back, exactly as before this rule, because starving an event is
+   * worse than a roster horse playing one more tournament.
+   */
+  private async cashRosterHeldFor(tournamentId?: string): Promise<Set<string>> {
+    try {
+      if (!hasCashRoster()) return new Set();
+      if (!tournamentId) return cashRosterHeldFromTournaments(null);
+      let club = this.tournamentHostClub.get(tournamentId);
+      if (club === undefined) {
+        const { data, error } = await supabase
+          .from('tournaments')
+          .select('club_id')
+          .eq('id', tournamentId)
+          .maybeSingle();
+        if (error) return new Set();
+        club = (data as { club_id?: string } | null)?.club_id ?? null;
+        if (this.tournamentHostClub.size > 5000) this.tournamentHostClub.clear();
+        this.tournamentHostClub.set(tournamentId, club);
+      }
+      return cashRosterHeldFromTournaments(club);
+    } catch {
+      return new Set();
+    }
+  }
+
   private async clubMemberIdsForTournament(
     tournamentId: string,
     pass?: HorseTopUpPass
@@ -5795,6 +5828,8 @@ export class TournamentRecurringService {
           .filter(([id]) => TournamentRecurringService.atCapacity(load, id))
           .map(([id]) => id)
       );
+      // The cash roster stays at cash (Dan 2026-10-23). See cashRosterHeldFor.
+      for (const id of await this.cashRosterHeldFor(tournamentId)) busy.add(id);
 
       /**
        * TWO BUGS FIXED HERE (2026-08-23).
@@ -7242,6 +7277,9 @@ export class TournamentRecurringService {
        * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
        */
       const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId, pass);
+      // The cash roster stays at cash (Dan 2026-10-23). See cashRosterHeldFor.
+      const rosterHeld = await this.cashRosterHeldFor(tournamentId);
+      let rosterDropped = 0;
 
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {
@@ -7256,6 +7294,12 @@ export class TournamentRecurringService {
         // The ticket is the lane: its value is already committed to this
         // tournament contract and must reach the atomic ticket-first door.
         if (ticketHintIds.has(h.id)) return true;
+        // A cash-roster horse is kept for the cash floor (ticket holders above
+        // still redeem: that value is already committed to this event).
+        if (rosterHeld.has(h.id)) {
+          rosterDropped++;
+          return false;
+        }
         // Freeroll override (Dan 2026-08-27): free money is not a lane
         // decision - every horse currently playing enters. Otherwise the
         // 2026-08-26 rule stands: cash-only horses never register for

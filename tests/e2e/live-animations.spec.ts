@@ -418,6 +418,15 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       if (!el) return { ms: -2, transform: '' };
       document.getElementById('mbc')!.className = 'mbc mbc--locked';
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      // The previous opening beat has already started the lid transition.
+      // Finish its return to locked before measuring a fresh full opening;
+      // otherwise WebKit correctly shortens the reversed transition.
+      await Promise.all(
+        el
+          .getAnimations()
+          .filter((a) => (a as CSSTransition).transitionProperty === 'transform')
+          .map((a) => a.finished.catch(() => {}))
+      );
       document.getElementById('mbc')!.className = 'mbc mbc--opening';
       /* FLAKE FIX (2026-08-29): two rAFs was a guess at when the browser
          lists the CSSTransition, and on a loaded CI runner it guessed wrong

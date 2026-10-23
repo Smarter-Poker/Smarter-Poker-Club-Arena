@@ -144,6 +144,7 @@ import {
   isPloVariant,
   ploRosterAllows,
   refreshPloRoster,
+  rosterExemptClub,
 } from './HorsePloRoster.js';
 
 /**
@@ -3176,6 +3177,7 @@ export class HorseFleetManager {
                a PLO table is not a reason to seat a losing PLO horse. An
                unread roster seats nobody at PLO (see HorsePloRoster). */
             if (
+              !rosterExemptClub(table.club_id) &&
               isPloVariant(table.game_variant) &&
               ploRosterAllows(h.id, table.game_variant) !== true
             ) {
@@ -3187,7 +3189,7 @@ export class HorseFleetManager {
                JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
                cash. Their tags already say so; this is the belt, and the
                database seat door is the braces. */
-            if (cashRosterAllows(h.id) === false) {
+            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id) === false) {
               tagDropped++;
               return false;
             }

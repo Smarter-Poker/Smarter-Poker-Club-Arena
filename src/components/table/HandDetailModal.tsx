@@ -55,6 +55,7 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import type { HandRecord, HandHistoryLoadState } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
+import RecordedPotAwards from '../handdetail/RecordedPotAwards';
 import CardImage, { CardBack } from './CardImage';
 import { replayRabbitOffer } from './replayRabbitOffer';
 import { useRabbitHuntReveal } from './useRabbitHuntReveal';
@@ -813,6 +814,7 @@ export function HandDetailModal({
                   />
                 ) : null}
 
+                <RecordedPotAwards model={model} />
                 {showdownRows.length === 0 ? (
                   <div className="hdm-empty hdm-empty--inline">
                     No Showdown{takenBy ? ` · Pot Taken By ${takenBy}` : ''}

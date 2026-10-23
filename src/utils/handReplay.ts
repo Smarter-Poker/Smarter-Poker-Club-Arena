@@ -408,6 +408,21 @@ export interface ReplayShowdownRow {
   isWinner: boolean;
 }
 
+/** Recorded monetary awards are independent of whether any cards were shown. */
+export interface ReplayRecordedBoardAward {
+  key: string;
+  userId: string;
+  name: string;
+  seat: number;
+  position: string;
+  boardIndex: number;
+  boardLabel: string;
+  low: boolean;
+  amount: number;
+  potSlices?: Array<{ index: number; amount: number }>;
+  handName?: string;
+}
+
 export interface ReplayModel {
   /** Read from the owning table arena; never inferred from a route or amount. */
   arenaAsset?: 'chips' | 'diamonds';
@@ -421,6 +436,8 @@ export interface ReplayModel {
   streets: ReplayStreet[];
   boards: DeckCard[][];
   showdown: ReplayShowdownRow[];
+  /** Absent on older cached models; empty when no board awards were recorded. */
+  recordedBoardAwards?: ReplayRecordedBoardAward[];
   potTotal: number;
   pots: { label: string; amount: number }[];
   rake: number;
@@ -1143,7 +1160,14 @@ export function buildReplay(input: ReplayInput): ReplayModel {
      with the 1-based board index the writer uses. */
   const perBoard = new Map<
     string,
-    { amount: number; handName?: string; pots?: Array<{ index: number; amount: number }> }
+    {
+      boardIndex: number;
+      userId: string;
+      low: boolean;
+      amount: number;
+      handName?: string;
+      pots?: Array<{ index: number; amount: number }>;
+    }
   >();
   for (const w of input.winnersByBoard || []) {
     const uid = w.userId || w.user_id;
@@ -1159,6 +1183,9 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     /* One key per (board, winner, half). A row older than the `low` flag has
        no half and is read as high, which is what it was. */
     perBoard.set(`${Number(w.board) || 1}|${uid}|${w.low ? 'lo' : 'hi'}`, {
+      boardIndex: (Number(w.board) || 1) - 1,
+      userId: uid,
+      low: w.low === true,
       amount: Number(w.amount) || 0,
       handName: w.handName || undefined,
       ...(pots.length ? { pots } : {}),
@@ -1297,6 +1324,23 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     streets,
     boards,
     showdown: showdownRows,
+    recordedBoardAwards: [...perBoard.values()].map((award) => {
+      const player = players.find((p) => p.userId === award.userId);
+      const seat = Number(player?.seat) || 0;
+      return {
+        key: `award-${award.boardIndex}-${award.userId}-${award.low ? 'lo' : 'hi'}`,
+        userId: award.userId,
+        name: player?.username || 'Player',
+        seat,
+        position: positions[seat] || '',
+        boardIndex: award.boardIndex,
+        boardLabel: `Board ${award.boardIndex + 1}${award.low ? ' Low' : hiLo ? ' High' : ''}`,
+        low: award.low,
+        amount: money(award.amount),
+        ...(award.pots ? { potSlices: award.pots } : {}),
+        ...(award.handName ? { handName: award.handName } : {}),
+      };
+    }),
     potTotal: money(storedPot || rebuiltPot),
     pots: potBreakdown,
     rake: money(Number(input.rakeAmount) || 0),

@@ -979,8 +979,6 @@ for (const width of [320, 375, 393, 430, 480])
       ] as const) {
         // The narrow nine-seat PLO6 ring is a required regression, not an
         // exception. Six-seat presentation is unchanged in this repair.
-        if (villainCards > 2 && width < 375 && count !== 9) continue;
-        if (state !== 'normal' && (width !== 320 || count !== 9)) continue;
         await page.setViewportSize({
           width,
           height: width === 320 ? 568 : width === 375 ? 667 : 852,

@@ -248,7 +248,8 @@ describe('the two gaps in how work reaches production', () => {
 
   it('the deploy is entered by an exact-SHA event, never a dropped cron tick', () => {
     const triggers = DEPLOY.slice(DEPLOY.indexOf('\non:'), DEPLOY.indexOf('\nconcurrency:'));
-    expect(triggers).toContain('types: [deploy-club-arena-engine]');
+    expect(triggers).toContain('types: [deploy-club-arena-engine, withdraw-club-arena-engine]');
+    expect(DEPLOY).toContain("if: github.event.action == 'deploy-club-arena-engine'");
     expect(triggers).not.toMatch(/^\s{2}schedule:/m);
     expect(STAGE).toContain('-f event_type=deploy-club-arena-engine');
     expect(STAGE).toContain('-F "client_payload[ref_sha]=$REF_SHA"');

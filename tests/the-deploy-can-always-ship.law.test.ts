@@ -26,7 +26,8 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
   it('accepts only the default-branch exact-SHA repository event', () => {
     const triggers = triggerBlock(engine);
     expect(triggers).toMatch(/^\s{2}repository_dispatch:/m);
-    expect(triggers).toContain('types: [deploy-club-arena-engine]');
+    expect(triggers).toContain('types: [deploy-club-arena-engine, withdraw-club-arena-engine]');
+    expect(engineCode).toContain("if: github.event.action == 'deploy-club-arena-engine'");
     expect(triggers).not.toMatch(/^\s{2}schedule:/m);
     expect(triggers).not.toMatch(/^\s{2}workflow_dispatch:/m);
     expect(triggers).not.toMatch(/^\s{2}push:/m);

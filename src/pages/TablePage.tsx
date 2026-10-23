@@ -14126,6 +14126,8 @@ function LiveTablePage({
                   ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
                   : undefined;
                 publishSessionSummary({
+                  // Initial result recovery has no surviving play-session counters.
+                  resultOnly: loadedFinishedReportReady || loadedTournamentStatus === 'COMPLETED',
                   arenaAsset: tableState.arenaAsset,
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                   handsPlayed: handsPlayedRef.current,

@@ -294,6 +294,36 @@ describe('Tournament result card delivery', () => {
     expect(card.textContent).toContain('TOURNAMENT');
   });
 
+  it('a recovered result keeps real finish terms without inventing a fresh browser play session', async () => {
+    renderHost();
+    await publishAndSettle({
+      resultOnly: true,
+      duration: 3,
+      handsPlayed: 0,
+      handsWon: 0,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Nightly 10K',
+      tournament: {
+        ...spinResult(353, 0),
+        name: 'Nightly 10K',
+        buyInAmount: 35,
+        rebuys: 1,
+        addOns: 1,
+        entrants: 375,
+      },
+    });
+    const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('353rd');
+    expect(card.textContent).toContain('35');
+    expect(card.textContent).toContain('Rebuy');
+    expect(card.textContent).toContain('Add-On');
+    expect(card.textContent).not.toContain('Duration');
+    expect(card.textContent).not.toContain('Hands');
+  });
+
   it('reports the session it is handed — duration and hands', async () => {
     /* Both have ridden in the payload since the card was written and the card
        read neither, so a Spin that ran 21 hands over three minutes said

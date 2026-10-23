@@ -201,7 +201,11 @@ describe('financial read-only request classification', () => {
         'POST',
         'https://project.supabase.co/storage/v1/object/avatar'
       )
-    ).toEqual({ action: 'ignore', method: 'POST', path: '/storage/v1/object/avatar' });
+    ).toEqual({
+      action: 'ignore',
+      method: 'POST',
+      path: '/storage/v1/object/avatar',
+    });
   });
 
   it('refuses broad or query-bearing RPC allowlist entries', () => {
@@ -290,7 +294,7 @@ describe('financial read-only Playwright guard', () => {
     expect(() => guard.assertNoViolations()).not.toThrow();
   });
 
-  it.each(['fn_achievement_record_login', 'ca_record_device_sighting'])(
+  it.each(['fn_achievement_record_login', 'ca_record_device_sighting', 'fn_ca_daily_bonus_status'])(
     'quarantines the global %s write while preserving mutation refusals',
     async (rpc) => {
       const path = `/rest/v1/rpc/${rpc}`;

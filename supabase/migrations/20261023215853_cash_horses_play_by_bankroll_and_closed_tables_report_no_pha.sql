@@ -338,6 +338,11 @@ exception
 end
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_horse_roster_seat_guard() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_horse_roster_seat_guard() TO service_role;
+
 CREATE OR REPLACE FUNCTION public.trg_auto_cashout_on_table_close()
 RETURNS trigger LANGUAGE plpgsql SET search_path TO 'public','pg_temp'
 AS $close$

@@ -108,6 +108,112 @@ describe('stale deployment chunk recovery', () => {
     expect(sessionStorage.getItem('club_arena_chunk_reload')).toBe('2');
   });
 
+  /* 2026-10-23, production post-deploy (Chromium and WebKit): navigating
+     away cancelled the old page's chunk loads, recovery read the
+     cancellations as a stale deploy, and its cache-busted reload of the page
+     being LEFT hijacked the player's navigation back to the club. */
+  describe('a page that is being navigated away from', () => {
+    async function freshDocument(href = 'https://example.test/clubs/kings-club') {
+      vi.resetModules();
+      vi.doMock('react', () => ({ lazy: (load: () => Promise<unknown>) => load }));
+      const browser = new EventTarget();
+      const replace = vi.fn();
+      Object.assign(browser, { location: { href, replace, reload: replace } });
+      vi.stubGlobal('window', browser);
+      vi.stubGlobal('navigator', {});
+      vi.stubGlobal('caches', undefined);
+      sessionStorage.clear();
+      const recovery = await import('../src/utils/lazyWithRetry');
+      return { browser, replace, recovery };
+    }
+    const cancelledLoad = () => {
+      const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
+        payload?: unknown;
+      };
+      event.payload = new TypeError('Importing a module script failed.');
+      return event;
+    };
+    const flush = async () => {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    };
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does not reload the page the player is leaving, and spends no reload budget', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(new Event('beforeunload'));
+      const event = cancelledLoad();
+      browser.dispatchEvent(event);
+      await flush();
+      expect(replace).not.toHaveBeenCalled();
+      expect(recovery.documentIsNavigatingAway()).toBe(true);
+      expect(sessionStorage.getItem('club_arena_chunk_reload')).toBeNull();
+      uninstall();
+    });
+
+    it('still recovers a real stale chunk when no navigation is under way', async () => {
+      const { browser, replace, recovery } = await freshDocument();
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(cancelledLoad());
+      await flush();
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(String(replace.mock.calls[0][0])).toContain('_cb=');
+      uninstall();
+    });
+
+    it('recovers after the grace period when the navigation never completed', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(new Event('beforeunload'));
+      browser.dispatchEvent(cancelledLoad());
+      browser.dispatchEvent(cancelledLoad());
+      await flush();
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+      await flush();
+      // Still on this page, so the failure was real: one recovery, not two.
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem('club_arena_chunk_reload')).toBe('1');
+      uninstall();
+    });
+
+    it('defers a direct hard reload requested during a navigation', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      browser.dispatchEvent(new Event('pagehide'));
+      await recovery.hardReload();
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+      await flush();
+      expect(replace).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a lazy route suspended instead of erroring while the page leaves', async () => {
+      vi.useFakeTimers();
+      const { browser, recovery } = await freshDocument();
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(new Event('beforeunload'));
+      const load = recovery.lazyWithRetry(async () => {
+        const event = cancelledLoad();
+        browser.dispatchEvent(event);
+        if (!event.defaultPrevented) throw event.payload;
+        return undefined as never;
+      }) as unknown as () => Promise<unknown>;
+      let state = 'pending';
+      void load().then(
+        () => (state = 'resolved'),
+        () => (state = 'rejected')
+      );
+      await flush();
+      expect(state).toBe('pending');
+      uninstall();
+    });
+  });
+
   afterEach(() => {
     clearChunkRecoveryState();
     sessionStorage.clear();

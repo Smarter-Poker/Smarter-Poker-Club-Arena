@@ -37,7 +37,10 @@ export function useProtectedCardLayout(
         Math.round(box.width),
         Math.round(box.height),
         Math.round(page.getBoundingClientRect().width),
-        window.innerHeight,
+        // Orientation, not the raw viewport height: a phone browser's toolbar
+        // showing or hiding changes innerHeight without moving the felt. When
+        // it does resize the table, the scaler box above changes and resets.
+        window.innerHeight > window.innerWidth ? 'portrait' : 'landscape',
         scaler.style.getPropertyValue('--table-w'),
         scaler.style.getPropertyValue('--table-h'),
         scaler.style.getPropertyValue('--sp-board-card-w'),
@@ -268,9 +271,17 @@ export function useProtectedCardLayout(
         if (next) {
           // translate is independent of the deal/flip transform and preserves animations.
           row.style.translate = `${(next.left - natural.left) / scale}px ${(next.top - natural.top) / scale}px`;
-          if (cards.length >= 5) settled.current.rows.set(row, row.style.translate);
           protectedBoxes.push(next);
+        } else {
+          // No clearer spot on this felt: the hand stays where it is drawn.
+          row.style.removeProperty('translate');
+          protectedBoxes.push(natural);
         }
+        // Dan 2026-10-23: shown cards never move once they are on the table.
+        // Every tabled hand (Hold'em through PLO6) keeps this slot, spacing and
+        // size for the rest of the hand; only a new hand or a real change in
+        // the table's own geometry may place it again.
+        settled.current.rows.set(row, row.style.translate || '');
       }
     };
     const place = () => {

@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { reportError } from '../../utils/errorReporter';
+import { documentIsNavigatingAway } from '../../utils/lazyWithRetry';
 
 interface Props {
   children: ReactNode;
@@ -39,6 +40,9 @@ class ErrorBoundary extends Component<Props, State> {
       // Dan 2026-08-19: reloading alone re-serves the same stale index.html
       // (SW / bfcache / edge), so the app loops on the identical chunk 404.
       // Purge the SW + caches and navigate cache-busted, once per session.
+      // A navigation the player started cancels this page's loads; those
+      // cancellations are not a stale deploy and must not hijack it.
+      if (documentIsNavigatingAway()) return;
       try {
         const KEY = 'ca-chunk-hardreload';
         if (!sessionStorage.getItem(KEY)) {

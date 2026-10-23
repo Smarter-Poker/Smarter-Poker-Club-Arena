@@ -45,6 +45,12 @@ def schema():
    names={'r':'SELECT','a':'INSERT','w':'UPDATE','d':'DELETE','D':'TRUNCATE','x':'REFERENCES','t':'TRIGGER','m':'MAINTAIN'}
    rights=[v for k,v in names.items() if k in acl]
    if rights:out.append('GRANT '+','.join(rights)+' ON '+table+' TO '+('PUBLIC' if not role else quote(role))+';')
+ # PostgreSQL table ACLs do not include column grants. Preserve both boundaries.
+ for c in records('column-privileges'):
+  table=quote(c['schema_name'])+'.'+quote(c['name'])
+  for role,acl in re.findall(r'(?:^|[,{"])(anon|authenticated|service_role|)=([a-zA-Z]*)/',c['acl'] or ''):
+   rights=[name+' ('+quote(c['column_name'])+')' for key,name in {'r':'SELECT','a':'INSERT','w':'UPDATE','x':'REFERENCES'}.items() if key in acl]
+   if rights:out.append('GRANT '+','.join(rights)+' ON '+table+' TO '+('PUBLIC' if not role else quote(role))+';')
  for t in records('triggers'):
   out.append(t['definition']+';')
   if t['enabled']=='D':out.append('ALTER TABLE '+t['table']+' DISABLE TRIGGER '+quote(t['name'])+';')

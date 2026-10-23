@@ -18,7 +18,7 @@ read-only catalog capture from PokerIQ-Production at the recorded timestamp.
 They contain definitions, constraints, RLS, ACLs and trigger metadata, not player
 rows or credentials. `registry.json` contains only ledger store/mode configuration.
 The composer preserves captured function bodies/owners and effective execution
-rights for the three application roles, table privileges, policies and affected
+rights for the three application roles, table and column privileges, policies and affected
 triggers. Native GoTrue owns Auth schema creation. A fresh read of production auth.users
 privileges confirms postgres has SELECT and REFERENCES; native setup grants
 only those required rights to the non-superuser application owner. Synthetic
@@ -33,3 +33,8 @@ routing key. It cannot publish. The normal production build, provenance admissio
 protected merge and static publisher remain intact. The no-egress native image
 maps that public routing key to its disposable anonymous key; authenticated user
 JWTs still reach real GoTrue/PostgREST/Realtime.
+
+Column privileges and the two actual profile/spendable-balance read helpers were
+refreshed read-only on 2026-10-23 after browser execution exposed the omitted
+column ACL boundary. Grants stay at their captured column scope; no table-wide
+client SELECT is substituted.

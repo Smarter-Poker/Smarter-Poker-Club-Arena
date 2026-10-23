@@ -2,17 +2,27 @@
 import { pathToFileURL } from 'node:url';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const WORKFLOW = '.github/workflows/lightning-pilot-roster.yml';
-export function assertRosterRun({ phase, operationId, current, baseline, runs }) {
+/** The same provider ownership rules serve the 2026-10-23 roster expansion
+ * workflow; it passes its own workflow path and run-name prefix. */
+export function assertRosterRun({
+  phase,
+  operationId,
+  current,
+  baseline,
+  runs,
+  workflow = WORKFLOW,
+  title = 'Lightning Roster',
+}) {
   if (
     !['prepare', 'execute'].includes(phase) ||
     !UUID.test(operationId) ||
     !current ||
     current.event !== 'workflow_dispatch' ||
     current.head_branch !== 'main' ||
-    current.path !== WORKFLOW ||
+    current.path !== workflow ||
     current.run_attempt !== 1 ||
     !Number.isFinite(Date.parse(current.created_at)) ||
-    current.display_title !== `Lightning Roster ${phase} ${operationId}`
+    current.display_title !== `${title} ${phase} ${operationId}`
   )
     throw new Error('Roster Run Identity Refused');
   if (phase === 'prepare') return;
@@ -22,20 +32,22 @@ export function assertRosterRun({ phase, operationId, current, baseline, runs })
     baseline.event !== 'workflow_dispatch' ||
     baseline.run_attempt !== 1 ||
     baseline.head_branch !== 'main' ||
-    baseline.path !== WORKFLOW ||
+    baseline.path !== workflow ||
     baseline.conclusion !== 'success' ||
-    baseline.display_title !== `Lightning Roster prepare ${operationId}` ||
+    baseline.display_title !== `${title} prepare ${operationId}` ||
     !Number.isFinite(Date.parse(baseline.created_at)) ||
     Date.parse(baseline.created_at) >= Date.parse(current.created_at) ||
     !Array.isArray(runs) ||
     !runs.some((r) => r.id === current.id) ||
-    runs.some(
-      (r) => r.id !== current.id && r.display_title === `Lightning Roster execute ${operationId}`
-    )
+    runs.some((r) => r.id !== current.id && r.display_title === `${title} execute ${operationId}`)
   )
     throw new Error('Roster Execution Already Owned Or Baseline Unverified');
 }
-export async function guardRosterRun(env = process.env, fetcher = fetch) {
+export async function guardRosterRun(
+  env = process.env,
+  fetcher = fetch,
+  { workflow = WORKFLOW, title = 'Lightning Roster' } = {}
+) {
   const repo = env.GITHUB_REPOSITORY,
     token = env.GITHUB_TOKEN;
   if (
@@ -63,7 +75,7 @@ export async function guardRosterRun(env = process.env, fetcher = fetch) {
     // This finite cap refuses an incomplete provider inventory rather than assuming no earlier write.
     for (let page = 1; page <= 20; page++) {
       const body = await api(
-        `actions/workflows/lightning-pilot-roster.yml/runs?event=workflow_dispatch&per_page=100&page=${page}`
+        `actions/workflows/${workflow.split('/').pop()}/runs?event=workflow_dispatch&per_page=100&page=${page}`
       );
       if (!Array.isArray(body.workflow_runs) || !Number.isSafeInteger(body.total_count))
         throw new Error('Roster Run Inventory Unknown');
@@ -79,6 +91,8 @@ export async function guardRosterRun(env = process.env, fetcher = fetch) {
     current,
     baseline,
     runs,
+    workflow,
+    title,
   });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

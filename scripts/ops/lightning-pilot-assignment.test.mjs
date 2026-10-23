@@ -162,7 +162,7 @@ function fixture({
   };
 }
 test('manifest/status binds all exact funded participants and refuses drift', () => {
-  assert.equal(scope.participants.length, 72);
+  assert.equal(scope.participants.length, 144);
   assertAssignmentStatus(status(false), false);
   for (const patch of [
     { active: null },

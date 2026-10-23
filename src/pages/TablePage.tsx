@@ -27277,7 +27277,7 @@ function LiveTablePage({
           bottom rows pad themselves by its height (TournamentHUD.css). On
           every MTT, Spin and heads-up match alike (isTournament covers all
           three). Never render it on the felt again. */}
-      {tableState.isTournament && tableState.tournamentId && !tournamentDockClosed && (
+      {tableState.isTournament && tableState.tournamentId && (
         <TournamentHUD
           tournamentId={tableState.tournamentId}
           spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
@@ -27285,6 +27285,7 @@ function LiveTablePage({
              its dock must know it is off screen and stop asking. */
           hidden={!isVisible}
           collapsed={tournamentDockCollapsed}
+          closed={tournamentDockClosed}
           onToggleCollapsed={toggleTournamentDock}
           onClose={() => setTournamentDockClosed(true)}
         />
@@ -29176,6 +29177,20 @@ function LiveTablePage({
                stack out of the tournament they just paid to stay in. */
             bustHoldRef.current.pendingExit = null;
             releaseBustHold();
+            // The atomic receipt owns the paid seat. Do not wait for a later
+            // broadcast, another hand, or a page refresh to restore the player.
+            masterBus.emit('TABLE_SEATED', {
+              tableId: purchase.tableId,
+              userId,
+              tableName: tableState.tableName,
+            });
+            if (purchase.tableId !== tableId) {
+              navigate(`/table/${purchase.tableId}`);
+            } else {
+              heroSeatRef.current = purchase.seatNumber;
+              setTableState((prev) => ({ ...prev, heroSeat: purchase.seatNumber }));
+              requestEngineSnapshot();
+            }
           } catch (error) {
             if (!isCurrentPurchase()) return;
             if (error instanceof TournamentPurchaseNotSubmittedError) {

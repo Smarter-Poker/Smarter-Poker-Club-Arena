@@ -912,3 +912,26 @@ it('shows actual manager hand-for-hand state in the mounted table HUD without re
   expect(screen.queryByText(/Hand For Hand/)).toBeNull();
   expect(screen.getByText('Last Rebuy Level')).toBeTruthy();
 });
+
+it('keeps the final rebuy-level notice at the top even with the bottom dock closed', async () => {
+  fx.tournamentAnswer = () =>
+    ok(running({ late_reg_levels: 9, rebuy_levels: 9, current_level: 8, rebuy_cost: 35 }));
+  await mount({ closed: true });
+  expect(screen.getByTestId('last-level-for-rebuy').textContent).toBe('Last Level For Rebuy');
+  expect((hudBar() as HTMLElement).style.display).toBe('none');
+});
+it('removes the final rebuy notice when the clock closes entry before the level ends', async () => {
+  fx.tournamentAnswer = () =>
+    ok(
+      running({
+        late_reg_levels: 9,
+        rebuy_levels: 9,
+        current_level: 8,
+        rebuy_cost: 35,
+        late_reg_mins: 90,
+        started_at: iso(Date.now() - 90 * 60_000),
+      })
+    );
+  await mount();
+  expect(screen.queryByTestId('last-level-for-rebuy')).toBeNull();
+});

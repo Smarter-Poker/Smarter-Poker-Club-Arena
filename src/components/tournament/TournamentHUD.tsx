@@ -74,6 +74,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
 import { tournamentService } from '../../services/TournamentService';
@@ -88,6 +89,16 @@ import {
   tournamentEntryWindow,
   tournamentEntryWindowOpen,
 } from '../../utils/tournamentEntryWindow';
+
+function TournamentDockArt() {
+  return (
+    <span className="tournament-dock__art" aria-hidden="true">
+      <span className="tournament-dock__art-top" />
+      <span className="tournament-dock__art-middle" />
+      <span className="tournament-dock__art-bottom" />
+    </span>
+  );
+}
 
 interface TournamentHUDProps {
   tournamentId: string;
@@ -109,6 +120,8 @@ interface TournamentHUDProps {
    * flag so the bars above the dock can stand on the right line.
    */
   collapsed?: boolean;
+  /** Hide the bottom dock while keeping mandatory tournament notices alive. */
+  closed?: boolean;
   /** Tapping the dock asks the page to flip `collapsed`. */
   onToggleCollapsed?: () => void;
   onClose?: () => void;
@@ -717,6 +730,7 @@ export function TournamentHUD({
   spinPrizePool,
   hidden = false,
   collapsed = false,
+  closed = false,
   onToggleCollapsed,
   onClose,
 }: TournamentHUDProps) {
@@ -847,9 +861,11 @@ export function TournamentHUD({
            on screen" to everything that looks for it. */
         className="tournament-dock tournament-dock--loading"
         data-collapsed={collapsed ? 'true' : 'false'}
+        style={closed ? { display: 'none' } : undefined}
         role="group"
         aria-label="Tournament Info"
       >
+        <TournamentDockArt />
         {onClose && (
           <button
             type="button"
@@ -892,7 +908,7 @@ export function TournamentHUD({
   const shownRank = fieldNow?.rank ?? null;
 
   // Urgency color for the countdown (last 60s of a level).
-  const timerColor = remaining <= 60 ? '#ff5252' : remaining <= 120 ? '#ffb74d' : '#4fc3f7';
+  const timerColor = remaining <= 60 ? '#ff5b6e' : remaining <= 120 ? '#ffd700' : '#45adff';
   const clockText = !running
     ? '--:--'
     : paused
@@ -900,7 +916,7 @@ export function TournamentHUD({
         ? 'Last Hand'
         : fmtClock(pauseSeconds)
       : fmtClock(remaining);
-  const clockColor = !running ? '#9aa7ae' : paused ? '#ffb74d' : timerColor;
+  const clockColor = !running ? '#9aa5b3' : paused ? '#ffd700' : timerColor;
 
   const windowBanner = [
     handForHand === true ? 'Hand For Hand' : null,
@@ -938,6 +954,7 @@ export function TournamentHUD({
          uses; `tournament-dock` is where it now lives. */
       className="tournament-hud-bar tournament-dock"
       data-collapsed={collapsed ? 'true' : 'false'}
+      style={closed ? { display: 'none' } : undefined}
       /* NOT `role="status"`. That is an aria-live=polite region, and this
          element re-renders every second for the countdown — so a screen reader
          re-announced level, blinds, ante, countdown, players and average stack
@@ -952,6 +969,18 @@ export function TournamentHUD({
       aria-label="Tournament Info"
       onClick={toggle}
     >
+      {running &&
+        tournamentEntryWindowOpen(row, nowMs) &&
+        sellsRebuys(row) &&
+        tournamentEntryWindow(row).mode === 'levels' &&
+        (row.current_level ?? 0) === (row.late_reg_levels ?? row.rebuy_levels ?? 0) - 1 &&
+        createPortal(
+          <div className="tournament-rebuy-notice" role="status" data-testid="last-level-for-rebuy">
+            Last Level For Rebuy
+          </div>,
+          document.body
+        )}
+      <TournamentDockArt />
       {onClose && (
         <button
           type="button"

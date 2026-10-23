@@ -37,3 +37,15 @@ Retained evidence: /Volumes/SmarterArchives/agent-evidence/mobile-table-energy-0
 Client-only existing APIs, no new engine contract, migration or restart.
 Real-time law: existing turn_change/insurance_offers events establish the
 server deadlines; no network polling or snapshot-diff trigger is added.
+
+The same inspection also confirmed full-page blurred shadow interpolation for
+hero-turn/all-in cues. At a393x852,3x-DPR CSS surface, idle produced0 Paint
+events in2s while those cues produced276/278. Their static peak shadows now
+breathe through compositor opacity on one dedicated pseudo-element, retaining
+the two-second periods and existing animation names. Background pause covers
+the root/pseudo-elements too. No control, artwork or table dimension changes.
+The existing required live-animation browser spec guards the running opacity
+keyframes, static blur, duration, non-interception and background pause; it
+failed against the old box-shadow animation before repair. After trace:0 hero
+paints and2 initial all-in transition paints. Peak screenshots differ by at
+most2/255 per channel due to compositing.

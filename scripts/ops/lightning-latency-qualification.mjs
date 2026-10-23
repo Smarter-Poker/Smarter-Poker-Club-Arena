@@ -337,6 +337,9 @@ export async function readLatencyWindows(admin, clusterId, from, to) {
     const oldest = Math.min(...rows.map((w) => Date.parse(w.window_from)));
     if (!Number.isFinite(oldest) || oldest >= Date.parse(cursor))
       throw new Error('Latency Reader Did Not Advance');
+    // A full page that already reaches the lookback start has read everything:
+    // asking again would send a window that ends before it begins.
+    if (oldest <= Date.parse(from)) break;
     cursor = iso(oldest);
   }
   return { windows, truncated };

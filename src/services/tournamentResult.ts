@@ -15,6 +15,8 @@ export async function fetchTournamentResult(
   userId: string
 ): Promise<TournamentResultRead> {
   const empty: TournamentResultRead = {
+    tournamentId,
+    userId,
     finishPlace: null,
     entrants: null,
     prize: 0,

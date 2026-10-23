@@ -252,7 +252,9 @@ function restoreTournamentReports(): void {
     const userId = readLocalSession()?.userId;
     const reports = stored.reports.filter(
       (p: SessionSummaryPayload) =>
-        p?.tournament?.userId === userId && typeof p.tournament.tournamentId === 'string'
+        !!p?.tournament &&
+        p.tournament.userId === userId &&
+        typeof p.tournament.tournamentId === 'string'
     );
     pending = reports.shift() ?? null;
     heldQueue = reports;

@@ -42,6 +42,17 @@ describe('public range advantage across Holdem and Omaha', () => {
       expect(saveFastRandom()).toBe(before);
     });
   }
+  for (const variant of variants)
+    it(`${variant} does not infer advantage from a high card when the other range is stronger`, () => {
+      const result = estimateRangeAdvantage(
+        cards('AsKh7d'),
+        [0, 0.4],
+        [0.86, 1],
+        variantInfo(variant)
+      )!;
+      expect(result.advantage).toBe(false);
+      expect(result.disadvantage).toBe(true);
+    });
   it('does not give an Omaha preflop raiser an automatic edge on connected low boards', () => {
     const r = estimateRangeAdvantage(cards('7s6d5c'), [0.86, 1], [0, 0.4], variantInfo('plo4'))!;
     expect(r.advantage).toBe(false);

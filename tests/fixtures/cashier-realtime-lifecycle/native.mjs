@@ -42,6 +42,8 @@ let stage = 'initialize',
   engineLoaded = false,
   stopEquityWorkers;
 let browser;
+let observedPages = [];
+const resourceFailures = [];
 const restFailures = [];
 function setStage(value) {
   assert.match(value, /^[a-zA-Z0-9_.-]{1,100}$/);
@@ -318,10 +320,17 @@ try {
     engineHost: '127.0.0.1',
   });
   await gateway.listen();
-  setStage('candidate-cashier-two-authenticated-browsers');
+  setStage('chromium-launch');
   browser = await chromium.launch({ headless: true });
   const contexts = [];
-  for (const actor of [owner, player])
+  setStage('genuine-browser-sessions');
+  for (const actor of [owner, player]) {
+    const storage = browserStorage(actor.session, host);
+    // The real SPA uses the shared Hub SSO key, not the SDK default key.
+    storage.origins[0].localStorage.push({
+      name: 'smarter-poker-auth',
+      value: JSON.stringify(actor.session),
+    });
     contexts.push(
       await browser.newContext({
         ignoreHTTPSErrors: true,
@@ -329,13 +338,24 @@ try {
         viewport: { width: 393, height: 852 },
       })
     );
+  }
   const [agentPage, playerPage] = await Promise.all(contexts.map((c) => c.newPage()));
+  observedPages = [agentPage, playerPage];
   const errors = [];
   function observe(page, topic) {
     const state = { joins: 0, changes: [] };
     page.on('pageerror', (e) => errors.push(e.name));
     page.on('response', async (r) => {
-      if (r.status() < 400 || !r.url().includes('/rest/v1/')) return;
+      if (r.status() < 400) return;
+      const url = new URL(r.url());
+      resourceFailures.push({
+        status: r.status(),
+        path: url.pathname
+          .replace(/[a-f0-9-]{36}/g, ':id')
+          .replace(/[^A-Za-z0-9_:/.-]/g, '')
+          .slice(0, 160),
+      });
+      if (!r.url().includes('/rest/v1/')) return;
       const body = await r.json().catch(() => null);
       restFailures.push({
         status: r.status(),
@@ -376,6 +396,7 @@ try {
   }
   const agentEvents = observe(agentPage, `realtime:agent-cashouts-${owner.id}-${club}`),
     playerEvents = observe(playerPage, `realtime:cashout-request-status:${player.id}:${club}`);
+  setStage('cashier-route-navigation');
   await Promise.all(
     [agentPage, playerPage].map((p) =>
       p.goto(`https://smarter.poker/hub/club-arena/clubs/${club}/cashier`, {
@@ -385,8 +406,10 @@ try {
     )
   );
   const openRequest = playerPage.getByRole('button', { name: 'Request Cash Out', exact: true });
+  setStage('player-request-control');
   await openRequest.waitFor({ state: 'visible', timeout: 45000 });
   const queueButton = agentPage.getByRole('button', { name: /Cash Out Requests/ });
+  setStage('agent-queue-control');
   await queueButton.waitFor({ state: 'visible', timeout: 45000 });
   // Open the agent queue before the other browser writes: a refresh cannot stand in for Realtime.
   await queueButton.click();
@@ -592,6 +615,21 @@ try {
       product_certificate: false,
       stage,
       rest_failures: restFailures.slice(-20),
+      resources: resourceFailures.slice(-20),
+      page_paths: observedPages.map((p) => {
+        try {
+          return new URL(p.url()).pathname
+            .replace(/[a-f0-9-]{36}/g, ':id')
+            .replace(/[^A-Za-z0-9_:/.-]/g, '')
+            .slice(0, 160);
+        } catch {
+          return 'unavailable';
+        }
+      }),
+      error_name: ['Error', 'TimeoutError', 'TypeError', 'AssertionError'].includes(error.name)
+        ? error.name
+        : 'Error',
+      network_code: /\bERR_[A-Z_]+\b/.exec(String(error.message))?.[0] ?? null,
       error_code: /^[A-Z0-9_]{3,50}$/.test(error.code || '')
         ? error.code
         : 'ASSERTION_OR_RUNTIME_FAILURE',

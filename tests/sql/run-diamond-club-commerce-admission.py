@@ -177,8 +177,12 @@ def person(db, tag, diamonds=0, horse=False):
 def club(db, tag, owner, requires_approval=True):
     cid = u('club:' + tag)
     psql(db, f"""
-      INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union,requires_approval)
-      VALUES ('{cid}','Admission {tag}','{owner}',NULL,0,0,false,{str(requires_approval).lower()});
+      -- Allocate fixture codes atomically instead of inheriting the captured
+      -- random default, which can collide before an admission race starts.
+      LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
+      INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union,requires_approval)
+      SELECT '{cid}',COALESCE(max(club_id),10000)+1,'Admission {tag}','{owner}',NULL,0,0,false,{str(requires_approval).lower()}
+      FROM public.clubs;
       INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{cid}','{owner}','owner','active',0);""")
     return cid
 

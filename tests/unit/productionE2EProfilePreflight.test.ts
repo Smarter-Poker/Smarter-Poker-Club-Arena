@@ -395,6 +395,30 @@ describe('authenticated production account preflight', () => {
     );
   });
 
+  it('returns every customization sign-in to Arena after the Hub welcome redirect', () => {
+    for (const file of [
+      'production-customization-realtime',
+      'production-customization-commerce',
+      'gameplay-customization-runtime',
+    ]) {
+      const body = source(`tests/e2e/${file}.spec.ts`);
+      const authenticated = body.indexOf('expect(await signedInUser.jsonValue()).toBe(account.id)');
+      const reentry = body.indexOf('await page.goto(protectedURL', authenticated);
+      const terms = body.indexOf('await ensureAcceptedTerms(page)', authenticated);
+      expect(
+        authenticated,
+        `${file} must verify the intended persisted account before writes`
+      ).toBeGreaterThan(-1);
+      expect(
+        reentry,
+        `${file} must re-enter Arena after sign-in can land on Hub onboarding`
+      ).toBeGreaterThan(authenticated);
+      expect(terms, `${file} must check the real Arena gates after re-entry`).toBeGreaterThan(
+        reentry
+      );
+    }
+  });
+
   it('preflights the dedicated account through the real public club join flow', () => {
     const setup = source('tests/e2e/global-setup.ts');
     expect(setup).toContain('ensureClubMembership(');
@@ -459,7 +483,7 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain("panel.getByRole('button', { name: 'Details', exact: true }).click()");
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
-    expect(lobby).toContain("locator('.agc-action--primary')");
+    expect(lobby).toContain(`locator('button[data-zone="primaryAction"]')`);
     // Every fresh lobby context can take the cold read, including the first
     // shell case. A timeout inside only one test does not protect its siblings.
     expect(lobby).toMatch(

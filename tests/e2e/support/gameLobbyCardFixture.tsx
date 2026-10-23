@@ -6,16 +6,16 @@ import { cashEntry, tournamentEntry } from '../../../src/components/lobby/lobbyE
 import { ToastProvider } from '../../../src/components/common/Toast';
 const kind = document.documentElement.dataset.kind || 'cash';
 const entry =
-  kind === 'cash'
+  kind === 'cash' || kind === 'cash-full'
     ? cashEntry({
-        id: 'fixture-cash',
+        id: kind === 'cash-full' ? 'fixture-cash-full' : 'fixture-cash',
         name: 'Classic',
         game_variant: 'plo6',
         small_blind: 1,
         big_blind: 2,
         min_buy_in: 80,
         max_buy_in: 400,
-        current_players: 4,
+        current_players: kind === 'cash-full' ? 6 : 4,
         max_players: 6,
         status: 'active',
       })
@@ -40,8 +40,17 @@ const entry =
 const noop = () => undefined;
 function Fixture() {
   const [open, setOpen] = useState(true);
+  const [waitlisted, setWaitlisted] = useState(false);
+  const [waitlistCalls, setWaitlistCalls] = useState<{ tableId: string; joining: boolean }[]>([]);
+  const [joinTableCalls, setJoinTableCalls] = useState<string[]>([]);
   return (
     <>
+      <output hidden data-testid="fixture-waitlist-calls">
+        {JSON.stringify(waitlistCalls)}
+      </output>
+      <output hidden data-testid="fixture-join-table-calls">
+        {JSON.stringify(joinTableCalls)}
+      </output>
       <button type="button" onClick={() => setOpen(true)}>
         Open Game Lobby
       </button>
@@ -49,14 +58,17 @@ function Fixture() {
         <GameLobbyPanel
           entry={entry}
           clubId="fixture"
-          currentUserId={null}
-          waitlisted={false}
+          currentUserId={kind === 'cash-full' ? 'fixture-user' : null}
+          waitlisted={waitlisted}
           seated={false}
           registered={false}
           busy={false}
           onClose={() => setOpen(false)}
-          onJoinTable={noop}
-          onWaitlistToggle={noop}
+          onJoinTable={(tableId) => setJoinTableCalls((calls) => [...calls, tableId])}
+          onWaitlistToggle={(tableId, joining) => {
+            setWaitlistCalls((calls) => [...calls, { tableId, joining }]);
+            setWaitlisted(joining);
+          }}
           onRegister={noop}
           onUnregister={noop}
           onSpinJoin={noop}

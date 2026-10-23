@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230210,
-      "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,

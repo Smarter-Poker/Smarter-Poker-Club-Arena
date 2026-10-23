@@ -1391,6 +1391,9 @@ jobs:
           # The hosted image also configures Chrome and Microsoft repositories.
           # An unrelated Chrome index hash mismatch blocked this accounting job.
           # Limit this installation to signed Ubuntu and PostgreSQL sources.
+          # The same Azure mirror stalled native qualification for 18 minutes.
+          # Preserve signed Ubuntu/PGDG sources and every package/test budget.
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
           pg_ci_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
           chmod 755 "$pg_ci_sources"
           test -f /etc/apt/sources.list.d/ubuntu.sources
@@ -3846,6 +3849,11 @@ jobs:
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
+
+      # Azure's Ubuntu mirror exhausted this job's budget before tests began.
+      # Keep the signed Ubuntu archive and exact browser dependencies unchanged.
+      - name: Use Ubuntu primary HTTPS mirror for browser dependencies
+        run: sudo python3 scripts/ci/ubuntu-apt-mirror.py
 
       - name: Install Chromium and WebKit
         run: npx playwright install chromium webkit --with-deps

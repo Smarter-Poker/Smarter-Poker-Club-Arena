@@ -204,6 +204,7 @@ export default function ClubDataSimplePage() {
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
   const [preset, setPreset] = useState<Preset>(1);
   const [endDate, setEndDate] = useState<string>(() => clubDataToday());
+  const observedDayRef = useRef(endDate);
   const [game, setGame] = useState<GameFilter>('ALL');
   const [stakes, setStakes] = useState<StakesFilter>('ALL');
   const [searchInput, setSearchInput] = useState('');
@@ -347,12 +348,25 @@ export default function ClubDataSimplePage() {
 
   // When the Chicago day turns over on an open "today" view, follow it.
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const followDay = () => {
       const now = clubDataToday();
-      setEndDate((prev) => (prev === addDays(now, -1) && isToday ? now : prev));
-    }, 30_000);
-    return () => window.clearInterval(id);
-  }, [isToday]);
+      const previousDay = observedDayRef.current;
+      observedDayRef.current = now;
+      // A refresh may render after midnight before this callback runs. Keep
+      // the last observed day instead of relying on render-derived isToday.
+      // Comparing dates also handles a tab suspended for more than one day.
+      setEndDate((prev) => (prev === previousDay || prev > now ? now : prev));
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') followDay();
+    };
+    const id = window.setInterval(followDay, 30_000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   // Search waits for the typing to stop.
   useEffect(() => {
@@ -516,7 +530,8 @@ export default function ClubDataSimplePage() {
       </div>
       {snapshot?.accounting_basis === 'chicago_net_money_flow' && (
         <p className={styles.liveLine}>
-          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
+          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished
+          MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
         </p>
       )}
       {snapshot?.accounting_basis === 'utc_net_money_flow' && (

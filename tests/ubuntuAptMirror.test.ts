@@ -1,0 +1,108 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+
+describe('Ubuntu browser dependency mirror', () => {
+  it('selects the primary mirror before both browser and native package installs', () => {
+    const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+    const native = workflow.jobs.accounting_postgres.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Install PostgreSQL 17 tools without a default database service'
+    ).run;
+    const selection = 'sudo python3 scripts/ci/ubuntu-apt-mirror.py';
+    expect(native).toContain(selection);
+    expect(native.indexOf(selection)).toBeLessThan(
+      native.indexOf('cp /etc/apt/sources.list.d/ubuntu.sources')
+    );
+    const browsers = workflow.jobs['css-beats-e2e'].steps;
+    const selected = browsers.findIndex((step: { run?: string }) => step.run === selection);
+    const install = browsers.findIndex(
+      (step: { run?: string }) => step.run === 'npx playwright install chromium webkit --with-deps'
+    );
+    expect(selected).toBeGreaterThanOrEqual(0);
+    expect(selected).toBeLessThan(install);
+  });
+
+  it('changes only active Azure Ubuntu URIs, preserves trust and is idempotent', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
+    try {
+      mkdirSync(join(root, 'sources.list.d'));
+      const legacy = join(root, 'sources.list');
+      const modern = join(root, 'sources.list.d', 'ubuntu.sources');
+      const unrelated = join(root, 'sources.list.d', 'other.list');
+      writeFileSync(
+        legacy,
+        '# http://azure.archive.ubuntu.com/ubuntu\ndeb [signed-by=/key] http://azure.archive.ubuntu.com/ubuntu/ noble main\n'
+      );
+      writeFileSync(
+        modern,
+        'Types: deb\nURIs: https://azure.archive.ubuntu.com/ubuntu\nSuites: noble noble-updates\nComponents: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n'
+      );
+      const other =
+        'deb https://example.com/ubuntu noble main\ndeb https://azure.archive.ubuntu.com/ubuntu-extra noble main\n';
+      writeFileSync(unrelated, other);
+      const run = () =>
+        execFileSync('python3', ['scripts/ci/ubuntu-apt-mirror.py', '--root', root], {
+          encoding: 'utf8',
+        });
+      expect(run()).toContain('updated 2 source files');
+      expect(readFileSync(legacy, 'utf8')).toBe(
+        '# http://azure.archive.ubuntu.com/ubuntu\ndeb [signed-by=/key] https://archive.ubuntu.com/ubuntu/ noble main\n'
+      );
+      expect(readFileSync(modern, 'utf8')).toBe(
+        'Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: noble noble-updates\nComponents: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n'
+      );
+      expect(readFileSync(unrelated, 'utf8')).toBe(other);
+      expect(run()).toContain('updated 0 source files');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rewrites referenced hosted mirrorlists while preserving weights, comments and trust', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
+    try {
+      mkdirSync(join(root, 'sources.list.d'));
+      const source = join(root, 'sources.list.d', 'ubuntu.sources');
+      const definition =
+        'Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates\nComponents: main\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n# mirror+file:/etc/apt/unused.txt\n';
+      writeFileSync(source, definition);
+      const mirror = join(root, 'apt-mirrors.txt');
+      writeFileSync(
+        mirror,
+        'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\n# http://azure.archive.ubuntu.com/ubuntu\nhttps://example.com/ubuntu\tpriority:3 # http://azure.archive.ubuntu.com/ubuntu\n'
+      );
+      const unused = 'http://azure.archive.ubuntu.com/ubuntu\n';
+      writeFileSync(join(root, 'unused.txt'), unused);
+      const run = () =>
+        execFileSync('python3', ['scripts/ci/ubuntu-apt-mirror.py', '--root', root], {
+          encoding: 'utf8',
+        });
+      expect(run()).toContain('updated 1 source files');
+      expect(readFileSync(source, 'utf8')).toBe(definition);
+      expect(readFileSync(mirror, 'utf8')).toBe(
+        'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\n# http://azure.archive.ubuntu.com/ubuntu\nhttps://example.com/ubuntu\tpriority:3 # http://azure.archive.ubuntu.com/ubuntu\n'
+      );
+      expect(readFileSync(join(root, 'unused.txt'), 'utf8')).toBe(unused);
+      expect(run()).toContain('updated 0 source files');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a missing source directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
+    try {
+      expect(() =>
+        execFileSync('python3', ['scripts/ci/ubuntu-apt-mirror.py', '--root', root], {
+          stdio: 'pipe',
+        })
+      ).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -358,6 +358,7 @@ import {
   portraitTableTransform,
   portraitBoardWidthOfFeltPct,
   boardCardWidthPx,
+  tabledCardWidthPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -5578,7 +5579,8 @@ function LiveTablePage({
       tableState.heroSeat,
       tableState.lastActions,
       tableState.lastBetAmounts,
-    ])
+    ]),
+    `${tableId}:${tableState.handNumber ?? 0}`
   );
 
   useEffect(() => {
@@ -25404,6 +25406,14 @@ function LiveTablePage({
                 seatViewportWidth <= 480 &&
                   scalerSize.h > scalerSize.w &&
                   tablePerspectiveTaper !== 0
+              )}px`,
+              '--sp-tabled-card-w': `${tabledCardWidthPx(
+                scalerSize.w,
+                seatViewportWidth,
+                seatViewportWidth <= 480 &&
+                  scalerSize.h > scalerSize.w &&
+                  tablePerspectiveTaper !== 0,
+                tableState.maxPlayers
               )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w

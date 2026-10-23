@@ -150,6 +150,19 @@ export function boardCardWidthPx(
   const gap = viewportW <= 480 ? 2 : viewportW <= 1024 ? 4 : 6;
   return Math.max(0, Math.round((((felt * rowPct) / 100 - 4 * gap) / 5) * 10) / 10);
 }
+/** The 320px dense-ring exception, shared by every tabled player.
+ * 7.8% leaves the four-pixel gutter beside the compact top plates; the old
+ * 8% missed that gutter by 1.5px across a six-card row. */
+export function tabledCardWidthPx(
+  scalerW: number,
+  viewportW: number,
+  portrait: boolean,
+  seats: number
+): number {
+  return portrait && viewportW <= 340 && seats >= 8
+    ? scalerW * 0.078
+    : boardCardWidthPx(scalerW, viewportW, portrait);
+}
 export function portraitTableTransform(size: Size): string {
   if (!(size.w > 0 && size.h > 0)) return 'none';
   const k = size.portraitTaper ?? PORTRAIT_TABLE_TAPER;

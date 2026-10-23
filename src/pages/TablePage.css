@@ -3428,7 +3428,8 @@
    SCREEN SHAKE — Triggered on big all-in or massive win
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.table-page--shake {
+/* Celebrate on the table artwork; tabled cards and wagers keep their slots. */
+.table-page--shake > .table-art {
   animation: tableWinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 

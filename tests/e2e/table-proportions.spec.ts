@@ -832,7 +832,7 @@ for (const width of [320, 375, 393, 430, 480])
   test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px`, async ({
     page,
   }, testInfo) => {
-    // Fourteen real tables (seven states, six and nine handed) per width.
+    // Real occupied tables include PLO5/PLO6 all-in and fully shown hands.
     test.setTimeout(150_000);
     const { buildSync } = await import('esbuild');
     const bundled = buildSync({
@@ -973,6 +973,7 @@ for (const width of [320, 375, 393, 430, 480])
         [false, 'none'],
         [true, 'none'],
         [true, 'mini', 6],
+        [true, 'mini', 5, 'all-in'],
         [true, 'mini', 6, 'all-in'],
         [true, 'mini', 6, 'all-shown'],
       ] as const) {
@@ -987,7 +988,7 @@ for (const width of [320, 375, 393, 430, 480])
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-cards="${villainCards === 6 ? 6 : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-seats="${count}" data-cards="${villainCards >= 5 ? villainCards : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
@@ -1045,6 +1046,58 @@ for (const width of [320, 375, 393, 430, 480])
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
           );
         });
+        if (revealed && villainCards >= 5) {
+          const measure = () =>
+            page.locator('.seat__cards--revealed .seat__card').evaluateAll((cards) =>
+              cards.map((card) => {
+                const b = card.getBoundingClientRect();
+                return { x: b.x, y: b.y, w: b.width, h: b.height };
+              })
+            );
+          const before = await measure();
+          expect(before.length).toBeGreaterThanOrEqual(villainCards);
+          // Same dimensions at every chair, including the all-in hero.
+          for (const card of before) {
+            expect(card.w).toBeCloseTo(before[0].w, 1);
+            expect(card.h).toBeCloseTo(before[0].h, 1);
+          }
+          await page.evaluate(() => {
+            document.dispatchEvent(new Event('fixture-runout'));
+            const pot = document.querySelector('.pot-display')!;
+            pot.classList.toggle('pot-display--updated');
+            document
+              .querySelectorAll('.seat')
+              .forEach((seat) => seat.classList.add('seat--allin-shake', 'seat--winner-pop'));
+            document.querySelector('.table-scaler')!.classList.add('table-page--shake');
+            // Board animation and highlight changes previously retriggered
+            // adaptive spacing, shrinking and placement after every street.
+            document
+              .querySelector('.table-scaler')!
+              .dispatchEvent(new Event('animationend', { bubbles: true }));
+          });
+          await page.evaluate(
+            () =>
+              new Promise<void>((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+              )
+          );
+          expect(await measure()).toEqual(before);
+          const steps = await page
+            .locator('.seat__cards--opponent.seat__cards--revealed')
+            .evaluateAll((rows) =>
+              rows.map((row) => parseFloat(getComputedStyle(row).getPropertyValue('--vh-step-f')))
+            );
+          expect(steps.every((step) => step >= 0.5)).toBe(true);
+          await page.evaluate(() => {
+            document
+              .querySelectorAll('.seat')
+              .forEach((seat) => seat.classList.remove('seat--allin-shake', 'seat--winner-pop'));
+            document.querySelector('.table-scaler')!.classList.remove('table-page--shake');
+            return new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+            );
+          });
+        }
         const result = await page.evaluate(() => {
           const box = (e: Element) => e.getBoundingClientRect();
           const overlaps = (a: DOMRect, b: DOMRect) =>
@@ -1295,6 +1348,11 @@ for (const width of [320, 375, 393, 430, 480])
             widths: [320],
             seatChangeToggle: false,
           });
+        if (result.violations.length) {
+          const proof = testInfo.outputPath('layout-failure.png');
+          await page.screenshot({ path: proof });
+          await testInfo.attach('layout-failure', { path: proof, contentType: 'image/png' });
+        }
         expect(
           result.violations,
           `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`

@@ -2,22 +2,34 @@ import { useRef } from 'react';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useProtectedCardLayout } from '../../src/hooks/useProtectedCardLayout';
-function Fixture({ revealed }: { revealed: boolean }) {
+function Fixture({
+  revealed,
+  revision = 'same-hand',
+  potTop = 260,
+  boardTop = 310,
+}: {
+  revealed: boolean;
+  revision?: string;
+  potTop?: number;
+  boardTop?: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  useProtectedCardLayout(ref, 'same-hand');
+  useProtectedCardLayout(ref, revision);
   return (
     <div className="table-page" data-box="0,0,393,852">
       <div className="bbj-mini-plate" data-box="130,20,140,14" />
       <div className="table-scaler" data-box="0,0,393,600" ref={ref}>
-        <div className="community-area" data-box="60,310,280,90" />
-        <div className="pot-display" data-box="160,260,80,30" />
+        <div className="community-area" data-box={`60,${boardTop},280,90}`} />
+        <div className="pot-display" data-box={`160,${potTop},80,30}`} />
         <div className="seat__info" data-box="10,410,100,40" />
         <div className="seat-wrapper--top">
           <img className="seat__avatar-img" data-box="180,100,50,50" alt="" />
         </div>
         {revealed && (
           <div className="seat__cards--revealed">
-            <div className="seat__card" data-box="80,330,100,35" />
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="seat__card" data-box={`${80 + i * 10},330,20,35`} />
+            ))}
           </div>
         )}
       </div>
@@ -71,6 +83,16 @@ it('a child reveal after the parent commit is positioned clear of the real board
   await act(async () => h.rerender(<Fixture revealed />));
   const row = h.container.querySelector<HTMLElement>('.seat__cards--revealed')!;
   await waitFor(() => expect(row.style.translate).not.toBe(''));
+  const settled = row.style.translate;
+  // Runout/pot updates and animation completion must not re-place this hand.
+  await act(async () =>
+    h.rerender(<Fixture revealed revision="turn" potTop={200} boardTop={500} />)
+  );
+  await act(async () => {
+    row.dispatchEvent(new Event('animationend', { bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(row.style.translate).toBe(settled);
   const card = row.querySelector('.seat__card')!.getBoundingClientRect();
   for (const element of h.container.querySelectorAll('.community-area,.pot-display,.seat__info')) {
     const box = element.getBoundingClientRect();

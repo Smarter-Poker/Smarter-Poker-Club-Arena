@@ -447,6 +447,11 @@ DAILY
 source_target_is_current() {
   local main_sha latest remaining lock_wait fetch_wait attempt fetched source_deadline
   local high_water high_water_contained target_already_sealed_past
+  # `local-main`: prove against the protected-main ref this transaction already
+  # fetched under the engine lock before cutover, without a network fetch.
+  # Every proof below still runs. See the post-cutover call for why.
+  local use_local_main=0
+  [ "${1:-}" != local-main ] || use_local_main=1
   remaining="$(remaining_seconds)" || die 'deadline expired before protected-main verification'
   source_deadline="$DEADLINE"
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -461,7 +466,9 @@ source_target_is_current() {
   exec 8>"$SOURCE_LOCK"
   flock -w "$lock_wait" 8 || die 'could not acquire the source-object lock'
   fetched=0
+  [ "$use_local_main" = 0 ] || fetched=1
   for attempt in 1 2 3; do
+    [ "$fetched" = 0 ] || break
     remaining=$((source_deadline - $(date +%s)))
     [ "$remaining" -gt 6 ] || die 'source verification deadline expired before protected-main fetch'
     fetch_wait=$((remaining - 5))
@@ -2142,7 +2149,20 @@ done
 
 # Main and the durable high-water may advance during the cold-start/public
 # proof. Recheck containment and forward ordering before committing this seal.
-source_target_is_current
+#
+# AGAINST THE MAIN ALREADY FETCHED (2026-10-23). This recheck used to fetch
+# protected main from GitHub again, inside what was left of the break after the
+# candidate's cold start and public proof. 2026-10-23 05:10 UTC, release
+# 734578ad: the candidate was healthy and public at 05:11:13, five seconds of
+# proof budget remained, and the transaction died "source verification
+# deadline expired before protected-main fetch". The supervisor restored the
+# previous release and the break was re-run an hour later: three restarts of
+# every table for one release. A fetch adds nothing here. New protected-main
+# merges never revoke a forward target (see source_target_is_current), main is
+# rewind-guarded, and the one thing that can revoke this target during the
+# proof - a newer sealed high-water - is read from the local seal, which the
+# local-main mode still does, together with every containment proof.
+source_target_is_current local-main
 assert_break_proof_time
 ACTUAL_CID="$(bounded_break_command 10 docker container inspect -f '{{.Id}}' "$CONTAINER")"
 ACTUAL_STARTED_AT="$(bounded_break_command 10 docker container inspect -f '{{.State.StartedAt}}' "$CONTAINER")"

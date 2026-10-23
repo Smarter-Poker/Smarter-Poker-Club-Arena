@@ -789,7 +789,8 @@ describe('private execution witness', () => {
     decision.policyGraph!.transitions[0].after.action = 'fold';
     decision.policyGraph!.finalAction.action = 'fold';
     expect(JSON.stringify(witness)).toBe(recorded);
-    expect(witness.policyGraph?.transitions).toHaveLength(8);
+    expect(witness.policyGraph?.transitions.map((t) => t.node)).toContain('wager_rules');
+    expect(witness.policyGraph?.transitions).toHaveLength(9);
     expect(Object.isFrozen(witness.identity)).toBe(true);
     expect(Object.isFrozen(witness.selected)).toBe(true);
   });

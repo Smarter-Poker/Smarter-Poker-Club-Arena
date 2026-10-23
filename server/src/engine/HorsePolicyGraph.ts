@@ -11,9 +11,18 @@ export const HORSE_POLICY_ORDER = Object.freeze([
   'tournament_continuation',
   'variant_utility_guard',
   'joint_policy',
+  'wager_rules',
   'timing',
 ] as const);
 export type HorsePolicyNode = (typeof HORSE_POLICY_ORDER)[number];
+export const HORSE_POLICY_GRAPH_VERSION = 'horse-policy-order-v2' as const;
+const LEGACY_POLICY_ORDER = Object.freeze(HORSE_POLICY_ORDER.filter((n) => n !== 'wager_rules'));
+/** Keep retained journal records readable under their original order. */
+export function horsePolicyOrderForVersion(version: unknown): readonly HorsePolicyNode[] | null {
+  if (version === HORSE_POLICY_GRAPH_VERSION) return HORSE_POLICY_ORDER;
+  if (version === 'horse-policy-order-v1') return LEGACY_POLICY_ORDER;
+  return null;
+}
 export interface HorsePolicyAction {
   action: HorseDecision['action'];
   amount: number | null;
@@ -26,7 +35,7 @@ export interface HorsePolicyTransition {
   elapsedMs: number;
 }
 export interface HorsePolicyGraphReceipt {
-  version: 'horse-policy-order-v1';
+  version: 'horse-policy-order-v1' | typeof HORSE_POLICY_GRAPH_VERSION;
   transitions: HorsePolicyTransition[];
   finalAction: HorsePolicyAction;
 }
@@ -130,7 +139,11 @@ export class HorsePolicyGraph {
     if (this.telemetry) noteFire('phase15_graph_completed');
     return {
       ...decision,
-      policyGraph: { version: 'horse-policy-order-v1', transitions: this.transitions, finalAction },
+      policyGraph: {
+        version: HORSE_POLICY_GRAPH_VERSION,
+        transitions: this.transitions,
+        finalAction,
+      },
     };
   }
 }

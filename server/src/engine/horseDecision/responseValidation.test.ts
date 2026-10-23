@@ -48,6 +48,41 @@ function utilityReceipt(): HorseDecision {
   return structuredClone(capturedUtilityDecision);
 }
 
+describe('river nuts final rule receipt transport', () => {
+  it('keeps original eight-node v1 journal graphs readable without treating them as v2', () => {
+    const value = receipt();
+    value.policyGraph!.version = 'horse-policy-order-v1';
+    value.policyGraph!.transitions = value.policyGraph!.transitions.filter(
+      (t) => t.node !== 'wager_rules'
+    );
+    expect(horseDecisionReceiptIsValid(value)).toBe(true);
+    value.policyGraph!.version = 'horse-policy-order-v2';
+    expect(horseDecisionReceiptIsValid(value)).toBe(false);
+  });
+  it('preserves the actual utility selection while binding the superseding raise to the graph', () => {
+    const prior = utilityReceipt();
+    const graph = new HorsePolicyGraph(() => 0);
+    let decision = prior;
+    for (const node of HORSE_POLICY_ORDER) {
+      decision = graph.run(node, node === 'reference' ? null : decision, () => ({
+        decision:
+          node === 'wager_rules'
+            ? { ...decision, action: 'raise' as const, amount: 500 }
+            : decision,
+      })).decision;
+    }
+    const result = graph.finish(decision);
+    expect(result.tournamentUtility).toEqual(prior.tournamentUtility);
+    expect(horseDecisionReceiptIsValid(result)).toBe(true);
+    const corrupt = structuredClone(result);
+    corrupt.policyGraph!.transitions.at(-2)!.before = { action: 'call', amount: 123 };
+    expect(horseDecisionReceiptIsValid(corrupt)).toBe(false);
+    const missingGraph = structuredClone(result);
+    delete missingGraph.policyGraph;
+    expect(horseDecisionReceiptIsValid(missingGraph)).toBe(false);
+  });
+});
+
 describe('Phase 7B joint population receipt admission', () => {
   // This deliberately exercises the structured-clone admission boundary.
   // Physical joint acquisition and action economics have separate connected tests.
@@ -344,7 +379,17 @@ describe('bounded Horse response receipt validation', () => {
         { mind: false, telemetry: false, decisionTimeMs: 0 }
       );
       expect(d.policyFallback).toBeUndefined();
-      expect(d.policyGraph?.transitions).toHaveLength(8);
+      expect(d.policyGraph?.transitions.map((t) => t.node)).toEqual([
+        'reference',
+        'reference_legality',
+        'variant_policy',
+        'tournament_utility',
+        'tournament_continuation',
+        'variant_utility_guard',
+        'joint_policy',
+        'wager_rules',
+        'timing',
+      ]);
       expect(horseDecisionReceiptIsValid(d), `${variant}:${street}`).toBe(true);
     }
   });

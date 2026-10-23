@@ -36,6 +36,7 @@ import type {
 } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
+import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import {
   buildTournamentMState,
@@ -4212,6 +4213,49 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 amount: jointLedger.baselineAmount ?? undefined,
               };
               noteFire('phase13_selection_withdrawn_before_acceptance');
+            }
+          }
+
+          // Authority can be withdrawn while a worker answer waits for its
+          // think time. Re-selecting that owner's baseline above must not
+          // restore the very river flat-call the final nuts rule forbids.
+          // Recheck the same rule with the controller's fresh legal menu.
+          const commitHero = currentState.players.find((p) => p.seat === seat);
+          if (commitHero) {
+            const nutsActions = applyTableCommitmentCap(
+              commitActions,
+              commitHero,
+              this.tableInfo?.cap_enabled === true,
+              Number(this.tableInfo?.cap_bb) || 0,
+              Number(this.tableInfo?.big_blind) || 0
+            );
+            const commitState = {
+              ...gameState,
+              players: currentState.players,
+              communityCards: currentState.communityCards,
+              communityCards2: currentState.communityCards2,
+              communityCards3: currentState.communityCards3,
+              stage: currentState.stage,
+              currentBet: currentState.currentBet,
+              pot: currentState.pot,
+              legalActions: [...nutsActions.legalActions],
+              toCall: nutsActions.toCall,
+              minRaiseTo: nutsActions.minRaiseTo,
+              maxRaiseTo: nutsActions.maxRaiseTo,
+              bettingStructure: nutsActions.structure,
+              fixedBetSize: nutsActions.fixedBetSize,
+              wagersCapped: nutsActions.wagersCapped,
+              commitmentCapRemaining: nutsActions.commitmentCapRemaining,
+            };
+            const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
+            const guarded = fullPotNearPotWager(
+              riverNutsRaise(decision, privateHero, commitState),
+              privateHero,
+              commitState
+            );
+            if (guarded !== decision) {
+              decision = { ...decision, ...guarded };
+              noteFire('wager_rules_commit_correction');
             }
           }
 

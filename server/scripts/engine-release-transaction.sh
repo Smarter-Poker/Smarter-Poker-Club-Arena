@@ -1699,8 +1699,10 @@ print(contract)
 # seconds. One throwaway container is therefore run to completion from the
 # exact candidate image here, outside any break, with the engine command
 # replaced so nothing connects to production. It carries no engine labels,
-# no env file and no ports, and it is never fatal: an unwarmed image only
-# costs time that the existing cutover budget still bounds.
+# no env file and only an ephemeral loopback port. Publishing exercises the
+# port-mapper path that the old bridge-only warm-up skipped. The command still
+# never starts the engine or binds the serving port. It is never fatal:
+# an unwarmed image only costs time that the existing cutover budget bounds.
 prewarm_candidate_image() {
   local remaining warm_timeout warm_name started finished
   remaining="$(remaining_seconds)" || return 0
@@ -1711,7 +1713,8 @@ prewarm_candidate_image() {
   timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
   started="$(date +%s)"
   if timeout --signal=TERM --kill-after=5s "${warm_timeout}s" docker run --rm --pull never \
-    --name "$warm_name" --restart no --network bridge --entrypoint node \
+    --name "$warm_name" --restart no --network bridge \
+    --publish 127.0.0.1::8080 --entrypoint node \
     "$IMAGE_REF" -e 'process.exit(0)' >/dev/null 2>&1; then
     finished="$(date +%s)"
     echo "ENGINE_IMAGE_PREWARM_SECONDS=$((finished - started))"

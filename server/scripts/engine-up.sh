@@ -66,6 +66,9 @@ HEALTH_START_PERIOD="${HEALTH_START_PERIOD:-300s}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-3}"
 
 log() { echo "[engine-up] $*"; }
+# Phase-only receipts survive a bounded cutover refusal without exposing the
+# run arguments, environment, tokens, or player data.
+phase() { printf '[engine-up] phase=%s epoch=%s\n' "$1" "$(date +%s)" >&2; }
 
 # Where outgoing engine logs are kept. Read by nothing automated; read by the
 # next agent asking "what did the engine do before it died at 16:52".
@@ -300,7 +303,9 @@ retire_outgoing_in_background ${LEFTOVER_OUTGOING[@]+"${LEFTOVER_OUTGOING[@]}"}
 OUTGOING_CONTAINER=''
 if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   log "stopping $CONTAINER (SIGTERM, 45s grace for snapshot flush)"
+  phase stop-start
   docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
+  phase stop-returned
   # THE OUTGOING ENGINE'S LOG SURVIVES IT (2026-09-07). `docker rm` deletes the
   # json-file log with the container, and the container is replaced every
   # hour, so the log of whatever went wrong in the previous hour was gone the
@@ -314,13 +319,17 @@ if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   # 2026-10-19: the dump now runs after the replacement is started (see
   # retire_outgoing_container). Only if the stopped container cannot be
   # renamed out of the way is it dumped here, in line, as before.
+  phase outgoing-inspect-start
   outgoing_id="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null | cut -c1-12 || true)"
   outgoing_state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+  phase outgoing-inspect-returned
+  phase outgoing-rename-start
   if [[ "$outgoing_id" =~ ^[0-9a-f]{12}$ ]] \
     && { [ "$outgoing_state" = exited ] || [ "$outgoing_state" = created ]; } \
     && docker update --restart no "$CONTAINER" >/dev/null 2>&1 \
     && docker rename "$CONTAINER" "${OUTGOING_PREFIX}${outgoing_id}" >/dev/null 2>&1; then
     OUTGOING_CONTAINER="${OUTGOING_PREFIX}${outgoing_id}"
+    phase outgoing-rename-returned
   else
     save_outgoing_log "$CONTAINER" || log "WARN: could not save the outgoing log (continuing)"
     docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -343,6 +352,7 @@ fi
 # stays because THIS FILE IS THE RUN-SPEC (design note 4): the deploy and the
 # host supervisor must start the container identically, and this is the one
 # place both of them read.
+phase launch-start
 STARTED_CONTAINER_ID="$(docker run -d \
   --name "$CONTAINER" \
   --restart "$RESTART_POLICY" \
@@ -364,6 +374,7 @@ STARTED_CONTAINER_ID="$(docker run -d \
   --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
   --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
   "$AUTHORIZED_IMAGE_ID")"
+phase launch-returned
 printf '%s\n' "$STARTED_CONTAINER_ID"
 
 # Docker already returned the newly created container's ID. A second daemon

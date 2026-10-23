@@ -152,6 +152,22 @@ exit 0
       expect(result.stdout).toContain(
         `saving the outgoing log of club-arena-engine-outgoing-${outgoingId} in the background`
       );
+      const phases = [...result.stderr.matchAll(/phase=([a-z-]+) epoch=([0-9]+)/g)];
+      expect(phases.map((match) => match[1])).toEqual([
+        'stop-start',
+        'stop-returned',
+        'outgoing-inspect-start',
+        'outgoing-inspect-returned',
+        'outgoing-rename-start',
+        'outgoing-rename-returned',
+        'launch-start',
+        'launch-returned',
+      ]);
+      expect(
+        phases.every(
+          (match, index) => index === 0 || Number(match[2]) >= Number(phases[index - 1]![2])
+        )
+      ).toBe(true);
       const order = readFileSync(calls, 'utf8').trim().split('\n');
       const at = (prefix: string) => order.findIndex((line) => line.startsWith(prefix));
       expect(at('stop -t 45 club-arena-engine')).toBeGreaterThan(-1);

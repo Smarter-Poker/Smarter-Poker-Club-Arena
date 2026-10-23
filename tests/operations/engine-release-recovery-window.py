@@ -21,7 +21,8 @@ NEWER = 'c' * 40
 
 def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False,
            health_extra=None, maintenance_extra=None, missed=False, urgent=False, recovers_on_lock=False,
-           certificate_deadline=0, superseded='', requests=(), seal_answers=None, calls=2, advance=0):
+           certificate_deadline=0, superseded='', requests=(), seal_answers=None, calls=2, advance=0,
+           owner_windows='', owner_contains_ok=''):
     """Run the real request_recovery_window `calls` times, `advance` seconds apart.
 
     `requests` are other durable requests on this host: (run, sha, unit state,
@@ -64,6 +65,8 @@ BREAK_ADMISSION_MIN_BREAK_MS=260000
 CERTIFICATE_DEADLINE={certificate_deadline}
 SUPERSEDED_BY={superseded}
 RECOVERY_URGENT={int(urgent)}
+OWNER_WINDOWS={shlex.quote(owner_windows)}
+OWNER_CONTAINS_OK={shlex.quote(owner_contains_ok)}
 LOCK_HELD=0
 NOW={1800000000 + minute * 60}
 HEALTH={shlex.quote(health)}
@@ -83,6 +86,16 @@ systemctl() {{
   esac
 }}
 fixture_git() {{
+  if [ "$1" = show ]; then
+    [ "$2" = "$SHA:server/release/owner-maintenance-windows.json" ] || exit 94
+    [ -n "$OWNER_WINDOWS" ] || return 128
+    printf '%s' "$OWNER_WINDOWS"
+    return 0
+  fi
+  if [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$4" = "$SHA" ]; then
+    [ -n "$OWNER_CONTAINS_OK" ] && [ "$3" = "$OWNER_CONTAINS_OK" ]
+    return
+  fi
   [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$3" = "$SHA" ] || exit 94
   case " {' '.join(ancestors)} " in *" $4 "*) return 0 ;; *) return 1 ;; esac
 }}
@@ -410,6 +423,80 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                 self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
                                           'REQUEST', 'UNLOCK'])
 
+
+
+OWNER_FIX = 'a' * 40
+
+
+def owner_doc(*, not_before='2027-01-15T07:00:00Z', not_after='2027-01-15T12:00:00Z',
+              minutes=(53, 54), contains=OWNER_FIX, order='Owner order: make the fix live now.'):
+    window = {'id': '2027-01-15-fixture', 'ownerOrder': order, 'contains': contains,
+              'notBefore': not_before, 'notAfter': not_after}
+    if minutes is not None:
+        window['announceAtChicagoMinutes'] = list(minutes)
+    return json.dumps({'version': 1, 'windows': [window]})
+
+
+class OwnerOrderedWindow(unittest.TestCase):
+    """The explicit narrow owner exception (2026-10-23). Fixture time 1800000000 is
+    2027-01-15 02:00 America/Chicago, so `minute` is the Chicago minute."""
+
+    def healthy(self, **kw):
+        kw.setdefault('owner_contains_ok', OWNER_FIX)
+        return invoke(health_extra={'liveness': 'ok'}, calls=1, **kw)
+
+    def test_a_valid_owner_window_reserves_once_as_the_owner_cause(self):
+        result, events = self.healthy(minute=53, owner_windows=owner_doc())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
+        self.assertIn('reason: owner-ordered 2027-01-15-fixture', result.stdout)
+
+    def test_it_waits_for_the_named_chicago_minute(self):
+        for minute in (30, 52, 55):
+            with self.subTest(minute=minute):
+                result, events = self.healthy(minute=minute, owner_windows=owner_doc())
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+
+    def test_an_expired_or_future_window_grants_nothing(self):
+        for doc in (owner_doc(not_after='2027-01-15T07:30:00Z'),
+                    owner_doc(not_before='2027-01-15T09:00:00Z', not_after='2027-01-15T10:00:00Z')):
+            with self.subTest(doc=doc):
+                result, events = self.healthy(minute=53, owner_windows=doc)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+
+    def test_the_release_must_contain_the_named_commit(self):
+        result, events = self.healthy(minute=53, owner_windows=owner_doc(), owner_contains_ok='')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, [])
+
+    def test_an_unbounded_unnamed_or_malformed_window_grants_nothing(self):
+        for doc in (owner_doc(not_before='2027-01-15T01:00:00Z', not_after='2027-01-15T12:00:00Z'),
+                    owner_doc(order=''), owner_doc(contains='not-a-sha'),
+                    '{"version": 2, "windows": []}', 'not json'):
+            with self.subTest(doc=doc):
+                result, events = self.healthy(minute=53, owner_windows=doc)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+
+    def test_no_file_and_a_legacy_urgency_flag_still_grant_nothing(self):
+        result, events = self.healthy(minute=53, urgent=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, [])
+
+    def test_a_spent_hour_still_waits_without_announcing(self):
+        result, events = self.healthy(minute=53, owner_windows=owner_doc(), seal_answers=['rate-limited'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'UNLOCK'])
+        self.assertNotIn('REQUEST', events)
+
+    def test_an_older_release_still_defers_to_a_newer_one(self):
+        result, events = self.healthy(minute=53, owner_windows=owner_doc(), superseded=NEWER,
+                                      requests=[('900-3', NEWER, 'active', True)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('REQUEST', events)
+        self.assertNotIn('RESERVE:--cause urgent', events)
 
 if __name__ == '__main__':
     unittest.main()

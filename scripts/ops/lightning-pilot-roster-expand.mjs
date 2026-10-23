@@ -27,7 +27,7 @@ export const EXPANSION_OPERATION = 'lightning-pilot-roster-expansion-20261023';
 export const EXPANSION_WORKFLOW = '.github/workflows/lightning-pilot-roster-expand.yml';
 export const EXPANSION_TITLE = 'Lightning Roster Expansion';
 export const EXPANSION_MANIFEST_SHA256 =
-  '0f53b788864bdaf27ce199a8a2fb39bbd9ac1491e59f42d7d52cb9a5fc303a2d';
+  'f1e1b8f58f60ed8e1ba1d4d6158c0849ef8467ce2522f75e906b47f5da2964bc';
 const PRIOR_MANIFEST_SHA256 = '121f80d2529012e532b4d3a702e2772cde9aa7778a82df26f5a02082d2b0ba8a';
 export const EXPANSION_CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 export const EXPANSION_SIZE = 72;

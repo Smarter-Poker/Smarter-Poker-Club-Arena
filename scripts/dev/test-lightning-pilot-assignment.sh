@@ -100,12 +100,12 @@ END $$;
 SELECT set_config('request.jwt.claim.sub','2d1cd6c3-5700-4af9-a271-d4863fdab20d',false);
 SELECT set_config('witness.live','true',false);
 DO $$ BEGIN
- PERFORM fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001023','65033b055ea62f49c1fc242ced3bd79ee72fa875682fe14f416efcca6f8a8698',fn_lightning_pilot_assignment_players(),'native wrong list for manifest');
+ PERFORM fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001023','3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820',fn_lightning_pilot_assignment_players(),'native wrong list for manifest');
  RAISE EXCEPTION 'WRONG_LIST_ADMITTED';
 EXCEPTION WHEN invalid_parameter_value THEN NULL; END $$;
 DO $$ DECLARE r jsonb; BEGIN
- r:=fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001024','65033b055ea62f49c1fc242ced3bd79ee72fa875682fe14f416efcca6f8a8698',fn_lightning_pilot_assignment_players_20261023(),'native expanded release');
- IF (SELECT manifest_sha256 FROM lightning_pilot_assignment)<>'65033b055ea62f49c1fc242ced3bd79ee72fa875682fe14f416efcca6f8a8698' OR (SELECT cardinality(player_ids) FROM lightning_pilot_assignment)<>144 THEN RAISE EXCEPTION 'expanded manifest not recorded'; END IF;
+ r:=fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001024','3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820',fn_lightning_pilot_assignment_players_20261023(),'native expanded release');
+ IF (SELECT manifest_sha256 FROM lightning_pilot_assignment)<>'3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820' OR (SELECT cardinality(player_ids) FROM lightning_pilot_assignment)<>144 THEN RAISE EXCEPTION 'expanded manifest not recorded'; END IF;
  r:=fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001025','121f80d2529012e532b4d3a702e2772cde9aa7778a82df26f5a02082d2b0ba8a',fn_lightning_pilot_assignment_players(),'native original release');
  IF (SELECT cardinality(player_ids) FROM lightning_pilot_assignment)<>72 THEN RAISE EXCEPTION 'original manifest not restorable'; END IF;
 END $$;

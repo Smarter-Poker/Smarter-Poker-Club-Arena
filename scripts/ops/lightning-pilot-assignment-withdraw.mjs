@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const ASSIGNMENT_MANIFEST_SHA256 =
-  '65033b055ea62f49c1fc242ced3bd79ee72fa875682fe14f416efcca6f8a8698';
+  '3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820';
 const ASSIGNMENT_SIZE = 144;
 const raw = readFileSync(
   new URL('../../docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-23.json', import.meta.url)

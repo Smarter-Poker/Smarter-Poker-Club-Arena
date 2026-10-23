@@ -80,6 +80,19 @@ const rulesFor = (selector: string) => RULES.filter((r) => r.selector === select
 // 1. A REVEALED HAND IS LAID OUT LEFT TO RIGHT, WHATEVER SEAT IT IS IN
 // ═══════════════════════════════════════════════════════════════════════════
 
+describe('the all-in wager preserves the hero felt offset on wider tables', () => {
+  it('keeps the original hero lift when puck and chips share one assembly', () => {
+    const transform = (selector: string) =>
+      rulesFor(selector)
+        .map((r) => r.body.match(/transform:\s*([^;]+);/)?.[1])
+        .find(Boolean)
+        ?.replace(/\s/g, '');
+    const original = transform('.seat--hero .seat__bet-chips');
+    expect(original).toContain('-30px');
+    expect(transform('.seat--hero .seat__wager-group:has(.seat__allin-puck)')).toBe(original);
+  });
+});
+
 describe('a revealed hand reads left to right at every seat', () => {
   /** Every rule that positions a card inside a REVEALED opponent cluster. */
   const revealedCardRules = () =>
@@ -481,6 +494,36 @@ describe("the hero's row opens out only when the table can see it", () => {
         {...props}
       />
     );
+
+  it('prints ALL IN only on the felt puck, including streets with no new wager', () => {
+    const { container, rerender } = renderHero(
+      { lastAction: 'all_in', lastBetAmount: 120 },
+      { status: 'all_in' }
+    );
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelectorAll('.seat__bet-chips .seat__allin-puck')).toHaveLength(1);
+    expect(container.querySelector('.seat__allin-puck')?.getAttribute('aria-label')).toBe(
+      'HERO: All In'
+    );
+    rerender(
+      <SeatSlot
+        seatNumber={1}
+        player={hero({ status: 'all_in', stack: 0 })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        lastBetAmount={0}
+      />
+    );
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelectorAll('.seat__bet-chips .seat__allin-puck')).toHaveLength(1);
+  });
+
+  it('does not turn a stale all-in action into a head label or an active all-in marker', () => {
+    const { container } = renderHero({ lastAction: 'all_in' });
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelector('.seat__allin-puck')).toBeNull();
+  });
 
   it('stays compact while the hand is private', () => {
     const { container } = renderHero();

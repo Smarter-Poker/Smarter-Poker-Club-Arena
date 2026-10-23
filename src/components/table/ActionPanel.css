@@ -124,10 +124,35 @@
 /* The phone's preselection and decision rows share one compact footprint.
    Keep the 44px controls usable while reserving their exact border/padding
    sum, including when the street or selected pre-action changes. */
+/* THE BAR'S OWN HOME-INDICATOR ALLOWANCE (Dan 2026-10-22: "if you lower and
+   center the fold call raise buttons we can use that extra padding at the
+   bottom to pull the table and everything else down"). Everywhere but a phone
+   the bar clears the whole inset. On a phone it sits 18px into the 34px
+   home-indicator strip, which still leaves the buttons ~10px clear of the
+   indicator, and it gives 4px of that back on top so the buttons are centred
+   in the visible bar. --sp-bar-drop is what that frees; TablePage.css adds it
+   to the felt's top reserve so the whole table moves down by it, unchanged in
+   size. Every surface stacked above the bar reads --sp-bar-inset, never
+   env(safe-area-inset-bottom) directly, so they all move with it. */
+:root {
+  --sp-bar-inset: env(safe-area-inset-bottom, 0px);
+  --sp-bar-drop: 0px;
+}
+
+@media (max-width: 480px) {
+  :root {
+    --sp-bar-inset: max(0px, calc(env(safe-area-inset-bottom, 0px) - 18px));
+    --sp-bar-drop: calc(
+      env(safe-area-inset-bottom, 0px) - max(0px, calc(env(safe-area-inset-bottom, 0px) - 18px)) -
+        min(4px, env(safe-area-inset-bottom, 0px))
+    );
+  }
+}
+
 @media (max-width: 480px) {
   :root {
     --sp-action-btn-h: 44px;
-    --sp-action-pad-top: 4px;
+    --sp-action-pad-top: calc(4px + min(4px, env(safe-area-inset-bottom, 0px)));
   }
 }
 
@@ -143,7 +168,9 @@
    because the height is the one part of the wrapper that has to agree with two
    rows this file owns. */
 .table-page .action-panel-wrapper {
-  min-height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
+  min-height: calc(
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -185,7 +212,9 @@
    on its own `.table-page` ancestor now. 0,3,0 still beats the 0,2,0 floor rule
    above, which is the comparison that has to hold. */
 .table-page.ca-raising .action-panel-wrapper {
-  height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
+  height: calc(
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -465,7 +494,7 @@
      allowance: the home-indicator strip is not wasted space, everything above
      it was. Repeated verbatim in every breakpoint below, because a shorthand
      `padding` in a media query silently puts the old gap back. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
   border-top: 1px solid var(--border-default);
   z-index: var(--z-action-panel);
@@ -1614,7 +1643,7 @@
     padding: var(--sp-action-pad-top) 10px;
     /* Flush — see the base rule. The `8px +` that used to be here is precisely
        the strip of dead black Dan reported under the buttons. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   }
 
   .action-row {
@@ -1734,7 +1763,7 @@
        being a measurement. Only the side gutters tighten here. */
     padding: var(--sp-action-pad-top) 8px;
     /* Flush — see the base rule. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   }
 
   /* Compound, to stay above the `padding` shorthand in this same block — see

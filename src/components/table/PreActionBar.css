@@ -32,7 +32,7 @@
      action row share one wrapper and one reserve; see the note on
      `.pre-action-btn` below for what the literals were costing. */
   padding: var(--sp-action-pad-top, 8px) 16px;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   background: linear-gradient(180deg, rgba(20, 24, 32, 0.92) 0%, rgba(14, 17, 24, 0.96) 100%);
   backdrop-filter: blur(12px) saturate(1.2);
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
@@ -403,7 +403,7 @@
   .pre-action-bar {
     padding: var(--sp-action-pad-top, 8px) 12px;
     /* Flush — see the base rule. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   }
 
   .pre-action-buttons {
@@ -439,7 +439,7 @@
   .pre-action-bar {
     padding: var(--sp-action-pad-top, 5px) 12px;
     /* Flush — see the base rule. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   }
 
   /* `.pre-action-btn { min-height: 46px }` DELETED 2026-08-28 — the token's
@@ -451,7 +451,7 @@
   .pre-action-bar {
     padding: var(--sp-action-pad-top, 5px) 10px;
     /* Flush — see the base rule. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   }
 
   .pre-action-buttons {

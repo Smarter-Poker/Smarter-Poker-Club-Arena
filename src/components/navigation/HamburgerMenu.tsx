@@ -61,6 +61,7 @@ import styles from './HamburgerMenu.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
 import { mediaUrl } from '../../utils/mediaBase';
 import { signInUrl } from '../../lib/signIn';
+import { IS_NATIVE_BUILD } from '../../lib/appBase';
 import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
 import { menuOffersCreateUnion } from './menuUnionDoor';
 import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurface';
@@ -150,6 +151,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   );
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
+  /* An unverified player is offered the welcome package (30-day VIP card and
+     500 diamonds) from here too (2026-10-23): invite signups land in Club
+     Arena, not the Hub home screen, so the Hub menu entry alone was never seen. */
+  const [phoneUnverified, setPhoneUnverified] = useState(false);
   const [isPlatformStaff, setIsPlatformStaff] = useState(false);
   const { diamonds: diamondBalance } = useWalletStore();
   // Bible V8 §11.1: User table settings (12 toggles) from Supabase
@@ -677,7 +682,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       supabase
         .from('profiles')
         .select(
-          `avatar_url:arena_avatar_url, ${PLAYER_NAME_COLUMNS}, sounds_enabled, vibrations_enabled, is_vip, tier, role`
+          `avatar_url:arena_avatar_url, ${PLAYER_NAME_COLUMNS}, sounds_enabled, vibrations_enabled, is_vip, tier, role, phone_verified`
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -725,6 +730,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             /* `profiles.show_stack_bb` is NOT read here any more — see the note
                where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
+            setPhoneUnverified(data.phone_verified === false && !data.is_vip);
             setIsPlatformStaff(isPlatformStaffRole(data.role));
           }
         });
@@ -1389,6 +1395,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {phoneUnverified && !IS_NATIVE_BUILD && (
+          <section className={styles.navGroup} aria-label="Welcome Package">
+            <button
+              type="button"
+              className={styles.navItem}
+              onClick={() => {
+                if (!mayLeaveCurrentPage()) return;
+                capture('club_arena_navigation_selected', {
+                  route: '/hub/verify-phone',
+                  from_route: location.pathname,
+                  source: 'hamburger',
+                });
+                onClose();
+                // The verify screen is a World Hub page, outside this app.
+                window.location.assign('/hub/verify-phone');
+              }}
+            >
+              <span>
+                <span className={styles.navLabel}>{tc('Verify Phone Number')}</span>
+                <span className={styles.navDescription}>
+                  {tc('Claim 1 Month Free VIP And 500 Diamonds')}
+                </span>
+              </span>
+              <span className={styles.navArrow}>›</span>
+            </button>
           </section>
         )}
 

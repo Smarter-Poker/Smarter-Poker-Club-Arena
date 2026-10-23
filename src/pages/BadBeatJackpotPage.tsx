@@ -152,20 +152,10 @@ export default function BadBeatJackpotPage() {
    */
   const loadRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
 
-  /* THE ALLOCATION RULE, ONCE. It is a rule and not a figure - it has changed
-     by hand once since it was written - so it is read on mount and cached for
-     the session by the feed, never polled. Its own effect because it does not
-     depend on the club: every pool on the platform is allocated by the same
-     policy row. */
-  useEffect(() => {
-    let alive = true;
-    void getBbjAllocationPolicy().then((p) => {
-      if (alive) setAllocationPolicy(p);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  /* THE ALLOCATION RULE. It is a rule and not a figure, so it is read once
+     per pool and cached for the session by the feed, never polled. It is read
+     for the pool this page shows (below, once the pool is resolved), because
+     since Dan's 2026-10-22 order the Midway Union pool has its own split. */
 
   useEffect(() => {
     if (!clubId) {
@@ -216,6 +206,11 @@ export default function BadBeatJackpotPage() {
            the page keeps working; what is skipped is the one binding that
            would have been wrong. */
         const readFailed = clubErr || poolErr;
+        /* The rule of THIS pool; an unresolved pool reads the platform rule,
+           which is what fn_bbj_allocate applies to a pool without its own row. */
+        void getBbjAllocationPolicy(readFailed ? null : (poolRow?.id ?? null)).then((p) => {
+          if (isMounted) setAllocationPolicy(p);
+        });
         if (readFailed) {
           reportError(
             (clubErr || poolErr)?.message ?? 'unknown',
@@ -640,6 +635,10 @@ export default function BadBeatJackpotPage() {
               banner counting toward a threshold it invented is worse than no
               banner, so it renders nothing rather than guessing (10.86). */}
           {allocationPolicy !== null &&
+            /* A pivot that sends the same share as the standard rule changes
+               nothing, so there is nothing to approach (the Midway Union pool,
+               10 / 30 / 60 at any size since Dan's 2026-10-22 order). */
+            allocationPolicy.pivotMain !== allocationPolicy.standardMain &&
             (jackpot?.main_balance || 0) >=
               allocationPolicy.pivotThreshold * BBJ_PIVOT_APPROACH_FRACTION && (
               <div className="bbj-page__pivot">

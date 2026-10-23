@@ -1004,6 +1004,66 @@ print(",".join(signs))
   return 0
 }
 
+# OWNER-ORDERED WINDOW (2026-10-23)
+# ───────────────────────────────────
+# The 04:00 America/Chicago rule stays binding "absent a later explicit narrow
+# human exception" (#7777). This is that exception's only carrier: an entry in
+# server/release/owner-maintenance-windows.json, merged through protected main,
+# that quotes the owner's order and names the exact commit that must be inside
+# the release, a bounded validity window (at most six hours) and the Chicago
+# minutes at which the announcement may be made. Commit text is still never
+# authority. The entry is read from the TARGET's own immutable tree, so it
+# cannot be granted by anything other than reviewed source, and it expires on
+# its own. Everything after the reason is unchanged: newest-owner, lock, a
+# fresh health read, the seal's one-window-per-hour limit, drain, freeze,
+# certificate, rollback reserve and thaw.
+# Prints "owner-ordered <id>" or nothing; never fails the caller.
+owner_window_reason() {
+  local windows now picked id contains
+  windows="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" show "$SHA:server/release/owner-maintenance-windows.json" 2>/dev/null)" || return 0
+  now="$(date +%s)"
+  picked="$(printf '%s' "$windows" | python3 -c '
+import json, re, sys
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+now = datetime.fromtimestamp(int(sys.argv[1]), timezone.utc)
+local = now.astimezone(ZoneInfo("America/Chicago"))
+doc = json.load(sys.stdin)
+if not isinstance(doc, dict) or doc.get("version") != 1: raise SystemExit(0)
+for w in doc.get("windows") or []:
+    try:
+        wid, contains, order = str(w["id"]), str(w["contains"]), str(w["ownerOrder"])
+        nb = datetime.fromisoformat(str(w["notBefore"]).replace("Z", "+00:00"))
+        na = datetime.fromisoformat(str(w["notAfter"]).replace("Z", "+00:00"))
+        minutes = w.get("announceAtChicagoMinutes")
+    except Exception:
+        continue
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", wid): continue
+    if not re.fullmatch(r"[0-9a-f]{40}", contains) or len(order.strip()) < 10: continue
+    if nb.tzinfo is None or na.tzinfo is None: continue
+    if not (0 < (na - nb).total_seconds() <= 6 * 3600) or not (nb <= now <= na): continue
+    if minutes is not None and (not isinstance(minutes, list) or local.minute not in minutes): continue
+    print(wid, contains)
+    break
+' "$now" 2>/dev/null)" || return 0
+  [ -n "$picked" ] || return 0
+  id="${picked%% *}"
+  contains="${picked#* }"
+  timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$SHA" 2>/dev/null || return 0
+  echo "owner-ordered $id"
+}
+
+# The seal and the serving engine already know one explicit owner cause,
+# `urgent`; an owner-ordered window is presented to both as that cause.
+recovery_cause() {
+  case "$1" in
+    owner-ordered) echo urgent ;;
+    *) echo "$1" ;;
+  esac
+}
+
 # The run key and SHA of a release of a NEWER engine SHA that is queued or
 # running on this host, if there is one. Only a durable request whose unit is
 # still live counts; a finished or failed one owns nothing.
@@ -1115,6 +1175,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   reason="$(recovery_window_reason "$health")"
+  [ -n "$reason" ] || reason="$(owner_window_reason)"
   # NO LOCK WITHOUT AN EMERGENCY (2026-10-04). The seal answers `unavailable`
   # to every reservation that names no cause, so a routine release (no
   # reason, or only a scheduled break it waited through) has nothing to ask.
@@ -1122,7 +1183,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   # releases for up to the whole lock wait and could end this one in `die`.
   # It waits for the scheduled break without touching the lock or the seal.
   case "${reason%% *}" in
-    engine-degraded) ;;
+    engine-degraded|owner-ordered) ;;
     *) return 0 ;;
   esac
   cause_key="$RECOVERY_ADMISSION_MISSED:${reason%% *}"
@@ -1149,12 +1210,16 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   }
   reason="$(recovery_window_reason "$health")"
-  if [ "${reason%% *}" != engine-degraded ]; then
-    release_engine_lock
-    return 0
-  fi
+  [ -n "$reason" ] || reason="$(owner_window_reason)"
+  case "${reason%% *}" in
+    engine-degraded|owner-ordered) ;;
+    *)
+      release_engine_lock
+      return 0
+      ;;
+  esac
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
-  reserve_args+=(--cause "${reason%% *}")
+  reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")
   if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
     "${reserve_args[@]}")"; then
     # NOT FATAL (2026-10-02). A refused or slow reservation asks for nothing:
@@ -1189,7 +1254,7 @@ print(1 if (json.load(sys.stdin).get("maintenance") or {}).get("recoveryWindowCa
   # A lost response is UNKNOWN; observe the certificate, never allocate a new
   # timestamp or send another announcement in this invocation.
   outcome="$(timeout --signal=TERM --kill-after=1s 20s docker exec -i "$CONTAINER" \
-    node - "$stamp" "${reason%% *}" "$cause_required" <<'NODE'
+    node - "$stamp" "$(recovery_cause "${reason%% *}")" "$cause_required" <<'NODE'
 const announcedAt=Number(process.argv[2]);
 const cause=process.argv[3];
 const causeRequired=process.argv[4]==="1";

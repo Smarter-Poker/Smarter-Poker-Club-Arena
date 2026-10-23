@@ -99,11 +99,22 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
       'reason="$(recovery_window_reason "$health")"',
       "acquire_engine_lock 'one recovery announcement'"
     );
+    // The one other reason (2026-10-23) is an explicit owner-ordered window:
+    // a reviewed, expiring entry read from the target's own tree. It is asked
+    // only after the measured reasons, under the same lock and seal.
     expect(gate).toMatch(
-      /case "\$\{reason%% \*\}" in\s+engine-degraded\) ;;\s+\*\) return 0 ;;\s+esac/
+      /case "\$\{reason%% \*\}" in\s+engine-degraded\|owner-ordered\) ;;\s+\*\) return 0 ;;\s+esac/
     );
+    expect(gate).toContain('[ -n "$reason" ] || reason="$(owner_window_reason)"');
     expect(request.split("acquire_engine_lock 'one recovery announcement'")).toHaveLength(2);
-    expect(request).toContain('reserve_args+=(--cause "${reason%% *}")');
+    expect(request).toContain('reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")');
+    const owner = between(policy, 'owner_window_reason() {', '\n}');
+    expect(owner).toContain(
+      'git -C "$REPO_DIR" show "$SHA:server/release/owner-maintenance-windows.json"'
+    );
+    expect(owner).toContain('merge-base --is-ancestor "$contains" "$SHA"');
+    expect(owner).toContain('6 * 3600');
+    expect(owner).not.toMatch(/log --format|Engine-Release/);
     expect(policy).not.toContain('--missed-window');
     const reasons = between(policy, 'recovery_window_reason() {', '\n}');
     expect(reasons).not.toContain('RECOVERY_ADMISSION_MISSED');

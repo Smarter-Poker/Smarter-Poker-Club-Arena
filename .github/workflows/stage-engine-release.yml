@@ -92,6 +92,31 @@ jobs:
             fi
           elif git log -1 --format=%B | grep -Eq '^Engine-Release: daily-maintenance-transition$'; then
             allowed=true
+          elif [ -f server/release/owner-maintenance-windows.json ]; then
+            # OWNER-ORDERED WINDOW (2026-10-23): a reviewed, expiring entry
+            # naming the owner's order and the exact commit this release must
+            # contain. Commit text is never consulted. The host transaction
+            # re-reads the same entry from the target tree and owns timing.
+            if OWNER_CONTAINS=$(python3 - <<'PYTHON'
+          import json
+          from datetime import datetime, timezone
+          doc = json.load(open("server/release/owner-maintenance-windows.json"))
+          now = datetime.now(timezone.utc)
+          for w in (doc.get("windows") or []) if doc.get("version") == 1 else []:
+              try:
+                  nb = datetime.fromisoformat(w["notBefore"].replace("Z", "+00:00"))
+                  na = datetime.fromisoformat(w["notAfter"].replace("Z", "+00:00"))
+              except Exception:
+                  continue
+              if 0 < (na - nb).total_seconds() <= 6 * 3600 and nb <= now <= na:
+                  print(w["contains"])
+                  break
+          PYTHON
+            ) && [[ "$OWNER_CONTAINS" =~ ^[0-9a-f]{40}$ ]] \
+              && git merge-base --is-ancestor "$OWNER_CONTAINS" HEAD; then
+              echo "Owner-ordered window admits this release (contains $OWNER_CONTAINS)."
+              allowed=true
+            fi
           fi
           if [ "$allowed" = false ]; then
             HEALTH=$(curl -sS --max-time 15 https://engine.smarter.poker/health) || HEALTH='{}'

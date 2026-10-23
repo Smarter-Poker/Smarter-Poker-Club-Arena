@@ -226,8 +226,5 @@ describe('the deploy documents name the live route', () => {
         'while the publisher publishes where nobody reads:\n  ' +
         offenders.join('\n  ')
     ).toHaveLength(0);
-    // This traverses the real repository. The SSD scan measured 5.5 seconds
-    // alone and 6.2 seconds with other checks, beyond the 5-second unit default.
-    // Keep every file and assertion, with a finite filesystem-work budget.
-  }, 15_000);
+  });
 });

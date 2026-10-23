@@ -150,7 +150,7 @@ def write(path: Path, text: str) -> None:
 def run_drill(*, desired=SHA, serving=SHA, label=SHA, image=IMAGE, policy='always',
               autoheal='running', restart=True, ready=True, remaining_ms=280_000,
               clock_skew_ms=0, after_instance=AFTER_INSTANCE, busy_unit='', pending='',
-              leader_rc=0, post_rc=0, leave_break_after=3, admission_seconds=8,
+              leader_rc=0, post_rc=0, leave_break_after=3, admission_seconds=30,
               restart_seconds=5, authorization='DA08 crash rehearsal approved by owner',
               adopt_after_reads=0, adopt_break_shift_ms=0):
     with tempfile.TemporaryDirectory(prefix='crash-drill-') as temp:
@@ -214,6 +214,11 @@ while True:
             'leave_break_after': leave_break_after,
             'adopt_after_reads': adopt_after_reads, 'adopt_break_shift_ms': adopt_break_shift_ms,
         }))
+        # Positive cases must reach the crash/recovery assertions, rather than
+        # expire while starting the stubbed host prerequisites. The full hook
+        # measured these reads beyond the former eight-second allowance.
+        # Negative admission cases still explicitly pass four seconds; the
+        # production 900-second reserve and all drill guards are unchanged.
         not_after = int(time.time()) + 900 + admission_seconds
         env = {
             **os.environ,

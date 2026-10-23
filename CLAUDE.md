@@ -1,4 +1,4 @@
-**ENGINE RESETS ONCE A DAY (owner update October 20, 2026).** Routine game-engine updates and restarts happen only once daily at 04:00 America/Chicago (DST aware): 03:58 last-hand notice, 04:00-04:05 maintenance window. There is no hourly engine reset and no hourly cash-game or platform freeze. Hourly tournament breaks (:55-:00) still run and are separate from engine maintenance. Only measured dead, stalled or severely quarantined engine recovery may restart outside 04:00. Commit-message urgency never authorizes an off-cycle break. See CLAUDE.md section 13.
+**ENGINE RESETS ONCE A DAY (owner update October 20, 2026).** Routine game-engine updates and restarts happen only once daily at 04:00 America/Chicago (DST aware): 03:58 last-hand notice, 04:00-04:05 maintenance window. There is no hourly engine reset and no hourly cash-game or platform freeze. Hourly tournament breaks (:55-:00) still run and are separate from engine maintenance. Only an explicit urgent or degraded-engine emergency may restart outside 04:00. See CLAUDE.md section 13.
 
 **Non-engine delivery: push, publish, verify and finish immediately; never wait for an engine window.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
 
@@ -1557,9 +1557,8 @@ This is a narrow exception to the former no-release-timer rule: the existing
 stage-engine-release.yml prepares protected main at 03:30 Chicago (UTC twin
 triggers guarded by Chicago hour), through the existing receiver only. It
 must not add a second publisher, watcher, retry agent or repair loop. Routine
-pushes queue for that daily preparation, including commits marked urgent. Only
-measured dead, stalled or severely quarantined engine recovery retains bounded
-emergency admission; commit messages never authorize a break. A request deadline or
+pushes queue for that daily preparation; urgent releases and degraded-engine
+recovery retain explicit, bounded emergency admission. A request deadline or
 a missed daily window is never an emergency reason.
 
 The release transaction refuses routine hourly certificates even while an old

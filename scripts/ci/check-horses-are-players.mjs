@@ -113,9 +113,17 @@ const REGISTER = {
     why: 'Refuses a chaos DRILL on any table with a real person at it. Drills are deliberate damage; declining to inflict it on humans is not a benefit withheld from horses.',
   },
   'server/src/lightning/LightningHandHost.ts': {
-    allowed: 1,
+    allowed: 2,
     kind: 'IDENTIFICATION',
-    why: 'Sets has_human on the Lightning hand_history row exactly as services/supabase/handHistory.ts does for a physical hand, so sp_prune_hand_history applies the same retention rule. Storage policy only: the horse is matched, dealt, timed and settled identically.',
+    why: [
+      'Sets has_human on the Lightning hand_history row exactly as services/supabase/handHistory.ts does for a physical hand, so sp_prune_hand_history applies the same retention rule. Storage policy only: the horse is matched, dealt, timed and settled identically.',
+      "clientControls() (2026-10-22) answers false for a non-horse participant: it only decides WHO supplies a horse's input, the brain or the account's own authenticated client (the Lightning pilot witnesses). A horse whose client controls its seat gets exactly the human clock, time bank, timeout and decision announcement; nothing is withheld. See docs/changelog/2026-10-22-a-horse-accounts-own-client-drives-its-seat.md.",
+    ].join('\n'),
+  },
+  'server/src/engine/ServerTableEngineTurns.ts': {
+    allowed: 2,
+    kind: 'IDENTIFICATION',
+    why: "Both are the horse INPUT DEVICE (2026-10-22): yieldHorseTurnToOwnClient and releaseOwnClientControl return early for a non-horse seat because they only cancel or resume the brain's decision for a horse account whose own authenticated client took or released its seat. A human seat has no brain decision to cancel or resume. The horse driven by its own client gets the same human clock, time bank and timeout as anybody else. See docs/changelog/2026-10-22-a-horse-accounts-own-client-drives-its-seat.md.",
   },
   'server/src/services/supabase/handHistory.ts': {
     allowed: 1,
@@ -126,7 +134,7 @@ const REGISTER = {
     allowed: 3,
     kind: 'IDENTIFICATION',
     why: [
-      'Two Horse input-device paths select horses: scheduling a horse\'s pineapple discard and its insurance response. Both hand a horse a feature it would otherwise sit out of.',
+      "Two Horse input-device paths select horses: scheduling a horse's pineapple discard and its insurance response. Both hand a horse a feature it would otherwise sit out of.",
       'The third predicate, in pineappleDiscardJournalContext, identifies the matching seated Horse before attaching private Horse decision/execution evidence. A human forced-runout discard still uses the same request and controller commit with null Horse journal context; observePineappleDiscardAcceptance then skips only Horse attribution, not the discard. This prevents human actions from being mislabeled as Horse evidence and changes no player entitlement or outcome.',
       'PineappleDiscardJournalContext.test.ts retains the actual-controller mixed Horse/human forced-runout case (both discard, only the Horse gets a private receipt) and the human-context preparation control.',
     ].join('\n'),

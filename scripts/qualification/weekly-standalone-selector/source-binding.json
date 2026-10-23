@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 230240,
-      "sha256": "deff1559014160324bf95a0ba3a220085d97a6afcf3f11c9b4c3ccd568928221"
+      "bytes": 230499,
+      "sha256": "d10046590e82ac9e13b7b5e5d512636944896c237128bc6df345b56e80b4e4b3"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -269,5 +269,16 @@
   },
   "clubNewsOnceRouting20261021": {
     "reason": "Reviewed CI addition of the club-entry-news native test in accounting shard 2. Refresh only current workflow enforcement bytes; candidate SQL, financial assertions and native result records are unchanged."
+  },
+  "quickClubOpeningEnforcement20261022": {
+    "reason": "Add the isolated funded-reserve reuse regression to accounting shard 2. Current workflow input identity only; all existing suite commands, financial sources, assertions and historical qualification states are preserved. No financial certificate restamp.",
+    "previous": {
+      "bytes": 229951,
+      "sha256": "53d246ff4d64aee62cab01069a4ea967b20dc7bbdd4f396d25683d5ae5d4b5d6"
+    },
+    "current": {
+      "bytes": 230210,
+      "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
   }
 }

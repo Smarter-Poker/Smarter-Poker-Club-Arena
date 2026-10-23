@@ -139,6 +139,7 @@ import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
 import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
+import { hydrateHorseExploitReads } from '../../services/HorseExploitHydrator.js';
 import {
   hydrateHorseMindFromDb,
   startHorseMindPersistence,
@@ -321,6 +322,9 @@ export async function startOwnedServices(shard?: {
     const lastFlush = await hydrateHorseMindFromDb();
     await Promise.all([
       hydrateHorseMind(lastFlush),
+      // 2026-10-22: the maniac read survives the daily reset - replay the
+      // recent human hands into the decayed exploit counters before READY.
+      hydrateHorseExploitReads(),
       loadGtoCharts(),
       loadGtoPostflop(),
       loadGtoPostflopV31(),

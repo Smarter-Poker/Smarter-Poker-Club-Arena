@@ -71,6 +71,7 @@ import { optimizeClubLogo } from '../../utils/clubLogoImage';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { uuid } from '../../utils/uuid';
+import { completeDefaultClubOpening } from '../../services/ClubQuickStartService';
 
 const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
 
@@ -171,6 +172,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const toast = useToast();
 
   const [clubName, setClubName] = useState('');
+  const [customizing, setCustomizing] = useState(false);
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [requiresApproval, setRequiresApproval] = useState(false);
@@ -195,6 +197,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creationRequestIdRef = useRef<string>(uuid());
+  const creatingRef = useRef(false);
+  const defaultName = `Poker Club ${creationRequestIdRef.current.slice(0, 8)}`;
+  const effectiveName = clubName.trim() || defaultName;
   const eligibilitySequenceRef = useRef(0);
   const availabilitySequenceRef = useRef(0);
   const logoSequenceRef = useRef(0);
@@ -347,11 +352,11 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
   useEffect(() => {
     const sequence = ++availabilitySequenceRef.current;
-    if (!isOpen || clubName.trim().length < 3) {
+    if (!isOpen || !user?.id || effectiveName.length < 3) {
       setNameStatus('idle');
       return;
     }
-    const checkedName = clubName.trim();
+    const checkedName = effectiveName;
     setNameStatus('checking');
     const timer = window.setTimeout(async () => {
       try {
@@ -364,7 +369,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [clubName, isOpen, isMounted]);
+  }, [effectiveName, isOpen, user?.id, isMounted]);
 
   useEffect(() => {
     if (!isOpen || !user?.id) return;
@@ -430,12 +435,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   };
 
   const handleCreate = async () => {
-    if (!clubName.trim()) {
-      toast.error('Please enter a club name');
-      return;
-    }
-
-    if (clubName.trim().length < 3) {
+    if (effectiveName.length < 3) {
       toast.error('Club name must be at least 3 characters');
       return;
     }
@@ -456,7 +456,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       return;
     }
 
-    if (isCreating) return;
+    if (isCreating || creatingRef.current) return;
     if (nameStatus !== 'available') {
       toast.error(
         nameStatus === 'taken'
@@ -472,6 +472,25 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       );
       return;
     }
+    // Even an untouched default needs a durable intent before the first write.
+    // Reloading after a lost response must recover this request, not mint a club.
+    try {
+      window.localStorage.setItem(
+        createDraftKeyFor(user.id),
+        JSON.stringify({
+          name: effectiveName,
+          description,
+          isPublic,
+          requiresApproval,
+          logoPresetId: selectedPresetId,
+          requestId: creationRequestIdRef.current,
+        })
+      );
+    } catch (storageError) {
+      reportError(storageError, 'CreateClubModal.SaveCreationIntent');
+    }
+    setClubName(effectiveName);
+    creatingRef.current = true;
     setIsCreating(true);
     const startedAt = performance.now();
     ClubEntryTrustService.track('create', 'submitted', { outcome: 'started' });
@@ -479,7 +498,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     try {
       const clubData = await ClubsService.create({
         request_id: creationRequestIdRef.current,
-        name: clubName.trim(),
+        name: effectiveName,
         description: description.trim(),
         is_public: isPublic,
         requires_approval: requiresApproval,
@@ -487,6 +506,17 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         logoUrl: selectedPresetId ? logoPreview : null,
       });
 
+      // Creation has committed. A setup failure must never send this owner
+      // back through Create and accidentally open another club.
+      try {
+        await completeDefaultClubOpening(clubData.id, creationRequestIdRef.current);
+      } catch (setupError) {
+        reportError(setupError, 'CreateClubModal.DefaultOpening');
+        if (isMounted.current)
+          toast.warning(
+            'Club Created. Default Setup Could Not Be Confirmed. Open Setup In Your Club To Continue.'
+          );
+      }
       if (!isMounted.current) return;
 
       haptic.success();
@@ -533,6 +563,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       reportError(err, 'CreateClubModal.Failed_to_create_club');
       if (isMounted.current) toast.error(err.message || 'Failed to create club');
     } finally {
+      creatingRef.current = false;
       if (isMounted.current) setIsCreating(false);
     }
   };
@@ -573,7 +604,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     !isCreating &&
     !isOptimizingLogo &&
     hasAgreed &&
-    !!clubName.trim() &&
+    effectiveName.length >= 3 &&
     !!logoPreview &&
     nameStatus === 'available' &&
     allowance?.canCreate === true;
@@ -633,131 +664,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                 and the painted plates below it never move. */}
               <div className={styles.scrollBody}>
                 <p className={`sc-copy sc-copy--center ${styles.copy}`}>
-                  Name Your Room, Establish Its Identity, And Open The Doors.
+                  Your Club Starts With Ready-Made Defaults. Create It, Send Your Link, And Invite
+                  Friends.
                 </p>
-
-                {/* ── The name, in a groove cut into the glass ─────────────── */}
-                <div className={styles.field} style={revealStyle(0)}>
-                  <label className="sc-label sc-ink--blue" htmlFor="new-club-name">
-                    Club Name
-                  </label>
-                  <input
-                    id="new-club-name"
-                    type="text"
-                    className={styles.input}
-                    placeholder="Name Your Club"
-                    value={clubName}
-                    onChange={(e) => setClubName(e.target.value)}
-                    maxLength={30}
-                    autoComplete="off"
-                  />
-                </div>
-
-                <div className={styles.field} style={revealStyle(1)}>
-                  <label className="sc-label sc-ink--blue" htmlFor="new-club-description">
-                    Description (Optional)
-                  </label>
-                  <textarea
-                    id="new-club-description"
-                    className={styles.textarea}
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    maxLength={180}
-                    placeholder="What Kind Of Room Are You Building?"
-                  />
-                </div>
-
-                {/* ── The crest vault: rows on the glass, never a grid of tiles ── */}
-                <div className={styles.section} style={revealStyle(2)}>
-                  <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
-                    Club Crest Vault
-                  </span>
-                  <p className={`sc-copy ${styles.copy}`}>
-                    Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A
-                    Custom Logo At Any Time.
-                  </p>
-
-                  <div
-                    className={styles.crestList}
-                    role="radiogroup"
-                    aria-label="Default Club Logos"
-                  >
-                    {DEFAULT_CLUB_LOGOS.map((logo) => {
-                      const selected = selectedPresetId === logo.id;
-                      return (
-                        <button
-                          key={logo.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          aria-label={logo.name}
-                          className={styles.crestRow}
-                          onClick={() => handlePresetSelect(logo)}
-                        >
-                          <img
-                            src={defaultLogoUrl(logo.file)}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            className={styles.crestArt}
-                          />
-                          <span
-                            className={`${styles.crestName} ${
-                              selected ? 'sc-ink--silver' : 'sc-ink--muted'
-                            }`}
-                          >
-                            {logo.name}
-                          </span>
-                          <span
-                            className={`sc-label ${styles.crestState} ${
-                              selected ? 'sc-ink--green' : 'sc-ink--muted'
-                            }`}
-                          >
-                            {selected ? 'Selected' : 'Choose'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {!selectedPresetId && (
-                    <img
-                      src={logoPreview}
-                      alt="Custom Club Logo Preview"
-                      className={styles.customLogoPreview}
-                    />
-                  )}
-                  {logoError && (
-                    <p role="alert" className={`sc-copy sc-ink--red ${styles.copy}`}>
-                      {titleCase(logoError)}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    className={`${styles.word} ${isOptimizingLogo ? 'sc-ink--muted' : 'sc-ink--blue'}`}
-                    disabled={isOptimizingLogo}
-                    onClick={() => {
-                      haptic.medium();
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    {isOptimizingLogo ? 'Optimizing Logo' : 'Upload A Custom Logo'}
-                  </button>
-                  <span className={`sc-label sc-ink--muted ${styles.hint}`}>
-                    {selectedPresetId
-                      ? 'PNG, JPG Or WEBP, 5MB Maximum'
-                      : 'Custom Logo Selected, PNG, JPG Or WEBP, 5MB Maximum'}
-                  </span>
-
-                  {/* Hidden file input */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className={styles.hiddenInput}
-                    onChange={handleFileSelect}
-                  />
-                </div>
 
                 <section
                   className={styles.welcomeSummary}
@@ -771,73 +680,210 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                     First-Club Opening Package
                   </span>
                   <p className={`sc-copy ${styles.copy}`}>
-                    Eligible First-Time Owners Receive Server-Provisioned Classic Cash Tables, A
-                    Daily Tournament, A Funded Bad Beat Jackpot, And Funded Spin And Heads-Up
-                    Boards. Diamond Spins Still Require The Owner To Read And Accept The Wallet
-                    Agreement. The Club Lobby Shows The Authoritative Receipt After Creation.
+                    Eligible First-Time Owners Get Preloaded Cash Games, A Daily Tournament, A
+                    Funded Jackpot And Spin Boards. Diamond Spins Still Require The Owner To Read
+                    And Accept The Wallet Agreement.
                   </p>
                 </section>
 
-                {/* ── Launch Settings: switches that read On or Off. The word is
+                <p id="new-club-default-name" className={`sc-copy ${styles.copy}`}>
+                  Your Default Name Is {titleCase(defaultName)}. Rename It Under Customize Club.
+                </p>
+                <button
+                  type="button"
+                  className={`${styles.word} sc-ink--blue`}
+                  aria-expanded={customizing}
+                  aria-controls="new-club-customization"
+                  onClick={() => setCustomizing((open) => !open)}
+                >
+                  {customizing ? 'Hide Customization' : 'Customize Club (Optional)'}
+                </button>
+                <div id="new-club-customization" hidden={!customizing}>
+                  {/* ── The name, in a groove cut into the glass ─────────────── */}
+                  <div className={styles.field} style={revealStyle(0)}>
+                    <label className="sc-label sc-ink--blue" htmlFor="new-club-name">
+                      Club Name
+                    </label>
+                    <input
+                      id="new-club-name"
+                      type="text"
+                      className={styles.input}
+                      placeholder="Name Your Club"
+                      aria-describedby="new-club-default-name"
+                      value={clubName}
+                      onChange={(e) => setClubName(e.target.value)}
+                      maxLength={30}
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  <div className={styles.field} style={revealStyle(1)}>
+                    <label className="sc-label sc-ink--blue" htmlFor="new-club-description">
+                      Description (Optional)
+                    </label>
+                    <textarea
+                      id="new-club-description"
+                      className={styles.textarea}
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      maxLength={180}
+                      placeholder="What Kind Of Room Are You Building?"
+                    />
+                  </div>
+
+                  {/* ── The crest vault: rows on the glass, never a grid of tiles ── */}
+                  <div className={styles.section} style={revealStyle(2)}>
+                    <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
+                      Club Crest Vault
+                    </span>
+                    <p className={`sc-copy ${styles.copy}`}>
+                      Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A
+                      Custom Logo At Any Time.
+                    </p>
+
+                    <div
+                      className={styles.crestList}
+                      role="radiogroup"
+                      aria-label="Default Club Logos"
+                    >
+                      {DEFAULT_CLUB_LOGOS.map((logo) => {
+                        const selected = selectedPresetId === logo.id;
+                        return (
+                          <button
+                            key={logo.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            aria-label={logo.name}
+                            className={styles.crestRow}
+                            onClick={() => handlePresetSelect(logo)}
+                          >
+                            <img
+                              src={defaultLogoUrl(logo.file)}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className={styles.crestArt}
+                            />
+                            <span
+                              className={`${styles.crestName} ${
+                                selected ? 'sc-ink--silver' : 'sc-ink--muted'
+                              }`}
+                            >
+                              {logo.name}
+                            </span>
+                            <span
+                              className={`sc-label ${styles.crestState} ${
+                                selected ? 'sc-ink--green' : 'sc-ink--muted'
+                              }`}
+                            >
+                              {selected ? 'Selected' : 'Choose'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {!selectedPresetId && (
+                      <img
+                        src={logoPreview}
+                        alt="Custom Club Logo Preview"
+                        className={styles.customLogoPreview}
+                      />
+                    )}
+                    {logoError && (
+                      <p role="alert" className={`sc-copy sc-ink--red ${styles.copy}`}>
+                        {titleCase(logoError)}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      className={`${styles.word} ${isOptimizingLogo ? 'sc-ink--muted' : 'sc-ink--blue'}`}
+                      disabled={isOptimizingLogo}
+                      onClick={() => {
+                        haptic.medium();
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      {isOptimizingLogo ? 'Optimizing Logo' : 'Upload A Custom Logo'}
+                    </button>
+                    <span className={`sc-label sc-ink--muted ${styles.hint}`}>
+                      {selectedPresetId
+                        ? 'PNG, JPG Or WEBP, 5MB Maximum'
+                        : 'Custom Logo Selected, PNG, JPG Or WEBP, 5MB Maximum'}
+                    </span>
+
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className={styles.hiddenInput}
+                      onChange={handleFileSelect}
+                    />
+                  </div>
+
+                  {/* ── Launch Settings: switches that read On or Off. The word is
                    what the eye reads; aria-checked is what a screen reader
                    announces, so the word is hidden from it. ─────────────── */}
-                <div className={styles.section} style={revealStyle(3)}>
-                  <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
-                    Launch Settings
-                  </span>
-                  <div className={styles.toggleList}>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isPublic}
-                      aria-describedby="discoverable-help"
-                      className={styles.toggleRow}
-                      onClick={() => {
-                        haptic.selection();
-                        setIsPublic((on) => !on);
-                      }}
-                    >
-                      <span className={`${styles.toggleName} sc-ink--silver`}>
-                        Discoverable In Club Arena
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className={`sc-label ${styles.toggleState} ${
-                          isPublic ? 'sc-ink--green' : 'sc-ink--muted'
-                        }`}
+                  <div className={styles.section} style={revealStyle(3)}>
+                    <span className={`sc-label sc-ink--blue ${styles.sectionLabel}`}>
+                      Launch Settings
+                    </span>
+                    <div className={styles.toggleList}>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isPublic}
+                        aria-describedby="discoverable-help"
+                        className={styles.toggleRow}
+                        onClick={() => {
+                          haptic.selection();
+                          setIsPublic((on) => !on);
+                        }}
                       >
-                        {isPublic ? 'On' : 'Off'}
-                      </span>
-                    </button>
-                    <p id="discoverable-help" className={styles.toggleHelp}>
-                      On Lets Players Find The Club In Club Arena. Off Keeps Entry Invite-Only.
-                    </p>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={requiresApproval}
-                      aria-describedby="approval-help"
-                      className={styles.toggleRow}
-                      onClick={() => {
-                        haptic.selection();
-                        setRequiresApproval((on) => !on);
-                      }}
-                    >
-                      <span className={`${styles.toggleName} sc-ink--silver`}>
-                        Review Join Requests
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className={`sc-label ${styles.toggleState} ${
-                          requiresApproval ? 'sc-ink--green' : 'sc-ink--muted'
-                        }`}
+                        <span className={`${styles.toggleName} sc-ink--silver`}>
+                          Discoverable In Club Arena
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className={`sc-label ${styles.toggleState} ${
+                            isPublic ? 'sc-ink--green' : 'sc-ink--muted'
+                          }`}
+                        >
+                          {isPublic ? 'On' : 'Off'}
+                        </span>
+                      </button>
+                      <p id="discoverable-help" className={styles.toggleHelp}>
+                        On Lets Players Find The Club In Club Arena. Off Keeps Entry Invite-Only.
+                      </p>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={requiresApproval}
+                        aria-describedby="approval-help"
+                        className={styles.toggleRow}
+                        onClick={() => {
+                          haptic.selection();
+                          setRequiresApproval((on) => !on);
+                        }}
                       >
-                        {requiresApproval ? 'On' : 'Off'}
-                      </span>
-                    </button>
-                    <p id="approval-help" className={styles.toggleHelp}>
-                      On Sends New Requests To The Owner For Review Before A Player Can Join.
-                    </p>
+                        <span className={`${styles.toggleName} sc-ink--silver`}>
+                          Review Join Requests
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className={`sc-label ${styles.toggleState} ${
+                            requiresApproval ? 'sc-ink--green' : 'sc-ink--muted'
+                          }`}
+                        >
+                          {requiresApproval ? 'On' : 'Off'}
+                        </span>
+                      </button>
+                      <p id="approval-help" className={styles.toggleHelp}>
+                        On Sends New Requests To The Owner For Review Before A Player Can Join.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

@@ -262,6 +262,8 @@ export interface MemberUplineLevel {
   name: string;
   player_number: string | null;
   role: ClubRole | null;
+  /** false only for the club owner shown because the player has no agent. */
+  assigned?: boolean;
 }
 
 export interface MemberDetail {
@@ -540,8 +542,7 @@ export const ClubRosterService = {
       .map((row) => ({
         depth: num(row.depth),
         user_id: row.user_id as string,
-        name:
-          typeof row.name === 'string' && row.name.trim() !== '' ? row.name : 'Unnamed Agent',
+        name: typeof row.name === 'string' && row.name.trim() !== '' ? row.name : 'Unnamed Agent',
         player_number:
           row.player_number === null || row.player_number === undefined
             ? null

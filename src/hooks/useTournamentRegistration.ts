@@ -71,6 +71,7 @@ export interface RegisterTournamentParams {
    * player who was funded in the club that would actually be charged.
    */
   club_id?: string | null;
+  union_id?: string | null;
 }
 
 export function useTournamentRegistration() {
@@ -169,6 +170,7 @@ export function useTournamentRegistration() {
         startTime: t.start_time ?? null,
         userId: currentUserId,
         clubId: t.club_id ?? null,
+        unionId: t.union_id ?? null,
         tournamentId: t.id,
         isLateRegistration: t.is_late_registration ?? isLateStatus(t.status),
         tournamentTicketId: entryTicket?.id ?? null,

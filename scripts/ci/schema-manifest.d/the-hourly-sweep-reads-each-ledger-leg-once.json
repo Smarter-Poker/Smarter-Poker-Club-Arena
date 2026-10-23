@@ -1,0 +1,5 @@
+{
+  "_owner": "perf/reports-and-sweep. Migration 20261022162545_the_hourly_sweep_reads_each_ledger_leg_once: installed after merge through apply-merged-migration; the conservation checkpoint tables and their advance function.",
+  "tables": ["ca_ledger_audit_marks", "ca_ledger_audit_member_net", "ca_ledger_audit_bbj_pool"],
+  "functions": ["fn_ca_ledger_audit_checkpoint_advance"]
+}

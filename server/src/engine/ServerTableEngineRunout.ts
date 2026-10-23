@@ -992,7 +992,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const leaseGeneration = lease?.verified === true ? lease.generation : null;
     for (const seat of seats) {
       const seated = this.seatedPlayers.find((p) => p.seat_number === seat);
-      if (!seated?.is_horse) continue;
+      // The account's own client discards for itself (isOwnClientControlling).
+      if (!seated?.is_horse || this.isOwnClientControlling(seated.user_id)) continue;
       const enginePlayer = hcState.players.find((p) => p.seat === seat);
       if (!enginePlayer || enginePlayer.is_folded || enginePlayer.cards.length !== 3) continue;
       const delay = 1200 + Math.random() * Math.min(4000, Math.max(1500, timeoutMs * 0.3));
@@ -3625,7 +3626,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected scheduleHorseInsuranceResponse(leaderId: string): void {
     const seated = this.seatedPlayers.find((p) => p.user_id === leaderId);
-    if (!seated?.is_horse) return;
+    if (!seated?.is_horse || this.isOwnClientControlling(leaderId)) return;
     const handAtOffer = this.handCount;
     setTimeout(
       () => {

@@ -24,11 +24,15 @@ describe('Horse strength demand leaves hosted capacity for required checks and p
       expect(Object.keys(workflow.on), file).toEqual(['workflow_dispatch']);
       expect(workflow.jobs.league.strategy['max-parallel'], file).toBe(8);
       expect(workflow.jobs.league.strategy['fail-fast'], file).toBe(false);
-      // The plan finishes before the matrix starts, so these cannot add to
-      // the eight-runner bound. No independent job may escape that bound.
+      // The plan finishes before the matrix starts and the assembler starts
+      // after it ends, so neither can add to the eight-runner bound. No
+      // independent job may escape that bound.
       expect(Object.keys(workflow.jobs).sort(), file).toEqual(
-        file.includes('phase8-') ? ['league'] : ['league', 'plan']
+        file.includes('phase8-') ? ['league'] : ['assemble', 'league', 'plan']
       );
+      if (workflow.jobs.assemble) {
+        expect(workflow.jobs.assemble.needs, file).toEqual(['plan', 'league']);
+      }
       if (workflow.jobs.plan) {
         expect(workflow.jobs.league.needs, file).toBe('plan');
         expect(workflow.jobs.league.strategy.matrix, file).toBe(

@@ -82,12 +82,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 /** Open the card through the one path every surface uses, and return it. */
-async function openCard(unit: number | null) {
+async function openCard(
+  unit: number | null,
+  event: typeof bountyEvent & { union_id?: string } = bountyEvent
+) {
   mocks.readUnit.mockResolvedValue(unit);
   render(<SignUpHost />);
   const hook = renderHook(() => useTournamentRegistration());
   act(() => {
-    void hook.result.current.register(bountyEvent);
+    void hook.result.current.register(event);
   });
   const dialog = await screen.findByRole('dialog');
   expect(mocks.readUnit).toHaveBeenCalledWith('tournament-1');
@@ -98,6 +101,26 @@ const head = (dialog: HTMLElement) =>
   dialog.querySelector('.signup-value--bounty')?.textContent ?? null;
 
 describe('the sign up card speaks the unit the entry is priced in', () => {
+  it.each(['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'])(
+    'shows the approved exact entry and permits a 5.50 balance for %s',
+    async (name) => {
+      mocks.readBalance.mockResolvedValue({ balance: 5.5, source: 'rpc' });
+      const dialog = await openCard(CHIP_UNIT_CENTS, {
+        ...bountyEvent,
+        name,
+        buy_in_amount: 5,
+        buy_in_fee: 0.5,
+        bounty_amount: 2,
+        club_id: 'member-club',
+        union_id: 'fade0000-0000-0000-0000-000000000001',
+      });
+      expect(dialog.textContent).toContain('5.50 (5 + 0.50)');
+      await waitFor(() => expect(mocks.readBalance).toHaveBeenCalled());
+      expect(screen.getByRole('button', { name: 'Confirm' })).not.toBeDisabled();
+      expect(mocks.registerPlayer).not.toHaveBeenCalled();
+    }
+  );
+
   it('a chip event reads exactly as before: head, balance and the chip wallet', async () => {
     const dialog = await openCard(CHIP_UNIT_CENTS);
     expect(head(dialog)).toBe('5 Chips');

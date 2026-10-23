@@ -133,8 +133,8 @@
 /* The state, printed. Engraved silver when the setting is on, dim when it is
    off - the same pair the master uses for a live figure and a dead one. */
 .tsp-state {
-  color: #4a5462;
-  -webkit-text-fill-color: #4a5462;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
   font-size: 3.2cqw;
   font-weight: 800;
   letter-spacing: 0.14em;

@@ -79,6 +79,7 @@ import { personaHash } from '../engine/HorsePersona.js';
 import { resolveHorseStyle } from '../engine/HorseLogic.js';
 import { HAND_RANKINGS } from '../engine/PokerEngine.js';
 import { readTableTalkGate } from './HorseTableTalkGate.js';
+import { tableStateHub } from '../transport/TableStateHub.js';
 import { humanBeat, humanBeatMs } from './horsePacing.js';
 import {
   personalChance,
@@ -134,6 +135,8 @@ export const SPEAK_CHANCE_PCT: Readonly<Record<TalkEvent, number>> = {
   arrival: 30,
   pot_lost: 28,
   pot_won: 14,
+  tilt: 45,
+  heater: 35,
   all_in: 22,
 };
 /** The longest line that may be written. The client's input cap is 200. */
@@ -438,6 +441,8 @@ const EVENT_ORDER: readonly TalkEvent[] = [
   'big_pot_won',
   'showdown_loss',
   'big_hand_shown',
+  'tilt',
+  'heater',
   'pot_lost',
   'pot_won',
   'arrival',
@@ -704,6 +709,7 @@ export function moodOf(event: TalkEvent): Mood {
   switch (event) {
     case 'pot_won':
     case 'big_pot_won':
+    case 'heater':
       return 'won';
     case 'all_in':
       return 'luck';
@@ -755,6 +761,8 @@ export interface TableMemory {
   lastLineHandsSeen: number | null;
   /** horseId -> handsSeen at that horse's last successful claim here. */
   lastLineByHorse: Map<string, number>;
+  /** horseId -> showdown streak here: +n won n in a row, -n lost n in a row. */
+  streak: Map<string, number>;
 }
 
 const tables = new Map<string, TableMemory>();
@@ -778,6 +786,7 @@ function tableMemory(tableId: string, now: number): TableMemory {
       seated: new Map(),
       lastLineHandsSeen: null,
       lastLineByHorse: new Map(),
+      streak: new Map(),
     };
     tables.set(tableId, mem);
   }
@@ -831,6 +840,65 @@ function rememberClaim(mem: TableMemory, horseId: string, now: number): void {
   mem.lastLineHandsSeen = mem.handsSeen;
   mem.lastLineByHorse.set(horseId, mem.handsSeen);
   claimsByHorse.set(horseId, [...recentClaims(horseId, now), now]);
+}
+
+/**
+ * Streaks at this table, from the showdowns this process watched: a horse that
+ * won counts up, a horse that showed down and lost counts down, and the other
+ * direction resets it. Only showdowns move a streak; a fold moves nothing.
+ */
+function noteStreaks(mem: TableMemory, input: TableTalkInput): void {
+  const winners = new Set(input.winners.map((w) => w.userId));
+  const horses = new Set(input.seated.filter((s) => s.isHorse).map((s) => s.userId));
+  for (const id of [...mem.streak.keys()]) if (!horses.has(id)) mem.streak.delete(id);
+  if (input.showdownResults.length === 0) return;
+  for (const r of input.showdownResults) {
+    if (!horses.has(r.userId)) continue;
+    const cur = mem.streak.get(r.userId) ?? 0;
+    if (winners.has(r.userId)) mem.streak.set(r.userId, cur > 0 ? cur + 1 : 1);
+    else mem.streak.set(r.userId, cur < 0 ? cur - 1 : -1);
+  }
+}
+
+/** Three showdowns in a row: an ordinary loss is said as tilt, an ordinary win as a heater. */
+export const STREAK_HANDS = 3;
+
+export function withStreaks(candidates: TalkCandidate[], mem: TableMemory): TalkCandidate[] {
+  return candidates.map((c) => {
+    const s = mem.streak.get(c.speakerId) ?? 0;
+    if (c.event === 'pot_lost' && s <= -STREAK_HANDS) return { ...c, event: 'tilt' };
+    if (c.event === 'pot_won' && s >= STREAK_HANDS) return { ...c, event: 'heater' };
+    return c;
+  });
+}
+
+/**
+ * Is anybody watching this table? A browser on the table is a subscriber of
+ * the engine's TableStateHub; a horse has no browser, so any subscriber is a
+ * person. Measured 2026-10-22 before this rule: 879 horse lines and 1,470
+ * horse throws in one hour, 874 of the lines at tables nobody had open.
+ */
+let audienceProbe: (tableId: string) => boolean = (tableId) =>
+  tableStateHub.subscriberCount(tableId) > 0;
+
+export function hasAudience(tableId: string): boolean {
+  try {
+    return audienceProbe(tableId);
+  } catch {
+    return true;
+  }
+}
+
+/** Test hook. */
+export function _setAudienceForTests(probe: ((tableId: string) => boolean) | null): void {
+  audienceProbe = probe ?? ((tableId) => tableStateHub.subscriberCount(tableId) > 0);
+}
+
+/** With nobody watching, one hand in ten that would have a line keeps it. */
+export const QUIET_ROOM_PCT = 10;
+
+function quietRoomStillSpeaks(tableId: string, handNumber: number): boolean {
+  return personaHash(`${tableId}|${handNumber}|quiet-room`) % 100 < QUIET_ROOM_PCT;
 }
 
 /** A template the sanitizer refused is reported once per process, not per hand. */
@@ -1062,7 +1130,8 @@ export type TalkOutcome =
   | TableRefusal
   | 'gate_closed'
   | 'no_event'
-  | 'no_speaker';
+  | 'no_speaker'
+  | 'no_audience';
 
 interface SayRequest {
   table: TalkTable;
@@ -1076,6 +1145,11 @@ interface SayRequest {
 }
 
 async function say(req: SayRequest): Promise<TalkOutcome> {
+  // All entry points share the speaker's own silence habit, including shove
+  // chat (whose event roll is owned by gestures) and arrival greetings.
+  if (speakChanceOverride === null && personalChance(req.speaker.userId, 100) === 0) {
+    return 'no_event';
+  }
   const voice = voiceFor(req.speaker.horseProfile, req.speaker.userId);
   const chosen = chooseLine(req.event, voice, req.speaker.userId, req.handNumber, req.facts);
   if (!chosen) return 'no_line';
@@ -1139,16 +1213,23 @@ export const speakAtTheFelt = bindToProcessRoot(
     try {
       const mem = tableMemory(input.table.tableId, now);
       noteHand(mem, input.handNumber, input.seated, true);
+      noteStreaks(mem, input);
       const refusal = tableRefusal(input.table);
       if (refusal) return refusal;
+      const audience = hasAudience(input.table.tableId);
       const pick = pickCandidate(
-        detectEvents(input).filter((c) =>
+        withStreaks(detectEvents(input), mem).filter((c) =>
           speaksThisTime(c.event, c.speakerId, input.table.tableId, input.handNumber)
         ),
         input.table.tableId,
         input.handNumber
       );
       if (!pick) return 'no_event';
+      // Nobody is looking: a line costs writes and reaches no one. Keep a
+      // trickle so the chat a player sees on arrival is not empty.
+      if (!audience && !quietRoomStillSpeaks(input.table.tableId, input.handNumber)) {
+        return 'no_audience';
+      }
       const gate = await readTableTalkGate(now);
       if (!gate.allowed) return 'gate_closed';
       const speaker = input.seated.find((s) => s.userId === pick.speakerId);
@@ -1193,17 +1274,15 @@ export const greetArrival = bindToProcessRoot(
         )
         .sort((a, b) => a.userId.localeCompare(b.userId));
       if (greeters.length === 0) return 'no_speaker';
-      if (
-        !speaksThisTime('arrival', input.arrivedUserId, input.table.tableId, input.handNumber)
-      ) {
-        return 'no_event';
-      }
-      const gate = await readTableTalkGate(now);
-      if (!gate.allowed) return 'gate_closed';
       const speaker =
         greeters[
           personaHash(`${input.table.tableId}|${input.handNumber}|arrival`) % greeters.length
         ];
+      if (!speaksThisTime('arrival', speaker.userId, input.table.tableId, input.handNumber)) {
+        return 'no_event';
+      }
+      const gate = await readTableTalkGate(now);
+      if (!gate.allowed) return 'gate_closed';
       return await say({
         table: input.table,
         handNumber: input.handNumber,

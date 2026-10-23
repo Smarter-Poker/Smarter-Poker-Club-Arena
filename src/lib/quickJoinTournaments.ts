@@ -118,7 +118,7 @@ export async function readTournamentContext(
   const { data: t, error: tErr } = await supabase
     .from('tournaments')
     .select(
-      'id, club_id, buy_in_amount, buy_in_fee, game_type, variant, tournament_type, format_contract, max_players'
+      'id, name, club_id, union_id, buy_in_amount, buy_in_fee, game_type, variant, tournament_type, format_contract, max_players'
     )
     .eq('id', tbl.tournament_id as string)
     .maybeSingle();
@@ -142,7 +142,7 @@ export async function readTournamentContext(
   return {
     id: String(t.id),
     clubId: (t.club_id as string | null) ?? null,
-    buyIn: totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
+    buyIn: totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0, t),
     variant: (t.game_type as string | null) ?? null,
     format,
   };
@@ -162,7 +162,7 @@ export function toQuickJoinTournamentCandidate(
     name: titleCase(t.name) || 'Tournament',
     variant: t.game_type ?? null,
     format: getTournamentFormatKind(t),
-    buyIn: totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
+    buyIn: totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0, t),
     entrants,
     capacity: getTournamentEntryCapacity(t),
     entryOpen: !isTournamentEntryUnavailable(t, entrants) && ENTRY_OPEN_KEYS.has(status.key),
@@ -242,7 +242,7 @@ export async function quickJoinTournamentRows(
       id: t.id,
       tournamentId: t.id,
       name: t.name,
-      stakes: formatBuyInShort(Number(raw?.buy_in_amount) || 0, Number(raw?.buy_in_fee) || 0),
+      stakes: formatBuyInShort(Number(raw?.buy_in_amount) || 0, Number(raw?.buy_in_fee) || 0, raw),
       players: entrants,
       max: cap,
       seats:

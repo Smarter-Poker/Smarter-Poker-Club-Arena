@@ -194,6 +194,7 @@ export interface UpcomingTournament {
   name: string;
   startsAt: number;
   clubId: string | null;
+  unionId?: string | null;
   /** tournaments.buy_in_amount - the PRIZE side only. */
   buyIn: number;
   /** tournaments.buy_in_fee - the house cut. */
@@ -222,7 +223,7 @@ export function startingSoonItem(t: UpcomingTournament): TickerItem {
      line used to prefix it unconditionally, so the live rail read
      "Buy-In Free Buy". The label already IS the sentence; it does not want a
      field name in front of it. */
-  const cost = formatBuyInShort(t.buyIn, t.buyInFee);
+  const cost = formatBuyInShort(t.buyIn, t.buyInFee, t);
   const costField = /^\d/.test(cost) ? `buy-in ${cost}` : cost;
   return item({
     id: `soon-${t.id}`,

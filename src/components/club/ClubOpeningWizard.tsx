@@ -1,6 +1,10 @@
 import { useCashRakePolicyVersion } from '../../hooks/useCashRakePolicyVersion';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  assertDefaultClubOpeningReady,
+  defaultClubOpeningInput,
+} from '../../services/ClubQuickStartService';
 import { requiredSeedForStake, SPIN_BOARD_STAKES } from '../../services/SpinActivationService';
 import {
   clubOpeningSetupService,
@@ -133,6 +137,7 @@ export default function ClubOpeningWizard({
   const toast = useToast();
   const cashPolicyReady = useCashRakePolicyVersion() === 1;
   const [step, setStep] = useState(0);
+  const [customizing, setCustomizing] = useState(false);
   const [tagline, setTagline] = useState(() => (initialTagline ?? '').trim().slice(0, 72));
   const [rakeMode, setRakeMode] = useState<'house' | 'custom'>('house');
   const [rakePercent, setRakePercent] = useState(10);
@@ -343,28 +348,30 @@ export default function ClubOpeningWizard({
     remaining,
   ]);
 
-  const finish = async () => {
+  const finish = async (useDefaults = false) => {
     if (stepError || saving || savingRef.current) return;
-    const input: ClubOpeningSetupInput = {
-      clubId,
-      tagline: normalizedTagline,
-      rakePercent: rakeMode === 'house' ? -1 : rakePercent,
-      rakeCapBB: rakeMode === 'house' ? -1 : rakeCap,
-      bbjEnabled,
-      bbjSeed,
-      spinsEnabled,
-      spinSeed,
-      spinMaxStake,
-      promoEnabled,
-      promoType,
-      promoName: promoName.trim(),
-      promoDescription: promoDescription.trim(),
-      promoBudget,
-      leaderboardRewardsEnabled,
-      leaderboardMetric,
-      leaderboardPrizeBudget,
-      leaderboardOverlayEnabled: false,
-    };
+    const input: ClubOpeningSetupInput = useDefaults
+      ? defaultClubOpeningInput(clubId, initialTagline, welcomePackage ?? null)
+      : {
+          clubId,
+          tagline: normalizedTagline,
+          rakePercent: rakeMode === 'house' ? -1 : rakePercent,
+          rakeCapBB: rakeMode === 'house' ? -1 : rakeCap,
+          bbjEnabled,
+          bbjSeed,
+          spinsEnabled,
+          spinSeed,
+          spinMaxStake,
+          promoEnabled,
+          promoType,
+          promoName: promoName.trim(),
+          promoDescription: promoDescription.trim(),
+          promoBudget,
+          leaderboardRewardsEnabled,
+          leaderboardMetric,
+          leaderboardPrizeBudget,
+          leaderboardOverlayEnabled: false,
+        };
     const fingerprint = JSON.stringify(input);
     if (!requestKeyRef.current || requestKeyRef.current.fingerprint !== fingerprint) {
       requestKeyRef.current = { fingerprint, key: crypto.randomUUID() };
@@ -375,6 +382,8 @@ export default function ClubOpeningWizard({
     const lifecycle = lifecycleRef.current;
     const isCurrent = () => lifecycleRef.current === lifecycle;
     try {
+      if (useDefaults) await assertDefaultClubOpeningReady();
+      if (!isCurrent()) return;
       const result = await clubOpeningSetupService.complete(input, operationId);
       if (!isCurrent()) return;
       requestKeyRef.current = null;
@@ -412,8 +421,8 @@ export default function ClubOpeningWizard({
       toast.success('Club Opening Setup Completed');
       onComplete({
         clubBankAfter: Number(result.club_bank_after),
-        spinsEnabled,
-        tagline: normalizedTagline,
+        spinsEnabled: input.spinsEnabled,
+        tagline: input.tagline,
       });
     } catch (error) {
       reportError(error, 'ClubOpeningWizard.complete');
@@ -445,28 +454,44 @@ export default function ClubOpeningWizard({
         eyebrow="Club Arena / Opening Pit Boss"
         title={`Open ${titleCase(clubName)}`}
         titleId="club-setup-title"
-        subtitle="Set Every System Before Opening"
-        pill={`Step ${step + 1} Of ${STEPS.length}`}
+        subtitle="Ready-Made Defaults, Optional Customization"
+        pill={customizing ? `Step ${step + 1} Of ${STEPS.length}` : 'Quick Start'}
         pillInk="blue"
         crest="club"
         plates={{
           secondary: {
-            label: step === 0 ? 'Close' : 'Back',
+            label: !customizing ? 'Customize' : step === 0 ? 'Close' : 'Back',
             ink: 'silver',
-            onClick: step === 0 ? onClose : () => setStep((value) => Math.max(0, value - 1)),
+            onClick: !customizing
+              ? () => setCustomizing(true)
+              : step === 0
+                ? onClose
+                : () => setStep((value) => Math.max(0, value - 1)),
             disabled: saving,
-            'aria-label': step === 0 ? 'Close Opening Wizard' : 'Previous Opening Step',
+            'aria-label': !customizing
+              ? 'Customize Club Setup'
+              : step === 0
+                ? 'Close Opening Wizard'
+                : 'Previous Opening Step',
           },
           primary: {
-            label: step < STEPS.length - 1 ? 'Continue' : saving ? 'Opening Club...' : 'Open Club',
+            label: saving
+              ? 'Opening Club...'
+              : !customizing
+                ? 'Use Defaults'
+                : step < STEPS.length - 1
+                  ? 'Continue'
+                  : 'Open Club',
             ink: 'white',
-            onClick:
-              step < STEPS.length - 1
+            onClick: !customizing
+              ? () => finish(true)
+              : step < STEPS.length - 1
                 ? () => setStep((value) => Math.min(STEPS.length - 1, value + 1))
-                : finish,
+                : () => finish(),
             disabled: Boolean(stepError) || saving,
-            'aria-label':
-              step < STEPS.length - 1
+            'aria-label': !customizing
+              ? 'Use Default Club Setup'
+              : step < STEPS.length - 1
                 ? 'Continue Opening Setup'
                 : 'Open Club And Complete Opening Setup',
           },
@@ -497,46 +522,41 @@ export default function ClubOpeningWizard({
             )}
           </div>
 
-          <nav className="club-setup-wizard__steps" aria-label="Club Opening Steps" ref={stepsRef}>
-            {STEPS.map((label, index) => (
-              <button
-                key={label}
-                type="button"
-                className={index === step ? 'is-current' : index < step ? 'is-complete' : ''}
-                aria-current={index === step ? 'step' : undefined}
-                onClick={() => index < step && !saving && setStep(index)}
-                disabled={index > step || saving}
-              >
-                <span>{index < step ? 'Done' : String(index + 1).padStart(2, '0')}</span>
-                {label}
-              </button>
-            ))}
-          </nav>
+          {customizing && (
+            <nav
+              className="club-setup-wizard__steps"
+              aria-label="Club Opening Steps"
+              ref={stepsRef}
+            >
+              {STEPS.map((label, index) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={index === step ? 'is-current' : index < step ? 'is-complete' : ''}
+                  aria-current={index === step ? 'step' : undefined}
+                  onClick={() => index < step && !saving && setStep(index)}
+                  disabled={index > step || saving}
+                >
+                  <span>{index < step ? 'Done' : String(index + 1).padStart(2, '0')}</span>
+                  {label}
+                </button>
+              ))}
+            </nav>
+          )}
 
           <main className="club-setup-wizard__main">
             {step === 0 && (
               <section className="club-setup-wizard__panel club-setup-wizard__intro">
-                <span className="club-setup-wizard__eyebrow">Opening Capital Control</span>
-                <h2 className="sc-ink--silver">Configure The Systems That Move Club Chips</h2>
+                <span className="club-setup-wizard__eyebrow">Your Club, Ready To Invite</span>
+                <h2 className="sc-ink--silver">Start With The Defaults</h2>
                 <p>
-                  This Guided Setup Configures Rake, Bad Beat Jackpot Funding, Spin Coverage, Your
-                  First Promotion, And Leaderboard Rewards. Every Enabled Treasury Is Funded From
-                  The Club Bank And Recorded In The Opening Ledger.
+                  Use The House Rake Schedule And A Ready-Made Tag Line. Keep Any Already-Funded
+                  Starter Games, Jackpot And Spin Boards. No Extra Club Bank Transfers.
                 </p>
-                <div className="club-setup-wizard__assurances">
-                  <article>
-                    <strong>100</strong>
-                    <span>Minimum BBJ Seed</span>
-                  </article>
-                  <article>
-                    <strong>100+</strong>
-                    <span>Minimum Spin Seed</span>
-                  </article>
-                  <article>
-                    <strong>One</strong>
-                    <span>Atomic Setup Commit</span>
-                  </article>
-                </div>
+                <p>
+                  Promotions And Paid Leaderboard Prizes Stay Off. Diamond Spins Still Need Your
+                  Wallet Agreement. Change Branding, Games And Optional Features Later.
+                </p>
               </section>
             )}
 

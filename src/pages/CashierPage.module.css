@@ -275,7 +275,7 @@
 
 .console :where(button:not(:global(.sc-plate))):focus-visible {
   outline: min(0.6cqw, 3px) solid #8fd4ff;
-  outline-offset: -0min (6cqw, 30px);
+  outline-offset: calc(-1 * min(0.6cqw, 3px));
 }
 
 /* ── Fields: one engraved rule under the value, no frame ─────────────── */
@@ -495,6 +495,15 @@
   flex: 1 1 18%;
   font-size: min(3.6cqw, 18px);
   font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Wallet choices must show which destination the next confirmation uses. */
+.presetBtn[role='radio'][aria-checked='true'] {
+  color: #f4f7fb;
+  text-decoration: underline;
+  text-decoration-color: #45adff;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.3em;
 }
 
 .loadMoreBtn,

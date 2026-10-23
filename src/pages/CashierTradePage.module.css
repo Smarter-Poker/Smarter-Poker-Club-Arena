@@ -627,6 +627,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   min-height: 44px;
   color: var(--ink-muted);
   font-size: min(3cqw, 15px);
@@ -641,13 +642,10 @@
    checkbox stays in the tree for keyboard and assistive tech, but it does not
    paint a white box on the glass. */
 .groupToggle input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
   margin: 0;
-  overflow: hidden;
-  opacity: 0;
-  clip-path: inset(50%);
 }
 
 .groupToggle:has(input:checked) {

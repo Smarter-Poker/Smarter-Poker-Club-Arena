@@ -139,17 +139,18 @@ describe('a revealed hand reads left to right at every seat', () => {
     );
   });
 
-  it('shows every card whole - the step never tapers by card count', () => {
-    // The regression: 1.06 for a pair but 0.48 at 3-4 cards and 0.40 at 5-6,
-    // which covers 52-60% of every card after the first. Dan asked for "every
-    // single card in the hand" to be clearly shown, so the step is one number.
+  it('keeps every corner index readable - the step never tapers by card count', () => {
+    // Dan 2026-10-22: shown hands are board-sized, "overlapped but not covered
+    // so all cards are CLEARLY READABLE". The deck's corner index (rank over
+    // suit) reaches 38% of a card at its widest, so a step under 0.42 cuts a
+    // suit; one step for every hand size, never tapered by a :has() guard.
     const revealed = rulesFor('.seat__cards--opponent.seat__cards--revealed');
     const step = /--vh-step-f:\s*([\d.]+)/.exec(revealed[0].body);
     expect(step, 'the revealed cluster must set its own step').toBeTruthy();
     expect(
       Number(step![1]),
-      'a step under 1 means one card covers part of the next'
-    ).toBeGreaterThanOrEqual(1);
+      "a step under 0.42 covers part of the next card's rank and suit"
+    ).toBeGreaterThanOrEqual(0.42);
 
     const taperers = RULES.filter(
       (r) =>
@@ -735,5 +736,33 @@ describe('the dealer button never stands on a name plate', () => {
     // dealerButtonPosition itself (tableGeometry.overlapsBoard) and the module
     // never hands the wrapper a puck on the cards to move.
     expect(moved, 'exactly the 84 measured overlaps move, and nothing else').toBe(84);
+  });
+});
+
+describe('chip contributions do not animate a negative amount', () => {
+  it.each([false, true])('updates the stack without a deduction float (hero=%s)', (isHero) => {
+    const seat = (stack: number, id = 'v1') => (
+      <SeatSlot
+        seatNumber={3}
+        player={villain({ id, stack, isHero })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+      />
+    );
+    const { container, rerender } = render(seat(100));
+    rerender(seat(98));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
+    expect(container.querySelector('.seat__stack--down')).toBeNull();
+    expect(container.querySelector('.seat__stack')?.textContent).toContain('98');
+    // A gain is still shown, and a following contribution clears it.
+    rerender(seat(110));
+    expect(container.querySelector('.seat__stack-delta--win')?.textContent).toContain('+12');
+    rerender(seat(108));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
+    rerender(seat(120));
+    expect(container.querySelector('.seat__stack-delta--win')).not.toBeNull();
+    rerender(seat(500, 'new-occupant'));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
   });
 });

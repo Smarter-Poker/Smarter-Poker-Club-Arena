@@ -62,7 +62,9 @@ describe('new club opening wizard', () => {
     expect(wizardCss).toContain('min-height: 100dvh');
     expect(wizardCss).toMatch(/grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
     expect(wizardCss).not.toContain('clip-path');
-    expect(wizard).toContain('pill={`Step ${step + 1} Of ${STEPS.length}`}');
+    expect(wizard).toContain(
+      "pill={customizing ? `Step ${step + 1} Of ${STEPS.length}` : 'Quick Start'}"
+    );
   });
 
   it('asks every unanswered financial question and safely reuses welcome-package funding', () => {

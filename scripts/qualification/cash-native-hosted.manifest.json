@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230240,
-      "sha256": "deff1559014160324bf95a0ba3a220085d97a6afcf3f11c9b4c3ccd568928221"
+      "bytes": 230499,
+      "sha256": "d10046590e82ac9e13b7b5e5d512636944896c237128bc6df345b56e80b4e4b3"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3607,6 +3607,17 @@
     "current_classifier": {
       "bytes": 37913,
       "sha256": "1325da3a525cd7e3523fdf26a70dddbe4ce62952da4fe7a3a6a5291676c20e40"
+    }
+  },
+  "quickClubOpeningEnforcement20261022": {
+    "reason": "Add the isolated funded-reserve reuse regression to accounting shard 2. Current workflow input identity only; all existing suite commands, financial sources, assertions and historical qualification states are preserved. No financial certificate restamp.",
+    "previous": {
+      "bytes": 229951,
+      "sha256": "53d246ff4d64aee62cab01069a4ea967b20dc7bbdd4f396d25683d5ae5d4b5d6"
+    },
+    "current": {
+      "bytes": 230210,
+      "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
     }
   }
 }

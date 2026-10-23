@@ -73,7 +73,7 @@ import {
   type CommittedCashSeat,
   type ImminentBooking,
 } from './HorseTournamentCommitment.js';
-import { isPloVariant, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
+import { cashRosterAllows, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -919,9 +919,11 @@ export class HorseSessionRotator {
      *
      * "KEEP IT UNDER 35-50 TOTAL HORSES AT ANY TIME FOR ALL GAME TYPES" and
      * "ONLY ALLOW THE HORSES THAT HAVE SHOWN TO BE PROFITABLE PLAYING PLO PLAY
-     * THOSE GAMES." The fleet cap and the bench stop NEW seats; this pass
-     * clears the old ones. A benched horse at any cash table, and a horse off
-     * the PLO roster at a PLO cash table, stands up through the engine's own
+     * THOSE GAMES." then "THEY CAN PLAY TOURNAMENTS, JUST NOT CASH GAMES."
+     * The cash roster and the seat door stop NEW cash seats; this pass clears
+     * the old ones. A horse off the 45-horse cash roster (or benched) at any
+     * cash table, and a horse off the PLO roster at a PLO cash table, stands
+     * up through the engine's own
      * leaveTable() - folds if mid-hand, cashes out at the end of the hand -
      * exactly like every other departure here. Tournament seats are not in
      * byTable, so nobody is pulled out of a running event. An unread PLO
@@ -938,7 +940,7 @@ export class HorseSessionRotator {
         const uid = String(seat.user_id ?? '');
         if (!uid || !horseIds.has(uid)) continue;
         if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
-        const benched = benchedIds.has(uid);
+        const benched = benchedIds.has(uid) || cashRosterAllows(uid) === false;
         const offPlo = ploRosterAllows(uid, t?.game_variant) === false;
         if (!benched && !offPlo) continue;
         try {
@@ -956,7 +958,7 @@ export class HorseSessionRotator {
     }
     if (rosterLeaves > 0) {
       console.log(
-        `[SessionRotator] ${rosterLeaves} horse(s) leaving cash seats - benched off the roster or off the PLO roster`
+        `[SessionRotator] ${rosterLeaves} horse(s) leaving cash seats - off the cash roster or off the PLO roster`
       );
     }
 

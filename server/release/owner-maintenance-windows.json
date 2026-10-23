@@ -1,13 +1,4 @@
 {
   "version": 1,
-  "windows": [
-    {
-      "id": "2026-10-23-river-nuts-v2",
-      "ownerOrder": "Dan, 2026-10-23 11:07 America/Chicago: \"NO, I WANT YOU TO RUN THIS NOW, DO A 11:55 ENGINE RESET AND MAKE THIS LIVE NOW.\" (river nuts always bet full, PR #7788)",
-      "contains": "6416f795ba314647f381856f1dd645be48920f22",
-      "notBefore": "2026-10-23T17:00:00Z",
-      "notAfter": "2026-10-23T21:30:00Z",
-      "announceAtChicagoMinutes": [53, 54]
-    }
-  ]
+  "windows": []
 }

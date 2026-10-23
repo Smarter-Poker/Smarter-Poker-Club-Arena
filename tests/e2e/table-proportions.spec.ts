@@ -1051,7 +1051,9 @@ for (const width of [320, 375, 393, 430, 480])
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
           );
         });
-        if (revealed && villainCards >= 5) {
+        // Dan 2026-10-23: shown cards never move once tabled, in every game.
+        // Hold'em-sized shown hands get the same no-movement proof as PLO5/6.
+        if (revealed) {
           const measure = () =>
             page.locator('.seat__cards--revealed .seat__card').evaluateAll((cards) =>
               cards.map((card) => {
@@ -1062,10 +1064,11 @@ for (const width of [320, 375, 393, 430, 480])
           const before = await measure();
           expect(before.length).toBeGreaterThanOrEqual(villainCards);
           // Same dimensions at every chair, including the all-in hero.
-          for (const card of before) {
-            expect(card.w).toBeCloseTo(before[0].w, 1);
-            expect(card.h).toBeCloseTo(before[0].h, 1);
-          }
+          if (villainCards >= 5)
+            for (const card of before) {
+              expect(card.w).toBeCloseTo(before[0].w, 1);
+              expect(card.h).toBeCloseTo(before[0].h, 1);
+            }
           await page.evaluate(() => {
             document.dispatchEvent(new Event('fixture-runout'));
             const pot = document.querySelector('.pot-display')!;
@@ -1092,7 +1095,7 @@ for (const width of [320, 375, 393, 430, 480])
             .evaluateAll((rows) =>
               rows.map((row) => parseFloat(getComputedStyle(row).getPropertyValue('--vh-step-f')))
             );
-          expect(steps.every((step) => step >= 0.5)).toBe(true);
+          if (villainCards >= 5) expect(steps.every((step) => step >= 0.5)).toBe(true);
           await page.evaluate(() => {
             document
               .querySelectorAll('.seat')

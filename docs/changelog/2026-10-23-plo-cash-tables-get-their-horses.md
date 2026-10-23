@@ -45,5 +45,7 @@ second overload. That refresh also stripped the PLO variants from 41 tags,
 undoing the low-stakes opening. The migration is now built on the installed
 bodies with only this change's edits, and it no longer strips any PLO tag.
 
-The engine half rides an owner-ordered window (`server/release/owner-maintenance-windows.json`,
-entry `2026-10-23-plo-cash-tables`) so it does not wait for 04:00.
+The engine half (low-stakes PLO open to every horse, #7813) ships in the
+04:00 America/Chicago daily maintenance: the latest owner instruction is
+"Keep 4 AM; no additional break" (#7817). Until then the database side is
+live and the PLO list horses, freed from tournaments, fill the PLO tables.

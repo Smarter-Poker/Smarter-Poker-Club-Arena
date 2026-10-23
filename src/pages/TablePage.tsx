@@ -629,6 +629,7 @@ import {
   MYSTERY_BOUNTIES_LIVE_TEXT,
   claimMysteryLiveAnnouncement,
   mysteryChestsLiveFromRow,
+  mysteryChestsOnlyFromRow,
   seatBountyBadge,
   seatedPlayersSignature,
 } from '../utils/mysteryBountyTable';
@@ -1820,6 +1821,8 @@ function LiveTablePage({
      flipped by the engine's `mystery_bounty_activated`; drives the seat badges
      and the one popup per event per table. See utils/mysteryBountyTable. */
   const [mysteryChestsLive, setMysteryChestsLive] = useState(false);
+  /* Chests only (Dan 2026-10-22): no head is advertised before the money. */
+  const [mysteryChestsOnly, setMysteryChestsOnly] = useState(false);
   const mysteryLiveAnnouncedRef = useRef<Set<string>>(new Set());
   /* The bounty re-read the load effect publishes; the seat-list effect calls it
      when the set of seated players changes (utils/mysteryBountyTable rule 3). */
@@ -13689,7 +13692,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13974,7 +13977,10 @@ function LiveTablePage({
             setSeatFirstBuyIn(null);
           }
 
-          if (isMounted) setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
+          if (isMounted) {
+            setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
+            setMysteryChestsOnly(mysteryChestsOnlyFromRow(tournData));
+          }
           if (
             tournData &&
             (tournData.is_bounty || tournData.is_pko || tournData.is_mystery_bounty)
@@ -15693,6 +15699,7 @@ function LiveTablePage({
       }
       bountyMapRefreshRef.current = null;
       setMysteryChestsLive(false);
+      setMysteryChestsOnly(false);
       addOnPresentationEpochRef.current += 1;
       refreshPersistedAddOnOfferRef.current = null;
       // P1-4 FIX: tear down the tournament channels in the SAME effect that
@@ -26763,6 +26770,7 @@ function LiveTablePage({
                     seatBountyBadge({
                       isBountyTournament: Boolean(tableState.isBountyTournament),
                       mysteryChestsLive,
+                      chestsOnly: mysteryChestsOnly,
                       playerId: player?.id,
                       playerStatus: player?.status,
                       bountyMap: tableState.bountyMap,
@@ -26772,6 +26780,7 @@ function LiveTablePage({
                     seatBountyBadge({
                       isBountyTournament: Boolean(tableState.isBountyTournament),
                       mysteryChestsLive,
+                      chestsOnly: mysteryChestsOnly,
                       playerId: player?.id,
                       playerStatus: player?.status,
                       bountyMap: tableState.bountyMap,

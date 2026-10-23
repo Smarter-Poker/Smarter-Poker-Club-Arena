@@ -483,26 +483,31 @@ describe('creator controls describe the committed purchase and mystery contracts
     expect(screen.queryByText(/Min Multiplier/)).toBeNull();
     expect(screen.queryByText(/Max Multiplier/)).toBeNull();
     expect(screen.queryByText(/Each Head Is Sealed At Registration/)).toBeNull();
-    expect(screen.getByText(/Inventory Is Built From The Funded Mystery Pool/)).toHaveTextContent(
+    expect(screen.getByText(/Inventory Is Built In Whole Chips/)).toHaveTextContent(
       'After Registration And Purchases Close'
     );
+    // Dan 2026-10-22: chests only, opened at the money, no bounty before it.
+    // The form no longer offers a setting the database would replace.
+    expect(screen.queryByText('Percent Of Bounties In Chests')).toBeNull();
+    expect(screen.queryByRole('option', { name: 'At A Player Count' })).toBeNull();
+    expect(screen.getByText('Chests Open At The Money')).toBeTruthy();
+    // Half of the whole entry, in whole chips, never typed by hand.
+    const bounty = container.querySelector('#tournament-bounty-amount') as HTMLInputElement;
+    expect(bounty.readOnly).toBe(true);
+    expect(Number.isInteger(Number(bounty.value))).toBe(true);
+    expect(Number(bounty.value)).toBeGreaterThan(0);
     const jackpot = screen.getByRole('option', {
       name: 'Jackpot (Top Heavy)',
     }) as HTMLOptionElement;
     fireEvent.change(jackpot.parentElement!, { target: { value: jackpot.value } });
-    const count = screen.getByRole('option', { name: 'At A Player Count' }) as HTMLOptionElement;
-    fireEvent.change(count.parentElement!, { target: { value: count.value } });
-    fireEvent.change(purchaseField('Players Left'), { target: { value: '27' } });
-    fireEvent.change(purchaseField('Percent Of Bounties In Chests'), { target: { value: '65' } });
     const config = await submitDraft(container);
     for (const document of [config, tournamentService.buildRpcConfig(config)]) {
       expect(document).not.toHaveProperty('mysteryBountyMin');
       expect(document).not.toHaveProperty('mysteryBountyMax');
       expect(document).toMatchObject({
         mysteryBountyProfile: 'jackpot',
-        mysteryBountyActivation: 'player_count',
-        mysteryBountyActivationValue: 27,
-        mysteryBountyPoolPercent: 65,
+        mysteryBountyActivation: 'at_the_money',
+        mysteryBountyPoolPercent: 100,
       });
     }
     // The one recurrence control replaced the "Repeats Weekly" checkbox; Weekly
@@ -517,8 +522,7 @@ describe('creator controls describe the committed purchase and mystery contracts
     ).p_schedule;
     expect(schedule.config).toMatchObject({
       mysteryBountyProfile: 'jackpot',
-      mysteryBountyActivationValue: 27,
-      mysteryBountyPoolPercent: 65,
+      mysteryBountyPoolPercent: 100,
     });
     expect(schedule.config).not.toHaveProperty('mysteryBountyMin');
     expect(schedule.config).not.toHaveProperty('mysteryBountyMax');

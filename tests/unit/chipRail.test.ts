@@ -776,6 +776,37 @@ describe('short phone rail bets clear the complete felt masthead', () => {
 });
 
 describe('the mobile painted chassis and marker projection share one perspective', () => {
+  it('uses desktop geometry for spectators without changing seated perspective', () => {
+    for (const x of [0, 13.3, 50, 86.5, 100])
+      for (const y of [0, 25, 58, 100]) {
+        const point = { x, y };
+        expect(projectPortraitTable(point, 0)).toEqual(point);
+        expect(unprojectPortraitTable(point, 0)).toEqual(point);
+      }
+    for (const x of [20.5, 27, 73, 79.5]) {
+      const cap = { x, y: 6 };
+      expect(
+        fitSeatToViewport(cap, { w: 393, h: 640, portraitTaper: 0 }, 393, { w: 92, h: 80 }, 0, 9).x
+      ).toBe(x);
+    }
+    const matrix = portraitTableTransform({ w: 393, h: 640, portraitTaper: 0 })
+      .slice(9, -1)
+      .split(',')
+      .map(Number);
+    expect(matrix).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    for (const seat of [
+      { x: 13, y: 25 },
+      { x: 87, y: 58 },
+      { x: 50, y: 100 },
+    ]) {
+      const size = { w: 393, h: 640, railBets: true, portraitTaper: 0 };
+      const bet = chipRestPosition(seat, size);
+      const button = dealerButtonPosition(seat, size);
+      expect(isInsideFelt(bet, size, chipRadiusWidthPct(size))).toBe(true);
+      expect(isInsideFelt(button, size, buttonRadiusWidthPct(size))).toBe(true);
+    }
+  });
+
   it('keeps the near rail unchanged and narrows the far rail to eighty percent', () => {
     expect(projectPortraitTable({ x: 0, y: 0 })).toEqual({ x: 10, y: 0 });
     expect(projectPortraitTable({ x: 100, y: 0 })).toEqual({ x: 90, y: 0 });

@@ -109,22 +109,26 @@ export interface Size {
   h: number;
   /** Portrait phones place resting bets directly inside the painted rail. */
   railBets?: boolean;
+  /** Zero uses the desktop oval while retaining portrait rail bet placement. */
+  portraitTaper?: number;
 }
 
 /** Owner October 20: the far rail is 80% of the near rail. This one
  * homography paints the art and projects marker coordinates. UI stays upright. */
 export const PORTRAIT_TABLE_TAPER = 0.25;
-export function projectPortraitTable(p: Pos): Pos {
-  const denominator = 1 + PORTRAIT_TABLE_TAPER * (1 - p.y / 100);
+export function projectPortraitTable(p: Pos, taper = PORTRAIT_TABLE_TAPER): Pos {
+  if (taper === 0) return { ...p };
+  const denominator = 1 + taper * (1 - p.y / 100);
   return { x: 50 + (p.x - 50) / denominator, y: p.y / denominator };
 }
-export function unprojectPortraitTable(p: Pos): Pos {
-  const y = (p.y * (1 + PORTRAIT_TABLE_TAPER)) / (1 + (PORTRAIT_TABLE_TAPER * p.y) / 100);
-  return { x: 50 + (p.x - 50) * (1 + PORTRAIT_TABLE_TAPER * (1 - y / 100)), y };
+export function unprojectPortraitTable(p: Pos, taper = PORTRAIT_TABLE_TAPER): Pos {
+  if (taper === 0) return { ...p };
+  const y = (p.y * (1 + taper)) / (1 + (taper * p.y) / 100);
+  return { x: 50 + (p.x - 50) * (1 + taper * (1 - y / 100)), y };
 }
-export function portraitBoardWidthOfFeltPct(): number {
+export function portraitBoardWidthOfFeltPct(taper = PORTRAIT_TABLE_TAPER): number {
   const boardY = (FELT_WINDOW.top + FELT_WINDOW.height * 0.425) / 100;
-  return (95 * (1 + PORTRAIT_TABLE_TAPER * boardY)) / (1 + PORTRAIT_TABLE_TAPER);
+  return (95 * (1 + taper * boardY)) / (1 + taper);
 }
 
 /**
@@ -148,7 +152,7 @@ export function boardCardWidthPx(
 }
 export function portraitTableTransform(size: Size): string {
   if (!(size.w > 0 && size.h > 0)) return 'none';
-  const k = PORTRAIT_TABLE_TAPER;
+  const k = size.portraitTaper ?? PORTRAIT_TABLE_TAPER;
   return `matrix3d(1,0,0,0,${(-size.w * k) / (2 * size.h)},1,0,${-k / size.h},0,0,1,0,${(size.w * k) / 2},0,0,${1 + k})`;
 }
 
@@ -478,6 +482,9 @@ export function fitSeatToViewport(
   // tag and bounty. They now keep their ring x (27/73 on 7-9 max), which puts
   // them over the top of the rail, clear of both side columns.
   const portraitPhone = viewportWidthPx <= 480 && canvas.h > canvas.w;
+  // Full-width spectator caps keep their desktop ring positions. The very
+  // shortest phones retain the separate compact cap lanes.
+  const desktopCaps = portraitPhone && canvas.portraitTaper === 0 && viewportWidthPx > 340;
   // A top cap also stays inboard of the side column, which on a phone is a
   // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
   // cap keeps 4px of air beyond it (only binds on the narrowest phones).
@@ -490,6 +497,7 @@ export function fitSeatToViewport(
         ? minX
         : maxX
       : portraitPhone &&
+          !desktopCaps &&
           seat.y < 20 &&
           seat.x !== 50 &&
           canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
@@ -497,7 +505,7 @@ export function fitSeatToViewport(
         ? seat.x < 50
           ? 15
           : 85
-        : portraitPhone && seat.y < 20 && seat.x !== 50
+        : portraitPhone && !desktopCaps && seat.y < 20 && seat.x !== 50
           ? seat.x < 50
             ? Math.min(50, Math.max(seat.x, capClearX))
             : Math.max(50, Math.min(seat.x, 100 - capClearX))
@@ -1114,7 +1122,7 @@ function insideStadiumPx(px: number, py: number, box: ReturnType<typeof feltBoxP
  * daylight rather than take the constant's word for it.
  */
 export function feltEdgeClearanceWidthPct(p: Pos, size: Size = NOMINAL_SCALER): number {
-  if (size.railBets) p = unprojectPortraitTable(p);
+  if (size.railBets) p = unprojectPortraitTable(p, size.portraitTaper);
   const box = feltBoxPx(size, 0);
   const d = spineDistancePx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
   return ((box.r - d) / size.w) * 100;
@@ -1174,7 +1182,7 @@ export function isInsideFelt(
   size: Size = NOMINAL_SCALER,
   marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
 ): boolean {
-  if (size.railBets) p = unprojectPortraitTable(p);
+  if (size.railBets) p = unprojectPortraitTable(p, size.portraitTaper);
   const box = feltBoxPx(size, marginWidthPct);
   return insideStadiumPx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
 }
@@ -1213,7 +1221,12 @@ export function clampIntoFelt(
 ): Pos {
   if (size.railBets)
     return projectPortraitTable(
-      clampIntoFelt(unprojectPortraitTable(p), { ...size, railBets: false }, marginWidthPct)
+      clampIntoFelt(
+        unprojectPortraitTable(p, size.portraitTaper),
+        { ...size, railBets: false },
+        marginWidthPct
+      ),
+      size.portraitTaper
     );
   const s = feltExitScale(p, size, marginWidthPct);
   if (!Number.isFinite(s) || s >= 1) return { x: p.x, y: p.y };
@@ -1452,10 +1465,13 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
       const dy = py - sy;
       const length = Math.hypot(dx, dy);
       if (length < 1e-6) return { ...source };
-      return projectPortraitTable({
-        x: ((sx + (dx / length) * box.r) / size.w) * 100,
-        y: ((sy + (dy / length) * box.r) / size.h) * 100,
-      });
+      return projectPortraitTable(
+        {
+          x: ((sx + (dx / length) * box.r) / size.w) * 100,
+          y: ((sy + (dy / length) * box.r) / size.h) * 100,
+        },
+        size.portraitTaper
+      );
     };
     // The amount label is wider than the disc. At short phone heights the
     // cap bends toward the board; walk along that same edge until the whole
@@ -1678,7 +1694,10 @@ export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
  */
 export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
   if (size.railBets)
-    return projectPortraitTable(dealerButtonPosition(seat, { ...size, railBets: false }, pod));
+    return projectPortraitTable(
+      dealerButtonPosition(seat, { ...size, railBets: false }, pod),
+      size.portraitTaper
+    );
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);

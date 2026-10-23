@@ -28,7 +28,7 @@ import {
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
-import { isBbjPlateShown } from './bbjPlateVisibility';
+import { isBbjPlateShown, isBbjCelebrationEligible } from './bbjPlateVisibility';
 import { miniPlateAmount, miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import BBJInfoModal from '../bbj/BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
@@ -1010,13 +1010,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         currency={ritCurrency}
       />
 
-      {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
-          Hidden entirely for variants the server never pays (PLO6, Short Deck),
-          and never displayed during MTT, Spins, or Heads-Up games. */}
-      {isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers }) &&
+      {/* Jackpot readouts stay in the lobby; eligible hit animations still play. */}
+      {isBbjCelebrationEligible({ gameType, isTournament, tournamentId, maxPlayers }) &&
         (jackpotAsset !== 'diamonds' ||
           (diamondJackpot?.enabled && (diamondJackpotStake?.drop ?? 0) > 0)) && (
           <BadBeatJackpot
+            showBanners={isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers })}
             amount={bbjAmount}
             asset={jackpotAsset}
             currency={jackpotAsset === 'diamonds' ? 'D ' : ''}

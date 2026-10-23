@@ -986,6 +986,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase14'
   ),
   table(
+    'horse_exploit_profiles',
+    'per_hand',
+    'HorseOpponentMemory via fn_horse_exploit_profiles_read; worker prerequisite read and monotonic import',
+    'private public-action counters, retained across sessions by exact variant, cash/tournament and dealt size; accepted hand trigger owns persistence',
+    'V50',
+    { dayColumn: 'updated_at', freshnessDays: 1 }
+  ),
+  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',
@@ -2856,6 +2864,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
    * refused from the worker; shed (the client's bound) and unavailable (the
    * job failed or expired) from the client.
    */
+  receipt(
+    'horse_continuation_*',
+    'HorseLogic premium 3-bet, terminal flop and call-side barrel budget',
+    'real-card value raise, funded short-stack flop wager or next-street call budget; no holdings or player identifiers',
+    'V50'
+  ),
+  receipt(
+    'horse_opponent_memory_*',
+    'HorseDecisionWorkerRuntime durable profile import',
+    'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
+    'V50'
+  ),
   receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',

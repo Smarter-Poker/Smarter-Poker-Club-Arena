@@ -271,6 +271,44 @@ echo "$out" >> "$EVIDENCE/8d-installs.log"
 [ "$(counts)" = "2 2 2" ] || fail "installer rerun changed state: $(counts)"
 pass 'the installer installs every queued file once inside the open break, and a rerun is a no-op'
 
+# 9. A later explicit owner exception uses the SAME applier and transaction,
+# at the real daytime clock. A scheduled or unowned freeze grants nothing.
+OWNER_FILE=20991231000004_window_fixture_owner_exception.sql
+sed 's/window_fixture_rake_cap/window_fixture_owner_exception/g' "$FIXTURES/$FIRST" > "$CASE/supabase/migrations/$OWNER_FILE"
+mkdir -p "$CASE/server/release"
+git -C "$CASE" init -q
+# Disposable fixture identity, never the production repository or a person.
+git -C "$CASE" -c user.name=WindowFixture -c user.email=window-fixture@example.invalid commit -q --allow-empty -m 'native owner-window fixture'
+OWNER_HEAD="$(git -C "$CASE" rev-parse HEAD)"
+OWNER_HEAD="$OWNER_HEAD" OWNER_FILE="$OWNER_FILE" OWNER_CASE="$CASE" node --input-type=module <<'JS'
+import {writeFileSync} from 'node:fs';
+const at=Date.now();
+writeFileSync(process.env.OWNER_CASE+'/server/release/owner-maintenance-windows.json', JSON.stringify({version:1,windows:[{
+ id:'native-owner-proof',contains:process.env.OWNER_HEAD,ownerOrder:"Native fixture only: publish now, don't wait",
+ notBefore:new Date(at-60000).toISOString(),notAfter:new Date(at+3600000).toISOString(),migrations:[process.env.OWNER_FILE]
+}]}));
+JS
+# An isolated scratch Git identity proves the real ancestry check.
+# No protected-main or production state is modified.
+owner_apply() { apply "$OWNER_FILE" --maintenance-window --owner-window native-owner-proof; }
+su_sql "SELECT public.fixture_open_window(240); UPDATE public.engine_maintenance_break SET break_started_at=clock_timestamp()-interval '1 second', announced_at=clock_timestamp()-interval '2 minutes';" >/dev/null
+set +e
+out="$(owner_apply 2>&1)"; code=$?
+set -e
+echo "$out" > "$EVIDENCE/9-owner-window.log"
+[ "$code" = 1 ] || fail "ordinary scheduled freeze admitted owner exception: $code $out"
+[ "$(counts)" = "2 2 2" ] || fail 'refused owner install changed state'
+su_sql "UPDATE public.engine_maintenance_break SET reason='Deployment Recovery';" >/dev/null
+set +e
+out="$(owner_apply 2>&1)"; code=$?
+set -e
+echo "$out" >> "$EVIDENCE/9-owner-window.log"
+[ "$code" = 0 ] || fail "owner window install failed: $code $out"
+[ "$(counts)" = "3 3 3" ] || fail "owner install state: $(counts)"
+out="$(owner_apply 2>&1)" || fail "owner repeat failed: $out"
+[ "$(counts)" = "3 3 3" ] || fail 'owner repeat changed state'
+pass 'explicit owner exception refuses a scheduled freeze, installs once in owned recovery, and duplicate is a no-op'
+
 su_sql "SELECT version || ' ' || name FROM supabase_migrations.schema_migrations ORDER BY version" \
   > "$EVIDENCE/history.txt"
 su_sql "SELECT id || ' ' || session_role || ' ' || coalesce(application_name, '') || ' ' || first_command || ' :: ' || reason FROM public.ca_break_window_migration_overrides ORDER BY id" \

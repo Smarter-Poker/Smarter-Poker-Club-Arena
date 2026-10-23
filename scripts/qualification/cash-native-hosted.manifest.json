@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 231660,
-      "sha256": "b7b342bd70bd144ed828c92eac8f9a248926d92ba0a131105a51f322600d0a22"
+      "bytes": 232055,
+      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -290,8 +290,8 @@
     "reason": "Existing Accounting job directly invokes retained-hand native qualification; selector and routing regression expanded. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 149836,
-        "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 17771,
@@ -306,8 +306,8 @@
       "revision": "59759374f63503f046b00fc54d3e0c161b87a0f4",
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -325,8 +325,8 @@
       "revision": "f3e5bae43395980fc49ca02876b3f94818a54672",
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -342,8 +342,8 @@
     "stockToolchainBinding": {
       "previousPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -360,8 +360,8 @@
       "revision": "546421d4a8080b6cf8127c538e9043f3219beb6a",
       "movementParentPins": {
         ".github/workflows/ci.yml": {
-          "bytes": 149836,
-          "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
         },
         "scripts/ci/classify-ci-changes.mjs": {
           "bytes": 17771,
@@ -392,8 +392,8 @@
     "reason": "Phase 5 cashier statements: ci.yml gains the cashier-statements fixture step; classify-ci-changes and fixtureNativeCi register the cashier-statements runner (additive only). Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 155443,
-        "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 22361,
@@ -409,8 +409,8 @@
     "reason": "Club membership cap: ci.yml gains the 'Club membership cap: one count, one lock, one limit' owned-PostgreSQL step (scripts/ci/test-club-membership-cap.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 155650,
-        "sha256": "7fc788bb2b661da0c07dba8689112e98b1975a5a803e4d90f38e7e2d76fb00a3"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -418,8 +418,8 @@
     "reason": "One capability registry: ci.yml gains the Capability registry and accepted-event continuation step (scripts/ci/test-capability-registry.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 155875,
-        "sha256": "97cfbc03b22fc20b6399850fae05815dd6e59b22bdf7a069d6183026b9c6126c"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -427,8 +427,8 @@
     "reason": "Member status is server owned: ci.yml gains the 'A member's club status is changed only by the server' owned-PostgreSQL step (scripts/ci/test-member-status-server-owned.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 156118,
-        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -436,8 +436,8 @@
     "reason": "Kill pot table settings: ci.yml gains the 'Kill pot table settings refuse what the engine cannot honour' owned-PostgreSQL step (scripts/ci/test-kill-pot-table-settings.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 156310,
-        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -445,8 +445,8 @@
     "reason": "Tournament creation rules: ci.yml gains the Tournament creation refuses what the client refuses step (scripts/ci/test-tournament-creation-rules.py against PostgreSQL 17), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 156310,
-        "sha256": "ac3db827933582958776cfe2c65f3d1cbe27a212696b4f34477a00b0669974c6"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -454,8 +454,8 @@
     "reason": "A schedule keeps its time zone: ci.yml gains the 'A schedule keeps its time zone across daylight saving' owned-PostgreSQL step (scripts/ci/test-schedule-time-zone.py), additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 155887,
-        "sha256": "8d76575b7aea0d1838a68faceb901b6014544e29b6d5f2c0b3dff9cdf37143f2"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -463,8 +463,8 @@
     "reason": "Multi-day stage foundation: ci.yml gains the 'Multi-day stage foundation keeps every stack through a bag and a resume' owned-PostgreSQL step (scripts/ci/test-multi-day-stage-foundation.py), which states its dependency on the capability registry migration 20260924025555; additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 156118,
-        "sha256": "92289c8ea6117b88bb961debd04dc3eae3496790beb0c6f8e907f29b3b8735f8"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -472,8 +472,8 @@
     "reason": "Multi-day stage view and operator doors: ci.yml gains the Multi-day stage view step (scripts/ci/test-multi-day-stage-view.py against PostgreSQL 17) beside the multi-day foundation step, additive only. Cash SQL and immutable capture inputs unchanged.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 156053,
-        "sha256": "259afdcaa30c62f030781d228ff87fc17b74b843b2af1a27380f439f0b43507a"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -519,8 +519,8 @@
     "reason": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed.",
     "previous": {
       ".github/workflows/ci.yml": {
-        "bytes": 168945,
-        "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 23714,
@@ -529,8 +529,8 @@
     },
     "current": {
       ".github/workflows/ci.yml": {
-        "bytes": 169118,
-        "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 23938,
@@ -745,8 +745,8 @@
     "reason": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records.",
     "previous": {
       ".github/workflows/ci.yml": {
-        "bytes": 169529,
-        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 24631,
@@ -755,8 +755,8 @@
     },
     "updated": {
       ".github/workflows/ci.yml": {
-        "bytes": 169704,
-        "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 24824,
@@ -968,8 +968,8 @@
     "reason": "Add native PG17 qualification of the BBJ contribution covering index and its unchanged installed RPCs to accounting shard 4, including concurrent writes, real interrupted index refusal, source/type drift and role isolation. Existing accounting fixtures and assertions stay unchanged.",
     "previous": {
       ".github/workflows/ci.yml": {
-        "bytes": 169529,
-        "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 24631,
@@ -978,8 +978,8 @@
     },
     "current": {
       ".github/workflows/ci.yml": {
-        "bytes": 169779,
-        "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 24951,
@@ -1901,8 +1901,8 @@
     "reason": "Stable Admin six-capability integration: add two original-owner PG17 qualifiers to the existing required accounting shards, classify their drivers/loaded fixtures/schema fragments, and test that enforcement. Reviewed additive workflow/classifier/test diff; no prior financial authority, assertion, captured fixture or qualification status changes. Source fingerprint refresh does not prove native execution, installation or publication.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 197294,
-        "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 32804,
@@ -2297,8 +2297,8 @@
     "reason": "Add the native read-only export/restore fixture to existing accounting shards1/4 and classify every maintained tool input. Refresh only these reviewed workflow/classifier fingerprints; retained financial source pins, assertions and SOURCE_ONLY_UNRUN status remain unchanged. This is not financial or full production recovery qualification.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 202788,
-        "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 35480,
@@ -2311,8 +2311,8 @@
     },
     "currentMainPreviousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 203003,
-        "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 35533,
@@ -2701,8 +2701,8 @@
     "reason": "Add actual original posthand escrow PostgreSQL17 qualification and always artifact in existing Accounting3. Preserve every prior native lane and historical pin. SQL/native and public financial projection qualification distinct from production installation or retention permission.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 209558,
-        "sha256": "d37c75bdf8c9f04a356363c8cff9b919f66f0a1640d7748c40f29cc40bd5aea9"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       }
     }
   },
@@ -2721,8 +2721,8 @@
     "reason": "Enforce the real scoped reset/undo and candidate-bound reporting, invoice permissions and floor regression in existing Accounting1. Refresh only these reviewed workflow/classifier/fixture wiring source fingerprints; all financial originals, assertions, historical pins and SOURCE_ONLY_UNRUN status remain unchanged. This is not production reset certification.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 204868,
-        "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 35991,
@@ -3240,8 +3240,8 @@
     "reason": "Preserve all current main CI routing and exact installed union source, add satellite-only native cohort and registry qualification. Source identity only, no financial authority or qualification status changed.",
     "previousPins": {
       ".github/workflows/ci.yml": {
-        "bytes": 219700,
-        "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
+        "bytes": 232055,
+        "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
       },
       "scripts/ci/classify-ci-changes.mjs": {
         "bytes": 36585,
@@ -3632,6 +3632,28 @@
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
     }
   },
+  "opponentMemoryPostgresGate20261023": {
+    "reason": "Add one PostgreSQL 17 regression step for durable opponent memory to accounting shard 2. Existing suites, financial source pins, assertions, timeouts and required joins are unchanged. This updates workflow input identity only, not a financial qualification certificate.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 231035,
+      "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
+    }
+  },
+  "opponentMemoryWorkflowInput20261023": {
+    "reason": "Add dedicated PostgreSQL 17 opponent-memory tests and their typecheck to existing required accounting shard 2. Existing financial source, native fixtures, assertions, routes and deadlines are unchanged. Current workflow input identity only; historical qualification evidence remains unchanged and new hosted results remain required.",
+    "previous": {
+      "bytes": 231035,
+      "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
+    },
+    "current": {
+      "bytes": 231107,
+      "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
+    }
+  },
   "handReviewAwardLayoutCiInput20261023": {
     "reason": "Add the real HandDetailModal award-row geometry regression to the existing required CSS Beat command. Refresh only current workflow input identity; preserve financial inputs, assertions, historical pins and qualification statuses. This is not a financial execution certificate.",
     "previous": {
@@ -3641,6 +3663,13 @@
     "current": {
       "bytes": 230753,
       "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
+    }
+  },
+  "opponentMemoryAwardLayoutIntegration20261023": {
+    "reason": "Merge both independent additive verification steps: durable opponent-memory PostgreSQL suite/typecheck and the existing hand-review award geometry suite. Record only the actual combined CI workflow input identity. Financial source/fixtures/assertions and historical evidence are preserved; fresh hosted checks remain required.",
+    "current": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
     }
   }
 }

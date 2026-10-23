@@ -1558,6 +1558,15 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: python3 scripts/ci/test-finance-gate-db-postgres.py
+      - name: Durable variant-scoped opponent memory PostgreSQL regression
+        if: matrix.shard == 2
+        working-directory: server
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          npx tsc --noEmit -p tsconfig.opponent-memory.json
+          npx vitest run --config vitest.opponent-memory.config.ts --reporter=verbose
       - name: A treasury-funded seat reads as a Club Bank send (20261012040542)
         if: matrix.shard == 2
         env:

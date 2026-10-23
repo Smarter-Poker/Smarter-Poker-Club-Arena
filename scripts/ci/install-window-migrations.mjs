@@ -35,6 +35,7 @@
  * summary names each file and its outcome; a red run on main is read by the
  * red-main detector in production-integrity-audit.yml (CLAUDE.md 10.83).
  */
+import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migration.mjs';
 import { readdirSync, readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -73,10 +74,19 @@ function finish(code, verdict) {
   process.exit(code);
 }
 
+let ownerWindow = null;
+if (args.includes('--owner-window')) {
+  try {
+    ownerWindow = readOwnerMigrationWindow(argValue('--owner-window'));
+  } catch (e) {
+    finish(1, `REFUSED - ${e.message}`);
+  }
+}
 const declared = readdirSync(DIR)
   .filter((f) => /^\d{14}_[a-z0-9_]+\.sql$/.test(f))
   .sort()
-  .filter((f) => declaresMaintenanceWindow(readFileSync(join(DIR, f), 'utf8')));
+  .filter((f) => declaresMaintenanceWindow(readFileSync(join(DIR, f), 'utf8')))
+  .filter((f) => !ownerWindow || ownerWindow.migrations.includes(f));
 if (declared.length === 0) finish(0, 'NOTHING QUEUED (no migration declares the window)');
 
 const CONN = process.env.DATABASE_URL;
@@ -150,7 +160,12 @@ for (const f of queued) {
   }
 }
 
-const window = windowToServe(Date.now());
+const window = ownerWindow
+  ? {
+      startsAt: Date.now(),
+      endsAt: Math.min(Date.parse(ownerWindow.notAfter), Date.now() + 70 * 60_000),
+    }
+  : windowToServe(Date.now());
 if (!window)
   finish(
     1,
@@ -173,7 +188,9 @@ let unreadable = 0;
 let lastState = null;
 while (Date.now() < lastAdmit) {
   try {
-    const [state] = await read(WINDOW_STATE_QUERY);
+    const [state] = await read(
+      ownerWindow ? ownerWindowState(ownerWindow, START_RESERVE_SECONDS) : WINDOW_STATE_QUERY
+    );
     unreadable = 0;
     lastState = state;
     if (state?.open === true) {
@@ -201,7 +218,14 @@ for (const f of queued) {
   const started = Date.now();
   const run = spawnSync(
     process.execPath,
-    [APPLIER, '--migration', f, '--maintenance-window', ...passthrough],
+    [
+      APPLIER,
+      '--migration',
+      f,
+      '--maintenance-window',
+      ...(ownerWindow ? ['--owner-window', ownerWindow.id] : []),
+      ...passthrough,
+    ],
     { stdio: 'inherit', env: process.env, timeout: 60_000 }
   );
   const ms = Date.now() - started;

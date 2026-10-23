@@ -76,6 +76,15 @@ export interface EvOpponentModel {
   canRespond?: boolean;
 }
 
+import {
+  callContinuationValue,
+  wagerRealization,
+  continuationMixWindow,
+  type BarrelContinuation,
+} from './HorseContinuation.js';
+export { barrelContinuationValue } from './HorseContinuation.js';
+export type { BarrelContinuation } from './HorseContinuation.js';
+
 export interface EvSpot {
   /** hero's equity vs the range in the pot (0..1), caps already applied */
   equity: number;
@@ -95,6 +104,7 @@ export interface EvSpot {
   models?: EvOpponentModel[];
   /** equity realization factor (0..1]; 1 on the river */
   realization: number;
+  continuation?: BarrelContinuation;
   /** marginal rake on the pot in cash (0..0.5) */
   rakeMarg?: number;
   /** tournament survival premium to subtract from equity on a stack-off (0..0.15) */
@@ -187,7 +197,16 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   if (facing) {
     candidates.push({ kind: 'fold', ev: 0 });
     // Calling: the pot already holds the wager; hero puts in c to see it.
-    const evCall = realized(c / Math.max(1, stack)) * (P + c) - c;
+    const evCall = callContinuationValue({
+      equity: eq,
+      realization: r,
+      pot: P,
+      call: c,
+      stack,
+      rake,
+      risk,
+      continuation: spot.continuation,
+    });
     candidates.push({ kind: 'call', ev: evCall });
   } else {
     // A check with the lead is not a free card: the opponent gets to bet
@@ -228,7 +247,9 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
     const eqCont = continuingEquity(eq, foldAll);
     const share = (c + s) / Math.max(1, stack);
     const realizedCont = clamp(
-      eqCont * r * (1 - rake) - risk * Math.sqrt(clamp(share, 0, 1)),
+      // Putting the effective stack in ends future betting. Discounting
+      // this equity for later folds made short-stack value jams check instead.
+      eqCont * wagerRealization(r, c + s, eff) * (1 - rake) - risk * Math.sqrt(clamp(share, 0, 1)),
       0,
       1
     );
@@ -251,7 +272,8 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   // Mixed strategy at indifference: every candidate within the window is
   // weighted by how close it sits to the best. The best keeps at least the
   // largest share; a candidate at exactly the same EV shares evenly.
-  const window = MIX_WINDOW_POT * P;
+  // A near-indifference mix cannot cost a large part of the chips behind.
+  const window = continuationMixWindow(P, eff, MIX_WINDOW_POT);
   const pool = candidates.filter((a) => best.ev - a.ev <= window);
   let pick = best;
   if (pool.length > 1) {

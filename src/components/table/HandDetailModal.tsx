@@ -378,7 +378,10 @@ export function HandDetailModal({
      hand, that hand becomes the subject by id; the navigator's total grows
      and the arrows still reach the new one. */
   useEffect(() => {
-    if (isOpen && subjectId === null && hands.length > 0) setSubjectId(hands[0].id);
+    if (isOpen && subjectId === null && hands.length > 0) {
+      // Preserve a requested hand queued by the opening effect in this same commit.
+      setSubjectId((current) => current ?? hands[0].id);
+    }
   }, [isOpen, subjectId, hands]);
 
   const index = useMemo(() => {

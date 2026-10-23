@@ -444,11 +444,12 @@ describe('One card, one carrier', () => {
      */
     expect(card).not.toMatch(/'SPIN'/);
     expect(card).toMatch(/!result\.isSpin && <span className="trc2__brand-mark">TOURNAMENT/);
-    expect(tablePage).toContain("isSpin: getTournamentFormatKind(tourney) === 'spin'");
+    const reader = tsCode(read('src/services/tournamentResult.ts'));
+    expect(reader).toContain("isSpin: getTournamentFormatKind(tourney) === 'spin'");
     // The persisted format identifies Spin; the mystery flag independently
     // controls the chest receipt read. Both must reach the result mapper.
-    expect(tablePage).toMatch(
-      /select\(\s*'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty'\s*\)/
+    expect(reader).toMatch(
+      /select\(\s*'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty, buy_in_amount, buy_in_fee'\s*\)/
     );
   });
 });

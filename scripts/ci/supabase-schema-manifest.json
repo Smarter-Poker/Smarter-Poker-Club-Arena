@@ -124,6 +124,7 @@
     "ca_bbj_alloc_state",
     "ca_bbj_bucket_moves",
     "ca_bbj_policy",
+    "ca_bbj_pool_policy",
     "ca_bbj_pool_snapshots",
     "ca_break_scorecards",
     "ca_break_window_migration_overrides",

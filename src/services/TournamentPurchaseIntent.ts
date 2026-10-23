@@ -9,7 +9,7 @@ export type TournamentPurchaseRequest = {
 };
 type Scope = { tournamentId: string; userId: string; kind: 'rebuy' | 'addon'; token?: string };
 type Intent = { version: 1; state: 'pending' | 'resolved'; request: TournamentPurchaseRequest };
-const running = new Map<string, Promise<number>>();
+const running = new Map<string, Promise<unknown>>();
 const prefix = 'ca:tournament-purchase:v1:';
 
 /** Fresh build/validation failed before any recoverable intent was published. */
@@ -51,14 +51,14 @@ function same(a: Intent | null, b: Intent): boolean {
 }
 
 /** Persist the exact receipt-bound payload before I/O, including the original level. */
-export function withTournamentPurchaseIntent(
+export function withTournamentPurchaseIntent<T>(
   scope: Scope,
   build: () => Promise<TournamentPurchaseRequest>,
-  submit: (request: TournamentPurchaseRequest) => Promise<number>
-): Promise<number> {
+  submit: (request: TournamentPurchaseRequest) => Promise<T>
+): Promise<T> {
   const key = prefix + scope.userId + ':' + scope.tournamentId + ':' + scope.kind;
   const active = running.get(key);
-  if (active) return active;
+  if (active) return active as Promise<T>;
   const work = (async () => {
     if (!globalThis.navigator?.locks || !globalThis.crypto?.randomUUID) {
       throw new Error('This Browser Cannot Safely Save The Tournament Purchase.');

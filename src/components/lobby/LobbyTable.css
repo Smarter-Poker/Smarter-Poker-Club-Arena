@@ -2083,8 +2083,11 @@ abbr.lt-variant[title] {
 
 /* R10: a must-move game counts its players like a tournament. */
 .lt-seats--game {
+  width: 100%;
+  flex-direction: column;
   gap: 0.15rem;
-  align-items: baseline;
+  align-items: center;
+  text-align: center;
 }
 .lt-seats__tables {
   font-size: 0.68rem;

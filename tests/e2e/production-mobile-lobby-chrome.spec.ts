@@ -263,6 +263,26 @@ test.describe('the mobile lobby chrome on production', () => {
     const row = page.getByTestId('lobby-game-row').first();
     await expect(row).toBeVisible({ timeout: 45_000 });
     await expect(page.locator('.compact-lobby')).toBeVisible();
+    await expect(page.locator('.ad-rotator--lobby-strip')).toHaveCount(0);
+    const rowLayout = await page.locator('.compact-lobby').evaluate((table) => {
+      const header = table.querySelector('thead th:nth-child(3)')!;
+      const center = (el: Element) => {
+        const box = el.getBoundingClientRect();
+        return box.left + box.width / 2;
+      };
+      return {
+        players: [...table.querySelectorAll('.lt-seats__num, .lt-seats__tables')].map((el) =>
+          Math.abs(center(el) - center(header))
+        ),
+        detailsWrap: [...table.querySelectorAll('.compact-lobby__meta')].every(
+          (el) => getComputedStyle(el).whiteSpace === 'normal'
+        ),
+      };
+    });
+    expect(rowLayout.players.length).toBeGreaterThan(0);
+    expect(rowLayout.players.every((offset) => offset <= 1)).toBe(true);
+    expect(rowLayout.detailsWrap).toBe(true);
+    await expect(page.locator('.lobby-refinements')).toBeVisible();
     await expect(page.locator('.lobby-sortbar')).toBeHidden();
     const deck = page.locator('.club-lobby-command-top__controls');
     await expect(deck).toHaveCSS('position', 'relative');

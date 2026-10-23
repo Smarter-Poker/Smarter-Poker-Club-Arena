@@ -182,6 +182,9 @@ export const RAKE_SCHEDULE: RakeScheduleEntry[] = [
 // 2026-08-18: this client copy said 40/30/30, which matched NEITHER the
 // standard nor the pivot split the server actually banks — a third disagreeing
 // definition of the same rule. Corrected to the server's standard split.
+// The platform rule. Since Dan's 2026-10-22 order the Midway Union pool alone
+// takes 10% main / 30% backup / 60% promo at any size, from its own row in
+// ca_bbj_pool_policy; every other pool follows these numbers.
 export const BBJ_POOL_ALLOCATION = {
   mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
   backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)

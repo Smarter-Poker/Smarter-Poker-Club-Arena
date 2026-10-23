@@ -27,6 +27,18 @@ test.describe('Club Operations', () => {
       timeout: 10000,
     });
     {
+      // Returning members start with Club Options collapsed. Open the real
+      // disclosure before measuring its controls so hidden content cannot
+      // turn the overlap check into a locator timeout.
+      const clubOptions = page.locator('details').filter({
+        has: page.getByText('Club Options', { exact: true }),
+      });
+      if (!(await clubOptions.evaluate((el) => (el as HTMLDetailsElement).open))) {
+        await clubOptions.locator('summary').click();
+      }
+      await expect(
+        page.getByRole('navigation', { name: 'Poker Arena Actions', exact: true })
+      ).toBeVisible();
       /* Visibility alone cannot detect occlusion. The approved top actions
          replaced the retired bottom Quick actions row; keep the overlap
          guard against the navigation that is actually rendered. */
@@ -41,9 +53,6 @@ test.describe('Club Operations', () => {
               name: 'Poker Arena Actions',
               exact: true,
             });
-            // Collapsed Club Options owns this navigation, but does not paint it.
-            // Hidden descendants can retain a rectangle that overlaps the card.
-            if (!(await actions.isVisible())) return true;
             const actionsBox = await actions.evaluate((el) => {
               const r = el.getBoundingClientRect();
               return { top: r.top, bottom: r.bottom };

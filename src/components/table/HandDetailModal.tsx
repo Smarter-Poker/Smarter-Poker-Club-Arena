@@ -62,7 +62,14 @@ import type { RabbitHuntRevealResult } from './RabbitHunt';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailModal.css';
-import { blindLabel, gameTypeLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
+import {
+  blindLabel,
+  gameTypeLabel,
+  money,
+  moneyForHand,
+  potShareLabels,
+  stamp,
+} from '../../utils/handFormat';
 import { handDeepLink } from '../../lib/handHistoryLive';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useHandReviewDetails } from '../../hooks/useHandReviewDetails';
@@ -312,6 +319,11 @@ function SummaryRow({
             ? `${row.boardLabel} · ${row.potLabel}`
             : row.boardLabel || row.potLabel}
         </span>
+        {potShareLabels(row.potSlices, { arenaAsset }).map((label, index) => (
+          <span className="hdm-sd__pot" key={index}>
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );

@@ -25,12 +25,19 @@
  * "tapping it closes the sheet" is.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/react';
+import { render, cleanup, fireEvent, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import HandHistoryPanel, { type HandRecord } from '@/components/table/HandHistoryPanel';
 import { HandDetailModal } from '@/components/table/HandDetailModal';
 import { adaptServiceHandToPanel } from '@/lib/handHistoryAdapter';
+import HandReplay from '@/components/replay/HandReplay';
+
+vi.mock('@/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: null }) }));
+vi.mock('@/services/SoundService', () => ({
+  soundService: new Proxy({}, { get: () => vi.fn() }),
+  haptic: new Proxy({}, { get: () => vi.fn() }),
+}));
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const HDM_CSS = read('src/components/table/HandDetailModal.css');
@@ -228,6 +235,124 @@ function serviceRow(over: Record<string, unknown> = {}) {
 function record(over: Record<string, unknown> = {}): HandRecord {
   return adaptServiceHandToPanel(serviceRow(over), HERO);
 }
+
+describe('recorded per-board pot allocations reach every review surface', () => {
+  function allocated(asset: 'chips' | 'diamonds', slices = true) {
+    const fractional = asset === 'chips';
+    return record({
+      arenaAsset: asset,
+      game_type: 'PLO8',
+      main_pot: 100,
+      side_pots: [50],
+      rit_boards: [RIT_BOARDS_RAW[0]],
+      winners_by_board: [1, 2].flatMap((board) => [
+        {
+          board,
+          user_id: HERO,
+          amount: 60,
+          hand_name: 'High',
+          ...(slices
+            ? {
+                pots: [
+                  { index: 0, amount: fractional ? 40.25 : 40 },
+                  { index: 1, amount: fractional ? 19.75 : 20 },
+                ],
+              }
+            : {}),
+        },
+        {
+          board,
+          user_id: VILLAIN,
+          amount: 15,
+          hand_name: 'Low',
+          low: true,
+          ...(slices
+            ? {
+                pots: [
+                  { index: 0, amount: fractional ? 9.75 : 10 },
+                  { index: 1, amount: fractional ? 5.25 : 5 },
+                ],
+              }
+            : {}),
+        },
+      ]),
+    });
+  }
+
+  it.each(['chips', 'diamonds'] as const)(
+    'prints exact %s high/low slices in Summary, Detail and Replay Rundown',
+    (asset) => {
+      const hand = allocated(asset);
+      const expected =
+        asset === 'chips'
+          ? ['Main 40.25', 'Side 1 19.75', 'Main 9.75', 'Side 1 5.25']
+          : ['Main 40', 'Side 1 20', 'Main 10', 'Side 1 5'];
+      const check = (root: Element | null) => {
+        expect(root).toBeTruthy();
+        for (const text of expected) expect(root!.textContent).toContain(text);
+        expect(root!.textContent).toMatch(/Board 1 High/i);
+        expect(root!.textContent).toMatch(/Board 1 Low/i);
+        expect(root!.textContent).toMatch(/Board 2 High/i);
+        expect(root!.textContent).toMatch(/Board 2 Low/i);
+      };
+      const view = render(
+        <HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />
+      );
+      check(view.container.querySelector('.hdm-showdown'));
+      fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+      check(view.container.querySelector('.hdv__showdown'));
+      view.unmount();
+      const replay = render(
+        <HandReplay
+          source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+        />
+      );
+      fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+      check(replay.container.querySelector('.hdv__showdown'));
+    }
+  );
+
+  it('leaves legacy board shares without invented pot amounts in both tabs and Replay Rundown', () => {
+    const hand = allocated('chips', false);
+    const check = (root: Element | null) => {
+      expect(root!.textContent).toMatch(/Board 1 High/i);
+      expect(root!.textContent).toMatch(/Board 1 Low/i);
+      expect(root!.textContent).not.toMatch(/(?:Main|Side 1) \d/);
+    };
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    check(view.container.querySelector('.hdm-showdown'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    check(view.container.querySelector('.hdv__showdown'));
+    view.unmount();
+    const replay = render(
+      <HandReplay
+        source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+      />
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+    check(replay.container.querySelector('.hdv__showdown'));
+  });
+
+  it('prints a recorded zero slice while leaving an absent slice unprinted', () => {
+    const hand = record({
+      winners_by_board: [
+        {
+          board: 1,
+          user_id: HERO,
+          amount: 1470,
+          pots: [
+            { index: 0, amount: 1470 },
+            { index: 1, amount: 0 },
+          ],
+        },
+      ],
+    });
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    expect(view.container.querySelector('.hdm-showdown')!.textContent).toContain('Side 1 0.00');
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    expect(view.container.querySelector('.hdv__showdown')!.textContent).toContain('Side 1 0.00');
+  });
+});
 
 describe('the backdrop closes the sheet, and the sheet itself does not', () => {
   it('Hand Detail closes when the exposed overlay is tapped', () => {

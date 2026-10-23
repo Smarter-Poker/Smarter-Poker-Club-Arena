@@ -2429,7 +2429,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             pots: snap.pots,
             // Keep later-pot and hi/lo identities without changing paid totals.
             // Written atomically with the same accepted hand, never rebuilt later.
-            perPotAwards: this.isTournamentTable() ? snap.perPotAwards : undefined,
+            perPotAwards: snap.perPotAwards,
             /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
              `players @> [{userId}]`, so a hand whose roster is missing a
              participant is a hand that participant can never open, and one

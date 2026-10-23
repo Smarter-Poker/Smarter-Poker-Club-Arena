@@ -41,7 +41,7 @@ import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/hand
 import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { computeEquity, type EquityResult } from '../../utils/equity';
 import './HandDetailView.css';
-import { blindLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
+import { blindLabel, money, moneyForHand, potShareLabels, stamp } from '../../utils/handFormat';
 
 export interface HandDetailViewProps {
   model: ReplayModel;
@@ -334,6 +334,11 @@ function ShowdownRow({
             ? `${row.boardLabel} · ${row.potLabel}`
             : row.boardLabel || row.potLabel}
         </span>
+        {potShareLabels(row.potSlices, { arenaAsset }).map((label, index) => (
+          <span className="hdv__sd-pot" key={index}>
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );

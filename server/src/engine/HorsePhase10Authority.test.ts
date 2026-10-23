@@ -46,6 +46,7 @@ import {
   RETIRED_2026_10_16_PHASE10_SELECTION,
   RETIRED_2026_10_17_PHASE10_SELECTION,
   RETIRED_2026_10_22_PHASE10_SELECTION,
+  RETIRED_2026_10_22B_PHASE10_SELECTION,
 } from './HorsePreviousSelections.test-support.js';
 
 const admit = (
@@ -70,19 +71,20 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the new source', () => {
+describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification', () => {
   const committed = PREVIOUS_PHASE10_SELECTION;
   const retired = RETIRED_2026_10_16_PHASE10_SELECTION;
   const generation3 = RETIRED_2026_10_17_PHASE10_SELECTION;
   const generation4 = RETIRED_2026_10_22_PHASE10_SELECTION;
-  const retainedGenerations = [committed!, retired, generation3, generation4] as const;
+  const generation5 = RETIRED_2026_10_22B_PHASE10_SELECTION;
+  const retainedGenerations = [committed!, retired, generation3, generation4, generation5] as const;
 
-  it('generation 5 (8ea7564b) is selected; generations 1 (c8bfc617), 2 (c92768c8), 3 (d9190c9e) and 4 (da94e437) are retained under the unchanged contract', () => {
-    // 2026-10-22: maniac pressure moved every hashed policy digest; the locked
-    // P10.2 matrix requalified the exact new source (run 39757485267).
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toMatchObject({
-      schema: 'horse-qualified-authority-selection-v1',
-      phase: 'phase10',
+  it('nothing is selected; generations 1 (c8bfc617), 2 (c92768c8), 3 (d9190c9e), 4 (da94e437) and 5 (8ea7564b) are retained under the unchanged contract', () => {
+    // 2026-10-22: the second maniac-pressure pass moved every hashed policy
+    // digest again; PLO4 plays shadow (the reference brain executes) until the
+    // locked P10.2 matrix requalifies the exact new source as generation 6.
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+    expect(generation5).toMatchObject({
       sourceSha: '8ea7564bc44ddead3189e76dd0b4c00d5dbcc3d8',
       packVersion: PLO4_POLICY_PACK.version,
       contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
@@ -92,25 +94,19 @@ describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the 
       expiresAt: null,
       withdrawn: null,
     });
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION!.approvalGeneration).toBeGreaterThan(
-      generation4.approvalGeneration
-    );
-    const live = admitHorsePhase10ReleaseAuthority();
-    expect(live.status).toBe('admitted');
-    expect(selectedHorsePhase10Authority(live)).not.toBeNull();
     for (const root of ['../../../', '../../release-evidence/']) {
       const bytes = readFileSync(
-        fileURLToPath(
-          new URL(
-            `${root}${PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath}`,
-            import.meta.url
-          )
-        )
+        fileURLToPath(new URL(`${root}${generation5.qualificationPath}`, import.meta.url))
       );
       expect(createHash('sha256').update(bytes).digest('hex'), root).toBe(
-        PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationSha256
+        generation5.qualificationSha256
       );
     }
+    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
+      status: 'refused',
+      reason: 'unselected',
+      transient: false,
+    });
     expect(generation4).toMatchObject({
       schema: 'horse-qualified-authority-selection-v1',
       phase: 'phase10',
@@ -182,10 +178,10 @@ describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the 
       );
       const file = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
       expect(file).toMatchObject({ qualified: true, mode: 'contract' });
-      // Generations 3 and 4 were measured under the running digest definition
-      // (v3); only its bytes moved. Generations 1 and 2 predate that definition.
+      // Generations 3, 4 and 5 were measured under the running digest
+      // definition (v3); only its bytes moved. Generations 1 and 2 predate it.
       expect(file.policyDigestDefinition).toBe(
-        previous === generation3 || previous === generation4
+        previous === generation3 || previous === generation4 || previous === generation5
           ? HORSE_PHASE10_POLICY_DIGEST_DEFINITION
           : 'horse-phase10-policy-digest-v2'
       );
@@ -218,9 +214,9 @@ describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the 
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is usable with the committed generation 5', () => {
+  it('the live main-scheduler gate is unselected until a new generation is committed', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
+    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -244,7 +240,7 @@ describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the 
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('the only qualified file on the running policy is the selected generation 5; every retained generation is on an old digest', () => {
+  it('no qualified file is on the running policy; every retained generation is on an old digest', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -253,10 +249,6 @@ describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the 
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true) {
         const path = `docs/evidence/phase10/${file}`;
-        if (path === PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath) {
-          expect(parsed.policyDigest, path).toBe(horsePhase10PolicyDigest());
-          continue;
-        }
         expect(retainedGenerations.map((g) => g.qualificationPath)).toContain(path);
         expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
       }

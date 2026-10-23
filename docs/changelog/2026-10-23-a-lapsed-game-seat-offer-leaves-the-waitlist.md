@@ -52,3 +52,18 @@ lapsed player can rejoin, is queued as a fresh `waiting` row and is later
 offered a seat; a live hold is never expired; a player seated through the
 offer gets the game row `seated`; the order of the other waiters is
 unchanged; the sweep expires only stranded rows; replay is refused.
+
+## Follow Up: A Seated Player's Stranded Row Reads Seated
+
+Installed 2026-10-23 12:38 UTC. The one-time sweep expired nothing, because
+by then the player on row `6955c265` had sat down at game `56d5d6f0` again
+(11:25 UTC). The offer pass marks such a row `seated`, but every chair in
+that game was taken and no vacancy offer had run, so the row still read
+`notified` and the game's waitlist and population counts still included her.
+
+Migration `20261023124157_a_seated_players_stranded_game_offer_reads_seated`
+applies the same rule once, as data only: a `notified` game row whose player
+is seated at that game becomes `seated` (bounded, idempotent, locked rows
+skipped, count reported as `seated_game_offers_marked`). No function changes.
+The native test adds both cases (the seated row is marked, a row whose player
+is not seated is left).

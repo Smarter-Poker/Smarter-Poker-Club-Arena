@@ -247,3 +247,29 @@ describe('provenance distinguishes a legitimate daily queue from a missed releas
     expect(audit).toContain('ENGINE PROVENANCE MISMATCH');
   });
 });
+
+const receiver = parse(
+  readFileSync(join(root, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8')
+);
+const liveProof = receiver.jobs.deploy.steps
+  .find((s: { id?: string }) => s.id === 'verify')
+  .run.split("<<'PYTHON'\n")[1]
+  .split('\nPYTHON')[0];
+
+it('proves installed routine refusal during the existing countdown without requiring an early thaw', () => {
+  const result = spawnSync(
+    'python3',
+    [
+      '-c',
+      `
+import io, urllib.request
+urllib.request.urlopen = lambda *args, **kwargs: io.BytesIO(b'{"running":true,"liveness":"ok","wholeFleetStalled":false,"tournamentManagersQuarantined":0,"maintenance":{"active":true}}')
+${liveProof}
+`,
+      join(root, 'server/scripts/engine-release-transaction.sh'),
+    ],
+    { encoding: 'utf8' }
+  );
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stdout).toContain('refuses legacy urgency against live healthy play');
+});

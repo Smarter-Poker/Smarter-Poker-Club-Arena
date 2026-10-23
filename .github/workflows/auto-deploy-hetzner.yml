@@ -478,8 +478,8 @@ jobs:
           end = source.index('\n}\n', start) + 3
           health = urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=15).read().decode()
           d = json.loads(health)
-          if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True or (d.get('maintenance') or {}).get('active') is not False:
-              raise SystemExit('live routine-admission proof requires healthy, unpaused play')
+          if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True:
+              raise SystemExit('live routine-admission proof requires a healthy engine')
           # Execute the installed decision with real live health and the old
           # urgency flag. This function is read-only and cannot announce a break.
           code = 'set -euo pipefail\nRECOVERY_URGENT=1\nRECOVERY_QUARANTINED_MANAGERS=100\n' + source[start:end] + '\nhealth=$(cat)\nrecovery_window_reason "$health"\n'

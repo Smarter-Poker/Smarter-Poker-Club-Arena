@@ -1,7 +1,8 @@
 /**
- * BBJ POOL ALLOCATION (Dan, 2026-08-18 — authoritative)
- *   STANDARD (main < 100k):  50% Main / 25% Back Up / 25% Promo
- *   PIVOT    (main >= 100k): 25% Main / 25% Back Up / 50% Promo
+ * BBJ POOL ALLOCATION
+ *   Dan 2026-10-22, "for the time being": 10% Main / 30% Back Up / 60% Promo,
+ *   the same below and at or above the 100k pivot.
+ *   (Dan 2026-08-18 until then: 50 / 25 / 25 below 100k, 25 / 25 / 50 above.)
  *
  * Three copies of this rule existed and all three disagreed: the client said
  * 40/30/30, the server config comment said pivot 30/40/30, and the banking
@@ -26,27 +27,27 @@ function split(amount: number, mainBalance: number) {
 }
 
 describe('standard allocation below the pivot', () => {
-  it('is 50 / 25 / 25', () => {
-    expect(BBJ_POOL_ALLOCATION.mainBBJ).toBe(0.5);
-    expect(BBJ_POOL_ALLOCATION.backUpBBJ).toBe(0.25);
-    expect(BBJ_POOL_ALLOCATION.promotional).toBe(0.25);
+  it('is 10 / 30 / 60', () => {
+    expect(BBJ_POOL_ALLOCATION.mainBBJ).toBe(0.1);
+    expect(BBJ_POOL_ALLOCATION.backUpBBJ).toBe(0.3);
+    expect(BBJ_POOL_ALLOCATION.promotional).toBe(0.6);
   });
 
   it('splits a fee correctly just under the pivot', () => {
     const s = split(1, BBJ_PIVOT_THRESHOLD - 0.01);
-    expect(s).toEqual({ main: 0.5, backup: 0.25, promo: 0.25 });
+    expect(s).toEqual({ main: 0.1, backup: 0.3, promo: 0.6 });
   });
 });
 
 describe('pivot allocation at and above 100k', () => {
-  it('is 25 / 25 / 50 - the back-up share stays flat, promo takes the surplus', () => {
-    expect(BBJ_POOL_ALLOCATION_PIVOT.mainBBJ).toBe(0.25);
-    expect(BBJ_POOL_ALLOCATION_PIVOT.backUpBBJ).toBe(0.25);
-    expect(BBJ_POOL_ALLOCATION_PIVOT.promotional).toBe(0.5);
+  it('is the same 10 / 30 / 60 - the split no longer changes at the pivot', () => {
+    expect(BBJ_POOL_ALLOCATION_PIVOT.mainBBJ).toBe(0.1);
+    expect(BBJ_POOL_ALLOCATION_PIVOT.backUpBBJ).toBe(0.3);
+    expect(BBJ_POOL_ALLOCATION_PIVOT.promotional).toBe(0.6);
   });
 
   it('applies AT exactly 100k, not just above it', () => {
-    expect(split(1, BBJ_PIVOT_THRESHOLD)).toEqual({ main: 0.25, backup: 0.25, promo: 0.5 });
+    expect(split(1, BBJ_PIVOT_THRESHOLD)).toEqual({ main: 0.1, backup: 0.3, promo: 0.6 });
   });
 
   it('is never the retired 30 / 40 / 30', () => {

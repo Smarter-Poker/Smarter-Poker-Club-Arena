@@ -640,6 +640,10 @@ export default function BadBeatJackpotPage() {
               banner counting toward a threshold it invented is worse than no
               banner, so it renders nothing rather than guessing (10.86). */}
           {allocationPolicy !== null &&
+            /* A pivot that sends the same share as the standard rule changes
+               nothing, so there is nothing to approach (Dan 2026-10-22 set both
+               to 10 / 30 / 60). */
+            allocationPolicy.pivotMain !== allocationPolicy.standardMain &&
             (jackpot?.main_balance || 0) >=
               allocationPolicy.pivotThreshold * BBJ_PIVOT_APPROACH_FRACTION && (
               <div className="bbj-page__pivot">

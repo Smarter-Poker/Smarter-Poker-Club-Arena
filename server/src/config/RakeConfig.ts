@@ -133,8 +133,9 @@ export function getPlayerCountCaps(
 }
 
 // BBJ POOL ALLOCATION (Dan, 2026-08-18 — authoritative)
-//   STANDARD (main pool < 100k):  50% Main / 25% Back Up / 25% Promo
-//   PIVOT    (main pool >= 100k): 25% Main / 25% Back Up / 50% Promo
+//   SINCE 2026-10-22 (Dan, "for the time being"): 10% Main / 30% Back Up / 60% Promo,
+//   below and above the 100k pivot alike.
+//   UNTIL 2026-10-22: 50 / 25 / 25 below 100k in main, 25 / 25 / 50 at or above it.
 // Past the pivot the jackpot is already large, so new rake is steered into the
 // promo wallet rather than growing main further; the Back Up share is held flat
 // at 25% because its job is to reseed main after a full hit, not to grow.
@@ -149,17 +150,20 @@ export function getPlayerCountCaps(
 // banking time; `LAW 6` in tests/the-jackpot-is-one-allocator-with-an-opening-
 // balance.law.test.ts is what keeps the mirror honest, and any surface that
 // needs the live rule reads `fn_bbj_allocation_policy()`.
+// Dan 2026-10-22: "for the time being, only 10% of the bbj collected goes to
+// the main bbj, 30% to back up bbj and 60% to promo wallet" - the same split
+// below and above the pivot (migration the_jackpot_drop_goes_10_main_30_backup_60_promo).
 export const BBJ_POOL_ALLOCATION = {
-  mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
-  backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)
-  promotional: 0.25, // 25% goes to Promotional fund (standard)
+  mainBBJ: 0.1, // 10% of each BBJ drop goes to the Main BBJ pool
+  backUpBBJ: 0.3, // 30% goes to the Back Up BBJ pool
+  promotional: 0.6, // 60% goes to the Promotional fund (the remainder)
 } as const;
 
 /** Applied once the main pool reaches BBJ_PIVOT_THRESHOLD (100,000). */
 export const BBJ_POOL_ALLOCATION_PIVOT = {
-  mainBBJ: 0.25,
-  backUpBBJ: 0.25,
-  promotional: 0.5,
+  mainBBJ: 0.1,
+  backUpBBJ: 0.3,
+  promotional: 0.6,
 } as const;
 
 export const BBJ_PIVOT_THRESHOLD = 100000;

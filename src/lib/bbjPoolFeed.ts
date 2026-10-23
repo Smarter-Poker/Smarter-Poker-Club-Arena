@@ -187,9 +187,9 @@ export function watchBbjPool(clubId: string, listener: BbjPoolListener): () => v
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Every raked hand's drop is split three ways, and `fn_bbj_allocate` reads the
- * split from ONE authority: `ca_bbj_policy`. Below the pivot a drop is 50%
- * main / 25% backup / 25% promo; at or above 100,000 in main it becomes
- * 25 / 25 / 50.
+ * split from ONE authority: `ca_bbj_policy`. Since Dan's 2026-10-22 order a
+ * drop is 10% main / 30% backup / 60% promo both below and at or above the
+ * 100,000 pivot (until then it was 50 / 25 / 25 below and 25 / 25 / 50 above).
  *
  * That threshold was written down in four places - the policy table, both
  * halves of `RakeConfig.ts` as `BBJ_PIVOT_THRESHOLD`, and twice more as bare

@@ -229,7 +229,26 @@ describe('LAW 6: one split, and the page reads the allocator', () => {
   const feed = readFileSync(resolve(HERE, '../src/lib/bbjPoolFeed.ts'), 'utf8');
 
   /** The seeded policy row, read from the migration rather than restated. */
-  const seed = /VALUES \(1, (\d+), ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+),/.exec(a);
+  const seeded = /VALUES \(1, (\d+), ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+),/.exec(a);
+  /* The policy in force: the seed, overridden by the LATEST migration that
+     UPDATEs the split (Dan 2026-10-22 moved it to 10 / 30 / 60). A later
+     UPDATE that forgets to carry its numbers to both configs fails here. */
+  const latestUpdate = readdirSync(MIG)
+    .filter((n) => /^\d{14}_.*\.sql$/.test(n))
+    .sort()
+    .map((n) => readFileSync(resolve(MIG, n), 'utf8'))
+    .map((sql) =>
+      /UPDATE public\.ca_bbj_policy\s+SET standard_main = ([\d.]+),\s*standard_backup = ([\d.]+),\s*pivot_main = ([\d.]+),\s*pivot_backup = ([\d.]+)/.exec(
+        sql
+      )
+    )
+    .filter((m): m is RegExpExecArray => m !== null)
+    .pop();
+  const seed: (string | undefined)[] | null = seeded
+    ? latestUpdate
+      ? [seeded[0], seeded[1], latestUpdate[1], latestUpdate[2], latestUpdate[3], latestUpdate[4]]
+      : [...seeded]
+    : null;
 
   const numberOf = (src: string, name: string): number => {
     const m = new RegExp(`${name}\\s*=\\s*([\\d_.]+)`).exec(src);

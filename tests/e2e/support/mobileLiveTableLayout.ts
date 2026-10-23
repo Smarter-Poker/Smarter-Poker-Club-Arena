@@ -120,12 +120,39 @@ export async function certifyMobileLiveTableLayout(
                 violations.push('ALL IN Marker Is Outside Painted Felt');
             }
           }
+          /* The character the player actually sees, not its letterbox
+             (2026-10-23, post-deploy 39963913337). Bust art is a 125x170
+             canvas drawn object-fit: contain into a square box, which the
+             per-character gain then scales up; the box's transparent sides
+             crossed the board on the acting side seat while the painted
+             character stood 12px clear of it. Measure the painted art. */
+          const paintedBox = (element: Element): DOMRect => {
+            const rect = box(element);
+            if (!(element instanceof HTMLImageElement)) return rect;
+            const style = getComputedStyle(element);
+            const nw = element.naturalWidth;
+            const nh = element.naturalHeight;
+            if (!nw || !nh || (style.objectFit !== 'contain' && style.objectFit !== 'scale-down'))
+              return rect;
+            const scale = Math.min(rect.width / nw, rect.height / nh);
+            const w = nw * scale;
+            const h = nh * scale;
+            const [x = '50%', y = '50%'] = style.objectPosition.split(/\s+/);
+            const fraction = (value: string) =>
+              value.endsWith('%') ? parseFloat(value) / 100 : 0.5;
+            return new DOMRect(
+              rect.left + (rect.width - w) * fraction(x),
+              rect.top + (rect.height - h) * fraction(y),
+              w,
+              h
+            );
+          };
           const board = table.querySelector('.community-area');
           if (board && visible(board)) {
             for (const node of table.querySelectorAll(
               '.seat__info, .seat__avatar-img, .seat__action, .seat__bet-chips'
             ))
-              if (visible(node) && intersects(box(node), box(board)))
+              if (visible(node) && intersects(paintedBox(node), box(board)))
                 violations.push(`Player Or Bet Covers Board: ${node.className}`);
           }
           const mini = table.querySelector('.bbj-mini-plate');

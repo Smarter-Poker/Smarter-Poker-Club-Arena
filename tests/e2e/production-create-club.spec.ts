@@ -364,7 +364,7 @@ test.describe('Production Create A Club Certificate', () => {
       await page.screenshot({ path: 'test-results/rotating-banners-mobile.png', fullPage: true });
       await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
       await expect(page.locator('.club-lobby-command-top__campaign-button img')).toHaveCount(0);
-      await expect(page.locator('.ad-rotator--lobby-strip img')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.ad-rotator--lobby-strip')).toHaveCount(0);
       await expect(page.locator('img[src*="shark-club-championship-ad"]')).toHaveCount(0);
       expect(bannerUploadCount, 'Only The Top Club Banner May Upload An Image').toBe(1);
     } finally {

@@ -376,6 +376,7 @@ test('pre-push checks earlier branch migrations on a follow-up push', () => {
       // unresolved import - which is a gate that did not run at all.
       'recording-only.mjs',
       'maintenance-window-migrations.mjs',
+      'owner-window-migration.mjs',
     ]) {
       put(
         path.join(dir, 'scripts/ci', name),

@@ -194,6 +194,8 @@ export async function witnessCycle({
     preactionExecution: 'not_observed',
     controlsQualified: false,
     requests: { timebank: 0, preaction: 0 },
+    appRequests: { timebank: 0 },
+    foldWatch: { accepted: 0, refused: 0, unknown: 0 },
     preactionRequestHandId: null,
     timebankContextHandId: null,
     observedHands: [],
@@ -221,6 +223,10 @@ export async function witnessCycle({
       bankBefore = null;
     let armedHandId = null,
       armedHandNumber = null;
+    // The control this witness is clicking right now. A request outside that
+    // click is the app's own (for example its automatic Time Bank) and is
+    // retained separately, never counted as the witness's one request.
+    let clicking = null;
     page.on('request', (request) => {
       try {
         const endpoint = new URL(request.url());
@@ -229,6 +235,10 @@ export async function witnessCycle({
         const body = request.postDataJSON();
         if (body.tableId !== pin.poolSessionId) return;
         if (endpoint.pathname === '/timebank') {
+          if (clicking !== 'timebank') {
+            report.appRequests.timebank++;
+            return;
+          }
           report.requests.timebank++;
           report.timebankContextHandId = UUID.test(bankBefore?.hand_id) ? bankBefore.hand_id : null;
         } else if (
@@ -292,13 +302,15 @@ export async function witnessCycle({
     while (!rendered) await page.waitForTimeout(Math.min(100, remaining()));
     // Optional single clicks only while the maintained UI already offers them.
     for (const [key, requested, selector, path] of [
+      // A pre-action is offered while others act, so it is tried first; the
+      // Time Bank needs the player's own turn and comes second.
+      ['preaction', preaction, '.pre-action-btn.check', '/preaction'],
       [
         'timebank',
         timebank,
         '.control-strip button[title="Time Bank"], .control-strip button[title="Unlimited Lifetime VIP Time Banks"]',
         '/timebank',
       ],
-      ['preaction', preaction, '.pre-action-btn.check', '/preaction'],
     ]) {
       if (!requested) continue;
       const control = page.locator(selector);
@@ -327,6 +339,7 @@ export async function witnessCycle({
       }
       report.subphase = key;
       report.cause = 'optional_action_unverified';
+      clicking = key;
       const response = await clickCycleControlOnce(
         page,
         { click: (options) => clickSelectedPoolControl(page, pin, control, remaining, options) },
@@ -353,6 +366,7 @@ export async function witnessCycle({
         },
         remaining
       );
+      clicking = null;
       if (!response) {
         report[key] = 'click_or_response_unknown';
         continue;
@@ -364,14 +378,47 @@ export async function witnessCycle({
     }
     report.subphase = 'natural_cycle';
     report.cause = 'natural_showdown_history_unobserved';
+    // The account's own client holds its turns (#7738), so a passive witness
+    // times out, leaves every hand and never sees a showdown. On its own turn
+    // it takes the normal non-wager Fold & Watch, once per hand, and watches
+    // the hand play to showdown. It never bets, calls or raises.
+    const foldWatch = page.getByTestId('lightning-fold-watch');
+    const foldedHands = new Set();
+    const watchOwnTurn = async () => {
+      const hand = clock.hand_id;
+      if (!UUID.test(hand) || foldedHands.has(hand)) return;
+      if (!(await bound(foldWatch.isVisible())) || !(await bound(foldWatch.isEnabled()))) return;
+      foldedHands.add(hand);
+      const response = await clickCycleControlOnce(
+        page,
+        { click: (options) => clickSelectedPoolControl(page, pin, foldWatch, remaining, options) },
+        (r) => {
+          if (r.request().method() !== 'POST') return false;
+          try {
+            return r.request().postDataJSON()?.tableId === pin.poolSessionId;
+          } catch {
+            return false;
+          }
+        },
+        remaining
+      );
+      if (!response) report.foldWatch.unknown++;
+      else {
+        const answer = await bound(response.json()).catch(() => null);
+        if (response.ok() && answer?.success === true) report.foldWatch.accepted++;
+        else report.foldWatch.refused++;
+      }
+    };
     while (
       !rendered ||
       ![...hands.values()].some((h) => h.betting && h.showdown && h.hand_complete && h.historyId) ||
       (report.preaction === 'armed' &&
         Number.isSafeInteger(armedHandNumber) &&
         !hands.get(armedHandNumber)?.historyId)
-    )
+    ) {
+      await watchOwnTurn();
       await page.waitForTimeout(Math.min(100, remaining()));
+    }
     const observed = [...hands.values()].find(
       (h) => h.betting && h.showdown && h.hand_complete && h.historyId
     );

@@ -257,6 +257,13 @@ test('partial browser failure retains bounded live phases and requested hand ide
             payload: { type, hand_number: 7, action: 'bet', amount: 999, cards: ['SECRET'] },
           }),
         });
+      // The app's own Time Bank request (no witness click in flight) is retained
+      // apart and never counted as the witness's one request.
+      handlers.request({
+        method: () => 'POST',
+        url: () => 'https://engine.smarter.poker/timebank',
+        postDataJSON: () => ({ tableId: room }),
+      });
       handlers.request({
         method: () => 'POST',
         url: () => 'https://engine.smarter.poker/preaction',
@@ -313,6 +320,8 @@ test('partial browser failure retains bounded live phases and requested hand ide
   assert.equal(result.controlsQualified, false);
   assert.equal(result.preactionRequestHandId, history);
   assert.deepEqual(result.requests, { timebank: 0, preaction: 1 });
+  assert.deepEqual(result.appRequests, { timebank: 1 });
+  assert.deepEqual(result.foldWatch, { accepted: 0, refused: 0, unknown: 0 });
   assert.deepEqual(result.observedHands, [
     { handNumber: 7, betting: true, showdown: true, hand_complete: false, historyId: null },
   ]);
@@ -376,4 +385,18 @@ test('a disappearing optional control is clicked once with a bounded response an
   );
   assert.match(source, /report.requests.timebank === 1/);
   assert.match(source, /report.timebank === 'accepted'/);
+});
+
+test('a client-held turn is answered once per hand with the normal Fold & Watch, never a wager', () => {
+  const src = readFileSync(new URL('./lightning-pilot-cycle.mjs', import.meta.url), 'utf8');
+  assert.match(src, /getByTestId\('lightning-fold-watch'\)/);
+  assert.match(src, /foldedHands\.has\(hand\)/);
+  assert.match(src, /foldedHands\.add\(hand\)/);
+  // The witness never reaches for a wagering control.
+  assert.doesNotMatch(
+    src,
+    /lightning-(call|raise|bet)|getByRole\('button', \{ name: '(Call|Raise|Bet)/
+  );
+  // The pre-action is offered first; the Time Bank needs the player's own turn.
+  assert.ok(src.indexOf("['preaction', preaction") < src.indexOf("'timebank',\n        timebank"));
 });

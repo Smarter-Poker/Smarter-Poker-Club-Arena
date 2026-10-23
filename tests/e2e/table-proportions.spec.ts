@@ -977,8 +977,7 @@ for (const width of [320, 375, 393, 430, 480])
         [true, 'mini', 6, 'all-in'],
         [true, 'mini', 6, 'all-shown'],
       ] as const) {
-        // The narrow nine-seat PLO6 ring is a required regression, not an
-        // exception. Six-seat presentation is unchanged in this repair.
+        // Both rings exercise every occupied state at every phone width.
         await page.setViewportSize({
           width,
           height: width === 320 ? 568 : width === 375 ? 667 : 852,
@@ -1094,6 +1093,11 @@ for (const width of [320, 375, 393, 430, 480])
             return new Promise<void>((resolve) =>
               requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
             );
+          });
+        }
+        if (state !== 'normal') {
+          await page.screenshot({
+            path: testInfo.outputPath(`${width}px-${count}-seats-PLO${villainCards}-${state}.png`),
           });
         }
         const result = await page.evaluate(() => {

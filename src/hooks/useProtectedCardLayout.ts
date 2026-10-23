@@ -183,7 +183,7 @@ export function useProtectedCardLayout(
           );
         };
         const place = (candidate: CardBox) =>
-          placeProtectedCardRow(candidate, others, bounds, 4, ownsIt) ??
+          placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
           placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
         let next = place(box);
@@ -494,12 +494,11 @@ export function useProtectedCardLayout(
               height: box.height,
               depth: point.depth,
             }));
-            // The 320px PLO6 cap lane is narrower than a sampled oval band.
+            // Short-phone PLO cap lanes can be narrower than a sampled oval band.
             // Include exact obstacle-edge intersections so a clear 23px slot
             // between two plates is not missed by the radial sampling grid.
             if (
-              page.getAttribute('data-seats') === '9' &&
-              window.innerWidth <= 340 &&
+              window.innerWidth <= 375 &&
               page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)')
             ) {
               const xs = new Set([desired.x - box.width / 2]);
@@ -563,7 +562,7 @@ export function useProtectedCardLayout(
               return playerCentres.every(
                 (other) =>
                   Math.hypot(other.x - desired.x, other.y - desired.y) < 1 ||
-                  own + 4 < Math.hypot(cx0 - other.x, cy0 - other.y)
+                  own + 1.5 < Math.hypot(cx0 - other.x, cy0 - other.y)
               );
             };
             const nearest = [...clearOfTable].sort(byCost);

@@ -7,3 +7,5 @@ Revealed-hand placements belong to the current table/hand and viewport geometry.
 All-in and winner cues animate the avatar; the big-win shake animates the table artwork. Card reveal turns the inner artwork within a fixed card slot without scaling the layout. Dealt-card indexes still govern winner highlighting and privacy; display slots retain their DOM identity during reveal.
 
 Regression coverage extends the occupied six- and nine-seat phone renders to PLO5/PLO6 all-in hands, uniform sizing, fixed geometry after animation events and minimum readable spacing. The existing board/player/wager/hand-overlap assertions remain enforced. Focused seat, card-geometry, placement and animation tests also apply.
+
+Short phones reserve the card-and-marker lane throughout every hand: six-seat tables remain shorter than nine seats, with enough height to keep the top all-in marker clear of the player plate and pot. The narrowest phones and dense mobile rings share a fixed tabled-card width rather than compressing individual hands.

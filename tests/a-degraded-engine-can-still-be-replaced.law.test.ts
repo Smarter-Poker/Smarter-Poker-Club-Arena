@@ -304,6 +304,16 @@ esac
         join(bin, 'docker'),
         `#!/usr/bin/env bash
 set -euo pipefail
+# The pre-break image warm-up is a throwaway container with its own name; it
+# never addresses the engine. Anything else that mutates is still refused.
+for arg in "$@"; do
+  case "$arg" in
+    club-arena-engine-prewarm-*)
+      printf 'image-prewarm-%s\\n' "$1" >> '${eventLog}'
+      exit 0
+      ;;
+  esac
+done
 case "\${1:-}" in
   run|start|stop|restart|update|unpause|rm|kill)
     printf 'MUTATION-docker-%s\\n' "$1" >> '${eventLog}'
@@ -403,6 +413,11 @@ exit 91
       const events = readFileSync(eventLog, 'utf8').trim().split('\n');
       expect(events.indexOf('sealed-high-water-read')).toBeGreaterThan(-1);
       expect(events.indexOf('sealed-high-water-read')).toBeLessThan(events.indexOf('builder'));
+      // The new image is warmed right after its build, before any break proof.
+      expect(events.indexOf('image-prewarm-run')).toBeGreaterThan(events.indexOf('builder'));
+      expect(events.indexOf('image-prewarm-run')).toBeLessThan(
+        events.findIndex((event) => event.startsWith('certificate-503:'))
+      );
       const certificates = events.filter((event) => event.startsWith('certificate-503:'));
       const sourceProofs = events
         .map((event, index) => ({ event, index }))

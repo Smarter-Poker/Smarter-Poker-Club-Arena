@@ -1,3 +1,5 @@
+-- @live-proof: position('smarter_private.f06_operations' in pg_get_functiondef('public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)'::regprocedure)) > 0 AND position('smarter_private.f06_operations' in pg_get_functiondef('public.fn_ensure_late_registration_capacity(uuid,integer)'::regprocedure)) > 0
+-- Historical installed statement body below; never replay this recorded version.
 SET LOCAL lock_timeout = '5s';
 
 DO $m$

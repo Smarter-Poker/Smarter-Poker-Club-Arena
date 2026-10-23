@@ -245,12 +245,21 @@ describe('durable opponent memory with real PostgreSQL', () => {
     );
     await client.query("set statement_timeout='1500ms'");
     try {
+      const started = performance.now();
       const rows = (
         await client.query(
           "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
           [ids]
         )
       ).rows;
+      console.info(
+        'OPPONENT_MEMORY_COLD_READ',
+        JSON.stringify({
+          players: rows.length,
+          horizon: 1024,
+          elapsedMs: performance.now() - started,
+        })
+      );
       expect(rows).toHaveLength(10);
       expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
     } finally {
@@ -259,12 +268,22 @@ describe('durable opponent memory with real PostgreSQL', () => {
   });
 
   it('actor-targeted legacy parsing matches every public-action actor', async () => {
+    const actions: unknown[] = [
+      ...publicActions.hands.map((h) => h.actions),
+      [
+        null,
+        3,
+        'malformed',
+        { userId: uid, action: 'check', stage: 'flop' },
+        { userId: other, action: 'raise', stage: 'turn', isFullRaise: true },
+      ],
+    ];
     const result = await client.query(
       `with hands as (select x from jsonb_array_elements($1) x),
       counted as (select x,fn_horse_exploit_increments(x) counts from hands)
       select bool_and(fn_horse_exploit_increments(x,k) = jsonb_build_object(k,counts->k)) matched
       from counted cross join lateral jsonb_object_keys(counts) k`,
-      [JSON.stringify(publicActions.hands.map((h) => h.actions))]
+      [JSON.stringify(actions)]
     );
     expect(result.rows[0].matched).toBe(true);
   });

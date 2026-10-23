@@ -54,3 +54,20 @@ export function isTableOfDisabledGame(
   if (disabledGameIds.size === 0) return false;
   return disabledGameIds.has(String(table.cluster_id));
 }
+
+/**
+ * A SWITCHED-OFF GAME EMPTIES OF HORSES (Dan 2026-10-23). True when the
+ * horses at this table should stand up at the end of the hand: the table is
+ * one of a disabled game's and nobody at it is a person. A person seated
+ * there keeps the horses, so this pass never leaves a human alone at a table.
+ * Built on isTableOfDisabledGame, so an empty (unread) set walks nobody out.
+ */
+export function horsesLeaveSwitchedOffGame(
+  clusterId: string | null | undefined,
+  seatedUserIds: ReadonlyArray<string>,
+  horseIds: ReadonlySet<string>,
+  disabledGameIds: ReadonlySet<string>
+): boolean {
+  if (!isTableOfDisabledGame({ cluster_id: clusterId ?? null }, disabledGameIds)) return false;
+  return !seatedUserIds.some((id) => id !== '' && !horseIds.has(id));
+}

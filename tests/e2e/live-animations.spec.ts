@@ -82,6 +82,45 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     await mountTable(page);
   });
 
+  test('turn and all-in glows breathe without animating a full-screen blur', async ({ page }) => {
+    for (const [state, animation, blur] of [
+      ['hero-turn', 'heroTurnPulse', '80px'],
+      ['allin-mode', 'allInTensionGlow', '60px'],
+    ]) {
+      const glow = await page.evaluate(
+        async ({ state, animation }) => {
+          const root = document.querySelector('.table-page')!;
+          root.className = `table-page table-page--${state}`;
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          );
+          const running = document
+            .getAnimations()
+            .find((a) => (a as CSSAnimation).animationName === animation);
+          const style = getComputedStyle(root, '::before');
+          return {
+            frames: running?.effect?.getKeyframes(),
+            duration: running?.effect?.getTiming().duration,
+            shadow: style.boxShadow,
+            pointerEvents: style.pointerEvents,
+          };
+        },
+        { state, animation }
+      );
+      expect(glow.duration).toBe(2000);
+      expect(glow.frames?.map((frame) => frame.opacity)).toEqual(['0', '1', '0']);
+      expect(glow.frames?.every((frame) => frame.boxShadow === undefined)).toBe(true);
+      expect(glow.shadow).toContain(blur);
+      expect(glow.pointerEvents).toBe('none');
+      const paused = await page.evaluate(() => {
+        const root = document.querySelector('.table-page')!;
+        root.classList.add('table-page--backgrounded');
+        return getComputedStyle(root, '::before').animationPlayState;
+      });
+      expect(paused).toBe('paused');
+    }
+  });
+
   test('every beat of a hand actually animates, at the right duration', async ({ page }) => {
     // ── BEAT 1 — THE DEAL: cards fly from the dealer to every seat ──────────
     const b1 = await beat(

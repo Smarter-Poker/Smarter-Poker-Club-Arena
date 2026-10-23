@@ -9,3 +9,5 @@ Stylesheet failures retain guarded document recovery and remove the failed link.
 Regression coverage exercises Safari's module-error wording through the Vite event and the real importWithRetry function, asserting no document replacement or spent recovery budget. A separate regression preserves critical recovery after its retry budget.
 
 This repairs a demonstrated reload path. It does not establish that every reported periodic Safari white screen came from that path. Device continuity and publication evidence remain in the task checkpoint.
+
+The required related preflight also exposed a timeout in the existing Double Diamonds law test: its latest-definition lookup read every migration twice. The lookup now scans newest-first and stops at the first matching definition, preserving the same selected file and every financial assertion. No product or database behavior changes.

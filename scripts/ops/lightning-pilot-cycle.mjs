@@ -119,6 +119,18 @@ export async function clickCycleControlOnce(page, control, matches, remaining, w
       : click.reason?.name === 'TimeoutError' || /Timeout/i.test(m)
         ? 'control_not_clickable'
         : 'click_failed';
+    // Playwright names the element that took the pointer; keep only its tag and
+    // class tokens (no text, ids or attributes), and Playwright's fixed reasons.
+    const blocker = m.match(
+      /<(\w{1,12})(?:[^>]*?class="([\w\s-]{0,80})")?[^>]*>[^\n]*intercepts pointer events/
+    );
+    if (blocker)
+      why.interceptedBy = `${blocker[1]}.${(blocker[2] || '').trim().split(/\s+/).slice(0, 4).join('.')}`;
+    if (/not visible/.test(m)) why.reason = 'not_visible';
+    else if (/not enabled|disabled/.test(m)) why.reason = 'not_enabled';
+    else if (/not stable/.test(m)) why.reason = 'not_stable';
+    else if (/intercepts pointer events/.test(m)) why.reason = 'pointer_intercepted';
+    else if (/outside of the viewport/.test(m)) why.reason = 'outside_viewport';
   } else why.click = 'clicked';
   if (response.status !== 'fulfilled') {
     why.response = 'no_matching_response';

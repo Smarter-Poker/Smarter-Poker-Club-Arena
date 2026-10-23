@@ -1,214 +1,112 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  TAB KEEPALIVE HOOK — Prevents Chrome from throttling background tabs
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Chrome aggressively throttles setTimeout/setInterval in background tabs,
- * stretching timers to ~1 minute intervals. This kills horse decision-making
- * which relies on setTimeout(thinkTime).
- *
- * Two techniques used together:
- * 1. Web Worker — runs in a separate thread, not subject to tab throttling
- * 2. Silent AudioContext — playing audio (even silent) keeps the tab active
- *
- * Also exports workerTimeout() — a throttle-proof setTimeout replacement
- * that uses a Web Worker for timing instead of the main thread timer.
+ * Bounded table decision timers. The historical hook name is retained for its
+ * TablePage caller; it now owns cleanup only, never anti-throttling activity.
+ * Real sounds and screen wake locks have separate owners.
  */
-
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { reportError } from '../utils/errorReporter';
 
-// ─── Worker-based setTimeout (throttle-proof) ────────────────────────────────
-// Chrome can't throttle Web Worker timers, so we route timing through a worker.
-
+// A worker is useful only while an insurance decision is actually pending.
+// Browser/OS suspension can still delay delivery; the engine owns the deadline.
 let _timerWorker: Worker | null = null;
 let _timerId = 0;
 const _callbacks = new Map<number, () => void>();
+const fallbackTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
-function getTimerWorker(): Worker {
-  if (!_timerWorker) {
-    const code = `
-            self.onmessage = function(e) {
-                var id = e.data.id;
-                var ms = e.data.ms;
-                setTimeout(function() { postMessage({ id: id }); }, ms);
-            };
-        `;
-    const blob = new Blob([code], { type: 'application/javascript' });
-    const url = URL.createObjectURL(blob);
-    _timerWorker = new Worker(url);
-    URL.revokeObjectURL(url); // Worker holds its own handle once constructed
-    _timerWorker.onmessage = (e: MessageEvent) => {
-      const cb = _callbacks.get(e.data.id);
-      if (cb) {
-        _callbacks.delete(e.data.id);
-        cb();
-      }
-    };
-  }
-  return _timerWorker;
+function releaseIdleWorker(): void {
+  if (_callbacks.size > 0) return;
+  _timerWorker?.terminate();
+  _timerWorker = null;
 }
 
-/**
- * Throttle-proof setTimeout — uses a Web Worker for timing.
- * Drop-in replacement for setTimeout(fn, ms).
- * Returns an id that can be passed to cancelWorkerTimeout().
- */
+function finishTimer(id: number): void {
+  const callback = _callbacks.get(id);
+  _callbacks.delete(id);
+  clearTimeout(fallbackTimers.get(id));
+  fallbackTimers.delete(id);
+  releaseIdleWorker();
+  callback?.();
+}
+
+function getTimerWorker(): Worker {
+  if (_timerWorker) return _timerWorker;
+  const code = `
+    const timers = new Map();
+    self.onmessage = function(e) {
+      const { id, ms, cancel } = e.data;
+      if (cancel) {
+        clearTimeout(timers.get(id));
+        timers.delete(id);
+        return;
+      }
+      timers.set(id, setTimeout(function() {
+        timers.delete(id);
+        postMessage({ id });
+      }, ms));
+    };
+  `;
+  const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+  try {
+    const worker = new Worker(url);
+    worker.onmessage = (event: MessageEvent<{ id: number }>) => {
+      if (_timerWorker === worker) finishTimer(event.data.id);
+    };
+    _timerWorker = worker;
+    return worker;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Schedule one decision deadline without a continuously running keepalive. */
 export function workerTimeout(fn: () => void, ms: number): number {
   const id = ++_timerId;
   _callbacks.set(id, fn);
   try {
     getTimerWorker().postMessage({ id, ms });
-  } catch (e) {
-    reportError(e, 'useTabKeepAlive.workerTimeout');
-    // Fallback to regular setTimeout if Worker fails
-    setTimeout(() => {
-      const cb = _callbacks.get(id);
-      if (cb) {
-        _callbacks.delete(id);
-        cb();
-      }
-    }, ms);
+  } catch (error) {
+    reportError(error, 'useTabKeepAlive.workerTimeout');
+    fallbackTimers.set(
+      id,
+      setTimeout(() => finishTimer(id), ms)
+    );
   }
   return id;
 }
 
-/**
- * Cancel a pending workerTimeout by id.
- * Prevents memory leaks from accumulated closures when hands complete
- * before think-time timers fire.
- */
 export function cancelWorkerTimeout(id: number): void {
-  _callbacks.delete(id);
-}
-
-// ─── React Hook ──────────────────────────────────────────────────────────────
-
-// ─── Shared keepalive resources (refcounted singletons) ──────────────────────
-//
-// ANIMATION/SOUND AUDIT 2026-08-20 — AUDIO EXHAUSTION FIX.
-//
-// This hook used to build a PER-MOUNT AudioContext and a PER-MOUNT Worker.
-// MultiTablePage keeps up to MAX_TABLES (4) TablePage instances mounted
-// SIMULTANEOUSLY — by design, so every EngineStateClient socket stays live —
-// so four tables meant four keepalive contexts. Add the SoundService context
-// (constructed at module import, so it always exists), the PremiumSFX context,
-// and a VoiceRecorder context, and a 4-table session reaches SEVEN concurrent
-// AudioContexts against Chrome's hard cap of SIX per document. The seventh
-// throws on construction, and because SoundService/PremiumSFX build theirs
-// LAZILY they are the ones that lose the race — the failure mode is the whole
-// table going SILENT, which is precisely the outcome the animation/sound work
-// exists to prevent.
-//
-// The keepalive context's job is "keep THIS TAB unthrottled". That is a
-// per-DOCUMENT concern, not a per-table one: four of them do nothing that one
-// does. Both resources are now refcounted module singletons — the first mount
-// creates, the last unmount tears down. Ceiling drops 7 -> 4, permanently
-// clear of the cap.
-//
-// The blob URLs are revoked immediately after construction (the Worker keeps
-// its own handle once created); previously each table open leaked one for the
-// lifetime of the document.
-
-let _keepAliveRefs = 0;
-let _keepAliveCtx: AudioContext | null = null;
-let _keepAliveWorker: Worker | null = null;
-
-function acquireKeepAlive(): void {
-  _keepAliveRefs += 1;
-  if (_keepAliveRefs > 1) return; // already running — just count the new holder
-
-  // 1. Web Worker keepalive — pings every 3 seconds from a worker thread
+  if (!_callbacks.delete(id)) return;
+  clearTimeout(fallbackTimers.get(id));
+  fallbackTimers.delete(id);
   try {
-    const blob = new Blob(['setInterval(function(){postMessage("k")},3000)'], {
-      type: 'application/javascript',
-    });
-    const url = URL.createObjectURL(blob);
-    const worker = new Worker(url);
-    URL.revokeObjectURL(url);
-    worker.onmessage = () => {
-      (window as any).__keepAliveTs = Date.now();
-    };
-    _keepAliveWorker = worker;
-  } catch (e) {
-    console.warn('[KeepAlive] Web Worker failed:', e);
-  }
-
-  // 2. Silent AudioContext — Chrome won't throttle tabs playing audio
-  try {
-    _keepAliveCtx = new AudioContext();
-    const osc = _keepAliveCtx.createOscillator();
-    const gain = _keepAliveCtx.createGain();
-    gain.gain.value = 0;
-    osc.connect(gain);
-    gain.connect(_keepAliveCtx.destination);
-    osc.start();
-  } catch (e) {
-    // Non-fatal by design: if we are already at the cap the tab simply keeps
-    // its Worker-based throttle protection, which covers horse think-timers.
-    _keepAliveCtx = null;
-    console.warn('[KeepAlive] AudioContext failed:', e);
+    _timerWorker?.postMessage({ id, cancel: true });
+  } catch (error) {
+    reportError(error, 'useTabKeepAlive.cancelWorkerTimeout');
+  } finally {
+    releaseIdleWorker();
   }
 }
 
-function releaseKeepAlive(): void {
-  _keepAliveRefs = Math.max(0, _keepAliveRefs - 1);
-  if (_keepAliveRefs > 0) return; // another table is still holding it open
-
-  if (_keepAliveWorker) {
-    _keepAliveWorker.terminate();
-    _keepAliveWorker = null;
-  }
-  if (_keepAliveCtx) {
-    _keepAliveCtx
-      .close()
-      .catch((e) => console.warn('[KeepAlive] Failed to close AudioContext:', e));
-    _keepAliveCtx = null;
-  }
-}
-
-/** Test-only: current refcount + whether the shared resources are live. */
-export function __keepAliveDebugState(): {
-  refs: number;
-  hasCtx: boolean;
-  hasWorker: boolean;
-} {
-  return {
-    refs: _keepAliveRefs,
-    hasCtx: _keepAliveCtx !== null,
-    hasWorker: _keepAliveWorker !== null,
-  };
-}
+/**
+ * Tables own pending decision timers, not a permanently active audio device.
+ * Horse decisions run on the server. A silent oscillator and empty worker
+ * pings cannot help that server and keep a phone doing work for the whole
+ * session. The timer worker above is created only for a real decision.
+ */
+let timerHolders = 0;
 
 export function useTabKeepAlive(): void {
-  const heldRef = useRef(false);
-
   useEffect(() => {
-    // StrictMode double-invoke and re-render safety: never acquire twice for
-    // the same mount, or the refcount would never fall back to zero.
-    if (heldRef.current) return;
-    heldRef.current = true;
-
-    acquireKeepAlive();
-
-    // Pre-warm the timer worker so the first horse decision doesn't lag.
-    // Already a module singleton, so this is idempotent across tables.
-    try {
-      getTimerWorker();
-    } catch (e) {
-      reportError(e, 'useTabKeepAlive.onmessage');
-      /* ok */
-    }
-
-    console.debug(
-      `[KeepAlive] Tab keepalive active (shared, refs=${_keepAliveRefs})`
-    );
-
+    timerHolders += 1;
     return () => {
-      if (!heldRef.current) return;
-      heldRef.current = false;
-      releaseKeepAlive();
-      console.debug(`[KeepAlive] Tab keepalive released (refs=${_keepAliveRefs})`);
+      timerHolders -= 1;
+      if (timerHolders > 0) return;
+      // The last table has left. No decision callback may outlive its owner.
+      for (const timer of fallbackTimers.values()) clearTimeout(timer);
+      fallbackTimers.clear();
+      _callbacks.clear();
+      _timerWorker?.terminate();
+      _timerWorker = null;
     };
   }, []);
 }

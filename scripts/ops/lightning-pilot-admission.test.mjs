@@ -834,3 +834,26 @@ test('admission accepts exactly the consented witness players and refuses anyone
   assert.equal(r.playerId, null);
   assert.equal(auth, 0);
 });
+
+test('a consented witness on another house email domain signs in; an account with no email never does', async () => {
+  for (const [email, ok] of [
+    ['milehigh@hydra.smarter.poker', true],
+    ['player009@smarter.poker', true],
+    ['', false],
+    [null, false],
+  ]) {
+    const f = fixture();
+    f.args.admin.auth.admin.getUserById = async () => ({
+      data: { user: { id: ADMISSION_PLAYER, email } },
+    });
+    const r = await witnessAdmission({
+      ...f.args,
+      withAdmittedSession: async () => ({ status: 'observed' }),
+    });
+    if (ok) assert.notEqual(r.phase, 'authentication');
+    else {
+      assert.equal(r.status, 'unknown');
+      assert.deepEqual(f.actions, []);
+    }
+  }
+});

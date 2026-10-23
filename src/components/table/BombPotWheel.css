@@ -86,6 +86,7 @@
   top: 12%;
   left: 47.5%;
   z-index: 3;
+  filter: brightness(2.8) drop-shadow(0 0 3px #f4f7fb) drop-shadow(0 0 8px #45adff);
 }
 .bpw__hub {
   position: absolute;
@@ -125,12 +126,25 @@
     opacity 260ms ease;
 }
 .bpw__wedge.is-lit {
-  filter: brightness(1.7);
+  stroke: #45adff;
+  stroke-width: 3;
+  filter: brightness(3) drop-shadow(0 0 5px rgb(69 173 255 / 90%));
 }
 .bpw__wedge.is-winner {
   stroke: #f02849;
-  stroke-width: 2.8;
+  stroke-width: 4;
+  filter: brightness(2.8) drop-shadow(0 0 6px rgb(240 40 73 / 95%));
   animation: bpwWinnerPulse calc(700ms * var(--bpw-speed, 1)) ease-in-out 2;
+}
+/* Light the existing glass face without covering its engraved numbers. */
+.bpw__light {
+  fill: #45adff;
+  fill-opacity: 0.4;
+  pointer-events: none;
+}
+.bpw__light--winner {
+  fill: #f02849;
+  fill-opacity: 0.4;
 }
 .bpw__wedge.is-dimmed {
   opacity: 0.45;
@@ -183,10 +197,10 @@
 @keyframes bpwWinnerPulse {
   0%,
   100% {
-    filter: brightness(1);
+    filter: brightness(2.8) drop-shadow(0 0 6px rgb(240 40 73 / 95%));
   }
   50% {
-    filter: brightness(1.6);
+    filter: brightness(3.8) drop-shadow(0 0 10px rgb(240 40 73 / 95%));
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -18,13 +18,11 @@
  * that moves chips into the agent wallet, the master's red for the one that
  * sends them back.
  *
- * NOT ONE MONEY PATH MOVED. `inFlightRef` still refuses the second tap on the
- * SAME card synchronously, `opIdFor` still mints one id per cashout PER
- * ACTION and holds it across a failure, the settlement-freeze check still runs
- * before either decision and still fails open, the realtime filter is still
- * built from a RESOLVED club uuid, and `cashout.amount.toLocaleString()` is
- * still the exact figure - this is the amount about to move, so it is never
- * abbreviated.
+ * Each accepted decision keeps its durable operation identity across failures.
+ * `inFlightRef` refuses a second tap on the same card; receipt recovery and
+ * current-account checks precede the atomic cashout transaction. General
+ * settlement locks never gate cashout decisions. Realtime uses a resolved club
+ * UUID, and the exact chip amount is never abbreviated.
  *
  * EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): the first-load skeleton keeps
  * `animationsShimmerFade` and `animationsShimmerSlide` at their own durations
@@ -54,7 +52,6 @@ import {
 } from '../../hooks/usePreparedCashoutOperations';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
-import { checkSettlementLock } from '../../utils/settlementLock';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { formatRelativeShort } from '@/lib/date';
 import { titleCase } from '../../utils/titleCase';
@@ -320,9 +317,6 @@ function AgentCashoutContent({
       checkingOutcome = false;
       assertCashoutStartCurrent(start);
       if (!recovery.found) {
-        const lock = await checkSettlementLock(start.clubId);
-        assertCashoutStartCurrent(start);
-        if (lock.locked) throw new Error('Settlement In Progress. Cashout Actions Are Frozen');
         checkingOutcome = true;
         await runCashoutOperation(start);
         checkingOutcome = false;
@@ -420,7 +414,7 @@ function AgentCashoutContent({
   return (
     <SpadeConsole
       eyebrow={eyebrow}
-        onClose={onClose}
+      onClose={onClose}
       title="Pending Cashouts"
       titleId="agent-cashout-title"
       pill={String(cashouts.length)}

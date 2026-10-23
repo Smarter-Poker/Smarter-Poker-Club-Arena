@@ -57,6 +57,12 @@ interface RoomInfo {
    * room). Cleared when the last socket closes. See isClientControlling.
    */
   clientClaimed?: boolean;
+  /**
+   * Counts the room's socket sessions: +1 each time its first socket arrives
+   * (0 -> 1). A first frame remembers the session it was sent into, so an ack
+   * from a later session is a resume, not a render (2026-10-23).
+   */
+  socketSession?: number;
 }
 
 /**
@@ -139,7 +145,15 @@ interface PendingRender {
   userId: string;
   clusterId: string | null;
   sentAtMs: number;
+  /**
+   * The room's socket session when the first frame went out, or null when no
+   * socket of the owner's was there to receive it (2026-10-23).
+   */
+  socketSession: number | null;
 }
+
+/** Why a RENDER_ACK closed a first frame without a hand_to_first_render sample. */
+export type LightningRenderResume = 'before_subscribe' | 'resubscribed' | 'hidden';
 
 /** A first frame unacknowledged this long is no sample (the room was not watching). */
 export const LIGHTNING_RENDER_ACK_TTL_MS = 60_000;
@@ -251,12 +265,14 @@ export class LightningRegistry {
   noteFirstFrame(roomId: string, userId: string, handId: string, atMs: number): void {
     if (!isUuid(roomId) || !isUuid(handId)) return;
     this.renderPending.delete(roomId);
+    const info = this.rooms.get(roomId);
     this.renderPending.set(roomId, {
       handId,
       userId,
-      clusterId:
-        this.rooms.get(roomId)?.clusterId ?? this.hostByRoom.get(roomId)?.clusterId ?? null,
+      clusterId: info?.clusterId ?? this.hostByRoom.get(roomId)?.clusterId ?? null,
       sentAtMs: atMs,
+      socketSession:
+        info && info.userId === userId && info.sockets > 0 ? (info.socketSession ?? 0) : null,
     });
     if (this.renderPending.size > LIGHTNING_RENDER_PENDING_MAX) {
       for (const [room, p] of this.renderPending) {
@@ -276,8 +292,18 @@ export class LightningRegistry {
    * sent, and only inside the TTL. The leg is the ENGINE's clock from the
    * first frame to now: the client's timestamps are never used. The frame
    * carries a hand id and nothing else of the hand.
+   *
+   * RESUME, NOT RENDER (2026-10-23). The leg measures a hand reaching a screen
+   * that was already watching. A first frame sent while the room had no socket
+   * of its owner's (the page was still loading, or away), acked from a later
+   * socket session, or painted only once a hidden tab came back (`resumed`,
+   * the client's own flag) is closed as a resume: it still claims the seat,
+   * it is counted, and it is not a hand_to_first_render sample. Measured: the
+   * pilot breaches of 2026-10-23 (13067, 30634, 51597, 15774, 3130, 20537 ms)
+   * were each a workload's first ack after its page load, for a hand formed
+   * 3 to 52 s before the page's socket subscribed.
    */
-  renderAck(roomId: string, userId: string, handId: unknown): boolean {
+  renderAck(roomId: string, userId: string, handId: unknown, resumed = false): boolean {
     // The owner's client rendering its hand is a control claim, whatever the
     // latency leg below makes of it.
     this.noteClientClaim(roomId, userId);
@@ -287,6 +313,19 @@ export class LightningRegistry {
     this.renderPending.delete(roomId);
     const ms = this.clock() - p.sentAtMs;
     if (ms < 0 || ms > LIGHTNING_RENDER_ACK_TTL_MS) return false;
+    const now = this.rooms.get(roomId)?.socketSession ?? 0;
+    const resume: LightningRenderResume | null =
+      p.socketSession === null
+        ? 'before_subscribe'
+        : p.socketSession !== now
+          ? 'resubscribed'
+          : resumed === true
+            ? 'hidden'
+            : null;
+    if (resume) {
+      this.metrics.recordRenderResume(resume);
+      return false;
+    }
     this.metrics.observeLatency('hand_to_first_render', ms, p.clusterId);
     return true;
   }
@@ -428,6 +467,7 @@ export class LightningRegistry {
     if (!info || info.userId !== userId) return;
     const controlledBefore = this.isClientControlling(userId, roomId);
     info.sockets++;
+    if (info.sockets === 1) info.socketSession = (info.socketSession ?? 0) + 1;
     if (platform) info.platform = platform;
     this.hostByRoom.get(roomId)?.notePresence(userId, true);
     if (!controlledBefore && this.isClientControlling(userId, roomId))

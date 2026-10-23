@@ -24184,9 +24184,9 @@ function LiveTablePage({
   const lightningRenderAckedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!lightningRenderHandId || lightningRenderAckedRef.current === lightningRenderHandId) return;
-    return scheduleLightningRenderAck(lightningRenderHandId, (handId, deltaMs) => {
+    return scheduleLightningRenderAck(lightningRenderHandId, (handId, deltaMs, resumed) => {
       lightningRenderAckedRef.current = handId;
-      sendEngineRenderAck(handId, deltaMs);
+      sendEngineRenderAck(handId, deltaMs, resumed);
     });
   }, [lightningRenderHandId, sendEngineRenderAck]);
 

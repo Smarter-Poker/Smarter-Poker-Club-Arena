@@ -150,8 +150,8 @@ const engineWs = new EngineWebSocketServer({
     gameServer.lightningRooms.disconnect(tableId, userId);
   },
   // Lightning Phase 12: the client rendered its room's hand (hand_to_first_render).
-  onRenderAck: (tableId, userId, handId) => {
-    gameServer.lightningRooms.renderAck(tableId, userId, handId);
+  onRenderAck: (tableId, userId, handId, resumed) => {
+    gameServer.lightningRooms.renderAck(tableId, userId, handId, resumed);
   },
 });
 

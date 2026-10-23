@@ -1118,11 +1118,81 @@ describe('hand creation → first client render: engine clock, per connection, o
       'utf8'
     );
     expect(src).toContain("case 'RENDER_ACK'");
-    expect(src).toMatch(/onRenderAck\?\.\(tableId, userId, handId\)/);
+    expect(src).toMatch(/onRenderAck\?\.\(tableId, userId, handId, resumed\)/);
+    // The client's own resume flag (a hidden tab) is the only extra it carries.
+    expect(src).toMatch(/this\.renderAck\(tableId, conn\.userId, msg\.hand_id, msg\.r === 1\)/);
     const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
     expect(index).toMatch(
-      /onRenderAck: \(tableId, userId, handId\) => \{\s*gameServer\.lightningRooms\.renderAck\(tableId, userId, handId\);/
+      /onRenderAck: \(tableId, userId, handId, resumed\) => \{\s*gameServer\.lightningRooms\.renderAck\(tableId, userId, handId, resumed\);/
     );
+  });
+
+  // 2026-10-23: every pilot breach was a workload's first ack after its page
+  // load, for a hand formed before the page's socket subscribed.
+  function resumes(r: InstanceType<typeof LightningRegistry>): Record<string, number> {
+    const m = (r as unknown as { metrics: InstanceType<typeof LightningMetrics> }).metrics;
+    const out: Record<string, number> = {};
+    for (const why of ['before_subscribe', 'resubscribed', 'hidden'])
+      out[why] = m.renderResumesTotal.get({ why }) ?? 0;
+    return out;
+  }
+
+  it('a hand dealt before the room had a socket is a resume, not a render (13:59:09 formed, 14:00:01 ack)', async () => {
+    const { r, t, seen } = reg();
+    await r.authorize(ROOM, USER);
+    // The page is still loading: the room is authorized but has no socket yet.
+    r.noteFirstFrame(ROOM, USER, HAND, t.now);
+    t.now += 51_000;
+    r.connect(ROOM, USER);
+    t.now += 597;
+    expect(r.renderAck(ROOM, USER, HAND)).toBe(false);
+    expect(seen).toEqual([]);
+    expect(resumes(r).before_subscribe).toBe(1);
+    // It still claims the seat for the player's own client.
+    expect(r.isClientControlling(USER, ROOM)).toBe(true);
+    // The next hand, dealt to the watching room, is measured.
+    const NEXT = '00008000-0000-4000-8000-000000000002';
+    r.noteFirstFrame(ROOM, USER, NEXT, t.now);
+    t.now += 88;
+    expect(r.renderAck(ROOM, USER, NEXT)).toBe(true);
+    expect(seen).toEqual([['hand_to_first_render', 88, CLUSTER]]);
+  });
+
+  it('a hand dealt before the room was even authorized is a resume too', async () => {
+    const { r, t, seen } = reg();
+    r.noteFirstFrame(ROOM, USER, HAND, t.now);
+    t.now += 3_000;
+    await r.authorize(ROOM, USER);
+    r.connect(ROOM, USER);
+    t.now += 130;
+    expect(r.renderAck(ROOM, USER, HAND)).toBe(false);
+    expect(seen).toEqual([]);
+    expect(resumes(r).before_subscribe).toBe(1);
+  });
+
+  it('a genuinely slow render on a room that was watching still counts, whatever its length', async () => {
+    const { r, t, seen } = reg();
+    await r.authorize(ROOM, USER);
+    r.connect(ROOM, USER);
+    r.noteFirstFrame(ROOM, USER, HAND, t.now);
+    // A second tab opening and closing is the same socket session.
+    r.connect(ROOM, USER);
+    r.disconnect(ROOM, USER);
+    t.now += 30_634;
+    expect(r.renderAck(ROOM, USER, HAND)).toBe(true);
+    expect(seen).toEqual([['hand_to_first_render', 30_634, CLUSTER]]);
+    expect(resumes(r)).toEqual({ before_subscribe: 0, resubscribed: 0, hidden: 0 });
+  });
+
+  it('a hand painted only after a hidden tab came back is a resume (the client says so)', async () => {
+    const { r, t, seen } = reg();
+    await r.authorize(ROOM, USER);
+    r.connect(ROOM, USER);
+    r.noteFirstFrame(ROOM, USER, HAND, t.now);
+    t.now += 20_537;
+    expect(r.renderAck(ROOM, USER, HAND, true)).toBe(false);
+    expect(seen).toEqual([]);
+    expect(resumes(r).hidden).toBe(1);
   });
 });
 

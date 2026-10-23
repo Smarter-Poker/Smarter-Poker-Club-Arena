@@ -108,7 +108,15 @@ export interface LightningHandBackend {
     instanceId: string,
     handNumber: number
   ): Promise<LightningCallOutcome<{ handId: string; handNumber: number; hostTableId: string }>>;
-  loadParticipants(handId: string): Promise<LightningParticipant[]>;
+  /**
+   * The formed hand's participants. `expectedPlayerIds` (the matcher's own
+   * list) lets the profile read go out alongside the participant read; the
+   * participant rows stay authoritative (2026-10-23 match_to_hand fix).
+   */
+  loadParticipants(
+    handId: string,
+    expectedPlayerIds?: readonly string[]
+  ): Promise<LightningParticipant[]>;
   loadHostRules(hostTableId: string): Promise<LightningHostRules>;
   insertHoleCards(
     hostTableId: string,
@@ -192,6 +200,90 @@ async function okCall(
   return { ok: true, value: row };
 }
 
+/**
+ * The relationship lightning_hand_player -> lightning_pool_slot (composite FK
+ * lightning_hand_player_sits_in_its_own_slot), named so PostgREST embeds the
+ * participant's own slot in the same request.
+ */
+export const LIGHTNING_PARTICIPANT_SELECT =
+  'player_id, pool_slot_id, seat, position, blind_role, stack_before, ' +
+  'slot:lightning_pool_slot!lightning_hand_player_sits_in_its_own_slot(pool_session_id)';
+
+type LightningReadClient = Pick<typeof supabase, 'from'>;
+
+async function readProfiles(
+  client: LightningReadClient,
+  ids: readonly string[]
+): Promise<Map<string, Record<string, any>>> {
+  const out = new Map<string, Record<string, any>>();
+  if (ids.length === 0) return out;
+  const { data, error } = await client
+    .from('profiles')
+    .select(SEATED_PROFILE_SELECT)
+    .in('id', [...ids]);
+  if (error) throw new Error(`profiles read failed: ${error.message}`);
+  for (const p of (data ?? []) as unknown as Array<Record<string, any>>) out.set(p.id, p);
+  return out;
+}
+
+/**
+ * MATCH_TO_HAND (2026-10-23). This used to be three dependent reads in a row
+ * (participants, then their pool slots, then their profiles). On 2026-10-23
+ * 14:31:01 they took 713 + 996 + 2219 ms of PostgREST origin time, a 3.9 s
+ * match_to_hand and a 5.8 s fast_fold_to_next_hand. Now the participant rows
+ * carry their own slot's pool session (one embedded read) and the profiles
+ * are read at the same time for the matcher's own player list. The
+ * participant rows stay authoritative: a profile the hint missed is read
+ * after them, so a wrong or absent hint costs time, never correctness.
+ */
+export async function loadLightningParticipants(
+  handId: string,
+  expectedPlayerIds?: readonly string[],
+  client: LightningReadClient = supabase
+): Promise<LightningParticipant[]> {
+  const hinted = (expectedPlayerIds ?? []).filter(isUuid);
+  const profilesP = readProfiles(client, hinted);
+  profilesP.catch(() => undefined);
+  const { data: rows, error } = await client
+    .from('lightning_hand_player')
+    .select(LIGHTNING_PARTICIPANT_SELECT)
+    .eq('hand_id', handId);
+  if (error) throw new Error(`lightning_hand_player read failed: ${error.message}`);
+  const players = (rows ?? []) as unknown as Array<Record<string, any>>;
+  if (players.length < 2) throw new Error('lightning hand has fewer than two participants');
+  let profileById: Map<string, Record<string, any>>;
+  try {
+    profileById = await profilesP;
+  } catch {
+    // The early read failed: the participants' own read below decides.
+    profileById = new Map();
+  }
+  const missing = players.map((p) => p.player_id as string).filter((id) => !profileById.has(id));
+  if (missing.length > 0) {
+    for (const [id, row] of await readProfiles(client, missing)) profileById.set(id, row);
+  }
+  return players.map((p) => {
+    const slot = obj(Array.isArray(p.slot) ? p.slot[0] : p.slot);
+    const poolSessionId = slot?.pool_session_id;
+    if (!isUuid(poolSessionId)) throw new Error('participant has no pool session');
+    const profile = profileById.get(p.player_id) ?? null;
+    return {
+      playerId: p.player_id,
+      poolSessionId,
+      seat: Number(p.seat),
+      position: p.position ?? null,
+      blindRole: p.blind_role ?? 'none',
+      stackBefore: Number(p.stack_before),
+      username: arenaPlayerName(profile as ArenaNameProfile | null),
+      avatarUrl: profile?.avatar_url ?? '',
+      equippedFrame: profile?.equipped_frame ?? '',
+      equippedAura: profile?.equipped_aura ?? '',
+      isHorse: profile?.is_horse === true,
+      horseProfile: profile?.horse_profile ?? undefined,
+    };
+  });
+}
+
 /** The production backend. */
 export function createSupabaseLightningHandBackend(): LightningHandBackend {
   return {
@@ -232,54 +324,8 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
       };
     },
 
-    async loadParticipants(handId) {
-      const { data: rows, error } = await supabase
-        .from('lightning_hand_player')
-        .select('player_id, pool_slot_id, seat, position, blind_role, stack_before')
-        .eq('hand_id', handId);
-      if (error) throw new Error(`lightning_hand_player read failed: ${error.message}`);
-      const players = (rows ?? []) as Array<Record<string, any>>;
-      if (players.length < 2) throw new Error('lightning hand has fewer than two participants');
-      const slotIds = players.map((p) => p.pool_slot_id);
-      const { data: slots, error: slotError } = await supabase
-        .from('lightning_pool_slot')
-        .select('id, pool_session_id, player_id')
-        .in('id', slotIds);
-      if (slotError) throw new Error(`lightning_pool_slot read failed: ${slotError.message}`);
-      const sessionBySlot = new Map<string, string>();
-      for (const s of (slots ?? []) as Array<Record<string, any>>) {
-        sessionBySlot.set(s.id, s.pool_session_id);
-      }
-      const { data: profiles, error: profileError } = await supabase
-        .from('profiles')
-        .select(SEATED_PROFILE_SELECT)
-        .in(
-          'id',
-          players.map((p) => p.player_id)
-        );
-      if (profileError) throw new Error(`profiles read failed: ${profileError.message}`);
-      const profileById = new Map<string, Record<string, any>>();
-      for (const p of (profiles ?? []) as unknown as Array<Record<string, any>>)
-        profileById.set(p.id, p);
-      return players.map((p) => {
-        const poolSessionId = sessionBySlot.get(p.pool_slot_id);
-        if (!isUuid(poolSessionId)) throw new Error('participant has no pool session');
-        const profile = profileById.get(p.player_id) ?? null;
-        return {
-          playerId: p.player_id,
-          poolSessionId,
-          seat: Number(p.seat),
-          position: p.position ?? null,
-          blindRole: p.blind_role ?? 'none',
-          stackBefore: Number(p.stack_before),
-          username: arenaPlayerName(profile as ArenaNameProfile | null),
-          avatarUrl: profile?.avatar_url ?? '',
-          equippedFrame: profile?.equipped_frame ?? '',
-          equippedAura: profile?.equipped_aura ?? '',
-          isHorse: profile?.is_horse === true,
-          horseProfile: profile?.horse_profile ?? undefined,
-        };
-      });
+    loadParticipants(handId, expectedPlayerIds) {
+      return loadLightningParticipants(handId, expectedPlayerIds);
     },
 
     async loadHostRules(hostTableId) {

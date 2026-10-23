@@ -153,6 +153,8 @@ export function canRestoreFinishedTournamentReport(input: {
 }): boolean {
   if (!['RUNNING', 'COMPLETED'].includes(String(input.tournamentStatus))) return false;
   if (!['eliminated', 'winner'].includes(String(input.entryStatus))) return false;
+  // Winner payout/completion keeps its existing committed-event boundary.
+  if (input.entryStatus === 'winner' && input.tournamentStatus !== 'COMPLETED') return false;
   return (
     input.tournamentStatus === 'COMPLETED' ||
     input.prizePoolFinalized === true ||

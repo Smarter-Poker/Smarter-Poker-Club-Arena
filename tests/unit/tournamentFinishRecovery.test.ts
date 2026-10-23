@@ -35,6 +35,24 @@ describe('initial load restores a finished participant without ending a rebuy de
       })
     ).toBe(false);
   });
+  it('waits for committed tournament completion before recovering a winner', () => {
+    expect(
+      canRestoreFinishedTournamentReport({
+        entryStatus: 'winner',
+        tournamentStatus: 'RUNNING',
+        prizePoolFinalized: true,
+        isRebuy: false,
+        isReentry: false,
+      })
+    ).toBe(false);
+    expect(
+      canRestoreFinishedTournamentReport({
+        entryStatus: 'winner',
+        tournamentStatus: 'COMPLETED',
+        prizePoolFinalized: true,
+      })
+    ).toBe(true);
+  });
   it('preserves an open rebuy or re-entry decision and refuses unknown finality', () => {
     for (const fields of [
       { isRebuy: true, isReentry: false },

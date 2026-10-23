@@ -9,3 +9,5 @@ Deferred-promise regressions reproduce the recovery and stale-response failures.
 No engine runtime change or new database migration is required.
 
 The required server check exposed an unrelated nondeterministic Lightning handoff fixture. Its real policy action remains intact; its disconnect decision now receives a fixed 1-second fixture think time rather than a randomized delay that can extend beyond the assertion's interval. All original action/clock assertions remain. The focused eight-test suite passes; production engine source is unchanged.
+
+Required CSS qualification exposed two existing fixture limits: the 60-case spectator sweep exhausted its 150-second shared budget, and occupied-ring measurement could run before the animation-end placement frame. Reuse PR7760's seat-count partition with all 60 cases and dock/geometry assertions retained, and wait for the pending frame before occupied-ring measurement. The unchanged 320px case passed locally; the intermittent hosted overlap is therefore not claimed as a locally reproduced runtime defect. No table runtime or artwork changed.

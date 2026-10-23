@@ -97,4 +97,10 @@ BEGIN
 END;
 $function$;
 
+-- Source recovery also repeats the pre-existing service-only ACL, which
+-- CREATE OR REPLACE preserves. Read-only production ACL verified 2026-10-23:
+-- postgres/service_role only; anon/authenticated cannot execute. This is not
+-- present in the historical statement bytes retained in the evidence archive.
+REVOKE ALL ON FUNCTION public.fn_spin_sweep_unbooked(integer, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_sweep_unbooked(integer, integer) TO service_role;
 COMMIT;

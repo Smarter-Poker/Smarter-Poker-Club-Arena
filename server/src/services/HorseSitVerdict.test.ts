@@ -96,6 +96,26 @@ const bookWith = (t: HorseTag = tag, s: HorseState = state) => ({
   statesReadAt: 0,
 });
 
+describe('cash roster bankroll-only wiring', () => {
+  it('passes the same unrestricted verdict to the buyer count and the seat', () => {
+    const context = ctxWith({
+      bankrollOnlyCashHorse: () => true,
+      horseTables: new Map([[HORSE, new Set(['another-cash-table'])]]),
+      book: bookWith({ ...tag, maxTables: 1 }, { ...state, restWeekday: 5 }),
+    });
+    expect(sitVerdictFor(HORSE, TABLE, context).ok).toBe(true);
+    expect(
+      sitVerdictFor(HORSE, TABLE, {
+        ...context,
+        bankrolls: new Map([[`${JAQK_CLUB_ID}:${HORSE}`, 0]]),
+      }).ok
+    ).toBe(false);
+    expect(sitVerdictFor(HORSE, TABLE, { ...context, bankrollOnlyCashHorse: () => false }).ok).toBe(
+      false
+    );
+  });
+});
+
 describe('sitVerdictFor - the ok path', () => {
   it('returns the wallet and the sized buy-in, no sit key when the mutex was not consulted', () => {
     const v = sitVerdictFor(HORSE, TABLE, ctxWith());
@@ -334,7 +354,9 @@ describe('the fleet: one predicate, asked for the count and for the chair', () =
   });
 
   it('the pool used for allocation AND for selection is the sittable pool', () => {
-    expect(CODE).toContain('let pool = sittable.filter((h) => isActiveNow(h.id, hourUTC));');
+    expect(CODE).toMatch(
+      /let pool = sittable\.filter\(\s*\(h\) => cashRosterAllows\(h\.id\) === true \|\| isActiveNow\(h\.id, hourUTC\)\s*\);/
+    );
     expect(CODE).toContain(
       'if (pool.length < emptySeats.length && humanNeedsRescue) pool = sittable;'
     );

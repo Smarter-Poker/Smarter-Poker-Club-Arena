@@ -8,6 +8,20 @@ DO $guard$ BEGIN
   OR to_regprocedure('public.fn_cashout_request_v2(uuid,numeric,uuid,uuid,text)') IS NULL
  THEN RAISE EXCEPTION 'isolated complete cashier authority required';END IF;
 END $guard$;
+-- Dan 2026-10-23 (migration 20261023161137): a cash out REQUEST notifies the
+-- player and their agent, not management. The catalog this fixture runs on is
+-- built from components, so install the same one-line audience change here,
+-- inside this rolled-back transaction, before the hold assertions below.
+DO $request_audience$ DECLARE v_def text;
+ v_old constant text:=E'unnest(ARRAY[club.owner_id,r.player_id,\n   CASE WHEN kind IN(''approval'',''decline'') THEN actor ELSE assigned END]) x;';
+ v_new constant text:=E'unnest(CASE WHEN kind=''hold'' THEN ARRAY[r.player_id] ELSE ARRAY[club.owner_id,r.player_id] END||ARRAY[\n   CASE WHEN kind IN(''approval'',''decline'') THEN actor ELSE assigned END]) x;';
+BEGIN
+ SELECT pg_get_functiondef('public.fn_cashier_cashout_transition(text,uuid,uuid,numeric,uuid,uuid,text)'::regprocedure) INTO v_def;
+ IF position(v_new IN v_def)=0 THEN
+  IF position(v_old IN v_def)=0 THEN RAISE EXCEPTION 'cashier fixture failed: request audience line not found';END IF;
+  EXECUTE replace(v_def,v_old,v_new);
+ END IF;
+END $request_audience$;
 CREATE FUNCTION pg_temp.cashier_check(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN
  IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'cashier fixture failed: %',label;END IF;
  RAISE NOTICE 'cashier fixture passed: %',label;

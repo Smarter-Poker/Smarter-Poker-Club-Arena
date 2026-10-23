@@ -445,3 +445,32 @@ test('an unknown control acknowledgment records a fixed cause, never a message',
     assert.deepEqual(why, { click: cause, response: 'no_matching_response' });
   }
 });
+
+test('a click whose pointer is taken keeps only the blocking tag and class tokens', async () => {
+  const page = {
+    waitForResponse: async () => {
+      throw Object.assign(new Error('x'), { name: 'TimeoutError' });
+    },
+  };
+  const why = {};
+  await clickCycleControlOnce(
+    page,
+    {
+      click: async () => {
+        throw Object.assign(
+          new Error(
+            'locator.click: Timeout 2500ms exceeded.\n  - <div id="secret" class="daily-bonus-sheet open">SECRET TEXT</div> intercepts pointer events\n  - retrying click action'
+          ),
+          { name: 'TimeoutError' }
+        );
+      },
+    },
+    () => false,
+    () => 60000,
+    why
+  );
+  assert.equal(why.click, 'control_not_clickable');
+  assert.equal(why.reason, 'pointer_intercepted');
+  assert.equal(why.interceptedBy, 'div.daily-bonus-sheet.open');
+  assert.doesNotMatch(JSON.stringify(why), /SECRET|secret/);
+});

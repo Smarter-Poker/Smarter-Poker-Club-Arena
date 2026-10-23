@@ -301,20 +301,25 @@ export function shareableFromModel(
    */
   const seatOf = new Map(model.players.map((p) => [p.userId, p.seat]));
   /**
-   * ONLY when the record actually said who won each board and each half. A
-   * showdown row's `net` is a pot SHARE then; without per-board awards it is
+   * ONLY when the record actually said who won each board and each half.
+   * Independent awards include fold wins with no showdown. Older cached
+   * models can still supply showdown rows, whose `net` is a pot SHARE then;
+   * without per-board awards it is
    * the player's whole-hand net, and putting that on the wire understates the
    * pot by the winner's own investment - 195 where the pot paid 201 on this
    * repo's own fixture, which is the conflation `winners[].amount` was
    * corrected for on 2026-08-23.
    */
   const perBoard = model.perBoardAwards
-    ? model.showdown.filter((r) => r.isWinner && r.net !== null)
+    ? (model.recordedBoardAwards ??
+      model.showdown
+        .filter((r) => r.isWinner && r.net !== null)
+        .map((r) => ({ ...r, amount: r.net! })))
     : [];
   const winners: ShareableWinner[] = perBoard.length
     ? perBoard.map((r) => ({
         seat: r.seat,
-        amount: Math.max(0, Number(r.net) || 0),
+        amount: Math.max(0, Number(r.amount) || 0),
         board: r.boardIndex + 1,
         low: r.low || undefined,
         hand: r.handName || undefined,

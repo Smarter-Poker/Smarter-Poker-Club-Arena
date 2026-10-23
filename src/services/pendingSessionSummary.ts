@@ -55,6 +55,8 @@ import type { DiamondRecapTarget } from './diamondCashSessionRecap';
 export interface TournamentResult {
   /** Owner of the cached display report, never payment authorization. */
   userId?: string;
+  /** Durable elimination generation; another entry may finish in the same event. */
+  finishSequence?: string;
   /** Entry price including its fee, in the event currency. */
   buyInAmount?: number;
   /** Tournament name for the header, e.g. "Early Bird Freeroll". */
@@ -210,8 +212,12 @@ function emit(): void {
 let heldQueue: SessionSummaryPayload[] = [];
 const acknowledgedTournamentIds = new Set<string>();
 let loadedReportUserId: string | null = null;
-function tournamentReportKey(result: TournamentResult | undefined): string | null {
-  return result?.tournamentId ? `${result.userId ?? 'unknown'}:${result.tournamentId}` : null;
+function tournamentReportKey(
+  result: Pick<TournamentResult, 'tournamentId' | 'userId' | 'finishSequence'> | undefined
+): string | null {
+  return result?.tournamentId
+    ? `${result.userId ?? 'unknown'}:${result.tournamentId}:${result.finishSequence ?? 'unknown'}`
+    : null;
 }
 
 function reportStorageKey(): string | null {
@@ -263,6 +269,16 @@ function restoreTournamentReports(): void {
   } catch {
     /* A corrupt cache cannot manufacture a result. */
   }
+}
+
+export function hasAcknowledgedTournamentReport(
+  tournamentId: string,
+  userId: string,
+  finishSequence?: string
+): boolean {
+  restoreTournamentReports();
+  const key = tournamentReportKey({ tournamentId, userId, finishSequence });
+  return key !== null && acknowledgedTournamentIds.has(key);
 }
 
 /** A delayed elimination callback must not reopen an acknowledged report. */

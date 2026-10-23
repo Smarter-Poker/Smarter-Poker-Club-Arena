@@ -51,7 +51,9 @@ export async function fetchTournamentResult(
     const [entryRes, tourneyRes, countRes] = await Promise.all([
       supabase
         .from('tournament_players')
-        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status')
+        .select(
+          'position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status, elimination_sequence'
+        )
         .eq('tournament_id', tournamentId)
         .eq('user_id', userId)
         .maybeSingle(),
@@ -112,6 +114,8 @@ export async function fetchTournamentResult(
         : undefined,
       name: tourney?.name || undefined,
       entryStatus: entry?.status ?? null,
+      finishSequence:
+        entry?.elimination_sequence == null ? undefined : String(entry.elimination_sequence),
       tournamentId,
       userId,
       buyInAmount: tourney
@@ -136,4 +140,22 @@ export async function fetchTournamentResult(
     reportError(err, 'TablePage.fetchTournamentResult');
     return empty;
   }
+}
+
+/** Final results are recoverable during an ongoing event only after this
+ * entrant has finished and cannot still buy back into it. */
+export function canRestoreFinishedTournamentReport(input: {
+  entryStatus?: unknown;
+  tournamentStatus?: unknown;
+  prizePoolFinalized?: unknown;
+  isRebuy?: unknown;
+  isReentry?: unknown;
+}): boolean {
+  if (!['RUNNING', 'COMPLETED'].includes(String(input.tournamentStatus))) return false;
+  if (!['eliminated', 'winner'].includes(String(input.entryStatus))) return false;
+  return (
+    input.tournamentStatus === 'COMPLETED' ||
+    input.prizePoolFinalized === true ||
+    (input.isRebuy === false && input.isReentry === false)
+  );
 }

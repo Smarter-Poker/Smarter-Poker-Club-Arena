@@ -104,8 +104,14 @@ import {
   useMemo,
   useSyncExternalStore,
 } from 'react';
-import { publishSessionSummary } from '../services/pendingSessionSummary';
-import { fetchTournamentResult } from '../services/tournamentResult';
+import {
+  publishSessionSummary,
+  hasAcknowledgedTournamentReport,
+} from '../services/pendingSessionSummary';
+import {
+  fetchTournamentResult,
+  canRestoreFinishedTournamentReport,
+} from '../services/tournamentResult';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { heroMayReopenBetting } from '../lib/raiseReopen';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
@@ -13105,6 +13111,7 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
+        let loadedFinishedReportReady = false;
         let durableParticipantWitnessed = false;
         setTableState((prev) => {
           if (!isMounted) return prev;
@@ -13581,7 +13588,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time, is_rebuy, is_reentry'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13811,7 +13818,7 @@ function LiveTablePage({
             if (userId && isUUID(userId)) {
               const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
-                .select('status, table_id')
+                .select('status, table_id, elimination_sequence')
                 .eq('tournament_id', table.tournament_id)
                 .eq('user_id', userId)
                 .maybeSingle();
@@ -13827,7 +13834,24 @@ function LiveTablePage({
                   tournamentId: table.tournament_id,
                 });
               } else {
-                if (myEntry) durableParticipantWitnessed = true;
+                if (myEntry) {
+                  durableParticipantWitnessed = true;
+                  loadedFinishedReportReady =
+                    canRestoreFinishedTournamentReport({
+                      entryStatus: myEntry.status,
+                      tournamentStatus: tournData?.status,
+                      prizePoolFinalized: tournData?.prize_pool_finalized,
+                      isRebuy: tournData?.is_rebuy,
+                      isReentry: tournData?.is_reentry,
+                    }) &&
+                    !hasAcknowledgedTournamentReport(
+                      table.tournament_id,
+                      userId,
+                      myEntry.elimination_sequence == null
+                        ? undefined
+                        : String(myEntry.elimination_sequence)
+                    );
+                }
                 const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
                 // "Seated" is table_seats, NEVER tournament_players.table_id.
                 // createTablesAndSeatPlayers historically wrote the seat row and
@@ -14420,7 +14444,7 @@ function LiveTablePage({
             scheduleDurableCompletionRetry();
           }
 
-          if (loadedTournamentStatus === 'COMPLETED') {
+          if (loadedTournamentStatus === 'COMPLETED' || loadedFinishedReportReady) {
             void exitFromDurableCompletion();
           }
 

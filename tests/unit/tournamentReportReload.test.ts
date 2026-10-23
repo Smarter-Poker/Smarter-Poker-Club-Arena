@@ -41,6 +41,21 @@ describe('an unacknowledged tournament report survives reload for its owner', ()
     store.publishSessionSummary(payload);
     expect(store.peekSessionSummary()).toBeNull();
   });
+  it('allows a later finish generation after a new entry in the same event', async () => {
+    const store = await import('../../src/services/pendingSessionSummary');
+    store.publishSessionSummary({
+      ...payload,
+      tournament: { ...payload.tournament, finishSequence: '1' },
+    });
+    store.dismissSessionSummary();
+    expect(store.hasAcknowledgedTournamentReport('nightly-reload', 'hero', '1')).toBe(true);
+    expect(store.hasAcknowledgedTournamentReport('nightly-reload', 'hero', '2')).toBe(false);
+    store.publishSessionSummary({
+      ...payload,
+      tournament: { ...payload.tournament, finishSequence: '2', finishPlace: 300 },
+    });
+    expect(store.peekSessionSummary()?.tournament?.finishPlace).toBe(300);
+  });
   it("never restores one account's report into another account", async () => {
     const store = await import('../../src/services/pendingSessionSummary');
     store.publishSessionSummary(payload);

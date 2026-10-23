@@ -58,6 +58,7 @@ import { reportError } from '../../utils/errorReporter';
    payload that shows it waits the few milliseconds the chunk takes. */
 const TournamentRankingCard = lazy(() => import('./TournamentRankingCard'));
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 export function TournamentRankingHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
@@ -67,6 +68,9 @@ export function TournamentRankingHost() {
   const playAgainBusyRef = useRef(false);
 
   useEffect(() => subscribeSessionSummary(setPayload), []);
+  // A reload can mount before an expired SSO token finishes refreshing.
+  // The existing auth event restores only the newly authenticated owner's cache.
+  useMasterBusSubscription('AUTH_STATE_CHANGED', () => setPayload(peekSessionSummary()));
 
   const close = useCallback(() => dismissSessionSummary(), []);
 

@@ -198,6 +198,9 @@ jobs:
             test-results/banner-displays-desktop.png
             test-results/rotating-banners-mobile.png
             test-results/create-club-ready-mobile.png
+            test-results/create-club-defaults-mobile.png
+            test-results/create-club-send-link-mobile.png
+            test-results/create-club-link-copied-mobile.png
             test-results/create-club-opened-mobile.png
             test-results/create-club-leaderboard-review-mobile.png
             test-results/create-club-prize-setup-mobile.png

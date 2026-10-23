@@ -158,16 +158,31 @@ export async function prepareExpansion({
   if (!/^\d+$/.test(String(sourceRunId))) fail('PREPARE_RUN_ID_REQUIRED');
   const scope = expansionScope();
   const initial = checkedRoster(await adapter.snapshot(), scope);
-  if (initial.rows.length !== 73) fail('EXACT_ORIGINAL_ROSTER_REQUIRED');
+  // A later operation completes an earlier stopped one. A pinned horse that
+  // is already a member counts as done only when it is active and its one
+  // durable 200.00 funding receipt (its deterministic fund op id) is proved;
+  // it is never joined, approved or funded again. Anything else refuses.
+  const joined = initial.rows.filter((r) => scope.incoming.includes(r.user_id));
+  if (initial.rows.length !== 73 + joined.length) fail('EXACT_ORIGINAL_ROSTER_REQUIRED');
+  const completed = [];
+  for (const r of joined) {
+    if (r.status !== 'active') fail('PARTIAL_MEMBER_NOT_ACTIVE');
+    completed.push({
+      userId: r.user_id,
+      ...(await adapter.provenFunding(r.user_id, expansionRequestId('fund', r.user_id))),
+    });
+  }
+  const remaining = scope.incoming.filter((id) => !joined.some((r) => r.user_id === id));
+  if (remaining.length === 0) fail('NOTHING_REMAINING');
   const incomingEvidence = [];
-  for (const id of scope.incoming)
+  for (const id of remaining)
     incomingEvidence.push({
       userId: id,
       ...(await adapter.validateIncoming(id, { strict: true })),
     });
-  if (initial.treasury < FUND_CENTS * EXPANSION_SIZE) fail('INSUFFICIENT_GROSS_TREASURY');
+  if (initial.treasury < FUND_CENTS * remaining.length) fail('INSUFFICIENT_GROSS_TREASURY');
   const baseline = {
-    version: 1,
+    version: 2,
     operation: EXPANSION_OPERATION,
     operationId,
     clubId: EXPANSION_CLUB,
@@ -177,6 +192,8 @@ export async function prepareExpansion({
     incoming: scope.incoming,
     requests: requestManifest(scope.incoming),
     fundCentsEach: FUND_CENTS,
+    completed,
+    remaining,
     incomingEvidence,
     initial,
   };
@@ -196,7 +213,16 @@ export async function executeExpansion({
   const { digest, ...body } = baseline ?? {};
   if (
     digest !== hash(body) ||
-    body.version !== 1 ||
+    body.version !== 2 ||
+    !Array.isArray(body.remaining) ||
+    !Array.isArray(body.completed) ||
+    body.remaining.length === 0 ||
+    body.remaining.some((id) => !scope.incoming.includes(id)) ||
+    !isDeepStrictEqual(
+      [...body.remaining, ...body.completed.map((c) => c.userId)].sort(),
+      scope.incoming
+    ) ||
+    body.initial?.rows?.length !== 73 + body.completed.length ||
     body.operation !== EXPANSION_OPERATION ||
     body.clubId !== EXPANSION_CLUB ||
     body.manifestSha256 !== EXPANSION_MANIFEST_SHA256 ||
@@ -251,8 +277,9 @@ export async function executeExpansion({
     let response;
     try {
       response = await call(step.requestId);
-    } catch {
+    } catch (error) {
       step.status = 'unknown';
+      step.error = error instanceof ExpansionFailure ? error.message : 'THROWN_BEFORE_RECEIPT';
       fail('DOOR_OUTCOME_UNKNOWN');
     }
     if (response?.success !== true) {
@@ -270,8 +297,8 @@ export async function executeExpansion({
     await read();
     // Every pinned horse is re-proved before the first write: identity,
     // horse status, membership cap and not already a pilot member.
-    for (const id of scope.incoming) await adapter.validateIncoming(id, { strict: false });
-    for (const id of scope.incoming) {
+    for (const id of body.remaining) await adapter.validateIncoming(id, { strict: false });
+    for (const id of body.remaining) {
       await door(
         'join',
         id,
@@ -306,7 +333,7 @@ export async function executeExpansion({
         (requestId) => adapter.fund(id, requestId),
         async (r, step) => {
           const atomic = rosterFundingReadback(r);
-          if (report.grossFundingCents + FUND_CENTS > FUND_CENTS * EXPANSION_SIZE)
+          if (report.grossFundingCents + FUND_CENTS > FUND_CENTS * body.remaining.length)
             fail('FUND_RECEIPT_INVALID');
           const proof = await adapter.verifyFunding(id, expansionRequestId('fund', id), r);
           if (!isDeepStrictEqual(proof, atomic)) fail('DURABLE_FUNDING_UNVERIFIED');
@@ -317,7 +344,11 @@ export async function executeExpansion({
       );
     }
     await read();
-    if (report.added !== EXPANSION_SIZE || report.grossFundingCents !== FUND_CENTS * EXPANSION_SIZE)
+    if (
+      report.added !== body.remaining.length ||
+      report.grossFundingCents !== FUND_CENTS * body.remaining.length ||
+      expected.size !== 73 + EXPANSION_SIZE
+    )
       fail('FINAL_ROSTER_INCOMPLETE');
     report.status = 'verified';
     report.rosterAfter = expected.size;
@@ -361,7 +392,7 @@ export function createExpansionAdapter({ admin, owner, createClient, url, timeou
     if (r.error || !Number.isSafeInteger(r.count)) readFailure(r, `COUNT_${table.toUpperCase()}`);
     return r.count;
   };
-  async function validateIncoming(id, { strict }) {
+  async function validateIncoming(id) {
     if (!scope.incoming.includes(id)) fail('UNPINNED_HORSE');
     const p = data(
       await admin
@@ -430,11 +461,13 @@ export function createExpansionAdapter({ admin, owner, createClient, url, timeou
       }).length;
       playing = booked.filter((b) => b.status === 'playing').length;
     }
-    // Never take a horse that is seated in a running tournament. A cash seat
-    // or a pre-start booking elsewhere is preserved exactly as the standing
-    // assignment preserves the original 72's: it finishes normally (a zero-cost
-    // pre-start booking keeps its normal withdrawal). Recorded, never touched.
-    if (strict && playing !== 0) fail('INCOMING_SEATED_IN_RUNNING_TOURNAMENT');
+    // Selection (2026-10-23 17:05 UTC, docs/lightning/PILOT-ROSTER-EXPANSION-
+    // 2026-10-23.json) took only horses seated in no running tournament. The
+    // house freerolls register cash-lane horses too (Midday Free Buy, 17:30
+    // UTC, seated 156 of them), so a later seat is recorded, never refused:
+    // joining and funding touch no seat or entry, and the standing assignment
+    // lets every running game and existing entry finish normally, exactly as
+    // for the original 72. It only stops new automated entries.
     return { seats, openCashSessions, liveBookings, playing };
   }
   return {
@@ -550,6 +583,39 @@ export function createExpansionAdapter({ admin, owner, createClient, url, timeou
           p_op_id: op,
         })
       );
+    },
+    /** The one durable receipt of an earlier completed funding, read only. */
+    async provenFunding(id, op) {
+      const tx = data(
+        await admin
+          .from('chip_transactions')
+          .select('id,from_user_id,to_user_id,amount::text,metadata')
+          .eq('club_id', EXPANSION_CLUB)
+          .eq('transaction_type', 'club_bank_send')
+          .eq('metadata->>op_id', op)
+      );
+      const intent = data(
+        await admin
+          .from('cashier_rpc_operation_intents')
+          .select('actor_user_id,action,club_id,receipt,completed_at')
+          .eq('operation_id', op)
+          .maybeSingle()
+      );
+      if (
+        tx.length !== 1 ||
+        tx[0].from_user_id !== PILOT.ownerId ||
+        tx[0].to_user_id !== id ||
+        rosterCents(tx[0].amount) !== FUND_CENTS ||
+        tx[0].metadata?.destination !== 'player_wallet' ||
+        intent.actor_user_id !== PILOT.ownerId ||
+        intent.action !== 'club_bank_send' ||
+        intent.club_id !== EXPANSION_CLUB ||
+        !intent.completed_at ||
+        intent.receipt?.success !== true ||
+        intent.receipt?.transaction_id !== tx[0].id
+      )
+        fail('EARLIER_FUNDING_UNPROVED');
+      return { transactionId: tx[0].id };
     },
     async verifyFunding(id, op, response) {
       const intent = data(

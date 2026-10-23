@@ -11,7 +11,8 @@ Owner order, October 23, 2026, 11:07 America/Chicago: "NO, I WANT YOU TO RUN THI
 - **One reviewed carrier.** `server/release/owner-maintenance-windows.json` holds owner-ordered entries: the quoted order, the exact commit the release must contain, a validity window of at most six hours, and the America/Chicago minutes the announcement may be made in. It is merged through protected main like any source and expires on its own.
 - **Both gates read it, neither reads commit text.** `stage-engine-release.yml` admits dispatch only while an entry is valid and HEAD contains its commit. The host transaction re-reads the entry from the target's own immutable tree (`git show "$SHA:..."`) and asks for a window only after the measured-emergency reasons, at the named minute.
 - **Everything after the reason is unchanged.** Newest-release ownership, the engine lock, the fresh health read, the seal's one window per rolling hour, the 2-minute last-hand lead, the 5-minute drain/freeze, certificate, rollback reserve and thaw. The seal and serving engine receive the existing owner cause, `urgent`.
-- **The first entry** names 6416f795 (#7788), valid 2026-10-23 12:45 to 18:45 Chicago, announced at :53 or :54 so the global pause starts at :55 alongside the hourly tournament break.
+- **Once.** A window grants nothing after its named commit is serving (both gates read the serving `releaseSha`; an unreadable identity grants nothing), so later merges inside the window never earn another reset.
+- **The first entry** names 6416f795 (#7788), valid 2026-10-23 12:00 to 16:30 Chicago, announced at :53 or :54 so the global pause starts at :55 alongside the hourly tournament break.
 
 ## Proof
 

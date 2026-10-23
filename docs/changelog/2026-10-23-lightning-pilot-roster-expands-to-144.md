@@ -18,6 +18,8 @@ Cash-lane horses only. The first pick (cash or both lanes) was refused by its ow
 
 From the 244 active cash-lane horses outside the pilot club: never seated in a running tournament, no anti-cheat flag in 14 days, under the 10-club membership cap, not resting on Friday, not already at today's cap (146 qualify). Ranked by how many hours of 13:00 to 23:00 UTC their activity window covers (the HorseBehavior window: start `h mod 24`, length `10 + ((h >>> 5) mod 8)`), then by lowest 48 hour cash load. Every one of the 72 covers at least 6 of those 10 hours.
 
+The second prepare (run 39997955967, read-only) refused too: the 17:30 UTC Midday Free Buy freeroll had seated 156 cash-lane horses, including pinned ones, after selection. Selection already required no running-tournament seat; preparation now records any later seat or entry instead of refusing it. Joining and funding touch no seat or entry, and the standing assignment lets running games and existing entries finish, as it does for the original 72.
+
 The exact 72 are pinned in `docs/lightning/PILOT-ROSTER-EXPANSION-2026-10-23.json` (SHA256 `f1e1b8f58f60ed8e1ba1d4d6158c0849ef8467ce2522f75e906b47f5da2964bc`). The standing assignment manifest becomes `docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-23.json` (144, SHA256 `3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820`).
 
 ## How It Is Done

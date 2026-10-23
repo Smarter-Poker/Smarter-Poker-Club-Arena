@@ -74,15 +74,27 @@ const TWO_PLACES = { minimumFractionDigits: 2, maximumFractionDigits: 2 } as con
 interface AgentCashoutPanelProps {
   clubId?: string;
   onCashoutProcessed?: () => void;
+  /** Show only this player's request (the member record, Dan 2026-10-23). */
+  playerId?: string;
+  /** The well's eyebrow; the Agent Desk keeps its own. */
+  eyebrow?: string;
+  /** Present when the panel is opened as a dialog over the cashier. */
+  onClose?: () => void;
 }
 
 export default function AgentCashoutPanel(props: AgentCashoutPanelProps) {
   const { user } = useAuthUser();
-  const key = useCashoutScopeKey(user?.id, JSON.stringify([props.clubId]));
+  const key = useCashoutScopeKey(user?.id, JSON.stringify([props.clubId, props.playerId ?? null]));
   return <AgentCashoutContent key={key} {...props} />;
 }
 
-function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelProps) {
+function AgentCashoutContent({
+  clubId,
+  onCashoutProcessed,
+  playerId,
+  eyebrow = 'Agent Desk',
+  onClose,
+}: AgentCashoutPanelProps) {
   const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const isCurrent = useCashoutScope(user?.id, clubId ?? 'all-clubs');
@@ -137,7 +149,8 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
 
     if (!hasLoadedRef.current) setLoading(true);
     try {
-      const pending = await cashoutService.getAgentPendingCashouts(user.id, clubId);
+      const scoped = await cashoutService.getAgentPendingCashouts(user.id, clubId);
+      const pending = playerId ? scoped.filter((row) => row.playerId === playerId) : scoped;
       if (!current()) return;
       rowsCurrent.current = current;
       rowsScope.current = isCurrent;
@@ -165,7 +178,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       hasLoadedRef.current = true;
       setLoading(false);
     }
-  }, [user?.id, clubId, isCurrent]);
+  }, [user?.id, clubId, playerId, isCurrent]);
 
   useEffect(() => {
     loadCashouts();
@@ -349,7 +362,8 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
   if (loading || !rowsScope.current?.()) {
     return (
       <SpadeConsole
-        eyebrow="Agent Desk"
+        eyebrow={eyebrow}
+        onClose={onClose}
         title="Pending Cashouts"
         titleId="agent-cashout-title"
         foot="foot"
@@ -383,7 +397,8 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
   if (error && cashouts.length === 0) {
     return (
       <SpadeConsole
-        eyebrow="Agent Desk"
+        eyebrow={eyebrow}
+        onClose={onClose}
         title="Pending Cashouts"
         titleId="agent-cashout-title"
         foot="foot"
@@ -404,7 +419,8 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
 
   return (
     <SpadeConsole
-      eyebrow="Agent Desk"
+      eyebrow={eyebrow}
+        onClose={onClose}
       title="Pending Cashouts"
       titleId="agent-cashout-title"
       pill={String(cashouts.length)}

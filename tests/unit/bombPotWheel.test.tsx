@@ -168,7 +168,7 @@ describe('the upgraded wheel preserves its clock and exact hand count', () => {
     });
     expect(onDone).toHaveBeenCalledTimes(1);
   });
-  it.each([1, 2, 3, 4, 5])('lands count %s beneath the fixed selector', async (hands) => {
+  it.each([1, 2, 3, 4, 5])('lands the moving selector at fixed count %s', async (hands) => {
     render(<BombPotWheel handsAway={hands} onDone={() => {}} playSounds={false} />);
     await act(async () => {
       vi.advanceTimersByTime(BOMB_WHEEL_CHASE_MS);
@@ -176,25 +176,33 @@ describe('the upgraded wheel preserves its clock and exact hand count', () => {
     const wheel = screen.getByTestId('bomb-pot-wheel');
     const svg = wheel.querySelector<SVGSVGElement>('.bpw__disc')!;
     const label = svg.querySelectorAll<SVGTextElement>('.bpw__label')[hands - 1];
-    const angle =
-      Math.atan2(Number(label.getAttribute('y')) - 120, Number(label.getAttribute('x')) - 120) +
-      (parseFloat(svg.style.getPropertyValue('--bpw-turn')) * Math.PI) / 180;
-    expect(Math.cos(angle)).toBeCloseTo(0, 8);
-    expect(Math.sin(angle)).toBeCloseTo(-1, 8);
+    const selector = wheel.querySelector<HTMLElement>('.bpw__selector-orbit')!;
+    const labelAngle = Math.atan2(
+      Number(label.getAttribute('y')) - 120,
+      Number(label.getAttribute('x')) - 120
+    );
+    const pointerAngle =
+      -Math.PI / 2 + (parseFloat(selector.style.getPropertyValue('--bpw-turn')) * Math.PI) / 180;
+    expect(Math.cos(pointerAngle)).toBeCloseTo(Math.cos(labelAngle), 8);
+    expect(Math.sin(pointerAngle)).toBeCloseTo(Math.sin(labelAngle), 8);
+    expect(svg.style.getPropertyValue('--bpw-turn')).toBe('');
+    for (const text of svg.querySelectorAll('text')) {
+      expect(text.closest('[transform]')).toBeNull();
+    }
     expect(wheel.querySelector('.bpw__hub strong')?.textContent).toBe(String(hands));
     expect(wheel.querySelectorAll('.is-winner')).toHaveLength(1);
     expect(wheel.querySelector('.bpw__housing')?.getAttribute('src')).toContain(
       'wheel-chrome-housing-v1.png'
     );
   });
-  it('keeps rotor, reveal and completion on the chosen duration multiplier', async () => {
+  it('keeps selector, reveal and completion on the chosen duration multiplier', async () => {
     document.documentElement.style.setProperty('--animation-speed', '2');
     const onDone = vi.fn();
     render(<BombPotWheel handsAway={3} onDone={onDone} playSounds={false} />);
     expect(
       screen
         .getByTestId('bomb-pot-wheel')
-        .querySelector<SVGSVGElement>('.bpw__disc')!
+        .querySelector<HTMLElement>('.bpw__selector-orbit')!
         .style.getPropertyValue('--bpw-spin-ms')
     ).toBe('4800ms');
     await act(async () => {

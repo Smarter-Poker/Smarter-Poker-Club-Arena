@@ -948,7 +948,7 @@ export class HorseSessionRotator {
         /* The Lightning pilot club is outside both roster rules (Dan 2026-10-23). */
         const exempt = rosterExemptClub((seat as { club_id?: unknown }).club_id);
         const benched = benchedIds.has(uid) || (!exempt && cashRosterAllows(uid) === false);
-        const offPlo = !exempt && ploRosterAllows(uid, t?.game_variant) === false;
+        const offPlo = !exempt && ploRosterAllows(uid, t?.game_variant, t?.big_blind) === false;
         if (!benched && !offPlo) continue;
         try {
           const result = await engine.leaveTable(uid);

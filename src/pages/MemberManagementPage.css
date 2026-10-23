@@ -1222,6 +1222,23 @@
   box-shadow: 0 0 8px rgba(0, 212, 255, 0.75);
 }
 
+/* Dan 2026-10-23: a pending cash out is printed on the record itself. */
+.mm-presence--cashout {
+  border-color: rgba(0, 212, 255, 0.56);
+  color: #8deaff;
+}
+
+.mm-presence--cashout::before {
+  background: var(--ca-cyan);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.75);
+}
+
+/* The request and its pull span the whole ledger grid. */
+.mm-cashout-request {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .mm-player-id {
   padding: 8px 11px;
   border-radius: 2px;

@@ -57,6 +57,8 @@ import ChipTransferModal from '../components/agent/ChipTransferModal';
 import MemberWatchAtTable from '../components/club/MemberWatchAtTable';
 import MemberWinLossCard from '../components/club/MemberWinLossCard';
 import MemberUplineCard from '../components/club/MemberUplineCard';
+import AgentCashoutPanel from '../components/agent/AgentCashoutPanel';
+import { useClubPendingCashoutsRead } from '../hooks/useClubPendingCashouts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -608,6 +610,16 @@ export default function MemberManagementPage() {
      The re-asked door answers heartbeats only, and a ring lit by it alone
      would light a seated person and not a seated horse (2026-10-05 audit). */
   const avatarLit = detail?.presence.is_seated === true || onlineNow;
+  /* CASH OUT REQUESTED (Dan 2026-10-23): "IF THEY GO TO A PLAYERS ACCOUNT,
+     THEY SHOULD BE ABLE TO SEE 'CASH OUT REQUESTED'". Read from the viewer's
+     own cashout queue (fn_cashout_queue: everything in a club they run, plus
+     their downline), so it shows exactly to the people who may pull the chips. */
+  const memberUuid = identity?.user_id ?? null;
+  const pendingCashouts = useClubPendingCashoutsRead(
+    resolvedClubId,
+    myRoleLoaded && !!memberUuid && memberUuid !== user?.id
+  );
+  const cashoutRequested = !!memberUuid && pendingCashouts.playerIds.has(memberUuid);
 
   const shownDownline = downline.slice(0, downlineShown);
   recordShownRef.current = !loadError && found;
@@ -754,6 +766,9 @@ export default function MemberManagementPage() {
                 >
                   {detail!.presence.is_seated ? 'At A Table' : onlineNow ? 'Online Now' : 'Offline'}
                 </span>
+                {cashoutRequested && (
+                  <span className="mm-presence mm-presence--cashout">Cash Out Requested</span>
+                )}
               </div>
               <h2 id="mm-player-name" className="mm-alias">
                 {alias}
@@ -783,6 +798,23 @@ export default function MemberManagementPage() {
       </section>
 
       <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
+        {/* ── Cash out requested (Dan 2026-10-23): the request, and the pull ── */}
+
+        {cashoutRequested && resolvedClubId && memberUuid && (
+          <div className="mm-cashout-request">
+            <AgentCashoutPanel
+              key={`cashout:${resolvedClubId}:${memberUuid}`}
+              clubId={resolvedClubId}
+              playerId={memberUuid}
+              eyebrow="Cash Out Requested"
+              onCashoutProcessed={() => {
+                pendingCashouts.reload();
+                recordRefreshRef.current();
+              }}
+            />
+          </div>
+        )}
+
         {/* ── Upline agents (Dan 2026-10-21): every agent above the player ─── */}
 
         {detail!.capabilities.can_view_financials && resolvedClubId && identity!.user_id && (

@@ -105,7 +105,7 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
     expect(gate).toMatch(
       /case "\$\{reason%% \*\}" in\s+engine-degraded\|owner-ordered\) ;;\s+\*\) return 0 ;;\s+esac/
     );
-    expect(gate).toContain('[ -n "$reason" ] || reason="$(owner_window_reason)"');
+    expect(gate).toContain('[ -n "$reason" ] || reason="$(owner_window_reason "$health")"');
     expect(request.split("acquire_engine_lock 'one recovery announcement'")).toHaveLength(2);
     expect(request).toContain('reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")');
     const owner = between(policy, 'owner_window_reason() {', '\n}');

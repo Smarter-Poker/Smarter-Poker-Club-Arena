@@ -100,13 +100,14 @@ export function registerGameLobbyCardCases() {
           `${kind} details remain scrollable`
         ).toBe(true);
         await expect(page.locator('.glp__close')).toBeVisible();
-        await page
-          .getByRole('button', { name: 'Close Game Lobby', exact: true })
-          .click({ timeout: 2000 });
+        await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
         await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('auto');
         const reopen = page.getByRole('button', { name: 'Open Game Lobby', exact: true });
-        await reopen.click();
+        // Safari touch clicks need not focus buttons. Restore keyboard focus
+        // from a keyboard opening, then exercise pointer entry separately.
+        await reopen.focus();
+        await reopen.press('Enter');
         await expect(
           page.getByRole('button', { name: 'Close Game Lobby', exact: true })
         ).toBeFocused();
@@ -115,9 +116,7 @@ export function registerGameLobbyCardCases() {
         await expect(reopen).toBeFocused();
         await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('auto');
         await reopen.click();
-        await page
-          .getByRole('link', { name: 'Back To All Games', exact: true })
-          .click({ timeout: 2000 });
+        await page.getByRole('link', { name: 'Back To All Games', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
       }
     }

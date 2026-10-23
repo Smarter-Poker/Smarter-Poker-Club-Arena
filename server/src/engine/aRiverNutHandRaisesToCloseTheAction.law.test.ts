@@ -218,10 +218,16 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
     );
   });
 
-  it('preserves an existing value raise and its policy sizing', () => {
+  it('sizes an under-sized pot-limit nut raise up to the maximum (hand 45000112)', () => {
     const { hero, state } = incident();
     const raise = { action: 'raise' as const, amount: 125, thinkTime: 17 };
-    expect(riverNutsRaise(raise, hero, state)).toBe(raise);
+    expect(riverNutsRaise(raise, hero, state)).toMatchObject({
+      action: 'raise',
+      amount: 269,
+      thinkTime: 17,
+    });
+    const max = { action: 'raise' as const, amount: 269, thinkTime: 17 };
+    expect(riverNutsRaise(max, hero, state)).toBe(max);
   });
 
   it.each(['flush', 'paired', 'wrong_two_hole', 'nut_low_only', 'high_only_low_live'] as const)(
@@ -389,4 +395,126 @@ describe('multiway nut-flush incident 44867615', () => {
       riverNutsRaise({ action: 'call', amount: 163, thinkTime: 0 }, hero, state)
     ).toMatchObject({ action: 'raise', amount: 659 });
   });
+});
+
+function checkedTo(variant: GameVariant = 'plo5') {
+  const { hero, state } = incident(variant);
+  state.players[1] = { ...state.players[1], bet: 0 };
+  Object.assign(state, {
+    pot: 169,
+    currentBet: 0,
+    toCall: 0,
+    minRaiseTo: 2,
+    maxRaiseTo: 169,
+    legalActions: ['fold', 'check', 'bet', 'all_in'],
+  });
+  return { hero, state };
+}
+
+describe('the river nuts always bet when checked to and are never under-sized', () => {
+  const check = { action: 'check' as const, thinkTime: 3 };
+
+  it('turns a checked-to nut check into a full pot-limit bet', () => {
+    const { hero, state } = checkedTo();
+    expect(riverNutsRaise(check, hero, state)).toMatchObject({
+      action: 'bet',
+      amount: 169,
+      thinkTime: 3,
+    });
+  });
+
+  it('sizes an under-sized nut bet up and keeps a full one', () => {
+    const { hero, state } = checkedTo();
+    expect(riverNutsRaise({ action: 'bet', amount: 60, thinkTime: 0 }, hero, state)).toMatchObject({
+      action: 'bet',
+      amount: 169,
+    });
+    const full = { action: 'bet' as const, amount: 169, thinkTime: 0 };
+    expect(riverNutsRaise(full, hero, state)).toBe(full);
+  });
+
+  it('bets at least the full pot in no limit and keeps a larger policy size', () => {
+    const { hero, state } = checkedTo('nlh');
+    hero.cards = cards('7c 5d');
+    Object.assign(state, { bettingStructure: 'no_limit', maxRaiseTo: 275.5 });
+    expect(riverNutsRaise(check, hero, state)).toMatchObject({ action: 'bet', amount: 169 });
+    const shove = { action: 'bet' as const, amount: 275.5, thinkTime: 0 };
+    expect(riverNutsRaise(shove, hero, state)).toBe(shove);
+    const facing = incident('nlh');
+    facing.hero.cards = cards('7c 5d');
+    Object.assign(facing.state, { bettingStructure: 'no_limit', maxRaiseTo: 275.5 });
+    expect(
+      riverNutsRaise({ action: 'raise', amount: 120, thinkTime: 0 }, facing.hero, facing.state)
+    ).toMatchObject({ action: 'raise', amount: 269 });
+  });
+
+  it('bets the fixed-limit size when checked to', () => {
+    const { hero, state } = checkedTo('flh');
+    hero.cards = cards('7c 5d');
+    Object.assign(state, { fixedBetSize: 4, minRaiseTo: 4, maxRaiseTo: 4 });
+    expect(riverNutsRaise(check, hero, state)).toMatchObject({ action: 'bet', amount: 4 });
+  });
+
+  it.each(['not_nuts', 'no_bet_menu', 'opponents_all_in', 'turn', 'stack_cap', 'capped'] as const)(
+    'keeps the check with %s',
+    (boundary) => {
+      const { hero, state } = checkedTo();
+      if (boundary === 'not_nuts') state.communityCards = cards('2s 3s 6s Jh 4d');
+      if (boundary === 'no_bet_menu') state.legalActions = ['fold', 'check'];
+      if (boundary === 'opponents_all_in') state.players[1].is_all_in = true;
+      if (boundary === 'turn') {
+        state.stage = 'turn';
+        state.communityCards.pop();
+      }
+      if (boundary === 'stack_cap') state.maxRaiseTo = 400; // menu above hero's chips
+      if (boundary === 'capped') state.wagersCapped = true;
+      expect(riverNutsRaise(check, hero, state)).toBe(check);
+    }
+  );
+
+  it('never checks the river nuts through HorseLogic in any style or seed', () => {
+    for (const style of ['balanced', 'tag', 'lag', 'tricky', 'grinder'] as const) {
+      for (let seed = 1; seed <= 8; seed++) {
+        seedFastRandom(seed);
+        const { hero, state } = checkedTo();
+        const d = HorseLogic.decide(
+          hero,
+          state,
+          style,
+          {},
+          { mind: false, phase11Omaha: 'off', phase13Joint: 'off', v9Timing: false }
+        );
+        expect(d.action, `${style} seed ${seed}`).toBe('bet');
+        expect(d.amount, `${style} seed ${seed}`).toBe(169);
+        expect(d.policyGraph?.finalAction).toEqual({ action: 'bet', amount: 169 });
+      }
+    }
+  });
+
+  it.each(['nlh', 'short_deck', 'plo4', 'plo6', 'plo8'] as const)(
+    '%s bets the nuts when checked to after every policy owner',
+    (variant) => {
+      const { hero, state } = checkedTo(variant);
+      if (variant === 'nlh') {
+        hero.cards = cards('7c 5d');
+        state.bettingStructure = 'no_limit';
+      }
+      if (variant === 'short_deck') {
+        hero.cards = cards('Ac Kd');
+        state.communityCards = cards('Qh Js Td 6c 7d');
+      }
+      if (variant === 'plo8') {
+        hero.cards = cards('6c 7d Ac 2h');
+        state.communityCards = cards('3c 4d 5h 9s Kd');
+      }
+      for (let seed = 1; seed <= 4; seed++) {
+        seedFastRandom(seed);
+        const d = HorseLogic.decide(hero, state, 'balanced', {}, { mind: false, v9Timing: false });
+        expect(d.policyFallback).toBeUndefined();
+        expect(d.action, `${variant} seed ${seed}`).toBe('bet');
+        expect(d.amount).toBeGreaterThanOrEqual(state.minRaiseTo!);
+        expect(d.amount).toBeLessThanOrEqual(state.maxRaiseTo!);
+      }
+    }
+  );
 });

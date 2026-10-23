@@ -1,4 +1,5 @@
 import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
+import { horseRiverValueAlarmSnapshot } from './engine/HorseRiverValueAudit.js';
 import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
 import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
@@ -456,7 +457,8 @@ type DealerPrerequisiteGate = {
   settled: boolean;
 };
 type ExternalShutdownOwnershipResult =
-  { status: 'fulfilled' } | { status: 'rejected'; reason: unknown };
+  | { status: 'fulfilled' }
+  | { status: 'rejected'; reason: unknown };
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -5368,6 +5370,9 @@ export class GameServer {
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.
       liveHorseDecision,
+      // Horse river value alarm (2026-10-23): proof the per-hand audit is
+      // running (handsAudited, riverActionsAudited) and whether it is firing.
+      horseRiverValueAlarm: horseRiverValueAlarmSnapshot(),
       adaptiveJournalWorker: horseAdaptiveJournalWorker.status(),
       // HTTP and WebSocket handlers are reachable before the leader boot has
       // finished. This is the exact admission gate they await before any table
@@ -11894,7 +11899,9 @@ export class GameServer {
     for (const retiring of this.tournamentDiagnosticRetirements?.get(tournamentId) ?? [])
       if (retiring.getTournamentLeaseGeneration() === generation) return false;
     const quarantined = this.tournamentManagerQuarantine?.heldBy(tournamentId) as
-      TournamentManager | null | undefined;
+      | TournamentManager
+      | null
+      | undefined;
     if (quarantined && quarantined.getTournamentLeaseGeneration?.() === generation) return false;
     return true;
   }
@@ -12400,9 +12407,9 @@ export class GameServer {
             : null;
         if (retainedRefusal) {
           this.holdRetainedHandRefusal(tableId, retainedRefusal.code);
-        } else if (!(
-          startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal()
-        )) {
+        } else if (
+          !(startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal())
+        ) {
           this.engineStartFailures++;
           reportError(startError, 'GameServer.direct_table_start_failed');
         }

@@ -1,4 +1,8 @@
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
+import {
+  observeCommittedHandRiverValue,
+  type RiverValueAuditInput,
+} from './HorseRiverValueAudit.js';
 import { publishSettledTournamentHand } from './settledTournamentStandings.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
 import { diamondCashJackpotVerdict } from './diamondCashJackpot.js';
@@ -1576,6 +1580,37 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // POST-HAND TASKS
   // ═════════════════════════════════════════════════════════════════════════════
 
+  /** Horse river value alarm (2026-10-23): pure in-memory audit of a committed
+   * hand's horse actions from its settled snapshot, scheduled after the
+   * current turn. No database reads; never throws (HorseRiverValueAudit). */
+  protected observeHorseRiverValueAfterCommit(
+    snap: {
+      handNumber: number;
+      variant?: string | null;
+      holeCards: RiverValueAuditInput['holeCards'];
+      actions: unknown;
+    },
+    tableInfo: {
+      game_variant?: string | null;
+      cap_enabled?: boolean | null;
+      cap_bb?: unknown;
+      big_blind?: unknown;
+    }
+  ): void {
+    const handNumber = snap.handNumber;
+    const input: RiverValueAuditInput = {
+      variant: snap.variant || tableInfo.game_variant || 'nlh',
+      holeCards: snap.holeCards,
+      actions: snap.actions as RiverValueAuditInput['actions'],
+      capEnabled: tableInfo.cap_enabled === true,
+      capBb: Number(tableInfo.cap_bb) || 0,
+      bigBlind: Number(tableInfo.big_blind) || 0,
+    };
+    setImmediate(() =>
+      observeCommittedHandRiverValue({ tableId: this.tableId, handNumber }, input)
+    );
+  }
+
   protected async postHandTasks(
     players: SeatedPlayer[],
     persistenceGeneration: number
@@ -2571,6 +2606,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           result = await commitAuthoritativeHand();
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
+          }
+          // HORSE RIVER VALUE ALARM (2026-10-23): audit the committed hand after
+          // this turn. Guarded: the alarm can never touch settlement.
+          try {
+            this.observeHorseRiverValueAfterCommit(snap, tableInfo);
+          } catch {
+            /* the alarm never affects a committed hand */
           }
         } catch (err) {
           const message = describeError(err);

@@ -211,7 +211,15 @@ describe('a recovered FreeBuy closing drain', () => {
     (m as any).prepareManagedTableEngineForPlay(e);
     expect(e.requiresExplicitPauseResume()).toBe(true);
     m.add('recovered', e);
+    (m as any).lifecycleOperation = Promise.resolve();
     const parked = (e as any).awaitPauseGate();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(chain.update).not.toHaveBeenCalled();
+    expect(marker.addon_period_ends_at).toBeNull();
+    // The real resume continuation reaches this only after ALL dealers and
+    // synchronized-break authorities have been reconstructed.
+    await (m as any).continueFreeBuyClosingDrain(true);
+    (m as any).lifecycleOperation = null;
     for (let i = 0; i < 40; i++) await Promise.resolve();
     expect(marker.addon_period_started_at).toBe('2026-10-23T02:00:00.000Z');
     expect(marker.addon_period_ends_at).toBe('2026-10-23T02:01:00.000Z');

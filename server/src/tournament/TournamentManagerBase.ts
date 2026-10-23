@@ -3061,7 +3061,7 @@ export abstract class TournamentManagerBase {
       this.releaseManagedTablePauseIfUnowned(engine);
       // The last parked dealer starts the actual paid add-on minute. This is
       // the original hand-boundary event, not a timer or repair poll.
-      if (this.addOnDrainPending && !this.addOnPeriodOpening) {
+      if (this.addOnDrainPending && !this.addOnPeriodOpening && !this.lifecycleOperation) {
         this.dispatchLifecycleCallback(
           () =>
             this.addOnPeriodTriggered
@@ -7892,7 +7892,7 @@ export abstract class TournamentManagerBase {
          grant another entitlement. A pool finalized just before the old
          process died receives a bounded, detached tail replay: no funding RPC
          is reachable from it and resume itself never waits. */
-      if (this.addOnDrainPending) await this.continueFreeBuyClosingDrain();
+      if (this.addOnDrainPending) await this.continueFreeBuyClosingDrain(true);
       if (this.addOnPeriodTriggered && !this.addOnDrainPending) {
         const addOnStartedMs = Date.parse(String(tournament.addon_period_started_at ?? ''));
         const addOnEndsMs = Date.parse(String(tournament.addon_period_ends_at ?? ''));
@@ -10835,8 +10835,16 @@ export abstract class TournamentManagerBase {
     );
   }
 
-  private async continueFreeBuyClosingDrain(): Promise<void> {
+  private async continueFreeBuyClosingDrain(admissionRestored = false): Promise<void> {
     if (this.addOnClosingDrainOpening || this.prizePoolFinalized) return;
+    // A pause-ready edge from the first restored dealer is not the whole
+    // field. resumeLifecycle explicitly continues after every admission and
+    // overlapping break has settled; ordinary start callbacks retain their
+    // existing scheduler edge until that lifecycle operation finishes.
+    if (this.lifecycleOperation && !admissionRestored) {
+      this.requestAddOnDeadlineRetry(TournamentManagerBase.ADD_ON_RETRY_MS);
+      return;
+    }
     if (isMaintenanceFrozen()) {
       this.scheduleAddOnResumeBroadcastRetry();
       return;

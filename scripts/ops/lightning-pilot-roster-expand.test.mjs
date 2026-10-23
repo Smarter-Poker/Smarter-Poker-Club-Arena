@@ -100,6 +100,11 @@ function fixture() {
         bank_after: state.club.chip_treasury,
       };
     },
+    async provenFunding(id, op) {
+      state.calls.push(['proven', id, op]);
+      if (state.wallets[id] !== FUND_CENTS) throw new Error('EARLIER_FUNDING_UNPROVED');
+      return { transactionId: `tx-${id}` };
+    },
     async verifyFunding(id, op, r) {
       state.calls.push(['verify', id, op]);
       return {
@@ -190,6 +195,52 @@ test('any pre-write refusal stops before the first door; an unknown door is neve
   assert.equal(r.cause, 'DOOR_OUTCOME_UNKNOWN');
   assert.equal(r.added, 3);
   assert.equal(state.calls.filter((c) => c[0] === 'join' && c[1] === scope.incoming[3]).length, 1);
+});
+
+test('a later operation completes a stopped one without touching finished horses', async () => {
+  const { state, adapter } = fixture();
+  let b = await prepareExpansion({ adapter, sourceRunId: 901, operationId, now: () => 1000 });
+  state.unknownAt = scope.incoming[57];
+  let r = await executeExpansion({
+    adapter,
+    baseline: b,
+    admission: admission(b),
+    persist: () => {},
+    now: () => 2000,
+  });
+  assert.equal(r.status, 'stopped');
+  assert.equal(r.added, 57);
+  assert.equal(r.steps.at(-1).error, 'THROWN_BEFORE_RECEIPT');
+  delete state.unknownAt;
+  state.calls.length = 0;
+  b = await prepareExpansion({
+    adapter,
+    sourceRunId: 903,
+    operationId: '7d3e7b5a-1c2d-4e5f-8a9b-0c1d2e3f4a5b',
+    now: () => 3000,
+  });
+  assert.equal(b.completed.length, 57);
+  assert.deepEqual(b.remaining, scope.incoming.slice(57));
+  r = await executeExpansion({
+    adapter,
+    baseline: b,
+    admission: { firstInvocation: true, prepareRunId: '903', executeRunId: '904' },
+    persist: () => {},
+    now: () => 4000,
+  });
+  assert.equal(r.status, 'verified', r.diagnostic);
+  assert.equal(r.added, 15);
+  assert.equal(r.grossFundingCents, 15 * FUND_CENTS);
+  assert.equal(r.rosterAfter, 145);
+  for (const id of scope.incoming.slice(0, 57))
+    assert.ok(!state.calls.some((c) => ['join', 'approve', 'fund'].includes(c[0]) && c[1] === id));
+  assert.equal(state.calls.filter((c) => c[0] === 'fund').length, 15);
+  // A joined horse with no proved funding is never adopted.
+  state.wallets[scope.incoming[0]] = 0;
+  await assert.rejects(
+    prepareExpansion({ adapter, sourceRunId: 905, operationId, now: () => 5000 }),
+    /EARLIER_FUNDING_UNPROVED/
+  );
 });
 
 test('tampered, expired or re-admitted baselines and roster drift refuse', async () => {

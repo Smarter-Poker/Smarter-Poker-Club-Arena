@@ -27,9 +27,9 @@ test.describe('Club Operations', () => {
       .locator('.sp-carousel__item.is-active')
       .getByRole('button', { name: /Click to enter lobby/i });
     if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
-      /* This caught the production regression where .carouselScrollFade
-         flex-shrank to zero and Quick actions occupied the club card's entire
-         rectangle. Visibility alone cannot detect occlusion. */
+      /* Visibility alone cannot detect occlusion. The approved top actions
+         replaced the retired bottom Quick actions row; keep the overlap
+         guard against the navigation that is actually rendered. */
       await expect
         .poll(
           async () => {
@@ -37,15 +37,15 @@ test.describe('Club Operations', () => {
               const r = el.getBoundingClientRect();
               return { top: r.top, bottom: r.bottom };
             });
-            const quickBox = await page
-              .getByRole('navigation', { name: 'Quick actions' })
+            const actionsBox = await page
+              .getByRole('navigation', { name: 'Poker Arena Actions', exact: true })
               .evaluate((el) => {
                 const r = el.getBoundingClientRect();
                 return { top: r.top, bottom: r.bottom };
               });
-            return cardBox.bottom <= quickBox.top + 1 || quickBox.bottom <= cardBox.top + 1;
+            return cardBox.bottom <= actionsBox.top + 1 || actionsBox.bottom <= cardBox.top + 1;
           },
-          { timeout: 8000, message: 'Club card must not overlap the quick-actions row' }
+          { timeout: 8000, message: 'Club card must not overlap the Poker Arena actions' }
         )
         .toBe(true);
       await clubCard.click({ timeout: 8000 });

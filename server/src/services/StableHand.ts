@@ -1345,8 +1345,8 @@ export function evaluateSit(r: SitRequest): SitRejection {
      ladder's top rung: a table above 25/50 is not a stake this platform
      deals. The bankroll decides everything below it, three lines down. */
   if (!stakeIsWithinLadder(r.bb)) return 'stake_above_ladder_top';
+  if (r.isRestDay) return 'rest_day';
   if (!r.bankrollOnly) {
-    if (r.isRestDay) return 'rest_day';
     if (r.inTwoHourWindow) return 'two_hour_window';
     if (!maySitOnKey(r.persona, r.sitsOnKeyToday)) return 'sit_cap';
   }

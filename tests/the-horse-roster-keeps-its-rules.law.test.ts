@@ -1,8 +1,6 @@
-/** Owner October 23: the fifty cash horses are restricted by bankroll,
- * never fixed variants/stakes, past PLO profits or activity personas.
- * This supersedes the earlier same-day winners-only rule. Read the LAST
- * migration definitions, so a later rewrite cannot quietly restore it.
- */
+/** Owner October23: the full scheduled fleet may play every game its bankroll
+ * supports. Activity schedules remain. Historical cash/PLO rankings and persona
+ * game restrictions cannot restore a fifty-horse cash limit. */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -36,8 +34,10 @@ describe('the cash roster keeps the latest bankroll-only rule', () => {
   const R = flat(lastDefinition('fn_ca_horse_roster_refresh').body);
   const G = flat(lastDefinition('fn_ca_horse_roster_seat_guard').body);
 
-  it('keeps exactly fifty ordinary cash horses without ranking on past profit', () => {
-    expect(R).toContain('v_size := 50;');
+  it('uses the full registered fleet without ranking on past profit', () => {
+    expect(R).toContain('select count(*) into v_size from _cand');
+    expect(R).toContain('ca_horse_fleet_register');
+    expect(R).not.toContain('v_size := 50;');
     expect(R).toContain('order by roster_rank, bankroll desc, id');
     expect(R).not.toContain('order by plo_profitable desc');
   });
@@ -51,14 +51,26 @@ describe('the cash roster keeps the latest bankroll-only rule', () => {
     expect(R).toContain('max_tables = 4');
     expect(R).not.toContain("jsonb_build_object('lane', 'cash', 'plocashlane', true)");
   });
-  it('keeps the ordinary pool boundary and the newer unrestricted Lightning admission', () => {
-    expect(G).toContain('horse_not_on_cash_roster');
-    expect(G).toContain('g.lightning_enabled');
+  it('never reinstates roster or profit exclusions for any game', () => {
+    expect(G).toContain('return new;');
+    expect(G).not.toContain('horse_not_on_cash_roster');
     expect(G).not.toContain('horse_not_on_plo_roster');
     expect(G).not.toContain('v_bb <= 0.5');
   });
   it('the engine never uses the historical PLO list to refuse a seat', () => {
     const source = readFileSync(resolve(REPO, 'server/src/services/HorsePloRoster.ts'), 'utf8');
     expect(source).toMatch(/export function ploRosterAllows[\s\S]*?\): boolean \{\s*return true;/);
+  });
+});
+
+describe('scheduled hours remain authoritative for the full fleet', () => {
+  it('does not bypass hours for ranked cash horses', () => {
+    const source = readFileSync(resolve(REPO, 'server/src/services/HorseFleetManager.ts'), 'utf8');
+    expect(source).toMatch(
+      /let pool = sittable\.filter\(\s*\(h\) => isActiveNow\(h\.id, hourUTC\)/
+    );
+    expect(source).not.toContain('cashRosterAllows(h.id) === true || isActiveNow');
+    expect(source).toContain('if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday))');
+    expect(source).toContain('if (!humanNeedsRescue && dailyCapReached(st, todayKey))');
   });
 });

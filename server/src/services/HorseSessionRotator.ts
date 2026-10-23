@@ -1358,8 +1358,7 @@ export class HorseSessionRotator {
         else if (swing <= 0.35) p *= 1.8; // felted-ish — calling it a night
         if (minutes > 150) p *= 1.6; // long sessions wind down
         // V8: outside the horse's daily activity window, sessions end sooner.
-        if (cashRosterAllows(seat.user_id) !== true && !isActiveNow(seat.user_id, hourUTC))
-          p *= 1.6;
+        if (!isActiveNow(seat.user_id, hourUTC)) p *= 1.6;
         // V8: rotation prefers horse-only tables — humans keep a stable game.
         if (humanPresent) p *= 0.5;
 

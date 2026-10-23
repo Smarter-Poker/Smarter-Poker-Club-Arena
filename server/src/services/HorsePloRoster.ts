@@ -1,7 +1,7 @@
 /** Cash roster reader. Owner October 23: cash horses are eligible for any
  * variant/stake their bankroll supports. The old PLO profitability list is
  * retained as historical data and never used as a seating restriction.
- * Cash roster membership still bounds ordinary cash allocation to fifty.
+ * The historical cash roster is advisory. Scheduled horses are eligible across all games.
  */
 
 import { supabase } from './supabase/client.js';
@@ -111,15 +111,13 @@ export function ploRosterAllows(_horseId: string, _variant: unknown, _bigBlind?:
   return true;
 }
 
-/**
- * May this horse sit at a CASH table at all? Dan 2026-10-23: "THEY CAN PLAY
- * TOURNAMENTS, JUST NOT CASH GAMES." Only the 45-horse active roster plays
- * cash; every horse plays tournaments. `undefined` before any good read (the
- * callers keep their own rule; the database seat door is the backstop).
- */
-export function cashRosterAllows(horseId: string): boolean | undefined {
-  if (!cashRoster) return undefined;
-  return cashRoster.has(horseId);
+/** Historical rankings are advisory. All active fleet horses may enter cash;
+ * callers retain activity schedules, bankroll and normal player admission. */
+export function cashRosterAllows(_horseId: string): boolean | undefined {
+  // Owner October 23: the full scheduled fleet may play cash. Membership,
+  // bankroll, activity hours and ordinary player doors are checked by callers.
+  // A historical ranking or an unavailable ranking read cannot deny a seat.
+  return true;
 }
 
 /**

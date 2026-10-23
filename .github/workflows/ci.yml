@@ -1416,6 +1416,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/cash-horse-bankroll.sql --candidate supabase/migrations/20261023221116_cash_horses_are_bankroll_only_and_closed_counts_are_truthful.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: The full scheduled horse fleet can play every game
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/scheduled-horses.sql --candidate supabase/migrations/20261023222825_scheduled_horses_play_every_game_without_roster_restrictions.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
       - name: Club entry news is shown once across devices
         if: matrix.shard == 2
         env:

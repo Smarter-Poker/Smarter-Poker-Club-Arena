@@ -48,8 +48,6 @@ export function BadBeatJackpot({
   miniAmount = null,
   miniQualifyingHand = null,
 }: BadBeatJackpotProps) {
-  const [mainHidden, setMainHidden] = useState(false);
-  const [miniHidden, setMiniHidden] = useState(false);
   const [displayAmount, setDisplayAmount] = useState(amount);
   // Brief scale/glow whenever the jackpot GROWS (2026-08-18) — a live pool
   // that only changes digits reads as static; a bump reads as money landing.
@@ -127,42 +125,30 @@ export function BadBeatJackpot({
 
   return (
     <>
-      {/* Separate sibling buttons keep dismissal out of the details action. */}
-      {!mainHidden && (
-        <div className="bbj-widget">
-          <button
-            type="button"
-            className="bbj-widget__details"
-            aria-label="Bad Beat Jackpot - View Recent Jackpots"
-            title={hoverSummary}
-            onClick={() => onOpenDetails?.()}
-          >
-            <span className="bbj-widget__label">BAD BEAT JACKPOT</span>
-            <span className={`bbj-widget__amount${bump ? ' bbj-widget__amount--bump' : ''}`}>
-              {currency}
-              {asset === 'diamonds' || displayAmount >= 1000
-                ? Math.trunc(displayAmount).toLocaleString('en-US')
-                : (Math.trunc(displayAmount * 100) / 100).toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="bbj-banner-close"
-            aria-label="Hide Bad Beat Jackpot"
-            title="Hide Bad Beat Jackpot"
-            onClick={() => setMainHidden(true)}
-          >
-            <span aria-hidden="true">{'\u00D7'}</span>
-          </button>
-        </div>
-      )}
+      {/* Jackpot plates stay in the left corner beneath the table menu. */}
+      <div className="bbj-widget">
+        <button
+          type="button"
+          className="bbj-widget__details"
+          aria-label="Bad Beat Jackpot - View Recent Jackpots"
+          title={hoverSummary}
+          onClick={() => onOpenDetails?.()}
+        >
+          <span className="bbj-widget__label">BAD BEAT JACKPOT</span>
+          <span className={`bbj-widget__amount${bump ? ' bbj-widget__amount--bump' : ''}`}>
+            {currency}
+            {asset === 'diamonds' || displayAmount >= 1000
+              ? Math.trunc(displayAmount).toLocaleString('en-US')
+              : (Math.trunc(displayAmount * 100) / 100).toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+          </span>
+        </button>
+      </div>
 
-      {/* The payable mini keeps its existing position and its own dismissal.
-          Hiding banners never disables subscriptions or jackpot celebrations. */}
-      {showMini && !miniHidden && (
+      {/* Only show a mini jackpot that can pay at these stakes. */}
+      {showMini && (
         <div className="bbj-mini-plate">
           <button
             type="button"
@@ -176,15 +162,6 @@ export function BadBeatJackpot({
               {currency}
               {Math.trunc(miniAmount as number).toLocaleString('en-US')}
             </span>
-          </button>
-          <button
-            type="button"
-            className="bbj-banner-close"
-            aria-label="Hide Mini Bad Beat Jackpot"
-            title="Hide Mini Bad Beat Jackpot"
-            onClick={() => setMiniHidden(true)}
-          >
-            <span aria-hidden="true">{'\u00D7'}</span>
           </button>
         </div>
       )}

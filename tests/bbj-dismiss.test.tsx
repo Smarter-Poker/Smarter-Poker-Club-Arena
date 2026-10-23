@@ -1,118 +1,50 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import BadBeatJackpot from '../src/components/table/BadBeatJackpot';
 
 const props = { amount: 36802, qualifyingHand: 'Aces Full Or Better', miniAmount: 700 };
+const mainName = 'Bad Beat Jackpot - View Recent Jackpots';
+const miniName = 'Mini Bad Beat Jackpot - View Recent Jackpots';
 
-describe('BBJ banner close controls', () => {
-  it('does not share the celebration dismiss button skin', () => {
-    const celebrationCss = readFileSync('src/components/table/BBJCelebration.css', 'utf8');
-    render(<BadBeatJackpot {...props} />);
-    for (const name of ['Hide Bad Beat Jackpot', 'Hide Mini Bad Beat Jackpot']) {
-      const button = screen.getByRole('button', { name, exact: true });
-      for (const className of button.classList) {
-        expect(celebrationCss).not.toMatch(new RegExp(`\\.${className}(?![\\w-])`));
-      }
-    }
-  });
-
-  it('uses matching X buttons and hides each banner independently', () => {
+describe('BBJ corner banners without close controls', () => {
+  it('keeps both plates visible and unobstructed after details and amount updates', () => {
     const open = vi.fn();
     const { container, rerender } = render(<BadBeatJackpot {...props} onOpenDetails={open} />);
-    const main = screen.getByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true });
-    const mini = screen.getByRole('button', { name: 'Hide Mini Bad Beat Jackpot', exact: true });
-    expect(main.className).toBe(mini.className);
-    expect(main.textContent).toBe(mini.textContent);
-    expect(main.textContent).toBe('\u00D7');
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /^Hide / })).toBeNull();
     expect(container.querySelector('button button')).toBeNull();
-    fireEvent.click(main);
-    expect(
-      screen.queryByRole('button', { name: 'Bad Beat Jackpot - View Recent Jackpots', exact: true })
-    ).toBeNull();
-    expect(
-      screen.getByRole('button', {
-        name: 'Mini Bad Beat Jackpot - View Recent Jackpots',
-        exact: true,
-      })
-    ).toBeInTheDocument();
-    expect(open).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: mainName, exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: miniName, exact: true }));
+    expect(open).toHaveBeenCalledTimes(2);
     rerender(<BadBeatJackpot {...props} amount={40000} miniAmount={800} onOpenDetails={open} />);
-    expect(screen.queryByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true })).toBeNull();
-    fireEvent.click(mini);
-    expect(container.querySelector('.bbj-widget')).toBeNull();
-    expect(container.querySelector('.bbj-mini-plate')).toBeNull();
-    expect(open).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: mainName, exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: miniName, exact: true })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Hide / })).toBeNull();
   });
 
-  it('keeps the main banner and details action when only the mini is hidden', () => {
-    const open = vi.fn();
-    render(<BadBeatJackpot {...props} onOpenDetails={open} />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Hide Mini Bad Beat Jackpot', exact: true })
-    );
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Bad Beat Jackpot - View Recent Jackpots', exact: true })
-    );
-    expect(open).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByRole('button', { name: 'Hide Mini Bad Beat Jackpot', exact: true })
-    ).toBeNull();
-  });
-
-  it('never hides a jackpot-hit celebration when the banners are dismissed', () => {
-    const { container, rerender } = render(<BadBeatJackpot {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Hide Mini Bad Beat Jackpot', exact: true })
-    );
-    rerender(<BadBeatJackpot {...props} isHit />);
-    expect(container.querySelector('.bbj-hit-overlay')).toBeInTheDocument();
-    expect(screen.getByText('HIT!')).toBeInTheDocument();
-  });
-
-  it('keeps dismissal local to its mounted table view', () => {
-    const first = render(<BadBeatJackpot {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true }));
-    first.unmount();
-    render(<BadBeatJackpot {...props} />);
-    expect(
-      screen.getByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true })
-    ).toBeInTheDocument();
-  });
-
-  it.each(['{Enter}', ' '])('hides with native keyboard activation: %s', async (key) => {
+  it.each([mainName, miniName])('opens %s once per native keyboard activation', async (name) => {
     const user = userEvent.setup();
     const open = vi.fn();
     render(<BadBeatJackpot {...props} onOpenDetails={open} />);
-    screen.getByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true }).focus();
-    await user.keyboard(key);
-    expect(screen.queryByRole('button', { name: 'Hide Bad Beat Jackpot', exact: true })).toBeNull();
-    expect(open).not.toHaveBeenCalled();
+    screen.getByRole('button', { name, exact: true }).focus();
+    await user.keyboard('{Enter}');
+    expect(open).toHaveBeenCalledTimes(1);
+    await user.keyboard(' ');
+    expect(open).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['{Enter}', ' '])(
-    'opens mini details once with native keyboard activation: %s',
-    async (key) => {
-      const user = userEvent.setup();
-      const open = vi.fn();
-      render(<BadBeatJackpot {...props} onOpenDetails={open} />);
-      screen
-        .getByRole('button', { name: 'Mini Bad Beat Jackpot - View Recent Jackpots', exact: true })
-        .focus();
-      await user.keyboard(key);
-      expect(open).toHaveBeenCalledTimes(1);
-    }
-  );
+  it('retains the jackpot-hit celebration alongside both plates', () => {
+    const { container } = render(<BadBeatJackpot {...props} isHit />);
+    expect(container.querySelector('.bbj-hit-overlay')).toBeInTheDocument();
+    expect(screen.getByText('HIT!')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: mainName, exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: miniName, exact: true })).toBeInTheDocument();
+  });
 
-  it.each([null, 0, -1])(
-    'does not offer a mini close control without a positive payable amount: %s',
-    (miniAmount) => {
-      render(<BadBeatJackpot {...props} miniAmount={miniAmount} />);
-      expect(
-        screen.queryByRole('button', { name: 'Hide Mini Bad Beat Jackpot', exact: true })
-      ).toBeNull();
-    }
-  );
+  it.each([null, 0, -1])('only shows the mini when it can pay: %s', (miniAmount) => {
+    render(<BadBeatJackpot {...props} miniAmount={miniAmount} />);
+    expect(screen.queryByRole('button', { name: miniName, exact: true })).toBeNull();
+    expect(screen.getByRole('button', { name: mainName, exact: true })).toBeInTheDocument();
+  });
 });

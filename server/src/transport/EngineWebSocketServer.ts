@@ -66,6 +66,9 @@ import {
   type TokenDenial,
 } from './wsHelpers.js';
 
+/** Grace for peers to answer the shutdown close frame before termination. */
+export const SHUTDOWN_CLOSE_GRACE_MS = 3_000;
+
 // Re-export helpers so existing imports keep working. Tests pull them from
 // wsHelpers.js directly to avoid the Supabase-at-import-time side effect.
 export { parseTableIdFromPath, extractBearerToken };
@@ -852,7 +855,16 @@ export class EngineWebSocketServer {
         /* ignore */
       }
     }
+    // A peer that never answers the close frame would hold wss.close() for
+    // ws's 30 s closeTimeout per socket. Shutdown runs after ownership release,
+    // so an unanswered socket is terminated after a short grace instead.
+    const forceClose = setTimeout(() => {
+      for (const ws of this.wss.clients) ws.terminate();
+      for (const [ws] of this.connections) ws.terminate();
+    }, SHUTDOWN_CLOSE_GRACE_MS);
+    forceClose.unref();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
+    clearTimeout(forceClose);
   }
 
   // Metrics

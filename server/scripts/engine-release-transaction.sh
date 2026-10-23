@@ -1601,6 +1601,41 @@ print(contract)
   TARGET_IMAGE_ID="${IMAGE_FIELDS[0]}"
 }
 
+# THE CANDIDATE IMAGE IS WARMED BEFORE THE BREAK (2026-10-23).
+# A freshly built image has never had a container. On engine-01 (containerd
+# snapshotter) the first `docker run` of a new image spent 13-40 s unpacking
+# its snapshot and another 18-52 s joining the bridge network, while a second
+# run of the same image takes 0.3 s for both. Measured over every cutover since
+# 2026-10-17: rollback restarts of an already-run image never exceeded 0.3 s,
+# and first runs of new images reached 81.5 s (stop 12.9 + create 23.9 +
+# join 44.7) on 2026-10-22 06:28 UTC, which alone exceeds the 75 s cutover
+# budget (run 39728449445-1). The engine is down for every one of those
+# seconds. One throwaway container is therefore run to completion from the
+# exact candidate image here, outside any break, with the engine command
+# replaced so nothing connects to production. It carries no engine labels,
+# no env file and no ports, and it is never fatal: an unwarmed image only
+# costs time that the existing cutover budget still bounds.
+prewarm_candidate_image() {
+  local remaining warm_timeout warm_name started finished
+  remaining="$(remaining_seconds)" || return 0
+  warm_timeout=$((remaining - 30))
+  [ "$warm_timeout" -le 120 ] || warm_timeout=120
+  [ "$warm_timeout" -ge 10 ] || return 0
+  warm_name="club-arena-engine-prewarm-$RUN_ID"
+  timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
+  started="$(date +%s)"
+  if timeout --signal=TERM --kill-after=5s "${warm_timeout}s" docker run --rm --pull never \
+    --name "$warm_name" --restart no --network bridge --entrypoint node \
+    "$IMAGE_REF" -e 'process.exit(0)' >/dev/null 2>&1; then
+    finished="$(date +%s)"
+    echo "ENGINE_IMAGE_PREWARM_SECONDS=$((finished - started))"
+  else
+    echo '[engine-release-transaction] candidate image prewarm did not finish; cutover remains bounded' >&2
+    timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
 read_pending_owner() {
   local description remaining
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -1763,6 +1798,7 @@ BUILD_TIMEOUT=$((BUILD_REMAINING - 16))
 timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
   "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" \
   || die 'bounded immutable engine image build failed'
+prewarm_candidate_image
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
 # This is a compatibility operation for three pinned immutable predecessors, not a

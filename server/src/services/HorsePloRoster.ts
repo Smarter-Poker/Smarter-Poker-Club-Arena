@@ -216,6 +216,13 @@ export function lightningFillVerdict(
   return typeof clusterId === 'string' && clusterId === game ? 'fill' : 'elsewhere';
 }
 
+/** Is this game a Lightning fill game? Its tables are filled full. */
+export function isLightningFillCluster(clusterId: unknown): boolean {
+  if (typeof clusterId !== 'string') return false;
+  for (const game of fillByHorse.values()) if (game === clusterId) return true;
+  return false;
+}
+
 /** Test seam for the Lightning fill list. */
 export function __setLightningFillForTest(rows: Array<[horseId: string, clusterId: string]>): void {
   fillByHorse = new Map(rows);

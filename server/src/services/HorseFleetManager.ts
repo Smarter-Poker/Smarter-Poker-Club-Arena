@@ -146,6 +146,7 @@ import {
   refreshPloRoster,
   rosterExemptClub,
   lightningFillVerdict,
+  isLightningFillCluster,
 } from './HorsePloRoster.js';
 
 /**
@@ -3015,6 +3016,12 @@ export class HorseFleetManager {
           if (openingFeeder || seedToDealable) {
             seatTarget = Math.min(table.max_players, Math.max(seatTarget, DEALABLE_MINIMUM));
           }
+          /* A LIGHTNING FILL GAME IS FILLED FULL (Dan 2026-10-23: "make sure
+             the horses are all playing 50 horses"). Its Main has to fill for
+             the tick to open the next table, so a drifting vibe target that
+             leaves one chair open would hold the game at one table. */
+          const lightningFillGame = isLightningFillCluster(table.cluster_id);
+          if (lightningFillGame) seatTarget = table.max_players;
           const seatsAllowed = capBySeatedCount(seatTarget, currentCount, policy.maxPerTable);
           if (seatsAllowed <= 0) {
             if (!table.cluster_id) continue;
@@ -3032,7 +3039,7 @@ export class HorseFleetManager {
              to be full are filled now and the pacing stays where it still
              reads as human: the sparse quarter, and a human's rescue. */
           const humanNeedsRescue = humanAtTable && currentCount < 4;
-          if (fill !== 'full' && !humanNeedsRescue) {
+          if (fill !== 'full' && !humanNeedsRescue && !lightningFillGame) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
           }
           /* ...except the two that make a cluster table dealable (see

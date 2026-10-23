@@ -34,3 +34,14 @@ describe('a Lightning fill horse plays its own test game', () => {
     expect(lightningFillVerdict('horse-a', undefined)).toBe('elsewhere');
   });
 });
+
+describe('a Lightning fill game is known by its fill list', () => {
+  afterEach(() => __setLightningFillForTest([]));
+  it('names exactly the games on the list', async () => {
+    const { isLightningFillCluster } = await import('./HorsePloRoster.js');
+    __setLightningFillForTest([['horse-a', NLH]]);
+    expect(isLightningFillCluster(NLH)).toBe(true);
+    expect(isLightningFillCluster(PLO)).toBe(false);
+    expect(isLightningFillCluster(null)).toBe(false);
+  });
+});

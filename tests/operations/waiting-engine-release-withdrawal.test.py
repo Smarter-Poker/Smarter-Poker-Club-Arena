@@ -99,6 +99,8 @@ class Withdrawal(unittest.TestCase):
         self.assertIn("if: github.event.action == 'withdraw-club-arena-engine'", job)
         self.assertIn('waiting-engine-release-withdrawal.test.py', job)
         self.assertIn('withdraw-waiting-engine-release.py', job)
+        self.assertIn('group: club-arena-engine-withdrawal-${{ github.event.client_payload.withdrawal.runKey }}', job)
+        self.assertIn('cancel-in-progress: false', job)
         for prohibited in ['docker ', 'engine-up', 'stage-engine', 'DATABASE_URL', 'deploy-club-arena-engine']:
             self.assertNotIn(prohibited, job)
         preflight = workflow.split('\n  preflight:', 1)[1].split('\n  engine-doors:', 1)[0]

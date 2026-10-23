@@ -24,6 +24,9 @@ jobs:
     name: Withdraw One Exact Waiting Original Transaction
     if: github.event.action == 'withdraw-club-arena-engine'
     runs-on: ubuntu-latest
+    concurrency:
+      group: club-arena-engine-withdrawal-${{ github.event.client_payload.withdrawal.runKey }}
+      cancel-in-progress: false
     timeout-minutes: 4
     permissions:
       contents: read

@@ -97,6 +97,7 @@ async function healthy(url, headers = {}) {
 }
 try {
   assert.equal(process.getuid(), 1000);
+  await mkdir('/tmp/fixture/realtime', { recursive: true, mode: 0o700 });
   await prepareRealtimeCookie();
   await mkdir('/run/cashier', { recursive: true, mode: 0o700 });
   await mkdir('/run/postgresql', { recursive: true, mode: 0o700 });

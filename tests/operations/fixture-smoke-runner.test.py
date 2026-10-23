@@ -235,8 +235,9 @@ class RunnerTests(unittest.TestCase):
             return code, json.loads(text), calls
 
     def test_complete_native_result(self):
-        code, receipt, _ = self.exercise()
+        code, receipt, calls = self.exercise()
         self.assertEqual(code, 0)
+        self.assertTrue(any(args[:2] == ['python3', 'tests/fixtures/cashier-realtime-lifecycle/run-native.py'] for args in calls))
         self.assertFalse(receipt['product_certificate'])
         self.assertTrue(all(receipt['cleanup'].values()))
 

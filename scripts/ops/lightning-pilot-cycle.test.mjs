@@ -383,7 +383,14 @@ test('a disappearing optional control is clicked once with a bounded response an
     source,
     /if \(!response\) \{\s*report\[key\] = 'click_or_response_unknown';\s*continue;/
   );
-  assert.match(source, /report.requests.timebank === 1/);
+  assert.match(source, /report\.requests\.timebank - report\.staleRefusals\.timebank === 1/);
+  assert.match(source, /report\.requests\.preaction - report\.staleRefusals\.preaction === 1/);
+  // Only an ended-hand refusal is retried, once; any other refusal still stops.
+  assert.match(
+    source,
+    /if \(!stale \|\| retried\.has\(key\)\) throw new Error\('Optional Action Refused'\)/
+  );
+  assert.match(source, /answer\?\.code === 'STALE_HAND'/);
   assert.match(source, /report.timebank === 'accepted'/);
 });
 

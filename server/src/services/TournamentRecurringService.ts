@@ -66,7 +66,7 @@ import {
   FREE_BUY_BOARD_NAMES,
   FREE_BUY_HOSTS,
   FREE_BUY_SLOTS,
-  FREE_BUY_TIERS,
+  freeBuyConfigForSlot,
   freeBuyBoardName,
   auditFreeBuyBoard,
   freeBuySlotsDue,
@@ -2990,7 +2990,7 @@ export function fixedFreeBuyRow(
 ): Record<string, unknown> | null {
   const slot = FREE_BUY_SLOTS.find((s) => freeBuyBoardName(s) === slotName);
   if (!slot) return null;
-  const cfg = FREE_BUY_TIERS[slot.tier];
+  const cfg = freeBuyConfigForSlot(slot);
   const dayKey = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Chicago',
     year: 'numeric',
@@ -3556,7 +3556,7 @@ export class TournamentRecurringService {
         this.freeBuyHostPublishRefused.delete(host.hostId);
         for (const d of due) {
           if (isMaintenanceFrozen()) return;
-          const cfg = FREE_BUY_TIERS[d.slot.tier];
+          const cfg = freeBuyConfigForSlot(d.slot);
           const row = freeBuyTournamentRow({
             host,
             due: d,

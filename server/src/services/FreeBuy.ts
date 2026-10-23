@@ -66,7 +66,7 @@ export interface FreeBuyConfig {
 export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
   standard: {
     tier: 'standard',
-    guarantee: 500,
+    guarantee: 250,
     buyIn: 0,
     startingChips: 3000,
     rebuyCost: 1,
@@ -80,7 +80,7 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
   },
   feature: {
     tier: 'feature',
-    guarantee: 1000,
+    guarantee: 500,
     buyIn: 0,
     startingChips: 3000,
     rebuyCost: 1,
@@ -109,9 +109,9 @@ export interface FreeBuySlot {
  *  A DAY $250'S EACH. 8PM IS $500."
  *
  *  2026-10-16 (Dan): the five slots start on the half hour, 8:30 AM to 12:30
- *  AM (FREE_BUY_SLOT_MINUTE), and "DOUBLE ALL THE OTHER CURRENT GUARANTEES,
- *  THEN ROUND THEM ALL UP TO THE NEAREST 1000 OR 500", so the standard tier
- *  guarantees 500 and the 8:30 PM feature 1,000.
+ *  AM (FREE_BUY_SLOT_MINUTE). Owner October 22: morning and midnight are
+ *  250; midday, afternoon and Prime Time are 500 in every room, every day.
+ *  The tier still controls the existing field size, not the slot guarantee.
  *
  *  These are CHICAGO hours, not UTC. The existing recurring board matches on
  *  `getUTCHours()`, which would drift by an hour twice a year and quietly move
@@ -191,9 +191,19 @@ export function slotForChicagoHour(hour: number): FreeBuySlot | null {
   return FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour) ?? null;
 }
 
-/** Guarantee exposure per host per day. 4 x 500 + 1,000 = 3,000. */
+/** Owner October 22: guarantees are authored by slot, shared by both creators.
+ * Keep the existing field sizes and purchase terms when midday/afternoon
+ * use the 500 guarantee; changing a guarantee must not change their capacity. */
+export function freeBuyConfigForSlot(slot: FreeBuySlot): FreeBuyConfig {
+  return {
+    ...FREE_BUY_TIERS[slot.tier],
+    guarantee: slot.chicagoHour === 8 || slot.chicagoHour === 0 ? 250 : 500,
+  };
+}
+
+/** Guarantee exposure per host per day. 2 x 250 + 3 x 500 = 2,000. */
 export function dailyGuaranteePerHost(): number {
-  return FREE_BUY_SLOTS.reduce((sum, s) => sum + FREE_BUY_TIERS[s.tier].guarantee, 0);
+  return FREE_BUY_SLOTS.reduce((sum, s) => sum + freeBuyConfigForSlot(s).guarantee, 0);
 }
 
 /** A Free Buy's prize pool is fed by rebuys and add-ons, so the house only
@@ -656,7 +666,7 @@ export function freeBuyTournamentRow(opts: {
   tableSize: number;
   lateRegLevels: number;
 }): Record<string, unknown> {
-  const cfg = FREE_BUY_TIERS[opts.due.slot.tier];
+  const cfg = freeBuyConfigForSlot(opts.due.slot);
   return {
     club_id: opts.host.clubId,
     union_id: opts.host.unionId,
@@ -793,7 +803,7 @@ export function auditFreeBuyRow(
     Number(row.guaranteed_prize) === FREE_BUY_PREVIOUS_GUARANTEES[slot.tier];
   let cfg = publishedAtPreviousGuarantee
     ? { ...FREE_BUY_TIERS[slot.tier], guarantee: FREE_BUY_PREVIOUS_GUARANTEES[slot.tier] }
-    : FREE_BUY_TIERS[slot.tier];
+    : freeBuyConfigForSlot(slot);
   // The owner standardized Midway's structures and reduced three guarantees
   // on October 20. Already-registered events retain their original contract.
   let revisedMidway = false;

@@ -62,6 +62,37 @@ describe('Ubuntu browser dependency mirror', () => {
     }
   });
 
+  it('rewrites referenced hosted mirrorlists while preserving weights, comments and trust', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
+    try {
+      mkdirSync(join(root, 'sources.list.d'));
+      const source = join(root, 'sources.list.d', 'ubuntu.sources');
+      const definition =
+        'Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates\nComponents: main\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n# mirror+file:/etc/apt/unused.txt\n';
+      writeFileSync(source, definition);
+      const mirror = join(root, 'apt-mirrors.txt');
+      writeFileSync(
+        mirror,
+        'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\n# http://azure.archive.ubuntu.com/ubuntu\nhttps://example.com/ubuntu\tpriority:3 # http://azure.archive.ubuntu.com/ubuntu\n'
+      );
+      const unused = 'http://azure.archive.ubuntu.com/ubuntu\n';
+      writeFileSync(join(root, 'unused.txt'), unused);
+      const run = () =>
+        execFileSync('python3', ['scripts/ci/ubuntu-apt-mirror.py', '--root', root], {
+          encoding: 'utf8',
+        });
+      expect(run()).toContain('updated 1 source files');
+      expect(readFileSync(source, 'utf8')).toBe(definition);
+      expect(readFileSync(mirror, 'utf8')).toBe(
+        'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\n# http://azure.archive.ubuntu.com/ubuntu\nhttps://example.com/ubuntu\tpriority:3 # http://azure.archive.ubuntu.com/ubuntu\n'
+      );
+      expect(readFileSync(join(root, 'unused.txt'), 'utf8')).toBe(unused);
+      expect(run()).toContain('updated 0 source files');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a missing source directory', () => {
     const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
     try {

@@ -47,3 +47,10 @@ Wait for the original import's reserve/read sequence before ending the test.
 The quota case's batch/reservation and operation identity assertions remain
 unchanged; the focused eleven-case suite passes. Product Cashier behavior is
 unchanged.
+
+A retained runner log exposed Ubuntu's alternate `mirror+file:` source format:
+`ubuntu.sources` referenced `/etc/apt/apt-mirrors.txt`, so direct URI replacement
+changed zero files and Azure still downloaded LLVM for twelve minutes. Follow
+active local mirror-list references inside `/etc/apt` and apply the same exact
+Azure URI substitution there. A fixture preserves source signatures, priorities,
+comments, unrelated mirrors and unused files, and verifies idempotence.

@@ -1236,6 +1236,13 @@ function HomePageInner() {
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
 
+  // Play Poker owns its club destination independently of the removed bottom
+  // shortcuts. The existing resolver keeps union entities out of this entry.
+  const quickLinkClub = useMemo(
+    () => resolveTargetClub(userClubs, quickLinkClubId),
+    [userClubs, quickLinkClubId]
+  );
+
   return (
     <div
       className={styles.container}

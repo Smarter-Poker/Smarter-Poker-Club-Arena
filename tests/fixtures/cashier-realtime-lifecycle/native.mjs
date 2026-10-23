@@ -49,8 +49,8 @@ function setStage(value) {
   console.log(JSON.stringify({ scope: 'cashier-realtime-native-lifecycle', kind: 'stage', stage }));
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-async function ready(check) {
-  const end = Date.now() + 60000;
+async function ready(check, budget = 60000) {
+  const end = Date.now() + budget;
   while (Date.now() < end) {
     assert.ok(
       children.every((c) => c.exitCode === null && !c.failed),
@@ -437,10 +437,11 @@ try {
     const holdBody = response.request().postDataJSON();
     const start = performance.now();
     await ready(() =>
-      agentEvents.changes.some((r) => r.id === hold.cashout_id && r.status === 'pending')
+      agentEvents.changes.some((r) => r.id === hold.cashout_id && r.status === 'pending'), 5000
     );
     const approve = agentPage.getByRole('button', { name: 'Approve Cashout', exact: true });
     await approve.waitFor({ state: 'visible', timeout: 5000 });
+    assert.ok(performance.now() - start < 5000, 'request status exceeded realtime budget');
     observations.push({
       stage: decision + '.request_cross_browser',
       latency_ms: Math.round(performance.now() - start),
@@ -496,7 +497,7 @@ try {
         (r) =>
           r.id === hold.cashout_id &&
           r.status === (decision === 'approval' ? 'approved' : 'rejected')
-      )
+      ), 5000
     );
     await agentPage
       .getByText('No Pending Cashout Requests', { exact: true })
@@ -505,6 +506,7 @@ try {
     await playerPage
       .getByRole('button', { name: 'Cancel', exact: true })
       .waitFor({ state: 'hidden', timeout: 5000 });
+    assert.ok(performance.now() - changed < 5000, 'decision status exceeded realtime budget');
     observations.push({
       stage: decision + '.decision_cross_browser',
       latency_ms: Math.round(performance.now() - changed),

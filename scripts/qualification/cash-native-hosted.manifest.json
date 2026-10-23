@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41349,
-      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+      "bytes": 41516,
+      "sha256": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3630,6 +3630,18 @@
     "current": {
       "bytes": 41349,
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    }
+  },
+  "cashierRealtimeFixtureEnforcement20261023": {
+    "reason": "Reviewed additive classifier native fixture routing for cashout components and scoped lifecycle fixtures. Existing accounting selections and all financial assertions are preserved. Current classifier source identity only, not a native execution or installation certificate.",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous": {
+      "bytes": 41349,
+      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    },
+    "current": {
+      "bytes": 41516,
+      "sha256": "1902754786fd31af0d65b84ba34aee5d690bbb936b0cec9374f3daf0d298ee95"
     }
   }
 }

@@ -45,8 +45,11 @@ vi.mock('../../src/core/MasterBus', () => ({
     }),
     subscribeDebounced: () => () => {},
     removeRegisteredChannel: vi.fn(),
+    registerChannelFactory: vi.fn(),
+    removeChannelFactory: vi.fn(),
   },
 }));
+vi.mock('../../src/lib/subscribeRealtime', () => ({ subscribeRealtime: vi.fn(async () => {}) }));
 vi.mock('../../src/utils/retryAsync', () => ({ retryAsync: (fn: any) => fn() }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/utils/strictClubIdResolver', () => ({

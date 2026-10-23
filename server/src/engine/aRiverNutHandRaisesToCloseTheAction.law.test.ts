@@ -3,7 +3,7 @@ import type { Card, GameVariant, GameState } from '../types.js';
 import { HorseLogic } from './HorseLogic.js';
 import { seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
-import { hasRiverNuts, riverNutsRaise } from './HorseRiverNuts.js';
+import { hasRiverNuts, riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { HandController } from './HandController.js';
 
 const cards = (s: string): Card[] =>
@@ -143,7 +143,7 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
         expect(d.action).toBe('raise');
         expect(d.amount).toBeGreaterThanOrEqual(state.minRaiseTo!);
         expect(d.amount).toBeLessThanOrEqual(state.maxRaiseTo!);
-        expect(d.policyGraph?.transitions.at(-2)?.node).toBe('river_nuts');
+        expect(d.policyGraph?.transitions.at(-2)?.node).toBe('wager_rules');
         expect(d.policyGraph?.finalAction).toEqual({ action: 'raise', amount: d.amount });
       }
     }
@@ -157,7 +157,7 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
     );
   });
 
-  it.each(['reopening', 'cap', 'call_all_in', 'opponents_all_in', 'still_to_act', 'turn'] as const)(
+  it.each(['reopening', 'cap', 'call_all_in', 'opponents_all_in', 'turn'] as const)(
     'does not manufacture a raise with %s',
     (boundary) => {
       const { hero, state } = incident();
@@ -165,8 +165,6 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
       if (boundary === 'cap') state.wagersCapped = true;
       if (boundary === 'call_all_in') hero.stack = 50;
       if (boundary === 'opponents_all_in') state.players[1].is_all_in = true;
-      if (boundary === 'still_to_act')
-        state.players[2] = { ...state.players[2], is_folded: false, bet: 0 };
       if (boundary === 'turn') {
         state.stage = 'turn';
         state.communityCards.pop();
@@ -285,5 +283,91 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
     expect(hasRiverNuts(hero, state)).toBe(false);
     state.communityCards.pop();
     expect(hasRiverNuts(hero, state)).toBe(false);
+  });
+});
+
+describe('near-pot wagers use full pot when the authoritative menu allows it', () => {
+  it.each([90, 95.88, 99.99, 100])('rounds a %s percent bet to full pot', (amount) => {
+    const { hero, state } = incident();
+    Object.assign(state, {
+      stage: 'flop',
+      pot: 100,
+      currentBet: 0,
+      toCall: 0,
+      minRaiseTo: 2,
+      maxRaiseTo: 100,
+      legalActions: ['check', 'bet'],
+    });
+    expect(fullPotNearPotWager({ action: 'bet', amount, thinkTime: 7 }, hero, state)).toMatchObject(
+      { action: 'bet', amount: 100, thinkTime: 7 }
+    );
+  });
+  it.each([89.99, 101, 150])('preserves other sizing %s', (amount) => {
+    const { hero, state } = incident();
+    Object.assign(state, {
+      pot: 100,
+      currentBet: 0,
+      toCall: 0,
+      minRaiseTo: 2,
+      maxRaiseTo: 500,
+      legalActions: ['bet'],
+    });
+    const wager = { action: 'bet' as const, amount, thinkTime: 0 };
+    expect(fullPotNearPotWager(wager, hero, state)).toBe(wager);
+  });
+  it('prices a pot raise after calling, including already committed chips', () => {
+    const { hero, state } = incident();
+    const wager = { action: 'raise' as const, amount: 248, thinkTime: 0 };
+    expect(fullPotNearPotWager(wager, hero, state).amount).toBe(269);
+  });
+  it.each(['stack', 'cap', 'fixed', 'menu'] as const)(
+    'preserves a wager when full pot is illegal: %s',
+    (why) => {
+      const { hero, state } = incident();
+      Object.assign(state, {
+        pot: 100,
+        currentBet: 0,
+        toCall: 0,
+        minRaiseTo: 2,
+        maxRaiseTo: 100,
+        legalActions: ['bet'],
+      });
+      if (why === 'stack') hero.stack = 95;
+      if (why === 'cap') state.maxRaiseTo = 95;
+      if (why === 'fixed') {
+        state.gameVariant = 'flh';
+        state.bettingStructure = 'fixed_limit';
+      }
+      if (why === 'menu') state.legalActions = ['check'];
+      const wager = { action: 'bet' as const, amount: 90, thinkTime: 0 };
+      expect(fullPotNearPotWager(wager, hero, state)).toBe(wager);
+    }
+  );
+});
+
+describe('multiway nut-flush incident 44867615', () => {
+  it('raises the nut flush even with a third responder behind', () => {
+    const { hero, state } = incident();
+    hero.cards = cards('As 5s Kc Jd Th');
+    hero.stack = 800;
+    state.communityCards = cards('4s 2s Qs 7c 8h');
+    state.players[1].bet = 163;
+    state.players[2] = {
+      ...state.players[2],
+      is_folded: false,
+      is_all_in: false,
+      bet: 0,
+      stack: 355.85,
+    };
+    Object.assign(state, {
+      pot: 333,
+      currentBet: 163,
+      toCall: 163,
+      minRaiseTo: 326,
+      maxRaiseTo: 659,
+    });
+    expect(
+      riverNutsRaise({ action: 'call', amount: 163, thinkTime: 0 }, hero, state)
+    ).toMatchObject({ action: 'raise', amount: 659 });
   });
 });

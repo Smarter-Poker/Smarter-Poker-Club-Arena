@@ -660,9 +660,9 @@ function policyGraphIsValid(value: RecordValue): boolean {
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
     if (
-      transition.node === 'river_nuts' &&
+      transition.node === 'wager_rules' &&
       changed &&
-      !['raise', 'all_in'].includes(transition.after.action)
+      !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;
     previous = transition.after;
@@ -705,7 +705,7 @@ export function horseDecisionReceiptIsValid(
   // owner actually selected. Bind its receipt to the graph's verified input
   // to the final rule; the graph itself still binds the executed output.
   const graph = value.policyGraph as HorseDecision['policyGraph'];
-  const beforeNuts = graph?.transitions.find((t) => t.node === 'river_nuts')?.before;
+  const beforeNuts = graph?.transitions.find((t) => t.node === 'wager_rules')?.before;
   const selected: RecordValue = beforeNuts
     ? { ...value, action: beforeNuts.action, amount: beforeNuts.amount ?? undefined }
     : value;

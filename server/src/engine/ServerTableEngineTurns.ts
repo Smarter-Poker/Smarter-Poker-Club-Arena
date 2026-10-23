@@ -36,7 +36,7 @@ import type {
 } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
-import { riverNutsRaise } from './HorseRiverNuts.js';
+import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import {
   buildTournamentMState,
@@ -4229,7 +4229,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               Number(this.tableInfo?.cap_bb) || 0,
               Number(this.tableInfo?.big_blind) || 0
             );
-            const guarded = riverNutsRaise(decision, commitHero, {
+            const commitState = {
               ...gameState,
               players: currentState.players,
               communityCards: currentState.communityCards,
@@ -4246,10 +4246,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               fixedBetSize: nutsActions.fixedBetSize,
               wagersCapped: nutsActions.wagersCapped,
               commitmentCapRemaining: nutsActions.commitmentCapRemaining,
-            });
+            };
+            const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
+            const guarded = fullPotNearPotWager(
+              riverNutsRaise(decision, privateHero, commitState),
+              privateHero,
+              commitState
+            );
             if (guarded !== decision) {
               decision = { ...decision, ...guarded };
-              noteFire('river_nuts_commit_raise');
+              noteFire('wager_rules_commit_correction');
             }
           }
 

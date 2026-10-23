@@ -6,7 +6,7 @@ import {
   type Phase6ReferenceRoute,
 } from './HorsePhase6Attribution.js';
 import { HorsePolicyGraph } from './HorsePolicyGraph.js';
-import { riverNutsRaise } from './HorseRiverNuts.js';
+import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { horsePolicyRegistration, horsePolicyOwnership } from './HorsePolicyRegistry.js';
 import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
@@ -3704,8 +3704,8 @@ export class HorseLogic {
       }
       return { decision };
     }).decision;
-    decision = graph.run('river_nuts', decision, () => ({
-      decision: riverNutsRaise(decision, player, gs),
+    decision = graph.run('wager_rules', decision, () => ({
+      decision: fullPotNearPotWager(riverNutsRaise(decision, player, gs), player, gs),
     })).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(

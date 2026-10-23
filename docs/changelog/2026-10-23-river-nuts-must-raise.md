@@ -1,4 +1,4 @@
-# River nuts raise when closing the action
+# River nuts raise and near-pot wagers use full pot
 
 Owner request: a horse must never flat-call last to act on the river with the nuts when it can legally raise. Production hand 44826179 (PLO5, 2d 3s 6s Jh 4d, muckGhost's 7c 5d) ended in a 50-chip call despite an authoritative raise-to range of 100 through 269.
 
@@ -6,9 +6,11 @@ The reference policy's estimated-equity gates and randomized value-raise mix cou
 
 `HorseRiverNuts` now resolves that decision after every strategy owner and before timing. It enumerates unseen opponent pairs using the existing exact evaluators, excluding only the horse's own cards, its known discards and public boards. It never reads opponents' private cards. This is exhaustive for Omaha's two-hole plus three-board rule across PLO4/5/6 as well as Hold'em, fixed-limit Hold'em, Short Deck and river Pineapple. Hi/lo requires the nuts on both halves when a low is possible; multiple boards require the nuts on every board. A single nut half or board must not be mistaken for the whole pot.
 
-When every other live player has answered the current wager, and the controller's immutable legal menu allows a raise, a passive nuts decision becomes a legal maximum raise (or the legal short all-in). Already selected raises keep their original sizing. No raise is invented when betting was not reopened, the fixed-limit cap was reached, only an all-in call remains, opponents cannot respond, or another player still owes an action.
+A passive river-nuts decision becomes a legal maximum raise (or the legal short all-in) whenever a live opponent can respond and the controller permits it. This includes closing action out of position and multiway pots with another responder behind. The second reported incident, hand 44867615, had an ace-high flush call 163 against a king-high flush on 4s 2s Qs 7c 8h, with a legal raise to 659 and a third responder behind. No raise is invented when action was not reopened, the fixed-limit cap was reached, only an all-in call remains, or opponents cannot respond. Already selected raises retain their sizing except for the owner's near-pot rule below.
 
-The executable graph records the rule as `river_nuts`, version 2. Version 1 journal graphs retain their original eight-node interpretation. Strategy receipts stay bound to what their owner selected; the continuous graph binds the superseding action actually returned. The new source participates in the existing policy digests. Existing unqualified pack selections remain off; this fix does not grant a pack qualification.
+The owner also requires wagers at 90-100% of pot to use full pot. The same final graph owner and fresh executor boundary round eligible bets and raises, using the pot after calling for raise increments. Deliberate overbets above pot retain their sizing. Full pot must satisfy the authoritative menu, minimum, maximum, stack and host commitment cap; fixed-limit wagers keep their exact prescribed size. Pineapple's fresh executor check retains the acting horse's own discarded card, without exposing it to opponents.
+
+The executable graph records the rule as `wager_rules`, version 2. Version 1 journal graphs retain their original eight-node interpretation. Strategy receipts stay bound to what their owner selected; the continuous graph binds the superseding action actually returned. The new source participates in the existing policy digests. Existing unqualified pack selections remain off; this fix does not grant a pack qualification.
 
 The table executor rechecks the same rule against the fresh controller menu after acceptance-time authority rechecks. A pack withdrawn during think time can restore its baseline, so this boundary must not restore a forbidden river call. Its regression first submits a passive worker result and observes the wrong call, then proves the executor submits the legal raise after the repair.
 

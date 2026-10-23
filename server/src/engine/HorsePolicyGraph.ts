@@ -11,12 +11,12 @@ export const HORSE_POLICY_ORDER = Object.freeze([
   'tournament_continuation',
   'variant_utility_guard',
   'joint_policy',
-  'river_nuts',
+  'wager_rules',
   'timing',
 ] as const);
 export type HorsePolicyNode = (typeof HORSE_POLICY_ORDER)[number];
 export const HORSE_POLICY_GRAPH_VERSION = 'horse-policy-order-v2' as const;
-const LEGACY_POLICY_ORDER = Object.freeze(HORSE_POLICY_ORDER.filter((n) => n !== 'river_nuts'));
+const LEGACY_POLICY_ORDER = Object.freeze(HORSE_POLICY_ORDER.filter((n) => n !== 'wager_rules'));
 /** Keep retained journal records readable under their original order. */
 export function horsePolicyOrderForVersion(version: unknown): readonly HorsePolicyNode[] | null {
   if (version === HORSE_POLICY_GRAPH_VERSION) return HORSE_POLICY_ORDER;

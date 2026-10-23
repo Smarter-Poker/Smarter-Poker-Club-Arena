@@ -63,8 +63,8 @@ export function hasRiverNuts(hero: SeatPlayer, state: HorseGameStateV2): boolean
 }
 
 /** Final strategy invariant, after every variant/joint/tournament owner.
- * Matching the outstanding bet means an opponent has already answered it;
- * thus this also catches a check/call closing the action out of position.
+ * Includes closing calls out of position and multiway nut-flush calls
+ * with another responder still behind (production hand 44867615).
  * Only the controller's immutable menu may grant reopening or a short raise.
  */
 export function riverNutsRaise(
@@ -93,11 +93,7 @@ export function riverNutsRaise(
   const opponents = state.players.filter(
     (p) => p.seat !== hero.seat && !p.is_folded && !p.is_sitting_out
   );
-  if (
-    !opponents.some((p) => !p.is_all_in && p.stack > 0) ||
-    opponents.some((p) => !p.is_all_in && p.stack > 0 && p.bet < state.currentBet)
-  )
-    return decision;
+  if (!opponents.some((p) => !p.is_all_in && p.stack > 0)) return decision;
   const min = state.minRaiseTo;
   const max = state.maxRaiseTo;
   // Fixed limit also advertises all_in when its structure clamp would only
@@ -142,4 +138,49 @@ export function riverNutsRaise(
   }
   if (!raise || !hasRiverNuts(hero, state)) return decision;
   return { ...decision, ...raise, amount: raise.amount };
+}
+
+/** Betting amounts are street totals. A pot raise adds the pot AFTER calling
+ * to the outstanding bet. Only round 90-100%; preserve deliberate overbets.
+ * The controller menu, stack and host cap must all permit the full target.
+ */
+export function fullPotNearPotWager(
+  decision: HorseDecision,
+  hero: SeatPlayer,
+  state: HorseGameStateV2
+): HorseDecision {
+  if (
+    (decision.action !== 'bet' && decision.action !== 'raise') ||
+    state.stateSchemaVersion !== 1 ||
+    !Array.isArray(state.legalActions) ||
+    !state.legalActions.includes(decision.action) ||
+    state.wagersCapped === true ||
+    variantInfo(state.gameVariant ?? 'nlh').isFixedLimit ||
+    state.bettingStructure === 'fixed_limit' ||
+    !Number.isFinite(decision.amount) ||
+    !Number.isFinite(state.pot) ||
+    state.pot <= 0 ||
+    !Number.isFinite(state.currentBet) ||
+    !Number.isFinite(state.toCall) ||
+    state.toCall! < 0 ||
+    !Number.isFinite(state.minRaiseTo) ||
+    !Number.isFinite(state.maxRaiseTo) ||
+    !Number.isFinite(hero.stack) ||
+    !Number.isFinite(hero.bet)
+  )
+    return decision;
+  const base = decision.action === 'bet' ? 0 : state.currentBet;
+  const potIncrement = state.pot + (decision.action === 'raise' ? state.toCall! : 0);
+  const increment = decision.amount! - base;
+  const target = Math.round((base + potIncrement) * 100) / 100;
+  if (
+    increment < potIncrement * 0.9 - 0.000001 ||
+    increment > potIncrement + 0.000001 ||
+    target < state.minRaiseTo! ||
+    target > state.maxRaiseTo! + 0.000001 ||
+    target > hero.bet + hero.stack + 0.000001 ||
+    target === decision.amount
+  )
+    return decision;
+  return { ...decision, amount: target };
 }

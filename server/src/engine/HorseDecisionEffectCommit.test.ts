@@ -357,22 +357,31 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
-  it.each([false, true])(
-    'rechecks river nuts against the fresh menu, including table cap=%s',
-    async (capped) => {
+  it.each([
+    { capped: false, discarded: false },
+    { capped: true, discarded: false },
+    { capped: false, discarded: true },
+    { capped: false, discarded: false, nearPot: true },
+  ])(
+    'rechecks river nuts against the fresh menu and own discard: %s',
+    async ({ capped, discarded, nearPot = false }) => {
       const { engine, player, enginePlayer, state, performAction } = harness(true);
-      Object.assign(engine.tableInfo, { game_variant: 'plo5' });
+      Object.assign(engine.tableInfo, { game_variant: discarded ? 'pineapple' : 'plo5' });
       if (capped) Object.assign(engine.tableInfo, { cap_enabled: true, cap_bb: 40 });
       const parse = (s: string) =>
         s.split(' ').map((c) => ({
           rank: c[0],
           suit: ({ c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' } as any)[c[1]],
         }));
-      Object.assign(enginePlayer, { cards: parse('7c 5d Ac Kh Qh'), stack: 275.5 });
+      Object.assign(enginePlayer, {
+        cards: parse(discarded ? 'Kh Qh' : '7c 5d Ac Kh Qh'),
+        stack: 275.5,
+      });
+      if (discarded) engine.handController.getPineappleKnownDeadCards = () => parse('Ah');
       player.stack = 275.5;
       Object.assign(state, {
         stage: 'river',
-        communityCards: parse('2d 3s 6s Jh 4d'),
+        communityCards: parse(discarded ? 'Jh 8h 4h 2c 3d' : '2d 3s 6s Jh 4d'),
         currentBet: 50,
         minRaise: 50,
         pot: 169,
@@ -391,6 +400,23 @@ describe('authoritative horse action effect commit', () => {
         fixedBetSize: null,
         wagersCapped: false,
       });
+      if (nearPot) {
+        Object.assign(state, { stage: 'flop', currentBet: 0, pot: 100 });
+        state.players[1].bet = 0;
+        engine.handController.getAuthoritativeActionState = () => ({
+          schemaVersion: 1,
+          heroSeat: 1,
+          currentPlayerSeat: 1,
+          canAct: true,
+          legalActions: ['check', 'bet'],
+          toCall: 0,
+          minRaiseTo: 2,
+          maxRaiseTo: 100,
+          structure: 'pot_limit',
+          fixedBetSize: null,
+          wagersCapped: false,
+        });
+      }
       const passive = async (snapshot: any) => ({
         type: 'FAST_RESULT' as const,
         requestId: 1,
@@ -398,7 +424,7 @@ describe('authoritative horse action effect commit', () => {
         fence: snapshot.fence,
         planIssueDisposition: 'no_effects' as const,
         planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
-        decision: { action: 'call', amount: 50, thinkTime: 1 },
+        decision: { action: nearPot ? 'bet' : 'call', amount: nearPot ? 95 : 50, thinkTime: 1 },
         rngBefore: 11,
         rngAfter: 22,
         computeMs: 1,
@@ -414,7 +440,11 @@ describe('authoritative horse action effect commit', () => {
       await vi.advanceTimersByTimeAsync(2000);
       expect(performAction).toHaveBeenCalledOnce();
       expect(performAction.mock.calls[0].slice(1, 4)).toEqual(
-        capped ? ['call', 50, 'horse_policy'] : ['raise', 269, 'horse_policy']
+        nearPot
+          ? ['bet', 100, 'horse_policy']
+          : capped
+            ? ['call', 50, 'horse_policy']
+            : ['raise', 269, 'horse_policy']
       );
     }
   );

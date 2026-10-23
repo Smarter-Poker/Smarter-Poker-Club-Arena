@@ -53,7 +53,7 @@ describe('river nuts final rule receipt transport', () => {
     const value = receipt();
     value.policyGraph!.version = 'horse-policy-order-v1';
     value.policyGraph!.transitions = value.policyGraph!.transitions.filter(
-      (t) => t.node !== 'river_nuts'
+      (t) => t.node !== 'wager_rules'
     );
     expect(horseDecisionReceiptIsValid(value)).toBe(true);
     value.policyGraph!.version = 'horse-policy-order-v2';
@@ -66,7 +66,9 @@ describe('river nuts final rule receipt transport', () => {
     for (const node of HORSE_POLICY_ORDER) {
       decision = graph.run(node, node === 'reference' ? null : decision, () => ({
         decision:
-          node === 'river_nuts' ? { ...decision, action: 'raise' as const, amount: 500 } : decision,
+          node === 'wager_rules'
+            ? { ...decision, action: 'raise' as const, amount: 500 }
+            : decision,
       })).decision;
     }
     const result = graph.finish(decision);
@@ -385,7 +387,7 @@ describe('bounded Horse response receipt validation', () => {
         'tournament_continuation',
         'variant_utility_guard',
         'joint_policy',
-        'river_nuts',
+        'wager_rules',
         'timing',
       ]);
       expect(horseDecisionReceiptIsValid(d), `${variant}:${street}`).toBe(true);

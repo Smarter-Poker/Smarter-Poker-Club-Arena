@@ -63,7 +63,7 @@ export function Review() {
         ]
   ) as Card[];
   const width = innerWidth;
-  const markerSize = { ...size, railBets: width <= 480 };
+  const markerSize = { ...size, railBets: width <= 480, portraitTaper: spectator ? 0 : undefined };
   const seats = seatLayoutFor(n).map((p) =>
     fitSeatToViewport(
       p,
@@ -144,8 +144,11 @@ export function Review() {
                   {
                     '--table-w': `${size.w}px`,
                     '--table-h': `${size.h}px`,
-                    '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
-                    '--sp-table-taper': portraitTableTransform(size),
+                    '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct(spectator ? 0 : undefined)}%`,
+                    '--sp-table-taper': portraitTableTransform({
+                      ...size,
+                      portraitTaper: spectator ? 0 : undefined,
+                    }),
                   } as any
                 }
               >

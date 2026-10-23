@@ -1,6 +1,6 @@
 # Mobile spectator desktop parity
 
-The owner supplied a phone screenshot with a small upper-page oval and a desktop mobile preview with a broad, tall table. Portrait spectators at 480px and below now use the full screen width and reclaim the unused hero-card band while retaining clearance for the bottom observer seat. The playing layout and desktop dimensions remain intact.
+The owner supplied a phone screenshot with a small upper-page oval and a desktop mobile preview with a broad, tall table. Portrait spectators at 480px and below now use the full screen width and reclaim the unused hero-card band while retaining clearance for the bottom observer seat. Spectators also use the desktop oval's identity projection. Artwork, chips, dealer and overlap placement share that projection; the playing layout and desktop dimensions remain intact.
 
 This intentionally replaces the previous same-size observer/player presentation at the phone breakpoint. Taking a seat enters the existing playing layout. Hand phases, action changes and tournament dock toggles do not change either view's dimensions. Action and hero reserves remain statically declared; no live measurement feeds table sizing.
 

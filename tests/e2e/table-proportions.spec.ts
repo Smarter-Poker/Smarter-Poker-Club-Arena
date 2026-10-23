@@ -1624,18 +1624,20 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
       contentType: existsSync(original) && original.endsWith('.webp') ? 'image/webp' : 'image/png',
     });
   });
-  for (const [width, height] of [
+  for (const [width, height, insetTop = 0, insetBottom = 0] of [
     [320, 568],
     [375, 667],
     [393, 852],
     [430, 932],
     [480, 975],
+    [393, 852, 47, 34],
+    [430, 932, 59, 34],
   ]) {
     await page.setViewportSize({ width, height });
     await page.route('http://spectator.fixture/', (route) =>
       route.fulfill({
         contentType: 'text/html',
-        body: `<html data-seats="9" data-spectator="true" data-revealed="false" data-jackpot="none"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+        body: `<html data-seats="9" data-spectator="true" data-revealed="false" data-jackpot="none"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${applyInsets(realCss, insetTop, insetBottom)}</style></head><body><div id="root"></div></body></html>`,
       })
     );
     await page.goto('http://spectator.fixture/');
@@ -1680,6 +1682,11 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
     ).toBeLessThanOrEqual(footer!.y);
     const canvas = await page.locator('.table-scaler').boundingBox();
     expect(canvas!.width, `${width}px spectator reaches both screen edges`).toBeCloseTo(width, 0);
+    const perspective = await page.locator('.table-art').evaluate((el) => {
+      const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+      return { x: m.m11, y: m.m22, w: m.m44, perspective: m.m24 };
+    });
+    expect(perspective).toEqual({ x: 1, y: 1, w: 1, perspective: 0 });
     expect(
       canvas!.height,
       `${width}px spectator uses the available vertical canvas`
@@ -1698,7 +1705,9 @@ test('mobile spectators fill the desktop-reference canvas through hand and dock 
     );
     if (width === 393) {
       const screenshot = await page.screenshot({
-        path: testInfo.outputPath('mobile-spectator-after.png'),
+        path: testInfo.outputPath(
+          insetTop ? 'mobile-spectator-real-insets.png' : 'mobile-spectator-after.png'
+        ),
       });
       await testInfo.attach('mobile-spectator-after', {
         body: screenshot,

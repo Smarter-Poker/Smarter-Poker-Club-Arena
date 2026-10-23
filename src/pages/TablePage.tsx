@@ -20515,6 +20515,8 @@ function LiveTablePage({
   );
 
   const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  // Spectators use the desktop reference's unprojected oval on phones.
+  const tablePerspectiveTaper = tableState.players.some((p) => p?.isHero) ? undefined : 0;
   const seatPositions = useMemo(() => {
     const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
     return seatRotationMap.map(({ pos }) =>
@@ -25437,17 +25439,19 @@ function LiveTablePage({
               /* The dense-ring pods (SeatSlot.css) size from the felt's
                  height as well as its width. */
               '--table-h': `${scalerSize.h}px`,
-              '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
+              '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct(tablePerspectiveTaper)}%`,
               /* A shown hand is drawn at the board's own card size (Dan
                  2026-10-22). SeatSlot.css reads it on the revealed row. */
               '--sp-board-card-w': `${boardCardWidthPx(
                 scalerSize.w,
                 seatViewportWidth,
-                seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
+                seatViewportWidth <= 480 &&
+                  scalerSize.h > scalerSize.w &&
+                  tablePerspectiveTaper !== 0
               )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
-                  ? portraitTableTransform(scalerSize)
+                  ? portraitTableTransform({ ...scalerSize, portraitTaper: tablePerspectiveTaper })
                   : 'none',
             } as React.CSSProperties
           }
@@ -26551,6 +26555,7 @@ function LiveTablePage({
             const markerSize = {
               ...scalerSize,
               railBets: seatViewportWidth <= 480 && scalerSize.h > scalerSize.w,
+              portraitTaper: tablePerspectiveTaper,
             };
             const betOffset = betChipOffsetPx(pos, markerSize, seatPod);
             const betOffsetX = betOffset.x;

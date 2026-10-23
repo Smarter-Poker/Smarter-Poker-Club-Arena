@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export LC_ALL=C LANG=C
+# Fixtures compare UTC report windows, independently of the host timezone.
+export PGTZ=UTC
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 pgbin="${PG17_BINDIR:-/opt/homebrew/opt/postgresql@17/bin}"

@@ -23,7 +23,7 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
 import TournamentRankingHost from '../../src/components/tournament/TournamentRankingHost';
 import {
@@ -97,6 +97,12 @@ const spinResult = (finishPlace: number, prize: number): TournamentResult => ({
 });
 
 describe('Tournament result card delivery', () => {
+  // Load the real lazy chunk before measuring card behavior. A cold import
+  // under the full contract suite must not consume the DOM assertion budget.
+  beforeAll(async () => {
+    await import('../../src/components/tournament/TournamentRankingCard');
+  });
+
   beforeEach(() => {
     clearSessionSummary();
   });

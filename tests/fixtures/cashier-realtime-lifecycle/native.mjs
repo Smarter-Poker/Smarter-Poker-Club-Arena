@@ -340,7 +340,7 @@ try {
     contexts.push(
       await browser.newContext({
         ignoreHTTPSErrors: true,
-        storageState: browserStorage(actor.session, host),
+        storageState: storage,
         viewport: { width: 393, height: 852 },
       })
     );

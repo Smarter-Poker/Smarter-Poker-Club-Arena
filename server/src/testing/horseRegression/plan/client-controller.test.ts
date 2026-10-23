@@ -340,7 +340,7 @@ describe('actual local client/worker and controller acceptance composition', () 
         await transport.harness.runtime.start();
         await client.ready();
         await expect(client.decideFast(requestAt())).rejects.toThrow('invalid decision effects');
-        expect(client.status().phase).toBe('failed');
+        expect(client.status().phase).toBe('ready');
         expect(transport.harness.applied()).toBe(0);
       } finally {
         await client.stop();

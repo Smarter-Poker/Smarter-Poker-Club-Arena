@@ -114,8 +114,17 @@ jobs:
           PYTHON
             ) && [[ "$OWNER_CONTAINS" =~ ^[0-9a-f]{40}$ ]] \
               && git merge-base --is-ancestor "$OWNER_CONTAINS" HEAD; then
-              echo "Owner-ordered window admits this release (contains $OWNER_CONTAINS)."
-              allowed=true
+              # Once: a window whose commit is already serving admits nothing.
+              SERVING=$(curl -sS --max-time 15 https://engine.smarter.poker/health \
+                | python3 -c 'import json,re,sys; v=json.load(sys.stdin).get("releaseSha"); print(v if isinstance(v,str) and re.fullmatch(r"[0-9a-f]{40}",v) else "")' 2>/dev/null) || SERVING=''
+              if [ -z "$SERVING" ]; then
+                echo "Owner-ordered window: serving identity unreadable; not admitted."
+              elif git merge-base --is-ancestor "$OWNER_CONTAINS" "$SERVING"; then
+                echo "Owner-ordered window already served ($OWNER_CONTAINS is in $SERVING); not admitted."
+              else
+                echo "Owner-ordered window admits this release (contains $OWNER_CONTAINS)."
+                allowed=true
+              fi
             fi
           fi
           if [ "$allowed" = false ]; then

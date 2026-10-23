@@ -1019,7 +1019,7 @@ print(",".join(signs))
 # certificate, rollback reserve and thaw.
 # Prints "owner-ordered <id>" or nothing; never fails the caller.
 owner_window_reason() {
-  local windows now picked id contains
+  local windows now picked id contains serving
   windows="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" show "$SHA:server/release/owner-maintenance-windows.json" 2>/dev/null)" || return 0
   now="$(date +%s)"
@@ -1052,6 +1052,20 @@ for w in doc.get("windows") or []:
   contains="${picked#* }"
   timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$SHA" 2>/dev/null || return 0
+  # ONCE (2026-10-23): the order is "make this commit live". When the serving
+  # engine already contains it, the window grants nothing more, so later
+  # merges inside the window never earn another reset. An unreadable serving
+  # identity grants nothing either.
+  serving="$(printf '%s' "${1:-}" | python3 -c '
+import json, re, sys
+v = json.load(sys.stdin).get("releaseSha")
+print(v if isinstance(v, str) and re.fullmatch(r"[0-9a-f]{40}", v) else "")
+' 2>/dev/null)" || return 0
+  [ -n "$serving" ] || return 0
+  if timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$serving" 2>/dev/null; then
+    return 0
+  fi
   echo "owner-ordered $id"
 }
 
@@ -1175,7 +1189,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   reason="$(recovery_window_reason "$health")"
-  [ -n "$reason" ] || reason="$(owner_window_reason)"
+  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
   # NO LOCK WITHOUT AN EMERGENCY (2026-10-04). The seal answers `unavailable`
   # to every reservation that names no cause, so a routine release (no
   # reason, or only a scheduled break it waited through) has nothing to ask.
@@ -1210,7 +1224,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   }
   reason="$(recovery_window_reason "$health")"
-  [ -n "$reason" ] || reason="$(owner_window_reason)"
+  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
   case "${reason%% *}" in
     engine-degraded|owner-ordered) ;;
     *)

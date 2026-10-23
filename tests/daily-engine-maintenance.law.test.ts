@@ -19,7 +19,7 @@ function admit(
   health: string,
   schedule = '30 8 * * *',
   createdAt = '2026-10-21T08:30:01Z',
-  owner?: { windows: string; ancestor: boolean }
+  owner?: { windows: string; ancestor: boolean; served?: boolean }
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'daily-admission-'));
   try {
@@ -36,7 +36,8 @@ function admit(
         '-c',
         `
       git() {
-        if [ "$1" = merge-base ]; then [ "$OWNER_ANCESTOR" = 1 ]; return; fi
+        if [ "$1" = merge-base ] && [ "$4" = HEAD ]; then [ "$OWNER_ANCESTOR" = 1 ]; return; fi
+        if [ "$1" = merge-base ]; then [ "$OWNER_SERVED" = 1 ]; return; fi
         printf '%s' "$MESSAGE"
       }
       date() { printf '%s' "$HOUR"; }
@@ -52,6 +53,7 @@ function admit(
         env: {
           ...process.env,
           OWNER_ANCESTOR: owner?.ancestor ? '1' : '0',
+          OWNER_SERVED: owner?.served ? '1' : '0',
           EVENT_NAME: event,
           HOUR: hour,
           SCHEDULE_EXPRESSION: schedule,
@@ -119,8 +121,22 @@ describe('daily routine admission uses the existing protected receiver only', ()
           { id: 'fixture', ownerOrder: 'Owner order: live now.', contains, notBefore, notAfter },
         ],
       });
-    const healthy = '{"liveness":"ok"}';
+    const healthy = `{"liveness":"ok","releaseSha":"${'e'.repeat(40)}"}`;
     const open = doc(iso(-10), iso(60));
+    // Once: when the serving engine already contains the commit, nothing more.
+    expect(
+      admit('push', '14', 'routine', healthy, undefined, undefined, {
+        windows: open,
+        ancestor: true,
+        served: true,
+      })
+    ).toBe(false);
+    expect(
+      admit('push', '14', 'routine', '{"liveness":"ok"}', undefined, undefined, {
+        windows: open,
+        ancestor: true,
+      })
+    ).toBe(false);
     expect(
       admit('push', '14', 'routine', healthy, undefined, undefined, {
         windows: open,

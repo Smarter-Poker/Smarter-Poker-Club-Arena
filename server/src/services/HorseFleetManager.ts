@@ -138,7 +138,12 @@ import {
   type FleetPolicy,
 } from './HorseFleetPolicy.js';
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
-import { DEALABLE_MINIMUM, refusesLoneSeat, seatsToDealable } from './HorseLoneTable.js';
+import {
+  DEALABLE_MINIMUM,
+  fillFirstRank,
+  refusesLoneSeat,
+  seatsToDealable,
+} from './HorseLoneTable.js';
 import {
   cashRosterAllows,
   isPloVariant,
@@ -2359,11 +2364,22 @@ export class HorseFleetManager {
          read): the walk is the only place a seat is decided, and the order
          below already puts a short-handed human's table first whatever its
          currency. Empty while the arena is closed. */
+      /* A FULLER TABLE FILLS FIRST (Dan 2026-10-23, PLO). Within the same
+         rank the walk used to go by table id, so a scarce pool (the PLO
+         winners) landed two horses on every table and the lobby showed many
+         thin games instead of a few full ones: measured 15:00 CDT, 71 players
+         on 22 of 36 PLO tables. Ranking the table that already has the most
+         players ahead of an emptier one means the pool tops up games people
+         can see are running before it starts another. Same rank only: a
+         short-handed human, an opening feeder and the main order still come
+         first. See fillFirstRank (HorseLoneTable.ts). */
+      const seatedAt = (t: { id: string }) => (seatsByTable.get(t.id) ?? []).length;
       const orderedTables = [...tables, ...diamondTables].sort(
         (a, b) =>
           Number(humanShort(b)) - Number(humanShort(a)) ||
           Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
           clusterRank(a) - clusterRank(b) ||
+          fillFirstRank(seatedAt(a), seatedAt(b)) ||
           String(a.id).localeCompare(String(b.id))
       );
 

@@ -215,21 +215,11 @@ begin
          updated_at=now()
    where p.horse_profile->>'ploCashLane'='true';
 
-  -- No roster benches anyone (Dan 2026-10-23: they can play tournaments).
-  perform set_config('app.horse_release', 'on', true);
-  with tgt as (
-    select p.id from public.profiles p
-      join public.ca_horse_roster_bench b on b.horse_id = p.id
-     where p.horse_status = 'disabled'
-     order by p.id for update of p
-  ), r as (
-    update public.profiles p set horse_status = 'available', updated_at = now()
-      from tgt where tgt.id = p.id
-    returning p.id
-  )
-  select count(*) into v_released from r;
-  delete from public.ca_horse_roster_bench where true;  -- the roster no longer benches anyone
-  perform set_config('app.horse_release', '', true);
+  -- The full scheduled fleet excludes explicitly disabled or retired horses.
+  -- Never reactivate an account as a side effect of a roster refresh.
+  v_released := 0;
+  delete from public.ca_horse_roster_bench b
+   where exists (select 1 from public.ca_horse_active_roster a where a.horse_id=b.horse_id);
 
   v_result := jsonb_build_object('ok', true, 'size', v_size, 'demand', v_demand,
     'active', v_active, 'plo', v_plo_n,

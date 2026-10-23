@@ -1,3 +1,3 @@
 # server/src/services/CashHorseBankrollEligibility.law.test.ts
 
-The fifty cash horses are eligible by bankroll, without persona, rest-day or per-game texture restrictions; financial, wallet ownership and universal player limits remain enforced.
+The full scheduled fleet is eligible by bankroll without persona ceilings or per-game texture exclusions. Preserve rest days, activity hours, daily schedules, financial safeguards, wallet ownership and universal player limits.

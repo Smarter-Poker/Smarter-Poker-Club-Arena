@@ -73,3 +73,15 @@ touched. Horses count as every other player; nothing filters them.
   into `fn_ca_rake_windows_v3`, where the window logic lives.
 
 Live timings after install are recorded in the pull request.
+
+## Installed on top of 20261022200354
+
+The first install (run 39888141557, 2026-10-23 02:21 UTC) was refused by this
+migration's own guard: `ca_club_data_screen` and `ca_club_data_snapshot_v2` had been
+replaced on production at 20:03 UTC by `20261022200354_club_data_snapshot_reads_by_day_not_by_every_row`
+(PR #7725, not yet on main). That migration only probes facts by date range instead
+of a date list and reads `data_updated_at` from each club's latest day. Reverting
+exactly those edits on production gives this migration's original pins, so the
+guard now accepts either pair, and the new bodies keep both edits: the screen's four
+fact probes use `BETWEEN v_start AND v_end`, and the snapshot reads its
+`data_updated_at` by latest day. Figures are unchanged.

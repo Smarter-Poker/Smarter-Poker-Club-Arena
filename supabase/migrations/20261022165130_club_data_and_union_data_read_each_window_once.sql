@@ -75,6 +75,11 @@ BEGIN
   FOR r IN SELECT * FROM (VALUES
     ('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)', '33922bec7a85906e3a3925aeb269d0ce'),
     ('public.ca_club_data_snapshot_v2(uuid,date,date,text,text,text,integer)', '01dde673050f62c1290ad3b74a138c4c'),
+    -- The same two readers after 20261022200354 (installed 2026-10-22 20:03 UTC
+    -- from PR #7725): only its date-range probes and latest-day data_updated_at
+    -- differ (reverting those edits on production gives the two pins above).
+    ('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)', '56f842f8cedd067d8ea1543939c3a89d'),
+    ('public.ca_club_data_snapshot_v2(uuid,date,date,text,text,text,integer)', 'd096a7f7b602f60e0bf7510385eeb2aa'),
     ('public.ca_club_game_page_core_20261006(uuid,date,date,text,text,text,text,jsonb,integer)', '7f788701d61ae1a2137b8fe4d0f532a2'),
     ('public.ca_rake_snapshot_v2(text,uuid,uuid,date,date,uuid,integer,integer,text,text)', 'f9d7e19f531145a8aea60af103aa95ed'),
     ('public.fn_ca_club_data_hand_count(uuid,date,date,text,text,text)', '81e9ebcdd7cce5ff2d08b858f9ce25d8'),
@@ -85,7 +90,13 @@ BEGIN
     ('public.fn_ca_club_data_clubs(uuid)', '6f4a0c250357251b86b2756f11423389')
   ) v(sig, pin) LOOP
     v_actual := md5(pg_get_functiondef(r.sig::regprocedure));
-    IF v_actual IS DISTINCT FROM r.pin THEN
+    IF v_actual IS DISTINCT FROM r.pin AND NOT EXISTS (
+         SELECT 1 FROM (VALUES
+           ('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)', '33922bec7a85906e3a3925aeb269d0ce', '56f842f8cedd067d8ea1543939c3a89d'),
+           ('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)', '56f842f8cedd067d8ea1543939c3a89d', '33922bec7a85906e3a3925aeb269d0ce'),
+           ('public.ca_club_data_snapshot_v2(uuid,date,date,text,text,text,integer)', '01dde673050f62c1290ad3b74a138c4c', 'd096a7f7b602f60e0bf7510385eeb2aa'),
+           ('public.ca_club_data_snapshot_v2(uuid,date,date,text,text,text,integer)', 'd096a7f7b602f60e0bf7510385eeb2aa', '01dde673050f62c1290ad3b74a138c4c')
+         ) a(sig, pin, alt) WHERE a.sig = r.sig AND a.pin = r.pin AND a.alt = v_actual) THEN
       RAISE EXCEPTION 'Club Data reader preimage changed: % (md5 %)', r.sig, v_actual;
     END IF;
   END LOOP;
@@ -678,7 +689,10 @@ BEGIN
       'winnings_abs',round((v_cur->>'total_winnings')::numeric-(v_prev->>'total_winnings')::numeric,2),
       'fee_abs',round((v_cur->>'fee')::numeric-(v_prev->>'fee')::numeric,2)),
     'rows',v_rows,'row_count',(v_cur->>'games')::int,'union_id',v_union,
-    'data_updated_at',(SELECT max(g.last_at) FROM public.ca_club_data_game_ct g WHERE g.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND g.stat_date BETWEEN v_start AND v_end),
+    'data_updated_at',(SELECT max(x.m) FROM unnest(public.fn_ca_club_data_clubs(p_club_id)) c(id)
+       CROSS JOIN LATERAL (SELECT max(g.last_at) m FROM public.ca_club_data_game_ct g
+         WHERE g.club_id = c.id AND g.stat_date = (SELECT max(d.stat_date) FROM public.ca_club_data_game_ct d
+           WHERE d.club_id = c.id AND d.stat_date BETWEEN v_start AND v_end)) x),
     'accounting_basis','chicago_net_money_flow','day_basis','America/Chicago',
     'generated_at',now());
 END;
@@ -815,7 +829,7 @@ BEGIN
     -- A seated table with no fact in the window is still a game on the screen.
     v_games := v_games + (SELECT count(*) FROM unnest(v_felt_ids) ft(id)
       WHERE NOT EXISTS (SELECT 1 FROM public.ca_club_data_fact_ct f
-                         WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date = ANY (v_days) AND f.game_id = ft.id
+                         WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date BETWEEN v_start AND v_end AND f.game_id = ft.id
                            AND (v_users IS NULL OR f.user_id = ANY (v_users))));
 
     -- Running tournaments this club (or this agent's downline) played in.
@@ -823,7 +837,7 @@ BEGIN
       SELECT tr.id FROM public.tournaments tr
        WHERE tr.status = 'RUNNING'
          AND EXISTS (SELECT 1 FROM public.ca_club_data_fact_ct f
-                      WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date = ANY (v_days) AND f.game_id = tr.id
+                      WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date BETWEEN v_start AND v_end AND f.game_id = tr.id
                         AND (v_users IS NULL OR f.user_id = ANY (v_users))));
 
     -- The page: every live game, then the most recently active, newest day first.
@@ -844,7 +858,7 @@ BEGIN
       SELECT f.kind, f.game_id, SUM(f.fee) AS fee, SUM(f.winnings) AS winnings, max(f.last_at) AS activity_at,
              count(DISTINCT f.user_id) FILTER (WHERE f.user_id <> v_zero) AS players
         FROM public.ca_club_data_fact_ct f
-       WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date = ANY (v_days) AND f.game_id = ANY (v_cands)
+       WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date BETWEEN v_start AND v_end AND f.game_id = ANY (v_cands)
          AND (v_users IS NULL OR f.user_id = ANY (v_users))
        GROUP BY f.kind, f.game_id
     ), fe AS (
@@ -1013,7 +1027,7 @@ BEGIN
   ), pl AS (
     SELECT f.game_id, count(DISTINCT f.user_id) AS n
       FROM public.ca_club_data_fact_ct f
-     WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date = ANY (v_days)
+     WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date BETWEEN v_start AND v_end
        AND f.user_id <> '00000000-0000-0000-0000-000000000000'::uuid
        AND (v_users IS NULL OR f.user_id = ANY (v_users))
        AND f.game_id IN (SELECT tp.game_id FROM top tp)

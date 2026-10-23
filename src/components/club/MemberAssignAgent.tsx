@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import { UnionOpsService } from '../../services/UnionOpsService';
-import {
-  AgentAssignmentService,
-  type AssignmentPreview,
-} from '../../services/AgentAssignmentService';
+import { AgentAssignmentService } from '../../services/AgentAssignmentService';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import {
@@ -25,7 +23,7 @@ import '../../pages/MemberManagementPage.css';
  * AGENT."
  *
  * Shown under Upline Agents to club management only (fn_can_manage_club_assignments:
- * owner, co-owner, admin, or the overseeing union). It uses the same reviewed,
+ * owner, co-owner, admin, or the overseeing union). Save validates and applies the same
  * all-or-nothing database path as the bulk Assign And Transfer panel:
  * fn_preview_club_assignment, then fn_apply_reviewed_club_assignment, which moves
  * club_members.agent_id and the agents hierarchy together, refuses cycles and
@@ -37,7 +35,8 @@ interface AgentOption {
   label: string;
   role: string;
 }
-const UPLINE_ROLES = ['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'];
+// Match the destination roles accepted by fn_preview_club_assignment.
+const UPLINE_ROLES = ['super_agent', 'agent', 'sub_agent'];
 
 type Request = {
   id: string;
@@ -68,12 +67,12 @@ export default function MemberAssignAgent({
   const [allowed, setAllowed] = useState(false);
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [target, setTarget] = useState('');
-  const [preview, setPreview] = useState<AssignmentPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const pending = useRef<Request | null>(null);
   const version = useRef(0);
+  const inFlight = useRef(false);
 
   const load = useCallback(async () => {
     const mine = ++version.current;
@@ -132,52 +131,34 @@ export default function MemberAssignAgent({
   useEffect(() => {
     pending.current = null;
     setTarget('');
-    setPreview(null);
     setError('');
     setUncertain(false);
+    setBusy(false);
+    inFlight.current = false;
     void load();
     return () => {
       ++version.current;
     };
   }, [load]);
 
-  const review = async () => {
-    if (busy || !target) return;
+  const save = async () => {
+    if (inFlight.current || !allowed || (!pending.current && !target)) return;
+    const mine = version.current;
+    const destination = target;
+    const source = currentAgentId ?? undefined;
+    inFlight.current = true;
     setBusy(true);
     setError('');
     try {
-      const value = await AgentAssignmentService.preview(
-        clubId,
-        [userId],
-        target,
-        currentAgentId ?? undefined
-      );
-      setPreview(value);
-    } catch (cause) {
-      setError((cause as { message?: string }).message || 'Could Not Review This Move.');
-      reportError(cause, 'MemberAssignAgent.preview');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirm = async () => {
-    if (busy) return;
-    const request: Request | null =
-      pending.current ??
-      (preview && target
-        ? {
-            id: uuid(),
-            target,
-            source: currentAgentId ?? undefined,
-            reviewToken: preview.review_token,
-          }
-        : null);
-    if (!request) return;
-    pending.current = request;
-    setBusy(true);
-    setError('');
-    try {
+      // Validation is part of Save. Only a write with an unknown outcome keeps
+      // its exact request for retry; a failed preview never creates a move.
+      let request = pending.current;
+      if (!request) {
+        const checked = await AgentAssignmentService.preview(clubId, [userId], destination, source);
+        if (mine !== version.current) return;
+        request = { id: uuid(), target: destination, source, reviewToken: checked.review_token };
+        pending.current = request;
+      }
       await UnionOpsService.reassignClubMembers(
         clubId,
         [userId],
@@ -186,43 +167,48 @@ export default function MemberAssignAgent({
         request.source,
         request.reviewToken
       );
+      if (mine !== version.current) return;
       const name = agents.find((a) => a.user_id === request.target)?.label ?? 'The New Agent';
       pending.current = null;
       setUncertain(false);
-      setPreview(null);
       setTarget('');
       toast.success(`Player Assigned To ${titleCase(name)}`);
       onAssigned?.();
+      masterBus.emit('AGENT_UPDATED', { clubId, agentId: request.target });
     } catch (cause) {
+      if (mine !== version.current) return;
+      const attemptedWrite = pending.current !== null;
       const code = (cause as { code?: string })?.code;
       // A database refusal rolled the whole move back. A transport failure keeps
       // the same operation id so a retry reads the original receipt.
       const refused = typeof code === 'string' && /^(22|23|40|42|P0)/.test(code);
       if (refused) {
         pending.current = null;
-        setPreview(null);
       }
-      setUncertain(!refused);
+      setUncertain(attemptedWrite && !refused);
       const message = (cause as { message?: string })?.message ?? '';
       setError(
-        refused
-          ? message === 'assignment_review_changed_preview_again' ||
-            message === 'assignment_changed_reload_members'
-            ? 'This Player Changed Since The Review. Review The Move Again.'
-            : titleCase((message || 'Move Refused.').replace(/_/g, ' '))
-          : 'Move Not Confirmed Yet. Tap Retry To Read Its Result.'
+        !attemptedWrite
+          ? titleCase((message || 'Could Not Save This Assignment.').replace(/_/g, ' '))
+          : refused
+            ? message === 'assignment_review_changed_preview_again' ||
+              message === 'assignment_changed_reload_members'
+              ? 'This Player Changed. Reload The Record And Save Again.'
+              : titleCase((message || 'Move Refused.').replace(/_/g, ' '))
+            : 'Move Not Confirmed Yet. Tap Retry To Read Its Result.'
       );
       reportError(cause, 'MemberAssignAgent.assign');
     } finally {
-      setBusy(false);
+      if (mine === version.current) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   };
 
   if (!allowed) return null;
 
   const choices = agents.filter((a) => a.user_id !== currentAgentId && a.user_id !== shownUplineId);
-  const destination = preview?.destination.name;
-  const source = preview?.members[0]?.source_name;
 
   return (
     <div className="mm-assign" aria-label="Assign To Agent">
@@ -235,7 +221,7 @@ export default function MemberAssignAgent({
           className="mm-assign__select"
           aria-label="Destination Agent"
           value={target}
-          disabled={busy || uncertain || preview !== null}
+          disabled={busy || uncertain}
           onChange={(e) => {
             setTarget(e.target.value);
             setError('');
@@ -248,51 +234,23 @@ export default function MemberAssignAgent({
             </option>
           ))}
         </select>
-        {!preview && !uncertain && (
+        {!uncertain && (
           <button
             type="button"
             className="mm-assign__button"
             disabled={busy || !target}
-            onClick={() => void review()}
+            onClick={() => void save()}
           >
-            {busy ? 'Checking...' : 'Review'}
+            {busy ? 'Saving...' : 'Save'}
           </button>
         )}
       </div>
-      {preview && (
-        <div className="mm-assign__review" role="status">
-          <p className="mm-winloss__note">
-            Move From {titleCase(source || 'Club Owner')} To {titleCase(destination || '')}
-            {preview.affected_count > preview.selected_count
-              ? `, Including ${(preview.affected_count - preview.selected_count).toLocaleString()} Downline Members.`
-              : '.'}
-          </p>
-          <div className="mm-assign__row">
-            <button
-              type="button"
-              className="mm-assign__button mm-assign__button--ghost"
-              disabled={busy}
-              onClick={() => setPreview(null)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="mm-assign__button"
-              disabled={busy}
-              onClick={() => void confirm()}
-            >
-              {busy ? 'Saving...' : 'Confirm Move'}
-            </button>
-          </div>
-        </div>
-      )}
       {uncertain && (
         <button
           type="button"
           className="mm-assign__button"
           disabled={busy}
-          onClick={() => void confirm()}
+          onClick={() => void save()}
         >
           {busy ? 'Saving...' : 'Retry Same Move'}
         </button>

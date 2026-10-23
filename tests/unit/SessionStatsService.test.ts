@@ -183,6 +183,51 @@ describe('SessionStatsService', () => {
       expect(stats!.profitLoss).toBe(0); // 1500 - 1500
     });
 
+    it('does not add the stack again when its snapshot arrived before the funded reply', () => {
+      sessionStatsService.startSession('table-1', 'user-1', 100, 10);
+      sessionStatsService.recordHand('table-1', 150, false, false, false);
+      sessionStatsService.recordRebuy('table-1', 50, false);
+      expect(sessionStatsService.getStats('table-1')).toMatchObject({
+        buyInTotal: 150,
+        currentStack: 150,
+        profitLoss: 0,
+        handsPlayed: 1,
+      });
+    });
+
+    it('accepts the reply before the snapshot without counting another hand', () => {
+      sessionStatsService.startSession('table-1', 'user-1', 100, 10);
+      sessionStatsService.recordRebuy('table-1', 50, false);
+      expect(sessionStatsService.getStats('table-1')).toMatchObject({
+        currentStack: 100,
+        buyInTotal: 150,
+        profitLoss: -50,
+        handsPlayed: 0,
+      });
+      sessionStatsService.updateStack('table-1', 150);
+      expect(sessionStatsService.getStats('table-1')).toMatchObject({
+        currentStack: 150,
+        buyInTotal: 150,
+        profitLoss: 0,
+        handsPlayed: 0,
+      });
+      sessionStatsService.recordRebuy('table-1', -10, false);
+      expect(sessionStatsService.getStats('table-1')).toMatchObject({
+        currentStack: 150,
+        buyInTotal: 140,
+        profitLoss: 10,
+      });
+    });
+
+    it('does not turn an unreadable snapshot into a stack', () => {
+      sessionStatsService.startSession('table-1', 'user-1', 100, 10);
+      for (const stack of [NaN, Infinity, -1]) sessionStatsService.updateStack('table-1', stack);
+      expect(sessionStatsService.getStats('table-1')).toMatchObject({
+        currentStack: 100,
+        buyInTotal: 100,
+      });
+    });
+
     it('should do nothing for unknown tableId', () => {
       sessionStatsService.recordRebuy('nonexistent', 500);
       expect(sessionStatsService.getStats('nonexistent')).toBeNull();

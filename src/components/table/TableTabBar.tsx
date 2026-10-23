@@ -747,6 +747,7 @@ export function TableTabBar({
                   : 'OFF'
                 : undefined,
               canAddFunds: tabs.find((t) => t.id === activeTabId)?.canAddFunds,
+              isTournament: tabs.find((t) => t.id === activeTabId)?.isTournament,
             }
           ),
     [activeTabId, tabs, activeIsLobby, profitTrackingEnabled, onToggleProfitTracking]

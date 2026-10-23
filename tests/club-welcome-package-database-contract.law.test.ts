@@ -854,16 +854,25 @@ describe('prospective lifetime-first club welcome package database contract', ()
 describe('the current opening authority retains welcome reserve reuse', () => {
   it('checks the newest maintained function body or asserted patch, not only the original migration', () => {
     const dir = resolve(__dirname, '../supabase/migrations');
-    const definitions = readdirSync(dir)
+    // Read newest-first and stop at the owning definition. Reading every
+    // historical migration before filtering made this synchronous test exceed
+    // its budget during concurrent verification, without changing its answer.
+    let current: { name: string; text: string } | undefined;
+    for (const name of readdirSync(dir)
       .filter((name) => name.endsWith('.sql'))
       .sort()
-      .map((name) => ({ name, text: readFileSync(resolve(dir, name), 'utf8') }))
-      .filter((file) =>
+      .reverse()) {
+      const text = readFileSync(resolve(dir, name), 'utf8');
+      if (
         /CREATE OR REPLACE FUNCTION public\.fn_complete_club_opening_setup|v_sig regprocedure := 'public\.fn_complete_club_opening_setup/.test(
-          file.text
+          text
         )
-      );
-    const current = definitions.at(-1)!;
+      ) {
+        current = { name, text };
+        break;
+      }
+    }
+    if (!current) throw new Error('The maintained club opening definition is missing');
     expect(current.text, current.name).toContain(
       'v_welcome public.club_welcome_package_receipts%ROWTYPE'
     );

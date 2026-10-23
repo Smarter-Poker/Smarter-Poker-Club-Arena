@@ -73,13 +73,13 @@ BEGIN
  OR (j->'rows'->0->>'unrecorded_hands')::integer<>1 OR (j->'rows'->0->>'total_antes')::numeric<>4
  OR (j->'rows'->0->>'avg_pot')::numeric<>13.5 OR (j->'rows'->0->>'avg_players')::numeric<>2
  THEN RAISE EXCEPTION 'Real rollup producer lost closed or live hand values: %',j; END IF;
- SELECT to_jsonb(c) INTO archived FROM ca_club_bomb_pot_complete c WHERE club_id='00000000-0000-4000-8000-000000000003' AND day=utc_today-3;
+ SELECT to_jsonb(c) INTO archived FROM ca_club_bomb_pot_complete c WHERE club_id='00000000-0000-4000-8000-000000000003' AND day=utc_today-2;
  IF archived IS NULL OR (archived->>'hands_read')::bigint<>1 THEN RAISE EXCEPTION 'Real producer did not seal actual source'; END IF;
  PERFORM public.fn_club_bomb_pot_report_v2('00000000-0000-4000-8000-000000000003',7);
- IF archived IS DISTINCT FROM (SELECT to_jsonb(c) FROM ca_club_bomb_pot_complete c WHERE club_id='00000000-0000-4000-8000-000000000003' AND day=utc_today-3)
+ IF archived IS DISTINCT FROM (SELECT to_jsonb(c) FROM ca_club_bomb_pot_complete c WHERE club_id='00000000-0000-4000-8000-000000000003' AND day=utc_today-2)
  THEN RAISE EXCEPTION 'Repeat read recomputed sealed source'; END IF;
- PERFORM public.fn_ca_bomb_pot_rollup_day('00000000-0000-4000-8000-000000000003',utc_today-3);
- IF archived IS DISTINCT FROM (SELECT to_jsonb(c) FROM ca_club_bomb_pot_complete c WHERE club_id='00000000-0000-4000-8000-000000000003' AND day=utc_today-3) THEN RAISE EXCEPTION 'Direct duplicate rewrote sealed source'; END IF;
+ PERFORM public.fn_ca_bomb_pot_rollup_day('00000000-0000-4000-8000-000000000003',utc_today-2);
+ IF archived IS DISTINCT FROM (SELECT to_jsonb(c) FROM ca_club_bomb_pot_complete c WHERE club_id='00000000-0000-4000-8000-000000000003' AND day=utc_today-2) THEN RAISE EXCEPTION 'Direct duplicate rewrote sealed source'; END IF;
  IF current_setting('plan_cache_mode')<>before_mode OR current_setting('work_mem')<>before_mem OR current_setting('statement_timeout')<>before_timeout OR current_setting('enable_indexscan')<>before_index THEN RAISE EXCEPTION 'Final report setting escaped its call'; END IF;
  RAISE NOTICE 'PASS: real archive producer, nonempty pot/rake, midnight grace, UTC timezone, future exclusion, club isolation and idempotent sealed archive';
 END $test$;

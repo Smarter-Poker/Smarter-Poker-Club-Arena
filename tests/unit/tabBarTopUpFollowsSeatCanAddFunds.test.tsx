@@ -170,3 +170,25 @@ describe('the open menu follows the owning table hand identity', () => {
     expect(hud).toMatch(/handNumber=\{tableState\.handNumber\}/);
   });
 });
+
+describe('Auto Top Up is a cash-table preference reported by its owner', () => {
+  it('keeps manual funding but removes the automatic cash action at tournaments', () => {
+    const actions = ids({ canAddFunds: true, isTournament: true });
+    expect(actions).toContain('rebuy');
+    expect(actions).not.toContain('auto-top-up');
+    expect(ids({ canAddFunds: true, isTournament: false })).toContain('auto-top-up');
+  });
+  it('reports the real preference through both missing hops to the tab badge', () => {
+    expect(read('src/pages/TablePage.tsx')).toContain(
+      'onTableInfoUpdate?.({ isAutoRebuyEnabled })'
+    );
+    expect(read('src/pages/MultiTablePage.tsx')).toContain(
+      'isAutoRebuyEnabled: t.isAutoRebuyEnabled'
+    );
+    expect(read('src/components/table/TableTabBar.tsx')).toContain(
+      'isTournament: tabs.find((t) => t.id === activeTabId)?.isTournament'
+    );
+    const page = read('src/pages/TablePage.tsx');
+    expect(page).toContain('...(canTopUpSeat && !tableState.isTournament');
+  });
+});

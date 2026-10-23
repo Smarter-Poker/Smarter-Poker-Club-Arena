@@ -1,3 +1,4 @@
+import { readCashAddonReceipt, readDiamondAddonReceipt } from './cashAddonReceipt.js';
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { loadSeatedPlayers } from '../services/supabase.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
@@ -46,7 +47,45 @@ type ExactPendingAddOnReceipt = {
   }>;
 };
 
+type AddChipsResult = {
+  success: boolean;
+  error?: string;
+  queued?: boolean;
+  applied?: number;
+  replayed?: boolean;
+  code?: string;
+};
+
 export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
+  private readonly addChipsInFlight = new Map<string, Promise<AddChipsResult>>();
+  private readonly addChipsUserTail = new Map<string, Promise<AddChipsResult>>();
+  protected readCashAddonReceipt = readCashAddonReceipt;
+  protected readDiamondAddonReceipt = readDiamondAddonReceipt;
+
+  public async addChips(userId: string, amount: number, opId?: string): Promise<AddChipsResult> {
+    if (isMaintenanceFrozen())
+      return { success: false, error: 'Scheduled maintenance is in progress' };
+    if (!this.seatedPlayers.find((p) => p.user_id === userId))
+      return { success: false, error: 'Player not seated' };
+    if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: 'Invalid amount' };
+    const operationId = opId || randomUUID();
+    const key = `${userId}:${operationId}`;
+    const existing = this.addChipsInFlight.get(key);
+    if (existing) return existing;
+    const previous = this.addChipsUserTail.get(userId);
+    const operation = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() =>
+      this.addChipsOnce(userId, amount, operationId)
+    );
+    this.addChipsInFlight.set(key, operation);
+    this.addChipsUserTail.set(userId, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.addChipsInFlight.get(key) === operation) this.addChipsInFlight.delete(key);
+      if (this.addChipsUserTail.get(userId) === operation) this.addChipsUserTail.delete(userId);
+    }
+  }
+
   /**
    * AUDIT FIX 2026-07-19: `POST /addchips` previously credited the stack with
    * NO wallet debit and no buy-in cap — a seated player could mint chips. Now
@@ -69,7 +108,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * against. The row now lands atomically with the debit, so the two can never
    * be separated by a crash.
    */
-  public async addChips(
+  private async addChipsOnce(
     userId: string,
     amount: number,
     /**
@@ -82,10 +121,16 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * without one (the horse rotator) keep the per-invocation key.
      */
     opId?: string
-  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+  ): Promise<AddChipsResult> {
     if (isMaintenanceFrozen()) {
       return { success: false, error: 'Scheduled maintenance is in progress' };
     }
+    if (!this.lifecycleCanMutate())
+      return {
+        success: false,
+        error: 'The Table State Changed. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      };
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) return { success: false, error: 'Player not seated' };
     if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
@@ -189,7 +234,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     userId: string,
     amount: number,
     opId?: string
-  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+  ): Promise<AddChipsResult> {
     if (isMaintenanceFrozen()) {
       return { success: false, error: 'Scheduled maintenance is in progress' };
     }
@@ -197,6 +242,41 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (!player) return { success: false, error: 'Player not seated' };
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
+    const addOnKey = `addon:${this.tableId}:${userId}:${opId || randomUUID()}`;
+    const recover = async (replayed: boolean): Promise<AddChipsResult | null> => {
+      const receipt = await this.readCashAddonReceipt(this.tableId, userId, addOnKey);
+      if (!this.lifecycleCanMutate())
+        return {
+          success: false,
+          error: 'The Table State Changed. Check Your Stack Before Trying Again.',
+          code: 'TRANSPORT',
+        };
+      if (!receipt) return null;
+      // A direct operation owns the seat boundary here. A live hand owns its
+      // own stack, so a historical replay must never replace it with disk's opening stack.
+      if (
+        receipt.appliedToSeat &&
+        !midHand &&
+        !this.handController &&
+        !this.hasSettlementInFlight()
+      )
+        player.stack = receipt.stack;
+      this.pendingAddOns.set(userId, receipt.pending);
+      if (receipt.pending > 0) this.requestPendingAddOnSweep();
+      this.broadcastCurrentState();
+      return { success: true, applied: receipt.amount, queued: receipt.queued, replayed };
+    };
+    try {
+      const existing = await recover(true);
+      if (existing) return existing;
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.addon_receipt_read_failed`);
+      return {
+        success: false,
+        error: 'Unable To Verify This Top Up. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      };
+    }
 
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
@@ -250,7 +330,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * actually committed, the second is a DB-side no-op that returns the
      * current balance, so we learn the chips landed instead of dropping them.
      */
-    const addOnKey = `addon:${this.tableId}:${userId}:${opId || randomUUID()}`;
     let lastError: { message?: string } | null = null;
     let debited = false;
     for (let attempt = 1; attempt <= 2 && !debited; attempt++) {
@@ -280,7 +359,31 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       if (attempt === 1) await new Promise((r) => setTimeout(r, 250));
     }
     if (!debited) {
+      // A lost acknowledgement is recovered from the original durable operation,
+      // while this direct call still owns the hand-preparation boundary.
+      try {
+        const committed = await recover(false);
+        if (committed) return committed;
+      } catch (error) {
+        reportError(error, `ServerTableEngine.${this.tableId}.addon_outcome_unknown`);
+        if (!midHand) this.killForRestart('addon_direct_outcome_unknown');
+        else this.requestPendingAddOnSweep();
+        return {
+          success: false,
+          error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+          code: 'TRANSPORT',
+        };
+      }
       const msg = String(lastError?.message || '');
+      if (!/insufficient/i.test(msg)) {
+        if (!midHand) this.killForRestart('addon_direct_outcome_unknown');
+        else this.requestPendingAddOnSweep();
+        return {
+          success: false,
+          error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+          code: 'TRANSPORT',
+        };
+      }
       const clean = /insufficient/i.test(msg) ? 'Insufficient wallet balance' : 'Add-on failed';
       reportError(lastError, `ServerTableEngine.${this.tableId}.addChips_debit_failed`, {
         userId,
@@ -290,6 +393,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: false, error: clean };
     }
 
+    if (!this.lifecycleCanMutate())
+      return {
+        success: false,
+        error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      };
     if (midHand) {
       // AUDIT M5: `pending` was captured before the `await atomic_table_addon`
       // above. On the single-threaded event loop another addChips for this same
@@ -352,7 +461,36 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     midHand: boolean,
     player: SeatedPlayer,
     opId?: string
-  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+  ): Promise<AddChipsResult> {
+    const requestId = uuidv5(
+      `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+      uuidv5.URL
+    );
+    const recover = async (replayed: boolean): Promise<AddChipsResult | null> => {
+      const receipt = await this.readDiamondAddonReceipt(this.tableId, userId, requestId);
+      if (!this.lifecycleCanMutate())
+        return {
+          success: false,
+          error: 'The Table State Changed. Check Your Stack Before Trying Again.',
+          code: 'TRANSPORT',
+        };
+      if (!receipt) return null;
+      if (!midHand && !this.handController && !this.hasSettlementInFlight())
+        player.stack = receipt.stack;
+      this.broadcastCurrentState();
+      return { success: true, applied: receipt.amount, replayed };
+    };
+    try {
+      const existing = await recover(true);
+      if (existing) return existing;
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.diamond_top_up_receipt_read_failed`);
+      return {
+        success: false,
+        error: 'Unable To Verify This Top Up. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      };
+    }
     if (midHand) {
       /* AN INTENT, NOT A DEBIT (2026-09-12). See `diamondTopUpIntents` on the
          base for why this arena cannot take the money now and land it later:
@@ -373,6 +511,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
          intended for this seat, so three taps during one hand cannot promise
          more than the table can hold. It is measured again at landing, because
          the pot moves the stack in between. */
+      const existingIntent = this.diamondTopUpIntents.get(requestId);
+      if (existingIntent)
+        return { success: true, queued: true, applied: existingIntent.amount, replayed: true };
       const intended = [...this.diamondTopUpIntents.values()]
         .filter((intent) => intent.userId === userId)
         .reduce((sum, intent) => sum + intent.amount, 0);
@@ -381,10 +522,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       if (applied < 1) {
         return { success: false, error: 'Already at the maximum buy-in for this table' };
       }
-      const requestId = uuidv5(
-        `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
-        uuidv5.URL
-      );
       /* Keyed by request id: the same tap retried overwrites itself, two
          genuine taps both count, and the SQL door de-duplicates a replay of
          the landing on the same id. */
@@ -401,10 +538,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (applied < 1) {
       return { success: false, error: 'Already at the maximum buy-in for this table' };
     }
-    const requestId = uuidv5(
-      `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
-      uuidv5.URL
-    );
     let lastError: { message?: string } | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
@@ -415,6 +548,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         p_request_id: requestId,
       });
       if (!error) {
+        if (!this.lifecycleCanMutate())
+          return {
+            success: false,
+            error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+            code: 'TRANSPORT',
+          };
         /* The seat row and its custody moved together in that transaction, so
            the in-memory copy is the only one still behind. Take the number the
            database wrote rather than the one we asked for. */
@@ -435,6 +574,18 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       }
       if (attempt === 1) await new Promise((r) => setTimeout(r, 250));
     }
+    try {
+      const committed = await recover(false);
+      if (committed) return committed;
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.diamond_top_up_outcome_unknown`);
+      this.killForRestart('diamond_top_up_outcome_unknown');
+      return {
+        success: false,
+        error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      };
+    }
     const message = String(lastError?.message || '');
     reportError(lastError, `ServerTableEngine.${this.tableId}.diamond_top_up_failed`, {
       userId,
@@ -450,7 +601,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (/diamond_top_up_stale_seat/i.test(message)) {
       return { success: false, error: 'The Seat Changed, Try Again' };
     }
-    return { success: false, error: 'Diamond Top Up Failed' };
+    this.killForRestart('diamond_top_up_outcome_unknown');
+    return {
+      success: false,
+      error: 'The Top Up Outcome Is Unknown. Check Your Stack Before Trying Again.',
+      code: 'TRANSPORT',
+    };
   }
 
   /**

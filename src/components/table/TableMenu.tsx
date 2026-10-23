@@ -144,6 +144,7 @@ export function createDefaultMenuSections(
   state?: {
     standUpBBBadge?: string;
     autoTopUpBadge?: string;
+    isTournament?: boolean;
     soundsBadge?: string;
     vibrationsBadge?: string;
     profitTrackingBadge?: string;
@@ -193,13 +194,17 @@ export function createDefaultMenuSections(
                 icon: <RebuyIcon />,
                 onClick: handlers.onRebuy || (() => {}),
               },
-              {
-                id: 'auto-top-up',
-                label: 'Auto Top Up',
-                icon: <RebuyIcon />,
-                badge: state?.autoTopUpBadge,
-                onClick: handlers.onAutoTopUp || (() => {}),
-              },
+              ...(state?.isTournament
+                ? []
+                : [
+                    {
+                      id: 'auto-top-up',
+                      label: 'Auto Top Up',
+                      icon: <RebuyIcon />,
+                      badge: state?.autoTopUpBadge,
+                      onClick: handlers.onAutoTopUp || (() => {}),
+                    },
+                  ]),
             ]),
       ],
     },

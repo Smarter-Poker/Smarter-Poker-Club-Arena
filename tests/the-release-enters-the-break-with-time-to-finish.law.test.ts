@@ -117,6 +117,7 @@ function admit(remainingMs: number, headroomMs: number) {
       phase: 'counting_down',
       durableConfirmed: true,
       remainingMs,
+      reason: 'Deployment Recovery',
       // The absolute boundary is given a cushion on purpose: this suite pins
       // what `remainingMs` must be, and the countdown's second predicate
       // (breakEndsAt - now) would otherwise lose a few milliseconds to the
@@ -129,7 +130,6 @@ function admit(remainingMs: number, headroomMs: number) {
     [
       '-c',
       `set -euo pipefail
-RECOVERY_URGENT=1
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${countdown}
@@ -501,7 +501,6 @@ function certificate(remainingMs: number, minimum?: number) {
     [
       '-c',
       `set -u
-RECOVERY_URGENT=1
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}

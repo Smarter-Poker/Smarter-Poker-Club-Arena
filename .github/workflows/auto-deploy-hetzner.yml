@@ -462,9 +462,33 @@ jobs:
           REMOTE_PROOF_TIMEOUT=$((PROOF_REMAINING - 35))
           [ "$REMOTE_PROOF_TIMEOUT" -le 180 ] || REMOTE_PROOF_TIMEOUT=180
           REMOTE_PROOF="$(timeout --signal=TERM --kill-after=5s "${REMOTE_PROOF_TIMEOUT}s" \
-            "$HSSH" "EXPECTED_SHA='$SHA' bash -se" <<'REMOTE'
+            "$HSSH" "EXPECTED_SHA='$SHA' EXPECTED_CONTROL_SHA='$CONTROL_SHA' bash -se" <<'REMOTE'
           set -euo pipefail
           CONTROL=/usr/local/lib/club-arena/engine-control
+          # Release control is installed separately from the game image. Prove
+          # the immutable generation and exact gate bytes, including when the
+          # requested game SHA is already serving and needs no replacement.
+          [ "$(tr -d '\r\n' < "$CONTROL/control-sha")" = "$EXPECTED_CONTROL_SHA" ]
+          git -C /opt/club-arena show "$EXPECTED_CONTROL_SHA:server/scripts/engine-release-transaction.sh" \
+            | cmp -s - "$CONTROL/engine-release-transaction.sh"
+          python3 - "$CONTROL/engine-release-transaction.sh" <<'PYTHON'
+          import json, pathlib, subprocess, sys, urllib.request
+          source = pathlib.Path(sys.argv[1]).read_text()
+          start = source.index('recovery_window_reason() {')
+          end = source.index('\n}\n', start) + 3
+          health = urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=15).read().decode()
+          d = json.loads(health)
+          if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True or (d.get('maintenance') or {}).get('active') is not False:
+              raise SystemExit('live routine-admission proof requires healthy, unpaused play')
+          # Execute the installed decision with real live health and the old
+          # urgency flag. This function is read-only and cannot announce a break.
+          code = 'set -euo pipefail\nRECOVERY_URGENT=1\nRECOVERY_QUARANTINED_MANAGERS=100\n' + source[start:end] + '\nhealth=$(cat)\nrecovery_window_reason "$health"\n'
+          result = subprocess.run(['bash', '-c', code], input=health, text=True, capture_output=True, timeout=10)
+          if result.returncode != 0 or result.stdout.strip():
+              raise SystemExit('installed gate granted routine urgency: ' + result.stdout + result.stderr)
+          print('Installed routine-admission gate refuses legacy urgency against live healthy play')
+          PYTHON
+          echo "__ENGINE_CONTROL_PROOF__ $EXPECTED_CONTROL_SHA"
           DESIRED_SHA="$($CONTROL/engine-release-seal.py get desired-sha)"
           DESIRED_IMAGE="$($CONTROL/engine-release-seal.py get desired-image-id)"
           ACTUAL_SHA="$(docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' club-arena-engine)"

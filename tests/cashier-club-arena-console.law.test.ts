@@ -360,29 +360,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     expect(statements).toContain('if (mountedRef.current) setCopiedId(ok ? id : null);');
   });
 
-  it('renders the Cashier card wallet directory on an approved painted console', () => {
-    const tile = read('src/components/home/ClubQuickLinkTile.tsx');
-    const homeCss = read('src/pages/HomePage.module.css');
-    const directoryCss = homeCss.slice(
-      homeCss.indexOf('.cashierSwitchOverlay'),
-      homeCss.indexOf('/* Dan 2026-08-24', homeCss.indexOf('.cashierSwitchOverlay'))
-    );
-
-    expect(tile).toMatch(
-      /import \{[^}]*\bSpadeConsole\b[^}]*\} from '[^']*\/console\/SpadeConsole'/
-    );
-    expect(tile).toContain('<SpadeConsole');
-    expect(tile).toContain('family="shark"');
-    expect(tile).toContain('className={styles.cashierSwitchConsole}');
-    expect(tile).toContain('formatWalletChips(visibleBalances.get(club.id))');
-    expect(tile).not.toContain('cashierSwitchLogoFallback');
-
-    expect(directoryCss).toContain('.cashierSwitchConsole');
-    expect(directoryCss).not.toMatch(/border-radius:\s*[1-9]/);
-    expect(directoryCss).not.toMatch(/(linear|radial|conic)-gradient\(/);
-    expect(directoryCss).not.toMatch(/^\s*[^*\n]*:hover\b[^\n]*\{/m);
-  });
-
+  // October 22: the owner removed the home card and its wallet-directory popup.
   it('prints exact in-Cashier club switcher balances', () => {
     const switcher = read('src/components/club/CashierClubSwitcher.tsx');
     expect(switcher).toContain('formatWalletChips(visibleBalances.get(club.id))');

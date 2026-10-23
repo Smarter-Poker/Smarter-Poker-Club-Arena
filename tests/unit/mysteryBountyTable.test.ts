@@ -17,6 +17,7 @@ import {
   MYSTERY_BOUNTIES_LIVE_TEXT,
   claimMysteryLiveAnnouncement,
   mysteryChestsLiveFromRow,
+  mysteryChestsOnlyFromRow,
   seatBountyBadge,
   seatedPlayersSignature,
 } from '../../src/utils/mysteryBountyTable';
@@ -71,6 +72,44 @@ describe('a seat does not advertise a flat head once the chests are live', () =>
         bountyMap,
       })
     ).toEqual({ value: undefined, mystery: true });
+  });
+
+  it('advertises no head before the money when the event is chests only', () => {
+    // Dan 2026-10-22: no bounty is paid before the money.
+    expect(
+      seatBountyBadge({
+        isBountyTournament: true,
+        mysteryChestsLive: false,
+        chestsOnly: true,
+        playerId: 'a',
+        bountyMap,
+      })
+    ).toEqual({ value: undefined, mystery: false });
+    expect(
+      seatBountyBadge({
+        isBountyTournament: true,
+        mysteryChestsLive: true,
+        chestsOnly: true,
+        playerId: 'a',
+        playerStatus: 'active',
+        bountyMap,
+      })
+    ).toEqual({ value: undefined, mystery: true });
+    expect(
+      mysteryChestsOnlyFromRow({ is_mystery_bounty: true, mystery_bounty_regular_pool_percent: 0 })
+    ).toBe(true);
+    expect(
+      mysteryChestsOnlyFromRow({ is_mystery_bounty: true, mystery_bounty_regular_pool_percent: '0' })
+    ).toBe(true);
+    expect(
+      mysteryChestsOnlyFromRow({ is_mystery_bounty: true, mystery_bounty_regular_pool_percent: 50 })
+    ).toBe(false);
+    expect(
+      mysteryChestsOnlyFromRow({ is_mystery_bounty: true, mystery_bounty_regular_pool_percent: null })
+    ).toBe(false);
+    expect(
+      mysteryChestsOnlyFromRow({ is_mystery_bounty: false, mystery_bounty_regular_pool_percent: 0 })
+    ).toBe(false);
   });
 
   it('hangs no prize on an eliminated player, and none off a bounty event', () => {

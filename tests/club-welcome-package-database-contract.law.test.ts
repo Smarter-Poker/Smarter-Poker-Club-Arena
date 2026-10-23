@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const sql = readFileSync(
@@ -848,5 +848,28 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(incrementalBoardCleanupSql).not.toMatch(
       /(INSERT INTO|UPDATE|DELETE FROM) public\.(clubs|club_members|players|wallets|chip_ledger|chip_transactions|spin_bonus_pools|spin_reserve_ledger|bbj_pools)/
     );
+  });
+});
+
+describe('the current opening authority retains welcome reserve reuse', () => {
+  it('checks the newest maintained function body or asserted patch, not only the original migration', () => {
+    const dir = resolve(__dirname, '../supabase/migrations');
+    const definitions = readdirSync(dir)
+      .filter((name) => name.endsWith('.sql'))
+      .sort()
+      .map((name) => ({ name, text: readFileSync(resolve(dir, name), 'utf8') }))
+      .filter((file) =>
+        /CREATE OR REPLACE FUNCTION public\.fn_complete_club_opening_setup|v_sig regprocedure := 'public\.fn_complete_club_opening_setup/.test(
+          file.text
+        )
+      );
+    const current = definitions.at(-1)!;
+    expect(current.text, current.name).toContain(
+      'v_welcome public.club_welcome_package_receipts%ROWTYPE'
+    );
+    expect(current.text, current.name).toContain('p_spins_enabled AND v_welcome.club_id IS NULL');
+    expect(current.text, current.name).toContain('p_bbj_enabled AND v_welcome.club_id IS NULL');
+    const ci = readFileSync(resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+    expect(ci).toContain('python3 -B scripts/ci/test-quick-club-opening.py');
   });
 });

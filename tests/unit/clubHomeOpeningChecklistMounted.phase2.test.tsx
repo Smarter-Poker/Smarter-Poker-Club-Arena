@@ -243,8 +243,7 @@ async function mountLobby() {
 }
 
 const lobby = () => document.querySelector('.club-lobby-machine') as HTMLElement;
-const wizardRow = () =>
-  screen.getByText('Complete The Opening Setup Wizard').closest('article') as HTMLElement;
+const wizardRow = () => screen.getByText('Club Defaults').closest('article') as HTMLElement;
 
 describe('the lobby and the checklist resolve skips from one state', () => {
   it('drops the checklist and the lobby layout attribute in the same render', async () => {
@@ -320,7 +319,7 @@ describe('the opening checklist is the owner’s', () => {
 
     expect(screen.getByText('New Club Opening Checklist')).toBeTruthy();
     expect(within(wizardRow()).queryByRole('button', { name: /^Skip/ })).toBeNull();
-    expect(within(wizardRow()).getByRole('button', { name: 'Start Setup' })).toBeTruthy();
+    expect(within(wizardRow()).getByRole('button', { name: 'Open Setup' })).toBeTruthy();
   });
 });
 
@@ -338,7 +337,7 @@ describe('a failed setup-state read', () => {
     await mountLobby();
 
     expect(h.setupCalls).toBe(2);
-    expect(within(wizardRow()).getByRole('button', { name: 'Start Setup' })).toBeTruthy();
+    expect(within(wizardRow()).getByRole('button', { name: 'Open Setup' })).toBeTruthy();
 
     /* A minute passes with the tab visible and nothing happening: no timer
        asks again. */
@@ -368,7 +367,7 @@ describe('the checklist is finished once (server latch, 2026-09-23)', () => {
 
     expect(screen.getByText('Find Your Game')).toBeTruthy();
     expect(screen.queryByText('New Club Opening Checklist')).toBeNull();
-    expect(screen.queryByText('Complete The Opening Setup Wizard')).toBeNull();
+    expect(screen.queryByText('Club Defaults')).toBeNull();
     expect(lobby().hasAttribute('data-opening-checklist')).toBe(false);
     expect(h.stateCalls).toBe(1);
     expect(h.setupCalls).toBe(0);

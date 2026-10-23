@@ -11,6 +11,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import ClubRosterService, { type MemberUplineLevel } from '../../src/services/ClubRosterService';
 import MemberUplineCard from '../../src/components/club/MemberUplineCard';
 
+// The assignment control has its own suite (PlayerAssignAgent.test.tsx).
+vi.mock('../../src/components/club/MemberAssignAgent', () => ({
+  default: ({
+    currentAgentId,
+    underOwner,
+  }: {
+    currentAgentId: string | null;
+    underOwner?: boolean;
+  }) => (
+    <div
+      data-testid="assign-agent"
+      data-current={currentAgentId ?? ''}
+      data-owner={String(underOwner)}
+    />
+  ),
+}));
+
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 const MIGRATION = read(
@@ -41,10 +58,40 @@ describe('Player Record: Upline Agents card', () => {
     );
   });
 
+  it('offers Assign To Agent with the direct upline as the current agent', async () => {
+    vi.spyOn(ClubRosterService, 'getMemberUplineChain').mockResolvedValue(chain);
+    render(<MemberUplineCard clubId="club-1" userId="player-1" />);
+    const control = await screen.findByTestId('assign-agent');
+    expect(control.getAttribute('data-current')).toBe('a1');
+  });
+
+  it('a player with no agent shows the club owner, and assigns from an empty agent', async () => {
+    vi.spyOn(ClubRosterService, 'getMemberUplineChain').mockResolvedValue([
+      {
+        depth: 1,
+        user_id: 'o1',
+        name: 'KingFish',
+        player_number: '1',
+        role: 'owner',
+        assigned: false,
+      },
+    ]);
+    render(<MemberUplineCard clubId="club-1" userId="player-1" />);
+    expect(await screen.findByText('KingFish (ID: 1)')).toBeInTheDocument();
+    expect(
+      screen.getByText('No Agent Assigned. This Player Sits Directly Under The Club Owner.')
+    ).toBeInTheDocument();
+    const control = screen.getByTestId('assign-agent');
+    expect(control.getAttribute('data-current')).toBe('');
+    expect(control.getAttribute('data-owner')).toBe('true');
+  });
+
   it('says so when the player has no upline', async () => {
     vi.spyOn(ClubRosterService, 'getMemberUplineChain').mockResolvedValue([]);
     render(<MemberUplineCard clubId="club-1" userId="player-1" />);
-    expect(await screen.findByText('This Player Has No Upline Agent.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('No Agent Assigned. This Player Sits Directly Under The Club Owner.')
+    ).toBeInTheDocument();
   });
 
   it('renders nothing for a viewer the RPC denies', async () => {
@@ -57,6 +104,24 @@ describe('Player Record: Upline Agents card', () => {
     expect(PAGE).toMatch(
       /can_view_financials && resolvedClubId && identity!\.user_id && \(\s*<MemberUplineCard/
     );
+  });
+});
+
+const OWNER_RULE = read(
+  'supabase/migrations/20261022150431_upline_chain_shows_the_club_owner_only_when_the_player_has_n.sql'
+);
+
+describe('ca_club_member_upline_chain: the owner is only the default home', () => {
+  it('never prints the club owner above an agent', () => {
+    expect(OWNER_RULE).toContain('AND nxt.agent_id IS DISTINCT FROM v_owner');
+    expect(OWNER_RULE).toContain('AND c.uid IS DISTINCT FROM v_owner');
+  });
+
+  it('shows the owner, unassigned, when the player has no agent', () => {
+    expect(OWNER_RULE).toMatch(/SELECT v_owner, 1, false[\s\S]*NOT EXISTS \(SELECT 1 FROM chain\)/);
+    expect(OWNER_RULE).toContain("'assigned', l.assigned");
+    expect(OWNER_RULE.match(/^BEGIN;$/gm)?.length).toBe(1);
+    expect(OWNER_RULE.match(/^COMMIT;$/gm)?.length).toBe(1);
   });
 });
 

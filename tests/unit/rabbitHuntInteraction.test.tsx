@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 
 vi.mock('../../src/hooks/useButtonImage', () => ({
   useButtonImage: () => '/rabbit.webp',
+  useTimebankIcon: () => '/time-bank.webp',
 }));
 
 vi.mock('../../src/services/VIPService', () => ({

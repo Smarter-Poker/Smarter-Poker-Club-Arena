@@ -1486,3 +1486,21 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* PICK 1 OF 3: which chest held the prize, and each other chest's number. */
+.mbc__picked-slot {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  margin-bottom: 4px;
+}
+.mbc__other-slot {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}

@@ -284,6 +284,17 @@ type HorseTurnAbandonStage =
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /** Previous zone is table-owned state and is embedded in every worker snapshot. */
   private readonly horseTournamentMZones = new Map<string, TournamentMZone>();
+  /**
+   * A HORSE ACCOUNT'S OWN CLIENT DRIVES ITS SEAT (2026-10-22). Users with a
+   * live authenticated engine socket on this table (onConnect/onAlive, until
+   * the last socket closes) and users whose own client has claimed the seat
+   * since that socket session began (the table page's HTTP heartbeat, an
+   * action, a pre-action or a time bank request). Only the client doors write
+   * these; the horse heartbeat and the brain never do. See
+   * isOwnClientControlling.
+   */
+  private readonly ownClientSockets = new Set<string>();
+  private readonly ownClientClaims = new Set<string>();
 
   /**
    * True only after an externally-computed runout payout may have touched the
@@ -1239,6 +1250,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   public async activateTimeBank(
     userId: string
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
+    this.noteOwnClientClaim(userId); // POST /timebank is the client's door
     // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
     // so they are Title Case with no em dashes.
     if (!this.lifecycleCanMutate()) {
@@ -1557,6 +1569,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        on-demand registration sitOut() and notifyPageLeft() already do. A
        spectator's heartbeat still registers nothing. */
     this.registerSeatedPlayerOnDemand(userId);
+    // A socket admission/pong proves the transport; the table page's own
+    // heartbeat is the client claiming its seat (isOwnClientControlling).
+    if (presenceOptions?.transportOnly) this.noteOwnClientSocket(userId);
+    else this.noteOwnClientClaim(userId);
     if (
       typeof presenceOptions?.autoTimeBank === 'boolean' &&
       this.disconnectEngine.getState(this.tableId, userId)
@@ -1613,6 +1629,96 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // invisible to the FSM, so the seat could never become MISSING.
     this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.markTransportGone(this.tableId, userId);
+    // After the ordinary disconnect handling: a horse seat its own client was
+    // driving goes back to the brain.
+    this.releaseOwnClientControl(userId);
+  }
+
+  /**
+   * A HORSE ACCOUNT'S OWN CLIENT DRIVES ITS SEAT (2026-10-22).
+   *
+   * Lightning pilot witnesses log in AS pilot horse accounts and play them
+   * through the ordinary client. The brain still answered that seat's turn
+   * within seconds, so the client's Time Bank never activated (witness run
+   * 39772148272), its pre-actions and clicks raced the brain, and it could
+   * not hold a decision.
+   *
+   * The rule: while the account's own client is controlling the seat - a
+   * live authenticated engine socket for that user on this table AND a
+   * client-originated claim (the table page's heartbeat, an action, a
+   * pre-action or a time bank request) since that socket session began - the
+   * brain does not act on the seat's turns. The turn runs on the human clock:
+   * action timer, time bank, then the ordinary timeout path. When the last
+   * socket closes, control returns to the brain, on the current turn too.
+   *
+   * Horses with no client never have a claim or a socket, so nothing about
+   * them changes. This only ever reads is_horse to decide WHO supplies a
+   * horse's input (CLAUDE.md 10.5, the input-device exception).
+   */
+  public isOwnClientControlling(userId: string): boolean {
+    // Optional reads: an engine object built without its constructor (a
+    // prototype fixture) simply has no client in control.
+    return (
+      this.ownClientSockets?.has(userId) === true && this.ownClientClaims?.has(userId) === true
+    );
+  }
+
+  protected noteOwnClientSocket(userId: string): void {
+    if (!this.ownClientSockets || this.ownClientSockets.has(userId)) return;
+    const before = this.isOwnClientControlling(userId);
+    this.ownClientSockets.add(userId);
+    if (!before && this.isOwnClientControlling(userId)) this.yieldHorseTurnToOwnClient(userId);
+  }
+
+  protected noteOwnClientClaim(userId: string): void {
+    if (!this.ownClientClaims || this.ownClientClaims.has(userId)) return;
+    const before = this.isOwnClientControlling(userId);
+    this.ownClientClaims.add(userId);
+    if (!before && this.isOwnClientControlling(userId)) this.yieldHorseTurnToOwnClient(userId);
+  }
+
+  /** Control just passed to the client: a brain decision in flight for this seat's turn stops. */
+  private yieldHorseTurnToOwnClient(userId: string): void {
+    try {
+      if (!this.handController) return;
+      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!seated?.is_horse) return;
+      if (this.handController.getState().currentPlayerSeat !== seated.seat_number) return;
+      this.cancelHorseDecisionWork();
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.own_client_yield_threw');
+    }
+  }
+
+  /** The client's socket session ended: the brain takes the seat back, on this turn too. */
+  protected releaseOwnClientControl(userId: string): void {
+    const was = this.isOwnClientControlling(userId);
+    this.ownClientSockets?.delete(userId);
+    this.ownClientClaims?.delete(userId);
+    if (!was) return;
+    try {
+      if (!this.lifecycleCanMutate() || !this.handController) return;
+      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!seated?.is_horse) return;
+      const state = this.handController.getState();
+      if (state.stage === 'pineapple_discard') return;
+      if (state.currentPlayerSeat !== seated.seat_number) return;
+      const enginePlayer = state.players.find((p) => p.seat === seated.seat_number);
+      if (
+        !enginePlayer ||
+        enginePlayer.is_folded ||
+        enginePlayer.is_all_in ||
+        enginePlayer.is_sitting_out
+      )
+        return;
+      // The deadline already running (action clock, bank or disconnect
+      // protection). The brain acts inside it; it is never extended.
+      const deadline = this.playerTurnStartTime + this.playerTurnDuration * 1000;
+      if (!(deadline > Date.now())) return;
+      this.scheduleHorseAction(seated, seated.seat_number, enginePlayer, state, deadline);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.own_client_release_threw');
+    }
   }
 
   /**
@@ -1657,6 +1763,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     action: string,
     maxCallAmount?: number
   ): { success: boolean; error?: string; code?: string; armedToCall?: number } {
+    this.noteOwnClientClaim(userId); // POST /preaction is the client's door
     /* A CLEAR IS FINISHED WHEN NOTHING IS ARMED (2026-10-04).
      *
      * This used to sit BELOW the two refusals that follow it, so a clear sent
@@ -1796,6 +1903,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     actionContext?: string | null,
     trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    // HTTP always supplies a context; trusted in-process callers omit it.
+    if (actionContext !== undefined) this.noteOwnClientClaim(userId);
     if (!this.lifecycleCanMutate()) {
       return {
         success: false,
@@ -2554,7 +2663,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const seatedPlayer = this.seatedPlayers.find(
         (p) => p.user_id === userId && p.seat_number === player.seat
       );
-      if (seatedPlayer?.is_horse) {
+      if (seatedPlayer?.is_horse && !this.isOwnClientControlling(userId)) {
         try {
           this.scheduleHorseAction(seatedPlayer, player.seat, player, state, protection);
         } catch (error) {
@@ -2758,7 +2867,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Step 5: If this is a horse, schedule their action after a realistic think time
     // The horse uses the SAME timer as a real player — the action fires within that timer window.
     // Think times: 2-8 seconds (varies by decision complexity to simulate real play)
-    if (player.is_horse) {
+    // A horse account whose own client is driving the seat plays on the
+    // human clock above (isOwnClientControlling); the brain stays out.
+    if (player.is_horse && !this.isOwnClientControlling(player.user_id)) {
       this.scheduleHorseAction(player, seat, enginePlayer, state);
     }
   }

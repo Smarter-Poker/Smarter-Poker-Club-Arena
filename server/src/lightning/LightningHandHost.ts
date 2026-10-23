@@ -327,6 +327,12 @@ export interface LightningHandHostDeps {
   sleep?: (ms: number) => Promise<void>;
   /** A live socket in the player's room (the registry's presence). */
   isConnected?(playerId: string, roomId: string): boolean;
+  /**
+   * The player's own authenticated client is controlling their seat (a live
+   * socket in their room plus a client claim; LightningRegistry). For a
+   * horse account this keeps the brain off the seat's turns. Absent: never.
+   */
+  isClientControlling?(playerId: string, roomId: string): boolean;
   /** The player may be matched again (worker wake). */
   onPlayerReleased?(playerId: string, foldType: LightningFoldType | 'hand_end'): void;
   /** The participants and rooms are known and the deal is about to start. */
@@ -762,6 +768,44 @@ export class LightningHandHost {
     if (!p) return false;
     if (p.isHorse) return true; // the engine heartbeats a horse; a horse has no browser
     return this.deps.isConnected?.(playerId, p.poolSessionId) ?? false;
+  }
+
+  /**
+   * A HORSE ACCOUNT'S OWN CLIENT DRIVES ITS SEAT (2026-10-22). Lightning pilot
+   * witnesses play pilot horse accounts through the ordinary client; the brain
+   * answering those turns within seconds meant the client's Time Bank never
+   * activated and its actions raced the brain. While the account's own client
+   * controls the seat, its turns run on the human clock (action timer, time
+   * bank, timeout) and the decision is announced like any player's.
+   */
+  private clientControls(userId: string): boolean {
+    const p = this.participants.get(userId);
+    if (!p?.isHorse) return false;
+    try {
+      return this.deps.isClientControlling?.(userId, p.poolSessionId) === true;
+    } catch {
+      return false; // an unreadable claim leaves the seat with its brain
+    }
+  }
+
+  /** The client just took control: a brain decision in flight for its turn stops. */
+  noteClientControl(userId: string): void {
+    if (this.isTerminal() || this.turnUser !== userId) return;
+    if (!this.participants.get(userId)?.isHorse) return;
+    if (this.horseTimer) clearTimeout(this.horseTimer);
+    this.horseTimer = null;
+    this.horseAbort?.abort();
+    this.horseAbort = null;
+    this.announceDecision(userId);
+  }
+
+  /** The client's last socket closed: the brain takes the seat back, on this turn too. */
+  noteClientReleased(userId: string): void {
+    const hc = this.hc;
+    if (this.isTerminal() || !hc || this.turnUser !== userId) return;
+    if (!this.participants.get(userId)?.isHorse || this.clientControls(userId)) return;
+    if (this.decisionOpenFor === userId) this.retractDecision('client_released');
+    this.scheduleHorse(userId, playerActionContext(hc));
   }
 
   /** The registry saw a socket arrive or leave in this player's room. */
@@ -1212,7 +1256,13 @@ export class LightningHandHost {
   /** Announce the decision the turn's player owes, with the engine's clock. */
   private announceDecision(userId: string): void {
     const p = this.participants.get(userId);
-    if (!p || p.isHorse || !this.deps.onDecision || this.turnUser !== userId) return;
+    if (
+      !p ||
+      (p.isHorse && !this.clientControls(userId)) ||
+      !this.deps.onDecision ||
+      this.turnUser !== userId
+    )
+      return;
     try {
       this.deps.onDecision(userId, {
         poolSessionId: p.poolSessionId,
@@ -1303,7 +1353,8 @@ export class LightningHandHost {
         timestamp: this.now(),
       })
     );
-    if (this.participants.get(userId)?.isHorse) this.scheduleHorse(userId, contextAtTurn);
+    if (this.participants.get(userId)?.isHorse && !this.clientControls(userId))
+      this.scheduleHorse(userId, contextAtTurn);
     else this.announceDecision(userId);
   }
 

@@ -128,6 +128,34 @@ describe('pick 1 of 3', () => {
     );
     expect(others).toEqual(['400', '12']);
     expect(container.querySelector('.mbc__amount')?.textContent).toBe('50');
+    // Every seat can tell which chest held the prize and which held the rest.
+    expect(container.querySelector('.mbc__picked-slot')?.textContent).toBe('You Picked Chest 1');
+    expect(
+      Array.from(container.querySelectorAll('.mbc__other-slot')).map((n) => n.textContent)
+    ).toEqual(['Chest 2', 'Chest 3']);
+  });
+
+  it('tells the rest of the table which chest the knockout picked', () => {
+    const { container } = render(
+      view(
+        {
+          ...offered,
+          amount: 50,
+          amountPending: false,
+          pickedSlot: 3,
+          choices: [
+            { slot: 1, amount: 12, picked: false },
+            { slot: 2, amount: 400, picked: false },
+            { slot: 3, amount: 50, picked: true },
+          ],
+        },
+        'spectator',
+        { remoteOpened: true }
+      )
+    );
+    act(() => vi.advanceTimersByTime(700));
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(container.querySelector('.mbc__picked-slot')?.textContent).toBe('Winner Picked Chest 3');
   });
 
   it('is the single chest it always was when only one is on offer', () => {

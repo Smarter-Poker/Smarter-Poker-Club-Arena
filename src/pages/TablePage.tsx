@@ -180,7 +180,7 @@ import { FaceDeckContext } from '../components/table/faceDeckContext';
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
-import { useButtonImage } from '../hooks/useButtonImage';
+import { useButtonImage, useTimebankIcon } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
@@ -629,6 +629,7 @@ import {
   MYSTERY_BOUNTIES_LIVE_TEXT,
   claimMysteryLiveAnnouncement,
   mysteryChestsLiveFromRow,
+  mysteryChestsOnlyFromRow,
   seatBountyBadge,
   seatedPlayersSignature,
 } from '../utils/mysteryBountyTable';
@@ -1597,7 +1598,7 @@ function LiveTablePage({
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
-  const timebankIconPage = useButtonImage('icon-timebank');
+  const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const requestedTableId = embeddedTableId || routeTableId;
   // Every table effect receives a database ID or no scope. A URL segment
@@ -1820,6 +1821,8 @@ function LiveTablePage({
      flipped by the engine's `mystery_bounty_activated`; drives the seat badges
      and the one popup per event per table. See utils/mysteryBountyTable. */
   const [mysteryChestsLive, setMysteryChestsLive] = useState(false);
+  /* Chests only (Dan 2026-10-22): no head is advertised before the money. */
+  const [mysteryChestsOnly, setMysteryChestsOnly] = useState(false);
   const mysteryLiveAnnouncedRef = useRef<Set<string>>(new Set());
   /* The bounty re-read the load effect publishes; the seat-list effect calls it
      when the set of seated players changes (utils/mysteryBountyTable rule 3). */
@@ -1916,21 +1919,24 @@ function LiveTablePage({
    * locally the instant they tap, so their tap feels immediate. This send
    * exists purely so the other seats open at the same moment.
    */
-  const broadcastChestOpen = useCallback((slot?: number) => {
-    const chan = chestChannelRef.current;
-    if (!chan) return;
-    try {
-      chan.send({
-        type: 'broadcast',
-        event: 'mystery_chest_opened',
-        payload: { tableId, at: Date.now(), slot: slot ?? null },
-      });
-    } catch (err) {
-      // A failed broadcast degrades to each spectator's own failsafe timer.
-      // It must never stop the winner from seeing their prize.
-      reportError(err, 'TablePage.broadcastChestOpen');
-    }
-  }, [tableId]);
+  const broadcastChestOpen = useCallback(
+    (slot?: number) => {
+      const chan = chestChannelRef.current;
+      if (!chan) return;
+      try {
+        chan.send({
+          type: 'broadcast',
+          event: 'mystery_chest_opened',
+          payload: { tableId, at: Date.now(), slot: slot ?? null },
+        });
+      } catch (err) {
+        // A failed broadcast degrades to each spectator's own failsafe timer.
+        // It must never stop the winner from seeing their prize.
+        reportError(err, 'TablePage.broadcastChestOpen');
+      }
+    },
+    [tableId]
+  );
 
   /**
    * THE TAP (Dan sections 19, 51-54).
@@ -6707,8 +6713,7 @@ function LiveTablePage({
       isFixedLimit,
       fixedBetSize: flBetSize,
     });
-    const canRaise =
-      heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
+    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
     if (!canRaise || maxRaiseTo < minRaiseTo) return '';
     const r = (n: number) => Math.round(n * 100) / 100;
     return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
@@ -13689,7 +13694,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13974,7 +13979,10 @@ function LiveTablePage({
             setSeatFirstBuyIn(null);
           }
 
-          if (isMounted) setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
+          if (isMounted) {
+            setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
+            setMysteryChestsOnly(mysteryChestsOnlyFromRow(tournData));
+          }
           if (
             tournData &&
             (tournData.is_bounty || tournData.is_pko || tournData.is_mystery_bounty)
@@ -15693,6 +15701,7 @@ function LiveTablePage({
       }
       bountyMapRefreshRef.current = null;
       setMysteryChestsLive(false);
+      setMysteryChestsOnly(false);
       addOnPresentationEpochRef.current += 1;
       refreshPersistedAddOnOfferRef.current = null;
       // P1-4 FIX: tear down the tournament channels in the SAME effect that
@@ -20513,8 +20522,12 @@ function LiveTablePage({
         pos,
         scalerSize,
         seatViewportWidth,
-        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
-        canvasLeft
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w, {
+          seats: seatRotationMap.length,
+          canvasHeightPx: scalerSize.h,
+        }),
+        canvasLeft,
+        seatRotationMap.length
       )
     );
   }, [seatRotationMap, scalerSize, seatViewportWidth]);
@@ -25434,6 +25447,9 @@ function LiveTablePage({
           style={
             {
               '--table-w': `${scalerSize.w}px`,
+              /* The dense-ring pods (SeatSlot.css) size from the felt's
+                 height as well as its width. */
+              '--table-h': `${scalerSize.h}px`,
               '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
               /* A shown hand is drawn at the board's own card size (Dan
                  2026-10-22). SeatSlot.css reads it on the revealed row. */
@@ -26540,7 +26556,8 @@ function LiveTablePage({
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
               pos.y >= 100 && pos.x === 50,
-              scalerSize.w
+              scalerSize.w,
+              { seats: seatPositions.length, canvasHeightPx: scalerSize.h }
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
@@ -26763,6 +26780,7 @@ function LiveTablePage({
                     seatBountyBadge({
                       isBountyTournament: Boolean(tableState.isBountyTournament),
                       mysteryChestsLive,
+                      chestsOnly: mysteryChestsOnly,
                       playerId: player?.id,
                       playerStatus: player?.status,
                       bountyMap: tableState.bountyMap,
@@ -26772,6 +26790,7 @@ function LiveTablePage({
                     seatBountyBadge({
                       isBountyTournament: Boolean(tableState.isBountyTournament),
                       mysteryChestsLive,
+                      chestsOnly: mysteryChestsOnly,
                       playerId: player?.id,
                       playerStatus: player?.status,
                       bountyMap: tableState.bountyMap,
@@ -27934,7 +27953,10 @@ function LiveTablePage({
                            The engine refuses a raise there; the button must not
                            offer one. */
                         canRaise={
-                          heroStack > callAmount && allInTo >= minRaise && !wagersCapped && mayReopen
+                          heroStack > callAmount &&
+                          allInTo >= minRaise &&
+                          !wagersCapped &&
+                          mayReopen
                         }
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."

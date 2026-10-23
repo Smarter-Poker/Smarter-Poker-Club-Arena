@@ -33,7 +33,7 @@
 
 import React from 'react';
 import './TimebankCounter.css';
-import { useButtonImage } from '../../hooks/useButtonImage';
+import { useTimebankIcon } from '../../hooks/useButtonImage';
 
 interface TimebankCounterProps {
   /**
@@ -62,7 +62,7 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
   unlimited = false,
   bankSeconds = 20,
 }) => {
-  const timebankIcon = useButtonImage('icon-timebank');
+  const timebankIcon = useTimebankIcon();
   const contents = (
     <div className="tbc-img-wrap" aria-hidden="true">
       <img src={timebankIcon} className="tbc-icon-img" alt="" draggable={false} />

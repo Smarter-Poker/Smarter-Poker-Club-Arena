@@ -2112,16 +2112,28 @@ export abstract class TournamentManagerBase {
    *
    * Returns true only when the hand-off was requested.
    */
-  getStalledEliminationSweep(
-    now = Date.now()
-  ): { msInFlight: number; msBustWaiting: number; stage: number } | null {
+  getStalledEliminationSweep(now = Date.now()): {
+    msInFlight: number;
+    msBustWaiting: number;
+    stage: number;
+    step: string | null;
+    msInStep: number;
+  } | null {
     const msInFlight =
       this.isProcessingEliminations && this.eliminationSweepStartedAt > 0
         ? now - this.eliminationSweepStartedAt
         : 0;
     const msBustWaiting = this.bustAwaitingSinceMs > 0 ? now - this.bustAwaitingSinceMs : 0;
     if (msInFlight <= 0 && msBustWaiting <= 0) return null;
-    return { msInFlight, msBustWaiting, stage: this.currentEliminationSweepStage() };
+    const step = msInFlight > 0 ? (this.eliminationSweepStep ?? null) : null;
+    return {
+      msInFlight,
+      msBustWaiting,
+      stage: this.currentEliminationSweepStage(),
+      step,
+      msInStep:
+        step && (this.eliminationSweepStepAt ?? 0) > 0 ? now - this.eliminationSweepStepAt : 0,
+    };
   }
 
   /** The stage the in-flight sweep is in; the eliminations layer knows it. */
@@ -11986,6 +11998,19 @@ export abstract class TournamentManagerBase {
    * every pass, or fails in a loop all leave it running.
    */
   protected bustAwaitingSinceMs = 0;
+  /**
+   * The awaited step the in-flight elimination sweep last entered, and when.
+   * A sweep that stalls logs nothing on its own (Coffee Break Freeroll
+   * f5a98d7e, 2026-10-22); the hand-off alert names this step so the stall is
+   * attributable to one call.
+   */
+  protected eliminationSweepStep: string | null = null;
+  protected eliminationSweepStepAt = 0;
+
+  protected noteEliminationSweepStep(step: string): void {
+    this.eliminationSweepStep = step;
+    this.eliminationSweepStepAt = Date.now();
+  }
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

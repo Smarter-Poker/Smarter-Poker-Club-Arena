@@ -38,9 +38,13 @@ import { isTournamentGameCode } from '../src/utils/gameCode';
 import { FREE_BUY_LABEL } from '../src/utils/freeBuy';
 import { sliceCssRule, sliceStatement } from './helpers/sourceWindow';
 
-const metadata = vi.hoisted(() => ({ read: vi.fn() }));
+const metadata = vi.hoisted(() => ({
+  read: vi.fn(),
+  getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+}));
 vi.mock('../src/lib/supabase', () => ({
   supabase: {
+    auth: { getSession: metadata.getSession },
     from: (table: string) => ({
       select: (columns: string) => ({
         in: (key: string, ids: string[]) => metadata.read(table, columns, key, ids),
@@ -49,13 +53,33 @@ vi.mock('../src/lib/supabase', () => ({
   },
 }));
 
+// Labels are rendered by the real TableTabBar. Its closed account menu is a
+// separate boundary: mounting it thousands of times hydrates identity and is
+// unrelated to the exhaustive event-name/buy-in matrix below.
+vi.mock('../src/components/table/TableMenu', () => ({
+  default: () => null,
+  createDefaultMenuSections: () => [],
+}));
+
+// Button-skin lookup also hydrates identity; labels do not depend on a skin.
+vi.mock('../src/hooks/useButtonImage', () => ({
+  useButtonImage: (iconName: string) => `/test-buttons/${iconName}.webp`,
+}));
+
 vi.mock('../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => () => {}) },
 }));
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  expect(
+    metadata.getSession,
+    'tab-label fixtures must not hydrate an unrelated account'
+  ).not.toHaveBeenCalled();
+  metadata.getSession.mockClear();
+});
 
 const tab = (over: Partial<TabInfo> = {}): TabInfo => ({
   id: 'table-1',

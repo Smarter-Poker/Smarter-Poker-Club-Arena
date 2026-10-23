@@ -393,6 +393,7 @@ import {
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
+import { isPloVariant, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
 
 /**
  * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
@@ -5768,6 +5769,42 @@ export class TournamentRecurringService {
     return [...ids];
   }
 
+  /** tournament id -> is it a PLO-family game. Game type never changes. */
+  private readonly ploTournamentCache = new Map<string, boolean>();
+
+  /**
+   * THE PLO ROSTER FOR TOURNAMENTS (Dan 2026-10-23). A PLO tournament (any
+   * game_type starting PLO) is entered only by horses on ca_horse_plo_roster:
+   * the horses with a proven profit at PLO. Every other tournament passes the
+   * list through untouched. An unreadable game type or roster enters nobody
+   * into a PLO event rather than everybody.
+   */
+  private async ploRosterOnly<T>(
+    tournamentId: string | undefined,
+    rows: T[],
+    idOf: (row: T) => string
+  ): Promise<T[]> {
+    if (!tournamentId || rows.length === 0) return rows;
+    let isPlo = this.ploTournamentCache.get(tournamentId);
+    if (isPlo === undefined) {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('game_type')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (error) {
+        reportError(error, 'TournamentRecurring.plo_roster_game_type_read_failed');
+        return [];
+      }
+      isPlo = isPloVariant((data as { game_type?: string | null } | null)?.game_type ?? '');
+      if (this.ploTournamentCache.size > 5000) this.ploTournamentCache.clear();
+      this.ploTournamentCache.set(tournamentId, isPlo);
+    }
+    if (!isPlo) return rows;
+    await refreshPloRoster();
+    return rows.filter((r) => ploRosterAllows(idOf(r), 'plo') === true);
+  }
+
   private async pickFreeHorses(
     count: number,
     allLanes = false,
@@ -5886,7 +5923,12 @@ export class TournamentRecurringService {
        * heads-up games through this path while #2430 held the registration
        * path shut.
        */
-      const fleetIds = fleetPage.rows.map((h) => h.id);
+      // A PLO event takes only horses with a proven PLO profit (Dan 2026-10-23).
+      const fleetIds = await this.ploRosterOnly(
+        tournamentId,
+        fleetPage.rows.map((h) => h.id),
+        (id) => id
+      );
       const clubIds = tournamentId
         ? await this.clubMemberIdsForTournament(tournamentId, pass)
         : null;
@@ -7171,7 +7213,7 @@ export class TournamentRecurringService {
         console.warn('[TournamentRecurring] registerHorses skipped: fleet read incomplete');
         return 0;
       }
-      const poolAll = poolPage.rows;
+      const poolAll = await this.ploRosterOnly(tournamentId, poolPage.rows, (h) => h.id);
       let busyDropped = 0;
       let laneDropped = 0;
       let clubDropped = 0;

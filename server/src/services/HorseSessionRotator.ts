@@ -73,6 +73,7 @@ import {
   type CommittedCashSeat,
   type ImminentBooking,
 } from './HorseTournamentCommitment.js';
+import { isPloVariant, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -384,7 +385,7 @@ export class HorseSessionRotator {
           // table's own limits, which price the reload, the swing and the
           // session P&L - `bb * 100` is not the buy-in at a 0.50 game whose
           // minimum is 200.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, tables!table_seats_table_id_fkey!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -467,12 +468,19 @@ export class HorseSessionRotator {
     const userIds = seats.map((s) => s.user_id);
     const horseRead = await selectInChunks<{ id: string }>(
       userIds,
-      (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
+      (batch) =>
+        supabase.from('profiles').select('id, horse_status').in('id', batch).eq('is_horse', true),
       'HorseSessionRotator.horseIds'
     );
     if (!this.lifecycleIsCurrent(generation)) return;
     if (!horseRead.complete) return; // an unreadable horse set is not an empty one
     const horseIds = new Set(horseRead.rows.map((h) => h.id));
+    /* Benched horses (horse_status 'disabled'): off the 45-horse roster. */
+    const benchedIds = new Set(
+      (horseRead.rows as Array<{ id: string; horse_status?: string | null }>)
+        .filter((h) => (h.horse_status ?? '').trim().toLowerCase() === 'disabled')
+        .map((h) => h.id)
+    );
     const hourUTC = new Date().getUTCHours();
 
     /**
@@ -902,6 +910,54 @@ export class HorseSessionRotator {
       } catch (err) {
         reportError(err, 'HorseSessionRotator.retireLeave');
       }
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  OFF THE ROSTER, OUT OF THE SEAT (Dan 2026-10-23)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * "KEEP IT UNDER 35-50 TOTAL HORSES AT ANY TIME FOR ALL GAME TYPES" and
+     * "ONLY ALLOW THE HORSES THAT HAVE SHOWN TO BE PROFITABLE PLAYING PLO PLAY
+     * THOSE GAMES." The fleet cap and the bench stop NEW seats; this pass
+     * clears the old ones. A benched horse at any cash table, and a horse off
+     * the PLO roster at a PLO cash table, stands up through the engine's own
+     * leaveTable() - folds if mid-hand, cashes out at the end of the hand -
+     * exactly like every other departure here. Tournament seats are not in
+     * byTable, so nobody is pulled out of a running event. An unread PLO
+     * roster walks nobody out of PLO (undefined is not false).
+     */
+    await refreshPloRoster();
+    let rosterLeaves = 0;
+    for (const [tableId, tableSeats] of byTable) {
+      if (!this.lifecycleIsCurrent(generation)) return;
+      const t = (tableSeats[0] as any)?.tables;
+      const engine = this.getEngine(tableId);
+      if (!engine) continue;
+      for (const seat of tableSeats) {
+        const uid = String(seat.user_id ?? '');
+        if (!uid || !horseIds.has(uid)) continue;
+        if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
+        const benched = benchedIds.has(uid);
+        const offPlo = ploRosterAllows(uid, t?.game_variant) === false;
+        if (!benched && !offPlo) continue;
+        try {
+          const result = await engine.leaveTable(uid);
+          if (!this.lifecycleIsCurrent(generation)) return;
+          this.noteLeaveResult(tableId, uid, result);
+          if (result.success) {
+            rosterLeaves++;
+            this.breaks.delete(HorseSessionRotator.breakKey(tableId, uid));
+          }
+        } catch (err) {
+          reportError(err, 'HorseSessionRotator.rosterLeave');
+        }
+      }
+    }
+    if (rosterLeaves > 0) {
+      console.log(
+        `[SessionRotator] ${rosterLeaves} horse(s) leaving cash seats - benched off the roster or off the PLO roster`
+      );
     }
 
     /* Who this cycle has already committed to moving or resting. A horse in

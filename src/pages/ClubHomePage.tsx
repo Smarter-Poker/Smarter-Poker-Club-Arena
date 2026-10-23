@@ -29,7 +29,7 @@ import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { withClubContext } from '../utils/clubScopedPath';
+import { matchesClubParam, withClubContext } from '../utils/clubScopedPath';
 /* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
    INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
    /tournaments/:id destination must render in the tab rather than change the
@@ -4001,7 +4001,7 @@ function ClubHomePageContent({
       clubIdOverride ||
       searchParams.get('invite') !== '1' ||
       !club ||
-      club.id !== clubId ||
+      !matchesClubParam(club, clubId) ||
       !isOwner
     )
       return;

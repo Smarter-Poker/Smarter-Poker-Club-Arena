@@ -8,10 +8,10 @@ import {
   exploitHandIncrements,
   freshExploitCounters,
   decayAndAdd,
-} from './HorseOpponentExploit.js';
-import { MEMORY_VARIANTS, validOpponentProfile } from './HorseOpponentMemory.js';
-import { HorseMind } from './HorseMind.js';
-import publicActions from './fixtures/opponent-memory-public-actions.json';
+} from '../src/engine/HorseOpponentExploit.js';
+import { MEMORY_VARIANTS, validOpponentProfile } from '../src/engine/HorseOpponentMemory.js';
+import { HorseMind } from '../src/engine/HorseMind.js';
+import publicActions from '../src/engine/fixtures/opponent-memory-public-actions.json';
 
 const PG =
   process.env.PG_BIN ??

@@ -1554,7 +1554,9 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
-        run: npx vitest run --config vitest.opponent-memory.config.ts --reporter=verbose
+        run: |
+          npx tsc --noEmit -p tsconfig.opponent-memory.json
+          npx vitest run --config vitest.opponent-memory.config.ts --reporter=verbose
       - name: A treasury-funded seat reads as a Club Bank send (20261012040542)
         if: matrix.shard == 2
         env:

@@ -4,7 +4,7 @@ export default defineConfig({
   ...base,
   test: {
     ...base.test,
-    include: ['src/engine/HorseOpponentMemory.postgres.ts'],
+    include: ['tests/HorseOpponentMemory.postgres.test.ts'],
     maxWorkers: 1,
     minWorkers: 1,
   },

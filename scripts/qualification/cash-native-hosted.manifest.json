@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 231035,
-      "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
+      "bytes": 231107,
+      "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3641,6 +3641,17 @@
     "current": {
       "bytes": 231035,
       "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
+    }
+  },
+  "opponentMemoryWorkflowInput20261023": {
+    "reason": "Add dedicated PostgreSQL 17 opponent-memory tests and their typecheck to existing required accounting shard 2. Existing financial source, native fixtures, assertions, routes and deadlines are unchanged. Current workflow input identity only; historical qualification evidence remains unchanged and new hosted results remain required.",
+    "previous": {
+      "bytes": 231035,
+      "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
+    },
+    "current": {
+      "bytes": 231107,
+      "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
     }
   }
 }

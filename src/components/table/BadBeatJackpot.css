@@ -64,8 +64,6 @@
      further ~47px DOWN, off the chrome and onto the felt. That is the drift
      Dan reported on 2026-08-25. The notch is handled once, by the bar. */
   top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
 
   background:
     var(--sp-dialog-blue) padding-box,
@@ -240,8 +238,7 @@
 .bbj-mini-plate {
   position: absolute;
   top: var(--sp-bbj-plate-h);
-  left: 50%;
-  transform: translateX(-50%);
+
   display: flex;
   align-items: center;
   justify-content: center;
@@ -820,10 +817,14 @@
   }
 }
 
-/* The console's silver X, with the same geometry on both jackpot banners.
-   Reserve its width inside the existing plate so it never covers the amount. */
+/* Both banners sit beneath the hamburger in the same 6px left gutter.
+   The containing table slot already starts below the tab bar. Keep their
+   vertical budget so moving or hiding banners never moves live seats.
+   Reserve the matching silver X inside each plate, clear of the amount. */
 .bbj-widget,
 .bbj-mini-plate {
+  left: 6px;
+  transform: none;
   padding-right: 28px;
 }
 

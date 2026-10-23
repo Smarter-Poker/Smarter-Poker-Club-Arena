@@ -2,7 +2,7 @@
  * No funding, roster, activity-policy or direct buy-in RPC writes. Unknown writes
  * are reconciled once through their real receipt; a new intent is never sent.
  */
-import { acceptPlayerTerms } from './lightning-pilot-player.mjs';
+import { acceptPlayerTerms, WITNESS_PLAYERS } from './lightning-pilot-player.mjs';
 import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 export const ADMISSION_PLAYER = 'a23ca5c9-b748-482f-9b59-9db35f7aa996';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
@@ -356,7 +356,7 @@ export async function witnessAdmission({
   const report = {
     status: 'unknown',
     phase: 'scope',
-    playerId: ADMISSION_PLAYER,
+    playerId: WITNESS_PLAYERS.includes(pin?.playerId) ? pin.playerId : null,
     clusterId: null,
     join: { outcome: 'not_requested', tableId: null },
     buyIn: { outcome: 'not_requested', requestId: null, receipt: 'not_read' },
@@ -389,7 +389,7 @@ export async function witnessAdmission({
   };
   try {
     if (
-      pin?.playerId !== ADMISSION_PLAYER ||
+      !WITNESS_PLAYERS.includes(pin?.playerId) ||
       pin.clubId !== CLUB ||
       !UUID.test(pin.clusterId) ||
       typeof acceptTerms !== 'boolean' ||

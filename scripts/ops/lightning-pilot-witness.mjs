@@ -65,7 +65,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
     const maxBatch = Number(env.PILOT_BATCH || '100');
     if (mode !== 'replay') {
       if (mode === 'admission') {
-        if (pin.playerId !== ADMISSION_PLAYER) throw new Error();
+        if (!WITNESS_PLAYERS.includes(pin.playerId)) throw new Error();
       } else assertPlayerPin(pin);
       if (['latency', 'financial'].includes(mode) && !WITNESS_PLAYERS.includes(pin.playerId))
         throw new Error();

@@ -815,3 +815,22 @@ test('daily bonus dismissal contract matches its real named secondary plate', ()
     /secondary:\s*\{[\s\S]*?label: 'Not Now'[\s\S]*?onClick: onClose,[\s\S]*?'aria-label': 'Close'/
   );
 });
+
+test('admission accepts exactly the consented witness players and refuses anyone else first', async () => {
+  const { WITNESS_PLAYERS } = await import('./lightning-pilot-player.mjs');
+  assert.ok(WITNESS_PLAYERS.includes(ADMISSION_PLAYER));
+  assert.ok(WITNESS_PLAYERS.length >= 3);
+  let auth = 0;
+  const f = fixture();
+  f.args.admin.auth.admin.getUserById = async () => {
+    auth++;
+    throw new Error();
+  };
+  const r = await witnessAdmission({
+    ...f.args,
+    pin: { ...pin, playerId: '23040e91-e0d0-430d-b18e-f9f67c385d90' },
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.playerId, null);
+  assert.equal(auth, 0);
+});

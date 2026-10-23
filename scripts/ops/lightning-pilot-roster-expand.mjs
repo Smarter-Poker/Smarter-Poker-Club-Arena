@@ -361,7 +361,7 @@ export function createExpansionAdapter({ admin, owner, createClient, url, timeou
     if (r.error || !Number.isSafeInteger(r.count)) readFailure(r, `COUNT_${table.toUpperCase()}`);
     return r.count;
   };
-  async function validateIncoming(id, { strict }) {
+  async function validateIncoming(id) {
     if (!scope.incoming.includes(id)) fail('UNPINNED_HORSE');
     const p = data(
       await admin
@@ -430,11 +430,13 @@ export function createExpansionAdapter({ admin, owner, createClient, url, timeou
       }).length;
       playing = booked.filter((b) => b.status === 'playing').length;
     }
-    // Never take a horse that is seated in a running tournament. A cash seat
-    // or a pre-start booking elsewhere is preserved exactly as the standing
-    // assignment preserves the original 72's: it finishes normally (a zero-cost
-    // pre-start booking keeps its normal withdrawal). Recorded, never touched.
-    if (strict && playing !== 0) fail('INCOMING_SEATED_IN_RUNNING_TOURNAMENT');
+    // Selection (2026-10-23 17:05 UTC, docs/lightning/PILOT-ROSTER-EXPANSION-
+    // 2026-10-23.json) took only horses seated in no running tournament. The
+    // house freerolls register cash-lane horses too (Midday Free Buy, 17:30
+    // UTC, seated 156 of them), so a later seat is recorded, never refused:
+    // joining and funding touch no seat or entry, and the standing assignment
+    // lets every running game and existing entry finish normally, exactly as
+    // for the original 72. It only stops new automated entries.
     return { seats, openCashSessions, liveBookings, playing };
   }
   return {

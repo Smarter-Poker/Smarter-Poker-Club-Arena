@@ -54,3 +54,9 @@ changed zero files and Azure still downloaded LLVM for twelve minutes. Follow
 active local mirror-list references inside `/etc/apt` and apply the same exact
 Azure URI substitution there. A fixture preserves source signatures, priorities,
 comments, unrelated mirrors and unused files, and verifies idempotence.
+
+Hosted scheduling also showed the polling assertion could expire while native
+crypto was pending. The legacy test now holds its first real digest behind a
+controlled promise, verifies the dialog opens before import, releases that gate,
+and joins the actual hydration promises before resetting mocks. This both
+reproduces the ordering and proves completion without a polling deadline.

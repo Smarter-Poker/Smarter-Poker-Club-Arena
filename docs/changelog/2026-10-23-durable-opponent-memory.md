@@ -53,3 +53,8 @@ The hand_history column and triggers require a hot-table DDL lock. The migration
 is declared for the existing daily-maintenance installer; it is never applied
 manually during play. Engine and schema activation remain pending until that
 qualified 04:00 Chicago transaction has installed and verified both.
+
+The accepted hand carries the authoritative dealt-card-map count separately
+from the access-control roster. A chair included only for historical access
+cannot move a short-handed read into the full-ring bucket. Legacy rows whose
+authoritative count is unavailable retain their explicit roster inference.

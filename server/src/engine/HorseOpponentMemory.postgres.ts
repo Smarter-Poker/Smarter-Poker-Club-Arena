@@ -217,6 +217,32 @@ describe('durable opponent memory with real PostgreSQL', () => {
     expect((await profile('plo5', 'tournament')).counters.hands).toBe(0);
   });
 
+  it('uses the authoritative dealt count rather than the access-control roster size', async () => {
+    const roster = Array.from({ length: 8 }, (_, n) => ({
+      userId: n === 0 ? uid : `91000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    }));
+    await client.query(
+      'insert into hand_history(id,game_variant,players,actions,horse_exploit_dealt_count) values($1,$2,$3,$4,$5)',
+      [
+        '92000000-0000-4000-8000-000000000001',
+        'plo8',
+        JSON.stringify(roster),
+        JSON.stringify(hand(uid).actions),
+        3,
+      ]
+    );
+    expect(Number((await profile('plo8')).observed_hands)).toBe(1);
+    const full = (
+      await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+        [uid],
+        'plo8',
+        'cash',
+        'full',
+      ])
+    ).rows[0];
+    expect(Number(full.observed_hands)).toBe(0);
+  });
+
   it('serializes simultaneous accepted hands and rolls learning back with a refused transaction', async () => {
     const before = await profile('plo6');
     const a = new Client({

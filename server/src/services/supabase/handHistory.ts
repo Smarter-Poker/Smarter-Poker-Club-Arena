@@ -730,7 +730,13 @@ export async function logHandHistory(params: {
       : record;
   });
 
+  const opponentDealtCount = params.holeCardsAll?.size;
   const row = {
+    // The RLS roster can include non-dealt chairs. Only the authoritative
+    // dealt-card map can state the population the opponent read belongs to.
+    ...(opponentDealtCount !== undefined && opponentDealtCount >= 2 && opponentDealtCount <= 10
+      ? { horse_exploit_dealt_count: opponentDealtCount }
+      : {}),
     // See `handId` on the params above. Omitted entirely when the caller did
     // not mint one, so the column keeps its gen_random_uuid() default and
     // every other caller of this function is byte-identical to before.

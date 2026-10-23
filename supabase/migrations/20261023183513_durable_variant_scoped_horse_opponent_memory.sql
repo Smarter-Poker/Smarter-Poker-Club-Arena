@@ -13,11 +13,12 @@ CREATE TABLE public.horse_exploit_profiles (
  PRIMARY KEY(user_id,variant,mode,size)
 );
 ALTER TABLE public.horse_exploit_profiles ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.horse_exploit_profiles FROM PUBLIC,anon,authenticated;
-GRANT SELECT,INSERT,UPDATE ON public.horse_exploit_profiles TO service_role;
+REVOKE ALL ON public.horse_exploit_profiles FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.horse_exploit_profiles TO service_role;
 -- Old rows are distinguishable from every row accepted after installation,
 -- including transactions that began before this migration. No timestamp guess.
-ALTER TABLE public.hand_history ADD COLUMN horse_exploit_recorded boolean NOT NULL DEFAULT false;
+ALTER TABLE public.hand_history ADD COLUMN horse_exploit_recorded boolean NOT NULL DEFAULT false,
+ ADD COLUMN horse_exploit_dealt_count smallint CHECK(horse_exploit_dealt_count BETWEEN 2 AND 10);
 
 CREATE FUNCTION public.fn_horse_exploit_add(p_base jsonb,p_delta jsonb,p_hands bigint DEFAULT 1)
 RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog,public AS $fn$
@@ -109,7 +110,7 @@ DECLARE v_mode text; v_size text; actor record;
 BEGIN
  IF NEW.game_variant IS NULL OR NEW.game_variant NOT IN ('nlh','plo4','plo5','plo6','plo8') THEN RETURN NEW; END IF;
  v_mode:=CASE WHEN NEW.tournament_id IS NULL THEN 'cash' ELSE 'tournament' END;
- v_size:=CASE WHEN jsonb_array_length(NEW.players)<=2 THEN 'hu' WHEN jsonb_array_length(NEW.players)<=5 THEN 'short' ELSE 'full' END;
+ v_size:=CASE WHEN coalesce(NEW.horse_exploit_dealt_count,jsonb_array_length(NEW.players))<=2 THEN 'hu' WHEN coalesce(NEW.horse_exploit_dealt_count,jsonb_array_length(NEW.players))<=5 THEN 'short' ELSE 'full' END;
  -- Sorted lock acquisition protects simultaneous multi-table players.
  FOR actor IN SELECT * FROM jsonb_each(public.fn_horse_exploit_increments(NEW.actions)) ORDER BY key LOOP
   INSERT INTO public.horse_exploit_profiles(user_id,variant,mode,size,counters,observed_hands)
@@ -153,7 +154,7 @@ BEGIN
      SELECT id,created_at,actions FROM public.hand_history
       WHERE NOT horse_exploit_recorded AND game_variant=p_variant
        AND (tournament_id IS NOT NULL)=(p_mode='tournament')
-       AND (CASE WHEN jsonb_array_length(players)<=2 THEN 'hu' WHEN jsonb_array_length(players)<=5 THEN 'short' ELSE 'full' END)=p_size
+       AND (CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END)=p_size
        AND players @> jsonb_build_array(jsonb_build_object('userId',uid))
       ORDER BY created_at DESC,id DESC LIMIT 1024
     ) recent ORDER BY created_at,id LOOP
@@ -174,6 +175,6 @@ BEGIN
  END LOOP;
  RETURN QUERY SELECT * FROM public.horse_exploit_profiles WHERE user_id=ANY(p_user_ids) AND variant=p_variant AND mode=p_mode AND size=p_size ORDER BY user_id;
 END $fn$;
-REVOKE ALL ON FUNCTION public.fn_horse_exploit_add(jsonb,jsonb,bigint),public.fn_horse_exploit_increments(jsonb),public.fn_horse_exploit_accept_hand(),public.fn_horse_exploit_mark_hand(),public.fn_horse_exploit_profiles_read(text[],text,text,text) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_horse_exploit_add(jsonb,jsonb,bigint),public.fn_horse_exploit_increments(jsonb),public.fn_horse_exploit_profiles_read(text[],text,text,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_exploit_add(jsonb,jsonb,bigint),public.fn_horse_exploit_increments(jsonb),public.fn_horse_exploit_accept_hand(),public.fn_horse_exploit_mark_hand(),public.fn_horse_exploit_profiles_read(text[],text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_horse_exploit_profiles_read(text[],text,text,text) TO service_role;
 COMMIT;

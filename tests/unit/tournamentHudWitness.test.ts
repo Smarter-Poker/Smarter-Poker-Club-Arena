@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   eligibleHudClock,
+  hudClockRejectionCategory,
   provenPreHudAttrition,
   createHudClockReader,
   hudEventObservationMs,
@@ -69,8 +70,68 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
     // this exact clock. It is no longer a parameter this function takes.
     expect(eligibleHudClock(sixMinute, recoveredAt)).not.toBeNull();
   });
+  it('refuses the recorded natural level delayed by the synchronized :55 break', () => {
+    const observedAt = Date.parse('2026-10-23T04:53:25.555Z');
+    const recorded = {
+      ...row,
+      current_level: 9,
+      level_started_at: '2026-10-23T04:48:36.651Z',
+      blind_structure: [{ durationMinutes: 8 }],
+      synchronized_breaks: true,
+    };
+    // Run39900848437:191096ms remained; :55 paused level9 until05:00.
+    expect(eligibleHudClock(recorded, observedAt)).toBeNull();
+    expect(selectableHudClock(recorded, observedAt)).toBeNull();
+    expect(hudClockRejectionCategory(recorded, observedAt, MTT_HUD_LEVEL_CAP_MS, null)).toBe(
+      'synchronized_break_window'
+    );
+    expect(
+      eligibleHudClock({ ...recorded, synchronized_breaks: false }, observedAt)?.remainingMs
+    ).toBe(191_096);
+  });
+
+  it('keeps delivery/render reserve outside synchronized breaks and resumes after the hour', () => {
+    const at = Date.parse('2026-10-23T04:53:00Z');
+    const clockRow = {
+      ...row,
+      current_level: 0,
+      blind_structure: [{ durationMinutes: 2 }],
+      synchronized_breaks: true,
+    };
+    // Boundary04:54 plus60s reserve reaches :55 and is refused, even if
+    // on_break has not yet been written by the engine. One millisecond earlier fits.
+    expect(
+      eligibleHudClock({ ...clockRow, level_started_at: '2026-10-23T04:52:00Z' }, at)
+    ).toBeNull();
+    expect(
+      eligibleHudClock({ ...clockRow, level_started_at: '2026-10-23T04:51:59.999Z' }, at)
+    ).not.toBeNull();
+    expect(
+      eligibleHudClock(
+        { ...clockRow, level_started_at: '2026-10-23T04:55:00Z' },
+        Date.parse('2026-10-23T04:55:01Z')
+      )
+    ).toBeNull();
+    expect(
+      eligibleHudClock(
+        { ...clockRow, level_started_at: '2026-10-23T05:00:00Z' },
+        Date.parse('2026-10-23T05:00:01Z')
+      )
+    ).not.toBeNull();
+    // The schema/engine default is synchronized unless explicitly opted out.
+    expect(
+      eligibleHudClock(
+        { ...clockRow, synchronized_breaks: undefined, level_started_at: '2026-10-23T04:52:00Z' },
+        at
+      )
+    ).toBeNull();
+  });
   it('refuses a level longer than the certifiable cap, right at its boundary', () => {
-    const atCap = { ...row, blind_structure: [{ durationMinutes: MTT_HUD_LEVEL_CAP_MS / 60_000 }] };
+    const atCap = {
+      ...row,
+      synchronized_breaks: false,
+      blind_structure: [{ durationMinutes: MTT_HUD_LEVEL_CAP_MS / 60_000 }],
+    };
     const overCap = {
       ...row,
       blind_structure: [{ durationMinutes: MTT_HUD_LEVEL_CAP_MS / 60_000 + 1 }],
@@ -243,6 +304,10 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
       await reader.close();
       reader = undefined;
       expect(paths.some((path) => path.includes('/auth/v1/logout?scope=local'))).toBe(true);
+      const tournamentRead = paths.find((path) => path.startsWith('/rest/v1/tournaments?'));
+      expect(
+        new URL(tournamentRead!, 'https://fixture.invalid').searchParams.get('select')?.split(',')
+      ).toContain('synchronized_breaks');
     } finally {
       await reader?.close();
       vi.unstubAllGlobals();

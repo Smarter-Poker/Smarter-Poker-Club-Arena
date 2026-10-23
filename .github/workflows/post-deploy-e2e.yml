@@ -1296,13 +1296,14 @@ jobs:
     if: needs.publication-gate.outputs.should_run == 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
-    # 12m prerequisite + 3 x 6.5m tournament cases + 6.5m cash case leaves
-    # 22m for checkout/setup, fixture lifecycle, provenance and reports.
-    # Preserve the existing job envelope; MTT shares the original case limit.
-    # +16m (2026-10-04): a certificate that would start within 15 minutes of
-    # the :53 announcement first waits for that break (await-engine-gameplay).
+    # Preserve the existing prerequisite, maintenance-wait and cleanup margin.
+    # The daily maintenance announcement can defer a certificate's start;
+    # await-engine-gameplay separately waits for the exact engine to resume.
     # The opt-in adds a separate 20m observation plus 2m setup/retention.
-    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 98 || 76 }}
+    # Two proven natural MTT closures may each require another complete subject:
+    # 2 x (390s startup + 15m maximum HUD clock + 60s reserve) = 45m.
+    # Preserve the existing 76/98-minute overhead and optional multirun budget.
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 143 || 121 }}
     permissions:
       contents: read
     # An explicit passive observation owns a distinct serialized queue. Ordinary

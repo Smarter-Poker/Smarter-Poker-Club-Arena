@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-23-horse-memory-strategy",
+      "ownerOrder": "Dan, 2026-10-23: \"you have to push and publish all of these changes and upgrades NOW\"; \"do not wait until 4 am to do this\". Holdem and all PLO opponent memory, premium raises, continuation and range advantage.",
+      "contains": "f35c068daeefd3005f967af16844a336a53d2e6b",
+      "notBefore": "2026-10-23T20:41:08Z",
+      "notAfter": "2026-10-24T02:41:08Z",
+      "migrations": ["20261023183513_durable_variant_scoped_horse_opponent_memory.sql"]
+    },
+    {
       "id": "2026-10-23-river-nuts-v2",
       "ownerOrder": "Dan, 2026-10-23 11:07 America/Chicago: \"NO, I WANT YOU TO RUN THIS NOW, DO A 11:55 ENGINE RESET AND MAKE THIS LIVE NOW.\" (river nuts always bet full, PR #7788)",
       "contains": "6416f795ba314647f381856f1dd645be48920f22",

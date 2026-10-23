@@ -46,6 +46,27 @@ describe('opponent memory request receipts', () => {
     expect(await createOpponentMemorySchemaProbe()()).toBe('unknown');
   });
 
+  it('recovers a missing startup schema on a later original request without polling', async () => {
+    let time = 0;
+    const abortSignal = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: { code: 'PGRST205' } })
+      .mockResolvedValue({ data: [], error: null });
+    mocks.from.mockReturnValue({ select: () => ({ limit: () => ({ abortSignal }) }) });
+    const probe = createOpponentMemorySchemaProbe(() => time);
+    const read = createDecisionOpponentProfileReader(probe);
+    expect(await read(request())).toBeUndefined();
+    time = 59_999;
+    expect(await read(request())).toBeUndefined();
+    expect(abortSignal).toHaveBeenCalledTimes(1);
+    time = 60_000;
+    expect(await Promise.all([read(request()), read(request())])).toEqual([[row()], [row()]]);
+    expect(abortSignal).toHaveBeenCalledTimes(2);
+    time = 180_000;
+    expect(await probe()).toBe('installed');
+    expect(abortSignal).toHaveBeenCalledTimes(2);
+  });
+
   it('deduplicates concurrent reads for a hand and refreshes for the next hand', async () => {
     const read = createDecisionOpponentProfileReader(async () => 'installed');
     const [a, b] = await Promise.all([read(request()), read(request('table:1:3:lease:other'))]);

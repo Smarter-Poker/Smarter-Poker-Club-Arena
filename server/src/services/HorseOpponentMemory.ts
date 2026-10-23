@@ -9,13 +9,17 @@ import {
 } from '../engine/HorseOpponentMemory.js';
 
 export type OpponentMemorySchema = 'installed' | 'unavailable' | 'unknown';
-/** One schema read per process/worker lifetime. This permits an unrelated
- * engine release before the declared schema window while keeping the new
- * feature explicitly inactive. It never polls or repairs the database. */
-export function createOpponentMemorySchemaProbe() {
+/** Installed schema is cached. Failed probes recover on an original request
+ * after a bounded cooldown; no timer or background database repair is involved. */
+export function createOpponentMemorySchemaProbe(now = Date.now) {
   let state: Promise<OpponentMemorySchema> | null = null;
-  return (): Promise<OpponentMemorySchema> =>
-    (state ??= (async () => {
+  let retryAt = Infinity;
+  return (): Promise<OpponentMemorySchema> => {
+    if (state && now() >= retryAt) {
+      state = null;
+      retryAt = Infinity;
+    }
+    return (state ??= (async () => {
       try {
         const { data, error } = await supabase
           .from('horse_exploit_profiles')
@@ -32,7 +36,11 @@ export function createOpponentMemorySchemaProbe() {
         reportError(error, 'HorseOpponentMemory.schema');
         return 'unknown';
       }
-    })());
+    })().then((result) => {
+      retryAt = result === 'installed' ? Infinity : now() + 60_000;
+      return result;
+    }));
+  };
 }
 export const horseOpponentMemorySchema = createOpponentMemorySchemaProbe();
 

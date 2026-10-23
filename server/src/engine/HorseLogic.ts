@@ -227,7 +227,13 @@ import { anteOrbitCostBB } from './AnteMath.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
-import { handClassRead, suitedness, aceSuited } from './HorseHandClasses.js';
+import { handClassRead } from './HorseHandClasses.js';
+import {
+  premiumPreflopAnchors,
+  shouldPriceTerminalFlop,
+  makeBarrelContinuation,
+  rangeAdvantageFor,
+} from './HorseContinuation.js';
 import { personaFromValue, followsSolver, type HorsePersonaV2 } from './HorsePersona.js';
 // V38 (2026-09-03): the EV engine — the arithmetic behind every choice, the
 // arbiter for the games with no solver export and for every river fold/call
@@ -4523,21 +4529,10 @@ export class HorseLogic {
       player.user_id
     );
     if (telemetryOn(opts) && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
-    const holdemPremiumPair =
-      !vi.isOmaha &&
-      !vi.isShortDeck &&
-      !vi.isFixedLimit &&
-      player.cards.length === 2 &&
-      player.cards[0].rank === player.cards[1].rank &&
-      (player.cards[0].rank === 'A' || player.cards[0].rank === 'K');
-    const suitedPremium: 'aces' | 'kings' | undefined =
-      (opts.v46Charts ?? true) !== false && vi.isOmaha
-        ? player.cards.filter((c) => c.rank === 'A').length === 2 && aceSuited(player.cards)
-          ? 'aces'
-          : player.cards.filter((c) => c.rank === 'K').length === 2 && suitedness(player.cards) >= 2
-            ? 'kings'
-            : undefined
-        : undefined;
+    const { holdemPremiumPair, suitedPremium } = premiumPreflopAnchors(player.cards, {
+      ...vi,
+      isOmaha: vi.isOmaha && (opts.v46Charts ?? true) !== false,
+    });
     const intent = decidePreflopV7({
       strength,
       position,
@@ -5813,11 +5808,26 @@ export class HorseLogic {
     const rankCounts: Record<string, number> = {};
     for (const r of boardRanks) rankCounts[r] = (rankCounts[r] || 0) + 1;
     const pairedBoard = Object.values(rankCounts).some((n) => n >= 2);
-    // NLH only: in Omaha equities run close and everyone flops draws, so a
-    // high-card dry board does not hand the aggressor a range edge — the A/B
-    // showed the range-c-bet upgrade does not translate, so it is gated off.
+    // Compare the two public ranges on the actual board. The old high-card
+    // NLH shortcut remains only when no range pair can be estimated; Omaha
+    // never inherits that shortcut. Uncertain samples grant no range edge.
+    const ownRange =
+      useMind && useCbet10 && useIQ && opponents.length === 1 && !multiBoard36
+        ? HorseMind.bandFor(player.user_id, gs.actionHistory, gs.bigBlind, useSizeReads, board)
+        : null;
+    const opponentRange = bands?.[0];
+    const rangeAdvantage =
+      ownRange && opponentRange ? rangeAdvantageFor(board, ownRange, opponentRange, vi) : null;
+    if (rangeAdvantage && tele15) {
+      if (rangeAdvantage.advantage) noteFire('horse_continuation_range_advantage');
+      else if (rangeAdvantage.disadvantage) noteFire('horse_continuation_range_disadvantage');
+    }
     const boardFavorsAggressor =
-      useCbet10 && useIQ && !vi.isOmaha && boardHasHigh && wetness < 0.4 && !pairedBoard;
+      useCbet10 &&
+      useIQ &&
+      (rangeAdvantage
+        ? rangeAdvantage.advantage
+        : !vi.isOmaha && boardHasHigh && wetness < 0.4 && !pairedBoard);
     // V3 bluff gating: blockers upgrade bluffs; wet boards without one demote.
     const blockerMod = blocker ? 1.35 : wetness > 0.55 ? 0.7 : 1.0;
     // V4: position scales bluffing — pressure comes cheaper in position.
@@ -6510,18 +6520,20 @@ export class HorseLogic {
       // terminal wager before the deep-stack check/protection mixes. This is
       // an EV comparison, not a sunk-cost instruction to shove every board.
       if (
-        (opts.v38Ev ?? true) !== false &&
-        street === 'flop' &&
-        !vi.isFixedLimit &&
-        initiative === 'hero' &&
-        stack > 0 &&
-        stack < pot * 0.33 &&
-        (gs.actionHistory ?? []).some(
-          (a) =>
-            a.stage === 'preflop' &&
-            a.userId === player.user_id &&
-            (a.action === 'raise' || a.action === 'bet')
-        )
+        shouldPriceTerminalFlop({
+          enabled: (opts.v38Ev ?? true) !== false,
+          street,
+          fixed: vi.isFixedLimit,
+          initiative,
+          stack,
+          pot,
+          raisedPreflop: (gs.actionHistory ?? []).some(
+            (a) =>
+              a.stage === 'preflop' &&
+              a.userId === player.user_id &&
+              (a.action === 'raise' || a.action === 'bet')
+          ),
+        })
       ) {
         const remainder = evaluateSpot({
           equity,
@@ -6998,9 +7010,16 @@ export class HorseLogic {
           riskPremium: risk,
           minBet: Math.max(gs.minRaise || 0, 0.01),
           maxBet: vi.isPotLimit ? pot : stack,
-          initiative: initiative === 'hero' || prevChecked,
+          initiative:
+            (initiative === 'hero' || prevChecked) && rangeAdvantage?.disadvantage !== true,
           // fixed limit has one size; pot limit tops out at the pot
-          sizes: vi.isFixedLimit ? [1] : vi.isPotLimit ? [0.33, 0.5, 0.75, 1.0] : undefined,
+          sizes: vi.isFixedLimit
+            ? [1]
+            : vi.isPotLimit
+              ? rangeAdvantage?.advantage
+                ? [0.25, 0.33, 0.5, 0.75, 1]
+                : [0.33, 0.5, 0.75, 1]
+              : undefined,
           rand: fastRandom,
         });
         if (verdict38.pick.kind === 'bet') {
@@ -8033,7 +8052,7 @@ export class HorseLogic {
       useMind &&
       !isRiver &&
       !solverCall32 &&
-      oppCount === 1 &&
+      opponents.length === 1 &&
       !vi.isFixedLimit &&
       !gs.bombPot &&
       !gs.communityCards2?.length &&
@@ -8089,12 +8108,12 @@ export class HorseLogic {
         bettor?.userId === opp.user_id &&
         opp.stack > 0
       ) {
-        continuation38 = {
+        continuation38 = makeBarrelContinuation({
           betProbability: read.mean,
           betFraction: potFrac,
           opponentStack: opp.stack,
           streets: street === 'flop' ? 2 : 1,
-        };
+        });
       }
     }
     const solverless38 = vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit;

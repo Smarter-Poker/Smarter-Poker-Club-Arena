@@ -76,50 +76,14 @@ export interface EvOpponentModel {
   canRespond?: boolean;
 }
 
-/** Bounded call-side scenario. Future bets use this opponent's observed
- * frequency and current pot fraction. Equity is against the current range;
- * this is not a solver export or a claim about an unseen river holding. */
-export interface BarrelContinuation {
-  betProbability: number;
-  betFraction: number;
-  opponentStack: number;
-  streets: number;
-}
-
-export function barrelContinuationValue(spot: {
-  equity: number;
-  pot: number;
-  toCall: number;
-  stack: number;
-  continuation: BarrelContinuation;
-  rakeMarg?: number;
-  riskPremium?: number;
-}): number {
-  const { continuation: plan } = spot;
-  const c = Math.min(spot.stack, Math.max(0, spot.toCall));
-  const q = clamp(plan.betProbability, 0, 1);
-  const f = Math.max(0, plan.betFraction);
-  const rake = clamp(spot.rakeMarg ?? 0, 0, 0.5);
-  const risk = clamp(spot.riskPremium ?? 0, 0, 0.15);
-  const terminal = (pot: number, spent: number): number =>
-    clamp(spot.equity * (1 - rake) - risk * Math.sqrt(spent / Math.max(1, spot.stack)), 0, 1) * pot;
-  const value = (pot: number, hero: number, opp: number, left: number, spent: number): number => {
-    if (left <= 0 || hero <= 0 || opp <= 0 || f <= 0 || q <= 0) return terminal(pot, spent);
-    const bet = Math.min(f * pot, hero, opp);
-    const checked = value(pot, hero, opp, left - 1, spent);
-    const called = value(pot + 2 * bet, hero - bet, opp - bet, left - 1, spent + bet) - bet;
-    return (1 - q) * checked + q * Math.max(0, called);
-  };
-  return (
-    value(
-      spot.pot + c,
-      spot.stack - c,
-      Math.max(0, plan.opponentStack),
-      Math.min(2, Math.max(0, Math.floor(plan.streets))),
-      c
-    ) - c
-  );
-}
+import {
+  callContinuationValue,
+  wagerRealization,
+  continuationMixWindow,
+  type BarrelContinuation,
+} from './HorseContinuation.js';
+export { barrelContinuationValue } from './HorseContinuation.js';
+export type { BarrelContinuation } from './HorseContinuation.js';
 
 export interface EvSpot {
   /** hero's equity vs the range in the pot (0..1), caps already applied */
@@ -233,26 +197,16 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   if (facing) {
     candidates.push({ kind: 'fold', ev: 0 });
     // Calling: the pot already holds the wager; hero puts in c to see it.
-    const callRealization = c >= stack ? 1 : r;
-    const callEquity = clamp(
-      eq * callRealization * (1 - rake) - risk * Math.sqrt(clamp(c / Math.max(1, stack), 0, 1)),
-      0,
-      1
-    );
-    const evCall =
-      spot.continuation && c < stack
-        ? // The explicit future-bet tree replaces the generic realization
-          // discount; applying both would charge the same later fold twice.
-          barrelContinuationValue({
-            equity: eq,
-            pot: P,
-            toCall: c,
-            stack,
-            continuation: spot.continuation,
-            rakeMarg: rake,
-            riskPremium: risk,
-          })
-        : callEquity * (P + c) - c;
+    const evCall = callContinuationValue({
+      equity: eq,
+      realization: r,
+      pot: P,
+      call: c,
+      stack,
+      rake,
+      risk,
+      continuation: spot.continuation,
+    });
     candidates.push({ kind: 'call', ev: evCall });
   } else {
     // A check with the lead is not a free card: the opponent gets to bet
@@ -295,7 +249,7 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
     const realizedCont = clamp(
       // Putting the effective stack in ends future betting. Discounting
       // this equity for later folds made short-stack value jams check instead.
-      eqCont * (c + s >= eff - 0.005 ? 1 : r) * (1 - rake) - risk * Math.sqrt(clamp(share, 0, 1)),
+      eqCont * wagerRealization(r, c + s, eff) * (1 - rake) - risk * Math.sqrt(clamp(share, 0, 1)),
       0,
       1
     );
@@ -319,7 +273,7 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
   // weighted by how close it sits to the best. The best keeps at least the
   // largest share; a candidate at exactly the same EV shares evenly.
   // A near-indifference mix cannot cost a large part of the chips behind.
-  const window = MIX_WINDOW_POT * Math.min(P, eff || P);
+  const window = continuationMixWindow(P, eff, MIX_WINDOW_POT);
   const pool = candidates.filter((a) => best.ev - a.ev <= window);
   let pick = best;
   if (pool.length > 1) {

@@ -789,6 +789,9 @@ export class HorseMind {
       rows.some((p) => !validOpponentProfile(p) || !p.initialized)
     )
       throw new Error('invalid durable opponent profile');
+    // A later validated request can activate a worker whose startup probe
+    // preceded installation or the PostgREST cache reload.
+    if (rows.length > 0) this.enableDurableOpponentMemory();
     let applied = 0;
     for (const p of rows) {
       const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);

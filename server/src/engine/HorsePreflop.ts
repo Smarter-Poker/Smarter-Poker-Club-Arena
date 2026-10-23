@@ -31,6 +31,7 @@
  */
 
 import { potLimitRaiseTo } from './BettingStructure.js';
+import { completePreflopCommitment } from './HorseContinuation.js';
 import {
   tournamentMZone,
   tournamentNextLevelProjectionApplies,
@@ -436,21 +437,7 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   if (ctx.classFoldAlways === true && ctx.toCall > 0) {
     return { a: 'fold' };
   }
-  let out = decidePreflopV7Core(ctx);
-  if (ctx.isFixedLimit !== true && out.a === 'raiseTo' && Number.isFinite(out.to)) {
-    const allInTo = ctx.currentBet - ctx.toCall + ctx.stack;
-    const remainder = allInTo - (out.to as number);
-    // A raise that leaves less than the call it just chose to continue is
-    // a commitment, not a deep-stack size. Finish it now when legal. PLO
-    // must retain a remainder when the pot ceiling forbids the full shove.
-    if (
-      remainder > 0 &&
-      remainder <= Math.min(ctx.toCall, ctx.stack) &&
-      (!ctx.isPotLimit || allInTo <= potLimitRaiseTo(ctx.pot, ctx.currentBet, ctx.toCall))
-    ) {
-      out = { a: 'jam' };
-    }
-  }
+  const out = completePreflopCommitment(decidePreflopV7Core(ctx), ctx);
   if (ctx.v13 === false) return out;
   if (out.a !== 'fold') return out;
   const stack = ctx.stack;

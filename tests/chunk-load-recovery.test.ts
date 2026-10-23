@@ -298,6 +298,39 @@ describe('stale deployment chunk recovery', () => {
     uninstall();
   });
 
+  it.each([true, false])(
+    'keeps guarded CSS recovery when the failed link is present: %s',
+    async (linkPresent) => {
+      vi.resetModules();
+      const browser = new EventTarget();
+      const replace = vi.fn();
+      Object.assign(browser, {
+        location: { href: 'https://example.test/table/observer', replace, reload: replace },
+      });
+      vi.stubGlobal('window', browser);
+      vi.stubGlobal('navigator', {});
+      vi.stubGlobal('caches', undefined);
+      sessionStorage.clear();
+      const recovery = await import('../src/utils/lazyWithRetry');
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.setAttribute('href', 'data:text/css,.recovery{}');
+      if (linkPresent) document.head.appendChild(link);
+      const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
+        payload?: unknown;
+      };
+      event.payload = new Error('Unable to preload CSS for data:text/css,.recovery{}');
+      browser.dispatchEvent(event);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(document.querySelector('link[href="data:text/css,.recovery{}"]')).toBeNull();
+      expect(event.defaultPrevented).toBe(false);
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem(recovery.chunkReloadGuardKey())).toBe('1');
+      uninstall();
+    }
+  );
+
   /* Dan 2026-10-14: the lobby drew with no CSS on an iPad. A failed
      stylesheet link stayed in the document, and Vite's preloader treats any
      present link as loaded, so every retry rendered the route unstyled. */

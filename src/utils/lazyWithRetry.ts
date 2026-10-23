@@ -281,9 +281,10 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
 }
 
 /**
- * Vite emits this before a failed preload rejects. The importer owns retry
- * and recovery: a speculative or optional import must never replace a usable
- * document. This listener only removes failed CSS dependencies for retry.
+ * Vite emits this before a failed preload rejects. JavaScript importers own
+ * retry and recovery so optional imports cannot replace a usable document.
+ * Failed CSS still needs document recovery: Vite remembers that dependency
+ * as seen even after its failed link is removed, so retry alone can skip it.
  */
 /**
  * A STYLESHEET THAT FAILED IS NOT A STYLESHEET THAT LOADED (Dan 2026-10-14,
@@ -294,14 +295,18 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
  * Vite's preloader skips a CSS dependency whose <link> is already in the
  * document, and it does not distinguish a link that LOADED from one that
  * ERRORED. So after one failed CSS fetch, every retry of that route "found"
- * its stylesheet and rendered without it. The failed link is removed here so
- * the next attempt fetches it again and waits for it.
+ * its stylesheet and rendered without it. Removing the failed link clears the
+ * DOM entry, but Vite also remembers it in an internal seen-dependency map.
+ * The guarded document recovery below resets that map for the next load.
  */
-export function dropFailedStylesheet(error: unknown): boolean {
+function failedStylesheetHref(error: unknown): string | undefined {
   const message = (error as { message?: string } | null)?.message ?? '';
-  const match = /Unable to preload CSS for (\S+)/.exec(message);
-  if (!match || typeof document === 'undefined') return false;
-  const href = match[1];
+  return /Unable to preload CSS for (\S+)/.exec(message)?.[1];
+}
+
+export function dropFailedStylesheet(error: unknown): boolean {
+  const href = failedStylesheetHref(error);
+  if (!href || typeof document === 'undefined') return false;
   let removed = false;
   document.querySelectorAll('link[rel="stylesheet"]').forEach((node) => {
     const link = node as HTMLLinkElement;
@@ -319,10 +324,15 @@ export function installVitePreloadErrorRecovery(): () => void {
     const payload = (event as Event & { payload?: unknown }).payload;
     // Let Vite reject into the importing caller. Cancelling here resolves its
     // import to undefined and skips both importWithRetry's non-disruptive
-    // retries and lazyWithRetry's bounded retries. Recovering here also reloads
-    // active tables for optional warmers that already handle their own errors.
+    // retries and lazyWithRetry's bounded retries. Automatically recovering
+    // JavaScript here would interrupt optional warmers that handle errors.
     // Critical lazy imports still request recovery after exhausting retries.
+    // CSS is different: Vite marks dependencies seen before fetching, so a
+    // retry in this document can silently skip the failed stylesheet. Preserve
+    // guarded recovery for CSS, without cancelling its original rejection.
+    const failedCss = failedStylesheetHref(payload) !== undefined;
     dropFailedStylesheet(payload);
+    if (failedCss) void recoverFromStaleChunk(payload);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => window.removeEventListener('vite:preloadError', onPreloadError);

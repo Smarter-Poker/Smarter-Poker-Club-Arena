@@ -163,6 +163,27 @@ afterAll(async () => {
 });
 
 describe('durable opponent memory with real PostgreSQL', () => {
+  it('does not validate the new nullable domain against historical rows but enforces new writes', async () => {
+    const constraint = (
+      await client.query(
+        "select convalidated from pg_constraint where conname='horse_exploit_dealt_count_range' and conrelid='public.hand_history'::regclass"
+      )
+    ).rows;
+    expect(constraint).toEqual([{ convalidated: false }]);
+    await expect(
+      client.query(
+        "update hand_history set horse_exploit_dealt_count=1 where id='20000000-0000-4000-8000-000000000000'"
+      )
+    ).rejects.toMatchObject({ code: '23514' });
+    expect(
+      (
+        await client.query(
+          "select horse_exploit_dealt_count from hand_history where id='20000000-0000-4000-8000-000000000000'"
+        )
+      ).rows
+    ).toEqual([{ horse_exploit_dealt_count: null }]);
+  });
+
   it('SQL action counting matches the live parser, including calls and short all-ins', async () => {
     const actions = [
       { userId: uid, action: 'bb', stage: 'preflop' },

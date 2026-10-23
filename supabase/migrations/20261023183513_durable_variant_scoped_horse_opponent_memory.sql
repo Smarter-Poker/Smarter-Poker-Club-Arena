@@ -18,7 +18,11 @@ GRANT SELECT ON public.horse_exploit_profiles TO service_role;
 -- Old rows are distinguishable from every row accepted after installation,
 -- including transactions that began before this migration. No timestamp guess.
 ALTER TABLE public.hand_history ADD COLUMN horse_exploit_recorded boolean NOT NULL DEFAULT false,
- ADD COLUMN horse_exploit_dealt_count smallint CHECK(horse_exploit_dealt_count BETWEEN 2 AND 10);
+ ADD COLUMN horse_exploit_dealt_count smallint;
+-- New nullable column: historical rows are deliberately unknown. Enforce the
+-- domain on new writes without scanning the entire hot history under a lock.
+ALTER TABLE public.hand_history ADD CONSTRAINT horse_exploit_dealt_count_range
+ CHECK(horse_exploit_dealt_count BETWEEN 2 AND 10) NOT VALID;
 
 CREATE FUNCTION public.fn_horse_exploit_add(p_base jsonb,p_delta jsonb,p_hands bigint DEFAULT 1)
 RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog,public AS $fn$

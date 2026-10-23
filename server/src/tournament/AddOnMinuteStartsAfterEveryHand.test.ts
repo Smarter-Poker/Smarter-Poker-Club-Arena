@@ -6,13 +6,15 @@ import { supabase } from '../services/supabase.js';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 class Harness extends TournamentManagerBase {
   notices: string[] = [];
-  constructor() {
+  constructor(fromStart = false) {
     super('00000000-0000-4000-8000-000000000077', {} as GameServer);
     (this as any).lifecycleEpoch.begin();
     this.running = true;
     this.tournamentCache = {
       addon_break_minutes: 1,
-      addon_from_start: false,
+      addon_from_start: fromStart,
+      start_time: new Date().toISOString(),
+      late_reg_mins: 1,
       addon_cost: 35,
       addon_chips: 30000,
       late_reg_levels: 9,
@@ -27,6 +29,9 @@ class Harness extends TournamentManagerBase {
   }
   open() {
     return this.triggerAddOnPeriod();
+  }
+  close(end: string) {
+    return (this as any).beginAddOnBreak(Date.parse(end));
   }
   pending() {
     return (this as any).addOnDrainPending;
@@ -99,5 +104,125 @@ describe('the paid add-on minute starts after every current hand', () => {
     a.resumeDealing();
     b.resumeDealing();
     await Promise.all([parkedA, parkedB]);
+  });
+});
+
+describe('FreeBuy final add-on minute', () => {
+  it('preserves early purchases then durably drains all hands before the full closing minute', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-23T01:30:00Z'));
+    let saved: any = {
+      addon_from_start: true,
+      add_on_available: true,
+      prize_pool_finalized: false,
+      status: 'RUNNING',
+    };
+    const writes: any[] = [];
+    const chain: any = {
+      update: vi.fn((r: any) => {
+        writes.push(r);
+        Object.assign(saved, r);
+        return chain;
+      }),
+      eq: () => chain,
+      is: () => chain,
+      in: () => chain,
+      select: () => chain,
+      maybeSingle: async () => ({ data: { ...saved }, error: null }),
+      then: (resolve: any) => Promise.resolve({ error: null }).then(resolve),
+    };
+    vi.spyOn(supabase, 'from').mockReturnValue(chain);
+    const m = new Harness(true);
+    const a = new ServerTableEngine('a');
+    const b = new ServerTableEngine('b');
+    (a as any).running = true;
+    (b as any).running = true;
+    m.add('a', a);
+    m.add('b', b);
+    await m.open();
+    expect(saved.addon_period_ends_at).toBe('2026-10-23T01:32:00.000Z');
+    expect(m.pending()).toBe(false);
+    expect(a.requiresExplicitPauseResume()).toBe(false);
+    vi.setSystemTime(new Date('2026-10-23T01:31:00Z'));
+    await m.close(saved.addon_period_ends_at);
+    expect(saved.addon_period_started_at).toBeNull();
+    expect(saved.addon_period_ends_at).toBeNull();
+    expect((m as any).isFreeBuyClosingDrain(saved)).toBe(true);
+    expect(m.pending()).toBe(true);
+    const parkedA = (a as any).awaitPauseGate();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(saved.addon_period_ends_at).toBeNull();
+    vi.setSystemTime(new Date('2026-10-23T01:32:10Z'));
+    const parkedB = (b as any).awaitPauseGate();
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(saved.addon_period_started_at).toBe('2026-10-23T01:32:10.000Z');
+    expect(saved.addon_period_ends_at).toBe('2026-10-23T01:33:10.000Z');
+    expect(m.pending()).toBe(false);
+    expect(a.isParkedBetweenHands()).toBe(true);
+    expect(b.isParkedBetweenHands()).toBe(true);
+    expect(m.notices.filter((n) => n === 'ADDON_PERIOD_START')).toHaveLength(2);
+    const count = writes.length;
+    await m.close(saved.addon_period_ends_at);
+    expect(writes).toHaveLength(count);
+    (a as any).running = false;
+    (b as any).running = false;
+    a.resumeDealing();
+    b.resumeDealing();
+    await Promise.all([parkedA, parkedB]);
+  });
+});
+
+describe('a recovered FreeBuy closing drain', () => {
+  it('inherits the durable hold, recovers a lost open reply, and never renews the committed minute', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-23T02:00:00Z'));
+    const marker: any = {
+      addon_from_start: true,
+      addon_period_triggered: true,
+      addon_period_started_at: null,
+      addon_period_ends_at: null,
+      add_on_available: true,
+      prize_pool_finalized: false,
+      status: 'RUNNING',
+    };
+    let reads = 0;
+    const chain: any = {
+      update: vi.fn((r: any) => {
+        Object.assign(marker, r);
+        return chain;
+      }),
+      eq: () => chain,
+      is: () => chain,
+      select: () => chain,
+      maybeSingle: async () => ({ data: { ...marker }, error: null }),
+      then: (resolve: any) =>
+        Promise.resolve({ error: { message: 'lost response' } }).then(resolve),
+    };
+    vi.spyOn(supabase, 'from').mockImplementation(() => {
+      reads++;
+      return chain;
+    });
+    const m = new Harness(true);
+    Object.assign((m as any).tournamentCache, marker);
+    (m as any).addOnPeriodTriggered = true;
+    (m as any).addOnDrainPending = (m as any).isFreeBuyClosingDrain(marker);
+    const e = new ServerTableEngine('recovered');
+    (e as any).running = true;
+    (m as any).prepareManagedTableEngineForPlay(e);
+    expect(e.requiresExplicitPauseResume()).toBe(true);
+    m.add('recovered', e);
+    const parked = (e as any).awaitPauseGate();
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(marker.addon_period_started_at).toBe('2026-10-23T02:00:00.000Z');
+    expect(marker.addon_period_ends_at).toBe('2026-10-23T02:01:00.000Z');
+    expect(chain.update).toHaveBeenCalledTimes(1);
+    expect(reads).toBeGreaterThanOrEqual(3);
+    vi.setSystemTime(new Date('2026-10-23T02:00:15Z'));
+    await m.close(marker.addon_period_ends_at);
+    expect(marker.addon_period_ends_at).toBe('2026-10-23T02:01:00.000Z');
+    expect(chain.update).toHaveBeenCalledTimes(1);
+    (e as any).running = false;
+    e.resumeDealing();
+    await parked;
   });
 });

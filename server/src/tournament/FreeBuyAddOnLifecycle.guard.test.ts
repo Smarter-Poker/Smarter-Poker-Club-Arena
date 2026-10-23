@@ -219,7 +219,9 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(pause).toContain('if (this.addOnBreakActive) this.addOnBreakOwnsPause = false');
     expect(pause).toContain('if (!addOnBreakAlreadyOwnsLevelClock) this.suspendLevelClock()');
 
-    expect(resumeBreak).toContain('const addOnBreakStillActive = this.addOnBreakActive');
+    expect(resumeBreak).toContain(
+      'const addOnBreakStillActive = this.addOnDrainPending || this.addOnBreakActive'
+    );
     expect(resumeBreak).toMatch(
       /if \(addOnBreakStillActive\) \{[\s\S]*?this\.addOnBreakOwnsPause = true;[\s\S]*?this\.addOnBreakOwnsLevelClock = true;/
     );

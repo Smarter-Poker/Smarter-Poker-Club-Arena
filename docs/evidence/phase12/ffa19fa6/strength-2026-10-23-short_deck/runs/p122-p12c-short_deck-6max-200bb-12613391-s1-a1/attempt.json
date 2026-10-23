@@ -1,0 +1,9 @@
+{
+  "schema": "horse-phase12-strength-attempt-v1",
+  "runAttempt": 1,
+  "job": "league",
+  "variant": "short_deck",
+  "startedAt": "2026-10-23T15:33:36Z",
+  "finishedAt": "2026-10-23T15:37:08Z",
+  "exitCode": 0
+}

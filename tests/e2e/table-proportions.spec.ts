@@ -834,142 +834,145 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // Real occupied components, not placeholder rectangles: this guards the
 // overlap missed by the old containment-only regression.
 for (const width of [320, 375, 393, 430, 480])
-  test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px`, async ({
-    page,
-  }, testInfo) => {
-    // Real occupied tables include PLO5/PLO6 all-in and fully shown hands.
-    test.setTimeout(150_000);
-    const { buildSync } = await import('esbuild');
-    const bundled = buildSync({
-      entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
-      jsx: 'automatic',
-      outfile: 'rail-fixture.js',
-      bundle: true,
-      write: false,
-      metafile: true,
-      format: 'iife',
-      platform: 'browser',
-      loader: {
-        '.css': 'empty',
-        '.png': 'dataurl',
-        '.webp': 'dataurl',
-        '.svg': 'dataurl',
-        '.jpg': 'dataurl',
-      },
-      define: {
-        'import.meta.env': JSON.stringify({
-          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
-          VITE_SUPABASE_ANON_KEY: 'local-fixture',
-          VITE_MEDIA_BASE: 'https://smarter.poker/hub/club-arena/',
-          DEV: true,
-        }),
-        'process.env.NODE_ENV': '"test"',
-      },
-    });
-    const bundle = bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text;
-    await page.route('**/cards/**', async (route) => {
-      const path = new URL(route.request().url()).pathname.split('/cards/')[1];
-      const source = resolve(process.cwd(), 'public/cards', path.replace(/\.webp$/, '.png'));
-      const original = resolve(process.cwd(), 'public/cards', path);
-      const file = existsSync(original) ? original : source;
-      expect(file.startsWith(resolve(process.cwd(), 'public/cards') + '/')).toBe(true);
-      expect(existsSync(file), `Local Card Artwork: ${path}`).toBe(true);
-      await route.fulfill({
-        body: readFileSync(file),
-        contentType: file.endsWith('.png') ? 'image/png' : 'image/webp',
+  for (const count of [6, 9])
+    test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px with ${count} seats`, async ({
+      page,
+    }, testInfo) => {
+      // Keep each ring independently bounded on hosted runners while retaining
+      // every PLO5/PLO6 all-in and fully shown scene at every width.
+      test.setTimeout(150_000);
+      const { buildSync } = await import('esbuild');
+      const bundled = buildSync({
+        entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
+        jsx: 'automatic',
+        outfile: 'rail-fixture.js',
+        bundle: true,
+        write: false,
+        metafile: true,
+        format: 'iife',
+        platform: 'browser',
+        loader: {
+          '.css': 'empty',
+          '.png': 'dataurl',
+          '.webp': 'dataurl',
+          '.svg': 'dataurl',
+          '.jpg': 'dataurl',
+        },
+        define: {
+          'import.meta.env': JSON.stringify({
+            VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
+            VITE_SUPABASE_ANON_KEY: 'local-fixture',
+            VITE_MEDIA_BASE: 'https://smarter.poker/hub/club-arena/',
+            DEV: true,
+          }),
+          'process.env.NODE_ENV': '"test"',
+        },
       });
-    });
-    await page.route('**/rest/v1/rpc/fn_cash_vpip_status', (route) =>
-      route.fulfill({
-        json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
-      })
-    );
+      const bundle = bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text;
+      await page.route('**/cards/**', async (route) => {
+        const path = new URL(route.request().url()).pathname.split('/cards/')[1];
+        const source = resolve(process.cwd(), 'public/cards', path.replace(/\.webp$/, '.png'));
+        const original = resolve(process.cwd(), 'public/cards', path);
+        const file = existsSync(original) ? original : source;
+        expect(file.startsWith(resolve(process.cwd(), 'public/cards') + '/')).toBe(true);
+        expect(existsSync(file), `Local Card Artwork: ${path}`).toBe(true);
+        await route.fulfill({
+          body: readFileSync(file),
+          contentType: file.endsWith('.png') ? 'image/png' : 'image/webp',
+        });
+      });
+      await page.route('**/rest/v1/rpc/fn_cash_vpip_status', (route) =>
+        route.fulfill({
+          json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
+        })
+      );
 
-    const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
-    await page.route('**/avatars/table/**', (route) =>
-      route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
-    );
-    const sheets = [
-      ...new Set([
-        'src/styles/club-engine.css',
-        'src/styles/animations.css',
-        'src/styles/metallic-popups.css',
-        'src/styles/reducedMotion.css',
-        'src/pages/MultiTablePage.css',
-        'src/components/table/TableTabBar.css',
-        'src/pages/TablePage.css',
-        'src/components/table/ActionPanel.css',
-        ...Object.keys(bundled.metafile!.inputs).filter((f) => f.endsWith('.css')),
-        'src/components/table/TableChat.css',
-        'src/components/table/TableVisualHotfix.css',
-      ]),
-    ];
-    const toolAlpha: Record<string, { left: number; top: number; right: number; bottom: number }> =
-      {};
-    for (const icon of ['chat', 'timebank', 'rabbit']) {
-      const bytes = readFileSync(tableArtFixture(`icon-${icon}.webp`));
-      toolAlpha[icon] = await page.evaluate(async (base64) => {
-        const image = new Image();
-        image.src = `data:image/webp;base64,${base64}`;
-        await image.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(image, 0, 0);
-        const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
-        let left = image.width,
-          top = image.height,
-          right = 0,
-          bottom = 0;
-        for (let y = 0; y < image.height; y++)
-          for (let x = 0; x < image.width; x++)
-            if (pixels[(y * image.width + x) * 4 + 3] > 128) {
-              left = Math.min(left, x);
-              top = Math.min(top, y);
-              right = Math.max(right, x + 1);
-              bottom = Math.max(bottom, y + 1);
-            }
-        return {
-          left: left / image.width,
-          top: top / image.height,
-          right: right / image.width,
-          bottom: bottom / image.height,
-        };
-      }, bytes.toString('base64'));
-      await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
-        route.fulfill({ body: bytes, contentType: 'image/webp' })
+      const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
+      await page.route('**/avatars/table/**', (route) =>
+        route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
       );
-    }
-    const fontSheet = await page.request.get('https://ca-static.smarter.poker/fonts/fonts.css');
-    expect(fontSheet.ok()).toBe(true);
-    const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
-      .map((m) => m[0])
-      .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
-    expect(inter).toBeTruthy();
-    const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
-    const fontResponse = await page.request.get(
-      new URL(fontPath.replace('/hub/club-arena/', '/'), 'https://ca-static.smarter.poker').href
-    );
-    expect(fontResponse.ok()).toBe(true);
-    const fontFace = inter
-      .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
-      .replace(
-        fontPath,
-        `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`
+      const sheets = [
+        ...new Set([
+          'src/styles/club-engine.css',
+          'src/styles/animations.css',
+          'src/styles/metallic-popups.css',
+          'src/styles/reducedMotion.css',
+          'src/pages/MultiTablePage.css',
+          'src/components/table/TableTabBar.css',
+          'src/pages/TablePage.css',
+          'src/components/table/ActionPanel.css',
+          ...Object.keys(bundled.metafile!.inputs).filter((f) => f.endsWith('.css')),
+          'src/components/table/TableChat.css',
+          'src/components/table/TableVisualHotfix.css',
+        ]),
+      ];
+      const toolAlpha: Record<
+        string,
+        { left: number; top: number; right: number; bottom: number }
+      > = {};
+      for (const icon of ['chat', 'timebank', 'rabbit']) {
+        const bytes = readFileSync(tableArtFixture(`icon-${icon}.webp`));
+        toolAlpha[icon] = await page.evaluate(async (base64) => {
+          const image = new Image();
+          image.src = `data:image/webp;base64,${base64}`;
+          await image.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(image, 0, 0);
+          const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
+          let left = image.width,
+            top = image.height,
+            right = 0,
+            bottom = 0;
+          for (let y = 0; y < image.height; y++)
+            for (let x = 0; x < image.width; x++)
+              if (pixels[(y * image.width + x) * 4 + 3] > 128) {
+                left = Math.min(left, x);
+                top = Math.min(top, y);
+                right = Math.max(right, x + 1);
+                bottom = Math.max(bottom, y + 1);
+              }
+          return {
+            left: left / image.width,
+            top: top / image.height,
+            right: right / image.width,
+            bottom: bottom / image.height,
+          };
+        }, bytes.toString('base64'));
+        await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
+          route.fulfill({ body: bytes, contentType: 'image/webp' })
+        );
+      }
+      const fontSheet = await page.request.get('https://ca-static.smarter.poker/fonts/fonts.css');
+      expect(fontSheet.ok()).toBe(true);
+      const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
+        .map((m) => m[0])
+        .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
+      expect(inter).toBeTruthy();
+      const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
+      const fontResponse = await page.request.get(
+        new URL(fontPath.replace('/hub/club-arena/', '/'), 'https://ca-static.smarter.poker').href
       );
-    const readStyle = (file: string): string =>
-      readFileSync(resolve(process.cwd(), file), 'utf8').replace(
-        /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
-        (_, imported: string) => readStyle(resolve(dirname(file), imported))
-      );
-    const realCss =
-      fontFace +
-      '\n' +
-      sheets.map(readStyle).join('\n') +
-      '\n' +
-      (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
-    for (const count of [6, 9])
+      expect(fontResponse.ok()).toBe(true);
+      const fontFace = inter
+        .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
+        .replace(
+          fontPath,
+          `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`
+        );
+      const readStyle = (file: string): string =>
+        readFileSync(resolve(process.cwd(), file), 'utf8').replace(
+          /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+          (_, imported: string) => readStyle(resolve(dirname(file), imported))
+        );
+      const realCss =
+        fontFace +
+        '\n' +
+        sheets.map(readStyle).join('\n') +
+        '\n' +
+        (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
       for (const [revealed, jackpot, villainCards = 2, state = 'normal'] of [
         [false, 'mini'],
         [true, 'mini'],
@@ -1402,7 +1405,7 @@ for (const width of [320, 375, 393, 430, 480])
         }
         await page.unroute('http://rail.fixture/');
       }
-  });
+    });
 
 // The full page has a ticker/tab strip above the embedded gameplay slot.
 // Include them and the real action components so a viewport-only fixture

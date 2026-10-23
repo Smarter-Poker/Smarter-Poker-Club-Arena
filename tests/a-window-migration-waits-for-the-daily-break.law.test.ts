@@ -28,6 +28,10 @@
  * The native proof of all five is scripts/ci/test-maintenance-window-migrations.sh,
  * run by .github/workflows/maintenance-window-migrations.yml.
  */
+import {
+  validateOwnerMigrationWindow,
+  ownerWindowPredicate,
+} from '../scripts/ci/owner-window-migration.mjs';
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -206,10 +210,12 @@ describe('the ordinary applier refuses it; only the window route installs it', (
 
   it('skips the :50-:03 refusal only on the window route, which asks the database instead', () => {
     expect(applier).toContain('if (!MAINTENANCE_WINDOW && (minute >= 50 || minute <= 3)) {');
-    expect(applier).toContain('state = (await client.query(WINDOW_STATE_QUERY)).rows[0];');
+    expect(applier).toMatch(
+      /state = \(\s*await client.query\(ownerWindow \? ownerWindowState\(ownerWindow, 150\) : WINDOW_STATE_QUERY\)\s*\).rows\[0\];/
+    );
     expect(applier).toContain('refused(\n        `the daily maintenance window is not open');
     expect(applier).toContain(
-      'if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);'
+      'if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL, ownerWindow);'
     );
     expect(applier).toContain('the window route installs only declared files');
   });
@@ -234,10 +240,10 @@ describe('the route runs on the daily schedule that already exists', () => {
   const stage = parse(stageText);
   const job = stage.jobs['window-migrations'];
 
-  it('runs only on the admitted 03:30 Chicago scheduled run, never on a push', () => {
+  it('runs on daily preparation or an explicit expiring owner migration window', () => {
     expect(job.needs).toBe('detect');
     expect(job.if).toBe(
-      "github.event_name == 'schedule' && needs.detect.outputs.admission_allowed == 'true'"
+      "needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')"
     );
     expect(stage.on.schedule).toEqual([{ cron: '30 8 * * *' }, { cron: '30 9 * * *' }]);
     expect(job.permissions).toEqual({ contents: 'read' });
@@ -275,5 +281,40 @@ describe('the route runs on the daily schedule that already exists', () => {
       if (!/@install-window/.test(sql)) continue;
       expect(() => validateWindowMigration(f, sql, { preamble: [] }), f).not.toThrow();
     }
+  });
+});
+
+describe('a later explicit owner exception preserves freeze and transaction safeguards', () => {
+  const at = Date.now();
+  const w = {
+    id: 'horse-test',
+    contains: 'a'.repeat(40),
+    ownerOrder: "Dan: publish this upgrade now, don't wait",
+    notBefore: new Date(at - 60_000).toISOString(),
+    notAfter: new Date(at + 3600000).toISOString(),
+    migrations: [FILE],
+  };
+  it('admits only named files in a bounded currently valid owner window', () => {
+    expect(validateOwnerMigrationWindow(w, FILE, at)).toEqual(w);
+    expect(() => validateOwnerMigrationWindow(w, '20991231000002_other.sql', at)).toThrow();
+    expect(() => validateOwnerMigrationWindow(w, FILE, at + 3600000)).toThrow();
+    expect(() =>
+      validateOwnerMigrationWindow(
+        { ...w, notAfter: new Date(at + 7 * 3600000).toISOString() },
+        FILE,
+        at
+      )
+    ).toThrow();
+    expect(() => validateOwnerMigrationWindow({ ...w, ownerOrder: '' }, FILE, at)).toThrow();
+  });
+  it('requires owned recovery, actual freeze and unchanged opening/closing reserves', () => {
+    const sql = windowTransactionSQL(FILE, 'BEGIN; SELECT 1; COMMIT;', w);
+    expect(sql).toContain(ownerWindowPredicate(150, w));
+    expect(sql).toContain(ownerWindowPredicate(100, w));
+    expect(sql).toContain("b.reason = 'Deployment Recovery'");
+    expect(sql).toContain('b.ownership_token IS NOT NULL');
+    expect(sql).toContain('public.fn_platform_frozen()');
+    expect(sql).toContain('make_interval(secs => 8)');
+    expect(sql).toContain("don''t wait");
   });
 });

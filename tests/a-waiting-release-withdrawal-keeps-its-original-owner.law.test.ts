@@ -25,5 +25,16 @@ it('keeps the revoked off-cycle owner order closed', () => {
       'utf8'
     )
   );
-  expect(windows).toEqual({ version: 1, windows: [] });
+  expect(windows.version).toBe(1);
+  // The withdrawn river order stays withdrawn. A later explicit owner order
+  // for a different assignment is separately bounded and qualified by the
+  // maintenance-window tests; it does not revive that revoked authority.
+  expect(windows.windows.some((w: { id: string }) => w.id === '2026-10-23-river-nuts-v2')).toBe(
+    false
+  );
+  expect(
+    windows.windows.some(
+      (w: { contains: string }) => w.contains === '6416f795ba314647f381856f1dd645be48920f22'
+    )
+  ).toBe(false);
 });

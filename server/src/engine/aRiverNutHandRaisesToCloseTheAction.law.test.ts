@@ -518,3 +518,68 @@ describe('the river nuts always bet when checked to and are never under-sized', 
     }
   );
 });
+
+describe('checked-to near-nut full house value', () => {
+  it.each([
+    'nlh',
+    'flh',
+    'pineapple',
+    'short_deck',
+    'plo4',
+    'plo5',
+    'plo6',
+    'plo8',
+    'flo8',
+  ] as const)('%s never checks back AQ on QQ75A', (variant) => {
+    for (const style of ['balanced', 'tag', 'lag', 'tricky', 'grinder'] as const) {
+      for (let seed = 1; seed <= 12; seed++) {
+        const { hero, state } = checkedTo(variant);
+        hero.cards = cards(
+          variant === 'plo6'
+            ? 'Ac Qd Kc Jh 9s 8h'
+            : variant === 'plo5'
+              ? 'Ac Qd Kc Jh 9s'
+              : variant.startsWith('plo') || variant === 'flo8'
+                ? 'Ac Qd Kc Jh'
+                : 'Ac Qd'
+        );
+        state.communityCards = cards(
+          variant === 'short_deck' ? 'Qh Qs 7c 9d Ah' : 'Qh Qs 7c 5d Ah'
+        );
+        state.dealerSeat = hero.seat;
+        state.actionHistory = [
+          {
+            userId: state.players[1].user_id,
+            seat: state.players[1].seat,
+            action: 'bet',
+            amount: 30,
+            stage: 'turn',
+            timestamp: 1,
+          },
+          {
+            userId: hero.user_id,
+            seat: hero.seat,
+            action: 'call',
+            amount: 30,
+            stage: 'turn',
+            timestamp: 2,
+          },
+          {
+            userId: state.players[1].user_id,
+            seat: state.players[1].seat,
+            action: 'check',
+            amount: 0,
+            stage: 'river',
+            timestamp: 3,
+          },
+        ];
+        if (variant === 'flh' || variant === 'flo8')
+          Object.assign(state, { fixedBetSize: 4, minRaiseTo: 4, maxRaiseTo: 4 });
+        seedFastRandom(seed);
+        const d = HorseLogic.decide(hero, state, style, {}, { v9Timing: false });
+        expect(d.action, `${variant} ${style} seed ${seed}`).toBe('bet');
+        expect(d.amount).toBeGreaterThan(0);
+      }
+    }
+  });
+});

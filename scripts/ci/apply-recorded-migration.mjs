@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migration.mjs';
 /**
  * ===========================================================================
  *  APPLY ONE MERGED-BUT-UNAPPLIED MIGRATION, FROM ITS OWN BYTES
@@ -208,6 +209,15 @@ const preamble = shape.indexes;
 // A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
 // (2026-10-22). A file that declares "-- @install-window: daily-maintenance"
 // is installed only by the window route, and only after these static rules.
+let ownerWindow = null;
+if (args.includes('--owner-window')) {
+  if (!MAINTENANCE_WINDOW) refused('owner window requires the maintained window route');
+  try {
+    ownerWindow = readOwnerMigrationWindow(argValue('--owner-window'), file);
+  } catch (e) {
+    refused(e.message);
+  }
+}
 let windowMigration = false;
 try {
   windowMigration = windowDeclaration(sql) === 'daily-maintenance';
@@ -417,7 +427,9 @@ async function refusalNow() {
   if (MAINTENANCE_WINDOW) {
     let state;
     try {
-      state = (await client.query(WINDOW_STATE_QUERY)).rows[0];
+      state = (
+        await client.query(ownerWindow ? ownerWindowState(ownerWindow, 150) : WINDOW_STATE_QUERY)
+      ).rows[0];
     } catch (e) {
       await client.end().catch(() => {});
       unknown(`could not read the maintenance window state: ${e.message}`);
@@ -613,7 +625,7 @@ try {
     : accountingAdmissionSQL(file, sql, atomicSQL);
   // A window file is never an accounting-admission file (validated above), so
   // the line before returned atomicSQL unchanged; wrap it in the window.
-  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);
+  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL, ownerWindow);
   transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});

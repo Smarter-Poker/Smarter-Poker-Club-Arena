@@ -179,8 +179,8 @@ const VARIANT_HOLDINGS = [
   ['PLO5', 5],
   ['PLO6', 6],
   ['PLO8', 4],
-  ['FIVE_CARD_PLO8', 5],
-  ['SIX_CARD_PLO8', 6],
+  ['FLH', 2],
+  ['FLO8', 4],
 ] as const;
 
 describe('the same private hand survives every review game family', () => {

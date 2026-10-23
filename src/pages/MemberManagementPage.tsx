@@ -58,7 +58,7 @@ import MemberWatchAtTable from '../components/club/MemberWatchAtTable';
 import MemberWinLossCard from '../components/club/MemberWinLossCard';
 import MemberUplineCard from '../components/club/MemberUplineCard';
 import AgentCashoutPanel from '../components/agent/AgentCashoutPanel';
-import { useClubPendingCashouts } from '../hooks/useClubPendingCashouts';
+import { useClubPendingCashoutsRead } from '../hooks/useClubPendingCashouts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -615,7 +615,7 @@ export default function MemberManagementPage() {
      own cashout queue (fn_cashout_queue: everything in a club they run, plus
      their downline), so it shows exactly to the people who may pull the chips. */
   const memberUuid = identity?.user_id ?? null;
-  const pendingCashouts = useClubPendingCashouts(
+  const pendingCashouts = useClubPendingCashoutsRead(
     resolvedClubId,
     myRoleLoaded && !!memberUuid && memberUuid !== user?.id
   );

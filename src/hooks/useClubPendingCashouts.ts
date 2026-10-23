@@ -31,7 +31,12 @@ export interface ClubPendingCashouts {
 const NONE: ReadonlySet<string> = new Set();
 const EMPTY: CashoutRequest[] = [];
 
-export function useClubPendingCashouts(
+/**
+ * The queue without its own realtime subscription: it re-reads on the bus
+ * events and on focus. The member record uses this one; the request panel it
+ * shows carries its own realtime subscription.
+ */
+export function useClubPendingCashoutsRead(
   clubUuid: string | null | undefined,
   enabled: boolean
 ): ClubPendingCashouts {
@@ -79,16 +84,6 @@ export function useClubPendingCashouts(
     };
   }, [scope, load]);
 
-  // Requests made from other devices arrive through the club's cashout rows.
-  useMasterBusChannel({
-    channelName: scope ? `club-pending-cashouts:${scope}` : null,
-    table: 'cashout_requests',
-    filter: clubUuid ? `club_id=eq.${clubUuid}` : null,
-    event: '*',
-    enabled: !!scope,
-    onPayload: () => void load(),
-  });
-
   const requests = state.scope === scope && scope ? state.requests : EMPTY;
   const playerIds = useMemo<ReadonlySet<string>>(
     () => (requests.length ? new Set(requests.map((r) => r.playerId)) : NONE),
@@ -101,4 +96,24 @@ export function useClubPendingCashouts(
     loaded: state.scope === scope && scope !== null,
     reload: () => void load(),
   };
+}
+
+/** The queue plus realtime on the club's cashout rows (the cashier). */
+export function useClubPendingCashouts(
+  clubUuid: string | null | undefined,
+  enabled: boolean
+): ClubPendingCashouts {
+  const { user } = useAuthUser();
+  const read = useClubPendingCashoutsRead(clubUuid, enabled);
+  const scope = enabled && clubUuid && user?.id ? `${user.id}:${clubUuid}` : null;
+  // Requests made from other devices arrive through the club's cashout rows.
+  useMasterBusChannel({
+    channelName: scope ? `club-pending-cashouts:${scope}` : null,
+    table: 'cashout_requests',
+    filter: clubUuid ? `club_id=eq.${clubUuid}` : null,
+    event: '*',
+    enabled: !!scope,
+    onPayload: () => read.reload(),
+  });
+  return read;
 }

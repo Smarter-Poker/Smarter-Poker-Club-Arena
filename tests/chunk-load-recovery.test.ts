@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  chunkReloadGuardKey,
   clearChunkRecoveryState,
   installVitePreloadErrorRecovery,
   isChunkLoadError,
@@ -100,12 +101,14 @@ describe('stale deployment chunk recovery', () => {
       browser.dispatchEvent(concurrent);
       await Promise.resolve();
 
-      expect(navigations).toHaveBeenCalledTimes(Math.min(documentIndex + 1, 2));
-      expect(event.defaultPrevented).toBe(documentIndex < 2);
-      expect(concurrent.defaultPrevented).toBe(documentIndex < 2);
+      // One guarded hard reload per build: the second document of the same
+      // build does not reload again, so a broken build cannot loop.
+      expect(navigations).toHaveBeenCalledTimes(1);
+      expect(event.defaultPrevented).toBe(documentIndex < 1);
+      expect(concurrent.defaultPrevented).toBe(documentIndex < 1);
       uninstall();
     }
-    expect(sessionStorage.getItem('club_arena_chunk_reload')).toBe('2');
+    expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
   });
 
   /* 2026-10-23, production post-deploy (Chromium and WebKit): navigating
@@ -150,7 +153,7 @@ describe('stale deployment chunk recovery', () => {
       await flush();
       expect(replace).not.toHaveBeenCalled();
       expect(recovery.documentIsNavigatingAway()).toBe(true);
-      expect(sessionStorage.getItem('club_arena_chunk_reload')).toBeNull();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
       uninstall();
     });
 
@@ -177,7 +180,7 @@ describe('stale deployment chunk recovery', () => {
       await flush();
       // Still on this page, so the failure was real: one recovery, not two.
       expect(replace).toHaveBeenCalledTimes(1);
-      expect(sessionStorage.getItem('club_arena_chunk_reload')).toBe('1');
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
       uninstall();
     });
 
@@ -224,7 +227,8 @@ describe('stale deployment chunk recovery', () => {
 
   it.each([
     new TypeError('Failed to fetch dynamically imported module: /assets/old.js'),
-    new Error('Importing a module script failed.'),
+    new TypeError('Importing a module script failed.'),
+    new TypeError('error loading dynamically imported module: /assets/old.js'),
     new Error('Unable to preload CSS for /assets/old.css'),
     Object.assign(new Error('chunk failed'), { name: 'ChunkLoadError' }),
   ])('recognizes every browser form of a retired asset', (error) => {
@@ -237,7 +241,7 @@ describe('stale deployment chunk recovery', () => {
 
   it('leaves an exhausted preload failure visible to the importing route', () => {
     // Keep recovery at its bounded ceiling so this unit test never navigates.
-    sessionStorage.setItem('club_arena_chunk_reload', '2');
+    sessionStorage.setItem(chunkReloadGuardKey(), '1');
     const uninstall = installVitePreloadErrorRecovery();
     const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
       payload?: unknown;
@@ -264,7 +268,7 @@ describe('stale deployment chunk recovery', () => {
     };
     event.payload = new Error('Unable to preload CSS for data:text/css,.a{}');
     // Keep recovery at its ceiling so the unit test never navigates.
-    sessionStorage.setItem('club_arena_chunk_reload', '2');
+    sessionStorage.setItem(chunkReloadGuardKey(), '1');
     window.dispatchEvent(event);
     expect(document.querySelector('link[href="data:text/css,.a{}"]')).toBeNull();
     expect(event.defaultPrevented).toBe(false);

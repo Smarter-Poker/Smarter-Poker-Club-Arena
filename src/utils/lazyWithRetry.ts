@@ -21,9 +21,34 @@
 import { lazy, ComponentType } from 'react';
 import { STORAGE_KEYS } from '../lib/storage';
 
-const RELOAD_KEY = STORAGE_KEYS.CHUNK_RELOAD;
-const MAX_RELOADS = 2; // Max full-page reloads before giving up
+/**
+ * THE RELOAD GUARD IS KEYED BY BUILD (2026-10-23, client_crash_log 3015: an
+ * iPhone at a live table, "Importing a module script failed.", on a URL that
+ * already carried the `_cb` of an earlier recovery reload). The guard used to
+ * be one counter per tab with a budget of two, so a tab that had spent its
+ * reloads on one publish had none left for the next, and the stale import
+ * fell through to the table's error boundary as a "crash". Each build now
+ * gets exactly one hard reload: the document that reloads into a newer build
+ * starts that build's own budget, while a build whose chunks genuinely cannot
+ * load still stops after one reload instead of looping.
+ */
+const BUILD_ID: string = (() => {
+  try {
+    const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+    const version = env?.VITE_APP_VERSION;
+    return typeof version === 'string' && version.trim() !== '' ? version.trim() : 'dev';
+  } catch {
+    return 'dev';
+  }
+})();
+const RELOAD_KEY = `${STORAGE_KEYS.CHUNK_RELOAD}:${BUILD_ID}`;
+const MAX_RELOADS = 1; // One guarded hard reload per build
 let recoveryStarted = false;
+
+/** The sessionStorage key that guards this build's single recovery reload. */
+export function chunkReloadGuardKey(): string {
+  return RELOAD_KEY;
+}
 
 /**
  * A PAGE THAT IS LEAVING IS NOT A STALE PAGE (2026-10-23, production
@@ -115,6 +140,9 @@ function incrementReloadCount(): void {
 export function clearChunkRecoveryState(): void {
   try {
     sessionStorage.removeItem(RELOAD_KEY);
+    // The per-tab counter this build-keyed guard replaced.
+    sessionStorage.removeItem(STORAGE_KEYS.CHUNK_RELOAD);
+    sessionStorage.removeItem('ca-chunk-hardreload');
   } catch {
     // sessionStorage unavailable
   }
@@ -196,6 +224,45 @@ export async function hardReload(): Promise<void> {
  */
 function canOwnChunkRecovery(error: unknown): boolean {
   return isChunkLoadError(error) && (recoveryStarted || getReloadCount() < MAX_RELOADS);
+}
+
+export type BoundaryChunkOutcome = 'not-chunk' | 'recovering' | 'exhausted';
+
+/**
+ * ONE ANSWER FOR EVERY ERROR BOUNDARY. A lazy component that failed to load
+ * reaches whichever boundary sits above it - the table tile, the page, a stats
+ * panel, the route, the root - and React.lazy() call sites that do not use
+ * lazyWithRetry reach them directly. Each boundary asks here first:
+ *
+ * - 'not-chunk': an ordinary render error; report it as a crash as before.
+ * - 'recovering': a stale or missing chunk this document is now replacing
+ *   with a cache-busted reload. Not a crash, and never written to
+ *   client_crash_log; the boundary paints nothing while the page navigates.
+ * - 'exhausted': a chunk/module load failure after this build's one reload
+ *   was already spent. The boundary shows its fallback (with its reload
+ *   action), and the failure goes to the first-party error sink with code
+ *   CHUNK_LOAD_EXHAUSTED (see reportExhaustedChunkLoad) - an asset or network
+ *   outage stays visible, but it is not a render crash and is not written to
+ *   client_crash_log.
+ */
+export function claimChunkErrorForBoundary(error: unknown): BoundaryChunkOutcome {
+  if (!isChunkLoadError(error)) return 'not-chunk';
+  if (!canOwnChunkRecovery(error)) return 'exhausted';
+  void recoverFromStaleChunk(error);
+  return 'recovering';
+}
+
+export function reportExhaustedChunkLoad(error: unknown, surface: string): void {
+  // Lazy import: the reporter must not ride in this module's import graph
+  // just to record a rare outage, and a failure here must never throw.
+  void import('./errorReporter')
+    .then((m) =>
+      m?.captureClientError?.(error, `chunk-load-exhausted:${surface}`, {
+        code: 'CHUNK_LOAD_EXHAUSTED',
+        build: BUILD_ID,
+      })
+    )
+    .catch(() => undefined);
 }
 
 export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {

@@ -13,6 +13,7 @@
 
 import React from 'react';
 import { EmptyState } from './EmptyState';
+import { claimChunkErrorForBoundary, reportExhaustedChunkLoad } from '../../utils/lazyWithRetry';
 
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
@@ -23,6 +24,8 @@ interface PageErrorBoundaryProps {
 interface PageErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  /** A stale chunk is being replaced by a cache-busted reload. */
+  chunkRecovering?: boolean;
 }
 
 export class PageErrorBoundary extends React.Component<
@@ -39,6 +42,17 @@ export class PageErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // A chunk retired by a publish is recovered by a cache-busted reload, not
+    // recorded as a page crash.
+    const chunk = claimChunkErrorForBoundary(error);
+    if (chunk === 'recovering') {
+      this.setState({ chunkRecovering: true });
+      return;
+    }
+    if (chunk === 'exhausted') {
+      reportExhaustedChunkLoad(error, `club-arena-page:${this.props.pageName || 'Page'}`);
+      return;
+    }
     console.error(
       `[PageErrorBoundary] ${this.props.pageName || 'Page'} crashed:`,
       error,
@@ -74,11 +88,12 @@ export class PageErrorBoundary extends React.Component<
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState({ hasError: false, error: null, chunkRecovering: false });
   };
 
   render() {
     if (this.state.hasError) {
+      if (this.state.chunkRecovering) return null;
       if (this.props.fallback) {
         return this.props.fallback({ error: this.state.error, retry: this.handleRetry });
       }

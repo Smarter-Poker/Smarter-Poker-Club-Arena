@@ -1351,6 +1351,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test scripts/ci/ubuntu-package-source.test.mjs
           pg_ci_build_packages=()
           pg_ci_build_tools_ready=true
           case "$PG_CI_SHARD" in
@@ -1395,6 +1396,11 @@ jobs:
           chmod 755 "$pg_ci_sources"
           test -f /etc/apt/sources.list.d/ubuntu.sources
           cp /etc/apt/sources.list.d/ubuntu.sources "$pg_ci_sources/ubuntu.sources"
+          # Azure served 112 MB at 65.3 kB/s for 28m27s and exhausted the
+          # 40-minute job before qualification finished (run39892241788).
+          # Change only this private copy's mirror. Suites, components,
+          # signing keys, exact packages and every native check stay intact.
+          node scripts/ci/ubuntu-package-source.mjs "$pg_ci_sources/ubuntu.sources"
           pg_ci_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_ci_sources")
           sudo apt-get "${pg_ci_apt[@]}" update
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates

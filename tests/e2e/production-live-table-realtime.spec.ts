@@ -57,6 +57,7 @@ import {
   type StalledSubject,
 } from './support/certifiableSubject';
 import { recordNonVerdict } from './support/nonVerdict';
+import { admitMttReplacementBudget, MTT_MAX_SUBJECT_MS } from './support/mttSubjectBudget';
 import {
   createHudClockReader,
   hudCandidateTableIdBatches,
@@ -1064,6 +1065,7 @@ async function certifyReadOnlyTournamentFormat(
   const attritions: Array<Record<string, unknown>> = [];
   const holds: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
+  let subjectMaxTimeoutMs = MTT_MAX_SUBJECT_MS;
   try {
     for (let attempt = 0; ; attempt++) {
       const attemptPage = attempt === 0 ? page : await page.context().newPage();
@@ -1072,6 +1074,7 @@ async function certifyReadOnlyTournamentFormat(
         await observeTournamentBoard(attemptPage, request, testInfo, gameFormat, {
           caseStartedAt,
           observationDeadline: caseStartedAt + testInfo.timeout,
+          subjectMaxTimeoutMs,
           boardReader,
           hudReader,
           watched,
@@ -1088,8 +1091,22 @@ async function certifyReadOnlyTournamentFormat(
         if (error instanceof PreHudCandidateAttrition) attritions.push(error.evidence);
         else if (error instanceof AuthoritativeHoldDuringObservation) holds.push(error.evidence);
         else endings.push(error.evidence);
-        // Reselection shares the existing case deadline, including any clock
-        // already admitted by the HUD; it never resets the case.
+        // A normal MTT closure can arrive near the end of its HUD clock.
+        // Fund the next complete subject only after that durable proof,
+        // retaining the replacement count and one overall finite case cap.
+        if (gameFormat === 'mtt' && error instanceof NaturalCompletionDuringObservation) {
+          const budget = admitMttReplacementBudget({
+            outcome: 'natural-completion',
+            reselectionsUsed: attempt,
+            caseElapsedMs: Date.now() - caseStartedAt,
+          });
+          if (!budget)
+            throw Object.assign(new Error('The finite MTT replacement budget is exhausted'), {
+              cause: error,
+            });
+          subjectMaxTimeoutMs = budget.subjectMaxTimeoutMs;
+          testInfo.setTimeout(budget.startupTimeoutMs);
+        }
         const decision = decideReselection({
           reselectionsUsed: attempt,
           remainingMs: caseStartedAt + testInfo.timeout - Date.now(),
@@ -1139,6 +1156,7 @@ async function observeTournamentBoard(
   clock: {
     caseStartedAt: number;
     observationDeadline: number;
+    subjectMaxTimeoutMs: number;
     boardReader: BoardReader | undefined;
     hudReader: BoardReader | undefined;
     watched: string[];
@@ -1550,10 +1568,9 @@ async function observeTournamentBoard(
         // Whatever this real clock needs is what the case gets: never a fixed
         // guess a natural blind level can outrun by luck. This only ever grows
         // the case's one deadline (never shrinks it) - see mttCaseTimeoutMs.
-        const mttTimeoutMs = mttCaseTimeoutMs(
-          hudClock.observedAt - caseStartedAt,
-          hudClock,
-          testInfo.timeout
+        const mttTimeoutMs = Math.min(
+          clock.subjectMaxTimeoutMs,
+          mttCaseTimeoutMs(hudClock.observedAt - caseStartedAt, hudClock, testInfo.timeout)
         );
         testInfo.setTimeout(mttTimeoutMs);
         const mttDeadline = caseStartedAt + mttTimeoutMs;

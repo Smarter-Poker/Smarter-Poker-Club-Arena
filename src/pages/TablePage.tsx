@@ -1,4 +1,8 @@
-import { usePreActionBoundary, acceptedActionSpendsPreAction } from '../hooks/usePreActionBoundary';
+import {
+  usePreActionBoundary,
+  acceptedActionSpendsPreAction,
+  latestHeroActionTimestamp,
+} from '../hooks/usePreActionBoundary';
 import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
 import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
@@ -3086,7 +3090,7 @@ function LiveTablePage({
    * as it stood when the handler closed over it.
    */
   const preActionArmedRef = useRef<typeof preAction>(null);
-  const preActionArmedAtRef = useRef<number | null>(null);
+  const preActionPriorHeroActionAtRef = useRef(0);
   useEffect(() => {
     preActionArmedRef.current = preAction;
   }, [preAction]);
@@ -16972,7 +16976,7 @@ function LiveTablePage({
           acceptedActionSpendsPreAction({
             heroSeat: tableStateRef.current.heroSeat,
             handNumber: tableStateRef.current.handNumber,
-            armedAt: preActionArmedAtRef.current,
+            knownHeroActionAtArm: preActionPriorHeroActionAtRef.current,
             event: data,
           })
         )
@@ -28003,7 +28007,12 @@ function LiveTablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={(next) => {
-                    preActionArmedAtRef.current = next ? serverNow() : null;
+                    preActionPriorHeroActionAtRef.current = next
+                      ? latestHeroActionTimestamp(
+                          engineSnapshotRef.current?.action_history,
+                          tableStateRef.current.heroSeat
+                        )
+                      : 0;
                     // Snapshot whether checking was free at arm time so the
                     // effect above can send auto_check_fold vs auto_fold.
                     preActionCanCheckRef.current =

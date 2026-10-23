@@ -5,6 +5,7 @@ import PreActionBar from '../../src/components/table/PreActionBar';
 import {
   usePreActionBoundary,
   acceptedActionSpendsPreAction,
+  latestHeroActionTimestamp,
 } from '../../src/hooks/usePreActionBoundary';
 import { PreActionEngine } from '../../server/src/engine/PreActionEngine';
 
@@ -67,8 +68,36 @@ describe('a call pre-action is spent by an accepted action, not a display label'
     rerender(<Harness label={null} stage="turn" engine={engine} />);
     expect(engine.getPreAction('table', 'hero')).toBeNull();
   });
+  it('uses the last server action as the arm boundary even when browser clocks disagree', () => {
+    const known = latestHeroActionTimestamp(
+      [
+        { seat: 9, timestamp: 500 },
+        { seat: 8, timestamp: 2000 },
+        { seat: 9, timestamp: 1000 },
+      ],
+      9
+    );
+    expect(known).toBe(1000);
+    // The client clock could be hours ahead; the new server action still spends it.
+    expect(
+      acceptedActionSpendsPreAction({
+        heroSeat: 9,
+        handNumber: 20,
+        knownHeroActionAtArm: known,
+        event: { seat: 9, hand_number: 20, timestamp: 1001 },
+      })
+    ).toBe(true);
+    expect(
+      acceptedActionSpendsPreAction({
+        heroSeat: 9,
+        handNumber: 20,
+        knownHeroActionAtArm: known,
+        event: { seat: 9, hand_number: 20, timestamp: 1000 },
+      })
+    ).toBe(false);
+  });
   it('does not let a previous hand, an old hero echo, or another seat cancel a later tap', () => {
-    const base = { heroSeat: 9, handNumber: 20, armedAt: 1000 };
+    const base = { heroSeat: 9, handNumber: 20, knownHeroActionAtArm: 1000 };
     expect(
       acceptedActionSpendsPreAction({
         ...base,

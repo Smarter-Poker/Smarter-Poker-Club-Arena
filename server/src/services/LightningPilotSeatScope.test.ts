@@ -164,13 +164,14 @@ describe('the pilot wallet at a pilot seat', () => {
 describe('the seating path reads the assignment', () => {
   const SRC = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
   const SIT = readFileSync(join(process.cwd(), 'src/services/HorseSitVerdict.ts'), 'utf8');
-  it('loads it every cycle and refuses an assigned horse elsewhere, on both seat routes', () => {
+  it('loads assignments and preserves pilot scope outside the bankroll-only cash roster', () => {
     expect(SRC).toContain('await loadPilotSeatScope(supabase)');
+    expect(SRC).toContain('const bankrollOnly = cashRosterAllows(h.id) === true;');
     expect(SRC).toMatch(
-      /if \(pilotSeatVerdict\(h\.id, seatClub\) === 'elsewhere'\) \{\s*pilotElsewhereDropped\+\+;\s*return false;\s*\}/
+      /if \(!bankrollOnly && pilotSeatVerdict\(h\.id, seatClub\) === 'elsewhere'\) \{\s*pilotElsewhereDropped\+\+;\s*return false;\s*\}/
     );
-    expect(SRC).toContain(
-      "if (pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere') continue;"
+    expect(SRC).toMatch(
+      /if \(\s*cashRosterAllows\(offer\.user_id\) !== true &&\s*pilotSeatVerdict\(offer\.user_id, seatClub\) === 'elsewhere'\s*\)\s*continue;/
     );
   });
   it('the gate, the sizing and the aggregate ceiling all use the seat policy', () => {

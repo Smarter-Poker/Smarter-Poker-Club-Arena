@@ -4839,7 +4839,11 @@ export class HorseFleetManager {
         if (seatClub === null) continue;
         /* An assigned pilot horse answers no seat call outside the pilot; the
            offer passes to the next player by its own sweep. */
-        if (pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere') continue;
+        if (
+          cashRosterAllows(offer.user_id) !== true &&
+          pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere'
+        )
+          continue;
         /* The same door rules as the seeding loop: a horse barred from this
            game does not answer its seat call, and one holding a rejoin floor
            answers with the floor. */

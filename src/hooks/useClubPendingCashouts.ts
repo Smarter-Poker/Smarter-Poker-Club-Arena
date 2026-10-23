@@ -18,6 +18,7 @@ import { cashoutService, type CashoutRequest } from '../services/CashoutService'
 import { useAuthUser } from './useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { useMasterBusChannel } from './useMasterBusChannel';
 
 export interface ClubPendingCashouts {
   requests: CashoutRequest[];
@@ -56,33 +57,37 @@ export function useClubPendingCashouts(
     }
   }, [scope, clubUuid, viewerId]);
 
+  // Bus events (a request, cancellation or approval anywhere on this client)
+  // and window focus re-read; several in a burst collapse into one read.
   useEffect(() => {
-    if (!scope || !clubUuid) return;
+    if (!scope) return;
     void load();
-    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => void load(), 500);
-    const unsubMutation = masterBus.subscribeDebounced('DATA_MUTATED', () => void load(), 500);
-    const channelKey = `club-pending-cashouts-${scope}`;
-    masterBus
-      .getOrCreateChannel(channelKey)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubUuid}` },
-        () => void load()
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR' && err)
-          reportError(err?.message || err, 'useClubPendingCashouts.channel');
-      });
-    const onFocus = () => void load();
-    window.addEventListener('focus', onFocus);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const soon = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void load(), 500);
+    };
+    const offBalance = masterBus.subscribe('BALANCE_UPDATED', soon);
+    const offMutation = masterBus.subscribe('DATA_MUTATED', soon);
+    window.addEventListener('focus', soon);
     return () => {
       generation.current++;
-      unsubBalance();
-      unsubMutation();
-      masterBus.removeRegisteredChannel(channelKey);
-      window.removeEventListener('focus', onFocus);
+      if (timer) clearTimeout(timer);
+      offBalance?.();
+      offMutation?.();
+      window.removeEventListener('focus', soon);
     };
-  }, [scope, clubUuid, load]);
+  }, [scope, load]);
+
+  // Requests made from other devices arrive through the club's cashout rows.
+  useMasterBusChannel({
+    channelName: scope ? `club-pending-cashouts:${scope}` : null,
+    table: 'cashout_requests',
+    filter: clubUuid ? `club_id=eq.${clubUuid}` : null,
+    event: '*',
+    enabled: !!scope,
+    onPayload: () => void load(),
+  });
 
   const requests = state.scope === scope && scope ? state.requests : EMPTY;
   const playerIds = useMemo<ReadonlySet<string>>(

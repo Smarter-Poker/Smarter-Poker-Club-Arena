@@ -251,6 +251,26 @@ describe('RIT money path - 3-way with side pot', () => {
 
     const winners = e.currentHandWinners as Array<{ userId: string; amount: number }>;
     expect(winners.length).toBeGreaterThan(0);
+    const awards = e.currentHandPerPotAwards as any[];
+    expect(awards.some((a) => a.potIndex === 1)).toBe(true);
+    for (const row of e.currentHandWinnersByBoard as any[]) {
+      const exact = awards.filter(
+        (a) => a.board === row.board && a.userId === row.userId && !!a.low === !!row.low
+      );
+      const expected = [...new Set<number>(exact.map((a) => a.potIndex))]
+        .sort((a, b) => a - b)
+        .map((index) => ({
+          index,
+          amount:
+            Math.round(
+              exact.filter((a) => a.potIndex === index).reduce((n, a) => n + a.amount, 0) * 100
+            ) / 100,
+        }));
+      expect(row.pots).toEqual(expected);
+      expect(Math.round(row.pots.reduce((n: number, p: any) => n + p.amount, 0) * 100)).toBe(
+        Math.round(row.amount * 100)
+      );
+    }
     for (const w of winners) {
       expect(['u1', 'u2', 'u3']).toContain(w.userId);
     }

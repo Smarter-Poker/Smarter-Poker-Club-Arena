@@ -411,6 +411,32 @@ describe('there is one replayer', () => {
  * share carries nothing extra, so an ordinary link is byte-identical.
  */
 describe('share link v4 carries which pot each board share came out of', () => {
+  it('preserves an explicitly recorded main-only allocation, including a known zero slice', () => {
+    const { decoded, rebuilt } = roundTrip(
+      ritHiLoInput({
+        winnersByBoard: [
+          {
+            board: 1,
+            userId: HERO,
+            amount: 1,
+            pots: [
+              { index: 0, amount: 1 },
+              { index: 1, amount: 0 },
+            ],
+          },
+          { board: 2, userId: HERO, amount: 1, pots: [{ index: 0, amount: 1 }] },
+        ],
+      })
+    );
+    expect(decoded.winners.find((w) => w.board === 2)!.pots).toEqual([{ index: 0, amount: 1 }]);
+    expect(rebuilt.showdown.find((r) => r.boardIndex === 1 && r.isWinner)!.potSlices).toEqual([
+      { index: 0, amount: 1 },
+    ]);
+    expect(rebuilt.showdown.find((r) => r.boardIndex === 0 && r.isWinner)!.potSlices).toEqual([
+      { index: 0, amount: 1 },
+      { index: 1, amount: 0 },
+    ]);
+  });
   it('a two-pot share survives encode -> URL -> decode -> rebuild', () => {
     const input = ritHiLoInput({
       winnersByBoard: [

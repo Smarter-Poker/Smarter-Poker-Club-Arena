@@ -29,6 +29,7 @@ export function Review() {
   const [size, setSize] = useState({ w: 300, h: 650 });
   const [armed, setArmed] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
   const action = document.documentElement.dataset.action || 'preflop';
+  const spectator = document.documentElement.dataset.spectator === 'true';
   const heroCards = Number(document.documentElement.dataset.cards || 4);
   const n = Number(
     document.documentElement.dataset.seats || new URLSearchParams(location.search).get('seats') || 9
@@ -68,7 +69,7 @@ export function Review() {
       p,
       size,
       width,
-      seatPodPx(width, p.y === 100, size.w, { seats: n, canvasHeightPx: size.h }),
+      seatPodPx(width, p.y === 100 && !spectator, size.w, { seats: n, canvasHeightPx: size.h }),
       ref.current?.getBoundingClientRect().left,
       n
     )
@@ -97,7 +98,7 @@ export function Review() {
           <div
             className="table-page table-page--embedded"
             data-seats={n}
-            data-hero="true"
+            data-hero={spectator ? 'false' : 'true'}
             data-hero-action={action === 'active' ? 'active' : 'waiting'}
             data-bbj-mini={jackpot === 'mini' ? '1' : '0'}
             style={{ background: '#080808' }}
@@ -178,7 +179,7 @@ export function Review() {
                   <PotDisplay mainPot={82.01} bigBlind={2} />
                 </div>
                 {seats.map((p, i) => {
-                  const pod = seatPodPx(width, i === 0, size.w, {
+                  const pod = seatPodPx(width, i === 0 && !spectator, size.w, {
                     seats: n,
                     canvasHeightPx: size.h,
                   });
@@ -187,7 +188,7 @@ export function Review() {
                   return (
                     <div
                       key={i}
-                      className={`seat-wrapper${i === 0 ? ' seat-wrapper--hero' : ''}${p.y < 20 ? ' seat-wrapper--top seat-wrapper--cap' : ''}`}
+                      className={`seat-wrapper${i === 0 && !spectator ? ' seat-wrapper--hero' : ''}${p.y < 20 ? ' seat-wrapper--top seat-wrapper--cap' : ''}`}
                       style={
                         {
                           left: `${p.x}%`,
@@ -228,14 +229,14 @@ export function Review() {
                               ? [...cards, { rank: '10', suit: 'diamonds' }].slice(0, heroCards)
                               : villainHand,
                           showCards:
-                            i === 0 ||
+                            (i === 0 && !spectator) ||
                             (revealed &&
                               // A PLO6 showdown tables three opponents' hands, as an
                               // all-in hand does, spread round the ring.
                               (document.documentElement.dataset.showAll === 'true' ||
                                 villainCards <= 2 ||
                                 [1, Math.floor(n / 2), n - 1].includes(i))),
-                          isHero: i === 0,
+                          isHero: i === 0 && !spectator,
                         }}
                         position={i === 1 ? 'SB' : null}
                         isActive={false}
@@ -248,7 +249,7 @@ export function Review() {
                 })}
                 <HeroVpipTracker
                   tableId="00000000-0000-4000-8000-000000000001"
-                  heroSeated
+                  heroSeated={!spectator}
                   isTournament={false}
                   handNumber={4283505}
                   heroPos={{ x: 50, y: 100 }}
@@ -262,7 +263,11 @@ export function Review() {
               </div>
             </div>
             <div className="action-panel-wrapper">
-              {action === 'active' ? (
+              {spectator ? (
+                <div className="spectator-footer-bar">
+                  <span className="spectator-footer-bar__label">Spectating</span>
+                </div>
+              ) : action === 'active' ? (
                 <ActionPanel
                   canFold
                   canCheck

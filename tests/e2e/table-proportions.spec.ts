@@ -786,7 +786,7 @@ test('portrait phone rings reserve outboard lanes and keep their height through 
           .evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-text-size-adjust'))
       ).toBe('100%');
       for (const [hero, action] of [
-        ['false', 'none'],
+        ['true', 'none'],
         ['true', 'waiting'],
         ['true', 'active'],
       ]) {
@@ -1545,3 +1545,166 @@ for (const [width, height] of [
           }
         }
       });
+
+// Owner screenshot October 22: the spectator phone must use the broad, tall
+// desktop preview instead of inheriting the seated player's compact canvas.
+test('mobile spectators fill the desktop-reference canvas through hand and dock states', async ({
+  page,
+}, testInfo) => {
+  const { buildSync } = await import('esbuild');
+  const built = buildSync({
+    entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
+    jsx: 'automatic',
+    outfile: 'spectator.js',
+    bundle: true,
+    write: false,
+    metafile: true,
+    format: 'iife',
+    platform: 'browser',
+    loader: {
+      '.css': 'empty',
+      '.png': 'dataurl',
+      '.webp': 'dataurl',
+      '.svg': 'dataurl',
+      '.jpg': 'dataurl',
+    },
+    define: {
+      'import.meta.env': JSON.stringify({
+        VITE_SUPABASE_URL: 'https://dummy.supabase.co',
+        VITE_SUPABASE_ANON_KEY: 'local-fixture',
+        DEV: true,
+      }),
+      'process.env.NODE_ENV': '"test"',
+    },
+  });
+  const readStyle = (file: string): string =>
+    readFileSync(resolve(ROOT, file), 'utf8').replace(
+      /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+      (_, imported: string) => readStyle(resolve(dirname(file), imported))
+    );
+  const sheets = [
+    ...new Set([
+      'src/styles/club-engine.css',
+      'src/styles/animations.css',
+      'src/styles/metallic-popups.css',
+      'src/styles/reducedMotion.css',
+      'src/pages/MultiTablePage.css',
+      'src/components/table/TableTabBar.css',
+      'src/pages/TablePage.css',
+      'src/components/table/ActionPanel.css',
+      ...Object.keys(built.metafile!.inputs).filter((f) => f.endsWith('.css')),
+      'src/components/table/TableVisualHotfix.css',
+    ]),
+  ];
+  const fontSheet = await page.request.get('https://ca-static.smarter.poker/fonts/fonts.css');
+  expect(fontSheet.ok()).toBe(true);
+  const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
+    .map((m) => m[0])
+    .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
+  const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
+  const fontResponse = await page.request.get(
+    new URL(fontPath.replace('/hub/club-arena/', '/'), 'https://ca-static.smarter.poker').href
+  );
+  expect(fontResponse.ok()).toBe(true);
+  const fontFace = inter
+    .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
+    .replace(fontPath, `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`);
+  const realCss = fontFace + '\n' + sheets.map(readStyle).join('\n');
+  const avatar = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
+  await page.route('**/avatars/table/**', (route) =>
+    route.fulfill({ body: avatar, contentType: 'image/webp' })
+  );
+  await page.route('**/rest/v1/**', (route) => route.fulfill({ json: [] }));
+  await page.route('**/cards/**', (route) => {
+    const card = new URL(route.request().url()).pathname.split('/cards/')[1];
+    const original = resolve(ROOT, 'public/cards', card);
+    const fallback = original.replace(/\.webp$/, '.png');
+    return route.fulfill({
+      body: readFileSync(existsSync(original) ? original : fallback),
+      contentType: existsSync(original) && original.endsWith('.webp') ? 'image/webp' : 'image/png',
+    });
+  });
+  for (const [width, height] of [
+    [320, 568],
+    [375, 667],
+    [393, 852],
+    [430, 932],
+    [480, 975],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.route('http://spectator.fixture/', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<html data-seats="9" data-spectator="true" data-revealed="false" data-jackpot="none"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+      })
+    );
+    await page.goto('http://spectator.fixture/');
+    await page.addScriptTag({
+      content: built.outputFiles.find((f) => f.path.endsWith('.js'))!.text,
+    });
+    await expect(page.locator('.seat__info')).toHaveCount(9);
+    await page.waitForFunction(() => {
+      const e = document.querySelector<HTMLElement>('.table-scaler')!;
+      return (
+        Math.abs(
+          parseFloat(e.style.getPropertyValue('--table-w')) - e.getBoundingClientRect().width
+        ) < 0.5
+      );
+    });
+    await page.evaluate(async () => {
+      await document.fonts.load('600 14px Inter');
+      await document.fonts.ready;
+    });
+    const boardCollisions = await page.evaluate(() => {
+      const board = document.querySelector('.community-area')!.getBoundingClientRect();
+      return [...document.querySelectorAll('.seat__info,.seat__action')]
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return (
+            r.left < board.right &&
+            r.right > board.left &&
+            r.top < board.bottom &&
+            r.bottom > board.top
+          );
+        })
+        .map((el) => el.className);
+    });
+    expect(boardCollisions, `${width}px spectator board stays clear of players`).toEqual([]);
+    const footer = await page.locator('.spectator-footer-bar').boundingBox();
+    const plates = await page
+      .locator('.seat__info')
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().bottom));
+    expect(
+      Math.max(...plates),
+      `${width}px bottom observer seat clears the footer`
+    ).toBeLessThanOrEqual(footer!.y);
+    const canvas = await page.locator('.table-scaler').boundingBox();
+    expect(canvas!.width, `${width}px spectator reaches both screen edges`).toBeCloseTo(width, 0);
+    expect(
+      canvas!.height,
+      `${width}px spectator uses the available vertical canvas`
+    ).toBeGreaterThan(height * 0.64);
+    for (const state of ['none', 'waiting', 'active']) {
+      await page.locator('.table-page').evaluate((el, value) => {
+        el.setAttribute('data-hero-action', value);
+        el.setAttribute('data-tdock', value === 'active' ? 'open' : 'collapsed');
+      }, state);
+      const next = await page.locator('.table-scaler').boundingBox();
+      expect(next!.width).toBeCloseTo(canvas!.width, 1);
+      expect(next!.height).toBeCloseTo(canvas!.height, 1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width
+    );
+    if (width === 393) {
+      const screenshot = await page.screenshot({
+        path: testInfo.outputPath('mobile-spectator-after.png'),
+      });
+      await testInfo.attach('mobile-spectator-after', {
+        body: screenshot,
+        contentType: 'image/png',
+      });
+    }
+    await page.unroute('http://spectator.fixture/');
+  }
+});

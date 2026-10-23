@@ -182,13 +182,15 @@ const GEOMETRY_PROPS = [
   '--sp-hero-clear',
 ];
 
-describe('the felt is ONE size — no state may change it (Dan 2026-08-28)', () => {
+describe('the felt reserves stay fixed through hand and action states', () => {
   /* "NO, THAT SHOULD NEVER HAPPEN, PREVENT IT AND FIX IT. THAT'S A GLITCH, NOT
      CODE."
      Two rules keyed on `[data-hero='false']` used to shrink --sp-action-reserve
      and --sp-hero-clear for a spectator. Between them the felt jumped 128px on
      desktop the instant somebody took a seat, and jumped back when they stood
-     up. Both are deleted. This test is what stops the next one. */
+     up. Both reserve overrides remain deleted. The October 22 owner request
+     adds a dedicated phone observer canvas, reading the same static reserves;
+     its hand/dock stability is measured in table-proportions.spec.ts. */
 
   it('declares no geometry property behind a component-state selector', () => {
     // A BREAKPOINT may change these — that is the viewport changing, which is
@@ -246,10 +248,12 @@ describe('the felt is ONE size — no state may change it (Dan 2026-08-28)', () 
     );
   });
 
-  it('keeps the spectator collapse deleted', () => {
-    // Named explicitly: these two exact rules were the sit-down jump.
-    expect(ALL_CSS).not.toMatch(/\[data-hero='false'\][^{]*\{[^}]*--sp-hero-clear/);
-    expect(ALL_CSS).not.toMatch(/\[data-hero='false'\][^{]*\{[^}]*--sp-action-reserve/);
+  it('keeps the action and hero reserves independent of spectator state', () => {
+    // The October 22 observer canvas reads these fixed reserves to reclaim
+    // unused hero-card space. It must never redefine either reserve or make
+    // hand/action state feed the dimensions.
+    expect(ALL_CSS).not.toMatch(/\[data-hero='false'\][^{]*\{[^}]*--sp-hero-clear\s*:/);
+    expect(ALL_CSS).not.toMatch(/\[data-hero='false'\][^{]*\{[^}]*--sp-action-reserve\s*:/);
   });
 });
 

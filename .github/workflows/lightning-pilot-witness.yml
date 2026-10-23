@@ -52,8 +52,10 @@ on:
         default: '100'
 permissions:
   contents: read
+# One witness at a time PER PLAYER: a player's runs (financial included) never
+# overlap, while different witness players run side by side. Replay reads only.
 concurrency:
-  group: lightning-pilot-witness
+  group: lightning-pilot-witness-${{ inputs.player_id || 'replay' }}
   cancel-in-progress: false
 jobs:
   witness:

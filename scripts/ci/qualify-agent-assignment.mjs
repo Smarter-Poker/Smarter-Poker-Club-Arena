@@ -94,9 +94,15 @@ try {
  const move={...first,p_agent_user_id:destination.account.id,p_op_id:randomUUID(),p_expected_agent_user_id:source.account.id};
  // Durable operation identities before writes; unknown outcomes are never replayed with new IDs.
  writeFileSync(join(root,'agent-assignment-operations.json'),JSON.stringify({first,move}),{mode:0o600});
- const assign=await req('/rest/v1/rpc/fn_reassign_club_members',{method:'POST',token,body:first});assert.equal(assign.success,true);assert.equal(assign.moved,1);
- assert.equal((await membership(player.account.id)).agent_id,source.account.id);
  const sourceToken=await login(source.account);
+ const playerProfile=await req(`/rest/v1/profiles?id=eq.${player.account.id}&select=alias,username`);
+ const playerSearch=playerProfile[0].alias || playerProfile[0].username;assert.ok(playerSearch);
+ browserProof=await startAssignmentBrowserProof({account:source.account,session:loginSessions.get(source.account.id),clubId:club,playerId:player.account.id,playerAlias:playerSearch,evidenceDir:join(process.cwd(),'e2e-report','agent-assignment'),initialAssignment:{actor:staff,session:loginSessions.get(staff.id),beforeWrite:async body=>{
+  assert.equal(body.p_expected_agent_user_id,null);
+  Object.assign(first,body);
+  writeFileSync(join(root,'agent-assignment-operations.json'),JSON.stringify({first,move}),{mode:0o600});
+ }}});
+ assert.equal((await membership(player.account.id)).agent_id,source.account.id);
  const visible=()=>req(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,{token:sourceToken});
  assert.deepEqual((await visible()).map(r=>r.user_id).sort(),[source.account.id,player.account.id].sort());
  const destinationToken=await login(destination.account);
@@ -104,11 +110,6 @@ try {
  const baseline=baselineRows.length?Number(baselineRows[0].sequence):0;assert.ok(Number.isSafeInteger(baseline));
  const sourceEvent=await listenForTransfer(source.account.id,sourceToken,baseline);
  const destinationEvent=await listenForTransfer(destination.account.id,destinationToken,baseline);
- const playerProfile=await req(`/rest/v1/profiles?id=eq.${player.account.id}&select=alias,username`);
- const playerSearch=playerProfile[0].alias || playerProfile[0].username;assert.ok(playerSearch);
- const sourceRoster=await req('/rest/v1/rpc/ca_club_members_page',{method:'POST',token:sourceToken,body:{p_club_id:club,p_search:playerSearch,p_limit:80}});
- const browserPlayer=sourceRoster.items.find(row=>row.user_id===player.account.id);assert.ok(browserPlayer?.alias);
- browserProof=await startAssignmentBrowserProof({account:source.account,session:loginSessions.get(source.account.id),clubId:club,playerId:player.account.id,playerAlias:browserPlayer.alias,evidenceDir:join(process.cwd(),'e2e-report','agent-assignment')});
  const applied=await browserProof.saveFromPlayerRecord(staff,loginSessions.get(staff.id),destination.account.id,body=>{
   assert.equal(body.p_expected_agent_user_id,source.account.id);
   Object.assign(move,body);
@@ -161,4 +162,4 @@ try {
  if(errors.length) throw new AggregateError(errors,'Assignment fixture cleanup incomplete');
 }
 assert.equal(passed,true);
-console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,playerRecordSave:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRetired:owned.length}));
+console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,unassignedPlayerRecordSave:true,playerRecordSave:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRetired:owned.length}));

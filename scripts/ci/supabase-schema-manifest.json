@@ -2689,6 +2689,7 @@
     "fn_ca_holdem_commit_pair_class",
     "fn_ca_horse_claim_due",
     "fn_ca_horse_fleet_metrics",
+    "fn_ca_horse_roster_seat_guard",
     "fn_ca_house_board_allows_automation",
     "fn_ca_incident_action",
     "fn_ca_incident_dashboard",

@@ -56,7 +56,11 @@ describe('the seat rebuild prunes, not just adds', () => {
     // The merge used to be purely additive: `[...prev, ...additions]`. Right
     // for an observer tab, wrong for one asserting `seated: true` about a seat
     // that no longer exists.
-    expect(CODE).toMatch(/const liveSeatIds = new Set\(ids\)/);
+    expect(CODE).toMatch(/const liveSeatIds = new Set\(\[\.\.\.ids, \.\.\.retainedReportTabs\]\)/);
+    expect(CODE).toContain('await reportRemovedTournamentSeats(');
+    expect(CODE.indexOf('await reportRemovedTournamentSeats(')).toBeLessThan(
+      CODE.indexOf('pruneStaleSeatedTabs(prev, liveSeatIds)')
+    );
     expect(CODE).toMatch(/survivors\s*=\s*pruneStaleSeatedTabs\(prev, liveSeatIds\)/);
   });
 

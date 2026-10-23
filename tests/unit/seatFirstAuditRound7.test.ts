@@ -65,7 +65,10 @@ describe('membership is only revoked on proof of non-membership', () => {
 
 describe('the post-spin result card never invents a losing result', () => {
   it('any of the three reads failing throws to the honest all-nulls path', () => {
-    const fn = sliceEnclosingBlock(table, 'const [entryRes, tourneyRes, countRes]');
+    const fn = sliceEnclosingBlock(
+      readSrc('services/tournamentResult.ts'),
+      'const [entryRes, tourneyRes, countRes]'
+    );
     expect(fn).toContain('if (entryRes.error) throw entryRes.error;');
     expect(fn).toContain('if (tourneyRes.error) throw tourneyRes.error;');
     expect(fn).toContain('if (countRes.error) throw countRes.error;');

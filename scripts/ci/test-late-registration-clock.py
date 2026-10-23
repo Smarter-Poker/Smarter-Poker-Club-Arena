@@ -204,3 +204,8 @@ finally:
     (out / 'results.json').write_text(json.dumps(results, indent=2, default=str) + '\n')
 
 print(json.dumps({'passed': all(c['passed'] for c in results['checks']), 'checks': len(results['checks'])}))
+
+# The same required workflow must qualify the consumers of this admission
+# predicate, so a later transition or rebuy cannot silently ignore its clock.
+import sys
+subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-tournament-entry-boundary.py')], check=True)

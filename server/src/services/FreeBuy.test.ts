@@ -14,6 +14,8 @@ import {
   ADDON_BREAK_MS,
   horseAddsOnImmediately,
   horseAddOnTiming,
+  horseTakesAddOn,
+  HORSE_ADDON_PARTICIPATION_RATE,
   horseRebuyAllowance,
   horseMayRebuy,
   HORSE_ADDON_IMMEDIATE_RATE,
@@ -140,7 +142,7 @@ describe('the add-on window is ONE window, open from the start', () => {
   });
 });
 
-describe('horses always add on', () => {
+describe('90 percent of surviving funded horses add on', () => {
   const ids = Array.from({ length: 2000 }, (_, i) => `h-${i}`);
 
   it('35% take it immediately, within sampling tolerance', () => {
@@ -150,14 +152,20 @@ describe('horses always add on', () => {
     expect(rate).toBeLessThan(HORSE_ADDON_IMMEDIATE_RATE + 0.04);
   });
 
-  it('and every horse still alive at the break takes one, so nobody is left without', () => {
-    const timings = ids.map((h) => horseAddOnTiming(h, 'evt-1', true));
-    expect(timings.every((t) => t === 'immediate' || t === 'at_break')).toBe(true);
-    expect(timings.filter((t) => t === 'at_break').length).toBeGreaterThan(0);
+  it('selects a stable 90 percent cohort for the event', () => {
+    const chosen = ids.filter((h) => horseTakesAddOn(h, 'evt-1'));
+    expect(chosen.length / ids.length).toBeGreaterThan(HORSE_ADDON_PARTICIPATION_RATE - 0.03);
+    expect(chosen.length / ids.length).toBeLessThan(HORSE_ADDON_PARTICIPATION_RATE + 0.03);
+    for (const id of ids) {
+      expect(horseAddOnTiming(id, 'evt-1', true) !== 'declined').toBe(horseTakesAddOn(id, 'evt-1'));
+      expect(horseTakesAddOn(id, 'evt-1')).toBe(horseTakesAddOn(id, 'evt-1'));
+    }
   });
 
   it('only a horse already busted misses out - and it has nothing to add on to', () => {
-    const late = ids.filter((h) => !horseAddsOnImmediately(h, 'evt-1'));
+    const late = ids.filter(
+      (h) => horseTakesAddOn(h, 'evt-1') && !horseAddsOnImmediately(h, 'evt-1')
+    );
     expect(horseAddOnTiming(late[0], 'evt-1', false)).toBe('busted_before_break');
   });
 

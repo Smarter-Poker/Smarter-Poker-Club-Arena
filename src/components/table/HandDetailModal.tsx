@@ -704,12 +704,7 @@ export function HandDetailModal({
           >
             {(() => {
               const me = model.players.find((p) => p.userId === heroId);
-              if (
-                !me ||
-                (tab === 'summary' &&
-                  model.showdown.some((row) => row.userId === heroId && row.hole?.length))
-              )
-                return null;
+              if (!me) return null;
               const cards = me.hole?.length ? me.hole : me.privateHole;
               const folded = hand.streets.some((street) =>
                 street.actions.some(

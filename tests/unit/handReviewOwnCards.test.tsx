@@ -141,6 +141,25 @@ describe('review keeps the viewer in the hand even outside showdown', () => {
     expect(mocks.getHand).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a shown hand at the top as well as in the full showdown breakdown', () => {
+    const row = stored('one', true);
+    row.players[0].hole_cards = row.players[0].private_hole_cards!;
+    row.players[0].private_hole_cards = undefined;
+    render(
+      <HandDetailModal
+        isOpen
+        onClose={() => {}}
+        hands={[adaptServiceHandToPanel(row, 'hero')]}
+        heroId="hero"
+      />
+    );
+    const own = screen.getByRole('region', { name: 'Your Cards' });
+    expect(within(own).getByRole('img', { name: 'Ace Of Spades' })).toBeTruthy();
+    expect(own.textContent).toContain('Shown');
+    expect(document.querySelector('.hdm-body')?.firstElementChild).toBe(own);
+    expect(mocks.getHand).not.toHaveBeenCalled();
+  });
+
   it('does not refetch already available cards or show another participant private cards', () => {
     render(
       <HandDetailModal isOpen onClose={() => {}} hands={[panel('one', true)]} heroId="hero" />

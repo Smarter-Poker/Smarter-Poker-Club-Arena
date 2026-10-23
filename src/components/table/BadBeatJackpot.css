@@ -819,3 +819,76 @@
     font-size: 0.625rem;
   }
 }
+
+/* The console's silver X, with the same geometry on both jackpot banners.
+   Reserve its width inside the existing plate so it never covers the amount. */
+.bbj-widget,
+.bbj-mini-plate {
+  padding-right: 28px;
+}
+
+.bbj-widget__details,
+.bbj-mini-plate__details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bbj-widget__details {
+  flex-direction: column;
+}
+
+.bbj-dismiss {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  bottom: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #e4e7ec;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  text-shadow: 0 1px 0 #000;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bbj-dismiss:focus-visible,
+.bbj-widget__details:focus-visible,
+.bbj-mini-plate__details:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 768px) {
+  .bbj-widget__details {
+    flex-direction: row;
+  }
+}
+
+@media (max-width: 360px) {
+  .bbj-widget__details {
+    gap: 4px;
+  }
+
+  .bbj-widget__label {
+    letter-spacing: 0.02em;
+  }
+}

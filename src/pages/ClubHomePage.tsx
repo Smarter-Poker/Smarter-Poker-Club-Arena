@@ -5872,35 +5872,8 @@ function ClubHomePageContent({
           onResolved={latchOpeningChecklist}
         />
 
-        {/* ═══════════════════════════════════════════════════════════════════
-          AD STRIP - directly under the action bar. THREE ROTATING PICTURES.
-          (Dan 2026-09-03.) The text strip that lived here was dropped by the
-          lobby rebuild in #1759 and nothing noticed for five days: this mount
-          is now pinned by tests/unit/houseAds.test.ts. The rotator renders
-          nothing at all when no creative has a picture, so it never takes
-          space it cannot fill.
-      ═══════════════════════════════════════════════════════════════════ */}
-        <HouseAdRotator
-          slot="lobby_strip"
-          clubId={resolvedClubId || club.id}
-          onNavigate={(path) => {
-            haptic.selection();
-            if (
-              isDiamondJackpotAdvertTarget(path, isAutomaticArena, [
-                clubId,
-                resolvedClubId,
-                club.id,
-              ])
-            ) {
-              setShowBBJInfo(true);
-              return;
-            }
-            navigate(path);
-          }}
-        />
-
         {/* The footer is the permanent Diamond Spins entry. Keep the
-            eligible zero-chip invitation without an extra box under ads.
+            eligible zero-chip invitation without a middle promotional strip.
 
             NOT IN THE DIAMOND ARENA (2026-09-19). "Out Of Chips? ... Chip
             Prizes Paid Into Your Club Wallet" invites the player to a wheel

@@ -9,11 +9,14 @@
     width: 100%;
     display: table;
     table-layout: fixed;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0 4px;
     font-family: var(--font-primary, 'Inter', sans-serif);
     font-size: 12px;
     color: #e4e7ec;
-    background: #03070a;
+    background: #080b11;
+    border: 1px solid rgb(88 142 235 / 25%);
+    box-shadow: 0 14px 30px rgb(0 0 0 / 65%);
   }
   .compact-lobby thead {
     display: table-header-group;
@@ -61,8 +64,15 @@
     text-align: center;
     font-size: 10px;
     font-weight: 600;
-    color: #9aa5b3;
-    border-bottom: 1px solid rgb(255 255 255 / 12%);
+    color: #b6bdc5;
+    background: linear-gradient(180deg, #14161c 0%, #0e1014 100%);
+    border-top: 1px solid rgb(217 222 229 / 35%);
+    border-right: 1px solid rgb(255 255 255 / 8%);
+    border-bottom: 2px solid #000;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 12%),
+      0 3px 7px rgb(0 0 0 / 70%);
+    text-shadow: 0 1px 1px #000;
   }
   .compact-lobby th:first-child {
     width: 42%;
@@ -83,12 +93,27 @@
     text-align: center;
     vertical-align: middle;
     overflow-wrap: anywhere;
-    border-bottom: 1px solid rgb(255 255 255 / 8%);
+    background: linear-gradient(180deg, #111722 0%, #080b11 100%);
+    border-top: 1px solid rgb(105 137 193 / 14%);
+    border-bottom: 1px solid rgb(0 0 0 / 68%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
     font-variant-numeric: tabular-nums;
   }
   .compact-lobby td:first-child {
     padding: 0;
     text-align: left;
+  }
+  /* The same recessed board and raised rows as the wider live-event table. */
+  .compact-lobby tbody tr:nth-child(even) td {
+    background: linear-gradient(180deg, #0d1928 0%, #080b11 100%);
+  }
+  .compact-lobby tbody td:first-child {
+    box-shadow:
+      inset 3px 0 0 rgb(88 137 225 / 28%),
+      inset 0 1px 0 rgb(255 255 255 / 3%);
+  }
+  .compact-lobby tbody tr:active td {
+    background: #07111d;
   }
   .compact-lobby tr {
     cursor: pointer;
@@ -118,6 +143,7 @@
     overflow: hidden;
     font-size: 13px;
     font-weight: 600;
+    text-shadow: 0 1px 1px #000;
     line-height: 1.25;
   }
   .compact-lobby__meta {

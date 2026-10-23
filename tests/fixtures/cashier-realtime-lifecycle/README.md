@@ -38,3 +38,7 @@ Column privileges and the two actual profile/spendable-balance read helpers were
 refreshed read-only on 2026-10-23 after browser execution exposed the omitted
 column ACL boundary. Grants stay at their captured column scope; no table-wide
 client SELECT is substituted.
+
+The app-entry RPC closure and its referenced read relations/view are also
+captured from the installed catalog. Access gating runs through the real
+`fn_poker_arena_context`, rather than a fixture bypass.

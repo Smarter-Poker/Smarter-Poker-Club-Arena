@@ -32,6 +32,11 @@ def schema():
   roles=f['execute_roles']
   if isinstance(roles,str):roles=[r for r in roles.strip('{}').split(',') if r]
   if roles:out.append('GRANT EXECUTE ON FUNCTION '+signature+' TO '+','.join(quote(r) for r in roles)+';')
+ for v in records('views'):
+  out.append('CREATE VIEW public.'+quote(v['relname'])+' AS '+v['definition'].rstrip(';')+';')
+  for role,acl in re.findall(r'(?:^|[,{"])(anon|authenticated|service_role|)=([a-zA-Z]*)/',v['acl'] or ''):
+   rights=[name for key,name in {'r':'SELECT','a':'INSERT','w':'UPDATE','d':'DELETE','D':'TRUNCATE','x':'REFERENCES','t':'TRIGGER','m':'MAINTAIN'}.items() if key in acl]
+   if rights:out.append('GRANT '+','.join(rights)+' ON public.'+quote(v['relname'])+' TO '+('PUBLIC' if not role else quote(role))+';')
  out+=defaults+[c[1] for c in constraints if not c[0]]+indexes+[c[1] for c in constraints if c[0]]
  for t in tables:
   table=quote(t['schema_name'])+'.'+quote(t['name'])

@@ -3,6 +3,11 @@ import { waitForGameCreationAuthority } from '../support/gameCreationReadiness';
 
 const CLUB_ID = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 
+// Production has zero retries: preserve the first failure's navigation,
+// format selection and real request evidence instead of losing its cause.
+// Playwright requires the trace fixture at file scope.
+test.use({ trace: 'retain-on-failure' });
+
 test.describe('Visible catalog production reads', () => {
   test.describe.configure({ timeout: 150_000 });
   test.skip(

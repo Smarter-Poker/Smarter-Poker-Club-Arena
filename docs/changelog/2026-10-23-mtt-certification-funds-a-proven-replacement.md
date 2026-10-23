@@ -30,6 +30,14 @@ achievement write. Both remain aborted; neither is admitted as a read or
 forwarded to production. The regression retains refusals for money RPCs,
 ledger inserts, method changes and lookalike endpoint names.
 
+Run 39899251741 also crossed Chicago midnight inside the Financial Admin case.
+Its day-specific prompt marker then allowed a legitimate new-day bonus status
+request. `fn_ca_daily_bonus_status` opens a bonus-day row and can consume a
+streak shield; it is not a read. Its exact POST now joins the aborted shell
+quarantine, including when it arrives after the guard was installed. It remains
+outside the read allowlist; method changes, lookalikes and financial mutations
+remain refused. No future-day markers suppress the application prompt.
+
 Returning players intentionally see Club Options collapsed. Its hidden action
 navigation has no accessible box to measure. The operations route now applies
 the same non-overlap calculation to rendered navigation and checks normal

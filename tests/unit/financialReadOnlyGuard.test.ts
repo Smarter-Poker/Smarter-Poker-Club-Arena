@@ -290,7 +290,7 @@ describe('financial read-only Playwright guard', () => {
     expect(() => guard.assertNoViolations()).not.toThrow();
   });
 
-  it.each(['fn_achievement_record_login', 'ca_record_device_sighting'])(
+  it.each(['fn_achievement_record_login', 'ca_record_device_sighting', 'fn_ca_daily_bonus_status'])(
     'quarantines the global %s write while preserving mutation refusals',
     async (rpc) => {
       const path = `/rest/v1/rpc/${rpc}`;
@@ -326,6 +326,31 @@ describe('financial read-only Playwright guard', () => {
       await guard.dispose();
     }
   );
+
+  it('quarantines a late daily-bonus POST after the certificate crosses Chicago midnight', async () => {
+    vi.useFakeTimers();
+    const harness = pageHarness();
+    let guard: Awaited<ReturnType<typeof installFinancialReadOnlyGuard>> | undefined;
+    try {
+      // The recorded case opened before midnight and navigated after it.
+      vi.setSystemTime(new Date('2026-10-23T04:59:57Z'));
+      guard = await installFinancialReadOnlyGuard(harness.page, {
+        allowedRpcPaths: FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+        quarantinedPostPaths: FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
+      });
+      vi.setSystemTime(new Date('2026-10-23T05:00:03Z'));
+      const path = '/rest/v1/rpc/fn_ca_daily_bonus_status';
+      const late = routeHarness('POST', `https://project.supabase.co${path}`);
+      await harness.handler()(late.route, late.route.request());
+      expect(late.abort).toHaveBeenCalledWith('blockedbyclient');
+      expect(late.fallback).not.toHaveBeenCalled();
+      expect(guard.quarantinedShellWrites).toEqual([{ method: 'POST', path }]);
+      expect(() => guard!.assertNoViolations()).not.toThrow();
+    } finally {
+      await guard?.dispose();
+      vi.useRealTimers();
+    }
+  });
 
   it('aborts exact shell writes without forwarding or treating them as page violations', async () => {
     const harness = pageHarness();

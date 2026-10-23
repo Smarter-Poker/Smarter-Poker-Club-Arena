@@ -407,3 +407,13 @@ test('a client-held turn is answered once per hand with the normal Fold & Watch,
   // The pre-action is offered first; the Time Bank needs the player's own turn.
   assert.ok(src.indexOf("['preaction', preaction") < src.indexOf("'timebank',\n        timebank"));
 });
+
+test('an armed Time Bank turn waits for the bank before Fold & Watch; the pre-action gets a longer offer window', () => {
+  const src = readFileSync(new URL('./lightning-pilot-cycle.mjs', import.meta.url), 'utf8');
+  const watch = src.slice(src.indexOf('const watchOwnTurn'));
+  assert.ok(
+    watch.indexOf("report.timebank === 'accepted'") < watch.indexOf('foldedHands.add(hand)')
+  );
+  assert.match(watch, /!\(bankActivated && deadlineExtended\)/);
+  assert.match(src, /key === 'preaction' \? 60000 : 20000/);
+});

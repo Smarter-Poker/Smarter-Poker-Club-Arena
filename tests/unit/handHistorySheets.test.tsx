@@ -332,7 +332,7 @@ describe('both surfaces show every board a hand ran', () => {
   it('says nothing about runs on an ordinary single-board hand', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[record()]} heroId={HERO} />);
     expect(document.querySelectorAll('.hdm-board__badge')).toHaveLength(0);
-    expect(document.querySelector('.hdm-section-head')?.textContent).toContain('Board');
+    expect(document.querySelector('.hdm-boards .hdm-section-head')?.textContent).toContain('Board');
   });
 
   it('the adapter carries rit_boards from the service row onto the view model', () => {
@@ -370,7 +370,7 @@ describe('both surfaces show every board a hand ran', () => {
      runs 2 and 3 rather than the whole-hand net repeated three times. */
   it('with no per-run record, the extra runs carry no invented share', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
-    const nets = Array.from(document.querySelectorAll('.hdm-sd__net'));
+    const nets = Array.from(document.querySelectorAll('.hdm-showdown .hdm-sd__net'));
     // Two players x three boards.
     expect(nets).toHaveLength(6);
     expect(nets.filter((n) => n.classList.contains('is-blank'))).toHaveLength(4);

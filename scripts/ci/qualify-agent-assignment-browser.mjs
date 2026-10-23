@@ -225,6 +225,8 @@ export async function startAssignmentBrowserProof({
             response.request().method() === 'POST',
           { timeout: 45_000 }
         );
+        // A missing button must still let the owning fixture cleanup finish.
+        response.catch(() => {});
         await control.getByRole('button', { name: 'Save', exact: true }).click();
         const result = await response;
         assert.ok(result.ok(), `Save refused (${result.status()})`);

@@ -11,3 +11,5 @@ Regression coverage exercises Safari's module-error wording through the Vite eve
 This repairs a demonstrated reload path. It does not establish that every reported periodic Safari white screen came from that path. Device continuity and publication evidence remain in the task checkpoint.
 
 The required related preflight also exposed a timeout in the existing Double Diamonds law test: its latest-definition lookup read every migration twice. The lookup now scans newest-first and stops at the first matching definition, preserving the same selected file and every financial assertion. No product or database behavior changes.
+
+The same required preflight exposed an exact-file Stats law lookup that loaded the whole migration corpus through migrationText. It now reads only its selected file, preserving all assertions.

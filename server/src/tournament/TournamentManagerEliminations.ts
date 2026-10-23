@@ -1861,7 +1861,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                     reason: 'satellite_has_no_awards',
                   });
                   if (sweepStopped()) return;
-                  if (!this.isOnBreak()) {
+                  if (!this.isOnBreak() && !this.successorDrainRequested) {
                     for (const engine of this.tableEngines.values()) engine.resumeDealing();
                   }
                 }
@@ -1943,7 +1943,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               if (sweepStopped()) return;
               // Ending the bubble cannot release an overlapping tournament break.
-              if (!this.isOnBreak()) {
+              if (!this.isOnBreak() && !this.successorDrainRequested) {
                 for (const engine of this.tableEngines.values()) {
                   engine.resumeDealing();
                 }

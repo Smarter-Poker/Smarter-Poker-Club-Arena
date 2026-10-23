@@ -288,8 +288,16 @@ describe('fold wins retain their recorded monetary awards without a showdown', (
     const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
     expect(screen.getByText(/No Showdown/)).toBeTruthy();
     check();
+    const summaryAwards = screen.getByRole('region', { name: 'Pot Awards' });
+    expect(summaryAwards.classList.contains('hdm-showdown')).toBe(true);
+    expect(summaryAwards.classList.contains('hdv__showdown')).toBe(false);
+    expect(summaryAwards.querySelectorAll('.hdm-sd')).toHaveLength(2);
+    expect(summaryAwards.querySelector('.hdm-section-head')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
     check();
+    expect(
+      screen.getByRole('region', { name: 'Pot Awards' }).classList.contains('hdv__showdown')
+    ).toBe(true);
     view.unmount();
     render(
       <HandReplay

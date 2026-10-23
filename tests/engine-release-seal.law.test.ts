@@ -2096,6 +2096,16 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(intake).toContain('"$CANONICAL_GENERATION/launch-engine-release.sh"');
   });
 
+  it('activates a newer canonical control generation without downgrading or replacing the same SHA', () => {
+    const result = spawnSync('python3', ['-B', 'tests/operations/engine-control-activation.py'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stderr).toContain('Ran 1 test');
+  });
+
   it('activates one complete control-plane generation atomically under the engine lock', () => {
     const lock = installer.indexOf('flock -w 600 9');
     const sourceLock = installer.indexOf('flock -w 90 8', lock);

@@ -20,8 +20,10 @@ CREATE TABLE IF NOT EXISTS public.ca_bbj_pool_policy (
   CHECK (pivot_main + pivot_backup <= 1)
 );
 ALTER TABLE public.ca_bbj_pool_policy ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.ca_bbj_pool_policy FROM PUBLIC, anon, authenticated;
-GRANT ALL ON TABLE public.ca_bbj_pool_policy TO service_role;
+-- Changed only by a migration; the service role reads it and nothing else
+-- (as applied on production, ALL was granted and 20261023031034 narrowed it).
+REVOKE ALL ON TABLE public.ca_bbj_pool_policy FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.ca_bbj_pool_policy TO service_role;
 
 -- Every other pool: the original rule.
 UPDATE public.ca_bbj_policy

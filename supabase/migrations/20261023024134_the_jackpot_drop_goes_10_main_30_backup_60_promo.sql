@@ -8,6 +8,9 @@
 -- The same night 20,000.00 moved from the Midway Union main bank to its promo
 -- bank through fn_bbj_move_between_banks (ca_bbj_bucket_moves op_id
 -- dan-2026-10-22-union-main-to-promo-20000).
+-- Superseded the same night by 20261023030641, which keeps 10 / 30 / 60 for
+-- the Midway Union pool only; the proof is that rule's row.
+-- @live-proof: EXISTS (SELECT 1 FROM public.ca_bbj_pool_policy WHERE standard_main = 0.10 AND standard_backup = 0.30 AND pivot_main = 0.10 AND pivot_backup = 0.30)
 
 UPDATE public.ca_bbj_policy
    SET standard_main = 0.10,

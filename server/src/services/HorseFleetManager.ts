@@ -3129,7 +3129,7 @@ export class HorseFleetManager {
             /* AN ASSIGNED PILOT HORSE SEATS ONLY IN THE PILOT (2026-10-22).
                New seats only; nothing it already holds is touched. See
                LightningPilotSeatScope. */
-            if (pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
+            if (!bankrollOnly && pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
               pilotElsewhereDropped++;
               return false;
             }

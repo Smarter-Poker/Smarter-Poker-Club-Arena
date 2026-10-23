@@ -119,5 +119,8 @@
   "openingCatalogSHA256": "5fe7191aa269effeb7916c9343f39c905225ae748e768dbe5340dda58eff88d4",
   "openingGovernanceSHA256": "702886e7df8b14465714321ffdb8ab5b93cf9f72e85610da484674e98914c834",
   "journalIndexCatalogSHA256": "eae9ee3e9dcc55b84fbb36dadc6175edfc9ab6e2b184da948ce906773b99275f",
-  "pickCatalogSHA256": "54b4585fcf3443abb6d1b3d76f36170d8ee9a4720fb8a4c5815edb5b05a44bac"
+  "pickCatalogSHA256": "54b4585fcf3443abb6d1b3d76f36170d8ee9a4720fb8a4c5815edb5b05a44bac",
+  "auditedSourceRevision": "ffa19fa61761da13c73b4442558a477704cbccca",
+  "qualificationScope": "fixed audit schema-only baseline plus four declared transitions; later migrations excluded",
+  "laterMigrationsExcluded": true
 }

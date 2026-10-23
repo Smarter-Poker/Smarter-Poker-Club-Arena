@@ -7,6 +7,8 @@ from pathlib import Path
 import fidelity,forward,governance
 ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'supabase/bootstrap'
+AUDITED_SOURCE_REVISION='ffa19fa61761da13c73b4442558a477704cbccca'
+QUALIFICATION_SCOPE='fixed audit schema-only baseline plus four declared transitions; later migrations excluded'
 class Refused(RuntimeError):pass
 def q(x):return '"'+x.replace('"','""')+'"'
 def lit(x):return "'"+str(x).replace("'","''")+"'"
@@ -102,7 +104,7 @@ def safe_error_line(value,context):
  return value[:240]
 def failure_diagnostic(stderr,phase,context,command):
  header=re.search(r'(?:ERROR|FATAL):\s+([A-Z0-9]{5}):\s*([^\n]*)',stderr)
- result={'schemaRebuilt':False,'status':'failed','phase':phase,'context':context,'command':Path(str(command)).name,'sqlstate':header[1] if header else None,'message':safe_error_line(header[2],context) if header else 'PostgreSQL rejected the command; raw source and detail are omitted','line':int(re.search(r':(\d+): (?:ERROR|FATAL):',stderr)[1]) if re.search(r':(\d+): (?:ERROR|FATAL):',stderr) else None,'rawDiagnostic':'ephemeral owned scratch only; never uploaded'}
+ result={'auditedSourceRevision':AUDITED_SOURCE_REVISION,'qualificationScope':QUALIFICATION_SCOPE,'laterMigrationsExcluded':True,'schemaRebuilt':False,'status':'failed','phase':phase,'context':context,'command':Path(str(command)).name,'sqlstate':header[1] if header else None,'message':safe_error_line(header[2],context) if header else 'PostgreSQL rejected the command; raw source and detail are omitted','line':int(re.search(r':(\d+): (?:ERROR|FATAL):',stderr)[1]) if re.search(r':(\d+): (?:ERROR|FATAL):',stderr) else None,'rawDiagnostic':'ephemeral owned scratch only; never uploaded'}
  hint=re.search(r'^HINT:\s*([^\n]*)',stderr,re.M)
  if hint:result['hint']=safe_error_line(hint[1],context)
  return result
@@ -156,7 +158,7 @@ def main():
  parent=validate_parent(args.scratch);output=Path(args.result).absolute()
  if sys.platform=='darwin' and not any(output.is_relative_to(root) for root in ['/Volumes/SmarterWork/agent-work','/Volumes/SmarterArchives/agent-evidence']):raise Refused('Mac result must be on an external task volume')
  if output.exists() or not output.parent.is_dir() or output.parent.resolve()!=output.parent:raise Refused('New result file in a real existing directory required')
- output.write_text(json.dumps({'schemaRebuilt':False,'status':'started'})+'\n');os.chmod(output,0o600)
+ output.write_text(json.dumps({'auditedSourceRevision':AUDITED_SOURCE_REVISION,'qualificationScope':QUALIFICATION_SCOPE,'laterMigrationsExcluded':True,'schemaRebuilt':False,'status':'started'})+'\n');os.chmod(output,0o600)
  pg=Path(args.pg_bin);manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());contract=json.loads((BASE/'pokeriq-role-contract.json').read_text());platform=json.loads((BASE/'pokeriq-platform-contract.json').read_text())['database'];source=(BASE/manifest['schemaFile']).read_bytes()
  if hashlib.sha256(source).hexdigest()!=manifest['schemaSHA256']:raise Refused('Baseline source checksum differs')
  if any(os.environ.get(k) for k in ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSERVICE','PGSERVICEFILE','DATABASE_URL','SUPABASE_DB_URL']):raise Refused('Remote or caller-provided database settings are forbidden')
@@ -243,7 +245,7 @@ def main():
   if any(x['count'] for x in catalog['unsupported_objects']):raise Refused('Catalog contains unsupported object families')
   differences=compare(semantic_expected,semantic_actual)
   if differences:
-   output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
+   output.write_text(json.dumps(dict(auditedSourceRevision=AUDITED_SOURCE_REVISION,qualificationScope=QUALIFICATION_SCOPE,laterMigrationsExcluded=True,schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent source catalog comparison differs before pending schema application: '+json.dumps(differences))
   # Four exact reviewed DDL files follow baseline fidelity; no business routine
   # is invoked. The hourly-sweep concurrent-index preamble stays outside its
@@ -265,13 +267,13 @@ def main():
   semantic_expected,semantic_actual,parsed=fidelity.normalize_expressions(sql,proposed,catalog);expressions_parsed+=parsed
   differences=compare(semantic_expected,semantic_actual)
   if differences:
-   output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='pending-catalog-comparison',differences=differences))+'\n')
+   output.write_text(json.dumps(dict(auditedSourceRevision=AUDITED_SOURCE_REVISION,qualificationScope=QUALIFICATION_SCOPE,laterMigrationsExcluded=True,schemaRebuilt=False,status='failed',phase='pending-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent pending schema catalog comparison differs: '+json.dumps(differences))
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':pending,'independentBaselineCatalogPassed':True,'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'omittedInvalidIndexesRestored':invalid_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'governanceConfigurationRowsInserted':1,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  receipt={'auditedSourceRevision':AUDITED_SOURCE_REVISION,'qualificationScope':QUALIFICATION_SCOPE,'laterMigrationsExcluded':True,'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':pending,'independentBaselineCatalogPassed':True,'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'omittedInvalidIndexesRestored':invalid_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'governanceConfigurationRowsInserted':1,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:
-  if 'receipt' not in locals() and json.loads(output.read_text()).get('status')=='started':output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',**last_operation,rawDiagnostic='ephemeral owned scratch only; never uploaded'))+'\n')
+  if 'receipt' not in locals() and json.loads(output.read_text()).get('status')=='started':output.write_text(json.dumps(dict(auditedSourceRevision=AUDITED_SOURCE_REVISION,qualificationScope=QUALIFICATION_SCOPE,laterMigrationsExcluded=True,schemaRebuilt=False,status='failed',**last_operation,rawDiagnostic='ephemeral owned scratch only; never uploaded'))+'\n')
   if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(data),'-m','immediate','-w','stop'],capture_output=True,env=env,timeout=30)
   # Failed private diagnostics stay only in owned scratch for diagnosis. No
   # running cluster survives a failure, and successful scratch is removed.

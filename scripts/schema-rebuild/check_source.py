@@ -4,7 +4,9 @@ import hashlib,json,re
 from pathlib import Path
 BASE=Path(__file__).resolve().parents[2]/'supabase/bootstrap'
 def main():
- manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());source=(BASE/manifest['schemaFile']).read_bytes()
+ manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());
+ if manifest.get('auditedSourceRevision')!='ffa19fa61761da13c73b4442558a477704cbccca' or manifest.get('sourceRevisionArena')!=manifest['auditedSourceRevision'] or manifest.get('laterMigrationsExcluded') is not True:raise ValueError('Fixed audit cutoff differs')
+ source=(BASE/manifest['schemaFile']).read_bytes()
  if len(source)!=manifest['bytes'] or hashlib.sha256(source).hexdigest()!=manifest['schemaSHA256']:raise ValueError('Native baseline bytes differ from provenance')
  for name,expected in [('pokeriq-catalog-reference.json',manifest['catalogSHA256']),('source-history.json',manifest['sourceHistorySHA256']),('pokeriq-platform-contract.json',manifest['platformContractSHA256']),('pokeriq-extension-runtime.json',manifest['extensionRuntimeSHA256']),('pokeriq-role-contract.json',manifest['roleContractSHA256']),('historical-ledger-reconciliation.json',manifest['historicalLedgerReconciliationSHA256']),('pending-hourly-sweep-catalog.json',manifest['pendingCatalogSHA256']),('forward-schema.json',manifest['forwardSchemaSHA256']),('post-capture-opening-catalog.json',manifest['openingCatalogSHA256']),('opening-governance.json',manifest['openingGovernanceSHA256']),('pending-journal-index-catalog.json',manifest['journalIndexCatalogSHA256']),('post-capture-pick-catalog.json',manifest['pickCatalogSHA256'])]:
   if hashlib.sha256((BASE/name).read_bytes()).hexdigest()!=expected:raise ValueError('Baseline evidence checksum differs: '+name)

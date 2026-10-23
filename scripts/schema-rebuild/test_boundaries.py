@@ -1,4 +1,4 @@
-import importlib.util,json,tempfile,unittest,os,subprocess,sys
+import importlib.util,json,tempfile,unittest,os,subprocess,sys,re,hashlib
 from pathlib import Path
 import check_history,forward
 p=Path(__file__).with_name('verify.py');spec=importlib.util.spec_from_file_location('rebuild',p);v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
@@ -6,11 +6,34 @@ class Boundaries(unittest.TestCase):
  def test_current_snapshot_refuses_any_unexecuted_forward(self):
   inventory=json.loads((v.BASE/'source-history.json').read_text())
   entries=json.loads((v.BASE/'forward-schema.json').read_text())['arena']
-  self.assertFalse(any(check_history.check(v.ROOT,'arena',inventory,entries).values()))
-  self.assertTrue(check_history.check(v.ROOT,'arena',inventory,[])['unadmittedNew'])
+  audited=Path(os.environ.get('SCHEMA_AUDITED_SOURCE',v.ROOT))
+  self.assertFalse(any(check_history.check(audited,'arena',inventory,entries).values()))
+  self.assertTrue(check_history.check(audited,'arena',inventory,[])['unadmittedNew'])
   for altered in [list(reversed(entries)),entries[:1],entries+entries,[dict(entries[0],sha256='0'*64)],[dict(entries[0],state='unknown')]]:
    with self.assertRaises(ValueError):forward.validate(v.ROOT,altered)
   with self.assertRaises(ValueError):check_history.check(v.ROOT,'arena',inventory,[{'path':'unreviewed.sql','sha256':'0'*64}])
+ def test_fixed_workflow_uses_only_exact_audited_history_and_strict_checker(self):
+  workflow=(v.ROOT/'.github/workflows/full-schema-rebuild.yml').read_text()
+  def pinned(text):
+   blocks=re.findall(r'^      - uses: actions/checkout@v4\n        with:\n(.*?)(?=^      -|\Z)',text,re.M|re.S)
+   audit=[b for b in blocks if 'path: audited-arena-source' in b]
+   fields=dict(line.strip().split(': ',1) for line in audit[0].splitlines() if ': ' in line and not line.lstrip().startswith('#')) if len(audit)==1 else {}
+   return fields=={'repository':'Smarter-Poker/Smarter-Poker-Club-Arena','ref':v.AUDITED_SOURCE_REVISION,'path':'audited-arena-source','sparse-checkout':'supabase/migrations','persist-credentials':'false'} and '--checkout audited-arena-source --repo arena' in text and '--checkout . --repo arena' not in text
+  self.assertTrue(pinned(workflow))
+  self.assertFalse(pinned(workflow.replace('ref: '+v.AUDITED_SOURCE_REVISION,'ref: main')))
+  self.assertFalse(pinned(workflow.replace('--checkout audited-arena-source --repo arena','--checkout . --repo arena')))
+  manifest=json.loads((v.BASE/'pokeriq-baseline.json').read_text())
+  self.assertEqual(manifest['auditedSourceRevision'],v.AUDITED_SOURCE_REVISION);self.assertEqual(manifest['qualificationScope'],v.QUALIFICATION_SCOPE);self.assertTrue(manifest['laterMigrationsExcluded'])
+  failure=v.failure_diagnostic('ERROR:  42501: denied','proof',{},'psql')
+  self.assertEqual(failure['auditedSourceRevision'],v.AUDITED_SOURCE_REVISION);self.assertEqual(failure['qualificationScope'],v.QUALIFICATION_SCOPE);self.assertTrue(failure['laterMigrationsExcluded'])
+  parent=Path(os.environ.get('SCHEMA_TEST_SCRATCH',v.ROOT.parent))
+  with tempfile.TemporaryDirectory(prefix='cutoff-',dir=parent) as folder:
+   root=Path(folder);migrations=root/'supabase/migrations';migrations.mkdir(parents=True)
+   source=migrations/'audited.sql';source.write_text('SELECT 1;')
+   inventory={'repositories':{'arena':{'files':[dict(path='supabase/migrations/audited.sql',sha256=hashlib.sha256(source.read_bytes()).hexdigest())]}}}
+   self.assertFalse(any(check_history.check(root,'arena',inventory,[]).values()))
+   (migrations/'later.sql').write_text('CREATE TABLE later(id int);')
+   self.assertEqual(check_history.check(root,'arena',inventory,[])['unadmittedNew'],['supabase/migrations/later.sql'])
  def test_pending_psql_file_is_visible_only_inside_mounted_scratch(self):
   parent=Path(os.environ.get('SCHEMA_TEST_SCRATCH',v.ROOT.parent))
   entries=json.loads((v.BASE/'forward-schema.json').read_text())['arena']
@@ -85,6 +108,8 @@ class Boundaries(unittest.TestCase):
    self.assertNotEqual(result.returncode,0)
    self.assertIn('caller-provided database settings are forbidden',result.stderr)
    self.assertEqual(list(directory.glob('sr-*')),[])
+   receipt=json.loads((directory/'result.json').read_text())
+   self.assertEqual(receipt['auditedSourceRevision'],v.AUDITED_SOURCE_REVISION);self.assertEqual(receipt['qualificationScope'],v.QUALIFICATION_SCOPE);self.assertTrue(receipt['laterMigrationsExcluded'])
  def test_schema_is_exact_native_file_and_no_credentials_are_fixture_inputs(self):
   manifest=json.loads((v.BASE/'pokeriq-baseline.json').read_text());self.assertTrue(manifest['allSchemas']);self.assertFalse(manifest['dataIncluded']);self.assertEqual(manifest['bytes'],(v.BASE/manifest['schemaFile']).stat().st_size)
 if __name__=='__main__':unittest.main()

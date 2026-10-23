@@ -1,3 +1,16 @@
+## Fixed audit scope
+
+The owner selected immutable Arena source revision
+`ffa19fa61761da13c73b4442558a477704cbccca` as this audit cutoff. Qualification
+covers the schema-only baseline plus the four declared transitions; all later
+migrations are excluded. It does not certify the schema intent or installation
+of later main changes. The workflow checks out that exact revision separately
+for the unchanged strict history checker. Its current implementation still
+checks every consumed forward SQL file against the four exact hashes. Future
+files are never silently added to the inventory or executed. Successful rebuild
+receipts identify `auditedSourceRevision`, `qualificationScope` and
+`laterMigrationsExcluded` explicitly.
+
 # Shared PokerIQ schema bootstrap
 
 This is a schema-only PostgreSQL baseline for a new, empty, isolated database.

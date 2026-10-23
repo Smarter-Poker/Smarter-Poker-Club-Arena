@@ -554,7 +554,7 @@ import { MustMoveLobbyModal } from '../components/table/MustMoveLobbyModal';
 import { CashClusterHUD } from '../components/table/CashClusterHUD';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
-import { CASH_TEMPLATES } from '../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../config/cashGames';
 import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { EquityBadgeLayer, type EquityBadge } from '../components/table/EquityBadgeLayer';
@@ -13537,7 +13537,8 @@ function LiveTablePage({
                 return;
               }
               const template = String(game?.template_name ?? '').toLowerCase();
-              const label = CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+              const label =
+                CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(template))?.label ?? null;
               if (!label) return;
               setTableState((prev) =>
                 prev.gameStyle === label ? prev : { ...prev, gameStyle: label }
@@ -24123,6 +24124,7 @@ function LiveTablePage({
     lightningCaps
   );
   const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
+  const lightningFoldBusyRef = useRef(false);
   const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
     () => readLightningPrefs().preferFoldWatch
   );
@@ -24133,6 +24135,8 @@ function LiveTablePage({
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
+      if (lightningFoldBusyRef.current) return;
+      lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
       setLightningFoldBusy(true);
@@ -24156,6 +24160,7 @@ function LiveTablePage({
           soundService.playFold();
         }
       } finally {
+        lightningFoldBusyRef.current = false;
         setLightningFoldBusy(false);
       }
     },
@@ -24194,6 +24199,8 @@ function LiveTablePage({
      through, so this tab follows their chair into the pool-session room. */
   const lightningHandoff = useLightningAnchorHandoff({
     tableId,
+    clusterId: tableState.clusterId,
+    userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
     follow: (poolSessionId) => {
@@ -25691,7 +25698,11 @@ function LiveTablePage({
                               See MastheadGameLine. */}
                           <span className="table-brand__line table-brand__line--level">
                             <MastheadGameLine className="table-brand__game">
-                              {tableState.gameStyle ? `${tableState.gameStyle} ` : ''}
+                              {lightningRoom
+                                ? 'Lightning Games '
+                                : tableState.gameStyle
+                                  ? `${tableState.gameStyle} `
+                                  : ''}
                               {gameShort} {tableState.blinds || '1/2'}
                               {tableState.ante > 0 &&
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
@@ -27717,6 +27728,13 @@ function LiveTablePage({
             {lightningHandoff.joining && !lightningRoom ? (
               <LightningJoining onCancel={lightningHandoff.cancel} />
             ) : null}
+            {lightningHandoff.readyPoolSessionId && !lightningRoom && !lightningHandoff.joining ? (
+              <LightningEndedNotice
+                eyebrow="Lightning Games"
+                text="Your Game Is Now Lightning. Your Seat And Chips Are Ready."
+                onViewGame={lightningHandoff.viewReady}
+              />
+            ) : null}
             {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
                 and this room will deal no more. Never a dead felt: the notice
                 and the player's own way back to their seat. The player moves
@@ -28089,6 +28107,12 @@ function LiveTablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={(next) => {
+                    // Lightning Fold is an immediate request to release this
+                    // hand and join the next table, including out of turn.
+                    if (lightningRoom && next === 'fold') {
+                      void handleLightningFold('fast_fold');
+                      return;
+                    }
                     preActionPriorHeroActionAtRef.current = next
                       ? latestHeroActionTimestamp(
                           engineSnapshotRef.current?.action_history,

@@ -116,17 +116,17 @@ const defaults = (template: string, variant: string) => {
           ? [9, 6]
           : [2, 3, 4, 5, 6, 7, 8, 9]
         : [2, 3, 4, 5, 6, 7, 8],
-    min_buyin_bb: classic ? 40 : template === 'action' ? 50 : 100,
+    min_buyin_bb: classic ? 40 : 100,
     max_buyin_bb: 200,
-    regular_ante: classic ? 'none' : template === 'action' ? 'sb' : 'bb',
-    vpip_floor: classic ? 0 : template === 'action' ? 30 : 50,
+    regular_ante: classic ? 'none' : 'bb',
+    vpip_floor: classic ? 0 : 40,
     vpip_window: 10,
     bombs: classic
       ? { enabled: false, trigger: null, ante_bb: null, boards: null }
       : {
           enabled: true,
-          trigger: template === 'action' ? 'timed_20m' : 'timed_10m',
-          ante_bb: template === 'action' ? 2 : 3,
+          trigger: 'timed_10m',
+          ante_bb: 3,
           boards: 2,
         },
     straddle: false,
@@ -217,7 +217,7 @@ describe('A1.4 - handedness follows the family (R1)', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Classic/ }));
     fireEvent.click(screen.getByRole('button', { name: 'NLH' }));
-    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move|Lightning Pool/ }));
     await waitFor(() => expect(seatButtons()).toEqual([9, 6]));
     expect(screen.queryByText('6-Max Is Locked For Omaha Games')).toBeNull();
   });
@@ -226,7 +226,7 @@ describe('A1.4 - handedness follows the family (R1)', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Classic/ }));
     fireEvent.click(screen.getByRole('button', { name: 'PLO4' }));
-    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move|Lightning Pool/ }));
     await waitFor(() => expect(seatButtons()).toEqual([6]));
     expect(screen.getByText('6-Max Is Locked For Omaha Games')).toBeTruthy();
     const only = document.querySelector('[data-step="handedness"] button[aria-pressed]');
@@ -280,20 +280,24 @@ describe('A1.6 - the two clocks can only be raised', () => {
 });
 
 describe('the flow shows the card the lobby will paint', () => {
-  it('renders a CashGameCard preview once the choices are made', async () => {
+  it('renders the approved lobby preview with only the canonical Lightning label', async () => {
     mount();
-    fireEvent.click(screen.getByRole('button', { name: /^Madness/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lightning Games/ }));
     fireEvent.click(screen.getByRole('button', { name: 'PLO6' }));
-    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move|Lightning Pool/ }));
     await waitFor(() => expect(seatButtons()).toEqual([6]));
     fireEvent.click(screen.getByRole('button', { name: 'Use The Usual Stakes' }));
-    await waitFor(() => expect(document.querySelector('.cgc')).not.toBeNull());
-    const card = document.querySelector('.cgc') as HTMLElement;
-    expect(card.className).toContain('cgc--madness');
-    expect(card.querySelector('.cgc__mode')?.textContent).toBe('MUST MOVE');
-    // Nothing exists yet, so the card says so rather than inventing a count.
-    expect(card.querySelector('.cgc__row--players')?.textContent).toBe('0');
-    expect((card.querySelector('.cgc__hit--join') as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() =>
+      expect(document.querySelector('.cash-create__preview-card article')).not.toBeNull()
+    );
+    const card = document.querySelector('.cash-create__preview-card') as HTMLElement;
+    expect(card.textContent).toContain('Lightning Games');
+    expect(card.textContent).not.toMatch(/MADNESS|ACTION/);
+    expect(card.textContent).toContain('40%');
+    expect(card.querySelector('[data-zone="players"]')?.textContent).toBe('0');
+    expect(
+      (card.querySelector('button[data-zone="primaryAction"]') as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 });
 
@@ -332,7 +336,7 @@ describe('the six steps render in the OPORD order and wait on each other', () =>
     for (const b of document.querySelectorAll('[data-step="stakes"] button')) {
       expect((b as HTMLButtonElement).disabled).toBe(true);
     }
-    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move|Lightning Pool/ }));
     await waitFor(() => expect(seatButtons().length).toBeGreaterThan(0));
     expect(save().disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Use The Usual Stakes' }));
@@ -341,7 +345,7 @@ describe('the six steps render in the OPORD order and wait on each other', () =>
 
   it('Save creates through the function with the resolved club, template, variant, stakes and seats', async () => {
     mount();
-    fireEvent.click(screen.getByRole('button', { name: /^Madness/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lightning Games/ }));
     fireEvent.click(screen.getByRole('button', { name: 'PLO6' }));
     fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
     await waitFor(() => expect(seatButtons()).toEqual([6]));
@@ -359,7 +363,7 @@ describe('the six steps render in the OPORD order and wait on each other', () =>
     expect(args.p_handedness).toBe(6);
     expect(args.p_sb).toBeGreaterThan(0);
     expect(args.p_bb).toBeGreaterThan(args.p_sb);
-    expect(args.p_must_move).toBe(false);
+    expect(args.p_must_move).toBe(true);
     expect(args.p_overrides.stay_clock_min).toBe(10);
     expect(args.p_overrides.rejoin_window_min).toBe(120);
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/clubs/club-1'));
@@ -392,7 +396,7 @@ const createArgs = () => {
 
 describe("I1 - the template's promise is printed, never offered (2026-09-09)", () => {
   it('the rules step has no ante radio, no bomb-pot switch, no bomb trigger, ante or boards control', async () => {
-    await walkToRules(/^Action/, 'NLH', /Automated Must Move/);
+    await walkToRules(/^Lightning Games/, 'NLH', /Automated Must Move|Lightning Pool/);
     const rules = document.querySelector('[data-step="overrides"]') as HTMLElement;
     expect(rules.querySelector('input[name="regular_ante"]')).toBeNull();
     expect(rules.querySelector('input[name="bomb_trigger"]')).toBeNull();
@@ -410,8 +414,8 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
     }
   });
 
-  it('an Action game prints its promise in Title Case, each line saying the template set it', async () => {
-    await walkToRules(/^Action/, 'NLH', /Automated Must Move/);
+  it('a Lightning game prints its promise in Title Case, each line saying the template set it', async () => {
+    await walkToRules(/^Lightning Games/, 'NLH', /Automated Must Move|Lightning Pool/);
     const promise = screen.getByTestId('cash-create-promise');
     expect(promise.getAttribute('role')).toBe('group');
     const rows = [...promise.querySelectorAll('[data-rule]')].map((r) => ({
@@ -420,10 +424,10 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
       note: r.querySelector('.cash-create__rule-readout__note')?.textContent,
     }));
     expect(rows.map((r) => r.key)).toEqual(['ante', 'vpip', 'bombs']);
-    expect(rows[0].value).toBe('One Small Blind From Each Dealt In Player');
-    expect(rows[1].value).toBe('30% Over 10 Hands');
-    expect(rows[2].value).toBe('Double Board, 2 BB Ante, Every 20 Minutes');
-    for (const r of rows) expect(r.note).toContain('Set By The Action Template');
+    expect(rows[0].value).toBe('One Big Blind, Paid By The Player In The Big Blind');
+    expect(rows[1].value).toBe('40% Over 10 Hands');
+    expect(rows[2].value).toBe('Double Board, 3 BB Ante, Every 10 Minutes');
+    for (const r of rows) expect(r.note).toContain('Set By The Lightning Games Template');
     // Nothing in the group is a control.
     expect(promise.querySelectorAll('input, button, select').length).toBe(0);
   });
@@ -441,9 +445,11 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
   });
 
   it('p_overrides never carries a template-locked key, and the preview card reads the snapshot', async () => {
-    await walkToRules(/^Madness/, 'NLH', /Automated Must Move/);
+    await walkToRules(/^Lightning Games/, 'NLH', /Automated Must Move|Lightning Pool/);
     // The card the lobby will paint says the template's rules, not a host edit.
-    expect(document.querySelector('.cgc')?.textContent).toContain('1 BB ANTE');
+    expect(document.querySelector('.cash-create__preview-card')?.textContent).toContain(
+      'Big Blind Ante'
+    );
     fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
     await waitFor(() =>
       expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_create', expect.anything())
@@ -537,7 +543,7 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
       },
     ]);
     mount();
-    fireEvent.click(screen.getByRole('button', { name: /^Action/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lightning Games/ }));
     fireEvent.click(screen.getByRole('button', { name: 'NLH' }));
     fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
     // 0.50/1 and 1/2 are both `low`; 0.25/0.50 is micro and 2/5 is mid.
@@ -552,7 +558,7 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
        (tests/unit/createTableHelpAndSwitches.test.tsx bans exactly that on this
        page). The struck chips point at it with aria-describedby. */
     const reason = screen.getByText(
-      'This Club Already Runs NLH 1/2 Action As Its Action Small Stakes Game.'
+      'This Club Already Runs NLH 1/2 Action As Its Lightning Games Small Stakes Game.'
     );
     expect(reason.closest('[role="status"]')).not.toBeNull();
     expect(screen.getByRole('button', { name: '1/2' }).getAttribute('aria-describedby')).toBe(
@@ -565,7 +571,9 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
       false
     );
     expect((screen.getByRole('button', { name: '2/5' }) as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByText(/Action Runs One Game Per Blind Band Per Variant/)).toBeTruthy();
+    expect(
+      screen.getByText(/Lightning Games Runs One Game Per Blind Band Per Variant/)
+    ).toBeTruthy();
   });
 
   it('Classic is unrestricted by band; only the exact must-move key is closed, and a manual table never is', async () => {
@@ -582,7 +590,7 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Classic/ }));
     fireEvent.click(screen.getByRole('button', { name: 'NLH' }));
-    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move|Lightning Pool/ }));
     await waitFor(() =>
       expect((screen.getByRole('button', { name: '1/2' }) as HTMLButtonElement).disabled).toBe(true)
     );
@@ -615,7 +623,7 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
     await waitFor(() => expect(seatButtons().length).toBeGreaterThan(0));
     fireEvent.click(screen.getByRole('button', { name: '1/2' }));
     expect(screen.getByRole('button', { name: '1/2' }).getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: /^Action/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lightning Games/ }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '1/2' }).getAttribute('aria-pressed')).toBe('false')
     );

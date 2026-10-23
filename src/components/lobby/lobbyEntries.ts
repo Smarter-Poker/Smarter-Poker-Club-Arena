@@ -1864,7 +1864,8 @@ const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\
 /** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
 export function cashTemplateLabel(template: string | null | undefined): string | null {
   if (!template) return null;
-  return CASH_TEMPLATES.find((t) => t.id === String(template).toLowerCase())?.label ?? null;
+  const id = String(template).toLowerCase();
+  return CASH_TEMPLATES.find((t) => t.id === (id === 'action' ? 'madness' : id))?.label ?? null;
 }
 
 /**
@@ -1883,16 +1884,17 @@ export function countStylesOnBoard(
   const counts: Record<string, number> = {};
   for (const r of rows) {
     if (!r.cluster_id || !isClusterFront(r)) continue;
-    const key = String(r.cluster_template ?? '')
+    const historicalKey = String(r.cluster_template ?? '')
       .trim()
       .toLowerCase();
+    const key = historicalKey === 'action' ? 'madness' : historicalKey;
     if (!key) continue;
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
 }
 
-/** "Classic 12 / Action 4 / Madness 2", in the menu's own order; zero is printed, not hidden. */
+/** "Classic 12 / Lightning Games 6", in the menu's own order; zero is printed, not hidden. */
 export function styleCountsLine(
   choices: ReadonlyArray<{ key: string; label: string }>,
   counts: Readonly<Record<string, number>>

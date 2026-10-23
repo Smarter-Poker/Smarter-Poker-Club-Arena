@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230753,
-      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
+      "bytes": 231056,
+      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -503,6 +503,17 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "lightningFiveReadyCiInput20261023": {
+    "reason": "Add source-bound five/six-ready Lightning transition qualification to required accounting shard3. Only current workflow input identity changes; preserve financial inputs, assertions, historical pins and qualification statuses. This is not an execution certificate.",
+    "previous": {
+      "bytes": 230753,
+      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
+    },
+    "current": {
+      "bytes": 231056,
+      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
     }
   }
 }

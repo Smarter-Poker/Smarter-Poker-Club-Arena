@@ -55,12 +55,13 @@ import { isFixedLimitVariant, stakesLabel } from '../../lib/bettingStructure';
 import { isEightOrBetterVariant } from '../../utils/handEvaluator';
 import { getRakeConfig } from '../../config/RakeConfig';
 import { formatCurrency } from '../../lib/utils';
-import CashGameCard, { rulesLineFor } from './CashGameCard';
+import ArenaGameCard from '../lobby/game-cards/ArenaGameCard';
 import {
   CASH_TEMPLATES,
   CASH_VARIANTS,
   CASH_VARIANT_LONG,
   cashGameCreateRefusalText,
+  cashTemplateNote,
   isDealtVariant,
   overridesFromSnapshot,
   stakesRungTaken,
@@ -165,7 +166,9 @@ export default function CashGameCreateFlow({
   );
   const [blindsIndex, setBlindsIndex] = useState<number | null>(null);
   const [handedness, setHandedness] = useState<number | null>(null);
-  const [tableMode, setTableMode] = useState<'must_move' | 'manual' | null>(null);
+  const [selectedTableMode, setTableMode] = useState<'must_move' | 'manual' | null>(null);
+  const isLightningTemplate = template === 'madness' || template === 'action';
+  const tableMode = isLightningTemplate ? 'must_move' : selectedTableMode;
   const [snapshot, setSnapshot] = useState<CashRulesetSnapshot | null>(null);
   const [overrides, setOverrides] = useState<CashGameOverrides | null>(null);
   const [name, setName] = useState('');
@@ -588,16 +591,19 @@ export default function CashGameCreateFlow({
             onClick={() => setTableMode('must_move')}
             aria-pressed={tableMode === 'must_move'}
           >
-            <span className="cash-create__card-title">Automated Must Move</span>
+            <span className="cash-create__card-title">
+              {isLightningTemplate ? 'Lightning Pool' : 'Automated Must Move'}
+            </span>
             <span className="cash-create__card-blurb">
-              One Game, Many Tables. Main 1 Is Always On; Feeders Open And Close Themselves. One Per
-              Stakes Per Club; Action And Madness Run One Per Blind Band.
+              {isLightningTemplate
+                ? 'One Lightning Pool Per Stakes. Five Players Minimum, Three Seconds For The Sixth.'
+                : 'One Game, Many Tables. Main 1 Is Always On; Feeders Open And Close Themselves. One Per Stakes Per Club.'}
             </span>
           </button>
           <button
             type="button"
             className={`cash-create__card${tableMode === 'manual' ? ' is-selected' : ''}`}
-            disabled={!stepVariantDone}
+            disabled={!stepVariantDone || isLightningTemplate}
             onClick={() => setTableMode('manual')}
             aria-pressed={tableMode === 'manual'}
           >
@@ -679,24 +685,32 @@ export default function CashGameCreateFlow({
         <section className="cash-create__step cash-create__preview" data-step="preview">
           <h2 className="cash-create__title">Preview</h2>
           <div className="cash-create__preview-card">
-            <CashGameCard
-              template={template}
-              stakesLabel={stakesLabel(stakes.sb, stakes.bb, variant)}
-              variantLabel={CASH_VARIANT_LONG[variant] ?? variant.toUpperCase()}
-              status="waiting"
-              mustMove={tableMode === 'must_move'}
-              players={0}
-              tables={1}
-              rulesLine={rulesLineFor({
-                /* Ante, VPIP floor and bombs are the snapshot's: the template
-                   promised them and the host cannot change them. */
-                ...snapshot,
-                seats: handedness ?? snapshot.seats,
-                min_buyin_bb: overrides.min_buyin_bb,
-                max_buyin_bb: overrides.max_buyin_bb,
-                kill: killChoice,
-              })}
-              joinDisabled
+            <ArenaGameCard
+              presentation="mobile"
+              data={{
+                id: 'cash-game-preview',
+                family: snapshot.family === 'plo' ? 'plo' : 'nlh',
+                title: `${variant.toUpperCase()} ${stakesLabel(stakes.sb, stakes.bb, variant)}`,
+                subtitle: templateLabel(template),
+                styleNote: cashTemplateNote(template) ?? undefined,
+                gameType: variant.toUpperCase(),
+                stakes: stakesLabel(stakes.sb, stakes.bb, variant),
+                players: '0',
+                buyIn: `${formatCurrency(overrides.min_buyin_bb * stakes.bb)} - ${formatCurrency(overrides.max_buyin_bb * stakes.bb)}`,
+                status: 'filling',
+                statusLabel: 'Preview',
+                rules: templatePromiseLines(snapshot).map((rule) => ({
+                  key: rule.key === 'vpip' ? 'nit_game' : rule.key,
+                  label: rule.key === 'vpip' ? 'VPIP' : rule.key === 'ante' ? 'Ante' : 'Bomb Pots',
+                  detail: rule.value,
+                  tip: rule.value,
+                })),
+              }}
+              actions={{
+                primaryLabel: 'Join Game',
+                secondaryLabel: 'View Game',
+                primaryDisabled: true,
+              }}
             />
           </div>
         </section>

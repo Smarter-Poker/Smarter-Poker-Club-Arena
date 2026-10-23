@@ -631,6 +631,19 @@
       0 0 9px rgb(38 202 109 / 78%);
   }
 
+  .club-lobby-machine .lobby-table tr[data-cash-format='madness'] td.lt-col-name::before {
+    display: none;
+  }
+
+  .club-lobby-machine .lobby-table .lt-lightning-icon {
+    position: absolute;
+    top: 50%;
+    left: 0.7cqw;
+    width: clamp(12px, 1.8cqw, 18px);
+    height: clamp(16px, 2.4cqw, 24px);
+    transform: translateY(-50%);
+  }
+
   .club-lobby-machine .lobby-table .lt-live {
     display: none;
   }

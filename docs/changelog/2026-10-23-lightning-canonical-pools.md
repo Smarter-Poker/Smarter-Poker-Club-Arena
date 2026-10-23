@@ -1,0 +1,9 @@
+# Canonical Lightning Games
+
+Action and Madness advertised two populations at the same stake. The catalog contained20 enabled duplicate pairs. Both are now one Lightning format:40% minimumVPIP and a big blind ante. Existing Madness IDs are canonical for exact club/variant/stake twins. Historical IDs, existing custody and settled records remain intact. Original membership, wallet, VPIP and seat-offer checks remain; source VPIP bars are retained before alias routing.
+
+Canonical always_on Lightning stays a pool below five players. Original begin/commit/drive transactions change only population policy. Disabled games, active explicit drains, freezes, in-flight hands, unobserved halts, session ownership and conservation remain protected. New creators begin original conversion before commit. Original opener and projection apply physical auto_start_players6 while pool dealing owns the five-player three-second rule.
+
+Retired sources stop admission and remain parked after original OFF conversion.40%VPIP, BBante and names are projected without reenabling them. An explicit engine-only retirement RPC accepts at most100 exact original occupancy IDs, requires observed halt and no active hands/instances/pools/reservations, then invokes the original service leave/cashout. Existing occupancy receipts make replay safe. It does not select humans or horses automatically.
+
+scripts/dev/test-lightning-canonical-admission.sh installs exact captured production definitions in native PostgreSQL and applies both migrations in order. It executes conversion/barrier/replay, original disabled-source OFF, authorization/private/VPIP, projection and original service leave/atomic cashout paths. Wallet-credit/session-record primitives are fixtures; production ledger integration and live delivery still require existing checks. This subtask made no production writes.

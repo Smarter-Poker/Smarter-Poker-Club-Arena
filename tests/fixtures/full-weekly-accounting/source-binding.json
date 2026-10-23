@@ -181,7 +181,7 @@
     "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
-    "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
+    "tests/components/agent-cashout-scope.test.tsx": "1741188412170b7dc2d283c217dfe7895dc888b2880c6b9c9f41f313dd3cb13a",
     "tests/unit/CashoutService.test.ts": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449",
     "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
     "tests/cashout-escrow-flow.test.ts": "08c3b2ed491fad0fb4673779f5ff863452e2a9bd6cf617955a3d4d36f2c534c6",
@@ -193,7 +193,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
-    "tests/unit/CashoutRequestModal.test.tsx": "49072c272d04e3ddbfd7220c8b7e92a463872550538004f21ddc92226281f1c5",
+    "tests/unit/CashoutRequestModal.test.tsx": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea",
@@ -224,7 +224,7 @@
     "tests/components/WeeklyAccountingWorkspace.test.tsx": "3fa2ec057866093383ec05539ac3a60de8cec52abfee780d2491ead8894f5be7",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "8863dfb7e552fdf23d4e8e00eefce37b16f3cfbf1eb1858f9db9274b1f987d80",
-    "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
+    "tests/components/cashier-cashout-generations.test.tsx": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
     "tests/unit/discardedErrorReadRatchet.test.ts": "227203c3742bcfe42dd6b6b72eb82cc2c9f80512627c2c96db027f625312db08",
@@ -5240,5 +5240,28 @@
         "reason": "Two preset-selection tests become one test that asserts no Quick Amounts group or preset button exists and that a typed cent amount is sent exactly; min, step, inputmode, retry identity and refusal tests are unchanged."
       }
     }
+  },
+  "cashoutSettlementIndependence20261023": {
+    "reason": "Reviewed cashout tests suspend at authoritative receipt recovery instead of the removed browser settlement gate, preserve account/club/input and duplicate-action refusals, and assert funded requests plus approval/rejection proceed despite settlement. Preserve the concurrent main change removing suggested cashout amounts. Current test identity only; historical evidence, financial SQL, invariants and qualification states unchanged. Five settlement regressions failed before the repair; required exact-candidate hosted qualification remains mandatory. This is not a financial certification restamp.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/components/agent-cashout-scope.test.tsx",
+        "previous": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
+        "current": "1741188412170b7dc2d283c217dfe7895dc888b2880c6b9c9f41f313dd3cb13a"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/components/cashier-cashout-generations.test.tsx",
+        "previous": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
+        "current": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/unit/CashoutRequestModal.test.tsx",
+        "previous": "49072c272d04e3ddbfd7220c8b7e92a463872550538004f21ddc92226281f1c5",
+        "current": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486"
+      }
+    ]
   }
 }

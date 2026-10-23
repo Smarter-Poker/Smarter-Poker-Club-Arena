@@ -4222,6 +4222,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // Recheck the same rule with the controller's fresh legal menu.
           const commitHero = currentState.players.find((p) => p.seat === seat);
           if (commitHero) {
+            const nutsActions = applyTableCommitmentCap(
+              commitActions,
+              commitHero,
+              this.tableInfo?.cap_enabled === true,
+              Number(this.tableInfo?.cap_bb) || 0,
+              Number(this.tableInfo?.big_blind) || 0
+            );
             const guarded = riverNutsRaise(decision, commitHero, {
               ...gameState,
               players: currentState.players,
@@ -4231,10 +4238,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               stage: currentState.stage,
               currentBet: currentState.currentBet,
               pot: currentState.pot,
-              legalActions: [...commitActions.legalActions],
-              toCall: commitActions.toCall,
-              minRaiseTo: commitActions.minRaiseTo,
-              maxRaiseTo: commitActions.maxRaiseTo,
+              legalActions: [...nutsActions.legalActions],
+              toCall: nutsActions.toCall,
+              minRaiseTo: nutsActions.minRaiseTo,
+              maxRaiseTo: nutsActions.maxRaiseTo,
+              bettingStructure: nutsActions.structure,
+              fixedBetSize: nutsActions.fixedBetSize,
+              wagersCapped: nutsActions.wagersCapped,
+              commitmentCapRemaining: nutsActions.commitmentCapRemaining,
             });
             if (guarded !== decision) {
               decision = { ...decision, ...guarded };

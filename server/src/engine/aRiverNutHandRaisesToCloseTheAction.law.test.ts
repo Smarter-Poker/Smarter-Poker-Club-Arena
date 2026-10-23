@@ -189,6 +189,37 @@ describe('the river nuts never flat-call to close a legally raisable pot', () =>
     );
   });
 
+  it('does not confuse a fixed-limit all-in button that only calls with a legal raise', () => {
+    const { hero, state } = incident('flh');
+    hero.cards = cards('7c 5d');
+    Object.assign(state, {
+      fixedBetSize: 4,
+      legalActions: ['fold', 'call', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+      wagersCapped: true,
+    });
+    const call = { action: 'call' as const, amount: 50, thinkTime: 0 };
+    expect(riverNutsRaise(call, hero, state)).toBe(call);
+    state.wagersCapped = false; // the same menu when action was not reopened
+    expect(riverNutsRaise(call, hero, state)).toBe(call);
+  });
+
+  it('still takes a real fixed-limit short all-in raise with null normal bounds', () => {
+    const { hero, state } = incident('flh');
+    hero.cards = cards('7c 5d');
+    hero.stack = 52;
+    Object.assign(state, {
+      fixedBetSize: 4,
+      legalActions: ['fold', 'call', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+    });
+    expect(riverNutsRaise({ action: 'call', amount: 50, thinkTime: 0 }, hero, state).action).toBe(
+      'all_in'
+    );
+  });
+
   it('preserves an existing value raise and its policy sizing', () => {
     const { hero, state } = incident();
     const raise = { action: 'raise' as const, amount: 125, thinkTime: 17 };

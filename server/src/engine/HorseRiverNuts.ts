@@ -3,6 +3,7 @@ import type { HorseGameStateV2 } from './HorseLogic.js';
 import { RANKS, SUITS } from './PokerEngine.js';
 import { scoreHoldem, scoreOmahaHi, scoreOmahaLow, variantInfo } from './HorseEval.js';
 import { horsePolicyRegistration } from './HorsePolicyRegistry.js';
+import { fixedLimitStreetBounds } from './BettingStructure.js';
 
 const key = (c: Card) => `${c.rank}:${c.suit}`;
 const valid = (c: Card) => c && RANKS.includes(c.rank) && SUITS.includes(c.suit);
@@ -76,6 +77,7 @@ export function riverNutsRaise(
   if (decision.action !== 'call' && decision.action !== 'fold') return decision;
   if (
     state.stage !== 'river' ||
+    state.wagersCapped === true ||
     state.stateSchemaVersion !== 1 ||
     !Array.isArray(state.legalActions) ||
     !Number.isFinite(state.toCall) ||
@@ -98,6 +100,22 @@ export function riverNutsRaise(
     return decision;
   const min = state.minRaiseTo;
   const max = state.maxRaiseTo;
+  // Fixed limit also advertises all_in when its structure clamp would only
+  // call (for example, action was not reopened). Null bounds authorize a
+  // short raise only below the actual full-raise/completion target.
+  const fixedLimit = variantInfo(state.gameVariant ?? 'nlh').isFixedLimit;
+  const shortFixedRaise =
+    fixedLimit && Number.isFinite(state.fixedBetSize) && Array.isArray(state.actionHistory)
+      ? hero.bet + hero.stack <
+        state.currentBet +
+          fixedLimitStreetBounds(
+            state.actionHistory,
+            state.stage,
+            state.fixedBetSize!,
+            state.currentBet
+          ).raiseSize -
+          0.005
+      : false;
   let raise: HorseDecision | null = null;
   if (
     state.legalActions.includes('raise') &&
@@ -117,7 +135,8 @@ export function riverNutsRaise(
     hero.bet + hero.stack > state.currentBet &&
     // HandController deliberately reports null bounds when only a short
     // all-in is available. Its explicit all_in menu entry is the authority.
-    (max === null || (Number.isFinite(max) && hero.bet + hero.stack <= max! + 0.005))
+    ((max === null && (!fixedLimit || shortFixedRaise)) ||
+      (Number.isFinite(max) && hero.bet + hero.stack <= max! + 0.005))
   ) {
     raise = { action: 'all_in', thinkTime: decision.thinkTime };
   }

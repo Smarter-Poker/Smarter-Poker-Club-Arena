@@ -12,4 +12,6 @@ The executable graph records the rule as `river_nuts`, version 2. Version 1 jour
 
 The table executor rechecks the same rule against the fresh controller menu after acceptance-time authority rechecks. A pack withdrawn during think time can restore its baseline, so this boundary must not restore a forbidden river call. Its regression first submits a passive worker result and observes the wrong call, then proves the executor submits the legal raise after the repair.
 
+That fresh menu passes through the existing `applyTableCommitmentCap` owner, just like the worker and HTTP inputs. A fixed-limit `all_in` button that the controller would clamp to a call is not treated as a raise: the street cap and exact full-raise/completion target distinguish it from a real short all-in. Both boundaries have failing-before/passing-after regressions.
+
 Regression protection includes the reported river situation across all five styles and seeds, all nine variants, multiple boards, high/low, Short Deck ordering, weaker hands, reopening/caps, short all-ins and the real HandController's menu and accepted raise. Tests also cover graph transport, earlier utility receipts and retained version 1 journal records. Provider deployment and live proof are recorded separately in the task evidence checkpoint, never inferred from this document.

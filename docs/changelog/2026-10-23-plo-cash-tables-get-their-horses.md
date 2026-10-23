@@ -33,3 +33,17 @@ limit (`fn_concurrent_game_load`) kept every one of them off the PLO cash floor.
 
 Migration `20261023175910_plo_roster_horses_play_plo_cash.sql`; pinned by
 `server/src/services/HorsePloRoster.test.ts`.
+
+## Follow-Up, 19:20 UTC
+
+The first version of the migration was refused by the applier before it
+changed anything: 20261023175018 and 20261023182203 (installed from another
+branch at 18:25 UTC) had replaced `fn_ca_horse_roster_refresh` with a
+five-argument version (the roster sizes itself to the floor; the PLO list needs
+5,000 PLO hands at 1 bb/100), so the old four-argument body would have made a
+second overload. That refresh also stripped the PLO variants from 41 tags,
+undoing the low-stakes opening. The migration is now built on the installed
+bodies with only this change's edits, and it no longer strips any PLO tag.
+
+The engine half rides an owner-ordered window (`server/release/owner-maintenance-windows.json`,
+entry `2026-10-23-plo-cash-tables`) so it does not wait for 04:00.

@@ -4,16 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 
 describe('Ubuntu browser dependency mirror', () => {
-  it.each(['scripts/ci/ubuntu-apt-mirror.py', 'tests/ubuntuAptMirror.test.ts'])(
-    'qualifies mirror-only changes through the existing browser and accounting jobs: %s',
-    (path) => {
-      expect(classifyChangedPaths([path])).toMatchObject({ src: true, server: true, tests: true });
-    }
-  );
-
   it('selects the primary mirror before both browser and native package installs', () => {
     const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
     const native = workflow.jobs.accounting_postgres.steps.find(

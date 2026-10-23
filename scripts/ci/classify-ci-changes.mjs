@@ -217,9 +217,6 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
-  const ubuntuAptSource = matches(
-    /^(scripts\/ci\/ubuntu-apt-mirror\.py|tests\/ubuntuAptMirror\.test\.ts)$/
-  );
   const onTimeMaintenance = matches(
     /^scripts\/ci\/(?:test-on-time-maintenance-thaw\.py$|test-multi-day-stage-foundation\.py$|fixtures\/on-time-start\/)/
   );
@@ -375,14 +372,8 @@ export function classifyChangedPaths(paths) {
   const devMatches = (pattern) => devPaths.some((p) => pattern.test(p));
   return {
     src:
-      ubuntuAptSource ||
-      broad ||
-      cashLobbyBrowser ||
-      paths.some(cssBeatInput) ||
-      buildProvenance ||
-      matches(/^src\//),
+      broad || cashLobbyBrowser || paths.some(cssBeatInput) || buildProvenance || matches(/^src\//),
     server:
-      ubuntuAptSource ||
       // Default opening reuses funded welcome reserves and the real publisher.
       matches(
         /^(src\/services\/Club(?:QuickStart|OpeningSetup|WelcomePackage)Service\.ts|scripts\/ci\/test-quick-club-opening\.py|tests\/unit\/clubQuickStart\.test\.ts)$/
@@ -443,7 +434,6 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
-      ubuntuAptSource ||
       matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||

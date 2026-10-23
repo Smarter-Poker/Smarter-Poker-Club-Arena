@@ -4257,6 +4257,8 @@ function LiveTablePage({
   // previous-hand card; the animated replay + share live INSIDE it now.
   const [showHandDetail, setShowHandDetail] = useState(false);
   const [lastHandId, setLastHandId] = useState<string | null>(null);
+  // A saved-hand event updates the newest hand, never the history replay being watched.
+  const [replaySubjectId, setReplaySubjectId] = useState<string | null>(null);
   const [showGameRules, setShowGameRules] = useState(false);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
 
@@ -9464,7 +9466,7 @@ function LiveTablePage({
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
   useEffect(() => {
-    if (!showHandReplay || lastHandId || !userId || userId === 'guest') return;
+    if (!showHandReplay || replaySubjectId || lastHandId || !userId || userId === 'guest') return;
     let cancelled = false;
     (async () => {
       try {
@@ -9479,7 +9481,7 @@ function LiveTablePage({
     return () => {
       cancelled = true;
     };
-  }, [showHandReplay, lastHandId, userId]);
+  }, [showHandReplay, replaySubjectId, lastHandId, userId]);
 
   /* The per-table hand cache is gone (see `handHistory` above). Keys written
      by earlier builds are removed once so they stop taking storage; nothing
@@ -23692,6 +23694,7 @@ function LiveTablePage({
          anything a tap on their own X does not already do. */
       setShowHandDetail(false);
       setShowHandReplay(false);
+      setReplaySubjectId(null);
       setShowTournamentInfo(false);
       setShowTimeBankStore(false);
       setShowThrowableSelector(false);
@@ -28412,7 +28415,7 @@ function LiveTablePage({
            this, because a zero-argument function is assignable to a
            one-argument prop type. Pinned by handHistoryMoneyAgreement. */
         onReplay={(hand) => {
-          setLastHandId(hand.id);
+          setReplaySubjectId(hand.id);
           setShowHandDetail(false);
           setShowHandReplay(true);
         }}
@@ -28513,8 +28516,11 @@ function LiveTablePage({
         onClosePlayerNotes={() => setShowPlayerNotes(false)}
         // Hand Replay
         showHandReplay={showHandReplay}
-        lastHandId={lastHandId}
-        onCloseHandReplay={() => setShowHandReplay(false)}
+        lastHandId={replaySubjectId ?? lastHandId}
+        onCloseHandReplay={() => {
+          setShowHandReplay(false);
+          setReplaySubjectId(null);
+        }}
         // Game Rules
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
@@ -29245,7 +29251,7 @@ function LiveTablePage({
         handHistoryViewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         onCloseHandHistory={handleCloseHandHistory}
         onReplay={(hand) => {
-          setLastHandId(hand.id);
+          setReplaySubjectId(hand.id);
           setShowHandDetail(false);
           setShowHandHistory(false);
           setShowHandReplay(true);

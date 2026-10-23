@@ -2857,6 +2857,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
    * job failed or expired) from the client.
    */
   receipt(
+    'horse_opponent_memory_*',
+    'HorseDecisionWorkerRuntime durable profile import',
+    'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
+    'V50'
+  ),
+  receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
     'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',

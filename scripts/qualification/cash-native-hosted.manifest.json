@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230712,
-      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+      "bytes": 231035,
+      "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3630,6 +3630,17 @@
     "current": {
       "bytes": 41349,
       "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    }
+  },
+  "opponentMemoryPostgresGate20261023": {
+    "reason": "Add one PostgreSQL 17 regression step for durable opponent memory to accounting shard 2. Existing suites, financial source pins, assertions, timeouts and required joins are unchanged. This updates workflow input identity only, not a financial qualification certificate.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 231035,
+      "sha256": "11de1de2acd489c7c809e3f19fbd794420e3eb9884f6349c2abcf2f2d148716a"
     }
   }
 }

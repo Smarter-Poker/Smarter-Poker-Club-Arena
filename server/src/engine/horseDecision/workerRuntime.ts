@@ -319,6 +319,7 @@ export async function startOwnedServices(shard?: {
     equityGovernor.startSampling();
     startSolverPolicyArtifactLoader();
 
+    HorseMind.enableDurableOpponentMemory();
     const lastFlush = await hydrateHorseMindFromDb();
     await Promise.all([
       hydrateHorseMind(lastFlush),
@@ -443,7 +444,8 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       request.actions,
       request.bigBlind,
       request.showdown,
-      request.scope
+      request.scope,
+      request.durableOpponentProfiles !== undefined
     );
   },
   noteDecision: noteDecisionMs,
@@ -2025,6 +2027,14 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
+    if (request.durableOpponentProfiles !== undefined) {
+      try {
+        if (HorseMind.importDurableOpponentProfiles(request.durableOpponentProfiles) > 0)
+          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
+      } catch {
+        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
+      }
+    }
     const planBinding = horsePlanBatchBindingFromRequest(request);
     const planContext = planBinding.planContext;
     const canonicalRng = this.deps.saveRng();
@@ -2110,7 +2120,20 @@ export class HorseDecisionWorkerRuntime {
       readFrame = encodeHorseDecisionReads(
         (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
           request.gameState.players,
-          handKey
+          handKey,
+          {
+            variant: request.gameState.gameVariant ?? 'nlh',
+            mode:
+              request.gameState.gameMode === 'tournament' || request.gameState.tournament
+                ? 'tournament'
+                : 'cash',
+            size:
+              (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 2
+                ? 'hu'
+                : (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 5
+                  ? 'short'
+                  : 'full',
+          }
         ),
         request.gameState.players,
         handKey,
@@ -2367,6 +2390,14 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
+    if (received.durableOpponentProfiles !== undefined) {
+      try {
+        if (HorseMind.importDurableOpponentProfiles(received.durableOpponentProfiles) > 0)
+          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
+      } catch {
+        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
+      }
+    }
     // ONE FLOOR, ONE READ (2026-10-16): a hand another shard owns is only
     // learned. Its owner journals it, binds its roster and settles its plans;
     // here it touches nothing but this worker's opponent memory.

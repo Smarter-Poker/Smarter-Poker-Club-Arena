@@ -1,3 +1,5 @@
+import { readHorseOpponentProfiles } from '../HorseOpponentMemory.js';
+import { memoryVariant, type DurableOpponentProfile } from '../../engine/HorseOpponentMemory.js';
 /**
  * Supabase helpers — the 4-tier hand history writer (Bible V8 §2.18).
  *
@@ -883,7 +885,32 @@ export async function logHandHistory(params: {
     );
     // P14.2: private only. Absent (never undefined-valued) is the explicit unknown.
     const acceptedRosterField = acceptedActorRoster ? { acceptedActorRoster } : {};
+    const variant = memoryVariant(params.gameVariant);
+    const dealt = params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0;
+    let durableOpponentProfiles: DurableOpponentProfile[] | undefined;
+    if (variant) {
+      durableOpponentProfiles = [];
+      try {
+        const actors = [
+          ...new Set(
+            acceptedActions
+              .map((a) => a.userId)
+              .filter((id): id is string => typeof id === 'string' && id.length > 0)
+          ),
+        ];
+        if (actors.length)
+          durableOpponentProfiles = await readHorseOpponentProfiles(
+            actors,
+            variant,
+            params.tournamentId ? 'tournament' : 'cash',
+            dealt <= 2 ? 'hu' : dealt <= 5 ? 'short' : 'full'
+          );
+      } catch (error) {
+        reportError(error, 'HandHistory.durable_opponent_read');
+      }
+    }
     const observation = getLiveHorseDecisionWorker().observeCompletedHand({
+      ...(durableOpponentProfiles !== undefined ? { durableOpponentProfiles } : {}),
       generation: params.handNumber,
       fence: [
         params.tableId,

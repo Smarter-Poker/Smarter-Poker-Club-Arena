@@ -2803,7 +2803,8 @@ export class HorseLogic {
                   .length
             : 0
         ),
-        typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null
+        typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
+        gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
       );
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.

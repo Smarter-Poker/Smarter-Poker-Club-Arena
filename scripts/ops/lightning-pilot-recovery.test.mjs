@@ -771,3 +771,14 @@ for (const initialTabState of ['missing', 'hidden', 'ambiguous']) {
     assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
   });
 }
+
+test('the second pool opens through View Game or a seated Return To, never Join or a waitlist', () => {
+  const src = readFileSync(new URL('./lightning-pilot-recovery.mjs', import.meta.url), 'utf8');
+  const door = src.slice(src.indexOf('async function openOtherPool'));
+  const body = door.slice(0, door.indexOf('\n}\n') + 2);
+  assert.match(body, /name: \/\^View Game \//);
+  assert.match(body, /name: \/\^Return To \//);
+  const lookups = body.match(/getByRole\('button', \{ name: [^}]+\}/g) ?? [];
+  assert.ok(lookups.length >= 2);
+  for (const l of lookups) assert.doesNotMatch(l, /Join|Sit|Waitlist/);
+});

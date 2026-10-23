@@ -9158,10 +9158,10 @@ export class GameServer {
         reportError(
           new Error(
             `Tournament ${tournamentId} table ${tableId} had no running dealer for ` +
-              `${Math.round((now - since) / 1000)}s - handed the event to a successor generation ` +
+              `${Math.round((now - since) / 1000)}s - requested a successor after its live hands drain ` +
               `(hand-off ${handoffs + 1} of ${GameServer.STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS})`
           ),
-          'GameServer.stuck_tournament_table_handed_on',
+          'GameServer.stuck_tournament_successor_drain_requested',
           { tournamentId, tableId }
         );
       }
@@ -9191,9 +9191,9 @@ export class GameServer {
               ? `, stuck in ${stalled.step} for ${Math.round(stalled.msInStep / 1000)}s`
               : '') +
             `) - no bust ` +
-            `could be recorded; handed the event to a successor generation`
+            `could be recorded; requested a successor after its live hands drain`
         ),
-        'GameServer.stalled_elimination_sweep_handed_on',
+        'GameServer.stalled_elimination_successor_drain_requested',
         {
           tournamentId,
           stage: stalled.stage,

@@ -41,7 +41,7 @@ def schema():
    cmd={'r':'SELECT','a':'INSERT','w':'UPDATE','d':'DELETE','*':'ALL'}[p['command']]
    out.append('CREATE POLICY '+quote(p['name'])+' ON '+table+' AS '+('PERMISSIVE' if p['permissive'] else 'RESTRICTIVE')+' FOR '+cmd+' TO '+','.join('PUBLIC' if r=='public' else quote(r) for r in p['roles'])+(' USING ('+p['using']+')' if p['using'] else '')+(' WITH CHECK ('+p['check']+')' if p['check'] else '')+';')
   # Reproduce the captured direct client/service table privileges. No client writes are added.
-  for role,acl in re.findall(r'(anon|authenticated|service_role|)=([a-zA-Z]*)/',t['acl'] or ''):
+  for role,acl in re.findall(r'(?:^|[,{"])(anon|authenticated|service_role|)=([a-zA-Z]*)/',t['acl'] or ''):
    names={'r':'SELECT','a':'INSERT','w':'UPDATE','d':'DELETE','D':'TRUNCATE','x':'REFERENCES','t':'TRIGGER','m':'MAINTAIN'}
    rights=[v for k,v in names.items() if k in acl]
    if rights:out.append('GRANT '+','.join(rights)+' ON '+table+' TO '+('PUBLIC' if not role else quote(role))+';')

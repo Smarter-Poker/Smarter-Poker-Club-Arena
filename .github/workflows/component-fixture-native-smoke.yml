@@ -53,6 +53,7 @@ jobs:
           node --test tests/fixtures/ev-cashout-lifecycle/diagnostics.test.mjs tests/fixtures/ev-cashout-lifecycle/controller-sequence.test.mjs
           node --test operations/release/fixture/representative/*.test.mjs
           python3 tests/fixtures/ev-cashout-lifecycle/bootstrap.test.py
+          python3 tests/fixtures/cashier-realtime-lifecycle/bootstrap.test.py
           python3 tests/operations/native-component-semantics.test.py
           python3 tests/operations/fixture-smoke-runner.test.py
           python3 tests/operations/fixture-smoke-lifecycle.test.py

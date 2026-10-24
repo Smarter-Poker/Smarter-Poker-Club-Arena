@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-plo-river-range-repair",
+      "ownerOrder": "Dan, 2026-10-23 evening: \"WHY THE FUCK WOULD THE HORSE RAISE INSTEAD OF JUST CALLING ON RIVER\" (hand45872846); \"IMPLEMENT THE HORSES WITH MORE PLO SKILLS ... RANGE ADVANTAGE, BLOCKERS\" and turn/river range understanding. Continues explicit push/publish NOW for every horse, not wait until4am; limited to these connected horse decision repairs.",
+      "contains": "439dbf4f6b7aaf562ebfe355772b8c3a714d3db8",
+      "notBefore": "2026-10-24T01:40:08Z",
+      "notAfter": "2026-10-24T07:40:08Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-plo-cold-flush-repair",
       "ownerOrder": "Dan, 2026-10-23 evening: \"GOT HORSES OVER CALLING 2 ALL IN'S WITH SMALL FLUSHED IN PLO5\"; \"IT JUST COST US 400 CHIPS\"; \"EVERY SINGLE HORSE IS UPDATED IN BOTH HOLDEM AND PLO FOR EVERYTHING WE FIXED TODAY\". Continuing the explicit order to push/publish NOW and not wait until 4 am. Applies only to the confirmed hand45855223 decision repair.",
       "contains": "e6440eab1982eb142ab120617e93137dabc3c507",

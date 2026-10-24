@@ -212,6 +212,8 @@ describe('accepted public tournament stage', () => {
       throw Error('missing public node');
     expect(first.tournamentStage).toMatchObject({ playersLeft: 4, inMoney: false });
     expect(second.tournamentStage).toMatchObject({ playersLeft: 3, inMoney: true });
-    expect(c.getState().actionHistory.every((a) => a.publicNode === undefined)).toBe(true);
+    expect(c.getState().actionHistory.map((a) => a.publicNode)).toEqual(
+      events.map((event) => event.publicNode)
+    );
   });
 });

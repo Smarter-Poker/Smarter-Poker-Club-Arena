@@ -1324,6 +1324,7 @@ export class HandController {
       timestamp: Date.now(),
       stage: this.state.stage,
       isFullRaise: isFullRaiseFlag,
+      publicNode,
     });
     this.state.actionHistory.push(record);
 

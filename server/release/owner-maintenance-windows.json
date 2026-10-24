@@ -2,6 +2,22 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-plo-river-range-repair",
+      "ownerOrder": "Dan, 2026-10-23 evening: \"WHY THE FUCK WOULD THE HORSE RAISE INSTEAD OF JUST CALLING ON RIVER\" (hand45872846); \"IMPLEMENT THE HORSES WITH MORE PLO SKILLS ... RANGE ADVANTAGE, BLOCKERS\" and turn/river range understanding. Continues explicit push/publish NOW for every horse, not wait until4am; limited to these connected horse decision repairs.",
+      "contains": "1a2bd6184bc91f304a06650afe91240c19f89d3b",
+      "notBefore": "2026-10-24T01:40:08Z",
+      "notAfter": "2026-10-24T07:40:08Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-plo-cold-flush-repair",
+      "ownerOrder": "Dan, 2026-10-23 evening: \"GOT HORSES OVER CALLING 2 ALL IN'S WITH SMALL FLUSHED IN PLO5\"; \"IT JUST COST US 400 CHIPS\"; \"EVERY SINGLE HORSE IS UPDATED IN BOTH HOLDEM AND PLO FOR EVERYTHING WE FIXED TODAY\". Continuing the explicit order to push/publish NOW and not wait until 4 am. Applies only to the confirmed hand45855223 decision repair.",
+      "contains": "1a2bd6184bc91f304a06650afe91240c19f89d3b",
+      "notBefore": "2026-10-24T01:12:00Z",
+      "notAfter": "2026-10-24T07:12:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-23-horse-memory-strategy",
       "ownerOrder": "Dan, 2026-10-23: \"you have to push and publish all of these changes and upgrades NOW\"; \"do not wait until 4 am to do this\". Holdem and all PLO opponent memory, premium raises, continuation and range advantage.",
       "contains": "f35c068daeefd3005f967af16844a336a53d2e6b",

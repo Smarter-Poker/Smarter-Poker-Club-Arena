@@ -106,7 +106,9 @@ describe('public deductions use the controller rules at the action', () => {
     expect(first.deductions).toMatchObject({ status: 'captured', rake: { percent: 8 } });
     expect(second.deductions).toMatchObject({ status: 'captured', rake: { percent: 3 } });
     expect(JSON.stringify(first.deductions)).not.toMatch(/private-name|cards|user_id/);
-    expect(controller.getState().actionHistory.every((a) => a.publicNode === undefined)).toBe(true);
+    expect(controller.getState().actionHistory.map((a) => a.publicNode)).toEqual(
+      events.map((event) => event.publicNode)
+    );
   });
 
   it('keeps absent BBJ explicit and unsupported timed rake out of model pricing', () => {

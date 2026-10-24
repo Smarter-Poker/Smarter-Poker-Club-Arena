@@ -3052,6 +3052,7 @@ export function pineapplePreflopScore(cards: Card[], shortDeck: boolean): number
 }
 
 export interface RangeAdvantageEstimate {
+  madeRangeChange?: OmahaMadeRangeEstimate;
   equity: number;
   standardError: number;
   samples: number;
@@ -3069,7 +3070,8 @@ export function estimateRangeAdvantage(
   board: Card[],
   heroBand: [number, number],
   oppBand: [number, number],
-  vi: VariantInfo
+  vi: VariantInfo,
+  options?: { previousBoard?: Card[] }
 ): RangeAdvantageEstimate | null {
   if (
     board.length < 3 ||
@@ -3087,15 +3089,40 @@ export function estimateRangeAdvantage(
     )
   )
     return null;
+  const previous = options?.previousBoard;
+  const highOnly =
+    !vi.isHiLo ||
+    new Set(board.map((c) => (c.rank === 'A' ? 1 : RANK_VALUES[c.rank])).filter((r) => r <= 8))
+      .size < 3;
+  const paired =
+    vi.isOmaha &&
+    highOnly &&
+    previous != null &&
+    board.length >= 4 &&
+    previous.length === board.length - 1 &&
+    previous.every((c, i) => cardKey(c) === cardKey(board[i]));
+  const physicalNut = paired ? publicPhysicalNutHigh(board) : 0;
+  let previousSum = 0,
+    currentMadeSum = 0,
+    deltaSum = 0,
+    delta2 = 0,
+    hn = 0,
+    on = 0,
+    nd2 = 0;
   const key = JSON.stringify([
+    ...(paired ? [board.map(cardKey)] : []),
     vi.holeCount,
     vi.isHiLo,
     board.map(cardKey).sort(),
     heroBand,
     oppBand,
   ]);
+  const copy = (value: RangeAdvantageEstimate): RangeAdvantageEstimate => ({
+    ...value,
+    ...(value.madeRangeChange ? { madeRangeChange: { ...value.madeRangeChange } } : {}),
+  });
   const cached = rangeAdvantageCache.get(key);
-  if (cached) return { ...cached };
+  if (cached) return copy(cached);
   const saved = saveFastRandom();
   let seed = 2166136261;
   for (let i = 0; i < key.length; i++) seed = Math.imul(seed ^ key.charCodeAt(i), 16777619);
@@ -3126,6 +3153,25 @@ export function estimateRangeAdvantage(
         vi.isOmaha ? scoreOmahaHi(hole, runout) : scoreHoldem([...hole, ...runout], 7, false);
       const hs = high(hero),
         os = high(opp);
+      if (paired && previous) {
+        const hp = scoreOmahaHiPartial(hero, previous),
+          op = scoreOmahaHiPartial(opp, previous);
+        const hc = scoreOmahaHiPartial(hero, board),
+          oc = scoreOmahaHiPartial(opp, board);
+        const ps = hp > op ? 1 : hp === op ? 0.5 : 0,
+          cs = hc > oc ? 1 : hc === oc ? 0.5 : 0,
+          d = cs - ps;
+        const heroN = hc === physicalNut ? 1 : 0,
+          oppN = oc === physicalNut ? 1 : 0,
+          nd = heroN - oppN;
+        previousSum += ps;
+        currentMadeSum += cs;
+        deltaSum += d;
+        delta2 += d * d;
+        hn += heroN;
+        on += oppN;
+        nd2 += nd * nd;
+      }
       let share = hs > os ? 1 : hs === os ? 0.5 : 0;
       if (vi.isHiLo) {
         const hl = scoreOmahaLow(hero, runout),
@@ -3153,8 +3199,77 @@ export function estimateRangeAdvantage(
     advantage: equity - 1.96 * se > 0.5,
     disadvantage: equity + 1.96 * se < 0.5,
   };
+  if (paired) {
+    const d = deltaSum / total,
+      nd = (hn - on) / total;
+    const variance = Math.max(0, delta2 / total - d * d),
+      nv = Math.max(0, nd2 / total - nd * nd);
+    const log = Math.log(3 / 0.05),
+      nr = Math.sqrt((2 * nv * log) / total) + (6 * log) / total;
+    (read as RangeAdvantageEstimate).madeRangeChange = {
+      samples: total,
+      previousShare: previousSum / total,
+      currentShare: currentMadeSum / total,
+      madeShareDelta: d,
+      deltaStandardError: Math.sqrt(variance / total),
+      improves: d > 1.96 * Math.sqrt(variance / total),
+      worsens: d < -1.96 * Math.sqrt(variance / total),
+      heroNutMass: hn / total,
+      opponentNutMass: on / total,
+      nutMassDelta: nd,
+      nutDeltaStandardError: Math.sqrt(nv / total),
+      nutAdvantage: nd > nr,
+      nutDisadvantage: nd < -nr,
+    };
+  }
   rangeAdvantageCache.set(key, read);
   while (rangeAdvantageCache.size > 512)
     rangeAdvantageCache.delete(rangeAdvantageCache.keys().next().value!);
-  return { ...read };
+  return copy(read);
+}
+
+/** Heads-up public-range MADE strength, not terminal equity. The same
+ * physical hole combinations are scored before/after the last public card.
+ * A qualifying low or multiway pot leaves this high-only signal unavailable. */
+export interface OmahaMadeRangeEstimate {
+  samples: number;
+  previousShare: number;
+  currentShare: number;
+  madeShareDelta: number;
+  deltaStandardError: number;
+  improves: boolean;
+  worsens: boolean;
+  heroNutMass: number;
+  opponentNutMass: number;
+  nutMassDelta: number;
+  nutDeltaStandardError: number;
+  nutAdvantage: boolean;
+  nutDisadvantage: boolean;
+}
+const omahaPhysicalNutCache = new Map<string, number>();
+function publicPhysicalNutHigh(board: Card[]): number {
+  const key = board.map(cardKey).sort().join('|');
+  const hit = omahaPhysicalNutCache.get(key);
+  if (hit !== undefined) return hit;
+  const used = new Set(board.map(cardKey));
+  const remaining = FULL_DECK.filter((card) => !used.has(cardKey(card)));
+  let best = 0;
+  const scratch: Card[] = new Array(5);
+  for (let a = 0; a < remaining.length; a++)
+    for (let b = a + 1; b < remaining.length; b++) {
+      scratch[0] = remaining[a];
+      scratch[1] = remaining[b];
+      for (let x = 0; x < board.length; x++)
+        for (let y = x + 1; y < board.length; y++)
+          for (let z = y + 1; z < board.length; z++) {
+            scratch[2] = board[x];
+            scratch[3] = board[y];
+            scratch[4] = board[z];
+            best = Math.max(best, scoreFiveCards(scratch));
+          }
+    }
+  omahaPhysicalNutCache.set(key, best);
+  if (omahaPhysicalNutCache.size > 128)
+    omahaPhysicalNutCache.delete(omahaPhysicalNutCache.keys().next().value!);
+  return best;
 }

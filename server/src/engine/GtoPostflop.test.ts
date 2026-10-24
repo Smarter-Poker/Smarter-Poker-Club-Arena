@@ -20,6 +20,8 @@ import {
   rollMix,
 } from './GtoPostflop.js';
 import { HorseLogic } from './HorseLogic.js';
+import { HorseMind } from './HorseMind.js';
+import { seedFastRandom, saveFastRandom } from './HorseEval.js';
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 
 const c = (rank: string, suit: string): Card => ({ rank, suit }) as Card;
@@ -507,6 +509,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
       [D('7'), CL('2')],
       [S('9'), S('8')],
     ]) {
+      // Compare the GTO switch from the SAME current brain and RNG state.
+      // Consecutive stochastic decisions compare different mixed-strategy
+      // rolls and speculative plans, not the effect of an empty solver store.
+      HorseMind.reset();
+      seedFastRandom(1701);
       const on = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         gs() as never,
@@ -516,6 +523,9 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
           v29GtoFlop: true,
         }
       );
+      const onRng = saveFastRandom();
+      HorseMind.reset();
+      seedFastRandom(1701);
       const off = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         gs() as never,
@@ -526,7 +536,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         }
       );
       expect(on.action).toBe(off.action);
+      expect(on.amount).toBe(off.amount);
+      expect(saveFastRandom()).toEqual(onRng);
 
+      HorseMind.reset();
+      seedFastRandom(1702);
       const onT = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         turnGs() as never,
@@ -536,6 +550,9 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
           v30GtoTurnRiver: true,
         }
       );
+      const onTurnRng = saveFastRandom();
+      HorseMind.reset();
+      seedFastRandom(1702);
       const offT = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         turnGs() as never,
@@ -546,6 +563,8 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         }
       );
       expect(onT.action).toBe(offT.action);
+      expect(onT.amount).toBe(offT.amount);
+      expect(saveFastRandom()).toEqual(onTurnRng);
     }
   });
 

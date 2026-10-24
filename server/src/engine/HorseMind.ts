@@ -1431,7 +1431,10 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: postflop aggression weight + checked-street count for
      *  board-contact conditioning (see HorseEval.simulateEquity). */
-    readOut?: OppPostflopRead
+    readOut?: OppPostflopRead,
+    /** Exact initial forced-money state for live controller histories, which
+     * omit FORCED_BETS_POSTED from actionHistory. Never contains hole cards. */
+    initialPublicMoney?: { pot: number; streetBets: ReadonlyArray<readonly [string, number]> }
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
     const postStagesActed = new Set<string>();
@@ -1456,23 +1459,69 @@ export class HorseMind {
     let lastAggrStage: string | null = null;
     let lastAggrFrac = 0;
     let lastAggrRaised = false;
-    // Pot replay state: recorded call amounts are increments; bet/raise/all_in
-    // amounts are street totals, so increment = amount - actor's street bet.
-    let pot = bigBlind > 0 ? bigBlind * 1.5 : 3; // SB+BB approximation
+    // Live controller history omits forced posts; persisted public history
+    // includes explicit blind/ante records. Prefer captured public nodes when
+    // present, otherwise replay call/post deltas and wager street totals;
+    // never double-count forced money.
+    const forced = history.some((a) =>
+      ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(a.action as string)
+    );
+    const initial =
+      !forced &&
+      initialPublicMoney &&
+      Number.isFinite(initialPublicMoney.pot) &&
+      initialPublicMoney.pot >= 0 &&
+      initialPublicMoney.streetBets.every(
+        ([id, amount]) => typeof id === 'string' && Number.isFinite(amount) && amount >= 0
+      )
+        ? initialPublicMoney
+        : undefined;
+    let pot = forced ? 0 : (initial?.pot ?? (bigBlind > 0 ? bigBlind * 1.5 : 3));
     let curStreet: string = 'preflop';
-    let streetBets = new Map<string, number>();
+    let streetBets = new Map<string, number>(initial?.streetBets);
+    let price = Math.max(bigBlind > 0 ? bigBlind : 0, ...streetBets.values());
+    const userBySeat = new Map(history.map((entry) => [entry.seat, entry.userId]));
     for (const a of history) {
-      const isAggr = isMindAggression(a);
-      const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
       if (a.stage === 'preflop') sawPreflop = true;
       if (a.stage !== curStreet) {
         curStreet = a.stage;
         streetBets = new Map();
+        price = 0;
       }
+      const node = a.publicNode;
+      if (node?.status === 'captured' && node.street === a.stage) {
+        pot = node.pot;
+        price = node.currentBet;
+        for (const [seat, , bet] of node.seats) {
+          const uid = userBySeat.get(seat);
+          if (uid) streetBets.set(uid, bet);
+        }
+      }
+      const kind = a.action as string;
+      const forcedPost = ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(
+        kind
+      );
+      const anyChips = forcedPost || ['bet', 'raise', 'call', 'all_in'].includes(kind);
       const prevBet = streetBets.get(a.userId) || 0;
-      let increment = 0;
-      if (a.action === 'call') increment = a.amount;
-      else if (anyChips) increment = Math.max(0, a.amount - prevBet);
+      if (anyChips && (!Number.isFinite(a.amount) || a.amount < 0)) return null;
+      // Controller calls/posts are paid deltas; bets, raises and all-ins are
+      // absolute street totals (including chips this actor already paid).
+      const targetWager = ['bet', 'raise', 'all_in'].includes(kind);
+      const increment = anyChips ? (targetWager ? a.amount - prevBet : a.amount) : 0;
+      if (increment < -1e-8) return null;
+      const total = prevBet + increment;
+      const isAggr =
+        kind === 'bet' || kind === 'raise' || (kind === 'all_in' && total > price + 1e-8);
+      // Dead forced posts contribute to pot but never raise the live price.
+      const dead = kind === 'ante' || (a as ActionRecord & { dead?: boolean }).dead === true;
+      const priceBefore = price;
+      const liveTotal = dead ? prevBet : total;
+      price = Math.max(price, liveTotal);
+      if (forcedPost) {
+        pot += increment;
+        if (!dead) streetBets.set(a.userId, liveTotal);
+        continue;
+      }
 
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
@@ -1487,14 +1536,14 @@ export class HorseMind {
           // top of their range, driving thin value and river bluffs into a
           // range that is calling. A CHECK is capped; a CALL is not.
           if (a.action === 'check') postStagesActed.add(a.stage);
+          else if (a.action === 'call' || anyChips) postStagesActed.delete(a.stage);
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
             if (a.stage !== lastAggrStage) {
               lastAggrStage = a.stage;
               lastAggrFrac = frac;
-              lastAggrRaised =
-                a.action === 'raise' || (a.action === 'all_in' && streetBets.size > 0);
+              lastAggrRaised = a.action === 'raise' || (a.action === 'all_in' && priceBefore > 0);
             } else {
               lastAggrFrac = Math.max(lastAggrFrac, frac);
               lastAggrRaised = true;
@@ -2082,6 +2131,112 @@ export class HorseMind {
    * Build the per-opponent band list for an equity simulation: live (unfolded,
    * not-hero) opponents in table order, each mapped through bandFor().
    */
+  /** Recover the exact initial public posts from the first accepted action's
+   * immutable pre-action node, then replay the controller's mixed amount ABI.
+   * Missing nodes or an incomplete/inconsistent money ledger are unknown;
+   * a blind raiser's initial post cannot be inferred from its final target. */
+  static initialPublicMoney(
+    players: SeatPlayer[],
+    history: ActionRecord[] | undefined,
+    pot: number
+  ): { pot: number; streetBets: Array<[string, number]> } | null {
+    if (!history?.length || !players.length || !Number.isFinite(pot) || pot < 0) return null;
+    if (
+      history.some((a) =>
+        ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(a.action as string)
+      )
+    )
+      return null; // Explicit posting histories replay themselves in bandFor.
+    const cents = (v: number) =>
+      Number.isFinite(v) && v >= 0 && Math.abs(v * 100 - Math.round(v * 100)) < 1e-5
+        ? Math.round(v * 100)
+        : null;
+    const first = history[0].publicNode;
+    if (
+      first?.status !== 'captured' ||
+      first.street !== history[0].stage ||
+      first.actorSeat !== history[0].seat ||
+      first.seats.length !== players.length
+    )
+      return null;
+    if (first.street !== 'preflop' && !(first.street === 'flop' && first.bombPot)) return null;
+    const ids = new Map(players.map((p) => [p.seat, p.user_id]));
+    if (ids.size !== players.length || new Set(ids.values()).size !== players.length) return null;
+    const initialPot = cents(first.pot);
+    if (initialPot === null) return null;
+    const invested = new Map<string, number>(),
+      deadMoney = new Map<string, number>();
+    let bets = new Map<string, number>();
+    const initialBets: Array<[string, number]> = [];
+    for (const [seat, , bet, total, dead] of first.seats) {
+      const uid = ids.get(seat),
+        b = cents(bet),
+        t = cents(total),
+        d = cents(dead);
+      if (!uid || invested.has(uid) || b === null || t === null || d === null || t < b + d)
+        return null;
+      invested.set(uid, t);
+      deadMoney.set(uid, d);
+      bets.set(uid, b);
+      initialBets.push([uid, b / 100]);
+    }
+    if ([...invested.values()].reduce((a, b) => a + b, 0) !== initialPot) return null;
+    let runningPot = initialPot;
+    let street: ActionRecord['stage'] = first.street;
+    for (const action of history) {
+      if (!invested.has(action.userId) || ids.get(action.seat) !== action.userId) return null;
+      if (action.stage !== street) {
+        street = action.stage;
+        bets = new Map();
+      }
+      const node = action.publicNode;
+      if (node?.status === 'captured') {
+        if (
+          node.street !== street ||
+          node.actorSeat !== action.seat ||
+          cents(node.pot) !== runningPot ||
+          node.seats.length !== players.length
+        )
+          return null;
+        const seen = new Set<number>();
+        for (const [seat, , bet, total, dead] of node.seats) {
+          const uid = ids.get(seat);
+          if (
+            !uid ||
+            seen.has(seat) ||
+            cents(bet) !== (bets.get(uid) ?? 0) ||
+            cents(total) !== invested.get(uid) ||
+            cents(dead) !== deadMoney.get(uid)
+          )
+            return null;
+          seen.add(seat);
+        }
+      }
+      if (!['call', 'bet', 'raise', 'all_in'].includes(action.action)) {
+        if (!['check', 'fold', 'discard', 'show', 'muck'].includes(action.action)) return null;
+        continue;
+      }
+      const amount = cents(action.amount),
+        before = bets.get(action.userId) ?? 0;
+      if (amount === null) return null;
+      const delta = action.action === 'call' ? amount : amount - before;
+      if (delta < 0) return null;
+      bets.set(action.userId, before + delta);
+      invested.set(action.userId, invested.get(action.userId)! + delta);
+      runningPot += delta;
+    }
+    if (cents(pot) !== runningPot) return null;
+    for (const player of players) {
+      if (
+        cents(player.returnedUncalled ?? 0) !== 0 ||
+        cents(player.totalInvested) !== invested.get(player.user_id) ||
+        cents(player.deadInvested ?? 0) !== deadMoney.get(player.user_id)
+      )
+        return null;
+    }
+    return { pot: initialPot / 100, streetBets: initialBets };
+  }
+
   static bandsForOpponents(
     heroSeat: number,
     players: SeatPlayer[],
@@ -2091,13 +2246,16 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: parallel per-opponent postflop reads (same order as
      *  the returned bands) for board-contact conditioning. */
-    readsOut?: Array<OppPostflopRead | null>
+    readsOut?: Array<OppPostflopRead | null>,
+    initialPublicMoney?: { pot: number; streetBets: ReadonlyArray<readonly [string, number]> }
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || (p.is_sitting_out && !p.is_all_in)) continue;
       const readOut: OppPostflopRead | undefined = readsOut ? { aggrW: 0, checked: 0 } : undefined;
-      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
+      bands.push(
+        this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut, initialPublicMoney)
+      );
       if (readsOut)
         readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
     }

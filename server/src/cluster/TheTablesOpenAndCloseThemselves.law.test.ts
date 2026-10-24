@@ -254,21 +254,25 @@ describe('the engine executes at the hand boundary and announces at the start', 
          notice referred to; the announcement now sits immediately before
          dealHand and the idle-branch execute is in the idle branch;
        - settlement executed every pending move, announced or not, so a move
-         planned mid-hand landed unannounced; settlement executes announced
-         moves only, and the announcement is written to the row
+         planned mid-hand landed unannounced; settlement keeps that rule for optional changes and swaps. Owner update
+         2026-10-23 requires must-move feeding at the first completed boundary.
+         The announcement is written to the row
          (fn_cash_seat_move_announce) so a slow hand cannot expire it;
        - the start() wait-for-players loop never executed a move at all, so a
          lone player on a feeder was planned onto Main 1 every minute and
          never moved (seventeen expired rows, 00:28-00:45 UTC). */
-  it('settlement executes ANNOUNCED moves after the leavers, at the end of the hand', () => {
+  it('settlement feeds Main at the first boundary and keeps other announcement rules', () => {
     const step = SETTLEMENT.slice(
       SETTLEMENT.indexOf("runStep('leave_pending'"),
       SETTLEMENT.indexOf("runStep('table_unlock'")
     );
     expect(step).toMatch(/await this\.readCashHandDepartures\(diagnostic\)/);
     expect(step).toMatch(
-      /await this\.executePendingSeatMoves\(\{ announcedOnly: true \}, pendingMoves, diagnostic\);/
+      /await this\.executePendingSeatMoves\(\{ announcedOnly: false \}, boundaryMoves, diagnostic\);/
     );
+    expect(step).toContain("move.reason === 'must_move' && move.swap_move_id == null");
+    expect(step).toContain('move.announced_at != null');
+    expect(step).toMatch(/pendingMoves === null\s*\? null/);
     expect(step.indexOf('readCashHandDepartures(')).toBeLessThan(
       step.indexOf('executePendingSeatMoves(')
     );

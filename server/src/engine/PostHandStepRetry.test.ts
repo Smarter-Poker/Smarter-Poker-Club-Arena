@@ -424,3 +424,47 @@ describe('a seat that already left is torn down even when the boundary throws', 
     expect(unregister).not.toHaveBeenCalledWith(id, 'a');
   });
 });
+
+describe('main-game vacancies take the first completed hand boundary', () => {
+  it('executes a mid-hand must-move without requiring another announced hand', async () => {
+    const { engine, players } = cashTable();
+    const candidate = (reason: string, announced: boolean, swap: string | null = null) => ({
+      move_id: reason + String(announced) + String(swap),
+      reason,
+      announced_at: announced ? '2026-10-24T03:00:00Z' : null,
+      swap_move_id: swap,
+    });
+    const urgent = candidate('must_move', false);
+    const promised = candidate('seat_change', true);
+    const pending = [
+      urgent,
+      promised,
+      candidate('seat_change', false),
+      candidate('balance', false),
+      candidate('break', false),
+      candidate('must_move', false, 'partner'),
+    ];
+    engine.readCashHandDepartures = vi
+      .fn()
+      .mockResolvedValue({ cashedOutIds: [], pendingMoves: pending });
+    await engine.postHandTasks(players, 1);
+    expect(engine.executePendingSeatMoves).toHaveBeenCalledWith(
+      { announcedOnly: false },
+      [urgent, promised],
+      expect.anything()
+    );
+  });
+
+  it('preserves an unknown move read instead of inventing an empty boundary', async () => {
+    const { engine, players } = cashTable();
+    engine.readCashHandDepartures = vi
+      .fn()
+      .mockResolvedValue({ cashedOutIds: [], pendingMoves: null });
+    await engine.postHandTasks(players, 1);
+    expect(engine.executePendingSeatMoves).toHaveBeenCalledWith(
+      { announcedOnly: false },
+      null,
+      expect.anything()
+    );
+  });
+});

@@ -3982,11 +3982,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.tearDownDepartedSeats(cashedOutIds);
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
-        // ANNOUNCED ONLY (2026-09-05): the deal told the player "Moving After
-        // This Hand"; a move planned during the hand waits for the next deal
-        // to be announced, so nobody is moved off a hand they were not told
-        // about.
-        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves, diagnostic);
+        // A Main vacancy takes this completed hand boundary, including a
+        // must-move planned while this hand was running. Requiring its notice
+        // at the next deal made the player play one entire extra feeder hand.
+        // Swaps and other move reasons keep their existing announcement rule.
+        // Preserve null: an unavailable read is never an empty move list.
+        const boundaryMoves =
+          pendingMoves === null
+            ? null
+            : pendingMoves.filter(
+                (move) =>
+                  move.announced_at != null ||
+                  (move.reason === 'must_move' && move.swap_move_id == null)
+              );
+        await this.executePendingSeatMoves({ announcedOnly: false }, boundaryMoves, diagnostic);
         const afterMirrors = this.lifecycleCanMutate();
         this.recordLeavePendingGuard(diagnostic, 'after_move_mirrors', afterMirrors);
         if (!afterMirrors) return;

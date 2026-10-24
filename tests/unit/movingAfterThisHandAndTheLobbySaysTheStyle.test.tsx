@@ -423,7 +423,7 @@ describe('the mobile card says the style', () => {
         cluster_must_move: true,
       })
     );
-    expect(cashCardTitle(e)).toEqual({ title: 'Late Night', subtitle: 'Action' });
+    expect(cashCardTitle(e)).toEqual({ title: 'Late Night', subtitle: 'Lightning Games' });
   });
 
   it('the club name rides after the style on a union board', () => {
@@ -441,9 +441,9 @@ describe('the mobile card says the style', () => {
       { other: 'Deep Stack Society' }
     );
     if (e.clubLabel) {
-      expect(cashCardTitle(e).subtitle).toBe('Madness, Deep Stack Society');
+      expect(cashCardTitle(e).subtitle).toBe('Lightning Games, Deep Stack Society');
     } else {
-      expect(cashCardTitle(e).subtitle).toBe('Madness');
+      expect(cashCardTitle(e).subtitle).toBe('Lightning Games');
     }
   });
 
@@ -479,7 +479,7 @@ describe('the mobile card says the style', () => {
         cluster_must_move: true,
       })
     );
-    expect(cashCardTitle(e).subtitle).toBe('Action');
+    expect(cashCardTitle(e).subtitle).toBe('Lightning Games');
   });
 
   it('the stakes and the players are separate card zones the second line never touches', () => {
@@ -510,15 +510,15 @@ describe('the Stakes menu counts styles', () => {
   ] as LobbyTableRow[];
 
   it('counts one per game, never per table, and ignores tables of no style', () => {
-    expect(countStylesOnBoard(rows)).toEqual({ classic: 2, action: 1 });
+    expect(countStylesOnBoard(rows)).toEqual({ classic: 2, madness: 1 });
     expect(countStylesOnBoard([])).toEqual({});
   });
 
   it('prints the line in the menu order with zeros, not gaps', () => {
     expect(styleCountsLine(CASH_STYLES, countStylesOnBoard(rows))).toBe(
-      'Classic 2 / Action 1 / Madness 0'
+      'Classic 2 / Lightning Games 1'
     );
-    expect(styleCountsLine(CASH_STYLES, {})).toBe('Classic 0 / Action 0 / Madness 0');
+    expect(styleCountsLine(CASH_STYLES, {})).toBe('Classic 0 / Lightning Games 0');
   });
 
   it('the menu shows the line and a figure beside each style; without counts it is as it was', () => {
@@ -545,7 +545,7 @@ describe('the Stakes menu counts styles', () => {
           styleChoices={CASH_STYLES}
           selectedStyles={[]}
           onStylesChange={vi.fn()}
-          styleCounts={{ classic: 12, action: 4, madness: 2 }}
+          styleCounts={{ classic: 12, madness: 6 }}
         />
       </MemoryRouter>
     );
@@ -553,11 +553,10 @@ describe('the Stakes menu counts styles', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /stakes/i }));
     const menu = within(bar).getByRole('group', { name: 'Stakes' });
     expect(within(menu).getByTestId('lt-style-counts').textContent).toBe(
-      'Classic 12 / Action 4 / Madness 2'
+      'Classic 12 / Lightning Games 6'
     );
     expect(within(menu).getByRole('button', { name: 'Classic, 12 Games' })).toBeTruthy();
-    expect(within(menu).getByRole('button', { name: 'Action, 4 Games' })).toBeTruthy();
-    expect(within(menu).getByRole('button', { name: 'Madness, 2 Games' })).toBeTruthy();
+    expect(within(menu).getByRole('button', { name: 'Lightning Games, 6 Games' })).toBeTruthy();
     unmount();
 
     render(

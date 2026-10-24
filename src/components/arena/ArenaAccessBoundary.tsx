@@ -1,10 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { signInUrl } from '../../lib/signIn';
+import { IS_NATIVE_BUILD } from '../../lib/appBase';
 import { useUserStore } from '../../stores/useUserStore';
 import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
 import PageSkeleton from '../common/PageSkeleton';
+import {
+  arenaAccessFailure,
+  ARENA_ACCESS_FAILURE_COPY,
+  type ArenaAccessFailure,
+} from '../../services/arenaAccessFailure';
 import DiamondCustodyBalance from './DiamondCustodyBalance';
 import DiamondArenaWallet from './DiamondArenaWallet';
 import { SpadeConsole } from '../console/SpadeConsole';
@@ -18,6 +25,7 @@ interface AccessState {
   context: ArenaAccessContext | null;
   settled: boolean;
   failed: boolean;
+  failure?: ArenaAccessFailure;
 }
 
 /** Checks entry before cached chip content can mount. This never navigates the host table. */
@@ -65,9 +73,16 @@ export default function ArenaAccessBoundary({
         const context = key ? await getArenaContext(key) : null;
         if (alive && token === request)
           setState({ key, accountGeneration, context, settled: true, failed: false });
-      } catch {
+      } catch (error) {
         if (alive && token === request)
-          setState({ key, accountGeneration, context: null, settled: true, failed: true });
+          setState({
+            key,
+            accountGeneration,
+            context: null,
+            settled: true,
+            failed: true,
+            failure: arenaAccessFailure(error),
+          });
       }
     };
     void refresh();
@@ -97,6 +112,7 @@ export default function ArenaAccessBoundary({
           context: null,
           settled: event === 'SIGNED_OUT',
           failed: event === 'SIGNED_OUT',
+          failure: event === 'SIGNED_OUT' ? 'authentication' : undefined,
         });
       }
       // Do not run Supabase calls synchronously inside the auth callback.
@@ -121,21 +137,31 @@ export default function ArenaAccessBoundary({
       <section className="club-home error" role="alert">
         <SpadeConsole
           eyebrow="Poker Arena"
-          title="Could Not Verify Arena Access"
-          pill="Offline"
+          title="Access Not Verified"
+          pill={ARENA_ACCESS_FAILURE_COPY[state.failure ?? 'service'].pill}
           pillInk="red"
           plates={{
             primary: {
               label: 'Retry',
               ink: 'white',
-              onClick: () => setRetry((value) => value + 1),
+              onClick: () => {
+                setState((value) => ({ ...value, settled: false }));
+                setRetry((value) => value + 1);
+              },
+            },
+            secondary: {
+              label: state.failure === 'authentication' ? 'Sign In' : 'Back To Clubs',
+              ink: 'white',
+              onClick: () => {
+                if (state.failure !== 'authentication') return navigate('/clubs');
+                const url = signInUrl(path);
+                if (IS_NATIVE_BUILD) navigate(url);
+                else window.location.assign(url);
+              },
             },
           }}
         >
-          <p className="sc-copy">
-            The Arena Did Not Answer. Nothing Is Wrong With Your Account; The Check Simply Did Not
-            Come Back. Try Again In A Moment.
-          </p>
+          <p className="sc-copy">{ARENA_ACCESS_FAILURE_COPY[state.failure ?? 'service'].message}</p>
         </SpadeConsole>
       </section>
     );

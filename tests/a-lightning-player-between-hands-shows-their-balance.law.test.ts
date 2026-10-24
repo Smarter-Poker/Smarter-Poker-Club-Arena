@@ -63,6 +63,66 @@ describe('a Lightning player between hands', () => {
     expect(lightningSessionStackFor(null, { poolSessionId: 'room-a', stack: 150 })).toBeNull();
   });
 
+  describe('the Lightning room around that chair', () => {
+    const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
+
+    it('remembers the roster stack and reads the pool balance while the hero waits', () => {
+      expect(page).toMatch(
+        /if \(lightningHeroInRoster && Number\.isFinite\(lightningHeroInRoster\.stack\)\) \{\s*lightningLastSeenStackRef\.current = lightningHeroInRoster\.stack;/
+      );
+      expect(page).toMatch(/lastSeenStack: lightningLastSeenStackRef\.current,/);
+      expect(page).toMatch(/sessionStack: lightningSessionStack,/);
+      expect(page).toMatch(
+        /setLightningSessionStack\(lightningSessionStackFor\(tableId, session\)\)/
+      );
+    });
+
+    it('reads the balance again after chips are added between hands', () => {
+      expect(page).toMatch(
+        /if \(lightningRoomRef\.current && !res\.queued && applied > 0\) \{\s*setLightningBalanceVersion/
+      );
+      expect(page).toMatch(
+        /\[lightningHeroWaiting, lightningRoomClusterId, tableId, lightningBalanceVersion\]/
+      );
+    });
+
+    it('gives a room opened between hands its player a chair', () => {
+      expect(page).toMatch(/hasLightningRoom\(session\) && session\.poolSessionId === tableId/);
+      expect(page).toMatch(
+        /if \(!lightningRoom \|\| !lightningSessionHoldsRoom\) return;[\s\S]{0,200}heroSeatRef\.current = 1;/
+      );
+    });
+
+    it('says nothing in the footer between hands, but keeps I am Back for a real sit-out', () => {
+      expect(page).toMatch(
+        /\{lightningRoom && !lightningHeroInRoster && !heroIsSittingOut \? \(\s*\/\*[\s\S]*?\*\/\s*<div className="spectator-footer-bar" data-state="lightning-between-hands">\s*<span className="spectator-footer-bar__label" \/>/
+      );
+    });
+
+    it('never sells a seat in a Lightning room', () => {
+      expect(page).toMatch(
+        /canSit=\{\s*tableState\.heroSeat <= 0 &&\s*pendingSeat === null &&\s*!lightningRoom &&/
+      );
+      expect(page).toMatch(
+        /const handleSeatClick = \(seatNumber: number\) => \{\s*\/\*[\s\S]*?\*\/\s*if \(lightningRoomRef\.current\) return;/
+      );
+    });
+
+    it('shows Leave and Add Chips the same balance', () => {
+      expect(page).toContain('heroStack={heroDisplayStack}');
+      expect(page).toMatch(
+        /const heroDisplayStack = lightningRoom\s*\?\s*\(lightningHeroInRoster\?\.stack \?\? lightningWaitingSeat\?\.stack \?\? 0\)/
+      );
+    });
+
+    it('never runs the cash bust prompt or cash session restore against a pool session', () => {
+      expect(page).toMatch(
+        /tableState\.heroSeat <= 0\) return;\s*\/\*[^*]*Lightning room rebuys[\s\S]*?\*\/\s*if \(lightningRoomRef\.current\) return;/
+      );
+      expect(page).toMatch(/const hasCashSessionSeat =[\s\S]{0,400}!lightningRoom;/);
+    });
+  });
+
   it('is how the table draws the hero chair in a Lightning room', () => {
     const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
     expect(page).toContain('lightningWaitingHero({');

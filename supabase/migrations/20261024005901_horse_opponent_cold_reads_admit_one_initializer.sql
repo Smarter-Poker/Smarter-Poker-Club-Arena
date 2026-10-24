@@ -4,7 +4,8 @@
 -- guarded UPSERT prevented double counting but did not prevent duplicate scans.
 -- Preserve the exact 1024 actual observations, decay, permissions and atomic
 -- merge with accepted hands. One database-wide initializer request is admitted
--- without waiting; busy requests fail explicitly through the existing optional
+-- without waiting, and initializes at most one cold profile per transaction;
+-- busy requests fail explicitly through the existing optional
 -- reader failure path. Warm profiles and accepted-hand writes remain available.
 -- Re-grant the original service-only permission after emergency containment.
 -- No hot-table DDL, data rewrite, engine replacement or new schedule.
@@ -80,6 +81,11 @@ BEGIN
      counters=public.fn_horse_exploit_add(base,horse_exploit_profiles.counters,horse_exploit_profiles.observed_hands),
      initialized=true,legacy_hands=n,updated_at=clock_timestamp()
      WHERE NOT horse_exploit_profiles.initialized;
+    -- Transaction locks survive to RPC completion. Never hold this profile's
+    -- write lock across a second history scan: accepted hands update it too.
+    -- The existing caller refuses an incomplete snapshot and uses its normal
+    -- decision path; subsequent original requests initialize remaining profiles.
+    EXIT;
    END IF;
   END IF;
  END LOOP;

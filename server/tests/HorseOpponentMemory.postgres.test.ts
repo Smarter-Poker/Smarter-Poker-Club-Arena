@@ -243,7 +243,7 @@ describe('durable opponent memory with real PostgreSQL', () => {
     }
   });
 
-  it('recovers a full ten-player legacy horizon inside the decision read budget', async () => {
+  it('recovers complete legacy profiles in successive requests within the decision read budget', async () => {
     const ids = Array.from(
       { length: 10 },
       (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -251,12 +251,18 @@ describe('durable opponent memory with real PostgreSQL', () => {
     await client.query("set statement_timeout='1500ms'");
     try {
       const started = performance.now();
-      const rows = (
-        await client.query(
-          "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
-          [ids]
-        )
-      ).rows;
+      let rows: Array<Record<string, any>> = [];
+      // Each original request admits one complete cold profile; never hold a
+      // profile write lock across the next player's expensive historical scan.
+      for (let n = 0; n < ids.length; n++) {
+        rows = (
+          await client.query(
+            "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
+            [ids]
+          )
+        ).rows;
+        expect(rows.filter((p) => p.initialized)).toHaveLength(n + 1);
+      }
       console.info(
         'OPPONENT_MEMORY_COLD_READ',
         JSON.stringify({
@@ -270,6 +276,29 @@ describe('durable opponent memory with real PostgreSQL', () => {
     } finally {
       await client.query('reset statement_timeout');
     }
+  });
+
+  it('commits one full cold profile before the next scan so accepted hands never wait behind that scan', async () => {
+    const ids = ['d0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000002'];
+    const row = hand('d1000000-0000-4000-8000-000000000001');
+    row.players = ids.map((userId) => ({ userId }));
+    row.actions = ids.map((userId) => ({ userId, action: 'raise', stage: 'preflop' }));
+    await insert(row);
+    const first = (
+      await client.query("select * from fn_horse_exploit_profiles_read($1,'plo5','cash','hu')", [
+        ids,
+      ])
+    ).rows;
+    expect(first.filter((p) => p.initialized)).toHaveLength(1);
+    // This new accepted hand can update the initialized profile immediately.
+    await insert({ ...row, id: 'd1000000-0000-4000-8000-000000000002' });
+    const complete = (
+      await client.query("select * from fn_horse_exploit_profiles_read($1,'plo5','cash','hu')", [
+        ids,
+      ])
+    ).rows;
+    expect(complete.every((p) => p.initialized)).toBe(true);
+    expect(complete.map((p) => Number(p.observed_hands))).toEqual([2, 2]);
   });
 
   it('actor-targeted legacy parsing matches every public-action actor', async () => {

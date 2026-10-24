@@ -101,7 +101,7 @@ describe('cash roster bankroll-only wiring', () => {
     const context = ctxWith({
       bankrollOnlyCashHorse: () => true,
       horseTables: new Map([[HORSE, new Set(['another-cash-table'])]]),
-      book: bookWith({ ...tag, maxTables: 1 }, { ...state, restWeekday: 5 }),
+      book: bookWith({ ...tag, maxTables: 1 }, { ...state, restWeekday: 4 }),
     });
     expect(sitVerdictFor(HORSE, TABLE, context).ok).toBe(true);
     expect(
@@ -355,7 +355,7 @@ describe('the fleet: one predicate, asked for the count and for the chair', () =
 
   it('the pool used for allocation AND for selection is the sittable pool', () => {
     expect(CODE).toMatch(
-      /let pool = sittable\.filter\(\s*\(h\) => cashRosterAllows\(h\.id\) === true \|\| isActiveNow\(h\.id, hourUTC\)\s*\);/
+      /let pool = sittable\.filter\(\s*\(h\) => isActiveNow\(h\.id, hourUTC\)\s*\);/
     );
     expect(CODE).toContain(
       'if (pool.length < emptySeats.length && humanNeedsRescue) pool = sittable;'

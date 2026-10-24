@@ -3283,11 +3283,11 @@ export class HorseFleetManager {
                tagger and read by nobody. A human short-handed at this table
                outranks both: a rest day is a texture, a person waiting is not. */
             const st = book?.states.get(h.id);
-            if (!bankrollOnly && !humanNeedsRescue && isRestDayFor(st, chicagoWeekday)) {
+            if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday)) {
               restDayDropped++;
               return false;
             }
-            if (!bankrollOnly && !humanNeedsRescue && dailyCapReached(st, todayKey)) {
+            if (!humanNeedsRescue && dailyCapReached(st, todayKey)) {
               dailyCapDropped++;
               return false;
             }
@@ -3488,9 +3488,7 @@ export class HorseFleetManager {
             diag.candidates = candidateHorses.length;
             diag.sittable = sittable.length;
           }
-          let pool = sittable.filter(
-            (h) => cashRosterAllows(h.id) === true || isActiveNow(h.id, hourUTC)
-          );
+          let pool = sittable.filter((h) => isActiveNow(h.id, hourUTC));
           /* How many were awake before any rule widened the hour, for the
              `asleep` and `hour_widened` counters below. */
           const awake = pool.length;

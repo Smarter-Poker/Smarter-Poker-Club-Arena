@@ -84,8 +84,8 @@ describe('A WAITING HUMAN OUTRANKS EVERY TEXTURE RULE', () => {
     for (const guard of [
       'if (!bankrollOnly && variantOk === false && !humanNeedsRescue)',
       'if (stakeOk === false && !humanNeedsRescue)',
-      'if (!bankrollOnly && !humanNeedsRescue && isRestDayFor(st, chicagoWeekday))',
-      'if (!bankrollOnly && !humanNeedsRescue && dailyCapReached(st, todayKey))',
+      'if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday))',
+      'if (!humanNeedsRescue && dailyCapReached(st, todayKey))',
     ]) {
       expect(SRC).toContain(guard);
     }

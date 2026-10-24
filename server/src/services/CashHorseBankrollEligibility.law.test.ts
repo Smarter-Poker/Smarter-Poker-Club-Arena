@@ -15,15 +15,15 @@ const request = (over: Partial<SitRequest> = {}): SitRequest => ({
   buyIn: 200,
   persona: 'regular',
   sitsOnKeyToday: 99,
-  isRestDay: true,
+  isRestDay: false,
   inTwoHourWindow: true,
   killed: false,
   bankrollOnly: true,
   ...over,
 });
 
-describe('the cash fifty are eligible by bankroll', () => {
-  it('ignores persona ceilings, rest days, daily sits and texture rejoin windows', () => {
+describe('the scheduled fleet is eligible by bankroll', () => {
+  it('ignores persona ceilings, daily sits and texture rejoin windows', () => {
     expect(evaluateSit(request())).toBe('ok');
   });
   it('retains bankroll, exposure, wallet ownership and universal seat safeguards', () => {
@@ -32,6 +32,9 @@ describe('the cash fifty are eligible by bankroll', () => {
     expect(evaluateSit(request({ activeSeatCount: 4 }))).toBe('seat_cap');
     expect(evaluateSit(request({ activeClubId: 'another-club' }))).toBe('other_club');
     expect(evaluateSit(request({ killed: true }))).toBe('killed');
+  });
+  it('preserves rest days even when historical eligibility restrictions are lifted', () => {
+    expect(evaluateSit(request({ isRestDay: true }))).toBe('rest_day');
   });
   it('leaves non-roster behavior unchanged', () => {
     expect(evaluateSit(request({ bankrollOnly: false }))).toBe('seat_cap');

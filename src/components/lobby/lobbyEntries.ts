@@ -1396,15 +1396,39 @@ function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
  * The card names it Madness from what the engine enforces at the table: a big
  * blind ante and a VPIP floor. Neither is ever set on a plain Classic table.
  */
-export function plainMadnessStyleOf(
-  t: { cluster_template?: string | null } & Partial<
-    Pick<LobbyTableRow, 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'>
+type StyleRuleRow = { cluster_template?: string | null } & Partial<
+  Pick<
+    LobbyTableRow,
+    'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min' | 'bomb_pot_enabled'
   >
-): { label: string; note: string } | null {
+>;
+
+/** "Big Blind Ante, 50% Minimum VPIP" for a Classic table that enforces both, else null. */
+function classicAnteFloorNoteOf(t: StyleRuleRow): string | null {
   if (cashTemplateKey(String(t.cluster_template ?? '')) !== 'classic') return null;
   const floor = Number(t.maintain_percent_min) || 0;
   if (t.big_blind_ante_enabled !== true || t.nit_game !== true || floor <= 0) return null;
-  return { label: 'Madness', note: `Big Blind Ante, ${floor}% Minimum VPIP` };
+  return `Big Blind Ante, ${floor}% Minimum VPIP`;
+}
+
+/**
+ * Madness is the ante and the floor WITH bomb pots. PLO5 and PLO6 Classic
+ * carry the ante and the floor without bombs (Dan 2026-10-24: "MAKE ALL PLO5
+ * AND PLO6 CLASSIC GAMES ... 50% VPIP AND BB ANTE FOR ALL STAKES"), and they
+ * stay Classic.
+ */
+export function plainMadnessStyleOf(t: StyleRuleRow): { label: string; note: string } | null {
+  const note = classicAnteFloorNoteOf(t);
+  if (!note || t.bomb_pot_enabled !== true) return null;
+  return { label: 'Madness', note };
+}
+
+/** What a cash card prints for its style: Madness, or Classic with its ante and floor. */
+export function cashRulesStyleOf(t: StyleRuleRow): { label: string; note: string } | null {
+  const madness = plainMadnessStyleOf(t);
+  if (madness) return madness;
+  const note = classicAnteFloorNoteOf(t);
+  return note ? { label: 'Classic', note } : null;
 }
 
 /** The filter and count key for Madness without Lightning; Lightning Games keep `madness`. */
@@ -1414,11 +1438,7 @@ export const STRAIGHT_MADNESS_STYLE = 'straight_madness';
  * The style a cash game counts and filters under: Classic, Lightning Games
  * (`madness`, historical `action` folded in) or Madness without Lightning.
  */
-export function cashStyleKeyOf(
-  t: { cluster_template?: string | null } & Partial<
-    Pick<LobbyTableRow, 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'>
-  >
-): string | null {
+export function cashStyleKeyOf(t: StyleRuleRow): string | null {
   if (plainMadnessStyleOf(t)) return STRAIGHT_MADNESS_STYLE;
   const historicalKey = String(t.cluster_template ?? '')
     .trim()
@@ -1455,7 +1475,7 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           id: t.cluster_id,
           mustMove: t.cluster_must_move !== false,
           template: t.cluster_template ?? null,
-          ...(plainMadnessStyleOf(t) ? { style: plainMadnessStyleOf(t) } : {}),
+          ...(cashRulesStyleOf(t) ? { style: cashRulesStyleOf(t) } : {}),
           tables: figures.tables,
           state: t.cluster_state ?? null,
           /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
@@ -1937,7 +1957,7 @@ export function countStylesOnBoard(
   rows: ReadonlyArray<
     Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
       cluster_template?: string | null;
-    } & Partial<Pick<LobbyTableRow, 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'>>
+    } & StyleRuleRow
   >
 ): Record<string, number> {
   const counts: Record<string, number> = {};

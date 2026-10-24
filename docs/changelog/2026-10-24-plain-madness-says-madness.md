@@ -25,3 +25,11 @@ now offer three styles: Classic, Lightning Games and Madness
 (`straight_madness`, decided by `cashStyleKeyOf` from the same table rules).
 Picking Classic no longer shows the Madness game, and picking Madness shows it
 alone.
+
+## PLO5 and PLO6 Classic carry the ante and the floor
+
+Same day, PLO5 and PLO6 Classic became 50% VPIP with a big blind ante at every
+stake (migration 20261024213131), without bomb pots. Madness is therefore the
+ante and the floor WITH bombs: `plainMadnessStyleOf` now requires the bomb pot,
+and `cashRulesStyleOf` prints "Classic | Big Blind Ante, 50% Minimum VPIP" for
+those Classic games. The Classic blurb in the create flow says the same.

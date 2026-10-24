@@ -37,6 +37,7 @@ const row = (over: Partial<LobbyTableRow>): LobbyTableRow =>
     nit_game: true,
     maintain_percent_min: 50,
     maintain_hands: 10,
+    bomb_pot_enabled: true,
     ...over,
   }) as LobbyTableRow;
 
@@ -61,6 +62,15 @@ describe('a Classic must-move game playing Madness rules', () => {
 });
 
 describe('a plain Classic game is untouched', () => {
+  it('PLO5/PLO6 Classic with the ante and the floor but no bombs stays Classic, with its rules', () => {
+    const e = cashEntry(
+      row({ bomb_pot_enabled: false, name: 'PLO6 1/2 Classic', game_variant: 'plo6' })
+    );
+    expect(cashTitleLines(e).subtitle).toBe('Classic');
+    expect(cashStyleNote(e)).toBe('Big Blind Ante, 50% Minimum VPIP');
+    expect(e.game?.template).toBe('classic');
+  });
+
   it('no ante or no floor means Classic, with no note', () => {
     for (const over of [
       { big_blind_ante_enabled: false },
@@ -90,6 +100,7 @@ describe('Madness is its own style on the board', () => {
     expect(CASH_STYLES.find((s) => s.key === 'straight_madness')?.label).toBe('Madness');
     expect(cashStyleKeyOf(row({}))).toBe('straight_madness');
     expect(cashStyleKeyOf(row({ nit_game: false }))).toBe('classic');
+    expect(cashStyleKeyOf(row({ bomb_pot_enabled: false }))).toBe('classic');
     expect(cashStyleKeyOf(row({ cluster_template: 'action' }))).toBe('madness');
     const front = { role: 'main', main_index: 1 } as Partial<LobbyTableRow>;
     expect(

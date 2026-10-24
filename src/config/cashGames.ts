@@ -38,7 +38,8 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
   {
     id: 'classic',
     label: 'Classic',
-    blurb: 'Standard Ring Game. No Antes, No Bombs, No Minimum VPIP.',
+    blurb:
+      'Standard Ring Game. No Bombs. PLO5 And PLO6 Play A Big Blind Ante And 50% Minimum VPIP; Every Other Game Has No Ante And No Minimum VPIP.',
   },
   {
     id: 'madness',

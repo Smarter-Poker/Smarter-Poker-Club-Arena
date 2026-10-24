@@ -7,16 +7,28 @@ import { awaitTournamentResultEnrichment } from '../../src/utils/tournamentResul
 
 const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
 const compiled = ts.transpileModule(
-  sliceMethod(source, 'async function announceSpectatorChampion()'),
+  sliceMethod(source, 'async function announceSpectatorChampion'),
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } }
 ).outputText;
 
 function viewer(
-  options: { embedded?: boolean; outcome?: unknown; pending?: Promise<unknown> } = {}
+  options: {
+    embedded?: boolean;
+    outcome?: unknown;
+    pending?: Promise<unknown>;
+    qualifiers?: unknown[];
+  } = {}
 ) {
   const query = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn(async () => ({
+      data: options.qualifiers ?? [],
+      count: options.qualifiers?.length ?? 0,
+      error: null,
+    })),
     maybeSingle: vi.fn(
       () =>
         options.pending ??
@@ -43,12 +55,13 @@ function viewer(
     'TOURNAMENT_CHAMPION_DISPLAY_MS',
     'awaitTournamentResultEnrichment',
     `
-    let isMounted=true, exitStarted=false, championAnnouncementInFlight=false;
+    let isMounted=true, exitStarted=false, championAnnouncementInFlight=false, terminalCelebrationStarted=false;
     let durableCompletionHandled=false;
     const tournamentExitTimerRef={current:null}, durableTournamentId='event', tableId='final';
     const embeddedTableId=${options.embedded ? "'final'" : 'undefined'};
     const durableTournamentName='Championship', formatGameTitle=(s)=>s;
     const lobbyClubIdRef={current:'my-club'};
+    const goToLobbyWithResult=(position,prize,delay)=>setTimeout(()=>masterBus.emit('entrant-result',{position,prize}),delay);
     ${compiled}
     return {run:announceSpectatorChampion, dispose:()=>{
       isMounted=false; clearTimeout(tournamentExitTimerRef.current);
@@ -96,6 +109,43 @@ describe('Everyone sees the committed champion then this table closes', () => {
       action: 'CLOSE_TABLE_TAB',
     });
     expect(v.navigate).toHaveBeenCalledExactlyOnceWith('/clubs/my-club');
+  });
+  it('keeps a participant own result separate from the champion announcement for the full dwell', async () => {
+    vi.useFakeTimers();
+    const v = viewer();
+    await v.run({ position: 2, prize: 40.25 });
+    expect(v.announce).toHaveBeenCalledWith(
+      expect.objectContaining({ championName: 'xXVikingXx', prize: 98.72 })
+    );
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(v.emit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(v.emit).toHaveBeenCalledExactlyOnceWith('entrant-result', { position: 2, prize: 40.25 });
+  });
+  it('announces all satellite qualifiers and their committed award values without inventing first place', async () => {
+    vi.useFakeTimers();
+    const v = viewer({
+      outcome: { data: null, error: null },
+      qualifiers: [
+        { user_id: 'a', username: 'Alice', prize: 50 },
+        { user_id: 'b', username: 'Bob', prize: 50 },
+      ],
+    });
+    await v.run();
+    expect(v.query.is).toHaveBeenCalledWith('position', null);
+    expect(v.announce).toHaveBeenCalledExactlyOnceWith({
+      prize: 0,
+      name: 'Championship',
+      championName: undefined,
+      qualifiers: [
+        { username: 'Alice', prize: 50 },
+        { username: 'Bob', prize: 50 },
+      ],
+    });
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(v.emit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(v.emit).toHaveBeenCalledOnce();
   });
   it('closes only the finished embedded tab and preserves the other tables', async () => {
     vi.useFakeTimers();
@@ -155,7 +205,9 @@ describe('Everyone sees the committed champion then this table closes', () => {
     const start = source.indexOf("data?.type === 'tournament_winner'");
     expect(
       source.slice(start, source.indexOf("data?.type === 'late_reg_closed'", start))
-    ).toContain('void announceSpectatorChampion()');
-    expect(source).toContain('position === 1 ? TOURNAMENT_CHAMPION_DISPLAY_MS : 2500');
+    ).toContain('void exitFromDurableCompletion()');
+    expect(sliceMethod(source, 'async function exitFromDurableCompletion()')).toContain(
+      'await announceSpectatorChampion({ position, prize })'
+    );
   });
 });

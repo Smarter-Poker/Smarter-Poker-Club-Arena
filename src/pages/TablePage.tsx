@@ -14094,9 +14094,12 @@ function LiveTablePage({
              was the last one. Single-table mode has no such subscriber, so it
              still navigates here. */
           let exitStarted = false;
+          let terminalCompletionWitnessed = false;
+          let terminalCelebrationStarted = false;
 
           const goToLobbyWithResult = (position: number, prize: number, delayMs: number) => {
             if (exitStarted) return;
+            if (terminalCompletionWitnessed && !terminalCelebrationStarted) return;
             exitStarted = true;
 
             const tid = table.tournament_id || tableStateRef.current.tournamentId;
@@ -14296,8 +14299,11 @@ function LiveTablePage({
           // Spectators watch the same committed champion announcement, but never
           // receive somebody else's result card or clear another table's session.
           let championAnnouncementInFlight = false;
-          async function announceSpectatorChampion(): Promise<void> {
-            if (!isMounted || exitStarted || championAnnouncementInFlight) return;
+          async function announceSpectatorChampion(participant?: {
+            position: number;
+            prize: number;
+          }): Promise<void> {
+            if (!isMounted || terminalCelebrationStarted || championAnnouncementInFlight) return;
             championAnnouncementInFlight = true;
             try {
               const outcome = await awaitTournamentResultEnrichment(
@@ -14313,26 +14319,76 @@ function LiveTablePage({
                 data: null,
                 error: new Error('Champion Result Read Timed Out'),
               };
-              if (!isMounted || exitStarted) return;
+              if (!isMounted || terminalCelebrationStarted) return;
+              let qualifiers: Array<{ username: string; prize: number }> | undefined;
+              if (!error && !champion) {
+                const result = await awaitTournamentResultEnrichment(
+                  supabase
+                    .from('tournament_players')
+                    .select('user_id, username, prize', { count: 'exact' })
+                    .eq('tournament_id', durableTournamentId)
+                    .eq('status', 'winner')
+                    .is('position', null)
+                    .order('user_id')
+                    .range(0, 999)
+                );
+                if (!isMounted || terminalCelebrationStarted) return;
+                if (
+                  result &&
+                  !result.error &&
+                  Array.isArray(result.data) &&
+                  result.data.length > 0 &&
+                  result.count === result.data.length &&
+                  result.data.every(
+                    (row) =>
+                      row.user_id &&
+                      row.prize != null &&
+                      Number.isFinite(Number(row.prize)) &&
+                      Number(row.prize) >= 0
+                  )
+                ) {
+                  qualifiers = result.data.map((row) => ({
+                    username: row.username || 'Qualifier',
+                    prize: Number(row.prize),
+                  }));
+                } else if (result?.error) {
+                  reportError(result.error, 'TablePage.satellite_qualifiers_unreadable');
+                }
+              }
               const prize = Number(champion?.prize);
               if (
-                error ||
-                !champion?.user_id ||
-                champion.prize == null ||
-                !Number.isFinite(prize) ||
-                prize < 0
+                !qualifiers &&
+                (error ||
+                  !champion?.user_id ||
+                  champion.prize == null ||
+                  !Number.isFinite(prize) ||
+                  prize < 0)
               ) {
                 if (error) reportError(error, 'TablePage.spectator_champion_unreadable');
                 scheduleDurableCompletionRetry();
                 return;
               }
-              exitStarted = true;
+              terminalCelebrationStarted = true;
+              // A last-hand elimination may already have scheduled its short exit.
+              // The committed terminal result owns the full celebration for everyone.
+              if (tournamentExitTimerRef.current) clearTimeout(tournamentExitTimerRef.current);
+              exitStarted = false;
               durableCompletionHandled = true;
               setTournamentWinner({
-                prize,
+                prize: qualifiers ? 0 : prize,
                 name: formatGameTitle(durableTournamentName) || 'Tournament',
-                championName: champion.username || 'Champion',
+                championName: qualifiers ? undefined : champion?.username || 'Champion',
+                ...(qualifiers ? { qualifiers } : {}),
               });
+              if (participant) {
+                goToLobbyWithResult(
+                  participant.position,
+                  participant.prize,
+                  TOURNAMENT_CHAMPION_DISPLAY_MS
+                );
+                return;
+              }
+              exitStarted = true;
               tournamentExitTimerRef.current = setTimeout(() => {
                 if (!isMounted) return;
                 masterBus.emit('TABLE_MENU_ACTION', {
@@ -14366,6 +14422,11 @@ function LiveTablePage({
             if (durableCompletionLookupInFlight || durableCompletionHandled || !isMounted) {
               return;
             }
+            terminalCompletionWitnessed = true;
+            // Terminal authority supersedes an ordinary elimination exit, even
+            // while the committed result read is pending or reconnecting.
+            if (tournamentExitTimerRef.current) clearTimeout(tournamentExitTimerRef.current);
+            exitStarted = false;
             if (!userId || userId === 'guest') {
               await announceSpectatorChampion();
               return;
@@ -14466,12 +14527,11 @@ function LiveTablePage({
                   if (!isMounted) return;
                   if (qualification?.qualified) {
                     committedSatelliteQualification = qualification;
-                    durableCompletionHandled = true;
                     if (durableCompletionRetryTimer) {
                       clearTimeout(durableCompletionRetryTimer);
                       durableCompletionRetryTimer = null;
                     }
-                    goToLobbyWithResult(0, qualification.amount, 2500);
+                    await announceSpectatorChampion({ position: 0, prize: qualification.amount });
                     return;
                   }
                 } catch (error) {
@@ -14485,24 +14545,16 @@ function LiveTablePage({
                 scheduleDurableCompletionRetry();
                 return;
               }
-              const prize = Number(result.prize) || 0;
-              durableCompletionHandled = true;
+              const prize = Number(result.prize);
+              if (result.prize == null || !Number.isFinite(prize) || prize < 0) {
+                scheduleDurableCompletionRetry();
+                return;
+              }
               if (durableCompletionRetryTimer) {
                 clearTimeout(durableCompletionRetryTimer);
                 durableCompletionRetryTimer = null;
               }
-              if (position === 1) {
-                setTournamentWinner({
-                  prize,
-                  name: formatGameTitle(durableTournamentName) || 'Tournament',
-                  championName: result.username || 'Champion',
-                });
-              }
-              goToLobbyWithResult(
-                position,
-                prize,
-                position === 1 ? TOURNAMENT_CHAMPION_DISPLAY_MS : 2500
-              );
+              await announceSpectatorChampion({ position, prize });
             } finally {
               durableCompletionLookupInFlight = false;
             }
@@ -14924,6 +14976,7 @@ function LiveTablePage({
 
                 // Check if the current user was eliminated
                 if (elimData.userId === userId) {
+                  if (terminalCelebrationStarted) return;
                   // ── Dan 2026-08-20, from a live table ─────────────────────
                   // "at the end of the tournament when you lose, you need to
                   //  be auto removed from the table, placed inside the lobby
@@ -15062,20 +15115,7 @@ function LiveTablePage({
                    Same 20s beat as the winner branch above, for the same
                    reason: the celebration overlay has to play before the
                    player is moved. */
-                const winData = data.payload || {};
-                if (winData.userId && winData.userId === userId) {
-                  const prize = Number(winData.prize) || 0;
-                  setTournamentWinner({
-                    prize,
-                    name: tableStateRef.current.tableName || 'Tournament',
-                    championName:
-                      tableStateRef.current.players.find((p) => p?.id === userId)?.name ||
-                      'Champion',
-                  });
-                  goToLobbyWithResult(1, prize, TOURNAMENT_CHAMPION_DISPLAY_MS);
-                } else {
-                  void announceSpectatorChampion();
-                }
+                void exitFromDurableCompletion();
               } else if (data?.type === 'late_reg_closed') {
                 // Late registration window has closed
                 setTableState((prev) => ({

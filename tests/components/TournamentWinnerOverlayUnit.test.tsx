@@ -145,6 +145,28 @@ describe('The Champion Announcement', () => {
     expect(container.textContent).toContain('1st Place');
     expect(prizeLine(container)).toBe('Prize: 98.72');
   });
+  it.each([CHIP_UNIT_CENTS, DIAMOND_UNIT_CENTS])(
+    'shows every qualifier with award values at unit %s, without a false rank',
+    (unitCents) => {
+      const { container } = render(
+        <TournamentWinnerOverlay
+          {...base}
+          prize={0}
+          unitCents={unitCents}
+          qualifiers={[
+            { username: 'Alice', prize: 50 },
+            { username: 'Bob', prize: 50 },
+          ]}
+        />
+      );
+      expect(container.textContent).toContain('Qualified!');
+      expect(container.textContent).toContain('Alice: Award Value 50');
+      expect(container.textContent).toContain('Bob: Award Value 50');
+      expect(container.textContent).not.toContain('1st Place');
+      expect(container.textContent).not.toContain('Champion!');
+      expect(prizeLine(container)).toBeNull();
+    }
+  );
   it('prints a committed zero prize rather than omitting the amount', () => {
     const { container } = render(
       <TournamentWinnerOverlay

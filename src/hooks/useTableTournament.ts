@@ -72,6 +72,7 @@ export interface RebuyData {
 
 export interface TournamentWinner {
   championName?: string;
+  qualifiers?: Array<{ username: string; prize: number }>;
   prize: number;
   name: string;
   /** Paid non-winners use the same celebration surface without being called champion. */

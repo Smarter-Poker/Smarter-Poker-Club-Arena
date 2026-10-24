@@ -28317,7 +28317,14 @@ function LiveTablePage({
                   onPreActionChange={(next) => {
                     // Lightning Fold is an immediate request to release this
                     // hand and join the next table, including out of turn.
-                    if (lightningRoom && next === 'fold') {
+                    // CHECK/FOLD NEVER FOLDS A FREE CHECK (2026-10-24): while
+                    // the hero owes nothing the button is Check/Fold, and it
+                    // arms the ordinary auto check/fold; if that ends in a
+                    // fold the host releases the player at once anyway.
+                    const heroOwesNothing =
+                      (tableState.currentBet || 0) <=
+                      (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
+                    if (lightningRoom && next === 'fold' && !heroOwesNothing) {
                       void handleLightningFold('fast_fold');
                       return;
                     }

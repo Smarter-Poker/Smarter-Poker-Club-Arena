@@ -42,10 +42,12 @@ import {
   type LightningEntryDecision,
 } from '../lightning/lightningSession';
 import { LIGHTNING_NEXT_HAND_NOTICE_MS } from '../lightning/lightningHand';
-import { clusterModeDisplay } from '../lightning/lightningLobby';
+import { clusterModeDisplay, isLightningMode } from '../lightning/lightningLobby';
 import {
   LIGHTNING_ENDED_EYEBROW,
   LIGHTNING_ENDED_TEXT,
+  LIGHTNING_SEAT_WAITING_EYEBROW,
+  LIGHTNING_SEAT_WAITING_TEXT,
   LIGHTNING_RETURN_LABEL,
   lightningReturnPath,
 } from '../lightning/lightningReversion';
@@ -279,12 +281,13 @@ export default function LightningEntryPage() {
   const { meta, decision } = phase;
   if (decision.kind === 'seat') {
     const seatTableId = decision.seatTableId;
+    const stillLightning = isLightningMode(meta?.clusterMode) && meta?.clusterMode === 'lightning';
     return (
       <div className="lightning-entry" data-testid="lightning-entry">
         <EmptyState
-          eyebrow={LIGHTNING_ENDED_EYEBROW}
+          eyebrow={stillLightning ? LIGHTNING_SEAT_WAITING_EYEBROW : LIGHTNING_ENDED_EYEBROW}
           title={meta?.name ?? 'Lightning'}
-          description={LIGHTNING_ENDED_TEXT}
+          description={stillLightning ? LIGHTNING_SEAT_WAITING_TEXT : LIGHTNING_ENDED_TEXT}
           action={{
             label: LIGHTNING_RETURN_LABEL,
             onClick: () => {

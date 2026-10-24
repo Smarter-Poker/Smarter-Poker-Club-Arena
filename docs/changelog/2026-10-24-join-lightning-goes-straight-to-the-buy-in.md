@@ -45,3 +45,12 @@ a Lightning entry intent.
 
 Pinned by `tests/lightning/a-lightning-join-names-its-chair.law.test.ts` and `tests/lightning/a-lightning-seat-buy-in-follows-the-player.test.ts`
 and `tests/lightning/LightningEntryPage.test.tsx`.
+
+## Two more from the same audit
+
+- Check/Fold in a Lightning room no longer folds a free check. While the hero
+  owes nothing the pre-action is Check/Fold, and it now arms the ordinary auto
+  check/fold; only a plain Fold facing a bet takes the immediate fast fold.
+- A seated player whose pool session closed (sat out, or a disconnect) while
+  the game is still Lightning is no longer told "Lightning Has Ended"; the card
+  says the seat is waiting.

@@ -295,6 +295,8 @@ export function buildHost(
     // No database in a unit test: the durable schema reads as absent, so the
     // observation still reaches the fake lane, with no profile read.
     horseObservation: { schema: async () => 'unavailable' as const, report: () => {} },
+    // Deterministic by default: no early fold unless a test asks for one.
+    earlyFoldRandom: () => 1,
     recordHorseResults: async (input) => {
       scoreboard.push(input);
     },

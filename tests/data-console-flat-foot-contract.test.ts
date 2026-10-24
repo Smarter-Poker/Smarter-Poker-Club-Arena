@@ -131,7 +131,7 @@ describe('Data and accounting consoles never expose unlabeled painted plates', (
     const rivetedFoot =
       css.match(/\.sc--family-riveted \.sc__foot,[\s\S]*?\{([\s\S]*?)\n\}/)?.[1] ?? '';
 
-    expect(spadeFoot).toContain('spade-console-v1/bottom-foot.png');
+    expect(spadeFoot).toContain('spade-console-v2/bottom-foot.png');
     expect(spadeFoot).not.toContain('bottom-plates.png');
     expect(sharkFoot).toContain('shark-console-v2/bottom-plate.png');
     expect(rivetedFoot).toContain('riveted-console-v2/bottom.png');

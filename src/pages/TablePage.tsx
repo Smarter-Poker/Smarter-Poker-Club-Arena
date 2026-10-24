@@ -546,6 +546,7 @@ import IdentityModal from '../components/table/IdentityModal';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
+import { useBombPotCountdown } from '../hooks/useBombPotCountdown';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
@@ -7823,8 +7824,8 @@ function LiveTablePage({
   /**
    * TIMED BOMB CLOCK 2026-08-28 (spec §15.2): the engine publishes
    * bomb_pot_next_at (epoch ms) for timed-mode tables; the felt pill counts
-   * down to it in m:ss. The one-second tick runs ONLY while a due timestamp
-   * exists — every other table pays nothing for this.
+   * down to it in m:ss. Its display clock sleeps outside the announcement
+   * window, at zero and while hidden; the engine owns the actual schedule.
    */
   /**
    * SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): the felt banner for a player
@@ -7848,26 +7849,14 @@ function LiveTablePage({
     []
   );
 
-  const [bombClockNowMs, setBombClockNowMs] = useState(() => Date.now());
-  const bombPotNextAtLive = tableState.bombPotNextAt;
-  useEffect(() => {
-    if (bombPotNextAtLive == null) return;
-    const t = window.setInterval(() => setBombClockNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [bombPotNextAtLive == null]);
-  const bombClockLabel = useMemo(() => {
-    if (bombPotNextAtLive == null) return null;
-    const remainMs = bombPotNextAtLive - bombClockNowMs;
-    if (remainMs <= 0) return 'NEXT HAND';
-    // ANNOUNCE WINDOW (spec §3): the host can keep the clock quiet until the
-    // bomb is close — 0/absent means always show.
-    const announce = bombPotRules?.announceSeconds ?? 0;
-    if (announce > 0 && remainMs > announce * 1000) return null;
-    const totalSec = Math.ceil(remainMs / 1000);
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }, [bombPotNextAtLive, bombClockNowMs, bombPotRules?.announceSeconds]);
+  const bombClockLabel = useBombPotCountdown(
+    tableState.bombPotNextAt,
+    bombPotRules?.announceSeconds ?? 0,
+    isVisible &&
+      !bombPotActive &&
+      tableState.bombPotWaitingFor == null &&
+      bombPotRules?.triggerMode !== 'bomb_pot_only'
+  );
 
   /**
    * ONE SENTENCE, TWO PLACES (Dan 2026-09-05).

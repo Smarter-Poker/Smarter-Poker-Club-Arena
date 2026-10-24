@@ -4,39 +4,6 @@
    not move cannot fail to play (CLAUDE.md 10.6). Mobile first: every sheet
    fits a 375px screen and scrolls inside itself. */
 
-.lightning-pool-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 2px 8px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(0, 0, 0, 0.45);
-}
-.lightning-pool-badge--building {
-  color: #c9c9d1;
-}
-.lightning-pool-badge--active {
-  color: #45adff;
-}
-.lightning-pool-badge--hot {
-  color: #ffb547;
-}
-.lightning-pool-badge--thin {
-  color: #ff7a7a;
-}
-.lightning-pool-badge__count {
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.72);
-}
-
 .lightning-room-tools {
   position: fixed;
   left: 12px;

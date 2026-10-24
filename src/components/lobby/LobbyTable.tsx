@@ -590,7 +590,10 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.featured && (
         <span
           className="lt-flag lt-flag--featured"
-          title="Pinned To The Top Of The Board By The Host"
+          /* The pin decorates the default order only: once the player picks a
+             heading or a Sort By, the game takes its place in that order
+             (2026-10-23 / 2026-10-24), so the tooltip says exactly that. */
+          title="Featured By The Host. Pinned To The Top Unless You Choose A Sort"
         >
           FEATURED
         </span>

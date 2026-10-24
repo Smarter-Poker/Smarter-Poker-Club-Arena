@@ -81,3 +81,13 @@ describe('the ALL tab obeys the Sort By order the player chose', () => {
     expect(ids()).toEqual(['low-featured', 'mid', 'high']);
   });
 });
+
+describe('the FEATURED chip says what the pin does', () => {
+  it('names the pin as the default order, not an unconditional top spot', () => {
+    board();
+    const chip = document.querySelector('.lobby-table-wrap .lt-flag--featured');
+    expect(chip?.getAttribute('title')).toBe(
+      'Featured By The Host. Pinned To The Top Unless You Choose A Sort'
+    );
+  });
+});

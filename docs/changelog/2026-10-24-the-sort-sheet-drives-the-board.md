@@ -17,3 +17,5 @@ Found in the line-by-line review after #7914. The lobby has two sort controls: t
 `ClubHomePage` hands each chip press to the board as a `requestedOrder` stamped with a sequence number. The same chip pressed twice still applies, and a tab change never re-applies an old press. The board reports headings through `onHeadingSort`.
 
 Tests: `tests/unit/lobbySortSheetDrivesTheBoard.test.tsx` covers rendered cash-tab chips, chip-after-heading, an ALL chip clearing a saved heading, heading reporting, and both mapping directions. The three rendered cases fail without the fix. The applySort source pin in `lobbyStakesMenuAndStyleSubtitle.test.tsx` now also expects the report-back call.
+
+**FEATURED tooltip.** It said "Pinned To The Top Of The Board By The Host", which stopped being true once a chosen heading or Sort By stands the pin down (2026-10-23 / #7914). It now reads "Featured By The Host. Pinned To The Top Unless You Choose A Sort". It follows the popup capitalisation rule and contains no em dashes. Pinned in `tests/unit/lobbyAllTabSortChoiceIsObeyed.test.tsx`.

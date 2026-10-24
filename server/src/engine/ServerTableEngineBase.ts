@@ -4805,11 +4805,13 @@ export abstract class ServerTableEngineBase {
    * else; `wakeCluster` never throws, and this wrapper makes sure of it, so a
    * controller fault can never become a table fault. 2026-09-05.
    */
-  protected wakeClusterGame(_reason: string): void {
+  protected wakeClusterGame(reason: string): void {
     const gameId = this.tableInfo?.cluster_id;
     if (!gameId || this.isTournamentTable()) return;
     try {
-      wakeCluster(String(gameId));
+      // A seat that opened is planned now, not after the 500 ms burst hold:
+      // see ClusterWakeOptions (a vacancy does not wait for the debounce).
+      wakeCluster(String(gameId), { now: reason === 'seat_left' });
     } catch {
       /* wakeCluster reports its own errors; nothing reaches the loop */
     }

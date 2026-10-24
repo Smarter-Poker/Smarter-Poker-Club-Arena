@@ -189,6 +189,22 @@ function noteCommittedPlans(data: unknown): void {
 }
 
 /**
+ * A VACANCY DOES NOT WAIT FOR THE DEBOUNCE (2026-10-24). The 500 ms hold
+ * exists to coalesce bursts - a feeder filling from the lobby, a break moving
+ * four players, every table's hand completing. A seat opening is the one wake
+ * Dan's rule is about ("MAIN GAME MUST BE FED RIGHT AWAY WHEN A SEAT OPENS
+ * UP ... NEXT HAND"): the plan it produces must reach a feeder before that
+ * feeder deals, and the hold plus the planner call was the whole ~0.8 s window
+ * in which a feeder could still deal the player one more hand (#7900). `now`
+ * skips the hold and replaces a pending one; it still never overlaps an
+ * in-flight tick for the same game, and a vacancy arriving during one keeps
+ * its urgency for the tick that follows.
+ */
+export interface ClusterWakeOptions {
+  now?: boolean;
+}
+
+/**
  * The controller this process is running, if it is the leader. `wakeCluster`
  * reaches it from the engine without the engine holding a reference.
  */
@@ -200,9 +216,9 @@ let activeController: ClusterController | null = null;
  * is running in this process (non-leader). NEVER throws: this is called from
  * inside the dealing loop and a controller fault must not become a table fault.
  */
-export function wakeCluster(gameId: string): void {
+export function wakeCluster(gameId: string, opts: ClusterWakeOptions = {}): void {
   try {
-    activeController?.wake(gameId);
+    activeController?.wake(gameId, opts);
   } catch (err) {
     reportError(err, 'ClusterController.wake_threw', { game_id: gameId });
   }
@@ -238,6 +254,8 @@ export class ClusterController {
   private readonly wakeInFlight = new Set<string>();
   /** Changes arriving during that RPC need one later pass, not overlapping RPCs. */
   private readonly wakeAgain = new Set<string>();
+  /** ...and a vacancy among them keeps its urgency for that later pass. */
+  private readonly wakeAgainNow = new Set<string>();
   /** Wakes that reached the RPC (for the summary line and tests). */
   private wakesFiredCount = 0;
   private wakesCoalescedCount = 0;
@@ -338,6 +356,7 @@ export class ClusterController {
     for (const t of this.wakeTimers.values()) clearTimeout(t);
     this.wakeTimers.clear();
     this.wakeAgain.clear();
+    this.wakeAgainNow.clear();
     if (activeController === this) activeController = null;
 
     const drain = this.drainLifecycleJobs();
@@ -365,37 +384,46 @@ export class ClusterController {
    * soon - once, however many times this is called inside the debounce
    * window. No-op unless the controller is running (leader only).
    */
-  wake(gameId: string): void {
+  wake(gameId: string, opts: ClusterWakeOptions = {}): void {
     if (!this.running || !gameId) return;
     if (this.wakeInFlight.has(gameId)) {
       this.wakeAgain.add(gameId);
+      if (opts.now) this.wakeAgainNow.add(gameId);
       this.wakesCoalescedCount++;
       return;
     }
-    if (this.wakeTimers.has(gameId)) {
+    const pending = this.wakeTimers.get(gameId);
+    if (pending) {
       this.wakesCoalescedCount++;
-      return;
+      if (!opts.now) return;
+      // A vacancy replaces the held wake rather than waiting it out.
+      clearTimeout(pending);
+      this.wakeTimers.delete(gameId);
     }
     const generation = this.lifecycleGeneration;
-    const handle = setTimeout(() => {
-      if (!this.lifecycleIsCurrent(generation)) return;
-      this.wakeTimers.delete(gameId);
-      this.wakeInFlight.add(gameId);
-      this.launchLifecycleJob(
-        generation,
-        async () => {
-          try {
-            await this.tickGame(gameId);
-          } finally {
-            this.wakeInFlight.delete(gameId);
-            const again = this.wakeAgain.delete(gameId);
-            if (again && this.lifecycleIsCurrent(generation)) this.wake(gameId);
-          }
-        },
-        'ClusterController.wake_tick_error',
-        { game_id: gameId }
-      );
-    }, CLUSTER_WAKE_DEBOUNCE_MS);
+    const handle = setTimeout(
+      () => {
+        if (!this.lifecycleIsCurrent(generation)) return;
+        this.wakeTimers.delete(gameId);
+        this.wakeInFlight.add(gameId);
+        this.launchLifecycleJob(
+          generation,
+          async () => {
+            try {
+              await this.tickGame(gameId);
+            } finally {
+              this.wakeInFlight.delete(gameId);
+              const again = this.wakeAgain.delete(gameId);
+              const now = this.wakeAgainNow.delete(gameId);
+              if (again && this.lifecycleIsCurrent(generation)) this.wake(gameId, { now });
+            }
+          },
+          'ClusterController.wake_tick_error',
+          { game_id: gameId }
+        );
+      },
+      opts.now ? 0 : CLUSTER_WAKE_DEBOUNCE_MS
+    );
     this.wakeTimers.set(gameId, handle);
   }
 

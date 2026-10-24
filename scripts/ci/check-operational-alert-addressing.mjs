@@ -82,11 +82,21 @@ async function main() {
   await db.connect();
   try {
     await db.query("SET statement_timeout = '20s'");
+    // THE WINDOW FIRST, THE PAYLOAD SECOND (2026-10-24). The single-WHERE form
+    // let the planner test payload->>'target_task_id' on every row before the
+    // time filter, detoasting the whole table (236,906 rows, 383 MB heap plus
+    // 401 MB TOAST): 12.7 s warm, and over the 20 s timeout under load, which
+    // turned this workflow red as COULD NOT TELL. Materialising the window
+    // first means only the rows inside it are detoasted: the same answer,
+    // measured at 157 ms warm and 8.0 s fully cold (heap only, no TOAST).
     const { rows: unaddressed } = await db.query(
-      `SELECT source, count(*) AS rows, min(id) AS first_id, min(received_at)::text AS oldest
-         FROM public.operational_alert_events
-        WHERE last_received_at > now() - $1::interval
-          AND payload->>'target_task_id' IS DISTINCT FROM $2
+      `WITH recent AS MATERIALIZED (
+         SELECT id, source, received_at, payload
+           FROM public.operational_alert_events
+          WHERE last_received_at > now() - $1::interval)
+       SELECT source, count(*) AS rows, min(id) AS first_id, min(received_at)::text AS oldest
+         FROM recent
+        WHERE payload->>'target_task_id' IS DISTINCT FROM $2
         GROUP BY source ORDER BY source`, [WINDOW, FLEET_TASK_ID]);
     const { rows: [previous] } = await db.query(
       `SELECT event_key, status, investigation_status FROM public.operational_alert_events

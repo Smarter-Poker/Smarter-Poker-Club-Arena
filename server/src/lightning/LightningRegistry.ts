@@ -1,3 +1,4 @@
+import type { LightningObserverProjection } from './LightningObserverProjection.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  WHERE THIS PROCESS'S LIGHTNING HANDS LIVE (Lightning Phase 6, 2026-09-27)
@@ -804,6 +805,7 @@ export class LightningRegistry {
 }
 
 export interface LightningHostingDeps {
+  observers?: LightningObserverProjection;
   registry: LightningRegistry;
   backend: LightningHandBackend;
   hub: LightningHub;
@@ -950,7 +952,12 @@ export class LightningHosting {
           noteIdle?.(playerId);
         }
       },
-      onDealing: (h) => registry.register(h),
+      onDealing: (h) => {
+        registry.register(h);
+        this.deps.observers?.started(h);
+      },
+      onPublicState: (h, state) => this.deps.observers?.state(h, state),
+      onPublicEvent: (h, event) => this.deps.observers?.event(h, event),
       // LIGHTNING PHASE 12: hand_to_first_render starts at the first frame.
       onFirstFrame: (playerId, roomId, handId, atMs) =>
         registry.noteFirstFrame(roomId, playerId, handId, atMs),
@@ -969,6 +976,7 @@ export class LightningHosting {
           ...settled,
         }),
       onFinished: (h) => {
+        this.deps.observers?.finished(h);
         registry.unregister(h);
         this.noteOutcome(h.clusterId, h.lifecycle);
         if (h.lifecycle === 'complete') wake();

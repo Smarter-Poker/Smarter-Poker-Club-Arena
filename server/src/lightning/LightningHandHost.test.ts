@@ -362,7 +362,7 @@ describe('fast fold and fold & watch', () => {
     expect(Math.round((sum + s.rake + s.bbj) * 100)).toBe(80000);
   });
 
-  it('a fold ahead of the turn is refused when nothing is owed (the folded hand could be left alone)', async () => {
+  it('a free-check fold removes the BB immediately without stealing the turn or winning later', async () => {
     const formed = formedHand(3, 2100);
     const t = buildHost(formed, [100, 100, 100]);
     await t.host.start();
@@ -378,11 +378,82 @@ describe('fast fold and fold & watch', () => {
         undefined,
         `lightning-hand:${t.host.currentHandId}`
       ).success
-    ).toBe(false);
-    expect(t.calls.fastFold).toEqual([]);
+    ).toBe(true);
+    expect(t.host.peekState()!.players.find((p) => p.user_id === bb.user_id)!.is_folded).toBe(true);
+    expect(t.host.peekState()!.currentPlayerSeat).toBe(st.currentPlayerSeat);
+    await flush();
+    expect(t.released).toContainEqual({ playerId: bb.user_id, why: 'fast' });
+    await playOut(t.host, mulberry32(3), () => 'fold');
+    await flush();
+    const settled = t.calls.settle[0];
+    expect(settled.results.find((p) => p.playerId === bb.user_id)!.won).toBe(0);
+    expect(
+      Math.round(
+        (settled.results.reduce((sum, p) => sum + p.stackAfter, 0) + settled.rake + settled.bbj) *
+          100
+      )
+    ).toBe(30000);
   });
 
-  it('fold & watch keeps the room receiving the hand and frees the player only when it ends', async () => {
+  it('preselected auto_fold is final immediately, including with nothing owed', async () => {
+    const formed = formedHand(3, 2150);
+    const t = buildHost(formed, [100, 100, 100]);
+    await t.host.start();
+    await flush();
+    const st = t.host.peekState()!;
+    const actor = st.currentPlayerSeat;
+    const bb = st.players.find((p) => p.user_id === formed.bb)!;
+    expect(actor).not.toBe(bb.seat);
+    expect(t.host.setPreAction(bb.user_id, 'auto_fold', undefined, 'old-hand').success).toBe(false);
+    expect(t.host.setPreAction(bb.user_id, 'auto_fold', undefined, formed.handId).success).toBe(
+      true
+    );
+    expect(t.host.peekState()!.players.find((p) => p.user_id === bb.user_id)!.is_folded).toBe(true);
+    expect(t.host.peekState()!.currentPlayerSeat).toBe(actor);
+    await flush();
+    expect(t.released).toContainEqual({ playerId: bb.user_id, why: 'fast' });
+    expect(t.host.setPreAction(bb.user_id, 'auto_fold', undefined, formed.handId).success).toBe(
+      false
+    );
+    await playOut(t.host, mulberry32(3), () => 'fold');
+    await flush();
+    const result = t.calls.settle[0].results.find((p) => p.playerId === bb.user_id)!;
+    expect(result.won).toBe(0);
+    // The unmatched blind is returned by the original settlement, not
+    // guessed/refunded when the player leaves for the next hand.
+    expect(result.stackAfter).toBe(99);
+  });
+
+  it('legacy watch and explicit pre-fold still honor live feature pauses', async () => {
+    const formed = formedHand(3, 2170);
+    const flags = { fastFold: false, foldWatch: true };
+    const t = buildHost(formed, [100, 100, 100], { deps: { foldFlags: () => flags } });
+    await t.host.start();
+    await flush();
+    const bb = t.host.peekState()!.players.find((p) => p.user_id === formed.bb)!;
+    const context = `lightning-hand:${formed.handId}`;
+    expect(t.host.handlePlayerAction(bb.user_id, 'fold_watch', undefined, context)).toMatchObject({
+      success: false,
+      code: 'LIGHTNING_FOLD_DISABLED',
+    });
+    expect(t.host.setPreAction(bb.user_id, 'auto_fold', undefined, formed.handId)).toMatchObject({
+      success: false,
+      code: 'LIGHTNING_FOLD_DISABLED',
+    });
+    flags.fastFold = true;
+    flags.foldWatch = false;
+    expect(t.host.handlePlayerAction(bb.user_id, 'fold_watch', undefined, context)).toMatchObject({
+      success: false,
+      code: 'FOLD_WATCH_DISABLED',
+    });
+    expect(t.calls.fastFold).toEqual([]);
+    expect(t.host.peekState()!.players.find((p) => p.user_id === bb.user_id)!.is_folded).toBe(
+      false
+    );
+    await playOut(t.host, mulberry32(2170));
+  });
+
+  it('legacy fold_watch releases immediately through the fast-fold door', async () => {
     const formed = formedHand(3, 2200);
     const t = buildHost(formed, [150, 150, 150]);
     await t.host.start();
@@ -401,24 +472,75 @@ describe('fast fold and fold & watch', () => {
     await flush();
     expect(t.calls.fastFold[0]).toMatchObject({
       playerId: current.user_id,
-      foldType: 'fold_watch',
+      foldType: 'fast',
     });
-    expect(t.released.find((x) => x.playerId === current.user_id)).toBeUndefined();
+    expect(t.released).toContainEqual({ playerId: current.user_id, why: 'fast' });
+    expect(t.host.isWatching(current.user_id)).toBe(false);
     const before = t.hub.inRoom(room).length;
     await playOut(t.host, mulberry32(3), (u, legal) =>
       legal.includes('check') ? 'check' : 'call'
     );
     await flush();
     expect(t.hub.inRoom(room).length).toBeGreaterThan(before);
-    expect(t.hub.inRoom(room).some((f) => f.payload.type === 'hand_complete')).toBe(true);
-    expect(t.released).toContainEqual({ playerId: current.user_id, why: 'hand_end' });
+    expect(t.hub.inRoom(room).some((f) => f.payload.type === 'hand_complete')).toBe(false);
+    expect(t.released.filter((x) => x.playerId === current.user_id)).toHaveLength(1);
     expect(t.calls.settle[0].results.find((x) => x.playerId === current.user_id)!.foldType).toBe(
-      'fold_watch'
+      'fast'
     );
   });
 });
 
 describe('the clock, the time bank and a horse', () => {
+  it.each([false, true])(
+    'an early fold preserves the owed actor context and original clock (time bank %s)',
+    async (bankActive) => {
+      vi.useFakeTimers({
+        toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+      });
+      const formed = formedHand(3, 2270);
+      const t = buildHost(formed, [100, 100, 100], { rules: { time_bank_enabled: bankActive } });
+      await t.host.start();
+      await flush();
+      const actor = t.host.peekState()!.currentPlayerSeat;
+      const current = t.host.peekState()!.players.find((p) => p.seat === actor)!;
+      const room = t.host.roomOf(current.user_id)!;
+      const turn = t.hub
+        .inRoom(room)
+        .filter((f) => f.payload.type === 'turn_change')
+        .at(-1)!.payload;
+      await vi.advanceTimersByTimeAsync(bankActive ? 15200 : 5000);
+      expect(
+        t.host.handlePlayerAction(
+          formed.bb,
+          'fast_fold',
+          undefined,
+          `lightning-hand:${formed.handId}`
+        ).success
+      ).toBe(true);
+      await flush();
+      const state = t.hub
+        .inRoom(room)
+        .filter((f) => f.payload.action_context)
+        .at(-1)!.payload;
+      expect(state.action_context).toBe(turn.action_context);
+      expect(t.host.peekState()!.currentPlayerSeat).toBe(actor);
+      expect(
+        t.hub
+          .inRoom(room)
+          .filter((f) => f.payload.type === 'turn_change')
+          .at(-1)!.payload
+      ).toEqual(turn);
+      await vi.advanceTimersByTimeAsync(bankActive ? 20500 : 10200);
+      await flush();
+      expect(
+        t.host.peekState()!.players.find((p) => p.user_id === current.user_id)!.is_folded
+      ).toBe(true);
+      expect(t.calls.fastFold).toContainEqual(
+        expect.objectContaining({ playerId: current.user_id, foldType: 'normal' })
+      );
+    }
+  );
+
   it('an idle player gets the clock, then a time bank, then is folded and freed', async () => {
     vi.useFakeTimers({
       toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
@@ -656,8 +778,6 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
         .filter((f) => f.kind === 'publish')
         .at(-1)!.payload;
       expect(snap.hand_id).toBe(formed.handId);
-      const me = st.players.find((x) => x.user_id === p.playerId)!;
-      const onTurn = st.currentPlayerSeat === me.seat;
       expect(snap.lightning).toEqual({
         hand_id: formed.handId,
         cluster_id: formed.clusterId,
@@ -665,8 +785,8 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
         small_blind: 1,
         big_blind: 2,
         variant: 'nlh',
-        // On the turn whenever fold is legal; before it only while facing a bet.
-        fast_fold_available: onTurn ? true : st.currentBet - me.bet > 0,
+        // Every live, non-all-in player may explicitly fold now.
+        fast_fold_available: true,
         // Lightning Phase 13: both controls offered while no flag says otherwise.
         fast_fold_enabled: true,
         fold_watch_enabled: true,
@@ -675,7 +795,7 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
     }
   });
 
-  it('a pre-action arms only for its own hand and lands when the turn arrives', async () => {
+  it('an explicit fold pre-action requires its own hand and releases immediately', async () => {
     const formed = formedHand(3, 3200);
     const t = buildHost(formed, [100, 100, 100]);
     await t.host.start();
@@ -696,7 +816,7 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
     );
     await flush();
     const folded = t.calls.settle[0].results.find((r) => r.playerId === waiting.user_id)!;
-    expect(folded.foldType).toBe('normal');
-    expect(t.calls.fastFold.find((f) => f.playerId === waiting.user_id)?.foldType).toBe('normal');
+    expect(folded.foldType).toBe('fast');
+    expect(t.calls.fastFold.find((f) => f.playerId === waiting.user_id)?.foldType).toBe('fast');
   });
 });

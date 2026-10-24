@@ -34,4 +34,5 @@ proof=$(sed -n 's/^-- @live-proof: //p' "$root/supabase/migrations/2026102323080
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-canonical-transition-assert.sql"
 "${psql[@]}" -f "$root/scripts/dev/lightning-retire-occupancies.sql" -f "$root/scripts/dev/fixtures/lightning-canonical-retirement-assert.sql" -f "$root/scripts/dev/fixtures/lightning-canonical-pineapple-retire.sql"
 echo 'PASS: exact-source canonical admission; actual zero-population conversion; active-hand and halt-observation barriers; committed replay; always-on population hold; physical six-player guard; explicit drain preserved; source VPIP/private authorization; unchanged occupied source custody'
+bash "$root/scripts/dev/test-midway-union-cash-host.sh"
 

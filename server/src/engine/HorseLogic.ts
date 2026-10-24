@@ -5767,6 +5767,7 @@ export class HorseLogic {
     // reading a call as a capped line); two called barrels and a non-nut
     // made hand has no third one - the range that is still there beats it.
     let calledBarrels40 = 0;
+    const liveCalledBarrels40 = new Map<string, Set<string>>();
     if (useV40 && vi.isOmaha && !facingBet && gs.actionHistory) {
       const heroBet40 = new Set<string>();
       const called40 = new Set<string>();
@@ -5776,6 +5777,19 @@ export class HorseLogic {
           if (a.action === 'bet' || a.action === 'raise') heroBet40.add(a.stage);
         } else if (heroBet40.has(a.stage) && (a.action === 'call' || a.action === 'all_in')) {
           called40.add(a.stage);
+          if (
+            a.action === 'call' &&
+            opponents.some((o) => o.user_id === a.userId && !o.is_all_in && o.stack > 0) &&
+            (!gs.pots?.length ||
+              gs.pots.some(
+                (p) =>
+                  p.eligiblePlayers.includes(player.user_id) && p.eligiblePlayers.includes(a.userId)
+              ))
+          ) {
+            const stages = liveCalledBarrels40.get(a.userId) ?? new Set<string>();
+            stages.add(a.stage);
+            liveCalledBarrels40.set(a.userId, stages);
+          }
         }
       }
       calledBarrels40 = called40.size;
@@ -5843,6 +5857,25 @@ export class HorseLogic {
       bluffScale *= 0.15;
       if (tele15) noteFire('v40_no_third_barrel');
     }
+    // Two called barrels leave a continuing range, not a random field. A
+    // third-nut-or-worse river flush cannot claim monster value from the raw
+    // MC alone. Preserve nut/second-nut, split-pot and multiple-board decisions.
+    const riverCanSplitLow =
+      vi.isHiLo &&
+      new Set(board.map((c) => (c.rank === 'A' ? 1 : RANK_VALUES[c.rank])).filter((r) => r <= 8))
+        .size >= 3;
+    const calledThroughFlush40 =
+      useV40 &&
+      useV15 &&
+      vi.isOmaha &&
+      !riverCanSplitLow &&
+      !multiBoard36 &&
+      isRiver &&
+      oppCount >= 2 &&
+      calledBarrels40 >= 2 &&
+      [...liveCalledBarrels40.values()].filter((stages) => stages.size >= 2).length >= 2 &&
+      cat === 6 &&
+      (nuts15?.higherFlushRanks ?? 0) >= 2;
     // V37: the covering stack near the bubble bluffs a notch more — the
     // covered field is folding hands it would call with anywhere else.
     if (!sat37.active) {
@@ -6515,6 +6548,10 @@ export class HorseLogic {
 
     // ═══ Not facing a bet ═══
     if (!facingBet) {
+      if (calledThroughFlush40) {
+        if (tele15) noteFire('horse_continuation_omaha_called_through_flush_check');
+        return { action: 'check', thinkTime: 0 };
+      }
       // A preflop pot raise can legally leave a remainder in PLO. When the
       // remainder is below the smallest ordinary flop size, price the actual
       // terminal wager before the deep-stack check/protection mixes. This is
@@ -7319,7 +7356,61 @@ export class HorseLogic {
     // the raise-after-we-bet line, and by the multiway raiser's extra
     // nuttedness. Feeds the commit branch, the call margin, and the value-
     // raise bar below, exactly as the NLH penalty does.
-    if (useV15 && vi.isOmaha && nuts15 != null && (betRatio >= 0.5 || raisedAfterAggr)) {
+    // A cold overcall of a bet and a price-increasing jam is a raised line
+    // even when HERO did not bet. The final call/pot ratio shrinks as other
+    // players contribute, so it cannot stand in for this public range evidence.
+    // A short all-in CALL is not aggression; a short RAISE still increases the
+    // price although it does not reopen betting. Count only live opponents
+    // sharing a pot with hero, never an unrelated side-pot contest.
+    let coldFlushPressure15 = false;
+    if (
+      useV15 &&
+      vi.isOmaha &&
+      !riverCanSplitLow &&
+      !multiBoard36 &&
+      isRiver &&
+      facingBet &&
+      cat === 6 &&
+      nuts15 != null
+    ) {
+      const shared = gs.pots?.filter((p) => p.eligiblePlayers.includes(player.user_id));
+      const eligible = new Set(
+        opponents
+          .filter(
+            (o) => !gs.pots?.length || shared?.some((p) => p.eligiblePlayers.includes(o.user_id))
+          )
+          .map((o) => o.user_id)
+      );
+      const aggressors = new Set<string>();
+      const streetContributions = new Map<string, number>();
+      let level = 0;
+      let heroAggressed = false;
+      let raisedAllIn = false;
+      for (const a of gs.actionHistory ?? []) {
+        if (a.stage !== street || !['bet', 'raise', 'all_in', 'call'].includes(a.action)) continue;
+        const amount = a.amount;
+        if (!Number.isFinite(amount) || amount < 0) continue;
+        // HandController records chips actually paid for EVERY action. A jam
+        // after a prior call must add that contribution before comparing prices.
+        const total = (streetContributions.get(a.userId) ?? 0) + amount;
+        streetContributions.set(a.userId, total);
+        if (a.action === 'call' || total <= level + 1e-8) continue;
+        level = total;
+        if (a.userId === player.user_id) heroAggressed = true;
+        else if (eligible.has(a.userId)) {
+          aggressors.add(a.userId);
+          if (a.action === 'all_in') raisedAllIn = true;
+        }
+      }
+      coldFlushPressure15 = !heroAggressed && raisedAllIn && aggressors.size >= 2;
+      if (tele15 && coldFlushPressure15) noteFire('horse_continuation_omaha_cold_flush_pressure');
+    }
+    if (
+      useV15 &&
+      vi.isOmaha &&
+      nuts15 != null &&
+      (betRatio >= 0.5 || raisedAfterAggr || coldFlushPressure15)
+    ) {
       let pen = 0;
       if (cat === 6) {
         const hf = nuts15.higherFlushRanks;
@@ -7347,7 +7438,7 @@ export class HorseLogic {
     if (useV15 && vi.isOmaha && nuts15 != null && !nutClass15 && (cat === 5 || cat === 6)) {
       let cap = Infinity;
       const hf = cat === 6 ? nuts15.higherFlushRanks : 0;
-      if (raisedAfterAggr) {
+      if (raisedAfterAggr || coldFlushPressure15) {
         if (cat === 6) cap = hf >= 4 ? 0.25 : hf >= 2 ? 0.35 : 0.55;
         else cap = 0.4; // dominated straight, raised
       } else if (isRiver && potFrac >= 0.8) {

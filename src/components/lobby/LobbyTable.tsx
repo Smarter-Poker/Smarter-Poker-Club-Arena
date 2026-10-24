@@ -46,6 +46,7 @@ import {
 export type { LobbyRowContext } from './lobbyCardContext';
 import { featuredNow } from '../../lib/featuredOnItsDay';
 import { variantRank, UNLISTED_VARIANT_RANK } from './variantRank';
+import { headingForOrder } from './lobbySortBridge';
 import './LobbyTable.css';
 import './LobbySortBar.css';
 import './CompactLobbyRows.css';
@@ -1682,6 +1683,16 @@ interface LobbyTableProps {
    * Low". Ignored once a heading is sorted, because the heading then decides.
    */
   orderChosen?: boolean;
+  /**
+   * ONE ORDER, TWO CONTROLS (2026-10-24; see lobbySortBridge). A Sort The
+   * Board chip the player pressed in the filter sheet, stamped with a
+   * sequence number so the same chip pressed twice still applies. The board
+   * adopts the matching heading sort (or its default order), so the sheet is
+   * no longer silently outranked by a heading.
+   */
+  requestedOrder?: { key: string; seq: number } | null;
+  /** A heading the player chose, reported so the sheet can light its chip. */
+  onHeadingSort?: (key: string, dir: SortDir) => void;
 }
 
 export default function LobbyTable({
@@ -1701,6 +1712,8 @@ export default function LobbyTable({
   onStylesChange,
   styleCounts,
   orderChosen = false,
+  requestedOrder = null,
+  onHeadingSort,
 }: LobbyTableProps) {
   const selectedStyles = savedStyles?.map(cashTemplateKey);
   /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
@@ -1857,6 +1870,26 @@ export default function LobbyTable({
    * header the player had clicked in between. The tab is the only thing that
    * changes the column set, and the column set is the only reason to re-read.
    */
+  /* A sheet chip applies once per press (the seq), never on mount and never
+     when the tab changes - the tab's own remembered heading wins there. */
+  const lastOrderSeqRef = useRef(requestedOrder?.seq ?? 0);
+  useEffect(() => {
+    if (!requestedOrder || requestedOrder.seq === lastOrderSeqRef.current) return;
+    lastOrderSeqRef.current = requestedOrder.seq;
+    const target = headingForOrder(category, requestedOrder.key);
+    const col =
+      target === 'reset' ? undefined : columns.find((c) => c.key === target.key && c.sortable);
+    if (target === 'reset' || !col) {
+      setSort(defaultSortFor(category));
+      setSortChosen(false);
+      writeSort(clubId, category, null);
+      return;
+    }
+    setSort(target);
+    setSortChosen(true);
+    writeSort(clubId, category, target);
+  }, [requestedOrder, category, clubId, columns]);
+
   const lastCategoryRef = useRef(category);
   useEffect(() => {
     if (lastCategoryRef.current === category) return;
@@ -2035,6 +2068,7 @@ export default function LobbyTable({
     setSort(next);
     setSortChosen(true);
     writeSort(clubId, category, next);
+    onHeadingSort?.(next.key, next.dir);
   };
 
   const handleHeaderClick = (col: ColumnDef) => {
@@ -2071,6 +2105,7 @@ export default function LobbyTable({
       setSort(next);
       setSortChosen(true);
       writeSort(clubId, category, next);
+      onHeadingSort?.(next.key, next.dir);
     }
   };
 

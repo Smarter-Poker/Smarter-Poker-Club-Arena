@@ -1701,26 +1701,61 @@ print(contract)
 # replaced so nothing connects to production. It carries no engine labels,
 # no env file and only an ephemeral loopback port. Publishing exercises the
 # port-mapper path that the old bridge-only warm-up skipped. The command still
-# never starts the engine or binds the serving port. It is never fatal:
-# an unwarmed image only costs time that the existing cutover budget bounds.
+# never starts the engine or binds the serving port.
+# A Node-only exit did not hydrate the application layer: release 735e first
+# emitted application output 58 seconds after Docker's start timestamp and
+# exhausted the unchanged replacement budget. Read the candidate's application
+# files here, with bounded memory and no imports, configuration or network work.
+# An incomplete warm-up now refuses BEFORE any maintenance announcement.
 prewarm_candidate_image() {
-  local remaining warm_timeout warm_name started finished
-  remaining="$(remaining_seconds)" || return 0
+  local remaining warm_timeout warm_name started finished warm_program
+  remaining="$(remaining_seconds)" || die 'deadline expired before candidate filesystem warm-up'
   warm_timeout=$((remaining - 30))
   [ "$warm_timeout" -le 120 ] || warm_timeout=120
-  [ "$warm_timeout" -ge 10 ] || return 0
+  [ "$warm_timeout" -ge 10 ] || die 'insufficient budget for candidate filesystem warm-up before maintenance'
+  warm_program="$(cat <<'CANDIDATE_FILESYSTEM_WARM'
+const fs = require('node:fs');
+const path = require('node:path');
+const root = process.argv[1];
+if (!root || !fs.lstatSync(path.join(root, 'dist/index.js')).isFile()) {
+  throw new Error('candidate application entrypoint absent');
+}
+const buffer = Buffer.alloc(64 * 1024);
+let files = 0;
+let bytes = 0;
+const pending = [root];
+while (pending.length) {
+  const directory = pending.pop();
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === '.env' || entry.name.startsWith('.env.')) continue;
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) { pending.push(file); continue; }
+    if (!entry.isFile()) continue; // Never follow links outside the candidate.
+    const fd = fs.openSync(file, 'r');
+    try {
+      let count;
+      while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) bytes += count;
+      files++;
+    } finally { fs.closeSync(fd); }
+  }
+}
+if (!files || !bytes) throw new Error('candidate filesystem warm-up incomplete');
+console.log('ENGINE_IMAGE_PREWARM_FILES=' + files);
+console.log('ENGINE_IMAGE_PREWARM_BYTES=' + bytes);
+CANDIDATE_FILESYSTEM_WARM
+)"
   warm_name="club-arena-engine-prewarm-$RUN_ID"
   timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
   started="$(date +%s)"
   if timeout --signal=TERM --kill-after=5s "${warm_timeout}s" docker run --rm --pull never \
     --name "$warm_name" --restart no --network bridge \
     --publish 127.0.0.1::8080 --entrypoint node \
-    "$IMAGE_REF" -e 'process.exit(0)' >/dev/null 2>&1; then
+    "$IMAGE_REF" -e "$warm_program" /app 2>/dev/null; then
     finished="$(date +%s)"
     echo "ENGINE_IMAGE_PREWARM_SECONDS=$((finished - started))"
   else
-    echo '[engine-release-transaction] candidate image prewarm did not finish; cutover remains bounded' >&2
     timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
+    die 'candidate filesystem warm-up did not finish before maintenance'
   fi
   return 0
 }

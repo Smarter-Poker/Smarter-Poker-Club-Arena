@@ -196,6 +196,11 @@ beforeAll(async () => {
   await client.query(indexPreamble);
   repairTransaction = 'BEGIN;\n' + replacement;
   await client.query(repairTransaction);
+  const admission = readdirSync(path).find((f) =>
+    f.endsWith('_horse_memory_bounded_cold_read_admission.sql')
+  );
+  if (!admission) throw new Error('bounded cold-read admission migration missing');
+  await client.query(readFileSync(join(path, admission), 'utf8'));
 }, 30000);
 
 afterAll(async () => {
@@ -503,6 +508,82 @@ describe('durable opponent memory with real PostgreSQL', () => {
       'fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure) AS body`)
       ).rows[0].body
     ).toBe(before);
+  });
+
+  it('keeps generic legacy plans on the compact actor/context index', async () => {
+    const path = join(process.cwd(), '../supabase/migrations');
+    const name = readdirSync(path).find((f) =>
+      f.endsWith('_horse_memory_bounded_cold_read_admission.sql')
+    )!;
+    const sql = readFileSync(join(path, name), 'utf8');
+    const selection = sql
+      .slice(
+        sql.indexOf('     SELECT id,created_at,actions FROM public.hand_history'),
+        sql.indexOf('\n    ), observations AS MATERIALIZED')
+      )
+      .replace(/\bp_variant\b/g, '$1')
+      .replace(/\bp_mode\b/g, '$2')
+      .replace(/\bp_size\b/g, '$3')
+      .replace(/\buid\b/g, '$4');
+    await client.query('set plan_cache_mode=force_generic_plan');
+    try {
+      await client.query('prepare bounded_legacy(text,text,text,text) as ' + selection);
+      const plan = JSON.stringify(
+        (
+          await client.query(
+            `explain(format json) execute bounded_legacy('plo5','cash','full','90000000-0000-4000-8000-000000000000')`
+          )
+        ).rows
+      );
+      expect(plan).toContain('idx_hand_history_horse_legacy_context');
+      expect(plan).not.toContain('BitmapAnd');
+      expect(plan).not.toContain('hand_history_players_idx');
+    } finally {
+      await client.query('deallocate bounded_legacy');
+      await client.query('reset plan_cache_mode');
+    }
+  });
+
+  it('refuses competing cold scans immediately while initialized reads remain available', async () => {
+    const lock = new Client({
+      host: '127.0.0.1',
+      port,
+      database: 'postgres',
+      user: process.env.USER ?? 'postgres',
+    });
+    await lock.connect();
+    const cold = 'a0000000-0000-4000-8000-000000000001';
+    const warm = await profile();
+    await lock.query('begin');
+    await lock.query(
+      "select pg_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initialization:v1',0))"
+    );
+    try {
+      await client.query("set statement_timeout='500ms'");
+      await expect(
+        client.query("select * from fn_horse_exploit_profiles_read($1,'nlh','cash','hu')", [[cold]])
+      ).rejects.toMatchObject({ code: '55P03' });
+      expect(await profile()).toEqual(warm);
+      expect(
+        (
+          await client.query(
+            'select count(*)::integer n from horse_exploit_profiles where user_id=$1',
+            [cold]
+          )
+        ).rows[0].n
+      ).toBe(0);
+    } finally {
+      await client.query('reset statement_timeout');
+      await lock.query('rollback');
+      await lock.end();
+    }
+    const initialized = (
+      await client.query("select * from fn_horse_exploit_profiles_read($1,'nlh','cash','hu')", [
+        [cold],
+      ])
+    ).rows[0];
+    expect(initialized.initialized).toBe(true);
+    expect(initialized.legacy_hands).toBe(0);
   });
 
   it('restricts durable reads to the engine service identity', async () => {

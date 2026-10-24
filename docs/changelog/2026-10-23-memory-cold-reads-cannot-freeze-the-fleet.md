@@ -1,0 +1,9 @@
+# Opponent memory cold reads cannot freeze the fleet
+
+At 02:20 UTC on October 24 (October 23 Chicago), the serving engine had 90 blocked settlements while 31–38 opponent-memory RPCs competed for database IO. Their HTTP caller gave up at 1500ms, but database transactions continued for roughly eight seconds. Cached generic plans also intersected the compact actor/context index with the redundant 780MB whole-roster GIN index.
+
+Emergency containment revoked only the memory-read function from service_role and cancelled its 31 active calls. The settlement backlog reached zero and completed hands rose from 64 to 693 per minute. All three occupied human tables subsequently advanced. This was containment, not a permanent fix.
+
+The maintained reader now uses its exact actor/context predicate without the redundant whole-roster index predicate. A nonblocking transaction advisory admission admits one cold initializer at a time; competing cold requests fail explicitly without scanning or queueing. Initialized profiles remain readable while another initializer works. The lock belongs only to opponent initialization and is never taken by hand settlement. Accepted-hand memory writes, the 1024-observation legacy horizon, both decay rates, profile counters, privacy and the service-only contract remain intact. No timer, repair loop, engine restart, financial mutation or player lockout is added.
+
+The existing native PostgreSQL qualification covers concurrency refusal, warm reads during cold admission, lock release and subsequent initialization, generic cached planning, original decay/counter correctness and the full ten-player 1500ms budget. The new concurrency regression failed against the prior reader. Protected merge, exact migration installation/readback, restored function access and live recovery evidence are required before completion.

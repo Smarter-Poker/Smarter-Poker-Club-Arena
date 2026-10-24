@@ -46,8 +46,12 @@ import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migra
  * Usage:
  *   DATABASE_URL=postgres://... node scripts/ci/apply-recorded-migration.mjs \
  *     --migration 20260922143541_club_and_union_diamond_commerce.sql [--dry-run]
+ * For the exact 20261022223439 journal cover only, --serial-journal-index
+ * requires a supported session-pool connection and verifies worker limit zero
+ * on the owning backend before CREATE INDEX. No global setting is changed.
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { validateSerialJournalIndex, serialJournalConnection, bindSerialJournalIndex } from './serial-journal-index.mjs';
 import { join } from 'node:path';
 import { supersededBy } from './check-migrations-are-live.mjs';
 import {
@@ -205,6 +209,13 @@ if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
 const shape = splitConcurrentPreamble(sql);
 if (!shape.ok) refused(`${file}: ${shape.reason}`);
 const preamble = shape.indexes;
+let serialJournalIndex;
+try {
+  serialJournalIndex = validateSerialJournalIndex({
+    enabled: args.includes('--serial-journal-index'), file, sql, preamble,
+    otherModes: Boolean(recovery || batches || SETTLEMENT_LANE || MAINTENANCE_THAW_REPAIR || MAINTENANCE_WINDOW || rakeHistory),
+  });
+} catch (e) { refused(e.message); }
 
 // A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
 // (2026-10-22). A file that declares "-- @install-window: daily-maintenance"
@@ -298,6 +309,9 @@ try {
 }
 if (!['postgres:', 'postgresql:'].includes(connectionURL.protocol))
   refused('database connection protocol is invalid');
+if (serialJournalIndex) {
+  try { connectionURL = serialJournalConnection(connectionURL); } catch (e) { refused(e.message); }
+}
 if (connectionURL.searchParams.has('sslcert') || connectionURL.searchParams.has('sslkey'))
   refused('client-certificate transport requires its maintained qualified route');
 const sslRoot =
@@ -558,6 +572,15 @@ for (const ix of preamble) {
   try {
     // Session-level and outside any transaction block: CONCURRENTLY requires it.
     await client.query("SET statement_timeout = '600s'");
+    if (serialJournalIndex) {
+      try {
+        await bindSerialJournalIndex(client);
+        console.log('[apply] serial journal backend verified; parallel maintenance workers=0');
+      } catch {
+        await client.end().catch(() => {});
+        refused('serial journal session identity or worker bound unproven. No index was sent.');
+      }
+    }
     await client.query(ix.statement);
     await client.query('RESET statement_timeout');
   } catch (e) {

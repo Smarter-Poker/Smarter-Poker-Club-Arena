@@ -4263,7 +4263,6 @@ function ClubHomePageContent({
   const handleJoinTable = useCallback(
     (tableId: string) => {
       haptic.medium();
-      setPanelOpen(false);
       /* JOIN GAME (Gate 4, 2026-09-05). A must-move game is one row on the
          board (R10) and its row is Main 1 - but JOIN must never simply open
          Main 1, which is full whenever the game is busy. The game door,
@@ -4277,9 +4276,12 @@ function ClubHomePageContent({
          seat to choose. Its one door is the Lightning route, which opens the
          player's pool session or takes them through the Cluster's join. */
       if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
+        // Leaving unmounts the panel. Closing it first also schedules the
+        // lobby's query-string sync, which can overwrite this navigation.
         navigate(`/lightning/${row.cluster_id}`);
         return;
       }
+      setPanelOpen(false);
       if (row?.cluster_id && row.cluster_must_move !== false) {
         if (!gameEntryScope.active || gameEntryScope.busy) return;
         gameEntryScope.busy = true;

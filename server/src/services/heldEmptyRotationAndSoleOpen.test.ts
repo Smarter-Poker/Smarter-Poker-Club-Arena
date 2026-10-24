@@ -117,7 +117,7 @@ describe('pickFreeHorses selection covers the fleet and never picks a busy horse
     // The old code could only ever return horses from the first N rows. Fed
     // the full fleet, eligible horses from the BACK of the list must appear.
     const picked = new Set(selectHorseCandidates(fleet, new Set(), false, 12));
-    const backHalfEligible = fleet.slice(300).filter((id) => gameLaneFor(id) !== 'cash');
+    const backHalfEligible = fleet.slice(300).filter((id) => isActiveNow(id, 12));
     expect(backHalfEligible.length).toBeGreaterThan(0);
     for (const id of backHalfEligible) expect(picked.has(id)).toBe(true);
   });
@@ -125,7 +125,7 @@ describe('pickFreeHorses selection covers the fleet and never picks a busy horse
   it('draining part of the fleet still leaves the rest claimable', () => {
     // The starvation shape: mark every eligible horse in the front half busy
     // and the back half must still supply candidates.
-    const eligible = fleet.filter((id) => gameLaneFor(id) !== 'cash');
+    const eligible = fleet.filter((id) => isActiveNow(id, 12));
     const busy = new Set(eligible.slice(0, Math.floor(eligible.length / 2)));
     const picked = selectHorseCandidates(fleet, busy, false, 12);
     expect(picked.length).toBeGreaterThan(0);
@@ -141,5 +141,17 @@ describe('pickFreeHorses selection covers the fleet and never picks a busy horse
       if (gameLaneFor(id) === 'cash') cashLanePicked++;
     }
     expect(cashLanePicked).toBeGreaterThan(0);
+  });
+});
+
+describe('all game lanes retain the existing daily schedule', () => {
+  const fleet = Array.from({ length: 120 }, (_, i) => `scheduled-horse-${i}`);
+  it('admits exactly the awake non-busy pool at every hour for both callers', () => {
+    const busy = new Set(fleet.filter((_, i) => i % 11 === 0));
+    for (let hour = 0; hour < 24; hour++) {
+      const expected = fleet.filter((id) => !busy.has(id) && isActiveNow(id, hour));
+      expect(selectHorseCandidates(fleet, busy, false, hour)).toEqual(expected);
+      expect(selectHorseCandidates(fleet, busy, true, hour)).toEqual(expected);
+    }
   });
 });

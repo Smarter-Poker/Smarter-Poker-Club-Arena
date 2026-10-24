@@ -1,3 +1,6 @@
+-- SUPERSEDED BY 20261023221116
+-- Retained as history. Do not replay the revoked profit gates or the old
+-- board snapshot: later owner-directed Lightning games are now enabled.
 -- 20261023205714_the_horse_roster_rules_are_written_down_and_the_plo_board_is.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

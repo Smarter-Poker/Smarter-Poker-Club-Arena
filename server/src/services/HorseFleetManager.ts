@@ -14,6 +14,7 @@
  */
 
 import { tableHeldByRetainedHand } from '../engine/retainedHandHolds.js';
+import { compareCashPopulation, isHoldemOrPlo } from './CashHorseAllocation.js';
 import { supabase, seedingSupabase } from './supabase.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -2379,6 +2380,10 @@ export class HorseFleetManager {
           Number(humanShort(b)) - Number(humanShort(a)) ||
           Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
           clusterRank(a) - clusterRank(b) ||
+          compareCashPopulation(
+            { ...a, occupied: seatsByTable.get(a.id)?.length ?? 0 },
+            { ...b, occupied: seatsByTable.get(b.id)?.length ?? 0 }
+          ) ||
           fillFirstRank(seatedAt(a), seatedAt(b)) ||
           String(a.id).localeCompare(String(b.id))
       );
@@ -2646,6 +2651,7 @@ export class HorseFleetManager {
          are the cycle's live maps, so a seat bought this cycle is visible to
          the next verdict, exactly as before. See HorseSitVerdict. */
       const sitCtx: SitVerdictContext = {
+        bankrollOnlyCashHorse: (id) => cashRosterAllows(id) === true,
         resolveSeatClub: (t, id) => this.resolveSeatClub(membership, t, id),
         sizeBuyIn: (t, id, club, floor) => {
           const telemetry: BankrollEvent[] = [];
@@ -2961,6 +2967,9 @@ export class HorseFleetManager {
           );
           const { fill } = target;
           let { seatTarget } = target;
+          // With fifty cash horses, fill playable Holdem/PLO games instead
+          // of deliberately retaining sparse persona occupancy targets.
+          if (isHoldemOrPlo(table.game_variant)) seatTarget = table.max_players;
           // Activity floor (see fleetBoost above). A full table is already at
           // max and cannot be lifted; this only ever helps a sparse one.
           if (fleetBoost) {
@@ -3047,7 +3056,7 @@ export class HorseFleetManager {
              to be full are filled now and the pacing stays where it still
              reads as human: the sparse quarter, and a human's rescue. */
           const humanNeedsRescue = humanAtTable && currentCount < 4;
-          if (fill !== 'full' && !humanNeedsRescue) {
+          if (fill !== 'full' && !humanNeedsRescue && !isHoldemOrPlo(table.game_variant)) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
           }
           /* ...except the two that make a cluster table dealable (see
@@ -3090,6 +3099,10 @@ export class HorseFleetManager {
              stake gate and the seat's idempotency key below; nothing else. */
           const arenaTable = diamondTableIds.has(String(table.id));
           const candidateHorses = validHorses.filter((h) => {
+            // Supersedes variant, stake and activity persona gates below.
+            // The roster still bounds the pool; bankroll and normal player
+            // admission rules still decide whether each seat is affordable.
+            const bankrollOnly = cashRosterAllows(h.id) === true;
             /* THE DATABASE ALREADY SAID THIS HORSE IS FULL (2026-09-11). It
                refused a buy-in for it at an earlier table in THIS cycle with
                the platform game limit, and nothing here lowers that count.
@@ -3116,7 +3129,7 @@ export class HorseFleetManager {
             /* AN ASSIGNED PILOT HORSE SEATS ONLY IN THE PILOT (2026-10-22).
                New seats only; nothing it already holds is touched. See
                LightningPilotSeatScope. */
-            if (pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
+            if (!bankrollOnly && pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
               pilotElsewhereDropped++;
               return false;
             }
@@ -3169,11 +3182,12 @@ export class HorseFleetManager {
             // Dan 2026-08-26 game lanes: a third of the stable plays events
             // only (tournaments / spins / heads-up) and never sits at cash.
             const cashOk = arenaTable ? tagAllowsCash(laneTag) : tagAllowsCash(tag);
-            if (cashOk === false) {
+            if (!bankrollOnly && cashOk === false) {
               tagDropped++;
               return false;
             }
-            if (cashOk === undefined && gameLaneFor(h.id) === 'events') return false;
+            if (!bankrollOnly && cashOk === undefined && gameLaneFor(h.id) === 'events')
+              return false;
 
             /* THE VARIANT. Nothing before this restricted it at all, so one
                horse played Omaha-8, short deck and pineapple interchangeably.
@@ -3182,7 +3196,7 @@ export class HorseFleetManager {
                the thinnest limit variant, against 20 NLH tables and a limit
                board trimmed to two. */
             const variantOk = tagAllowsVariant(laneTag, String(table.game_variant ?? ''));
-            if (variantOk === false && !humanNeedsRescue) {
+            if (!bankrollOnly && variantOk === false && !humanNeedsRescue) {
               tagDropped++;
               return false;
             }
@@ -3217,7 +3231,7 @@ export class HorseFleetManager {
                this, blinds were read solely to size a buy-in, and 64 of 210
                horses sat across multiple stakes in 48 hours, one at 0.10/0.20
                and 25.00/50.00 both. */
-            let stakeOk = tagAllowsStake(tag, Number(table.big_blind));
+            let stakeOk = bankrollOnly ? true : tagAllowsStake(tag, Number(table.big_blind));
             /* A TAG WITH NO GAME LEFT IN IT FALLS THROUGH TO THE BAND
                (2026-09-06). `tagAllowsStake` is exact, and a tag drawn into a
                band whose every rung the operator has closed refuses every
@@ -3366,6 +3380,7 @@ export class HorseFleetManager {
                not once the host is at its curve. Bypassed entirely when a
                human at this table needs the game rescued. */
             if (
+              !bankrollOnly &&
               !hostAllowsNewBody({
                 hostId: String((table as any).club_id ?? ''),
                 horseId: h.id,
@@ -3394,7 +3409,9 @@ export class HorseFleetManager {
             const gameLoad = {
               seats: tablesForHorse?.size ?? 0,
               bookings: bookingLoad.get(h.id) ?? 0,
-              ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),
+              ownCashCeiling: bankrollOnly
+                ? MAX_TABLES_PER_HORSE
+                : tagMaxTables(tag, MAX_TABLES_PER_HORSE),
               /* The tag ceiling is a CASH rule (HorseGameLoad). `seats` above
                  is every open seat on the platform, tournaments included, and
                  subtracting those from a cash ceiling refused 837 tagged
@@ -4822,7 +4839,11 @@ export class HorseFleetManager {
         if (seatClub === null) continue;
         /* An assigned pilot horse answers no seat call outside the pilot; the
            offer passes to the next player by its own sweep. */
-        if (pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere') continue;
+        if (
+          cashRosterAllows(offer.user_id) !== true &&
+          pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere'
+        )
+          continue;
         /* The same door rules as the seeding loop: a horse barred from this
            game does not answer its seat call, and one holding a rejoin floor
            answers with the floor. */

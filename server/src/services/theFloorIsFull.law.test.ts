@@ -111,7 +111,10 @@ describe('LAW: four tables is the target, not the ceiling', () => {
        `fn_concurrent_game_load` counts them. The database was refusing that
        fifth game 10,577 times in four hours while this line said the horse was
        free. Both rules, one predicate: see HorseGameLoad. */
-    expect(FLEET).toContain('ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),');
+    // October 23: the cash fifty use the universal ceiling, without persona caps.
+    expect(FLEET).toMatch(
+      /ownCashCeiling: bankrollOnly\s*\? MAX_TABLES_PER_HORSE\s*: tagMaxTables\(tag, MAX_TABLES_PER_HORSE\),/
+    );
     expect(FLEET).toContain('if (!mayEnterAnotherGame(gameLoad)) {');
     // the constant is still the ceiling that gets handed in
     expect(FLEET).toContain('const MAX_TABLES_PER_HORSE = 4');

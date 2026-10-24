@@ -1437,7 +1437,7 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
      a Join that can only fail is not an offer (fix-first, 2026-09-09). */
   const st = cluster
     ? t.cluster_enabled === false
-      ? { key: 'closed' as LobbyStatusKey, label: 'Closed' }
+      ? { key: 'closed' as LobbyStatusKey, label: gamePlayers > 0 ? 'Join Closed' : 'Closed' }
       : modeClosedLabel
         ? { key: 'closed' as LobbyStatusKey, label: modeClosedLabel }
         : gamePlayers > 0
@@ -1479,7 +1479,11 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     buyInValue: range.unknown ? Infinity : minBuy,
     guaranteeLabel: null,
     guaranteeValue: 0,
-    players: cluster ? gamePlayers : t.current_players || 0,
+    players: cluster
+      ? gamePlayers
+      : ['closed', 'deleted'].includes(String(t.status).toLowerCase())
+        ? 0
+        : t.current_players || 0,
     capacity: cluster ? 0 : t.max_players || 0,
     ...(cluster ? { game: cluster } : {}),
     startTime: null,

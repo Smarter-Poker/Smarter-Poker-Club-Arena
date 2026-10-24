@@ -18,6 +18,7 @@ const results = vi.hoisted(() => ({
     error: null as unknown,
   },
   scope: { data: ['club-1'] as unknown, error: null as unknown },
+  downline: { data: false, error: null as unknown },
 }));
 
 vi.mock('./supabase.js', () => ({
@@ -33,7 +34,9 @@ vi.mock('./supabase.js', () => ({
         Promise.resolve(results[table]).then(resolve);
       return builder;
     },
-    rpc: vi.fn(async () => results.scope),
+    rpc: vi.fn(async (name: string) =>
+      name === 'fn_agent_can_watch_table' ? results.downline : results.scope
+    ),
   },
 }));
 
@@ -42,6 +45,7 @@ import { authorizeTableViewer } from './TableViewerAccess.js';
 describe('authorizeTableViewer', () => {
   beforeEach(() => {
     queriedTables.mockClear();
+    results.downline = { data: false, error: null };
     results.tables = {
       data: {
         club_id: 'club-1',
@@ -54,6 +58,30 @@ describe('authorizeTableViewer', () => {
     results.table_seats = { data: null, error: null };
     results.club_members = { data: [{ club_id: 'club-1' }], error: null };
     results.scope = { data: ['club-1'], error: null };
+  });
+
+  it('allows an agent to watch a live downline outside the table club despite observer restrictions', async () => {
+    results.tables.data!.restrict_observers = true;
+    results.club_members.data = [];
+    results.downline.data = true;
+    await expect(authorizeTableViewer('table-1', 'agent-1')).resolves.toEqual({
+      allowed: true,
+      reason: 'agent_downline',
+      clubId: 'club-1',
+    });
+    results.downline.data = false;
+    await expect(authorizeTableViewer('table-1', 'agent-1')).resolves.toMatchObject({
+      allowed: false,
+      reason: 'membership_required',
+    });
+  });
+
+  it('does not grant an observer exception when the relationship lookup fails', async () => {
+    results.tables.data!.restrict_observers = true;
+    results.downline.error = new Error('relationship unavailable');
+    await expect(authorizeTableViewer('table-1', 'agent-1')).resolves.toMatchObject({
+      allowed: false,
+    });
   });
 
   it('allows an active club member to observe', async () => {
@@ -179,6 +207,7 @@ describe('authorizeTableViewer', () => {
 describe('seated reconnect access dependencies', () => {
   beforeEach(() => {
     queriedTables.mockClear();
+    results.downline = { data: false, error: null };
     results.tables = {
       data: {
         club_id: 'club-1',
@@ -222,6 +251,7 @@ describe('seated reconnect access dependencies', () => {
 describe('Diamond Arena entitlement', () => {
   beforeEach(() => {
     queriedTables.mockClear();
+    results.downline = { data: false, error: null };
     results.tables = {
       data: {
         club_id: 'diamond',
@@ -240,6 +270,15 @@ describe('Diamond Arena entitlement', () => {
       clubId: 'diamond',
     });
     expect(queriedTables.mock.calls.flat()).not.toContain('club_members');
+  });
+  it('allows a verified agent downline at a restricted Diamond table', async () => {
+    results.tables.data!.restrict_observers = true;
+    results.downline.data = true;
+    expect(await authorizeTableViewer('table-1', 'agent')).toEqual({
+      allowed: true,
+      reason: 'agent_downline',
+      clubId: 'diamond',
+    });
   });
   it('still enforces observer restrictions', async () => {
     results.tables.data!.restrict_observers = true;

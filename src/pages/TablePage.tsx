@@ -114,6 +114,7 @@ import {
 } from '../services/tournamentResult';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { heroMayReopenBetting } from '../lib/raiseReopen';
+import { TOURNAMENT_CHAMPION_DISPLAY_MS } from '../utils/tournamentChampion';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 import {
   readMySatelliteQualifierResult,
@@ -14099,9 +14100,12 @@ function LiveTablePage({
             exitStarted = true;
 
             const tid = table.tournament_id || tableStateRef.current.tournamentId;
+            const resultEnrichment = tid
+              ? awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
+              : Promise.resolve(undefined);
 
             /* Held so the effect's cleanup can cancel it. Without that, a
-               player who closes this tab (or is moved off it) inside the 7s
+               player who closes this tab (or is moved off it) inside the 20s
                winner beat is force-navigated out of wherever they went next —
                which, in multi-table, is somebody else's live table. */
             tournamentExitTimerRef.current = setTimeout(() => {
@@ -14114,9 +14118,7 @@ function LiveTablePage({
                    a no-op. The bounded fallback preserves the broadcast's
                    authoritative position/prize and always reaches the card,
                    close signals and navigation below. */
-                const full = tid
-                  ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
-                  : undefined;
+                const full = await resultEnrichment;
                 publishSessionSummary({
                   // Initial result recovery has no surviving play-session counters.
                   resultOnly: loadedFinishedReportReady || loadedTournamentStatus === 'COMPLETED',
@@ -14291,6 +14293,66 @@ function LiveTablePage({
 
           let durableCompletionLookupInFlight = false;
           let durableCompletionHandled = false;
+          // Spectators watch the same committed champion announcement, but never
+          // receive somebody else's result card or clear another table's session.
+          let championAnnouncementInFlight = false;
+          async function announceSpectatorChampion(): Promise<void> {
+            if (!isMounted || exitStarted || championAnnouncementInFlight) return;
+            championAnnouncementInFlight = true;
+            try {
+              const outcome = await awaitTournamentResultEnrichment(
+                supabase
+                  .from('tournament_players')
+                  .select('user_id, username, prize')
+                  .eq('tournament_id', durableTournamentId)
+                  .eq('status', 'winner')
+                  .eq('position', 1)
+                  .maybeSingle()
+              );
+              const { data: champion, error } = outcome ?? {
+                data: null,
+                error: new Error('Champion Result Read Timed Out'),
+              };
+              if (!isMounted || exitStarted) return;
+              const prize = Number(champion?.prize);
+              if (
+                error ||
+                !champion?.user_id ||
+                champion.prize == null ||
+                !Number.isFinite(prize) ||
+                prize < 0
+              ) {
+                if (error) reportError(error, 'TablePage.spectator_champion_unreadable');
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              exitStarted = true;
+              durableCompletionHandled = true;
+              setTournamentWinner({
+                prize,
+                name: formatGameTitle(durableTournamentName) || 'Tournament',
+                championName: champion.username || 'Champion',
+              });
+              tournamentExitTimerRef.current = setTimeout(() => {
+                if (!isMounted) return;
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: tableId ?? '',
+                  action: 'CLOSE_TABLE_TAB',
+                });
+                if (embeddedTableId) return;
+                const clubId = lobbyClubIdRef.current;
+                navigate(
+                  clubId ? `/clubs/${clubId}` : `/tournament-results?id=${durableTournamentId}`
+                );
+              }, TOURNAMENT_CHAMPION_DISPLAY_MS);
+            } catch (error) {
+              reportError(error, 'TablePage.spectator_champion_unreadable');
+              scheduleDurableCompletionRetry();
+            } finally {
+              championAnnouncementInFlight = false;
+            }
+          }
+
           function scheduleDurableCompletionRetry(): void {
             if (!isMounted || durableCompletionHandled || durableCompletionRetryTimer) return;
             const delayMs = Math.min(30_000, 1_000 * 2 ** Math.min(durableCompletionRetryCycle, 5));
@@ -14301,13 +14363,11 @@ function LiveTablePage({
             }, delayMs);
           }
           async function exitFromDurableCompletion(): Promise<void> {
-            if (
-              durableCompletionLookupInFlight ||
-              durableCompletionHandled ||
-              !isMounted ||
-              !userId ||
-              userId === 'guest'
-            ) {
+            if (durableCompletionLookupInFlight || durableCompletionHandled || !isMounted) {
+              return;
+            }
+            if (!userId || userId === 'guest') {
+              await announceSpectatorChampion();
               return;
             }
             durableCompletionLookupInFlight = true;
@@ -14315,13 +14375,14 @@ function LiveTablePage({
               status?: string | null;
               position?: number | null;
               prize?: number | null;
+              username?: string | null;
             } | null = null;
             let lastError: unknown = null;
             try {
               for (let attempt = 1; attempt <= 3; attempt++) {
                 const { data, error: resultError } = await supabase
                   .from('tournament_players')
-                  .select('status, position, prize')
+                  .select('status, position, prize, username')
                   .eq('tournament_id', durableTournamentId)
                   .eq('user_id', userId)
                   .maybeSingle();
@@ -14369,11 +14430,7 @@ function LiveTablePage({
                       seat.tables.tournament_id === durableTournamentId
                   );
                   if (completeReadableHistory && !participated) {
-                    durableCompletionHandled = true;
-                    if (durableCompletionRetryTimer) {
-                      clearTimeout(durableCompletionRetryTimer);
-                      durableCompletionRetryTimer = null;
-                    }
+                    await announceSpectatorChampion();
                     return;
                   }
                   if (!seatError && participated) durableParticipantWitnessed = true;
@@ -14438,9 +14495,14 @@ function LiveTablePage({
                 setTournamentWinner({
                   prize,
                   name: formatGameTitle(durableTournamentName) || 'Tournament',
+                  championName: result.username || 'Champion',
                 });
               }
-              goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
+              goToLobbyWithResult(
+                position,
+                prize,
+                position === 1 ? TOURNAMENT_CHAMPION_DISPLAY_MS : 2500
+              );
             } finally {
               durableCompletionLookupInFlight = false;
             }
@@ -14913,7 +14975,7 @@ function LiveTablePage({
                       prize: elimData.prize || 0,
                       name: tournamentName,
                     });
-                    goToLobbyWithResult(1, elimData.prize || 0, 7000);
+                    goToLobbyWithResult(1, elimData.prize || 0, TOURNAMENT_CHAMPION_DISPLAY_MS);
                   } else {
                     const paidPosition = Number(elimData.position) || 0;
                     const paidPrize = Number(elimData.prize) || 0;
@@ -14997,7 +15059,7 @@ function LiveTablePage({
                    an elimination toast on that event — announcing the
                    champion as knocked out is worse than saying nothing.
 
-                   Same 7s beat as the winner branch above, for the same
+                   Same 20s beat as the winner branch above, for the same
                    reason: the celebration overlay has to play before the
                    player is moved. */
                 const winData = data.payload || {};
@@ -15006,8 +15068,13 @@ function LiveTablePage({
                   setTournamentWinner({
                     prize,
                     name: tableStateRef.current.tableName || 'Tournament',
+                    championName:
+                      tableStateRef.current.players.find((p) => p?.id === userId)?.name ||
+                      'Champion',
                   });
-                  goToLobbyWithResult(1, prize, 7000);
+                  goToLobbyWithResult(1, prize, TOURNAMENT_CHAMPION_DISPLAY_MS);
+                } else {
+                  void announceSpectatorChampion();
                 }
               } else if (data?.type === 'late_reg_closed') {
                 // Late registration window has closed
@@ -15664,7 +15731,7 @@ function LiveTablePage({
         addOnChannelRef.current = null;
       }
       /* AUDIT 2026-08-22: a scheduled tournament exit must not outlive the
-         subscription that scheduled it. The winner's beat is 7s long; a player
+         subscription that scheduled it. The winner's beat is 20s long; a player
          whose tab is closed inside it used to be force-navigated out of
          whatever they were looking at when it fired. */
       if (tournamentExitTimerRef.current) {

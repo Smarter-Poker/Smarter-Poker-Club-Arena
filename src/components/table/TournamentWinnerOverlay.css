@@ -339,3 +339,9 @@
     0 1px 0 #050607,
     0 0 12px rgb(69 173 255 / 30%);
 }
+
+.winnerChampionName {
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}

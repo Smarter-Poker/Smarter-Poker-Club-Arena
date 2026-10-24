@@ -21288,6 +21288,16 @@ function LiveTablePage({
     location.pathname,
   ]);
 
+  /* JOIN LIGHTNING FROM A LIGHTNING TABLE (Dan 2026-10-24: "YOU DON'T SELECT
+     YOUR SEAT, YOU 'JOIN LIGHTNING GAMES' SELECT HOW MUCH YOU WANT TO BUY IN
+     FOR, AND THEN YOU AUTO ASSIGN THEM TO A SEAT AND TABLE"). The game's own
+     Join Lightning door asks the amount at once (?join=1) and seats the
+     player itself; nobody picks a chair on this felt. */
+  const openLightningAnchorEntry = () => {
+    if (!anchorLightningClusterId) return;
+    navigate(`${lightningRoute(anchorLightningClusterId)}?join=1`);
+  };
+
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
    * spends money. Called from the confirmation sheet, never from a raw tap:
@@ -27609,7 +27619,7 @@ function LiveTablePage({
             ) : !tableState.isTournament && anchorLightningClusterId ? (
               <WaitlistCallToAction
                 lightning
-                onClick={() => navigate(lightningRoute(anchorLightningClusterId))}
+                onClick={openLightningAnchorEntry}
                 waitingCount={0}
                 position={null}
               />
@@ -28358,7 +28368,14 @@ function LiveTablePage({
                   onPreActionChange={(next) => {
                     // Lightning Fold is an immediate request to release this
                     // hand and join the next table, including out of turn.
-                    if (lightningRoom && next === 'fold') {
+                    // CHECK/FOLD NEVER FOLDS A FREE CHECK (2026-10-24): while
+                    // the hero owes nothing the button is Check/Fold, and it
+                    // arms the ordinary auto check/fold; if that ends in a
+                    // fold the host releases the player at once anyway.
+                    const heroOwesNothing =
+                      (tableState.currentBet || 0) <=
+                      (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
+                    if (lightningRoom && next === 'fold' && !heroOwesNothing) {
                       void handleLightningFold('fast_fold');
                       return;
                     }

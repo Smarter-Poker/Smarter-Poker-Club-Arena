@@ -29,6 +29,11 @@ export const LIGHTNING_ENDED_TITLE = 'Lightning Has Ended';
 export const LIGHTNING_ENDED_TEXT = 'Lightning Has Ended. Your Seat Is Ready At Your Table.';
 /** The one button: the player's own table. An approved term (VIEW GAME). */
 export const LIGHTNING_RETURN_LABEL = 'View Game';
+/* A seat with no open pool session while the game IS still Lightning (the
+   player sat out, or a disconnect closed the session). Lightning has not
+   ended, so the card does not say it has (2026-10-24 audit). */
+export const LIGHTNING_SEAT_WAITING_EYEBROW = 'Lightning';
+export const LIGHTNING_SEAT_WAITING_TEXT = 'Your Seat Is Waiting. Sit Back In To Play.';
 
 /** The table path a player is offered after Lightning ends. */
 export function lightningReturnPath(seatTableId: string): string {

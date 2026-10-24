@@ -1,3 +1,4 @@
+import { useSeatArrivals } from '../components/table/seatArrival';
 import {
   usePreActionBoundary,
   acceptedActionSpendsPreAction,
@@ -24253,6 +24254,7 @@ function LiveTablePage({
     }
   }, [lightningRoom, preAction, lightningHandKeyNow]);
 
+  const seatArrivals = useSeatArrivals(tableId ?? '', lightningRoom ? tableState.players : []);
   const lightningHero =
     tableState.heroSeat > 0 ? (tableState.players[tableState.heroSeat - 1] ?? null) : null;
   /* THE IDLE SNAPSHOT AFTER A FOLD. The engine answers a fold with stage
@@ -26801,6 +26803,7 @@ function LiveTablePage({
                 <SeatSlot
                   seatNumber={seatNumber}
                   player={displayPlayer}
+                  arrival={lightningRoom ? seatArrivals[seatNumber] : undefined}
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may
                      sit out as long as they like. Withheld here rather than

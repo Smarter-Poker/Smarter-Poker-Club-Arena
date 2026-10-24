@@ -30,9 +30,7 @@ describe('fn_search_players final migration-order contract', () => {
   const final = finalDefinition();
 
   it('is restored by a forward migration after every older replacement', () => {
-    expect(final.name).toMatch(
-      /^20260927\d{6}_restore_final_player_search_fuzzy_affiliations_contract\.sql$/
-    );
+    expect(final.name).toMatch(/^20261024\d{6}_agents_can_watch_every_live_downline_table\.sql$/);
     expect(final.lastTouch).toBe(final.name);
   });
 
@@ -73,5 +71,7 @@ describe('fn_search_players final migration-order contract', () => {
     expect(final.body).toContain('v_like');
     expect(final.body).not.toContain('hidden_count');
     expect(final.body).not.toContain('c.is_private');
+    expect(final.body).not.toContain("concat('$'");
+    expect(final.body).toContain("THEN 'Free Buy'");
   });
 });

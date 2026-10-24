@@ -208,6 +208,14 @@ try:
     """)
     assert watch_acl == 't', watch_acl
 
+    downline_setup, downline_assertions = (FIXTURE / 'downline-watch.sql').read_text().split('-- BEGIN DOWNLINE ASSERTIONS')
+    query(downline_setup)
+    baseline_access = json.loads(as_viewer("SELECT public.fn_get_table_watch_access('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002');"))
+    assert baseline_access['can_watch'] is False, baseline_access
+    print('baseline-confirmed-active-recursive-agent-refused')
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024020328_agents_can_watch_every_live_downline_table.sql').read_text())
+    query(downline_assertions)
+    print('agent-downline-watch-native-acceptance-passed')
     print('player-search-privacy-native-acceptance-passed')
 finally:
     if STARTED and (DATA / 'postmaster.pid').exists():

@@ -33,7 +33,10 @@ let fundingSource = '',
   inputSource = '';
 function visit(node: ts.Node) {
   if (ts.isCallExpression(node)) {
-    if (node.expression.getText(source) === 'setLightningAnchorFunding')
+    if (
+      node.expression.getText(source) === 'setLightningAnchorFunding' &&
+      node.arguments[0].getText(source).includes('existingSeats')
+    )
       fundingSource = node.arguments[0].getText(source);
     if (node.expression.getText(source) === 'useLightningAnchorHandoff')
       inputSource = node.arguments[0].getText(source);

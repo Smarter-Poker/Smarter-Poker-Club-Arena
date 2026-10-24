@@ -29039,6 +29039,11 @@ function LiveTablePage({
               totalBuyInRef.current += paid.p_amount;
               peakStackRef.current = Math.max(peakStackRef.current, paid.p_amount);
               leftSeatPendingRef.current = false;
+              setLightningAnchorFunding({
+                tableId: paid.p_table_id,
+                userId: paid.p_user_id,
+                funded: paid.p_amount > 0,
+              });
               seatAcquiredAtRef.current = Date.now();
               bootNoticeShownRef.current = false;
               masterBus.emit('TABLE_SEATED', {

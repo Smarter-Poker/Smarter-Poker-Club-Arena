@@ -7,3 +7,5 @@ The original seat lookup now retains account/table-scoped funding truth separate
 The original Join Lightning intent and newly purchased-seat handoff retain their prior gate. No new query, poller, purchase, custody operation or engine API is introduced. This client repair is compatible with the serving engine and can publish independently.
 
 Regression tests execute the actual TablePage funding/input expressions and mount the actual handoff hook. A funded anchor whose public roster omits the hero enables View Game; empty, leaving, unfunded and other-account anchors do not. Both ordinary and embedded navigation wait for the gesture. Three cases fail against the original source. Existing Lightning entry/session tests remain enforced.
+
+A confirmed new physical-table buy-in refreshes the same funding record. Recovered historical receipts retain the existing rule that they cannot restore an old seat or its funding ownership. The actual cash buy-in callback regression protects this distinction.

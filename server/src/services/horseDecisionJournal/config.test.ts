@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, statfsSync: vi.fn(actual.statfsSync) };
 });
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
-  return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
+  return {
+    ...actual,
+    execFile: vi.fn(actual.execFile),
+    execFileSync: vi.fn(actual.execFileSync),
+  };
 });
 import { mkdirSync, mkdtempSync, rmSync, statfsSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -404,6 +408,73 @@ describe('the journal disk bounds the shards a default may add', () => {
     const measured = await horseJournalShardCapacityMeasured(env);
     expect(measured).toBe(horseJournalShardCapacity(env));
     expect(await horseJournalShardCapacityMeasured({})).toBeUndefined();
+  });
+
+  it('skips the boot walk only when a lower bound already admits the sufficient count (2026-10-24)', async () => {
+    const dir = directory();
+    for (const name of ['archive', 'archive-shard-1', 'archive-shard-2']) {
+      mkdirSync(join(dir, name));
+      writeFileSync(join(dir, name, 'segment'), Buffer.alloc(8192));
+    }
+    const env = { HORSE_DECISION_JOURNAL_DIR: dir };
+    const ample = { ...statfsSync(dir), bsize: 4096, bavail: (400 * GiB) / 4096 };
+    vi.mocked(execFile).mockClear();
+    vi.mocked(statfsSync).mockReturnValueOnce(ample);
+    const skipped = await horseJournalShardCapacityMeasured(env, { sufficientShards: 8 });
+    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    expect(horseJournalCapacityUnreadableReason()).toBeNull();
+    // The published answer is the lower bound: every archive priced as empty.
+    vi.mocked(statfsSync).mockReturnValueOnce(ample);
+    expect(skipped).toBe(horseJournalShardCapacity(env, (dirs) => dirs.map(() => 0)));
+    expect(skipped).toBeGreaterThanOrEqual(8);
+    // ...which never exceeds the measured answer on the same filesystem.
+    vi.mocked(statfsSync).mockReturnValueOnce(ample);
+    expect(skipped).toBeLessThanOrEqual(horseJournalShardCapacity(env)!);
+
+    // A disk whose lower bound cannot admit the count is walked exactly as before.
+    const tight = { ...statfsSync(dir), bsize: 4096, bavail: (60 * GiB) / 4096 };
+    vi.mocked(execFile).mockClear();
+    vi.mocked(statfsSync).mockReturnValueOnce(tight).mockReturnValueOnce(tight);
+    const walked = await horseJournalShardCapacityMeasured(env, { sufficientShards: 8 });
+    expect(vi.mocked(execFile)).toHaveBeenCalledTimes(1);
+    vi.mocked(statfsSync).mockReturnValueOnce(tight);
+    expect(walked).toBe(horseJournalShardCapacity(env));
+    expect(walked).toBeLessThan(8);
+
+    // Without the option the walk always runs (unchanged default behaviour).
+    vi.mocked(execFile).mockClear();
+    vi.mocked(statfsSync).mockReturnValueOnce(ample);
+    await horseJournalShardCapacityMeasured(env);
+    expect(vi.mocked(execFile)).toHaveBeenCalledTimes(1);
+  });
+
+  it('prices empty archives as the most growth they can claim, so the bound never exceeds the measurement', () => {
+    const shard = horseJournalShardDiskBytes(HORSE_JOURNAL_ARCHIVE_BYTES);
+    const additional = horseJournalShardDiskBytes(HORSE_JOURNAL_ADDITIONAL_ARCHIVE_BYTES);
+    const base = {
+      shardBytes: shard,
+      additionalShardBytes: additional,
+      reserveBytes: HORSE_JOURNAL_SHARD_DISK_RESERVE_BYTES,
+    };
+    for (const availableBytes of [20 * GiB, 120 * GiB, 240 * GiB, 900 * GiB]) {
+      for (const allocated of [
+        [shard, shard, additional],
+        [13 * GiB, 9 * GiB, 4 * GiB, 4 * GiB, 4 * GiB, 4 * GiB, 4 * GiB, 4 * GiB],
+        [0, 2 * shard],
+      ]) {
+        const bound = horseJournalShardsAffordable({
+          ...base,
+          availableBytes,
+          existingShardAllocatedBytes: allocated.map(() => 0),
+        });
+        const measured = horseJournalShardsAffordable({
+          ...base,
+          availableBytes,
+          existingShardAllocatedBytes: allocated,
+        });
+        expect(bound).toBeLessThanOrEqual(measured);
+      }
+    }
   });
 
   it('reads nothing when no journal is configured', () => {

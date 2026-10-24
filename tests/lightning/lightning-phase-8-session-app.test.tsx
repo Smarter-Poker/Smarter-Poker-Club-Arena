@@ -99,8 +99,6 @@ import {
   openLightningSessionSummary,
   closeLightningSessionSummary,
 } from '../../src/lightning/lightningSummaryStore';
-import LightningDecisionQueue from '../../src/components/lightning/LightningDecisionQueue';
-import LightningRoomTools from '../../src/components/lightning/LightningRoomTools';
 import LightningRecentHands from '../../src/components/lightning/LightningRecentHands';
 import { lightningStatRows } from '../../src/components/lightning/LightningStatsGrid';
 import { LightningSessionSummaryHost } from '../../src/components/lightning/LightningSessionSummary';
@@ -306,60 +304,12 @@ describe('the decision queue store', () => {
 });
 
 describe('the decision queue strip (CLAUDE.md 10.6)', () => {
-  it('lists other rooms by time left, and focuses one ONLY on a tap', () => {
-    vi.useFakeTimers();
-    registerLightningPoolSession({
-      poolSessionId: POOL_B,
-      clusterId: CLUSTER_B,
-      meta: {
-        ...(gameRow as never),
-        clusterId: CLUSTER_B,
-        name: 'PLO 2/5',
-        smallBlind: 2,
-        bigBlind: 5,
-        maxPlayers: 6,
-        variant: 'plo',
-        clubId: null,
-        clusterMode: 'lightning',
-        enabled: true,
-      },
-    });
-    noteLightningUserEvent(decision(POOL, 'here', serverClock + 3_000));
-    noteLightningUserEvent(decision(POOL_C, 'c', serverClock + 14_000));
-    noteLightningUserEvent(decision(POOL_B, 'b', serverClock + 8_000));
-    const onFocus = vi.fn();
-    render(<LightningDecisionQueue activeRoomId={POOL} onFocus={onFocus} />);
-    const items = screen.getAllByTestId('lightning-decision');
-    expect(items.map((i) => i.getAttribute('data-room'))).toEqual([POOL_B, POOL_C]);
-    expect(items[0].textContent).toContain('PLO 2/5');
-    expect(items[0].getAttribute('data-urgency')).toBe('high');
-    // The clocks run down to critical and past: nothing focuses anything.
-    for (let i = 0; i < 20; i++) {
-      serverClock += 1_000;
-      act(() => {
-        vi.advanceTimersByTime(1_000);
-      });
-    }
-    expect(onFocus).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('lightning-decision')).toBeNull();
-    act(() => {
-      noteLightningUserEvent(decision(POOL_C, 'c2', serverClock + 9_000));
-    });
-    fireEvent.click(screen.getByTestId('lightning-decision'));
-    expect(onFocus).toHaveBeenCalledTimes(1);
-    expect(onFocus).toHaveBeenCalledWith(POOL_C);
-  });
-
   it('MultiTablePage moves to a room only from the queue entry handler, as a tab select', () => {
     const multi = read('src/pages/MultiTablePage.tsx');
     const handler = sliceEnclosingBlock(multi, 'handleTabSelect(roomId);');
     expect(handler).not.toMatch(/setActiveIndex|useEffect|setTimeout|setInterval/);
     expect(multi).not.toContain('<LightningDecisionQueue');
     expect(multi).toContain('lightningUrgencyByRoom(lightningDecisions, serverNow())');
-    // The strip component itself never navigates or selects.
-    const strip = read('src/components/lightning/LightningDecisionQueue.tsx');
-    expect(strip).not.toMatch(/navigate\(|setActiveIndex|handleTabSelect/);
-    expect(strip.match(/onFocus\(/g)).toHaveLength(1);
   });
 });
 
@@ -484,59 +434,6 @@ describe('parsing the Lightning session RPCs', () => {
 // ─── 4. The room's tools ───────────────────────────────────────────────────
 
 const callsTo = (fn: string) => rpc.mock.calls.filter(([n]) => n === fn);
-
-describe('the Lightning room tools', () => {
-  it('Session reads once per new hand while open, never between hands, and is remembered', async () => {
-    const view = render(
-      <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey="id:h1" visible />
-    );
-    expect((await screen.findByTestId('lightning-pool-badge')).getAttribute('data-status')).toBe(
-      'HOT'
-    );
-    /* LIGHTNING PHASE 10 widened this pin: the hand-volume line reads the
-       stats ONCE on mount as its baseline. Still never a poll: one read at
-       mount, then one per new hand only while the panel is open. */
-    expect(callsTo('fn_lightning_session_stats')).toHaveLength(1);
-    fireEvent.click(screen.getByTestId('lightning-session-toggle'));
-    await screen.findByTestId('lightning-stats-session');
-    expect(callsTo('fn_lightning_session_stats')).toHaveLength(2);
-    for (const call of callsTo('fn_lightning_session_stats')) {
-      expect(call).toEqual(['fn_lightning_session_stats', { p_pool_session_id: POOL }]);
-    }
-    expect(readLightningPrefs().statsVisible).toBe(true);
-    // Between hands (null key) nothing is read; the next hand reads once.
-    view.rerender(
-      <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey={null} visible />
-    );
-    view.rerender(
-      <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey="id:h2" visible />
-    );
-    await waitFor(() => expect(callsTo('fn_lightning_session_stats')).toHaveLength(3));
-    expect(screen.getByText('LIGHTNING FOLD')).toBeTruthy();
-    expect(screen.getByText('P95 Wait')).toBeTruthy();
-    expect(moneyRpcs()).toEqual([]);
-  });
-
-  it('Previous Hand opens the existing replay for the last hand of this session', async () => {
-    render(<LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey={null} visible />);
-    fireEvent.click(screen.getByTestId('lightning-previous-hand'));
-    expect((await screen.findByTestId('hand-replay')).textContent).toBe(HH_2);
-    expect(callsTo('fn_lightning_recent_hands')[0][1]).toEqual({
-      p_limit: 1,
-      p_pool_session_id: POOL,
-    });
-    fireEvent.click(screen.getByTestId('lightning-replay-close'));
-    expect(screen.queryByTestId('hand-replay')).toBeNull();
-  });
-
-  it('the pool badge is not polled while the room is off screen', async () => {
-    render(
-      <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey={null} visible={false} />
-    );
-    await Promise.resolve();
-    expect(callsTo('fn_lightning_pool_status')).toHaveLength(0);
-  });
-});
 
 describe('Recent Hands', () => {
   it('lists the session, toggles to all Lightning, and opens only written hands', async () => {

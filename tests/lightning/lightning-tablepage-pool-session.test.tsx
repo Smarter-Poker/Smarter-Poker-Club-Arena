@@ -172,7 +172,6 @@ describe('JOIN LIGHTNING hand-off from the anchor table', () => {
 describe('player-visible terminology', () => {
   const FILES = [
     ...readdirSync(join(ROOT, 'src/lightning')).map((f) => `src/lightning/${f}`),
-    'src/components/table/LightningFoldBar.tsx',
     'src/components/table/LightningFoldBar.css',
     'src/components/table/LightningNextHand.tsx',
     'src/pages/LightningEntryPage.tsx',

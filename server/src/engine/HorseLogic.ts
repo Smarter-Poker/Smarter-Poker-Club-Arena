@@ -2244,6 +2244,10 @@ function maniacCallDown(
   vi: VariantInfo,
   opts: HorseDecideOpts
 ): HorseDecision {
+  if (decision.action === 'fold' && decision.continuationGuard) {
+    if (telemetryOn(opts)) noteFire('horse_continuation_protected_fold_retained');
+    return decision;
+  }
   if (decision.action !== 'fold' || opts.mind === false || gs.allInOrFold === true) return decision;
   const toCall = Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
   if (!(toCall > 0) || !(player.stack > 0)) return decision;
@@ -7742,7 +7746,13 @@ export class HorseLogic {
       const investedShare28 = invested28 > 0 ? invested28 / (stack + invested28) : 0;
       if (plan23 === 'foldToRaise' && potOdds >= 0.15 && investedShare28 < 0.3) {
         if (tele15) noteFire('v23_plan_fold');
-        return { action: 'fold', thinkTime: 0 };
+        return {
+          action: 'fold',
+          thinkTime: 0,
+          ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
+            ? { continuationGuard: 'dominated_commitment_floor' as const }
+            : {}),
+        };
       }
       if (plan23 === 'callOnce') {
         planCallOnly23 = true;
@@ -7860,11 +7870,13 @@ export class HorseLogic {
       return {
         action: 'fold',
         thinkTime: 0,
-        ...(useV20 && pressure20 >= 2
-          ? { continuationGuard: 'multiway_commitment_floor' as const }
-          : dominated21 || (vi.isOmaha && made40?.weak && eq15 < equity)
-            ? { continuationGuard: 'dominated_commitment_floor' as const }
-            : {}),
+        ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
+          ? { continuationGuard: 'dominated_commitment_floor' as const }
+          : useV20 && pressure20 >= 2
+            ? { continuationGuard: 'multiway_commitment_floor' as const }
+            : dominated21 || (vi.isOmaha && made40?.weak && eq15 < equity)
+              ? { continuationGuard: 'dominated_commitment_floor' as const }
+              : {}),
       };
     }
 
@@ -8307,7 +8319,13 @@ export class HorseLogic {
         });
         if (tele15) noteFire(v.call ? 'v38_river_call' : 'v38_river_fold');
         if (v.call) return { action: 'call', amount: toCall, thinkTime: 0 };
-        return { action: 'fold', thinkTime: 0 };
+        return {
+          action: 'fold',
+          thinkTime: 0,
+          ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
+            ? { continuationGuard: 'dominated_commitment_floor' as const }
+            : {}),
+        };
       }
       // Flop / turn in a solverless game: realized equity vs the raked price.
       const drawy38 = cat <= 1 && drawsLive && equity >= (street === 'flop' ? 0.3 : 0.2);
@@ -8346,7 +8364,13 @@ export class HorseLogic {
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       if (tele15) noteFire('v38_ev_fold');
-      return { action: 'fold', thinkTime: 0 };
+      return {
+        action: 'fold',
+        thinkTime: 0,
+        ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
+          ? { continuationGuard: 'dominated_commitment_floor' as const }
+          : {}),
+      };
     }
     if (
       eq15 + impliedBonus >=
@@ -8370,7 +8394,13 @@ export class HorseLogic {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
 
-    return { action: 'fold', thinkTime: 0 };
+    return {
+      action: 'fold',
+      thinkTime: 0,
+      ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
+        ? { continuationGuard: 'dominated_commitment_floor' as const }
+        : {}),
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────

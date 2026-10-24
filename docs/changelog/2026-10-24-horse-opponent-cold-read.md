@@ -7,3 +7,5 @@ Scanning the existing player index still visits tens of thousands of unrelated g
 The existing merged-migration applier builds the index concurrently before the short function transaction. Its normal DDL window, immutable merged bytes and invalid-index refusal remain in force. No engine replacement or financial mutation is required. The migration must validate the actual index before enabling the new read.
 
 Qualification and installation evidence remain in `CHECKPOINT-horse-opponent-memory.md`. A passing local test or one-player read does not certify the full live request or fleet activation.
+
+Required engine qualification exposed an existing wall-clock-dependent registration-door fixture. Its three synthetic entrants are now tested at a fixed hour when all are on duty; date mocking is restored after every case. All five fixture cases pass with their original assertions. Production horse schedules and registration behavior are unchanged.

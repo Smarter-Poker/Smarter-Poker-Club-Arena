@@ -80,6 +80,7 @@ import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
   countStylesOnBoard,
+  cashStyleKeyOf,
   isCensusTable,
   isClusterFront,
   isHiddenClusterMember,
@@ -3610,7 +3611,7 @@ function ClubHomePageContent({
               : Number(table.current_players) || 0,
             game: isClusterFront(table as unknown as LobbyTableRow),
             name: table.name,
-            style: table.cluster_template ?? null,
+            style: cashStyleKeyOf(table as unknown as LobbyTableRow),
             row: table as unknown as Record<string, unknown>,
             settings,
           })

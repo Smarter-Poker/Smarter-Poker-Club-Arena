@@ -516,9 +516,9 @@ describe('the Stakes menu counts styles', () => {
 
   it('prints the line in the menu order with zeros, not gaps', () => {
     expect(styleCountsLine(CASH_STYLES, countStylesOnBoard(rows))).toBe(
-      'Classic 2 / Lightning Games 1'
+      'Classic 2 / Lightning Games 1 / Madness 0'
     );
-    expect(styleCountsLine(CASH_STYLES, {})).toBe('Classic 0 / Lightning Games 0');
+    expect(styleCountsLine(CASH_STYLES, {})).toBe('Classic 0 / Lightning Games 0 / Madness 0');
   });
 
   it('the menu shows the line and a figure beside each style; without counts it is as it was', () => {
@@ -553,7 +553,7 @@ describe('the Stakes menu counts styles', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /stakes/i }));
     const menu = within(bar).getByRole('group', { name: 'Stakes' });
     expect(within(menu).getByTestId('lt-style-counts').textContent).toBe(
-      'Classic 12 / Lightning Games 6'
+      'Classic 12 / Lightning Games 6 / Madness 0'
     );
     expect(within(menu).getByRole('button', { name: 'Classic, 12 Games' })).toBeTruthy();
     expect(within(menu).getByRole('button', { name: 'Lightning Games, 6 Games' })).toBeTruthy();

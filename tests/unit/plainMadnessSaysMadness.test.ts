@@ -81,3 +81,23 @@ describe('a plain Classic game is untouched', () => {
     expect(cashStyleNote(e)).toBe('Big Blind Ante, 40% Minimum VPIP');
   });
 });
+
+describe('Madness is its own style on the board', () => {
+  it('counts and filters apart from Classic and Lightning Games', async () => {
+    const { countStylesOnBoard, cashStyleKeyOf } =
+      await import('../../src/components/lobby/lobbyEntries');
+    const { CASH_STYLES } = await import('../../src/components/lobby/advancedFilterSpec');
+    expect(CASH_STYLES.find((s) => s.key === 'straight_madness')?.label).toBe('Madness');
+    expect(cashStyleKeyOf(row({}))).toBe('straight_madness');
+    expect(cashStyleKeyOf(row({ nit_game: false }))).toBe('classic');
+    expect(cashStyleKeyOf(row({ cluster_template: 'action' }))).toBe('madness');
+    const front = { role: 'main', main_index: 1 } as Partial<LobbyTableRow>;
+    expect(
+      countStylesOnBoard([
+        row({ ...front, cluster_id: 'a' }),
+        row({ ...front, cluster_id: 'b', nit_game: false }),
+        row({ ...front, cluster_id: 'c', cluster_template: 'madness' }),
+      ])
+    ).toEqual({ straight_madness: 1, classic: 1, madness: 1 });
+  });
+});

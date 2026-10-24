@@ -16,3 +16,12 @@ card printed the template's word.
   same game.
 - It stays an ordinary game: no Lightning icon, no Lightning door.
 - Pinned by `tests/unit/plainMadnessSaysMadness.test.ts`.
+
+## Madness is its own style
+
+Dan, same day: "THERE IS ONLY LIGHTNING AND CLASSIC. NO STRAIGHT MADNESS GAME
+WITHOUT LIGHTNING". The Stakes menu, the Game Style filter and the style counts
+now offer three styles: Classic, Lightning Games and Madness
+(`straight_madness`, decided by `cashStyleKeyOf` from the same table rules).
+Picking Classic no longer shows the Madness game, and picking Madness shows it
+alone.

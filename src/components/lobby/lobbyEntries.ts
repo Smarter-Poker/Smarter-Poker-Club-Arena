@@ -1397,15 +1397,34 @@ function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
  * blind ante and a VPIP floor. Neither is ever set on a plain Classic table.
  */
 export function plainMadnessStyleOf(
-  t: Pick<
-    LobbyTableRow,
-    'cluster_template' | 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'
+  t: { cluster_template?: string | null } & Partial<
+    Pick<LobbyTableRow, 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'>
   >
 ): { label: string; note: string } | null {
   if (cashTemplateKey(String(t.cluster_template ?? '')) !== 'classic') return null;
   const floor = Number(t.maintain_percent_min) || 0;
   if (t.big_blind_ante_enabled !== true || t.nit_game !== true || floor <= 0) return null;
   return { label: 'Madness', note: `Big Blind Ante, ${floor}% Minimum VPIP` };
+}
+
+/** The filter and count key for Madness without Lightning; Lightning Games keep `madness`. */
+export const STRAIGHT_MADNESS_STYLE = 'straight_madness';
+
+/**
+ * The style a cash game counts and filters under: Classic, Lightning Games
+ * (`madness`, historical `action` folded in) or Madness without Lightning.
+ */
+export function cashStyleKeyOf(
+  t: { cluster_template?: string | null } & Partial<
+    Pick<LobbyTableRow, 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'>
+  >
+): string | null {
+  if (plainMadnessStyleOf(t)) return STRAIGHT_MADNESS_STYLE;
+  const historicalKey = String(t.cluster_template ?? '')
+    .trim()
+    .toLowerCase();
+  if (!historicalKey) return null;
+  return historicalKey === 'action' ? 'madness' : historicalKey;
 }
 
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
@@ -1436,7 +1455,7 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           id: t.cluster_id,
           mustMove: t.cluster_must_move !== false,
           template: t.cluster_template ?? null,
-          style: plainMadnessStyleOf(t),
+          ...(plainMadnessStyleOf(t) ? { style: plainMadnessStyleOf(t) } : {}),
           tables: figures.tables,
           state: t.cluster_state ?? null,
           /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
@@ -1916,16 +1935,15 @@ export function cashTemplateLabel(template: string | null | undefined): string |
  */
 export function countStylesOnBoard(
   rows: ReadonlyArray<
-    Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & { cluster_template?: string | null }
+    Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
+      cluster_template?: string | null;
+    } & Partial<Pick<LobbyTableRow, 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'>>
   >
 ): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const r of rows) {
     if (!r.cluster_id || !isClusterFront(r)) continue;
-    const historicalKey = String(r.cluster_template ?? '')
-      .trim()
-      .toLowerCase();
-    const key = historicalKey === 'action' ? 'madness' : historicalKey;
+    const key = cashStyleKeyOf(r);
     if (!key) continue;
     counts[key] = (counts[key] ?? 0) + 1;
   }

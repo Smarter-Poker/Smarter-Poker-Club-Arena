@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const transaction = readFileSync(resolve('server/scripts/engine-release-transaction.sh'), 'utf8');
 const up = readFileSync(resolve('server/scripts/engine-up.sh'), 'utf8');
@@ -25,7 +26,10 @@ describe('the owning release prepares an unstarted candidate before the cutover'
     expect(certificate).toBeGreaterThan(prepared);
     expect(token).toBeGreaterThan(certificate);
     expect(cutover).toBeGreaterThan(token);
-    expect(transaction.slice(cutover, cutover + 290)).toContain('ENGINE_UP_STAGED_RUN="$RUN_ID"');
+    expect(transaction.indexOf('\nunset TOKEN', cutover)).toBeGreaterThan(cutover);
+    expect(sliceBetween(transaction, 'bounded_break_command 75 env', '\nunset TOKEN')).toContain(
+      'ENGINE_UP_STAGED_RUN="$RUN_ID"'
+    );
     expect(transaction).toContain('BREAK_CUTOVER_PROOF_SECONDS=150');
     expect(transaction).toContain('BREAK_ROLLBACK_RESERVE_SECONDS=135');
     expect(up).toContain('flock -w 180 9');

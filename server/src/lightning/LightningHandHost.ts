@@ -143,6 +143,8 @@ import {
   type LightningObservationDeps,
 } from './LightningHorseObservation.js';
 import { recordLightningHorseResults } from './LightningHorseResults.js';
+import { planEarlyFold } from './LightningHorseEarlyFold.js';
+import { lightningVpipFloor } from './LightningHorseResults.js';
 import type { HorseReviewInput } from '../services/HorseHandReview.js';
 import {
   horseOpponentMemorySchema,
@@ -389,6 +391,8 @@ export interface LightningHandHostDeps {
    * for tests; the physical path's own doors otherwise.
    */
   horseObservation?: Partial<Pick<LightningObservationDeps, 'schema' | 'readProfiles' | 'report'>>;
+  /** The early-fold draw (LightningHorseEarlyFold); Math.random otherwise. Injected for tests. */
+  earlyFoldRandom?: () => number;
   /** Files the settled hand on the horse scoreboard (LightningHorseResults). Injected for tests. */
   recordHorseResults?: (input: HorseReviewInput) => Promise<void>;
   /** The jackpot payout doors (injected for tests; the physical ones otherwise). */
@@ -475,6 +479,8 @@ export class LightningHandHost {
   private startedAtMs = 0;
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private horseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** LightningHorseEarlyFold: a horse's pending Lightning Fold, by player. */
+  private earlyFolds = new Map<string, ReturnType<typeof setTimeout>>();
   /** The horse turn in flight: aborted when the turn moves on (one lane job per turn). */
   private horseAbort: AbortController | null = null;
   private horseGeneration = 0;
@@ -791,6 +797,54 @@ export class LightningHandHost {
    * controls the seat, its turns run on the human clock (action timer, time
    * bank, timeout) and the decision is announced like any player's.
    */
+  /**
+   * A HORSE FOLDS ITS TRASH EARLY, LIKE A PERSON (LightningHorseEarlyFold):
+   * a hand the brain folds from this seat whatever happens is folded through
+   * the person's own door ('fast_fold', this hand's context) after a person's
+   * reaction time - unless the horse's turn arrives first.
+   */
+  private armEarlyFold(userId: string, cards: Card[]): void {
+    const part = this.participants.get(userId);
+    if (!part?.isHorse || this.earlyFolds.has(userId)) return;
+    const plan = planEarlyFold(
+      {
+        cards,
+        variant: String(this.rules?.game_variant || 'nlh'),
+        blindRole: part.blindRole,
+        vpipFloor: lightningVpipFloor(this.rules ?? {}),
+        clientControlled: this.clientControls(userId),
+      },
+      this.deps.earlyFoldRandom ?? Math.random
+    );
+    if (!plan) return;
+    const handId = this.handId;
+    const timer = setTimeout(() => {
+      this.earlyFolds.delete(userId);
+      if (this.state !== 'dealing' || this.handId !== handId || this.turnUser === userId) return;
+      if (this.clientControls(userId)) return;
+      const st = this.hc?.getState();
+      const me = st?.players.find((p) => p.user_id === userId);
+      if (!st || !me || me.is_folded || st.stage !== 'preflop') return;
+      const out = this.handlePlayerAction(
+        userId,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${handId}`
+      );
+      noteFire(out.success ? 'lightning_horse_early_fold' : 'lightning_horse_early_fold_refused');
+    }, plan.delayMs);
+    (timer as { unref?: () => void }).unref?.();
+    this.earlyFolds.set(userId, timer);
+  }
+
+  private disarmEarlyFold(userId?: string): void {
+    for (const [id, timer] of this.earlyFolds) {
+      if (userId !== undefined && id !== userId) continue;
+      clearTimeout(timer);
+      this.earlyFolds.delete(id);
+    }
+  }
+
   private clientControls(userId: string): boolean {
     const p = this.participants.get(userId);
     if (!p?.isHorse) return false;
@@ -1163,6 +1217,7 @@ export class LightningHandHost {
         const room = this.watching.get(player.user_id);
         // To this player's room, for this player's sockets. Never a hub event.
         if (room) this.sendHoleCards(player.user_id, room, player.seat, event.cards);
+        this.armEarlyFold(player.user_id, event.cards);
         break;
       }
       case 'TURN_CHANGE':
@@ -1344,6 +1399,8 @@ export class LightningHandHost {
     const contextAtTurn = playerActionContext(hc);
     const player = hc.getState().players.find((p) => p.seat === seat);
     if (!player) return;
+    // The turn reached a horse before its early fold: the brain decides now.
+    this.disarmEarlyFold(player.user_id);
     this.clearTurn();
     // The physical turn settle: a just-dealt hand or street gets its beat first.
     const now = this.now();
@@ -2534,6 +2591,7 @@ export class LightningHandHost {
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     this.clearTurn();
+    this.disarmEarlyFold();
     for (const p of this.participants.values()) {
       this.recordBank(p.playerId);
       this.timer.cancelTimer(this.timerKey, p.playerId);

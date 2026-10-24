@@ -83,6 +83,43 @@ export interface LightningHorseDecision {
   fast: FastHorseDecisionResult | null;
 }
 
+/**
+ * THE LIGHTNING TURN FENCE HAS THE PHYSICAL ENGINE'S FIVE PARTS (2026-10-24).
+ *
+ * The physical engine fences a horse turn as
+ * `table:hand:seat:lease:turn` (ServerTableEngineTurns.scheduleHorseAction),
+ * and every consumer of the fence reads exactly those five parts:
+ * HorseMindHandIdentity.horseMindHandFromDecision (the in-hand opponent read
+ * and the plan namespace), HorseDecisionHandBinding.anchorHorseDecisionHand
+ * (the private journal and the committed-hand binding) and the lifecycle
+ * journal keys. The Lightning host built `table:hand:seat:turn`, four parts,
+ * so for every Lightning horse decision the worker refused the in-hand
+ * HorseMind observation (explicit null identity), the barrel and raise plans
+ * had no hand key, and the journal counted three capture gaps per decision:
+ * production 2026-10-22..24 read 1,725,367 `phase15_hand_binding_invalid_turn_identity`
+ * and 5,176,830 `phase15_journal_capture_unavailable` (three per refusal).
+ *
+ * The lease part is the host table's verified cash lease generation, the same
+ * value Lightning settlement fences on (LightningHandHost.leaseFor). Without
+ * one the part reads `unverified`, exactly as the physical engine writes it,
+ * and the consumers refuse it by name rather than inventing an identity.
+ */
+export function lightningHorseDecisionFence(input: {
+  hostTableId: string;
+  handNumber: number;
+  seat: number;
+  leaseGeneration: string | null;
+  generation: number;
+}): string {
+  return [
+    input.hostTableId,
+    input.handNumber,
+    input.seat,
+    input.leaseGeneration ?? 'unverified',
+    input.generation,
+  ].join(':');
+}
+
 /** The physical engine's snapshot of this turn, for this horse. */
 export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorseDecisionSnapshot {
   const hc = turn.hc;

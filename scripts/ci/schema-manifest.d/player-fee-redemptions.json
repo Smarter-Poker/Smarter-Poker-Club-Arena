@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/woowoo-fee-reporting-01a16aec",
+  "_comment": "Declared object inventory for 20261023224850. This fragment is not installation evidence: require the exact migration history and live member/player fee readback before closing the delivery.",
+  "tables": ["smarter_private.player_fee_redemptions"],
+  "functions": []
+}

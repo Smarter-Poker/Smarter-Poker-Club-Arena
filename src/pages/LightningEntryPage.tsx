@@ -55,24 +55,14 @@ import { isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { lightningMultiTableLimit } from '../lightning/lightningCapabilities';
 import { lightningDeviceNow } from '../lightning/lightningDeviceReport';
-import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
-import { lightningRoute } from '../lightning/lightningLobby';
-import type { LightningMySessionRow } from '../lightning/lightningSessionApi';
-import LightningMySessions, {
+import { writeLightningPrefs } from '../lightning/lightningPrefs';
+import {
   lightningJoinWithinLimit,
   useLightningMySessions,
 } from '../components/lightning/LightningMySessions';
-import LightningPoolBadge from '../components/lightning/LightningPoolBadge';
+import LightningCashEntryCard from '../components/lightning/LightningCashEntryCard';
 import { useLightningPoolHealth } from '../components/lightning/useLightningSessionData';
 import './LightningEntryPage.css';
-
-/** The room path for one of the player's other sessions, with its tab name and stakes. */
-function mySessionPath(row: LightningMySessionRow): string {
-  const params = new URLSearchParams();
-  params.set('name', row.name);
-  if (row.stakes) params.set('stakes', row.stakes);
-  return `/table/${row.poolSessionId}?${params.toString()}`;
-}
 
 /** What the device allows, in the page's words. */
 export const LIGHTNING_LIMIT_TEXT =
@@ -126,7 +116,6 @@ export default function LightningEntryPage() {
   const validId = Boolean(clusterId && isUUID(clusterId));
   /* LIGHTNING PHASE 8: the player's other Lightning tables and the device limit. */
   const mine = useLightningMySessions(clusterId ?? null, validId);
-  const [prefs] = useState(() => readLightningPrefs());
 
   useEffect(() => {
     if (!validId || !clusterId) return;
@@ -299,15 +288,6 @@ export default function LightningEntryPage() {
   }
   const joinLabel = decision.kind === 'entry' ? decision.joinLabel : 'Join Game';
   const lightning = decision.kind === 'entry' && decision.lightning;
-  const entryGuidance = lightning
-    ? 'Buy In Once And Play One Stream Of Hands.'
-    : meta?.clusterMode === 'must_move'
-      ? MUST_MOVE_ENTRY_TEXT
-      : REGULAR_ENTRY_TEXT;
-  const stakes =
-    meta && meta.smallBlind > 0 && meta.bigBlind > 0
-      ? `Blinds ${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
-      : '';
   /* A paused, frozen or dead Cluster offers no door at all, and says so in the
      board's own words; a disabled one is closed as before. The database's own
      verdict (fn_lightning_pool_status.joinable, where pool_status's
@@ -328,74 +308,36 @@ export default function LightningEntryPage() {
     poolHealth?.joinsEnabled === false;
   /* At the device's limit, another Cluster's JOIN LIGHTNING is not offered. */
   const atLimit = lightning && !closed && !withinLimit;
-  const eyebrow = modeDisplay.closedLabel
-    ? `Game ${modeDisplay.closedLabel}`
-    : lightning || modeDisplay.label === 'LIGHTNING LIVE'
-      ? 'Lightning'
-      : 'Must Move';
   return (
     <div className="lightning-entry" data-testid="lightning-entry">
-      <EmptyState
-        eyebrow={eyebrow}
+      <LightningCashEntryCard
         title={meta?.name ?? 'Lightning'}
-        description={
-          joinsClosed
-            ? LIGHTNING_JOINS_CLOSED_TEXT
-            : closed
-              ? 'This Game Is Not Taking Players.'
+        variant={meta?.variant ?? 'NLH'}
+        stakes={meta ? `${meta.smallBlind}/${meta.bigBlind}` : ''}
+        players={poolHealth?.players}
+        buyIn={
+          meta?.minBuyIn != null && meta.maxBuyIn != null
+            ? `${meta.minBuyIn.toLocaleString()} - ${meta.maxBuyIn.toLocaleString()}`
+            : undefined
+        }
+        status={
+          joining
+            ? 'Joining'
+            : joinsClosed || closed
+              ? (modeDisplay.closedLabel ?? 'Closed')
               : atLimit
-                ? LIGHTNING_LIMIT_TEXT
-                : [stakes, entryGuidance].filter(Boolean).join('. ')
+                ? 'Limit'
+                : 'Running'
         }
-        action={
-          joinsClosed || closed || atLimit
-            ? undefined
-            : { label: joining ? 'Joining...' : joinLabel, onClick: () => void join() }
-        }
-        secondaryAction={{ label: 'Return To Lobby', onClick: () => navigate('/') }}
-      >
-        {joinsClosed ? (
-          <button
-            type="button"
-            className="lightning-entry__join-closed"
-            data-testid="lightning-entry-join-closed"
-            disabled
-            aria-disabled="true"
-          >
-            {joinLabel}
-          </button>
-        ) : null}
-        {lightning && poolHealth ? (
-          <div className="lightning-entry__badge">
-            <LightningPoolBadge status={poolHealth.status} players={poolHealth.players} />
-          </div>
-        ) : null}
-      </EmptyState>
-      {clusterId && mine.rows ? (
-        <LightningMySessions
-          rows={mine.rows}
-          currentClusterId={clusterId}
-          limit={tableLimit}
-          lastPlayed={
-            prefs.lastClusterId
-              ? {
-                  clusterId: prefs.lastClusterId,
-                  name: prefs.lastClusterName,
-                  stakes: prefs.lastStakes,
-                }
-              : null
-          }
-          onViewGame={(row) => {
-            registerLightningPoolSession({
-              poolSessionId: row.poolSessionId,
-              clusterId: row.clusterId,
-              meta: null,
-            });
-            navigate(mySessionPath(row));
-          }}
-          onOpenCluster={(id) => navigate(lightningRoute(id))}
-        />
-      ) : null}
+        primaryTestId={joinsClosed ? 'lightning-entry-join-closed' : undefined}
+        actions={{
+          primaryLabel: joining ? 'Joining...' : joinLabel,
+          primaryDisabled: joining || closed || joinsClosed || atLimit,
+          onPrimary: () => void join(),
+          secondaryLabel: 'Return To Lobby',
+          onSecondary: () => navigate('/'),
+        }}
+      />
     </div>
   );
 }

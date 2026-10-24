@@ -21,6 +21,18 @@ const LEGS = [
   'normal_fold_to_next_hand',
   'fold_watch_to_next_hand',
 ];
+
+/**
+ * This harness's own refusals are fixed plain-word sentences ("Existing Funded
+ * Active Pilot Player Unavailable"). Only that shape is reported; any other
+ * message is redacted, because an arbitrary exception can carry a URL or a
+ * credential and the witness report is uploaded as an artifact.
+ */
+export function witnessReason(error) {
+  const message = typeof error?.message === 'string' ? error.message.trim() : '';
+  return /^[A-Z][A-Za-z]*( [A-Za-z]+){1,11}$/.test(message) ? message : 'redacted';
+}
+
 export async function validateLatencyPlayer(admin, pin, validate = validatePlayer) {
   return validatePlayablePlayer(admin, pin, validate);
 }
@@ -338,6 +350,16 @@ export async function witnessLatencyWorkload({
       error?.message === 'Playable Pilot Anchor Unavailable'
         ? 'player_anchor_not_playable'
         : 'bounded_partial_or_observation_unavailable';
+    // Name what actually went wrong (CLAUDE.md 10.86 rule 1). On 2026-10-23
+    // two dispatches failed in preflight on a pool session that had closed
+    // eleven minutes earlier, and the report said only
+    // "bounded_partial_or_observation_unavailable": the reason
+    // ("Existing Funded Active Pilot Player Unavailable") was thrown here and
+    // dropped. The cause stays one of the known codes; the reason rides beside
+    // it, but only when it is one of this harness's own plain-word refusals.
+    // Anything else (a URL, a token, a stack) is redacted, as the witness
+    // already redacts every exception it reports.
+    report.reason = witnessReason(error);
   } finally {
     cleaning = true;
     const cleanupBudget = () => Math.max(1, end - Date.now());

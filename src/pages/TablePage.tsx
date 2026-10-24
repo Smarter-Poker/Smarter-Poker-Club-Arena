@@ -2296,15 +2296,23 @@ function LiveTablePage({
    */
   const engineSnapshot = rawEngineSnapshot;
   /* A fold pressed out of turn stays on the felt until the action reaches the
-     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot. */
+     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot.
+     LIGHTNING ONLY (Dan 2026-10-24, from a player report: "NO PART OF THE
+     LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE TOUCHING THE CLASSIC GAMES").
+     On a Classic table a folded player keeps their avatar and plate for the
+     whole hand, exactly as normal poker; the tracker never runs there. */
   const foldRevealRef = useRef<FoldRevealTracker | null>(null);
   const foldReveal = useMemo(() => {
+    if (!lightningRoom) {
+      foldRevealRef.current = null;
+      return null;
+    }
     foldRevealRef.current = nextFoldReveal(
       foldRevealRef.current,
       engineSnapshot as unknown as Record<string, unknown> | null
     );
     return foldRevealRef.current;
-  }, [engineSnapshot]);
+  }, [engineSnapshot, lightningRoom]);
   const lightningObserver = isLightningObserverSnapshot(engineSnapshot);
   const [lightningAnchorFunded, setLightningAnchorFunded] = useState(false);
   useEffect(() => setLightningAnchorFunded(false), [tableId, userId]);
@@ -24034,7 +24042,11 @@ function LiveTablePage({
     () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
     [tableState.clusterId, lightningRoom]
   );
-  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
+  /* Asked once: a Classic table's game answers "no Lightning" and is never
+     polled again (Dan 2026-10-24, Lightning never touches Classic). */
+  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds, {
+    settleClassic: true,
+  });
   const anchorLightningClusterId =
     tableState.clusterId &&
     !lightningRoom &&
@@ -26856,13 +26868,15 @@ function LiveTablePage({
                   player={displayPlayer}
                   arrival={lightningRoom ? seatArrivals[seatNumber] : undefined}
                   foldCommitted={
+                    lightningRoom != null &&
                     hasCommittedSeatFold(
                       engineSnapshot,
                       tableId,
                       tableState.handNumber,
                       seatNumber,
                       displayPlayer?.id
-                    ) && foldRevealed(foldReveal, seatNumber)
+                    ) &&
+                    foldRevealed(foldReveal, seatNumber)
                   }
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may

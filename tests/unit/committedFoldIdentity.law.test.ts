@@ -48,16 +48,47 @@ describe('a player disappears only after their actual fold', () => {
       false
     );
   });
-  it('the maintained table supplies authoritative state to the real seat, without a format filter', () => {
+  it('the maintained table supplies authoritative state to the real seat', () => {
     const source = readFileSync('src/pages/TablePage.tsx', 'utf8').replace(/\s+/g, ' ');
     expect(source).toMatch(
-      /foldCommitted=\{ hasCommittedSeatFold\(\s*engineSnapshot, tableId, tableState.handNumber, seatNumber, displayPlayer\?\.id\s*\) && foldRevealed\(foldReveal, seatNumber\) \}/
+      /foldCommitted=\{ lightningRoom != null && hasCommittedSeatFold\(\s*engineSnapshot, tableId, tableState.handNumber, seatNumber, displayPlayer\?\.id\s*\) && foldRevealed\(foldReveal, seatNumber\) \}/
     );
     expect(source).toContain('nextFoldReveal( foldRevealRef.current,');
     const css = readFileSync('src/components/table/SeatSlot.css', 'utf8');
     const rule = css.slice(css.indexOf('.seat--fold-hidden >'));
     expect(rule).toContain('visibility: hidden');
     expect(rule).not.toMatch(/seat__wager-group|seat__cards/);
+  });
+});
+
+/* Dan 2026-10-24, on a player report that avatars on Classic tables vanished
+   and came back every hand: "NO PART OF THE LIGHTNING GAMES OR FUNCTIONALITY
+   SHOULD BE TOUCHING THE CLASSIC GAMES." Hiding a folded player is a Lightning
+   rule. A Classic table is normal poker: the folded player stays seated, with
+   avatar and plate, for the whole hand. */
+describe('a Classic table never hides a folded player', () => {
+  const source = readFileSync('src/pages/TablePage.tsx', 'utf8').replace(/\s+/g, ' ');
+  it('the seat is told a fold is committed only inside a Lightning room', () => {
+    const prop = source.slice(source.indexOf('foldCommitted={'));
+    expect(prop.slice(0, 60)).toContain('foldCommitted={ lightningRoom != null &&');
+    expect(source.match(/foldCommitted=\{/g)?.length).toBe(1);
+  });
+  it('the fold reveal tracker does not run on a Classic table', () => {
+    const memo = source.slice(source.indexOf('const foldReveal = useMemo('));
+    expect(memo.slice(0, 200)).toMatch(
+      /if \(!lightningRoom\) \{ foldRevealRef.current = null; return null; \}/
+    );
+    expect(memo).toMatch(
+      /^const foldReveal = useMemo\([\s\S]*?\}, \[engineSnapshot, lightningRoom\]\);/
+    );
+  });
+  it('the Lightning room flag is the pool-session lookup, which is null for every Classic table', () => {
+    expect(source).toContain('const lightningRoom = useLightningPoolSession(tableId);');
+  });
+  it('the table asks whether its game is Lightning once, and stops for a Classic game', () => {
+    expect(source).toMatch(
+      /useLightningLobbyStates\(anchorLightningClusterIds, \{ settleClassic: true, \}\)/
+    );
   });
 });
 

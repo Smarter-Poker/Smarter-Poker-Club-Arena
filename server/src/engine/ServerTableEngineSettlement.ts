@@ -42,6 +42,8 @@ import {
   persistTimeBanks,
   reconcileTableSeatCount,
   autoRebuyHorse,
+  readClubChipBalances,
+  readSeatWalletClub,
   processLeavePending,
   logBBJCollection,
   logInsuranceSettlement,
@@ -65,6 +67,7 @@ import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import {
+  capTopUpToWallet,
   horseCashTopUpStyle,
   horseTopUpAmount,
   isPlo5Variant,
@@ -3852,17 +3855,32 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (isDiamondCash || this.isTournamentTable() || isMaintenanceFrozen()) return;
       const variant = this.tableInfo?.game_variant;
       if (!isPlo5Variant(variant)) return;
+      // Never a Lightning table: its Cluster refills through the pooled
+      // auto-rebuy on the session's anchor seat. A Cluster table whose
+      // Lightning switch has not been read yet is treated as Lightning.
+      if (this.clusterLightningEnabled === true) return;
+      if (this.tableInfo?.cluster_id && this.clusterLightningEnabled !== false) return;
       const maxBuyIn = this.getMaxBuyIn();
       if (!(maxBuyIn > 0)) return;
       for (const horse of players) {
         if (!horse.is_horse || horsesReloadedThisHand.has(horse.user_id)) continue;
         if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
-        const amount = horseTopUpAmount({
+        const wanted = horseTopUpAmount({
           userId: horse.user_id,
           variant,
           stack: Number(horse.stack),
           maxBuyIn,
         });
+        if (!(wanted > 0)) continue;
+        // Paid from the horse's own wallet only, as a human's top-up is.
+        const walletClub =
+          (await readSeatWalletClub(this.tableId, horse.user_id)) || this.tableInfo?.club_id || '';
+        if (!this.lifecycleCanMutate()) return;
+        const wallet = walletClub
+          ? (await readClubChipBalances(walletClub, [horse.user_id])).get(horse.user_id)
+          : undefined;
+        if (!this.lifecycleCanMutate()) return;
+        const amount = capTopUpToWallet(wanted, wallet);
         if (!(amount > 0)) continue;
         const funding = await autoRebuyHorse(
           this.tableId,

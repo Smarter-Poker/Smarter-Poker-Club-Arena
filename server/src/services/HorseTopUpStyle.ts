@@ -26,8 +26,19 @@
  *
  * MONEY: this module decides only WHETHER and HOW MUCH. The chips move through
  * `fn_horse_fund_from_treasury` exactly like a horse rebuy - the horse's own
- * club wallet first, through the human add-on door, then the club treasury for
- * any shortfall - and the amount never takes the stack past the table maximum.
+ * club wallet first, through the human add-on door - and the amount never takes
+ * the stack past the table maximum.
+ *
+ * A TOP-UP IS PAID FROM THE HORSE'S OWN WALLET ONLY (`capTopUpToWallet`). A
+ * human cannot add chips they do not have, and an unknown balance never tops a
+ * human up (TablePage). A horse is held to the same rule: otherwise a losing
+ * horse topped back to the maximum every hand would never bust, never reach its
+ * rebuy stop-loss, and draw on the club treasury indefinitely.
+ *
+ * NOT LIGHTNING. A Lightning Cluster refills through its own pooled auto-rebuy
+ * (`fn_lightning_auto_rebuy`, keyed to the pool session's anchor seat), and no
+ * Classic rule touches it. The engine skips Lightning tables; the seat flag is
+ * only written for non-Lightning tables.
  */
 
 import { createHash } from 'node:crypto';
@@ -97,4 +108,15 @@ export function horseTopUpAmount(input: HorseTopUpInput): number {
   if (style === 'add_on' && stack >= max * horseAddOnLine(input.userId)) return 0;
   const amount = Math.floor((max - stack) * 100) / 100;
   return amount > 0 ? amount : 0;
+}
+
+/**
+ * The top-up the horse's own club wallet can pay, to the cent, or 0. An
+ * unknown balance (undefined) is 0: a top-up is optional, so unlike a rebuy it
+ * fails CLOSED.
+ */
+export function capTopUpToWallet(amount: number, wallet: number | undefined): number {
+  if (!(amount > 0) || wallet === undefined || !Number.isFinite(wallet) || wallet <= 0) return 0;
+  const capped = Math.floor(Math.min(amount, wallet) * 100) / 100;
+  return capped > 0 ? capped : 0;
 }

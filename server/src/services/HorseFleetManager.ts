@@ -551,6 +551,44 @@ const SEED_CYCLE_SEATING_BUDGET_MS = Number(
 );
 
 export class HorseFleetManager {
+  /**
+   * Lightning Clusters (cash_games.lightning_enabled), read at most once a
+   * minute, for the PLO5 Auto Top Up seat flag only: a Lightning Cluster
+   * refills through its own pooled auto-rebuy, so a horse never sits there
+   * with the Classic flag on. Null = unread, and an unread set writes no flag.
+   */
+  private lightningClusterRead: { at: number; ids: Set<string> | null } = { at: 0, ids: null };
+
+  private async lightningClusterIds(): Promise<Set<string> | null> {
+    const now = Date.now();
+    if (this.lightningClusterRead.ids && now - this.lightningClusterRead.at < 60_000) {
+      return this.lightningClusterRead.ids;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('cash_games')
+        .select('id')
+        .eq('lightning_enabled', true);
+      if (error) return null;
+      const ids = new Set<string>(((data ?? []) as Array<{ id: string }>).map((r) => String(r.id)));
+      this.lightningClusterRead = { at: now, ids };
+      return ids;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Does this horse sit at this table with Auto Top Up on? (HorseTopUpStyle) */
+  private async sitsWithAutoTopUp(
+    horseId: string,
+    table: { game_variant?: unknown; cluster_id?: string | null }
+  ): Promise<boolean> {
+    if (!horseSitsWithAutoTopUp(horseId, table.game_variant)) return false;
+    if (!table.cluster_id) return true;
+    const lightning = await this.lightningClusterIds();
+    return lightning !== null && !lightning.has(table.cluster_id);
+  }
+
   private isRunning = false;
   private seedInterval: ReturnType<typeof setInterval> | null = null;
   /**
@@ -3764,7 +3802,7 @@ export class HorseFleetManager {
               },
               {
                 diamond: arenaTable,
-                autoTopUp: horseSitsWithAutoTopUp(horse.id, table.game_variant),
+                autoTopUp: await this.sitsWithAutoTopUp(horse.id, table),
               }
             );
             if (!success) return false;
@@ -4871,7 +4909,7 @@ export class HorseFleetManager {
           table.name,
           seatClub ?? null,
           undefined,
-          { autoTopUp: horseSitsWithAutoTopUp(offer.user_id, table.game_variant) }
+          { autoTopUp: await this.sitsWithAutoTopUp(offer.user_id, table) }
         );
         if (!ok) continue;
 

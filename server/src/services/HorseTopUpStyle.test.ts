@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
+  capTopUpToWallet,
   ADD_ON_LINE_MAX,
   ADD_ON_LINE_MIN,
   horseAddOnLine,
@@ -76,15 +77,28 @@ describe('PLO5 horse top-up style', () => {
     }
   });
 
+  it('pays a top-up from the horse wallet only, and never on an unknown balance', () => {
+    expect(capTopUpToWallet(300, 1000)).toBe(300);
+    expect(capTopUpToWallet(300, 120.555)).toBe(120.55);
+    expect(capTopUpToWallet(300, 0)).toBe(0);
+    expect(capTopUpToWallet(300, undefined)).toBe(0);
+    expect(capTopUpToWallet(300, NaN)).toBe(0);
+    expect(capTopUpToWallet(0, 500)).toBe(0);
+  });
+
   it('is wired: seats carry the flag and settlement runs the top-up with its own key', () => {
     const read = (rel: string) =>
       readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
     const fleet = read('./HorseFleetManager.ts');
     expect(fleet).not.toContain('p_auto_rebuy: false');
-    expect(fleet.match(/horseSitsWithAutoTopUp\(/g)?.length).toBe(2);
+    expect(fleet.match(/await this\.sitsWithAutoTopUp\(/g)?.length).toBe(2);
+    expect(fleet).toContain(".eq('lightning_enabled', true)");
     const settle = read('../engine/ServerTableEngineSettlement.ts');
     expect(settle).toContain("runStep('horse_top_ups'");
     expect(settle).toMatch(/snap\.handNumber,\s*'topup'\s*\)/);
+    const step = settle.slice(settle.indexOf("runStep('horse_top_ups'"));
+    expect(step).toContain('if (this.clusterLightningEnabled === true) return;');
+    expect(step).toContain('capTopUpToWallet(wanted, wallet)');
     const wallets = read('./supabase/wallets.ts');
     expect(wallets).toContain("'horse-topup:'");
   });

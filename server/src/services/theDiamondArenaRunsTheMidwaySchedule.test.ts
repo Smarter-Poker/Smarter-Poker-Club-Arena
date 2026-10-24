@@ -1,4 +1,3 @@
-import { gameLaneFor, isActiveNow } from './HorseBehavior.js';
 /**
  * THE DIAMOND ARENA RUNS THE MIDWAY UNION'S SCHEDULE (Dan, 2026-10-06 13:09 CT:
  * "USE THE SAME TOURNAMENT SCHEDULE AND RAKE AS THE MIDWAY UNION FOR NOW").
@@ -33,7 +32,7 @@ import {
   readDiamondSpawnAnswer,
 } from './diamondScheduledSpawn.js';
 import { MIDWAY_UNION_ID, overlayHostsFrom } from './HorseOverlayGuard.js';
-import { gameLaneFor } from './HorseBehavior.js';
+import { gameLaneFor, isActiveNow } from './HorseBehavior.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
 import { withMysteryBountyTerms } from '../tournament/mysteryBountyTerms.js';

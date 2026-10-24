@@ -13,6 +13,10 @@
       "pct": 4.2,
       "reason": "Artwork, and the measurement is unambiguous: this is a 1000x8 horizontal TILING rail, and cleaning removes 40 pixels that are 5 complete columns - 5 in every one of the 8 rows. Tiled across a console that is five transparent slits through the rail. The pixels it wants are the light brushed band in the rail, which is smooth and neutral by design."
     },
+    "public/assets/club-buttons/console/spade-console-v2/mid.png": {
+      "pct": 0.5,
+      "reason": "Artwork, the same five columns as spade-console-v1/mid.png (x 32-34 and 962-963, every row): the light brushed band in the tiling rail. v2 is v1 with the glass between the rails made opaque (scripts/art/solidify-spade-console.py), so the rail pixels are untouched and only the denominator grew, which is why 4.2% now reads 0.5%. Cleaning would cut five slits through the rail."
+    },
     "public/assets/club-buttons/game-cards/plo/shark-four-bay-v1/live-dot.png": {
       "pct": 0.7,
       "reason": "Noise, not matte. 23 pixels, mean luminance 20 - nearly black. It is nibbling the dark glow halo around the green dot, not a white ramp. Before and after are indistinguishable."

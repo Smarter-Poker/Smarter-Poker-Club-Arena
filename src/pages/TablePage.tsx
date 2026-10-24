@@ -375,7 +375,7 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { isLightningMode, lightningRoute } from '../lightning/lightningLobby';
+import { isClassicLobbyState, isLightningMode, lightningRoute } from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -2296,15 +2296,23 @@ function LiveTablePage({
    */
   const engineSnapshot = rawEngineSnapshot;
   /* A fold pressed out of turn stays on the felt until the action reaches the
-     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot. */
+     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot.
+     LIGHTNING ONLY (Dan 2026-10-24, from a player report: "NO PART OF THE
+     LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE TOUCHING THE CLASSIC GAMES").
+     On a Classic table a folded player keeps their avatar and plate for the
+     whole hand, exactly as normal poker; the tracker never runs there. */
   const foldRevealRef = useRef<FoldRevealTracker | null>(null);
   const foldReveal = useMemo(() => {
+    if (!lightningRoom) {
+      foldRevealRef.current = null;
+      return null;
+    }
     foldRevealRef.current = nextFoldReveal(
       foldRevealRef.current,
       engineSnapshot as unknown as Record<string, unknown> | null
     );
     return foldRevealRef.current;
-  }, [engineSnapshot]);
+  }, [engineSnapshot, lightningRoom]);
   const lightningObserver = isLightningObserverSnapshot(engineSnapshot);
   const [lightningAnchorFunded, setLightningAnchorFunded] = useState(false);
   useEffect(() => setLightningAnchorFunded(false), [tableId, userId]);
@@ -2434,24 +2442,6 @@ function LiveTablePage({
       isBountyTournament: false,
     };
   });
-  /* Dan 2026-10-24: "THERE SHOULDN'T BE A WAITING LIST WHEN THERE ARE ALWAYS
-     OPEN SEATS. REMOVE THE ABILITY TO EVEN JOIN A WAITING LIST IN A LIGHTNING
-     GAME, PLAYER BUYS IN AND GETS DEALT INTO A NEW TABLE ASAP, NO WAITING."
-     A spectator watching a physical table of a Lightning game is offered the
-     game's own Join Lightning entry (one buy-in into the pool), never this
-     table's chair queue and never a seat at this one table. */
-  const anchorLightningClusterIds = useMemo(
-    () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
-    [tableState.clusterId, lightningRoom]
-  );
-  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
-  const anchorLightningClusterId =
-    tableState.clusterId &&
-    !lightningRoom &&
-    (lightningObserver ||
-      isLightningMode(spectatorLightningStates[tableState.clusterId]?.clusterMode))
-      ? tableState.clusterId
-      : null;
   /* CHIP CONTINUITY: tournaments have no stay clock. */
   const heroLeaveLocked = !tableState.isTournament && heroLeaveLockedRaw;
 
@@ -20864,7 +20854,15 @@ function LiveTablePage({
      other render. `safeBB` splits and parses a string; `holeCardCountFor` switches on the
      variant. Neither depends on the seat. One table-wide value each, recomputed
      only when the input actually changes. */
-  const seatBigBlind = useMemo(() => safeBB(tableState.blinds), [tableState.blinds]);
+  /* The big blind every figure on the felt is printed against - the seats,
+     the bets in front of them and the pot (Dan 2026-10-24). Display only, and
+     0 while the table's blinds are not yet known ("?/?" on a fresh Lightning
+     room or an auto-seat): with nothing true to divide by, every BB figure
+     prints its chip amount and they all switch to BB together the moment the
+     real blinds land. It used to fall back to 2, so a 5/10 table opened before
+     its blinds arrived showed five times too many big blinds. Game logic that
+     needs a working blind (the raise panel) keeps its own `bb`. */
+  const seatBigBlind = useMemo(() => safeBB(tableState.blinds, 0), [tableState.blinds]);
   /* VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant wins —
      a PLO4 bomb hand at an NLH table draws four card-backs per villain, and
      the winner-highlight evaluators below pick the right combination rule. */
@@ -24052,6 +24050,47 @@ function LiveTablePage({
     setShowWaitList(true);
   }, [loadWaitlist, tableState.clusterId]);
 
+  /* Dan 2026-10-24: "THERE SHOULDN'T BE A WAITING LIST WHEN THERE ARE ALWAYS
+     OPEN SEATS. REMOVE THE ABILITY TO EVEN JOIN A WAITING LIST IN A LIGHTNING
+     GAME, PLAYER BUYS IN AND GETS DEALT INTO A NEW TABLE ASAP, NO WAITING."
+     A spectator watching a physical table of a Lightning game is offered the
+     game's own Join Lightning entry (one buy-in into the pool), never this
+     table's chair queue and never a seat at this one table. */
+  const anchorLightningClusterIds = useMemo(
+    () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
+    [tableState.clusterId, lightningRoom]
+  );
+  /* Asked once: a Classic table's game answers Classic and is never polled
+     again (Dan 2026-10-24, Lightning never touches Classic). */
+  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds, {
+    settleClassic: true,
+  });
+  /* The database answers with a full state object for EVERY cash game, Classic
+     included, so a non-null answer is not "Lightning". Until 2026-10-24 it was
+     read that way, and every Classic spectator was offered Join Lightning
+     instead of the waiting list, and every Classic buy-in flashed "Joining
+     Lightning..." over the felt. A table is a Lightning anchor only while its
+     game is actually in a Lightning mode, or the engine is already showing a
+     Lightning hand on it. */
+  const tableGameLightningState = tableState.clusterId
+    ? spectatorLightningStates[tableState.clusterId]
+    : undefined;
+  const anchorLightningClusterId =
+    tableState.clusterId &&
+    !lightningRoom &&
+    (lightningObserver || isLightningMode(tableGameLightningState?.clusterMode))
+      ? tableState.clusterId
+      : null;
+  /* A game that can become Lightning while the player sits (Lightning switch
+     on). A Classic game never converts, so the handoff never watches it. */
+  const lightningCapableClusterId =
+    tableState.clusterId &&
+    (lightningRoom !== null ||
+      lightningObserver ||
+      (tableGameLightningState !== undefined && !isClassicLobbyState(tableGameLightningState)))
+      ? tableState.clusterId
+      : null;
+
   /**
    * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────
    *
@@ -24389,7 +24428,7 @@ function LiveTablePage({
      through, so this tab follows their chair into the pool-session room. */
   const lightningHandoff = useLightningAnchorHandoff({
     tableId,
-    clusterId: tableState.clusterId,
+    clusterId: lightningCapableClusterId,
     userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: lightningObserver
@@ -26866,13 +26905,15 @@ function LiveTablePage({
                   player={displayPlayer}
                   arrival={lightningRoom ? seatArrivals[seatNumber] : undefined}
                   foldCommitted={
+                    lightningRoom != null &&
                     hasCommittedSeatFold(
                       engineSnapshot,
                       tableId,
                       tableState.handNumber,
                       seatNumber,
                       displayPlayer?.id
-                    ) && foldRevealed(foldReveal, seatNumber)
+                    ) &&
+                    foldRevealed(foldReveal, seatNumber)
                   }
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may
@@ -28182,6 +28223,7 @@ function LiveTablePage({
                            print BB unconditionally while every seat next to it
                            printed chips. Same setting the seats and pot read. */
                         showStackInBB={v8Settings.show_stack_in_bb}
+                        displayBigBlind={seatBigBlind}
                         isMyTurn={true}
                         /* 2026-09-04 (audit item 6): the row is marked while
                            the socket is down. See ActionPanel.connectionStale. */

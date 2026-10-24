@@ -10,7 +10,7 @@ import { haptic } from '../../services/SoundService';
 import { TapHaptic } from '../haptics/TapHaptic';
 import '../../styles/table-design-tokens.css';
 import './ActionPanel.css';
-import { formatTableChips } from '../../utils/format';
+import { formatBigBlinds, formatTableChips } from '../../utils/format';
 
 interface ActionPanelProps {
   canFold: boolean;
@@ -161,6 +161,15 @@ interface ActionPanelProps {
    * hook read so this component stays presentational and unit-testable.
    */
   showStackInBB?: boolean;
+  /**
+   * The big blind the felt PRINTS against: the same figure as the seats and
+   * the pot, 0 while the table's blinds are not yet known (Dan 2026-10-24).
+   * `bigBlind` above keeps driving the slider grid and raise sizing, which
+   * need a working number; this one only decides what a BB label says, so
+   * the Call button never reads "15 BB" against a guessed blind while the
+   * seats beside it are still in chips. Defaults to `bigBlind`.
+   */
+  displayBigBlind?: number;
 }
 
 // Dan 2026-08-28: bet/raise amounts are never abbreviated — see
@@ -555,7 +564,12 @@ export default function ActionPanel({
   verticalSlider: _verticalSliderDeprecated,
   // Chips is the default and the rule — see the prop's docstring.
   showStackInBB = false,
+  displayBigBlind,
 }: ActionPanelProps) {
+  /* An amount in big blinds when the player reads the table in BB and the
+     felt knows its big blind; null otherwise, and the caller prints chips. */
+  const asBB = (n: number): string | null =>
+    showStackInBB ? formatBigBlinds(n, displayBigBlind ?? bigBlind) : null;
   /**
    * The table's indivisible amount: a cent for chips, a whole Diamond at a
    * Diamond table. See the `unit` prop for why the distinction is load-bearing
@@ -1274,8 +1288,8 @@ export default function ActionPanel({
               )}
               {/* Big blinds only when the player asked for them — chips are
                   the default everywhere (Dan 2026-08-25). */}
-              {showStackInBB && bigBlind > 0 && !amountTyping && (
-                <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
+              {!amountTyping && asBB(raiseAmount) && (
+                <span className="raise-value__bb">{asBB(raiseAmount)}</span>
               )}
             </div>
             <button
@@ -1415,9 +1429,7 @@ export default function ActionPanel({
                 every other number on the felt already did. */}
           <div className="raise-slider-vertical__caps" aria-hidden="true">
             <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-              {showStackInBB && bigBlind > 0
-                ? `${Math.round(minRaise / bigBlind)}BB`
-                : formatChips(minRaise)}
+              {asBB(minRaise)?.replace(' BB', 'BB') ?? formatChips(minRaise)}
             </span>
           </div>
         </div>
@@ -1508,10 +1520,12 @@ export default function ActionPanel({
               onAction('call');
             }}
             title={isDesktop ? 'Check/Call (C Or W)' : undefined}
-            aria-label={`Call ${formatChips(callAmount)}`}
+            aria-label={`Call ${asBB(callAmount) ?? formatChips(callAmount)}`}
           >
             <span className="action-btn__label">Call</span>
-            <span className="action-btn__amount">{formatChips(callAmount)}</span>
+            <span className="action-btn__amount">
+              {asBB(callAmount) ?? formatChips(callAmount)}
+            </span>
             {showPotOdds && pot > 0 && callAmount > 0 && (
               <span
                 className="action-btn__odds"

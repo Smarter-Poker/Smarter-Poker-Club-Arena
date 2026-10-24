@@ -243,7 +243,7 @@ describe('Drift Gate console source contract', () => {
     expect(component).not.toMatch(/crest="(?:club|diamond)"/);
     expect(component).not.toContain('family="shark"');
     expect(component).toContain('foot="foot"');
-    expect(flatFootCss).toContain('spade-console-v1/bottom-foot.png');
+    expect(flatFootCss).toContain('spade-console-v2/bottom-foot.png');
     expect(flatFootCss).not.toContain('bottom-plates.png');
     expect(sharkFootCss).toContain('shark-console-v2/bottom-plate.png');
     expect(component).not.toContain('dgp-card');

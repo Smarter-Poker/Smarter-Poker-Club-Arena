@@ -44,13 +44,42 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
 
-    // Lobby cards label the button "Join Lightning"; lobby rows read
-    // "Join Lightning" with an aria-label naming the game. Either is the door.
-    const joins = page.locator('button:visible:enabled', { hasText: /^\s*Join Lightning\s*$/ });
-    await expect(joins.first(), 'the member lobby lists a joinable Lightning game').toBeVisible({
-      timeout: 30_000,
+    // The live lobby is a row list (compact rows with a Details button on a
+    // phone, table rows on desktop). A row opens the game panel, and the panel
+    // holds Join Lightning: the exact path #7879 repaired. Games named
+    // "Lightning" that are not running Lightning offer Join Game instead, so
+    // the first panel that offers an enabled Join Lightning is the door.
+    const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
+    if (await allGames.count()) await allGames.click();
+    const rows = page
+      .locator(
+        '[data-testid="lobby-game-row"][data-kind="cash"], .club-home__games .lt-row[data-kind="cash"]'
+      )
+      .filter({ hasText: /lightning/i });
+    await expect(rows.first(), 'the member lobby lists a Lightning game').toBeVisible({
+      timeout: 45_000,
     });
-    await joins.first().click();
+    const panel = page.getByRole('dialog').filter({ has: page.locator('.arena-game-card') });
+    const tries = Math.min(await rows.count(), 8);
+    let opened = false;
+    for (let i = 0; i < tries && !opened; i += 1) {
+      const row = rows.nth(i);
+      const details = row.getByRole('button', { name: /^Details:/ });
+      if (await details.count()) await details.first().click();
+      else await row.click();
+      await expect(panel.first(), 'a lobby row opens its game panel').toBeVisible({
+        timeout: 8_000,
+      });
+      const join = panel.getByRole('button', { name: 'Join Lightning', exact: true }).first();
+      if ((await join.count()) && (await join.isEnabled())) {
+        await join.click();
+        opened = true;
+      } else {
+        await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
+        await expect(panel).toHaveCount(0);
+      }
+    }
+    expect(opened, 'a Lightning game panel offers an enabled Join Lightning').toBe(true);
 
     await expect(page).toHaveURL(LIGHTNING_ROUTE, { timeout: 15_000 });
     const landed = page.url();

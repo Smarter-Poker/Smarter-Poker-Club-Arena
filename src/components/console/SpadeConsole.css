@@ -67,7 +67,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 348;
-  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
+  background: url('/assets/club-buttons/console/spade-console-v2/top.png') top center / 100% auto
     no-repeat;
 }
 
@@ -76,19 +76,19 @@
    with the rails re-mitred into it. No two share a housing. Same box, same
    ratio, same zones; only the picture changes. */
 .sc--crest-flat .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-flat.png');
+  background-image: url('/assets/club-buttons/console/spade-console-v2/top-flat.png');
 }
 
 .sc--crest-diamond .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-diamond.png');
+  background-image: url('/assets/club-buttons/console/spade-console-v2/top-diamond.png');
 }
 
 .sc--crest-club .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-club.png');
+  background-image: url('/assets/club-buttons/console/spade-console-v2/top-club.png');
 }
 
 .sc--crest-vip .sc__head {
-  background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip-v2.png');
+  background-image: url('/assets/club-buttons/console/spade-console-v2/top-vip-v2.png');
 }
 
 /* Between the rails: inside x 85-915 of the master, with a little air.
@@ -121,7 +121,20 @@
    centred, which is x 74-923. The art is unchanged and still paints on top.
    The shark and riveted families cut their glass opaque and their
    `background-image` overrides below replace the layer list, so they are not
-   touched. Only the spade family had a window where its glass should be. */
+   touched. Only the spade family had a window where its glass should be.
+
+   THE ART IS SOLID TOO (Dan 2026-10-24): "YOU SHOULDN'T SEE ANYTHING INSIDE
+   THE FRAME OR IN THE CARD, IT SHOULD BE 100% SOLID ALL THE WAY THROUGH THE
+   FRAME AND INSIDE OF THE CARD." The glass layer above only covers the
+   rectangle between the rails. The slices still had windows it cannot reach:
+   the gap between the outer frame and the header well, the band under the
+   head's chrome rule, the channels between the rail strands, the chamfered
+   corners and the closing cap. On the Tournament Break card the felt, the
+   seats and their chips printed through all of them. spade-console-v2 is the
+   same art with every pixel inside the outer silhouette made opaque over the
+   master's glass tone (#0a0b0d) - nothing outside the frame changes. Derived
+   by scripts/art/solidify-spade-console.py; v1 stays as it shipped, because a
+   pooled asset URL never changes bytes. */
 .sc__body {
   position: relative;
   display: flex;
@@ -131,7 +144,7 @@
   margin-top: -1px;
   margin-bottom: -1px;
   background:
-    url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto repeat-y,
+    url('/assets/club-buttons/console/spade-console-v2/mid.png') top center / 100% auto repeat-y,
     linear-gradient(#0a0b0d, #0a0b0d) 50% 0 / 84.9% 100% no-repeat;
 }
 
@@ -146,7 +159,7 @@
      both feet (rows 205-266 of 277 on the plates foot, 0-61 of 72 on the flat
      one), so it never shows below the frame. See "THE GLASS IS SOLID". */
   background:
-    url('/assets/club-buttons/console/spade-console-v1/bottom-foot.png') bottom center / 100% auto
+    url('/assets/club-buttons/console/spade-console-v2/bottom-foot.png') bottom center / 100% auto
       no-repeat,
     linear-gradient(#0a0b0d, #0a0b0d) 50% 0 / 84.9% 80% no-repeat;
 }
@@ -156,7 +169,7 @@
   /* Both layers restated: a one-value `background-image` would collapse the
      layer list and drop the glass. */
   background-image:
-    url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png'),
+    url('/assets/club-buttons/console/spade-console-v2/bottom-plates.png'),
     linear-gradient(#0a0b0d, #0a0b0d);
 }
 

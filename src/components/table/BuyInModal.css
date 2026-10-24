@@ -2,7 +2,7 @@
    BUY-IN MODAL - on the spade master (2026-09-04, approved 2026-09-08)
 
    The sheet is Dan's spade PLO master cut into three: the console's own head
-   (console/spade-console-v1/top.png: crest, header well, pill slot), a stage
+   (console/spade-console-v2/top.png: crest, header well, pill slot), a stage
    on the repeated rails (mid.png), and the master's deck
    (popups/buy-in-v1/deck-d5664b815000.png: the four bays with their labels lifted, the
    two plates, the chip). Every zone is measured on that master and printed
@@ -77,7 +77,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 348;
-  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
+  background: url('/assets/club-buttons/console/spade-console-v2/top.png') top center / 100% auto
     no-repeat;
 }
 
@@ -89,14 +89,15 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 627;
-  background: url('/assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png') top center / 100% auto no-repeat;
+  background: url('/assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png') top center / 100%
+    auto no-repeat;
 }
 
 /* ── Stage: the slider beside the amount, inside the rails ───────────── */
 
 .buy-in-modal__stage {
   position: relative;
-  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
+  background: url('/assets/club-buttons/console/spade-console-v2/mid.png') top center / 100% auto
     repeat-y;
   display: grid;
   grid-template-columns: 22% minmax(0, 1fr);

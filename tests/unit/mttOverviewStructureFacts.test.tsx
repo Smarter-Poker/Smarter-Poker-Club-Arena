@@ -687,7 +687,7 @@ describe('recorded satellite qualifier ranking', () => {
       expect(row.querySelector('button')).toBeNull();
     }
     expect(rows[2].querySelector('.rk-rank')?.textContent).toBe('3');
-    expect(rows[2].querySelector('.rk-sub')?.textContent).toBe('Finished 3rd');
+    expect(rows[2].querySelector('.rk-sub')?.textContent).toBe('Busted 3rd');
     expect(screen.queryByText('The Field Is In The Money')).toBeNull();
   });
 });

@@ -833,20 +833,41 @@ export async function prepareProductionE2ETemplateFixture({
   return club;
 }
 
-/** Lightning operator authority belongs to its own club, including a union
- * member club. A standalone template fixture is a separate requirement. */
-export function prepareProductionE2ELightningMembership({
+/** Lightning operator authority is checked on the club that OWNS the games.
+ * Since #7884 a union member club's Lightning page reads its union's games, and
+ * fn_lightning_operator_overview authorizes that owner (admins of the owning
+ * club), so the reserved account is a zero-balance admin of the member club AND
+ * of its union's house club (Dan 2026-10-24: "Admin on Midway"). A standalone
+ * club owns its own games and needs only its own membership. */
+export async function prepareProductionE2ELightningMembership({
   environment = process.env,
   fetchImpl = fetch,
 } = {}) {
-  return prepareProductionE2EStaffMembership({
-    environment: {
-      ...environment,
-      E2E_CLUB_ID: environment.E2E_LIGHTNING_CLUB_ID || DEFAULT_E2E_LIGHTNING_CLUB_ID,
-    },
+  const clubId = environment.E2E_LIGHTNING_CLUB_ID || DEFAULT_E2E_LIGHTNING_CLUB_ID;
+  const member = await prepareProductionE2EStaffMembership({
+    environment: { ...environment, E2E_CLUB_ID: clubId },
     fetchImpl,
     reusePreparedMembership: true,
   });
+  const configuration = requireEnvironment(environment);
+  const clubs = await serviceRequest(
+    configuration,
+    `/rest/v1/clubs?id=eq.${encodeURIComponent(clubId)}&select=id,union_id,status`,
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(clubs) || clubs.length !== 1 || clubs[0].id !== clubId)
+    throw new Error('Lightning certification club scope could not be read.');
+  const owner = clubs[0].union_id;
+  if (!owner || owner === clubId) return member;
+  if (!/^[0-9a-f-]{36}$/.test(owner))
+    throw new Error('Lightning certification union owner is malformed.');
+  await prepareProductionE2EStaffMembership({
+    environment: { ...environment, E2E_CLUB_ID: owner },
+    fetchImpl,
+    reusePreparedMembership: true,
+  });
+  return member;
 }
 
 export async function cleanupStaleProductionE2EAccounts({

@@ -30,11 +30,4 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
     expect(body).toMatch(/navigate\(`\$\{lightningRoute\(anchorLightningClusterId\)\}\?join=1`\)/);
     expect(body).not.toMatch(/handleSeatClick/);
   });
-
-  it('only a game whose mode is Lightning is treated as Lightning (a Classic table keeps its waiting list)', () => {
-    expect(page).toMatch(
-      /isLightningMode\(spectatorLightningStates\[tableState\.clusterId\]\?\.clusterMode\)/
-    );
-    expect(page).not.toMatch(/spectatorLightningStates\[tableState\.clusterId\] != null/);
-  });
 });

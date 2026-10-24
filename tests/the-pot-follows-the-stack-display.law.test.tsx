@@ -27,7 +27,16 @@
  *   2. in BB mode every pot figure prints in BB - the POT pill, each side pot,
  *      the TOTAL row and the spoken label - and in chips mode none of them do;
  *   3. in BB mode every figure a seat prints - stack, bet chips, action label,
- *      won amount - reads BB, and in chips mode none of them do.
+ *      won amount - reads BB, and in chips mode none of them do;
+ *   4. every BB figure has ONE shape (`formatBigBlinds`): "50 BB", "37.5 BB",
+ *      "1,250 BB". The pot printed "50 BB" while the seat beside it printed
+ *      "50.0 BB" and a bet "6.0 BB";
+ *   5. the felt never divides by a guessed big blind. While the blinds are
+ *      unknown the shared figure is 0 and every amount prints in chips, pot
+ *      and seats together; it used to fall back to 2, so a 5/10 table opened
+ *      before its blinds arrived showed five times too many big blinds.
+ *   6. the hero's Call button follows it too, against the felt's big blind
+ *      (`displayBigBlind`), not the raise panel's working one.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -35,6 +44,8 @@ import { resolve } from 'node:path';
 import { render, cleanup } from '@testing-library/react';
 import { PotDisplay } from '../src/components/table/PotDisplay';
 import SeatSlot, { type SeatPlayer } from '../src/components/table/SeatSlot';
+import { formatBigBlinds } from '../src/utils/format';
+import ActionPanel from '../src/components/table/ActionPanel';
 
 const ROOT = resolve(__dirname, '..');
 const stripComments = (src: string) =>
@@ -61,8 +72,18 @@ describe('the pot reads the same big blind as the stacks', () => {
   });
 
   it('the seats are handed the same seatBigBlind', () => {
-    expect(page).toMatch(/const seatBigBlind = useMemo\(\(\) => safeBB\(tableState\.blinds\)/);
+    expect(page).toMatch(/const seatBigBlind = useMemo\(\(\) => safeBB\(tableState\.blinds, 0\)/);
     expect(page).toMatch(/<SeatSlot[\s\S]*?bigBlind=\{seatBigBlind\}/);
+  });
+
+  it('the felt never divides by a guessed big blind', () => {
+    // safeBB's own fallback is 2; the felt's figure must fall back to 0.
+    expect(page).not.toMatch(/const seatBigBlind = useMemo\(\(\) => safeBB\(tableState\.blinds\)/);
+  });
+
+  it("the hero's action panel prints against the felt's big blind", () => {
+    const panel = page.slice(page.indexOf('<ActionPanel'));
+    expect(panel.slice(0, panel.indexOf('/>'))).toMatch(/displayBigBlind=\{seatBigBlind\}/);
   });
 
   it('both read the one stack-display setting', () => {
@@ -141,13 +162,13 @@ describe('in BB mode every figure a seat prints is in BB', () => {
   it('stack, bet chips and the action label read BB', () => {
     const { container } = seat(true);
     expect(container.querySelector('.seat__stack')!.textContent).toContain('BB');
-    expect(container.querySelector('.seat__action')!.textContent).toBe('Raise 6.0 BB');
-    expect(container.querySelector('.seat__bet-chips .cp-amount')!.textContent).toBe('6.0 BB');
+    expect(container.querySelector('.seat__action')!.textContent).toBe('Raise 6 BB');
+    expect(container.querySelector('.seat__bet-chips .cp-amount')!.textContent).toBe('6 BB');
   });
 
   it("the winner's +N reads BB", () => {
     const { container } = winner(true);
-    expect(container.querySelector('.seat__net-win')!.textContent).toBe('+15.0 BB');
+    expect(container.querySelector('.seat__net-win')!.textContent).toBe('+15 BB');
   });
 
   it('in chips mode none of them do', () => {
@@ -157,5 +178,120 @@ describe('in BB mode every figure a seat prints is in BB', () => {
     expect(container.textContent).not.toContain('BB');
     cleanup();
     expect(winner(false).container.querySelector('.seat__net-win')!.textContent).toBe('+30');
+  });
+});
+
+describe('every BB figure has one shape', () => {
+  it('whole, one decimal, or grouped past 100', () => {
+    expect(formatBigBlinds(100, 2)).toBe('50 BB');
+    expect(formatBigBlinds(75, 2)).toBe('37.5 BB');
+    expect(formatBigBlinds(10, 3)).toBe('3.3 BB');
+    expect(formatBigBlinds(2500, 2)).toBe('1,250 BB');
+    expect(formatBigBlinds(0, 2)).toBe('0 BB');
+  });
+
+  it('no big blind to divide by is not "0 BB": the caller prints chips', () => {
+    expect(formatBigBlinds(100, 0)).toBeNull();
+    expect(formatBigBlinds(100, undefined)).toBeNull();
+    expect(formatBigBlinds(100, Number.NaN)).toBeNull();
+  });
+
+  it('the seat stack, the pot and a bet print the same figure the same way', () => {
+    const { container } = render(
+      <SeatSlot
+        seatNumber={2}
+        player={{
+          id: 'u-v',
+          name: 'v',
+          avatar: '',
+          stack: 100,
+          status: 'active',
+          isHero: false,
+          showCards: false,
+        }}
+        position={null}
+        isActive={false}
+        lastAction="bet"
+        lastBetAmount={100}
+        bigBlind={2}
+        showStackInBB
+      />
+    );
+    expect(container.querySelector('.seat__stack')!.textContent).toContain('50 BB');
+    expect(container.querySelector('.seat__bet-chips .cp-amount')!.textContent).toBe('50 BB');
+    cleanup();
+    const pot = render(<PotDisplay mainPot={100} bigBlind={2} displayMode="bb" />);
+    expect(pot.container.querySelector('.pot-display__main')!.textContent).toBe('POT50 BB');
+  });
+});
+
+describe('with the blinds not yet known, the whole felt stays in chips', () => {
+  it('a seat in BB mode with no big blind prints chips, never "0 BB"', () => {
+    const { container } = render(
+      <SeatSlot
+        seatNumber={2}
+        player={{
+          id: 'u-v',
+          name: 'v',
+          avatar: '',
+          stack: 500,
+          status: 'active',
+          isHero: false,
+          showCards: false,
+        }}
+        position={null}
+        isActive={false}
+        lastAction="raise"
+        lastBetAmount={30}
+        bigBlind={0}
+        showStackInBB
+      />
+    );
+    expect(container.textContent).not.toContain('BB');
+    expect(container.querySelector('.seat__stack')!.textContent).toContain('500');
+    expect(container.querySelector('.seat__action')!.textContent).toBe('Raise 30');
+  });
+
+  it('and so does the pot', () => {
+    const { container } = render(<PotDisplay mainPot={150} bigBlind={0} displayMode="bb" />);
+    expect(container.textContent).toBe('POT150');
+  });
+});
+
+describe("the hero's Call button follows the setting", () => {
+  const panel = {
+    canFold: true,
+    canCheck: false,
+    canCall: true,
+    canAllIn: true,
+    canRaise: false,
+    currentBet: 6,
+    callAmount: 6,
+    minRaise: 12,
+    maxRaise: 500,
+    pot: 9,
+    bigBlind: 2,
+    isMyTurn: true,
+    onAction: () => {},
+  };
+  const callText = (c: HTMLElement) =>
+    c.querySelector('.action-btn--call .action-btn__amount')!.textContent;
+
+  it('reads BB in BB mode', () => {
+    const { container } = render(<ActionPanel {...panel} showStackInBB displayBigBlind={2} />);
+    expect(callText(container)).toBe('3 BB');
+    expect(container.querySelector('.action-btn--call')!.getAttribute('aria-label')).toBe(
+      'Call 3 BB'
+    );
+  });
+
+  it('reads chips in chips mode', () => {
+    const { container } = render(<ActionPanel {...panel} displayBigBlind={2} />);
+    expect(callText(container)).not.toContain('BB');
+  });
+
+  it('reads chips while the felt does not know its big blind', () => {
+    const { container } = render(<ActionPanel {...panel} showStackInBB displayBigBlind={0} />);
+    expect(callText(container)).not.toContain('BB');
   });
 });

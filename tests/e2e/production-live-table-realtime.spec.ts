@@ -26,6 +26,7 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import { captureEngineFailureHealth } from './support/liveTableFailureHealth';
 import {
   refreshPreNavigationSelection,
   nextHandAdvanced,
@@ -1694,6 +1695,23 @@ async function observeTournamentBoard(
     }
   } catch (error) {
     if (error instanceof PreHudCandidateAttrition) throw error;
+    if (gameFormat === 'mtt') {
+      // Capture the blocked step before closeout reads can outlast the stall.
+      // This evidence never changes the original assertion or its classification.
+      const failureHealth = await captureEngineFailureHealth(
+        request.get.bind(request),
+        ENGINE_HEALTH_URL,
+        candidate.id
+      );
+      try {
+        await testInfo.attach(`${tag}-engine-at-failure`, {
+          body: Buffer.from(JSON.stringify(failureHealth, null, 2)),
+          contentType: 'application/json',
+        });
+      } catch {
+        console.warn('[MTT continuity] Engine failure evidence could not be attached');
+      }
+    }
     /* Say WHY the case failed, from evidence, before the failure leaves this
        function. Nothing here turns a failure into a pass: a proven natural
        ending routes to another running board (bounded, inside the same case

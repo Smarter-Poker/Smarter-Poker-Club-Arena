@@ -88,6 +88,7 @@ import {
 } from './types';
 import type { TournamentEntry } from './types';
 import SatelliteSeatBadge from './SatelliteSeatBadge';
+import BuyInMarks from './BuyInMarks';
 import '../../../styles/tournament-lobby-3d.css';
 import './RankingTab.css';
 
@@ -246,7 +247,13 @@ const RankRow = React.memo(function RankRow({
           {isHero && <span className="tl-badge tl-badge--action">You</span>}
           {isDownline && !isHero && <span className="tl-badge">Yours</span>}
         </span>
-        <span className="tl-sub rk-sub">{subText}</span>
+        <span className="rk-subline">
+          <span className="tl-sub rk-sub">{subText}</span>
+          {/* Dan 2026-10-24: "INSIDE THE RANKING IT SHOULD TELL YOU HOW MANY
+              TIMES THE REBOUGHT AND IF THEY ADDED ON AS WELL." The row already
+              held both; it never printed them. */}
+          <BuyInMarks rebuys={entry.rebuys} addOn={(entry.add_ons ?? 0) > 0} />
+        </span>
         {!out && (
           <span className="tl-meter rk-meter" aria-hidden="true">
             <span

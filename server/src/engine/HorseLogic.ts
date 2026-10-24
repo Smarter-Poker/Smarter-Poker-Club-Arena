@@ -8117,8 +8117,13 @@ export class HorseLogic {
     // deck draws complete more often and earn a bit extra.
     const loOnly23 =
       useV23Var && useHiLo && !!hiLoSplit && hiLoSplit.hi < 0.15 && hiLoSplit.lo > 0.3;
+    const impliedDraw = vi.isOmaha ? drawInfo40() : null;
+    const hasImpliedDraw =
+      !vi.isOmaha ||
+      (!!impliedDraw &&
+        (impliedDraw.nutty || impliedDraw.dominatedFlushDraw || impliedDraw.straightOuts > 0));
     const impliedBonus =
-      drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
+      drawsLive && hasImpliedDraw && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
         ? 0.04 + (useV23ShortDeck && vi.isShortDeck ? 0.02 : 0)
         : 0;
     // V35: fixed limit calls lighter — the pot always lays the price.

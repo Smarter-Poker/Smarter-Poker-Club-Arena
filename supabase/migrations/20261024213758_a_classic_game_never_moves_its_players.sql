@@ -66,6 +66,10 @@
 --    definition above), so the on-table lobby stops showing a Classic player
 --    a Must Move List and a place on it that will never move them.
 --
+-- 7. fn_cash_game_join fills a Classic game's fullest table with an open
+--    chair first, whatever its role: feeder-last only made sense while the
+--    tick moved the feeder's players up.
+--
 -- No chip moves. No hot table (clubs, tables, hand_history) is locked by this
 -- file: it replaces two functions, adds a trigger on cash_seat_moves and
 -- updates pending rows of cash_seat_moves.
@@ -75,6 +79,7 @@
 -- @live-proof: (SELECT position('v_classic := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);' in pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure)) > 0)
 -- @live-proof: (SELECT position('public.fn_cash_game_never_moves_players(cg.template_name, cg.ruleset_snapshot)' in pg_get_functiondef('public.fn_cash_cluster_balance(uuid,timestamptz)'::regprocedure)) > 0)
 -- @live-proof: (SELECT position('''never_moves_players'', public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)' in pg_get_functiondef('public.fn_cash_game_lobby(uuid)'::regprocedure)) > 0)
+-- @live-proof: (SELECT position('v_never_moves := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);' in pg_get_functiondef('public.fn_cash_game_join(uuid)'::regprocedure)) > 0)
 -- @live-proof: (SELECT count(*) = 1 FROM pg_trigger WHERE tgrelid = 'public.cash_seat_moves'::regclass AND tgname = 'a_classic_game_never_moves_players' AND tgenabled = 'O')
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m JOIN public.cash_games g ON g.id = m.game_id WHERE m.state = 'pending' AND m.reason <> 'seat_change' AND public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)))
 
@@ -302,6 +307,66 @@ END
 $classic_lobby$;
 
 -- ===========================================================================
+-- 7. THE JOIN DOOR FILLS A CLASSIC GAME'S FULLEST TABLE FIRST
+-- ===========================================================================
+-- Feeder-last made sense only while the tick moved a feeder's players up to
+-- the Mains. A Classic game moves nobody, so a newcomer sent past the feeder
+-- to a Main left the feeder's players short-handed for good. For a game that
+-- never moves its players the role is ignored and the fullest table with an
+-- open chair fills first (Dan 2026-10-23: "A FULLER TABLE FILLS FIRST").
+-- Every other game keeps its order exactly.
+DO $classic_join$
+DECLARE
+  v_fn  text := 'public.fn_cash_game_join(uuid)';
+  v_src text; v_find text; v_n integer;
+BEGIN
+  v_src := pg_get_functiondef(v_fn::regprocedure);
+
+  IF position('v_never_moves' in v_src) > 0 THEN
+    RAISE NOTICE 'fn_cash_game_join already fills a Classic game fullest first; nothing to do';
+    RETURN;
+  END IF;
+  IF md5(v_src) <> '2ab096598d5d2240d546a08dd96094ea' THEN
+    RAISE EXCEPTION 'CLASSIC_NEVER_MOVES_JOIN_PREIMAGE_DRIFT: fn_cash_game_join is %, read it before re-running', md5(v_src);
+  END IF;
+
+  v_find := '  v_need numeric;' || chr(10);
+  v_n := (length(v_src) - length(replace(v_src, v_find, ''))) / length(v_find);
+  IF v_n <> 1 THEN RAISE EXCEPTION 'join declaration anchor found % times, not once', v_n; END IF;
+  v_src := replace(v_src, v_find, v_find || '  v_never_moves boolean := false;' || chr(10));
+
+  v_find := '  IF NOT FOUND THEN RAISE EXCEPTION ''GAME_NOT_FOUND: %'', p_game_id; END IF;' || chr(10);
+  v_n := (length(v_src) - length(replace(v_src, v_find, ''))) / length(v_find);
+  IF v_n <> 1 THEN RAISE EXCEPTION 'join game-row anchor found % times, not once', v_n; END IF;
+  v_src := replace(v_src, v_find, v_find
+    || '  -- A CLASSIC GAME NEVER MOVES ITS PLAYERS (Dan 2026-10-24): its fullest table' || chr(10)
+    || '  -- with an open chair fills first, whatever its role.' || chr(10)
+    || '  v_never_moves := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);' || chr(10));
+
+  v_find := '     ORDER BY (tb.role = ''feeder'') ASC, seated ASC, tb.main_index ASC NULLS LAST, tb.created_at ASC' || chr(10);
+  v_n := (length(v_src) - length(replace(v_src, v_find, ''))) / length(v_find);
+  IF v_n <> 1 THEN RAISE EXCEPTION 'join order anchor found % times, not once', v_n; END IF;
+  v_src := replace(v_src, v_find,
+       '     ORDER BY (tb.role = ''feeder'' AND NOT v_never_moves) ASC,' || chr(10)
+    || '              (CASE WHEN v_never_moves THEN -1 ELSE 1 END)' || chr(10)
+    || '                * (SELECT count(*) FROM public.table_seats ts2 WHERE ts2.table_id = tb.id AND ts2.left_at IS NULL) ASC,' || chr(10)
+    || '              tb.main_index ASC NULLS LAST, tb.created_at ASC' || chr(10));
+
+  -- Every sibling door must have survived.
+  IF position('NOT_AUTHENTICATED' in v_src) = 0
+     OR position('PRIVATE_MEMBERSHIP_REQUIRED' in v_src) = 0
+     OR position('GAME_BARRED' in v_src) = 0
+     OR position('INSUFFICIENT_CHIPS' in v_src) = 0
+     OR position('LIGHTNING NEVER QUEUES' in v_src) = 0
+     OR position('''waitlisted''' in v_src) = 0 THEN
+    RAISE EXCEPTION 'a sibling door did not survive the edit to fn_cash_game_join';
+  END IF;
+
+  EXECUTE v_src;
+END
+$classic_join$;
+
+-- ===========================================================================
 -- POST-IMAGE
 -- ===========================================================================
 DO $classic_post$
@@ -314,6 +379,7 @@ BEGIN
      OR position('AND (NOT v_classic OR (c.seated = 0 AND c.reserved = 0))' in v_tick) = 0
      OR position('''classic_break_withdrawn''' in v_tick) = 0
      OR position('public.fn_cash_game_never_moves_players(cg.template_name, cg.ruleset_snapshot)' in v_bal) = 0
+     OR position('v_never_moves := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);' in pg_get_functiondef('public.fn_cash_game_join(uuid)'::regprocedure)) = 0
      OR position('''never_moves_players'', public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)' in pg_get_functiondef('public.fn_cash_game_lobby(uuid)'::regprocedure)) = 0
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.cash_seat_moves'::regclass
                      AND tgname = 'a_classic_game_never_moves_players' AND tgenabled = 'O')

@@ -65,8 +65,8 @@ describe('a Classic game never moves its players', () => {
     expect(SQL).toContain("IF md5(v_src) <> '801638baef58f9f44ff4e80e24c153ab' THEN");
     expect(SQL).toContain("IF md5(v_src) <> '3c4b563f1f00b4372ebd024c7494a884' THEN");
     // Tick: declaration, read, must-move, break candidate, break moves (5);
-    // balancer guard (1); lobby game object (1).
-    expect(SQL.match(/IF v_n <> 1 THEN RAISE EXCEPTION/g)?.length).toBe(7);
+    // balancer guard (1); lobby game object (1); join declaration, read, order (3).
+    expect(SQL.match(/IF v_n <> 1 THEN RAISE EXCEPTION/g)?.length).toBe(10);
     // Every sibling step of the tick must survive the edit.
     for (const sibling of [
       "'''lightning_cluster_stands_down'''",
@@ -152,6 +152,24 @@ describe('a Classic game never moves its players', () => {
     const home = readFileSync(join(ROOT, 'src/pages/ClubHomePage.tsx'), 'utf8');
     expect(home).toContain('rules_profile:ruleset_snapshot->>rules_profile');
     expect(home).toContain('cluster_rules_profile: game.rules_profile ?? null,');
+  });
+
+  it('the join door fills a Classic game fullest table first, whatever its role', () => {
+    expect(SQL).toContain("IF md5(v_src) <> '2ab096598d5d2240d546a08dd96094ea' THEN");
+    expect(SQL).toContain(
+      "'  v_never_moves := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);'"
+    );
+    expect(SQL).toContain("'     ORDER BY (tb.role = ''feeder'' AND NOT v_never_moves) ASC,'");
+    expect(SQL).toContain("'              (CASE WHEN v_never_moves THEN -1 ELSE 1 END)'");
+    // Every other game keeps the old order: feeder last, shortest first.
+    for (const door of [
+      'NOT_AUTHENTICATED',
+      'PRIVATE_MEMBERSHIP_REQUIRED',
+      'GAME_BARRED',
+      'INSUFFICIENT_CHIPS',
+      'LIGHTNING NEVER QUEUES',
+    ])
+      expect(SQL, door).toContain(`position('${door}' in v_src) = 0`);
   });
 
   it('the lobby never promises a Classic player a move', () => {

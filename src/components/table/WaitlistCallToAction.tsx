@@ -23,17 +23,19 @@ import './WaitlistCallToAction.css';
  */
 export interface WaitlistCallToActionProps {
   onClick: () => void;
+  /** Lightning joins its pool through the original buy-in, never a chair queue. */
+  lightning?: boolean;
   /** Players currently on this table's waiting list. */
   waitingCount: number;
   /** The hero's 1-based place on the list, or null when not on it. */
   position: number | null;
 }
 
-export function WaitlistCallToAction({ onClick, waitingCount, position }: WaitlistCallToActionProps) {
-  const onList = position != null;
-  const socket = onList ? `#${position}` : String(waitingCount);
-  const eyebrow = onList ? 'You Are On The Waiting List' : `Table Full · ${waitingCount} Waiting`;
-  const title = onList ? `Position ${position} Of ${waitingCount}` : 'Join The Waiting List';
+export function WaitlistCallToAction({ onClick, waitingCount, position, lightning = false }: WaitlistCallToActionProps) {
+  const onList = !lightning && position != null;
+  const socket = lightning ? '' : onList ? `#${position}` : String(waitingCount);
+  const eyebrow = lightning ? 'Lightning Games' : onList ? 'You Are On The Waiting List' : `Table Full · ${waitingCount} Waiting`;
+  const title = lightning ? 'Join Lightning' : onList ? `Position ${position} Of ${waitingCount}` : 'Join The Waiting List';
 
   const socketRef = useFitText<HTMLSpanElement>(socket, 1, 0.5);
   const eyebrowRef = useFitText<HTMLSpanElement>(eyebrow, 1, 0.5);

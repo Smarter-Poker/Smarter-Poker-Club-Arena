@@ -370,6 +370,7 @@ import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
 import { lightningRoute } from '../lightning/lightningLobby';
+import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
   fetchLightningAnchorSeat,
@@ -380,6 +381,7 @@ import {
   lightningAnchorSeat,
   lightningClusterIdOfSnapshot,
   registerLightningPoolSession,
+  setLightningEntryIntent,
   useLightningPoolSession,
   type LightningAnchorSeat,
 } from '../lightning/lightningSession';
@@ -24006,6 +24008,24 @@ function LiveTablePage({
     setShowWaitList(true);
   }, [loadWaitlist, tableState.clusterId]);
 
+  /* Dan 2026-10-24: "THERE SHOULDN'T BE A WAITING LIST WHEN THERE ARE ALWAYS
+     OPEN SEATS. REMOVE THE ABILITY TO EVEN JOIN A WAITING LIST IN A LIGHTNING
+     GAME, PLAYER BUYS IN AND GETS DEALT INTO A NEW TABLE ASAP, NO WAITING."
+     A spectator watching a physical table of a Lightning game is offered the
+     game's own Join Lightning entry (one buy-in into the pool), never this
+     table's chair queue and never a seat at this one table. */
+  const anchorLightningClusterIds = useMemo(
+    () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
+    [tableState.clusterId, lightningRoom]
+  );
+  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
+  const anchorLightningClusterId =
+    tableState.clusterId &&
+    !lightningRoom &&
+    (lightningObserver || spectatorLightningStates[tableState.clusterId] != null)
+      ? tableState.clusterId
+      : null;
+
   /**
    * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────
    *
@@ -27495,6 +27515,13 @@ function LiveTablePage({
               />
             ) : tableState.isTournament && spectatorSeatState === 'no-seats-here' ? (
               <span className="spectator-footer-bar__label">Spectating · All Seats Taken</span>
+            ) : !tableState.isTournament && anchorLightningClusterId ? (
+              <WaitlistCallToAction
+                lightning
+                onClick={() => navigate(lightningRoute(anchorLightningClusterId))}
+                waitingCount={0}
+                position={null}
+              />
             ) : spectatorSeatState === 'no-seats-here' ? (
               /* A button, not a sentence: "join the waiting list" is an
                  action he asked for, and the waitlist modal is already
@@ -28896,6 +28923,15 @@ function LiveTablePage({
               toast.error('Unable To Verify Your Table And Seat.');
               return false;
             }
+            /* A buy-in at a physical table of a Lightning game is a Join
+               Lightning: the database moves the player into the pool, and
+               their hands are dealt in their own pool-session room. Mark the
+               intent exactly as the Join Lightning page does, so this tab
+               follows the player's chair into that room the moment it
+               exists. Without it the tab stayed on the physical table while
+               every hand dealt to the player timed out on a screen they
+               could not see (WooWoo, 2026-10-24). */
+            if (anchorLightningClusterId) setLightningEntryIntent(tableId, anchorLightningClusterId);
             const reviewed =
               cashBuyInRecovery?.payload.p_user_id.toLowerCase() === userId.toLowerCase() &&
               cashBuyInRecovery.payload.p_table_id.toLowerCase() === tableId.toLowerCase()

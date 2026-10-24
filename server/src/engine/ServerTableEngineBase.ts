@@ -6778,6 +6778,17 @@ export abstract class ServerTableEngineBase {
     }));
   }
 
+  /** Only an acknowledged Lightning halt may replace the physical public view. */
+  lightningObserverCluster(): string | null {
+    return !this.isTournamentTable() &&
+      this.dealingHaltObservedFor !== null &&
+      this.dealingHaltObservedFor === this.dealingHaltedAt &&
+      this.tableInfo?.dealing_halted_reason === 'lightning' &&
+      this.clusterLightningEnabled === true
+      ? (this.tableInfo?.cluster_id ?? null)
+      : null;
+  }
+
   /**
    * LIGHTNING PRESENCE (2026-09-25): what this engine knows about the clients
    * of the players seated at it, for the Lightning worker's p_disconnected

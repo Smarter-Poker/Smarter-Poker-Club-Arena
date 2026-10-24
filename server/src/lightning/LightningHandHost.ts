@@ -337,6 +337,9 @@ export interface LightningHandHostDeps {
   onPlayerReleased?(playerId: string, foldType: LightningFoldType | 'hand_end'): void;
   /** The participants and rooms are known and the deal is about to start. */
   onDealing?(host: LightningHandHost): void;
+  /** Shared presentation only; never personal Lightning blocks or hole cards. */
+  onPublicState?(host: LightningHandHost, state: Record<string, unknown>): void;
+  onPublicEvent?(host: LightningHandHost, event: Record<string, unknown>): void;
   /**
    * LIGHTNING PHASE 12: the hand's first frame was sent to this player's room
    * at `atMs` (engine clock). The registry closes it on that room's RENDER_ACK
@@ -833,6 +836,7 @@ export class LightningHandHost {
 
   private emitAll(frame: Record<string, unknown> | null): void {
     if (!frame) return;
+    this.deps.onPublicEvent?.(this, frame);
     for (const [, room] of this.rooms())
       this.deps.hub.emitEvent(room, { ...frame, table_id: room });
   }
@@ -896,6 +900,7 @@ export class LightningHandHost {
         handHasWinners: this.winners.length > 0,
       },
     });
+    this.deps.onPublicState?.(this, { ...base, hand_id: this.handId });
     for (const [playerId, room] of this.rooms()) {
       this.deps.hub.publish(room, {
         ...base,

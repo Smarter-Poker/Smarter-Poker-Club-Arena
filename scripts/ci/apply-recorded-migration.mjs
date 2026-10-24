@@ -350,6 +350,30 @@ try {
   unknown(`could not connect: ${e.message}`);
 }
 
+/* ONE APPLIER AT A TIME, AND NO DISPATCH DROPPED (2026-10-24). This used to be
+   enforced by one workflow concurrency group for every file. GitHub keeps at
+   most ONE pending run per group and cancels the older pending run when a new
+   one arrives, so three dispatches in a row applied one file and silently
+   dropped two: 20261024193700, 20261024194135 and 20261024204950 merged at
+   21:58 and were never applied, while late registrations kept being refused.
+   The workflow group is now per file (a second run of the SAME file still
+   waits), and this session lock serializes DIFFERENT files in the database
+   itself, before the history read below - so a run that waited sees what the
+   run ahead of it installed. A dry run sends nothing and does not wait. A
+   wait that times out has sent nothing, so it is a refusal, not an unknown. */
+if (!DRY_RUN) {
+  try {
+    await client.query("SET lock_timeout = '12min'");
+    await client.query("SELECT pg_advisory_lock(hashtextextended('apply-recorded-migration', 0))");
+    await client.query('RESET lock_timeout');
+  } catch (e) {
+    await client.end().catch(() => {});
+    if (e && e.code === '55P03')
+      refused('another migration is still being applied; nothing was sent - dispatch this file again');
+    unknown(`could not take the applier lock: ${e.message}`);
+  }
+}
+
 let already;
 try {
   // Read the history the way CLAUDE.md section 2 rule 8 prescribes: a plain

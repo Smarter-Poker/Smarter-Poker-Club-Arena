@@ -91,8 +91,16 @@ on:
 
 # One applier at a time. Two concurrent DDL transactions would each take their
 # own PostgREST schema reload (~28s on this database).
+#
+# The group is PER FILE (2026-10-24). GitHub keeps at most one pending run per
+# concurrency group and cancels the older pending run when a new one is
+# queued, so a single group for every file silently dropped all but the last
+# of several dispatches (20261024193700, 194135 and 204950 were never applied).
+# A second dispatch of the SAME file still waits here; DIFFERENT files are
+# serialized by the applier's session advisory lock in the database
+# (scripts/ci/apply-recorded-migration.mjs), which never drops one.
 concurrency:
-  group: apply-merged-migration
+  group: apply-merged-migration-${{ inputs.migration || github.event.client_payload.migration }}
   cancel-in-progress: false
 
 permissions:

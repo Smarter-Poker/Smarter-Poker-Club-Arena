@@ -105,6 +105,29 @@ describe('the parity harness', () => {
       expect(CHECK, k).toContain(k);
   });
 
+  it('compares the current port only after the complete source-admitted five/six policy, preserving independent fairness inputs', () => {
+    const preimage = HCODE.indexOf('-f "$F/lightning-five-ready-preimages.sql"');
+    const policy = HCODE.indexOf(
+      '-f "$M/20261023230001_classic_and_lightning_five_ready_waits_three_seconds_for_six.sql"'
+    );
+    const current = HCODE.indexOf('-f "$F/lightning-current-policy-parity.sql"');
+    const comparison = HCODE.indexOf(
+      'node --import tsx src/lightning/__tests__/lightningMatcherParity.ts'
+    );
+    expect(preimage).toBeGreaterThan(HCODE.indexOf("grep '^  ok  11'"));
+    expect(policy).toBeGreaterThan(preimage);
+    expect(current).toBeGreaterThan(policy);
+    expect(comparison).toBeGreaterThan(current);
+    const fixture = read('scripts', 'dev', 'fixtures', 'lightning-current-policy-parity.sql');
+    expect(fixture).toContain('FOR f IN SELECT * FROM pp.out ORDER BY n LOOP');
+    expect(fixture).toContain(
+      "result->>'legal_count' IS DISTINCT FROM f.doc#>>'{plan,legal_count}'"
+    );
+    expect(fixture).toContain('public.fn_lightning_match(g,to_timestamp');
+    expect(fixture).toContain("jsonb_array_length(members->'players') NOT BETWEEN 5 AND 6");
+    expect(fixture).not.toMatch(/UPDATE\s+(?:public\.)?lightning_matcher_shadow_comparison/i);
+  });
+
   it('never reads a horse marker (Law 10.5)', () => {
     for (const src of [CHECK, MODEL]) expect(src).not.toMatch(/is_horse|horse_id|isHorse/);
     const sqlOnly = HCODE.split('\n').filter(

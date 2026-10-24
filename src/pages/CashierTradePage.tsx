@@ -1444,6 +1444,26 @@ function CashierTradeWorkspace() {
     if (tab === 'record') void loadRecords();
   }, [tab, loadRecords, recordsReload]);
 
+  /* A cash-out accepted (or a send made) while the Transaction History is open
+     lands in it without a manual refresh: the accept writes the row the
+     history reads, and the bus says a balance moved. A burst collapses into
+     one read, exactly as useClubPendingCashouts does. */
+  useEffect(() => {
+    if (tab !== 'record') return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const soon = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setRecordsReload((value) => value + 1), 500);
+    };
+    const offBalance = masterBus.subscribe('BALANCE_UPDATED', soon);
+    const offMutation = masterBus.subscribe('DATA_MUTATED', soon);
+    return () => {
+      if (timer) clearTimeout(timer);
+      offBalance?.();
+      offMutation?.();
+    };
+  }, [tab]);
+
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
   /** Open chip requests in this club. Drives the tab badge. */
   const [pendingCount, setPendingCount] = useState(0);

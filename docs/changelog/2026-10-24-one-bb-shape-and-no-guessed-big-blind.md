@@ -13,3 +13,7 @@ With stacks in BB the pot printed `50 BB`, the seat beside it `50.0 BB` and a be
 ## Pinned by
 
 `tests/the-pot-follows-the-stack-display.law.test.tsx`, extended: 6 of its 15 checks fail on the previous code.
+
+## 3. The hero's Call button follows the setting too
+
+The Call button printed its amount in chips with the stacks in BB. `ActionPanel` takes `displayBigBlind` (the felt's `seatBigBlind`) and prints the Call amount, the raise readout's BB figure and the slider floor through one `asBB` gate: BB when the player chose BB and the felt knows its big blind, chips otherwise. `bigBlind` still drives the slider grid and raise sizing. Two source pins in `tests/unit/tourneyUxSweep20260825.test.tsx` moved to the new gate in the same commit; the rule they guard (no BB text unless the user asked for it) is unchanged.

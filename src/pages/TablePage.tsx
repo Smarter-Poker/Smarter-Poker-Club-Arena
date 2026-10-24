@@ -28180,6 +28180,7 @@ function LiveTablePage({
                            print BB unconditionally while every seat next to it
                            printed chips. Same setting the seats and pot read. */
                         showStackInBB={v8Settings.show_stack_in_bb}
+                        displayBigBlind={seatBigBlind}
                         isMyTurn={true}
                         /* 2026-09-04 (audit item 6): the row is marked while
                            the socket is down. See ActionPanel.connectionStale. */

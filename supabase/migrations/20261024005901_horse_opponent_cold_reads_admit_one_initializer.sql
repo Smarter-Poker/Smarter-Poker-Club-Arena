@@ -13,8 +13,8 @@ SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';
 DO $preimage$
 BEGIN
- IF position('Concurrent initializers may scan' in pg_get_functiondef(
-  'public.fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure))=0 THEN
+ IF md5(pg_get_functiondef(
+  'public.fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure)) <> 'd2b6bc29fcb26a4fbaafac3132676399' THEN
   RAISE EXCEPTION 'opponent memory reader preimage changed';
  END IF;
 END $preimage$;

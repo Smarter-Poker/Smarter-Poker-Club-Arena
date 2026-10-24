@@ -137,7 +137,7 @@ export default function ArenaAccessBoundary({
       <section className="club-home error" role="alert">
         <SpadeConsole
           eyebrow="Poker Arena"
-          title="Could Not Verify Arena Access"
+          title="Access Not Verified"
           pill={ARENA_ACCESS_FAILURE_COPY[state.failure ?? 'service'].pill}
           pillInk="red"
           plates={{

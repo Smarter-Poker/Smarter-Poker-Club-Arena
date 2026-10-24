@@ -36,7 +36,7 @@ export function arenaGameCardActionsForEntry(
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
-    if (entry.status === 'full' || entry.status === 'waitlist') {
+    if (!entry.game?.lightning && (entry.status === 'full' || entry.status === 'waitlist')) {
       const joined = mine === 'waitlisted';
       return {
         primaryLabel: joined ? 'Leave Waitlist' : 'Join Waitlist',

@@ -1056,8 +1056,8 @@ const COL_ACTIONS: ColumnDef = {
       /* A seat the player already holds beats every other consideration: a
          full table is still THEIR table, and Return To Table has to win over
          the waitlist offer. */
-      const full = !seated && e.capacity > 0 && e.players >= e.capacity;
-      const waiting = ctx.waitlistedIds.has(e.id);
+      const full = !e.game?.lightning && !seated && e.capacity > 0 && e.players >= e.capacity;
+      const waiting = !e.game?.lightning && ctx.waitlistedIds.has(e.id);
       /* A disabled game (or a paused table) is not taking players: its door
          refuses, so the button says so instead of offering a Join that can
          only fail. A seat the player already holds still wins - they finish

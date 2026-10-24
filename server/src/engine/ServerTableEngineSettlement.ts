@@ -64,6 +64,11 @@ import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import {
+  horseCashTopUpStyle,
+  horseTopUpAmount,
+  isPlo5Variant,
+} from '../services/HorseTopUpStyle.js';
 import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
 import { gestureAfterHand } from '../services/HorseTableGestures.js';
 import {
@@ -3751,6 +3756,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     if (!this.lifecycleCanMutate()) return;
 
     // 5. Auto-rebuy busted horses (cash games only)
+    // A horse that reloaded this hand is not also topped up this hand (5.1).
+    const horsesReloadedThisHand = new Set<string>();
     await runStep('horse_rebuys', false, async () => {
       if (!isDiamondCash && !this.isTournamentTable() && !isMaintenanceFrozen()) {
         const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
@@ -3814,6 +3821,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (funding.status === 'unknown') return;
           if (funding.status === 'funded') {
             horse.stack = funding.stack;
+            horsesReloadedThisHand.add(horse.user_id);
             this.horseRebuys.set(horse.user_id, currentRebuys + 1);
             console.log(
               `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
@@ -3828,6 +3836,58 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           }
         }
+      }
+    });
+    if (!this.lifecycleCanMutate()) return;
+
+    // 5.1 PLO5 HORSE TOP-UPS (Dan 2026-10-24): "70% OF HORSES SHOULD BE ADDING
+    // ON IN THE PLO5 GAME. 30% SHOULD BE ON 'AUTO TOP UP'." Between hands, an
+    // Auto Top Up horse refills any stack under the table maximum, exactly as
+    // the human Auto Top Up does; an add-on horse adds back to the maximum
+    // once its stack is under its own comfort line. Which horse is which, and
+    // how much, is HorseTopUpStyle. Same funding door as the rebuy above, own
+    // idempotency key, and the same add_on_applied bubble a human's add-on
+    // shows. Every other game is untouched.
+    await runStep('horse_top_ups', false, async () => {
+      if (isDiamondCash || this.isTournamentTable() || isMaintenanceFrozen()) return;
+      const variant = this.tableInfo?.game_variant;
+      if (!isPlo5Variant(variant)) return;
+      const maxBuyIn = this.getMaxBuyIn();
+      if (!(maxBuyIn > 0)) return;
+      for (const horse of players) {
+        if (!horse.is_horse || horsesReloadedThisHand.has(horse.user_id)) continue;
+        if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+        const amount = horseTopUpAmount({
+          userId: horse.user_id,
+          variant,
+          stack: Number(horse.stack),
+          maxBuyIn,
+        });
+        if (!(amount > 0)) continue;
+        const funding = await autoRebuyHorse(
+          this.tableId,
+          horse.user_id,
+          amount,
+          this.tableInfo?.club_id || '',
+          snap.handNumber,
+          'topup'
+        );
+        if (!this.lifecycleCanMutate()) return;
+        if (funding.status !== 'funded') continue; // declined or unknown: no chips moved here
+        horse.stack = funding.stack;
+        this.hub?.emitEvent(this.tableId, {
+          type: 'add_on_applied',
+          table_id: this.tableId,
+          seat: horse.seat_number ?? null,
+          user_id: horse.user_id,
+          amount,
+          stack: funding.stack,
+          kind: 'addon',
+          timestamp: Date.now(),
+        });
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Horse ${horseCashTopUpStyle(horse.user_id, variant)}: ${horse.username} +${amount} -> ${funding.stack}`
+        );
       }
     });
     if (!this.lifecycleCanMutate()) return;

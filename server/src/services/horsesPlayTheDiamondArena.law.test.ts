@@ -183,7 +183,7 @@ describe('the arena wallet is the horses own Diamonds', () => {
     const keys = seat.match(/p_idempotency_key/g) ?? [];
     expect(keys.length).toBe(2);
     expect(seat).toContain('...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),');
-    expect(SEED).toContain('{ diamond: arenaTable }');
+    expect(SEED).toContain('diamond: arenaTable,');
   });
 
   it('Diamond exposure is its own map and never summed into the chip one', () => {

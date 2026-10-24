@@ -15,9 +15,7 @@ import { reportError } from '../errorReporter.js';
 import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 export type HorseRebuyResult =
-  | { status: 'funded'; stack: number }
-  | { status: 'declined' }
-  | { status: 'unknown' };
+  { status: 'funded'; stack: number } | { status: 'declined' } | { status: 'unknown' };
 
 /** One bust is one funding operation, including a retry through the idle path. */
 export async function autoRebuyHorse(
@@ -25,7 +23,11 @@ export async function autoRebuyHorse(
   userId: string,
   rebuyAmount: number,
   clubId: string,
-  handNumber: number
+  handNumber: number,
+  /* A between-hands TOP-UP of a live stack (HorseTopUpStyle, PLO5) is its own
+     purchase with its own key: a horse that busts and rebuys in a hand must
+     never present the rebuy's key for a top-up of a different size. */
+  purpose: 'rebuy' | 'topup' = 'rebuy'
 ): Promise<HorseRebuyResult> {
   if (isMaintenanceFrozen()) return { status: 'unknown' };
   if (
@@ -41,7 +43,15 @@ export async function autoRebuyHorse(
     );
     return { status: 'unknown' };
   }
-  const opId = uuidv5('horse-rebuy:' + tableId + ':' + userId + ':' + handNumber, uuidv5.URL);
+  const opId = uuidv5(
+    (purpose === 'topup' ? 'horse-topup:' : 'horse-rebuy:') +
+      tableId +
+      ':' +
+      userId +
+      ':' +
+      handNumber,
+    uuidv5.URL
+  );
   const payload = { p_table_id: tableId, p_user_id: userId, p_amount: rebuyAmount, p_op_id: opId };
   let lastError = 'missing or mismatched funding receipt';
   for (let attempt = 0; attempt < 3; attempt++) {

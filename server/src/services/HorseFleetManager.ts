@@ -13,6 +13,7 @@
  * NOTE: "Horses" — NEVER call them anything else.
  */
 
+import { horseSitsWithAutoTopUp } from './HorseTopUpStyle.js';
 import { tableHeldByRetainedHand } from '../engine/retainedHandHolds.js';
 import { compareCashPopulation, isHoldemOrPlo } from './CashHorseAllocation.js';
 import { supabase, seedingSupabase } from './supabase.js';
@@ -3761,7 +3762,10 @@ export class HorseFleetManager {
                   cappedThisCycle.add(horse.id);
                 }
               },
-              { diamond: arenaTable }
+              {
+                diamond: arenaTable,
+                autoTopUp: horseSitsWithAutoTopUp(horse.id, table.game_variant),
+              }
             );
             if (!success) return false;
             seated++;
@@ -4865,7 +4869,9 @@ export class HorseFleetManager {
           seatNumber,
           buyIn,
           table.name,
-          seatClub ?? null
+          seatClub ?? null,
+          undefined,
+          { autoTopUp: horseSitsWithAutoTopUp(offer.user_id, table.game_variant) }
         );
         if (!ok) continue;
 
@@ -4992,7 +4998,10 @@ export class HorseFleetManager {
        row and the seat into one receipt, so a lost response can be replayed
        instead of paid twice. One fresh key per ATTEMPT, exactly as the
        browser's buy-in mints one per click. Chip seats send nothing new. */
-    opts?: { diamond?: boolean }
+    /* THE SEAT'S AUTO TOP UP FLAG (Dan 2026-10-24). 30% of PLO5 horses sit
+       with Auto Top Up on and 70% add on by hand (HorseTopUpStyle); the flag
+       is written by the same buy-in door a human's switch is. */
+    opts?: { diamond?: boolean; autoTopUp?: boolean }
   ): Promise<boolean> {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): a cycle that began before :53 stops at
     // the first seat after it (a cycle has run for 47 minutes before).
@@ -5019,7 +5028,7 @@ export class HorseFleetManager {
         p_table_id: tableId,
         p_seat_number: seatNumber,
         p_amount: buyIn,
-        p_auto_rebuy: false,
+        p_auto_rebuy: opts?.autoTopUp === true,
         p_club_id: clubId,
         ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
       });
@@ -5041,7 +5050,7 @@ export class HorseFleetManager {
             p_table_id: tableId,
             p_seat_number: seatNumber,
             p_amount: opts?.diamond ? Math.ceil(required) : required,
-            p_auto_rebuy: false,
+            p_auto_rebuy: opts?.autoTopUp === true,
             p_club_id: clubId,
             ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
           }));

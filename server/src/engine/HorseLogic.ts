@@ -1980,6 +1980,15 @@ export interface HorseDecideOpts {
    *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
    *  (default: enabled; league matchup v51_river_flat). */
   v51RiverFlat?: boolean;
+  /** V52 (2026-10-24): the public-range advantage read added with the
+   *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
+   *  compare hero's and the opponent's public ranges on the actual board; the
+   *  result drives the range c-bet upgrade (boardFavorsAggressor), the V38 EV
+   *  initiative and the pot-limit small sizes. Disabled, no own range is
+   *  built, so every consumer falls back to the earlier rule (NLH high-card
+   *  dry-board shortcut; Omaha none). Disable to ablate (default: enabled;
+   *  league matchups v52_range_advantage, plo4/plo5/plo6_v52_range_advantage). */
+  v52RangeAdvantage?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -5946,7 +5955,12 @@ export class HorseLogic {
     // NLH shortcut remains only when no range pair can be estimated; Omaha
     // never inherits that shortcut. Uncertain samples grant no range edge.
     const ownRange =
-      useMind && useCbet10 && useIQ && opponents.length === 1 && !multiBoard36
+      (opts.v52RangeAdvantage ?? true) !== false &&
+      useMind &&
+      useCbet10 &&
+      useIQ &&
+      opponents.length === 1 &&
+      !multiBoard36
         ? HorseMind.bandFor(
             player.user_id,
             gs.actionHistory,

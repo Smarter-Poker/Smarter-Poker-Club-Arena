@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-main-seat-rest-timing",
+      "ownerOrder": "Dan, 2026-10-24 09:45 Chicago: \"FINSIH UP ALL OF THIS\" on the Main seat timing report, which stated that PR #7900 (110e1b7c1) goes live at the routine 4:00 AM release tomorrow and \"To get it live sooner, you'd need to order an off-cycle release window\"; same message: \"MAKE SURE THE REMAINING 288 HORSES GET THE UPDATED BRAIN\". Applies only to making protected 110e1b7c1 (a Main seat planned or filled under the 2-second rest takes the next hand) live.",
+      "contains": "110e1b7c111bee6e442d6407cf050cd677ea3daf",
+      "notBefore": "2026-10-24T14:48:44Z",
+      "notAfter": "2026-10-24T20:47:44Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-horse-fleet-final-activation",
       "ownerOrder": "Dan, 2026-10-23 evening: \"Fix the cutover failure and get these upgrades live on every horse NOW. Don't stop at merged or installed. Verify every horse is using the new decision making and persistent memory\"; \"ALL HORSES NEED TO BE USING THESE SKILL ON EVERY SINGLE HAND\"; \"these horses have GOT TO STOP ... CALLING OFF THERE WHOLE STACKS WITH WEAK FLUSHES IN PLO4 PLO5 AND PLO6\"; 2026-10-24 01:30 Chicago: \"PICK UP WHERE THE OTHER AGENT LEFT OFF\". The 735e and f16 cutovers rolled back on the bounded launch, so the earlier windows expire unserved. Applies only to making protected f16e2c13 (all horse gameplay repairs, weak-flush guard and bounded memory caller) live on the shared horse decision path.",
       "contains": "f16e2c1384bfccef49ba03094f6202de05365fca",

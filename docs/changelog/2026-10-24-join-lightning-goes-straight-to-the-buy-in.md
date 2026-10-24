@@ -34,8 +34,9 @@ A running physical table of a Lightning game paints a pool room's hand
 (LightningObserverProjection), so every seat on it looks taken whatever is
 free underneath, and a buy-in opened "on the first open seat" found none.
 Migration `20261024150545` makes the join door name the chair it holds
-(`seat_number`, from `fn_lightning_join_chair`: the lowest physically free
-chair, stepping past earlier holds of other players), and refuses up front with
+(`seat_number`, computed inline: the lowest physically free chair, stepping
+past earlier holds of other players; probed in a rolled-back transaction
+against the live definition), and refuses up front with
 `LIGHTNING_JOINS_DISABLED` when an operator has stopped Lightning joins. The
 entry page carries the chair on `?seat=`, and `handleSeatClick(seat,
 { lightningChair: true })` opens the buy-in on it without consulting the
@@ -54,3 +55,24 @@ and `tests/lightning/LightningEntryPage.test.tsx`.
 - A seated player whose pool session closed (sat out, or a disconnect) while
   the game is still Lightning is no longer told "Lightning Has Ended"; the card
   says the seat is waiting.
+
+## Third pass: Join Lightning is one question (Dan, 14:37 Chicago)
+
+Dan: "LIGHTNING NEEDS TO OPERATE JUST LIKE A TOURNAMENT, YOU DON'T SELECT YOUR
+SEAT, YOU 'JOIN LIGHTNING GAMES' SELECT HOW MUCH YOU WANT TO BUY IN FOR, AND
+THEN YOU AUTO ASSIGN THEM TO A SEAT AND TABLE."
+
+The first two passes still sent the player to a table and opened that table's
+buy-in. Now the Join Lightning page asks the amount itself (the shared
+BuyInModal, priced from a live table of the game with the rejoin floor and the
+paying wallet), and on confirm `src/lightning/lightningJoinBuyIn.ts` holds a
+chair through `fn_cash_game_join` (which names it, `seat_number`), buys that
+chair through the cash buy-in journal and `atomic_table_buyin` exactly as a
+table's own sheet does, and opens the pool room. A chair taken between the
+hold and the purchase (a proven seat collision, no chips moved) is replaced
+once with a fresh hold; an unanswered purchase is never retried and is left
+for the table's own recovery. Join Lightning on a Lightning table goes to
+`/lightning/:id?join=1`, which opens the amount at once. The table-side
+Lightning chair plumbing from the second pass is removed.
+
+Pinned by `tests/lightning/join-lightning-is-one-buy-in.law.test.ts`.

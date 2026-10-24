@@ -19,23 +19,20 @@ describe('a Lightning join names the chair it holds', () => {
   });
 
   it('every Lightning seat answer carries seat_number; other modes carry NULL', () => {
+    expect(sql).toContain("THEN $r$ || replace(chair, '%T', 'h.table_id') || $r$ END);$r$);");
+    expect(sql).toContain("THEN $r$ || replace(chair, '%T', 't.id') || $r$ END);$r$);");
     expect(sql).toMatch(
-      /'seat_number', CASE WHEN g\.cluster_mode = 'lightning'\s+THEN public\.fn_lightning_join_chair\(h\.table_id, v_uid\) END/
+      /'table_opened', true,\s+'seat_number', \$r\$ \|\| replace\(chair, '%T', 't\.id'\)/
     );
-    expect(sql).toMatch(
-      /'seat_number', CASE WHEN g\.cluster_mode = 'lightning'\s+THEN public\.fn_lightning_join_chair\(t\.id, v_uid\) END/
-    );
-    expect(sql).toMatch(
-      /'table_opened', true,\s+'seat_number', public\.fn_lightning_join_chair\(t\.id, v_uid\)/
-    );
+    expect(sql).toMatch(/'seat_number', CASE WHEN g\.cluster_mode = 'lightning'/);
   });
 
-  it('the chair is a physically free one, stepping past earlier holds, and is not a client RPC', () => {
-    expect(sql).toMatch(/ts\.left_at IS NULL\s+AND ts\.seat_number = n/);
-    expect(sql).toMatch(/WHERE f\.rn = 1 \+ \(SELECT count\(\*\) FROM public\.table_waitlist w/);
-    expect(sql).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_lightning_join_chair(uuid, uuid) FROM PUBLIC, anon, authenticated;'
+  it('the chair is a physically free one, stepping past earlier holds, and declares no new object', () => {
+    expect(sql).toMatch(/lj_ts\.left_at IS NULL\s+AND lj_ts\.seat_number = lj_n/);
+    expect(sql).toMatch(
+      /WHERE lj_f\.lj_rn = 1 \+ \(SELECT count\(\*\) FROM public\.table_waitlist lj_w/
     );
+    expect(sql).not.toMatch(/CREATE (OR REPLACE )?FUNCTION/);
   });
 
   it('a stopped Lightning game refuses before any hold, and says so', () => {

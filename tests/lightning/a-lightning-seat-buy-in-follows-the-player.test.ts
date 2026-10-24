@@ -25,27 +25,10 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
     );
   });
 
-  it('Join Lightning on a Lightning table opens the door-assigned chair, never a watch-only loop', () => {
+  it('Join Lightning on a Lightning table goes to the one-question door, never a seat on this felt', () => {
     const body = sliceMethod(page, 'const openLightningAnchorEntry = () =>');
-    expect(body).toMatch(
-      /handleSeatClick\(lightningChairFromUrl\(\), \{ lightningChair: true \}\)/
-    );
-    expect(body).toMatch(/navigate\(lightningRoute\(anchorLightningClusterId\)\)/);
-  });
-
-  it('a Lightning chair is not read off a felt painting a pool room', () => {
-    const seat = sliceMethod(page, 'const handleSeatClick = (seatNumber: number');
-    expect(seat).toMatch(
-      /const lightningChair = opts\?\.lightningChair === true && !!anchorLightningClusterId;/
-    );
-    expect(seat).toMatch(/!lightningChair &&\s+seatIdx >= 0/);
-    const deepLink = page.slice(
-      page.indexOf('DEEP LINK ?buyin=1'),
-      page.indexOf('const openLightningAnchorEntry')
-    );
-    expect(deepLink).toMatch(
-      /if \(anchorLightningClusterId\) \{[\s\S]*?handleSeatClick\(lightningChairFromUrl\(\), \{ lightningChair: true \}\);/
-    );
+    expect(body).toMatch(/navigate\(`\$\{lightningRoute\(anchorLightningClusterId\)\}\?join=1`\)/);
+    expect(body).not.toMatch(/handleSeatClick/);
   });
 
   it('only a game whose mode is Lightning is treated as Lightning (a Classic table keeps its waiting list)', () => {
@@ -53,13 +36,5 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
       /isLightningMode\(spectatorLightningStates\[tableState\.clusterId\]\?\.clusterMode\)/
     );
     expect(page).not.toMatch(/spectatorLightningStates\[tableState\.clusterId\] != null/);
-  });
-
-  it('the Join Lightning door lands on the table with its buy-in open on the assigned chair', () => {
-    const entry = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
-    expect(entry).toMatch(
-      /joinsLightning && r\.action === 'seat'\s+\? `\/table\/\$\{r\.table_id\}\?buyin=1/
-    );
-    expect(entry).toContain('&seat=${chair}');
   });
 });

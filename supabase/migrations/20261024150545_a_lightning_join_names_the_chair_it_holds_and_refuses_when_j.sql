@@ -25,8 +25,8 @@
 --    carries seat_number: the lowest physically free chair on the held table
 --    (no live table_seats row), stepping past one chair for every earlier live
 --    hold of another player on that table, so two holders are not told the
---    same number. fn_lightning_join_chair computes it; it is internal (no
---    grant to clients). Classic and must-move answers carry seat_number NULL,
+--    same number. The chair is computed inline in the join's answer, so this
+--    migration declares no new object. Classic and must-move answers carry seat_number NULL,
 --    and the client keeps the chair the player tapped, exactly as before.
 --    The buy-in door (atomic_table_buyin) is still the authority on the seat.
 --
@@ -47,33 +47,24 @@ BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '8s';
 
-CREATE OR REPLACE FUNCTION public.fn_lightning_join_chair(p_table_id uuid, p_user_id uuid)
- RETURNS integer
- LANGUAGE sql
- STABLE
- SET search_path TO 'public', 'pg_temp'
-AS $function$
-  -- The chair a Lightning join hands its caller on this table: the lowest free
-  -- chair, stepping past one for each other player's earlier live hold here.
-  SELECT f.n
-    FROM (SELECT n, row_number() OVER (ORDER BY n) AS rn
-            FROM public.tables tb, generate_series(1, tb.max_players) AS n
-           WHERE tb.id = p_table_id
-             AND NOT EXISTS (SELECT 1 FROM public.table_seats ts
-                              WHERE ts.table_id = p_table_id AND ts.left_at IS NULL
-                                AND ts.seat_number = n)) f
-   WHERE f.rn = 1 + (SELECT count(*) FROM public.table_waitlist w
-                      WHERE w.table_id = p_table_id AND w.user_id <> p_user_id
-                        AND w.status = 'notified' AND w.hold_expires_at > now()
-                        AND w.notified_at < coalesce((SELECT max(x.notified_at) FROM public.table_waitlist x
-                                                       WHERE x.table_id = p_table_id AND x.user_id = p_user_id
-                                                         AND x.status = 'notified'), now()));
-$function$;
-REVOKE ALL ON FUNCTION public.fn_lightning_join_chair(uuid, uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_lightning_join_chair(uuid, uuid) TO service_role;
-
 DO $source$
 DECLARE s text; n text;
+  -- The chair a Lightning join hands its caller on table %T: the lowest
+  -- physically free chair, stepping past one for each other player's earlier
+  -- live hold on that table.
+  chair CONSTANT text := $c$(SELECT lj_f.lj_n FROM (SELECT lj_n, row_number() OVER (ORDER BY lj_n) AS lj_rn
+                FROM public.tables lj_tb, generate_series(1, lj_tb.max_players) AS lj_n
+               WHERE lj_tb.id = %T
+                 AND NOT EXISTS (SELECT 1 FROM public.table_seats lj_ts
+                                  WHERE lj_ts.table_id = %T AND lj_ts.left_at IS NULL
+                                    AND lj_ts.seat_number = lj_n)) lj_f
+       WHERE lj_f.lj_rn = 1 + (SELECT count(*) FROM public.table_waitlist lj_w
+                              WHERE lj_w.table_id = %T AND lj_w.user_id <> v_uid
+                                AND lj_w.status = 'notified' AND lj_w.hold_expires_at > now()
+                                AND lj_w.notified_at < coalesce((SELECT max(lj_x.notified_at)
+                                      FROM public.table_waitlist lj_x
+                                     WHERE lj_x.table_id = %T AND lj_x.user_id = v_uid
+                                       AND lj_x.status = 'notified'), now())))$c$;
   a_refuse  CONSTANT text := $a$  IF EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=g.club_id AND c.asset='diamonds')
      AND g.cluster_mode IS DISTINCT FROM 'must_move' THEN$a$;
   a_refresh CONSTANT text := $a$                              'open_seats', public.fn_cash_game_open_seats(h.table_id) + 1,
@@ -100,7 +91,7 @@ BEGIN
       USING ERRCODE = 'check_violation';
   END IF;
   -- LIGHTNING NAMES ITS CHAIR (2026-10-24): every Lightning 'seat' answer
-  -- below carries seat_number, the chair it holds (fn_lightning_join_chair).
+  -- below carries seat_number, the lowest free chair on the held table.
 
 $r$ || a_refuse);
   -- LIGHTNING NAMES ITS CHAIR (2026-10-24): every Lightning 'seat' answer
@@ -108,13 +99,13 @@ $r$ || a_refuse);
   n := replace(n, a_refresh, $r$                              'open_seats', public.fn_cash_game_open_seats(h.table_id) + 1,
                               'hold_expires_at', v_hold_until,
                               'seat_number', CASE WHEN g.cluster_mode = 'lightning'
-                                THEN public.fn_lightning_join_chair(h.table_id, v_uid) END);$r$);
+                                THEN $r$ || replace(chair, '%T', 'h.table_id') || $r$ END);$r$);
   n := replace(n, a_loop, $r$                              'open_seats', public.fn_cash_game_open_seats(t.id) + 1,
                               'hold_expires_at', v_hold_until,
                               'seat_number', CASE WHEN g.cluster_mode = 'lightning'
-                                THEN public.fn_lightning_join_chair(t.id, v_uid) END);$r$);
+                                THEN $r$ || replace(chair, '%T', 't.id') || $r$ END);$r$);
   n := replace(n, a_opened, $r$'hold_expires_at', v_hold_until, 'table_opened', true,
-                              'seat_number', public.fn_lightning_join_chair(t.id, v_uid));$r$);
+                              'seat_number', $r$ || replace(chair, '%T', 't.id') || $r$);$r$);
 
   IF n = s OR position('LIGHTNING NAMES ITS CHAIR' IN n) = 0
      OR position('LIGHTNING_JOINS_DISABLED' IN n) = 0 THEN

@@ -1136,6 +1136,58 @@
       "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
       "refusedBy": ["check-definer-authorization: anon rule"],
       "liveVerdict": "Both replaced functions preserve postgres/service_role-only ACL. Live read after installation: has_function_privilege false for anon and authenticated, true for service_role on both functions. Exact proacl {postgres=X/postgres,service_role=X/postgres}; migration asserts owner and ACL preimages. No browser execution introduced."
+    },
+    {
+      "version": "20261023214601",
+      "name": "midway_tables_fill_full_for_the_lightning_test",
+      "file": "supabase/migrations/20261023214601_midway_tables_fill_full_for_the_lightning_test.sql",
+      "md5": "cbf21d90693a62d5f9adc149e8bfc414",
+      "appliedToProductionAt": "2026-10-23T21:46:01Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: data-only history declares no object and carries no @live-proof line; adding one would stop it being a recording"
+      ],
+      "liveVerdict": "Data only: upserts one ca_horse_fleet_policy occupancy row for the Midway Lightning test. Creates no function, table, trigger, policy or grant. Read 2026-10-24 19:55 UTC: supabase_migrations.schema_migrations holds 20261023214601 with md5(statements) cbf21d90693a62d5f9adc149e8bfc414, equal to this file. Its liveness is that history row."
+    },
+    {
+      "version": "20261023221147",
+      "name": "midway_plo_games_switched_back_on",
+      "file": "supabase/migrations/20261023221147_midway_plo_games_switched_back_on.sql",
+      "md5": "1ac946fecf33c74877649f7dac579fe1",
+      "appliedToProductionAt": "2026-10-23T22:11:47Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: data-only history declares no object and carries no @live-proof line; adding one would stop it being a recording"
+      ],
+      "liveVerdict": "Data only: re-enables the Midway PLO cash_games closed after 20:50 UTC on 2026-10-23 and logs cash_cluster_events. Creates no function, table, trigger, policy or grant. Read 2026-10-24 19:55 UTC: supabase_migrations.schema_migrations holds 20261023221147 with md5(statements) 1ac946fecf33c74877649f7dac579fe1, equal to this file. Its liveness is that history row."
+    },
+    {
+      "version": "20261023222643",
+      "name": "midway_lightning_fill_starts_with_horses_awake_and_free",
+      "file": "supabase/migrations/20261023222643_midway_lightning_fill_starts_with_horses_awake_and_free.sql",
+      "md5": "aa37f25c21118a1c83617bb00b2fcedd",
+      "appliedToProductionAt": "2026-10-23T22:26:43Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: data-only history declares no object and carries no @live-proof line; adding one would stop it being a recording"
+      ],
+      "liveVerdict": "Data only: rebuilds lightning_horse_fill and the matching stable_hand_membership_tags rows in one DO block (temp tables on commit drop). Creates no function, table, trigger, policy or grant. Read 2026-10-24 19:55 UTC: supabase_migrations.schema_migrations holds 20261023222643 with md5(statements) aa37f25c21118a1c83617bb00b2fcedd, equal to this file. Its liveness is that history row."
+    },
+    {
+      "version": "20261023224834",
+      "name": "midway_lightning_fill_draws_from_every_union_club",
+      "file": "supabase/migrations/20261023224834_midway_lightning_fill_draws_from_every_union_club.sql",
+      "md5": "49544dd0682d2795c94de6b9ad63cbec",
+      "appliedToProductionAt": "2026-10-23T22:48:34Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: data-only history declares no object and carries no @live-proof line; adding one would stop it being a recording"
+      ],
+      "liveVerdict": "Data only: rebuilds lightning_horse_fill from every Midway union club, upserts its stable_hand_membership_tags and clears fill horses' per-game sit windows, in one DO block (temp tables on commit drop). Creates no function, table, trigger, policy or grant. Read 2026-10-24 19:55 UTC: supabase_migrations.schema_migrations holds 20261023224834 with md5(statements) 49544dd0682d2795c94de6b9ad63cbec, equal to this file. Its liveness is that history row."
     }
   ]
 }

@@ -23,7 +23,7 @@ import {
  *             plus unions the viewer owns (never admin-only treasuries), with balances (Dan: "I also own
  *             the midway union... show wallets for all the clubs, unions a
  *             user is a part of").
- *   Tabs      Trade | Trade Record | Leaderboard Record | Chip Request
+ *   Tabs      Trade | Transaction History | Leaderboard Record | Chip Request
  *   Strip     Your Chip Balance · Agency Players Balance · Available Chips (+)
  *   List      the viewer's DOWNLINE (whole club for owners/admins, assigned
  *             players for agents) with live balances, search, group-by-role,
@@ -4394,7 +4394,7 @@ function CashierTradeWorkspace() {
                   value={recordQuery}
                   onChange={(event) => setRecordQuery(event.target.value)}
                   placeholder="Search Person Or Entry Type"
-                  aria-label="Search Trade Record"
+                  aria-label="Search Transaction History"
                 />
                 <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
                   {(['all', 'in', 'out', 'managed'] as const).map((direction) => (

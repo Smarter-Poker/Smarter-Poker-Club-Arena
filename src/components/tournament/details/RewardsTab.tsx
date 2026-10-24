@@ -88,7 +88,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
-import type { TournamentTabProps, PayoutPlace } from './types';
+import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import {
   chips,
@@ -411,7 +411,47 @@ export default function RewardsTab({
   /* ── THE LADDER OF PLACES ─────────────────────────────────────────────── */
 
   const parsedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
-  const bands = useMemo(() => (parsedPlaces ? toBands(parsedPlaces) : []), [parsedPlaces]);
+  /**
+   * WHO FINISHED IN EACH PAID PLACE (Dan 2026-10-24: "WHAT PLAYERS WON WHAT
+   * PRIZES UNDER REWARDS").
+   *
+   * The ladder used to print place, percentage and amount and never the
+   * player, even after the event ended: Friday Fight Night PKO (827A1B52)
+   * finished with all 276 positions and 35 prizes recorded on
+   * tournament_players, and Rewards still read "1st 17.32% 1,741" with no
+   * name. A finishing position is written to the player's row when they bust,
+   * and the champion's when the event ends, so the names fill in down the
+   * ladder as the field plays into the money. A live player has no position
+   * and claims no row.
+   */
+  const finisherByPlace = useMemo(() => {
+    const byPlace = new Map<number, TournamentEntry>();
+    for (const e of entries) {
+      const place = Math.floor(num(e.position));
+      if (place > 0 && (isPlayerOut(e) || e.status === 'winner')) byPlace.set(place, e);
+    }
+    return byPlace;
+  }, [entries]);
+
+  /* A band of places sharing one percentage reads as "4-6" until somebody in
+     it finishes; then it opens into its single places so every name sits on
+     its own prize. */
+  const bands = useMemo(() => {
+    if (!parsedPlaces) return [];
+    return toBands(parsedPlaces).flatMap((band) => {
+      if (band.fromPlace === band.toPlace) return [band];
+      let decided = false;
+      for (let place = band.fromPlace; place <= band.toPlace; place++) {
+        if (finisherByPlace.has(place)) decided = true;
+      }
+      if (!decided) return [band];
+      return Array.from({ length: band.toPlace - band.fromPlace + 1 }, (_, k) => ({
+        fromPlace: band.fromPlace + k,
+        toPlace: band.fromPlace + k,
+        percentage: band.percentage,
+      }));
+    });
+  }, [parsedPlaces, finisherByPlace]);
   const paidPlaces = parsedPlaces ? parsedPlaces.length : 0;
   /* The MTT's paid depth, as the database applies it
      (fn_ca_effective_payout_depth: the stored depth, else the legacy percent). */
@@ -930,6 +970,13 @@ export default function RewardsTab({
                 placeLadderPool !== null && placeLadderPool > 0 && parsedPlaces
                   ? placePrize(placeLadderPool, parsedPlaces, band.fromPlace, unitCents)
                   : 0;
+              /* The player who took this place, and what they were actually
+                 paid. The recorded prize wins over the projection: a final
+                 table deal or the residual on the last paid place makes them
+                 differ, and the player's wallet holds the recorded one. */
+              const finisher =
+                band.fromPlace === band.toPlace ? finisherByPlace.get(band.fromPlace) : undefined;
+              const recordedPrize = finisher ? num(finisher.prize) : 0;
 
               return (
                 <li
@@ -949,7 +996,14 @@ export default function RewardsTab({
                   </span>
 
                   <span className="rw-row__mid">
-                    <span className="rw-pct">{pct(band.percentage)}</span>
+                    {finisher ? (
+                      <span className="rw-who">
+                        <span className="tl-name rw-who__name">{finisher.username}</span>
+                        <span className="rw-pct">{pct(band.percentage)}</span>
+                      </span>
+                    ) : (
+                      <span className="rw-pct">{pct(band.percentage)}</span>
+                    )}
                     {isHeroRow && (
                       <span className="tl-badge tl-badge--action rw-tag">
                         {heroFinish ? 'Your Finish' : 'You If You Bust Now'}
@@ -961,7 +1015,7 @@ export default function RewardsTab({
                   </span>
 
                   <span className="tl-num tl-num--accent rw-prize">
-                    {prize > 0 ? chips(prize) : '-'}
+                    {recordedPrize > 0 ? unitMoney(recordedPrize) : prize > 0 ? chips(prize) : '-'}
                   </span>
                 </li>
               );

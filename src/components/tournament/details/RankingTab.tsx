@@ -208,15 +208,27 @@ const RankRow = React.memo(function RankRow({
     .filter(Boolean)
     .join(' ');
 
+  /* Dan 2026-10-24: Ranking "SHOULD SHOW THE PLAYERS AND WHAT POSITION THE
+     BUSTED IN". A busted row reads "Busted 61st" and, when the place paid,
+     carries what it won where its stack used to read "0 / 0 BB". The champion
+     is not "out" (isPlayerOut is eliminated/finished only), so a finished
+     event used to print the winner as "Not Seated Yet" beside a stack nobody
+     holds any more. */
+  const champion = !qualified && entry.status === 'winner';
+  const finished = (out && !qualified) || champion;
+  const won = Number(entry.prize) || 0;
+
   const subText = qualified
     ? 'Qualified'
-    : out
-      ? entry.position
-        ? `Finished ${ordinal(entry.position)}`
-        : 'Eliminated'
-      : entry.table_id
-        ? tableName || 'At A Table'
-        : 'Not Seated Yet';
+    : champion
+      ? 'Winner'
+      : out
+        ? entry.position
+          ? `Busted ${ordinal(entry.position)}`
+          : 'Busted'
+        : entry.table_id
+          ? tableName || 'At A Table'
+          : 'Not Seated Yet';
 
   const body = (
     <>
@@ -254,7 +266,7 @@ const RankRow = React.memo(function RankRow({
               held both; it never printed them. */}
           <BuyInMarks rebuys={entry.rebuys} addOn={(entry.add_ons ?? 0) > 0} />
         </span>
-        {!out && (
+        {!out && !champion && (
           <span className="tl-meter rk-meter" aria-hidden="true">
             <span
               className={`tl-meter__fill${underAverage ? ' tl-meter__fill--under' : ''}`}
@@ -271,25 +283,36 @@ const RankRow = React.memo(function RankRow({
         )}
       </span>
 
-      <span className="rk-nums">
-        <span className={`tl-num${isHero ? ' tl-num--accent' : ''}`}>{chips(stack)}</span>
-        {/* The delta replaces the BB line for the second it is on screen, so a
+      {finished ? (
+        <span className="rk-nums">
+          {won > 0 && (
+            <>
+              <span className="tl-num tl-num--accent">{chips(won)}</span>
+              <span className="tl-sub rk-won">Won</span>
+            </>
+          )}
+        </span>
+      ) : (
+        <span className="rk-nums">
+          <span className={`tl-num${isHero ? ' tl-num--accent' : ''}`}>{chips(stack)}</span>
+          {/* The delta replaces the BB line for the second it is on screen, so a
             move reads as a move rather than as a number that silently differs
             from the one you were looking at. It is never announced: this is a
             board that changes constantly and an aria-live region here would
             talk over everything else on the page. */}
-        {pulseDir !== 0 && pulseAmount !== 0 ? (
-          <span
-            className={`tl-sub rk-delta${pulseDir > 0 ? ' rk-delta--up' : ' rk-delta--down'}`}
-            aria-hidden="true"
-          >
-            {pulseDir > 0 ? '+' : '-'}
-            {chipsCompact(Math.abs(pulseAmount))}
-          </span>
-        ) : (
-          <span className="tl-sub rk-bb">{bb === null ? '-' : `${chips(bb)} BB`}</span>
-        )}
-      </span>
+          {pulseDir !== 0 && pulseAmount !== 0 ? (
+            <span
+              className={`tl-sub rk-delta${pulseDir > 0 ? ' rk-delta--up' : ' rk-delta--down'}`}
+              aria-hidden="true"
+            >
+              {pulseDir > 0 ? '+' : '-'}
+              {chipsCompact(Math.abs(pulseAmount))}
+            </span>
+          ) : (
+            <span className="tl-sub rk-bb">{bb === null ? '-' : `${chips(bb)} BB`}</span>
+          )}
+        </span>
+      )}
     </>
   );
 

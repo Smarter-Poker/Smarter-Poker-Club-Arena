@@ -370,6 +370,12 @@
   white-space: nowrap;
 }
 
+/* "Won", under what a finished player was paid. */
+.rk-won {
+  color: var(--tl-text-dim);
+  text-transform: none;
+}
+
 .rk-bb {
   color: var(--tl-text-dim);
   font-variant-numeric: tabular-nums;

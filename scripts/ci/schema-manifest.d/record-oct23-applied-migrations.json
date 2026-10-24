@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/record-oct23-applied-migrations. OBSERVED live, not promised: read-only on 2026-10-24, to_regclass('public.ca_horse_roster_log') and to_regprocedure('public.fn_ca_horse_roster_digest(date)') both resolve in production. Both were created by 20261023182203 (applied 2026-10-23 with NULL statements, so the base snapshot never picked them up from a file); 20261023205714, 20261023221116 and 20261023222825 on main already write to the table.",
+  "tables": ["ca_horse_roster_log"],
+  "functions": ["fn_ca_horse_roster_digest"]
+}

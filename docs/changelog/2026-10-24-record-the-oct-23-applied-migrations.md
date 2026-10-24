@@ -17,6 +17,8 @@
 
 The six with stored statements are recordings of what ran, not of what #7846 says ran: two of #7846's files had drifted (220839 carried two extra blank lines; 222643 was missing four comment lines production holds and carried an install note added afterwards), and 224834 existed in no branch at all. Each was rebuilt from `supabase_migrations.schema_migrations.statements` and proved against `public.fn_ca_migration_text(version)` by md5 before it was written. All six have a row in `scripts/ci/recorded-migrations.manifest.json`; `check-definer-authorization`, `check-money-trigger-declared` and `check-no-new-band-aids` raise nothing against any of the eight.
 
+For the two NULL-statement versions the objects were checked instead: `20261023182203` creates `ca_horse_roster_log` and `fn_ca_horse_roster_digest(date)`, and both resolve in production (read-only, 2026-10-24). The nightly schema snapshot had never picked them up because no file declared them, which is what `check-migrations-applied` caught; `scripts/ci/schema-manifest.d/record-oct23-applied-migrations.json` declares them as observed, and the nightly refresh absorbs it. `20261023192030`'s declared objects were already in the snapshot.
+
 Nothing is applied by this change. Every version is already in `schema_migrations`, so `Apply Merged Migration` skips them.
 
 ## Also

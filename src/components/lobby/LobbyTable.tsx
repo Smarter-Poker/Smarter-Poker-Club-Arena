@@ -1920,17 +1920,21 @@ export default function LobbyTable({
   );
 
   const sorted = useMemo(() => {
-    /* GAMES ARE NEVER MIXED (Dan 2026-09-03). On the cash tabs every ordering
-       - the default, or whichever heading the player chose - runs INSIDE the
-       canonical variant groups: all the No Limit tables in stake order, then
-       all the Pineapple, then Short Deck; PLO, then PLO5, PLO6, PLO8o. The
-       group order is fixed; the player's sort and its direction decide the
-       order within each group, and the empty-table sink runs per group. */
+    /* Stakes sorting leads with the selected price direction across variants
+       (Dan 2026-10-23). Canonical variant order breaks ties at each stake;
+       other headings retain their variant groups. */
     const grouped = groupsByVariant(category);
     const col = sort ? columns.find((c) => c.key === sort.key) : undefined;
     const sv = col?.sortValue;
     const dir = sort?.dir === 'desc' ? -1 : 1;
+    const stakesFirst = grouped && col?.key === 'stakes';
     const compare = (a: LobbyEntry, b: LobbyEntry): number => {
+      if (stakesFirst) {
+        const aBad = !Number.isFinite(a.stakesValue);
+        const bBad = !Number.isFinite(b.stakesValue);
+        if (aBad !== bBad) return aBad ? 1 : -1;
+        if (!aBad && a.stakesValue !== b.stakesValue) return (a.stakesValue - b.stakesValue) * dir;
+      }
       if (grouped) {
         const ra = variantRank(a);
         const rb = variantRank(b);
@@ -1970,22 +1974,29 @@ export default function LobbyTable({
       if (!sv) return sink(entries);
       return sink([...entries].sort(compare));
     }
-    /* Sort the whole list, then sink within each variant run so an empty
-       No Limit table never drops below a running Pineapple one. */
+    /* Sink only inside a variant run, also bounded by stake when stakes
+       leads. An empty game must not cross either selected grouping. */
     const ordered = [...entries].sort(compare);
     const out: LobbyEntry[] = [];
     let run: LobbyEntry[] = [];
     let runRank: number | null = null;
     let runLabel = '';
+    let runStakes: number | null = null;
     for (const e of ordered) {
       const rank = variantRank(e);
       const label = String(e.gameLabel);
-      if (runRank !== null && (rank !== runRank || (rank === 40 && label !== runLabel))) {
+      if (
+        runRank !== null &&
+        (rank !== runRank ||
+          (rank === 40 && label !== runLabel) ||
+          (stakesFirst && !Object.is(e.stakesValue, runStakes)))
+      ) {
         out.push(...sink(run));
         run = [];
       }
       runRank = rank;
       runLabel = label;
+      runStakes = e.stakesValue;
       run.push(e);
     }
     if (run.length) out.push(...sink(run));

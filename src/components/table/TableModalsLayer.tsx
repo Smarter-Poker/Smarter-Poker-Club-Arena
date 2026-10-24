@@ -490,7 +490,12 @@ export interface TableModalsLayerProps {
   onDismissAnnouncement: () => void;
 
   // Tournament Winner
-  tournamentWinner: { prize: number; name: string; position?: number } | null;
+  tournamentWinner: {
+    prize: number;
+    name: string;
+    position?: number;
+    championName?: string;
+  } | null;
   onDismissTournamentWinner: () => void;
 
   // Hand History Panel
@@ -1423,6 +1428,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           unitCents={tournamentPrizeUnitCents}
           tournamentName={tournamentWinner.name}
           position={tournamentWinner.position}
+          championName={tournamentWinner.championName}
           onDismiss={onDismissTournamentWinner}
         />
       )}

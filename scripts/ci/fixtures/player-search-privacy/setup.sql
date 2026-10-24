@@ -60,6 +60,7 @@ CREATE TABLE public.club_members (
   user_id uuid NOT NULL,
   status text,
   role text,
+  agent_id uuid,
   PRIMARY KEY (club_id, user_id)
 );
 
@@ -99,7 +100,8 @@ CREATE TABLE public.tournaments (
 
 CREATE TABLE public.tables (
   id uuid PRIMARY KEY,
-  club_id uuid NOT NULL,
+  club_id uuid,
+  union_id uuid,
   tournament_id uuid,
   name text,
   game_variant text,

@@ -35,6 +35,7 @@ import {
   type CashBuyInIntent,
 } from '../services/CashBuyInRecovery';
 import { readTableFundingBalance } from '../services/TableFundingService';
+import { reportError } from '../utils/errorReporter';
 import { fetchMyLightningSession, setLightningEntryIntent } from './lightningSession';
 
 /** What the amount question needs: the game's range, the floor and the wallet. */
@@ -72,7 +73,8 @@ const defaultDeps: LightningBuyInDeps = {
 
 /** The signed-in player, or null. */
 export async function currentLightningUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
   return data.session?.user?.id ?? null;
 }
 
@@ -102,7 +104,10 @@ export async function readLightningBuyInContext(
   /* The rejoin floor (a player who just cashed out comes back with at least
      what they left with). The buy-in door enforces it; the question says it. */
   try {
-    const { data: floor } = await supabase.rpc('fn_cash_effective_buyin', { p_table_id: row.id });
+    const { data: floor, error: floorError } = await supabase.rpc('fn_cash_effective_buyin', {
+      p_table_id: row.id,
+    });
+    if (floorError) reportError(floorError, 'lightningJoinBuyIn.effective_buyin_read');
     const f = floor as { min?: unknown; floor_applied?: unknown } | null;
     if (f?.floor_applied === true && Number(f.min) > min) min = Number(f.min);
   } catch {

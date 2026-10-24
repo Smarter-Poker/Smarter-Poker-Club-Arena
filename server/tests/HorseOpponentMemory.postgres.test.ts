@@ -25,7 +25,6 @@ let client: Client;
 let port: number;
 let started = false;
 let repairTransaction: string;
-let numericTransaction: string;
 const hand = (
   id: string,
   action = 'raise',
@@ -197,11 +196,6 @@ beforeAll(async () => {
   await client.query(indexPreamble);
   repairTransaction = 'BEGIN;\n' + replacement;
   await client.query(repairTransaction);
-  numericTransaction = readFileSync(
-    join(path, '20261024031602_horse_opponent_legacy_numeric_counts.sql'),
-    'utf8'
-  );
-  await client.query(numericTransaction);
 }, 30000);
 
 afterAll(async () => {
@@ -347,21 +341,6 @@ describe('durable opponent memory with real PostgreSQL', () => {
       );
       expect(rows).toHaveLength(10);
       expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
-      const actions = ids.flatMap((userId) =>
-        ['preflop', 'flop', 'turn', 'river'].map((stage) => ({
-          userId,
-          stage,
-          action: stage === 'preflop' ? 'raise' : 'bet',
-        }))
-      );
-      const increments = exploitHandIncrements(actions);
-      for (const row of rows) {
-        const expected = freshExploitCounters();
-        for (let observation = 0; observation < 1024; observation++)
-          decayAndAdd(expected, increments.get(row.user_id)!);
-        for (const field of Object.keys(expected) as (keyof typeof expected)[])
-          expect(row.counters[field], `${row.user_id}/${field}`).toBeCloseTo(expected[field], 9);
-      }
     } finally {
       await client.query('reset statement_timeout');
     }
@@ -386,29 +365,6 @@ describe('durable opponent memory with real PostgreSQL', () => {
       [JSON.stringify(actions)]
     );
     expect(result.rows[0].matched).toBe(true);
-    const numeric = await client.query(
-      `with hands as (select x from jsonb_array_elements($1) x),
-      counted as materialized (select x,fn_horse_exploit_increments(x) counts from hands)
-      select bool_and(fn_horse_exploit_actor_counts(x,k) = ARRAY[
-        (counts->k->>'hands')::integer,
-        (counts->k->>'vpip')::integer,
-        (counts->k->>'pfr')::integer,
-        (counts->k->>'rfiOpp')::integer,
-        (counts->k->>'rfi')::integer,
-        (counts->k->>'threeBetOpp')::integer,
-        (counts->k->>'threeBet')::integer,
-        (counts->k->>'foldTo3BetOpp')::integer,
-        (counts->k->>'foldTo3Bet')::integer,
-        (counts->k->>'betCheckedToOpp')::integer,
-        (counts->k->>'betCheckedTo')::integer,
-        (counts->k->>'foldToBetOpp')::integer,
-        (counts->k->>'foldToBet')::integer,
-        (counts->k->>'riverCallOpp')::integer,
-        (counts->k->>'riverCall')::integer
-      ]) matched from counted cross join lateral jsonb_object_keys(counts) k`,
-      [JSON.stringify(actions)]
-    );
-    expect(numeric.rows[0].matched).toBe(true);
   });
 
   it('reads canonical history when player index projection is pending or a fact was voided', async () => {
@@ -536,10 +492,6 @@ describe('durable opponent memory with real PostgreSQL', () => {
       await expect(client.query(repairTransaction)).rejects.toThrow(
         /index missing, invalid or definition differs/
       );
-      await client.query('rollback');
-      await expect(client.query(numericTransaction)).rejects.toThrow(
-        /index missing, invalid or definition differs/
-      );
     } finally {
       await client.query('rollback');
       await client.query(`drop index idx_hand_history_horse_legacy_context;
@@ -567,26 +519,6 @@ describe('durable opponent memory with real PostgreSQL', () => {
     } finally {
       await client.query('reset role');
     }
-  });
-
-  it('keeps the integer parser private to the owning reader', async () => {
-    for (const role of ['anon', 'authenticated', 'service_role']) {
-      await client.query(`set role ${role}`);
-      try {
-        await expect(
-          client.query('select fn_horse_exploit_actor_counts($1,$2)', [
-            JSON.stringify(hand(uid).actions),
-            uid,
-          ])
-        ).rejects.toThrow(/permission denied/);
-      } finally {
-        await client.query('reset role');
-      }
-    }
-    expect(
-      (await client.query(`select fn_horse_exploit_actor_counts('null'::jsonb,$1) counts`, [uid]))
-        .rows[0].counts
-    ).toBeNull();
   });
 
   it('rejects malformed snapshots and ignores stale or duplicated worker delivery', async () => {

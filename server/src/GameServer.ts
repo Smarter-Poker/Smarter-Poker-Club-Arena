@@ -1,3 +1,4 @@
+import { LightningObserverProjection } from './lightning/LightningObserverProjection.js';
 import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
 import { horseRiverValueAlarmSnapshot } from './engine/HorseRiverValueAudit.js';
 import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
@@ -3555,6 +3556,13 @@ export class GameServer {
     registry: this.lightningRooms,
     backend: createSupabaseLightningHandBackend(),
     hub: tableStateHub,
+    observers: new LightningObserverProjection(tableStateHub, (clusterId) =>
+      [...this.tableEngines]
+        .filter(
+          ([, engine]) => engine.isRunning() && engine.lightningObserverCluster() === clusterId
+        )
+        .map(([tableId]) => tableId)
+    ),
     leaseFor: (hostTableId) => this.lightningLeaseFor(hostTableId),
     // Lightning Phase 10: auto-rebuy is asked for between hands only, at the
     // settled boundary; the database validates and moves every chip.

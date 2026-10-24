@@ -398,6 +398,12 @@ recover_on_exit() {
   elif [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]; then
     echo '[engine-release-transaction] WARN: deferred recovery to ExecStopPost because the engine lock is not held' >&2
   fi
+  if [ -n "${STOPPED_PREPARATION_IMAGE:-}" ]; then
+    timeout --signal=TERM --kill-after=1s 5s env \
+      ENGINE_UP_LOCK_HELD="$LOCK_HELD" ENGINE_UP_REMOVE_STOPPED=1 ENGINE_UP_STAGED_RUN="$RUN_ID" \
+      IMAGE="$STOPPED_PREPARATION_IMAGE" ENGINE_UP_PREPARED_SHA="$SHA" CONTAINER="$CONTAINER" ENV_FILE="$ENV_FILE" "$ENGINE_UP" \
+      || echo '[engine-release-transaction] WARN: stopped preparation retained for owning-run inspection' >&2
+  fi
   if [ "$LOCK_HELD" = 1 ]; then
     flock -u 9
   fi
@@ -1923,6 +1929,15 @@ timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
   "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" \
   || die 'bounded immutable engine image build failed'
 prewarm_candidate_image
+# Create only Docker metadata before any announcement or cutover. The sole
+# canonical run-spec cannot start these bytes without the later seal token.
+STOPPED_PREPARATION_IMAGE="$IMAGE_REF"
+PREPARE_REMAINING="$(remaining_seconds)" || die 'deadline expired before stopped preparation'
+[ "$PREPARE_REMAINING" -le 120 ] || PREPARE_REMAINING=120
+timeout --signal=TERM --kill-after=1s "${PREPARE_REMAINING}s" env \
+  ENGINE_UP_PREPARE_STOPPED=1 ENGINE_UP_STAGED_RUN="$RUN_ID" \
+  IMAGE="$IMAGE_REF" ENGINE_UP_PREPARED_SHA="$SHA" CONTAINER="$CONTAINER" ENV_FILE="$ENV_FILE" "$ENGINE_UP" \
+  || die 'immutable stopped candidate preparation failed before maintenance'
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
 # This is a compatibility operation for three pinned immutable predecessors, not a
@@ -2238,7 +2253,7 @@ bounded_break_command 20 docker stop -t 15 sp-autoheal >/dev/null
   || die 'autoheal did not stop before the compatibility trial'
 
 bounded_break_command 75 env \
-  ENGINE_UP_LOCK_HELD=1 ENGINE_RELEASE_TOKEN_FD=3 IMAGE="$TARGET_IMAGE_ID" \
+  ENGINE_UP_LOCK_HELD=1 ENGINE_RELEASE_TOKEN_FD=3 ENGINE_UP_STAGED_RUN="$RUN_ID" IMAGE="$TARGET_IMAGE_ID" \
   CONTAINER="$CONTAINER" ENV_FILE="$ENV_FILE" "$ENGINE_UP" 3<<<"$TOKEN" \
   || die 'candidate replacement exceeded its bounded cutover budget'
 unset TOKEN

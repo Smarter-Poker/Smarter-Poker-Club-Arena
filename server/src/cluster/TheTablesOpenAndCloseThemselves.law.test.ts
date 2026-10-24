@@ -268,17 +268,14 @@ describe('the engine executes at the hand boundary and announces at the start', 
     );
     expect(step).toMatch(/await this\.readCashHandDepartures\(diagnostic\)/);
     expect(step).toMatch(
-      /await this\.executePendingSeatMoves\(\{ announcedOnly: false \}, boundaryMoves, diagnostic\);/
+      /await this\.executePendingSeatMoves\(\{ announcedOnly: true \}, pendingMoves, diagnostic\);/
     );
-    expect(step).toContain("move.reason === 'must_move' && move.swap_move_id == null");
-    expect(step).toContain('move.announced_at != null');
-    expect(step).toMatch(/pendingMoves === null\s*\? null/);
     expect(step.indexOf('readCashHandDepartures(')).toBeLessThan(
       step.indexOf('executePendingSeatMoves(')
     );
   });
 
-  it('an idle table executes every pending move, in the idle branch and nowhere before the deal', () => {
+  it('idle tables execute every move while the seat-load sweep never moves a playing table', () => {
     const idle = DEALING.slice(
       DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');"),
       DEALING.indexOf('SPIN REVEAL HOLD')
@@ -323,7 +320,10 @@ describe('the engine executes at the hand boundary and announces at the start', 
     );
     expect(announce).toMatch(/await announceSeatMoves\(fresh\)/);
     expect(MOVES).toMatch(/fn_cash_seat_move_announce/);
-    expect(MOVES).toMatch(/pending\.filter\(\(m\) => m\.announced_at != null\)/);
+    expect(MOVES).toMatch(/pending\.filter\(\(move\) => seatMoveIsDue\(move, opts\)\)/);
+    expect(MOVES).toContain("move.reason === 'must_move' && move.swap_move_id == null");
+    expect(announce).toContain('mustMoveOnly: true');
+    expect(announce).toContain('await this.acquireSeatBoundary()');
   });
 
   it('a player is told once at the start of the hand, and never asked', () => {

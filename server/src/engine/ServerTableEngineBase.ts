@@ -152,6 +152,8 @@ import {
   pendingSeatMoves,
   seatMoveCancelledNotice,
   seatMoveNotice,
+  seatMoveIsDue,
+  type ExecuteSeatMovesOptions,
   SeatMoveBatchError,
   type PendingSeatMove,
   type SeatMoveOutcome,
@@ -4680,6 +4682,39 @@ export abstract class ServerTableEngineBase {
     // defer its next deal too, rather than move a player out of a live hand.
     if (!this.lifecycleCanMutate() || pending === null) return false;
     this.reconcileSeatMoveHolds(pending);
+    // A vacancy may be planned during the between-hand rest, after settlement
+    // already read its moves. Feed it here before another feeder hand starts.
+    const mainMoves = pending.filter(
+      (move) =>
+        seatMoveIsDue(move, { announcedOnly: true, mustMoveOnly: true }) &&
+        this.seatedPlayers.some(
+          (seat) =>
+            seat.user_id === move.player_id && seat.occupancy_id === move.source_occupancy_id
+        )
+    );
+    if (mainMoves.length > 0) {
+      // The outer read/deal budget cannot cancel an issued transfer. Keep this
+      // boundary until its actual result settles, including after a timeout.
+      const release = await this.acquireSeatBoundary();
+      try {
+        if (!this.lifecycleCanMutate()) return false;
+        await this.executePendingSeatMoves({ announcedOnly: true, mustMoveOnly: true }, pending);
+        if (!this.lifecycleCanMutate()) return false;
+      } finally {
+        release();
+      }
+      // A frozen or unresolved transfer must not be sent into another hand.
+      // The next normal boundary read resolves a terminal refusal as well.
+      if (
+        mainMoves.some((move) =>
+          this.seatedPlayers.some(
+            (seat) =>
+              seat.user_id === move.player_id && seat.occupancy_id === move.source_occupancy_id
+          )
+        )
+      )
+        return false;
+    }
     const fresh: string[] = [];
     for (const m of pending) {
       if (
@@ -4742,7 +4777,7 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
-   * At the END of a hand (announced moves only) and whenever the table is
+   * At the END of a hand (announced moves and ordinary must-moves) and whenever the table is
    * below the minimum to deal (every pending move - there is no hand to
    * finish) the planned moves are executed: chair, chips and session go to
    * the other table in one SQL transaction; this engine forgets the player
@@ -4792,7 +4827,7 @@ export abstract class ServerTableEngineBase {
   }
 
   protected async executePendingSeatMoves(
-    opts: { announcedOnly: boolean } = { announcedOnly: false },
+    opts: ExecuteSeatMovesOptions = { announcedOnly: false },
     /** Read at this boundary by the caller; `null` is a read that FAILED. */
     prefetched?: readonly PendingSeatMove[] | null,
     diagnostic?: LeavePendingAttempt
@@ -4813,7 +4848,7 @@ export abstract class ServerTableEngineBase {
     // may observe its committed seat before this RPC response returns, including
     // idle moves that never passed through a hand-start announcement.
     for (const m of pending) {
-      if (opts.announcedOnly && m.announced_at == null) continue;
+      if (!seatMoveIsDue(m, opts)) continue;
       this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
     }
     let outcome: SeatMoveOutcome;

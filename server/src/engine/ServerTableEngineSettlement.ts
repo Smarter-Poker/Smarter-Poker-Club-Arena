@@ -3986,16 +3986,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // must-move planned while this hand was running. Requiring its notice
         // at the next deal made the player play one entire extra feeder hand.
         // Swaps and other move reasons keep their existing announcement rule.
-        // Preserve null: an unavailable read is never an empty move list.
-        const boundaryMoves =
-          pendingMoves === null
-            ? null
-            : pendingMoves.filter(
-                (move) =>
-                  move.announced_at != null ||
-                  (move.reason === 'must_move' && move.swap_move_id == null)
-              );
-        await this.executePendingSeatMoves({ announcedOnly: false }, boundaryMoves, diagnostic);
+        // Keep the complete list for durable swap-hold reconciliation; the
+        // executor selects which moves may land at this completed boundary.
+        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves, diagnostic);
         const afterMirrors = this.lifecycleCanMutate();
         this.recordLeavePendingGuard(diagnostic, 'after_move_mirrors', afterMirrors);
         if (!afterMirrors) return;

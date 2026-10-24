@@ -449,8 +449,8 @@ describe('main-game vacancies take the first completed hand boundary', () => {
       .mockResolvedValue({ cashedOutIds: [], pendingMoves: pending });
     await engine.postHandTasks(players, 1);
     expect(engine.executePendingSeatMoves).toHaveBeenCalledWith(
-      { announcedOnly: false },
-      [urgent, promised],
+      { announcedOnly: true },
+      pending,
       expect.anything()
     );
   });
@@ -462,7 +462,7 @@ describe('main-game vacancies take the first completed hand boundary', () => {
       .mockResolvedValue({ cashedOutIds: [], pendingMoves: null });
     await engine.postHandTasks(players, 1);
     expect(engine.executePendingSeatMoves).toHaveBeenCalledWith(
-      { announcedOnly: false },
+      { announcedOnly: true },
       null,
       expect.anything()
     );

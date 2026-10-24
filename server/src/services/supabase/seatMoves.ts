@@ -9,16 +9,10 @@
  * transaction and touches no wallet. A move the engine does not reach within
  * three minutes expires and is planned again; nothing is lost either way.
  *
- * A player is never asked anything. They are told once, at the start of the
- * hand they will move after ("Seat Open On Main 2. Moving After This Hand."),
- * and then they are at the new table. THE PROMISE IS KEPT (2026-09-05): the
- * announcement stamps the row (`announced_at`) and extends its life to cover
- * the hand, and settlement executes ANNOUNCED moves only - a move planned
- * mid-hand waits for the next deal to be announced, never lands unannounced
- * at the end of a hand the player was not told about. A table with no hand
- * running (below the minimum to deal) executes any pending move at once:
- * there is no hand to finish, and a lone player on a feeder has nothing to
- * wait for.
+ * Ordinary must-moves take the first safe source boundary, including a plan
+ * made during the completed hand or before the next deal. They never wait
+ * for an extra feeder hand merely to announce it. Other moves keep their
+ * announced-hand contract; idle tables can execute every pending move.
  *
  * THREE REASONS, TWO ENTRIES (Dan 2026-09-05). `must_move` and `break` are
  * the game moving the player: they arrive dealt in, owing nothing, and take
@@ -201,13 +195,21 @@ export async function announceSeatMoves(moveIds: string[]): Promise<number> {
 
 export interface ExecuteSeatMovesOptions {
   /**
-   * Execute only moves that were announced (settlement: the hand the player
-   * was told about has ended). An idle table passes false: nothing is
-   * running, every pending move lands now.
+   * Settlement admits announced moves plus ordinary must-moves at this
+   * completed boundary. An idle table passes false for every pending move.
    */
   announcedOnly: boolean;
+  /** Before a new deal, feed Main without consuming optional moves or swaps. */
+  mustMoveOnly?: boolean;
   /** Withdraws future dispatches; an already issued request remains owned until settled. */
   shouldContinue?: () => boolean;
+}
+
+/** Select execution without discarding the full durable list used for swap holds. */
+export function seatMoveIsDue(move: PendingSeatMove, opts: ExecuteSeatMovesOptions): boolean {
+  const feedsMain = move.reason === 'must_move' && move.swap_move_id == null;
+  if (opts.mustMoveOnly) return feedsMain;
+  return !opts.announcedOnly || move.announced_at != null || feedsMain;
 }
 
 /**
@@ -224,7 +226,7 @@ export async function executePendingSeatMoves(
   diagnostic?: LeavePendingOperation
 ): Promise<SeatMoveOutcome> {
   const pending = prefetched ?? (await pendingSeatMoves(tableId));
-  const due = opts.announcedOnly ? pending.filter((m) => m.announced_at != null) : pending;
+  const due = pending.filter((move) => seatMoveIsDue(move, opts));
   const done: ExecutedSeatMove[] = [];
   const held: SeatMoveOutcome['held'] = [];
   const refused: SeatMoveOutcome['refused'] = [];

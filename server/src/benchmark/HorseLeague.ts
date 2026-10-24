@@ -1337,6 +1337,32 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'plo4_v53_pressure', variant: 'plo4', pairs: 6000, a: {}, b: { v53Pressure: false } },
   { name: 'plo5_v53_pressure', variant: 'plo5', pairs: 6000, a: {}, b: { v53Pressure: false } },
   { name: 'plo6_v53_pressure', variant: 'plo6', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  // V54 (2026-10-24): the targeted river bluff. Dan: "the bluff shove or
+  // big bet bluff needed to be implemented ONLY WHEN IT MAKES SENSE." Default
+  // OFF, so arm A turns it on (the v16Hu pattern); it is promoted to every
+  // horse when it beats the current brain here.
+  { name: 'v54_river_bluff', pairs: 6000, a: { v54RiverBluff: true }, b: {} },
+  {
+    name: 'plo4_v54_river_bluff',
+    variant: 'plo4',
+    pairs: 6000,
+    a: { v54RiverBluff: true },
+    b: {},
+  },
+  {
+    name: 'plo5_v54_river_bluff',
+    variant: 'plo5',
+    pairs: 6000,
+    a: { v54RiverBluff: true },
+    b: {},
+  },
+  {
+    name: 'plo6_v54_river_bluff',
+    variant: 'plo6',
+    pairs: 6000,
+    a: { v54RiverBluff: true },
+    b: {},
+  },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // PLO5 COVERAGE (2026-10-24): v40Omaha, v46Charts, v24PloDefense and the
@@ -1499,6 +1525,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v53PhysicalDraws: false,
       v53OmahaBlockers: false,
       v53RangeRunout: false,
+      v54RiverBluff: false,
       mind: false,
       streetIQ: false,
       handReading: false,

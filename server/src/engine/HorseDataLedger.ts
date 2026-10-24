@@ -739,6 +739,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorsePreflop.decidePreflopV7'
   ),
   flag(
+    'v54RiverBluff',
+    'targeted heads-up river big bet / shove bluff with air, blockers, a value story, a capped non-station opponent; DEFAULT OFF until league v54_river_bluff and plo4/plo5/plo6_v54_river_bluff resolve positive',
+    'V54'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -2982,6 +2987,22 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
     'a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold\'em solver spot handed to the exploit layer',
     'V53'
+  ),
+  // No floor: v54RiverBluff is default OFF (2026-10-24), so silence is
+  // expected until the league promotes it. Once promoted, v54_river_bluff
+  // counts the bluffs fired and the skip family says why every other
+  // heads-up river spot with air did not bluff.
+  receipt(
+    'v54_river_bluff',
+    'HorseLogic not-facing-a-bet river (V54)',
+    'a heads-up river big bet or shove bluff fired with air, blockers and a value story; opt-in (v54RiverBluff)',
+    'V54'
+  ),
+  receipt(
+    'v54_river_bluff_skip_*',
+    'HorseLogic not-facing-a-bet river (V54)',
+    'why a V54 river bluff did not fire: multiway, multiboard, all_in, showdown_value, station, no_story, uncapped, no_blocker, short_stack, icm, illegal, frequency; opt-in (v54RiverBluff)',
+    'V54'
   ),
   receipt(
     'v46_class_read',

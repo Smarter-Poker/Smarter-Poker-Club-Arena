@@ -18,6 +18,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cashEntry, type LobbyTableRow } from '../src/components/lobby/lobbyEntries';
+import {
+  MADNESS_WITHOUT_LIGHTNING_PROFILE,
+  cashGameNeverMovesPlayers,
+} from '../src/config/classicNeverMovesPlayers';
 
 const ROOT = join(__dirname, '..');
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
@@ -60,7 +64,9 @@ describe('a Classic game never moves its players', () => {
   it('patches the live tick and balancer by asserted single anchors over a stated pre-image', () => {
     expect(SQL).toContain("IF md5(v_src) <> '801638baef58f9f44ff4e80e24c153ab' THEN");
     expect(SQL).toContain("IF md5(v_src) <> '3c4b563f1f00b4372ebd024c7494a884' THEN");
-    expect(SQL.match(/IF v_n <> 1 THEN RAISE EXCEPTION/g)?.length).toBe(6);
+    // Tick: declaration, read, must-move, break candidate, break moves (5);
+    // balancer guard (1); lobby game object (1).
+    expect(SQL.match(/IF v_n <> 1 THEN RAISE EXCEPTION/g)?.length).toBe(7);
     // Every sibling step of the tick must survive the edit.
     for (const sibling of [
       "'''lightning_cluster_stands_down'''",
@@ -125,6 +131,29 @@ describe('a Classic game never moves its players', () => {
       );
   });
 
+  it('the on-table lobby hears it from the database, which adds exactly one key', () => {
+    expect(SQL).toContain("IF md5(v_src) <> '1fb26fc0037a7491d6f259d526fc0217' THEN");
+    expect(SQL).toContain(
+      "'                               ''never_moves_players'', public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)),'"
+    );
+    const modal = readFileSync(join(ROOT, 'src/components/table/MustMoveLobbyModal.tsx'), 'utf8');
+    expect(modal).toContain('const neverMoves = game?.never_moves_players === true;');
+    expect(modal).toContain('{!neverMoves && (');
+  });
+
+  it('the board mirror is the same two lines as the SQL definition', () => {
+    expect(cashGameNeverMovesPlayers('classic', null)).toBe(true);
+    expect(cashGameNeverMovesPlayers('Classic', undefined)).toBe(true);
+    expect(cashGameNeverMovesPlayers('classic', 'madness_without_lightning')).toBe(false);
+    expect(cashGameNeverMovesPlayers('madness', null)).toBe(false);
+    expect(cashGameNeverMovesPlayers('action', null)).toBe(false);
+    expect(cashGameNeverMovesPlayers(null, null)).toBe(false);
+    expect(SQL).toContain(`<> '${MADNESS_WITHOUT_LIGHTNING_PROFILE}'`);
+    const home = readFileSync(join(ROOT, 'src/pages/ClubHomePage.tsx'), 'utf8');
+    expect(home).toContain('rules_profile:ruleset_snapshot->>rules_profile');
+    expect(home).toContain('cluster_rules_profile: game.rules_profile ?? null,');
+  });
+
   it('the lobby never promises a Classic player a move', () => {
     const row = {
       id: 't1',
@@ -148,5 +177,11 @@ describe('a Classic game never moves its players', () => {
     // Same row, same path: the pill is drawn, so the Classic assertion is not vacuous.
     expect(JSON.stringify(madness.rules ?? [])).toContain('MUST MOVE');
     expect(labels).toContain('CLASSIC');
+    // The Madness stand-in is a Classic-template row with its own profile.
+    const standIn = cashEntry({
+      ...row,
+      cluster_rules_profile: MADNESS_WITHOUT_LIGHTNING_PROFILE,
+    } as LobbyTableRow);
+    expect(JSON.stringify(standIn.rules ?? [])).toContain('MUST MOVE');
   });
 });

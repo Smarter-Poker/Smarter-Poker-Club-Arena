@@ -62,6 +62,10 @@
 --    A cancelled move is never executed (fn_cash_seat_move_execute takes only
 --    pending rows). No seat, stack, wallet or hand is touched.
 --
+-- 6. fn_cash_game_lobby's game object says never_moves_players (from the one
+--    definition above), so the on-table lobby stops showing a Classic player
+--    a Must Move List and a place on it that will never move them.
+--
 -- No chip moves. No hot table (clubs, tables, hand_history) is locked by this
 -- file: it replaces two functions, adds a trigger on cash_seat_moves and
 -- updates pending rows of cash_seat_moves.
@@ -70,6 +74,7 @@
 
 -- @live-proof: (SELECT position('v_classic := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);' in pg_get_functiondef('public.fn_cash_cluster_tick(uuid,integer)'::regprocedure)) > 0)
 -- @live-proof: (SELECT position('public.fn_cash_game_never_moves_players(cg.template_name, cg.ruleset_snapshot)' in pg_get_functiondef('public.fn_cash_cluster_balance(uuid,timestamptz)'::regprocedure)) > 0)
+-- @live-proof: (SELECT position('''never_moves_players'', public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)' in pg_get_functiondef('public.fn_cash_game_lobby(uuid)'::regprocedure)) > 0)
 -- @live-proof: (SELECT count(*) = 1 FROM pg_trigger WHERE tgrelid = 'public.cash_seat_moves'::regclass AND tgname = 'a_classic_game_never_moves_players' AND tgenabled = 'O')
 -- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m JOIN public.cash_games g ON g.id = m.game_id WHERE m.state = 'pending' AND m.reason <> 'seat_change' AND public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)))
 
@@ -264,6 +269,39 @@ UPDATE public.cash_seat_moves m
    AND public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);
 
 -- ===========================================================================
+-- 6. THE LOBBY SAYS SO
+-- ===========================================================================
+DO $classic_lobby$
+DECLARE
+  v_fn  text := 'public.fn_cash_game_lobby(uuid)';
+  v_src text; v_find text; v_n integer;
+BEGIN
+  v_src := pg_get_functiondef(v_fn::regprocedure);
+
+  IF position('''never_moves_players''' in v_src) > 0 THEN
+    RAISE NOTICE 'fn_cash_game_lobby already says never_moves_players; nothing to do';
+    RETURN;
+  END IF;
+  IF md5(v_src) <> '1fb26fc0037a7491d6f259d526fc0217' THEN
+    RAISE EXCEPTION 'CLASSIC_NEVER_MOVES_LOBBY_PREIMAGE_DRIFT: fn_cash_game_lobby is %, read it before re-running', md5(v_src);
+  END IF;
+
+  v_find := '                               ''last_tick_at'', g.last_tick_at),' || chr(10);
+  v_n := (length(v_src) - length(replace(v_src, v_find, ''))) / length(v_find);
+  IF v_n <> 1 THEN RAISE EXCEPTION 'lobby game-object anchor found % times, not once', v_n; END IF;
+  v_src := replace(v_src, v_find,
+         '                               ''last_tick_at'', g.last_tick_at,' || chr(10)
+      || '                               ''never_moves_players'', public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)),' || chr(10));
+
+  IF position('SELECT * INTO g FROM public.cash_games WHERE id = p_game_id;' in v_src) = 0 THEN
+    RAISE EXCEPTION 'fn_cash_game_lobby no longer reads the whole game row; the lobby edit cannot see ruleset_snapshot';
+  END IF;
+
+  EXECUTE v_src;
+END
+$classic_lobby$;
+
+-- ===========================================================================
 -- POST-IMAGE
 -- ===========================================================================
 DO $classic_post$
@@ -276,6 +314,7 @@ BEGIN
      OR position('AND (NOT v_classic OR (c.seated = 0 AND c.reserved = 0))' in v_tick) = 0
      OR position('''classic_break_withdrawn''' in v_tick) = 0
      OR position('public.fn_cash_game_never_moves_players(cg.template_name, cg.ruleset_snapshot)' in v_bal) = 0
+     OR position('''never_moves_players'', public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot)' in pg_get_functiondef('public.fn_cash_game_lobby(uuid)'::regprocedure)) = 0
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.cash_seat_moves'::regclass
                      AND tgname = 'a_classic_game_never_moves_players' AND tgenabled = 'O')
      OR EXISTS (SELECT 1 FROM public.cash_seat_moves m JOIN public.cash_games g ON g.id = m.game_id

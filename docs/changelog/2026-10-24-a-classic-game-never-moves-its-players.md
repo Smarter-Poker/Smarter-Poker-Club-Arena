@@ -23,7 +23,9 @@ Dan 2026-10-24: "THIS HAS GOT TO BE FIXED AT ONCE, PLAYERS SHOULD NOT BE MOVING 
 - `fn_cash_cluster_balance` plans nothing for a Classic game.
 - Prevention: a trigger on `cash_seat_moves` refuses any move except `seat_change` for a Classic game, so no planner, present or future, can move a Classic player.
 - Already-planned automatic Classic moves are cancelled (`classic_game_never_moves_players`). No seat, stack, wallet or hand is touched.
-- The lobby card no longer says MUST MOVE / "Seats Open On A Main Pull Players Off The Feeder" on a Classic game; it says CLASSIC.
+- `fn_cash_game_lobby`'s game object carries `never_moves_players` from the same definition. The on-table lobby is then the "Game Lobby" for a Classic game, with no Must Move List, no "You Are Number N On The Must Move List" and no Must Move figure. The tables, the waiting list and the player's own seat change stay. The patch adds exactly one key: the rolled-back production probe compared the lobby answer with the live one and found it identical apart from the new key and the `as_of` clock.
+- The board reads the game's rules profile in its cluster embed (`rules_profile:ruleset_snapshot->>rules_profile`), and `src/config/classicNeverMovesPlayers.ts` mirrors the SQL definition.
+- The lobby card no longer says MUST MOVE / "Seats Open On A Main Pull Players Off The Feeder" on a Classic game; it says CLASSIC. The Madness stand-in keeps MUST MOVE.
 
 ## Proof
 

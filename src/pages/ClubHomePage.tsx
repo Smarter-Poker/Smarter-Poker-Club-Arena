@@ -5909,10 +5909,13 @@ function ClubHomePageContent({
                  opens the tab's games - No Limit / Pineapple / Short Deck,
                  PLO / PLO5 / PLO6 / PLO8o - with an All option. It reads and
                  writes the SAME saved `games` filter the Advanced Filters
-                 sheet does, so the two can never disagree. */
+                 sheet does, so the two can never disagree. LIMIT has the
+                 same menu (2026-10-24): its spec has carried FLH / FLO8 chips
+                 since the limit games shipped, so the heading on that tab was
+                 the one cash Variant heading with no way to pick a game. */
               {...(() => {
                 const vSpec =
-                  gameType === 'HOLDEM' || gameType === 'OMAHA'
+                  gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
                     ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
                     : null;
                 if (!vSpec) return {};

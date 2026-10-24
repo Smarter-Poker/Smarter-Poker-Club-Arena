@@ -8,6 +8,8 @@ The heading sort on the Hold'em, Omaha and Limit tabs already obeyed it. A line-
 2. **ALL tab Stakes heading.** Two cash games at one price kept arrival order. They now meet in canonical variant order. Tournament buy-ins are not reordered against cash.
 3. **Sort By Variant.** Inside a variant every row ranked equal, so stakes kept arrival order and the second tap flipped a direction nothing read. Variants stay canonical. Stakes inside each variant follow the chosen direction, Low To High first.
 
+4. **LIMIT tab Variant heading.** The LIMIT spec has carried FLH and FLO8 chips since the limit games shipped. Its heading was still the only cash Variant heading that could not open the variant menu. It now opens the same menu as Hold'em and Omaha (All, FLH, FLO8, Sort By Variant), reading and writing the same saved `games` filter as Advanced Filters.
+
 The canonical rank (NLH, Pineapple, Short Deck, PLO, PLO5, PLO6, PLO8, FLH, FLO, FLO8, then unlisted by name) moved to `src/components/lobby/variantRank.ts`, so the board and the page read one table. `LobbyTable` re-exports `VARIANT_RANK` and `variantRank`. The page's separate `VARIANT_GROUP_ORDER` copy is gone. Legacy spellings (`plo`, `hilo`, `limit_holdem`) fold through `variantKey` before ranking.
 
-Tests: `tests/unit/lobbyStakesFirst.law.test.tsx` (rendered ALL heading in both directions; Sort By Variant both taps), `tests/unit/cashBoardOrder.test.ts` (ALL stakes sorts, Omaha legacy spellings, unchanged other sorts).
+Tests: `tests/unit/lobbyStakesFirst.law.test.tsx` (rendered ALL heading in both directions; Sort By Variant both taps), `tests/unit/cashBoardOrder.test.ts` (ALL stakes sorts, Omaha legacy spellings, unchanged other sorts), `tests/unit/lobbyVariantMenuWorks.test.tsx` (LIMIT menu items and page wiring).

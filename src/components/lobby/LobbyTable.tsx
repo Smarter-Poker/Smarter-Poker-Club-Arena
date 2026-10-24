@@ -706,6 +706,8 @@ export const VARIANT_MENU_LABELS: Readonly<Record<string, string>> = {
   plo5: 'PLO5',
   plo6: 'PLO6',
   plo8: 'PLO8o',
+  flh: 'FLH',
+  flo8: 'FLO8',
 };
 
 const COL_VARIANT: ColumnDef = {

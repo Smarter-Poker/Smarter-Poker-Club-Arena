@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { isLightningObserverSnapshot } from '../../src/utils/mapEngineSnapshot';
 import { describe, expect, it, vi } from 'vitest';
 
 const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
@@ -35,7 +36,13 @@ function callback(marker: string, variable = false) {
 }
 
 function execute(code: string, deps: Record<string, unknown>) {
-  return new Function(...Object.keys(deps), code)(...Object.values(deps));
+  const scoped = {
+    lightningObserver: false,
+    engineSnapshotRef: { current: null },
+    isLightningObserverSnapshot,
+    ...deps,
+  };
+  return new Function(...Object.keys(scoped), code)(...Object.values(scoped));
 }
 
 function fixture() {
@@ -207,4 +214,28 @@ describe('confirmed seat removal clears every local seat claim', () => {
     })();
     expect(reconcile).toHaveBeenCalled();
   });
+});
+
+it('neither hero recovery invariant claims a public observer whose ID is in the virtual hand', () => {
+  const f = fixture();
+  const reconcile = vi.fn(() => ({ heroSeat: 8 }));
+  const state = { ...f.state(), heroSeat: 0 };
+  state.players[7] = { ...state.players[7], isHero: false };
+  f.deps.heroSeatRef.current = 0;
+  const dependencies = {
+    ...f.deps,
+    lightningObserver: true,
+    engineSnapshotRef: { current: { lightning_observer: true } },
+    USE_ENGINE_WS: true,
+    engineSnapshot: { lightning_observer: true, players: [{ seat: 8, user_id: 'hero' }] },
+    tableState: state,
+    engineSeatMismatchReportedRef: { current: '' },
+    reportError: vi.fn(),
+    reconcileHeroSeatFromEngine: reconcile,
+  };
+  execute(callback('const enginePlayers ='), dependencies)();
+  execute(callback('const idx = tableState.players.findIndex'), dependencies)();
+  expect(reconcile).not.toHaveBeenCalled();
+  expect(f.deps.heroSeatRef.current).toBe(0);
+  expect(state.players[7].isHero).toBe(false);
 });

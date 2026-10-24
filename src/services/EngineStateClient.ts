@@ -65,7 +65,10 @@ async function tokenForConnection(
 
 // ─── Protocol types — mirror server/src/transport/TableStateHub.ts ────────────
 
-export type EngineSnapshot = Record<string, unknown>;
+export type EngineSnapshot = Record<string, unknown> & {
+  /** Public virtual hand projected onto a physical Lightning anchor. */
+  lightning_observer?: boolean;
+};
 
 export interface ServerSnapshotMessage {
   type: 'SNAPSHOT';

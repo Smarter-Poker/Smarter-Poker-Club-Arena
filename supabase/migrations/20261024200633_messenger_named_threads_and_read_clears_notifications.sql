@@ -4,6 +4,7 @@
 -- TIER:        2
 -- AUTHOR:      Claude (owner request, 2026-10-24)
 -- AFFECTS:     fn_get_user_conversations, fn_mark_messages_read_through,
+--              fn_deliver_club_messenger_welcome,
 --              notifications (DML: stale new_message rows marked read)
 -- IRREVERSIBLE: no (rollback section below restores both functions)
 --
@@ -33,6 +34,9 @@
 --   - fn_mark_messages_read_through: in the same transaction, marks the
 --     reader's new_message notifications for that thread read, up to the
 --     first message that is still unread (a later message keeps its alert).
+--   - fn_deliver_club_messenger_welcome: the agent welcome is never sent to
+--     certification equipment (fn_ca_is_cert_account), which stops new
+--     orphaned threads at the source. Horses are never equipment and keep it.
 --   - One-time: mark the already-stale new_message notifications read.
 -- =====================================================================
 
@@ -46,6 +50,10 @@ BEGIN
        OR to_regprocedure('public.fn_mark_messages_read_through(uuid,uuid,uuid)') IS NULL THEN
         RAISE EXCEPTION 'pre-flight failed: messenger inbox functions missing';
     END IF;
+    IF to_regprocedure('public.fn_deliver_club_messenger_welcome()') IS NULL
+       OR to_regprocedure('public.fn_ca_is_cert_account(uuid)') IS NULL THEN
+        RAISE EXCEPTION 'pre-flight failed: welcome trigger or certification predicate missing';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='player_number')
        OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='alias')
        OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='notifications' AND column_name='is_read')
@@ -53,6 +61,11 @@ BEGIN
         RAISE EXCEPTION 'pre-flight failed: expected profile/notification columns missing';
     END IF;
 END $$;
+
+-- This repository's history last defined the one-argument reader. Production
+-- already serves only the two-argument one (read 2026-10-24), so this drop is a
+-- no-op there; it keeps exactly one door by name wherever an older copy lives.
+DROP FUNCTION IF EXISTS public.fn_get_user_conversations(uuid);
 
 CREATE OR REPLACE FUNCTION public.fn_get_user_conversations(p_user_id uuid, p_context_entity_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(conversation_id uuid, title text, is_group boolean, last_message_at timestamp with time zone, unread_count bigint, other_user_id uuid, other_user_username text, other_user_avatar text, context_entity_id uuid, context_entity_type text)
@@ -172,6 +185,45 @@ BEGIN
   RETURN jsonb_build_object('success',true,'marked',v_count,'readThrough',v_through);
 END $function$;
 
+-- 4. Root cause of the nameless threads: post-deploy certification probes
+--    (ca-customization-cert-postdeploy-%@example.invalid) join the owner's
+--    club, receive the agent welcome, and are deleted ~52 s later. The
+--    welcome never goes to certification equipment. fn_ca_is_cert_account
+--    never classifies a horse as equipment (CLAUDE.md 10.5), so every horse
+--    and every person still gets the welcome exactly as before.
+CREATE OR REPLACE FUNCTION public.fn_deliver_club_messenger_welcome()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+DECLARE v_member record; v_admission record; v_sender uuid; v_owner uuid; v_template record; v_result jsonb;
+BEGIN
+ SELECT * INTO v_member FROM public.club_members WHERE club_id=NEW.club_id AND user_id=NEW.user_id;
+ IF NOT FOUND OR v_member.is_active IS NOT TRUE OR v_member.status NOT IN ('active','approved') OR v_member.membership_lifecycle_status<>'active' THEN RETURN NEW; END IF;
+ IF public.fn_ca_is_cert_account(NEW.user_id) THEN RETURN NEW; END IF;
+ SELECT * INTO v_admission FROM public.club_messenger_admissions WHERE club_id=NEW.club_id AND user_id=NEW.user_id AND active AND transaction_id=txid_current() FOR UPDATE;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.club_messenger_welcome_deliveries WHERE generation=v_admission.generation) THEN RETURN NEW; END IF;
+ SELECT owner_id INTO v_owner FROM public.clubs WHERE id=NEW.club_id;
+ v_sender:=v_member.agent_id;
+ IF v_sender IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.agents WHERE club_id=NEW.club_id AND user_id=v_sender AND status='active') THEN v_sender:=NULL; END IF;
+ IF v_sender IS NULL OR public.fn_club_messenger_staff_role(NEW.club_id,v_sender) IS NULL THEN v_sender:=v_owner; END IF;
+ IF v_sender IS NULL OR v_sender=NEW.user_id THEN RETURN NEW; END IF;
+ SELECT * INTO v_template FROM public.club_messenger_welcome_templates WHERE club_id=NEW.club_id AND user_id=v_sender AND enabled FOR SHARE;
+ IF NOT FOUND THEN RETURN NEW; END IF;
+ v_result:=public.fn_send_club_welcome_text(NEW.club_id,NEW.user_id,v_sender,v_template.content,v_template.revision,'downline');
+ IF v_result->>'status'='cancelled' THEN RETURN NEW; END IF;
+ INSERT INTO public.club_messenger_welcome_deliveries(generation,club_id,recipient_id,sender_id,template_revision,conversation_id,message_id,status)
+ VALUES(v_admission.generation,NEW.club_id,NEW.user_id,v_sender,v_template.revision,(v_result->>'conversation_id')::uuid,(v_result->>'message_id')::uuid,v_result->>'status');
+ IF v_result->>'status'='sent' AND v_owner<>NEW.user_id THEN
+  INSERT INTO public.club_messenger_owner_followups(generation,club_id,recipient_id,sender_id,content,template_revision,due_at)
+  SELECT v_admission.generation,NEW.club_id,NEW.user_id,v_owner,t.content,t.revision,clock_timestamp()+interval '10 minutes'
+  FROM public.club_messenger_owner_welcome_templates t WHERE t.club_id=NEW.club_id AND t.user_id=v_owner AND t.enabled
+  ON CONFLICT(generation) DO NOTHING;
+ END IF;
+ RETURN NEW;
+END $function$;
+
 -- One-time repair: alerts for threads the reader has already read past.
 UPDATE notifications n
    SET read=true, is_read=true, read_at=COALESCE(n.read_at, NOW()), updated_at=NOW()
@@ -200,6 +252,9 @@ BEGIN
     IF position('new_message' in (SELECT prosrc FROM pg_proc WHERE oid='public.fn_mark_messages_read_through(uuid,uuid,uuid)'::regprocedure)) = 0 THEN
         RAISE EXCEPTION 'post-check failed: read receipt does not clear message notifications';
     END IF;
+    IF position('fn_ca_is_cert_account(NEW.user_id)' in (SELECT prosrc FROM pg_proc WHERE oid='public.fn_deliver_club_messenger_welcome()'::regprocedure)) = 0 THEN
+        RAISE EXCEPTION 'post-check failed: welcome still reaches certification equipment';
+    END IF;
     SELECT count(*) INTO v_stale
       FROM notifications n
       JOIN social_conversation_participants p ON p.user_id=n.user_id AND p.conversation_id::text=n.data->>'conversationId'
@@ -222,6 +277,7 @@ COMMIT;
 --     line.
 --   fn_mark_messages_read_through: remove the v_next_unread SELECT and the
 --     UPDATE notifications block.
+--   fn_deliver_club_messenger_welcome: remove the fn_ca_is_cert_account line.
 -- Notifications marked read by the one-time repair were for already-read
 -- threads and are not restored.
 -- =====================================================================

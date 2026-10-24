@@ -4913,6 +4913,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
             return 'continue';
           }
+          if (!engine) {
+            // Registration can commit a new table while this boundary is held.
+            // Returning pending before the later expansion stage strands its
+            // durable admission receipt and every sibling waits for a dealer
+            // that nobody starts. Consume the original capacity hand-off here
+            // through its existing database authority and admit-before-ack path.
+            // Keep the boundary held until a subsequent park edge proves the
+            // complete field; an absent receipt or failed RPC grants nothing.
+            this.noteEliminationSweepStep('checkDynamicTableExpansion');
+            await this.checkDynamicTableExpansion();
+            return 'pending';
+          }
           if (
             !engine?.isRunning() ||
             this.gameServer.getTableEngine(tableId) !== engine ||

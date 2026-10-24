@@ -435,7 +435,10 @@ test('existing hosted installer exposes the serial option through explicit dispa
   assert.match(workflow, /if \[\[ "\$\{SERIAL_JOURNAL_INDEX:-false\}" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/);
   assert.doesNotMatch(workflow, /client_payload\.serial_journal_index/);
   assert.match(workflow, /recovery_args\+=\(--recover-index/);
-  assert.match(workflow, /group: apply-merged-migration\s*cancel-in-progress: false/);
+  assert.match(
+    workflow,
+    /group: apply-merged-migration-\$\{\{ inputs\.migration \|\| github\.event\.client_payload\.migration \}\}\s*cancel-in-progress: false/
+  );
   const start = workflow.indexOf('          recovery_args=()');
   const end = workflow.indexOf('          node scripts/ci/apply-recorded-migration.mjs', start);
   assert.ok(start > 0 && end > start);

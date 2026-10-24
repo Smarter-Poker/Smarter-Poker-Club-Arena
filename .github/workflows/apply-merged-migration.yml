@@ -89,10 +89,20 @@ on:
   repository_dispatch:
     types: [apply-merged-migration]
 
-# One applier at a time. Two concurrent DDL transactions would each take their
-# own PostgREST schema reload (~28s on this database).
+# ONE GROUP PER FILE (2026-10-24). This was a single group, `apply-merged-migration`,
+# so that two DDL transactions would not each take a PostgREST schema reload
+# (~28s on this database). GitHub keeps at most ONE pending run per group and
+# CANCELS the older pending one when another arrives, whatever
+# cancel-in-progress says. Three files dispatched in the same second after one
+# merge (#7920, 22:53:57Z) became one APPLIED run and two `cancelled` ones, and
+# `cancelled` is not red: 20261024193700 (a rebuy is never seated on a table
+# being broken) and 20261024204950 (mystery rebuy head snapshot) sat merged and
+# uninstalled while the tournaments they fix kept running. Two reloads is the
+# price of never dropping a migration. The same file dispatched twice still
+# shares a group, so it is never applied by two runs at once, and every file
+# is self-guarding (schema_migrations, its own BEGIN/COMMIT, lock_timeout).
 concurrency:
-  group: apply-merged-migration
+  group: apply-merged-migration-${{ inputs.migration || github.event.client_payload.migration }}
   cancel-in-progress: false
 
 permissions:

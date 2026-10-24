@@ -673,6 +673,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V51'
   ),
   flag(
+    'v52RangeAdvantage',
+    'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
+    'V52'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'

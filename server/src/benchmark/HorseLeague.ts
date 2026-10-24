@@ -990,6 +990,33 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // jamming. Measured on the standard NLH card, where the committed river
   // spot arises from ordinary 100bb raise wars.
   { name: 'v51_river_flat', pairs: 6000, a: {}, b: { v51RiverFlat: false } },
+  // V52 (2026-10-24): the public-range advantage read behind the continuation
+  // work. Same-hour live reviews showed NLH big-bet-then-fold rising 9.5% ->
+  // 13.3% after it shipped; outcome tags cannot say whether the extra
+  // initiative earns, so each variant where it fires is measured on/off.
+  // Arm A is "range advantage on" (production default).
+  { name: 'v52_range_advantage', pairs: 6000, a: {}, b: { v52RangeAdvantage: false } },
+  {
+    name: 'plo4_v52_range_advantage',
+    variant: 'plo4',
+    pairs: 6000,
+    a: {},
+    b: { v52RangeAdvantage: false },
+  },
+  {
+    name: 'plo5_v52_range_advantage',
+    variant: 'plo5',
+    pairs: 6000,
+    a: {},
+    b: { v52RangeAdvantage: false },
+  },
+  {
+    name: 'plo6_v52_range_advantage',
+    variant: 'plo6',
+    pairs: 6000,
+    a: {},
+    b: { v52RangeAdvantage: false },
+  },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
@@ -1044,6 +1071,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v46Charts: false,
       v46ShortDeck: false,
       v51RiverFlat: false,
+      v52RangeAdvantage: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -152,3 +152,87 @@ describe('a committed plan reaches its game the moment the planner returns', () 
     await controller.stop();
   });
 });
+
+describe('a vacancy reaches the planner without the 500 ms burst hold (2026-10-24)', () => {
+  function counting(reply: () => Promise<{ data: unknown; error: unknown }>) {
+    const calls: string[] = [];
+    const controller = build(async (fn) => {
+      calls.push(fn);
+      return fn === 'fn_cash_cluster_tick' ? reply() : { data: pass([]), error: null };
+    });
+    return { controller, ticks: () => calls.filter((fn) => fn === 'fn_cash_cluster_tick').length };
+  }
+  const answer = async () => ({ data: planned, error: null });
+
+  it('an ordinary wake still holds for the debounce', async () => {
+    vi.useFakeTimers();
+    const { controller, ticks } = counting(answer);
+    controller.start();
+    controller.wake('g');
+    await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS - 1);
+    expect(ticks()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ticks()).toBe(1);
+    await controller.stop();
+  });
+
+  it('a vacancy wake plans at once', async () => {
+    vi.useFakeTimers();
+    const { controller, ticks } = counting(answer);
+    controller.start();
+    controller.wake('g', { now: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ticks()).toBe(1);
+    expect(movesPlannedGeneration('g')).toBe(1);
+    await controller.stop();
+  });
+
+  it('a vacancy replaces a held wake: one planner call, not two, and no hold', async () => {
+    vi.useFakeTimers();
+    const { controller, ticks } = counting(answer);
+    controller.start();
+    controller.wake('g');
+    await vi.advanceTimersByTimeAsync(100);
+    controller.wake('g', { now: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ticks()).toBe(1);
+    await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS * 2);
+    expect(ticks()).toBe(1);
+    await controller.stop();
+  });
+
+  it('a vacancy during an in-flight tick never overlaps it and keeps its urgency', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    let first = true;
+    const { controller, ticks } = counting(async () => {
+      if (first) {
+        first = false;
+        await new Promise<void>((r) => {
+          release = r;
+        });
+      }
+      return { data: planned, error: null };
+    });
+    controller.start();
+    controller.wake('g', { now: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ticks()).toBe(1);
+    controller.wake('g', { now: true }); // arrives while the first RPC runs
+    await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS * 2);
+    expect(ticks()).toBe(1); // never overlapping
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ticks()).toBe(2); // the follow-up did not wait the hold
+    await controller.stop();
+  });
+
+  it('the engine sends a vacancy as `now` and every other reason through the hold', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const base = readFileSync(join(__dirname, '..', 'engine', 'ServerTableEngineBase.ts'), 'utf8');
+    expect(base).toMatch(/wakeCluster\(String\(gameId\), \{ now: reason === 'seat_left' \}\);/);
+    expect(base.match(/wakeCluster\(/g)).toHaveLength(1);
+  });
+});

@@ -194,9 +194,15 @@ describe('a reminder needs a device to reach', () => {
   it('the partial index the predicate rides on is declared in this repo', () => {
     // It was live and in no migration, so a rebuild from this directory would
     // have produced the predicate without the index that makes it free.
+    // Only the files that name the index are normalised (2026-10-24). Running
+    // code() over every migration in the repo joined into one string took
+    // 3.4-4.8 s against the 5 s test budget and failed under parallel load; a
+    // file that does not name the index cannot declare it, so the verdict is
+    // the same.
     const all = code(
       migrationFiles()
         .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
+        .filter((sql) => /push_subscriptions_user_active_idx/i.test(sql))
         .join('\n')
     );
     expect(

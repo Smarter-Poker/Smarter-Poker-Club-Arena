@@ -1136,6 +1136,78 @@
       "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
       "refusedBy": ["check-definer-authorization: anon rule"],
       "liveVerdict": "Both replaced functions preserve postgres/service_role-only ACL. Live read after installation: has_function_privilege false for anon and authenticated, true for service_role on both functions. Exact proacl {postgres=X/postgres,service_role=X/postgres}; migration asserts owner and ACL preimages. No browser execution introduced."
+    },
+    {
+      "version": "20261023213842",
+      "name": "midway_madness_lightning_test_games_keep_fifty_horses_each",
+      "file": "supabase/migrations/20261023213842_midway_madness_lightning_test_games_keep_fifty_horses_each.sql",
+      "md5": "e2b73d862c87640bac8fc3ff7c400beb",
+      "appliedToProductionAt": "2026-10-23T21:38:42Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7846",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-24: schema_migrations holds this version with ONE statement and public.fn_ca_migration_text returns md5 e2b73d862c87640bac8fc3ff7c400beb, the md5 of this file. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids raise nothing against it. Applied directly for the Midway Lightning test on 2026-10-23; its authored copy sat only in unmerged PR #7846."
+    },
+    {
+      "version": "20261023214601",
+      "name": "midway_tables_fill_full_for_the_lightning_test",
+      "file": "supabase/migrations/20261023214601_midway_tables_fill_full_for_the_lightning_test.sql",
+      "md5": "cbf21d90693a62d5f9adc149e8bfc414",
+      "appliedToProductionAt": "2026-10-23T21:46:01Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7846",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-24: schema_migrations holds this version with ONE statement and public.fn_ca_migration_text returns md5 cbf21d90693a62d5f9adc149e8bfc414, the md5 of this file. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids raise nothing against it. Applied directly for the Midway Lightning test on 2026-10-23; its authored copy sat only in unmerged PR #7846."
+    },
+    {
+      "version": "20261023220839",
+      "name": "midway_lightning_fill_and_all_horse_limits_removed",
+      "file": "supabase/migrations/20261023220839_midway_lightning_fill_and_all_horse_limits_removed.sql",
+      "md5": "f1b48cf303b28c7fdef7a861b158c563",
+      "appliedToProductionAt": "2026-10-23T22:08:39Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7846",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-24: schema_migrations holds this version with ONE statement and public.fn_ca_migration_text returns md5 f1b48cf303b28c7fdef7a861b158c563, the md5 of this file. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids raise nothing against it. Applied directly for the Midway Lightning test on 2026-10-23; its authored copy sat only in unmerged PR #7846."
+    },
+    {
+      "version": "20261023221147",
+      "name": "midway_plo_games_switched_back_on",
+      "file": "supabase/migrations/20261023221147_midway_plo_games_switched_back_on.sql",
+      "md5": "1ac946fecf33c74877649f7dac579fe1",
+      "appliedToProductionAt": "2026-10-23T22:11:47Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7846",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-24: schema_migrations holds this version with ONE statement and public.fn_ca_migration_text returns md5 1ac946fecf33c74877649f7dac579fe1, the md5 of this file. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids raise nothing against it. Applied directly for the Midway Lightning test on 2026-10-23; its authored copy sat only in unmerged PR #7846."
+    },
+    {
+      "version": "20261023222643",
+      "name": "midway_lightning_fill_starts_with_horses_awake_and_free",
+      "file": "supabase/migrations/20261023222643_midway_lightning_fill_starts_with_horses_awake_and_free.sql",
+      "md5": "aa37f25c21118a1c83617bb00b2fcedd",
+      "appliedToProductionAt": "2026-10-23T22:26:43Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7846",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-24: schema_migrations holds this version with ONE statement and public.fn_ca_migration_text returns md5 aa37f25c21118a1c83617bb00b2fcedd, the md5 of this file. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids raise nothing against it. Applied directly for the Midway Lightning test on 2026-10-23; its authored copy sat only in unmerged PR #7846."
+    },
+    {
+      "version": "20261023224834",
+      "name": "midway_lightning_fill_draws_from_every_union_club",
+      "file": "supabase/migrations/20261023224834_midway_lightning_fill_draws_from_every_union_club.sql",
+      "md5": "49544dd0682d2795c94de6b9ad63cbec",
+      "appliedToProductionAt": "2026-10-23T22:48:34Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7846",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-24: schema_migrations holds this version with ONE statement and public.fn_ca_migration_text returns md5 49544dd0682d2795c94de6b9ad63cbec, the md5 of this file. check-definer-authorization, check-money-trigger-declared and check-no-new-band-aids raise nothing against it. Applied directly for the Midway Lightning test on 2026-10-23; its authored copy sat only in unmerged PR #7846."
     }
   ]
 }

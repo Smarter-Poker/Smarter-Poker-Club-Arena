@@ -17,7 +17,7 @@ const actual =
 const formats = ['mtt-v1', 'mtt-v2', 'sng-v1', 'spin-v1', 'seat-first-satellite-v1'] as const;
 const roles = ['champion', 'runner-up', 'spectator', 'guest'] as const;
 
-function client(role: (typeof roles)[number], satellite = false) {
+function client(role: (typeof roles)[number], satellite = false, terminal = true) {
   const own =
     role === 'champion'
       ? { status: 'winner', position: satellite ? null : 1, prize: 50 }
@@ -59,23 +59,29 @@ function client(role: (typeof roles)[number], satellite = false) {
     'setTournamentWinner',
     'masterBus',
     'navigate',
-    'goToLobbyWithResult',
+    'publishResult',
     'scheduleDurableCompletionRetry',
     'reportError',
     'awaitTournamentResultEnrichment',
     'TOURNAMENT_CHAMPION_DISPLAY_MS',
     `
-    let isMounted=true,exitStarted=true,championAnnouncementInFlight=false,terminalCelebrationStarted=false,terminalCompletionWitnessed=false;
+    let isMounted=true,exitStarted=${terminal},championAnnouncementInFlight=false,terminalCelebrationStarted=false,terminalCompletionWitnessed=${terminal};
     let durableCompletionHandled=false,durableCompletionLookupInFlight=false,durableParticipantWitnessed=false;
     let durableCompletionFailureReported=false,durableCompletionRetryTimer=null,committedSatelliteQualification=null;
     const tableId='finished', embeddedTableId='finished', durableTournamentId='event',durableTournamentName='Final';
     const userId=${JSON.stringify(role === 'guest' ? 'guest' : role)};
+    const loadedSatelliteTarget=${satellite ? "'target'" : 'null'};
     const formatGameTitle=(s)=>s,lobbyClubIdRef={current:'club'};
     // Reproduce the final-hand race: an elimination exit was already armed.
-    const tournamentExitTimerRef={current:setTimeout(()=>masterBus.emit('premature-close'),2500)};
+    const tournamentExitTimerRef={current:${terminal} ? setTimeout(()=>masterBus.emit('premature-close'),2500) : null};
+    const goToLobbyWithResult=(position,prize,delay)=>{
+      if(exitStarted || (terminalCompletionWitnessed&&!terminalCelebrationStarted))return;
+      exitStarted=true;
+      tournamentExitTimerRef.current=setTimeout(()=>publishResult({position,prize}),delay);
+    };
     const readMySatelliteQualifierResult=async()=>({qualified:true,amount:50,position:null,deliveryKind:'ticket'});
     ${actual}
-    return {run:exitFromDurableCompletion,dispose:()=>{isMounted=false;clearTimeout(tournamentExitTimerRef.current)}};
+    return {run:exitFromDurableCompletion,complete:()=>{terminalCompletionWitnessed=true;return exitFromDurableCompletion()},dispose:()=>{isMounted=false;clearTimeout(tournamentExitTimerRef.current)}};
   `
   );
   return {
@@ -89,8 +95,7 @@ function client(role: (typeof roles)[number], satellite = false) {
       announce,
       { emit: close },
       vi.fn(),
-      (position: number, prize: number, delay: number) =>
-        setTimeout(() => result({ position, prize }), delay),
+      result,
       retry,
       report,
       awaitTournamentResultEnrichment,
@@ -137,6 +142,29 @@ describe('Every persisted tournament format shares the terminal celebration', ()
         expect(c.report).not.toHaveBeenCalled();
       });
     }
+  it('restores an individual bust while the tournament is still running without inventing a champion or waiting 20 seconds', async () => {
+    vi.useFakeTimers();
+    const c = client('runner-up', false, false);
+    await c.run();
+    expect(c.announce).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2499);
+    expect(c.result).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(c.result).toHaveBeenCalledExactlyOnceWith({ position: 2, prize: 20 });
+  });
+  it('lets actual completion supersede an already recovered individual result before its short exit', async () => {
+    vi.useFakeTimers();
+    const c = client('runner-up', false, false);
+    await c.run();
+    await vi.advanceTimersByTimeAsync(1000);
+    await c.complete();
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(c.result).not.toHaveBeenCalled();
+    expect(c.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(c.announce).toHaveBeenCalledOnce();
+    expect(c.result).toHaveBeenCalledExactlyOnceWith({ position: 2, prize: 20 });
+  });
   it('keeps the matrix exhaustive and executes it in the required client and publisher suites', () => {
     const owner = ts.createSourceFile(
       'formats.ts',
@@ -173,6 +201,7 @@ describe('Every persisted tournament format shares the terminal celebration', ()
         to = source.indexOf(`data?.type === '${next}'`, from);
       expect(from).toBeGreaterThan(-1);
       expect(source.slice(from, to)).toContain('void exitFromDurableCompletion()');
+      expect(source.slice(from, to)).toContain('terminalCompletionWitnessed = true');
     }
     expect(actual).not.toMatch(
       /tournamentFormatRef|is_horse|is_mystery_bounty|is_bounty|game_type/

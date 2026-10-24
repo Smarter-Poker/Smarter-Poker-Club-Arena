@@ -17,6 +17,7 @@ function viewer(
     outcome?: unknown;
     pending?: Promise<unknown>;
     qualifiers?: unknown[];
+    target?: boolean;
   } = {}
 ) {
   const query = {
@@ -61,6 +62,7 @@ function viewer(
     const embeddedTableId=${options.embedded ? "'final'" : 'undefined'};
     const durableTournamentName='Championship', formatGameTitle=(s)=>s;
     const lobbyClubIdRef={current:'my-club'};
+    const loadedSatelliteTarget=${(options.target ?? !!options.qualifiers) ? "'target'" : 'null'};
     const goToLobbyWithResult=(position,prize,delay)=>setTimeout(()=>masterBus.emit('entrant-result',{position,prize}),delay);
     ${compiled}
     return {run:announceSpectatorChampion, dispose:()=>{
@@ -146,6 +148,18 @@ describe('Everyone sees the committed champion then this table closes', () => {
     expect(v.emit).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(v.emit).toHaveBeenCalledOnce();
+  });
+  it('does not infer satellite qualification from a missing first place in an ordinary tournament', async () => {
+    vi.useFakeTimers();
+    const v = viewer({
+      outcome: { data: null, error: null },
+      qualifiers: [{ user_id: 'bad', username: 'Unranked', prize: 50 }],
+      target: false,
+    });
+    await v.run();
+    expect(v.query.range).not.toHaveBeenCalled();
+    expect(v.announce).not.toHaveBeenCalled();
+    expect(v.retry).toHaveBeenCalledOnce();
   });
   it('closes only the finished embedded tab and preserves the other tables', async () => {
     vi.useFakeTimers();

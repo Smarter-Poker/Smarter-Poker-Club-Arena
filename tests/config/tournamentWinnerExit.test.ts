@@ -518,7 +518,7 @@ describe('The actual TablePage qualifier completion caller', () => {
       'reportError',
       `let isMounted=true, durableCompletionLookupInFlight=false, durableCompletionHandled=false;
        let durableCompletionFailureReported=false, durableCompletionRetryTimer=null;
-       let committedSatelliteQualification=null, exitStarted=false, terminalCompletionWitnessed=false;
+       let committedSatelliteQualification=null, exitStarted=false, terminalCompletionWitnessed=true,terminalCelebrationStarted=false;
        const tournamentExitTimerRef={current:null};
        let durableParticipantWitnessed=${Boolean(options.known)};
        const durableTournamentId=${JSON.stringify(tid)}, userId=${JSON.stringify(uid)};

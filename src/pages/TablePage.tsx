@@ -13143,6 +13143,7 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
+        let loadedSatelliteTarget: string | null = null;
         let loadedFinishedReportReady = false;
         let durableParticipantWitnessed = false;
         setTableState((prev) => {
@@ -13632,6 +13633,9 @@ function LiveTablePage({
             });
           }
           loadedTournamentStatus = typeof tournData?.status === 'string' ? tournData.status : null;
+          const satelliteTarget = tournData?.satellite_target_id ?? tournData?.satellite_target;
+          loadedSatelliteTarget =
+            typeof satelliteTarget === 'string' && isUUID(satelliteTarget) ? satelliteTarget : null;
 
           /**
            * FINAL TABLE IS ASKED FOR, NOT INFERRED (Dan 2026-08-28, bug 7).
@@ -14094,7 +14098,7 @@ function LiveTablePage({
              was the last one. Single-table mode has no such subscriber, so it
              still navigates here. */
           let exitStarted = false;
-          let terminalCompletionWitnessed = false;
+          let terminalCompletionWitnessed = loadedTournamentStatus === 'COMPLETED';
           let terminalCelebrationStarted = false;
 
           const goToLobbyWithResult = (position: number, prize: number, delayMs: number) => {
@@ -14321,7 +14325,7 @@ function LiveTablePage({
               };
               if (!isMounted || terminalCelebrationStarted) return;
               let qualifiers: Array<{ username: string; prize: number }> | undefined;
-              if (!error && !champion) {
+              if (!error && !champion && loadedSatelliteTarget) {
                 const result = await awaitTournamentResultEnrichment(
                   supabase
                     .from('tournament_players')
@@ -14419,14 +14423,15 @@ function LiveTablePage({
             }, delayMs);
           }
           async function exitFromDurableCompletion(): Promise<void> {
-            if (durableCompletionLookupInFlight || durableCompletionHandled || !isMounted) {
-              return;
+            if (!isMounted) return;
+            // A terminal signal can arrive during an individual-result read.
+            // Cancel its shorter exit immediately, while retaining an already
+            // started celebration's timer on duplicate terminal signals.
+            if (terminalCompletionWitnessed && !terminalCelebrationStarted) {
+              if (tournamentExitTimerRef.current) clearTimeout(tournamentExitTimerRef.current);
+              exitStarted = false;
             }
-            terminalCompletionWitnessed = true;
-            // Terminal authority supersedes an ordinary elimination exit, even
-            // while the committed result read is pending or reconnecting.
-            if (tournamentExitTimerRef.current) clearTimeout(tournamentExitTimerRef.current);
-            exitStarted = false;
+            if (durableCompletionLookupInFlight || durableCompletionHandled) return;
             if (!userId || userId === 'guest') {
               await announceSpectatorChampion();
               return;
@@ -14554,6 +14559,10 @@ function LiveTablePage({
                 clearTimeout(durableCompletionRetryTimer);
                 durableCompletionRetryTimer = null;
               }
+              if (!terminalCompletionWitnessed) {
+                goToLobbyWithResult(position, prize, 2500);
+                return;
+              }
               await announceSpectatorChampion({ position, prize });
             } finally {
               durableCompletionLookupInFlight = false;
@@ -14564,7 +14573,9 @@ function LiveTablePage({
             if (!isMounted || durableCompletionHandled) return;
             const { data: terminal, error: terminalError } = await supabase
               .from('tournaments')
-              .select('status, format_contract, final_table_triggered')
+              .select(
+                'status, format_contract, final_table_triggered, satellite_target_id, satellite_target'
+              )
               .eq('id', durableTournamentId)
               .maybeSingle();
             if (!isMounted) return;
@@ -14580,8 +14591,13 @@ function LiveTablePage({
               scheduleDurableCompletionRetry();
               return;
             }
+            const satelliteTarget = terminal.satellite_target_id ?? terminal.satellite_target;
+            if (typeof satelliteTarget === 'string' && isUUID(satelliteTarget)) {
+              loadedSatelliteTarget = satelliteTarget;
+            }
             applyDurableFinalTableState(terminal);
             if (terminal.status === 'COMPLETED') {
+              terminalCompletionWitnessed = true;
               await exitFromDurableCompletion();
               return;
             }
@@ -14609,6 +14625,7 @@ function LiveTablePage({
               (payload: any) => {
                 applyDurableFinalTableState(payload.new);
                 if (payload.new?.status === 'COMPLETED') {
+                  terminalCompletionWitnessed = true;
                   void exitFromDurableCompletion();
                 }
               }
@@ -15086,6 +15103,7 @@ function LiveTablePage({
                   data.payload?.tournamentId === durableTournamentId &&
                   data.payload?.receiptVersion === 3
                 ) {
+                  terminalCompletionWitnessed = true;
                   void exitFromDurableCompletion();
                 }
               } else if (data?.type === 'final_table_deal') {
@@ -15094,6 +15112,7 @@ function LiveTablePage({
                 // tournament_players row. Reuse the durable terminal reader so
                 // every player exits with their own result card, and so a
                 // duplicate announcement remains one-shot.
+                terminalCompletionWitnessed = true;
                 void exitFromDurableCompletion();
               } else if (data?.type === 'tournament_winner') {
                 /* ── The champion's exit (2026-08-22) ─────────────────────
@@ -15115,6 +15134,7 @@ function LiveTablePage({
                    Same 20s beat as the winner branch above, for the same
                    reason: the celebration overlay has to play before the
                    player is moved. */
+                terminalCompletionWitnessed = true;
                 void exitFromDurableCompletion();
               } else if (data?.type === 'late_reg_closed') {
                 // Late registration window has closed

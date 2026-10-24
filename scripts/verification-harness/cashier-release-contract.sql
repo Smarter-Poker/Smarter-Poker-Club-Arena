@@ -174,7 +174,7 @@ BEGIN
     jsonb_build_object(
       'signature', 'public.fn_cashier_transaction_history(uuid,text,integer,integer)',
       -- The Cashier's Transaction History door (Dan 2026-10-24). Migration
-      -- 20261024195842, installed and recorded 20261024203917; full definition
+      -- 20261024203917, installed and recorded under that version; full definition
       -- read back live the same day as owner, agent and player.
       'hash', '3919f3ef7a21ed33e2f0c7a80113c7d2'
     ),

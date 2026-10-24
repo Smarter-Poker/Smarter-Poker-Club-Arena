@@ -50,7 +50,7 @@ Went To Your Agent Wallet").
 - Owners, co-owners and admins get **All Club Transactions / My
   Transactions**. Everyone else reads their own rows.
 - New door `fn_cashier_transaction_history(p_club_id, p_scope, p_limit,
-p_offset)` (migration `20261024195842`): `club` returns the club's book only
+p_offset)` (migration `20261024203917`): `club` returns the club's book only
   to owner/co-owner/admin; any other request returns the viewer's own rows, so
   the scope can narrow a book but never widen it. Rows are presented exactly
   as `fn_club_trade_ledger` presents them (arena names, a funded seat as a Club

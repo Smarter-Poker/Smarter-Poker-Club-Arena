@@ -129,7 +129,7 @@ describe('the cashier transaction history', () => {
   });
 
   it('enforces the same rule in the database: the scope narrows a book, never widens it', () => {
-    const sql = read('supabase/migrations/20261024195842_cashier_transaction_history_scope.sql');
+    const sql = read('supabase/migrations/20261024203917_cashier_transaction_history_scope.sql');
     expect(sql).toContain("IF v_scope = 'club' AND v_role IN ('owner', 'co_owner', 'admin') THEN");
     expect(sql).toContain('AND (ct.from_user_id = v_viewer OR ct.to_user_id = v_viewer)');
     expect(sql).toContain('v_viewer uuid := auth.uid();');

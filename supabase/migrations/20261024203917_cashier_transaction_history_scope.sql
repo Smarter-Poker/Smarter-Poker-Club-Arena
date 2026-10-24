@@ -1,4 +1,4 @@
--- 20261024195842_cashier_transaction_history_scope.sql
+-- 20261024203917_cashier_transaction_history_scope.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

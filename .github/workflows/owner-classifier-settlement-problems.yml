@@ -1,0 +1,61 @@
+name: Owner classifier covers settlement problems
+
+# supabase/migrations/20260928171444_the_owner_classifier_covers_settlement_problems_and_push_off.sql
+# makes public.fn_is_owner_operational_notification classify, for the owner
+# account only, smarter-poker-workers' weekly auto-settlement problem notices
+# (type 'settlement': three titles, ASCII case and whitespace folded, or the
+# route's marker) and World Hub push-health's 'Push Notifications Are Off', so
+# store-only delivery (20260927235053) delivers them to the Production Alerts
+# task and never to the owner's inbox or phone, and it preserves the owner's
+# existing rows of those kinds in the store for the held cleanup
+# 20260928000622: documented to precede it, and correct in either order
+# (Production Alerts board, incident owner-inbox-operational-rows).
+#
+# This runs the executable red-before/green-after proof against a throwaway
+# PostgreSQL cluster built from production - store-only delivery's fixture plus
+# the production push mirror, every function and trigger pinned to the md5
+# production returns, then the real store-only migration - never production.
+# It adds no timer (CLAUDE.md 10.85): pull_request only, scoped to the paths the
+# proof reads. The proof needs store-only delivery's migration and fixture,
+# which ship with #5512, so this branch is stacked on it; a tree without them
+# makes the proof exit 2, which fails this job - it is never skipped. When the
+# held cleanup's migration is in the tree, the proof runs it in both orders;
+# without it, a stand-in for its removal record proves the other order. The
+# runtime detector for a recurrence is store-only delivery's
+# zz_owner_operational_original_reached_personal_inbox, which asks this
+# classifier; that its newest definition keeps these kinds, owner-only, is
+# tests/the-owner-classifier-keeps-its-operational-kinds.law.test.ts, which the
+# unit suite runs on every pull request touching supabase/migrations.
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/20260928171444_the_owner_classifier_covers_settlement_problems_and_push_off.sql
+      - supabase/migrations/20260927235053_owner_operational_notifications_are_delivered_to_the_operati.sql
+      - supabase/migrations/20260928000622_owner_inbox_keeps_no_operational_original.sql
+      - scripts/dev/probe-owner-classifier-settlement-problems.sh
+      - scripts/dev/fixtures/owner-classifier-settlement-problems/**
+      - scripts/dev/fixtures/owner-inbox-store-only/**
+      - .github/workflows/owner-classifier-settlement-problems.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-classifier-settlement-problems-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-proof:
+    name: Red before, green after (throwaway PostgreSQL, never production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install a PostgreSQL server if the runner has none
+        run: |
+          if ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y postgresql-16
+          fi
+      - name: Run the executable red/green proof
+        run: bash scripts/dev/probe-owner-classifier-settlement-problems.sh

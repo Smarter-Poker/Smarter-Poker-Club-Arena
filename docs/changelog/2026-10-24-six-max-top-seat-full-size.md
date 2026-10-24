@@ -20,6 +20,16 @@ seat is open page and the cap had nothing left to protect.
   (`--seat-avatar-base: var(--seat-avatar-full)`) and the 1.45x bust for the
   top seat of every 2-6 ring. The phone compact-pod block is scoped to 7-9 max
   with `:not(:where(...))`, which adds no specificity.
+- On a portrait phone (<=480px) the slot is full but the bust overhang is
+  1.3x rather than 1.45x (1.05x on the <=620px-tall first-generation SE, where
+  every villain is already a 40px pod). Measured: with six PLO6 hands tabled,
+  a 1.45x top bust made the protected card layout push both neighbouring
+  shown hands off their players at 375 and 480 wide and park the top
+  player's bet beside the next chair; 1.3x passes every occupied state of
+  `table-proportions.spec.ts` at 375, 393, 430 and 480, and 1.05x at 320.
+- `table-proportions.spec.ts`: "Top Avatar/Plate Is Not Compact" now applies
+  to 7-9 max only; a 2-6 ring instead asserts the top avatar is the same width
+  as the other villains.
 - The celebration hop stays at the top row's -5px: on a phone the corner
   jackpot plate still reaches over the top seat's left shoulder (the layout
   hook parks the art 8px under it), and a full 10px hop would touch it.

@@ -1,24 +1,48 @@
--- Cold opponent-history reads must not starve dealing or arena access.
--- Production: 40 simultaneous cold RPCs waited on disk, only 4/3214 profiles
--- initialized, and arena access returned 503 or took up to 8842ms. The old
--- guarded UPSERT prevented double counting but did not prevent duplicate scans.
--- Preserve the exact 1024 actual observations, decay, permissions and atomic
--- merge with accepted hands. One database-wide initializer request is admitted
--- without waiting, and initializes at most one cold profile per transaction;
--- busy requests fail explicitly through the existing optional
--- reader failure path. Warm profiles and accepted-hand writes remain available.
--- Re-grant the original service-only permission after emergency containment.
--- No hot-table DDL, data rewrite, engine replacement or new schedule.
+-- Version reserved by scripts/reserve-migration-version.sh.
+-- Fix observed SQLSTATE 57014 in original-request legacy opponent initialization.
+-- The accepted player index has 56k+ lifetime hands for active horses: batching
+-- or paging it still misses the entire 1500ms budget in rare game contexts.
+-- One compact GIN intersects actor UUID and exact context before heap/action
+-- reads. Only userId values are indexed, not other roster fields. Its builtin
+-- jsonb_path_query_array expression is immutable; no extension/helper is needed.
+-- Future accepted hands are recorded=true and do not grow this legacy index.
+-- The maintained applier runs this supported nonblocking preamble separately.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_hand_history_horse_legacy_context
+ ON public.hand_history USING gin
+ ((jsonb_path_query_array(players,'$[*].userId')) jsonb_path_ops,
+  (ARRAY[game_variant,CASE WHEN tournament_id IS NULL THEN 'cash' ELSE 'tournament' END,CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END]) array_ops)
+ WHERE NOT horse_exploit_recorded;
+
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';
-DO $preimage$
+
+-- IF NOT EXISTS is not evidence that an existing index has the right shape or
+-- completed its concurrent build. Refuse before replacing the function if a
+-- previous interrupted build or same-name unrelated index is present.
+DO $index_guard$
+DECLARE actual_definition text; valid boolean; ready boolean;
 BEGIN
- IF md5(pg_get_functiondef(
-  'public.fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure)) <> 'd2b6bc29fcb26a4fbaafac3132676399' THEN
-  RAISE EXCEPTION 'opponent memory reader preimage changed';
+ SELECT pg_get_indexdef(i.indexrelid),i.indisvalid,i.indisready
+ INTO actual_definition,valid,ready FROM pg_index i
+ WHERE i.indexrelid=to_regclass('public.idx_hand_history_horse_legacy_context')
+  AND i.indrelid='public.hand_history'::regclass;
+ IF valid IS DISTINCT FROM true OR ready IS DISTINCT FROM true
+  OR regexp_replace(actual_definition,'\s+','','g') IS DISTINCT FROM
+   regexp_replace($expected$CREATE INDEX idx_hand_history_horse_legacy_context ON public.hand_history USING gin (jsonb_path_query_array(players, '$[*]."userId"'::jsonpath) jsonb_path_ops, (ARRAY[game_variant,
+CASE
+    WHEN (tournament_id IS NULL) THEN 'cash'::text
+    ELSE 'tournament'::text
+END,
+CASE
+    WHEN (COALESCE((horse_exploit_dealt_count)::integer, jsonb_array_length(players)) <= 2) THEN 'hu'::text
+    WHEN (COALESCE((horse_exploit_dealt_count)::integer, jsonb_array_length(players)) <= 5) THEN 'short'::text
+    ELSE 'full'::text
+END])) WHERE (NOT horse_exploit_recorded)$expected$,'\s+','','g') THEN
+  RAISE EXCEPTION 'horse legacy context index missing, invalid or definition differs';
  END IF;
-END $preimage$;
+END $index_guard$;
+
 CREATE OR REPLACE FUNCTION public.fn_horse_exploit_profiles_read(p_user_ids text[],p_variant text,p_mode text,p_size text)
 RETURNS SETOF public.horse_exploit_profiles LANGUAGE plpgsql SECURITY DEFINER
 SET search_path=pg_catalog,public AS $fn$
@@ -33,13 +57,8 @@ BEGIN
  FOR uid IN SELECT DISTINCT x FROM unnest(p_user_ids)x ORDER BY x LOOP
   SELECT initialized INTO ready FROM public.horse_exploit_profiles WHERE user_id=uid AND variant=p_variant AND mode=p_mode AND size=p_size;
   IF NOT coalesce(ready,false) THEN
-   -- A fleet cold start must not fan out into concurrent GIN history scans.
-   -- Warm reads and accepted-hand recording never take this advisory lock.
-   -- Refuse immediately rather than queue or hold a row used by live hands.
-   IF NOT pg_try_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initializer',0)) THEN
-    RAISE EXCEPTION 'opponent memory initialization busy' USING ERRCODE='55P03';
-   END IF;
-   -- Another initializer may have committed since the first profile lookup.
+   -- Concurrent initializers may scan, but only the first initialization
+   -- can win the guarded upsert below. No live row lock spans the scan.
    SELECT initialized INTO ready FROM public.horse_exploit_profiles WHERE user_id=uid AND variant=p_variant AND mode=p_mode AND size=p_size;
    IF NOT coalesce(ready,false) THEN
     base:='{"hands": 0, "vpip": 0, "pfr": 0, "rfiOpp": 0, "rfi": 0, "threeBetOpp": 0, "threeBet": 0, "foldTo3BetOpp": 0, "foldTo3Bet": 0, "betCheckedToOpp": 0, "betCheckedTo": 0, "foldToBetOpp": 0, "foldToBet": 0, "riverCallOpp": 0, "riverCall": 0, "fHands": 0, "fPfr": 0, "fRfiOpp": 0, "fRfi": 0, "fThreeBetOpp": 0, "fThreeBet": 0, "fBetCheckedToOpp": 0, "fBetCheckedTo": 0, "fFoldToBetOpp": 0, "fFoldToBet": 0, "fRiverCallOpp": 0, "fRiverCall": 0}'::jsonb; n:=0;
@@ -55,6 +74,8 @@ BEGIN
       WHERE NOT horse_exploit_recorded AND game_variant=p_variant
        AND (tournament_id IS NOT NULL)=(p_mode='tournament')
        AND (CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END)=p_size
+       AND jsonb_path_query_array(players,'$[*].userId') @> jsonb_build_array(uid)
+       AND ARRAY[game_variant,CASE WHEN tournament_id IS NULL THEN 'cash' ELSE 'tournament' END,CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END] @> ARRAY[p_variant,p_mode,p_size]
        AND players @> jsonb_build_array(jsonb_build_object('userId',uid))
        AND EXISTS (SELECT 1 FROM jsonb_array_elements(actions) a
         WHERE a->>'userId'=uid AND a->>'action' IN ('fold','check','call','bet','raise','all_in'))
@@ -81,16 +102,13 @@ BEGIN
      counters=public.fn_horse_exploit_add(base,horse_exploit_profiles.counters,horse_exploit_profiles.observed_hands),
      initialized=true,legacy_hands=n,updated_at=clock_timestamp()
      WHERE NOT horse_exploit_profiles.initialized;
-    -- Transaction locks survive to RPC completion. Never hold this profile's
-    -- write lock across a second history scan: accepted hands update it too.
-    -- The existing caller refuses an incomplete snapshot and uses its normal
-    -- decision path; subsequent original requests initialize remaining profiles.
-    EXIT;
    END IF;
   END IF;
  END LOOP;
  RETURN QUERY SELECT * FROM public.horse_exploit_profiles WHERE user_id=ANY(p_user_ids) AND variant=p_variant AND mode=p_mode AND size=p_size ORDER BY user_id;
 END $fn$;
-REVOKE ALL ON FUNCTION public.fn_horse_exploit_profiles_read(text[],text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION public.fn_horse_exploit_profiles_read(text[],text,text,text)
+ FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_horse_exploit_profiles_read(text[],text,text,text) TO service_role;
 COMMIT;

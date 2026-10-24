@@ -286,6 +286,9 @@ export async function installMobileAwardJournal(page: Page) {
       for (const [id, flight] of active) {
         if (flight.chip.isConnected) continue;
         active.delete(id);
+        // An explicit endpoint witness completes this flight. Later seat
+        // reflow cannot turn its recorded landing into a pre-arrival removal.
+        if (seen.has(id)) continue;
         if (flight.distance === null || flight.distance > 2) {
           evidence.violations.push('Payout Disappeared Before Reaching Its Recipient');
         } else if (!seen.has(id)) {

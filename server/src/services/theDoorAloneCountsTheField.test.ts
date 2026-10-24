@@ -41,11 +41,10 @@ function countWrites(updates: Update[]): Update[] {
 
 describe('a fill pass leaves the field count to the door', () => {
   beforeEach(() => {
-    // h1, h2 and h3 are all inside their real activity windows at noon UTC.
-    // A wall-clock run at 01:00 excludes h1, masking the count-write contract
-    // behind an unrelated eligibility change. Keep real asynchronous timers.
+    // These synthetic horse IDs are all on duty at this hour. The assertion
+    // concerns the registration door, rather than the wall-clock duty roster.
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-08T12:00:00Z'));
+    vi.setSystemTime(new Date('2026-10-24T00:00:00Z'));
   });
 
   function harness(ids: string[]) {

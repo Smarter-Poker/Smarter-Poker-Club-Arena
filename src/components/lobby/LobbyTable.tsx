@@ -1674,6 +1674,14 @@ interface LobbyTableProps {
   onStylesChange?: (keys: string[]) => void;
   /** Games per style on this tab (countStylesOnBoard), shown inside the Stakes menu. */
   styleCounts?: Readonly<Record<string, number>>;
+  /**
+   * The player chose the page's Sort By order for this tab (2026-10-24). On a
+   * tab with no heading sort (ALL) that order IS the board, so - like a chosen
+   * heading - it decides the whole list and the featured pin stands down.
+   * Without it, a featured 50 buy-in sat above the 100s under "Stakes: High To
+   * Low". Ignored once a heading is sorted, because the heading then decides.
+   */
+  orderChosen?: boolean;
 }
 
 export default function LobbyTable({
@@ -1692,6 +1700,7 @@ export default function LobbyTable({
   selectedStyles: savedStyles,
   onStylesChange,
   styleCounts,
+  orderChosen = false,
 }: LobbyTableProps) {
   const selectedStyles = savedStyles?.map(cashTemplateKey);
   /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
@@ -1871,6 +1880,10 @@ export default function LobbyTable({
        sort was there for), and evaluates the predicate exactly once per row.
        The identical array reference is returned when nothing needs to sink, so
        the memo below still sees no change. */
+      /* A chosen heading, or the page's chosen Sort By order on a board with
+         no heading sort, decides the whole list; the pin decorates only the
+         default order. */
+      const orderObeyed = sortChosen || (sort == null && orderChosen);
       const pinned: LobbyEntry[] = [];
       const open: LobbyEntry[] = [];
       /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
@@ -1893,14 +1906,14 @@ export default function LobbyTable({
           r.status !== 'closed' &&
           r.status !== 'completed';
         if (!seatFirstJoinable(r)) gone.push(r);
-        else if (r.featured && enterable && !sortChosen) pinned.push(r);
+        else if (r.featured && enterable && !orderObeyed) pinned.push(r);
         else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
         else open.push(r);
       }
       if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
       return pinned.concat(open, empty, gone);
     },
-    [sortChosen]
+    [sortChosen, sort, orderChosen]
   );
 
   const sorted = useMemo(() => {

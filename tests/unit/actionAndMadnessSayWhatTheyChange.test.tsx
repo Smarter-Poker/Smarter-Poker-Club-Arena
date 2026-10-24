@@ -41,8 +41,8 @@ vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
 
 // Dan 2026-10-16: the real minimum VPIP, not "VPIP Floor" / "High VPIP Floor",
 // and bombs every 20 minutes for Action and every 10 for Madness.
-const ACTION_NOTE = 'Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20 Minutes';
-const MADNESS_NOTE = 'Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10 Minutes';
+const ACTION_NOTE = 'Big Blind Ante, 40% Minimum VPIP';
+const MADNESS_NOTE = ACTION_NOTE;
 
 const table = (over: Partial<LobbyTableRow>): LobbyTableRow =>
   ({
@@ -70,7 +70,7 @@ const card = (over: Partial<ArenaGameCardData>): ArenaGameCardData => ({
   id: 't1',
   family: 'plo',
   title: 'PLO 1/2',
-  subtitle: 'Action',
+  subtitle: 'Lightning Games',
   styleNote: ACTION_NOTE,
   gameType: 'PLO',
   stakes: '1/2',
@@ -120,7 +120,7 @@ describe('the lobby card data carries the note for the game it describes', () =>
     expect(arenaGameCardDataFromEntry(entry('madness')).styleNote).toBe(MADNESS_NOTE);
   });
 
-  it('an NLH game named for its style never prints No Limit Hold\'em again (Dan 2026-10-16)', () => {
+  it("an NLH game named for its style never prints No Limit Hold'em again (Dan 2026-10-16)", () => {
     for (const template of ['action', 'madness', 'classic']) {
       const data = arenaGameCardDataFromEntry(
         cashEntry(
@@ -165,7 +165,7 @@ describe('the phone cards print the note next to the style', () => {
       );
       const row = container.querySelector('[data-zone="subtitle"]');
       expect(row).not.toBeNull();
-      expect(row!.textContent).toContain('Action');
+      expect(row!.textContent).toContain('Lightning Games');
       const note = row!.querySelector('[data-zone="styleNote"]');
       expect(note?.textContent).toBe(ACTION_NOTE);
     });

@@ -223,6 +223,12 @@ import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
 import { isLightningObserverSnapshot, mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import {
+  foldRevealed,
+  hasCommittedSeatFold,
+  nextFoldReveal,
+  type FoldRevealTracker,
+} from '../utils/committedSeatFold';
+import {
   fixedLimitStreetBet,
   killNextAnnouncement,
   killPotPillText,
@@ -2289,6 +2295,16 @@ function LiveTablePage({
    * socket, exactly as it is on every other page.
    */
   const engineSnapshot = rawEngineSnapshot;
+  /* A fold pressed out of turn stays on the felt until the action reaches the
+     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot. */
+  const foldRevealRef = useRef<FoldRevealTracker | null>(null);
+  const foldReveal = useMemo(() => {
+    foldRevealRef.current = nextFoldReveal(
+      foldRevealRef.current,
+      engineSnapshot as unknown as Record<string, unknown> | null
+    );
+    return foldRevealRef.current;
+  }, [engineSnapshot]);
   const lightningObserver = isLightningObserverSnapshot(engineSnapshot);
   const [lightningAnchorFunded, setLightningAnchorFunded] = useState(false);
   useEffect(() => setLightningAnchorFunded(false), [tableId, userId]);
@@ -26839,6 +26855,15 @@ function LiveTablePage({
                   seatNumber={seatNumber}
                   player={displayPlayer}
                   arrival={lightningRoom ? seatArrivals[seatNumber] : undefined}
+                  foldCommitted={
+                    hasCommittedSeatFold(
+                      engineSnapshot,
+                      tableId,
+                      tableState.handNumber,
+                      seatNumber,
+                      displayPlayer?.id
+                    ) && foldRevealed(foldReveal, seatNumber)
+                  }
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may
                      sit out as long as they like. Withheld here rather than
@@ -28940,7 +28965,8 @@ function LiveTablePage({
                exists. Without it the tab stayed on the physical table while
                every hand dealt to the player timed out on a screen they
                could not see (WooWoo, 2026-10-24). */
-            if (anchorLightningClusterId) setLightningEntryIntent(tableId, anchorLightningClusterId);
+            if (anchorLightningClusterId)
+              setLightningEntryIntent(tableId, anchorLightningClusterId);
             const reviewed =
               cashBuyInRecovery?.payload.p_user_id.toLowerCase() === userId.toLowerCase() &&
               cashBuyInRecovery.payload.p_table_id.toLowerCase() === tableId.toLowerCase()

@@ -22,8 +22,8 @@ SET LOCAL statement_timeout='60s';
 -- have their stale display count corrected. No seat or wallet is changed.
 do $baseline$
 begin
-  if md5(pg_get_functiondef('public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer)'::regprocedure)) <> '0ef7d304fb604d7c4df5d2a9b05078d9'
-     or md5(pg_get_functiondef('public.fn_ca_horse_roster_seat_guard()'::regprocedure)) <> '793c4d45b9674e518f3b39308957b486'
+  if md5(pg_get_functiondef('public.fn_ca_horse_roster_refresh(integer,integer,integer,numeric,integer)'::regprocedure)) <> '3bf4db40450d39decb96b61b12daed96'
+     or md5(pg_get_functiondef('public.fn_ca_horse_roster_seat_guard()'::regprocedure)) <> '3333770871b2d064596c2c7a333fea70'
      or md5(pg_get_functiondef('public.trg_auto_cashout_on_table_close()'::regprocedure)) <> 'a936bf2b604a14a6ae620e6b3db852f0' then
     raise exception 'Cash horse/lifecycle source changed since qualification; inspect before applying';
   end if;

@@ -225,6 +225,19 @@ try:
     query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024020328_agents_can_watch_every_live_downline_table.sql').read_text())
     query(downline_assertions)
     print('agent-downline-watch-native-acceptance-passed')
+    # TablePage bootstrap for a downline table the restrictive arena policy hides.
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024200812_agent_downline_watch_reads_table_metadata.sql').read_text())
+    query("""
+      CREATE POLICY fixture_restrictive_arena_access ON public.tables AS RESTRICTIVE
+        FOR SELECT TO authenticated USING (false);
+    """)
+    assert as_viewer("SELECT count(*) FROM public.tables WHERE id='30000000-0000-0000-0000-000000000004';") == '0'
+    meta = json.loads(as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000004');"))
+    assert meta['id'] == '30000000-0000-0000-0000-000000000004' and meta['arena']['id'] == meta['club_id'] and meta['tournament_id'] is not None, meta
+    assert as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000005') IS NULL;") == 't'
+    assert as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000006') IS NULL;") == 't'
+    assert query("SELECT has_function_privilege('anon','public.fn_agent_watch_table_metadata(uuid)','EXECUTE');") == 'f'
+    print('agent-downline-watch-table-metadata-passed')
     print('player-search-privacy-native-acceptance-passed')
 finally:
     if STARTED and (DATA / 'postmaster.pid').exists():

@@ -12,7 +12,10 @@ const players = (n: number, idle = 10_000): LightningPoolPlayer[] =>
     reasonCode: null,
     idleSinceMs: idle,
     enteredAtMs: 0,
-    lastBbAtMs: null,
+    // Every player here has been the big blind before: this file is about
+    // group sizes, not the first-entry rule (a never-BB slot is a newcomer,
+    // held until it is a big blind; ANewPlayersFirstLightningHandIsTheBigBlind).
+    lastBbAtMs: 0,
     bbUnresolved: false,
     debtSinceMs: 0,
     handsSinceBb: null,

@@ -59,7 +59,8 @@ function consumer(
   fundingOwner = USER,
   observer = false,
   legacyFunded = false,
-  departed = false
+  departed = false,
+  lightningCapableClusterId: string | null = CLUSTER
 ) {
   const navigate = vi.fn(),
     onTableInfoUpdate = vi.fn();
@@ -70,6 +71,7 @@ function consumer(
     tableId: ANCHOR,
     userId: USER,
     tableState: { clusterId: CLUSTER, heroSeat: 3, players: Array(6).fill(null) },
+    lightningCapableClusterId,
     lightningRoom: null,
     lightningHero: null,
     lightningObserver: observer,
@@ -159,6 +161,7 @@ it('a locally confirmed departure overrides an earlier funded anchor lookup', as
     tableId: ANCHOR,
     userId: USER,
     tableState: { clusterId: CLUSTER, heroSeat: 0 },
+    lightningCapableClusterId: CLUSTER,
     lightningRoom: null,
     lightningHero: null,
     lightningObserver: false,
@@ -217,4 +220,26 @@ it('an observer never reuses a previous account record even while the legacy fla
   await act(async () => {});
   expect(c.navigate).not.toHaveBeenCalled();
   expect(rpc).not.toHaveBeenCalled();
+});
+
+/* Dan 2026-10-24: "NO PART OF THE LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE
+   TOUCHING THE CLASSIC GAMES." A funded seat at a Classic game is never
+   watched for a Lightning conversion: no session read, no realtime channel,
+   no room offered. */
+it('a funded seat at a Classic game is never watched for a Lightning conversion', async () => {
+  const c = consumer(
+    [{ user_id: USER, stack: '200', leave_pending: false }],
+    false,
+    USER,
+    false,
+    false,
+    false,
+    null
+  );
+  expect(c.input.clusterId).toBeNull();
+  const { result } = renderHook(() => useLightningAnchorHandoff(c.input));
+  await act(async () => {});
+  expect(rpc).not.toHaveBeenCalled();
+  expect(result.current.readyPoolSessionId).toBeNull();
+  expect(result.current.joining).toBe(false);
 });

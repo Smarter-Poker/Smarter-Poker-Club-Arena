@@ -8,7 +8,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { parseLightningLobbyState, type LightningLobbyState } from './lightningLobby';
+import {
+  isClassicLobbyState,
+  parseLightningLobbyState,
+  type LightningLobbyState,
+} from './lightningLobby';
 import { fetchLightningPoolHealth } from './lightningSessionApi';
 
 export async function fetchLightningLobbyState(
@@ -41,11 +45,21 @@ export const LIGHTNING_LOBBY_REFRESH_MS = 30_000;
 /**
  * The Lightning state of each listed Cluster, keyed by Cluster id. An empty
  * list reads nothing and returns an empty map.
+ *
+ * `settleClassic`: a Cluster whose first clean answer is a Classic game
+ * (isClassicLobbyState: Lightning switch off and not in a Lightning mode) is
+ * never asked again while this list stands. The
+ * table page sets it, because it asks about the one table it is showing
+ * before it knows which kind of game that is (Dan 2026-10-24: "NO PART OF THE
+ * LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE TOUCHING THE CLASSIC GAMES").
+ * A failed read is not an answer, so it is asked again on the next tick.
  */
 export function useLightningLobbyStates(
-  clusterIds: readonly string[]
+  clusterIds: readonly string[],
+  options: { settleClassic?: boolean } = {}
 ): Record<string, LightningLobbyState | null> {
   const key = useMemo(() => [...new Set(clusterIds)].sort().join(','), [clusterIds]);
+  const settleClassic = options.settleClassic === true;
   const [states, setStates] = useState<Record<string, LightningLobbyState | null>>({});
   useEffect(() => {
     const ids = key ? key.split(',') : [];
@@ -54,11 +68,20 @@ export function useLightningLobbyStates(
       return;
     }
     let live = true;
+    const classic = new Set<string>();
+    const settled = new Map<string, LightningLobbyState | null>();
+    let timer: ReturnType<typeof setInterval> | null = null;
     const readAll = async () => {
       const pairs = await Promise.all(
         ids.map(async (id) => {
+          if (classic.has(id)) return [id, settled.get(id) ?? null] as const;
           try {
-            return [id, await fetchLightningLobbyState(id)] as const;
+            const state = await fetchLightningLobbyState(id);
+            if (settleClassic && isClassicLobbyState(state)) {
+              classic.add(id);
+              settled.set(id, state);
+            }
+            return [id, state] as const;
           } catch (err) {
             reportError(err, 'lightningLobbyFeed.read_failed', { clusterId: id });
             return [id, null] as const;
@@ -67,16 +90,20 @@ export function useLightningLobbyStates(
       );
       if (!live) return;
       setStates(Object.fromEntries(pairs));
+      if (settleClassic && timer !== null && ids.every((id) => classic.has(id))) {
+        clearInterval(timer);
+        timer = null;
+      }
     };
-    void readAll();
-    const timer = setInterval(() => {
+    timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       void readAll();
     }, LIGHTNING_LOBBY_REFRESH_MS);
+    void readAll();
     return () => {
       live = false;
-      clearInterval(timer);
+      if (timer !== null) clearInterval(timer);
     };
-  }, [key]);
+  }, [key, settleClassic]);
   return states;
 }

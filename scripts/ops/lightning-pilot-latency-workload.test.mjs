@@ -453,3 +453,26 @@ test('latency refuses a fold gesture after selection changes despite an own-pool
   assert.equal(clicks, 0);
   assert.equal(r.outcome, 'unknown');
 });
+
+test('a failed run names its own refusal and redacts anything else (2026-10-24)', async () => {
+  const { witnessReason } = await import('./lightning-pilot-latency-workload.mjs');
+  assert.equal(
+    witnessReason(new Error('Existing Funded Active Pilot Player Unavailable')),
+    'Existing Funded Active Pilot Player Unavailable'
+  );
+  assert.equal(
+    witnessReason(new Error('Playable Pilot Anchor Unavailable')),
+    'Playable Pilot Anchor Unavailable'
+  );
+  for (const leaky of [
+    'fetch failed: https://example.supabase.co/rest/v1/x?apikey=eyJhbGciOi',
+    'Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig',
+    'TypeError: Cannot read properties of undefined (reading id)',
+    'token=abc123',
+    '',
+  ]) {
+    assert.equal(witnessReason(new Error(leaky)), 'redacted', leaky);
+  }
+  assert.equal(witnessReason(undefined), 'redacted');
+  assert.equal(witnessReason('Plain String Not An Error'), 'redacted');
+});

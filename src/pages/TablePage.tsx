@@ -375,7 +375,7 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { lightningRoute } from '../lightning/lightningLobby';
+import { isClassicLobbyState, isLightningMode, lightningRoute } from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -2296,15 +2296,23 @@ function LiveTablePage({
    */
   const engineSnapshot = rawEngineSnapshot;
   /* A fold pressed out of turn stays on the felt until the action reaches the
-     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot. */
+     seat (Dan 2026-10-24); see nextFoldReveal. Idempotent per snapshot.
+     LIGHTNING ONLY (Dan 2026-10-24, from a player report: "NO PART OF THE
+     LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE TOUCHING THE CLASSIC GAMES").
+     On a Classic table a folded player keeps their avatar and plate for the
+     whole hand, exactly as normal poker; the tracker never runs there. */
   const foldRevealRef = useRef<FoldRevealTracker | null>(null);
   const foldReveal = useMemo(() => {
+    if (!lightningRoom) {
+      foldRevealRef.current = null;
+      return null;
+    }
     foldRevealRef.current = nextFoldReveal(
       foldRevealRef.current,
       engineSnapshot as unknown as Record<string, unknown> | null
     );
     return foldRevealRef.current;
-  }, [engineSnapshot]);
+  }, [engineSnapshot, lightningRoom]);
   const lightningObserver = isLightningObserverSnapshot(engineSnapshot);
   const [lightningAnchorFunded, setLightningAnchorFunded] = useState(false);
   useEffect(() => setLightningAnchorFunded(false), [tableId, userId]);
@@ -13126,6 +13134,22 @@ function LiveTablePage({
         if (table && !res.error) break;
         // A clean "no such table" answer is final — retrying cannot invent a row.
         if (!res.error && !table) break;
+      }
+      /* AGENT DOWNLINE WATCH (2026-10-24). An agent watching a downline at a
+         table in a club the agent does not belong to cannot read this row: the
+         restrictive poker_arena_table_access policy hides it from non-members,
+         and the bootstrap then reported a missing table. The definer RPC
+         returns the same bootstrap columns only when fn_agent_can_watch_table
+         allows this viewer. Observation only; seating, money and hole-card
+         rules are unchanged. A missing RPC or a refusal keeps today's path. */
+      if (!table && !error && isMounted && tableId) {
+        const watch = await supabase.rpc('fn_agent_watch_table_metadata', {
+          p_table_id: tableId,
+        });
+        if (!isMounted) return;
+        if (!watch.error && watch.data && typeof watch.data === 'object') {
+          table = watch.data as TableBootstrapRow & { union_id?: string | null; arena?: unknown };
+        }
       }
       /* AUDIT 2026-08-25 — THE DEAD-BOOKMARK HOLE.
          Below this point the code went straight to `if (table && !error)`.
@@ -24050,11 +24074,34 @@ function LiveTablePage({
     () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
     [tableState.clusterId, lightningRoom]
   );
-  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
+  /* Asked once: a Classic table's game answers Classic and is never polled
+     again (Dan 2026-10-24, Lightning never touches Classic). */
+  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds, {
+    settleClassic: true,
+  });
+  /* The database answers with a full state object for EVERY cash game, Classic
+     included, so a non-null answer is not "Lightning". Until 2026-10-24 it was
+     read that way, and every Classic spectator was offered Join Lightning
+     instead of the waiting list, and every Classic buy-in flashed "Joining
+     Lightning..." over the felt. A table is a Lightning anchor only while its
+     game is actually in a Lightning mode, or the engine is already showing a
+     Lightning hand on it. */
+  const tableGameLightningState = tableState.clusterId
+    ? spectatorLightningStates[tableState.clusterId]
+    : undefined;
   const anchorLightningClusterId =
     tableState.clusterId &&
     !lightningRoom &&
-    (lightningObserver || spectatorLightningStates[tableState.clusterId] != null)
+    (lightningObserver || isLightningMode(tableGameLightningState?.clusterMode))
+      ? tableState.clusterId
+      : null;
+  /* A game that can become Lightning while the player sits (Lightning switch
+     on). A Classic game never converts, so the handoff never watches it. */
+  const lightningCapableClusterId =
+    tableState.clusterId &&
+    (lightningRoom !== null ||
+      lightningObserver ||
+      (tableGameLightningState !== undefined && !isClassicLobbyState(tableGameLightningState)))
       ? tableState.clusterId
       : null;
 
@@ -24395,7 +24442,7 @@ function LiveTablePage({
      through, so this tab follows their chair into the pool-session room. */
   const lightningHandoff = useLightningAnchorHandoff({
     tableId,
-    clusterId: tableState.clusterId,
+    clusterId: lightningCapableClusterId,
     userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: lightningObserver
@@ -26872,13 +26919,15 @@ function LiveTablePage({
                   player={displayPlayer}
                   arrival={lightningRoom ? seatArrivals[seatNumber] : undefined}
                   foldCommitted={
+                    lightningRoom != null &&
                     hasCommittedSeatFold(
                       engineSnapshot,
                       tableId,
                       tableState.handNumber,
                       seatNumber,
                       displayPlayer?.id
-                    ) && foldRevealed(foldReveal, seatNumber)
+                    ) &&
+                    foldRevealed(foldReveal, seatNumber)
                   }
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may
@@ -28188,6 +28237,7 @@ function LiveTablePage({
                            print BB unconditionally while every seat next to it
                            printed chips. Same setting the seats and pot read. */
                         showStackInBB={v8Settings.show_stack_in_bb}
+                        displayBigBlind={seatBigBlind}
                         isMyTurn={true}
                         /* 2026-09-04 (audit item 6): the row is marked while
                            the socket is down. See ActionPanel.connectionStale. */

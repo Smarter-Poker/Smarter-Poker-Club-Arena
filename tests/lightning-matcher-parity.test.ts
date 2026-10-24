@@ -110,13 +110,19 @@ describe('the parity harness', () => {
     const policy = HCODE.indexOf(
       '-f "$M/20261023230001_classic_and_lightning_five_ready_waits_three_seconds_for_six.sql"'
     );
+    const firstEntry = HCODE.indexOf(
+      '-f "$M/20261024195059_lightning_new_players_are_always_the_big_blind_first.sql"'
+    );
     const current = HCODE.indexOf('-f "$F/lightning-current-policy-parity.sql"');
     const comparison = HCODE.indexOf(
       'node --import tsx src/lightning/__tests__/lightningMatcherParity.ts'
     );
     expect(preimage).toBeGreaterThan(HCODE.indexOf("grep '^  ok  11'"));
     expect(policy).toBeGreaterThan(preimage);
-    expect(current).toBeGreaterThan(policy);
+    // New players are always the big blind first (20261024195059): today's
+    // port is compared with today's SQL rule, installed on the same preimages.
+    expect(firstEntry).toBeGreaterThan(policy);
+    expect(current).toBeGreaterThan(firstEntry);
     expect(comparison).toBeGreaterThan(current);
     const fixture = read('scripts', 'dev', 'fixtures', 'lightning-current-policy-parity.sql');
     expect(fixture).toContain('FOR f IN SELECT * FROM pp.out ORDER BY n LOOP');

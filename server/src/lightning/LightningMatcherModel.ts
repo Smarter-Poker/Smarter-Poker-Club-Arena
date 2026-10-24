@@ -20,7 +20,8 @@
  *
  *   - `m1`, a line-for-line port of the live SQL plan (P1 group sizes from
  *     the legal count, P2 big blinds by the barrier's blind order, the
- *     first-entry rule, P4 queue order for the other seats, P2 again for the
+ *     first-entry rule (always on: a newcomer is dealt in only as a big
+ *     blind, 20261024195059), P4 queue order for the other seats, P2 again for the
  *     small blinds, P5's diversity assignment with the SQL's weights and
  *     bands, and P3's advisory position order from the button backward);
  *   - `m2`, THE CANDIDATE: m1 with P5's diversity also weighing in the
@@ -91,7 +92,12 @@ export interface LightningPoolPlayer {
   debtSinceMs: number;
   /** Hands the player has been dealt since their last big blind (null = none yet). */
   handsSinceBb: number | null;
-  /** Not yet in the Cluster's blind ledger (the first-entry rule). */
+  /**
+   * The first-entry rule's key, as the database reports it: this pool slot
+   * has never been the big blind (sl.last_bb_at IS NULL, 20261024195059).
+   * The plan derives it from `lastBbAtMs` itself (`isLightningNewcomer`), so
+   * a snapshot can never carry a newcomer the blind order does not rank first.
+   */
   newcomer: boolean;
   /** P3: how often the player has held each labelled position. */
   positions: { btn: number; co: number; hj: number; utg: number };
@@ -131,6 +137,13 @@ export interface LightningMatcherParams {
   instanceMin: number;
   instanceTarget: number;
   instanceMax: number;
+  /**
+   * ALWAYS 'big_blind' from the live config (Dan 2026-10-24: "NEW PLAYERS
+   * SHOULD ALWAYS BE BB FIRST"): `lightningMatcherParams` never returns
+   * anything else, as fn_lightning_config never does. 'any_seat' survives only
+   * as an OFFLINE what-if for the simulator (LightningMatcherSim), to measure
+   * what the rule costs; no live path can reach it.
+   */
   firstEntryRule: 'any_seat' | 'big_blind';
   positionFairness: boolean;
   recentWindowHands: number;
@@ -150,7 +163,7 @@ export const LIGHTNING_MATCHER_PARAM_DEFAULTS: Readonly<LightningMatcherParams> 
   instanceMin: 5,
   instanceTarget: 6,
   instanceMax: 6,
-  firstEntryRule: 'any_seat',
+  firstEntryRule: 'big_blind',
   positionFairness: true,
   recentWindowHands: 60,
   recentWindowSeconds: 900,
@@ -253,6 +266,14 @@ export function lightningFormationSizes(
 // ─── ORDERS ───────────────────────────────────────────────────────────────
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * THE FIRST-ENTRY KEY (20261024195059): a pool slot that has never been the
+ * big blind. The SQL plan reads `bo.last_bb_at IS NULL`, the same key
+ * fn_lightning_blind_order ranks first, so this reads `lastBbAtMs` and never
+ * the Cluster's blind ledger.
+ */
+export const isLightningNewcomer = (p: LightningPoolPlayer): boolean => p.lastBbAtMs === null;
 
 /** The pool slot's opening (P2's fourth key), or the pool entry when the model never saw it apart. */
 const slotOpened = (p: LightningPoolPlayer): number => p.slotOpenedAtMs ?? p.enteredAtMs;
@@ -428,21 +449,31 @@ function planWith(
     snapshot.nowMs + LIGHTNING_FORMATION_MAX_WAIT_MS,
     params
   );
-  const g = Math.min(sizes.length, cap);
+  let g = Math.min(sizes.length, cap);
 
-  if (params.firstEntryRule === 'big_blind' && g > 0) {
-    const firstBbs = new Set(seatable.slice(0, g).map((p) => p.playerId));
-    const next = seatable.filter((p) => !p.newcomer || firstBbs.has(p.playerId));
-    if (next.length < seatable.length) {
+  // NEW PLAYERS ARE ALWAYS THE BIG BLIND FIRST (20261024195059, the SQL's
+  // LOOP, line for line). A newcomer who is not one of this pass's big blinds
+  // is held even when that costs the pass a hand; holding shrinks the pass,
+  // so its big blinds are taken again and a newcomer pushed out of them is
+  // held too, until nothing changes. The one exception: a hold that would
+  // leave the pass no hand at all is not taken (a pool of only newcomers
+  // still deals).
+  if (params.firstEntryRule === 'big_blind') {
+    for (;;) {
+      if (g === 0) break;
+      const firstBbs = new Set(seatable.slice(0, g).map((p) => p.playerId));
+      const next = seatable.filter((p) => !isLightningNewcomer(p) || firstBbs.has(p.playerId));
+      if (next.length === seatable.length) break;
       const sizes2 = lightningFormationSizes(
         next,
         snapshot.nowMs + LIGHTNING_FORMATION_MAX_WAIT_MS,
         params
       );
-      if (Math.min(sizes2.length, cap) === g) {
-        seatable = next;
-        sizes = sizes2;
-      }
+      const g2 = Math.min(sizes2.length, cap);
+      if (g2 === 0) break;
+      seatable = next;
+      sizes = sizes2;
+      g = g2;
     }
   }
 
@@ -629,7 +660,9 @@ export function lightningMatcherParams(raw: unknown, maxGroups?: number): Lightn
     instanceMin: Math.round(num(row.instance_min, d.instanceMin, 2, 9)),
     instanceTarget: Math.round(num(row.instance_target, d.instanceTarget, 2, 9)),
     instanceMax: Math.round(num(row.instance_max, d.instanceMax, 2, 9)),
-    firstEntryRule: row.first_entry_rule === 'big_blind' ? 'big_blind' : 'any_seat',
+    // Always big_blind, whatever the row says (fn_lightning_config lists any
+    // other value under `invalid` and uses big_blind).
+    firstEntryRule: 'big_blind',
     positionFairness:
       typeof row.position_fairness === 'boolean' ? row.position_fairness : d.positionFairness,
     recentWindowHands: Math.round(

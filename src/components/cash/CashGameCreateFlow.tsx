@@ -63,6 +63,8 @@ import {
   CASH_VARIANT_LONG,
   cashGameCreateRefusalText,
   cashTemplateNote,
+  cashTemplateVariantAvailable,
+  PINEAPPLE_CLASSIC_NOTE,
   isDealtVariant,
   overridesFromSnapshot,
   stakesRungTaken,
@@ -214,7 +216,7 @@ export default function CashGameCreateFlow({
   /* Step 1 + 2 -> the server's defaults for this template x variant. Every
      change re-loads them (OPORD 1.3 ROE 6: templates auto-load defaults). */
   useEffect(() => {
-    if (!template || !variant) {
+    if (!template || !variant || !cashTemplateVariantAvailable(template, variant)) {
       setSnapshot(null);
       setOverrides(null);
       return;
@@ -375,7 +377,8 @@ export default function CashGameCreateFlow({
       ? { mode: killMode, thresholdBb: killThreshold }
       : null;
   const stepTemplateDone = template !== null;
-  const stepVariantDone = stepTemplateDone && variant !== null;
+  const stepVariantDone =
+    stepTemplateDone && variant !== null && cashTemplateVariantAvailable(template, variant);
   const stepModeDone = stepVariantDone && tableMode !== null;
   const stepStakesDone = stepModeDone && stakes !== null;
   const stepHandednessDone = stepStakesDone && handedness !== null && snapshot !== null;
@@ -531,6 +534,10 @@ export default function CashGameCreateFlow({
               className={`cash-create__card${template === t.id ? ' is-selected' : ''}`}
               onClick={() => setTemplate(t.id)}
               aria-pressed={template === t.id}
+              disabled={!cashTemplateVariantAvailable(t.id, variant)}
+              title={
+                !cashTemplateVariantAvailable(t.id, variant) ? PINEAPPLE_CLASSIC_NOTE : undefined
+              }
             >
               <span className="cash-create__card-title">{t.label}</span>
               <span className="cash-create__card-blurb">{t.blurb}</span>
@@ -553,7 +560,10 @@ export default function CashGameCreateFlow({
               key={v.id}
               type="button"
               className={`config-preset-chip cash-create__chip${variant === v.id ? ' is-selected' : ''}`}
-              disabled={!stepTemplateDone}
+              disabled={!stepTemplateDone || !cashTemplateVariantAvailable(template, v.id)}
+              title={
+                !cashTemplateVariantAvailable(template, v.id) ? PINEAPPLE_CLASSIC_NOTE : undefined
+              }
               onClick={() => setVariant(v.id)}
               aria-pressed={variant === v.id}
             >
@@ -574,6 +584,9 @@ export default function CashGameCreateFlow({
             </button>
           )}
         </div>
+        {(isLightningTemplate || variant === 'pineapple') && (
+          <p className="cash-create__note">{PINEAPPLE_CLASSIC_NOTE}</p>
+        )}
       </section>
 
       {/* ── 3. Table Mode (R9) ─────────────────────────────────────────── */}

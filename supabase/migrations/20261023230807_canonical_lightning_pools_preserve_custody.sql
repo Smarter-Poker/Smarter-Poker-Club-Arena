@@ -1,4 +1,4 @@
--- @live-proof: (SELECT position('canonical_lightning_game_id' IN pg_get_functiondef('public.fn_cash_game_join(uuid)'::regprocedure))>0) AND (SELECT position('lightning-game-key:' IN pg_get_functiondef('public.fn_cash_game_create_impl_20260905(uuid,text,text,numeric,numeric,integer,jsonb,text,boolean)'::regprocedure))>0) AND (SELECT position('always_on' IN pg_get_functiondef('public.fn_cash_cluster_lightning_drive(uuid)'::regprocedure))>0) AND (SELECT position('lightning_retired' IN pg_get_functiondef('public.fn_cash_apply_ruleset(uuid)'::regprocedure))>0) AND NOT EXISTS(SELECT 1 FROM public.cash_games WHERE enabled AND closed_at IS NULL AND template_name IN ('action','madness') AND ((ruleset_snapshot->>'vpip_floor') IS DISTINCT FROM '40' OR (ruleset_snapshot->>'regular_ante') IS DISTINCT FROM 'bb' OR handedness IS DISTINCT FROM 6 OR lightning_enabled IS DISTINCT FROM true OR must_move IS DISTINCT FROM true OR ruleset_snapshot#>'{lightning,always_on}' IS DISTINCT FROM 'true'::jsonb))
+-- @live-proof: (SELECT position('canonical_lightning_game_id' IN pg_get_functiondef('public.fn_cash_game_join(uuid)'::regprocedure))>0) AND (SELECT position('lightning-game-key:' IN pg_get_functiondef('public.fn_cash_game_create_impl_20260905(uuid,text,text,numeric,numeric,integer,jsonb,text,boolean)'::regprocedure))>0) AND (SELECT position('always_on' IN pg_get_functiondef('public.fn_cash_cluster_lightning_drive(uuid)'::regprocedure))>0) AND (SELECT position('lightning_retired' IN pg_get_functiondef('public.fn_cash_apply_ruleset(uuid)'::regprocedure))>0) AND NOT EXISTS(SELECT 1 FROM public.cash_games WHERE enabled AND closed_at IS NULL AND template_name IN ('action','madness') AND ((ruleset_snapshot->>'vpip_floor') IS DISTINCT FROM '40' OR (ruleset_snapshot->>'regular_ante') IS DISTINCT FROM 'bb' OR handedness IS DISTINCT FROM 6 OR lightning_enabled IS DISTINCT FROM true OR must_move IS DISTINCT FROM true OR ruleset_snapshot#>'{lightning,always_on}' IS DISTINCT FROM 'true'::jsonb)) AND NOT EXISTS(SELECT 1 FROM public.cash_games WHERE enabled AND closed_at IS NULL AND variant='pineapple' AND (template_name IS DISTINCT FROM 'classic' OR lightning_enabled))
 -- Reserved by scripts/reserve-migration-version.sh at 2026-10-23 23:08:07 UTC.
 -- Action and Madness split the same stake into separate populations (20 pairs
 -- observed). Keep Madness canonical and retire only its exact-stake Action twin.
@@ -57,8 +57,10 @@ BEGIN
   ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
   AND target.club_id=source.club_id AND target.variant=source.variant
   AND target.sb=source.sb AND target.bb=source.bb
-  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
- WHERE source.id=p_game_id AND source.template_name IN ('action','madness')),p_game_id) IS DISTINCT FROM p_game_id
+  AND target.closed_at IS NULL
+ WHERE ((source.template_name IN ('action','madness') AND target.template_name IN ('action','madness'))
+  OR (source.variant='pineapple' AND source.template_name='classic' AND target.template_name='classic' AND NOT source.enabled AND target.enabled))
+ AND source.id=p_game_id ),p_game_id) IS DISTINCT FROM p_game_id
      AND public.fn_cash_game_barred_seconds(p_game_id,v_uid) IS NOT NULL THEN
     RAISE EXCEPTION 'GAME_BARRED:%',public.fn_cash_game_barred_seconds(p_game_id,v_uid)
       USING ERRCODE='check_violation';
@@ -68,8 +70,10 @@ BEGIN
   ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
   AND target.club_id=source.club_id AND target.variant=source.variant
   AND target.sb=source.sb AND target.bb=source.bb
-  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
- WHERE source.id=p_game_id AND source.template_name IN ('action','madness')),p_game_id);
+  AND target.closed_at IS NULL
+ WHERE ((source.template_name IN ('action','madness') AND target.template_name IN ('action','madness'))
+  OR (source.variant='pineapple' AND source.template_name='classic' AND target.template_name='classic' AND NOT source.enabled AND target.enabled))
+ AND source.id=p_game_id ),p_game_id);
   SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR NO KEY UPDATE;$join$);
  IF n=s THEN RAISE EXCEPTION 'Cash join canonical anchor changed'; END IF;
  EXECUTE n;
@@ -146,8 +150,10 @@ DO $physical$ DECLARE s text; n text; BEGIN
   ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
   AND target.club_id=source.club_id AND target.variant=source.variant
   AND target.sb=source.sb AND target.bb=source.bb
-  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
- WHERE source.id=g.id AND source.template_name IN ('action','madness')),g.id)<>g.id THEN
+  AND target.closed_at IS NULL
+ WHERE ((source.template_name IN ('action','madness') AND target.template_name IN ('action','madness'))
+  OR (source.variant='pineapple' AND source.template_name='classic' AND target.template_name='classic' AND NOT source.enabled AND target.enabled))
+ AND source.id=g.id ),g.id)<>g.id THEN
     UPDATE public.tables t SET dealing_halted_at=clock_timestamp(),
       dealing_halted_reason='lightning_retired'
      WHERE t.cluster_id=g.id AND coalesce(t.lifecycle,'')<>'closed'
@@ -157,6 +163,36 @@ DO $physical$ DECLARE s text; n text; BEGIN
  IF n=s OR n NOT LIKE '%auto_start_players IS DISTINCT FROM 6%' THEN RAISE EXCEPTION 'Cash projection minimum anchors changed'; END IF;
  EXECUTE n;
 END $physical$;
+
+-- Pineapple needs the physical discard pipeline. Preserve its current seats
+-- and hands in Classic instead of admitting an unusable Lightning pool.
+DO $pineapple$ DECLARE pn record; target_id uuid; BEGIN
+ PERFORM id FROM public.cash_games WHERE variant='pineapple'
+  AND template_name IN ('action','madness') AND closed_at IS NULL ORDER BY id FOR UPDATE;
+ IF EXISTS(SELECT 1 FROM public.cash_games g WHERE g.variant='pineapple'
+  AND g.template_name IN ('action','madness') AND g.closed_at IS NULL
+  AND (g.cluster_mode<>'must_move'
+   OR EXISTS(SELECT 1 FROM public.lightning_pool_session p WHERE p.cluster_id=g.id AND p.exited_at IS NULL)
+   OR EXISTS(SELECT 1 FROM public.lightning_instance i WHERE i.cluster_id=g.id AND i.state IN ('forming','reserved','dealing','settling'))
+   OR EXISTS(SELECT 1 FROM public.lightning_reservation r WHERE r.cluster_id=g.id AND r.state IN ('pending','committed'))))
+ THEN RAISE EXCEPTION 'Pineapple Lightning custody requires original drain before Classic normalization'; END IF;
+ FOR pn IN SELECT id,club_id,sb,bb,enabled FROM public.cash_games WHERE variant='pineapple'
+  AND template_name IN ('action','madness') AND closed_at IS NULL ORDER BY id FOR UPDATE LOOP
+  SELECT id INTO target_id FROM public.cash_games WHERE club_id=pn.club_id AND variant='pineapple'
+   AND sb=pn.sb AND bb=pn.bb AND template_name='classic' AND enabled AND must_move
+   AND closed_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE;
+  IF pn.enabled AND target_id IS NULL THEN RAISE EXCEPTION 'Pineapple canonical Classic missing: %',pn.id; END IF;
+  UPDATE public.cash_games SET enabled=false,template_name='classic',lightning_enabled=false,
+   ruleset_snapshot=(coalesce(ruleset_snapshot,'{}')-'canonical_lightning_game_id'-'lightning')
+    || jsonb_build_object('template','classic','regular_ante','none','vpip_floor',0,
+       'bombs',public.fn_cash_template_defaults('classic','pineapple')->'bombs')
+    || CASE WHEN target_id IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('canonical_lightning_game_id',target_id::text) END,
+   name='PINEAPPLE '||pn.sb::text||'/'||pn.bb::text||' Classic',updated_at=now() WHERE id=pn.id;
+  PERFORM public.fn_cash_apply_ruleset(pn.id);
+  UPDATE public.tables SET name='PINEAPPLE '||pn.sb::text||'/'||pn.bb::text||' Classic',updated_at=now()
+   WHERE cluster_id=pn.id AND lifecycle<>'closed' AND NOT coalesce(is_deleted,false);
+ END LOOP;
+END $pineapple$;
 
 -- Bounded, exact-scope one-hop aliases. Never rewrite historical template IDs,
 -- transfer a table's cluster, or copy pool/session custody to another game.

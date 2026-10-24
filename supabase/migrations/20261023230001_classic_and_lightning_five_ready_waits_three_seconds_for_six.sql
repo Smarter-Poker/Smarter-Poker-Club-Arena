@@ -114,6 +114,9 @@ DECLARE t text:=lower(coalesce(p_template,'classic')); v text:=lower(coalesce(p_
 BEGIN
  IF t IN ('action','madness','lightning') THEN t:='madness'; END IF;
  IF t NOT IN ('classic','madness') THEN RAISE EXCEPTION 'TEMPLATE_UNKNOWN: %',p_template; END IF;
+ IF t='madness' AND v IN ('pineapple','pineapple_holdem') THEN
+  RAISE EXCEPTION 'LIGHTNING_VARIANT_NOT_SUPPORTED: Pineapple Uses Classic Games';
+ END IF;
  family:=CASE WHEN v IN ('plo4','plo5','plo6','plo8','flo8') THEN 'plo' WHEN v='short_deck' THEN 'shortdeck' WHEN v='pineapple' THEN 'pineapple' ELSE 'holdem' END;
  seats:=CASE WHEN t='classic' AND family='holdem' THEN 9 ELSE 6 END;
  RETURN jsonb_build_object('template',t,'variant',v,'family',family,'seats',seats,
@@ -131,9 +134,9 @@ END $defaults$;
 UPDATE public.cash_games cg
  SET ruleset_snapshot=jsonb_set(jsonb_set(coalesce(cg.ruleset_snapshot,'{}'::jsonb),'{regular_ante}','"bb"'::jsonb),'{vpip_floor}','40'::jsonb),
      name=upper(cg.variant)||' '||cg.sb::text||'/'||cg.bb::text||' Lightning Games',updated_at=now()
- WHERE cg.template_name IN ('action','madness') AND cg.closed_at IS NULL;
+ WHERE cg.template_name IN ('action','madness') AND cg.variant NOT IN ('pineapple','pineapple_holdem') AND cg.closed_at IS NULL;
 DO $rules$ DECLARE r record; BEGIN
- FOR r IN SELECT id FROM public.cash_games WHERE template_name IN ('action','madness') AND closed_at IS NULL LOOP
+ FOR r IN SELECT id FROM public.cash_games WHERE template_name IN ('action','madness') AND variant NOT IN ('pineapple','pineapple_holdem') AND closed_at IS NULL LOOP
   PERFORM public.fn_cash_apply_ruleset(r.id);
  END LOOP;
 END $rules$;

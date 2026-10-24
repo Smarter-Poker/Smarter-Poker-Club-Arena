@@ -241,6 +241,35 @@ describe('A1.4 - handedness follows the family (R1)', () => {
 });
 
 describe('A1.5 - an undealt variant is offered disabled, never saved as NLHE (ROE 16)', () => {
+  it('keeps Pineapple in Classic without asking for unsupported Lightning defaults', async () => {
+    mount('pineapple');
+    expect(
+      (screen.getByRole('button', { name: /^Lightning Games/ }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /^Classic/ }));
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_template_defaults', {
+        p_template: 'classic',
+        p_variant: 'pineapple',
+      })
+    );
+    expect(
+      mocks.rpc.mock.calls.some(
+        ([fn, args]) => fn === 'fn_cash_template_defaults' && args.p_template !== 'classic'
+      )
+    ).toBe(false);
+  });
+
+  it('disables Pineapple after Lightning is selected while keeping supported variants available', () => {
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /^Lightning Games/ }));
+    expect((screen.getByRole('button', { name: 'Pineapple' }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
+    expect((screen.getByRole('button', { name: 'NLH' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Pineapple Uses Classic Games/)).toBeTruthy();
+  });
+
   it('a route opened for a variant the engine does not deal shows it disabled', () => {
     mount('nlhe');
     const dead = screen.getByRole('button', {

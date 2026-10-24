@@ -18,6 +18,20 @@ export function cashTemplateKey(template: string): string {
   return key === 'action' || key === 'lightning' ? 'madness' : key;
 }
 
+/** Pineapple's discard round belongs to the physical Classic host. */
+export function cashTemplateVariantAvailable(
+  template: string | null,
+  variant: string | null
+): boolean {
+  return !(
+    cashTemplateKey(template ?? '') === 'madness' &&
+    (variant === 'pineapple' || variant === 'pineapple_holdem')
+  );
+}
+
+export const PINEAPPLE_CLASSIC_NOTE =
+  'Pineapple Uses Classic Games. Its Discard Round Is Not Available In Lightning Games.';
+
 export const LIGHTNING_RULES_SUMMARY = 'Big Blind Ante, 40% Minimum VPIP';
 
 export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; blurb: string }> = [
@@ -390,6 +404,7 @@ export function cashGameCreateRefusalText(raw: unknown): string | null {
   if (/STAKES_INVALID/.test(m)) return 'Those Stakes Are Not Valid';
   if (/SESSION_REVOKED/.test(m)) return 'Your Session Is Signed Out. Sign In Again.';
   if (/TEMPLATE_UNKNOWN/.test(m)) return 'Pick A Template First';
+  if (/LIGHTNING_VARIANT_NOT_SUPPORTED/.test(m)) return PINEAPPLE_CLASSIC_NOTE;
   if (/ANTE_INVALID/.test(m)) return 'The Ante Setting Is Not Valid';
   if (/VPIP_WINDOW_INVALID/.test(m)) return 'The VPIP Window Must Be Between 10 And 200 Hands';
   if (/VPIP_INVALID/.test(m)) return 'The Minimum VPIP Must Be Between 0 And 100 Percent';

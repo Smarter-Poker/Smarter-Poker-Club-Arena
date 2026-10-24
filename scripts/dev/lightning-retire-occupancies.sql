@@ -30,8 +30,10 @@ BEGIN
   ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
   AND target.club_id=source.club_id AND target.variant=source.variant
   AND target.sb=source.sb AND target.bb=source.bb
-  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
- WHERE source.id=g.id AND source.template_name IN ('action','madness')),g.id)=g.id THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','retired_source_not_drained'); END IF;
+  AND target.closed_at IS NULL
+ WHERE ((source.template_name IN ('action','madness') AND target.template_name IN ('action','madness'))
+  OR (source.variant='pineapple' AND source.template_name='classic' AND target.template_name='classic' AND NOT source.enabled AND target.enabled))
+ AND source.id=g.id ),g.id)=g.id THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','retired_source_not_drained'); END IF;
  IF EXISTS(SELECT 1 FROM unnest(requested) q(occ) WHERE NOT EXISTS(SELECT 1 FROM public.table_seats ts JOIN public.tables t ON t.id=ts.table_id WHERE ts.occupancy_id=q.occ AND t.cluster_id=g.id)) THEN RAISE EXCEPTION 'RETIREMENT_OCCUPANCY_SCOPE_MISMATCH' USING ERRCODE='23514'; END IF;
  IF EXISTS(SELECT 1 FROM public.tables t WHERE t.cluster_id=g.id AND coalesce(t.lifecycle,'')<>'closed' AND NOT coalesce(t.is_deleted,false)
    AND (t.dealing_halted_at IS NULL OR t.dealing_halt_observed_at IS NULL OR t.dealing_halt_observed_at<t.dealing_halted_at)) THEN RETURN jsonb_build_object('ok',false,'pending',true,'reason','halt_not_observed'); END IF;
@@ -58,8 +60,10 @@ BEGIN
   ON target.id::text=source.ruleset_snapshot->>'canonical_lightning_game_id'
   AND target.club_id=source.club_id AND target.variant=source.variant
   AND target.sb=source.sb AND target.bb=source.bb
-  AND target.template_name IN ('action','madness') AND target.closed_at IS NULL
- WHERE source.id=g.id AND source.template_name IN ('action','madness')),g.id),
+  AND target.closed_at IS NULL
+ WHERE ((source.template_name IN ('action','madness') AND target.template_name IN ('action','madness'))
+  OR (source.variant='pineapple' AND source.template_name='classic' AND target.template_name='classic' AND NOT source.enabled AND target.enabled))
+ AND source.id=g.id ),g.id),
   'departed',departed,'replayed',replayed,'credited_this_call',credited,'receipts',outcomes,
   'remaining_seats',(SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id=ts.table_id WHERE t.cluster_id=g.id AND ts.left_at IS NULL));
 END $retire$;

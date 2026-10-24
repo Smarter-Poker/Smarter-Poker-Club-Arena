@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import LightningEntrySurface from '../../src/components/lightning/LightningEntrySurface';
 import LightningMySessions from '../../src/components/lightning/LightningMySessions';
 import { lightningStakeText } from '../../src/lightning/lightningStakeText';
+import { lightningRoomPath } from '../../src/lightning/lightningSession';
 
 afterEach(cleanup);
 
@@ -84,5 +85,22 @@ describe('the Lightning entry stays on its approved frame', () => {
       /<LightningEntrySurface[\s\S]*<LightningMySessions[\s\S]*<\/LightningEntrySurface>/
     );
     expect(page).toContain('mine.rows && !mine.failed');
+  });
+
+  it('carries compact stakes into the opened Lightning table tab', () => {
+    const path = lightningRoomPath('pool', {
+      clusterId: 'cluster',
+      clubId: null,
+      name: 'PLO5 1.00/2.00 Lightning Games',
+      variant: 'plo5',
+      smallBlind: 1,
+      bigBlind: 2,
+      maxPlayers: 6,
+      clusterMode: 'lightning',
+      enabled: true,
+    });
+    const query = new URL(path, 'https://example.test').searchParams;
+    expect(query.get('name')).toBe('PLO5 1/2 Lightning Games');
+    expect(query.get('stakes')).toBe('1/2');
   });
 });

@@ -65,12 +65,13 @@ import LightningMySessions, {
 import LightningPoolBadge from '../components/lightning/LightningPoolBadge';
 import { useLightningPoolHealth } from '../components/lightning/useLightningSessionData';
 import './LightningEntryPage.css';
+import { lightningStakeText } from '../lightning/lightningStakeText';
 
 /** The room path for one of the player's other sessions, with its tab name and stakes. */
 function mySessionPath(row: LightningMySessionRow): string {
   const params = new URLSearchParams();
-  params.set('name', row.name);
-  if (row.stakes) params.set('stakes', row.stakes);
+  params.set('name', lightningStakeText(row.name));
+  if (row.stakes) params.set('stakes', lightningStakeText(row.stakes));
   return `/table/${row.poolSessionId}?${params.toString()}`;
 }
 

@@ -18,6 +18,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase';
+import { lightningStakeText } from './lightningStakeText';
 import { isUUID } from '../utils/clubIdResolver';
 import { clusterModeDisplay, isLightningEligible } from './lightningLobby';
 import { markLightningRoom } from './lightningDeviceReport';
@@ -523,7 +524,7 @@ export function lightningRoomPath(
 ): string {
   const params = new URLSearchParams();
   if (meta) {
-    params.set('name', meta.name);
+    params.set('name', lightningStakeText(meta.name));
     if (meta.smallBlind > 0 && meta.bigBlind > 0) {
       params.set('stakes', `${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`);
     }

@@ -1,0 +1,3 @@
+# The Live Lobby-Join Check Settles The Lobby First
+
+Run 40132784246 exercised `production-lightning-lobby-join.spec.ts` for the first time after the row-and-panel change. At 393px the club message opened underneath the already-open game panel and its registered dismissal could not reach Enter Lobby; at 1440px the first matching row was the hidden phone-layout row. The check now follows the existing lobby pattern (Diamond entry read before navigation, overlay dismissals after it, the wallets trigger as the readiness signal, the Diamond offer settled) and settles the club message before any panel opens, and it counts only rows the current width shows. No product change.

@@ -5,3 +5,5 @@ A fast fold can deliver the next hand before the old seat's fold animation timeo
 The extra Lightning statistics/tools row, duplicate fold text row and decision queue below the tabs are removed from the table page. The original action panel, instant fold preselection, tab urgency indicators and explicit tab selection remain. Player names, stakes, pot and gameplay labels are preserved.
 
 The real SeatSlot rerender regression fails before and passes after the fix. Focused tests also retain animation, seat rendering, original Lightning actions and no automatic table switching checks. This is client-only and uses the serving engine contract.
+
+The hidden Fold & Watch keyboard binding and its remembered-choice write are removed as well. Shift+F and the original fold/preselection use immediate release.

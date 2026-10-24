@@ -402,7 +402,7 @@ import {
 import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
 import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
-import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
+import { readLightningPrefs } from '../lightning/lightningPrefs';
 import { createLightningMilestoneTracker } from '../lightning/lightningMilestone';
 import { lightningDecisions as pendingLightningDecisions } from '../lightning/lightningDecisionQueue';
 import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
@@ -23709,12 +23709,10 @@ function LiveTablePage({
   // Keyboard Shortcuts — wired to table actions (Phase 8)
   // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
   // deleted. See the gravestone above handleActionPanelAction.
-  /* LIGHTNING PHASE 12: the Lightning keys (Shift+F, Shift+V) reach the fold
-     strip's own handler through this ref, filled where that handler is made. */
+  // Shift+F uses the same immediate fold as the original controls.
   const lightningHotkeysRef = useRef<{
     fold: (() => void) | null;
-    watch: (() => void) | null;
-  }>({ fold: null, watch: null });
+  }>({ fold: null });
   useTableKeyboard({
     /* WHICH TABLE IS THE PLAYER LOOKING AT. Without this every mounted
        TablePage answered the keyboard, so hero with action on two tables folded
@@ -23775,7 +23773,6 @@ function LiveTablePage({
     /* LIGHTNING PHASE 12: present only in a Lightning room whose platform row
        offers hotkeys (the ref is null everywhere else). */
     onLightningFold: lightningRoom ? () => lightningHotkeysRef.current.fold?.() : undefined,
-    onLightningFoldWatch: lightningRoom ? () => lightningHotkeysRef.current.watch?.() : undefined,
     /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
        `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
        armed a legacy client-side RIT prompt the button never armed — so a shove
@@ -24239,9 +24236,6 @@ function LiveTablePage({
   );
   const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
   const lightningFoldBusyRef = useRef(false);
-  const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
-    () => readLightningPrefs().preferFoldWatch
-  );
   const lightningFoldHandId =
     lightningRoom && lightningHandLive
       ? lightningHandId(engineSnapshot as LightningSnapshotFields)
@@ -24254,11 +24248,6 @@ function LiveTablePage({
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
       setLightningFoldBusy(true);
-      /* LIGHTNING PHASE 8: the player's FOLD & WATCH preference, remembered on
-         this device (a reminder only; the strip offers both, always). */
-      setLightningPrefersWatch(
-        writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
-      );
       try {
         const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
@@ -24280,18 +24269,12 @@ function LiveTablePage({
     },
     [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
-  /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
-     own handler, only while the strip offers that fold and the platform row
-     offers hotkeys. The engine validates every fold. */
+  // There is one fold behavior in Lightning: release the hand immediately.
   lightningHotkeysRef.current = lightningCaps.hotkeys
     ? {
         fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,
-        watch:
-          lightningCaps.fold_and_watch && lightningFold.foldWatch
-            ? () => void handleLightningFold('fold_watch')
-            : null,
       }
-    : { fold: null, watch: null };
+    : { fold: null };
 
   /* LIGHTNING PHASE 12 (spec ACTION LATENCY TELEMETRY): hand creation ->
      first client render. Once per hand, after the hand is on the felt and

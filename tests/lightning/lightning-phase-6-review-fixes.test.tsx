@@ -36,11 +36,13 @@ const fromCalls: string[] = [];
 let clusterRows: unknown[] = [];
 let onClusterUpdate: (() => void) | null = null;
 const removeChannel = vi.fn();
+const channelOpened = vi.fn();
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...a: unknown[]) => rpc(...a),
     removeChannel: (...a: unknown[]) => removeChannel(...a),
-    channel: () => {
+    channel: (...a: unknown[]) => {
+      channelOpened(...a);
       const channel = {
         on: (_event: unknown, _filter: unknown, callback: () => void) => {
           onClusterUpdate = callback;
@@ -97,6 +99,7 @@ import {
   lightningHandOnFelt,
 } from '../../src/lightning/lightningHand';
 import { lightningCapabilities } from '../../src/lightning/lightningCapabilities';
+import { LIGHTNING_LOBBY_REFRESH_MS } from '../../src/lightning/lightningLobbyFeed';
 import {
   clusterModeDisplay,
   lightningLobbyBadge,
@@ -134,6 +137,7 @@ beforeEach(() => {
   clusterRows = [];
   onClusterUpdate = null;
   removeChannel.mockReset();
+  channelOpened.mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -456,9 +460,13 @@ describe('conversion of an already seated player', () => {
     expect(getLightningPoolSession(POOL)?.clusterId).toBe(CLUSTER);
     expect(follow).toHaveBeenCalledWith(POOL);
     unmount();
-    expect(removeChannel).toHaveBeenCalledTimes(1);
+    /* 2026-10-24: no realtime channel at all. `cash_games` is not published
+       (19.5M updates on 266 rows), so the old one could never fire. */
+    expect(channelOpened).not.toHaveBeenCalled();
+    expect(removeChannel).not.toHaveBeenCalled();
   });
   it('reads the original cluster transition and rejects a different anchor', async () => {
+    vi.useFakeTimers();
     rpc.mockResolvedValue({
       data: { pool_session_id: null, cluster_mode: 'must_move' },
       error: null,
@@ -474,23 +482,85 @@ describe('conversion of an already seated player', () => {
         follow,
       })
     );
-    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(result.current.readyPoolSessionId).toBeNull();
     rpc.mockResolvedValue({
       data: { ...SESSION_WITH_ANCHOR, anchor_table_id: OTHER_CLUSTER },
       error: null,
     });
     await act(async () => {
-      onClusterUpdate?.();
+      await vi.advanceTimersByTimeAsync(LIGHTNING_LOBBY_REFRESH_MS);
     });
     expect(result.current.readyPoolSessionId).toBeNull();
     rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
     await act(async () => {
-      onClusterUpdate?.();
+      await vi.advanceTimersByTimeAsync(LIGHTNING_LOBBY_REFRESH_MS);
     });
     expect(result.current.readyPoolSessionId).toBe(POOL);
     expect(follow).not.toHaveBeenCalled();
   });
+
+  it('reads nothing while the tab is hidden, and reads the moment it is shown', async () => {
+    vi.useFakeTimers();
+    rpc.mockResolvedValue({
+      data: { pool_session_id: null, cluster_mode: 'pending_on' },
+      error: null,
+    });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow: vi.fn(),
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const afterMount = rpc.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * LIGHTNING_LOBBY_REFRESH_MS);
+    });
+    expect(rpc.mock.calls.length).toBe(afterMount);
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    visibility.mockReturnValue('visible');
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    visibility.mockRestore();
+  });
+
+  it('stops reading once the room is ready', async () => {
+    vi.useFakeTimers();
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow: vi.fn(),
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    const reads = rpc.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * LIGHTNING_LOBBY_REFRESH_MS);
+    });
+    expect(rpc.mock.calls.length).toBe(reads);
+  });
+
   it('does not reuse a conversion response or View Game callback after an account change', async () => {
     rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
     const follow = vi.fn();
@@ -523,6 +593,7 @@ describe('conversion of an already seated player', () => {
     expect(result.current.readyPoolSessionId).toBeNull();
   });
   it('keeps the newest conversion result when an earlier read finishes last', async () => {
+    vi.useFakeTimers();
     let oldRead: (value: unknown) => void = () => {};
     rpc.mockImplementationOnce(
       () =>
@@ -541,7 +612,9 @@ describe('conversion of an already seated player', () => {
       })
     );
     rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
-    await act(async () => onClusterUpdate?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIGHTNING_LOBBY_REFRESH_MS);
+    });
     expect(result.current.readyPoolSessionId).toBe(POOL);
     await act(async () => oldRead({ data: { pool_session_id: null }, error: null }));
     expect(result.current.readyPoolSessionId).toBe(POOL);

@@ -1,31 +1,6 @@
-/* LIGHTNING PHASE 6: the Lightning route's one surface, inside the app shell.
-   The entry itself is the shared EmptyState card; this only centres it and
-   holds the space, so a quick answer shows nothing at all while it resolves. */
 .lightning-entry {
+  width: 100%;
   min-height: 60vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
-.lightning-entry__quiet {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 15px;
-  letter-spacing: 0.02em;
-}
-
-/* LIGHTNING PHASE 13: JOIN LIGHTNING while an operator has stopped new
-   players. Shown so the player knows the door exists, never pressable. */
-.lightning-entry__join-closed {
-  margin: 12px auto 0;
-  display: block;
-  padding: 10px 18px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  font: inherit;
-  letter-spacing: 0.04em;
-  cursor: not-allowed;
+  padding: clamp(12px, 3vw, 28px);
+  box-sizing: border-box;
 }

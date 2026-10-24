@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { isLightningObserverSnapshot } from '../src/utils/mapEngineSnapshot';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Execute the actual recovery effect. Mounting the complete TablePage would
@@ -26,7 +27,11 @@ function visit(node: ts.Node): void {
 visit(source);
 if (!effectSource) throw new Error('Actual recovery effect was not found');
 
-function start(userId: string, response = Promise.resolve({ data: null, error: null })) {
+function start(
+  userId: string,
+  response = Promise.resolve({ data: null, error: null }),
+  observer = false
+) {
   const filters: Array<[string, unknown]> = [];
   const query = {
     select: vi.fn().mockReturnThis(),
@@ -43,6 +48,9 @@ function start(userId: string, response = Promise.resolve({ data: null, error: n
   const dependencies = {
     tableId: '11111111-1111-4111-8111-111111111111',
     userId,
+    lightningObserver: observer,
+    engineSnapshotRef: { current: observer ? { lightning_observer: true } : null },
+    isLightningObserverSnapshot,
     supabase: { from },
     reportError: vi.fn(),
     heroCardFetchRef: { current: null },
@@ -102,4 +110,29 @@ describe('actual private hole-card recovery effect', () => {
     expect(recovery.dependencies.heroCardFetchRef.current).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
   });
+});
+
+it('never queries private cards for a public observer with a resolved identity', async () => {
+  vi.useFakeTimers();
+  const recovery = start('22222222-2222-4222-8222-222222222222', undefined, true);
+  await vi.advanceTimersByTimeAsync(6000);
+  expect(recovery.from).not.toHaveBeenCalled();
+  expect(recovery.dependencies.heroCardFetchRef.current).toBeNull();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('does not apply an in-flight private read after the room becomes a public observer', async () => {
+  vi.useFakeTimers();
+  let answer!: (value: any) => void;
+  const response = new Promise<any>((resolve) => {
+    answer = resolve;
+  });
+  const recovery = start('22222222-2222-4222-8222-222222222222', response);
+  recovery.dependencies.engineSnapshotRef.current = { lightning_observer: true };
+  answer({ data: { cards: ['As', 'Ah'], hand_number: 1 }, error: null });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(recovery.from).toHaveBeenCalledTimes(1);
+  expect(recovery.setTableState).not.toHaveBeenCalled();
+  recovery.cleanup();
+  expect(vi.getTimerCount()).toBe(0);
 });

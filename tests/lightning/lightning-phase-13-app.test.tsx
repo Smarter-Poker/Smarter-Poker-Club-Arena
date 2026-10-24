@@ -222,7 +222,7 @@ describe('joins closed: JOIN LIGHTNING shown, not offered', () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(await screen.findByText(LIGHTNING_JOINS_CLOSED_TEXT)).toBeTruthy();
+    expect(await screen.findByText('Closed')).toBeTruthy();
     const closed = await screen.findByTestId('lightning-entry-join-closed');
     expect(closed.textContent).toMatch(/join lightning/i);
     expect((closed as HTMLButtonElement).disabled).toBe(true);

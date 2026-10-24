@@ -205,7 +205,8 @@ describe('Lightning hotkeys (spec HOTKEYS): safe modifiers, the strip’s own ha
     expect(page).toContain(
       "fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,"
     );
-    expect(page).toContain('lightningCaps.fold_and_watch && lightningFold.foldWatch');
+    expect(page).not.toContain('onLightningFoldWatch:');
+    expect(page).not.toContain("handleLightningFold('fold_watch')");
     expect(page).toMatch(
       /onLightningFold: lightningRoom \? \(\) => lightningHotkeysRef\.current\.fold\?\.\(\) : undefined,/
     );

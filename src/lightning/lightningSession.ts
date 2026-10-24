@@ -180,6 +180,8 @@ export interface LightningClusterMeta {
   smallBlind: number;
   bigBlind: number;
   maxPlayers: number;
+  minBuyIn?: number | null;
+  maxBuyIn?: number | null;
   /**
    * `cash_games.handedness` exactly as read: null when absent or unreadable.
    * maxPlayers above falls back to 6 for display; eligibility never does.
@@ -196,10 +198,19 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
   const id = text(row.id);
   if (!id) return null;
   const handedness = num(row.handedness);
+  const rules =
+    row.ruleset_snapshot && typeof row.ruleset_snapshot === 'object'
+      ? (row.ruleset_snapshot as Record<string, unknown>)
+      : {};
+  const minBuyInBb = num(rules.min_buyin_bb),
+    maxBuyInBb = num(rules.max_buyin_bb);
+  const bigBlind = num(row.bb);
   return {
     clusterId: id,
     clubId: text(row.club_id),
     name: text(row.name) ?? 'Lightning',
+    minBuyIn: minBuyInBb !== null && bigBlind !== null ? minBuyInBb * bigBlind : null,
+    maxBuyIn: maxBuyInBb !== null && bigBlind !== null ? maxBuyInBb * bigBlind : null,
     variant: text(row.variant) ?? 'nlh',
     smallBlind: num(row.sb) ?? 0,
     bigBlind: num(row.bb) ?? 0,
@@ -212,7 +223,7 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
 }
 
 const LIGHTNING_CLUSTER_META_COLUMNS =
-  'id, club_id, name, variant, sb, bb, handedness, template_name, cluster_mode, enabled';
+  'id, club_id, name, variant, sb, bb, handedness, template_name, cluster_mode, enabled, ruleset_snapshot';
 
 export async function fetchLightningClusterMeta(
   clusterId: string

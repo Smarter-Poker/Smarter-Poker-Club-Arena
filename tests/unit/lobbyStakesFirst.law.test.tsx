@@ -9,6 +9,13 @@ vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));
 
+// Stakes ordering does not exercise speculative transport or route loading.
+// Keep those asynchronous imports inside the warm-up suite that owns them.
+vi.mock('../../src/services/tableWarmup', () => ({
+  observeLobbyTableWarmups: vi.fn(() => () => {}),
+  warmTable: vi.fn(),
+}));
+
 const ctx = {
   waitlistedIds: new Set<string>(),
   seatedIds: new Set<string>(),

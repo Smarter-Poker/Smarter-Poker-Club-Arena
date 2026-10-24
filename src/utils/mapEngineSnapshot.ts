@@ -397,12 +397,18 @@ function derivePerSeatLastAction(
   return { lastActions, lastBetAmounts };
 }
 
+export function isLightningObserverSnapshot(raw: EngineSnapshot | null | undefined): boolean {
+  return raw?.lightning_observer === true;
+}
+
 export function mapEngineSnapshot(
   raw: EngineSnapshot,
   heroUserId: string,
   maxSeats: number
 ): MappedTableStatePatch {
   const s = raw as unknown as EnginePublishedState;
+  // Identity in a public virtual hand does not grant control of this physical room.
+  if (isLightningObserverSnapshot(raw)) heroUserId = '';
 
   /* ═══ NEVER DROP A SEAT THE ENGINE SAYS EXISTS (Dan 2026-08-30) ═══════════
      `maxSeats` is caller state (`tableState.maxPlayers`), which BOOTS AT 6 and

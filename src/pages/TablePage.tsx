@@ -1,3 +1,4 @@
+import { useSeatArrivals } from '../components/table/seatArrival';
 import {
   usePreActionBoundary,
   acceptedActionSpendsPreAction,
@@ -220,7 +221,7 @@ import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
-import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { isLightningObserverSnapshot, mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import {
   fixedLimitStreetBet,
   killNextAnnouncement,
@@ -362,7 +363,6 @@ import {
   tabledCardWidthPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
-import LightningFoldBar from '../components/table/LightningFoldBar';
 import LightningNextHand from '../components/table/LightningNextHand';
 import LightningEndingNotice from '../components/table/LightningEndingNotice';
 import LightningJoining from '../components/table/LightningJoining';
@@ -402,9 +402,8 @@ import {
 } from '../lightning/lightningCapabilities';
 import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
 import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
-import LightningRoomTools from '../components/lightning/LightningRoomTools';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
-import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
+import { readLightningPrefs } from '../lightning/lightningPrefs';
 import { createLightningMilestoneTracker } from '../lightning/lightningMilestone';
 import { lightningDecisions as pendingLightningDecisions } from '../lightning/lightningDecisionQueue';
 import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
@@ -2288,6 +2287,15 @@ function LiveTablePage({
    * socket, exactly as it is on every other page.
    */
   const engineSnapshot = rawEngineSnapshot;
+  const lightningObserver = isLightningObserverSnapshot(engineSnapshot);
+  const [lightningAnchorFunded, setLightningAnchorFunded] = useState(false);
+  useEffect(() => setLightningAnchorFunded(false), [tableId, userId]);
+  // A funded physical anchor survives an empty/stale public hand roster.
+  const [lightningAnchorFunding, setLightningAnchorFunding] = useState<{
+    tableId: string;
+    userId: string;
+    funded: boolean;
+  } | null>(null);
   /* LIGHTNING PHASE 6: the snapshot for handlers that run after their render
      (the pre-action arm names the hand it belongs to). */
   const engineSnapshotRef = useRef(engineSnapshot);
@@ -2557,6 +2565,17 @@ function LiveTablePage({
        snapshot never writes it. The mapper only wants a floor; a ref gives
        it one without making this effect fire on its own output. */
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableStateRef.current.maxPlayers);
+    if (lightningObserver) {
+      const physical = tableStateRef.current;
+      if (
+        physical.tableId === tableId &&
+        physical.heroSeat > 0 &&
+        physical.players.some((p) => p?.isHero && p.id === userId && p.stack > 0)
+      ) {
+        setLightningAnchorFunded(true);
+      }
+      heroSeatRef.current = 0;
+    }
     setTableIsAnonymous(mapped.isAnonymous);
     /* Identity resolution BEFORE the card/status merge below: the engine owns
        the hand, the database owns the face, and a face the database has
@@ -2574,7 +2593,7 @@ function LiveTablePage({
     // totalBuyInRef is only updated by the manual buy-in modal, so it is 0 after a page refresh
     // or after a Seat-First buy-in. Seed it with the hero's current stack so the Session Complete card doesn't drop the stat.
     const mappedHero = mapped.players.find((p) => p && p.id === userId);
-    if (mappedHero && mappedHero.stack > 0) {
+    if (!lightningObserver && mappedHero && mappedHero.stack > 0) {
       if (totalBuyInRef.current === 0) {
         totalBuyInRef.current = mappedHero.stack;
         sessionBuyInSeedRef.current = mappedHero.stack;
@@ -2598,7 +2617,7 @@ function LiveTablePage({
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
       const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
-        if (leftSeatPendingRef.current && p.id === userId) return null;
+        if (!lightningObserver && leftSeatPendingRef.current && p.id === userId) return null;
         let sp = p as unknown as SeatPlayer;
         /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
            cards in DEALT order. Keep the row in its display order. */
@@ -2810,6 +2829,7 @@ function LiveTablePage({
            9-max to 6-max must be allowed to shrink. `mapped.maxSeats` is
            itself already clamped never to fall below an occupied seat, so this
            still cannot erase a seated player. */
+        ...(lightningObserver ? { heroSeat: 0 } : {}),
         maxPlayers: mapped.maxSeats || prev.maxPlayers,
         pot: mapped.pot,
         communityCards: nextCards,
@@ -11063,6 +11083,7 @@ function LiveTablePage({
   // Callback for handling new hole cards
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
+      if (isLightningObserverSnapshot(engineSnapshotRef.current)) return;
       /* DELETE carries no `new`, so it falls through here and is IGNORED, and
          that is deliberate. `insert_hole_cards` prunes rows with
          `hand_number < p_hand_number` on every deal, so the deletes this
@@ -11367,13 +11388,14 @@ function LiveTablePage({
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
   // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
-    if (!tableId || !userId || userId === 'guest' || lightningRoomRef.current) return;
+    if (!tableId || !userId || userId === 'guest' || lightningRoomRef.current || lightningObserver)
+      return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
 
     const fetchExistingHand = async () => {
-      if (cancelled) return;
+      if (cancelled || isLightningObserverSnapshot(engineSnapshotRef.current)) return;
       const { data, error: holeCardsErr } = await supabase
         .from('table_hole_cards')
         .select('cards, hand_number')
@@ -11391,7 +11413,7 @@ function LiveTablePage({
         reportError(holeCardsErr, 'TablePage.hole_card_recovery_read_failed', { tableId });
       }
 
-      if (cancelled) return;
+      if (cancelled || isLightningObserverSnapshot(engineSnapshotRef.current)) return;
 
       // AUDIT FIX 2026-07-19: don't apply a row from a DIFFERENT (older) hand.
       // Once we know the current hand number (set on HAND_STARTED), require the
@@ -11596,7 +11618,7 @@ function LiveTablePage({
       if (pollTimer) clearInterval(pollTimer);
       clearEarlyTimers();
     };
-  }, [tableId, userId]);
+  }, [tableId, userId, lightningObserver]);
 
   /* ═══ THE NET UNDER ALL FOUR DOORS (Dan 2026-09-01) ═══════════════════════
      "PREVENT IT FROM NEVER BEING POSSIBLE TO HAPPEN EVER AGAIN UNDER ANY
@@ -15565,6 +15587,16 @@ function LiveTablePage({
           });
         }
 
+        if (!seatsRestoreErr && Array.isArray(existingSeats) && userId && userId !== 'guest') {
+          setLightningAnchorFunding({
+            tableId: table.id,
+            userId,
+            funded: existingSeats.some(
+              (seat) => seat.user_id === userId && Number(seat.stack) > 0 && !seat.leave_pending
+            ),
+          });
+        }
+
         if (existingSeats && existingSeats.length > 0) {
           // Fetch display names for seated players
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
@@ -15586,6 +15618,14 @@ function LiveTablePage({
             });
           }
           if (!isMounted) return;
+          setLightningAnchorFunded(
+            existingSeats.some(
+              (seat) =>
+                seat.user_id === userId &&
+                Number(seat.stack) > 0 &&
+                !(seat as { leave_pending?: boolean }).leave_pending
+            )
+          );
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
           setTableState((prev) => {
@@ -16524,7 +16564,8 @@ function LiveTablePage({
   // remains the job of the existing paths that demand proof of eviction
   // (seat stolen, snapshot without hero), so this can never fight them.
   useEffect(() => {
-    if (!userId || userId === 'guest') return;
+    if (isLightningObserverSnapshot(engineSnapshotRef.current) || !userId || userId === 'guest')
+      return;
     /* A SEAT WE HAVE ALREADY LEFT IS NOT A DISAGREEMENT TO HEAL (2026-09-05).
        The row survives until settlement stamps `left_at`, and the engine keeps
        the player in its roster until the same moment, so `players[]` legally
@@ -16582,7 +16623,8 @@ function LiveTablePage({
      alarm. One report per (table, seat) per session is enough to find it. */
   const engineSeatMismatchReportedRef = useRef<string>('');
   useEffect(() => {
-    if (!USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest') return;
+    if (lightningObserver || !USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest')
+      return;
     // The last snapshot can predate the confirmed exit. It cannot reclaim it.
     if (leftSeatPendingRef.current) return;
     const enginePlayers =
@@ -16907,6 +16949,7 @@ function LiveTablePage({
       }
 
       case 'GAME_START': {
+        if (isLightningObserverSnapshot(engineSnapshotRef.current)) break;
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = evt.data as any;
         if (!syncData) break;
@@ -22583,6 +22626,7 @@ function LiveTablePage({
       callsite?: string
     ): Promise<boolean> => {
       try {
+        if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;
         const res = await submitAction(tid, uid, action, amount, tableState.actionContext);
         if (!res.success) {
           if (res.code === 'ACTION_NOT_DELIVERED') {
@@ -23711,12 +23755,10 @@ function LiveTablePage({
   // Keyboard Shortcuts — wired to table actions (Phase 8)
   // ONE keyboard system since 2026-08-28; TablePage's own duplicate listener is
   // deleted. See the gravestone above handleActionPanelAction.
-  /* LIGHTNING PHASE 12: the Lightning keys (Shift+F, Shift+V) reach the fold
-     strip's own handler through this ref, filled where that handler is made. */
+  // Shift+F uses the same immediate fold as the original controls.
   const lightningHotkeysRef = useRef<{
     fold: (() => void) | null;
-    watch: (() => void) | null;
-  }>({ fold: null, watch: null });
+  }>({ fold: null });
   useTableKeyboard({
     /* WHICH TABLE IS THE PLAYER LOOKING AT. Without this every mounted
        TablePage answered the keyboard, so hero with action on two tables folded
@@ -23777,7 +23819,6 @@ function LiveTablePage({
     /* LIGHTNING PHASE 12: present only in a Lightning room whose platform row
        offers hotkeys (the ref is null everywhere else). */
     onLightningFold: lightningRoom ? () => lightningHotkeysRef.current.fold?.() : undefined,
-    onLightningFoldWatch: lightningRoom ? () => lightningHotkeysRef.current.watch?.() : undefined,
     /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
        `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
        armed a legacy client-side RIT prompt the button never armed — so a shove
@@ -24213,6 +24254,7 @@ function LiveTablePage({
     }
   }, [lightningRoom, preAction, lightningHandKeyNow]);
 
+  const seatArrivals = useSeatArrivals(tableId ?? '', lightningRoom ? tableState.players : []);
   const lightningHero =
     tableState.heroSeat > 0 ? (tableState.players[tableState.heroSeat - 1] ?? null) : null;
   /* THE IDLE SNAPSHOT AFTER A FOLD. The engine answers a fold with stage
@@ -24241,9 +24283,6 @@ function LiveTablePage({
   );
   const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
   const lightningFoldBusyRef = useRef(false);
-  const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
-    () => readLightningPrefs().preferFoldWatch
-  );
   const lightningFoldHandId =
     lightningRoom && lightningHandLive
       ? lightningHandId(engineSnapshot as LightningSnapshotFields)
@@ -24256,11 +24295,6 @@ function LiveTablePage({
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
       setLightningFoldBusy(true);
-      /* LIGHTNING PHASE 8: the player's FOLD & WATCH preference, remembered on
-         this device (a reminder only; the strip offers both, always). */
-      setLightningPrefersWatch(
-        writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
-      );
       try {
         const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
@@ -24282,18 +24316,12 @@ function LiveTablePage({
     },
     [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
-  /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
-     own handler, only while the strip offers that fold and the platform row
-     offers hotkeys. The engine validates every fold. */
+  // There is one fold behavior in Lightning: release the hand immediately.
   lightningHotkeysRef.current = lightningCaps.hotkeys
     ? {
         fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,
-        watch:
-          lightningCaps.fold_and_watch && lightningFold.foldWatch
-            ? () => void handleLightningFold('fold_watch')
-            : null,
       }
-    : { fold: null, watch: null };
+    : { fold: null };
 
   /* LIGHTNING PHASE 12 (spec ACTION LATENCY TELEMETRY): hand creation ->
      first client render. Once per hand, after the hand is on the felt and
@@ -24318,7 +24346,20 @@ function LiveTablePage({
     clusterId: tableState.clusterId,
     userId,
     isPoolSession: lightningRoom !== null,
-    heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
+    heroBoughtIn: lightningObserver
+      ? leftSeatPendingRef.current
+        ? false
+        : lightningAnchorFunding
+          ? lightningAnchorFunding.tableId === tableId &&
+            lightningAnchorFunding.userId === userId &&
+            lightningAnchorFunding.funded
+          : lightningAnchorFunded
+      : tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
+    existingAnchorFunded: leftSeatPendingRef.current
+      ? false
+      : lightningAnchorFunding?.tableId === tableId && lightningAnchorFunding?.userId === userId
+        ? lightningAnchorFunding.funded
+        : undefined,
     follow: (poolSessionId) => {
       if (embeddedTableId) {
         onTableInfoUpdate?.({ movedToTableId: poolSessionId });
@@ -26768,6 +26809,7 @@ function LiveTablePage({
                 <SeatSlot
                   seatNumber={seatNumber}
                   player={displayPlayer}
+                  arrival={lightningRoom ? seatArrivals[seatNumber] : undefined}
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may
                      sit out as long as they like. Withheld here rather than
@@ -27801,34 +27843,6 @@ function LiveTablePage({
                 2026-08-25; the twin of it was removed from the ActionPanel on
                 2026-08-15 for exactly the same reason. There is one button. */}
 
-            {/* LIGHTNING PHASE 6: always mounted in a Lightning room while the
-                hero is in the pool, so the strip never enters or leaves
-                between hands; only its words light up when folding is
-                available (on the hero's turn and before it). */}
-            {lightningRoom && userId && userId !== 'guest' ? (
-              <LightningFoldBar
-                availability={lightningFold}
-                offerFoldWatch={lightningCaps.fold_and_watch}
-                preferFoldWatch={lightningPrefersWatch}
-                busy={lightningFoldBusy}
-                onFold={(kind) => void handleLightningFold(kind)}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 8: the pool's health, the running Session
-                numbers, Recent Hands and Previous Hand. Read-only panels. */}
-            {lightningRoom &&
-            tableId &&
-            userId &&
-            userId !== 'guest' &&
-            !lightningReversion.seatTableId &&
-            !lightningSessionEnd.ended ? (
-              <LightningRoomTools
-                poolSessionId={tableId}
-                clusterId={lightningRoom.clusterId}
-                handKey={lightningHandKeyNow}
-                visible={isVisible && (!isMultiTable || isActive)}
-              />
-            ) : null}
             {lightningRoom ? (
               <LightningNextHand
                 handInProgress={lightningHandLive && tableState.isHandInProgress}
@@ -29018,6 +29032,11 @@ function LiveTablePage({
               totalBuyInRef.current += paid.p_amount;
               peakStackRef.current = Math.max(peakStackRef.current, paid.p_amount);
               leftSeatPendingRef.current = false;
+              setLightningAnchorFunding({
+                tableId: paid.p_table_id,
+                userId: paid.p_user_id,
+                funded: paid.p_amount > 0,
+              });
               seatAcquiredAtRef.current = Date.now();
               bootNoticeShownRef.current = false;
               masterBus.emit('TABLE_SEATED', {

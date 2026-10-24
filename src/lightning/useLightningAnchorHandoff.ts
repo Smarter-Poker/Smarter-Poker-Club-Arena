@@ -75,16 +75,19 @@ export function useLightningAnchorHandoff(input: {
   isPoolSession: boolean;
   /** The hero holds a seat with chips at this table (the buy-in landed). */
   heroBoughtIn: boolean;
+  /** Original seat lookup, independent of the public hand roster. */
+  existingAnchorFunded?: boolean;
   /** Re-point this tab at the pool-session room. */
   follow: (poolSessionId: string) => void;
 }): LightningAnchorHandoff {
   const { tableId, isPoolSession, heroBoughtIn } = input;
+  const conversionFunded = input.existingAnchorFunded ?? heroBoughtIn;
   /* Read at hand-off time: the navigate inside it changes identity on every
      route change, and a new closure each render must not restart the poll. */
   const followRef = useRef(input.follow);
   followRef.current = input.follow;
   const [joining, setJoining] = useState(false);
-  const identity = `${tableId ?? ''}:${input.clusterId ?? ''}:${input.userId ?? ''}:${isPoolSession}:${heroBoughtIn}`;
+  const identity = `${tableId ?? ''}:${input.clusterId ?? ''}:${input.userId ?? ''}:${isPoolSession}:${conversionFunded}`;
   const identityRef = useRef(identity);
   identityRef.current = identity;
   const [readySession, setReadySession] = useState<{ identity: string; id: string } | null>(null);
@@ -103,7 +106,7 @@ export function useLightningAnchorHandoff(input: {
   useEffect(() => {
     setReadySession(null);
     const clusterId = input.clusterId;
-    if (!tableId || !clusterId || !input.userId || isPoolSession || !heroBoughtIn) return;
+    if (!tableId || !clusterId || !input.userId || isPoolSession || !conversionFunded) return;
     let stopped = false;
     let readVersion = 0;
     const read = async () => {
@@ -136,7 +139,7 @@ export function useLightningAnchorHandoff(input: {
       stopped = true;
       void supabase.removeChannel(channel);
     };
-  }, [tableId, input.clusterId, input.userId, isPoolSession, heroBoughtIn, identity]);
+  }, [tableId, input.clusterId, input.userId, isPoolSession, conversionFunded, identity]);
 
   const viewReady = useCallback(() => {
     if (!readyPoolSessionId || !input.clusterId || identityRef.current !== identity) return;

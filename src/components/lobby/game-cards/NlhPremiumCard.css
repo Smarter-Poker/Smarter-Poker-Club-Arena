@@ -342,3 +342,10 @@
 .agc-nlh-premium__zone.agc-nlh-premium__style-row {
   display: flex;
 }
+
+.agc-nlh-premium__game-type {
+  place-items: center;
+}
+.agc-nlh-premium__game-type .arena-premium-text {
+  font-size: 7cqw;
+}

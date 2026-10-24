@@ -21240,6 +21240,33 @@ function LiveTablePage({
     location.pathname,
   ]);
 
+  /* JOIN LIGHTNING FROM A LIGHTNING TABLE (Dan 2026-10-24: "YOU ARE AUTO
+     ASSIGNED TO A TABLE AND SEAT, YOU DON'T PICK YOUR SEAT"). With a chair
+     open here, the buy-in sheet opens on it exactly as the ?buyin=1 arrival
+     does; the player only confirms the amount. With none open, the game's own
+     Join Lightning door holds a chair (on a new table when every chair is
+     taken) and brings the player straight back to its buy-in. It never sends a
+     player back to a table where they could only watch. */
+  const openLightningAnchorEntry = () => {
+    if (!anchorLightningClusterId) return;
+    const occupied = new Set(
+      (Array.isArray(engineSnapshot?.players) ? engineSnapshot.players : []).map(
+        (p: { seat?: unknown } | null) => Number(p?.seat)
+      )
+    );
+    const rosterKnown =
+      engineSnapshot?.table_id === tableId && Array.isArray(engineSnapshot?.players);
+    const openIdx =
+      rosterKnown && tableState.arenaAsset && heroSeatRef.current <= 0 && tableState.heroSeat <= 0
+        ? tableState.players.findIndex((p, index) => !p && !occupied.has(index + 1))
+        : -1;
+    if (openIdx >= 0) {
+      handleSeatClick(openIdx + 1);
+      return;
+    }
+    navigate(lightningRoute(anchorLightningClusterId));
+  };
+
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
    * spends money. Called from the confirmation sheet, never from a raw tap:
@@ -27518,7 +27545,7 @@ function LiveTablePage({
             ) : !tableState.isTournament && anchorLightningClusterId ? (
               <WaitlistCallToAction
                 lightning
-                onClick={() => navigate(lightningRoute(anchorLightningClusterId))}
+                onClick={openLightningAnchorEntry}
                 waitingCount={0}
                 position={null}
               />

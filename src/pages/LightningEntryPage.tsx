@@ -215,7 +215,12 @@ export default function LightningEntryPage() {
         });
       }
       warmTable(r.table_id);
-      navigate(`/table/${r.table_id}`);
+      /* Dan 2026-10-24: "WHEN YOU CLICK JOIN LIGHTNING AND CONFIRM YOUR BUY IN
+         AMOUNT, YOU ARE AUTO ASSIGNED TO A TABLE AND SEAT, YOU DON'T PICK YOUR
+         SEAT." The door has already held a chair for this player; ?buyin=1
+         opens the table's own buy-in sheet on that open chair the moment the
+         table paints, so the only thing left to do is confirm the amount. */
+      navigate(joinsLightning ? `/table/${r.table_id}?buyin=1` : `/table/${r.table_id}`);
     } catch (err) {
       if (!ownsPage()) return;
       reportError(err, 'LightningEntryPage.join_failed', { clusterId });

@@ -21,7 +21,17 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
 
   it('a spectator at a Lightning anchor is offered Join Lightning, not the waiting list', () => {
     expect(page).toMatch(
-      /!tableState\.isTournament && anchorLightningClusterId \? \(\s*<WaitlistCallToAction\s+lightning\s+onClick=\{\(\) => navigate\(lightningRoute\(anchorLightningClusterId\)\)\}/
+      /!tableState\.isTournament && anchorLightningClusterId \? \(\s*<WaitlistCallToAction\s+lightning\s+onClick=\{openLightningAnchorEntry\}/
     );
+  });
+
+  it('Join Lightning on a Lightning table opens the buy-in on a free seat, never a watch-only loop', () => {
+    const body = sliceMethod(page, 'const openLightningAnchorEntry = () =>');
+    expect(body).toMatch(/handleSeatClick\(openIdx \+ 1\)/);
+    expect(body).toMatch(/navigate\(lightningRoute\(anchorLightningClusterId\)\)/);
+  });
+  it('the Join Lightning door lands on the table with its buy-in already open', () => {
+    const entry = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
+    expect(entry).toMatch(/navigate\(joinsLightning \? `\/table\/\$\{r\.table_id\}\?buyin=1`/);
   });
 });

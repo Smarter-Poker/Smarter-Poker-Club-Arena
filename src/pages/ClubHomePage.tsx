@@ -5926,6 +5926,7 @@ function ClubHomePageContent({
               /* A Sort By the player chose for this tab is obeyed over the
                  featured pin wherever it is the board's order (ALL). */
               requestedOrder={requestedOrder}
+              orderLabel={SORT_OPTIONS.find((o) => o.key === sortKey)?.label}
               onHeadingSort={followHeadingSort}
               orderChosen={
                 viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null

@@ -91,3 +91,28 @@ describe('the FEATURED chip says what the pin does', () => {
     );
   });
 });
+
+describe('the screen-reader status names the order that is actually in force', () => {
+  it('announces the chosen Sort By when it, not a heading, orders the board', () => {
+    localStorage.clear();
+    render(
+      <MemoryRouter>
+        <LobbyTable
+          entries={pageOrder}
+          category="ALL"
+          selectedId={null}
+          onSelect={vi.fn()}
+          onActivate={vi.fn()}
+          ctx={ctx}
+          orderChosen
+          orderLabel="Stakes: High To Low"
+        />
+      </MemoryRouter>
+    );
+    const statuses = Array.from(document.querySelectorAll('[role="status"]')).map(
+      (s) => s.textContent
+    );
+    expect(statuses).toContain('Sorted By Stakes: High To Low');
+    expect(statuses).not.toContain('Default Order');
+  });
+});

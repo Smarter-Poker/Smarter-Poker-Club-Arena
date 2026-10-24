@@ -1696,6 +1696,9 @@ interface LobbyTableProps {
   requestedOrder?: { key: string; seq: number } | null;
   /** A heading the player chose, reported so the sheet can light its chip. */
   onHeadingSort?: (key: string, dir: SortDir) => void;
+  /** The chosen Sort By's own words ("Stakes: High To Low"), announced when it,
+      not a heading, is ordering the board. */
+  orderLabel?: string;
 }
 
 export default function LobbyTable({
@@ -1717,6 +1720,7 @@ export default function LobbyTable({
   orderChosen = false,
   requestedOrder = null,
   onHeadingSort,
+  orderLabel,
 }: LobbyTableProps) {
   const selectedStyles = savedStyles?.map(cashTemplateKey);
   /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
@@ -2194,7 +2198,9 @@ export default function LobbyTable({
         <span className="sr-only" role="status" aria-live="polite">
           {sort
             ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${sort.dir === 'asc' ? 'Ascending' : 'Descending'}`
-            : 'Default Order'}
+            : orderChosen && orderLabel
+              ? `Sorted By ${orderLabel}`
+              : 'Default Order'}
         </span>
         <table className="compact-lobby" aria-label="Games">
           <thead>
@@ -2374,7 +2380,9 @@ export default function LobbyTable({
             ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
                 sort.dir === 'asc' ? 'Ascending' : 'Descending'
               }`
-            : 'Default Order'}
+            : orderChosen && orderLabel
+              ? `Sorted By ${orderLabel}`
+              : 'Default Order'}
         </span>
         {/* The category is on the table so the stylesheet can shed columns per
           BOARD rather than per page width. The wide breakpoints were written

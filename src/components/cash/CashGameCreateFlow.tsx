@@ -61,6 +61,7 @@ import {
   CASH_TEMPLATES,
   CASH_VARIANTS,
   CASH_VARIANT_LONG,
+  classicBlurbFor,
   cashGameCreateRefusalText,
   cashTemplateNote,
   cashTemplateVariantAvailable,
@@ -540,7 +541,11 @@ export default function CashGameCreateFlow({
               }
             >
               <span className="cash-create__card-title">{t.label}</span>
-              <span className="cash-create__card-blurb">{t.blurb}</span>
+              <span className="cash-create__card-blurb">
+                {t.id === 'classic' && template === 'classic' && snapshot?.template === 'classic'
+                  ? classicBlurbFor(snapshot)
+                  : t.blurb}
+              </span>
             </button>
           ))}
         </div>

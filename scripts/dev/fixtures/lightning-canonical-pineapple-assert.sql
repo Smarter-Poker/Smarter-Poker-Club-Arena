@@ -54,7 +54,7 @@ DO $$ DECLARE alias text; message text; answer jsonb; BEGIN
   OR ruleset_snapshot->>'stay_clock_min'<>'17' OR ruleset_snapshot->>'rejoin_window_min'<>'180')) THEN
   RAISE EXCEPTION 'Pineapple buy-in or session clock changed'; END IF;
  IF (SELECT count(*) FROM tables WHERE game_variant='pineapple' AND auto_start_players=2
-  AND dealing_halted_reason='lightning_retired' AND name LIKE '%Classic')<>2 THEN
+  AND dealing_halted_reason='lightning' AND name LIKE '%Classic')<>2 THEN
   RAISE EXCEPTION 'Pineapple physical minimum/hold changed'; END IF;
  IF (SELECT count(*) FROM table_seats s JOIN tables t ON t.id=s.table_id WHERE t.game_variant='pineapple'
   AND s.stack=57.35 AND s.left_at IS NULL)<>2 THEN RAISE EXCEPTION 'Pineapple custody changed'; END IF;

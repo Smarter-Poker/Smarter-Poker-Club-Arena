@@ -868,9 +868,8 @@ describe('post-deploy production account', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/clubs?');
   });
 
-  it('prepares Lightning independently of an invalid standalone template scope', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-'));
-    const env = { ...environment(directory), E2E_TEMPLATE_CLUB_ID: 'not-standalone' };
+  const LIGHTNING_UNION = 'fade0000-0000-0000-0000-000000000001';
+  const lightningAccount = (directory: string) =>
     writeFileSync(
       join(directory, 'club-arena-production-e2e-account.json'),
       JSON.stringify({
@@ -879,22 +878,57 @@ describe('post-deploy production account', () => {
         password: 'unused',
       })
     );
-    const row = {
-      club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
-      user_id: USER_ID,
-      role: 'admin',
-      status: 'active',
-      chip_balance: 0,
-    };
-    const fetchMock = vi.fn().mockResolvedValue(Response.json([row]));
+  const adminRow = (clubId: string) => ({
+    club_id: clubId,
+    user_id: USER_ID,
+    role: 'admin',
+    status: 'active',
+    chip_balance: 0,
+  });
+  /** Membership reads answer per club; the club read answers the scope. */
+  const lightningFetch = (unionId: string | null, rows: Record<string, unknown[]>) =>
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?'))
+        return Response.json([
+          { id: DEFAULT_E2E_LIGHTNING_CLUB_ID, union_id: unionId, status: 'active' },
+        ]);
+      const club = /club_id=eq\.([0-9a-f-]{36})/.exec(url)?.[1] ?? '';
+      return Response.json(rows[club] ?? []);
+    });
+
+  it('prepares Lightning independently of an invalid standalone template scope', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-'));
+    const env = { ...environment(directory), E2E_TEMPLATE_CLUB_ID: 'not-standalone' };
+    lightningAccount(directory);
+    const row = adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID);
+    const fetchMock = lightningFetch(null, { [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [row] });
     await expect(
       prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
     ).resolves.toEqual(row);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain(
-      `club_id=eq.${DEFAULT_E2E_LIGHTNING_CLUB_ID}`
-    );
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain('/clubs?');
+    const urls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(urls[0]).toContain(`club_id=eq.${DEFAULT_E2E_LIGHTNING_CLUB_ID}`);
+    expect(urls.some((url) => url.includes('not-standalone'))).toBe(false);
+    // A standalone club owns its games: no second membership is read or made.
+    expect(urls.filter((url) => url.includes('/club_members?'))).toHaveLength(1);
+  });
+
+  it('also holds the reserved admin membership on the union that owns the games (#7884)', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-union-'));
+    const env = environment(directory);
+    lightningAccount(directory);
+    const fetchMock = lightningFetch(LIGHTNING_UNION, {
+      [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID)],
+      [LIGHTNING_UNION]: [adminRow(LIGHTNING_UNION)],
+    });
+    await expect(
+      prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toEqual(adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID));
+    const memberships = fetchMock.mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.includes('/club_members?'));
+    expect(memberships).toHaveLength(2);
+    expect(memberships[1]).toContain(`club_id=eq.${LIGHTNING_UNION}`);
   });
 
   it.each([{ chip_balance: 1 }, { role: 'player' }, { status: 'inactive' }, { user_id: 'other' }])(
@@ -902,29 +936,43 @@ describe('post-deploy production account', () => {
     async (difference) => {
       const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-refused-'));
       const env = environment(directory);
-      writeFileSync(
-        join(directory, 'club-arena-production-e2e-account.json'),
-        JSON.stringify({
-          id: USER_ID,
-          email: 'ca-customization-cert-postdeploy-lightning@example.invalid',
-          password: 'unused',
-        })
-      );
-      const row = {
-        club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
-        user_id: USER_ID,
-        role: 'admin',
-        status: 'active',
-        chip_balance: 0,
-        ...difference,
-      };
-      const fetchMock = vi.fn().mockResolvedValue(Response.json([row]));
+      lightningAccount(directory);
+      const row = { ...adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID), ...difference };
+      const fetchMock = lightningFetch(LIGHTNING_UNION, { [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [row] });
       await expect(
         prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
       ).rejects.toThrow('Refusing to change an existing');
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
   );
+
+  it.each([{ chip_balance: 1 }, { role: 'player' }, { status: 'inactive' }])(
+    'never reuses a union-owner membership outside the reserved admin shape: %j',
+    async (difference) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-union-refused-'));
+      const env = environment(directory);
+      lightningAccount(directory);
+      const fetchMock = lightningFetch(LIGHTNING_UNION, {
+        [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID)],
+        [LIGHTNING_UNION]: [{ ...adminRow(LIGHTNING_UNION), ...difference }],
+      });
+      await expect(
+        prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+      ).rejects.toThrow('Refusing to change an existing');
+    }
+  );
+
+  it('refuses a malformed union owner instead of guessing', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-malformed-'));
+    const env = environment(directory);
+    lightningAccount(directory);
+    const fetchMock = lightningFetch('not-a-club', {
+      [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID)],
+    });
+    await expect(
+      prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('union owner is malformed');
+  });
 
   it('refuses to overwrite an existing reserved membership', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-existing-staff-'));

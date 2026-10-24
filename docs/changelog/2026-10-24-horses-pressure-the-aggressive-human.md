@@ -35,7 +35,8 @@ passes on its recorded corpus).
    and the V16/V46 "take a flop" flats give way to the 3-bet.
 2. **Raise the wide bettor** (aggressiveBettorPressure): heads-up flop/turn
    against a preflop maniac, an over-bettor or a postflop maniac, the value
-   raise bar drops 8 points and fires at least 85% of the time once cleared
+   raise bar drops 8 points for two pair or better and fires at least 85% of
+   the time once cleared (one pair stays a bluff-catcher that calls)
    (every V15/V21 domination gate still applies); the semi-bluff check-raise
    band widens to 0.60 equity and fires 1.6x as often (2.5-4x into a credible
    over-folder), into bets up to the pot.

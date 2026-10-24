@@ -8128,7 +8128,10 @@ export class HorseLogic {
       sprAdj +
       dominationPenalty +
       (spin23 ? -0.02 : 0) -
-      (pressure53 ? pressure53.valueBarDrop : 0);
+      // Two pair or better only: against a wide bettor one pair is a
+      // bluff-catcher that calls and lets them keep firing (the trap and
+      // call-down reads own it); raising it only folds out their air.
+      (pressure53 && cat >= 3 ? pressure53.valueBarDrop : 0);
     if (eq15 >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -8191,10 +8194,10 @@ export class HorseLogic {
         fastRandom() <
           Math.max(
             0.55 * params.aggression + params.checkRaiseFreq + oopBoost,
-            pressure53 ? pressure53.raiseFloor : 0
+            pressure53 && cat >= 3 ? pressure53.raiseFloor : 0
           )
       ) {
-        if (tele15 && pressure53) noteFire('v53_pressure_value_raise');
+        if (tele15 && pressure53 && cat >= 3) noteFire('v53_pressure_value_raise');
         // V18 EXPLOIT SIZING: on the river, a station (valueThinMod > 1)
         // pays a bigger raise; a nit calls only what a smaller one asks.
         let sizeF = 0.7 + fastRandom() * 0.4;

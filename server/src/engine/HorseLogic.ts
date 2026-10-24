@@ -1,3 +1,4 @@
+import { hasPhysicalImpliedDraw } from './HorseOmahaImpliedDraw.js';
 import { horsePlanHandKey } from './HorseDecisionEffects.js';
 import {
   observePhase6Lookup,
@@ -2264,6 +2265,22 @@ function maniacCallDown(
   const toCall = Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
   if (!(toCall > 0) || !(player.stack > 0)) return decision;
   try {
+    // Preserve the reference's priced weak-flush fold when a whole stack is
+    // at risk. A preflop-only maniac recovery must not erase this boundary.
+    // Existing reference calls, cheaper calls and split-pot redraws retain
+    // their own policy; this never turns an existing call into a fold.
+    if (
+      vi.isOmaha &&
+      !vi.isHiLo &&
+      ['flop', 'turn', 'river'].includes(gs.stage) &&
+      toCall >= player.stack
+    ) {
+      const flush = omahaNutStatus(player.cards, gs.communityCards ?? []);
+      if (flush.category === 6 && flush.higherFlushRanks >= 2) {
+        if (telemetryOn(opts)) noteFire('horse_continuation_omaha_flush_stack_fold_retained');
+        return decision;
+      }
+    }
     const street = gs.stage;
     const hist = gs.actionHistory ?? [];
     let aggressorId: string | null = null;
@@ -8117,8 +8134,9 @@ export class HorseLogic {
     // deck draws complete more often and earn a bit extra.
     const loOnly23 =
       useV23Var && useHiLo && !!hiLoSplit && hiLoSplit.hi < 0.15 && hiLoSplit.lo > 0.3;
+    const hasImpliedDraw = hasPhysicalImpliedDraw(vi.isOmaha, vi.isOmaha ? drawInfo40() : null);
     const impliedBonus =
-      drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
+      drawsLive && hasImpliedDraw && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
         ? 0.04 + (useV23ShortDeck && vi.isShortDeck ? 0.02 : 0)
         : 0;
     // V35: fixed limit calls lighter — the pot always lays the price.

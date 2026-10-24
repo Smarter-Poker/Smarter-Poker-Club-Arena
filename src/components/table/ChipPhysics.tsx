@@ -115,6 +115,9 @@ export interface ChipPhysicsProps {
   animate?: 'none' | 'splash' | 'slide-in' | 'collect';
   compact?: boolean;
   showAmount?: boolean;
+  /** How the amount label prints. A seat passes its own wager formatter so a
+      bet reads in BB when the player reads the table in BB (2026-10-24). */
+  formatAmount?: (n: number) => string;
   className?: string;
 }
 
@@ -127,6 +130,7 @@ export function ChipPhysics({
   animate = 'none',
   compact = false,
   showAmount = true,
+  formatAmount = formatChipAmount,
   className = '',
 }: ChipPhysicsProps) {
   const [isVisible, setIsVisible] = useState(animate === 'none');
@@ -204,7 +208,7 @@ export function ChipPhysics({
       </div>
 
       {/* Amount display */}
-      {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
+      {showAmount && <span className="cp-amount">{formatAmount(amount)}</span>}
     </div>
   );
 }

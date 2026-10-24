@@ -212,3 +212,42 @@ describe('PLO trip-board full house incident 45872846', () => {
     expect(features(incident(18))).not.toContain(key);
   });
 });
+
+describe('V53 switch: v53TripBoardBoat', () => {
+  it('off restores the pre-#7866 value raise with the under-full boat', () => {
+    for (const variant of ['plo4', 'plo5', 'plo6'] as const) {
+      HorseMind.reset();
+      seedFastRandom(100);
+      const spot = configured(variant);
+      const off = HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          v53TripBoardBoat: false,
+        }
+      );
+      expect(['raise', 'all_in'], variant).toContain(off.action);
+    }
+    HorseMind.reset();
+    seedFastRandom(100);
+    enableBrainTelemetry();
+    drainFires();
+    const spot = configured('plo5');
+    HorseLogic.decide(
+      spot.hero,
+      spot.state,
+      'balanced',
+      {},
+      {
+        telemetry: true,
+        v53TripBoardBoat: false,
+      }
+    );
+    expect(drainFires().map((r) => r.feature)).not.toContain(
+      'horse_continuation_trip_board_boat_flat'
+    );
+  });
+});

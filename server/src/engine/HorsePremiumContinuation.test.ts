@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
+import * as Preflop from './HorsePreflop.js';
 import { HorseMind } from './HorseMind.js';
 import { seedFastRandom } from './HorseEval.js';
 import { barrelContinuationValue, evaluateSpot } from './HorseEvEngine.js';
@@ -365,5 +366,247 @@ describe('preflop commitment sizing respects the actual pot ceiling', () => {
       a: 'raiseTo',
       to: 150,
     });
+  });
+});
+
+/*
+ * V53 MEASUREMENT SWITCHES (2026-10-24). Each #7838 layer above now has a
+ * default-on HorseDecideOpts switch so the nightly league can measure it.
+ * These pin that the switch reaches the same real spots: off restores the
+ * pre-#7838 answer exactly, and the default (no opts) is untouched above.
+ */
+describe('V53 switches restore the pre-#7838 answer on the same spots', () => {
+  const ctx: PreflopCtx = {
+    strength: 1,
+    position: 'late',
+    raiserPosition: 'middle',
+    raises: 1,
+    limpers: 0,
+    callers: 0,
+    oppsLeft: 1,
+    toCall: 50,
+    currentBet: 50,
+    pot: 50,
+    bigBlind: 2,
+    stack: 185,
+    stackBB: 92.5,
+    tightness: 1,
+    bluffFreq: 0,
+    aggression: 1,
+    slowplayFreq: 0,
+    sizingMultiplier: 1,
+    isOmaha: false,
+    isPotLimit: false,
+    riskAdd: 0,
+    mode: 'cash',
+    tableSize: 6,
+    rand: () => 0,
+  };
+  it('v53TerminalCommitment off: the bar raise is no longer completed into the jam', () => {
+    expect(decidePreflopV7({ ...ctx, terminalCommitment: true })).toEqual({ a: 'jam' });
+    const off = decidePreflopV7({ ...ctx, terminalCommitment: false });
+    expect(off.a).toBe('raiseTo');
+    expect(off.to).toBeLessThan(185 + 50 - 50);
+  });
+  it('v53TerminalCommitment off: an all-in call keeps the generic realization discount', () => {
+    const spot = {
+      equity: 0.3,
+      pot: 150,
+      toCall: 50,
+      stack: 50,
+      effectiveStack: 50,
+      street: 'flop' as const,
+      inPosition: false,
+      opponents: 1,
+      realization: 0.75,
+      minBet: 2,
+      maxBet: 0,
+      sizes: [],
+      rand: () => 0,
+    };
+    const callEv = (terminalCommitment?: boolean) =>
+      evaluateSpot({ ...spot, terminalCommitment }).candidates.find((c) => c.kind === 'call')!.ev;
+    expect(callEv()).toBeCloseTo(10);
+    // pre-#7838: 0.3 x 0.75 x 200 - 50 = -5
+    expect(callEv(false)).toBeCloseTo(-5);
+  });
+  it('v53TerminalCommitment off: the flop remainder is not priced as terminal', () => {
+    const hero = {
+      seat: 2,
+      user_id: 'hero',
+      stack: 35,
+      bet: 0,
+      is_folded: false,
+      cards: holding('nlh', 'AsAh7s2h'),
+    } as SeatPlayer;
+    const gs = {
+      players: [{ seat: 1, user_id: 'v1', stack: 400, bet: 0, is_folded: false, cards: [] }, hero],
+      communityCards: cards('Qc6d3h'),
+      pot: 303,
+      currentBet: 0,
+      minRaise: 2,
+      lastRaise: 2,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      smallBlind: 1,
+      dealerSeat: 2,
+      actionHistory: [
+        { stage: 'preflop', seat: 1, userId: 'v1', action: 'raise', amount: 50 },
+        { stage: 'preflop', seat: 2, userId: 'hero', action: 'raise', amount: 150 },
+        { stage: 'preflop', seat: 1, userId: 'v1', action: 'call', amount: 150 },
+        { stage: 'flop', seat: 1, userId: 'v1', action: 'check', amount: 0 },
+      ],
+    } as unknown as HorseGameStateV2;
+    const spy = vi.spyOn(EvEngine, 'evaluateSpot');
+    seedFastRandom(100);
+    HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false });
+    expect(spy.mock.calls.some(([s]) => s.sizes?.length === 0 && s.toCall === 0)).toBe(true);
+    spy.mockClear();
+    seedFastRandom(100);
+    HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false, v53TerminalCommitment: false });
+    // The terminal-remainder pricing call (sizes: [], toCall 0) is gone and
+    // every remaining EV call carries the pre-#7838 contract.
+    for (const [s] of spy.mock.calls) expect(s.terminalCommitment).toBe(false);
+    expect(spy.mock.calls.some(([s]) => s.sizes?.length === 0 && s.toCall === 0)).toBe(false);
+  });
+  it('v53BarrelBudget off: the bettor read no longer builds a continuation', () => {
+    const opp = '10000000-0000-4000-8000-000000000009';
+    const counters = {
+      ...freshExploitCounters(),
+      hands: 40,
+      vpip: 40,
+      pfr: 32,
+      betCheckedToOpp: 40,
+      betCheckedTo: 32,
+    };
+    for (const v of ['nlh', 'plo5'] as const) {
+      HorseMind.reset();
+      HorseMind.importDurableOpponentProfiles([
+        {
+          user_id: opp,
+          variant: v,
+          mode: 'cash',
+          size: 'hu',
+          observed_hands: 40,
+          initialized: true,
+          counters,
+        },
+      ]);
+      const hero = {
+        seat: 2,
+        user_id: 'hero',
+        username: 'Hero',
+        totalInvested: 17,
+        stack: 1000,
+        bet: 0,
+        is_folded: false,
+        cards: cards(v === 'nlh' ? 'QhQd' : 'QhQd9c7sJc'),
+      } as SeatPlayer;
+      const gs = {
+        players: [{ seat: 1, user_id: opp, stack: 995, bet: 5, is_folded: false, cards: [] }, hero],
+        communityCards: cards('Kc8d2h4s'),
+        pot: 100,
+        currentBet: 5,
+        minRaise: 5,
+        lastRaise: 5,
+        stage: 'turn',
+        gameVariant: v,
+        bigBlind: 2,
+        smallBlind: 1,
+        dealerSeat: 2,
+        actionHistory: [
+          { stage: 'preflop', seat: 1, userId: opp, action: 'raise', amount: 7 },
+          { stage: 'preflop', seat: 2, userId: 'hero', action: 'call', amount: 7 },
+          { stage: 'flop', seat: 1, userId: opp, action: 'bet', amount: 10 },
+          { stage: 'flop', seat: 2, userId: 'hero', action: 'call', amount: 10 },
+          { stage: 'turn', seat: 1, userId: opp, action: 'bet', amount: 5 },
+        ],
+      } as unknown as HorseGameStateV2;
+      const spy = vi.spyOn(EvEngine, 'evaluateSpot');
+      seedFastRandom(10);
+      HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false });
+      expect(
+        spy.mock.calls.some(([s]) => s.continuation),
+        v
+      ).toBe(true);
+      spy.mockClear();
+      seedFastRandom(10);
+      HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false, v53BarrelBudget: false });
+      expect(
+        spy.mock.calls.some(([s]) => s.continuation),
+        v
+      ).toBe(false);
+      spy.mockRestore();
+    }
+  });
+  it('v53PremiumRaise off: HorseLogic hands the bars no premium anchor', () => {
+    for (const variant of ['nlh', 'plo4'] as const) {
+      const hole = holding(variant, 'AsAh7s2h');
+      const shuffle = vi.spyOn(Deck.prototype, 'shuffle').mockImplementation(function (this: Deck) {
+        const deck = (this as unknown as { cards: Card[] }).cards;
+        const rest = deck.filter((c) => !hole.some((h) => h.rank === c.rank && h.suit === c.suit));
+        deck.splice(
+          0,
+          deck.length,
+          ...rest.slice(0, hole.length),
+          ...hole,
+          ...rest.slice(hole.length)
+        );
+      });
+      const config: HandConfig = {
+        tableId: '10000000-0000-4000-8000-000000000001',
+        handNumber: 1,
+        gameVariant: variant,
+        smallBlind: 1,
+        bigBlind: 2,
+        ante: 0,
+        isTournament: false,
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      };
+      const players = Array.from(
+        { length: 6 },
+        (_, i) =>
+          ({
+            seat: i + 1,
+            user_id: `p${i + 1}`,
+            username: `P${i + 1}`,
+            totalInvested: 0,
+            stack: 202,
+            bet: 0,
+            cards: [],
+            is_folded: false,
+            is_all_in: false,
+            is_sitting_out: false,
+          }) as SeatPlayer
+      );
+      const c = new HandController(config, players, 6);
+      c.start();
+      shuffle.mockRestore();
+      expect(c.performAction(3, 'raise', 7)).toBe(true);
+      for (const seat of [4, 5, 6, 1]) expect(c.performAction(seat, 'call')).toBe(true);
+      const spot = controllerDecisionState(c, variant as never, 'cash', config)!;
+      expect(spot.hero.cards).toEqual(hole);
+      const bars = vi.spyOn(Preflop, 'decidePreflopV7');
+      seedFastRandom(100);
+      HorseLogic.decide(spot.hero, spot.state, 'balanced', {}, { telemetry: false });
+      const on = bars.mock.calls.at(-1)![0];
+      expect(variant === 'nlh' ? on.holdemPremiumPair : on.omahaSuitedPremium).toBe(
+        variant === 'nlh' ? true : 'aces'
+      );
+      bars.mockClear();
+      seedFastRandom(100);
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        { telemetry: false, v53PremiumRaise: false }
+      );
+      const off = bars.mock.calls.at(-1)![0];
+      expect(off.holdemPremiumPair).toBe(false);
+      expect(off.omahaSuitedPremium).toBeUndefined();
+      bars.mockRestore();
+    }
   });
 });

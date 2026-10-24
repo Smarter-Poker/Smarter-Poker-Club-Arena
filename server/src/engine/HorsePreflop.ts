@@ -200,6 +200,10 @@ export interface PreflopCtx {
   omahaSuitedPremium?: 'aces' | 'kings';
   /** Exact Hold’em AA/KK, so score jitter cannot demote a value squeeze. */
   holdemPremiumPair?: boolean;
+  /** V53 (HorseDecideOpts.v53TerminalCommitment): a raise that leaves no more
+   *  than the call behind becomes the jam (completePreflopCommitment). Default
+   *  true; false returns the bar's raise size unchanged. */
+  terminalCommitment?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -445,7 +449,8 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   if (ctx.classFoldAlways === true && ctx.toCall > 0) {
     return { a: 'fold' };
   }
-  const out = completePreflopCommitment(decidePreflopV7Core(ctx), ctx);
+  const core = decidePreflopV7Core(ctx);
+  const out = ctx.terminalCommitment === false ? core : completePreflopCommitment(core, ctx);
   if (ctx.v13 === false) return out;
   if (out.a !== 'fold') return out;
   const stack = ctx.stack;

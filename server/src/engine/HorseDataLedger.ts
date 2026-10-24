@@ -683,6 +683,56 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V53'
   ),
   flag(
+    'v53PremiumRaise',
+    'exact AA/KK and Omaha suited-AA / double-suited-KK anchors value 3-bet a single open (#7838; league v53_premium_raise, plo4/plo6 mirrors)',
+    'V53'
+  ),
+  flag(
+    'v53TerminalCommitment',
+    'whole-stack lines priced as terminal: preflop remainder jams, flop remainder priced, full realization all-in, mix window capped by chips behind (#7838; league v53_terminal_commitment, plo4/plo5/plo6 mirrors)',
+    'V53'
+  ),
+  flag(
+    'v53BarrelBudget',
+    'heads-up one-pair / weak Omaha two-pair calls price the bettor observed next barrel (#7838, #7866; league v53_barrel_budget, plo4/plo5/plo6 mirrors)',
+    'V53'
+  ),
+  flag(
+    'v53TripBoardBoat',
+    'an Omaha river trip-board full house a bigger boat beats flats instead of raising (#7866; league plo4/plo5/plo6_v53_omaha_river)',
+    'V53'
+  ),
+  flag(
+    'v53ColdFlushPressure',
+    'a cold bet plus price-raising jam is raised-line evidence against a dominated Omaha river flush (#7866; league plo4/plo5/plo6_v53_omaha_river)',
+    'V53'
+  ),
+  flag(
+    'v53CalledThroughFlush',
+    'a third-nut-or-worse Omaha river flush checks after two live opponents each called two barrels (#7866; league plo4/plo5/plo6_v53_omaha_river)',
+    'V53'
+  ),
+  flag(
+    'v53ManiacRecovery',
+    'maniac call-down guards (weak-flush stack fold, cold-flush and multi-board folds kept) and granted-sample boundary refinement (#7866, #7876; fixture-pinned, no mirror-league card)',
+    'V53'
+  ),
+  flag(
+    'v53PhysicalDraws',
+    'Omaha implied-odds credit requires an actual physical draw (#7876; league plo4/plo5/plo6_v53_physical_draws)',
+    'V53'
+  ),
+  flag(
+    'v53OmahaBlockers',
+    'Omaha bluff blockers on flush boards are the physical two-hole nut-flush blocker (#7866; league plo4/plo5/plo6_v53_omaha_blockers)',
+    'V53'
+  ),
+  flag(
+    'v53RangeRunout',
+    'Omaha turn/river made-range runout comparison withdraws range initiative when the last card favors the opponent (#7866; league plo4/plo5/plo6_v53_range_runout)',
+    'V53'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'

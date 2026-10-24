@@ -20,14 +20,16 @@ describe('a player disappears only after their actual fold', () => {
     expect(hidden(folded)).toBe(true);
     expect(hidden(JSON.parse(JSON.stringify(folded)))).toBe(true);
   });
-  it.each(['flop', 'turn', 'river', 'showdown'])('keeps a committed fold hidden on %s', (stage) => {
-    expect(hidden({ ...folded, stage })).toBe(true);
-  });
+  it.each(['flop', 'turn', 'river', 'showdown', 'waiting'])(
+    'keeps a committed fold hidden on %s',
+    (stage) => {
+      expect(hidden({ ...folded, stage })).toBe(true);
+    }
+  );
   it.each([
     null,
     { ...folded, table_id: 'another-table' },
     { ...folded, hand_number: 11 },
-    { ...folded, stage: 'waiting' },
     { ...folded, players: [{ ...folded.players[0], user_id: 'replacement' }] },
     { ...folded, players: [{ ...folded.players[0], seat: 3 }] },
     { ...folded, players: [{ ...folded.players[0], is_folded: 'true' }] },

@@ -29,7 +29,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { EmptyState } from '../components/common/EmptyState';
+import LightningEntrySurface from '../components/lightning/LightningEntrySurface';
 import { useToast } from '../components/common/Toast';
 import {
   fetchLightningClusterMeta,
@@ -242,7 +242,7 @@ export default function LightningEntryPage() {
   if (!validId) {
     return (
       <div className="lightning-entry" data-testid="lightning-entry">
-        <EmptyState
+        <LightningEntrySurface
           tone="error"
           eyebrow="Lightning"
           title="Game Unavailable"
@@ -256,7 +256,7 @@ export default function LightningEntryPage() {
   if (phase.kind === 'resolving') {
     return (
       <div className="lightning-entry" data-testid="lightning-entry" aria-busy="true">
-        {slow ? <p className="lightning-entry__quiet">One Moment...</p> : null}
+        {slow ? <LightningEntrySurface title="Opening Game" description="One Moment..." /> : null}
       </div>
     );
   }
@@ -264,7 +264,7 @@ export default function LightningEntryPage() {
   if (phase.kind === 'failed') {
     return (
       <div className="lightning-entry" data-testid="lightning-entry">
-        <EmptyState
+        <LightningEntrySurface
           tone="error"
           eyebrow="Lightning"
           title="Game Unavailable"
@@ -281,7 +281,7 @@ export default function LightningEntryPage() {
     const seatTableId = decision.seatTableId;
     return (
       <div className="lightning-entry" data-testid="lightning-entry">
-        <EmptyState
+        <LightningEntrySurface
           eyebrow={LIGHTNING_ENDED_EYEBROW}
           title={meta?.name ?? 'Lightning'}
           description={LIGHTNING_ENDED_TEXT}
@@ -335,9 +335,18 @@ export default function LightningEntryPage() {
       : 'Must Move';
   return (
     <div className="lightning-entry" data-testid="lightning-entry">
-      <EmptyState
+      <LightningEntrySurface
         eyebrow={eyebrow}
         title={meta?.name ?? 'Lightning'}
+        pill={
+          joining
+            ? 'Joining'
+            : joinsClosed || closed
+              ? 'Closed'
+              : atLimit
+                ? 'Limit'
+                : (poolHealth?.status ?? 'Entry')
+        }
         description={
           joinsClosed
             ? LIGHTNING_JOINS_CLOSED_TEXT
@@ -348,54 +357,50 @@ export default function LightningEntryPage() {
                 : [stakes, entryGuidance].filter(Boolean).join('. ')
         }
         action={
-          joinsClosed || closed || atLimit
-            ? undefined
-            : { label: joining ? 'Joining...' : joinLabel, onClick: () => void join() }
+          joinsClosed
+            ? { label: joinLabel, disabled: true, testId: 'lightning-entry-join-closed' }
+            : closed || atLimit
+              ? undefined
+              : {
+                  label: joining ? 'Joining...' : joinLabel,
+                  onClick: () => void join(),
+                  disabled: joining,
+                }
         }
         secondaryAction={{ label: 'Return To Lobby', onClick: () => navigate('/') }}
       >
-        {joinsClosed ? (
-          <button
-            type="button"
-            className="lightning-entry__join-closed"
-            data-testid="lightning-entry-join-closed"
-            disabled
-            aria-disabled="true"
-          >
-            {joinLabel}
-          </button>
-        ) : null}
         {lightning && poolHealth ? (
           <div className="lightning-entry__badge">
             <LightningPoolBadge status={poolHealth.status} players={poolHealth.players} />
           </div>
         ) : null}
-      </EmptyState>
-      {clusterId && mine.rows ? (
-        <LightningMySessions
-          rows={mine.rows}
-          currentClusterId={clusterId}
-          limit={tableLimit}
-          lastPlayed={
-            prefs.lastClusterId
-              ? {
-                  clusterId: prefs.lastClusterId,
-                  name: prefs.lastClusterName,
-                  stakes: prefs.lastStakes,
-                }
-              : null
-          }
-          onViewGame={(row) => {
-            registerLightningPoolSession({
-              poolSessionId: row.poolSessionId,
-              clusterId: row.clusterId,
-              meta: null,
-            });
-            navigate(mySessionPath(row));
-          }}
-          onOpenCluster={(id) => navigate(lightningRoute(id))}
-        />
-      ) : null}
+        {clusterId && mine.rows && !mine.failed ? (
+          <LightningMySessions
+            rows={mine.rows}
+            currentClusterId={clusterId}
+            limit={tableLimit}
+            lastPlayed={
+              prefs.lastClusterId
+                ? {
+                    clusterId: prefs.lastClusterId,
+                    name: prefs.lastClusterName,
+                    stakes: prefs.lastStakes,
+                  }
+                : null
+            }
+            onViewGame={(row) => {
+              registerLightningPoolSession({
+                poolSessionId: row.poolSessionId,
+                clusterId: row.clusterId,
+                meta: null,
+              });
+              navigate(mySessionPath(row));
+            }}
+            onOpenCluster={(id) => navigate(lightningRoute(id))}
+          />
+        ) : null}
+        {mine.failed ? <p className="sc-copy">Your Lightning Tables Could Not Be Loaded.</p> : null}
+      </LightningEntrySurface>
     </div>
   );
 }

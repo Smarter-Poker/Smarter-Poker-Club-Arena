@@ -1,10 +1,11 @@
+import './LightningEntrySurface.css';
 /**
  * LIGHTNING PHASE 8: YOUR LIGHTNING TABLES, ON THE LIGHTNING ENTRY.
  *
  * A player may hold Lightning in several Clusters at once, up to their
  * device's limit (desktop 4, tablet 3, phone 2 by default; the database
  * enforces the real number in the matcher). The entry lists the Clusters
- * they already play (fn_lightning_my_sessions), each with VIEW GAME, says
+ * they already play (fn_lightning_my_sessions), each with View Game, says
  * how many of the device's tables are in use, and offers the last Cluster
  * they played as a door back. Every door is a tap; joining another Cluster
  * goes through the Cluster's own entry and its buy-in confirmation.
@@ -16,6 +17,8 @@ import {
 } from '../../lightning/lightningSessionApi';
 import { reportError } from '../../utils/errorReporter';
 import './LightningSession.css';
+import { lightningStakeText } from '../../lightning/lightningStakeText';
+import { titleCase } from '../../utils/titleCase';
 
 export interface LightningMySessionsState {
   rows: LightningMySessionRow[] | null;
@@ -47,7 +50,7 @@ export function useLightningMySessions(
 }
 
 /**
- * Is another Cluster's JOIN LIGHTNING still within the device's limit?
+ * Is another Cluster's Join Lightning still within the device's limit?
  * The Cluster on screen does not count against itself.
  */
 export function lightningJoinWithinLimit(
@@ -80,7 +83,6 @@ export default function LightningMySessions({
     lastPlayed.clusterId !== currentClusterId &&
     !rows.some((r) => r.clusterId === lastPlayed.clusterId) &&
     rows.length < limit;
-  if (others.length === 0 && !showLast) return null;
   return (
     <section
       className="lightning-mine"
@@ -98,8 +100,10 @@ export default function LightningMySessions({
           {others.map((r) => (
             <li key={r.poolSessionId} className="lightning-mine__row">
               <span className="lightning-mine__name">
-                {r.name}
-                {r.stakes ? <span className="lightning-mine__stakes"> {r.stakes}</span> : null}
+                {titleCase(lightningStakeText(r.name))}
+                {r.stakes && !lightningStakeText(r.name).includes(lightningStakeText(r.stakes)) ? (
+                  <span className="lightning-mine__stakes"> {lightningStakeText(r.stakes)}</span>
+                ) : null}
               </span>
               <button
                 type="button"
@@ -107,11 +111,14 @@ export default function LightningMySessions({
                 data-testid="lightning-my-session-view"
                 onClick={() => onViewGame(r)}
               >
-                VIEW GAME
+                View Game
               </button>
             </li>
           ))}
         </ul>
+      ) : null}
+      {others.length === 0 && !showLast ? (
+        <p className="lightning-mine__empty">No Other Lightning Tables</p>
       ) : null}
       {showLast && lastPlayed ? (
         <div
@@ -119,9 +126,15 @@ export default function LightningMySessions({
           data-testid="lightning-last-played"
         >
           <span className="lightning-mine__name">
-            Last Played: {lastPlayed.name ?? 'Lightning'}
-            {lastPlayed.stakes ? (
-              <span className="lightning-mine__stakes"> {lastPlayed.stakes}</span>
+            Last Played: {titleCase(lightningStakeText(lastPlayed.name ?? 'Lightning'))}
+            {lastPlayed.stakes &&
+            !lightningStakeText(lastPlayed.name ?? '').includes(
+              lightningStakeText(lastPlayed.stakes)
+            ) ? (
+              <span className="lightning-mine__stakes">
+                {' '}
+                {lightningStakeText(lastPlayed.stakes)}
+              </span>
             ) : null}
           </span>
           <button
@@ -130,7 +143,7 @@ export default function LightningMySessions({
             data-testid="lightning-last-played-open"
             onClick={() => onOpenCluster(lastPlayed.clusterId)}
           >
-            JOIN LIGHTNING
+            Join Lightning
           </button>
         </div>
       ) : null}

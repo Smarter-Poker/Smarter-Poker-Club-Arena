@@ -14,7 +14,6 @@ export function hasCommittedSeatFold(
     handNumber <= 0 ||
     snapshot.table_id !== tableId ||
     snapshot.hand_number !== handNumber ||
-    snapshot.stage === 'waiting' ||
     !Array.isArray(snapshot.players)
   )
     return false;

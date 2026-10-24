@@ -111,6 +111,7 @@ import {
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import { HorseMind, SNAP_MS, TANK_MS, readScopeOf } from './HorseMind.js';
+import { omahaFlushBlocker } from './OmahaFlushBlocker.js';
 import {
   isStation,
   EXPLOIT_FAST_ENGAGE_MIN_N,
@@ -254,6 +255,21 @@ import {
 import { evaluateTournamentPostflop, type Phase8Mode } from './HorseTournamentPostflop.js';
 import { liveHorsePhase8Safety } from './HorsePhase8Safety.js';
 import { performance } from 'node:perf_hooks';
+
+/** Omaha flush blockers use two hole cards, including on four-suited boards.
+ * A high-only blocker cannot establish scoop pressure when a low can qualify.
+ * Other board textures retain the existing straight/draw blocker behavior.
+ */
+function hasVariantBlocker(hole: Card[], board: Card[], vi: VariantInfo): boolean {
+  if (!vi.isOmaha) return HorseMind.hasBlocker(hole, board);
+  const fact = omahaFlushBlocker(hole, board, vi.holeCount);
+  if (fact.status === 'no_flush_threat') return HorseMind.hasBlocker(hole, board);
+  if (fact.status === 'invalid') return false;
+  const lowRanks = new Set(
+    board.map((c) => (c.rank === 'A' ? 1 : RANK_VALUES[c.rank])).filter((rank) => rank <= 8)
+  );
+  return fact.blocksNutFlush && (!vi.isHiLo || lowRanks.size + 5 - board.length < 3);
+}
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -2275,8 +2291,24 @@ function maniacCallDown(
     const bb = gs.bigBlind > 0 ? gs.bigBlind : 1;
     const bands = live.map((p) =>
       p.user_id === aggressorId
-        ? HorseMind.bandFor(p.user_id, preflopOnly, bb, false, null)
-        : HorseMind.bandFor(p.user_id, hist, bb, true, gs.communityCards ?? null)
+        ? HorseMind.bandFor(
+            p.user_id,
+            preflopOnly,
+            bb,
+            false,
+            null,
+            undefined,
+            HorseMind.initialPublicMoney(gs.players, gs.actionHistory, gs.pot) ?? undefined
+          )
+        : HorseMind.bandFor(
+            p.user_id,
+            hist,
+            bb,
+            true,
+            gs.communityCards ?? null,
+            undefined,
+            HorseMind.initialPublicMoney(gs.players, gs.actionHistory, gs.pot) ?? undefined
+          )
     );
     const iterations = Math.max(240, Math.floor(vi.iterations * 0.8));
     const betSelectionPenalty = (1 - betRate) * 0.15;
@@ -3950,7 +3982,10 @@ export class HorseLogic {
               gs.players,
               gs.actionHistory,
               gs.bigBlind,
-              (opts.v7SizeReads ?? opts.v7) !== false
+              (opts.v7SizeReads ?? opts.v7) !== false,
+              undefined,
+              undefined,
+              HorseMind.initialPublicMoney(gs.players, gs.actionHistory, gs.pot) ?? undefined
             )
           : undefined;
         const deckSize7 = vi.isShortDeck ? 36 : 52;
@@ -4377,7 +4412,9 @@ export class HorseLogic {
                   gs.actionHistory,
                   bb,
                   true,
-                  null
+                  null,
+                  undefined,
+                  HorseMind.initialPublicMoney(gs.players, gs.actionHistory, gs.pot) ?? undefined
                 )
               : undefined;
           const otherLiveResponder38 = gs.players.some(
@@ -5138,7 +5175,8 @@ export class HorseLogic {
           gs.bigBlind,
           useSizeReads,
           gs.communityCards,
-          oppReads
+          oppReads,
+          HorseMind.initialPublicMoney(gs.players, gs.actionHistory, gs.pot) ?? undefined
         );
         // V16 SIZE-CONDITIONED SAMPLING is a sampler behavior — disable by
         // stripping the flag the mind attached, so HorseEval needs no opts.
@@ -5165,7 +5203,7 @@ export class HorseLogic {
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
         const tex = HorseMind.texture(gs.communityCards);
         wetness = tex.wetness;
-        blocker = HorseMind.hasBlocker(player.cards, gs.communityCards);
+        blocker = hasVariantBlocker(player.cards, gs.communityCards, vi);
       } catch {
         /* intelligence layer is best-effort — fall back to V2 behavior */
       }
@@ -5426,7 +5464,7 @@ export class HorseLogic {
     if (useMind && multiBoard36 && styleIdx36 !== 0) {
       try {
         wetness = HorseMind.texture(board).wetness;
-        blocker = HorseMind.hasBlocker(player.cards, board);
+        blocker = hasVariantBlocker(player.cards, board, vi);
       } catch {
         /* style reads are best-effort */
       }
@@ -5619,8 +5657,17 @@ export class HorseLogic {
         boatDominated15 = false;
       }
     }
+    // A river trip board does not make every full house a value raise.
+    // A bigger legal two-card boat can call while weaker holdings fold.
+    // Preserve the top boat (quads alone above it) and existing call/fold EV.
+    const tripBoardDominatedBoat15 =
+      isRiver &&
+      vi.isOmaha &&
+      cat === 7 &&
+      board.some((card) => board.filter((other) => other.rank === card.rank).length === 3) &&
+      omahaBoatsAbove(player.cards, board).boats > 0;
     const nutClass15 =
-      (cat >= 7 && !boatDominated15) ||
+      (cat >= 7 && !boatDominated15 && !tripBoardDominatedBoat15) ||
       (nuts15 != null &&
         ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
           (cat === 5 && nuts15.straightIsNut && !boardMono15)));
@@ -5827,11 +5874,37 @@ export class HorseLogic {
     // never inherits that shortcut. Uncertain samples grant no range edge.
     const ownRange =
       useMind && useCbet10 && useIQ && opponents.length === 1 && !multiBoard36
-        ? HorseMind.bandFor(player.user_id, gs.actionHistory, gs.bigBlind, useSizeReads, board)
+        ? HorseMind.bandFor(
+            player.user_id,
+            gs.actionHistory,
+            gs.bigBlind,
+            useSizeReads,
+            board,
+            undefined,
+            HorseMind.initialPublicMoney(gs.players, gs.actionHistory, gs.pot) ?? undefined
+          )
         : null;
     const opponentRange = bands?.[0];
     const rangeAdvantage =
-      ownRange && opponentRange ? rangeAdvantageFor(board, ownRange, opponentRange, vi) : null;
+      ownRange && opponentRange
+        ? rangeAdvantageFor(
+            board,
+            ownRange,
+            opponentRange,
+            vi,
+            vi.isOmaha && board.length >= 4 ? { previousBoard: board.slice(0, -1) } : undefined
+          )
+        : null;
+    const rangeChange = rangeAdvantage?.madeRangeChange;
+    // A runout that strengthens the other range is a reason to stop automatic
+    // initiative, not to turn our actual made hand into an automatic fold.
+    const runoutFavorsOpponent = rangeChange?.worsens || rangeChange?.nutDisadvantage;
+    if (rangeChange && tele15) {
+      if (rangeChange.improves) noteFire('horse_continuation_range_runout_improves');
+      if (rangeChange.worsens) noteFire('horse_continuation_range_runout_worsens');
+      if (rangeChange.nutAdvantage) noteFire('horse_continuation_range_nut_advantage');
+      if (rangeChange.nutDisadvantage) noteFire('horse_continuation_range_nut_disadvantage');
+    }
     if (rangeAdvantage && tele15) {
       if (rangeAdvantage.advantage) noteFire('horse_continuation_range_advantage');
       else if (rangeAdvantage.disadvantage) noteFire('horse_continuation_range_disadvantage');
@@ -5840,7 +5913,7 @@ export class HorseLogic {
       useCbet10 &&
       useIQ &&
       (rangeAdvantage
-        ? rangeAdvantage.advantage
+        ? rangeAdvantage.advantage && !runoutFavorsOpponent
         : !vi.isOmaha && boardHasHigh && wetness < 0.4 && !pairedBoard);
     // V3 bluff gating: blockers upgrade bluffs; wet boards without one demote.
     const blockerMod = blocker ? 1.35 : wetness > 0.55 ? 0.7 : 1.0;
@@ -7048,7 +7121,8 @@ export class HorseLogic {
           minBet: Math.max(gs.minRaise || 0, 0.01),
           maxBet: vi.isPotLimit ? pot : stack,
           initiative:
-            (initiative === 'hero' || prevChecked) && rangeAdvantage?.disadvantage !== true,
+            (initiative === 'hero' || prevChecked) &&
+            (rangeAdvantage?.disadvantage || runoutFavorsOpponent) !== true,
           // fixed limit has one size; pot limit tops out at the pot
           sizes: vi.isFixedLimit
             ? [1]
@@ -7753,6 +7827,7 @@ export class HorseLogic {
         const preferFlat15 =
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
           (boatDominated15 && raisedAfterAggr) ||
+          tripBoardDominatedBoat15 ||
           (useV21 && dominated21) ||
           planCallOnly23;
         // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
@@ -7769,6 +7844,8 @@ export class HorseLogic {
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard));
         if (toCall >= stack || preferFlat15) {
+          if (tele15 && tripBoardDominatedBoat15)
+            noteFire('horse_continuation_trip_board_boat_flat');
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
         if (riverOnePair51) {
@@ -7831,8 +7908,11 @@ export class HorseLogic {
       // V15 BOATS: a full house that a bigger boat beats, raised after it
       // bet, calls. The range that raises a boat on a paired board is the
       // bigger boat; re-raising only ever gets called by it.
-      if (boatDominated15 && raisedAfterAggr) {
-        if (tele15) noteFire('v15_boat_gate');
+      if (tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)) {
+        if (tele15)
+          noteFire(
+            tripBoardDominatedBoat15 ? 'horse_continuation_trip_board_boat_flat' : 'v15_boat_gate'
+          );
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       // ═══ V21 RIVER RAISE-WAR GOVERNOR ═══ once hero's river aggression

@@ -46,6 +46,7 @@ BEGIN
        WHERE child.status IN ('active', 'approved')
     ), playing AS (
       SELECT ts.user_id FROM public.table_seats ts
+       JOIN public.tables t ON t.id = ts.table_id AND t.tournament_id IS NULL
        WHERE ts.table_id = p_table_id AND ts.left_at IS NULL
       UNION
       SELECT tp.user_id FROM public.tournament_players tp

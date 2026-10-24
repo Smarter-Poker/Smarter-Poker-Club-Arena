@@ -67,6 +67,7 @@ SELECT pg_temp.assert_watch(jsonb_array_length(public.fn_search_players('kingfis
 UPDATE public.table_seats SET left_at=now() WHERE table_id='30000000-0000-0000-0000-000000000006';
 SELECT pg_temp.assert_watch(NOT public.fn_agent_can_watch_table('30000000-0000-0000-0000-000000000006'), 'departed cash downline granted');
 UPDATE public.tournament_players SET status='eliminated' WHERE table_id='30000000-0000-0000-0000-000000000004';
+INSERT INTO public.table_seats(table_id,user_id) VALUES ('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002');
 SELECT pg_temp.assert_watch(NOT public.fn_agent_can_watch_table('30000000-0000-0000-0000-000000000004'), 'departed tournament downline granted');
 SELECT pg_temp.assert_watch(public.fn_get_table_watch_access('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002')->>'action'='unavailable', 'stale target click granted');
 

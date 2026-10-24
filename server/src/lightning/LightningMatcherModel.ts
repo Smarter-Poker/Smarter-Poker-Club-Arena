@@ -147,9 +147,9 @@ export interface LightningMatcherParams {
 }
 
 export const LIGHTNING_MATCHER_PARAM_DEFAULTS: Readonly<LightningMatcherParams> = Object.freeze({
-  instanceMin: 2,
-  instanceTarget: 9,
-  instanceMax: 9,
+  instanceMin: 5,
+  instanceTarget: 6,
+  instanceMax: 6,
   firstEntryRule: 'any_seat',
   positionFairness: true,
   recentWindowHands: 60,
@@ -232,22 +232,22 @@ export function lightningGroupSizes(
   return out;
 }
 
-/** Owner choice, 2026-10-15: fresh arrivals wait for a full ring for at most
- * three seconds. Only legal queue ages count; no queue timestamp is reset. */
+/** Owner choice, 2026-10-23: six ready players form immediately; five wait
+ * three seconds from the fifth arrival. Never form fewer than five. */
 export const LIGHTNING_FORMATION_MAX_WAIT_MS = 3_000;
 
 export function lightningFormationSizes(
   players: readonly LightningPoolPlayer[],
   nowMs: number,
-  params: LightningMatcherParams
+  _params: LightningMatcherParams
 ): number[] {
-  const max = Math.min(Math.max(params.instanceMax || 2, 2), 9);
-  const min = Math.min(Math.max(params.instanceMin || 2, 2), max);
-  const target = Math.min(Math.max(params.instanceTarget || max, min), max);
-  const oldest = players.reduce((t, p) => Math.min(t, p.idleSinceMs), Infinity);
-  if (nowMs - oldest >= LIGHTNING_FORMATION_MAX_WAIT_MS)
-    return lightningGroupSizes(players.length, min, target, max);
-  return Array.from({ length: Math.floor(players.length / target) }, () => target);
+  const sizes = Array.from({ length: Math.floor(players.length / 6) }, () => 6);
+  // The fifth arrival starts the wait. An old first arrival must never
+  // release four new arrivals before they have waited for the sixth.
+  const fifthReadyAt = players.reduce((t, p) => Math.max(t, p.idleSinceMs), -Infinity);
+  if (players.length % 6 === 5 && nowMs - fifthReadyAt >= LIGHTNING_FORMATION_MAX_WAIT_MS)
+    sizes.push(5);
+  return sizes;
 }
 
 // ─── ORDERS ───────────────────────────────────────────────────────────────
@@ -423,14 +423,22 @@ function planWith(
   const cap = Math.max(0, Math.floor(params.maxGroups));
 
   let seatable = legal;
-  let sizes = lightningFormationSizes(seatable, snapshot.nowMs, params);
+  let sizes = lightningFormationSizes(
+    seatable,
+    snapshot.nowMs + LIGHTNING_FORMATION_MAX_WAIT_MS,
+    params
+  );
   const g = Math.min(sizes.length, cap);
 
   if (params.firstEntryRule === 'big_blind' && g > 0) {
     const firstBbs = new Set(seatable.slice(0, g).map((p) => p.playerId));
     const next = seatable.filter((p) => !p.newcomer || firstBbs.has(p.playerId));
     if (next.length < seatable.length) {
-      const sizes2 = lightningFormationSizes(next, snapshot.nowMs, params);
+      const sizes2 = lightningFormationSizes(
+        next,
+        snapshot.nowMs + LIGHTNING_FORMATION_MAX_WAIT_MS,
+        params
+      );
       if (Math.min(sizes2.length, cap) === g) {
         seatable = next;
         sizes = sizes2;
@@ -484,6 +492,13 @@ function planWith(
       .sort(compareQueueOrder);
     const order: string[] = [];
     const size = members.length;
+    if (
+      size === 5 &&
+      members.some(
+        (id) => snapshot.nowMs - byId.get(id)!.idleSinceMs < LIGHTNING_FORMATION_MAX_WAIT_MS
+      )
+    )
+      continue;
     for (let seat = size; seat >= 3; seat--) {
       const label =
         seat === size

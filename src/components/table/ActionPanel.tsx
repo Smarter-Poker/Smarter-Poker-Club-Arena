@@ -10,7 +10,7 @@ import { haptic } from '../../services/SoundService';
 import { TapHaptic } from '../haptics/TapHaptic';
 import '../../styles/table-design-tokens.css';
 import './ActionPanel.css';
-import { formatTableChips } from '../../utils/format';
+import { formatBigBlinds, formatTableChips } from '../../utils/format';
 
 interface ActionPanelProps {
   canFold: boolean;
@@ -1275,7 +1275,7 @@ export default function ActionPanel({
               {/* Big blinds only when the player asked for them — chips are
                   the default everywhere (Dan 2026-08-25). */}
               {showStackInBB && bigBlind > 0 && !amountTyping && (
-                <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
+                <span className="raise-value__bb">{formatBigBlinds(raiseAmount, bigBlind)}</span>
               )}
             </div>
             <button

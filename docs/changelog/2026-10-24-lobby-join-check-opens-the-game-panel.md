@@ -1,0 +1,3 @@
+# The Live Lobby-Join Check Opens The Game Panel
+
+The first post-deploy run of `production-lightning-lobby-join.spec.ts` (run 40113167665) found no visible Join Lightning button: the live lobby is a row list, and Join Lightning lives in the game panel a row opens, which is the exact path #7879 repaired. The check now selects ALL, takes rows whose game name says Lightning (compact rows through their Details button, desktop rows by click), and presses the first enabled Join Lightning a panel offers; a Lightning-named game that is not running Lightning offers Join Game and is closed and skipped. Every later assertion (route holds, approved card, no admission or buy-in request) is unchanged.

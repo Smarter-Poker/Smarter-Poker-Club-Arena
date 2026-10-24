@@ -424,7 +424,7 @@ export const REFUSAL_WORDS: Record<string, string> = {
   ALREADY: 'The Cluster Is Already In That State. Nothing Changed.',
   NOT_FOUND: 'This Cluster No Longer Exists.',
   IDEMPOTENCY_CONFLICT: 'This Request Was Already Used For A Different Control.',
-  LIGHTNING_TEMPLATE_NOT_ALLOWED: 'Lightning Is Only Available For Action And Madness.',
+  LIGHTNING_TEMPLATE_NOT_ALLOWED: 'Choose Lightning Games To Use A Lightning Pool.',
   LIGHTNING_TABLE_SIZE_NOT_ALLOWED: 'Lightning Is Only Available For Six Seat Games.',
 };
 
@@ -537,7 +537,7 @@ export const READINESS_REASON_WORDS: Record<string, string> = {
   MATCHER_VERSION_INVALID: 'The Live Matcher Version Is Invalid',
   AA_CALIBRATION_BIAS: 'The Live Matcher Disagrees With Its Own Port',
   WORKER_OFF: 'The Lightning Worker Is Off, So No Hands Would Form',
-  LIGHTNING_TEMPLATE_NOT_ALLOWED: 'Lightning Is Only Available For Action And Madness',
+  LIGHTNING_TEMPLATE_NOT_ALLOWED: 'Choose Lightning Games To Use A Lightning Pool',
   LIGHTNING_TABLE_SIZE_NOT_ALLOWED: 'Lightning Is Only Available For Six Seat Games',
   NO_AA_CALIBRATION: 'No A/A Calibration Of The Live Matcher Yet',
   NO_LATENCY_EVIDENCE: 'No Latency Window In The Last 24 Hours',

@@ -598,6 +598,10 @@ describe('the wiring', () => {
       '- name: Lightning Phases 6 and 7 match every legal hand, explain every idle player and rotate the blinds fairly'
     );
   });
+  it('the required native entrypoint also qualifies the canonical five-ready replacement', () => {
+    expect(HARNESS).toContain('bash "$root/scripts/dev/test-lightning-five-ready.sh"');
+    expect(HARNESS).toContain('bash "$root/scripts/dev/test-lightning-canonical-admission.sh"');
+  });
   it('the schema fragment names every function, the table and the column this file adds', () => {
     for (const f of FUNCTIONS) expect(FRAGMENT.functions).toContain(f.name);
     expect(FRAGMENT.tables).toContain('cash_cluster_matcher_pass');

@@ -104,7 +104,10 @@ def person(tag, diamonds=0, role='user'):
 
 def club(tag, owner):
     cid = u('club:' + tag)
-    q(f"""INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES ('{cid}','Metrics {tag}','{owner}',NULL,0,0,false);
+    # Fixture identities must not depend on the production random five-digit
+    # default. Match the base harness's explicit allocation above occupied IDs.
+    q(f"""INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union)
+      SELECT '{cid}',COALESCE(max(club_id),10000)+1,'Metrics {tag}','{owner}',NULL,0,0,false FROM public.clubs;
       INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{cid}','{owner}','owner','active',0);""")
     return cid
 
@@ -162,6 +165,22 @@ def build():
 
     # Five owners buy 500-diamond capacity; one purchase is replayed.
     o1, o2, o3, o4, o6 = (person(t, 5000) for t in ('o1', 'o2', 'o3', 'o4', 'o6'))
+    # Deterministically reproduce the observed random-default collision:
+    # force the old allocator to return an occupied code in a rollback-only
+    # subtransaction. The repaired helper must work under the same default.
+    q("""DO $collision$ DECLARE code int; constraint_name text; BEGIN
+      SELECT min(club_id) INTO code FROM public.clubs;
+      BEGIN
+        EXECUTE format('ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT %s',code);
+        INSERT INTO public.clubs(id,name,owner_id,chip_treasury,promo_balance,is_union)
+          SELECT gen_random_uuid(),'Collision Witness',owner_id,0,0,false FROM public.clubs LIMIT 1;
+        RAISE EXCEPTION 'Expected the occupied club-code collision';
+      EXCEPTION WHEN unique_violation THEN
+        GET STACKED DIAGNOSTICS constraint_name=CONSTRAINT_NAME;
+        IF constraint_name<>'clubs_club_id_key' THEN RAISE EXCEPTION 'Wrong collision constraint: %',constraint_name; END IF;
+      END;
+      EXECUTE format('ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT %s',code);
+    END $collision$;""")
     k1, k2, k3, k4, k6 = (club(t, o) for t, o in (('k1', o1), ('k2', o2), ('k3', o3), ('k4', o4), ('k6', o6)))
     q1 = quote(o1, k1, 'capacity_60')
     p1 = buy(o1, q1['quote_id'], 'metrics-p1-000001')

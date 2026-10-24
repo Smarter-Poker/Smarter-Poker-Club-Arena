@@ -34,9 +34,22 @@ const USER = '77777777-7777-4777-8777-777777777777';
 const rpc = vi.fn();
 const fromCalls: string[] = [];
 let clusterRows: unknown[] = [];
+let onClusterUpdate: (() => void) | null = null;
+const removeChannel = vi.fn();
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...a: unknown[]) => rpc(...a),
+    removeChannel: (...a: unknown[]) => removeChannel(...a),
+    channel: () => {
+      const channel = {
+        on: (_event: unknown, _filter: unknown, callback: () => void) => {
+          onClusterUpdate = callback;
+          return channel;
+        },
+        subscribe: () => channel,
+      };
+      return channel;
+    },
     from: (table: string) => {
       fromCalls.push(table);
       const chain: Record<string, unknown> = {};
@@ -119,6 +132,8 @@ beforeEach(() => {
   notifyLeave.mockReset();
   fromCalls.length = 0;
   clusterRows = [];
+  onClusterUpdate = null;
+  removeChannel.mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -417,6 +432,129 @@ describe('3. JOIN LIGHTNING keeps waiting, says so, and stops when told', () => 
     expect(PAGE).toMatch(
       /\{lightningHandoff\.joining && !lightningRoom \? \(\s*<LightningJoining onCancel=\{lightningHandoff\.cancel\} \/>/
     );
+  });
+});
+
+describe('conversion of an already seated player', () => {
+  it('discovers the existing pool without entry intent and follows only on View Game', async () => {
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    const follow = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow,
+      })
+    );
+    await act(async () => {});
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    expect(follow).not.toHaveBeenCalled();
+    act(() => result.current.viewReady());
+    expect(getLightningPoolSession(POOL)?.clusterId).toBe(CLUSTER);
+    expect(follow).toHaveBeenCalledWith(POOL);
+    unmount();
+    expect(removeChannel).toHaveBeenCalledTimes(1);
+  });
+  it('reads the original cluster transition and rejects a different anchor', async () => {
+    rpc.mockResolvedValue({
+      data: { pool_session_id: null, cluster_mode: 'must_move' },
+      error: null,
+    });
+    const follow = vi.fn();
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow,
+      })
+    );
+    await act(async () => {});
+    expect(result.current.readyPoolSessionId).toBeNull();
+    rpc.mockResolvedValue({
+      data: { ...SESSION_WITH_ANCHOR, anchor_table_id: OTHER_CLUSTER },
+      error: null,
+    });
+    await act(async () => {
+      onClusterUpdate?.();
+    });
+    expect(result.current.readyPoolSessionId).toBeNull();
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    await act(async () => {
+      onClusterUpdate?.();
+    });
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    expect(follow).not.toHaveBeenCalled();
+  });
+  it('does not reuse a conversion response or View Game callback after an account change', async () => {
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    const follow = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ userId }) =>
+        useLightningAnchorHandoff({
+          tableId: ANCHOR,
+          clusterId: CLUSTER,
+          userId,
+          isPoolSession: false,
+          heroBoughtIn: true,
+          follow,
+        }),
+      { initialProps: { userId: USER } }
+    );
+    await act(async () => {});
+    const previousView = result.current.viewReady;
+    let complete: (value: unknown) => void = () => {};
+    rpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        })
+    );
+    rerender({ userId: OTHER_CLUSTER });
+    expect(result.current.readyPoolSessionId).toBeNull();
+    act(() => previousView());
+    expect(follow).not.toHaveBeenCalled();
+    await act(async () => complete({ data: { pool_session_id: null }, error: null }));
+    expect(result.current.readyPoolSessionId).toBeNull();
+  });
+  it('keeps the newest conversion result when an earlier read finishes last', async () => {
+    let oldRead: (value: unknown) => void = () => {};
+    rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          oldRead = resolve;
+        })
+    );
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow: vi.fn(),
+      })
+    );
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    await act(async () => onClusterUpdate?.());
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    await act(async () => oldRead({ data: { pool_session_id: null }, error: null }));
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+  });
+  it('the Lightning room names the format on the felt independently of historical template metadata', () => {
+    expect(PAGE).toMatch(/lightningRoom\s*\? 'Lightning Games '/);
+    expect(PAGE).toContain('t.id === cashTemplateKey(template)');
+  });
+  it('Lightning preselected Fold uses the immediate fast-fold door before arming a normal pre-action', () => {
+    expect(PAGE).toMatch(
+      /onPreActionChange=\{\(next\) => \{[\s\S]*?if \(lightningRoom && next === 'fold'\) \{\s*void handleLightningFold\('fast_fold'\);\s*return;/
+    );
+    expect(PAGE).toContain('if (lightningFoldBusyRef.current) return;');
   });
 });
 

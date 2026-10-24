@@ -49,7 +49,7 @@ import {
   type FilterableTournament,
 } from '../../utils/tournamentFilters';
 import { SPIN_VARIANT_KEYS, TOURNAMENT_VARIANT_KEYS } from '../../config/tournamentVariants';
-import { CASH_TEMPLATES } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import type { PlatformCapabilityId } from '../../config/platformCapabilities';
 import { killModeOf } from '../../utils/killPot';
 
@@ -720,8 +720,8 @@ export function rowPassesFilter(
 
   // ── Game Style chips (cash: classic / action / madness) ──────────────────
   if (v.styles && v.styles.length > 0) {
-    const style = typeof r.style === 'string' ? r.style.toLowerCase() : null;
-    if (!style || !v.styles.includes(style)) return false;
+    const style = typeof r.style === 'string' ? cashTemplateKey(r.style) : null;
+    if (!style || !v.styles.some((selected) => cashTemplateKey(selected) === style)) return false;
   }
 
   // ── Format chips (SN only: satellite vs regular) ─────────────────────────

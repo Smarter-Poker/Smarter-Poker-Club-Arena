@@ -2097,3 +2097,11 @@ abbr.lt-variant[title] {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* Lightning is a format, so its painted bolt replaces the live dot even while waiting. */
+.lt-lightning-icon {
+  flex: none;
+  width: 14px;
+  height: 20px;
+  object-fit: contain;
+}

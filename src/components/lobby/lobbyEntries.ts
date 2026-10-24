@@ -1506,14 +1506,25 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
                       detail: lightningStatus,
                       tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
                     }
-                  : {
-                      key: cluster.mustMove ? 'must_move' : 'manual_table',
-                      label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
-                      detail: cluster.template ? cluster.template.toUpperCase() : undefined,
-                      tip: cluster.mustMove
-                        ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
-                        : 'One Table The Host Runs By Hand.',
-                    },
+                  : /* A CLASSIC GAME NEVER MOVES ITS PLAYERS (Dan 2026-10-24: "PLAYERS
+                       SHOULD NOT BE MOVING ON CLASSIC GAMES PERIOD"). The database refuses
+                       every automatic move on a Classic game
+                       (20261024213758), so its card never promises one. */
+                    cluster.mustMove && cluster.template?.toLowerCase() === 'classic'
+                    ? {
+                        key: 'classic_seat_stays',
+                        label: 'CLASSIC',
+                        detail: undefined,
+                        tip: 'Regular Ring Game. Your Seat Is Yours Until You Leave Or Ask To Change It.',
+                      }
+                    : {
+                        key: cluster.mustMove ? 'must_move' : 'manual_table',
+                        label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+                        detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+                        tip: cluster.mustMove
+                          ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+                          : 'One Table The Host Runs By Hand.',
+                      },
               ]),
           ...cashRuleMedallions(t),
         ]

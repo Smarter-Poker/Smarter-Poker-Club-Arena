@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useBombPotCountdown } from '../../src/hooks/useBombPotCountdown';
@@ -13,6 +14,12 @@ afterEach(() => {
 });
 
 describe('bomb pot display energy', () => {
+  it('uses painted visibility rather than focus so every visible grid tile keeps its countdown', () => {
+    const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
+    expect(page).toMatch(
+      /useBombPotCountdown\(\s*tableState\.bombPotNextAt,\s*bombPotRules\?\.announceSeconds \?\? 0,\s*isVisible &&/
+    );
+  });
   it('sleeps through the quiet window, counts visible seconds and stops at NEXT HAND', () => {
     let renders = 0;
     const { result, unmount } = renderHook(() => {
@@ -85,15 +92,15 @@ describe('bomb pot display energy', () => {
     unmount();
   });
 
-  it('keeps an inactive table asleep and catches up when selected again', () => {
+  it('keeps a hidden pane asleep and catches up when painted again', () => {
     const { result, rerender, unmount } = renderHook(
-      ({ active }) => useBombPotCountdown(110_000, 0, active),
-      { initialProps: { active: false } }
+      ({ visible }) => useBombPotCountdown(110_000, 0, visible),
+      { initialProps: { visible: false } }
     );
     expect(result.current).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
     act(() => vi.advanceTimersByTime(20_000));
-    rerender({ active: true });
+    rerender({ visible: true });
     expect(result.current).toBe('NEXT HAND');
     expect(vi.getTimerCount()).toBe(0);
     unmount();

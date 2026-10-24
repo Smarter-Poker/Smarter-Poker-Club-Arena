@@ -12,8 +12,9 @@ The timed bomb-pot display updated TablePage every second throughout its quiet
 announcement window and indefinitely after reaching NEXT HAND. Its display
 hook now waits directly for the announcement window, updates at whole-second
 boundaries, sleeps at zero, and stops its display timer while the document is
-hidden or the player selects another mounted table. A changed engine deadline,
-table selection or Safari restoration re-evaluates wall time.
+hidden or the mounted pane is not painted. Every visible grid tile retains
+its countdown regardless of focus. A changed engine deadline, pane visibility
+or Safari restoration re-evaluates wall time.
 Higher priority live/waiting/bomb-only statuses need no countdown. The engine
 still controls bomb-pot scheduling; action timers, gameplay and animations
 are unchanged.

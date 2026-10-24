@@ -1,4 +1,5 @@
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
+import { observeHandResults } from '../HorseWinnerRead.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
 import {
@@ -2393,6 +2394,14 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
+    // A PROVEN WINNER IS RESPECTED (HorseWinnerRead): every shard learns
+    // every hand's results, owner and mirror alike; deduplicated by hand key.
+    try {
+      if (observeHandResults(received.handKey, received.results, received.bigBlind))
+        this.deps.noteFeature('horse_winner_read_hand');
+    } catch {
+      this.deps.noteFeature('horse_winner_read_refused');
+    }
     if (received.durableOpponentProfiles !== undefined) {
       try {
         if (HorseMind.importDurableOpponentProfiles(received.durableOpponentProfiles) > 0)

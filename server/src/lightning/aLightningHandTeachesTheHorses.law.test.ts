@@ -165,3 +165,19 @@ describe('LAW: a Lightning action carries the price it was taken at', () => {
     expect(observed.length).toBe(voluntary.length);
   });
 });
+
+describe('LAW: a Lightning hand carries its results to the winner read', () => {
+  it('every dealt player net, from settlement, conserving the pot less the drop', async () => {
+    const t = await playHand(8700);
+    const o = t.horseLane.observed[0]!;
+    const settled = t.calls.settle[0]!;
+    expect(o.results!.length).toBe(settled.results.length);
+    for (const r of settled.results)
+      expect(o.results!.find((x) => x.user_id === r.playerId)!.net).toBeCloseTo(
+        r.won - r.contributed,
+        2
+      );
+    const sum = o.results!.reduce((a, r) => a + r.net, 0);
+    expect(sum).toBeCloseTo(-(settled.rake + settled.bbj), 2);
+  });
+});

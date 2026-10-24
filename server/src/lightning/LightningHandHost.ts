@@ -2532,7 +2532,12 @@ export class LightningHandHost {
   }
 
   /** LightningHorseObservation: teach the live horse lane this committed hand. */
-  private observeForHorses(state: GameState, leaseGeneration: string, handHistoryId: string) {
+  private observeForHorses(
+    state: GameState,
+    leaseGeneration: string,
+    handHistoryId: string,
+    results?: LightningSettleResult[]
+  ) {
     const rules = this.rules!;
     const lane = this.deps.horseLane ?? getLiveHorseDecisionWorker;
     const custom = this.deps.horseObservation ?? {};
@@ -2547,6 +2552,7 @@ export class LightningHandHost {
         dealtCount: state.players.length,
         actions: this.actions,
         showdown: this.showdown,
+        ...(results ? { results } : {}),
       },
       {
         lane,
@@ -2589,7 +2595,7 @@ export class LightningHandHost {
         // and before anyone is released, so the next hand any of these players
         // is matched into is read with this one already in it. Not awaited:
         // it can never hold or endanger the settled hand.
-        this.observeForHorses(state, lease.generation, out.value.handHistoryId);
+        this.observeForHorses(state, lease.generation, out.value.handHistoryId, results);
         // A LIGHTNING HAND IS ON THE HORSE SCOREBOARD (2026-10-24): the
         // physical path's recordHorseHandReviews, filed under lightning_<bb>bb.
         this.recordForHorseScoreboard(state, results, rake, bbj, out.value.handHistoryId);

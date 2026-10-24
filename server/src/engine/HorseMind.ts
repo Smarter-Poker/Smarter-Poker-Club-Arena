@@ -10,6 +10,7 @@ import {
   type MemoryMode,
   type MemorySize,
 } from './HorseOpponentMemory.js';
+import { respectWinner } from './HorseWinnerRead.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -1801,6 +1802,12 @@ export class HorseMind {
   // ───────────────────────────────────────────────────────────────────────
 
   static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
+    // A PROVEN WINNER IS RESPECTED (2026-10-24, HorseWinnerRead): fewer
+    // bluffs and no thin value against a credible winner; reads unchanged.
+    return respectWinner(this.readExploit(userId, recencyBlend), userId);
+  }
+
+  private static readExploit(userId: string, recencyBlend: boolean): ExploitProfile {
     const legacy = this.legacyExploit(userId, recencyBlend);
     // 2026-10-16 OPPONENT EXPLOIT: a credible read replaces the lifetime
     // profile on the statistics it covers. The bluff read is POSTFLOP-ONLY

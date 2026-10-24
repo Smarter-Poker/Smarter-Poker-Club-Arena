@@ -84,6 +84,32 @@ describe('authorizeTableViewer', () => {
     });
   });
 
+  it('preserves existing access and refuses the new exception before its daily-window RPC exists', async () => {
+    results.downline = {
+      data: false,
+      error: { code: 'PGRST202', message: 'Function not installed' },
+    };
+    await expect(authorizeTableViewer('table-1', 'member')).resolves.toMatchObject({
+      allowed: true,
+      reason: 'club_member',
+    });
+    results.tables.data!.restrict_observers = true;
+    await expect(authorizeTableViewer('table-1', 'member')).resolves.toMatchObject({
+      allowed: false,
+      reason: 'observers_restricted',
+    });
+    results.club_members.data = [];
+    await expect(authorizeTableViewer('table-1', 'outsider')).resolves.toMatchObject({
+      allowed: false,
+      reason: 'membership_required',
+    });
+    results.table_seats.data = { id: 'seat-1' };
+    await expect(authorizeTableViewer('table-1', 'seated')).resolves.toMatchObject({
+      allowed: true,
+      reason: 'seated',
+    });
+  });
+
   it('allows an active club member to observe', async () => {
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toEqual({
       allowed: true,

@@ -6,6 +6,7 @@ import {
   type DurableOpponentProfile,
   blendOpponentMemory,
   opponentMemoryDonors,
+  opponentProfileVersion,
   type MemoryMode,
   type MemorySize,
 } from './HorseOpponentMemory.js';
@@ -785,11 +786,7 @@ export class HorseMind {
   static importDurableOpponentProfiles(rows: readonly DurableOpponentProfile[]): number {
     if (this.sandboxDepth > 0 || this.decisionEffectSink)
       throw new Error('durable profile import outside live boundary');
-    if (
-      !Array.isArray(rows) ||
-      rows.length > 10 ||
-      rows.some((p) => !validOpponentProfile(p) || !p.initialized)
-    )
+    if (!Array.isArray(rows) || rows.length > 10 || rows.some((p) => !validOpponentProfile(p)))
       throw new Error('invalid durable opponent profile');
     // A later validated request can activate a worker whose startup probe
     // preceded installation or the PostgREST cache reload.
@@ -798,11 +795,11 @@ export class HorseMind {
     for (const p of rows) {
       const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
       const known = this.durableOpponentVersions.get(key);
-      if (this.exploitCounters.has(key) && known !== undefined && known >= p.observed_hands)
-        continue;
+      const version = opponentProfileVersion(p);
+      if (this.exploitCounters.has(key) && known !== undefined && known >= version) continue;
       this.exploitCounters.delete(key);
       this.exploitCounters.set(key, { ...p.counters });
-      this.durableOpponentVersions.set(key, p.observed_hands);
+      this.durableOpponentVersions.set(key, version);
       applied++;
     }
     while (this.exploitCounters.size > EXPLOIT_ROW_CAP) {

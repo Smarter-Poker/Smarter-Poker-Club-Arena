@@ -3,6 +3,7 @@ import { reportError } from './errorReporter.js';
 import { noteFire } from '../engine/BrainTelemetry.js';
 import {
   memoryVariant,
+  opponentProfileVersion,
   validOpponentProfile,
   type DurableOpponentProfile,
   type MemoryMode,
@@ -76,10 +77,10 @@ export function createOpponentMemoryProfileCache() {
   return {
     remember(rows: DurableOpponentProfile[]) {
       for (const row of rows) {
-        if (!validOpponentProfile(row) || !row.initialized) continue;
+        if (!validOpponentProfile(row)) continue;
         const k = key(row.user_id, row.variant, row.mode, row.size);
         const previous = profiles.get(k);
-        if (previous && previous.observed_hands > row.observed_hands) continue;
+        if (previous && opponentProfileVersion(previous) > opponentProfileVersion(row)) continue;
         profiles.delete(k);
         profiles.set(k, structuredClone(row));
       }
@@ -164,8 +165,8 @@ export async function readHorseOpponentProfiles(
       new Set(data.map((p) => p.user_id)).size !== data.length
     )
       throw new Error('opponent memory receipt incomplete');
-    // Cold actors remain explicitly uninitialized until their own complete
-    // legacy horizon commits. Preserve every already initialized actor.
+    // Every validated row is evidence, back-filled or not (engine
+    // HorseOpponentMemory.opponentProfileVersion); the newest version wins.
     validatedOpponentProfiles.remember(data as DurableOpponentProfile[]);
     noteFire('horse_opponent_memory_read_ok');
     noteFire(opponentMemoryLatencyBucket(Date.now() - startedAt));
@@ -218,7 +219,7 @@ export function createDecisionOpponentProfileReader(schema = horseOpponentMemory
       const merged = new Map(profiles.map((profile) => [profile.user_id, profile]));
       for (const profile of validatedOpponentProfiles.read(ids, variant, mode, size)) {
         const previous = merged.get(profile.user_id);
-        if (!previous || profile.observed_hands >= previous.observed_hands)
+        if (!previous || opponentProfileVersion(profile) >= opponentProfileVersion(previous))
           merged.set(profile.user_id, profile);
       }
       return ids.flatMap((id) => {

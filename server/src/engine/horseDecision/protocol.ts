@@ -179,7 +179,8 @@ export interface DeepHorseDecisionRequest extends LiveHorseDecisionSnapshot {
 }
 
 export interface CompletedHandObservation extends HorseDecisionFence {
-  /** Complete initialized public-action profiles from the accepted hand path.
+  /** Validated public-action profiles from the accepted hand path, back-filled or not
+   * (HorseOpponentMemory.opponentProfileVersion).
    * Empty means unavailable; presence suppresses non-durable family pooling. */
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   /** UUID returned by the accepted hand transaction; absent on legacy replay. */

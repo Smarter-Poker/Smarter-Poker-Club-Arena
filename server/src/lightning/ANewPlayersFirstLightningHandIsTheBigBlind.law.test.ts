@@ -93,15 +93,18 @@ const newcomersOffTheBigBlind = (p: LightningMatchPlan, pool: LightningPoolPlaye
 };
 
 describe("a new player's first Lightning hand is the big blind", () => {
-  it.each(VERSIONS)('holds the second of two newcomers rather than deal them a small blind (%s)', (v) => {
-    const pool = [...newcomers(2), ...regulars(4)];
-    const p = plan(pool, v);
-    expect(p.groups).toHaveLength(1);
-    expect(p.groups[0].bb).toBe('n00');
-    expect(p.groups[0].players).toHaveLength(5);
-    expect(seated(p).has('n01')).toBe(false);
-    expect(newcomersOffTheBigBlind(p, pool)).toEqual([]);
-  });
+  it.each(VERSIONS)(
+    'holds the second of two newcomers rather than deal them a small blind (%s)',
+    (v) => {
+      const pool = [...newcomers(2), ...regulars(4)];
+      const p = plan(pool, v);
+      expect(p.groups).toHaveLength(1);
+      expect(p.groups[0].bb).toBe('n00');
+      expect(p.groups[0].players).toHaveLength(5);
+      expect(seated(p).has('n01')).toBe(false);
+      expect(newcomersOffTheBigBlind(p, pool)).toEqual([]);
+    }
+  );
 
   it.each(VERSIONS)(
     'holds a newcomer even when it costs the pass a hand, and re-takes the big blinds after each hold (%s)',
@@ -168,11 +171,7 @@ describe("a new player's first Lightning hand is the big blind", () => {
   });
 
   it('a player with an unresolved big blind still outranks a newcomer, who waits for the next pass', () => {
-    const pool = [
-      ...newcomers(1),
-      { ...player('d00', 50), bbUnresolved: true },
-      ...regulars(4),
-    ];
+    const pool = [...newcomers(1), { ...player('d00', 50), bbUnresolved: true }, ...regulars(4)];
     const p = plan(pool);
     expect(p.groups).toHaveLength(1);
     expect(p.groups[0].bb).toBe('d00');
@@ -219,7 +218,9 @@ describe('the live SQL plan says the same thing (migration 20261024195059)', () 
     expect(PLAN_BLOCK).not.toContain("v_rule = 'big_blind'");
     expect(SQL).toContain("position('IF v_g2 = v_g THEN' IN n) > 0");
     // The TypeScript port runs the same loop.
-    expect(MODEL).toMatch(/if \(g === 0\) break;[\s\S]*if \(next\.length === seatable\.length\) break;[\s\S]*if \(g2 === 0\) break;[\s\S]*g = g2;/);
+    expect(MODEL).toMatch(
+      /if \(g === 0\) break;[\s\S]*if \(next\.length === seatable\.length\) break;[\s\S]*if \(g2 === 0\) break;[\s\S]*g = g2;/
+    );
     expect(MODEL).not.toMatch(/=== g\) \{\s*seatable = next;/);
   });
 

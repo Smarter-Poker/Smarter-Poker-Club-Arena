@@ -349,8 +349,10 @@ describe('the desktop Stakes heading carries the same menu', () => {
     expect(th).toMatch(/col\.key === 'stakes' && hasStakesMenu && stakesMenuOpen/);
     expect(th).toMatch(/onSort=\{\(dir\) => applySort\(COL_STAKES, dir\)\}/);
     expect(src).toMatch(/const applySort = \(col: ColumnDef, dir: SortDir\)/);
+    // Persisted with the same write, then reported so the filter sheet's chip
+    // follows the heading (lobbySortBridge, 2026-10-24).
     expect(src).toMatch(
-      /writeSort\(clubId, category, next\);\s*\};\s*\n\s*const handleHeaderClick/
+      /writeSort\(clubId, category, next\);\s*onHeadingSort\?\.\(next\.key, next\.dir\);\s*\};\s*\n\s*const handleHeaderClick/
     );
   });
 });

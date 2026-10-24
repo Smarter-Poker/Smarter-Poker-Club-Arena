@@ -81,3 +81,38 @@ describe('the ALL tab obeys the Sort By order the player chose', () => {
     expect(ids()).toEqual(['low-featured', 'mid', 'high']);
   });
 });
+
+describe('the FEATURED chip says what the pin does', () => {
+  it('names the pin as the default order, not an unconditional top spot', () => {
+    board();
+    const chip = document.querySelector('.lobby-table-wrap .lt-flag--featured');
+    expect(chip?.getAttribute('title')).toBe(
+      'Featured By The Host. Pinned To The Top Unless You Choose A Sort'
+    );
+  });
+});
+
+describe('the screen-reader status names the order that is actually in force', () => {
+  it('announces the chosen Sort By when it, not a heading, orders the board', () => {
+    localStorage.clear();
+    render(
+      <MemoryRouter>
+        <LobbyTable
+          entries={pageOrder}
+          category="ALL"
+          selectedId={null}
+          onSelect={vi.fn()}
+          onActivate={vi.fn()}
+          ctx={ctx}
+          orderChosen
+          orderLabel="Stakes: High To Low"
+        />
+      </MemoryRouter>
+    );
+    const statuses = Array.from(document.querySelectorAll('[role="status"]')).map(
+      (s) => s.textContent
+    );
+    expect(statuses).toContain('Sorted By Stakes: High To Low');
+    expect(statuses).not.toContain('Default Order');
+  });
+});

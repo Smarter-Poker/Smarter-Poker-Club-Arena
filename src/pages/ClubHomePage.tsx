@@ -180,6 +180,7 @@ import {
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
 import { cashBoardComparator } from '../components/lobby/cashBoardOrder';
+import { orderForHeading } from '../components/lobby/lobbySortBridge';
 import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
@@ -2307,13 +2308,30 @@ function ClubHomePageContent({
     [viewPrefs, updateViewPrefs]
   );
 
+  /* ONE ORDER, TWO CONTROLS (2026-10-24, lobbySortBridge): a chip pressed in
+     the sheet is handed to the board as a request, so the board's heading
+     sort follows it instead of silently outranking it. */
+  const [requestedOrder, setRequestedOrder] = useState<{ key: SortKey; seq: number } | null>(null);
+
   /** Pick a sort: it belongs to the tab it was chosen on. */
   const selectSortKey = useCallback(
     (key: SortKey) => {
       setSortKey(key);
+      setRequestedOrder((prev) => ({ key, seq: (prev?.seq ?? 0) + 1 }));
       updateViewPrefs({ sortByTab: { [gameType]: key } });
     },
     [gameType, updateViewPrefs]
+  );
+
+  /** A heading the player chose lights the sheet chip that means the same. */
+  const followHeadingSort = useCallback(
+    (key: string, dir: 'asc' | 'desc') => {
+      const chip = orderForHeading(gameType, key, dir) as SortKey | null;
+      if (!chip || chip === sortKey) return;
+      setSortKey(chip);
+      updateViewPrefs({ sortByTab: { [gameType]: chip } });
+    },
+    [gameType, sortKey, updateViewPrefs]
   );
 
   /** Toggle Favorites: remembered like everything else on this bar. */
@@ -5907,6 +5925,9 @@ function ClubHomePageContent({
               ctx={lobbyCtx}
               /* A Sort By the player chose for this tab is obeyed over the
                  featured pin wherever it is the board's order (ALL). */
+              requestedOrder={requestedOrder}
+              orderLabel={SORT_OPTIONS.find((o) => o.key === sortKey)?.label}
+              onHeadingSort={followHeadingSort}
               orderChosen={
                 viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null
               }

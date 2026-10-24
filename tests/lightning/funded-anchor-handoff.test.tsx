@@ -16,7 +16,10 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 import { useLightningAnchorHandoff } from '../../src/lightning/useLightningAnchorHandoff';
-import { resetLightningRegistryForTests } from '../../src/lightning/lightningSession';
+import {
+  resetLightningRegistryForTests,
+  setLightningEntryIntent,
+} from '../../src/lightning/lightningSession';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const CLUSTER = '22222222-2222-4222-8222-222222222222';
@@ -50,7 +53,14 @@ function evaluate(expression: string, values: Record<string, unknown>) {
     '\nreturn result;';
   return new Function(...Object.keys(values), script)(...Object.values(values));
 }
-function consumer(rows: unknown[], embedded = false, fundingOwner = USER) {
+function consumer(
+  rows: unknown[],
+  embedded = false,
+  fundingOwner = USER,
+  observer = false,
+  legacyFunded = false,
+  departed = false
+) {
   const navigate = vi.fn(),
     onTableInfoUpdate = vi.fn();
   const funding = fundingSource
@@ -62,10 +72,10 @@ function consumer(rows: unknown[], embedded = false, fundingOwner = USER) {
     tableState: { clusterId: CLUSTER, heroSeat: 3, players: Array(6).fill(null) },
     lightningRoom: null,
     lightningHero: null,
-    lightningObserver: false,
-    lightningAnchorFunded: false,
+    lightningObserver: observer,
+    lightningAnchorFunded: legacyFunded,
     lightningAnchorFunding: funding,
-    leftSeatPendingRef: { current: false },
+    leftSeatPendingRef: { current: departed },
     embeddedTableId: embedded ? ANCHOR : undefined,
     navigate,
     onTableInfoUpdate,
@@ -162,5 +172,49 @@ it('a locally confirmed departure overrides an earlier funded anchor lookup', as
   const { result } = renderHook(() => useLightningAnchorHandoff(input));
   await act(async () => {});
   expect(result.current.readyPoolSessionId).toBeNull();
+  expect(rpc).not.toHaveBeenCalled();
+});
+
+it('a new observer-anchor purchase completes its original Join intent from scoped funding even before legacy roster restoration', async () => {
+  setLightningEntryIntent(ANCHOR, CLUSTER);
+  const c = consumer(
+    [{ user_id: USER, stack: 200, leave_pending: false }],
+    false,
+    USER,
+    true,
+    false
+  );
+  renderHook(() => useLightningAnchorHandoff(c.input));
+  await act(async () => {});
+  expect(c.navigate).toHaveBeenCalledWith(`/table/${POOL}`, { replace: true });
+});
+it.each([
+  { rows: [], departed: false },
+  { rows: [{ user_id: USER, stack: 200, leave_pending: true }], departed: false },
+  { rows: [{ user_id: USER, stack: 200, leave_pending: false }], departed: true },
+])(
+  'known negative/departed anchor truth cannot fulfill a Join intent from stale legacy funding (%j)',
+  async ({ rows, departed }) => {
+    setLightningEntryIntent(ANCHOR, CLUSTER);
+    const c = consumer(rows, false, USER, true, true, departed);
+    renderHook(() => useLightningAnchorHandoff(c.input));
+    await act(async () => {});
+    expect(c.navigate).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  }
+);
+
+it('an observer never reuses a previous account record even while the legacy flag remains true', async () => {
+  setLightningEntryIntent(ANCHOR, CLUSTER);
+  const c = consumer(
+    [{ user_id: 'previous-account', stack: 200 }],
+    false,
+    'previous-account',
+    true,
+    true
+  );
+  renderHook(() => useLightningAnchorHandoff(c.input));
+  await act(async () => {});
+  expect(c.navigate).not.toHaveBeenCalled();
   expect(rpc).not.toHaveBeenCalled();
 });

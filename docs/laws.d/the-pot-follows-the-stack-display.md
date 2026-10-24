@@ -1,0 +1,3 @@
+# tests/the-pot-follows-the-stack-display.law.test.tsx
+
+Dan 2026-10-24: switching the stack display from totals to BB must switch every figure on the felt with it. The pot is handed the same big blind the seats are (`seatBigBlind`), never a private read of the blinds string with its own fallback, so an unparsed blinds string ("?/?" on a fresh Lightning room or auto-seat) can no longer leave the stacks in BB and the pot in chips. In BB mode the POT pill, every side pot, the TOTAL row and the pot's spoken label read BB, and so does every figure a seat prints: the stack, the bet chips in front of it, the Call / Bet / Raise label and the winner's +N. In chips mode none of them do.

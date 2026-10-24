@@ -638,18 +638,36 @@ function formatWager(amount: number): string {
   return formatTableChips(amount);
 }
 
-function getActionLabel(action: LastAction, amount?: number): string {
+/**
+ * A wager printed the way the player chose to read the table (Dan
+ * 2026-10-24): "WHEN YOU CHANGE YOUR STACK FROM A TOTAL TO BB IT SHOW THE
+ * TOTAL POT AMOUNT IN THE POT AS TOTAL CHIPS INSTEAD OF BB'S." The pot was the
+ * one he saw; the bet chips in front of each seat, the Call / Bet / Raise
+ * label and the won amount had the same split - the stack switched to BB and
+ * they stayed in chips. Every figure a seat prints follows the one setting,
+ * through the same big blind the stack uses. No big blind to divide by keeps
+ * the chip figure rather than printing a "0 BB" that is not true.
+ */
+function formatSeatWager(amount: number, inBB: boolean, bigBlind: number): string {
+  return inBB && bigBlind > 0 ? formatStackAsBB(amount, bigBlind) : formatWager(amount);
+}
+
+function getActionLabel(
+  action: LastAction,
+  amount?: number,
+  fmt: (n: number) => string = formatWager
+): string {
   switch (action) {
     case 'fold':
       return 'Fold';
     case 'check':
       return 'Check';
     case 'call':
-      return amount ? `Call ${formatWager(amount)}` : 'Call';
+      return amount ? `Call ${fmt(amount)}` : 'Call';
     case 'bet':
-      return amount ? `Bet ${formatWager(amount)}` : 'Bet';
+      return amount ? `Bet ${fmt(amount)}` : 'Bet';
     case 'raise':
-      return amount ? `Raise ${formatWager(amount)}` : 'Raise';
+      return amount ? `Raise ${fmt(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
     case 'discard':
@@ -913,6 +931,7 @@ export const SeatSlot = memo(
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
+    const wagerFmt = (n: number) => formatSeatWager(n, showStackInBB, bigBlind);
 
     /**
      * THE CALLBACKS, ALWAYS THE LATEST ONES (audit 2026-08-25).
@@ -2933,9 +2952,9 @@ export const SeatSlot = memo(
           <div
             className={`seat__action seat__action--${shownAction}`}
             role="status"
-            aria-label={`${player.name}: ${getActionLabel(shownAction, lastBetAmount)}`}
+            aria-label={`${player.name}: ${getActionLabel(shownAction, lastBetAmount, wagerFmt)}`}
           >
-            {getActionLabel(shownAction, lastBetAmount)}
+            {getActionLabel(shownAction, lastBetAmount, wagerFmt)}
           </div>
         )}
 
@@ -2958,6 +2977,7 @@ export const SeatSlot = memo(
             <div className="seat__bet-chips">
               <ChipPhysics
                 amount={lastBetAmount}
+                formatAmount={wagerFmt}
                 animate={
                   isCollectingChips
                     ? 'collect'
@@ -3431,7 +3451,7 @@ export const SeatSlot = memo(
           {stackDelta > 0 && (
             <span className="seat__stack-delta seat__stack-delta--win">
               +{/* A stack gain uses wager precision (Dan 2026-09-23, item 9). */}
-              {showStackInBB ? formatStackAsBB(stackDelta, bigBlind) : formatWager(stackDelta)}
+              {wagerFmt(stackDelta)}
             </span>
           )}
         </div>
@@ -3732,7 +3752,7 @@ export const SeatSlot = memo(
             {/* A win is a wager's kind of number, not a stack's: +12, not
                 +12.00, beside a stack delta that already reads +12
                 (2026-09-24, the one float item 9 missed). */}
-            {formatWager(Math.abs(netWinAmount))}
+            {wagerFmt(Math.abs(netWinAmount))}
           </div>
         )}
 

@@ -221,6 +221,7 @@ import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { hasCommittedSeatFold } from '../utils/committedSeatFold';
 import {
   fixedLimitStreetBet,
   killNextAnnouncement,
@@ -26768,6 +26769,13 @@ function LiveTablePage({
                 <SeatSlot
                   seatNumber={seatNumber}
                   player={displayPlayer}
+                  foldCommitted={hasCommittedSeatFold(
+                    engineSnapshot,
+                    tableId,
+                    tableState.handNumber,
+                    seatNumber,
+                    displayPlayer?.id
+                  )}
                   /* The sit-out deadline for THIS seat, and only where a
                      deadline applies — a tournament player (a spin is one) may
                      sit out as long as they like. Withheld here rather than

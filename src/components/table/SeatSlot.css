@@ -5047,3 +5047,13 @@
     filter 0.3s ease;
   transform: none;
 }
+
+/* Confirmed folds hide identity after its motion. Keep the occupied seat,
+   private muck view and committed chips until their existing owners clear them. */
+.seat--fold-hidden > .seat__avatar-wrap,
+.seat--fold-hidden > .seat__info,
+.seat--fold-hidden > .seat__action,
+.seat--fold-hidden > .seat__bounty {
+  visibility: hidden;
+  pointer-events: none;
+}

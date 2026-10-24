@@ -9,6 +9,17 @@ vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));
 
+// Sorting exercises the real rows, not speculative network preparation.
+// A route import surviving this test's teardown can log from the next worker.
+vi.mock('../../src/utils/ChunkPreloader', () => ({
+  prefetchIntent: () => ({ onMouseEnter() {}, onTouchStart() {}, onFocus() {} }),
+  preloadRoute: vi.fn(),
+}));
+vi.mock('../../src/services/tableWarmup', () => ({
+  warmTable: vi.fn(),
+  observeLobbyTableWarmups: () => () => {},
+}));
+
 const ctx = {
   waitlistedIds: new Set<string>(),
   seatedIds: new Set<string>(),

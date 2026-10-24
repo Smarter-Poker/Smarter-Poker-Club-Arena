@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 import {
   foldRevealed,
   hasCommittedSeatFold,
@@ -67,20 +68,21 @@ describe('a player disappears only after their actual fold', () => {
    rule. A Classic table is normal poker: the folded player stays seated, with
    avatar and plate, for the whole hand. */
 describe('a Classic table never hides a folded player', () => {
-  const source = readFileSync('src/pages/TablePage.tsx', 'utf8').replace(/\s+/g, ' ');
+  const raw = readFileSync('src/pages/TablePage.tsx', 'utf8');
+  const source = raw.replace(/\s+/g, ' ');
   it('the seat is told a fold is committed only inside a Lightning room', () => {
-    const prop = source.slice(source.indexOf('foldCommitted={'));
-    expect(prop.slice(0, 60)).toContain('foldCommitted={ lightningRoom != null &&');
+    const prop = sliceEnclosingBlock(raw, 'lightningRoom != null &&').replace(/\s+/g, ' ');
+    expect(prop).toMatch(/^\{ lightningRoom != null && hasCommittedSeatFold\(/);
+    expect(prop).toMatch(/&& foldRevealed\(foldReveal, seatNumber\) \}$/);
+    expect(source).toContain('foldCommitted={ lightningRoom != null && hasCommittedSeatFold(');
     expect(source.match(/foldCommitted=\{/g)?.length).toBe(1);
   });
   it('the fold reveal tracker does not run on a Classic table', () => {
-    const memo = source.slice(source.indexOf('const foldReveal = useMemo('));
-    expect(memo.slice(0, 200)).toMatch(
-      /if \(!lightningRoom\) \{ foldRevealRef.current = null; return null; \}/
-    );
+    const memo = sliceStatement(raw, 'const foldReveal = useMemo(').replace(/\s+/g, ' ');
     expect(memo).toMatch(
-      /^const foldReveal = useMemo\([\s\S]*?\}, \[engineSnapshot, lightningRoom\]\);/
+      /^const foldReveal = useMemo\(\(\) => \{ if \(!lightningRoom\) \{ foldRevealRef.current = null; return null; \}/
     );
+    expect(memo).toMatch(/\}, \[engineSnapshot, lightningRoom\]\);$/);
   });
   it('the Lightning room flag is the pool-session lookup, which is null for every Classic table', () => {
     expect(source).toContain('const lightningRoom = useLightningPoolSession(tableId);');

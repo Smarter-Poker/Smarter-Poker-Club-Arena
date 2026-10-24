@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 /* WooWoo, 2026-10-24: he bought in by tapping an open seat on a physical
    table of a Lightning game. The database moved him into the pool and dealt
@@ -12,9 +13,7 @@ const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
 
 describe('a buy-in at a Lightning anchor follows the player into their room', () => {
   it('the seat buy-in marks the Lightning entry intent for this anchor', () => {
-    const confirm = page.indexOf('onConfirmBuyIn={async (amount, autoRebuy) => {');
-    expect(confirm).toBeGreaterThan(-1);
-    const body = page.slice(confirm, confirm + 4000);
+    const body = sliceMethod(page, 'onConfirmBuyIn={async (amount, autoRebuy) =>');
     expect(body).toMatch(
       /if \(anchorLightningClusterId\) setLightningEntryIntent\(tableId, anchorLightningClusterId\);/
     );

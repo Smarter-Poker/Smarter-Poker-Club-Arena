@@ -130,7 +130,7 @@ describe('the Lightning route', () => {
     expect(screen.queryByText(/table \d|seat \d/i)).toBeNull();
     fireEvent.click(join);
     const probe = await screen.findByTestId('table-route');
-    expect(probe.textContent).toBe(`${ANCHOR}|`);
+    expect(probe.textContent).toBe(`${ANCHOR}|?buyin=1`);
     expect(rpc).toHaveBeenCalledWith('fn_cash_game_join', { p_game_id: CLUSTER });
     expect(getLightningEntryIntent(ANCHOR)).toBe(CLUSTER);
   });
@@ -223,7 +223,7 @@ describe('truthful regular-table entry guidance', () => {
         expect(screen.queryByTestId('table-route')).toBeNull();
         expect(rpc.mock.calls.some(([name]) => name === 'fn_lightning_pool_status')).toBe(false);
         fireEvent.click(join);
-        expect((await screen.findByTestId('table-route')).textContent).toBe(`${ANCHOR}|`);
+        expect((await screen.findByTestId('table-route')).textContent).toBe(`${ANCHOR}|?buyin=1`);
         expect(getLightningEntryIntent(ANCHOR)).toBeNull();
       } finally {
         gameRow.cluster_mode = previousMode;
@@ -351,7 +351,9 @@ describe('route ownership of a pending join', () => {
       expect(toast.info).not.toHaveBeenCalled();
       expect(toast.warning).not.toHaveBeenCalled();
       resolveNext({ data: { ok: true, action: 'seat', table_id: NEXT_ANCHOR }, error: null });
-      expect((await screen.findByTestId('table-route')).textContent).toBe(`${NEXT_ANCHOR}|`);
+      expect((await screen.findByTestId('table-route')).textContent).toBe(
+        `${NEXT_ANCHOR}|?buyin=1`
+      );
       expect(getLightningEntryIntent(NEXT_ANCHOR)).toBe(NEXT_CLUSTER);
       expect(
         rpc.mock.calls

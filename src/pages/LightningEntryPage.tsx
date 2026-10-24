@@ -215,7 +215,12 @@ export default function LightningEntryPage() {
         });
       }
       warmTable(r.table_id);
-      navigate(`/table/${r.table_id}`);
+      /* The join door has already HELD a chair for this player (60 s), so the
+         table opens straight onto the buy-in. Without ?buyin=1 the sheet only
+         appeared if the realtime offer listener happened to see the hold row;
+         a slow or dropped socket left the player a spectator to tap a seat,
+         and Lightning never asks anyone to choose a seat (Dan 2026-10-24). */
+      navigate(`/table/${r.table_id}?buyin=1`);
     } catch (err) {
       if (!ownsPage()) return;
       reportError(err, 'LightningEntryPage.join_failed', { clusterId });

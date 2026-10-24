@@ -376,7 +376,7 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { lightningRoute } from '../lightning/lightningLobby';
+import { isLightningMode, lightningRoute } from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -24137,10 +24137,21 @@ function LiveTablePage({
     [tableState.clusterId, lightningRoom]
   );
   const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
+  /* fn_cash_game_lobby returns a Lightning state object for EVERY game,
+     Classic included (cluster_mode 'must_move'), so "has a state" is not
+     "is Lightning": a Classic table was offering Join Lightning in place of
+     its own waiting list. Only a Cluster dealing Lightning, or converting to
+     it, is a Lightning anchor. */
+  const anchorLightningState = tableState.clusterId
+    ? spectatorLightningStates[tableState.clusterId]
+    : null;
   const anchorLightningClusterId =
     tableState.clusterId &&
     !lightningRoom &&
-    (lightningObserver || spectatorLightningStates[tableState.clusterId] != null)
+    (lightningObserver ||
+      (!!anchorLightningState &&
+        (isLightningMode(anchorLightningState.clusterMode) ||
+          anchorLightningState.clusterMode === 'pending_on')))
       ? tableState.clusterId
       : null;
 
@@ -27238,6 +27249,9 @@ function LiveTablePage({
                     tableState.heroSeat <= 0 &&
                     pendingSeat === null &&
                     !lightningRoom &&
+                    /* A Lightning game's own tables: Join Lightning assigns the
+                       seat (the entry door holds it and opens the buy-in). */
+                    !anchorLightningClusterId &&
                     !tableState.players.some((pl) => pl && pl.id === userId) &&
                     /* A tournament seat is not for sale - EXCEPT in the
                        seat-first formats, where buying the seat IS how you
@@ -29161,6 +29175,12 @@ function LiveTablePage({
                 setPendingSeat(null);
                 setSelectedSeat(null);
                 setShowBuyInModal(false);
+                if (anchorLightningClusterId) {
+                  /* Lightning never queues (Dan 2026-10-24): the join door
+                     holds a fresh chair, on a new table if it has to. */
+                  navigate(lightningRoute(anchorLightningClusterId));
+                  return false;
+                }
                 toast.info('This Seat Is Reserved. Join The List To Get Your Next Available Seat.');
                 handleOpenWaitlist();
                 return false;

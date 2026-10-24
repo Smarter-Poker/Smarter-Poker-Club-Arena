@@ -123,6 +123,32 @@ describe('a Lightning player between hands', () => {
     });
   });
 
+  describe('Lightning entry never queues and never asks for a seat', () => {
+    const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
+    const entry = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
+
+    it('treats only a Cluster dealing or converting to Lightning as Lightning (not Classic)', () => {
+      expect(page).toMatch(
+        /\(isLightningMode\(anchorLightningState\.clusterMode\) \|\|\s*anchorLightningState\.clusterMode === 'pending_on'\)/
+      );
+      expect(page).not.toMatch(/spectatorLightningStates\[tableState\.clusterId\] != null/);
+    });
+
+    it('offers no chair to tap on a Lightning game table', () => {
+      expect(page).toMatch(/!lightningRoom &&\s*\/\*[\s\S]*?\*\/\s*!anchorLightningClusterId &&/);
+    });
+
+    it('sends a lapsed Lightning chair back through Join Lightning, never the list', () => {
+      expect(page).toMatch(
+        /if \(anchorLightningClusterId\) \{\s*\/\*[\s\S]*?\*\/\s*navigate\(lightningRoute\(anchorLightningClusterId\)\);\s*return false;\s*\}\s*toast\.info\('This Seat Is Reserved/
+      );
+    });
+
+    it('opens the buy-in on the held chair as soon as Join Lightning lands', () => {
+      expect(entry).toContain('navigate(`/table/${r.table_id}?buyin=1`);');
+    });
+  });
+
   it('is how the table draws the hero chair in a Lightning room', () => {
     const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
     expect(page).toContain('lightningWaitingHero({');

@@ -1,0 +1,4 @@
+{
+  "_comment": "Declared by reserved migration 20261024031602; pending protected merge and exact installation. This source declaration is not installation evidence. The helper grants no client or service execution.",
+  "functions": ["fn_horse_exploit_actor_counts"]
+}

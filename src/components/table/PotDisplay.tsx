@@ -430,7 +430,7 @@ function PotDisplayComponent({
       }
       role="status"
       aria-live="polite"
-      aria-label={`Pot: ${formatAmount(displayPot, bigBlind)}${streetBets > 0 ? `, ${formatAmount(streetBets, bigBlind)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+      aria-label={`Pot: ${fmt(displayPot)}${streetBets > 0 ? `, ${fmt(streetBets)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
       {/* Main Pot pill — click to toggle chips/BB display */}
       <div

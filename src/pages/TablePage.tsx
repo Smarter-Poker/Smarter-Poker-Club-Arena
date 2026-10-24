@@ -26441,7 +26441,16 @@ function LiveTablePage({
                   ? potShipView.sides.filter((_, i) => !potShipView.retired.includes(i + 1))
                   : tableState.sidePots
               }
-              bigBlind={safeBB(tableState.blinds, 0)}
+              /* Dan 2026-10-24: "WHEN YOU CHANGE YOUR STACK FROM A TOTAL TO BB
+                 IT SHOW THE TOTAL POT AMOUNT IN THE POT AS TOTAL CHIPS INSTEAD
+                 OF BB'S." The pot read the big blind with a 0 fallback while
+                 every seat and the raise panel read it with safeBB's own, so
+                 whenever the blinds string was not yet a clean pair (a
+                 Lightning room seeds "?/?", an auto-seat has no lobby card)
+                 the stacks switched to BB and the pot, holding a big blind of
+                 0, stayed in chips. The pot reads the seats' figure: one big
+                 blind, one setting, every number on the felt follows it. */
+              bigBlind={seatBigBlind}
               displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
               collectTo={potCollectTo}

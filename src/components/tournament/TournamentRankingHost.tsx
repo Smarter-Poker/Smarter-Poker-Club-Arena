@@ -57,6 +57,7 @@ import { reportError } from '../../utils/errorReporter';
    320kB gate (321kB measured), so it splits into its own chunk instead; the
    payload that shows it waits the few milliseconds the chunk takes. */
 const TournamentRankingCard = lazy(() => import('./TournamentRankingCard'));
+import { awaitTournamentResultEnrichment } from '../../utils/tournamentResultEnrichment';
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
@@ -169,8 +170,20 @@ export function TournamentRankingHost() {
   }, [tournamentId, payload?.tournament]);
 
   const playAgain = useCallback(() => {
+    const requested = payload?.tournament;
+    const isCurrentReport = () => {
+      const current = peekSessionSummary()?.tournament;
+      return (
+        !!requested &&
+        !!current &&
+        current.tournamentId === requested.tournamentId &&
+        current.finishSequence === requested.finishSequence &&
+        (!requested.userId || requested.userId === readLocalSession()?.userId)
+      );
+    };
     /* The card's own fallback (tournaments list) handles the no-id case. */
     const fallback = () => {
+      if (!isCurrentReport()) return;
       close();
       navigate(payload?.tournament?.isSpin ? '/tournaments?type=spin' : '/tournaments');
     };
@@ -187,13 +200,15 @@ export function TournamentRankingHost() {
         // Keep it inside the action's existing failure/fallback boundary.
         const { readTournamentFormat, isSeatFirstTournamentFormat, isTournamentEntryUnavailable } =
           await import('../../utils/tournamentPresentation');
-        const { data: origin, error: originErr } = await supabase
-          .from('tournaments')
-          .select(
-            'format_contract, club_id, buy_in_amount, game_type, variant, tournament_type, satellite_target_id, satellite_target, max_players'
-          )
-          .eq('id', tournamentId)
-          .maybeSingle();
+        const { data: origin, error: originErr } = (await awaitTournamentResultEnrichment(
+          supabase
+            .from('tournaments')
+            .select(
+              'format_contract, club_id, buy_in_amount, game_type, variant, tournament_type, satellite_target_id, satellite_target, max_players'
+            )
+            .eq('id', tournamentId)
+            .maybeSingle()
+        )) ?? { data: null, error: new Error('Play Again Origin Read Timed Out') };
         if (originErr) throw originErr;
 
         /* Seat-first games only: an MTT's "again" genuinely is the list. */
@@ -222,7 +237,9 @@ export function TournamentRankingHost() {
         q = q.eq('format_contract', readTournamentFormat(origin));
         const target = origin.satellite_target_id ?? origin.satellite_target;
         if (target) q = q.or(`satellite_target_id.eq.${target},satellite_target.eq.${target}`);
-        const { data: siblings, error: siblingErr } = await q;
+        const { data: siblings, error: siblingErr } = (await awaitTournamentResultEnrichment(
+          q
+        )) ?? { data: null, error: new Error('Play Again Sibling Read Timed Out') };
         if (siblingErr) throw siblingErr;
 
         const sibling = siblings?.find(
@@ -235,12 +252,15 @@ export function TournamentRankingHost() {
           return;
         }
 
-        const liveTable = await tableService.resolveTournamentLiveTable(String(sibling.id));
+        const liveTable = await awaitTournamentResultEnrichment(
+          tableService.resolveTournamentLiveTable(String(sibling.id))
+        );
         if (!liveTable) {
           fallback();
           return;
         }
 
+        if (!isCurrentReport()) return;
         close();
         navigate(`/table/${liveTable}`);
       } catch (err) {
@@ -252,7 +272,7 @@ export function TournamentRankingHost() {
         playAgainBusyRef.current = false;
       }
     })();
-  }, [tournamentId, payload?.tournament?.isSpin, close, navigate]);
+  }, [tournamentId, payload?.tournament, close, navigate]);
 
   if (!payload?.tournament) return null;
   if (payload.tournament.userId && payload.tournament.userId !== readLocalSession()?.userId)

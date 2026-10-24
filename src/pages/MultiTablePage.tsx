@@ -1101,7 +1101,8 @@ export default function MultiTablePage() {
         const retainedReportTabs = await reportRemovedTournamentSeats(
           previousSeatedIds.filter((id) => !ids.includes(id)),
           user.id,
-          isCurrent
+          isCurrent,
+          new Set(tblRows.map((row) => row.tournament_id).filter((id): id is string => !!id))
         );
         if (!isCurrent()) return;
         reconciliationQueued = true;

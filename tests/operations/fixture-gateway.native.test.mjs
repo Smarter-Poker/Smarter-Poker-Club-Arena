@@ -288,9 +288,22 @@ test('cross-origin browser preflight is local and preserves only the declared si
   const count = requests.length;
   const response = await request({
     method: 'OPTIONS',
-    headers: { origin: 'https://smarter.poker' },
+    headers: {
+      origin: 'https://smarter.poker',
+      'access-control-request-headers':
+        'accept-profile,content-profile,authorization,apikey,content-type',
+    },
   });
   assert.equal(response.status, 204);
+  const allowed = response.headers['access-control-allow-headers'].split(',');
+  for (const header of [
+    'accept-profile',
+    'content-profile',
+    'authorization',
+    'apikey',
+    'content-type',
+  ])
+    assert.ok(allowed.includes(header), `Required SDK header refused: ${header}`);
   assert.equal(response.headers['access-control-allow-origin'], 'https://smarter.poker');
   assert.equal(requests.length, count);
 });

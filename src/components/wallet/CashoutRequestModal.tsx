@@ -16,6 +16,7 @@ import {
   useCashoutReceiptChecks,
 } from './CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import {
   runCashoutOperation,
   recoverCashoutOperation,
@@ -174,6 +175,11 @@ function CashoutRequestContent({
   const submitLockRef = useRef(false);
   const cancelLockRef = useRef(false);
   const queuedPendingReload = useRef(false);
+  const queuedBalanceReload = useRef(false);
+  const completeRef = useRef(onComplete);
+  useEffect(() => {
+    completeRef.current = onComplete;
+  }, [onComplete]);
 
   /**
    * Declared HERE, above the effects that list it as a dependency. It used to be
@@ -199,6 +205,11 @@ function CashoutRequestContent({
         rowsCurrent.current = current;
         rowsScope.current = isCurrent;
         setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
+        if (queuedBalanceReload.current) {
+          queuedBalanceReload.current = false;
+          // Both Cashier callers read balances without replacing the working form.
+          completeRef.current?.();
+        }
       }
     } catch (err) {
       reportError(err, 'CashoutRequestModal.Failed_to_load_pending_cashouts');
@@ -366,8 +377,26 @@ function CashoutRequestContent({
     }
   }, [isOpen, playerId, clubId, loadPendingCashouts]);
 
-  // Pending requests load on open and after this user's completed command.
-  // Background status/balance events never refresh a working Cashier form.
+  // Another device may decide a pending request while this sheet stays open.
+  // Refresh only the scoped pending rows; never replace the amount/note draft
+  // or the parent Cashier's working form. The existing read gate queues an
+  // event received during receipt recovery until the owned command finishes.
+  useMasterBusChannel({
+    channelName: isOpen && playerId ? `cashout-request-status:${playerId}:${clubId}` : null,
+    table: 'cashout_requests',
+    filter: playerId ? `player_id=eq.${playerId}` : null,
+    event: '*',
+    enabled: isOpen && !!playerId && !!clubId,
+    onPayload: (payload) => {
+      const decided = payload.new;
+      if (
+        (decided?.status === 'approved' || decided?.status === 'rejected') &&
+        visiblePendingCashouts.some((row) => row.id === decided.id)
+      )
+        queuedBalanceReload.current = true;
+      void loadPendingCashouts();
+    },
+  });
 
   const handleSubmit = async () => {
     if (submitLockRef.current || !isCurrent()) return;

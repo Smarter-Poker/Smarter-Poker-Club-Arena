@@ -1,4 +1,8 @@
 CREATE UNIQUE INDEX cash_games_one_per_key ON cash_games(club_id,variant,sb,bb,template_name) WHERE enabled AND must_move;
+ALTER TABLE tables ADD CONSTRAINT tables_dealing_halt_is_explained CHECK (
+ ((dealing_halted_at IS NULL) AND (dealing_halted_reason IS NULL)) OR
+ ((dealing_halted_at IS NOT NULL) AND (dealing_halted_reason IS NOT NULL)
+ AND dealing_halted_reason=ANY(ARRAY['lightning_pending_on'::text,'lightning'::text])));
 CREATE TABLE cash_game_waitlist(game_id uuid,user_id uuid,status text,updated_at timestamptz);
 INSERT INTO cash_games(id,club_id,template_name,variant,sb,bb,ruleset_snapshot,name,cluster_mode,lightning_enabled)
 VALUES('74000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001','classic','pineapple',.25,.5,'{"canonical_existing":true}','Existing Classic','must_move',false);

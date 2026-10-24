@@ -37,9 +37,58 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('the tournament break card', () => {
+  it('shares the canonical tournament link and prevents duplicate share sheets', async () => {
+    let finish!: () => void;
+    const share = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    vi.stubGlobal('navigator', { share });
+    render(<TournamentBreakScreen {...props} tournamentId="share-event" />);
+    const button = screen.getByRole('button', { name: 'Share Tournament' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(share).toHaveBeenCalledWith({
+      title: props.tournamentName,
+      url: expect.stringMatching(/\/hub\/club-arena\/tournaments\/share-event$/),
+    });
+    await act(async () => finish());
+  });
+
+  it('copies a link without Web Share, and reports clipboard failure honestly', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    render(<TournamentBreakScreen {...props} tournamentId="share-event" />);
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Share Tournament' }))
+    );
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/tournaments\/share-event$/));
+    expect(screen.getByRole('alert')).toHaveTextContent('Tournament Link Copied');
+    writeText.mockRejectedValue(new Error('Denied'));
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Share Tournament' }))
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Could Not Share Tournament');
+  });
+
+  it('treats dismissing the share sheet as cancellation', async () => {
+    vi.stubGlobal('navigator', {
+      share: vi.fn().mockRejectedValue(new DOMException('Cancelled', 'AbortError')),
+    });
+    render(<TournamentBreakScreen {...props} tournamentId="share-event" />);
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Share Tournament' }))
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('uses the server clock after a delayed tick, and never declares play resumed at zero', () => {
     render(<TournamentBreakScreen {...props} breakEndsAtMs={clock.now + 241000} />);
     expect(screen.getByRole('timer')).toHaveTextContent('4:01');
@@ -71,11 +120,11 @@ describe('the tournament break card', () => {
   it('minimizes and reopens through accessible buttons without blocking the table', () => {
     render(<TournamentBreakScreen {...props} />);
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'false');
-    fireEvent.click(screen.getByRole('button', { name: 'Close Break Screen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open Break Screen' }));
     expect(screen.getByRole('dialog')).toBeVisible();
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Close Break Screen' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Close' }), {
       key: 'Escape',
     });
     expect(screen.getByRole('button', { name: 'Open Break Screen' })).toBeVisible();

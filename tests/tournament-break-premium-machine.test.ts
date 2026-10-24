@@ -23,7 +23,7 @@ describe('tournament break console', () => {
   it('uses one approved console instead of slicing multiple unrelated frames', () => {
     expect(SCREEN).toContain('<SpadeConsole');
     expect(SCREEN).toContain('foot="foot"');
-    expect(SCREEN).toContain('aria-label="Close Break Screen"');
+    expect(SCREEN).toContain('onClose={() => setMinimized(true)}');
     expect(CSS).not.toContain('border-image');
     expect(CSS).not.toContain('clip-path');
     expect(CSS).not.toContain('club-utility-shell');

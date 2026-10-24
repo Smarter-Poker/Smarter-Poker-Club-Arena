@@ -57,33 +57,10 @@
   text-wrap: balance;
 }
 
-/* The X lives on the clear glass in the master's head, never in a box. */
-.break-screen[role='dialog'] .break-screen__close {
-  position: absolute;
-  top: 13.6cqw;
-  left: 87.8cqw;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0;
-  margin: 0;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #e4e7ec !important;
-  font:
-    600 18px/1 Inter,
-    sans-serif;
-  transform: translate(-50%, -50%) !important;
-  cursor: pointer;
+/* The master owns the close glyph and its touch target. */
+.break-screen__content .sc__close {
   pointer-events: auto;
-  z-index: 2;
 }
-
-.break-screen__close:focus-visible,
 .break-screen__minimized:focus-visible {
   outline: 2px solid #45adff;
   outline-offset: -4px;
@@ -365,5 +342,35 @@
     600 11px/1 'Roboto Condensed',
     Inter,
     sans-serif;
+  text-align: center;
+}
+
+/* The transparent hit target uses the existing master pill face. */
+.break-screen[role='dialog'] .break-screen__share {
+  position: absolute;
+  top: 21.7cqw;
+  left: 77.15cqw;
+  width: 19.7cqw;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: translate(-50%, -50%) !important;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 2;
+}
+.break-screen__share:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: -4px;
+}
+.break-screen__share-message {
+  margin: 0 0 2cqw;
+  color: #e4e7ec;
+  font-size: 13px;
   text-align: center;
 }

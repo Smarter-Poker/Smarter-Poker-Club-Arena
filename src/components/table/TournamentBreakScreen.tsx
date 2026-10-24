@@ -10,13 +10,14 @@
  * - Average stack display
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { serverNow } from '../../utils/serverClock';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
+import { publicOrigin, IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import './TournamentBreakScreen.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -139,6 +140,35 @@ export function TournamentBreakScreen({
   onDismiss,
 }: TournamentBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
+  const sharing = useRef(false);
+  const [shareMessage, setShareMessage] = useState('');
+  const shareTournament = async () => {
+    if (sharing.current) return;
+    if (!tournamentId) {
+      setShareMessage('Tournament Link Unavailable');
+      return;
+    }
+    sharing.current = true;
+    setShareMessage('');
+    const url = `${publicOrigin()}/hub/club-arena/tournaments/${encodeURIComponent(tournamentId)}`;
+    try {
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
+        const { nativeShareText } = await import('../../lib/native/share');
+        await nativeShareText(tournamentName, '', url);
+      } else if (typeof navigator.share === 'function') {
+        await navigator.share({ title: tournamentName, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareMessage('Tournament Link Copied');
+      }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'AbortError')) {
+        setShareMessage('Could Not Share Tournament. Please Try Again.');
+      }
+    } finally {
+      sharing.current = false;
+    }
+  };
 
   const [factsFailed, setFactsFailed] = useState(false);
 
@@ -337,19 +367,23 @@ export function TournamentBreakScreen({
       <div className="break-screen__frame">
         <button
           type="button"
-          className="break-screen__close"
-          onClick={() => setMinimized(true)}
-          aria-label="Close Break Screen"
-        >
-          X
-        </button>
+          className="break-screen__share"
+          aria-label="Share Tournament"
+          onClick={shareTournament}
+        />
         <SpadeConsole
           className="break-screen__content"
           title="Tournament Break"
-          pill="Paused"
+          onClose={() => setMinimized(true)}
+          pill="Share"
           pillInk="gold"
           foot="foot"
         >
+          {shareMessage && (
+            <p className="break-screen__share-message" role="alert">
+              {shareMessage}
+            </p>
+          )}
           <h1 id="break-title" className="break-screen__title">
             {titleCase(tournamentName)}
           </h1>

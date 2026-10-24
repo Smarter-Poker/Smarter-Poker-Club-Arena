@@ -7,3 +7,5 @@ The card now uses one approved SpadeConsole with a complete fixed head and foot 
 The existing server clock and last-hand/countdown phases remain authoritative. Zero seconds reports Waiting For Play To Resume rather than claiming gameplay restarted. Pending and failed tournament reads show loading/unavailable state instead of fabricated zero statistics. No engine, database, financial or break-scheduling behavior changes.
 
 Regression coverage exercises delayed clock ticks, last-hand transition, zero-time waiting, minimize/reopen, field/hero values, pending/failed/empty reads and the single-frame scroll contract. Real-font Chromium renders check phone, desktop and short landscape layouts, long titles, standings access and keyboard reopening. Publication evidence belongs in the task checkpoint, separately from these local checks.
+
+The header Share control opens the native/browser share sheet for the tournament link, with clipboard fallback and visible failure feedback. The master console owns the close button.

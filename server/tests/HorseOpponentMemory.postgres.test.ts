@@ -148,6 +148,11 @@ beforeAll(async () => {
   );
   if (!migration) throw new Error('durable opponent migration missing');
   await client.query(readFileSync(join(path, migration), 'utf8'));
+  const admission = readdirSync(path).find((f) =>
+    f.endsWith('_horse_opponent_cold_reads_admit_one_initializer.sql')
+  );
+  if (!admission) throw new Error('opponent memory admission migration missing');
+  await client.query(readFileSync(join(path, admission), 'utf8'));
 }, 30000);
 
 afterAll(async () => {
@@ -383,6 +388,67 @@ describe('durable opponent memory with real PostgreSQL', () => {
       expect(await profile('plo6')).toEqual(current);
     } finally {
       await Promise.all([a.end(), b.end()]);
+    }
+  });
+
+  it('refuses a concurrent cold scan immediately while warm reads and accepted hands continue', async () => {
+    const a = new Client({
+      host: '127.0.0.1',
+      port,
+      database: 'postgres',
+      user: process.env.USER ?? 'postgres',
+    });
+    await a.connect();
+    try {
+      await profile();
+      await a.query('begin');
+      await a.query(
+        "select pg_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initializer',0))"
+      );
+      await client.query("set statement_timeout='500ms'");
+      try {
+        const peers = Array.from(
+          { length: 8 },
+          () =>
+            new Client({
+              host: '127.0.0.1',
+              port,
+              database: 'postgres',
+              user: process.env.USER ?? 'postgres',
+            })
+        );
+        let results: PromiseSettledResult<unknown>[];
+        try {
+          await Promise.all(peers.map((peer) => peer.connect()));
+          await Promise.all(peers.map((peer) => peer.query("set statement_timeout='500ms'")));
+          results = await Promise.allSettled(
+            peers.map((peer) =>
+              peer.query(
+                "select * from fn_horse_exploit_profiles_read($1,'nlh','tournament','hu')",
+                [[other]]
+              )
+            )
+          );
+        } finally {
+          await Promise.all(peers.map((peer) => peer.end()));
+        }
+        expect(results.every((r) => r.status === 'rejected' && r.reason.code === '55P03')).toBe(
+          true
+        );
+        expect((await profile()).initialized).toBe(true);
+        await insert(hand('c0000000-0000-4000-8000-000000000001'));
+      } finally {
+        await client.query('reset statement_timeout');
+      }
+      await a.query('rollback');
+      const restored = await client.query(
+        "select * from fn_horse_exploit_profiles_read($1,'nlh','tournament','hu')",
+        [[other]]
+      );
+      expect(restored.rows[0].initialized).toBe(true);
+      expect(restored.rows[0].legacy_hands).toBe(0);
+    } finally {
+      await a.end();
     }
   });
 

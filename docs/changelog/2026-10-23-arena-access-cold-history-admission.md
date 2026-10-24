@@ -1,0 +1,9 @@
+# Arena Access And Cold Opponent History Admission
+
+Cold opponent-memory initialization could run concurrently for every decision request. Its guarded UPSERT prevented double counting but allowed every caller to scan the same large historical GIN result before applying the 1024-observation limit. Production showed roughly 40 active cold reads waiting on disk, only 4 initialized contexts out of 3214, access-check 503 responses and successful access checks taking up to 8842ms.
+
+The reader now admits one cold initializer transaction with a nonblocking transaction-scoped advisory lock. A competing cold read returns explicit 55P03 through the existing optional reader failure path. Warm reads and the accepted-hand recording trigger do not take this lock. Historical observations, numerical decay, atomic merging, variant isolation and service-only access remain unchanged. There is no worker, scheduler, repair loop, hot-table DDL or engine replacement. The migration restores the original service execute grant after incident containment.
+
+The client preserves database error codes, distinguishes sign-in, timeout, connection and unknown-service failures, removes unsupported account reassurance and the universal Offline claim, shows loading on Retry, and supplies a working secondary navigation plate. Sign-in uses the existing web/native return-path helper.
+
+Regression protection: real PostgreSQL cold-reader contention test with eight independent connections, warm-reader and accepted-hand progress during contention, the existing historical parity/decay/concurrency suite, and client failure/retry tests. The new contention test fails against the original reader. The permanent SQL and client publication still require protected delivery and live readback; emergency containment alone is not completion.

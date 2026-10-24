@@ -2244,7 +2244,7 @@ function maniacCallDown(
   vi: VariantInfo,
   opts: HorseDecideOpts
 ): HorseDecision {
-  if (decision.action === 'fold' && decision.continuationGuard) {
+  if (decision.action === 'fold' && decision.continuationGuard === 'omaha_cold_flush_pressure') {
     if (telemetryOn(opts)) noteFire('horse_continuation_protected_fold_retained');
     return decision;
   }
@@ -2330,6 +2330,7 @@ function maniacCallDown(
         undefined,
         player.knownDeadCards ?? []
       ) - betSelectionPenalty;
+    let recoverySamples = equitySampleSizeOfLastCall();
     const call = Math.min(toCall, player.stack);
     const pot = Number.isFinite(gs.contestablePot)
       ? Math.max(0, gs.contestablePot as number)
@@ -2356,7 +2357,9 @@ function maniacCallDown(
     // through sampling noise (retained PLO4 potter hand 74 after full-pot
     // sizing). Refine that boundary once, with a fixed bounded sample; do
     // not lower the price, survival premium or realization requirement.
-    const uncertainty = 2 * Math.sqrt(Math.max(0.01, eq * (1 - eq)) / iterations);
+    const rawRecoveryMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
+    const uncertainty =
+      2 * Math.sqrt(Math.max(0.01, rawRecoveryMean * (1 - rawRecoveryMean)) / recoverySamples);
     if (
       street !== 'preflop' &&
       live.length === 1 &&
@@ -2378,7 +2381,44 @@ function maniacCallDown(
           undefined,
           player.knownDeadCards ?? []
         ) - betSelectionPenalty;
-      eq = (eq * iterations + refined * extra) / (iterations + extra);
+      const granted = equitySampleSizeOfLastCall();
+      eq = (eq * recoverySamples + refined * granted) / (recoverySamples + granted);
+      recoverySamples += granted;
+    }
+    // A remaining heads-up boundary miss can still be Monte Carlo noise:
+    // retained K8/A6 flop nodes rejected profitable calls after 1,800 draws.
+    // One fresh confirmation targets 1% worst-case standard error (0.25/n)
+    // at full governor scale. The earlier prefix was selected for being low;
+    // pooling it into this estimate would retain that selection bias. Keep
+    // price/rake/realization/ranges unchanged, and respect the live governor.
+    // This is one bounded batch, never a retry loop or forced call.
+    const boundarySamples = Math.ceil(0.25 / (0.01 * 0.01));
+    const rawRefinedMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
+    const remainingUncertainty =
+      2 * Math.sqrt(Math.max(0.01, rawRefinedMean * (1 - rawRefinedMean)) / recoverySamples);
+    if (
+      street !== 'preflop' &&
+      live.length === 1 &&
+      recoverySamples < boundarySamples &&
+      eq < required &&
+      required - eq <= remainingUncertainty
+    ) {
+      const refined =
+        simulateEquity(
+          player.cards,
+          gs.communityCards ?? [],
+          live.length,
+          vi,
+          boundarySamples,
+          bands,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          player.knownDeadCards ?? []
+        ) - betSelectionPenalty;
+      eq = refined;
+      if (telemetryOn(opts)) noteFire('horse_continuation_maniac_boundary_refined');
     }
     if (telemetryOn(opts)) {
       noteFire('maniac_call_down_checked');
@@ -7750,7 +7790,7 @@ export class HorseLogic {
           action: 'fold',
           thinkTime: 0,
           ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
-            ? { continuationGuard: 'dominated_commitment_floor' as const }
+            ? { continuationGuard: 'omaha_cold_flush_pressure' as const }
             : {}),
         };
       }
@@ -7871,7 +7911,7 @@ export class HorseLogic {
         action: 'fold',
         thinkTime: 0,
         ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
-          ? { continuationGuard: 'dominated_commitment_floor' as const }
+          ? { continuationGuard: 'omaha_cold_flush_pressure' as const }
           : useV20 && pressure20 >= 2
             ? { continuationGuard: 'multiway_commitment_floor' as const }
             : dominated21 || (vi.isOmaha && made40?.weak && eq15 < equity)
@@ -8323,7 +8363,7 @@ export class HorseLogic {
           action: 'fold',
           thinkTime: 0,
           ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
-            ? { continuationGuard: 'dominated_commitment_floor' as const }
+            ? { continuationGuard: 'omaha_cold_flush_pressure' as const }
             : {}),
         };
       }
@@ -8368,7 +8408,7 @@ export class HorseLogic {
         action: 'fold',
         thinkTime: 0,
         ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
-          ? { continuationGuard: 'dominated_commitment_floor' as const }
+          ? { continuationGuard: 'omaha_cold_flush_pressure' as const }
           : {}),
       };
     }
@@ -8398,7 +8438,7 @@ export class HorseLogic {
       action: 'fold',
       thinkTime: 0,
       ...(coldFlushPressure15 && nuts15 != null && nuts15.higherFlushRanks > 0
-        ? { continuationGuard: 'dominated_commitment_floor' as const }
+        ? { continuationGuard: 'omaha_cold_flush_pressure' as const }
         : {}),
     };
   }
@@ -8998,6 +9038,7 @@ export class HorseLogic {
 
   /** Exposed for tests ONLY: internal fast evaluators for cross-validation. */
   static readonly __testables = {
+    maniacCallDown,
     scoreHoldem,
     scoreOmahaHi,
     scoreOmahaLow,

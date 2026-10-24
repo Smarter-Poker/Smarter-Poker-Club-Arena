@@ -243,8 +243,11 @@ describe('reported PLO5 small-flush hand 45855223', () => {
     });
     it(`${variant}: declines the cold stack-off with a dominated low flush after a bet and short jam`, () => {
       for (const style of styles)
-        for (let seed = 0; seed < 8; seed++)
-          expect(decide(21, variant, style, seed).action, `${style}/${seed}`).toBe('fold');
+        for (let seed = 0; seed < 8; seed++) {
+          const decision = decide(21, variant, style, seed);
+          expect(decision.action, `${style}/${seed}`).toBe('fold');
+          expect(decision.continuationGuard).toBe('omaha_cold_flush_pressure');
+        }
     });
 
     it(`${variant}: preserves nut-flush calls against the same known maniac`, () => {

@@ -74,6 +74,14 @@ it('refuses unknown chip movements instead of absorbing a returned bet into post
 
 it('does not reinterpret a returned uncalled bet as smaller forced money', () => {
   const s = snapshot(21);
+  for (const returnedUncalled of [NaN, Infinity, -1, 0.001]) {
+    const invalid = s.players.map((p, i) => (i === 0 ? { ...p, returnedUncalled } : p));
+    expect(HorseMind.initialPublicMoney(invalid, s.history, s.pot)).toBeNull();
+  }
+  const zero = s.players.map((p) => ({ ...p, returnedUncalled: 0 }));
+  expect(HorseMind.initialPublicMoney(zero, s.history, s.pot)).toEqual(
+    HorseMind.initialPublicMoney(s.players, s.history, s.pot)
+  );
   const players = s.players.map((p, i) =>
     i === 0 ? { ...p, returnedUncalled: 0.5, totalInvested: p.totalInvested - 0.5 } : p
   );

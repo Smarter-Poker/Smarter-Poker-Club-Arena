@@ -2160,7 +2160,7 @@ export class HorseMind {
       initialTotal = 0;
     const streetBets: Array<[string, number]> = [];
     for (const p of players) {
-      if ((p.returnedUncalled ?? 0) > 0) return null;
+      if (cents(p.returnedUncalled ?? 0) !== 0) return null;
       const total = cents(p.totalInvested),
         dead = cents(p.deadInvested ?? 0);
       if (total === null || dead === null) return null;

@@ -72,6 +72,7 @@ import './avatarChoreography.css';
 import {
   formatPrizeAtUnit,
   formatStackChips,
+  formatBigBlinds,
   formatTableChips,
   moneyWordAtUnit,
 } from '../../utils/format';
@@ -567,11 +568,11 @@ function formatStack(amount: number): string {
 // which is the abbreviation complaint wearing a different unit. Deep counts
 // stay whole and separated; shallow ones keep the one decimal that decides
 // whether you are shoving.
+/* The stack in big blinds, in the one BB shape the pot and every bet use
+   (formatBigBlinds). With no big blind known yet it prints the chip stack, so
+   the seat never shows a "0 BB" or a count against a guessed blind. */
 function formatStackAsBB(stack: number, bigBlind: number): string {
-  if (bigBlind <= 0) return '0 BB';
-  const bb = stack / bigBlind;
-  if (bb >= 100) return `${Math.round(bb).toLocaleString('en-US')} BB`;
-  return `${bb.toFixed(1)} BB`;
+  return formatBigBlinds(stack, bigBlind) ?? formatStack(stack);
 }
 
 /**
@@ -651,7 +652,7 @@ function formatWager(amount: number): string {
  * the chip figure rather than printing a "0 BB" that is not true.
  */
 function formatSeatWager(amount: number, inBB: boolean, bigBlind: number): string {
-  return inBB && bigBlind > 0 ? formatStackAsBB(amount, bigBlind) : formatWager(amount);
+  return (inBB && formatBigBlinds(amount, bigBlind)) || formatWager(amount);
 }
 
 function getActionLabel(

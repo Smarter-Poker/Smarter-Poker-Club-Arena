@@ -20846,7 +20846,15 @@ function LiveTablePage({
      other render. `safeBB` splits and parses a string; `holeCardCountFor` switches on the
      variant. Neither depends on the seat. One table-wide value each, recomputed
      only when the input actually changes. */
-  const seatBigBlind = useMemo(() => safeBB(tableState.blinds), [tableState.blinds]);
+  /* The big blind every figure on the felt is printed against - the seats,
+     the bets in front of them and the pot (Dan 2026-10-24). Display only, and
+     0 while the table's blinds are not yet known ("?/?" on a fresh Lightning
+     room or an auto-seat): with nothing true to divide by, every BB figure
+     prints its chip amount and they all switch to BB together the moment the
+     real blinds land. It used to fall back to 2, so a 5/10 table opened before
+     its blinds arrived showed five times too many big blinds. Game logic that
+     needs a working blind (the raise panel) keeps its own `bb`. */
+  const seatBigBlind = useMemo(() => safeBB(tableState.blinds, 0), [tableState.blinds]);
   /* VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant wins —
      a PLO4 bomb hand at an NLH table draws four card-backs per villain, and
      the winner-highlight evaluators below pick the right combination rule. */

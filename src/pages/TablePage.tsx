@@ -362,7 +362,6 @@ import {
   tabledCardWidthPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
-import LightningFoldBar from '../components/table/LightningFoldBar';
 import LightningNextHand from '../components/table/LightningNextHand';
 import LightningEndingNotice from '../components/table/LightningEndingNotice';
 import LightningJoining from '../components/table/LightningJoining';
@@ -402,7 +401,6 @@ import {
 } from '../lightning/lightningCapabilities';
 import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
 import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
-import LightningRoomTools from '../components/lightning/LightningRoomTools';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
 import { createLightningMilestoneTracker } from '../lightning/lightningMilestone';
@@ -27801,34 +27799,6 @@ function LiveTablePage({
                 2026-08-25; the twin of it was removed from the ActionPanel on
                 2026-08-15 for exactly the same reason. There is one button. */}
 
-            {/* LIGHTNING PHASE 6: always mounted in a Lightning room while the
-                hero is in the pool, so the strip never enters or leaves
-                between hands; only its words light up when folding is
-                available (on the hero's turn and before it). */}
-            {lightningRoom && userId && userId !== 'guest' ? (
-              <LightningFoldBar
-                availability={lightningFold}
-                offerFoldWatch={lightningCaps.fold_and_watch}
-                preferFoldWatch={lightningPrefersWatch}
-                busy={lightningFoldBusy}
-                onFold={(kind) => void handleLightningFold(kind)}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 8: the pool's health, the running Session
-                numbers, Recent Hands and Previous Hand. Read-only panels. */}
-            {lightningRoom &&
-            tableId &&
-            userId &&
-            userId !== 'guest' &&
-            !lightningReversion.seatTableId &&
-            !lightningSessionEnd.ended ? (
-              <LightningRoomTools
-                poolSessionId={tableId}
-                clusterId={lightningRoom.clusterId}
-                handKey={lightningHandKeyNow}
-                visible={isVisible && (!isMultiTable || isActive)}
-              />
-            ) : null}
             {lightningRoom ? (
               <LightningNextHand
                 handInProgress={lightningHandLive && tableState.isHandInProgress}

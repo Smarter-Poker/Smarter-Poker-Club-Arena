@@ -354,8 +354,8 @@ describe('the decision queue strip (CLAUDE.md 10.6)', () => {
     const multi = read('src/pages/MultiTablePage.tsx');
     const handler = sliceEnclosingBlock(multi, 'handleTabSelect(roomId);');
     expect(handler).not.toMatch(/setActiveIndex|useEffect|setTimeout|setInterval/);
-    const mount = sliceEnclosingBlock(multi, '<LightningDecisionQueue');
-    expect(mount).toContain('onFocus={handleLightningFocus}');
+    expect(multi).not.toContain('<LightningDecisionQueue');
+    expect(multi).toContain('lightningUrgencyByRoom(lightningDecisions, serverNow())');
     // The strip component itself never navigates or selects.
     const strip = read('src/components/lightning/LightningDecisionQueue.tsx');
     expect(strip).not.toMatch(/navigate\(|setActiveIndex|handleTabSelect/);
@@ -628,8 +628,7 @@ describe('the session summary', () => {
     expect(page).toMatch(
       /const forceSummaryRoom = forceLightning \? lightningRoomRef\.current : null;/
     );
-    const tools = sliceEnclosingBlock(page, '<LightningRoomTools');
-    expect(tools).toContain('!lightningReversion.seatTableId');
+    expect(page).not.toContain('<LightningRoomTools');
   });
 });
 

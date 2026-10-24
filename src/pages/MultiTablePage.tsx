@@ -100,7 +100,6 @@ import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 import { openInBrowser } from '../lib/openExternal';
 import { isNativePlatform } from '../lib/appBase';
 import { parseTileRaiseBounds, tileAllInTo, tilePotRaiseTo } from '../utils/tileRaiseSizing';
-import LightningDecisionQueue from '../components/lightning/LightningDecisionQueue';
 import {
   lightningUrgencyByRoom,
   lightningDecisions as readLightningDecisions,
@@ -5367,15 +5366,6 @@ export default function MultiTablePage() {
             </div>
           </>
         )}
-
-        {/* LIGHTNING PHASE 8: rooms owing a decision, most urgent first; a tap
-            focuses one. Renders nothing while nothing is owed elsewhere. */}
-        {!hidden ? (
-          <LightningDecisionQueue
-            activeRoomId={tables[activeIndex]?.id ?? null}
-            onFocus={handleLightningFocus}
-          />
-        ) : null}
 
         {/* Tile View Grid or Swipe Container */}
         {isTileView && tables.length > 1 ? (

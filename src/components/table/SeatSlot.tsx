@@ -1348,6 +1348,9 @@ export const SeatSlot = memo(
     const [isFolding, setIsFolding] = useState(false);
     const prevActionRef = React.useRef<LastAction>(null);
     useEffect(() => {
+      // A new hand can arrive before the previous fold timer completes.
+      // Its cleanup cancels that timer; the new action must release the old pose.
+      if (lastAction !== 'fold') setIsFolding(false);
       // IMPROVEMENT PASS 2026-08-19: every class-removal window scales with
       // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {

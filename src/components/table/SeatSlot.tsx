@@ -257,6 +257,8 @@ export interface SeatSlotProps {
   sitOutAt?: number | null;
   seatNumber: number;
   player: SeatPlayer | null;
+  /** Confirmed by this hand's engine roster, never by a queued pre-action. */
+  foldCommitted?: boolean;
   position: PositionBadge;
   /**
    * KILL POTS (rule manifest kill-v1): the marker on the killer's seat for the
@@ -854,6 +856,7 @@ export const SeatSlot = memo(
     const {
       seatNumber,
       player,
+      foldCommitted = false,
       position,
       killMarker = null,
       isActive,
@@ -2909,6 +2912,12 @@ export const SeatSlot = memo(
     const shownAction: LastAction =
       player.status === 'all_in' || lastAction === 'all_in' ? null : lastAction;
 
+    const foldIdentityHidden =
+      foldCommitted &&
+      !isFolding &&
+      avatarGesture !== 'fold' &&
+      !(lastAction === 'fold' && prevActionRef.current !== 'fold');
+
     return (
       <div
         ref={seatRef}
@@ -2916,8 +2925,10 @@ export const SeatSlot = memo(
            outboard at the top cap, inboard everywhere else, see `seatCardSide`.
            It rides on the seat rather than on the card row so the CSS can key
            both the hero row and the opponent row off one class. */
-        className={`${containerClasses} seat--cards-${cardSide}`}
-        onClick={() => callbacksRef.current.onAction?.()}
+        className={`${containerClasses} seat--cards-${cardSide}${foldIdentityHidden ? ' seat--fold-hidden' : ''}`}
+        onClick={() => {
+          if (!foldIdentityHidden) callbacksRef.current.onAction?.();
+        }}
         data-seat-num={seatNumber}
         data-player-id={player.id}
         role="region"
@@ -3099,6 +3110,8 @@ export const SeatSlot = memo(
         {/* showHolo: eligible art AND on the clock - see holoOnClockDelayMs. */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
+          inert={foldIdentityHidden}
+          aria-hidden={foldIdentityHidden || undefined}
           /* `--rigged` hands ALL motion to the rig. Without it a rigged avatar
              plays its own Push animation while this wrap ALSO leans through
              spAvatarPush, and keeps breathing on top of the rig's own idle —
@@ -3371,7 +3384,14 @@ export const SeatSlot = memo(
             instantly on every turn for reduced-motion players — the exact case
             the escape hatch was built for. The ring is informational, not
             vestibular motion (it shrinks in place). */}
-        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
+        <div
+          className="seat__info"
+          style={timerStyle}
+          key={`info-${timerKey}`}
+          data-motion="keep"
+          inert={foldIdentityHidden}
+          aria-hidden={foldIdentityHidden || undefined}
+        >
           {/* The neon countdown ring. A real element (it was `.seat__info::before`
               until 2026-10-04) because it has to be a size container: the
               sweep is converted from "fraction of the BORDER spent" to a conic
@@ -3875,6 +3895,7 @@ export const SeatSlot = memo(
     if (prev.position !== next.position) return false;
     if (prev.killMarker !== next.killMarker) return false;
     if (prev.isTournament !== next.isTournament) return false;
+    if (prev.foldCommitted !== next.foldCommitted) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
     if (prev.bountyIsMystery !== next.bountyIsMystery) return false;

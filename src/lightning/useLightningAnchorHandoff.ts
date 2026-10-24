@@ -25,7 +25,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { reportError } from '../utils/errorReporter';
-import { supabase } from '../lib/supabase';
+import { LIGHTNING_LOBBY_REFRESH_MS } from './lightningLobbyFeed';
 import {
   clearLightningEntryIntent,
   fetchLightningClusterMeta,
@@ -101,43 +101,65 @@ export function useLightningAnchorHandoff(input: {
   }, [tableId]);
 
   // A seated player can enter Lightning when their existing game converts,
-  // without ever having clicked Join Lightning. Observe that original game
-  // transition and reconnect; do not add a polling repair loop or switch tabs.
+  // without ever having clicked Join Lightning. Read their pool session and
+  // offer View Game; never switch the tab for them.
+  //
+  // READ ON THE LOBBY FEED'S CADENCE, NOT FROM A ROW CHANGE (2026-10-24). This
+  // used to wait for a realtime UPDATE on `cash_games`, which is not in the
+  // supabase_realtime publication and must not be: 19.5M updates against 266
+  // rows (pg_stat_user_tables, 2026-10-24), the shape every table on the
+  // KNOWN_UNPUBLISHED baseline in scripts/ci/check-realtime-publication.mjs
+  // was taken off it for. The channel joined, said SUBSCRIBED and never
+  // fired, so a player seated at an anchor while the game was pending_on was
+  // only ever offered the room by remounting. The session is now read once on
+  // mount and again every LIGHTNING_LOBBY_REFRESH_MS while the tab is visible
+  // (and the moment it becomes visible), until the room is ready. It is a read
+  // of state the page shows, not a repair: it writes nothing.
   useEffect(() => {
     setReadySession(null);
     const clusterId = input.clusterId;
     if (!tableId || !clusterId || !input.userId || isPoolSession || !conversionFunded) return;
     let stopped = false;
     let readVersion = 0;
-    const read = async () => {
+    /** Reads the session; true when the room is ready (the reads can stop). */
+    const read = async (): Promise<boolean> => {
       const version = ++readVersion;
       try {
         const session = await fetchMyLightningSession(clusterId);
-        if (stopped || version !== readVersion || identityRef.current !== identity) return;
-        setReadySession(
+        if (stopped || version !== readVersion || identityRef.current !== identity) return false;
+        const ready =
           hasLightningRoom(session) && session.anchorTableId === tableId && session.poolSessionId
             ? { identity, id: session.poolSessionId }
-            : null
-        );
+            : null;
+        setReadySession(ready);
+        return ready !== null;
       } catch (err) {
         if (!stopped)
           reportError(err, 'lightning.conversion_session_read_failed', { clusterId, tableId });
+        return false;
       }
     };
-    const channel = supabase
-      .channel(`lightning-anchor-conversion:${tableId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'cash_games', filter: `id=eq.${clusterId}` },
-        () => void read()
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') void read();
+    let found = false;
+    const tick = () => {
+      if (stopped || found) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void read().then((ready) => {
+        if (ready) found = true;
       });
-    void read();
+    };
+    const timer = setInterval(tick, LIGHTNING_LOBBY_REFRESH_MS);
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') tick();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+    void read().then((ready) => {
+      if (ready) found = true;
+    });
     return () => {
       stopped = true;
-      void supabase.removeChannel(channel);
+      clearInterval(timer);
+      if (typeof document !== 'undefined')
+        document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tableId, input.clusterId, input.userId, isPoolSession, conversionFunded, identity]);
 

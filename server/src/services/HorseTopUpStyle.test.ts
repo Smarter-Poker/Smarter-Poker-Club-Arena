@@ -27,7 +27,8 @@ describe('PLO5 horse top-up style', () => {
   });
 
   it('gives each horse one habit for life', () => {
-    for (const id of ids.slice(0, 200)) {
+    const sample = Array.from({ length: 200 }, () => randomUUID());
+    for (const id of sample) {
       expect(horseCashTopUpStyle(id, 'plo5')).toBe(horseCashTopUpStyle(id, 'PLO5'));
       expect(horseSitsWithAutoTopUp(id, 'plo5')).toBe(
         horseCashTopUpStyle(id, 'plo5') === 'auto_top_up'
@@ -70,7 +71,8 @@ describe('PLO5 horse top-up style', () => {
   });
 
   it('never tops up a busted stack (that is a rebuy) or prices off a bad number', () => {
-    for (const id of ids.slice(0, 50)) {
+    const sample = Array.from({ length: 50 }, () => randomUUID());
+    for (const id of sample) {
       expect(horseTopUpAmount({ userId: id, variant: 'plo5', stack: 0, maxBuyIn: 400 })).toBe(0);
       expect(horseTopUpAmount({ userId: id, variant: 'plo5', stack: 10, maxBuyIn: 0 })).toBe(0);
       expect(horseTopUpAmount({ userId: id, variant: 'plo5', stack: NaN, maxBuyIn: 400 })).toBe(0);

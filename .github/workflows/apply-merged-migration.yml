@@ -91,12 +91,22 @@ on:
 
 # One applier at a time. Two concurrent DDL transactions would each take their
 # own PostgREST schema reload (~28s on this database).
+#
+# The group is PER FILE, and the one-at-a-time order is the queue step in the
+# job (2026-10-24). A single shared group holds one running and ONE pending
+# run, and GitHub cancels the pending run whenever a newer one joins: at
+# 22:53Z three merges dispatched three files within a second, two runs were
+# cancelled before they started, and 20261024213143 (the Lightning pilot
+# switch-off) silently never applied. A per-file group still collapses a
+# duplicate dispatch of the same file; different files no longer erase each
+# other, and the queue step below runs them in run-id order.
 concurrency:
-  group: apply-merged-migration
+  group: apply-merged-migration-${{ inputs.migration || github.event.client_payload.migration }}
   cancel-in-progress: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   apply:
@@ -129,6 +139,7 @@ jobs:
           RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
           MAINTENANCE_THAW_REPAIR: ${{ inputs.maintenance_thaw_repair }}
           QUALIFY_RAKE_REPORT_HISTORY: ${{ inputs.qualify_rake_report_history }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           # The pipeline below is allowed to fail WITHOUT aborting this step.
@@ -140,6 +151,28 @@ jobs:
           # that names no cause (CLAUDE.md 10.86 rule 1). Record it, then exit
           # with it.
           set +e
+          # THE QUEUE. Wait, bounded, until no earlier run of this workflow is
+          # queued or running, so files still apply one at a time in dispatch
+          # order. Nothing is sent while waiting; a timeout or an unreadable
+          # queue is REFUSED with nothing sent, never UNKNOWN.
+          deadline=$(( $(date +%s) + 600 ))
+          while :; do
+            ahead=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/apply-merged-migration.yml/runs?per_page=100" \
+              --jq "[.workflow_runs[] | select(.id < $GITHUB_RUN_ID and .status != \"completed\")] | length" 2>/dev/null)
+            if ! [[ "$ahead" =~ ^[0-9]+$ ]]; then
+              echo "[apply] REFUSED: could not read the applier queue. Nothing was sent; dispatch again." | tee /tmp/apply.log
+              echo "code=1" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            [[ "$ahead" == "0" ]] && break
+            if (( $(date +%s) >= deadline )); then
+              echo "[apply] REFUSED: $ahead earlier applier run(s) still active after 600s. Nothing was sent; dispatch again once they finish." | tee /tmp/apply.log
+              echo "code=1" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            echo "[queue] $ahead earlier applier run(s) queued or running; waiting"
+            sleep 15
+          done
           recovery_args=()
           if [[ "${SERIAL_JOURNAL_INDEX:-false}" == "true" ]]; then
             recovery_args+=(--serial-journal-index)

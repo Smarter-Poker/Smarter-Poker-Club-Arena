@@ -1,4 +1,4 @@
 {
-  "_comment": "Declared by 20261024193818_agent_downline_watch_functions_before_window_policy.sql (ordinary install, no relation lock) and re-declared byte-identically by the queued daily-window 20261024020328_agents_can_watch_every_live_downline_table.sql, which also adds the public.tables observation policy. Not an installed/live receipt.",
-  "functions": ["fn_agent_can_watch_table"]
+  "_comment": "fn_agent_can_watch_table: declared by 20261024193818_agent_downline_watch_functions_before_window_policy.sql (ordinary install, no relation lock) and re-declared byte-identically by the queued daily-window 20261024020328_agents_can_watch_every_live_downline_table.sql, which also adds the public.tables observation policy. fn_agent_watch_table_metadata: declared by 20261024200812_agent_downline_watch_reads_table_metadata.sql. Not an installed/live receipt.",
+  "functions": ["fn_agent_can_watch_table", "fn_agent_watch_table_metadata"]
 }

@@ -70,8 +70,11 @@ import {
   buyIntoLightning,
   currentLightningUserId,
   readLightningBuyInContext,
+<<<<<<< HEAD
   rememberLightningBuyIn,
   rememberedLightningBuyIn,
+=======
+>>>>>>> origin/main
   type LightningBuyInContext,
 } from '../lightning/lightningJoinBuyIn';
 import { useUserStore } from '../stores/useUserStore';
@@ -241,7 +244,10 @@ export default function LightningEntryPage() {
       });
       if (!mounted.current) return result.kind === 'seated';
       if (result.kind === 'rejected') return { status: 'rejected', message: result.message };
+<<<<<<< HEAD
       if (result.kind === 'seated') rememberLightningBuyIn(clusterId, amount);
+=======
+>>>>>>> origin/main
       setBuyIn(null);
       const meta = phase.kind === 'entry' ? phase.meta : null;
       writeLightningPrefs({
@@ -451,6 +457,7 @@ export default function LightningEntryPage() {
           onSecondary: () => navigate('/'),
         }}
       />
+<<<<<<< HEAD
       {/* A door that is not offered says why, in one line. */}
       {atLimit ? (
         <p className="lightning-entry__quiet" role="status" data-testid="lightning-entry-why">
@@ -461,6 +468,8 @@ export default function LightningEntryPage() {
           {LIGHTNING_JOINS_CLOSED_TEXT}
         </p>
       ) : null}
+=======
+>>>>>>> origin/main
       {buyIn ? (
         <BuyInModal
           isOpen
@@ -470,7 +479,10 @@ export default function LightningEntryPage() {
           gameType={meta?.variant ?? null}
           minBuyIn={buyIn.minBuyIn}
           maxBuyIn={buyIn.maxBuyIn}
+<<<<<<< HEAD
           defaultBuyIn={clusterId ? rememberedLightningBuyIn(clusterId, buyIn) : undefined}
+=======
+>>>>>>> origin/main
           accountBalance={buyIn.balance}
           bigBlind={buyIn.bigBlind || meta?.bigBlind || 0}
         />

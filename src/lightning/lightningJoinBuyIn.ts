@@ -216,6 +216,7 @@ export async function buyIntoLightning(
   }
   return { kind: 'rejected', message: 'That Seat Was Just Taken. Try Again.' };
 }
+<<<<<<< HEAD
 
 /* ─── The amount the player chose last time (per device, per game) ───────────
    A reminder only: it pre-fills the amount question, which the player still
@@ -256,3 +257,5 @@ export function rememberedLightningBuyIn(
   if (ceiling < context.minBuyIn) return undefined;
   return Math.min(Math.max(last, context.minBuyIn), ceiling);
 }
+=======
+>>>>>>> origin/main

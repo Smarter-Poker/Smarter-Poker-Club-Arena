@@ -13140,6 +13140,22 @@ function LiveTablePage({
         // A clean "no such table" answer is final — retrying cannot invent a row.
         if (!res.error && !table) break;
       }
+      /* AGENT DOWNLINE WATCH (2026-10-24). An agent watching a downline at a
+         table in a club the agent does not belong to cannot read this row: the
+         restrictive poker_arena_table_access policy hides it from non-members,
+         and the bootstrap then reported a missing table. The definer RPC
+         returns the same bootstrap columns only when fn_agent_can_watch_table
+         allows this viewer. Observation only; seating, money and hole-card
+         rules are unchanged. A missing RPC or a refusal keeps today's path. */
+      if (!table && !error && isMounted && tableId) {
+        const watch = await supabase.rpc('fn_agent_watch_table_metadata', {
+          p_table_id: tableId,
+        });
+        if (!isMounted) return;
+        if (!watch.error && watch.data && typeof watch.data === 'object') {
+          table = watch.data as TableBootstrapRow & { union_id?: string | null; arena?: unknown };
+        }
+      }
       /* AUDIT 2026-08-25 — THE DEAD-BOOKMARK HOLE.
          Below this point the code went straight to `if (table && !error)`.
          Follow the two failing paths out of the retry loop:
@@ -21292,7 +21308,11 @@ function LiveTablePage({
      player itself; nobody picks a chair on this felt. */
   const openLightningAnchorEntry = () => {
     if (!anchorLightningClusterId) return;
+<<<<<<< HEAD
     navigate(lightningJoinRoute(anchorLightningClusterId));
+=======
+    navigate(`${lightningRoute(anchorLightningClusterId)}?join=1`);
+>>>>>>> origin/main
   };
 
   /**

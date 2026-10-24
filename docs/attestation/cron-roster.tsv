@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-19T09:29:10Z
-# active: 137
+# observed_at: 2026-10-24T21:52:20Z
+# active: 140
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -145,6 +145,19 @@
 #   sp-daily-digest-watchdog   15 13,14 * * *
 # Each gates itself on Chicago local time inside its command; neither moves money.
 # ca-currency-meter-nightly moved one row only to restore the generator's sort order.
+# 2026-10-24: 137 -> 140, nothing retired. Three jobs were scheduled after the
+# 2026-10-19 anchor and Cron Health had been red on the count since 2026-10-22:
+# ca-writer-lock-sentinel-5s (20261022030326_a_migration_never_holds_the_live_tables_hostage,
+# CLAUDE.md section 2 rule 9), ca-bust-backlog-page-2m
+# (20261022172522_a_bust_backlog_pages_within_four_minutes) and ca-horse-roster-refresh
+# at 15 3,9,15,21 * * * (applied migration 20261023182203, file recorded by
+# fix/record-oct23-applied-migrations). Three schedules moved with them:
+# ca-freeze-mark-pre 55 * * * * -> 0 9,10 * * * and ca-freeze-mark-post 0 * * * * ->
+# 5 9,10 * * * (20261021174252, the daily 04:00 Chicago break), and
+# sp-daily-metrics-snapshot 15,45 5,6 -> 15,45 5-12 (applied migration
+# 20261022171756_daily_reports_fit_their_budgets). Every row below was read from
+# cron.job WHERE active on 2026-10-24 21:52 UTC; md5 of the C-sorted rows
+# 8f9931f41e96ee704312c022aa810cbb, identical to production's own.
 # jobname	schedule
 # 2026-10-04: 125 -> 126. postgrest-pool-renew-10m was scheduled by migration
 # the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
@@ -200,6 +213,7 @@ ca-bbj-threshold-notify-5m	*/5 * * * *
 ca-bound-outside-snapshots-1m	* * * * *
 ca-break-scorecard	12 * * * *
 ca-burnin-gate-hourly	58 * * * *
+ca-bust-backlog-page-2m	*/2 * * * *
 ca-cash-pot-conservation-hourly	34 */6 * * *
 ca-chip-wallet-day-seal	30 * * * *
 ca-collusion-daily	20 4 * * *
@@ -220,12 +234,13 @@ ca-duplicate-structure-payout-hourly	37 * * * *
 ca-escalate-reconcile-criticals-hourly	52 * * * *
 ca-escrow-shadow-hourly	35 * * * *
 ca-escrow-ttl-sweep-10m	*/10 * * * *
-ca-freeze-mark-post	0 * * * *
-ca-freeze-mark-pre	55 * * * *
+ca-freeze-mark-post	5 9,10 * * *
+ca-freeze-mark-pre	0 9,10 * * *
 ca-guard-defs-hourly	25 * * * *
 ca-guard-integrity-daily	15 * * * *
 ca-hand-facts-prune-daily	40 5 * * *
 ca-horse-claim-due-minute	* * * * *
+ca-horse-roster-refresh	15 3,9,15,21 * * *
 ca-incident-escalation-tick	* * * * *
 ca-ledger-chain-verify-daily	35 4 * * *
 ca-ledger-day-manifest	25 4 * * *
@@ -254,6 +269,7 @@ ca-tournament-dark-while-running-5m	3-59/5 * * * *
 ca-tournament-finished-not-completed-5m	*/5 * * * *
 ca-trial-balance-hourly	20 * * * *
 ca-uncollected-entry-check-hourly	47 * * * *
+ca-writer-lock-sentinel-5s	5 seconds
 cleanup-hole-cards	0 */6 * * *
 client-error-events-prune	16 * * * *
 club-rake-rollup-catchup	25 * * * *
@@ -309,7 +325,7 @@ refresh-player-stats-hourly	17 * * * *
 resolve-friend-challenges	*/15 * * * *
 snapshot-player-stats	5 0 * * *
 sp-daily-digest-watchdog	15 13,14 * * *
-sp-daily-metrics-snapshot	15,45 5,6 * * *
+sp-daily-metrics-snapshot	15,45 5-12 * * *
 sp-prune-hand-discards	7,37 * * * *
 sp-prune-rabbit-hunt-offers	9,39 * * * *
 sp_prune_ca_settlements_10m	7,17,27,37,47 * * * *

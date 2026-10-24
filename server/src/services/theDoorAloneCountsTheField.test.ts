@@ -27,16 +27,9 @@ import { HEADS_UP_BLIND_STRUCTURE, HEADS_UP_PAYOUTS } from '../config/headsUpSpe
 
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
-beforeEach(() => {
-  // This contract tests the registration count's sole writer. All three
-  // fixture horses are awake at noon UTC; real wall time crosses their
-  // independently enforced activity-window boundary at 01:00 UTC.
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date('2026-10-23T12:00:00.000Z'));
-});
 afterEach(() => {
-  vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 const T = 'fb8931b5-0000-4000-8000-000000000001';
@@ -47,6 +40,13 @@ function countWrites(updates: Update[]): Update[] {
 }
 
 describe('a fill pass leaves the field count to the door', () => {
+  beforeEach(() => {
+    // These synthetic horse IDs are all on duty at this hour. The assertion
+    // concerns the registration door, rather than the wall-clock duty roster.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-24T00:00:00Z'));
+  });
+
   function harness(ids: string[]) {
     const svc = new TournamentRecurringService() as any;
     const updates: Update[] = [];

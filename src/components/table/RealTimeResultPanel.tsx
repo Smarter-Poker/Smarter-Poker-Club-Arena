@@ -158,11 +158,11 @@ export default function RealTimeResultPanel({
      back through the service rather than casting a Record into a shape it was
      never checked against. The payload is the signal; the service is the data. */
   useMasterBusSubscription('SESSION_STATS_UPDATE', (payload) => {
-    if (payload?.tableId === tableId) setStats(sessionStatsService.getStats(tableId));
+    if (isOpen && payload?.tableId === tableId) setStats(sessionStatsService.getStats(tableId));
   });
 
   useMasterBusSubscription('HAND_COMPLETED', (payload) => {
-    if ((payload as { tableId?: string })?.tableId === tableId) {
+    if (isOpen && (payload as { tableId?: string })?.tableId === tableId) {
       setStats(sessionStatsService.getStats(tableId));
     }
   });

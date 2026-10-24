@@ -60,11 +60,12 @@ describe('selectHumanFillCandidates', () => {
   const fleet: string[] = Array.from({ length: 4000 }, () => randomUUID());
   const hour = 14;
 
-  it('offers the events lanes first and only active cash-lane horses after them', () => {
+  it('offers the full scheduled fleet without a historical cash-lane exclusion', () => {
     const busy = new Set(fleet.slice(0, 50));
     const { events, cash } = selectHumanFillCandidates(fleet, busy, hour);
     expect(events).toEqual(selectHorseCandidates(fleet, busy, false, hour));
-    expect(cash.length).toBeGreaterThan(0);
+    expect(cash).toEqual([]);
+    for (const id of events) expect(isActiveNow(id, hour)).toBe(true);
     for (const id of cash) {
       expect(gameLaneFor(id)).toBe('cash');
       expect(isActiveNow(id, hour)).toBe(true);

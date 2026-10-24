@@ -62,7 +62,7 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   // the panel opened from an observer context that never seated hero — so the
   // HUD renders honest zeros instead of a null.
   useEffect(() => {
-    if (!arenaAsset) return;
+    if (!isOpen || !arenaAsset) return;
     if (!sessionStatsService.getStats(tableId)) {
       sessionStatsService.startSession(
         tableId,
@@ -73,24 +73,27 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
       );
     }
     setStats(sessionStatsService.getStats(tableId));
-  }, [tableId, userId, bigBlind, arenaAsset]); // initialStack intentionally omitted — captured in ref
+  }, [isOpen, tableId, userId, bigBlind, arenaAsset]); // initialStack intentionally omitted — captured in ref
 
   // ── Listen for stats updates ──
   useMasterBusSubscription('SESSION_STATS_UPDATE', (payload: any) => {
-    if (payload?.tableId === tableId) {
+    if (isOpen && payload?.tableId === tableId) {
       setStats(payload.stats);
     }
   });
 
   // ── Also refresh on HAND_COMPLETED for real-time profit updates ──
   useMasterBusSubscription('HAND_COMPLETED', (payload: any) => {
-    if (payload?.tableId === tableId) {
+    if (isOpen && payload?.tableId === tableId) {
       setStats(sessionStatsService.getStats(tableId));
     }
   });
 
-  // ── Session duration timer (updates every second) ──
+  // The label displays minutes. A closed panel needs no display timer; an
+  // open one wakes only at its next minute boundary and after Safari resumes.
   useEffect(() => {
+    if (!isOpen) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const formatDuration = () => {
       // Dan 2026-08-15: count from the REAL session start (when hero sat down)
       // rather than when this panel was opened. Previously these were the same
@@ -104,10 +107,27 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
       if (hours > 0) return `${hours}h ${minutes}m`;
       return `${minutes}m`;
     };
-    setSessionDuration(formatDuration());
-    const timer = setInterval(() => setSessionDuration(formatDuration()), 1000);
-    return () => clearInterval(timer);
-  }, [sessionStartTime, tableId]);
+    const update = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === 'hidden') return;
+      setSessionDuration(formatDuration());
+      const startedAt = sessionStatsService.getStats(tableId)?.sessionStartTime ?? sessionStartTime;
+      const elapsed = Math.max(0, Date.now() - startedAt);
+      timer = setTimeout(update, 60_000 - (elapsed % 60_000));
+    };
+    const resume = () => {
+      update();
+      if (document.visibilityState !== 'hidden') setStats(sessionStatsService.getStats(tableId));
+    };
+    update();
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('pageshow', resume);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('pageshow', resume);
+    };
+  }, [isOpen, sessionStartTime, tableId, stats?.sessionStartTime]);
 
   const formatPL = (value: number): string => {
     const sign = value >= 0 ? '+' : '';

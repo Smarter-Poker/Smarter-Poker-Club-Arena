@@ -129,7 +129,7 @@ const FILTER_LABEL: Record<RosterFilter, string> = {
   high_fees: 'Fees 100+',
 };
 
-/** The Win / Loss windows on the Players list (Dan 2026-10-16). Days are UTC. */
+/** Today uses Chicago midnight; weekly/monthly Win / Loss windows use UTC. */
 const WIN_LOSS_LABEL: Record<WinLossPeriod, string> = {
   overall: 'Win / Loss Overall',
   month: 'Win / Loss This Month',

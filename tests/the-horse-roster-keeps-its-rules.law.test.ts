@@ -1,25 +1,6 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE HORSE ROSTER KEEPS ITS RULES
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Dan, 2026-10-23, binding:
- *   - "KEEP IT UNDER 35-50 TOTAL HORSES AT ANY TIME FOR ALL GAME TYPES"
- *     (cash; every horse still plays tournaments);
- *   - "ONLY ALLOW THE HORSES THAT HAVE SHOWN TO BE PROFITABLE PLAYING PLO PLAY
- *     THOSE GAMES";
- *   - "all horses can play the lower stakes plo games under .10-.25 and
- *     .25-.50";
- *   - "ALLOW MORE HORSES INTO THE GAME, BUT ONLY THE WINNING ONES."
- *
- * WHY THIS EXISTS. Three sessions rewrote fn_ca_horse_roster_refresh on that
- * one day, two from branches that never reached main, and one rewrite put
- * back the line that strips every PLO tag from a horse off the PLO list,
- * undoing the low-stakes opening 40 minutes after it shipped. Nothing caught
- * it. The rules live in SQL, so the pins read the migration that defines each
- * function LAST (the one a rebuild ends on), plus the engine's mirror of the
- * stake split and the job that runs the refresh.
- */
+/** Owner October23: the full scheduled fleet may play every game its bankroll
+ * supports. Activity schedules remain. Historical cash/PLO rankings and persona
+ * game restrictions cannot restore a fifty-horse cash limit. */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -47,70 +28,49 @@ function lastDefinition(fn: string): { file: string; body: string } {
   throw new Error(`no migration defines public.${fn}`);
 }
 
-/** The arguments of the LAST migration that points the refresh job at the function. */
-function lastJobCall(): { file: string; args: number[] } {
-  for (let i = files.length - 1; i >= 0; i--) {
-    const sql = read(files[i]);
-    if (!/ca-horse-roster-refresh/.test(sql)) continue;
-    const m = /select public\.fn_ca_horse_roster_refresh\(([^)]*)\)'/.exec(sql);
-    if (!m) continue;
-    const args = m[1]
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map(Number);
-    return { file: files[i], args };
-  }
-  throw new Error('no migration sets the ca-horse-roster-refresh job');
-}
-
 const flat = (s: string) => s.replace(/\s+/g, ' ').toLowerCase();
 
-describe('the horse roster keeps its rules', () => {
-  const refresh = lastDefinition('fn_ca_horse_roster_refresh');
-  const guard = lastDefinition('fn_ca_horse_roster_seat_guard');
-  const R = flat(refresh.body);
-  const G = flat(guard.body);
+describe('the cash roster keeps the latest bankroll-only rule', () => {
+  const R = flat(lastDefinition('fn_ca_horse_roster_refresh').body);
+  const G = flat(lastDefinition('fn_ca_horse_roster_seat_guard').body);
 
-  it('keeps 35 to 50 horses at cash', () => {
-    expect(R).toMatch(/v_size := greatest\(35, least\(50,/);
+  it('uses the full registered fleet without ranking on past profit', () => {
+    expect(R).toContain('select count(*) into v_size from _cand');
+    expect(R).toContain('ca_horse_fleet_register');
+    expect(R).not.toContain('v_size := 50;');
+    expect(R).toContain('order by roster_rank, bankroll desc, id');
+    expect(R).not.toContain('order by plo_profitable desc');
   });
-
-  it('puts only proven PLO winners on the PLO list', () => {
-    // A sample floor and a positive win rate, both required.
-    expect(R).toMatch(/coalesce\(f\.ph, 0\) >= p_min_plo/);
-    expect(R).toMatch(/f\.pn \* 100\.0 \/ f\.ph >= p_min_plo_bb100/);
-    expect(R).toMatch(/insert into public\.ca_horse_plo_roster[\s\S]*where c\.plo_profitable/);
+  it('puts every cash horse on the PLO list, regardless of sample size or win rate', () => {
+    expect(R).toContain('join public.ca_horse_active_roster a on a.horse_id = c.id');
+    expect(R).not.toContain('where c.plo_profitable');
   });
-
-  it('never strips a PLO tag and gives every roster cash tag the low stakes', () => {
-    expect(R).not.toMatch(/v not like 'plo%'/);
-    expect(R).toMatch(/array\[0\.25, ?0\.5\]::numeric\[\]/);
-    expect(R).toMatch(/array\['plo4','plo5','plo6','plo8'\]/);
+  it('gives the pool every variant and live stake, without a persona table ceiling', () => {
+    expect(R).toContain("variants = array['nlh','plo4','plo5','plo6','plo8'");
+    expect(R).toContain('select big_blind as bb from public.tables');
+    expect(R).toContain('max_tables = 4');
+    expect(R).not.toContain("jsonb_build_object('lane', 'cash', 'plocashlane', true)");
   });
-
-  it('keeps the PLO winners on the cash lane', () => {
-    expect(R).toContain("jsonb_build_object('lane', 'cash', 'plocashlane', true)");
+  it('never reinstates roster or profit exclusions for any game', () => {
+    expect(G).toContain('return new;');
+    expect(G).not.toContain('horse_not_on_cash_roster');
+    expect(G).not.toContain('horse_not_on_plo_roster');
+    expect(G).not.toContain('v_bb <= 0.5');
   });
-
-  it('opens PLO at 0.50 big blind and under to every cash horse, and gates the rest', () => {
-    expect(G).toMatch(/not \(v_bb is not null and v_bb > 0 and v_bb <= 0\.5\)/);
-    expect(G).toContain('horse_not_on_plo_roster');
-    expect(G).toContain('horse_not_on_cash_roster');
+  it('the engine never uses the historical PLO list to refuse a seat', () => {
+    const source = readFileSync(resolve(REPO, 'server/src/services/HorsePloRoster.ts'), 'utf8');
+    expect(source).toMatch(/export function ploRosterAllows[\s\S]*?\): boolean \{\s*return true;/);
   });
+});
 
-  it('runs the refresh with the winners rule: 50 at cash, 1 bb/100 or better', () => {
-    const { args } = lastJobCall();
-    expect(args).toHaveLength(5);
-    const [size, , minPlo, minBb100] = args;
-    expect(size).toBeGreaterThanOrEqual(35);
-    expect(size).toBeLessThanOrEqual(50);
-    expect(minPlo).toBeGreaterThanOrEqual(1000);
-    expect(minBb100).toBeGreaterThan(0);
-  });
-
-  it('the engine mirrors the same 0.50 split', () => {
-    const plo = readFileSync(resolve(REPO, 'server/src/services/HorsePloRoster.ts'), 'utf8');
-    expect(plo).toContain('export const PLO_OPEN_MAX_BIG_BLIND = 0.5;');
+describe('scheduled hours remain authoritative for the full fleet', () => {
+  it('does not bypass hours for ranked cash horses', () => {
+    const source = readFileSync(resolve(REPO, 'server/src/services/HorseFleetManager.ts'), 'utf8');
+    expect(source).toMatch(
+      /let pool = sittable\.filter\(\s*\(h\) => isActiveNow\(h\.id, hourUTC\)/
+    );
+    expect(source).not.toContain('cashRosterAllows(h.id) === true || isActiveNow');
+    expect(source).toContain('if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday))');
+    expect(source).toContain('if (!humanNeedsRescue && dailyCapReached(st, todayKey))');
   });
 });

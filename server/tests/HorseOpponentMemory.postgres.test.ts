@@ -291,7 +291,7 @@ describe('durable opponent memory with real PostgreSQL', () => {
     }
   });
 
-  it('recovers a full ten-player legacy horizon inside the decision read budget', async () => {
+  it('initializes ten complete horizons in bounded original requests then reads the entire roster', async () => {
     const ids = Array.from(
       { length: 10 },
       (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -329,21 +329,31 @@ describe('durable opponent memory with real PostgreSQL', () => {
     expect(index.definition).toContain('WHERE (NOT horse_exploit_recorded)');
     await client.query("set statement_timeout='1500ms'");
     try {
-      const started = performance.now();
+      for (let initialized = 1; initialized <= ids.length; initialized++) {
+        const started = performance.now();
+        const rows = (
+          await client.query(
+            "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
+            [ids]
+          )
+        ).rows;
+        console.info(
+          'OPPONENT_MEMORY_COLD_READ',
+          JSON.stringify({
+            players: rows.length,
+            horizon: 1024,
+            elapsedMs: performance.now() - started,
+          })
+        );
+        expect(rows).toHaveLength(initialized);
+        expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
+      }
       const rows = (
         await client.query(
           "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
           [ids]
         )
       ).rows;
-      console.info(
-        'OPPONENT_MEMORY_COLD_READ',
-        JSON.stringify({
-          players: rows.length,
-          horizon: 1024,
-          elapsedMs: performance.now() - started,
-        })
-      );
       expect(rows).toHaveLength(10);
       expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
     } finally {

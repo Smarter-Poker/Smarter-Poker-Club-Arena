@@ -99,6 +99,11 @@ BEGIN
      counters=public.fn_horse_exploit_add(base,horse_exploit_profiles.counters,horse_exploit_profiles.observed_hands),
      initialized=true,legacy_hands=n,updated_at=clock_timestamp()
      WHERE NOT horse_exploit_profiles.initialized;
+    -- Commit this complete player horizon before attempting another cold one.
+    -- A cold roster may return incomplete; the existing caller rejects that
+    -- receipt and its next original request continues from persisted progress.
+    -- Warm rosters still return every requested profile in one indexed read.
+    EXIT;
    END IF;
   END IF;
  END LOOP;

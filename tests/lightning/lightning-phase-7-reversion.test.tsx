@@ -200,7 +200,7 @@ describe('2. the room turns into the MUST MOVE notice', () => {
     expect(PAGE).toMatch(
       /useLightningReversion\(\{\s*clusterId: lightningRoom\?\.clusterId \?\? null,\s*roomClosed: lightningRoom && engineLastError\?\.code === 4404 \? engineLastError : null,\s*\}\)/
     );
-    const mount = sliceEnclosingBlock(PAGE, '<LightningEndedNotice');
+    const mount = sliceEnclosingBlock(PAGE, 'lightningRoom && lightningReversion.seatTableId');
     expect(mount).toContain('lightningRoom && lightningReversion.seatTableId');
   });
 

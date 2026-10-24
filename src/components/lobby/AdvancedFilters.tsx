@@ -34,6 +34,7 @@ import {
   type GameFilterSpec,
   type GameFilterValue,
 } from './advancedFilterSpec';
+import { cashTemplateKey } from '../../config/cashGames';
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
@@ -140,7 +141,9 @@ export function sanitizeStore(parsed: FilterStore | null | undefined): FilterSto
         ...value,
         // Drop keys a previous build wrote that this one no longer defines.
         games: list(value.games).filter((g) => gameKeys.has(g)),
-        styles: list(value.styles).filter((g) => styleKeys.has(g)),
+        styles: [...new Set(list(value.styles).map(cashTemplateKey))].filter((g) =>
+          styleKeys.has(g)
+        ),
         statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
         mustHave: list(value.mustHave).filter((k) => known.has(k)),
         hide: list(value.hide).filter((k) => known.has(k)),
@@ -287,17 +290,15 @@ export function pushRemoteFilters(clubId: string, store: FilterStore): void {
   markUnsynced(unsyncedKey(clubId, userId), true);
   const write = async (): Promise<boolean> => {
     try {
-      const { error } = await supabase
-        .from('user_lobby_filters')
-        .upsert(
-          {
-            user_id: userId,
-            club_id: clubId,
-            filters: store,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,club_id' }
-        );
+      const { error } = await supabase.from('user_lobby_filters').upsert(
+        {
+          user_id: userId,
+          club_id: clubId,
+          filters: store,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,club_id' }
+      );
       if (error) {
         if (!isAbortedRequest(error)) {
           reportError(error, 'AdvancedFilters.pushRemoteFilters', { clubId });

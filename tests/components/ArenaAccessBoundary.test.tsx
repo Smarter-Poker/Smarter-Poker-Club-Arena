@@ -97,6 +97,36 @@ describe('Arena entry before cached club content mounts', () => {
     expect(await screen.findByText('Arena Not Found')).toBeTruthy();
     expect(screen.queryByText('Private Chip Lobby')).toBeNull();
   });
+  it.each([
+    [{ code: '57014', message: 'canceling statement due to statement timeout' }, 'Delayed'],
+    [{ code: '28000', message: 'Authentication Required' }, 'Sign In'],
+    [new TypeError('Failed to fetch'), 'Connection'],
+    [new Error('Unexpected database failure'), 'Unavailable'],
+  ])('reports an unreadable access result honestly: %s', async (error, pill) => {
+    mocks.access.mockRejectedValue(error);
+    render(view('chip'));
+    expect(await screen.findByText(pill, { selector: '.sc__pill *' })).toBeTruthy();
+    expect(screen.queryByText('Offline')).toBeNull();
+    expect(screen.queryByText(/Nothing Is Wrong With Your Account/)).toBeNull();
+    expect(screen.queryByText('Private Chip Lobby')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: pill === 'Sign In' ? 'Sign In' : 'Back To Clubs' })
+    ).toBeTruthy();
+  });
+  it('shows loading during a retry and restores the verified page when it completes', async () => {
+    let complete: (value: unknown) => void = () => {};
+    mocks.access.mockRejectedValueOnce(new Error('Unavailable')).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        })
+    );
+    render(view('chip'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    await act(async () => complete(chip));
+    expect(await screen.findByText('Private Chip Lobby')).toBeTruthy();
+  });
   it('retries a failed access read without treating the failure as a join requirement', async () => {
     mocks.access.mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce(chip);
     render(view('chip'));

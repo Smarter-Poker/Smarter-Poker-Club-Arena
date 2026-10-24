@@ -202,3 +202,14 @@ describe('every board entry is coherent', () => {
     }
   });
 });
+
+describe('Classic and Lightning style aliases', () => {
+  it('keeps saved Action selections usable and narrows them to Lightning', () => {
+    for (const selected of ['action', 'madness', 'lightning']) {
+      const value = { ...emptyFilterValue(holdem), styles: [selected] };
+      for (const style of ['action', 'madness'])
+        expect(rowPassesFilter(holdem, value, row({ style }))).toBe(true);
+      expect(rowPassesFilter(holdem, value, row({ style: 'classic' }))).toBe(false);
+    }
+  });
+});

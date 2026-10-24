@@ -19,11 +19,13 @@
  * player cancels, or when the Cluster is no longer Lightning at all (there is
  * then no pool session to wait for).
  *
- * Without an intent for this table it does nothing at all, which is every
- * table in production today.
+ * An existing seated player whose game converts receives an explicit View
+ * Game notice from the original conversion event; their tab stays put until
+ * they choose it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { reportError } from '../utils/errorReporter';
+import { supabase } from '../lib/supabase';
 import {
   clearLightningEntryIntent,
   fetchLightningClusterMeta,
@@ -61,10 +63,14 @@ export interface LightningAnchorHandoff {
   joining: boolean;
   /** Stop waiting: the intent is forgotten and the table is left as it is. */
   cancel: () => void;
+  readyPoolSessionId: string | null;
+  viewReady: () => void;
 }
 
 export function useLightningAnchorHandoff(input: {
   tableId: string | undefined;
+  clusterId?: string | null;
+  userId?: string | null;
   /** This room is already a pool session: nothing to hand off. */
   isPoolSession: boolean;
   /** The hero holds a seat with chips at this table (the buy-in landed). */
@@ -78,6 +84,11 @@ export function useLightningAnchorHandoff(input: {
   const followRef = useRef(input.follow);
   followRef.current = input.follow;
   const [joining, setJoining] = useState(false);
+  const identity = `${tableId ?? ''}:${input.clusterId ?? ''}:${input.userId ?? ''}:${isPoolSession}:${heroBoughtIn}`;
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+  const [readySession, setReadySession] = useState<{ identity: string; id: string } | null>(null);
+  const readyPoolSessionId = readySession?.identity === identity ? readySession.id : null;
   /* Bumped by cancel(): the effect below re-runs, finds no intent, and stops. */
   const [cancelled, setCancelled] = useState(0);
   const cancel = useCallback(() => {
@@ -85,6 +96,57 @@ export function useLightningAnchorHandoff(input: {
     setJoining(false);
     setCancelled((n) => n + 1);
   }, [tableId]);
+
+  // A seated player can enter Lightning when their existing game converts,
+  // without ever having clicked Join Lightning. Observe that original game
+  // transition and reconnect; do not add a polling repair loop or switch tabs.
+  useEffect(() => {
+    setReadySession(null);
+    const clusterId = input.clusterId;
+    if (!tableId || !clusterId || !input.userId || isPoolSession || !heroBoughtIn) return;
+    let stopped = false;
+    let readVersion = 0;
+    const read = async () => {
+      const version = ++readVersion;
+      try {
+        const session = await fetchMyLightningSession(clusterId);
+        if (stopped || version !== readVersion || identityRef.current !== identity) return;
+        setReadySession(
+          hasLightningRoom(session) && session.anchorTableId === tableId && session.poolSessionId
+            ? { identity, id: session.poolSessionId }
+            : null
+        );
+      } catch (err) {
+        if (!stopped)
+          reportError(err, 'lightning.conversion_session_read_failed', { clusterId, tableId });
+      }
+    };
+    const channel = supabase
+      .channel(`lightning-anchor-conversion:${tableId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'cash_games', filter: `id=eq.${clusterId}` },
+        () => void read()
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') void read();
+      });
+    void read();
+    return () => {
+      stopped = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [tableId, input.clusterId, input.userId, isPoolSession, heroBoughtIn, identity]);
+
+  const viewReady = useCallback(() => {
+    if (!readyPoolSessionId || !input.clusterId || identityRef.current !== identity) return;
+    registerLightningPoolSession({
+      poolSessionId: readyPoolSessionId,
+      clusterId: input.clusterId,
+      meta: null,
+    });
+    followRef.current(readyPoolSessionId);
+  }, [readyPoolSessionId, input.clusterId, identity]);
 
   useEffect(() => {
     if (!tableId || isPoolSession || !heroBoughtIn) {
@@ -152,5 +214,5 @@ export function useLightningAnchorHandoff(input: {
     };
   }, [tableId, isPoolSession, heroBoughtIn, cancelled]);
 
-  return { joining, cancel };
+  return { joining, cancel, readyPoolSessionId, viewReady };
 }

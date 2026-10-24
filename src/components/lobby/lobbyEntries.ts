@@ -63,7 +63,7 @@ import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { tournamentRowUnitCents, type TournamentArenaEmbed } from '../tournament/details/types';
 import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
-import { CASH_TEMPLATES } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -1868,7 +1868,8 @@ const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\
 /** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
 export function cashTemplateLabel(template: string | null | undefined): string | null {
   if (!template) return null;
-  return CASH_TEMPLATES.find((t) => t.id === String(template).toLowerCase())?.label ?? null;
+  const id = String(template).toLowerCase();
+  return CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(id))?.label ?? null;
 }
 
 /**
@@ -1887,16 +1888,17 @@ export function countStylesOnBoard(
   const counts: Record<string, number> = {};
   for (const r of rows) {
     if (!r.cluster_id || !isClusterFront(r)) continue;
-    const key = String(r.cluster_template ?? '')
+    const historicalKey = String(r.cluster_template ?? '')
       .trim()
       .toLowerCase();
+    const key = historicalKey === 'action' ? 'madness' : historicalKey;
     if (!key) continue;
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
 }
 
-/** "Classic 12 / Action 4 / Madness 2", in the menu's own order; zero is printed, not hidden. */
+/** "Classic 12 / Lightning Games 6", in the menu's own order; zero is printed, not hidden. */
 export function styleCountsLine(
   choices: ReadonlyArray<{ key: string; label: string }>,
   counts: Readonly<Record<string, number>>

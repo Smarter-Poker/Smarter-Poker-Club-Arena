@@ -102,6 +102,7 @@ export interface HorseDiscardControllerReceipt {
 export class HandController {
   private config: HandConfig;
   private state: GameState;
+  private immediateFoldCount = 0;
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
@@ -1122,6 +1123,27 @@ export class HandController {
     origin: AcceptedActionOrigin = 'unknown',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
+    return this.performBettingAction(seat, action, amount, origin, onAccepted);
+  }
+
+  /** Early folds do not replace the current actor's still-owed decision. */
+  getDecisionActionCount(): number {
+    return this.state.actionHistory.length - this.immediateFoldCount;
+  }
+
+  /** Explicit Lightning fold: final now, even while another player owes a decision. */
+  performImmediateFold(seat: number): boolean {
+    return this.performBettingAction(seat, 'fold', undefined, 'player', undefined, true);
+  }
+
+  private performBettingAction(
+    seat: number,
+    action: ActionType,
+    amount?: number,
+    origin: AcceptedActionOrigin = 'unknown',
+    onAccepted?: (record: Readonly<ActionRecord>) => void,
+    immediateFold = false
+  ): boolean {
     /* A TOURNAMENT CHIP IS WHOLE, LIKE A DIAMOND (launch audit 2026-10-05).
        Every place this controller splits or rounds already treats a
        tournament chip as one unit (chipUnit, the ante unit, the odd-chip
@@ -1141,7 +1163,9 @@ export class HandController {
     // or advance the hand with a live seat still holding three cards.
     if (this.state.stage === 'pineapple_discard') return false;
     const player = this.state.players.find((p) => p.seat === seat);
-    if (!player || seat !== this.state.currentPlayerSeat) return false;
+    const earlyFold = immediateFold && action === 'fold' && seat !== this.state.currentPlayerSeat;
+    if (earlyFold && !['preflop', 'flop', 'turn', 'river'].includes(this.state.stage)) return false;
+    if (!player || (!earlyFold && seat !== this.state.currentPlayerSeat)) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
     // whatever currentPlayerSeat claims. Without this, any stale turn pointer
     // lets an automated path (watchdog force-action, disconnect auto-action, a
@@ -1327,6 +1351,7 @@ export class HandController {
       publicNode,
     });
     this.state.actionHistory.push(record);
+    if (earlyFold) this.immediateFoldCount++;
 
     // Observe the exact clamped, validated and cent-snapped action before
     // broadcasts/advanceGame can change the current street or turn. A receipt
@@ -1353,7 +1378,11 @@ export class HandController {
         : 'unknown',
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
-    this.advanceGame();
+    if (!earlyFold) this.advanceGame();
+    else if (this.getActivePlayers().length === 1) this.completeHand();
+    else if (this.isBettingRoundComplete()) this.advanceStage();
+    // Otherwise the same current actor still owes the same decision. Do not
+    // call advanceGame(), which would move past that player's live clock.
     return true;
   }
 

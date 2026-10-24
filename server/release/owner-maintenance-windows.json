@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-lightning-public-observer-repair",
+      "ownerOrder": "Dan, 2026-10-23/24: \"get all of this fixed and live now\"; \"NO, ONCE ALL WORK IS DONE, I WANT IT LAUNCHED TONIGHT, NOT AT 4 AM\". Current owner report: all Lightning tables appear frozen and players are waiting. Limited to the confirmed physical Lightning observer projection, its directly necessary client compatibility repair, and the later explicit owner order that every Fold and preselected Fold immediately move to the next Lightning table and Fold & Watch be removed. Preserve the original drain, freeze, certificate, rollback and thaw safeguards.",
+      "contains": "e3f74638da4c4c6fa456ab2796305d892e02b48a",
+      "notBefore": "2026-10-24T05:24:46Z",
+      "notAfter": "2026-10-24T08:00:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-plo-river-range-repair",
       "ownerOrder": "Dan, 2026-10-23 evening: \"WHY THE FUCK WOULD THE HORSE RAISE INSTEAD OF JUST CALLING ON RIVER\" (hand45872846); \"IMPLEMENT THE HORSES WITH MORE PLO SKILLS ... RANGE ADVANTAGE, BLOCKERS\" and turn/river range understanding. Continues explicit push/publish NOW for every horse, not wait until4am; limited to these connected horse decision repairs.",
       "contains": "1a2bd6184bc91f304a06650afe91240c19f89d3b",

@@ -250,6 +250,24 @@ interface TableRoom {
 
 export class TableStateHub {
   private rooms: Map<string, TableRoom> = new Map();
+  /** A virtual public hand temporarily owns a halted physical observer room. */
+  private projections = new Map<string, { owner: object; active: () => boolean }>();
+
+  claimPublicProjection(tableId: string, owner: object, active: () => boolean): void {
+    if (this.projections.get(tableId)?.owner !== owner) this.retained.delete(tableId);
+    this.projections.set(tableId, { owner, active });
+  }
+
+  private acceptsPublisher(tableId: string, owner?: object): boolean {
+    const projection = this.projections.get(tableId);
+    if (!projection) return owner === undefined;
+    if (!projection.active()) {
+      this.projections.delete(tableId);
+      this.retained.delete(tableId);
+      return owner === undefined;
+    }
+    return projection.owner === owner;
+  }
   /** B12: messages skipped because a socket was backed up past the soft limit. */
   private softDropped = 0;
   /** B12: subscribers evicted because a socket blew past the hard limit. */
@@ -267,7 +285,8 @@ export class TableStateHub {
    * Subsequent publishes → computes JSON Patch diff, sends DELTA.
    * Messages go out to every OPEN subscriber; closed subscribers are evicted.
    */
-  publish(tableId: string, state: GameStateSnapshot): number {
+  publish(tableId: string, state: GameStateSnapshot, owner?: object): number {
+    if (!this.acceptsPublisher(tableId, owner)) return this.rooms.get(tableId)?.lastSeq ?? 0;
     // Diff the same JSON shape clients actually receive. structuredClone
     // retains undefined object keys which JSON omits, causing later DELTAs
     // to replace/remove paths absent from the client's SNAPSHOT. Normalize
@@ -347,7 +366,8 @@ export class TableStateHub {
   /**
    * Emit a transient event (e.g. time bank timeout, insurance offer) to all subscribers.
    */
-  emitEvent(tableId: string, payload: Record<string, unknown>): void {
+  emitEvent(tableId: string, payload: Record<string, unknown>, owner?: object): void {
+    if (!this.acceptsPublisher(tableId, owner)) return;
     // STATS FACT LAYER 2026-08-21 — capture all-in equity on its way past.
     //
     // ServerTableEngineRunout.broadcastAllInEquity() computes EXACT all-in
@@ -361,11 +381,11 @@ export class TableStateHub {
     // intercept here instead of editing it. This MUST sit above the
     // `if (!room) return` below: that early return fires on tables with no
     // subscribers, and a hand nobody is watching still counts.
-    captureAllInEquity(tableId, payload);
+    if (!owner) captureAllInEquity(tableId, payload);
     // RIT/insurance lifecycle telemetry - see handFacts.captureRitEvent for
     // why this exists. Same placement rationale: above the `if (!room) return`,
     // because an offer nobody is subscribed to still happened.
-    captureRitEvent(tableId, payload);
+    if (!owner) captureRitEvent(tableId, payload);
 
     // D3: retain BEFORE the `if (!room) return` below, for the same reason the
     // two captures above sit there — the early return fires while a table has
@@ -405,6 +425,8 @@ export class TableStateHub {
     payload: Record<string, unknown>,
     onDelivered?: () => void
   ): number {
+    // A physical observer projection never receives private cash-engine frames.
+    if (!this.acceptsPublisher(tableId)) return 0;
     const room = this.rooms.get(tableId);
     if (!room || !userId) return 0;
     const message: UserEventMessage = { type: 'USER_EVENT', tableId, payload };

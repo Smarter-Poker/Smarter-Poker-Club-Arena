@@ -410,3 +410,30 @@ describe('a rebuilt engine whose row is halted', () => {
     }
   });
 });
+
+describe('public Lightning anchor admission', () => {
+  it('requires the current acknowledged Lightning halt and releases on reversion', () => {
+    const { e } = dealingTable(() => {});
+    e.tableInfo.dealing_halted_reason = 'lightning';
+    e.dealingHaltedAt = H1;
+    e.clusterLightningEnabled = true;
+    expect(e.lightningObserverCluster()).toBeNull();
+    e.dealingHaltObservedFor = H1;
+    expect(e.lightningObserverCluster()).toBe('game-1');
+    e.dealingHaltedAt = H2;
+    expect(e.lightningObserverCluster()).toBeNull();
+    e.dealingHaltedAt = H1;
+    e.clusterLightningEnabled = false;
+    expect(e.lightningObserverCluster()).toBeNull();
+    e.clusterLightningEnabled = true;
+    e.tableInfo.dealing_halted_reason = 'lightning_pending_on';
+    expect(e.lightningObserverCluster()).toBeNull();
+    e.tableInfo.dealing_halted_reason = 'lightning';
+    e.dealingHaltedAt = null;
+    expect(e.lightningObserverCluster()).toBeNull();
+    e.dealingHaltedAt = H1;
+    e.tableInfo.game_type = 'tournament';
+    e.tableInfo.tournament_id = '00000000-0000-4000-8000-000000007899';
+    expect(e.lightningObserverCluster()).toBeNull();
+  });
+});

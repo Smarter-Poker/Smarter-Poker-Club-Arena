@@ -16,10 +16,12 @@ export function playerActionContext(hand: HandController): string | null {
   }
   // These are public action coordinates, never cards or deck state. The clock
   // is deliberately absent: buying time or reconnecting does not create a turn.
+  // An explicit out-of-turn fold leaves this actor and wager unchanged, so
+  // it also must not retire the existing turn clock/time-bank callbacks.
   return [
     incarnation,
     state.stage,
-    state.actionHistory.length,
+    hand.getDecisionActionCount(),
     state.currentPlayerSeat,
     state.currentBet,
   ].join(':');

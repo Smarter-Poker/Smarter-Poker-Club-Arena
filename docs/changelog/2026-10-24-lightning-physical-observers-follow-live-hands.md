@@ -1,0 +1,11 @@
+# Physical Lightning observers follow live hands
+
+Physical Lightning anchors intentionally stop their cash dealing loop after conversion. Their existing observer sockets nevertheless kept receiving the last cash hand, while the live Lightning hosts published only to participant pool rooms. The result looked frozen even as virtual hands dealt and settled.
+
+The hosting owner now projects its existing shared, sanitized presentation and public hand events into those physical rooms. Each anchor follows one host until that host finishes, then follows another active hand or retains the terminal frame until the next hand. The hub retains the selected snapshot for reconnect/resync and rejects stale cash publications and private frames while the projection owns the room. Hand changes clear prior retained reveal events. Normal cash publication resumes when the acknowledged Lightning halt or enabled-cluster condition clears.
+
+Physical viewer admission remains the existing transport authorization. Observers gain no pool session, private cards, personal fold controls, presence or action ownership. The projection does not change dealing, settlement, custody, schedules or navigation. A `lightning_observer` snapshot marker identifies the public projection to consumers.
+
+Regression coverage exercises the real hosting owner, real hand host/shared presentation and actual hub: stable hand selection, rotation, reconnect, private-card isolation, anonymous names, stale cash suppression/restoration, and acknowledged-halt eligibility. The three observer regressions fail against the original host/hub/hosting source. Focused existing halt, hosting and transport suites also pass. Engine publication and affected live browser proof remain separate release evidence.
+
+The compatible client consumes that marker as a public observer role, even when the signed-in user's ID appears in the selected virtual hand. It clears physical hero ownership, prevents private-card restoration and ordinary action submission, and preserves separately verified funded-anchor ownership for the existing explicit View Game handoff. The real client snapshot/delta/reconnect pipeline and mapper retain this separation; both runtime regressions fail on the original mapper.

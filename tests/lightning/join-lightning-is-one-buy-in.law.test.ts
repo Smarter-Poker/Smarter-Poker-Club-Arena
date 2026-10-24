@@ -28,6 +28,7 @@ function deps(over: Partial<LightningBuyInDeps> = {}): LightningBuyInDeps {
     complete: vi.fn(async () => undefined),
     execute: vi.fn(async () => ({ kind: 'confirmed' as const, fromReceipt: false })),
     markIntent: vi.fn(),
+    clearIntent: vi.fn(),
     readPoolSession: vi.fn(async () => POOL),
     ...over,
   };
@@ -99,7 +100,6 @@ describe('Join Lightning is one buy-in: the amount, then an assigned seat', () =
     expect(page).not.toMatch(/\?buyin=1/);
   });
 });
-<<<<<<< HEAD
 
 describe('Join Lightning is one tap from everywhere, and nobody picks a Lightning seat', () => {
   const read = (p: string) => readFileSync(p, 'utf8');
@@ -160,5 +160,3 @@ it('a Join Lightning that is not offered says why', () => {
   expect(page).toMatch(/\{atLimit \? \(\s+<p[^>]*>\s+\{LIGHTNING_LIMIT_TEXT\}/);
   expect(page).toMatch(/joinsClosed \? \(\s+<p[^>]*>\s+\{LIGHTNING_JOINS_CLOSED_TEXT\}/);
 });
-=======
->>>>>>> origin/main

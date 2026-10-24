@@ -21308,11 +21308,7 @@ function LiveTablePage({
      player itself; nobody picks a chair on this felt. */
   const openLightningAnchorEntry = () => {
     if (!anchorLightningClusterId) return;
-<<<<<<< HEAD
     navigate(lightningJoinRoute(anchorLightningClusterId));
-=======
-    navigate(`${lightningRoute(anchorLightningClusterId)}?join=1`);
->>>>>>> origin/main
   };
 
   /**

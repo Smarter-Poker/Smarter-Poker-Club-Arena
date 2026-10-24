@@ -70,14 +70,10 @@ import {
   buyIntoLightning,
   currentLightningUserId,
   readLightningBuyInContext,
-<<<<<<< HEAD
   rememberLightningBuyIn,
   rememberedLightningBuyIn,
-=======
->>>>>>> origin/main
   type LightningBuyInContext,
 } from '../lightning/lightningJoinBuyIn';
-import { useUserStore } from '../stores/useUserStore';
 import './LightningEntryPage.css';
 
 /** What the device allows, in the page's words. */
@@ -90,7 +86,6 @@ export const LIGHTNING_LIMIT_TEXT =
  * already in it play on; JOIN LIGHTNING is shown, and not offered.
  */
 export const LIGHTNING_JOINS_CLOSED_TEXT = 'Lightning Is Not Taking New Players Right Now.';
-
 
 type Phase =
   | { kind: 'resolving' }
@@ -240,14 +235,13 @@ export default function LightningEntryPage() {
         clusterId,
         userId: buyIn.userId,
         amount,
-        clubId: useUserStore.getState().currentClubId ?? null,
+        /* The wallet shown is the one the table's own door reads; the buy-in
+           lets that same door choose it, so the two can never differ. */
+        clubId: null,
       });
       if (!mounted.current) return result.kind === 'seated';
       if (result.kind === 'rejected') return { status: 'rejected', message: result.message };
-<<<<<<< HEAD
       if (result.kind === 'seated') rememberLightningBuyIn(clusterId, amount);
-=======
->>>>>>> origin/main
       setBuyIn(null);
       const meta = phase.kind === 'entry' ? phase.meta : null;
       writeLightningPrefs({
@@ -457,7 +451,6 @@ export default function LightningEntryPage() {
           onSecondary: () => navigate('/'),
         }}
       />
-<<<<<<< HEAD
       {/* A door that is not offered says why, in one line. */}
       {atLimit ? (
         <p className="lightning-entry__quiet" role="status" data-testid="lightning-entry-why">
@@ -468,8 +461,6 @@ export default function LightningEntryPage() {
           {LIGHTNING_JOINS_CLOSED_TEXT}
         </p>
       ) : null}
-=======
->>>>>>> origin/main
       {buyIn ? (
         <BuyInModal
           isOpen
@@ -479,10 +470,7 @@ export default function LightningEntryPage() {
           gameType={meta?.variant ?? null}
           minBuyIn={buyIn.minBuyIn}
           maxBuyIn={buyIn.maxBuyIn}
-<<<<<<< HEAD
           defaultBuyIn={clusterId ? rememberedLightningBuyIn(clusterId, buyIn) : undefined}
-=======
->>>>>>> origin/main
           accountBalance={buyIn.balance}
           bigBlind={buyIn.bigBlind || meta?.bigBlind || 0}
         />

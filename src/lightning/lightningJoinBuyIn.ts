@@ -36,7 +36,11 @@ import {
 } from '../services/CashBuyInRecovery';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { reportError } from '../utils/errorReporter';
-import { fetchMyLightningSession, setLightningEntryIntent } from './lightningSession';
+import {
+  clearLightningEntryIntent,
+  fetchMyLightningSession,
+  setLightningEntryIntent,
+} from './lightningSession';
 
 /** What the amount question needs: the game's range, the floor and the wallet. */
 export interface LightningBuyInContext {
@@ -59,6 +63,7 @@ export interface LightningBuyInDeps {
   complete: typeof cashBuyInJournal.complete;
   execute: typeof executeCashBuyIn;
   markIntent: (tableId: string, clusterId: string) => void;
+  clearIntent: (tableId: string) => void;
   readPoolSession: (clusterId: string) => Promise<string | null>;
 }
 
@@ -68,6 +73,7 @@ const defaultDeps: LightningBuyInDeps = {
   complete: (attempt) => cashBuyInJournal.complete(attempt),
   execute: executeCashBuyIn,
   markIntent: setLightningEntryIntent,
+  clearIntent: clearLightningEntryIntent,
   readPoolSession: async (clusterId) => (await fetchMyLightningSession(clusterId)).poolSessionId,
 };
 
@@ -190,6 +196,8 @@ export async function buyIntoLightning(
     }
     await deps.complete(attempt).catch(() => undefined);
     if (outcome.kind === 'rejected') {
+      /* No seat was bought: the tab has no room to follow. */
+      deps.clearIntent(held.table_id);
       const conflict = cashBuyInSeatConflictText(outcome.error);
       /* The chair went to someone else between the hold and the purchase: no
          chips moved, so the door is asked once more for a fresh chair. */
@@ -216,7 +224,6 @@ export async function buyIntoLightning(
   }
   return { kind: 'rejected', message: 'That Seat Was Just Taken. Try Again.' };
 }
-<<<<<<< HEAD
 
 /* ─── The amount the player chose last time (per device, per game) ───────────
    A reminder only: it pre-fills the amount question, which the player still
@@ -257,5 +264,3 @@ export function rememberedLightningBuyIn(
   if (ceiling < context.minBuyIn) return undefined;
   return Math.min(Math.max(last, context.minBuyIn), ceiling);
 }
-=======
->>>>>>> origin/main

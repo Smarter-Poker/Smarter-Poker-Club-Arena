@@ -27,11 +27,7 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
 
   it('Join Lightning on a Lightning table goes to the one-question door, never a seat on this felt', () => {
     const body = sliceMethod(page, 'const openLightningAnchorEntry = () =>');
-<<<<<<< HEAD
     expect(body).toContain('navigate(lightningJoinRoute(anchorLightningClusterId));');
-=======
-    expect(body).toMatch(/navigate\(`\$\{lightningRoute\(anchorLightningClusterId\)\}\?join=1`\)/);
->>>>>>> origin/main
     expect(body).not.toMatch(/handleSeatClick/);
   });
 });

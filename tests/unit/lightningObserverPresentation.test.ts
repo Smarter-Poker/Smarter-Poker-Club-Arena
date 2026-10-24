@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { EngineStateClient, type EngineSnapshot } from '../../src/services/EngineStateClient';
 import { isLightningObserverSnapshot, mapEngineSnapshot } from '../../src/utils/mapEngineSnapshot';
 
@@ -76,6 +77,38 @@ describe('public Lightning observer consumer', () => {
     } finally {
       client.disconnect();
     }
+  });
+
+  it('refuses ordinary actions through the actual page callback before transport submission', async () => {
+    const text = readFileSync('src/pages/TablePage.tsx', 'utf8');
+    const ast = ts.createSourceFile(
+      'TablePage.tsx',
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    let action: ts.Node | undefined;
+    function visit(node: ts.Node) {
+      if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'submitActionWithToast') {
+        action = (node.initializer as ts.CallExpression).arguments[0];
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(ast);
+    expect(action).toBeDefined();
+    const script =
+      ts.transpile('const run = ' + action!.getText(ast), { target: ts.ScriptTarget.ES2022 }) +
+      '\nreturn run;';
+    const submit = vi.fn();
+    const run = new Function(
+      'isLightningObserverSnapshot',
+      'engineSnapshotRef',
+      'submitAction',
+      script
+    )(isLightningObserverSnapshot, { current: snapshot() }, submit);
+    expect(await run('anchor', 'viewer', 'fold')).toBe(false);
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it('gates physical hero healing, private recovery and action submission while retaining funded handoff', () => {

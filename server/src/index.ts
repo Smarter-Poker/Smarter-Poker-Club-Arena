@@ -384,6 +384,8 @@ function stopLeaderOwnedServices(): Promise<void> {
 gameServer.registerExternalShutdownOwnershipBarrier(stopLeaderOwnedServices);
 
 httpServer.listen(PORT, () => {
+  // Module load and construction end here; /health bootPhases measures from process start.
+  gameServer.markBootPhase('http_listening');
   console.log(`[HTTP] Health check server listening on port ${PORT}`);
   console.log(`[WS]   Engine WebSocket server attached at /ws/table/:tableId`);
   console.log(`[WS]   Channel WebSocket server attached at /ws/channel`);

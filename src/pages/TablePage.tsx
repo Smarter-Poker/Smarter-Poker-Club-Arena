@@ -2288,6 +2288,12 @@ function LiveTablePage({
    * socket, exactly as it is on every other page.
    */
   const engineSnapshot = rawEngineSnapshot;
+  // A funded physical anchor survives an empty/stale public hand roster.
+  const [lightningAnchorFunding, setLightningAnchorFunding] = useState<{
+    tableId: string;
+    userId: string;
+    funded: boolean;
+  } | null>(null);
   /* LIGHTNING PHASE 6: the snapshot for handlers that run after their render
      (the pre-action arm names the hand it belongs to). */
   const engineSnapshotRef = useRef(engineSnapshot);
@@ -15565,6 +15571,16 @@ function LiveTablePage({
           });
         }
 
+        if (!seatsRestoreErr && Array.isArray(existingSeats) && userId && userId !== 'guest') {
+          setLightningAnchorFunding({
+            tableId: table.id,
+            userId,
+            funded: existingSeats.some(
+              (seat) => seat.user_id === userId && Number(seat.stack) > 0 && !seat.leave_pending
+            ),
+          });
+        }
+
         if (existingSeats && existingSeats.length > 0) {
           // Fetch display names for seated players
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
@@ -24319,6 +24335,11 @@ function LiveTablePage({
     userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
+    existingAnchorFunded: leftSeatPendingRef.current
+      ? false
+      : lightningAnchorFunding?.tableId === tableId && lightningAnchorFunding?.userId === userId
+        ? lightningAnchorFunding.funded
+        : undefined,
     follow: (poolSessionId) => {
       if (embeddedTableId) {
         onTableInfoUpdate?.({ movedToTableId: poolSessionId });

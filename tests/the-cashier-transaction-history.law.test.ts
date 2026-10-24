@@ -120,6 +120,14 @@ describe('the cashier transaction history', () => {
     expect(page).toContain('const direction = ledgerDirection(r, user.id);');
   });
 
+  it('pins the installed door in the post-deploy cashier contract', () => {
+    const contract = read('scripts/verification-harness/cashier-release-contract.sql');
+    expect(contract).toContain(
+      "'signature', 'public.fn_cashier_transaction_history(uuid,text,integer,integer)',"
+    );
+    expect(contract).toContain("'hash', '3919f3ef7a21ed33e2f0c7a80113c7d2'");
+  });
+
   it('enforces the same rule in the database: the scope narrows a book, never widens it', () => {
     const sql = read('supabase/migrations/20261024195842_cashier_transaction_history_scope.sql');
     expect(sql).toContain("IF v_scope = 'club' AND v_role IN ('owner', 'co_owner', 'admin') THEN");

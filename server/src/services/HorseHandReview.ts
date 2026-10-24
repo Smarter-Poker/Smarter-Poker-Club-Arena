@@ -105,6 +105,28 @@ export interface HorseReviewInput {
    * rows it produces are keyed apart so nothing judges the two together.
    */
   vpipFloor?: number;
+  /**
+   * The results bucket this hand files under (2026-10-24). Absent: derived as
+   * always (tournament / hu_cash / cash). Lightning passes
+   * `lightningReviewFormat(bigBlind)` so its hands get their own scoreboard
+   * rows per stake and never move the cash tuner's inputs, which read only
+   * cash and hu_cash.
+   */
+  format?: string;
+  /** Touch the fleet seat for this table (default true). A Lightning host
+   *  table is not where the horse is seated, so Lightning passes false. */
+  seatTouch?: boolean;
+}
+
+/** The Lightning results bucket for one stake, e.g. `lightning_2bb` or `lightning_0.5bb`. */
+export function lightningReviewFormat(bigBlind: number): string {
+  const bb = Number.isFinite(bigBlind) && bigBlind > 0 ? Math.round(bigBlind * 100) / 100 : 0;
+  return `lightning_${bb}bb`;
+}
+
+function reviewFormat(input: HorseReviewInput, dealtCount: number): string {
+  if (typeof input.format === 'string' && input.format.length > 0) return input.format;
+  return input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
 }
 
 const FLAG_BB = 20;
@@ -914,7 +936,7 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
 
   const bb = input.bigBlind > 0 ? input.bigBlind : 1;
   const dealtCount = input.holeCardsAll.size || input.roster.length;
-  const format = input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
+  const format = reviewFormat(input, dealtCount);
 
   // Distinct non-empty boards: board 1 is repeated inside some callers' lists.
   const multiBoard =
@@ -1024,7 +1046,7 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
     const bb = input.bigBlind > 0 ? input.bigBlind : 1;
     const day = input.playedAt.slice(0, 10);
     const dealtCount = input.holeCardsAll.size || input.roster.length;
-    const format = input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
+    const format = reviewFormat(input, dealtCount);
     const returnedBy = new Map<string, number>();
     for (const w of input.winners ?? []) {
       if (!w?.userId) continue;
@@ -1498,7 +1520,7 @@ const touchEnabled = (): boolean => process.env.HORSE_SEAT_TOUCH_ENABLED !== 'fa
 
 function touchHorseSeats(input: HorseReviewInput): void {
   try {
-    if (!touchEnabled() || !input.tableId) return;
+    if (!touchEnabled() || !input.tableId || input.seatTouch === false) return;
     for (const p of input.roster) {
       if (!p.isHorse || !p.userId) continue;
       const key = `${p.userId}|${input.tableId}`;

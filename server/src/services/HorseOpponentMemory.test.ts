@@ -253,3 +253,52 @@ it('reuses a profile learned after a hand failure without retrying that failed h
   expect(await read(snapshot)).toEqual([{ ...row(), user_id: other }]);
   expect(mocks.rpc).toHaveBeenCalledTimes(2);
 });
+
+describe('the cost of every opponent read is a number (2026-10-24)', () => {
+  it('buckets latency and names each failure kind', async () => {
+    const { opponentMemoryLatencyBucket: b, opponentMemoryFailureFeature: f } =
+      await import('./HorseOpponentMemory.js');
+    expect(b(10)).toBe('horse_opponent_memory_read_ms_le50');
+    expect(b(50)).toBe('horse_opponent_memory_read_ms_le50');
+    expect(b(51)).toBe('horse_opponent_memory_read_ms_le100');
+    expect(b(400)).toBe('horse_opponent_memory_read_ms_le500');
+    expect(b(1400)).toBe('horse_opponent_memory_read_ms_gt1000');
+    expect(b(NaN)).toBe('horse_opponent_memory_read_ms_unknown');
+    expect(f(new Error('opponent memory unavailable: busy'))).toBe(
+      'horse_opponent_memory_read_busy'
+    );
+    expect(f(new Error('opponent memory unavailable: 57014'))).toBe(
+      'horse_opponent_memory_read_timeout'
+    );
+    expect(f(Object.assign(new Error('x'), { name: 'TimeoutError' }))).toBe(
+      'horse_opponent_memory_read_timeout'
+    );
+    expect(f(new Error('opponent memory receipt incomplete'))).toBe(
+      'horse_opponent_memory_read_incomplete'
+    );
+    expect(f(new Error('opponent memory unavailable: 42501'))).toBe(
+      'horse_opponent_memory_read_failed'
+    );
+  });
+
+  it('files every read outcome into the horse telemetry the flush publishes', async () => {
+    const telemetry = await import('../engine/BrainTelemetry.js');
+    telemetry.enableBrainTelemetry();
+    telemetry.drainFires();
+    const ids = ['90000000-0000-4000-8000-0000000000a1'];
+    mocks.rpc.mockImplementationOnce(() => ({
+      abortSignal: async () => ({ data: [], error: null }),
+    }));
+    await readHorseOpponentProfiles(ids, 'nlh', 'cash', 'full');
+    mocks.rpc.mockImplementationOnce(() => ({
+      abortSignal: async () => ({ data: null, error: { code: '57014' } }),
+    }));
+    await expect(readHorseOpponentProfiles(ids, 'nlh', 'cash', 'short')).rejects.toThrow();
+    const fired = new Map(telemetry.drainFires().map((r) => [r.feature, r.fires]));
+    expect(fired.get('horse_opponent_memory_read_ok')).toBe(1);
+    expect(fired.get('horse_opponent_memory_read_timeout')).toBe(1);
+    expect(
+      [...fired.keys()].filter((k) => k.startsWith('horse_opponent_memory_read_ms_')).length
+    ).toBe(1);
+  });
+});

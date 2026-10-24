@@ -20,6 +20,7 @@ import {
 import { LightningMetrics } from '../lightning/LightningMetrics.js';
 import { MetricsRegistry } from '../observability/Metrics.js';
 import { HorseLogic } from '../engine/HorseLogic.js';
+import type { HorseReviewInput } from '../services/HorseHandReview.js';
 import type {
   CompletedHandObservation,
   FastHorseDecisionResult,
@@ -274,6 +275,7 @@ export function buildHost(
   const released: Array<{ playerId: string; why: string }> = [];
   const metrics = new LightningMetrics(new MetricsRegistry());
   const horseLane = fakeHorseLane();
+  const scoreboard: HorseReviewInput[] = [];
   const jackpot = {
     payMain: vi.fn(async () => ({ status: 'nothing_to_pay' as const, reason: 'fixture' })),
     payMini: vi.fn(async () => ({ status: 'skipped' as const, reason: 'fixture' })),
@@ -293,10 +295,13 @@ export function buildHost(
     // No database in a unit test: the durable schema reads as absent, so the
     // observation still reaches the fake lane, with no profile read.
     horseObservation: { schema: async () => 'unavailable' as const, report: () => {} },
+    recordHorseResults: async (input) => {
+      scoreboard.push(input);
+    },
     jackpot: jackpot as never,
     ...(opts.deps ?? {}),
   });
-  return { host, hub, released, metrics, horseLane, jackpot, ...fb };
+  return { host, hub, released, metrics, horseLane, jackpot, scoreboard, ...fb };
 }
 
 /** Let promise chains settle without advancing any fake clock. */

@@ -142,6 +142,8 @@ import {
   observeLightningHand,
   type LightningObservationDeps,
 } from './LightningHorseObservation.js';
+import { recordLightningHorseResults } from './LightningHorseResults.js';
+import type { HorseReviewInput } from '../services/HorseHandReview.js';
 import {
   horseOpponentMemorySchema,
   readHorseOpponentProfiles,
@@ -387,6 +389,8 @@ export interface LightningHandHostDeps {
    * for tests; the physical path's own doors otherwise.
    */
   horseObservation?: Partial<Pick<LightningObservationDeps, 'schema' | 'readProfiles' | 'report'>>;
+  /** Files the settled hand on the horse scoreboard (LightningHorseResults). Injected for tests. */
+  recordHorseResults?: (input: HorseReviewInput) => Promise<void>;
   /** The jackpot payout doors (injected for tests; the physical ones otherwise). */
   jackpot?: Pick<LightningJackpotDeps, 'payMain' | 'payMini'>;
   /** How long the post-commit drain may keep trying while the lease is held. */
@@ -2228,6 +2232,37 @@ export class LightningHandHost {
     };
   }
 
+  /** LightningHorseResults: the settled hand's exact horse nets, play and reviews. */
+  private recordForHorseScoreboard(
+    state: GameState,
+    results: LightningSettleResult[],
+    rake: number,
+    bbj: number,
+    handHistoryId: string
+  ) {
+    const participants = [...this.participants.values()];
+    void recordLightningHorseResults(
+      {
+        handHistoryId,
+        hostTableId: this.hostTableId,
+        rules: this.rules ?? {},
+        playedAtMs: this.now(),
+        potSize: state.pot,
+        board: this.boards[0],
+        holeCards: this.holeCards,
+        results,
+        winners: this.winners,
+        actions: this.actions,
+        participants,
+        rake,
+        bbj,
+        buttonSeat: participants.find((p) => p.position === 'btn')?.seat ?? null,
+      },
+      this.deps.recordHorseResults,
+      this.deps.horseObservation?.report ?? reportError
+    );
+  }
+
   /** LightningHorseObservation: teach the live horse lane this committed hand. */
   private observeForHorses(state: GameState, leaseGeneration: string, handHistoryId: string) {
     const rules = this.rules!;
@@ -2287,6 +2322,9 @@ export class LightningHandHost {
         // is matched into is read with this one already in it. Not awaited:
         // it can never hold or endanger the settled hand.
         this.observeForHorses(state, lease.generation, out.value.handHistoryId);
+        // A LIGHTNING HAND IS ON THE HORSE SCOREBOARD (2026-10-24): the
+        // physical path's recordHorseHandReviews, filed under lightning_<bb>bb.
+        this.recordForHorseScoreboard(state, results, rake, bbj, out.value.handHistoryId);
         await this.drainPostCommit(out.value.handHistoryId);
         // This is the committed hand's receipt, including for a player freed
         // by an earlier fold. Gameplay frames still go only to watching rooms.

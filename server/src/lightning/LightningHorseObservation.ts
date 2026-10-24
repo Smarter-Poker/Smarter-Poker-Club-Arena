@@ -33,6 +33,7 @@
  * the hand, and every failure is reported and swallowed - exactly the
  * physical path's contract.
  */
+import { noteFire } from '../engine/BrainTelemetry.js';
 import { readScopeOf } from '../engine/HorseMind.js';
 import { memoryVariant, type DurableOpponentProfile } from '../engine/HorseOpponentMemory.js';
 import type {
@@ -130,10 +131,18 @@ export async function observeLightningHand(
       }
     }
     const pending = deps.lane().observeCompletedHand(buildLightningObservation(hand, durable));
-    await pending.catch((error) =>
-      deps.report(error, 'LightningHorseObservation.horse_mind_observation_failed')
+    // Coverage is a number (horse_brain_telemetry): every settled Lightning
+    // hand files exactly one of these two, so observed / settled is the share
+    // of Lightning hands the horse mind actually learned.
+    await pending.then(
+      () => noteFire('lightning_hand_observed'),
+      (error) => {
+        noteFire('lightning_hand_observe_failed');
+        deps.report(error, 'LightningHorseObservation.horse_mind_observation_failed');
+      }
     );
   } catch (error) {
+    noteFire('lightning_hand_observe_failed');
     deps.report(error, 'LightningHorseObservation.horse_mind_observation_failed');
   }
 }

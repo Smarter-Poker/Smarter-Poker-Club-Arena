@@ -121,7 +121,10 @@ describe('the Lightning route', () => {
         };
       }
       if (name === 'fn_cash_game_join') {
-        return { data: { ok: true, action: 'seat', table_id: ANCHOR }, error: null };
+        return {
+          data: { ok: true, action: 'seat', table_id: ANCHOR, seat_number: 4 },
+          error: null,
+        };
       }
       return { data: null, error: null };
     });
@@ -130,7 +133,8 @@ describe('the Lightning route', () => {
     expect(screen.queryByText(/table \d|seat \d/i)).toBeNull();
     fireEvent.click(join);
     const probe = await screen.findByTestId('table-route');
-    expect(probe.textContent).toBe(`${ANCHOR}|?buyin=1`);
+    /* the door's own chair rides along: the player never picks a seat */
+    expect(probe.textContent).toBe(`${ANCHOR}|?buyin=1&seat=4`);
     expect(rpc).toHaveBeenCalledWith('fn_cash_game_join', { p_game_id: CLUSTER });
     expect(getLightningEntryIntent(ANCHOR)).toBe(CLUSTER);
   });
@@ -351,7 +355,9 @@ describe('route ownership of a pending join', () => {
       expect(toast.info).not.toHaveBeenCalled();
       expect(toast.warning).not.toHaveBeenCalled();
       resolveNext({ data: { ok: true, action: 'seat', table_id: NEXT_ANCHOR }, error: null });
-      expect((await screen.findByTestId('table-route')).textContent).toBe(`${NEXT_ANCHOR}|?buyin=1`);
+      expect((await screen.findByTestId('table-route')).textContent).toBe(
+        `${NEXT_ANCHOR}|?buyin=1`
+      );
       expect(getLightningEntryIntent(NEXT_ANCHOR)).toBe(NEXT_CLUSTER);
       expect(
         rpc.mock.calls

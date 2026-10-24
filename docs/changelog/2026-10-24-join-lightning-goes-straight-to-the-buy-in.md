@@ -28,5 +28,20 @@ player back to the same table. A loop with no buy-in in it, which reads as
   merged but had not been dispatched; it is installed through Apply Merged
   Migration.
 
-Pinned by `tests/lightning/a-lightning-seat-buy-in-follows-the-player.test.ts`
+## Second pass: the felt is not asked which chair is free
+
+A running physical table of a Lightning game paints a pool room's hand
+(LightningObserverProjection), so every seat on it looks taken whatever is
+free underneath, and a buy-in opened "on the first open seat" found none.
+Migration `20261024150545` makes the join door name the chair it holds
+(`seat_number`, from `fn_lightning_join_chair`: the lowest physically free
+chair, stepping past earlier holds of other players), and refuses up front with
+`LIGHTNING_JOINS_DISABLED` when an operator has stopped Lightning joins. The
+entry page carries the chair on `?seat=`, and `handleSeatClick(seat,
+{ lightningChair: true })` opens the buy-in on it without consulting the
+projected felt. The anchor-table detection now requires the game's mode to be
+Lightning, so a Classic must-move table keeps its waiting list and never marks
+a Lightning entry intent.
+
+Pinned by `tests/lightning/a-lightning-join-names-its-chair.law.test.ts` and `tests/lightning/a-lightning-seat-buy-in-follows-the-player.test.ts`
 and `tests/lightning/LightningEntryPage.test.tsx`.

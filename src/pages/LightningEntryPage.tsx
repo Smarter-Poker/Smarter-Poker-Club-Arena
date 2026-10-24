@@ -217,10 +217,16 @@ export default function LightningEntryPage() {
       warmTable(r.table_id);
       /* Dan 2026-10-24: "WHEN YOU CLICK JOIN LIGHTNING AND CONFIRM YOUR BUY IN
          AMOUNT, YOU ARE AUTO ASSIGNED TO A TABLE AND SEAT, YOU DON'T PICK YOUR
-         SEAT." The door has already held a chair for this player; ?buyin=1
-         opens the table's own buy-in sheet on that open chair the moment the
-         table paints, so the only thing left to do is confirm the amount. */
-      navigate(joinsLightning ? `/table/${r.table_id}?buyin=1` : `/table/${r.table_id}`);
+         SEAT." The door has already held a chair for this player and names it
+         (seat_number); ?buyin=1&seat= opens the table's own buy-in sheet on
+         that chair the moment the table paints, so the only thing left to do
+         is confirm the amount. */
+      const chair = Number(r.seat_number);
+      navigate(
+        joinsLightning && r.action === 'seat'
+          ? `/table/${r.table_id}?buyin=1${Number.isSafeInteger(chair) && chair > 0 ? `&seat=${chair}` : ''}`
+          : `/table/${r.table_id}`
+      );
     } catch (err) {
       if (!ownsPage()) return;
       reportError(err, 'LightningEntryPage.join_failed', { clusterId });

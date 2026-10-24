@@ -1461,7 +1461,8 @@ export class HorseMind {
     let lastAggrRaised = false;
     // Live controller history omits forced posts; persisted public history
     // includes explicit blind/ante records. Prefer captured public nodes when
-    // present, otherwise replay paid deltas and never double-count forced money.
+    // present, otherwise replay call/post deltas and wager street totals;
+    // never double-count forced money.
     const forced = history.some((a) =>
       ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(a.action as string)
     );
@@ -1501,8 +1502,13 @@ export class HorseMind {
         kind
       );
       const anyChips = forcedPost || ['bet', 'raise', 'call', 'all_in'].includes(kind);
-      const increment = anyChips && Number.isFinite(a.amount) ? Math.max(0, a.amount) : 0;
       const prevBet = streetBets.get(a.userId) || 0;
+      if (anyChips && (!Number.isFinite(a.amount) || a.amount < 0)) return null;
+      // Controller calls/posts are paid deltas; bets, raises and all-ins are
+      // absolute street totals (including chips this actor already paid).
+      const targetWager = ['bet', 'raise', 'all_in'].includes(kind);
+      const increment = anyChips ? (targetWager ? a.amount - prevBet : a.amount) : 0;
+      if (increment < -1e-8) return null;
       const total = prevBet + increment;
       const isAggr =
         kind === 'bet' || kind === 'raise' || (kind === 'all_in' && total > price + 1e-8);
@@ -2125,53 +2131,110 @@ export class HorseMind {
    * Build the per-opponent band list for an equity simulation: live (unfolded,
    * not-hero) opponents in table order, each mapped through bandFor().
    */
-  /** Recover initial forced money from the live controller's public state.
-   * totalInvested includes dead money; actionHistory amounts are paid deltas.
-   * Requires the full current-hand history; reject inconsistent or unknown money movements. */
+  /** Recover the exact initial public posts from the first accepted action's
+   * immutable pre-action node, then replay the controller's mixed amount ABI.
+   * Missing nodes or an incomplete/inconsistent money ledger are unknown;
+   * a blind raiser's initial post cannot be inferred from its final target. */
   static initialPublicMoney(
     players: SeatPlayer[],
     history: ActionRecord[] | undefined,
     pot: number
   ): { pot: number; streetBets: Array<[string, number]> } | null {
-    if (!history || !players.length || !Number.isFinite(pot) || pot < 0) return null;
+    if (!history?.length || !players.length || !Number.isFinite(pot) || pot < 0) return null;
     if (
       history.some((a) =>
         ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(a.action as string)
       )
     )
-      return null;
+      return null; // Explicit posting histories replay themselves in bandFor.
     const cents = (v: number) =>
       Number.isFinite(v) && v >= 0 && Math.abs(v * 100 - Math.round(v * 100)) < 1e-5
         ? Math.round(v * 100)
         : null;
-    const paid = new Map<string, number>();
-    const ids = new Set(players.map((p) => p.user_id));
-    if (ids.size !== players.length) return null;
-    for (const a of history) {
-      if (!['call', 'bet', 'raise', 'all_in'].includes(a.action)) {
-        if (!['check', 'fold', 'discard', 'show', 'muck'].includes(a.action)) return null;
+    const first = history[0].publicNode;
+    if (
+      first?.status !== 'captured' ||
+      first.street !== history[0].stage ||
+      first.actorSeat !== history[0].seat ||
+      first.seats.length !== players.length
+    )
+      return null;
+    if (first.street !== 'preflop' && !(first.street === 'flop' && first.bombPot)) return null;
+    const ids = new Map(players.map((p) => [p.seat, p.user_id]));
+    if (ids.size !== players.length || new Set(ids.values()).size !== players.length) return null;
+    const initialPot = cents(first.pot);
+    if (initialPot === null) return null;
+    const invested = new Map<string, number>(),
+      deadMoney = new Map<string, number>();
+    let bets = new Map<string, number>();
+    const initialBets: Array<[string, number]> = [];
+    for (const [seat, , bet, total, dead] of first.seats) {
+      const uid = ids.get(seat),
+        b = cents(bet),
+        t = cents(total),
+        d = cents(dead);
+      if (!uid || invested.has(uid) || b === null || t === null || d === null || t < b + d)
+        return null;
+      invested.set(uid, t);
+      deadMoney.set(uid, d);
+      bets.set(uid, b);
+      initialBets.push([uid, b / 100]);
+    }
+    if ([...invested.values()].reduce((a, b) => a + b, 0) !== initialPot) return null;
+    let runningPot = initialPot;
+    let street: ActionRecord['stage'] = first.street;
+    for (const action of history) {
+      if (!invested.has(action.userId) || ids.get(action.seat) !== action.userId) return null;
+      if (action.stage !== street) {
+        street = action.stage;
+        bets = new Map();
+      }
+      const node = action.publicNode;
+      if (node?.status === 'captured') {
+        if (
+          node.street !== street ||
+          node.actorSeat !== action.seat ||
+          cents(node.pot) !== runningPot ||
+          node.seats.length !== players.length
+        )
+          return null;
+        const seen = new Set<number>();
+        for (const [seat, , bet, total, dead] of node.seats) {
+          const uid = ids.get(seat);
+          if (
+            !uid ||
+            seen.has(seat) ||
+            cents(bet) !== (bets.get(uid) ?? 0) ||
+            cents(total) !== invested.get(uid) ||
+            cents(dead) !== deadMoney.get(uid)
+          )
+            return null;
+          seen.add(seat);
+        }
+      }
+      if (!['call', 'bet', 'raise', 'all_in'].includes(action.action)) {
+        if (!['check', 'fold', 'discard', 'show', 'muck'].includes(action.action)) return null;
         continue;
       }
-      const amount = cents(a.amount);
-      if (amount === null || !ids.has(a.userId)) return null;
-      paid.set(a.userId, (paid.get(a.userId) ?? 0) + amount);
+      const amount = cents(action.amount),
+        before = bets.get(action.userId) ?? 0;
+      if (amount === null) return null;
+      const delta = action.action === 'call' ? amount : amount - before;
+      if (delta < 0) return null;
+      bets.set(action.userId, before + delta);
+      invested.set(action.userId, invested.get(action.userId)! + delta);
+      runningPot += delta;
     }
-    let currentTotal = 0,
-      initialTotal = 0;
-    const streetBets: Array<[string, number]> = [];
-    for (const p of players) {
-      if (cents(p.returnedUncalled ?? 0) !== 0) return null;
-      const total = cents(p.totalInvested),
-        dead = cents(p.deadInvested ?? 0);
-      if (total === null || dead === null) return null;
-      const initial = total - (paid.get(p.user_id) ?? 0);
-      if (initial < dead) return null;
-      currentTotal += total;
-      initialTotal += initial;
-      streetBets.push([p.user_id, (initial - dead) / 100]);
+    if (cents(pot) !== runningPot) return null;
+    for (const player of players) {
+      if (
+        cents(player.returnedUncalled ?? 0) !== 0 ||
+        cents(player.totalInvested) !== invested.get(player.user_id) ||
+        cents(player.deadInvested ?? 0) !== deadMoney.get(player.user_id)
+      )
+        return null;
     }
-    if (cents(pot) !== currentTotal) return null;
-    return { pot: initialTotal / 100, streetBets };
+    return { pot: initialPot / 100, streetBets: initialBets };
   }
 
   static bandsForOpponents(

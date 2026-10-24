@@ -1,7 +1,8 @@
 import { it, expect } from 'vitest';
 import { HorseMind } from './HorseMind.js';
+import { HandController } from './HandController.js';
 import f from './fixtures/horse-plo5-small-flush-45855223.json';
-import type { SeatPlayer, ActionRecord } from '../types.js';
+import type { SeatPlayer, ActionRecord, HandConfig } from '../types.js';
 import type { OppPostflopRead } from './HorseEval.js';
 function snapshot(ordinal: number) {
   const n = f.actions[ordinal].publicNode!;
@@ -19,10 +20,10 @@ function snapshot(ordinal: number) {
     deadInvested,
     cards: [],
   })) as SeatPlayer[];
-  const history = f.actions.slice(3, ordinal).map(({ publicNode, ...a }) => a) as ActionRecord[];
+  const history = f.actions.slice(3, ordinal) as ActionRecord[];
   return { players, history, pot: n.pot };
 }
-it('reconstructs actual live-style missing-post history at all three river decisions', () => {
+it('reconstructs captured initial posts and mixed controller amounts at all three river decisions', () => {
   for (const ordinal of [19, 21, 22]) {
     const s = snapshot(ordinal);
     const money = HorseMind.initialPublicMoney(s.players, s.history, s.pot)!;
@@ -86,4 +87,136 @@ it('does not reinterpret a returned uncalled bet as smaller forced money', () =>
     i === 0 ? { ...p, returnedUncalled: 0.5, totalInvested: p.totalInvested - 0.5 } : p
   );
   expect(HorseMind.initialPublicMoney(players, s.history, s.pot - 0.5)).toBeNull();
+});
+
+it('retains exact initial blind/ante money when the small blind raises to a street total', () => {
+  const config: HandConfig = {
+    tableId: 'money-abi',
+    handNumber: 1,
+    gameVariant: 'nlh',
+    smallBlind: 1,
+    bigBlind: 2,
+    ante: 2,
+    bigBlindAnte: true,
+    rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+  };
+  const players = [1, 2, 3].map((seat) => ({
+    seat,
+    user_id: `u${seat}`,
+    username: `Seat ${seat}`,
+    stack: 100,
+    bet: 0,
+    totalInvested: 0,
+    cards: [],
+    is_folded: false,
+    is_all_in: false,
+    is_sitting_out: false,
+  })) as SeatPlayer[];
+  const controller = new HandController(config, players, 1);
+  controller.start();
+  expect(controller.performAction(1, 'call')).toBe(true);
+  expect(controller.performAction(2, 'raise', 6)).toBe(true);
+  expect(controller.performAction(3, 'call')).toBe(true);
+  const state = controller.getState();
+  expect(state.actionHistory[1]).toMatchObject({ action: 'raise', amount: 6 });
+  expect(state.actionHistory[1].publicNode).toMatchObject({ status: 'captured' });
+  const money = HorseMind.initialPublicMoney(state.players, state.actionHistory, state.pot)!;
+  expect(money.pot).toBe(5);
+  expect(new Map(money.streetBets)).toEqual(
+    new Map([
+      ['u1', 0],
+      ['u2', 1],
+      ['u3', 2],
+    ])
+  );
+  const absent = state.actionHistory.map(({ publicNode, ...action }) => action);
+  expect(HorseMind.initialPublicMoney(state.players, absent, state.pot)).toBeNull();
+});
+
+it('retains actual bomb-pot forced antes without inventing street wagers', () => {
+  const config: HandConfig = {
+    tableId: 'bomb-money-abi',
+    handNumber: 1,
+    gameVariant: 'plo5',
+    smallBlind: 1,
+    bigBlind: 2,
+    bombPot: { anteMultiplier: 3, boardCount: 1 },
+    rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+  };
+  const players = [1, 2, 3, 4, 5, 6].map((seat) => ({
+    seat,
+    user_id: `bomb${seat}`,
+    username: `Seat ${seat}`,
+    stack: 100,
+    bet: 0,
+    totalInvested: 0,
+    cards: [],
+    is_folded: false,
+    is_all_in: false,
+    is_sitting_out: false,
+  })) as SeatPlayer[];
+  const controller = new HandController(config, players, 1);
+  controller.start();
+  let state = controller.getState();
+  expect(state.stage).toBe('flop');
+  expect(controller.performAction(state.currentPlayerSeat!, 'check')).toBe(true);
+  state = controller.getState();
+  expect(state.actionHistory[0].publicNode).toMatchObject({
+    status: 'captured',
+    street: 'flop',
+    bombPot: true,
+    pot: 36,
+  });
+  expect(HorseMind.initialPublicMoney(state.players, state.actionHistory, state.pot)).toEqual({
+    pot: 36,
+    streetBets: players.map((p) => [p.user_id, 0]),
+  });
+  for (const stage of ['flop', 'turn'] as const) {
+    const history = state.actionHistory.map((a) => ({
+      ...a,
+      stage,
+      publicNode:
+        a.publicNode?.status === 'captured'
+          ? { ...a.publicNode, street: stage, bombPot: false }
+          : a.publicNode,
+    }));
+    expect(HorseMind.initialPublicMoney(state.players, history, state.pot)).toBeNull();
+  }
+});
+
+it('retains actual per-player antes separately from initial live blinds', () => {
+  const config: HandConfig = {
+    tableId: 'ante-money-abi',
+    handNumber: 1,
+    gameVariant: 'nlh',
+    smallBlind: 1,
+    bigBlind: 2,
+    ante: 2,
+    rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+  };
+  const players = [1, 2, 3].map((seat) => ({
+    seat,
+    user_id: `ante${seat}`,
+    username: `Seat ${seat}`,
+    stack: 100,
+    bet: 0,
+    totalInvested: 0,
+    cards: [],
+    is_folded: false,
+    is_all_in: false,
+    is_sitting_out: false,
+  })) as SeatPlayer[];
+  const controller = new HandController(config, players, 1);
+  controller.start();
+  expect(controller.performAction(1, 'call')).toBe(true);
+  const state = controller.getState();
+  const money = HorseMind.initialPublicMoney(state.players, state.actionHistory, state.pot);
+  expect(money).toEqual({
+    pot: 9,
+    streetBets: [
+      ['ante1', 0],
+      ['ante2', 1],
+      ['ante3', 2],
+    ],
+  });
 });

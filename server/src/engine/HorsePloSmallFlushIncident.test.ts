@@ -1,13 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from './fixtures/horse-plo5-small-flush-45855223.json';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
 import { HorseMind } from './HorseMind.js';
 import { seedFastRandom } from './HorseEval.js';
-import { calculateContestablePot, calculatePots } from './PokerEngine.js';
+import { calculateContestablePot, calculatePots, Deck } from './PokerEngine.js';
+import { HandController } from './HandController.js';
 import { horseVariantRulesFor } from './VariantRules.js';
 import type { HorsePublicActionNode } from './HorsePublicActionNode.js';
-import type { ActionRecord, Card, HorseStyle, SeatPlayer } from '../types.js';
+import type { ActionRecord, Card, HandConfig, HorseStyle, SeatPlayer } from '../types.js';
 
 type Variant = 'plo4' | 'plo5' | 'plo6' | 'plo8';
 type Captured = Extract<HorsePublicActionNode, { status: 'captured' }>;
@@ -103,6 +104,143 @@ function incident(ordinal: number, variant: Variant = 'plo5') {
   return { hero, state };
 }
 
+/** Real controller records: actor1 bets4, actor2 calls4, actor3 raises TO8,
+ * actor1 jams TO10 (short raise) or TO8 (all-in call). The controlled physical
+ * deck gives actor2 the reported small flush without exposing other holdings
+ * to HorseLogic. All action validation, menus, pots and public nodes are real. */
+function controllerRiverPriceChain(firstStack: 10 | 12, jamCaller = false) {
+  const parse = (text: string): Card =>
+    ({
+      rank: text[0],
+      suit: ({ s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' } as Record<string, string>)[
+        text[1]
+      ],
+    }) as Card;
+  const prefix = [
+    'As',
+    'Ac',
+    'Ks',
+    'Kc',
+    'Ts',
+    'Qh',
+    '2d',
+    '5h',
+    'Jh',
+    '9d',
+    '7c',
+    '7s',
+    '8h',
+    'Th',
+    '3c',
+    '6d',
+    'Jd',
+    'Qd',
+    '8c',
+    '9s',
+  ].map(parse);
+  const shuffle = vi.spyOn(Deck.prototype, 'shuffle').mockImplementation(function (this: Deck) {
+    const cards = (this as unknown as { cards: Card[] }).cards;
+    const rest = cards.filter((c) => !prefix.some((p) => p.rank === c.rank && p.suit === c.suit));
+    cards.splice(0, cards.length, ...prefix, ...rest);
+  });
+  const config: HandConfig = {
+    tableId: '20000000-0000-4000-8000-000000000001',
+    handNumber: 1,
+    gameVariant: 'plo5',
+    smallBlind: 1,
+    bigBlind: 2,
+    ante: 0,
+    rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+  };
+  const players: SeatPlayer[] = [1, 2, 3].map(
+    (seat) =>
+      ({
+        seat,
+        user_id: `20000000-0000-4000-8000-00000000000${seat}`,
+        username: `Seat ${seat}`,
+        stack: seat === (jamCaller ? 2 : 1) ? firstStack : 100,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      }) as SeatPlayer
+  );
+  const controller = new HandController(config, players, 3);
+  try {
+    controller.start();
+  } finally {
+    shuffle.mockRestore();
+  }
+  for (const seat of [3, 1]) expect(controller.performAction(seat, 'call')).toBe(true);
+  expect(controller.performAction(2, 'check')).toBe(true);
+  while (controller.getState().stage !== 'river') {
+    const actor = controller.getCurrentPlayer();
+    if (!actor) throw Error('controller did not reach river');
+    expect(controller.performAction(actor.seat, 'check')).toBe(true);
+  }
+  expect(controller.performAction(1, 'bet', 4)).toBe(true);
+  expect(controller.performAction(2, 'call')).toBe(true);
+  expect(controller.performAction(3, 'raise', 8)).toBe(true);
+  if (jamCaller) expect(controller.performAction(1, 'call')).toBe(true);
+  expect(controller.performAction(jamCaller ? 2 : 1, 'all_in')).toBe(true);
+  const live = controller.getState();
+  const actor = controller.getCurrentPlayer();
+  if (!actor) throw Error('missing real controller actor');
+  const menu = controller.getAuthoritativeActionState(actor.user_id);
+  if (!menu?.canAct) throw Error('missing real controller decision menu');
+  const hero: SeatPlayer = {
+    ...actor,
+    cards: actor.cards.map((c) => ({ ...c })),
+    knownDeadCards: [],
+  };
+  const state: HorseGameStateV2 = {
+    stateSchemaVersion: 1,
+    dealtSeatIds: live.players.filter((p) => p.cards.length > 0).map((p) => p.seat),
+    blindSeats: controller.getBlindSeatsSnapshot(),
+    ...controller.getChipRulesSnapshot(),
+    heroSeat: actor.seat,
+    currentPlayerSeat: actor.seat,
+    legalActions: [...menu.legalActions],
+    toCall: menu.toCall,
+    minRaiseTo: menu.minRaiseTo,
+    maxRaiseTo: menu.maxRaiseTo,
+    bettingStructure: menu.structure,
+    fixedBetSize: menu.fixedBetSize,
+    fixedLimitSmallBet: controller.getFixedLimitSmallBet(),
+    wagersCapped: menu.wagersCapped,
+    pots: controller.computeLivePots(),
+    contestablePot: calculateContestablePot(live.players, actor.user_id, menu.toCall),
+    rakeConfig: controller.getRakeConfigSnapshot(),
+    variantRules: horseVariantRulesFor('plo5'),
+    players: live.players.map((p) => {
+      const { knownDeadCards: _private, ...publicPlayer } = p;
+      return { ...publicPlayer, cards: [] };
+    }),
+    communityCards: [...live.communityCards],
+    communityCards2: [],
+    communityCards3: [],
+    bombPot: false,
+    boardCount: 1,
+    pot: live.pot,
+    currentBet: live.currentBet,
+    minRaise: live.minRaise,
+    lastRaise: live.lastRaise,
+    stage: live.stage,
+    gameVariant: 'plo5',
+    bigBlind: config.bigBlind,
+    dealerSeat: live.dealerSeat,
+    actionHistory: live.actionHistory.map((a) => ({ ...a })),
+    gameMode: 'cash',
+    format: 'cash',
+    ante: config.ante ?? 0,
+    straddleActive: false,
+  };
+  expect(hero.seat).toBe(jamCaller ? 3 : 2);
+  return { hero, state };
+}
+
 function decide(ordinal: number, variant: Variant, style: HorseStyle, seed: number, nuts = false) {
   HorseMind.reset();
   seedFastRandom(100 + seed);
@@ -140,7 +278,7 @@ describe('reported PLO5 small-flush hand 45855223', () => {
     return drainFires().map((row) => row.feature);
   }
 
-  it('distinguishes paid-delta short raises from all-in calls', () => {
+  it('distinguishes controller street-total short raises from all-in calls', () => {
     const key = 'horse_continuation_omaha_cold_flush_pressure';
     expect(features(incident(21))).toContain(key);
     const call = incident(21);
@@ -148,14 +286,39 @@ describe('reported PLO5 small-flush hand 45855223', () => {
       i === 20 ? { ...a, amount: 160 } : a
     );
     expect(features(call)).not.toContain(key);
-    const priorCall = incident(21);
-    const jam = priorCall.state.actionHistory![20];
-    priorCall.state.actionHistory = [
-      ...priorCall.state.actionHistory!.slice(0, 20),
-      { ...jam, action: 'call', amount: 160 },
-      { ...jam, amount: 21.75 },
-    ];
-    expect(features(priorCall)).toContain(key);
+    const shortRaise = controllerRiverPriceChain(12);
+    const river = shortRaise.state.actionHistory!.filter((a) => a.stage === 'river');
+    expect(river.map((a) => [a.action, a.amount])).toEqual([
+      ['bet', 4],
+      ['call', 4],
+      ['raise', 8],
+      ['all_in', 10],
+    ]);
+    expect(river.at(-1)!.isFullRaise).toBe(false);
+    expect(features(shortRaise)).toContain(key);
+    const matchedAllIn = controllerRiverPriceChain(10);
+    const matched = matchedAllIn.state.actionHistory!.filter((a) => a.stage === 'river');
+    expect(matched.map((a) => [a.action, a.amount])).toEqual([
+      ['bet', 4],
+      ['call', 4],
+      ['raise', 8],
+      ['all_in', 8],
+    ]);
+    expect(matched.at(-1)!.isFullRaise).toBeUndefined();
+    expect(features(matchedAllIn)).not.toContain(key);
+    // A player who first CALLED4 and then jams also records TOTAL10,
+    // not the six additional chips paid. Capture that producer contract too.
+    const priorCall = controllerRiverPriceChain(12, true);
+    const calledThenJammed = priorCall.state.actionHistory!.filter((a) => a.stage === 'river');
+    expect(calledThenJammed.map((a) => [a.action, a.amount])).toEqual([
+      ['bet', 4],
+      ['call', 4],
+      ['raise', 8],
+      ['call', 4],
+      ['all_in', 10],
+    ]);
+    expect(calledThenJammed[1].userId).toBe(calledThenJammed[4].userId);
+    expect(calledThenJammed.at(-1)!.isFullRaise).toBe(false);
   });
 
   it('excludes unrelated side-pot aggression and earlier streets', () => {

@@ -2244,6 +2244,18 @@ function maniacCallDown(
   vi: VariantInfo,
   opts: HorseDecideOpts
 ): HorseDecision {
+  // The reference already prices all physical boards and pot shares. This
+  // recovery estimator samples only communityCards; it cannot overturn that
+  // decision using one board while ignoring the other visible cards/shares.
+  if (
+    decision.action === 'fold' &&
+    ((gs.boardCount ?? 1) > 1 ||
+      (gs.communityCards2?.length ?? 0) >= 3 ||
+      (gs.communityCards3?.length ?? 0) >= 3)
+  ) {
+    if (telemetryOn(opts)) noteFire('horse_continuation_multiboard_reference_retained');
+    return decision;
+  }
   if (decision.action === 'fold' && decision.continuationGuard === 'omaha_cold_flush_pressure') {
     if (telemetryOn(opts)) noteFire('horse_continuation_protected_fold_retained');
     return decision;
@@ -7508,9 +7520,11 @@ export class HorseLogic {
         if (a.stage !== street || !['bet', 'raise', 'all_in', 'call'].includes(a.action)) continue;
         const amount = a.amount;
         if (!Number.isFinite(amount) || amount < 0) continue;
-        // HandController records chips actually paid for EVERY action. A jam
-        // after a prior call must add that contribution before comparing prices.
-        const total = (streetContributions.get(a.userId) ?? 0) + amount;
+        // Controller calls record chips paid; bet/raise/all-in record the
+        // resulting street TOTAL. Adding a prior call to an all-in total
+        // would invent a raise when the player only matched the current price.
+        const total =
+          a.action === 'call' ? (streetContributions.get(a.userId) ?? 0) + amount : amount;
         streetContributions.set(a.userId, total);
         if (a.action === 'call' || total <= level + 1e-8) continue;
         level = total;
@@ -8270,6 +8284,19 @@ export class HorseLogic {
     // those need their own runout/side-pot model. Missing reads keep the
     // previous path; preflop looseness never supplies a postflop bluff read.
     let continuation38: BarrelContinuation | undefined;
+    // Weak Omaha two-pair classes are category 3, including a pocket pair
+    // above a paired board. They need the same future-barrel budget as a
+    // one-pair hand. Genuine trips/sets and qualifying-low runouts retain
+    // their own redraw pricing rather than this constant-equity scenario.
+    const lowRanks38 = new Set(
+      board.map((c) => (c.rank === 'A' ? 1 : RANK_VALUES[c.rank])).filter((r) => r <= 8)
+    ).size;
+    const weakOmahaTwoPair38 =
+      vi.isOmaha &&
+      made40?.weak === true &&
+      (made40.cls === 'board2p' || made40.cls === 'low2p') &&
+      !nutClass15 &&
+      (!vi.isHiLo || lowRanks38 + (5 - board.length) < 3);
     if (
       useEv38 &&
       useMind &&
@@ -8279,7 +8306,8 @@ export class HorseLogic {
       !vi.isFixedLimit &&
       !gs.bombPot &&
       !gs.communityCards2?.length &&
-      cat <= 2 &&
+      !gs.communityCards3?.length &&
+      (cat <= 2 || weakOmahaTwoPair38) &&
       toCall < stack &&
       currentBet > 0
     ) {

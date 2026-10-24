@@ -168,7 +168,7 @@ describe('reported PLO5 small-flush hand 45855223', () => {
     return drainFires().map((row) => row.feature);
   }
 
-  it('distinguishes paid-delta short raises from all-in calls', () => {
+  it('distinguishes street-total short raises from all-in calls after paid-delta calls', () => {
     const key = 'horse_continuation_omaha_cold_flush_pressure';
     expect(features(incident(21))).toContain(key);
     const call = incident(21);
@@ -181,7 +181,7 @@ describe('reported PLO5 small-flush hand 45855223', () => {
     priorCall.state.actionHistory = [
       ...priorCall.state.actionHistory!.slice(0, 20),
       { ...jam, action: 'call', amount: 160 },
-      { ...jam, amount: 21.75 },
+      { ...jam, amount: 181.75 },
     ];
     expect(features(priorCall)).toContain(key);
   });

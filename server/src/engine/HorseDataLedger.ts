@@ -733,6 +733,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V53'
   ),
   flag(
+    'v53PloTourneyIcm',
+    'PLO4/5/6 tournament preflop bars priced by the exact ICM cost of the pot-limit risk; DEFAULT OFF until its tournament flag cards (plo4/plo5/plo6_v53_icm_mtt/sng) beat today',
+    'V53',
+    'HorsePreflop.decidePreflopV7'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -2956,6 +2962,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   // No floor: the spot (committed, river, one pair, clearing the call bar)
   // is rare by construction; silence on a quiet day is not a dead layer.
+  // No floor: default off, and in scope only for PLO tournaments.
+  receipt(
+    'v53_plo_icm',
+    'HorseOmahaTournamentPressure via HorseLogic preflop glue (V53)',
+    'an Omaha tournament preflop decision was priced by the V53 ICM pressure read; flag on only',
+    'V53'
+  ),
   receipt(
     'v51_river_flat',
     'HorseLogic committed branch (V51)',

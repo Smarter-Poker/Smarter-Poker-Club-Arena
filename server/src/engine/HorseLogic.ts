@@ -151,6 +151,7 @@ import {
   type TournamentPreflopPolicyInput,
 } from './HorseTournamentPreflop.js';
 import { potLimitRaiseTo } from './BettingStructure.js';
+import { omahaTournamentPressure } from './HorseOmahaTournamentPressure.js';
 import { reportError } from '../services/errorReporter.js';
 // V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
 import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
@@ -2076,6 +2077,14 @@ export interface HorseDecideOpts {
    *  terminal-equity one alone (default: enabled; league
    *  plo4/plo5/plo6_v53_range_runout). */
   v53RangeRunout?: boolean;
+  /** V53 (2026-10-24): Omaha tournament pressure. PLO4/5/6 tournament
+   *  preflop bars priced by the exact ICM cost of what each action puts at
+   *  risk in pot limit (covering stacks, bubble and pay jumps through
+   *  IcmModel), compressed for the variant's equity spread and faded by M.
+   *  DEFAULT OFF until it beats the current brain on its locked held-out
+   *  measurement (tournament league cards plo4/plo5/plo6_v53_icm_*).
+   *  See HorseOmahaTournamentPressure.ts. */
+  v53PloTourneyIcm?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -4778,7 +4787,76 @@ export class HorseLogic {
             isOmaha: vi.isOmaha && (opts.v46Charts ?? true) !== false,
           })
         : { holdemPremiumPair: false, suitedPremium: undefined };
+    // ═══ V53 OMAHA TOURNAMENT PRESSURE (default off) ═══ the exact ICM price
+    // of what this pot-limit decision risks, replacing the flat premium on the
+    // bars it names. Null outside its scope (see the module header).
+    const ploIcm53 = (() => {
+      const t53 = trustedTournament;
+      if (
+        opts.v53PloTourneyIcm !== true ||
+        !vi.isOmaha ||
+        !isTournamentMode(gs) ||
+        gs.allInOrFold === true ||
+        (gs.format !== 'mtt' && gs.format !== 'sng') ||
+        t53?.schemaVersion !== 1 ||
+        t53.satellite === true ||
+        t53.isPko === true ||
+        t53.isBounty === true ||
+        t53.isMysteryBounty === true ||
+        (t53.bountyFactor ?? 0) > 0 ||
+        !t53.m ||
+        !Array.isArray(t53.stacks) ||
+        !Array.isArray(t53.payoutPct) ||
+        !t53.stackByUser
+      )
+        return null;
+      try {
+        const behind = phase7PlayersBehind(gs, player);
+        const lastRaiser =
+          lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
+        const realM = tournamentNextLevelProjectionApplies(t53.nextBlindInMin, t53.nextBlindMult)
+          ? Math.min(t53.m.realM, t53.m.projectedM)
+          : t53.m.realM;
+        return omahaTournamentPressure({
+          holeCount: vi.holeCount,
+          isHiLo: vi.isHiLo,
+          isPotLimit: vi.isPotLimit,
+          heroUserId: player.user_id,
+          heroStack: player.stack,
+          heroBet: player.bet,
+          pot: gs.pot,
+          contestablePot,
+          currentBet: gs.currentBet,
+          toCall,
+          bigBlind: bb,
+          potRaiseTo: potLimitRaiseTo(gs.pot, gs.currentBet, toCall),
+          unopened: straddleUnopened || (raises === 0 && gs.currentBet <= bb * 1.05),
+          lastRaiserUserId: lastRaiser?.user_id ?? null,
+          opponents: gs.players
+            .filter((p) => p.user_id !== player.user_id)
+            .map((p) => ({
+              userId: p.user_id,
+              stack: p.stack,
+              bet: p.bet,
+              folded: p.is_folded,
+              allIn: p.is_all_in,
+              sittingOut: p.is_sitting_out === true,
+              actsAfterHero: behind.has(p.user_id),
+            })),
+          fieldStacks: t53.stacks,
+          fieldStackByUser: t53.stackByUser,
+          payoutPct: t53.payoutPct,
+          playersLeft: t53.playersLeft ?? 0,
+          realM,
+        });
+      } catch (error) {
+        reportError(error, 'HorseLogic.v53_plo_icm');
+        return null;
+      }
+    })();
+    if (ploIcm53 && telemetryOn(opts)) noteFire('v53_plo_icm');
     const intent = decidePreflopV7({
+      ...(ploIcm53 ? { ploIcm: ploIcm53.shifts } : {}),
       strength,
       position,
       raiserPosition,

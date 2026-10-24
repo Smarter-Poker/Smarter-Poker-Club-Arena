@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const directory = resolve(process.cwd(), '.github/workflows');
+// The tournament flag cards (V53) share the same hosted-capacity bound.
 const files = readdirSync(directory).filter((file) =>
-  /^horse-phase\d+-strength-league\.yml$/.test(file)
+  /^horse-(phase\d+-strength-league|tournament-flag-cards)\.yml$/.test(file)
 );
 const read = (file: string) => parse(readFileSync(resolve(directory, file), 'utf8'));
 const capacityGroup = 'horse-strength-hosted-capacity';

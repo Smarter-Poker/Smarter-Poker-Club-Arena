@@ -84,4 +84,18 @@ describe('bomb pot display energy', () => {
     expect(vi.getTimerCount()).toBe(0);
     unmount();
   });
+
+  it('keeps an inactive table asleep and catches up when selected again', () => {
+    const { result, rerender, unmount } = renderHook(
+      ({ active }) => useBombPotCountdown(110_000, 0, active),
+      { initialProps: { active: false } }
+    );
+    expect(result.current).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => vi.advanceTimersByTime(20_000));
+    rerender({ active: true });
+    expect(result.current).toBe('NEXT HAND');
+    expect(vi.getTimerCount()).toBe(0);
+    unmount();
+  });
 });

@@ -7852,7 +7852,8 @@ function LiveTablePage({
   const bombClockLabel = useBombPotCountdown(
     tableState.bombPotNextAt,
     bombPotRules?.announceSeconds ?? 0,
-    !bombPotActive &&
+    (!isMultiTable || isActive) &&
+      !bombPotActive &&
       tableState.bombPotWaitingFor == null &&
       bombPotRules?.triggerMode !== 'bomb_pot_only'
   );

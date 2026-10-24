@@ -8,6 +8,13 @@
       "notBefore": "2026-10-23T20:41:08Z",
       "notAfter": "2026-10-24T02:41:08Z",
       "migrations": ["20261023183513_durable_variant_scoped_horse_opponent_memory.sql"]
+    },
+    {
+      "id": "2026-10-23-classic-lightning-launch",
+      "ownerOrder": "Dan, 2026-10-23: \"NO, ONCE ALL WORK IS DONE, I WANT IT LAUNCHED TONIGHT, NOT AT 4 AM\". One completed Classic and Lightning launch, including the scheduled horse fleet; the daily maintenance schedule remains unchanged.",
+      "contains": "6d8b0ed1f803843363292f17df65bc5db42b8c80",
+      "notBefore": "2026-10-24T02:39:36Z",
+      "notAfter": "2026-10-24T05:00:00Z"
     }
   ]
 }

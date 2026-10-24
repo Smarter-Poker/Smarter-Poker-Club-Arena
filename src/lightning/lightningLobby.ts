@@ -68,6 +68,11 @@ export interface LightningLobbyState {
    * entering the pool. Present only when the Cluster's state carries it.
    */
   joinsEnabled?: boolean;
+  /**
+   * The game's own Lightning switch (cash_games.lightning_enabled). False on
+   * every Classic game. Present only when the Cluster's state carries it.
+   */
+  lightningEnabled?: boolean;
 }
 
 /**
@@ -76,6 +81,20 @@ export interface LightningLobbyState {
  */
 export function isLightningMode(mode: string | null | undefined): boolean {
   return mode === 'lightning' || mode === 'pending_off' || mode === 'draining';
+}
+
+/**
+ * A Classic game: its Lightning switch is off and it is not dealing (or
+ * draining) Lightning. fn_cash_cluster_lightning_state answers with a full
+ * object for EVERY cash game, Classic included (measured 2026-10-24: 246
+ * must_move games, lightning_enabled false), so "has a state" never means
+ * "is Lightning". No state at all (the game does not exist) is Classic too.
+ * Dan 2026-10-24: "NO PART OF THE LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE
+ * TOUCHING THE CLASSIC GAMES."
+ */
+export function isClassicLobbyState(state: LightningLobbyState | null | undefined): boolean {
+  if (!state) return true;
+  return state.lightningEnabled === false && !isLightningMode(state.clusterMode);
 }
 
 /** What the board says about a Cluster's mode, and which door it offers. */
@@ -124,6 +143,7 @@ export function parseLightningLobbyState(raw: unknown): LightningLobbyState | nu
     offThreshold: count(thresholds?.off),
     // LIGHTNING PHASE 13: only when the state says so; absent decides nothing.
     ...(joins !== undefined ? { joinsEnabled: joins } : {}),
+    ...(typeof r.lightning_enabled === 'boolean' ? { lightningEnabled: r.lightning_enabled } : {}),
   };
 }
 

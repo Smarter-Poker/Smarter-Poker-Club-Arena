@@ -438,7 +438,10 @@ export function playHand(
 
       const toCall = Math.max(0, currentBet - p.bet);
       const d: { action: string; amount?: number } =
-        humanField !== undefined && !p.is_horse
+        // Routed by the field's own seat assignment (the same predicate that
+        // seated this player), so a seat's input device is chosen where the
+        // seat was dealt, never re-derived from a flag on the player.
+        humanField?.isHuman(i) === true
           ? humanFieldDecision(humanField, p, stage, boardCards, gameVariant, {
               pot,
               currentBet,

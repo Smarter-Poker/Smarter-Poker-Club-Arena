@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const MASTER_WIDTHS = new Map<string, number>([
   ['/assets/club-buttons/console/spade-console-v1/', 1000],
+  ['/assets/club-buttons/console/spade-console-v2/', 1000],
   ['/assets/club-buttons/console/shark-console-v2/', 733],
   ['/assets/club-buttons/console/riveted-console-v2/', 729],
   ['/assets/club-buttons/popups/buy-in-v1/', 1000],

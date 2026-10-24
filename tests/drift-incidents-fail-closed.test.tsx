@@ -395,7 +395,7 @@ describe('Drift Incidents painted foot contract', () => {
     expect(page).not.toContain('family="shark"');
     expect(page).not.toContain('family="riveted"');
     expect(page.match(/foot="foot"/g)).toHaveLength(3);
-    expect(flatFootCss).toContain('spade-console-v1/bottom-foot.png');
+    expect(flatFootCss).toContain('spade-console-v2/bottom-foot.png');
     expect(flatFootCss).not.toContain('bottom-plates.png');
   });
 });

@@ -24347,7 +24347,13 @@ function LiveTablePage({
     userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: lightningObserver
-      ? lightningAnchorFunded
+      ? leftSeatPendingRef.current
+        ? false
+        : lightningAnchorFunding
+          ? lightningAnchorFunding.tableId === tableId &&
+            lightningAnchorFunding.userId === userId &&
+            lightningAnchorFunding.funded
+          : lightningAnchorFunded
       : tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
     existingAnchorFunded: leftSeatPendingRef.current
       ? false

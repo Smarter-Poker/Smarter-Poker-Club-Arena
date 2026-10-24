@@ -121,6 +121,6 @@ describe('public Lightning observer consumer', () => {
     );
     expect(page).toContain('if (lightningObserver || !USE_ENGINE_WS');
     expect(page).toContain('heroBoughtIn: lightningObserver');
-    expect(page).toContain('? lightningAnchorFunded');
+    expect(page).toContain(': lightningAnchorFunded');
   });
 });

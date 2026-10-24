@@ -616,26 +616,23 @@ describe('the Lightning entry with several Clusters', () => {
       return defaultRpc(name);
     });
 
-  it('lists the other Lightning tables with VIEW GAME, and the pool badge', async () => {
+  it('keeps the entry to one clean cash card without extra table and pool panels', async () => {
     withSessions(2);
     renderEntry(`/lightning/${CLUSTER}`);
     expect(await screen.findByRole('button', { name: /join lightning/i })).toBeTruthy();
-    expect((await screen.findByTestId('lightning-table-count')).textContent).toBe('2 Of 4');
-    expect((await screen.findByTestId('lightning-pool-badge')).getAttribute('data-status')).toBe(
-      'HOT'
-    );
-    fireEvent.click(screen.getAllByTestId('lightning-my-session-view')[0]);
-    const probe = await screen.findByTestId('table-route');
-    expect(probe.textContent?.startsWith(`${POOL_B}|`)).toBe(true);
-    expect(probe.textContent).toContain('stakes=2%2F5');
+    expect(screen.queryByTestId('lightning-table-count')).toBeNull();
+    expect(screen.queryByTestId('lightning-pool-badge')).toBeNull();
+    expect(document.querySelectorAll('.agc-nlh-premium')).toHaveLength(1);
     expect(moneyRpcs()).toEqual([]);
   });
 
   it('at the device limit JOIN LIGHTNING is not offered, and the page says why', async () => {
     withSessions(4);
     renderEntry(`/lightning/${CLUSTER}`);
-    expect(await screen.findByText(/Most Lightning Tables This Device Allows/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^join lightning$/i })).toBeNull();
+    expect(await screen.findByText('Limit')).toBeTruthy();
+    const join = screen.getByRole('button', { name: /^join lightning$/i });
+    expect(join.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(join);
     expect(moneyRpcs()).toEqual([]);
   });
 
@@ -665,7 +662,9 @@ describe('the Lightning entry with several Clusters', () => {
     renderEntry(`/lightning/${CLUSTER}`);
     expect(await screen.findByRole('button', { name: /join lightning/i })).toBeTruthy();
     await waitFor(() =>
-      expect(screen.getByTestId('lightning-table-count').textContent).toBe('4 Of 5')
+      expect(
+        screen.getByRole('button', { name: /^join lightning$/i }).hasAttribute('disabled')
+      ).toBe(false)
     );
     expect(screen.queryByText(/Most Lightning Tables This Device Allows/)).toBeNull();
     expect(moneyRpcs()).toEqual([]);
@@ -685,8 +684,10 @@ describe('the Lightning entry with several Clusters', () => {
       return defaultRpc(name);
     });
     renderEntry(`/lightning/${CLUSTER}`);
-    expect(await screen.findByText('This Game Is Not Taking Players.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^join lightning$/i })).toBeNull();
+    expect(await screen.findByText('Closed')).toBeTruthy();
+    const join = screen.getByRole('button', { name: /^join lightning$/i });
+    expect(join.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(join);
     expect(moneyRpcs()).toEqual([]);
   });
 
@@ -698,8 +699,8 @@ describe('the Lightning entry with several Clusters', () => {
     });
     withSessions(1);
     renderEntry(`/lightning/${CLUSTER}`);
-    const last = await screen.findByTestId('lightning-last-played');
-    expect(last.textContent).toContain('NLH 5/10');
+    await screen.findByRole('button', { name: /^join lightning$/i });
+    expect(screen.queryByTestId('lightning-last-played')).toBeNull();
     expect(moneyRpcs()).toEqual([]);
   });
 });

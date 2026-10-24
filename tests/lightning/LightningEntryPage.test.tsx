@@ -174,8 +174,8 @@ describe('the Lightning route', () => {
     rpc.mockResolvedValue({ data: { pool_session_id: null, cluster_mode: 'paused' }, error: null });
     try {
       renderAt(`/lightning/${CLUSTER}`);
-      expect(await screen.findByText('Game Paused')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: /join/i })).toBeNull();
+      expect(await screen.findByText('Paused')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /join/i }).hasAttribute('disabled')).toBe(true);
     } finally {
       gameRow.cluster_mode = 'lightning';
     }
@@ -218,9 +218,7 @@ describe('truthful regular-table entry guidance', () => {
       try {
         renderAt(`/lightning/${CLUSTER}`);
         const join = await screen.findByRole('button', { name: 'Join Game' });
-        expect(
-          screen.getByText(/This Game Uses Regular Tables And The Normal Buy-In/)
-        ).toBeTruthy();
+        expect(screen.queryByText(/This Game Uses Regular Tables/)).toBeNull();
         expect(screen.queryByText(/Buy In Once And Play One Stream/)).toBeNull();
         expect(screen.queryByTestId('table-route')).toBeNull();
         expect(rpc.mock.calls.some(([name]) => name === 'fn_lightning_pool_status')).toBe(false);
@@ -244,7 +242,7 @@ describe('truthful regular-table entry guidance', () => {
     try {
       renderAt(`/lightning/${CLUSTER}`);
       await screen.findByRole('button', { name: 'Join Game' });
-      expect(screen.getByText(/Join Game Opens The Normal Table Buy-In/)).toBeTruthy();
+      expect(screen.queryByText(/Join Game Opens The Normal Table Buy-In/)).toBeNull();
       expect(screen.queryByText(/Buy In Once And Play One Stream/)).toBeNull();
       expect(screen.queryByTestId('table-route')).toBeNull();
     } finally {

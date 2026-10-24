@@ -2076,23 +2076,158 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     );
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A HORSE ANSWERS ITS REBUY OFFER LIKE A CLICK (2026-10-24)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan, 2026-10-24: a 276-entry PKO showed 9 rebuys - "THIS LOOKS FAKE". With
+   * the place collision fixed and the share at 75%, a 149-player freeroll the
+   * same morning still showed 85 horses choosing to rebuy and 19 getting in.
+   *
+   * The offer is a database deadline written with the bust (30 seconds). A
+   * human's answer is a click that goes straight to process_tournament_rebuy.
+   * A horse's answer was only ever given inside the elimination sweep, and
+   * every tournament's sweep shares one process-wide scheduler (four slots,
+   * ~300 managers registered at peak, a five-second work budget per pass, and
+   * an event loop measured at p50 204 ms / p99 448 ms that day). So on a busy
+   * engine the horse's "click" arrived after its offer had expired: 160
+   * "Rebuy or re-entry decision window has closed" refusals in six hours, and
+   * busts in that freeroll waited 150-230 s for their pass. That is the same
+   * offer with a different answer window, which CLAUDE.md 10.5 forbids.
+   *
+   * So a hand that leaves a zero stack now also wakes this input device, which
+   * answers every open horse offer of this event directly, outside the
+   * scheduler and its budget: one read of the open offers, then the same
+   * tryTournamentRebuys the sweep uses (same window policy, same draw, same
+   * free-buy allowance, same atomic purchase door). It answers only to manager
+   * stop and the maintenance freeze, as a click does. The sweep's own call
+   * stays as it was; the purchase receipt is keyed by the knockout generation,
+   * so whichever arrives second replays the first. An offer whose bust row has
+   * not landed yet, or whose purchase hit a transient error, is asked again
+   * every two seconds until its own deadline - never after it.
+   */
+  private horseRebuyInputInFlight = false;
+  private horseRebuyInputAgain = false;
+  private horseRebuyInputTimer: ReturnType<typeof setTimeout> | null = null;
+  static readonly HORSE_REBUY_INPUT_RETRY_MS = 2_000;
+  static readonly HORSE_REBUY_INPUT_MAX_PASSES = 16;
+
+  protected override horseRebuyOfferMayHaveOpened(): void {
+    this.answerHorseRebuyOffersNow(0);
+  }
+
+  private answerHorseRebuyOffersNow(pass: number): void {
+    if (!this.running) return;
+    if (this.horseRebuyInputInFlight) {
+      this.horseRebuyInputAgain = true;
+      return;
+    }
+    this.horseRebuyInputInFlight = true;
+    void (async () => {
+      let retryPass: number | null = null;
+      try {
+        let current = pass;
+        do {
+          this.horseRebuyInputAgain = false;
+          const unanswered = await this.answerOpenHorseRebuyOffers();
+          if (this.horseRebuyInputAgain) current = 0;
+          else if (
+            unanswered &&
+            current + 1 < TournamentManagerEliminations.HORSE_REBUY_INPUT_MAX_PASSES
+          )
+            retryPass = current + 1;
+        } while (this.horseRebuyInputAgain && this.running);
+      } catch (error) {
+        reportError(error, 'Tournament.horse_rebuy_input_failed', {
+          tournamentId: this.tournamentId,
+        });
+        if (pass + 1 < TournamentManagerEliminations.HORSE_REBUY_INPUT_MAX_PASSES)
+          retryPass = pass + 1;
+      } finally {
+        this.horseRebuyInputInFlight = false;
+      }
+      if (retryPass !== null && this.running && !this.horseRebuyInputTimer) {
+        const next = retryPass;
+        this.horseRebuyInputTimer = setTimeout(() => {
+          this.horseRebuyInputTimer = null;
+          this.answerHorseRebuyOffersNow(next);
+        }, TournamentManagerEliminations.HORSE_REBUY_INPUT_RETRY_MS);
+        this.horseRebuyInputTimer.unref?.();
+      }
+    })();
+  }
+
+  /**
+   * One pass of the horse input device. Returns true while a horse that chose
+   * to rebuy still holds an open, unanswered offer (worth asking again).
+   */
+  private async answerOpenHorseRebuyOffers(): Promise<boolean> {
+    if (!this.running || isMaintenanceFrozen()) return false;
+    const t = this.tournamentCache as { is_rebuy?: boolean; is_reentry?: boolean } | undefined;
+    if (!t?.is_rebuy && !t?.is_reentry) return false;
+    const nowIso = new Date().toISOString();
+    const { data: offers, error } = await supabase
+      .from('tournament_knockout_candidates')
+      .select('eliminated_user_id, hand_number, rebuy_prompt_until')
+      .eq('tournament_id', this.tournamentId)
+      .eq('state', 'pending')
+      .gt('rebuy_prompt_until', nowIso)
+      .order('hand_number', { ascending: true })
+      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE * 4);
+    if (error || !Array.isArray(offers)) return true;
+    if (offers.length === 0) return false;
+
+    const handNumbers = new Map<string, number>();
+    for (const offer of offers as { eliminated_user_id: string; hand_number: unknown }[]) {
+      const hand = Number(offer.hand_number);
+      if (!Number.isSafeInteger(hand) || hand <= 0) continue;
+      const prior = handNumbers.get(offer.eliminated_user_id);
+      if (prior === undefined || hand > prior) handNumbers.set(offer.eliminated_user_id, hand);
+    }
+    const userIds = [...handNumbers.keys()];
+    if (userIds.length === 0) return false;
+
+    const mayAnswer = () => this.running && !isMaintenanceFrozen();
+    let stillOpen = false;
+    for (let i = 0; i < userIds.length; i += TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {
+      if (!mayAnswer()) return false;
+      const batch = userIds.slice(i, i + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+      const { answered, horses } = await this.tryTournamentRebuys(batch, handNumbers, mayAnswer);
+      // A human's click is their own; only a horse that chose to rebuy and was
+      // not answered yet is worth asking again.
+      for (const userId of batch) {
+        if (!horses.has(userId) || answered.has(userId)) continue;
+        const hand = handNumbers.get(userId);
+        if (horseChoosesTournamentRebuy(this.tournamentId, userId, hand)) stillOpen = true;
+      }
+    }
+    return stillOpen;
+  }
+
   private async tryTournamentRebuys(
     bustedUserIds: string[],
-    bustHandNumbers: ReadonlyMap<string, number>
-  ): Promise<{ rebought: Set<string>; answered: Set<string> }> {
+    bustHandNumbers: ReadonlyMap<string, number>,
+    // The sweep passes its own work-budget fence. The horse input device
+    // (answerHorseRebuyOffersNow) is not a sweep and answers to manager stop
+    // and the maintenance freeze only, exactly as a human's click does.
+    mayMutate: () => boolean = () => this.eliminationMutationAllowed()
+  ): Promise<{ rebought: Set<string>; answered: Set<string>; horses: Set<string> }> {
     const rebought = new Set<string>();
     /** Players whose rebuy decision is FINAL this pass: horses that were asked
      *  (the RPC either granted or refused). Everyone else — humans, and any
      *  horse the profile read could not identify — still holds an open
      *  decision window and gets the elimination grace below instead. */
     const answered = new Set<string>();
+    /** The ids in this batch the profile read identified as horses. */
+    const horses = new Set<string>();
     // The database maintenance trigger intentionally exempts service_role.
     // This manager uses that role, so the application boundary must freeze
     // before even identifying horses to charge. The durable decision deadline
     // is database-owned, so maintenance never advances or reconstructs it in
     // process memory; thaw emits the causal sweep that re-reads the same offer.
     if (isMaintenanceFrozen()) {
-      return { rebought, answered };
+      return { rebought, answered, horses };
     }
     const t = this.tournamentCache as
       | {
@@ -2104,13 +2239,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
       | undefined;
     if ((!t?.is_rebuy && !t?.is_reentry) || bustedUserIds.length === 0) {
-      return { rebought, answered };
+      return { rebought, answered, horses };
     }
     // The horse input device follows the event's executable recovery product.
     // Prefer a rebuy when both legacy flags are present; a re-entry-only event
     // must not silently eliminate every horse while humans retain the option.
     const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry';
-    if (!this.eliminationMutationAllowed()) return { rebought, answered };
+    if (!mayMutate()) return { rebought, answered, horses };
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
 
@@ -2135,8 +2270,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       } catch (error) {
         reportError(error, 'Tournament.rebuy_window_read_failed');
       }
-      if (!this.eliminationMutationAllowed()) return { rebought, answered };
-      if (closedWindow) return { rebought, answered };
+      if (!mayMutate()) return { rebought, answered, horses };
+      if (closedWindow) return { rebought, answered, horses };
       // Open, malformed or unreadable policy retains the original purchase
       // authority, including its exact receipt replay and fresh locked checks.
       const { data: horseRows, error: horseErr } = await supabase
@@ -2144,8 +2279,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('id')
         .in('id', batch)
         .eq('is_horse', true);
-      if (!this.eliminationMutationAllowed()) return { rebought, answered };
-      if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered };
+      if (!mayMutate()) return { rebought, answered, horses };
+      if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered, horses };
+      for (const horse of horseRows) horses.add(String(horse.id));
 
       const declined = new Map<string, number>();
       let freeBuyReloads: Map<string, number> | null = null;
@@ -2156,12 +2292,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .select('user_id, rebuys')
           .eq('tournament_id', this.tournamentId)
           .in('user_id', horseIds);
-        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (!mayMutate()) return { rebought, answered, horses };
         if (reloadErr || !Array.isArray(reloadRows)) {
           // Unknown allowance state is not a decline. Preserve the decision
           // window and retry rather than either charging or eliminating.
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          return { rebought, answered };
+          return { rebought, answered, horses };
         }
         freeBuyReloads = new Map(
           reloadRows.map((row) => [
@@ -2171,7 +2307,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
       }
       for (const h of horseRows) {
-        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (!mayMutate()) return { rebought, answered, horses };
         const bustHandNumber = bustHandNumbers.get(h.id);
         if (!Number.isSafeInteger(bustHandNumber) || Number(bustHandNumber) <= 0) {
           // Unknown identity is not a decline or permission to charge. Keep
@@ -2204,7 +2340,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           p_chips: null,
           p_current_level: this.currentLevel,
         });
-        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (!mayMutate()) return { rebought, answered, horses };
         if (error) {
           declined.set(error.message, (declined.get(error.message) || 0) + 1);
           // A transport error can follow a committed purchase. Keep the
@@ -2231,7 +2367,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     } catch (err) {
       reportError(err, 'Tournament.tournament_rebuy_threw');
     }
-    return { rebought, answered };
+    return { rebought, answered, horses };
   }
 
   /**

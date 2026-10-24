@@ -221,3 +221,36 @@ describe('the page wires the menu to the saved filter', () => {
     expect(FILTER_SPECS.OMAHA.games?.length).toBeGreaterThan(0);
   });
 });
+
+describe('the LIMIT tab has the same Variant menu (2026-10-24)', () => {
+  it('lists FLH and FLO8 from the LIMIT spec and the page wires the tab', () => {
+    const limit = FILTER_SPECS.LIMIT.games!;
+    render(
+      <MemoryRouter>
+        <LobbyTable
+          entries={[
+            cashEntry(table({ id: 'h', name: 'FLH 1/2', game_variant: 'flh' })),
+            cashEntry(table({ id: 'o', name: 'FLO8 1/2', game_variant: 'flo8' })),
+          ]}
+          category="LIMIT"
+          selectedId={null}
+          onSelect={() => {}}
+          onActivate={() => {}}
+          ctx={ctx}
+          variantChoices={limit}
+          selectedVariants={[]}
+          onVariantsChange={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+    const bar = document.querySelector<HTMLElement>('.arena-lobby-card-list')!;
+    fireEvent.click(within(bar).getByRole('button', { name: /^game$/i }));
+    const menu = within(bar).getByRole('group', { name: 'Game Variant' });
+    const items = within(menu)
+      .getAllByRole('button')
+      .map((b) => b.textContent?.trim());
+    expect(items).toEqual(['All', 'FLH', 'FLO8', 'Sort By Variant']);
+    const page = readFileSync(resolve(process.cwd(), 'src/pages/ClubHomePage.tsx'), 'utf8');
+    expect(page).toContain("gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'");
+  });
+});

@@ -711,7 +711,10 @@ jobs:
               || : > "$1"
           }
           read_release release-bracket/lightning-before.json
+          # Read-only Join Lightning from the member lobby (#7879) rides the same
+          # authenticated account and the same release bracket.
           npx playwright test tests/e2e/production-lightning-operator.spec.ts \
+            tests/e2e/production-lightning-lobby-join.spec.ts \
             --project=chromium --reporter=line,json --workers=1 --retries=0
           rc=$?
           read_release release-bracket/lightning-after.json

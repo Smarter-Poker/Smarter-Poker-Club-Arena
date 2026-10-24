@@ -1,0 +1,7 @@
+# The Horse Journal Walk Leaves The Engine Boot Path
+
+Every engine start awaited a `du -sk` walk over all eight Horse journal archive shards (about 3.5 million segment files) before the decision lane existed, and table discovery waits for that lane. On release c485ce7a the lane started 23 s after the process; on release e4f793b6 the same boot cost is why the candidate reached dealer readiness about 7-10 s too late for its final database proof inside the 5-minute maintenance break, and the release rolled back.
+
+The walk only feeds the default worker count, which is `min(CPU default, journal capacity, 8)`. The capacity is now first priced with every existing archive assumed empty (the most growth they could still claim, so it can only be lower than the measured answer), from one `statfs` and a directory listing. When that lower bound already admits the lane's maximum of 8 workers, the walk cannot change the worker count and is skipped; `/health` then publishes the lower bound as `journalShardCapacity` (about 20 on engine-01 instead of 25). On a fuller disk, or when the bound is unreadable, the original walk runs with every refusal rule unchanged.
+
+Tests: `server/src/services/horseDecisionJournal/config.test.ts` (skip only when sufficient, walk otherwise, bound never above the measurement) and `server/src/engine/horseDecision/lane.test.ts` (identical worker count for any capacity at or above the maximum). Expected effect: roughly 20 s less from engine start to dealer readiness on every restart and cutover.

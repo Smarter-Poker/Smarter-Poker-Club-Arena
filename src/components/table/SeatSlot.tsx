@@ -257,6 +257,8 @@ export interface SeatSlotProps {
   sitOutAt?: number | null;
   seatNumber: number;
   player: SeatPlayer | null;
+  /** Confirmed by this hand's engine roster, never by a queued pre-action. */
+  foldCommitted?: boolean;
   position: PositionBadge;
   /**
    * KILL POTS (rule manifest kill-v1): the marker on the killer's seat for the
@@ -638,18 +640,36 @@ function formatWager(amount: number): string {
   return formatTableChips(amount);
 }
 
-function getActionLabel(action: LastAction, amount?: number): string {
+/**
+ * A wager printed the way the player chose to read the table (Dan
+ * 2026-10-24): "WHEN YOU CHANGE YOUR STACK FROM A TOTAL TO BB IT SHOW THE
+ * TOTAL POT AMOUNT IN THE POT AS TOTAL CHIPS INSTEAD OF BB'S." The pot was the
+ * one he saw; the bet chips in front of each seat, the Call / Bet / Raise
+ * label and the won amount had the same split - the stack switched to BB and
+ * they stayed in chips. Every figure a seat prints follows the one setting,
+ * through the same big blind the stack uses. No big blind to divide by keeps
+ * the chip figure rather than printing a "0 BB" that is not true.
+ */
+function formatSeatWager(amount: number, inBB: boolean, bigBlind: number): string {
+  return inBB && bigBlind > 0 ? formatStackAsBB(amount, bigBlind) : formatWager(amount);
+}
+
+function getActionLabel(
+  action: LastAction,
+  amount?: number,
+  fmt: (n: number) => string = formatWager
+): string {
   switch (action) {
     case 'fold':
       return 'Fold';
     case 'check':
       return 'Check';
     case 'call':
-      return amount ? `Call ${formatWager(amount)}` : 'Call';
+      return amount ? `Call ${fmt(amount)}` : 'Call';
     case 'bet':
-      return amount ? `Bet ${formatWager(amount)}` : 'Bet';
+      return amount ? `Bet ${fmt(amount)}` : 'Bet';
     case 'raise':
-      return amount ? `Raise ${formatWager(amount)}` : 'Raise';
+      return amount ? `Raise ${fmt(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
     case 'discard':
@@ -854,6 +874,7 @@ export const SeatSlot = memo(
     const {
       seatNumber,
       player,
+      foldCommitted = false,
       position,
       killMarker = null,
       isActive,
@@ -913,6 +934,7 @@ export const SeatSlot = memo(
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
+    const wagerFmt = (n: number) => formatSeatWager(n, showStackInBB, bigBlind);
 
     /**
      * THE CALLBACKS, ALWAYS THE LATEST ONES (audit 2026-08-25).
@@ -2909,6 +2931,12 @@ export const SeatSlot = memo(
     const shownAction: LastAction =
       player.status === 'all_in' || lastAction === 'all_in' ? null : lastAction;
 
+    const foldIdentityHidden =
+      foldCommitted &&
+      !isFolding &&
+      avatarGesture !== 'fold' &&
+      !(lastAction === 'fold' && prevActionRef.current !== 'fold');
+
     return (
       <div
         ref={seatRef}
@@ -2916,8 +2944,10 @@ export const SeatSlot = memo(
            outboard at the top cap, inboard everywhere else, see `seatCardSide`.
            It rides on the seat rather than on the card row so the CSS can key
            both the hero row and the opponent row off one class. */
-        className={`${containerClasses} seat--cards-${cardSide}`}
-        onClick={() => callbacksRef.current.onAction?.()}
+        className={`${containerClasses} seat--cards-${cardSide}${foldIdentityHidden ? ' seat--fold-hidden' : ''}`}
+        onClick={() => {
+          if (!foldIdentityHidden) callbacksRef.current.onAction?.();
+        }}
         data-seat-num={seatNumber}
         data-player-id={player.id}
         role="region"
@@ -2933,9 +2963,9 @@ export const SeatSlot = memo(
           <div
             className={`seat__action seat__action--${shownAction}`}
             role="status"
-            aria-label={`${player.name}: ${getActionLabel(shownAction, lastBetAmount)}`}
+            aria-label={`${player.name}: ${getActionLabel(shownAction, lastBetAmount, wagerFmt)}`}
           >
-            {getActionLabel(shownAction, lastBetAmount)}
+            {getActionLabel(shownAction, lastBetAmount, wagerFmt)}
           </div>
         )}
 
@@ -2958,6 +2988,7 @@ export const SeatSlot = memo(
             <div className="seat__bet-chips">
               <ChipPhysics
                 amount={lastBetAmount}
+                formatAmount={wagerFmt}
                 animate={
                   isCollectingChips
                     ? 'collect'
@@ -3099,6 +3130,8 @@ export const SeatSlot = memo(
         {/* showHolo: eligible art AND on the clock - see holoOnClockDelayMs. */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
+          inert={foldIdentityHidden}
+          aria-hidden={foldIdentityHidden || undefined}
           /* `--rigged` hands ALL motion to the rig. Without it a rigged avatar
              plays its own Push animation while this wrap ALSO leans through
              spAvatarPush, and keeps breathing on top of the rig's own idle —
@@ -3371,7 +3404,14 @@ export const SeatSlot = memo(
             instantly on every turn for reduced-motion players — the exact case
             the escape hatch was built for. The ring is informational, not
             vestibular motion (it shrinks in place). */}
-        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
+        <div
+          className="seat__info"
+          style={timerStyle}
+          key={`info-${timerKey}`}
+          data-motion="keep"
+          inert={foldIdentityHidden}
+          aria-hidden={foldIdentityHidden || undefined}
+        >
           {/* The neon countdown ring. A real element (it was `.seat__info::before`
               until 2026-10-04) because it has to be a size container: the
               sweep is converted from "fraction of the BORDER spent" to a conic
@@ -3431,7 +3471,7 @@ export const SeatSlot = memo(
           {stackDelta > 0 && (
             <span className="seat__stack-delta seat__stack-delta--win">
               +{/* A stack gain uses wager precision (Dan 2026-09-23, item 9). */}
-              {showStackInBB ? formatStackAsBB(stackDelta, bigBlind) : formatWager(stackDelta)}
+              {wagerFmt(stackDelta)}
             </span>
           )}
         </div>
@@ -3732,7 +3772,7 @@ export const SeatSlot = memo(
             {/* A win is a wager's kind of number, not a stack's: +12, not
                 +12.00, beside a stack delta that already reads +12
                 (2026-09-24, the one float item 9 missed). */}
-            {formatWager(Math.abs(netWinAmount))}
+            {wagerFmt(Math.abs(netWinAmount))}
           </div>
         )}
 
@@ -3875,6 +3915,7 @@ export const SeatSlot = memo(
     if (prev.position !== next.position) return false;
     if (prev.killMarker !== next.killMarker) return false;
     if (prev.isTournament !== next.isTournament) return false;
+    if (prev.foldCommitted !== next.foldCommitted) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
     if (prev.bountyIsMystery !== next.bountyIsMystery) return false;

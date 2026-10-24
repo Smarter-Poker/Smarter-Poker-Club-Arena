@@ -217,6 +217,90 @@ const draftView = () => (
 const authEvent = (event: string, id?: string) =>
   mocks.auth.mock.calls[0][0](event, id ? { user: { id } } : null);
 
+describe('a slow or dropped re-check keeps the verified page (2026-10-24)', () => {
+  it.each([
+    [{ code: '57014', message: 'canceling statement due to statement timeout' }],
+    [new TypeError('Failed to fetch')],
+  ])('keeps the cashier draft through a transient re-check failure: %s', async (error) => {
+    mocks.access.mockResolvedValueOnce(chip).mockRejectedValueOnce(error);
+    render(draftView());
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Amount' }), {
+      target: { value: '1,500' },
+    });
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    await waitFor(() => expect(mocks.access).toHaveBeenCalledTimes(2));
+    expect((screen.getByRole('textbox', { name: 'Amount' }) as HTMLInputElement).value).toBe(
+      '1,500'
+    );
+    expect(screen.queryByText('Access Not Verified')).toBeNull();
+  });
+
+  it('still applies the next real answer after a kept page', async () => {
+    mocks.access
+      .mockResolvedValueOnce(chip)
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ...chip, member: false });
+    render(view('chip'));
+    await screen.findByText('Private Chip Lobby');
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    await waitFor(() => expect(mocks.access).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Private Chip Lobby')).toBeTruthy();
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    expect(await screen.findByRole('button', { name: 'Join This Club' })).toBeTruthy();
+    expect(screen.queryByText('Private Chip Lobby')).toBeNull();
+  });
+
+  it('removes private content on an unclassified service failure, as before', async () => {
+    mocks.access
+      .mockResolvedValueOnce(chip)
+      .mockRejectedValueOnce(new Error('Unexpected database failure'));
+    render(view('chip'));
+    await screen.findByText('Private Chip Lobby');
+    fireEvent.focus(window);
+    await waitFor(() => expect(screen.queryByText('Private Chip Lobby')).toBeNull());
+    expect(await screen.findByText('Unavailable', { selector: '.sc__pill *' })).toBeTruthy();
+  });
+
+  it('re-reads a transient first-read failure by itself, without a Retry tap', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mocks.access
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce(chip);
+      render(view('chip'));
+      expect(await screen.findByText('Connection', { selector: '.sc__pill *' })).toBeTruthy();
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+      });
+      expect(await screen.findByText('Private Chip Lobby')).toBeTruthy();
+      expect(mocks.access).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not schedule a re-read for a sign-in failure', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mocks.access.mockRejectedValue({ code: '28000', message: 'Authentication Required' });
+      render(view('chip'));
+      await screen.findByText('Sign In', { selector: '.sc__pill *' });
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(mocks.access).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('Cashier draft and authenticated arena lifetime', () => {
   it('keeps the mounted amount through same-account sign-in and token refresh', async () => {
     mocks.access.mockResolvedValue(chip);

@@ -5,6 +5,7 @@ const club = process.env.E2E_LIGHTNING_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7f
 const overviewRpc = '/rest/v1/rpc/fn_lightning_operator_overview';
 const clusterRpc = '/rest/v1/rpc/fn_lightning_operator_cluster';
 const readinessRpc = '/rest/v1/rpc/fn_lightning_rollout_readiness';
+const unionContextRpc = '/rest/v1/rpc/fn_club_union_context';
 
 for (const width of [393, 1440]) {
   test(`Lightning operator cold load at ${width}px preserves read ownership and cancel`, async ({
@@ -25,12 +26,23 @@ for (const width of [393, 1440]) {
       )
         writes.push(path);
     });
+    const ownerContext = page.waitForResponse((r) => new URL(r.url()).pathname === unionContextRpc);
     const overview = page.waitForResponse((r) => new URL(r.url()).pathname === overviewRpc);
     await page.goto(`clubs/${club}/lightning`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
+    // A member club shows its union's games (#7884): the page resolves the
+    // owning scope with fn_club_union_context, and the overview reads that
+    // owner. The expected id comes from the same live answer, never a constant.
+    const contextResponse = await ownerContext;
+    expect(contextResponse.status()).toBe(200);
+    expect(contextResponse.request().postDataJSON().p_club_id).toBe(club);
+    const contextBody = await contextResponse.json();
+    const context = Array.isArray(contextBody) ? contextBody[0] : contextBody;
+    const owner: string = context?.own_union_id ?? context?.member_union_id ?? club;
+    expect(owner).toMatch(/^[0-9a-f-]{36}$/);
     const response = await overview;
     expect(response.status()).toBe(200);
-    expect(response.request().postDataJSON().p_club_id).toBe(club);
+    expect(response.request().postDataJSON().p_club_id).toBe(owner);
     const body = await response.json();
     expect(body.ok).not.toBe(false);
     expect(Array.isArray(body.clusters)).toBe(true);

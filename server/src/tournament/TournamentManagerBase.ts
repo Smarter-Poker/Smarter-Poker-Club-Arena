@@ -2859,6 +2859,13 @@ export abstract class TournamentManagerBase {
    */
   protected bustAwaitsItsStage(): void {}
 
+  /**
+   * A hand just left a player at zero, which opens that player's rebuy offer.
+   * The elimination manager answers open horse offers at once (see
+   * answerHorseRebuyOffersNow); the base manager has no rebuy input.
+   */
+  protected horseRebuyOfferMayHaveOpened(): void {}
+
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
@@ -3058,6 +3065,7 @@ export abstract class TournamentManagerBase {
         if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
+        this.horseRebuyOfferMayHaveOpened();
         this.requestEliminationSweep();
       }
     });

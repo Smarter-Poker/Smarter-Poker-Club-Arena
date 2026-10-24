@@ -552,7 +552,9 @@ export async function startLiveHorseDecisionWorker(
     // The archive walk runs as a child process the event loop does not wait
     // on (horseJournalShardCapacityMeasured, 2026-10-15).
     const journalCapacity = options.journalCapacity ?? {
-      shards: await horseJournalShardCapacityMeasured(),
+      shards: await horseJournalShardCapacityMeasured(process.env, {
+        sufficientShards: MAX_HORSE_DECISION_WORKERS,
+      }),
     };
     if (!singleton) singleton = new LiveHorseDecisionWorkerPool({ ...options, journalCapacity });
     console.log(

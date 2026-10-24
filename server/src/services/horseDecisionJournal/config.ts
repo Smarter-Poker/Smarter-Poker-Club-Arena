@@ -409,13 +409,46 @@ export async function horseJournalArchiveAllocatedBytesAsync(
   return parseHorseJournalDu(output, directories);
 }
 
-/** The capacity, with the archive walk measured asynchronously first. The
- * same reading and the same refusals as horseJournalShardCapacity. */
+/**
+ * THE WALK LEAVES THE BOOT PATH WHEN IT CANNOT CHANGE THE ANSWER (2026-10-24).
+ * Lane construction awaits this before any table can be dealt, so the du walk
+ * over every archive shard (about 3.5 million segment files on engine-01) sat
+ * on the critical path of every engine start. Release c485ce7a booted with the
+ * lane starting 23 s after the process; the same walk is why release e4f7
+ * reached dealer readiness too late for its final database proof inside the
+ * maintenance break and rolled back.
+ *
+ * The walk only ever matters through the default worker count, which takes the
+ * minimum of the CPU default, this capacity and a fixed maximum. So the
+ * capacity is first priced with every existing archive assumed EMPTY - the
+ * most growth those archives could still claim, which can only lower the
+ * answer - from one statfs and a directory listing. When even that lower bound
+ * already admits `sufficientShards` (the lane passes its maximum worker count),
+ * the measured answer could not change the worker count and the walk is
+ * skipped; the published capacity is that lower bound. Otherwise, or when the
+ * bound itself is unreadable, the original walk runs with every refusal rule
+ * unchanged, so a full disk is still measured exactly and an unreadable
+ * reading still keeps the legacy two-worker ceiling.
+ */
 export async function horseJournalShardCapacityMeasured(
-  environment: Readonly<Record<string, string | undefined>> = process.env
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  options: { sufficientShards?: number } = {}
 ): Promise<number | undefined> {
   const directory = environment.HORSE_DECISION_JOURNAL_DIR;
   if (!directory) return horseJournalShardCapacity(environment);
+  const sufficient = options.sufficientShards;
+  if (sufficient !== undefined && Number.isSafeInteger(sufficient) && sufficient >= 1) {
+    const lowerBound = horseJournalShardCapacity(environment, (directories) =>
+      directories.map(() => 0)
+    );
+    if (
+      horseJournalCapacityUnreadableReason() === null &&
+      lowerBound !== undefined &&
+      lowerBound >= sufficient
+    ) {
+      return lowerBound;
+    }
+  }
   let measured: number[] | { error: unknown };
   try {
     const names = horseJournalArchiveDirectoryNames(directory);

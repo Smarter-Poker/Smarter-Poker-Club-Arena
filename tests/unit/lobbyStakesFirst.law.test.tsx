@@ -108,3 +108,111 @@ describe('stakes lead the cash lobby across selected variants', () => {
     expect(ids()).toEqual(['plo-1', 'plo-2', 'plo-2-empty', 'plo5-2']);
   });
 });
+
+/* 2026-10-24: the same rule everywhere a price is sorted. */
+const omahaGames = [
+  { key: 'plo4', label: 'PLO' },
+  { key: 'plo5', label: 'PLO5' },
+  { key: 'plo6', label: 'PLO6' },
+  { key: 'plo8', label: 'PLO8o' },
+];
+function rendered(props: Record<string, unknown>) {
+  localStorage.clear();
+  render(
+    <MemoryRouter>
+      <LobbyTable
+        selectedId={null}
+        onSelect={vi.fn()}
+        onActivate={vi.fn()}
+        ctx={ctx}
+        {...(props as { entries: never; category: never })}
+      />
+    </MemoryRouter>
+  );
+  return () =>
+    Array.from(document.querySelectorAll('.lobby-table-wrap tbody tr[id]')).map((el) =>
+      el.id.replace('lt-row-', '')
+    );
+}
+
+describe('every stakes order keeps one price together in canonical variant order', () => {
+  it('the ALL tab Stakes heading groups each price by canonical variant, both directions', () => {
+    // Arrival order is deliberately scrambled and player counts differ, so
+    // only the canonical rank can produce the expected order.
+    const entries = [
+      entry('plo8', 2, '', 5),
+      entry('nlh', 1, '', 2),
+      entry('short_deck', 2, '', 4),
+      entry('plo', 1, '', 6),
+      entry('nlh', 2, '', 1),
+      entry('pineapple', 2, '', 6),
+      entry('plo5', 2, '', 3),
+    ];
+    const ids = rendered({ entries, category: 'ALL' });
+    const head = document.querySelector('.lobby-table-wrap thead') as HTMLElement;
+    const stakes = within(head).getByRole('columnheader', { name: /stakes/i });
+    fireEvent.click(within(stakes).queryByRole('button') ?? stakes);
+    expect(ids()).toEqual([
+      'nlh-1',
+      'plo-1',
+      'nlh-2',
+      'pineapple-2',
+      'short_deck-2',
+      'plo5-2',
+      'plo8-2',
+    ]);
+    fireEvent.click(within(stakes).queryByRole('button') ?? stakes);
+    expect(ids()).toEqual([
+      'nlh-2',
+      'pineapple-2',
+      'short_deck-2',
+      'plo5-2',
+      'plo8-2',
+      'nlh-1',
+      'plo-1',
+    ]);
+  });
+
+  it('Sort By Variant lists each variant by stakes, and the second tap reverses the stakes only', () => {
+    const entries = [
+      entry('plo5', 1, '', 6),
+      entry('plo', 4, '', 6),
+      entry('plo', 1, '', 1),
+      entry('plo5', 4, '', 1),
+      entry('plo', 2, '', 3),
+    ];
+    const ids = rendered({
+      entries,
+      category: 'OMAHA',
+      variantChoices: omahaGames,
+      selectedVariants: [],
+      onVariantsChange: vi.fn(),
+    });
+    const bar = document.querySelector('.arena-lobby-card-list') as HTMLElement;
+    const sortByVariant = () => {
+      fireEvent.click(within(bar).getByRole('button', { name: /^game$/i }));
+      const menu = within(bar).getByRole('group', { name: 'Game Variant' });
+      fireEvent.click(within(menu).getByRole('button', { name: 'Sort By Variant' }));
+    };
+    sortByVariant();
+    expect(ids()).toEqual(['plo-1', 'plo-2', 'plo-4', 'plo5-1', 'plo5-4']);
+    sortByVariant();
+    expect(ids()).toEqual(['plo-4', 'plo-2', 'plo-1', 'plo5-4', 'plo5-1']);
+  });
+});
+
+describe('the ALL board keeps one printed stakes level together across betting structures', () => {
+  it('a limit "1/2" (blinds 0.50/1) sits with the no-limit 1/2 games, both directions', () => {
+    const ids = rendered({
+      entries: [entry('flh', 1), entry('nlh', 1), entry('nlh', 2), entry('plo', 2)],
+      category: 'ALL',
+    });
+    const head = document.querySelector('.lobby-table-wrap thead') as HTMLElement;
+    const stakes = within(head).getByRole('columnheader', { name: /stakes/i });
+    const press = () => fireEvent.click(within(stakes).queryByRole('button') ?? stakes);
+    press();
+    expect(ids()).toEqual(['nlh-1', 'nlh-2', 'plo-2', 'flh-1']);
+    press();
+    expect(ids()).toEqual(['nlh-2', 'plo-2', 'flh-1', 'nlh-1']);
+  });
+});

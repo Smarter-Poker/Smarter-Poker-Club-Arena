@@ -2,19 +2,19 @@
   "version": 1,
   "windows": [
     {
-      "id": "2026-10-24-arena-dealing-incident",
-      "ownerOrder": "Dan, 2026-10-23: \"THIS NEEDS TO BE FIXED AT ONCE, PLAYERS ARE SITTED AT THE TABLE BUT CARDS AREN'T DEALING... FIX WHAT EVER IS BLOCKING THIS THEN FIX IT SO IT CAN'T HAPPEN AGAIN...\" Emergency incident repair includes missing satellite dealer admission while its boundary is held.",
-      "contains": "a1d1a637371f601921f0620f1d26fa517eb06f29",
-      "notBefore": "2026-10-24T02:33:00Z",
-      "notAfter": "2026-10-24T06:33:00Z"
-    },
-    {
       "id": "2026-10-23-horse-memory-strategy",
       "ownerOrder": "Dan, 2026-10-23: \"you have to push and publish all of these changes and upgrades NOW\"; \"do not wait until 4 am to do this\". Holdem and all PLO opponent memory, premium raises, continuation and range advantage.",
       "contains": "f35c068daeefd3005f967af16844a336a53d2e6b",
       "notBefore": "2026-10-23T20:41:08Z",
       "notAfter": "2026-10-24T02:41:08Z",
       "migrations": ["20261023183513_durable_variant_scoped_horse_opponent_memory.sql"]
+    },
+    {
+      "id": "2026-10-24-arena-dealing-incident",
+      "ownerOrder": "Dan, 2026-10-23: \"THIS NEEDS TO BE FIXED AT ONCE, PLAYERS ARE SITTED AT THE TABLE BUT CARDS AREN'T DEALING... FIX WHAT EVER IS BLOCKING THIS THEN FIX IT SO IT CAN'T HAPPEN AGAIN...\" Emergency incident repair includes missing satellite dealer admission while its boundary is held.",
+      "contains": "a1d1a637371f601921f0620f1d26fa517eb06f29",
+      "notBefore": "2026-10-24T02:33:00Z",
+      "notAfter": "2026-10-24T06:33:00Z"
     }
   ]
 }

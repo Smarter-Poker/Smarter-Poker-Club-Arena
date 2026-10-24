@@ -32,6 +32,7 @@ import type {
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
 import { buildHorseDecisionKey } from './protocol.js';
+import { createDecisionOpponentProfileReader } from '../../services/HorseOpponentMemory.js';
 import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 
 describe('the decision deadline is the turn clock: the number', () => {
@@ -322,6 +323,46 @@ describe('the decision deadline is the turn clock: the client', () => {
       });
       const rejection = expect(pending).rejects.toThrow(/expired after 8000ms/);
       await vi.advanceTimersByTimeAsync(8_000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('opponent restoration shares the caller deadline', () => {
+  it.each([undefined, Number.NaN, 0, -1])(
+    'cancels a stalled schema before enqueue with default budget (%s)',
+    async (deadlineMs) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        jobTimeoutMs: 30,
+        opponentProfiles: createDecisionOpponentProfileReader(() => new Promise(() => {})),
+      });
+      worker.emitMessage(ready);
+      await expect(
+        client.decideFast(snapshot('schema-deadline'), undefined, { deadlineMs })
+      ).rejects.toThrow();
+      expect(worker.sent.some((m) => (m as { type?: string }).type === 'DECIDE_FAST')).toBe(false);
+    }
+  );
+  it('subtracts restoration time from the remaining default compute window', async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      jobTimeoutMs: 1000,
+      opponentProfiles: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return [];
+      },
+    });
+    try {
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('memory-budget'));
+      const rejection = expect(pending).rejects.toThrow(/expired after 500ms/);
+      await vi.advanceTimersByTimeAsync(1000);
       await rejection;
     } finally {
       vi.useRealTimers();

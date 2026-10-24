@@ -717,6 +717,19 @@ export class LiveHorseDecisionWorkerClient {
     options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
     const captured = this.opponentProfiles ? structuredClone(snapshot) : snapshot;
+    const startedAt = Date.now();
+    const callerBudget =
+      typeof options?.deadlineMs === 'number' &&
+      Number.isFinite(options.deadlineMs) &&
+      options.deadlineMs > 0
+        ? options.deadlineMs
+        : this.jobTimeoutMs;
+    const memorySignal =
+      callerBudget && Number.isFinite(callerBudget) && callerBudget > 0
+        ? signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(Math.ceil(callerBudget))])
+          : AbortSignal.timeout(Math.ceil(callerBudget))
+        : signal;
     const enqueue = (profiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[]) => {
       const request: FastHorseDecisionRequest = {
         ...captured,
@@ -729,10 +742,15 @@ export class LiveHorseDecisionWorkerClient {
         'FAST_RESULT',
         signal,
         false,
-        options?.deadlineMs
+        Math.max(1, callerBudget - (Date.now() - startedAt))
       );
     };
-    return this.opponentProfiles ? this.opponentProfiles(captured).then(enqueue) : enqueue();
+    return this.opponentProfiles
+      ? this.opponentProfiles(captured, memorySignal).then((profiles) => {
+          memorySignal?.throwIfAborted();
+          return enqueue(profiles);
+        })
+      : enqueue();
   }
 
   decideDeep(

@@ -63,6 +63,7 @@ function fixture() {
         (name, payload) => dependencies.supabase.rpc(name, payload),
         current
       ),
+    setLightningAnchorFunding: vi.fn(),
     setCashBuyInRecovery: (attempt: any) => {
       dependencies.cashBuyInRecovery = attempt;
     },
@@ -123,6 +124,11 @@ describe('cash buy-in callback recovery', () => {
     await f.handler(400, false);
     expect(f.d.heroRowStack).toBe(null);
     expect(f.d.pendingSeatStackRef.current).toBe(400);
+    expect(f.d.setLightningAnchorFunding).toHaveBeenCalledWith({
+      tableId: f.d.tableId,
+      userId: f.d.userId,
+      funded: true,
+    });
   });
 
   it('buys in without native randomUUID and without a preliminary seat read', async () => {
@@ -292,6 +298,7 @@ it('recovers a committed receipt without restoring an old stack or subtracting t
   expect(f.state().heroSeat).toBe(0);
   expect(f.d.totalBuyInRef.current).toBe(0);
   expect(f.d.leftSeatPendingRef.current).toBe(true);
+  expect(f.d.setLightningAnchorFunding).not.toHaveBeenCalled();
 });
 
 it('keeps a late confirmation inside its original view and cannot clear a newer operation latch', async () => {
@@ -346,6 +353,7 @@ it('treats a successful retried mutation as recovery when the original may have 
   expect(f.state().heroSeat).toBe(0);
   expect(f.d.totalBuyInRef.current).toBe(0);
   expect(f.d.leftSeatPendingRef.current).toBe(true);
+  expect(f.d.setLightningAnchorFunding).not.toHaveBeenCalled();
   expect(f.d.retryAccountBalance).toHaveBeenCalledOnce();
 });
 

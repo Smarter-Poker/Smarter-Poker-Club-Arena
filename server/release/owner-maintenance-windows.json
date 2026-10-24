@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-v52-range-advantage-1555",
+      "ownerOrder": "Dan, 2026-10-24 14:33 Chicago, on the V52 range-advantage measurement (#7915) being left for the routine 04:00 release: \"NO LAUNCH IT AT THE 3:55 BREAK.\" Applies only to making protected ebe9363e (#7915, v52RangeAdvantage switch default on and its nightly league cards) live at the 15:55 Chicago break, with 16:55 as the fallback if 15:55 is missed.",
+      "contains": "ebe9363ec3189b17c655f8c87954cae1010c21f4",
+      "notBefore": "2026-10-24T19:34:22Z",
+      "notAfter": "2026-10-24T21:58:00Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-main-seat-rest-timing",
       "ownerOrder": "Dan, 2026-10-24 09:45 Chicago: \"FINSIH UP ALL OF THIS\" on the Main seat timing report, which stated that PR #7900 (110e1b7c1) goes live at the routine 4:00 AM release tomorrow and \"To get it live sooner, you'd need to order an off-cycle release window\"; same message: \"MAKE SURE THE REMAINING 288 HORSES GET THE UPDATED BRAIN\". Applies only to making protected 110e1b7c1 (a Main seat planned or filled under the 2-second rest takes the next hand) live.",
       "contains": "110e1b7c111bee6e442d6407cf050cd677ea3daf",

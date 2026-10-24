@@ -26,6 +26,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/HorseTournamentPreflop.ts':
       'the Phase 6 tournament preflop atlas the bars shift by',
     'src/engine/AnteMath.ts': 'the ante orbit cost behind the M-zones',
+    'src/engine/OmahaFlushBlocker.ts':
+      'physical two-hole three-board nut-flush and straight-flush blockers consumed by the reference decision',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',

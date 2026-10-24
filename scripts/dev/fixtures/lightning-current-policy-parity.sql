@@ -85,7 +85,12 @@ BEGIN
   PERFORM public.fx9_pool(v_g);
   -- TIME TRAVEL (fixture boundary): the five-player deadline has elapsed for
   -- everyone, so the fixture is about first entry, not fullness.
-  UPDATE public.lightning_pool_slot SET idle_since = clock_timestamp() - interval '4 seconds'
+  -- The slot's opening moves back with it (idle_since >= opened_at is a
+  -- table CHECK); a later buy-in stays a newcomer because its CASH session
+  -- still opened after the epoch, which the conversion test also requires.
+  UPDATE public.lightning_pool_slot
+     SET opened_at = least(opened_at, clock_timestamp() - interval '4 seconds'),
+         idle_since = clock_timestamp() - interval '4 seconds'
    WHERE cluster_id = v_g AND closed_at IS NULL;
   v_new := ARRAY(SELECT ps.player_id FROM public.lightning_pool_session ps
                    JOIN public.cash_cluster_epoch e ON e.cluster_id = ps.cluster_id AND e.epoch = ps.cluster_epoch

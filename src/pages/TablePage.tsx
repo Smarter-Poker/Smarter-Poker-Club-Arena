@@ -319,6 +319,7 @@ import {
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
+import { lightningSessionStackFor, lightningWaitingHero } from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
@@ -4493,6 +4494,44 @@ function LiveTablePage({
     event: rawEngineLastEvent,
     onPersisted: acceptLightningSitOutTransition,
   });
+  /* LIGHTNING: THE HERO BETWEEN HANDS (Dan 2026-10-24). "IT SHOUDN'T SAY
+     SITTING OUT... IT SHOULD NEVER SAY 0.00". A fold answers with an idle room
+     (no players), so the hero's chair is drawn from these two facts instead
+     of the cash seat-row placeholder. See lightning/lightningWaitingHero.ts. */
+  const lightningHeroInRoster = lightningRoom
+    ? (tableState.players.find((p) => !!p && !!userId && p.id === userId) ?? null)
+    : null;
+  /* Per room: LiveTablePage is keyed by tableId, so a new room starts empty. */
+  const lightningLastSeenStackRef = useRef<number | null>(null);
+  if (lightningHeroInRoster && Number.isFinite(lightningHeroInRoster.stack)) {
+    lightningLastSeenStackRef.current = lightningHeroInRoster.stack;
+  }
+  const [lightningSessionStack, setLightningSessionStack] = useState<number | null>(null);
+  const lightningHeroWaiting = !!lightningRoom && !!userId && !lightningHeroInRoster;
+  const lightningRoomClusterId = lightningRoom?.clusterId ?? null;
+  useEffect(() => {
+    /* A dealt hand supersedes any earlier read: the next gap reads again. */
+    if (!lightningHeroWaiting || !lightningRoomClusterId || !tableId) {
+      setLightningSessionStack(null);
+      return;
+    }
+    let cancelled = false;
+    fetchMyLightningSession(lightningRoomClusterId)
+      .then((session) => {
+        if (!cancelled) setLightningSessionStack(lightningSessionStackFor(tableId, session));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [lightningHeroWaiting, lightningRoomClusterId, tableId]);
+  const lightningWaitingSeat = lightningRoom
+    ? lightningWaitingHero({
+        sittingOut: lightningSitOut.sittingOut,
+        lastSeenStack: lightningLastSeenStackRef.current,
+        sessionStack: lightningSessionStack,
+      })
+    : null;
   const heroIsSittingOut =
     (tableState.heroSeat > 0 &&
       (tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' ||
@@ -26691,8 +26730,11 @@ function LiveTablePage({
                 avatar: heroAvatarUrl || '',
                 // A confirmed seat balance supersedes the original buy-in,
                 // including zero. The buy-in is only a pre-row placeholder.
-                stack: heroRowStack ?? pendingSeatStackRef.current ?? 0,
-                status: 'sitting_out',
+                stack:
+                  lightningWaitingSeat?.stack ?? heroRowStack ?? pendingSeatStackRef.current ?? 0,
+                /* A Lightning player between hands is in the pool, not sitting
+                   out, unless they asked to be (Dan 2026-10-24). */
+                status: lightningWaitingSeat ? lightningWaitingSeat.status : 'sitting_out',
                 isHero: true,
                 showCards: false,
               } as any;

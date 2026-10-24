@@ -19,6 +19,7 @@
 import { variantRank, UNLISTED_VARIANT_RANK } from './variantRank';
 import { variantDisplay } from './lobbyEntries';
 import { variantKey } from './advancedFilterSpec';
+import { stakesSortValue } from '../../lib/bettingStructure';
 
 export type CashBoardSortKey =
   | 'recommended'
@@ -34,7 +35,9 @@ export interface CashBoardRow {
   game_variant?: string | null;
 }
 
-const bb = (t: CashBoardRow) => Number(t.big_blind) || 0;
+/* The stakes a row prints (see stakesSortValue): a fixed-limit "1/2" is
+   ordered with every other "1/2", not half a level below it. */
+const bb = (t: CashBoardRow) => stakesSortValue(Number(t.big_blind) || 0, t.game_variant);
 /* Fold legacy spellings (`plo`, `limit_holdem`, `hilo`) through the filter's
    own key first, so a row is ranked as the game the Variant chips call it. */
 const label = (t: CashBoardRow) => {

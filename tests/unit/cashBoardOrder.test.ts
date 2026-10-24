@@ -21,18 +21,18 @@ const board = [
   row('NLH 1/2', 'nlh', 2, 2),
   row('Pineapple 1/2', 'pineapple', 2, 9),
   row('PLO5 .5/1', 'plo5', 1, 9),
-  row('FLH 1/2', 'flh', 2, 9),
+  row('FLH 2/4', 'flh', 2, 9),
 ];
 
 describe('cashBoardComparator', () => {
   it('ALL: Stakes High To Low keeps each price together in canonical variant order', () => {
     expect(names(board, 'stakes_high', 'ALL')).toEqual([
+      'FLH 2/4',
       'NLH 1/2',
       'Pineapple 1/2',
       'Short Deck 1/2',
       'PLO 1/2',
       'PLO8 1/2',
-      'FLH 1/2',
       'NLH .5/1',
       'PLO5 .5/1',
     ]);
@@ -47,7 +47,7 @@ describe('cashBoardComparator', () => {
       'Short Deck 1/2',
       'PLO 1/2',
       'PLO8 1/2',
-      'FLH 1/2',
+      'FLH 2/4',
     ]);
   });
 
@@ -64,7 +64,7 @@ describe('cashBoardComparator', () => {
 
   it('the other sorts are unchanged: ALL stays a flat list, OMAHA keeps its variant groups', () => {
     expect(names(board, 'recommended', 'ALL')).toEqual([
-      'FLH 1/2',
+      'FLH 2/4',
       'Pineapple 1/2',
       'PLO8 1/2',
       'Short Deck 1/2',
@@ -74,9 +74,36 @@ describe('cashBoardComparator', () => {
       'NLH .5/1',
     ]);
     expect(names(board, 'players', 'ALL').slice(0, 3)).toEqual([
-      'FLH 1/2',
+      'FLH 2/4',
       'Pineapple 1/2',
       'PLO5 .5/1',
+    ]);
+  });
+});
+
+describe('a fixed-limit row is ordered by the stakes it prints (2026-10-24)', () => {
+  // Blinds 0.50/1 FLH prints "1/2"; blinds 1/2 NLH prints "1/2" too. On ALL
+  // they are one stakes level, never split around the 0.50/1 group.
+  const mixed = [
+    row('FLH prints 1/2', 'flh', 1),
+    row('NLH 1/2', 'nlh', 2),
+    row('NLH .5/1', 'nlh', 1),
+    row('PLO 1/2', 'plo4', 2),
+  ];
+  it('High To Low keeps every "1/2" ahead of every "0.50/1"', () => {
+    expect(names(mixed, 'stakes_high', 'ALL')).toEqual([
+      'NLH 1/2',
+      'PLO 1/2',
+      'FLH prints 1/2',
+      'NLH .5/1',
+    ]);
+  });
+  it('Low To High reverses the levels, not the variant order', () => {
+    expect(names(mixed, 'stakes_low', 'ALL')).toEqual([
+      'NLH .5/1',
+      'NLH 1/2',
+      'PLO 1/2',
+      'FLH prints 1/2',
     ]);
   });
 });

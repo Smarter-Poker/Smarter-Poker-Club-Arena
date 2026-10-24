@@ -81,9 +81,16 @@ describe('the lobby posts a limit table by its bet sizes', () => {
     expect(nulled.stakesValue).toBe(0);
   });
 
-  it('sorts on the big blind, which the label change must not touch', () => {
-    // stakesValue drives the lobby's stake sort. It is deliberately still the
-    // raw big blind, so a limit table sorts beside the blinds it actually posts.
-    expect(cashEntry(row({ game_variant: 'flh' })).stakesValue).toBe(2);
+  it('sorts on the stakes it prints, so a limit 2/4 groups with every 2/4', () => {
+    // stakesValue drives the lobby's stake sort. Until 2026-10-24 it was the
+    // raw big blind, which put a limit row half a level below its own label:
+    // on the ALL tab's High To Low a "1/2" FLH reappeared after the whole
+    // 0.50/1 group (Dan 2026-10-23: "DISPLAY ALL THE 1/2 GAMES FIRST ... AND
+    // THEN DO THE .50/1.00 GAME"). It is now the larger printed figure: the
+    // big bet for limit, the big blind otherwise. Within the LIMIT tab the
+    // order is unchanged (every row scales by the same factor).
+    expect(cashEntry(row({ game_variant: 'flh' })).stakesLabel).toBe('2/4');
+    expect(cashEntry(row({ game_variant: 'flh' })).stakesValue).toBe(4);
+    expect(cashEntry(row({ game_variant: 'nlh' })).stakesValue).toBe(2);
   });
 });

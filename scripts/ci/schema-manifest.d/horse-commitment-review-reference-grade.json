@@ -1,0 +1,8 @@
+{
+  "_owner": "claude/horse-commitment-review-matches: the daily commitment audit grades each eligible horse row against the stored push/fold solver charts (20261024225914). Native PG17 qualified by scripts/ci/test-horse-commitment-audit.py job reference_grade24; a declaration pending protected merge and exact production installation/readback, not a live installation claim.",
+  "functions": [
+    "fn_horse_commitment_reference_grade",
+    "fn_horse_commitment_reference_position",
+    "fn_horse_commitment_reference_hand_class"
+  ]
+}

@@ -1144,7 +1144,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_commitment_reviews',
     'nightly',
     'fn_horse_commitment_audit_step',
-    'strictly over10BB cumulative commitment including refunds, or unknown eligibility; private diagnostics with unmatched replay/reference and no policy authority',
+    'strictly over10BB cumulative commitment including refunds, or unknown eligibility; each eligible row graded against the stored push/fold solver charts (reference_agreed / reference_deviation) or unverified with every ungraded decision named (20261024225914); private diagnostics with no policy authority',
     'Phase14'
   ),
   table(

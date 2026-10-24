@@ -22,6 +22,21 @@ export interface DailyTrust {
   /** Test dependency injection only; production CLI always supplies false. */
   allowSynthetic?: boolean;
 }
+/**
+ * A per-row reason the daily step writes about the horse's DECISION against
+ * the solver reference, as opposed to a source/identity gap. Rows written
+ * before 20261024225914 carry the two old placeholders; rows written since
+ * carry the reference grade's own vocabulary (`reference_*`, `decision_*`,
+ * fn_horse_commitment_reference_grade). Neither is a source gap: the private
+ * corrective review is exactly what can say more about such a decision.
+ */
+export function isCommitmentDecisionReason(reason: string): boolean {
+  return (
+    reason === 'decision_replay_not_matched' ||
+    reason === 'reference_not_matched' ||
+    /^(reference|decision)_[a-z0-9_]+(:[A-Za-z0-9_|.:+-]+)?$/.test(reason)
+  );
+}
 /** The queue-row screen shared with the mapping producer: null means the
  * row may be joined to private evidence; otherwise the named pending reason. */
 export function dailyRowScreen(row: DailyRow): string | null {
@@ -34,10 +49,7 @@ export function dailyRowScreen(row: DailyRow): string | null {
     Number(row.committedBb) <= 10
   )
     return 'monetary_eligibility_unknown';
-  if (
-    row.gaps.length ||
-    row.reasons.some((r) => !['decision_replay_not_matched', 'reference_not_matched'].includes(r))
-  )
+  if (row.gaps.length || row.reasons.some((r) => !isCommitmentDecisionReason(r)))
     return 'daily_source_gap';
   return null;
 }

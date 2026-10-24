@@ -99,3 +99,63 @@ describe('Join Lightning is one buy-in: the amount, then an assigned seat', () =
     expect(page).not.toMatch(/\?buyin=1/);
   });
 });
+
+describe('Join Lightning is one tap from everywhere, and nobody picks a Lightning seat', () => {
+  const read = (p: string) => readFileSync(p, 'utf8');
+  it('the lobby card and PLAY AGAIN open the amount at once', async () => {
+    const { lightningJoinRoute } = await import('../../src/lightning/lightningLobby');
+    expect(lightningJoinRoute(CLUSTER)).toBe(`/lightning/${CLUSTER}?join=1`);
+    expect(read('src/pages/ClubHomePage.tsx')).toContain(
+      'navigate(lightningJoinRoute(row.cluster_id));'
+    );
+    expect(read('src/components/lightning/LightningSessionSummary.tsx')).toContain(
+      'navigate(lightningJoinRoute(req.clusterId));'
+    );
+  });
+
+  it('a chair tapped on a Lightning table opens the one-question door, never a seat buy-in', () => {
+    const page = read('src/pages/TablePage.tsx');
+    const tap = page.slice(
+      page.indexOf('const handleSeatClick = (seatNumber: number) => {'),
+      page.indexOf('// Validate seat is empty before showing buy-in modal')
+    );
+    expect(tap).toMatch(
+      /if \(anchorLightningClusterId && heroSeatRef\.current <= 0 && tableState\.heroSeat <= 0\) \{\s+openLightningAnchorEntry\(\);\s+return;/
+    );
+    /* no seat-change or waiting-list box on a Lightning table */
+    expect(page).toMatch(
+      /tableState\.clusterId &&\s+!anchorLightningClusterId &&\s+!lightningRoom && \(\s+<div className="hud-seat-change-dock">/
+    );
+  });
+});
+
+describe("the amount question remembers last time, inside today's range and wallet", () => {
+  it('first visit keeps the default; later visits pre-fill the last confirmed amount, clamped', async () => {
+    const m = await import('../../src/lightning/lightningJoinBuyIn');
+    localStorage.clear();
+    const ctx = { minBuyIn: 40, maxBuyIn: 200, balance: 500 };
+    expect(m.rememberedLightningBuyIn(CLUSTER, ctx)).toBeUndefined();
+    m.rememberLightningBuyIn(CLUSTER, 120);
+    expect(m.rememberedLightningBuyIn(CLUSTER, ctx)).toBe(120);
+    expect(m.rememberedLightningBuyIn(CLUSTER, { ...ctx, balance: 90 })).toBe(90);
+    expect(m.rememberedLightningBuyIn(CLUSTER, { ...ctx, maxBuyIn: 100 })).toBe(100);
+    expect(m.rememberedLightningBuyIn(CLUSTER, { ...ctx, balance: 10 })).toBeUndefined();
+    expect(m.rememberedLightningBuyIn(TABLE, ctx)).toBeUndefined();
+  });
+
+  it('only a confirmed seat is remembered', () => {
+    const page = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
+    expect(page).toContain(
+      "if (result.kind === 'seated') rememberLightningBuyIn(clusterId, amount);"
+    );
+    expect(page).toContain(
+      'defaultBuyIn={clusterId ? rememberedLightningBuyIn(clusterId, buyIn) : undefined}'
+    );
+  });
+});
+
+it('a Join Lightning that is not offered says why', () => {
+  const page = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
+  expect(page).toMatch(/\{atLimit \? \(\s+<p[^>]*>\s+\{LIGHTNING_LIMIT_TEXT\}/);
+  expect(page).toMatch(/joinsClosed \? \(\s+<p[^>]*>\s+\{LIGHTNING_JOINS_CLOSED_TEXT\}/);
+});

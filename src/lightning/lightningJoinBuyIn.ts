@@ -216,3 +216,43 @@ export async function buyIntoLightning(
   }
   return { kind: 'rejected', message: 'That Seat Was Just Taken. Try Again.' };
 }
+
+/* ─── The amount the player chose last time (per device, per game) ───────────
+   A reminder only: it pre-fills the amount question, which the player still
+   confirms. The first visit keeps Dan's default (the maximum, capped by the
+   wallet). Storage that is blocked or full simply forgets. */
+const LAST_BUY_IN_KEY = 'ca.lightning.last-buyin.v1';
+
+function readLastBuyIns(): Record<string, number> {
+  try {
+    const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(LAST_BUY_IN_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function rememberLightningBuyIn(clusterId: string, amount: number): void {
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  try {
+    const all = readLastBuyIns();
+    all[clusterId] = Math.round(amount * 100) / 100;
+    localStorage.setItem(LAST_BUY_IN_KEY, JSON.stringify(all));
+  } catch {
+    /* forgotten */
+  }
+}
+
+/** The pre-filled amount: last time's, inside today's range and wallet; else none. */
+export function rememberedLightningBuyIn(
+  clusterId: string,
+  context: Pick<LightningBuyInContext, 'minBuyIn' | 'maxBuyIn' | 'balance'>
+): number | undefined {
+  const last = Number(readLastBuyIns()[clusterId]);
+  if (!Number.isFinite(last) || last <= 0) return undefined;
+  const ceiling =
+    context.balance !== null ? Math.min(context.maxBuyIn, context.balance) : context.maxBuyIn;
+  if (ceiling < context.minBuyIn) return undefined;
+  return Math.min(Math.max(last, context.minBuyIn), ceiling);
+}

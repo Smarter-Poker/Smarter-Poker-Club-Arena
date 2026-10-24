@@ -95,6 +95,7 @@ import {
 import {
   isLightningMode,
   lightningClusterIdsOf,
+  lightningJoinRoute,
   lightningRoute,
   withLightningState,
   type LightningLobbyState,
@@ -4254,7 +4255,7 @@ function ClubHomePageContent({
       if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
         // Leaving unmounts the panel. Closing it first also schedules the
         // lobby's query-string sync, which can overwrite this navigation.
-        navigate(`/lightning/${row.cluster_id}`);
+        navigate(lightningJoinRoute(row.cluster_id));
         return;
       }
       setPanelOpen(false);

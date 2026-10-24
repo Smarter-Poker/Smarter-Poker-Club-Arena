@@ -70,6 +70,8 @@ import {
   buyIntoLightning,
   currentLightningUserId,
   readLightningBuyInContext,
+  rememberLightningBuyIn,
+  rememberedLightningBuyIn,
   type LightningBuyInContext,
 } from '../lightning/lightningJoinBuyIn';
 import { useUserStore } from '../stores/useUserStore';
@@ -86,10 +88,6 @@ export const LIGHTNING_LIMIT_TEXT =
  */
 export const LIGHTNING_JOINS_CLOSED_TEXT = 'Lightning Is Not Taking New Players Right Now.';
 
-/** Mode guidance uses the actual cluster metadata, never inferred population. */
-export const MUST_MOVE_ENTRY_TEXT =
-  'This Game Uses Regular Tables And The Normal Buy-In. Lightning Is Not Active Here. Lightning Hands Require Enough Eligible Players.';
-export const REGULAR_ENTRY_TEXT = 'Join Game Opens The Normal Table Buy-In.';
 
 type Phase =
   | { kind: 'resolving' }
@@ -243,6 +241,7 @@ export default function LightningEntryPage() {
       });
       if (!mounted.current) return result.kind === 'seated';
       if (result.kind === 'rejected') return { status: 'rejected', message: result.message };
+      if (result.kind === 'seated') rememberLightningBuyIn(clusterId, amount);
       setBuyIn(null);
       const meta = phase.kind === 'entry' ? phase.meta : null;
       writeLightningPrefs({
@@ -452,6 +451,16 @@ export default function LightningEntryPage() {
           onSecondary: () => navigate('/'),
         }}
       />
+      {/* A door that is not offered says why, in one line. */}
+      {atLimit ? (
+        <p className="lightning-entry__quiet" role="status" data-testid="lightning-entry-why">
+          {LIGHTNING_LIMIT_TEXT}
+        </p>
+      ) : joinsClosed ? (
+        <p className="lightning-entry__quiet" role="status" data-testid="lightning-entry-why">
+          {LIGHTNING_JOINS_CLOSED_TEXT}
+        </p>
+      ) : null}
       {buyIn ? (
         <BuyInModal
           isOpen
@@ -461,6 +470,7 @@ export default function LightningEntryPage() {
           gameType={meta?.variant ?? null}
           minBuyIn={buyIn.minBuyIn}
           maxBuyIn={buyIn.maxBuyIn}
+          defaultBuyIn={clusterId ? rememberedLightningBuyIn(clusterId, buyIn) : undefined}
           accountBalance={buyIn.balance}
           bigBlind={buyIn.bigBlind || meta?.bigBlind || 0}
         />

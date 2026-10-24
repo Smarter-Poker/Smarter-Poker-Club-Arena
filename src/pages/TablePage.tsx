@@ -375,7 +375,7 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { lightningRoute } from '../lightning/lightningLobby';
+import { isClassicLobbyState, isLightningMode, lightningRoute } from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -24042,15 +24042,34 @@ function LiveTablePage({
     () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
     [tableState.clusterId, lightningRoom]
   );
-  /* Asked once: a Classic table's game answers "no Lightning" and is never
-     polled again (Dan 2026-10-24, Lightning never touches Classic). */
+  /* Asked once: a Classic table's game answers Classic and is never polled
+     again (Dan 2026-10-24, Lightning never touches Classic). */
   const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds, {
     settleClassic: true,
   });
+  /* The database answers with a full state object for EVERY cash game, Classic
+     included, so a non-null answer is not "Lightning". Until 2026-10-24 it was
+     read that way, and every Classic spectator was offered Join Lightning
+     instead of the waiting list, and every Classic buy-in flashed "Joining
+     Lightning..." over the felt. A table is a Lightning anchor only while its
+     game is actually in a Lightning mode, or the engine is already showing a
+     Lightning hand on it. */
+  const tableGameLightningState = tableState.clusterId
+    ? spectatorLightningStates[tableState.clusterId]
+    : undefined;
   const anchorLightningClusterId =
     tableState.clusterId &&
     !lightningRoom &&
-    (lightningObserver || spectatorLightningStates[tableState.clusterId] != null)
+    (lightningObserver || isLightningMode(tableGameLightningState?.clusterMode))
+      ? tableState.clusterId
+      : null;
+  /* A game that can become Lightning while the player sits (Lightning switch
+     on). A Classic game never converts, so the handoff never watches it. */
+  const lightningCapableClusterId =
+    tableState.clusterId &&
+    (lightningRoom !== null ||
+      lightningObserver ||
+      (tableGameLightningState !== undefined && !isClassicLobbyState(tableGameLightningState)))
       ? tableState.clusterId
       : null;
 
@@ -24391,7 +24410,7 @@ function LiveTablePage({
      through, so this tab follows their chair into the pool-session room. */
   const lightningHandoff = useLightningAnchorHandoff({
     tableId,
-    clusterId: tableState.clusterId,
+    clusterId: lightningCapableClusterId,
     userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: lightningObserver

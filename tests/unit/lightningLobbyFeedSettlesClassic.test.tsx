@@ -18,7 +18,21 @@ import {
   useLightningLobbyStates,
 } from '../../src/lightning/lightningLobbyFeed';
 
-const classicAnswer = { data: { lightning: null }, error: null };
+/* The real shapes, read from production 2026-10-24
+   (fn_cash_cluster_lightning_state): the database answers for EVERY game,
+   Classic included. A null `lightning` never happens for a real game. */
+const classicState = {
+  enabled: true,
+  verdict: { live_eligible: 81, to_on: 0, to_off: 63 },
+  thresholds: { on: 27, off: 18, lightning_allowed: false },
+  must_move: true,
+  cluster_mode: 'must_move',
+  joins_enabled: true,
+  lightning_enabled: false,
+};
+const lightningState = { ...classicState, cluster_mode: 'lightning', lightning_enabled: true };
+const switchedOnState = { ...classicState, lightning_enabled: true };
+const classicAnswer = { data: { lightning: classicState }, error: null };
 const flush = async () => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };
@@ -36,7 +50,8 @@ describe('the table page asks a Classic game about Lightning once', () => {
     const { result } = renderHook(() => useLightningLobbyStates(ids, { settleClassic: true }));
     await act(flush);
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(result.current['classic-game']).toBeNull();
+    expect(result.current['classic-game']?.clusterMode).toBe('must_move');
+    expect(result.current['classic-game']?.lightningEnabled).toBe(false);
     for (let i = 0; i < 4; i++) {
       await act(async () => {
         vi.advanceTimersByTime(LIGHTNING_LOBBY_REFRESH_MS);
@@ -44,6 +59,22 @@ describe('the table page asks a Classic game about Lightning once', () => {
       });
     }
     expect(rpc).toHaveBeenCalledTimes(1);
+    expect(result.current['classic-game']?.clusterMode).toBe('must_move');
+  });
+
+  it.each([
+    ['a Lightning game', lightningState],
+    ['a game whose Lightning switch is on but is not yet dealing Lightning', switchedOnState],
+  ])('%s keeps its refresh', async (_label, state) => {
+    rpc.mockResolvedValue({ data: { lightning: state }, error: null });
+    const ids = ['some-game'];
+    renderHook(() => useLightningLobbyStates(ids, { settleClassic: true }));
+    await act(flush);
+    await act(async () => {
+      vi.advanceTimersByTime(LIGHTNING_LOBBY_REFRESH_MS * 2);
+      await flush();
+    });
+    expect(rpc).toHaveBeenCalledTimes(3);
   });
 
   it('a failed read is not an answer, so it is asked again', async () => {

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
+import { sliceCall, sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 import {
   foldRevealed,
   hasCommittedSeatFold,
@@ -8,6 +8,7 @@ import {
   turnPassedSeat,
   type FoldRevealTracker,
 } from '../../src/utils/committedSeatFold';
+import { isClassicLobbyState, parseLightningLobbyState } from '../../src/lightning/lightningLobby';
 
 const snapshot = {
   table_id: 'table',
@@ -67,6 +68,43 @@ describe('a player disappears only after their actual fold', () => {
    SHOULD BE TOUCHING THE CLASSIC GAMES." Hiding a folded player is a Lightning
    rule. A Classic table is normal poker: the folded player stays seated, with
    avatar and plate, for the whole hand. */
+describe('a Classic game reads as Classic from the real database answer', () => {
+  /* fn_cash_cluster_lightning_state for a Classic game, production 2026-10-24. */
+  const classic = parseLightningLobbyState({
+    cluster_mode: 'must_move',
+    lightning_enabled: false,
+    joins_enabled: true,
+    verdict: { live_eligible: 81 },
+    thresholds: { on: 27, off: 18 },
+  });
+  it('is a non-null state, which is exactly why non-null cannot mean Lightning', () => {
+    expect(classic).not.toBeNull();
+    expect(isClassicLobbyState(classic)).toBe(true);
+  });
+  it('a Lightning game, or a game whose switch is on, is not Classic', () => {
+    expect(
+      isClassicLobbyState(
+        parseLightningLobbyState({ cluster_mode: 'lightning', lightning_enabled: true })
+      )
+    ).toBe(false);
+    expect(
+      isClassicLobbyState(
+        parseLightningLobbyState({ cluster_mode: 'must_move', lightning_enabled: true })
+      )
+    ).toBe(false);
+    expect(
+      isClassicLobbyState(
+        parseLightningLobbyState({ cluster_mode: 'draining', lightning_enabled: false })
+      )
+    ).toBe(false);
+  });
+  it('a state without the switch is not assumed Classic', () => {
+    expect(isClassicLobbyState(parseLightningLobbyState({ cluster_mode: 'must_move' }))).toBe(
+      false
+    );
+  });
+});
+
 describe('a Classic table never hides a folded player', () => {
   const raw = readFileSync('src/pages/TablePage.tsx', 'utf8');
   const source = raw.replace(/\s+/g, ' ');
@@ -86,6 +124,18 @@ describe('a Classic table never hides a folded player', () => {
   });
   it('the Lightning room flag is the pool-session lookup, which is null for every Classic table', () => {
     expect(source).toContain('const lightningRoom = useLightningPoolSession(tableId);');
+  });
+  it('a Classic game is never read as a Lightning anchor: the mode decides, not a non-null answer', () => {
+    const anchor = sliceStatement(raw, 'const anchorLightningClusterId =').replace(/\s+/g, ' ');
+    expect(anchor).toContain('isLightningMode(tableGameLightningState?.clusterMode)');
+    expect(anchor).not.toMatch(/!= null|!== null|!== undefined/);
+    expect(source).not.toContain('spectatorLightningStates[tableState.clusterId] != null');
+  });
+  it('the Lightning handoff never watches a Classic game for a conversion', () => {
+    const handoff = sliceCall(raw, 'useLightningAnchorHandoff(').replace(/\s+/g, ' ');
+    expect(handoff).toContain('clusterId: lightningCapableClusterId,');
+    const capable = sliceStatement(raw, 'const lightningCapableClusterId =').replace(/\s+/g, ' ');
+    expect(capable).toContain('!isClassicLobbyState(tableGameLightningState)');
   });
   it('the table asks whether its game is Lightning once, and stops for a Classic game', () => {
     expect(source).toMatch(

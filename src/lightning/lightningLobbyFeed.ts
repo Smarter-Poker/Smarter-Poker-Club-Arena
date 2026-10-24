@@ -8,7 +8,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { parseLightningLobbyState, type LightningLobbyState } from './lightningLobby';
+import {
+  isClassicLobbyState,
+  parseLightningLobbyState,
+  type LightningLobbyState,
+} from './lightningLobby';
 import { fetchLightningPoolHealth } from './lightningSessionApi';
 
 export async function fetchLightningLobbyState(
@@ -42,8 +46,9 @@ export const LIGHTNING_LOBBY_REFRESH_MS = 30_000;
  * The Lightning state of each listed Cluster, keyed by Cluster id. An empty
  * list reads nothing and returns an empty map.
  *
- * `settleClassic`: a Cluster whose first clean answer is "no Lightning state"
- * is a Classic game, and is never asked again while this list stands. The
+ * `settleClassic`: a Cluster whose first clean answer is a Classic game
+ * (isClassicLobbyState: Lightning switch off and not in a Lightning mode) is
+ * never asked again while this list stands. The
  * table page sets it, because it asks about the one table it is showing
  * before it knows which kind of game that is (Dan 2026-10-24: "NO PART OF THE
  * LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE TOUCHING THE CLASSIC GAMES").
@@ -64,14 +69,18 @@ export function useLightningLobbyStates(
     }
     let live = true;
     const classic = new Set<string>();
+    const settled = new Map<string, LightningLobbyState | null>();
     let timer: ReturnType<typeof setInterval> | null = null;
     const readAll = async () => {
       const pairs = await Promise.all(
         ids.map(async (id) => {
-          if (classic.has(id)) return [id, null] as const;
+          if (classic.has(id)) return [id, settled.get(id) ?? null] as const;
           try {
             const state = await fetchLightningLobbyState(id);
-            if (settleClassic && state === null) classic.add(id);
+            if (settleClassic && isClassicLobbyState(state)) {
+              classic.add(id);
+              settled.set(id, state);
+            }
             return [id, state] as const;
           } catch (err) {
             reportError(err, 'lightningLobbyFeed.read_failed', { clusterId: id });

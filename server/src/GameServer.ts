@@ -279,6 +279,7 @@ import {
 } from './observability/engineInstruments.js';
 import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { BootPhaseTimeline } from './engine/bootPhases.js';
 import { decisionPipelineDistress } from './decisionPipelinePressure.js';
 import { isFleetWideStall } from './fleetWideZombieVerdict.js';
 import {
@@ -2096,6 +2097,8 @@ export class GameServer {
    * see the startup grace in getStatus().
    */
   private readonly processStartedAt: number = Date.now();
+  /** Where boot time goes, phase by phase, published on /health as bootPhases. */
+  private readonly bootTimeline = new BootPhaseTimeline();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
   /**
    * When each installed manager was admitted. The never-dealt sweep measures a
@@ -4035,8 +4038,12 @@ export class GameServer {
      * Fail-open on error, and a standby retains standby -- see
      * services/leadership.ts for why that asymmetry matters.
      */
+    const endLeadershipPhase = this.bootTimeline.begin('leadership_claim');
     let role = await renewLeadership();
-    if (!this.directAdmissionIsCurrent(generation)) return;
+    if (!this.directAdmissionIsCurrent(generation)) {
+      endLeadershipPhase('cancelled');
+      return;
+    }
     startLeadershipRenewal();
     /**
      * THE BOOT CLAIM RETRIES THROUGH ONE STALENESS WINDOW (2026-08-30).
@@ -4072,6 +4079,7 @@ export class GameServer {
         );
       }
     }
+    endLeadershipPhase(role === 'leader' ? 'ok' : 'cancelled');
     if (role === 'standby') {
       /**
        * Tell leadership.ts that this process never started the fleet, so that
@@ -4098,51 +4106,72 @@ export class GameServer {
      * A standby returns above and therefore never starts a competing copy.
      * Unexpected worker loss is process-fatal because silently replacing it
      * would reset RNG and learned-memory ordering inside active hands.
-     */
-    try {
-      await startLiveHorseDecisionWorker({
-        onFatal: (error) => {
-          this.revokeDealerPrerequisites(generation);
-          throw error;
-        },
-      });
-    } catch (error) {
-      // stop() can intentionally cancel a worker that has not reached READY.
-      // That is a successful boot cancellation, not a fatal startup failure.
-      if (
-        error instanceof HorseDecisionAbortedError &&
-        !this.directAdmissionIsCurrent(generation)
-      ) {
-        return;
-      }
-      throw error;
-    }
-    if (!this.directAdmissionIsCurrent(generation)) return;
-
-    /**
+     *
      * All-in equity and insurance are worker-only realtime dependencies. Every
      * configured worker must author a READY handshake before table discovery
      * can route a hand here. After startup, callers fail closed at their own
      * SLA while an immediate bounded replacement remains visible without
      * taking an otherwise healthy dealer out of routing.
+     *
+     * THE LANES AND THE CLEANUP OVERLAP (2026-10-24). These four used to run
+     * one after another: the horse lane (8 workers hydrating HorseMind and the
+     * solver stores from the database), THEN the equity pool, THEN the stale
+     * data cleanup (a fleet-wide `tables` status reset measured at 1.1 s mean
+     * and 7.6 s max in pg_stat_statements), THEN the rake spec check. None of
+     * them reads or writes anything another one owns, and none of them admits
+     * a table: admission waits on the dealer gate published at the end of
+     * this method. So they start together, and the boot waits for all of them
+     * at the same point it waited for the last one before. What the old order
+     * protected is unchanged: leadership is decided first (a standby returned
+     * above and started none of them), cleanup still finishes before break
+     * adoption and before any discovery loop exists, and both lanes are READY
+     * before break adoption, discovery and the dealer gate. A lane failure is
+     * still fatal to the boot exactly as before; a cleanup that ran beside a
+     * lane that then failed did only the idempotent recovery the next leader
+     * boot repeats.
      */
-    try {
-      await startEquityWorkerPool();
-    } catch (error) {
-      if (
-        error instanceof EquityWorkerPoolAbortedError &&
-        !this.directAdmissionIsCurrent(generation)
-      ) {
-        return;
-      }
-      throw error;
-    }
-    if (!this.directAdmissionIsCurrent(generation)) return;
+    const endHorseLanePhase = this.bootTimeline.begin('horse_decision_lane_ready');
+    const horseLane = startLiveHorseDecisionWorker({
+      onFatal: (error) => {
+        this.revokeDealerPrerequisites(generation);
+        throw error;
+      },
+    });
+    const endEquityLanePhase = this.bootTimeline.begin('equity_worker_pool_ready');
+    const equityLane = startEquityWorkerPool();
+    // Both outcomes are observed here, at admission, so a lane that fails
+    // while the cleanup below is still awaited is never an unhandled
+    // rejection; the verdicts are read after the cleanup.
+    const lanesSettled = Promise.allSettled([
+      horseLane.then(
+        (value) => {
+          endHorseLanePhase('ok');
+          return value;
+        },
+        (error: unknown) => {
+          endHorseLanePhase(error instanceof HorseDecisionAbortedError ? 'cancelled' : 'failed');
+          throw error;
+        }
+      ),
+      equityLane.then(
+        (value) => {
+          endEquityLanePhase('ok');
+          return value;
+        },
+        (error: unknown) => {
+          endEquityLanePhase(
+            error instanceof EquityWorkerPoolAbortedError ? 'cancelled' : 'failed'
+          );
+          throw error;
+        }
+      ),
+    ]);
 
     // Step 1: Clean up stale data from previous runs.
     // Test mode passes the protected id so cleanup spares it.
+    const endCleanupPhase = this.bootTimeline.begin('stale_data_cleanup');
     await this.cleanupStaleData(testTableId);
-    if (!this.directAdmissionIsCurrent(generation)) return;
+    endCleanupPhase();
 
     /**
      * ONE RAKE SPEC (Chip Accounting Standard R7, 2026-09-02). Before any
@@ -4154,7 +4183,38 @@ export class GameServer {
      * is enforced, so this never holds a table, never throws and never stops
      * the boot. See services/rakeSpecGuard.ts.
      */
-    await startRakeSpecGuard();
+    if (this.directAdmissionIsCurrent(generation)) {
+      const endRakeSpecPhase = this.bootTimeline.begin('rake_spec_check');
+      await startRakeSpecGuard();
+      endRakeSpecPhase();
+    }
+
+    // The lanes are joined even when shutdown fenced this generation above:
+    // stop() has already begun cancelling a lane still starting, and the
+    // join keeps that cancellation inside this boot's ownership proof.
+    const [horseOutcome, equityOutcome] = await lanesSettled;
+    if (horseOutcome.status === 'rejected') {
+      // stop() can intentionally cancel a worker that has not reached READY.
+      // That is a successful boot cancellation, not a fatal startup failure.
+      const error = horseOutcome.reason;
+      if (
+        error instanceof HorseDecisionAbortedError &&
+        !this.directAdmissionIsCurrent(generation)
+      ) {
+        return;
+      }
+      throw error;
+    }
+    if (equityOutcome.status === 'rejected') {
+      const error = equityOutcome.reason;
+      if (
+        error instanceof EquityWorkerPoolAbortedError &&
+        !this.directAdmissionIsCurrent(generation)
+      ) {
+        return;
+      }
+      throw error;
+    }
     if (!this.directAdmissionIsCurrent(generation)) return;
 
     if (!maintenanceMode && !testTableId) {
@@ -4206,7 +4266,9 @@ export class GameServer {
        * set HERE, by restoreFromStore, so this must run first. Engines
        * adopted later are parked by maintenanceBreak.adopt().
        */
+      const endBreakAdoptionPhase = this.bootTimeline.begin('maintenance_break_adoption');
       await this.maintenanceBreak.start();
+      endBreakAdoptionPhase();
       if (!this.directAdmissionIsCurrent(generation)) return;
 
       // Subscribe before tournament discovery starts. Any action committed
@@ -4432,6 +4494,11 @@ export class GameServer {
     if (outcome !== 'ready') {
       throw new Error(`E2E test table ${tableId} admission ended as ${outcome}`);
     }
+  }
+
+  /** A zero-length boot milestone owned by the bootstrap (e.g. the HTTP listener). */
+  markBootPhase(name: string): void {
+    this.bootTimeline.mark(name);
   }
 
   /** Index-owned mutators may start only after the leader boot is fully committed. */
@@ -5386,6 +5453,10 @@ export class GameServer {
       // finished. This is the exact admission gate they await before any table
       // lookup, lease claim or dealer construction is allowed to begin.
       dealerPrerequisitesReady: this.dealerPrerequisitesReady,
+      // Where this process's boot time went, phase by phase, measured from
+      // process start (engine/bootPhases.ts). dealerReadyMs is the instant the
+      // gate above opened; a cutover reads its own breakdown here.
+      bootPhases: this.bootTimeline.snapshot(),
       // THE REST, MEASURED (Dan 2026-09-07): completion -> next deal, fleet-wide,
       // last ten minutes. `over` is the number that means the bookkeeping did
       // not fit inside the rest. See engine/NextHandGap.ts.
@@ -12194,6 +12265,7 @@ export class GameServer {
     if (!gate || gate.generation !== generation || gate.settled) return false;
     this.dealerPrerequisitesReady = true;
     this.settleDealerPrerequisiteGate(generation, true);
+    this.bootTimeline.markDealerReady();
     return true;
   }
 

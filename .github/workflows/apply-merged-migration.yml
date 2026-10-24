@@ -141,7 +141,7 @@ jobs:
           # with it.
           set +e
           recovery_args=()
-          if [[ "$SERIAL_JOURNAL_INDEX" == "true" ]]; then
+          if [[ "${SERIAL_JOURNAL_INDEX:-false}" == "true" ]]; then
             recovery_args+=(--serial-journal-index)
           fi
           if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" || -n "$RECOVER_TRANSIENT_OID" ]]; then

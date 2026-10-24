@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import {
   CHICAGO_FILE,
   CHICAGO_INDEX,
@@ -431,10 +432,26 @@ test('existing hosted installer exposes the serial option through explicit dispa
   const workflow = readFileSync(new URL('../../.github/workflows/apply-merged-migration.yml', import.meta.url), 'utf8');
   assert.match(workflow, /serial_journal_index:\s*\n\s*description:/);
   assert.match(workflow, /SERIAL_JOURNAL_INDEX: \$\{\{ inputs\.serial_journal_index \}\}/);
-  assert.match(workflow, /if \[\[ "\$SERIAL_JOURNAL_INDEX" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/);
+  assert.match(workflow, /if \[\[ "\$\{SERIAL_JOURNAL_INDEX:-false\}" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/);
   assert.doesNotMatch(workflow, /client_payload\.serial_journal_index/);
   assert.match(workflow, /recovery_args\+=\(--recover-index/);
   assert.match(workflow, /group: apply-merged-migration\s*cancel-in-progress: false/);
+  const start = workflow.indexOf('          recovery_args=()');
+  const end = workflow.indexOf('          node scripts/ci/apply-recorded-migration.mjs', start);
+  assert.ok(start > 0 && end > start);
+  const env = { PATH: process.env.PATH, RECOVER_INDEX: '', RECOVER_OID: '',
+    RECOVER_BEFORE: '', RECOVER_TRANSIENT_OID: '', FINAL_TABLE_PAGES: '',
+    FINAL_TABLE_OPERATION: '', QUALIFY_RAKE_REPORT_HISTORY: 'false',
+    MAINTENANCE_THAW_REPAIR: 'false' };
+  for (const value of [undefined, 'false', 'true', 'true; arbitrary command']) {
+    const input = { ...env, ...(value === undefined ? {} : { SERIAL_JOURNAL_INDEX: value }) };
+    const result = spawnSync('bash', ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'], { env: input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.includes('--serial-journal-index'), value === 'true');
+  }
+  const mixed = spawnSync('bash', ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'], { env: { ...env, SERIAL_JOURNAL_INDEX: 'true', RECOVER_INDEX: 'fixture' }, encoding: 'utf8' });
+  assert.equal(mixed.status, 0, mixed.stderr);
+  assert.ok(mixed.stdout.includes('--serial-journal-index') && mixed.stdout.includes('--recover-index'));
 });
 test('serial setting is applied and read back before the index, never assumed from startup', async () => {
   for (const scenario of ['good', 'wrong-setting', 'different-backend', 'missing-row', 'set-error', 'wrong-user', 'replica', 'wrong-db']) {

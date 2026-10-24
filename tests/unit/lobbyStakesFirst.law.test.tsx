@@ -200,3 +200,19 @@ describe('every stakes order keeps one price together in canonical variant order
     expect(ids()).toEqual(['plo-4', 'plo-2', 'plo-1', 'plo5-4', 'plo5-1']);
   });
 });
+
+describe('the ALL board keeps one printed stakes level together across betting structures', () => {
+  it('a limit "1/2" (blinds 0.50/1) sits with the no-limit 1/2 games, both directions', () => {
+    const ids = rendered({
+      entries: [entry('flh', 1), entry('nlh', 1), entry('nlh', 2), entry('plo', 2)],
+      category: 'ALL',
+    });
+    const head = document.querySelector('.lobby-table-wrap thead') as HTMLElement;
+    const stakes = within(head).getByRole('columnheader', { name: /stakes/i });
+    const press = () => fireEvent.click(within(stakes).queryByRole('button') ?? stakes);
+    press();
+    expect(ids()).toEqual(['nlh-1', 'nlh-2', 'plo-2', 'flh-1']);
+    press();
+    expect(ids()).toEqual(['nlh-2', 'plo-2', 'flh-1', 'nlh-1']);
+  });
+});

@@ -49,7 +49,7 @@ import {
   tournamentNameConvention,
   type TournamentTraitRow,
 } from '../../utils/tournamentFilters';
-import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
+import { stakesLabel as stakesLabelFor, stakesSortValue } from '../../lib/bettingStructure';
 import {
   blindLevelAt,
   blindLevelMinutes,
@@ -1470,7 +1470,9 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
       Number(t.big_blind) > 0
         ? stakesLabelFor(Number(t.small_blind) || 0, Number(t.big_blind), t.game_variant)
         : null,
-    stakesValue: Number(t.big_blind) || 0,
+    /* Sorted by the stakes the row PRINTS (stakesSortValue), so a limit
+       "1/2" groups with every other "1/2" on a mixed board. */
+    stakesValue: stakesSortValue(Number(t.big_blind) || 0, t.game_variant),
     buyInLabel: cashBuyInLabel(t),
     /* ITEM E audit, 2026-08-26: an unknown range used to sort as buyInValue 0
        — the TOP of an ascending Buy-In sort, as if it were the cheapest game

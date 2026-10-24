@@ -5905,6 +5905,11 @@ function ClubHomePageContent({
               onActivate={openEntry}
               loading={loading}
               ctx={lobbyCtx}
+              /* A Sort By the player chose for this tab is obeyed over the
+                 featured pin wherever it is the board's order (ALL). */
+              orderChosen={
+                viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null
+              }
               /* THE VARIANT SELECTOR (Dan 2026-09-03): the Variant heading
                  opens the tab's games - No Limit / Pineapple / Short Deck,
                  PLO / PLO5 / PLO6 / PLO8o - with an All option. It reads and

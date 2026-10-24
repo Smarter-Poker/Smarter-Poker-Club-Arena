@@ -393,14 +393,20 @@ describe('Item 7 - amounts default to actual totals, never BB', () => {
     expect(src).toMatch(/showStackInBB = false/);
   });
 
+  /* MOVED 2026-10-24 (the pot follows the stack display): the setting gate
+     now lives in ONE place, `asBB`, which returns null unless the player
+     switched to BB and the felt knows its big blind - the BB sub-label, the
+     slider cap and the Call button all read through it. The rule these pins
+     guard is unchanged: no BB text unless the user asked for it. */
   it('the BB sub-label is gated on the user setting', () => {
     const src = code(read(ACTION_TSX));
-    expect(src).toMatch(/showStackInBB && bigBlind > 0 && !amountTyping/);
+    expect(src).toMatch(/const asBB = \(n: number\): string \| null =>\s*showStackInBB \?/);
+    expect(src).toMatch(/!amountTyping && asBB\(raiseAmount\)/);
   });
 
   it('the slider cap prints chips unless BB is switched on', () => {
     const src = code(read(ACTION_TSX));
-    expect(src).toMatch(/showStackInBB && bigBlind > 0\s*\?\s*`\$\{Math\.round\(minRaise/);
+    expect(src).toMatch(/asBB\(minRaise\)\?\.replace\(' BB', 'BB'\) \?\? formatChips\(minRaise\)/);
   });
 
   it('renders no BB text at all with the default settings', () => {

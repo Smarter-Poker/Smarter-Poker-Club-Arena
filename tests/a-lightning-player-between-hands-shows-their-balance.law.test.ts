@@ -127,9 +127,9 @@ describe('a Lightning player between hands', () => {
     const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
     const entry = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
 
-    it('treats only a Cluster dealing or converting to Lightning as Lightning (not Classic)', () => {
+    it('treats only a Cluster in a Lightning mode as Lightning (never Classic)', () => {
       expect(page).toMatch(
-        /\(isLightningMode\(anchorLightningState\.clusterMode\) \|\|\s*anchorLightningState\.clusterMode === 'pending_on'\)/
+        /\(lightningObserver \|\| isLightningMode\(tableGameLightningState\?\.clusterMode\)\)/
       );
       expect(page).not.toMatch(/spectatorLightningStates\[tableState\.clusterId\] != null/);
     });

@@ -48,6 +48,35 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
 ];
 
 /**
+ * The Classic variants that play a big blind ante and a 50% minimum VPIP
+ * (owner 2026-10-24, migration 20261024213131): "MAKE THIS ADJUSTMENT NOW TO
+ * ALL PLO5 AND PLO6 CLASSIC GAMES. 50% VPIP AND BB ANTE FOR ALL STAKES."
+ * Mirrors fn_cash_template_defaults('classic', v), which is the authority.
+ */
+export const CLASSIC_ANTE_AND_FLOOR_VARIANTS: readonly string[] = ['plo5', 'plo6'];
+
+export const CLASSIC_PLO5_PLO6_BLURB =
+  'Standard Ring Game. Big Blind Ante, 50% Minimum VPIP, No Bombs.';
+
+/**
+ * The template card's promise for the variant being created. The card is a
+ * promise, so a Classic PLO5 or PLO6 game never reads "No Antes".
+ */
+export function cashTemplateBlurb(
+  template: CashTemplate | string,
+  variant: string | null | undefined
+): string {
+  const id = cashTemplateKey(String(template));
+  if (
+    id === 'classic' &&
+    CLASSIC_ANTE_AND_FLOOR_VARIANTS.includes(String(variant ?? '').toLowerCase())
+  ) {
+    return CLASSIC_PLO5_PLO6_BLURB;
+  }
+  return CASH_TEMPLATES.find((t) => t.id === id)?.blurb ?? '';
+}
+
+/**
  * Render the cadence stored in a game snapshot. Historical tokens remain
  * readable because settled and retired game snapshots are preserved.
  */

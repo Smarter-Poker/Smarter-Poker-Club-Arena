@@ -1,3 +1,8 @@
+-- SUPERSEDED BY 20261024213131
+-- Never installed. 20261024213131 (applied as 20261024213348) made the same PLO5
+-- Classic floor change and PLO6 with it, against the same pre-image; that
+-- pre-image is gone, and on a rebuild in version order this file would change
+-- the body 213131's guard and anchors read. It must never run.
 -- 20261024212524_plo5_classic_plays_at_a_fifty_percent_vpip_floor.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

@@ -19,7 +19,7 @@
  * These drive the real methods with the database mocked and record every
  * update the service sends, so a returning second writer fails here.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
 import { supabase } from './supabase.js';
 import { MTT_BLIND_PRESETS } from '../tournament/mttStructurePolicy.js';
@@ -27,7 +27,17 @@ import { HEADS_UP_BLIND_STRUCTURE, HEADS_UP_PAYOUTS } from '../config/headsUpSpe
 
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
-afterEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  // This contract tests the registration count's sole writer. All three
+  // fixture horses are awake at noon UTC; real wall time crosses their
+  // independently enforced activity-window boundary at 01:00 UTC.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-23T12:00:00.000Z'));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const T = 'fb8931b5-0000-4000-8000-000000000001';
 type Update = { table: string; payload: Record<string, unknown> };

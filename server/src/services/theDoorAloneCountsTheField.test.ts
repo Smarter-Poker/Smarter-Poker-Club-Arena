@@ -19,7 +19,7 @@
  * These drive the real methods with the database mocked and record every
  * update the service sends, so a returning second writer fails here.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
 import { supabase } from './supabase.js';
 import { MTT_BLIND_PRESETS } from '../tournament/mttStructurePolicy.js';
@@ -27,7 +27,10 @@ import { HEADS_UP_BLIND_STRUCTURE, HEADS_UP_PAYOUTS } from '../config/headsUpSpe
 
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 const T = 'fb8931b5-0000-4000-8000-000000000001';
 type Update = { table: string; payload: Record<string, unknown> };
@@ -37,6 +40,14 @@ function countWrites(updates: Update[]): Update[] {
 }
 
 describe('a fill pass leaves the field count to the door', () => {
+  beforeEach(() => {
+    // h1, h2 and h3 are all inside their real activity windows at noon UTC.
+    // A wall-clock run at 01:00 excludes h1, masking the count-write contract
+    // behind an unrelated eligibility change. Keep real asynchronous timers.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T12:00:00Z'));
+  });
+
   function harness(ids: string[]) {
     const svc = new TournamentRecurringService() as any;
     const updates: Update[] = [];

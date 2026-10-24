@@ -1,0 +1,126 @@
+{
+  "source": "independent read-only installed pg_proc metadata 2026-10-22",
+  "routines": [
+    {
+      "acl": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_club_opening_defaults_ready",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "boolean",
+      "schema": "public",
+      "strict": false,
+      "definer": false,
+      "support": null,
+      "language": "sql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "704fe028718687ae186d1865dd219b40"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "authenticated",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "p_club_id uuid, p_operation_id uuid, p_tagline text, p_rake_percent numeric, p_rake_cap_bb numeric, p_bbj_enabled boolean, p_bbj_seed numeric, p_spins_enabled boolean, p_spin_seed numeric, p_spin_max_stake numeric, p_promo_enabled boolean, p_promo_type text, p_promo_name text, p_promo_description text, p_promo_budget numeric, p_leaderboard_rewards_enabled boolean, p_leaderboard_metric text, p_leaderboard_prize_budget numeric, p_leaderboard_overlay_enabled boolean",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_complete_club_opening_setup",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "jsonb",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "v",
+      "definition_md5": "d704e99a01cbde02b33c7f9c33466203"
+    }
+  ],
+  "before": {
+    "acl": [
+      {
+        "grantee": "authenticated",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      },
+      {
+        "grantee": "postgres",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      },
+      {
+        "grantee": "service_role",
+        "grantor": "postgres",
+        "grantable": false,
+        "privilege": "EXECUTE"
+      }
+    ],
+    "args": "p_club_id uuid, p_operation_id uuid, p_tagline text, p_rake_percent numeric, p_rake_cap_bb numeric, p_bbj_enabled boolean, p_bbj_seed numeric, p_spins_enabled boolean, p_spin_seed numeric, p_spin_max_stake numeric, p_promo_enabled boolean, p_promo_type text, p_promo_name text, p_promo_description text, p_promo_budget numeric, p_leaderboard_rewards_enabled boolean, p_leaderboard_metric text, p_leaderboard_prize_budget numeric, p_leaderboard_overlay_enabled boolean",
+    "cost": 100,
+    "kind": "f",
+    "name": "fn_complete_club_opening_setup",
+    "rows": 0,
+    "owner": "postgres",
+    "result": "jsonb",
+    "schema": "public",
+    "strict": false,
+    "definer": true,
+    "support": null,
+    "language": "plpgsql",
+    "parallel": "u",
+    "settings": ["search_path=public, pg_temp"],
+    "aggregate": null,
+    "leakproof": false,
+    "volatility": "v",
+    "definition_md5": "0f9d094f015b0ab7dab000f217c29bf2"
+  },
+  "newRoutineAbsentBefore": true
+}

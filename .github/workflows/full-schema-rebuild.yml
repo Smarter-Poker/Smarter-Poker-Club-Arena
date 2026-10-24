@@ -1,0 +1,56 @@
+name: Full shared schema rebuild
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'scripts/schema-rebuild/**'
+      - '.github/workflows/full-schema-rebuild.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'scripts/schema-rebuild/**'
+      - '.github/workflows/full-schema-rebuild.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-World-Hub
+          ref: d318a16c9fbdd8d71e68d0d9fcfc30acdd17e00d
+          path: shared-hub-source
+          sparse-checkout: supabase/migrations
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-Club-Arena
+          ref: ffa19fa61761da13c73b4442558a477704cbccca
+          path: audited-arena-source
+          sparse-checkout: supabase/migrations
+          persist-credentials: false
+      - name: Verify immutable source lineage and local-only guard tests
+        run: |
+          python3 scripts/schema-rebuild/check_history.py --checkout audited-arena-source --repo arena --inventory supabase/bootstrap/source-history.json --forward supabase/bootstrap/forward-schema.json
+          python3 scripts/schema-rebuild/check_history.py --checkout shared-hub-source --repo hub --inventory supabase/bootstrap/source-history.json --forward supabase/bootstrap/forward-schema.json
+          SCHEMA_AUDITED_SOURCE="$PWD/audited-arena-source" python3 scripts/schema-rebuild/test_boundaries.py
+          python3 scripts/schema-rebuild/check_source.py
+      - name: Pull pinned official PostgreSQL 17 platform runtime
+        run: docker pull --platform linux/amd64 supabase/postgres@sha256:432d12926b09e10eb3317b0e2e9672c9ce8ea6bccb359857a31ff9f90683161d
+      - name: Rebuild every schema with no external network or production credentials
+        run: bash scripts/schema-rebuild/run-image.sh "$PWD/schema-rebuild-results"
+      - name: Preserve finite rebuild result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-schema-rebuild-result
+          path: schema-rebuild-results/
+          if-no-files-found: error

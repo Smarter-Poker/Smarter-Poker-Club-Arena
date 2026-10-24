@@ -285,6 +285,45 @@ finally:
     signal.alarm(0)
 HORSE_JOURNAL_PREFLIGHT
 
+# A create that was interrupted (or whose owner was killed before it could
+# publish the name) leaves a never-started container in a dedicated, labelled
+# namespace. Retire only those CREATED containers before touching the engine.
+# This is best effort by design: a stale prepared container runs nothing, binds
+# nothing and has a unique per-attempt name, so an unreadable listing or an
+# unexpected name is reported and left alone, never a reason to refuse
+# recovery of the serving engine.
+INCOMING_PREFIX="${CONTAINER}-incoming-"
+INCOMING_CONTAINER=''
+STOP_OPERATION_PID=''
+ABANDONED_PREPARED="$(docker container ls -a \
+  --filter "name=^/${INCOMING_PREFIX}" --filter status=created \
+  --filter label=sp.engine-up.prepared=1 --format '{{.Names}}' 2>/dev/null)" \
+  || { log 'WARN: prepared container listing is unreadable; none retired'; ABANDONED_PREPARED=''; }
+while IFS= read -r abandoned; do
+  [ -n "$abandoned" ] || continue
+  suffix="${abandoned#"$INCOMING_PREFIX"}"
+  if [[ "$abandoned" != "$INCOMING_PREFIX"* || ! "$suffix" =~ ^[0-9a-f]{12}-[1-9][0-9]*$ ]]; then
+    log "WARN: prepared container owner is ambiguous; leaving $abandoned untouched"
+    continue
+  fi
+  timeout --signal=TERM --kill-after=1s 5s docker rm "$abandoned" >/dev/null 2>&1 \
+    || log "WARN: abandoned prepared container $abandoned could not be retired"
+done <<< "$ABANDONED_PREPARED"
+cleanup_prepared_container() {
+  local result=$?
+  trap - EXIT INT TERM
+  if [ -n "$STOP_OPERATION_PID" ]; then wait "$STOP_OPERATION_PID" || true; fi
+  if [ -n "$INCOMING_CONTAINER" ]; then
+    # No force: an unexpected running process is for the original recovery,
+    # never a speculative cleanup. This name is cleared before canonical start.
+    timeout --signal=TERM --kill-after=1s 5s docker rm "$INCOMING_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  return "$result"
+}
+trap cleanup_prepared_container EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
@@ -301,11 +340,87 @@ done < <(docker container ls -a --filter "name=^/${OUTGOING_PREFIX}" \
 retire_outgoing_in_background ${LEFTOVER_OUTGOING[@]+"${LEFTOVER_OUTGOING[@]}"}
 
 OUTGOING_CONTAINER=''
+HAD_OUTGOING_CONTAINER=0
 if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+  HAD_OUTGOING_CONTAINER=1
   log "stopping $CONTAINER (SIGTERM, 45s grace for snapshot flush)"
   phase stop-start
-  docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
-  phase stop-returned
+  ( docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
+    phase stop-returned
+  ) &
+  STOP_OPERATION_PID=$!
+fi
+
+# THE REPLACEMENT IS CREATED DURING THE OUTGOING GRACE (2026-10-24).
+# The replacement used to be run only after `docker stop` returned, so the old
+# engine's shutdown and the new container's creation were paid in series
+# inside the release transaction's 75-second cutover budget. Measured on
+# engine-01 (Docker 29.7.2, containerd snapshotter):
+#   release 735e, 04:54 UTC: stop 17 s, then create ~19 s; launch never
+#     returned before the budget expired.
+#   release f16e, 06:17 UTC: stop 50 s (the outgoing engine reached its own
+#     40 s shutdown deadline and Docker used the force at 45 s), then create
+#     22 s and start 4 s - 76 s, one second over.
+# The candidate filesystem warm-up had read every application file in 1 s, so
+# file reads were not the cost. Container creation builds the container's
+# filesystem and configuration only: it starts no process, opens no journal
+# and binds no published port (Docker allocates ports at start). It now runs
+# while the outgoing engine is still inside its unchanged 45 s SIGTERM grace,
+# so the budget pays max(stop, create) + start instead of their sum. The
+# replacement is STARTED only after the old process has exited and been
+# renamed away, under the same canonical lock, so there is never more than one
+# journal writer or port owner. The 45 s grace, the 75 s cutover and the 285 s
+# rollback budgets are unchanged.
+
+# 2026-08-23: OVERRIDE THE IMAGE'S HEALTHCHECK ADDRESS.
+#
+# The Dockerfile probes 127.0.0.1, but `httpServer.listen(PORT)` passes no host,
+# so Node binds the unspecified address and answers on :: in a dual-stack
+# container. The IPv4 loopback probe was REFUSED, every time.
+#
+# Docker then marked the container unhealthy after 3 tries, sp-autoheal saw the
+# autoheal=true label and killed it, --restart always brought it back, and the
+# cycle repeated about every 5 minutes. A perfectly healthy engine was being
+# executed by its own self-healing -- and every restart voids the in-flight
+# hands on every table it owns.
+#
+# The Dockerfile is fixed too, so the image is not born broken. This override
+# stays because THIS FILE IS THE RUN-SPEC (design note 4): the deploy and the
+# host supervisor must start the container identically, and this is the one
+# place both of them read.
+INCOMING_CONTAINER="${INCOMING_PREFIX}${AUTHORIZED_SHA:0:12}-$$"
+phase create-start
+STARTED_CONTAINER_ID="$(docker create \
+  --name "$INCOMING_CONTAINER" \
+  --restart "$RESTART_POLICY" \
+  --health-interval="$HEALTH_INTERVAL" \
+  --health-timeout="$HEALTH_TIMEOUT" \
+  --health-start-period="$HEALTH_START_PERIOD" \
+  --health-retries="$HEALTH_RETRIES" \
+  --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\"" \
+  --label sp.engine-up.prepared=1 \
+  --label autoheal=true \
+  --label sp.role=engine \
+  --label "sp.release.sha=$AUTHORIZED_SHA" \
+  --log-driver json-file \
+  --log-opt max-size=50m \
+  --log-opt max-file=5 \
+  -p "${PORT}:8080" \
+  --env-file "$ENV_FILE" \
+  --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
+  --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
+  --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
+  --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
+  "$AUTHORIZED_IMAGE_ID")"
+phase create-returned
+[[ "$STARTED_CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] \
+  || { log 'FATAL: Docker did not return an exact prepared container ID'; exit 1; }
+if [ -n "$STOP_OPERATION_PID" ]; then
+  wait "$STOP_OPERATION_PID" || true
+  STOP_OPERATION_PID=''
+fi
+
+if [ "$HAD_OUTGOING_CONTAINER" = 1 ]; then
   # THE OUTGOING ENGINE'S LOG SURVIVES IT (2026-09-07). `docker rm` deletes the
   # json-file log with the container, and the container is replaced every
   # hour, so the log of whatever went wrong in the previous hour was gone the
@@ -336,44 +451,14 @@ if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   fi
 fi
 
-# 2026-08-23: OVERRIDE THE IMAGE'S HEALTHCHECK ADDRESS.
-#
-# The Dockerfile probes 127.0.0.1, but `httpServer.listen(PORT)` passes no host,
-# so Node binds the unspecified address and answers on :: in a dual-stack
-# container. The IPv4 loopback probe was REFUSED, every time.
-#
-# Docker then marked the container unhealthy after 3 tries, sp-autoheal saw the
-# autoheal=true label and killed it, --restart always brought it back, and the
-# cycle repeated about every 5 minutes. A perfectly healthy engine was being
-# executed by its own self-healing -- and every restart voids the in-flight
-# hands on every table it owns.
-#
-# The Dockerfile is fixed too, so the image is not born broken. This override
-# stays because THIS FILE IS THE RUN-SPEC (design note 4): the deploy and the
-# host supervisor must start the container identically, and this is the one
-# place both of them read.
+# Only the original lock owner can publish the prepared container's name.
+# Creation did not run the application; old process exit precedes this start.
+phase incoming-rename-start
+docker rename "$INCOMING_CONTAINER" "$CONTAINER"
+INCOMING_CONTAINER=''
+phase incoming-rename-returned
 phase launch-start
-STARTED_CONTAINER_ID="$(docker run -d \
-  --name "$CONTAINER" \
-  --restart "$RESTART_POLICY" \
-  --health-interval="$HEALTH_INTERVAL" \
-  --health-timeout="$HEALTH_TIMEOUT" \
-  --health-start-period="$HEALTH_START_PERIOD" \
-  --health-retries="$HEALTH_RETRIES" \
-  --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\"" \
-  --label autoheal=true \
-  --label sp.role=engine \
-  --label "sp.release.sha=$AUTHORIZED_SHA" \
-  --log-driver json-file \
-  --log-opt max-size=50m \
-  --log-opt max-file=5 \
-  -p "${PORT}:8080" \
-  --env-file "$ENV_FILE" \
-  --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
-  --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
-  --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
-  --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
-  "$AUTHORIZED_IMAGE_ID")"
+docker start "$CONTAINER" >/dev/null
 phase launch-returned
 printf '%s\n' "$STARTED_CONTAINER_ID"
 

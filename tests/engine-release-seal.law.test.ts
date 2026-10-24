@@ -437,12 +437,13 @@ if [ "$1" = image ] && [ "$2" = inspect ]; then
   exit 0
 fi
 if [ "$1" = container ] && [ "$2" = inspect ]; then exit 0; fi
+if [ "$1" = container ] && [ "$2" = ls ]; then exit 0; fi
 case "$1" in
-  stop|rm|run) printf '%s\\n' "$1" >> "$FAKE_DOCKER_MUTATION_LOG" ;;
+  stop|rm|create|start) printf '%s\\n' "$1" >> "$FAKE_DOCKER_MUTATION_LOG" ;;
 esac
-if [ "$1" = stop ] || [ "$1" = rm ]; then exit 0; fi
+if [ "$1" = stop ] || [ "$1" = rm ] || [ "$1" = start ] || [ "$1" = rename ]; then exit 0; fi
 if [ "$1" = logs ]; then printf 'synthetic outgoing engine log\\n'; exit 0; fi
-if [ "$1" = run ]; then
+if [ "$1" = create ]; then
   shift
   printf '%s\\n' "$*" >> "$FAKE_DOCKER_RUN_LOG"
   printf '%s\\n' '${'1'.repeat(64)}'
@@ -493,7 +494,13 @@ exit 1
       );
       expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
       expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
-      expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+      // Creation overlaps the outgoing stop; removal of the old name and the
+      // start of the replacement follow both.
+      {
+        const mutations = readFileSync(mutationLog, 'utf8').trim().split('\n');
+        expect([...mutations.slice(0, 2)].sort()).toEqual(['create', 'stop']);
+        expect(mutations.slice(2)).toEqual(['rm', 'start']);
+      }
       expect(statSync(horseDirectory).mode & 0o777).toBe(0o700);
       expect(readdirSync(horseDirectory)).toEqual([]);
 
@@ -513,7 +520,13 @@ exit 1
       );
       expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
       expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
-      expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+      // Creation overlaps the outgoing stop; removal of the old name and the
+      // start of the replacement follow both.
+      {
+        const mutations = readFileSync(mutationLog, 'utf8').trim().split('\n');
+        expect([...mutations.slice(0, 2)].sort()).toEqual(['create', 'stop']);
+        expect(mutations.slice(2)).toEqual(['rm', 'start']);
+      }
       expect(readFileSync(retainedPath)).toEqual(retainedBytes);
       expect(readdirSync(horseDirectory)).toEqual(['horse-decisions.sqlite']);
 
@@ -580,14 +593,23 @@ exit 1
   it('keeps one journal writer by holding the canonical lock through old process exit and replacement', () => {
     const source = readFileSync(resolve(ROOT, 'server/scripts/engine-up.sh'), 'utf8');
     const lock = source.indexOf('flock -w 180 9');
-    const stop = source.indexOf('  docker stop -t 45 "$CONTAINER"');
-    const remove = source.indexOf('  docker rm "$CONTAINER"');
-    const start = source.indexOf('docker run -d');
+    const stop = source.indexOf('docker stop -t 45 "$CONTAINER"');
+    // Creation may overlap the outgoing grace; it runs no process and binds no
+    // port. The old process must have exited before the replacement STARTS.
+    const create = source.indexOf('docker create', stop);
+    const exited = source.indexOf('wait "$STOP_OPERATION_PID"', create);
+    const remove = source.indexOf('  docker rm "$CONTAINER"', exited);
+    const publish = source.indexOf('docker rename "$INCOMING_CONTAINER" "$CONTAINER"', remove);
+    const start = source.indexOf('docker start "$CONTAINER"', publish);
     expect(lock).toBeGreaterThan(-1);
     expect(stop).toBeGreaterThan(lock);
-    expect(remove).toBeGreaterThan(stop);
-    expect(start).toBeGreaterThan(remove);
-    expect(source).toContain('--name "$CONTAINER"');
+    expect(create).toBeGreaterThan(stop);
+    expect(exited).toBeGreaterThan(create);
+    expect(remove).toBeGreaterThan(exited);
+    expect(publish).toBeGreaterThan(remove);
+    expect(start).toBeGreaterThan(publish);
+    expect(source).not.toContain('docker run -d');
+    expect(source).toContain('--name "$INCOMING_CONTAINER"');
     expect(source).not.toContain('flock -u');
     // Docker itself refuses the replacement name if both stop/remove attempts
     // fail; a second writer cannot be started over a still-existing process.
@@ -1771,7 +1793,7 @@ describe('every host mutation path obeys the durable release authority', () => {
   it('runs the authorized image ID, so retagging the requested name after authorization is inert', () => {
     const authorize = engineUp.indexOf('AUTHORIZATION="$("$RELEASE_SEAL"');
     const immutable = engineUp.indexOf('AUTHORIZED_IMAGE_ID', authorize);
-    const run = engineUp.indexOf('docker run -d');
+    const run = engineUp.indexOf('docker create');
     const runBlock = engineUp.slice(run, engineUp.indexOf('\n\nlog "started', run));
     expect(authorize).toBeGreaterThan(0);
     expect(immutable).toBeGreaterThan(authorize);
@@ -1786,8 +1808,8 @@ describe('every host mutation path obeys the durable release authority', () => {
       engineUp.indexOf('[[ "$AUTHORIZED_SHA"', engineUp.indexOf('case "$AUTHORIZED_CLASS" in'))
     );
     const run = engineUp.slice(
-      engineUp.indexOf('docker run -d'),
-      engineUp.indexOf('\n\nlog "started', engineUp.indexOf('docker run -d'))
+      engineUp.indexOf('docker create'),
+      engineUp.indexOf('\n\nlog "started', engineUp.indexOf('docker create'))
     );
     expect(classBranch).toContain('desired) RESTART_POLICY=always');
     expect(classBranch).toContain('pending)');

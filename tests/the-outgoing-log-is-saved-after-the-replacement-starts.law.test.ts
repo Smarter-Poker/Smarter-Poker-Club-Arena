@@ -43,7 +43,7 @@ describe('engine-up starts the replacement before it saves the outgoing log', ()
       'docker rename "$CONTAINER" "${OUTGOING_PREFIX}${outgoing_id}"',
       stop
     );
-    const run = sh.indexOf('docker run -d', rename);
+    const run = sh.indexOf('docker start "$CONTAINER"', rename);
     const retire = sh.indexOf('retire_outgoing_in_background "$OUTGOING_CONTAINER"', run);
     expect(stop).toBeGreaterThan(0);
     expect(norestart).toBeGreaterThan(stop);
@@ -85,15 +85,21 @@ case "$1" in
   image) exit 0 ;;
   stop) rm -f "$running"; exit 0 ;;
   update|rm) exit 0 ;;
-  rename) : > '${state}/renamed'; exit 0 ;;
-  run) : > "$running"; printf '%s\\n' '${'f00dfeed'.repeat(8)}'; exit 0 ;;
+  rename)
+    case "$2" in club-arena-engine-incoming-*) exit 0 ;; esac
+    : > '${state}/renamed'; exit 0 ;;
+  create) printf '%s\\n' '${'f00dfeed'.repeat(8)}'; exit 0 ;;
+  start) : > "$running"; exit 0 ;;
   logs)
     sleep 2
     printf '%s\\n' "2026-10-19T17:55:13Z [GameServer] the log of $3"
     exit 0
     ;;
   container)
-    if [ "$2" = ls ]; then printf '%s\\n' '${leftover}'; exit 0; fi
+    if [ "$2" = ls ]; then
+      case "$*" in *outgoing-*) printf '%s\\n' '${leftover}' ;; esac
+      exit 0
+    fi
     if [ "$2" = inspect ]; then
       [ -e '${state}/renamed' ] && [ ! -e "$running" ] && exit 1
       exit 0
@@ -153,16 +159,25 @@ exit 0
         `saving the outgoing log of club-arena-engine-outgoing-${outgoingId} in the background`
       );
       const phases = [...result.stderr.matchAll(/phase=([a-z-]+) epoch=([0-9]+)/g)];
-      expect(phases.map((match) => match[1])).toEqual([
+      // stop-returned is written by the overlapped stop operation, so its
+      // position relative to create-* is not fixed; it always precedes the
+      // outgoing inspection, which waits for that operation.
+      const names = phases.map((match) => match[1]);
+      expect(names.filter((name) => name !== 'stop-returned')).toEqual([
         'stop-start',
-        'stop-returned',
+        'create-start',
+        'create-returned',
         'outgoing-inspect-start',
         'outgoing-inspect-returned',
         'outgoing-rename-start',
         'outgoing-rename-returned',
+        'incoming-rename-start',
+        'incoming-rename-returned',
         'launch-start',
         'launch-returned',
       ]);
+      expect(names.indexOf('stop-returned')).toBeGreaterThan(names.indexOf('stop-start'));
+      expect(names.indexOf('stop-returned')).toBeLessThan(names.indexOf('outgoing-inspect-start'));
       expect(
         phases.every(
           (match, index) => index === 0 || Number(match[2]) >= Number(phases[index - 1]![2])
@@ -177,13 +192,18 @@ exit 0
       expect(
         at(`rename club-arena-engine club-arena-engine-outgoing-${outgoingId}`)
       ).toBeGreaterThan(at('update --restart no club-arena-engine'));
-      expect(at('run -d')).toBeGreaterThan(
+      expect(at('start club-arena-engine')).toBeGreaterThan(
         at(`rename club-arena-engine club-arena-engine-outgoing-${outgoingId}`)
       );
+      expect(order.some((line) => line.startsWith('run '))).toBe(false);
       // The serving name is never removed after the replacement starts.
-      expect(order.slice(at('run -d')).some((line) => line === 'rm club-arena-engine')).toBe(false);
       expect(
-        order.slice(at('run -d')).some((line) => line === 'inspect -f {{.Id}} club-arena-engine')
+        order.slice(at('start club-arena-engine')).some((line) => line === 'rm club-arena-engine')
+      ).toBe(false);
+      expect(
+        order
+          .slice(at('start club-arena-engine'))
+          .some((line) => line === 'inspect -f {{.Id}} club-arena-engine')
       ).toBe(false);
 
       const deadline = Date.now() + 12_000;

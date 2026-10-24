@@ -303,11 +303,16 @@ describe('the decision queue store', () => {
   });
 });
 
-describe('the decision queue strip (CLAUDE.md 10.6)', () => {
-  it('MultiTablePage moves to a room only from the queue entry handler, as a tab select', () => {
+describe('the original table tabs (CLAUDE.md 10.6)', () => {
+  it('MultiTablePage retains explicit tab selection and urgency without a second strip', () => {
     const multi = read('src/pages/MultiTablePage.tsx');
-    const handler = sliceEnclosingBlock(multi, 'handleTabSelect(roomId);');
-    expect(handler).not.toMatch(/setActiveIndex|useEffect|setTimeout|setInterval/);
+    const handler = sliceEnclosingBlock(
+      multi,
+      'const idx = tables.findIndex((t) => t.id === tabId);'
+    );
+    expect(handler).not.toMatch(/useEffect|setInterval/);
+    expect(multi).toContain('onTabSelect={handleTabSelect}');
+    expect(multi).not.toContain('handleLightningFocus');
     expect(multi).not.toContain('<LightningDecisionQueue');
     expect(multi).toContain('lightningUrgencyByRoom(lightningDecisions, serverNow())');
   });

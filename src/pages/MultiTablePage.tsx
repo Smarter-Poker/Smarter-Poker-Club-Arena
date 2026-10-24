@@ -113,7 +113,7 @@ import {
   lightningCapabilities,
 } from '../lightning/lightningCapabilities';
 import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
-import { getLightningPoolSession, lightningRoomPath } from '../lightning/lightningSession';
+import { getLightningPoolSession } from '../lightning/lightningSession';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -4876,27 +4876,12 @@ export default function MultiTablePage() {
     [navigate]
   );
 
-  /* LIGHTNING PHASE 8: THE DECISION QUEUE. Every Lightning room where the
-     player owes a decision, from the engine's own announcements. The strip
-     and the urgency outline only SIGNAL; the view moves from the player's tap
-     on a queue entry (handleLightningFocus), which is a tab select like any
-     other (CLAUDE.md 10.6). */
+  // Existing table tabs retain urgency without a duplicate decision strip.
   const lightningDecisions = useLightningDecisions();
   const lightningUrgency = useMemo(
     () => lightningUrgencyByRoom(lightningDecisions, serverNow()),
     [lightningDecisions]
   );
-  const handleLightningFocus = useCallback(
-    (roomId: string) => {
-      if (tablesRef.current.some((t) => t.id === roomId)) {
-        handleTabSelect(roomId);
-        return;
-      }
-      navigate(lightningRoomPath(roomId, getLightningPoolSession(roomId)?.meta ?? null));
-    },
-    [handleTabSelect, navigate]
-  );
-
   // ─── Render ──────────────────────────────────────────────────────────
   if (tables.length === 0) {
     // Hidden with nothing mounted: render nothing at all.

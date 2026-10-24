@@ -9,6 +9,7 @@ describe('interrupted contract index recovery reaches the required real database
     'scripts/ci/contract-index-recovery.test.mjs',
     'scripts/ci/test-contract-index-recovery-postgres.py',
     'scripts/ci/apply-recorded-migration.mjs',
+    'scripts/ci/serial-journal-index.mjs',
     '.github/workflows/apply-merged-migration.yml',
   ])('admits accounting and its controls for %s', (path) => {
     const flags = classifyChangedPaths([path]);

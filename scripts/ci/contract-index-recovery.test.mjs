@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import {
   CHICAGO_FILE,
   CHICAGO_INDEX,
@@ -385,6 +386,98 @@ test('current admission cannot filter readers using the historical failed-operat
       source.indexOf('await sendOnce(recoveryStatement(recovery))')
   );
   assert.ok(source.includes('recoverySent ? EXIT_UNKNOWN : EXIT_REFUSED'));
+});
+
+// The same required installer regression job covers the source-bound serial option.
+import {
+  SERIAL_JOURNAL_FILE, validateSerialJournalIndex, validateSerialJournalConnection,
+  bindSerialJournalIndex, serialJournalConnection,
+} from './serial-journal-index.mjs';
+const serialSql = readFileSync(new URL('../../supabase/migrations/' + SERIAL_JOURNAL_FILE, import.meta.url), 'utf8');
+const serialRequest = { enabled: true, file: SERIAL_JOURNAL_FILE, sql: serialSql,
+  preamble: [{ schema: 'public', name: 'horse_adaptive_journal_metadata_cover' }], otherModes: false };
+test('serial option binds only the exact merged single-index migration', () => {
+  assert.equal(validateSerialJournalIndex(serialRequest), true);
+  assert.equal(validateSerialJournalIndex({ enabled: false }), false);
+  for (const bad of [{ file: '20261020170644_other.sql' }, { sql: serialSql + '\n' },
+    { otherModes: true }, { preamble: [] }, { preamble: [...serialRequest.preamble, ...serialRequest.preamble] },
+    { preamble: [{ schema: 'public', name: 'other' }] }])
+    assert.throws(() => validateSerialJournalIndex({ ...serialRequest, ...bad }));
+});
+test('serial option refuses transaction pool and unverified session hosts', () => {
+  validateSerialJournalConnection(new URL('postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/postgres'));
+  for (const u of ['postgres://postgres@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
+    'postgres://postgres@localhost:5432/postgres',
+    'postgres://postgres.otherproject@aws-0-us-west-2.pooler.supabase.com:5432/postgres',
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-1-us-west-2.pooler.supabase.com:5432/postgres',
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/other']) assert.throws(() => validateSerialJournalConnection(new URL(u)));
+});
+test('explicit serial mode selects only the configured provider session port', () => {
+  for (const port of ['5432', '6543']) {
+    const configured = new URL(`postgres://postgres.kuklfnapbkmacvwxktbh:fixture%40password@aws-0-us-west-2.pooler.supabase.com:${port}/postgres?sslmode=require`);
+    const session = serialJournalConnection(configured);
+    assert.equal(configured.port, port);
+    assert.equal(session.port, '5432');
+    for (const key of ['hostname', 'username', 'password', 'pathname', 'search'])
+      assert.equal(session[key], configured[key]);
+  }
+  for (const raw of [
+    'postgres://postgres.kuklfnapbkmacvwxktbh@unverified.example:6543/postgres',
+    'postgres://postgres.other@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:6432/postgres',
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:6543/other',
+  ]) assert.throws(() => serialJournalConnection(new URL(raw)));
+});
+test('existing hosted installer exposes the serial option through explicit dispatch only', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/apply-merged-migration.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /serial_journal_index:\s*\n\s*description:/);
+  assert.match(workflow, /SERIAL_JOURNAL_INDEX: \$\{\{ inputs\.serial_journal_index \}\}/);
+  assert.match(workflow, /if \[\[ "\$\{SERIAL_JOURNAL_INDEX:-false\}" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/);
+  assert.doesNotMatch(workflow, /client_payload\.serial_journal_index/);
+  assert.match(workflow, /recovery_args\+=\(--recover-index/);
+  assert.match(workflow, /group: apply-merged-migration\s*cancel-in-progress: false/);
+  const start = workflow.indexOf('          recovery_args=()');
+  const end = workflow.indexOf('          node scripts/ci/apply-recorded-migration.mjs', start);
+  assert.ok(start > 0 && end > start);
+  const env = { PATH: process.env.PATH, RECOVER_INDEX: '', RECOVER_OID: '',
+    RECOVER_BEFORE: '', RECOVER_TRANSIENT_OID: '', FINAL_TABLE_PAGES: '',
+    FINAL_TABLE_OPERATION: '', QUALIFY_RAKE_REPORT_HISTORY: 'false',
+    MAINTENANCE_THAW_REPAIR: 'false' };
+  for (const value of [undefined, 'false', 'true', 'true; arbitrary command']) {
+    const input = { ...env, ...(value === undefined ? {} : { SERIAL_JOURNAL_INDEX: value }) };
+    const result = spawnSync('bash', ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'], { env: input, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.includes('--serial-journal-index'), value === 'true');
+  }
+  const mixed = spawnSync('bash', ['-eu', '-c', workflow.slice(start, end) + '\ndeclare -p recovery_args'], { env: { ...env, SERIAL_JOURNAL_INDEX: 'true', RECOVER_INDEX: 'fixture' }, encoding: 'utf8' });
+  assert.equal(mixed.status, 0, mixed.stderr);
+  assert.ok(mixed.stdout.includes('--serial-journal-index') && mixed.stdout.includes('--recover-index'));
+});
+test('serial setting is applied and read back before the index, never assumed from startup', async () => {
+  for (const scenario of ['good', 'wrong-setting', 'different-backend', 'missing-row', 'set-error', 'wrong-user', 'replica', 'wrong-db']) {
+    const calls = [];
+    const client = { async query(sql) {
+      calls.push(sql);
+      if (sql.startsWith('SET ')) { if (scenario === 'set-error') throw new Error('refused'); return {}; }
+      if (!sql.includes('current_setting')) return { rows: [{ pid: 42, session_user: scenario === 'wrong-user' ? 'other' : 'postgres', current_user: 'postgres', recovery: scenario === 'replica', database: scenario === 'wrong-db' ? 'other' : 'postgres' }] };
+      return { rows: scenario === 'missing-row' ? [] : [{ pid: scenario === 'different-backend' ? 43 : 42,
+        workers: scenario === 'wrong-setting' ? '8' : '0' }] };
+    } };
+    const send = async () => { await bindSerialJournalIndex(client); calls.push('CREATE INDEX'); };
+    if (scenario === 'good') { await send(); assert.equal(calls.at(-1), 'CREATE INDEX'); }
+    else { await assert.rejects(send); assert.ok(!calls.includes('CREATE INDEX')); }
+    if (!['wrong-user', 'replica', 'wrong-db'].includes(scenario)) assert.ok(calls.includes('SET max_parallel_maintenance_workers = 0'));
+  }
+});
+test('maintained applier invokes the serial guard immediately before concurrent index send', () => {
+  const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  assert.match(source, /validateSerialJournalIndex\(\{/);
+  assert.match(source, /connectionURL = serialJournalConnection\(connectionURL\)/);
+  assert.match(source, /if \(serialJournalIndex\) \{\s*try \{\s*await bindSerialJournalIndex\(client\);/);
+  const bound = source.indexOf('await bindSerialJournalIndex(client);');
+  const refusal = source.indexOf("refused('serial journal session identity or worker bound unproven. No index was sent.');", bound);
+  const send = source.indexOf('await client.query(ix.statement);', bound);
+  assert.ok(bound > 0 && refusal > bound && send > refusal);
 });
 
 test('Chicago cash recovery binds exact source, predicate, OID and sole index', () => {

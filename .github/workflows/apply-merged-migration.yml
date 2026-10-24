@@ -71,6 +71,11 @@ on:
         required: false
         default: false
         type: boolean
+      serial_journal_index:
+        description: 'Exact journal cover only: source-bound serial build on the configured Supavisor session endpoint'
+        required: false
+        default: false
+        type: boolean
       maintenance_thaw_repair:
         description: 'Explicit audited installation of the exact merged trigger repair for an expired maintenance thaw'
         required: false
@@ -117,6 +122,7 @@ jobs:
           FINAL_TABLE_PAGES: ${{ inputs.final_table_pages }}
           FINAL_TABLE_OPERATION: ${{ inputs.final_table_operation }}
           MIGRATION_FILE: ${{ inputs.migration || github.event.client_payload.migration }}
+          SERIAL_JOURNAL_INDEX: ${{ inputs.serial_journal_index }}
           RECOVER_INDEX: ${{ inputs.recover_index }}
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
@@ -135,8 +141,11 @@ jobs:
           # with it.
           set +e
           recovery_args=()
+          if [[ "${SERIAL_JOURNAL_INDEX:-false}" == "true" ]]; then
+            recovery_args+=(--serial-journal-index)
+          fi
           if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" || -n "$RECOVER_TRANSIENT_OID" ]]; then
-            recovery_args=(--recover-index "$RECOVER_INDEX" --recover-oid "$RECOVER_OID" --recover-before "$RECOVER_BEFORE")
+            recovery_args+=(--recover-index "$RECOVER_INDEX" --recover-oid "$RECOVER_OID" --recover-before "$RECOVER_BEFORE")
           fi
           if [[ -n "$RECOVER_TRANSIENT_OID" ]]; then
             recovery_args+=(--recover-transient-oid "$RECOVER_TRANSIENT_OID")

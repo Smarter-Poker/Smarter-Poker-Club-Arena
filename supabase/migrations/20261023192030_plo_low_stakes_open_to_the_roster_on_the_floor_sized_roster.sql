@@ -1,0 +1,19 @@
+-- UNRECOVERABLE STUB (2026-10-24, recorded while clearing "Installed and merged
+-- migrations agree" for every pull request).
+--
+-- Production applied version 20261023192030 ("plo_low_stakes_open_to_the_roster_on_the_floor_sized_roster") on 2026-10-23 from a branch that
+-- never reached main, and supabase_migrations.schema_migrations.statements is
+-- NULL for it (public.fn_ca_migration_text('20261023192030') returns md5 NULL,
+-- byte_len NULL), so its exact SQL cannot be recovered from anywhere.
+--
+-- What it changed is known: it rewrote public.fn_ca_horse_roster_refresh and
+-- public.fn_ca_horse_roster_seat_guard. The installed bodies of both were
+-- written down by 20261023205714_the_horse_roster_rules_are_written_down_and_
+-- the_plo_board_is.sql (its header names this version), which was in turn
+-- superseded by 20261023221116. A rebuild takes those functions from those
+-- files; this one only records that the version ran.
+--
+-- Do NOT invent SQL here and do NOT re-run anything.
+--
+-- @live-proof: (SELECT count(*)=2 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('fn_ca_horse_roster_refresh','fn_ca_horse_roster_seat_guard'))
+SELECT 'applied 20261023192030: plo_low_stakes_open_to_the_roster_on_the_floor_sized_roster (statements not preserved)' AS unrecoverable_backfill_note;

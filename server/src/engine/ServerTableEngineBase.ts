@@ -189,7 +189,11 @@ import type {
 import { reportError } from '../services/errorReporter.js';
 import { isMissingFunctionError } from '../lightning/rpcErrors.js';
 import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
-import { presenceFromFsm, type PresenceTableReport } from '../lightning/LightningPresence.js';
+import {
+  ENGINE_INPUT_DEVICE_PLATFORM,
+  presenceFromFsm,
+  type PresenceTableReport,
+} from '../lightning/LightningPresence.js';
 import { subscribeBombRequests, unsubscribeBombRequests } from '../services/BombRequestBus.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
@@ -6845,6 +6849,11 @@ export abstract class ServerTableEngineBase {
    * horses exactly as humans (CLAUDE.md 10.5) - and a player this engine has
    * no presence entry for is `unknown`, never assumed present. See
    * src/lightning/LightningPresence.ts for how the feed uses it.
+   *
+   * A horse's input device is this engine (it heartbeats the seat), so the
+   * engine also says what a browser's `?p=` would: the desktop device class
+   * (ENGINE_INPUT_DEVICE_PLATFORM, Dan 2026-10-24 "4 GAMES MAX"). A human's
+   * class comes from their own client's room, never from here.
    */
   lightningPresenceReport(): PresenceTableReport {
     return {
@@ -6856,6 +6865,7 @@ export abstract class ServerTableEngineBase {
           this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state ?? null,
           this.disconnectEngine.isConnected(this.tableId, p.user_id)
         ),
+        ...(p.is_horse ? { platform: ENGINE_INPUT_DEVICE_PLATFORM } : {}),
       })),
     };
   }

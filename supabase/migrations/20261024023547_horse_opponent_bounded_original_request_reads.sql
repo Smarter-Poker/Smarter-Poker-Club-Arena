@@ -131,7 +131,7 @@ BEGIN
    -- One full legacy actor per original request. A nonblocking global owner
    -- prevents cross-process/restart cold-start herds; known rows remain usable.
    cold_attempted:=true;
-   IF NOT pg_try_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initialization-v1',0)) THEN
+   IF NOT pg_try_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initialization:v1',0)) THEN
     EXIT;
    END IF;
    SELECT initialized INTO ready FROM public.horse_exploit_profiles WHERE user_id=uid AND variant=p_variant AND mode=p_mode AND size=p_size;
@@ -149,9 +149,10 @@ BEGIN
       WHERE NOT horse_exploit_recorded AND game_variant=p_variant
        AND (tournament_id IS NOT NULL)=(p_mode='tournament')
        AND (CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END)=p_size
+       -- Exact actor membership is already supplied by this compact predicate.
+       -- A redundant whole-roster predicate adds its large GIN to generic plans.
        AND jsonb_path_query_array(players,'$[*].userId') @> jsonb_build_array(uid)
        AND ARRAY[game_variant,CASE WHEN tournament_id IS NULL THEN 'cash' ELSE 'tournament' END,CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END] @> ARRAY[p_variant,p_mode,p_size]
-       AND players @> jsonb_build_array(jsonb_build_object('userId',uid))
        AND EXISTS (SELECT 1 FROM jsonb_array_elements(actions) a
         WHERE a->>'userId'=uid AND a->>'action' IN ('fold','check','call','bet','raise','all_in'))
       ORDER BY created_at DESC,id DESC LIMIT 1024

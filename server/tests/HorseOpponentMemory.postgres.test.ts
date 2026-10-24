@@ -256,6 +256,11 @@ beforeAll(async () => {
   await client.query(indexPreamble);
   repairTransaction = 'BEGIN;\n' + replacement;
   await client.query(repairTransaction);
+  const admission = readdirSync(path).find((f) =>
+    f.endsWith('_horse_memory_bounded_cold_read_admission.sql')
+  );
+  if (!admission) throw new Error('peer bounded cold-read predecessor missing');
+  await client.query(readFileSync(join(path, admission), 'utf8'));
   const bounded = readdirSync(path).find((f) =>
     f.endsWith('_horse_opponent_bounded_original_request_reads.sql')
   );
@@ -360,7 +365,7 @@ describe('durable opponent memory with real PostgreSQL', () => {
     const repairSql = readFileSync(
       join(
         process.cwd(),
-        '../supabase/migrations/20261024005333_horse_opponent_legacy_context_index.sql'
+        '../supabase/migrations/20261024023547_horse_opponent_bounded_original_request_reads.sql'
       ),
       'utf8'
     );
@@ -433,6 +438,42 @@ describe('durable opponent memory with real PostgreSQL', () => {
     }
   });
 
+  it('keeps forced generic legacy plans on only the compact actor/context index', async () => {
+    const selection = boundedTransaction
+      .slice(
+        boundedTransaction.indexOf('     SELECT id,created_at,actions FROM public.hand_history'),
+        boundedTransaction.indexOf('\n    ), observations AS MATERIALIZED')
+      )
+      .replace(/\bp_variant\b/g, '$1')
+      .replace(/\bp_mode\b/g, '$2')
+      .replace(/\bp_size\b/g, '$3')
+      .replace(/\buid\b/g, '$4');
+    await client.query('set plan_cache_mode=force_generic_plan');
+    try {
+      await client.query('prepare bounded_opponent_legacy(text,text,text,text) as ' + selection);
+      for (const variant of ['plo5', 'plo4']) {
+        const plan = JSON.stringify(
+          (
+            await client.query(
+              `explain(format json) execute bounded_opponent_legacy('${variant}','cash','full','90000000-0000-4000-8000-000000000000')`
+            )
+          ).rows
+        );
+        expect(plan).toContain('idx_hand_history_horse_legacy_context');
+        expect(plan).not.toContain('BitmapAnd');
+        expect(plan).not.toContain('hand_history_players_idx');
+        process.stdout.write(
+          'OPPONENT_MEMORY_GENERIC_PLAN ' +
+            JSON.stringify({ variant, plan: JSON.parse(plan) }) +
+            '\n'
+        );
+      }
+    } finally {
+      await client.query('deallocate bounded_opponent_legacy');
+      await client.query('reset plan_cache_mode');
+    }
+  });
+
   it('never queues cold work behind another process and preserves partial accepted learning', async () => {
     const holder = new Client({
       host: '127.0.0.1',
@@ -457,7 +498,7 @@ describe('durable opponent memory with real PostgreSQL', () => {
     try {
       await holder.query('begin');
       await holder.query(
-        "select pg_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initialization-v1',0))"
+        "select pg_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initialization:v1',0))"
       );
       await client.query("set statement_timeout='100ms'");
       const heldStarted = performance.now();

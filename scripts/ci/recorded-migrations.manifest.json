@@ -1188,6 +1188,19 @@
         "a-merged-migration-must-be-live: data-only history declares no object and carries no @live-proof line; adding one would stop it being a recording"
       ],
       "liveVerdict": "Data only: rebuilds lightning_horse_fill from every Midway union club, upserts its stable_hand_membership_tags and clears fill horses' per-game sit windows, in one DO block (temp tables on commit drop). Creates no function, table, trigger, policy or grant. Read 2026-10-24 19:55 UTC: supabase_migrations.schema_migrations holds 20261023224834 with md5(statements) 49544dd0682d2795c94de6b9ad63cbec, equal to this file. Its liveness is that history row."
+    },
+    {
+      "version": "20261023213842",
+      "name": "midway_madness_lightning_test_games_keep_fifty_horses_each",
+      "file": "supabase/migrations/20261023213842_midway_madness_lightning_test_games_keep_fifty_horses_each.sql",
+      "md5": "e2b73d862c87640bac8fc3ff7c400beb",
+      "appliedToProductionAt": "2026-10-23T21:38:42Z",
+      "recoveredOn": "2026-10-24",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "check-migrations-applied: lightning_horse_fill absent from the stale schema snapshot"
+      ],
+      "liveVerdict": "Read 2026-10-24 20:20 UTC: public.lightning_horse_fill exists with row level security on, no policies, no SELECT for anon or authenticated, SELECT only for service_role (100 rows). fn_ca_horse_roster_seat_guard and fn_ca_horse_roster_refresh are security definer with no EXECUTE for anon or authenticated (their current bodies come from later migrations on main). supabase_migrations.schema_migrations holds this version with md5(statements) e2b73d862c87640bac8fc3ff7c400beb, equal to this file."
     }
   ]
 }

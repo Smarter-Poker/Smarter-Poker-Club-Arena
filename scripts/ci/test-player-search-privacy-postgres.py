@@ -213,6 +213,15 @@ try:
     baseline_access = json.loads(as_viewer("SELECT public.fn_get_table_watch_access('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002');"))
     assert baseline_access['can_watch'] is False, baseline_access
     print('baseline-confirmed-active-recursive-agent-refused')
+    # Production order: the function-only migration installs first through the
+    # ordinary route; the queued daily-window file later adds the tables policy.
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024193818_agent_downline_watch_functions_before_window_policy.sql').read_text())
+    functions_only = json.loads(as_viewer("SELECT public.fn_get_table_watch_access('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002');"))
+    assert functions_only['can_watch'] is True and functions_only['action'] == 'watch', functions_only
+    assert as_viewer("SELECT public.fn_agent_can_watch_table('30000000-0000-0000-0000-000000000004');") == 't'
+    assert as_viewer("SELECT public.fn_agent_can_watch_table('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000003');") == 'f'
+    assert query("SELECT count(*) FROM pg_policies WHERE tablename='tables' AND policyname='agent_downline_table_observation';") == '0'
+    print('agent-downline-watch-functions-only-passed')
     query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024020328_agents_can_watch_every_live_downline_table.sql').read_text())
     query(downline_assertions)
     print('agent-downline-watch-native-acceptance-passed')

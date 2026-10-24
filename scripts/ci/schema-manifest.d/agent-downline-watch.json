@@ -1,4 +1,4 @@
 {
-  "_comment": "Declared by 20261024020328_agents_can_watch_every_live_downline_table.sql; queued for the required daily-maintenance install, not an installed/live receipt.",
+  "_comment": "Declared by 20261024193818_agent_downline_watch_functions_before_window_policy.sql (ordinary install, no relation lock) and re-declared byte-identically by the queued daily-window 20261024020328_agents_can_watch_every_live_downline_table.sql, which also adds the public.tables observation policy. Not an installed/live receipt.",
   "functions": ["fn_agent_can_watch_table"]
 }

@@ -63,7 +63,7 @@ import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { tournamentRowUnitCents, type TournamentArenaEmbed } from '../tournament/details/types';
 import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
-import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey, cashTemplateNote } from '../../config/cashGames';
 import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -265,6 +265,13 @@ export interface LobbyEntry {
      */
     /** LIGHTNING PHASE 13: `joinsClosed` while an operator has stopped new players. */
     lightning?: { players: number; status: LightningPoolStatus; joinsClosed?: true } | null;
+    /**
+     * MADNESS WITHOUT LIGHTNING (Dan 2026-10-24). An ordinary must-move game
+     * whose tables play Madness rules - a big blind ante and a VPIP floor -
+     * without Lightning. Read from the table's own rule columns, so the card
+     * can only say Madness when the engine is actually enforcing it.
+     */
+    style?: { label: string; note: string } | null;
   };
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
@@ -1382,6 +1389,25 @@ function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
   return clusterFigures([t]).get(String(t.cluster_id)) ?? { players: 0, tables: 0 };
 }
 
+/**
+ * MADNESS WITHOUT LIGHTNING (Dan 2026-10-24): "JUST A REGULAR PLO5 MADNESS
+ * GAME 50% VPIP WITH BB ANTE". Lightning Games own the Madness template, so
+ * this game is a Classic must-move game whose tables carry the Madness rules.
+ * The card names it Madness from what the engine enforces at the table: a big
+ * blind ante and a VPIP floor. Neither is ever set on a plain Classic table.
+ */
+export function plainMadnessStyleOf(
+  t: Pick<
+    LobbyTableRow,
+    'cluster_template' | 'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min'
+  >
+): { label: string; note: string } | null {
+  if (cashTemplateKey(String(t.cluster_template ?? '')) !== 'classic') return null;
+  const floor = Number(t.maintain_percent_min) || 0;
+  if (t.big_blind_ante_enabled !== true || t.nit_game !== true || floor <= 0) return null;
+  return { label: 'Madness', note: `Big Blind Ante, ${floor}% Minimum VPIP` };
+}
+
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
   const figures = t.cluster_id ? clusterFiguresOf(t) : null;
@@ -1410,6 +1436,7 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           id: t.cluster_id,
           mustMove: t.cluster_must_move !== false,
           template: t.cluster_template ?? null,
+          style: plainMadnessStyleOf(t),
           tables: figures.tables,
           state: t.cluster_state ?? null,
           /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
@@ -1867,6 +1894,11 @@ const VARIANT_HEAD =
  */
 const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\.\d+)/;
 
+/** The note printed beside a cash game's style: its own rules first, then the template's. */
+export function cashStyleNote(entry: Pick<LobbyEntry, 'game'>): string | null {
+  return entry.game?.style?.note ?? cashTemplateNote(entry.game?.template);
+}
+
 /** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
 export function cashTemplateLabel(template: string | null | undefined): string | null {
   if (!template) return null;
@@ -1915,7 +1947,7 @@ export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle:
      parsed back out of a table name. Dan 2026-09-04: "UNDER ALL THE GAMES
      TITLES INSTEAD OF REPEATING THE STAKES AGAIN, SHOULD JUST SAY 'CLASSIC'
      'ACTION' OR 'MADNESS'." */
-  const templateLabel = cashTemplateLabel(entry.game?.template);
+  const templateLabel = entry.game?.style?.label ?? cashTemplateLabel(entry.game?.template);
   if (templateLabel) {
     return { headline: headline || String(entry.name || ''), subtitle: templateLabel };
   }

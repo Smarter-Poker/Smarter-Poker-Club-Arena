@@ -13559,7 +13559,7 @@ function LiveTablePage({
             try {
               const { data: game, error: gameError } = await supabase
                 .from('cash_games')
-                .select('template_name')
+                .select('template_name, rules_profile:ruleset_snapshot->>rules_profile')
                 .eq('id', table.cluster_id)
                 .maybeSingle();
               if (!isMounted) return;
@@ -13568,8 +13568,16 @@ function LiveTablePage({
                 return;
               }
               const template = String(game?.template_name ?? '').toLowerCase();
-              const label =
-                CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(template))?.label ?? null;
+              /* MADNESS WITHOUT LIGHTNING (Dan 2026-10-24): a Classic game
+                 carrying the madness_without_lightning profile plays Madness
+                 rules without Lightning, and the felt says Madness. */
+              const plainMadness =
+                cashTemplateKey(template) === 'classic' &&
+                (game as { rules_profile?: string | null } | null)?.rules_profile ===
+                  'madness_without_lightning';
+              const label = plainMadness
+                ? 'Madness'
+                : (CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(template))?.label ?? null);
               if (!label) return;
               setTableState((prev) =>
                 prev.gameStyle === label ? prev : { ...prev, gameStyle: label }

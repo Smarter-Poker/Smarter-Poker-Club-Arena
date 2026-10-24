@@ -57,6 +57,25 @@
  * itself. One fetch feeds both, because the page passes the hook result in
  * through `mysteryBounty` on the tab contract.
  *
+ * ── THE TOTAL PRIZE POOL IS EVERYTHING THE FIELD PUT IN ────────────────────
+ *
+ * Dan 2026-10-24, verbatim: "REWARDS PAGE SHOULD HAVE THE TOTAL PRIZE POOL
+ * INSIDE OF IT. THE TOTAL OF ALL THE BUY IN'S REBUYS AND ADD ON'S."
+ *
+ * The headline used to print `prize_pool` alone. On a bounty event that is only
+ * the PLACE half: fn_ca_process_tournament_chip_purchase_money_v1 splits every
+ * purchase, net of the fee, into `prize_pool` (places) and `bounty_pool`
+ * (heads). Friday Fight Night PKO (827A1B52) read 10,050 while the field had
+ * put 14,325 in: 276 buy-ins and 9 rebuys at 27, plus 221 add-ons at 30 (an
+ * add-on carries no fee). 10,050 + 4,275 = 14,325 exactly.
+ *
+ * So the headline is now places + bounties, and a "Where It Comes From" strip
+ * underneath shows the buy-ins, rebuys and add-ons that make it up and the split
+ * between place prizes and the bounty pool. The per-line amounts are priced off
+ * the event's own costs by the server's rule and are printed ONLY when they
+ * reconcile with the server's pool to the chip; an event with free entries
+ * (satellite seats, free buys) shows the counts without inventing amounts.
+ *
  * ── ONE QUERY, AND ONLY WHEN IT IS NEEDED ──────────────────────────────────
  *
  * types.ts asks tabs to prefer props. The props carry the tournament row, so
@@ -237,6 +256,9 @@ interface RewardColumns {
   current_players?: number | null;
   bubble_protection?: boolean | null;
   buy_in_amount?: number | null;
+  buy_in_fee?: number | null;
+  rebuy_cost?: number | null;
+  addon_cost?: number | null;
   variant?: string | null;
   tournament_type?: string | null;
   satellite_target_id?: string | null;
@@ -558,6 +580,73 @@ export default function RewardsTab({
 
   const bountyKind = isMystery ? 'Mystery Bounty' : isPko ? 'Progressive Knockout' : 'Bounty';
 
+  /* ── THE TOTAL PRIZE POOL: EVERY BUY-IN, REBUY AND ADD-ON ─────────────── */
+
+  /* The bounty half of what the field paid in. Zero on a non-bounty event. */
+  const bountyShare = bounty ? Math.max(0, bounty.total) : 0;
+  /* Places (with any guarantee overlay the club funds) plus the bounty pool. */
+  const totalPrizePool = effectivePool + bountyShare;
+
+  const composition = useMemo(() => {
+    let rebuyCount = 0;
+    let addOnCount = 0;
+    for (const e of entries) {
+      rebuyCount += Math.max(0, Math.floor(num(e.rebuys)));
+      if (num(e.add_ons) > 0) addOnCount += 1;
+    }
+    const buyInCount = entries.length;
+
+    /* The server's own pricing rule
+       (fn_ca_process_tournament_chip_purchase_money_v1): a rebuy costs
+       `rebuy_cost` (or the buy-in when unset) and sheds the same fee RATIO as
+       the buy-in; an add-on costs `addon_cost` (or the buy-in) and sheds no
+       fee at all. What is left of each purchase is what reaches the pool. */
+    const buyIn = num(t.buy_in_amount);
+    const fee = num(t.buy_in_fee);
+    const feeRatio = buyIn + fee > 0 ? fee / (buyIn + fee) : 0;
+    const rebuyGross = num(t.rebuy_cost) > 0 ? num(t.rebuy_cost) : buyIn + fee;
+    const perRebuy = cents(rebuyGross * (1 - feeRatio));
+    const perAddOn = cents(num(t.addon_cost) > 0 ? num(t.addon_cost) : buyIn);
+
+    const buyInTotal = cents(buyInCount * buyIn);
+    const rebuyTotal = cents(rebuyCount * perRebuy);
+    const addOnTotal = cents(addOnCount * perAddOn);
+    const collected = num(t.prize_pool) + bountyShare;
+    /* A cent of rounding per purchase is the most the server's fee rounding can
+       move it; anything wider means entries this rule did not price (free
+       seats, satellite winners) and the amounts are withheld, not guessed. */
+    const purchases = buyInCount + rebuyCount + addOnCount;
+    const tolerance = Math.max(1, purchases * 0.01);
+    const reconciles =
+      purchases > 0 && Math.abs(buyInTotal + rebuyTotal + addOnTotal - collected) <= tolerance;
+
+    return {
+      buyInCount,
+      rebuyCount,
+      addOnCount,
+      buyIn,
+      perRebuy,
+      perAddOn,
+      buyInTotal,
+      rebuyTotal,
+      addOnTotal,
+      reconciles,
+    };
+  }, [
+    entries,
+    t.buy_in_amount,
+    t.buy_in_fee,
+    t.rebuy_cost,
+    t.addon_cost,
+    t.prize_pool,
+    bountyShare,
+  ]);
+
+  const showRebuyLine = composition.rebuyCount > 0;
+  const showAddOnLine = composition.addOnCount > 0;
+  const showComposition =
+    totalPrizePool > 0 && (composition.buyInCount > 0 || showRebuyLine || showAddOnLine);
+
   /* ═════════════════════════════════════════════════════════════════════════
      RENDER
      ═════════════════════════════════════════════════════════════════════════ */
@@ -590,7 +679,7 @@ export default function RewardsTab({
           <div className="tl-stat tl-stat--feature rw-pool">
             <span className="tl-stat__label">Total Prize Pool</span>
             <span className="tl-stat__value tl-stat__value--accent rw-pool__value">
-              {effectivePool > 0 ? chips(effectivePool) : 'Set By Entries'}
+              {totalPrizePool > 0 ? chips(totalPrizePool) : 'Set By Entries'}
             </span>
             <span className="tl-stat__sub">
               {/* A cancelled event's pool is not "Still Growing". */}
@@ -678,6 +767,72 @@ export default function RewardsTab({
             <p className="rw-gtd__note">
               The Club Covers The {chips(overlay)} Overlay If The Field Does Not Close It
             </p>
+          </div>
+        )}
+
+        {showComposition && (
+          <div className="rw-mix" aria-label="Where The Prize Pool Comes From">
+            <div className="rw-mix__head">Where It Comes From</div>
+            <ul className="rw-mix__list">
+              <li className="rw-mix__row">
+                <span className="rw-mix__label">
+                  {chips(composition.buyInCount)}{' '}
+                  {composition.buyInCount === 1 ? 'Buy-In' : 'Buy-Ins'}
+                  {composition.reconciles && composition.buyIn > 0 && (
+                    <span className="rw-mix__each"> x {chips(composition.buyIn)}</span>
+                  )}
+                </span>
+                <span className="rw-mix__figure">
+                  {composition.reconciles ? chips(composition.buyInTotal) : '-'}
+                </span>
+              </li>
+              {showRebuyLine && (
+                <li className="rw-mix__row">
+                  <span className="rw-mix__label">
+                    {chips(composition.rebuyCount)}{' '}
+                    {composition.rebuyCount === 1 ? 'Rebuy' : 'Rebuys'}
+                    {composition.reconciles && composition.perRebuy > 0 && (
+                      <span className="rw-mix__each"> x {chips(composition.perRebuy)}</span>
+                    )}
+                  </span>
+                  <span className="rw-mix__figure">
+                    {composition.reconciles ? chips(composition.rebuyTotal) : '-'}
+                  </span>
+                </li>
+              )}
+              {showAddOnLine && (
+                <li className="rw-mix__row">
+                  <span className="rw-mix__label">
+                    {chips(composition.addOnCount)}{' '}
+                    {composition.addOnCount === 1 ? 'Add-On' : 'Add-Ons'}
+                    {composition.reconciles && composition.perAddOn > 0 && (
+                      <span className="rw-mix__each"> x {chips(composition.perAddOn)}</span>
+                    )}
+                  </span>
+                  <span className="rw-mix__figure">
+                    {composition.reconciles ? chips(composition.addOnTotal) : '-'}
+                  </span>
+                </li>
+              )}
+              {overlay > 0 && (
+                <li className="rw-mix__row">
+                  <span className="rw-mix__label">Club Overlay</span>
+                  <span className="rw-mix__figure">{chips(overlay)}</span>
+                </li>
+              )}
+            </ul>
+            {bountyShare > 0 && (
+              <div className="rw-mix__split">
+                <span className="rw-mix__part">
+                  <span className="rw-mix__part-label">Place Prizes</span>
+                  <span className="rw-mix__part-value">{chips(effectivePool)}</span>
+                </span>
+                <span className="rw-mix__part">
+                  <span className="rw-mix__part-label">Bounty Pool</span>
+                  <span className="rw-mix__part-value">{chips(bountyShare)}</span>
+                </span>
+              </div>
+            )}
           </div>
         )}
 

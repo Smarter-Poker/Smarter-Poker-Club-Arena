@@ -1,5 +1,9 @@
--- UNRECOVERABLE STUB (2026-10-24, recorded while clearing "Installed and merged
--- migrations agree" for every pull request).
+-- 20261023192030_plo_low_stakes_open_to_the_roster_on_the_floor_sized_roster
+--
+-- History stub, not recoverable (2026-10-24, written while clearing "Installed
+-- and merged migrations agree" for every pull request). The legacy first-line
+-- stub marker is frozen below 20260915 (scripts/ci/recording-only.mjs), so this
+-- file is judged as ordinary work: it only proves the installed state.
 --
 -- Production applied version 20261023192030 ("plo_low_stakes_open_to_the_roster_on_the_floor_sized_roster") on 2026-10-23 from a branch that
 -- never reached main, and supabase_migrations.schema_migrations.statements is

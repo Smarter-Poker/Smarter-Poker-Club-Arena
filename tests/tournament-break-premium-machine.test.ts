@@ -43,7 +43,7 @@ describe('tournament break console', () => {
     expect(SCREEN).toContain('aria-modal="false"');
     expect(CSS).toContain('@media (max-height: 500px)');
     expect(CSS).toMatch(
-      /\.break-screen__minimized\s*\{[^}]*bottom:\s*calc\(var\(--bottom-nav-clearance,/s
+      /\.break-screen__minimized\s*\{[^}]*bottom:\s*calc\(var\(--bottom-nav-stack-base,/s
     );
     expect(CSS).toContain('calc(var(--bottom-nav-clearance, 44px) + 12px)');
   });

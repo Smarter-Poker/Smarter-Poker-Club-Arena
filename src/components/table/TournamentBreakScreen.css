@@ -293,7 +293,7 @@
 .break-screen__minimized {
   position: fixed;
   z-index: 700;
-  bottom: calc(var(--bottom-nav-clearance, 44px) + 12px);
+  bottom: calc(var(--bottom-nav-stack-base, 44px) + 12px);
   left: 50%;
   transform: translateX(-50%);
   width: 240px;

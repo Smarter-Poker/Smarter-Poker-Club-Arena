@@ -15,7 +15,7 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
   it('the seat buy-in marks the Lightning entry intent for this anchor', () => {
     const body = sliceMethod(page, 'onConfirmBuyIn={async (amount, autoRebuy) =>');
     expect(body).toMatch(
-      /if \(anchorLightningClusterId\) setLightningEntryIntent\(tableId, anchorLightningClusterId\);/
+      /if \(anchorLightningClusterId\)\s+setLightningEntryIntent\(tableId, anchorLightningClusterId\);/
     );
   });
 

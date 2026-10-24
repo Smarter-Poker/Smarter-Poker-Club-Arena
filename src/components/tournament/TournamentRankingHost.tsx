@@ -57,7 +57,6 @@ import { reportError } from '../../utils/errorReporter';
    320kB gate (321kB measured), so it splits into its own chunk instead; the
    payload that shows it waits the few milliseconds the chunk takes. */
 const TournamentRankingCard = lazy(() => import('./TournamentRankingCard'));
-import { awaitTournamentResultEnrichment } from '../../utils/tournamentResultEnrichment';
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
@@ -200,6 +199,8 @@ export function TournamentRankingHost() {
         // Keep it inside the action's existing failure/fallback boundary.
         const { readTournamentFormat, isSeatFirstTournamentFormat, isTournamentEntryUnavailable } =
           await import('../../utils/tournamentPresentation');
+        const { awaitTournamentResultEnrichment } =
+          await import('../../utils/tournamentResultEnrichment');
         const { data: origin, error: originErr } = (await awaitTournamentResultEnrichment(
           supabase
             .from('tournaments')

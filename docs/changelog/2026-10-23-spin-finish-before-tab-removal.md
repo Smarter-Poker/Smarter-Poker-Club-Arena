@@ -1,6 +1,6 @@
 # A Spin Finish Reaches Its Card Before The Tab Closes
 
-A seat release can commit before the tournament entrant's elimination. The tab rebuild treated a still-playing entrant as a move and pruned its table even without a replacement seat, cancelling the delayed result handoff. It now retains every removed tab until a readable cash table, a confirmed replacement in the same tournament, or a published terminal result establishes the exit. Omitted table rows stay unknown. No rank, payout, or finish is inferred from a missing seat.
+The tab rebuild treated a released seat paired with a still-playing entrant read as a move and pruned its table even without a replacement seat, cancelling the delayed result handoff. It now retains every removed tab until a readable cash table, a confirmed replacement in the same tournament, or a published terminal result establishes the exit. Omitted table rows stay unknown. No rank, payout, or finish is inferred from a missing seat.
 
 Play Again retains its same-club, same-stake, same-format sibling selection and navigation-only behavior. Each network lookup now uses the existing bounded read helper, with the Spin list as the usable fallback. A late lookup cannot navigate after its report is dismissed or replaced.
 

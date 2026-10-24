@@ -779,7 +779,7 @@ export default function RewardsTab({
                   {chips(composition.buyInCount)}{' '}
                   {composition.buyInCount === 1 ? 'Buy-In' : 'Buy-Ins'}
                   {composition.reconciles && composition.buyIn > 0 && (
-                    <span className="rw-mix__each"> x {chips(composition.buyIn)}</span>
+                    <span className="rw-mix__each"> × {chips(composition.buyIn)}</span>
                   )}
                 </span>
                 <span className="rw-mix__figure">
@@ -792,7 +792,7 @@ export default function RewardsTab({
                     {chips(composition.rebuyCount)}{' '}
                     {composition.rebuyCount === 1 ? 'Rebuy' : 'Rebuys'}
                     {composition.reconciles && composition.perRebuy > 0 && (
-                      <span className="rw-mix__each"> x {chips(composition.perRebuy)}</span>
+                      <span className="rw-mix__each"> × {chips(composition.perRebuy)}</span>
                     )}
                   </span>
                   <span className="rw-mix__figure">
@@ -806,7 +806,7 @@ export default function RewardsTab({
                     {chips(composition.addOnCount)}{' '}
                     {composition.addOnCount === 1 ? 'Add-On' : 'Add-Ons'}
                     {composition.reconciles && composition.perAddOn > 0 && (
-                      <span className="rw-mix__each"> x {chips(composition.perAddOn)}</span>
+                      <span className="rw-mix__each"> × {chips(composition.perAddOn)}</span>
                     )}
                   </span>
                   <span className="rw-mix__figure">

@@ -327,6 +327,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.rw-mix__label {
+  min-width: 0;
+}
+
 .rw-mix__each {
   color: var(--tl-text-dim);
   font-weight: 600;

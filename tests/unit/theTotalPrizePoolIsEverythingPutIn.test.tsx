@@ -104,9 +104,9 @@ describe('Rewards: the Total Prize Pool is every buy-in, rebuy and add-on', () =
   it('shows where it comes from, and the lines add up to the headline', () => {
     const { container } = render(<RewardsTab {...props()} />);
     expect(mixRows(container)).toEqual([
-      ['276 Buy-Ins x 27', '7,452'],
-      ['9 Rebuys x 27', '243'],
-      ['221 Add-Ons x 30', '6,630'],
+      ['276 Buy-Ins × 27', '7,452'],
+      ['9 Rebuys × 27', '243'],
+      ['221 Add-Ons × 30', '6,630'],
     ]);
     const split = container.querySelector('.rw-mix__split')?.textContent ?? '';
     expect(split).toContain('Place Prizes10,050');

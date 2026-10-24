@@ -495,6 +495,7 @@ export interface TableModalsLayerProps {
     name: string;
     position?: number;
     championName?: string;
+    qualifiers?: Array<{ username: string; prize: number }>;
   } | null;
   onDismissTournamentWinner: () => void;
 
@@ -1429,6 +1430,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           tournamentName={tournamentWinner.name}
           position={tournamentWinner.position}
           championName={tournamentWinner.championName}
+          qualifiers={tournamentWinner.qualifiers}
           onDismiss={onDismissTournamentWinner}
         />
       )}

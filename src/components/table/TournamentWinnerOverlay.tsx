@@ -55,6 +55,7 @@ interface TournamentWinnerOverlayProps {
   tournamentName: string;
   position?: number;
   championName?: string;
+  qualifiers?: Array<{ username: string; prize: number }>;
   onDismiss: () => void;
 }
 
@@ -66,6 +67,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
   tournamentName,
   position = 1,
   championName,
+  qualifiers,
   onDismiss,
 }) => {
   const [visible, setVisible] = useState(false);
@@ -152,6 +154,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
   if (!isWinner) return null;
 
   const paidFinish = position > 1;
+  const qualifiedFinish = !!qualifiers?.length;
   const positionLabel =
     position === 2 ? 'Second Place' : position === 3 ? 'Third Place' : `Place ${position}`;
 
@@ -161,7 +164,13 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
       className={`winnerOverlay ${visible ? 'visible' : ''}`}
       role="dialog"
       aria-modal="true"
-      aria-label={paidFinish ? `${positionLabel} Paid Finish` : 'Tournament Champion'}
+      aria-label={
+        qualifiedFinish
+          ? 'Satellite Qualifiers'
+          : paidFinish
+            ? `${positionLabel} Paid Finish`
+            : 'Tournament Champion'
+      }
       onClick={handleDismiss}
     >
       <div className="sparkleContainer">
@@ -182,12 +191,20 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         as="div"
         className="winner-console winner-entrance winner-golden"
         eyebrow={tournamentName}
-        title={paidFinish ? 'Paid Finish!' : 'Champion!'}
-        pill={paidFinish ? positionLabel : '1st Place'}
+        title={qualifiedFinish ? 'Qualified!' : paidFinish ? 'Paid Finish!' : 'Champion!'}
+        pill={qualifiedFinish ? 'Qualifiers' : paidFinish ? positionLabel : '1st Place'}
         pillInk="gold"
         foot="foot"
       >
-        {!paidFinish && championName && (
+        {qualifiedFinish &&
+          qualifiers.map((qualifier, index) => (
+            <p className="sc-copy winnerChampionName" key={index}>
+              {qualifier.username}
+              {unitCents != null &&
+                `: Award Value ${formatPrizeAtUnit(qualifier.prize, unitCents)}${moneySuffixAtUnit(unitCents)}`}
+            </p>
+          ))}
+        {!qualifiedFinish && !paidFinish && championName && (
           <p className="sc-copy winnerChampionName">{championName}</p>
         )}
         {unitCents != null && (
@@ -197,7 +214,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
             />
           </div>
         )}
-        {prize >= 0 && unitCents != null && (
+        {!qualifiedFinish && prize >= 0 && unitCents != null && (
           <div className="winnerPrize prize-counter">
             {/* To the cent (2026-09-09): this is the banner shown at the
                 moment a player cashes, and a prize of 98.72 read "99".

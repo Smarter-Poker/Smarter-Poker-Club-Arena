@@ -383,9 +383,14 @@ describe('load: 10, 50, 100, 500, 1,000 players (5,000 and 10,000 with LIGHTNING
         });
         assertRequiredOutcome(r, { label: `load ${row.players}` });
         expect(r.world.settledHands).toBeGreaterThanOrEqual(Math.min(row.hands, 10));
-        // Every leg the spec names was measured, the render leg included.
+        // Every active leg is measured, the render leg included. Legacy watch
+        // input now releases immediately into the fast-fold lane.
         for (const seg of LIGHTNING_LATENCY_SEGMENTS) {
-          if (seg === 'fold_watch_to_next_hand' && row.players < 50) continue;
+          if (seg === 'fold_watch_to_next_hand') {
+            expect(r.engine.samples.get(seg)?.length ?? 0, 'retired watch lane').toBe(0);
+            expect(r.engine.samples.get('fast_fold_to_next_hand')?.length ?? 0).toBeGreaterThan(0);
+            continue;
+          }
           expect(r.engine.samples.get(seg)?.length ?? 0, `leg ${seg}`).toBeGreaterThan(0);
         }
         assertLedgerMatchesSamples(r);

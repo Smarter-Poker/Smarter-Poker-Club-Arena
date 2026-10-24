@@ -44,16 +44,11 @@ import {
   stopLightningPlaying,
 } from '../../src/lightning/lightningSessionApi';
 import {
-  lightningHandVolume,
-  lightningHandVolumeText,
-} from '../../src/lightning/lightningSessionMetrics';
-import {
   LIGHTNING_STOPPED_TITLE,
   lightningReconnectVerdict,
   lightningSessionEndText,
   parseLightningReconnectState,
 } from '../../src/lightning/lightningReconnect';
-import LightningRoomTools from '../../src/components/lightning/LightningRoomTools';
 
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -118,69 +113,6 @@ describe('fn_lightning_stop_playing, read defensively', () => {
     expect(isLightningRpcMissing(MISSING)).toBe(true);
     expect(isLightningRpcMissing({ code: '42883' })).toBe(true);
     expect(isLightningRpcMissing({ code: '57014' })).toBe(false);
-  });
-});
-
-// ─── 2. The control in the room's tools ────────────────────────────────────
-
-function renderTools(handKey: string | null = 'id:h1') {
-  return render(
-    <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey={handKey} visible={true} />
-  );
-}
-
-describe('the Stop Playing control', () => {
-  it('one tap asks the database, and a live hand shows "Finishing Current Hand..."', async () => {
-    quietRpc({
-      fn_lightning_stop_playing: () => ({
-        data: { ok: true, pool_session_id: POOL, exited: false, in_hand: true },
-        error: null,
-      }),
-    });
-    renderTools('id:h1');
-    const btn = screen.getByTestId('lightning-stop-playing');
-    expect(btn.textContent).toBe(LIGHTNING_STOP_PLAYING_LABEL);
-    fireEvent.click(btn);
-    await waitFor(() =>
-      expect(rpc.mock.calls.some(([fn]) => fn === 'fn_lightning_stop_playing')).toBe(true)
-    );
-    const call = rpc.mock.calls.find(([fn]) => fn === 'fn_lightning_stop_playing')!;
-    expect(call[1]).toEqual({ p_cluster_id: CLUSTER });
-    await waitFor(() => expect(btn.textContent).toBe(LIGHTNING_STOP_FINISHING_TEXT));
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
-    // A second tap cannot ask again: one stop per session is the whole job.
-    fireEvent.click(btn);
-    expect(rpc.mock.calls.filter(([fn]) => fn === 'fn_lightning_stop_playing')).toHaveLength(1);
-  });
-
-  it('a database without the function gets a graceful "not available", not a crash', async () => {
-    quietRpc({
-      fn_lightning_stop_playing: () => ({ data: null, error: MISSING }),
-    });
-    renderTools();
-    fireEvent.click(screen.getByTestId('lightning-stop-playing'));
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(LIGHTNING_STOP_UNAVAILABLE_TEXT));
-    // Still offered: the migration may land while the session runs.
-    const btn = screen.getByTestId('lightning-stop-playing') as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toBe(LIGHTNING_STOP_PLAYING_LABEL);
-    expect(reportError).not.toHaveBeenCalled();
-  });
-
-  it('a failed stop is reported and the control stays usable', async () => {
-    quietRpc({
-      fn_lightning_stop_playing: () => ({
-        data: null,
-        error: { code: '57014', message: 'canceled' },
-      }),
-    });
-    renderTools();
-    fireEvent.click(screen.getByTestId('lightning-stop-playing'));
-    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
-    expect(reportError).toHaveBeenCalledTimes(1);
-    expect((screen.getByTestId('lightning-stop-playing') as HTMLButtonElement).disabled).toBe(
-      false
-    );
   });
 });
 
@@ -273,65 +205,6 @@ describe('the responsible-gaming ending (Lightning Phase 12, exit_reason rg_limi
   });
 });
 
-describe('session metrics: hand volume, duration and rate', () => {
-  it('the arithmetic: baseline plus local ticks, a dash while nothing is known', () => {
-    const v = lightningHandVolume({
-      baseHands: 120,
-      baseDurationS: 3_600,
-      baseAtMs: 1_000_000,
-      handsSinceBase: 3,
-      nowMs: 1_060_000,
-    });
-    expect(v.hands).toBe(123);
-    expect(v.durationS).toBe(3_660);
-    expect(Math.round(v.handsPerHour!)).toBe(121);
-    expect(lightningHandVolumeText(v)).toBe('Hands 123 · 1h 01m · 121/hr');
-    const unknown = lightningHandVolume({
-      baseHands: null,
-      baseDurationS: null,
-      baseAtMs: null,
-      handsSinceBase: 0,
-      nowMs: 1,
-    });
-    expect(lightningHandVolumeText(unknown)).toBe('Hands - · - · -/hr');
-    // Under a minute of clock no rate is printed: a two-hand burst is not
-    // "7200 hands an hour".
-    expect(
-      lightningHandVolume({
-        baseHands: 2,
-        baseDurationS: 10,
-        baseAtMs: 0,
-        handsSinceBase: 0,
-        nowMs: 0,
-      }).handsPerHour
-    ).toBeNull();
-  });
-
-  it('the room shows the volume line and ticks it when a new hand deals', async () => {
-    quietRpc({
-      fn_lightning_session_stats: () => ({
-        data: { hands: 40, duration_s: 1_200 },
-        error: null,
-      }),
-    });
-    const view = renderTools('id:h1');
-    await waitFor(() =>
-      expect(screen.getByTestId('lightning-hand-volume').textContent).toContain('Hands 40')
-    );
-    // The next hand reaches the felt: one more, locally, no new read.
-    const statsReads = rpc.mock.calls.filter(([fn]) => fn === 'fn_lightning_session_stats').length;
-    view.rerender(
-      <LightningRoomTools poolSessionId={POOL} clusterId={CLUSTER} handKey="id:h2" visible={true} />
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId('lightning-hand-volume').textContent).toContain('Hands 41')
-    );
-    expect(rpc.mock.calls.filter(([fn]) => fn === 'fn_lightning_session_stats').length).toBe(
-      statsReads
-    );
-  });
-});
-
 // ─── 5. The auto-rebuy status line ─────────────────────────────────────────
 
 describe('the auto-rebuy status (read-only, from fn_lightning_pool_status since Lightning Phase 12)', () => {
@@ -384,48 +257,6 @@ describe('the auto-rebuy status (read-only, from fn_lightning_pool_status since 
     rpc.mockRejectedValue(new Error('network'));
     expect(await fetchLightningAutoRebuyStatus(CLUSTER)).toBeNull();
   });
-
-  it('the Session panel shows the line only while auto-rebuy is on, and never asks fn_lightning_config', async () => {
-    quietRpc({
-      fn_lightning_pool_status: () => ({
-        data: {
-          players: 20,
-          status: 'ACTIVE',
-          joinable: true,
-          auto_rebuy: {
-            enabled: true,
-            trigger: 'zero',
-            target: 'max',
-            max_count: 3,
-            used_count: 0,
-          },
-        },
-        error: null,
-      }),
-    });
-    renderTools();
-    fireEvent.click(screen.getByTestId('lightning-session-toggle'));
-    await waitFor(() =>
-      expect(screen.getByTestId('lightning-auto-rebuy-status').textContent).toBe(
-        'Auto-Rebuy: On (When Out Of Chips → Max Buy-In), 0 Of 3 Used'
-      )
-    );
-    cleanup();
-    quietRpc({
-      fn_lightning_pool_status: () => ({
-        data: { players: 20, status: 'ACTIVE', auto_rebuy: { enabled: false } },
-        error: null,
-      }),
-    });
-    renderTools();
-    fireEvent.click(screen.getByTestId('lightning-session-toggle'));
-    await waitFor(() =>
-      expect(rpc.mock.calls.some(([fn]) => fn === 'fn_lightning_pool_status')).toBe(true)
-    );
-    expect(screen.queryByTestId('lightning-auto-rebuy-status')).toBeNull();
-    expect(rpc.mock.calls.some(([fn]) => fn === 'fn_lightning_config')).toBe(false);
-    expect(read('src/lightning/lightningSessionApi.ts')).not.toMatch(/rpc\('fn_lightning_config'/);
-  });
 });
 
 // ─── 6. Law 10.6 and the hidden-information review, client side ────────────
@@ -437,11 +268,7 @@ describe('Law 10.6 and the replay door (spec Phase 17, client)', () => {
        exactly two navigate(lightningReturnPath(...)) sites, both inside
        onViewGame button handlers. */
     expect(page.split('navigate(lightningReturnPath(').length - 1).toBe(2);
-    for (const f of [
-      'src/components/lightning/LightningRoomTools.tsx',
-      'src/lightning/lightningSessionMetrics.ts',
-      'src/lightning/lightningSessionApi.ts',
-    ]) {
+    for (const f of ['src/lightning/lightningSessionApi.ts']) {
       const src = read(f);
       expect(src, f).not.toMatch(/useNavigate|navigate\(|location\.href|history\.push/);
     }

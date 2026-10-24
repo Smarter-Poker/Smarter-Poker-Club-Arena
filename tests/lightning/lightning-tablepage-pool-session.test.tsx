@@ -108,12 +108,12 @@ describe('TablePage on a pool-session id', () => {
     expect(PAGE).toContain('lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)');
   });
 
-  it('mounts the Lightning controls only in a Lightning room', () => {
+  it('keeps the original actions without a duplicate Lightning fold strip', () => {
     /* For the whole room, not only while a seat shows: the idle snapshot after
        a fold carries no players, and the strip must hold its place, dimmed. */
-    expect(PAGE).toMatch(
-      /\{lightningRoom && userId && userId !== 'guest' \? \(\s*<LightningFoldBar/
-    );
+    expect(PAGE).not.toContain('<LightningFoldBar');
+    expect(PAGE).toContain('<ActionPanel');
+    expect(PAGE).toContain("void handleLightningFold('fast_fold')");
     expect(PAGE).toMatch(/\{lightningRoom \? \(\s*<LightningNextHand/);
   });
 });
@@ -172,7 +172,6 @@ describe('JOIN LIGHTNING hand-off from the anchor table', () => {
 describe('player-visible terminology', () => {
   const FILES = [
     ...readdirSync(join(ROOT, 'src/lightning')).map((f) => `src/lightning/${f}`),
-    'src/components/table/LightningFoldBar.tsx',
     'src/components/table/LightningFoldBar.css',
     'src/components/table/LightningNextHand.tsx',
     'src/pages/LightningEntryPage.tsx',

@@ -18,6 +18,7 @@
  */
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
+import type { SeatArrival } from './seatArrival';
 import { serverNow } from '../../utils/serverClock';
 import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
@@ -238,6 +239,7 @@ export interface SeatPlayer {
 }
 
 export interface SeatSlotProps {
+  arrival?: SeatArrival;
   /**
    * `table_seats.sit_out_at` in epoch ms, and ONLY when a deadline applies.
    *
@@ -1087,6 +1089,42 @@ export const SeatSlot = memo(
      * on the default side before correcting itself.
      */
     const seatRef = useRef<HTMLDivElement | null>(null);
+    const playedArrivalRef = useRef<string | null>(null);
+    useLayoutEffect(() => {
+      const arrival = props.arrival;
+      if (
+        !arrival ||
+        !player ||
+        arrival.playerId !== player.id ||
+        playedArrivalRef.current === arrival.key
+      )
+        return;
+      playedArrivalRef.current = arrival.key;
+      if (player.isHero || isActive) return;
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      // Only existing portrait/nameplate art arrives. Cards, timers, actions,
+      // and the authoritative roster are already present and never delayed.
+      const animations = [
+        ...(seatRef.current?.querySelectorAll<HTMLElement>('.seat__avatar, .seat__info') ?? []),
+      ]
+        .filter((node) => typeof node.animate === 'function')
+        .map((node) =>
+          node.animate(
+            [
+              { opacity: 0, transform: reduced ? 'none' : 'scale(0.94)' },
+              { opacity: 1, transform: 'none' },
+            ],
+            {
+              duration: 180 * getAnimationSpeed(),
+              delay: arrival.delayMs,
+              fill: 'backwards',
+              easing: 'ease-out',
+            }
+          )
+        );
+      return () => animations.forEach((animation) => animation.cancel());
+    }, [props.arrival, player?.id, player?.isHero, isActive]);
+
     const [cardSide, setCardSide] = useState<CardSide>('right');
     const hasPlayer = !!player;
     useLayoutEffect(() => {
@@ -1348,6 +1386,9 @@ export const SeatSlot = memo(
     const [isFolding, setIsFolding] = useState(false);
     const prevActionRef = React.useRef<LastAction>(null);
     useEffect(() => {
+      // A new hand can arrive before the previous fold timer completes.
+      // Its cleanup cancels that timer; the new action must release the old pose.
+      if (lastAction !== 'fold') setIsFolding(false);
       // IMPROVEMENT PASS 2026-08-19: every class-removal window scales with
       // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
@@ -3798,6 +3839,7 @@ export const SeatSlot = memo(
        travel through props any more. */
     if (prev.actionClock !== next.actionClock) return false;
     if (prev.isActive !== next.isActive) return false;
+    if (prev.arrival?.key !== next.arrival?.key) return false;
     if (prev.canSit !== next.canSit) return false;
     /**
      * AUDIT 2026-08-25 — two props that were passed, read, and then blocked.

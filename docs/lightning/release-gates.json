@@ -189,7 +189,7 @@
       "requirement": "Fast Fold works",
       "qualificationFiles": [
         "server/src/lightning/LightningHandHost.test.ts",
-        "tests/lightning/LightningFoldBar.test.tsx"
+        "tests/lightning/lightning-phase-6-review-fixes.test.tsx"
       ]
     },
     {
@@ -197,7 +197,7 @@
       "requirement": "Fold & Watch works where supported",
       "qualificationFiles": [
         "server/src/lightning/LightningHandHost.test.ts",
-        "tests/lightning/LightningFoldBar.test.tsx"
+        "tests/lightning/lightning-phase-12-app.test.tsx"
       ]
     },
     {

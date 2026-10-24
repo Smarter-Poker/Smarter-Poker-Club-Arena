@@ -634,12 +634,12 @@ describe('4. the idle snapshot after a fold', () => {
     expect(screen.getByTestId('lightning-next-hand').textContent).toBe(LIGHTNING_NEXT_HAND_TEXT);
   });
 
-  it('TablePage: the controls read the snapshot, and stay mounted (dimmed) between hands', () => {
+  it('TablePage: original controls read the snapshot without a duplicate fold strip', () => {
     expect(PAGE).toContain('lightningHandOnFelt(engineSnapshot as LightningSnapshotFields)');
     expect(PAGE).toContain('handOnFelt: lightningHandLive,');
-    expect(PAGE).toMatch(
-      /\{lightningRoom && userId && userId !== 'guest' \? \(\s*<LightningFoldBar/
-    );
+    expect(PAGE).not.toContain('<LightningFoldBar');
+    expect(PAGE).toContain('<ActionPanel');
+    expect(PAGE).toContain("void handleLightningFold('fast_fold')");
     expect(PAGE).toMatch(
       /<LightningNextHand\s+handInProgress=\{lightningHandLive && tableState\.isHandInProgress\}/
     );

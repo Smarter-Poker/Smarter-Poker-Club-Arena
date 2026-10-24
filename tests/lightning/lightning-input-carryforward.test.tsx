@@ -6,7 +6,6 @@ import { useTableKeyboard } from '../../src/hooks/useTableKeyboard';
 import { lightningShortcut, lightningShortcutRoom } from '../../src/lightning/lightningShortcuts';
 import { createLightningMilestoneTracker } from '../../src/lightning/lightningMilestone';
 import { readLightningPrefs, writeLightningPrefs } from '../../src/lightning/lightningPrefs';
-import LightningPreferences from '../../src/components/lightning/LightningPreferences';
 
 beforeEach(() => localStorage.clear());
 afterEach(() => {
@@ -137,22 +136,6 @@ describe('optional event-owned milestone', () => {
 });
 
 describe('real preferences surface', () => {
-  it('persists configuration without a request and reset restores defaults', () => {
-    const close = vi.fn();
-    render(<LightningPreferences onClose={close} />);
-    fireEvent.change(screen.getByLabelText('Shortcut Modifier'), {
-      target: { value: 'alt_shift' },
-    });
-    fireEvent.change(screen.getByLabelText('Milestone Sound'), { target: { value: '250' } });
-    expect(readLightningPrefs()).toMatchObject({
-      shortcutModifier: 'alt_shift',
-      milestoneHands: 250,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Defaults' }));
-    expect(readLightningPrefs()).toMatchObject({ shortcutModifier: 'shift', milestoneHands: 0 });
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(close).toHaveBeenCalledTimes(1);
-  });
   it('keeps the choice for this visit if storage is blocked and rejects corrupt values', () => {
     writeLightningPrefs({ milestoneHands: 500 });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {

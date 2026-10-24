@@ -66,7 +66,11 @@ describe('TablePage wiring', () => {
     );
     expect(wait).toBeGreaterThan(fn.indexOf("res.code === 'ACTION_NOT_DELIVERED'"));
     expect(wait).toBeLessThan(fn.indexOf('showActionError({'));
-    expect(wait).toBeLessThan(fn.indexOf('return false;'));
+    // The public-observer gate precedes submission. This contract owns the
+    // failure path after a real action was sent.
+    expect(wait).toBeLessThan(
+      fn.indexOf('return false;', fn.indexOf('const res = await submitAction'))
+    );
   });
 
   it('the snapshot releases the wait after the merge effect is queued', () => {

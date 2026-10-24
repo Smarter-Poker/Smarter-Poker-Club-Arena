@@ -220,7 +220,7 @@ import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
-import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import { isLightningObserverSnapshot, mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import {
   fixedLimitStreetBet,
   killNextAnnouncement,
@@ -2288,6 +2288,9 @@ function LiveTablePage({
    * socket, exactly as it is on every other page.
    */
   const engineSnapshot = rawEngineSnapshot;
+  const lightningObserver = isLightningObserverSnapshot(engineSnapshot);
+  const [lightningAnchorFunded, setLightningAnchorFunded] = useState(false);
+  useEffect(() => setLightningAnchorFunded(false), [tableId, userId]);
   /* LIGHTNING PHASE 6: the snapshot for handlers that run after their render
      (the pre-action arm names the hand it belongs to). */
   const engineSnapshotRef = useRef(engineSnapshot);
@@ -2557,6 +2560,17 @@ function LiveTablePage({
        snapshot never writes it. The mapper only wants a floor; a ref gives
        it one without making this effect fire on its own output. */
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableStateRef.current.maxPlayers);
+    if (lightningObserver) {
+      const physical = tableStateRef.current;
+      if (
+        physical.tableId === tableId &&
+        physical.heroSeat > 0 &&
+        physical.players.some((p) => p?.isHero && p.id === userId && p.stack > 0)
+      ) {
+        setLightningAnchorFunded(true);
+      }
+      heroSeatRef.current = 0;
+    }
     setTableIsAnonymous(mapped.isAnonymous);
     /* Identity resolution BEFORE the card/status merge below: the engine owns
        the hand, the database owns the face, and a face the database has
@@ -2574,7 +2588,7 @@ function LiveTablePage({
     // totalBuyInRef is only updated by the manual buy-in modal, so it is 0 after a page refresh
     // or after a Seat-First buy-in. Seed it with the hero's current stack so the Session Complete card doesn't drop the stat.
     const mappedHero = mapped.players.find((p) => p && p.id === userId);
-    if (mappedHero && mappedHero.stack > 0) {
+    if (!lightningObserver && mappedHero && mappedHero.stack > 0) {
       if (totalBuyInRef.current === 0) {
         totalBuyInRef.current = mappedHero.stack;
         sessionBuyInSeedRef.current = mappedHero.stack;
@@ -2598,7 +2612,7 @@ function LiveTablePage({
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
       const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
-        if (leftSeatPendingRef.current && p.id === userId) return null;
+        if (!lightningObserver && leftSeatPendingRef.current && p.id === userId) return null;
         let sp = p as unknown as SeatPlayer;
         /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
            cards in DEALT order. Keep the row in its display order. */
@@ -2810,6 +2824,7 @@ function LiveTablePage({
            9-max to 6-max must be allowed to shrink. `mapped.maxSeats` is
            itself already clamped never to fall below an occupied seat, so this
            still cannot erase a seated player. */
+        ...(lightningObserver ? { heroSeat: 0 } : {}),
         maxPlayers: mapped.maxSeats || prev.maxPlayers,
         pot: mapped.pot,
         communityCards: nextCards,
@@ -11063,6 +11078,7 @@ function LiveTablePage({
   // Callback for handling new hole cards
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
+      if (isLightningObserverSnapshot(engineSnapshotRef.current)) return;
       /* DELETE carries no `new`, so it falls through here and is IGNORED, and
          that is deliberate. `insert_hole_cards` prunes rows with
          `hand_number < p_hand_number` on every deal, so the deletes this
@@ -11367,13 +11383,14 @@ function LiveTablePage({
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
   // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
-    if (!tableId || !userId || userId === 'guest' || lightningRoomRef.current) return;
+    if (!tableId || !userId || userId === 'guest' || lightningRoomRef.current || lightningObserver)
+      return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
 
     const fetchExistingHand = async () => {
-      if (cancelled) return;
+      if (cancelled || isLightningObserverSnapshot(engineSnapshotRef.current)) return;
       const { data, error: holeCardsErr } = await supabase
         .from('table_hole_cards')
         .select('cards, hand_number')
@@ -11391,7 +11408,7 @@ function LiveTablePage({
         reportError(holeCardsErr, 'TablePage.hole_card_recovery_read_failed', { tableId });
       }
 
-      if (cancelled) return;
+      if (cancelled || isLightningObserverSnapshot(engineSnapshotRef.current)) return;
 
       // AUDIT FIX 2026-07-19: don't apply a row from a DIFFERENT (older) hand.
       // Once we know the current hand number (set on HAND_STARTED), require the
@@ -11596,7 +11613,7 @@ function LiveTablePage({
       if (pollTimer) clearInterval(pollTimer);
       clearEarlyTimers();
     };
-  }, [tableId, userId]);
+  }, [tableId, userId, lightningObserver]);
 
   /* ═══ THE NET UNDER ALL FOUR DOORS (Dan 2026-09-01) ═══════════════════════
      "PREVENT IT FROM NEVER BEING POSSIBLE TO HAPPEN EVER AGAIN UNDER ANY
@@ -15586,6 +15603,14 @@ function LiveTablePage({
             });
           }
           if (!isMounted) return;
+          setLightningAnchorFunded(
+            existingSeats.some(
+              (seat) =>
+                seat.user_id === userId &&
+                Number(seat.stack) > 0 &&
+                !(seat as { leave_pending?: boolean }).leave_pending
+            )
+          );
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
           setTableState((prev) => {
@@ -16524,7 +16549,8 @@ function LiveTablePage({
   // remains the job of the existing paths that demand proof of eviction
   // (seat stolen, snapshot without hero), so this can never fight them.
   useEffect(() => {
-    if (!userId || userId === 'guest') return;
+    if (isLightningObserverSnapshot(engineSnapshotRef.current) || !userId || userId === 'guest')
+      return;
     /* A SEAT WE HAVE ALREADY LEFT IS NOT A DISAGREEMENT TO HEAL (2026-09-05).
        The row survives until settlement stamps `left_at`, and the engine keeps
        the player in its roster until the same moment, so `players[]` legally
@@ -16582,7 +16608,8 @@ function LiveTablePage({
      alarm. One report per (table, seat) per session is enough to find it. */
   const engineSeatMismatchReportedRef = useRef<string>('');
   useEffect(() => {
-    if (!USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest') return;
+    if (lightningObserver || !USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest')
+      return;
     // The last snapshot can predate the confirmed exit. It cannot reclaim it.
     if (leftSeatPendingRef.current) return;
     const enginePlayers =
@@ -16907,6 +16934,7 @@ function LiveTablePage({
       }
 
       case 'GAME_START': {
+        if (isLightningObserverSnapshot(engineSnapshotRef.current)) break;
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = evt.data as any;
         if (!syncData) break;
@@ -22583,6 +22611,7 @@ function LiveTablePage({
       callsite?: string
     ): Promise<boolean> => {
       try {
+        if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;
         const res = await submitAction(tid, uid, action, amount, tableState.actionContext);
         if (!res.success) {
           if (res.code === 'ACTION_NOT_DELIVERED') {
@@ -24318,7 +24347,9 @@ function LiveTablePage({
     clusterId: tableState.clusterId,
     userId,
     isPoolSession: lightningRoom !== null,
-    heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
+    heroBoughtIn: lightningObserver
+      ? lightningAnchorFunded
+      : tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
     follow: (poolSessionId) => {
       if (embeddedTableId) {
         onTableInfoUpdate?.({ movedToTableId: poolSessionId });

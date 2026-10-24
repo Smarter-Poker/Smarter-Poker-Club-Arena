@@ -16,7 +16,11 @@ const users = Array.from(
   (_, i) => `aaaaaaaa-0000-4000-8000-${String(i + 2).padStart(12, '0')}`
 );
 
-const willingUsers = [0, 2, 3, 4, 5, 8, 12, 15].map((i) => users[i]);
+const { horseChoosesTournamentRebuy } = await import('./horseTournamentRebuyChoice.js');
+// Derived from the input device itself so the owner share (75%, 2026-10-24)
+// can change without re-deriving these indices by hand.
+const willingUsers = users.filter((id) => horseChoosesTournamentRebuy(event, id, 123));
+const decliningUser = users.find((id) => !willingUsers.includes(id))!;
 for (const id of users) bustHands.set(id, 123);
 
 function setup(window: unknown = { open: false, reason: 'tournament_not_rebuyable' }) {
@@ -247,7 +251,9 @@ describe('a rebuy-window policy the engine cannot read names itself once (2026-0
 
 describe('a horse answers once for the recorded bust', () => {
   it('never sends a purchase for a decline on repeated sweeps or a replacement manager', async () => {
-    const declined = users[1];
+    expect(willingUsers.length).toBeGreaterThan(0);
+    expect(decliningUser).toBeDefined();
+    const declined = decliningUser;
     for (const manager of [setup({ open: true }), setup({ open: true })]) {
       await manager.tryTournamentRebuys([declined], new Map([[declined, 123]]));
       await manager.tryTournamentRebuys([declined], new Map([[declined, 123]]));

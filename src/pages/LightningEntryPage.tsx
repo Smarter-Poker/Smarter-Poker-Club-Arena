@@ -42,10 +42,12 @@ import {
   type LightningEntryDecision,
 } from '../lightning/lightningSession';
 import { LIGHTNING_NEXT_HAND_NOTICE_MS } from '../lightning/lightningHand';
-import { clusterModeDisplay } from '../lightning/lightningLobby';
+import { clusterModeDisplay, isLightningMode } from '../lightning/lightningLobby';
 import {
   LIGHTNING_ENDED_EYEBROW,
   LIGHTNING_ENDED_TEXT,
+  LIGHTNING_SEAT_WAITING_EYEBROW,
+  LIGHTNING_SEAT_WAITING_TEXT,
   LIGHTNING_RETURN_LABEL,
   lightningReturnPath,
 } from '../lightning/lightningReversion';
@@ -215,7 +217,18 @@ export default function LightningEntryPage() {
         });
       }
       warmTable(r.table_id);
-      navigate(`/table/${r.table_id}`);
+      /* Dan 2026-10-24: "WHEN YOU CLICK JOIN LIGHTNING AND CONFIRM YOUR BUY IN
+         AMOUNT, YOU ARE AUTO ASSIGNED TO A TABLE AND SEAT, YOU DON'T PICK YOUR
+         SEAT." The door has already held a chair for this player and names it
+         (seat_number); ?buyin=1&seat= opens the table's own buy-in sheet on
+         that chair the moment the table paints, so the only thing left to do
+         is confirm the amount. */
+      const chair = Number(r.seat_number);
+      navigate(
+        joinsLightning && r.action === 'seat'
+          ? `/table/${r.table_id}?buyin=1${Number.isSafeInteger(chair) && chair > 0 ? `&seat=${chair}` : ''}`
+          : `/table/${r.table_id}`
+      );
     } catch (err) {
       if (!ownsPage()) return;
       reportError(err, 'LightningEntryPage.join_failed', { clusterId });
@@ -268,12 +281,13 @@ export default function LightningEntryPage() {
   const { meta, decision } = phase;
   if (decision.kind === 'seat') {
     const seatTableId = decision.seatTableId;
+    const stillLightning = isLightningMode(meta?.clusterMode) && meta?.clusterMode === 'lightning';
     return (
       <div className="lightning-entry" data-testid="lightning-entry">
         <EmptyState
-          eyebrow={LIGHTNING_ENDED_EYEBROW}
+          eyebrow={stillLightning ? LIGHTNING_SEAT_WAITING_EYEBROW : LIGHTNING_ENDED_EYEBROW}
           title={meta?.name ?? 'Lightning'}
-          description={LIGHTNING_ENDED_TEXT}
+          description={stillLightning ? LIGHTNING_SEAT_WAITING_TEXT : LIGHTNING_ENDED_TEXT}
           action={{
             label: LIGHTNING_RETURN_LABEL,
             onClick: () => {

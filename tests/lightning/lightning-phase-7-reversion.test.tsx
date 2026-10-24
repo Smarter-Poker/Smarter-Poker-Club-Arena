@@ -65,6 +65,7 @@ import {
 } from '../../src/lightning/lightningSession';
 import {
   LIGHTNING_ENDED_TEXT,
+  LIGHTNING_SEAT_WAITING_TEXT,
   LIGHTNING_RETURN_LABEL,
   lightningReturnPath,
   useLightningReversion,
@@ -263,6 +264,16 @@ describe('3. the Lightning route after reversion', () => {
     fireEvent.click(view);
     expect((await screen.findByTestId('table-route')).textContent).toBe(SEAT_TABLE);
     expect(warmTable).toHaveBeenCalledWith(SEAT_TABLE);
+    expect(rpc.mock.calls.map((c) => c[0])).not.toContain('fn_cash_game_join');
+  });
+
+  it('a seated caller of a game that is still Lightning is not told Lightning has ended', async () => {
+    gameRow.cluster_mode = 'lightning';
+    rpc.mockResolvedValue({ data: { ...reverted, cluster_mode: 'lightning' }, error: null });
+    renderRoute();
+    expect(await screen.findByRole('button', { name: 'View Game' })).toBeTruthy();
+    expect(screen.getByText(LIGHTNING_SEAT_WAITING_TEXT)).toBeTruthy();
+    expect(screen.queryByText(LIGHTNING_ENDED_TEXT)).toBeNull();
     expect(rpc.mock.calls.map((c) => c[0])).not.toContain('fn_cash_game_join');
   });
 

@@ -32,7 +32,10 @@ describe('the ?buyin=1 seat-offer link waits for the table before it spends its 
   /* Dan 2026-10-14: the tap is no longer refused with a popup while the asset
      is unread; it is remembered silently and replayed when the asset lands. */
   it('handleSeatClick defers (never spends) a tap while the table asset is unread', () => {
-    const handler = sliceMethod(SOURCE, 'const handleSeatClick = (seatNumber: number) => {');
+    const handler = sliceMethod(
+      SOURCE,
+      'const handleSeatClick = (seatNumber: number, opts?: { lightningChair?: boolean }) => {'
+    );
     expect(handler).toContain('if (!tableState.arenaAsset) {');
     expect(handler).toContain('deferredSeatTapRef.current = seatNumber;');
     expect(handler).not.toContain("toast.warning('Verifying Table Funding');");

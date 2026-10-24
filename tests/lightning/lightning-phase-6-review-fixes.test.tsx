@@ -552,7 +552,12 @@ describe('conversion of an already seated player', () => {
   });
   it('Lightning preselected Fold uses the immediate fast-fold door before arming a normal pre-action', () => {
     expect(PAGE).toMatch(
-      /onPreActionChange=\{\(next\) => \{[\s\S]*?if \(lightningRoom && next === 'fold'\) \{\s*void handleLightningFold\('fast_fold'\);\s*return;/
+      /onPreActionChange=\{\(next\) => \{[\s\S]*?if \(lightningRoom && next === 'fold' && !heroOwesNothing\) \{\s*void handleLightningFold\('fast_fold'\);\s*return;/
+    );
+    /* Check/Fold while checking is free arms the ordinary auto check/fold:
+       an immediate fold there would throw away a free look (2026-10-24). */
+    expect(PAGE).toMatch(
+      /const heroOwesNothing =\s+\(tableState\.currentBet \|\| 0\) <=\s+\(tableState\.lastBetAmounts\?\.\[tableState\.heroSeat - 1\] \|\| 0\);/
     );
     expect(PAGE).toContain('if (lightningFoldBusyRef.current) return;');
   });

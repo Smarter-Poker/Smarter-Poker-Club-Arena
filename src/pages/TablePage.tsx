@@ -369,7 +369,7 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { lightningRoute } from '../lightning/lightningLobby';
+import { isLightningMode, lightningRoute } from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -2418,6 +2418,34 @@ function LiveTablePage({
       isBountyTournament: false,
     };
   });
+  /* Dan 2026-10-24: "THERE SHOULDN'T BE A WAITING LIST WHEN THERE ARE ALWAYS
+     OPEN SEATS. REMOVE THE ABILITY TO EVEN JOIN A WAITING LIST IN A LIGHTNING
+     GAME, PLAYER BUYS IN AND GETS DEALT INTO A NEW TABLE ASAP, NO WAITING."
+     A spectator watching a physical table of a Lightning game is offered the
+     game's own Join Lightning entry (one buy-in into the pool), never this
+     table's chair queue and never a seat at this one table. */
+  const anchorLightningClusterIds = useMemo(
+    () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
+    [tableState.clusterId, lightningRoom]
+  );
+  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
+  const anchorLightningClusterId =
+    tableState.clusterId &&
+    !lightningRoom &&
+    (lightningObserver ||
+      isLightningMode(spectatorLightningStates[tableState.clusterId]?.clusterMode))
+      ? tableState.clusterId
+      : null;
+  /* The chair the Lightning join door assigned, carried on ?seat= by the
+     entry page. 1 when absent: the door answers with its own chair anyway. */
+  const lightningChairFromUrl = (): number => {
+    try {
+      const n = Number(new URLSearchParams(window.location.search).get('seat'));
+      return Number.isSafeInteger(n) && n > 0 ? n : 1;
+    } catch {
+      return 1;
+    }
+  };
   /* CHIP CONTINUITY: tournaments have no stay clock. */
   const heroLeaveLocked = !tableState.isTournament && heroLeaveLockedRaw;
 
@@ -21021,15 +21049,27 @@ function LiveTablePage({
      silently, and replayed the moment the funding read lands (effect below
      the handler). */
   const deferredSeatTapRef = useRef<number | null>(null);
-  const handleSeatClick = (seatNumber: number) => {
+  const handleSeatClick = (seatNumber: number, opts?: { lightningChair?: boolean }) => {
     if (!tableState.arenaAsset) {
       deferredSeatTapRef.current = seatNumber;
       return;
     }
     deferredSeatTapRef.current = null;
+    /* A LIGHTNING CHAIR IS ASSIGNED, NOT PICKED (Dan 2026-10-24: "YOU ARE AUTO
+       ASSIGNED TO A TABLE AND SEAT, YOU DON'T PICK YOUR SEAT"). A running
+       physical table of a Lightning game paints a pool room's hand, so its
+       seats look full whatever is free underneath. The felt is not asked:
+       the join door answers with the chair it holds (seat_number), and the
+       buy-in opens on that chair. */
+    const lightningChair = opts?.lightningChair === true && !!anchorLightningClusterId;
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
-    if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
+    if (
+      !lightningChair &&
+      seatIdx >= 0 &&
+      seatIdx < tableState.players.length &&
+      tableState.players[seatIdx]
+    ) {
       // Seat is occupied — ignore click
       console.debug('[Seat] Seat', seatNumber, 'is occupied - ignoring click');
       return;
@@ -21048,7 +21088,9 @@ function LiveTablePage({
       console.debug('[Seat] Hero already seated at seat', tableState.heroSeat, '- ignoring click');
       return;
     }
-    const existingHeroIdx = tableState.players.findIndex((p) => p && p.id === userId);
+    const existingHeroIdx = lightningChair
+      ? -1
+      : tableState.players.findIndex((p) => p && p.id === userId);
     if (existingHeroIdx >= 0) {
       console.debug(
         '[Seat] Hero found at seat',
@@ -21202,6 +21244,16 @@ function LiveTablePage({
     }
     if (!wantsBuyIn) return;
     if (!tableState.players.length) return; // table not painted yet - wait
+    if (anchorLightningClusterId) {
+      /* Lightning: the join door assigns the chair; never read it off a felt
+         that is painting a pool room's hand. Waits for the funding read so
+         the one automatic tap is not spent on it. */
+      if (!tableState.arenaAsset) return;
+      if (heroSeatRef.current > 0 || tableState.heroSeat > 0) return;
+      autoBuyInFiredRef.current = true;
+      handleSeatClick(lightningChairFromUrl(), { lightningChair: true });
+      return;
+    }
     /* AND ITS FUNDING IS KNOWN (launch audit 2026-10-05). The seat array is
        painted before the table's asset is read, and handleSeatClick answers a
        tap in that gap with "Verifying Table Funding" and returns. This effect
@@ -21238,7 +21290,24 @@ function LiveTablePage({
     openBuyInOnArrival,
     acceptedChair,
     location.pathname,
+    anchorLightningClusterId,
   ]);
+
+  /* JOIN LIGHTNING FROM A LIGHTNING TABLE (Dan 2026-10-24: "YOU ARE AUTO
+     ASSIGNED TO A TABLE AND SEAT, YOU DON'T PICK YOUR SEAT"). With a chair
+     open here, the buy-in sheet opens on it exactly as the ?buyin=1 arrival
+     does; the player only confirms the amount. With none open, the game's own
+     Join Lightning door holds a chair (on a new table when every chair is
+     taken) and brings the player straight back to its buy-in. It never sends a
+     player back to a table where they could only watch. */
+  const openLightningAnchorEntry = () => {
+    if (!anchorLightningClusterId) return;
+    if (tableState.arenaAsset && heroSeatRef.current <= 0 && tableState.heroSeat <= 0) {
+      handleSeatClick(lightningChairFromUrl(), { lightningChair: true });
+      return;
+    }
+    navigate(lightningRoute(anchorLightningClusterId));
+  };
 
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
@@ -24007,24 +24076,6 @@ function LiveTablePage({
     loadWaitlist();
     setShowWaitList(true);
   }, [loadWaitlist, tableState.clusterId]);
-
-  /* Dan 2026-10-24: "THERE SHOULDN'T BE A WAITING LIST WHEN THERE ARE ALWAYS
-     OPEN SEATS. REMOVE THE ABILITY TO EVEN JOIN A WAITING LIST IN A LIGHTNING
-     GAME, PLAYER BUYS IN AND GETS DEALT INTO A NEW TABLE ASAP, NO WAITING."
-     A spectator watching a physical table of a Lightning game is offered the
-     game's own Join Lightning entry (one buy-in into the pool), never this
-     table's chair queue and never a seat at this one table. */
-  const anchorLightningClusterIds = useMemo(
-    () => (tableState.clusterId && !lightningRoom ? [tableState.clusterId] : []),
-    [tableState.clusterId, lightningRoom]
-  );
-  const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds);
-  const anchorLightningClusterId =
-    tableState.clusterId &&
-    !lightningRoom &&
-    (lightningObserver || spectatorLightningStates[tableState.clusterId] != null)
-      ? tableState.clusterId
-      : null;
 
   /**
    * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────
@@ -27518,7 +27569,7 @@ function LiveTablePage({
             ) : !tableState.isTournament && anchorLightningClusterId ? (
               <WaitlistCallToAction
                 lightning
-                onClick={() => navigate(lightningRoute(anchorLightningClusterId))}
+                onClick={openLightningAnchorEntry}
                 waitingCount={0}
                 position={null}
               />
@@ -28266,7 +28317,14 @@ function LiveTablePage({
                   onPreActionChange={(next) => {
                     // Lightning Fold is an immediate request to release this
                     // hand and join the next table, including out of turn.
-                    if (lightningRoom && next === 'fold') {
+                    // CHECK/FOLD NEVER FOLDS A FREE CHECK (2026-10-24): while
+                    // the hero owes nothing the button is Check/Fold, and it
+                    // arms the ordinary auto check/fold; if that ends in a
+                    // fold the host releases the player at once anyway.
+                    const heroOwesNothing =
+                      (tableState.currentBet || 0) <=
+                      (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
+                    if (lightningRoom && next === 'fold' && !heroOwesNothing) {
                       void handleLightningFold('fast_fold');
                       return;
                     }
@@ -28931,7 +28989,8 @@ function LiveTablePage({
                exists. Without it the tab stayed on the physical table while
                every hand dealt to the player timed out on a screen they
                could not see (WooWoo, 2026-10-24). */
-            if (anchorLightningClusterId) setLightningEntryIntent(tableId, anchorLightningClusterId);
+            if (anchorLightningClusterId)
+              setLightningEntryIntent(tableId, anchorLightningClusterId);
             const reviewed =
               cashBuyInRecovery?.payload.p_user_id.toLowerCase() === userId.toLowerCase() &&
               cashBuyInRecovery.payload.p_table_id.toLowerCase() === tableId.toLowerCase()

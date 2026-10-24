@@ -32,7 +32,7 @@ import {
   readDiamondSpawnAnswer,
 } from './diamondScheduledSpawn.js';
 import { MIDWAY_UNION_ID, overlayHostsFrom } from './HorseOverlayGuard.js';
-import { gameLaneFor } from './HorseBehavior.js';
+import { gameLaneFor, isActiveNow } from './HorseBehavior.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
 import { withMysteryBountyTerms } from '../tournament/mysteryBountyTerms.js';
@@ -448,82 +448,86 @@ describe('horses register into Diamond Arena events like players', () => {
 });
 
 describe('the Diamond bankroll gate reads Diamonds', () => {
-  /** Two event-lane horse ids, found rather than hard-coded, so the lane hash cannot drift the test. */
-  const eventLaneIds = (prefix: string, n: number): string[] => {
+  /** Bankroll fixtures must be awake at the controlled hour, independent of wall time. */
+  const eventLaneIds = (prefix: string, n: number, hourUTC: number): string[] => {
     const out: string[] = [];
     for (let i = 0; out.length < n && i < 10_000; i++) {
       const id = `${prefix}-${i}`;
-      if (gameLaneFor(id) !== 'cash') out.push(id);
+      if (gameLaneFor(id) !== 'cash' && isActiveNow(id, hourUTC)) out.push(id);
     }
     return out;
   };
 
-  it('a horse whose Diamonds cannot carry the entry is not registered; one that can is', async () => {
-    const [rich, broke] = eventLaneIds('dss-horse', 2);
-    const tables: string[] = [];
-    const memberWalletReads: unknown[] = [];
-    const target = {
-      club_id: ARENA,
-      union_id: null,
-      buy_in_amount: 9,
-      buy_in_fee: 1,
-    };
-    vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
-      tables.push(table);
-      const b: Record<string, any> = {};
-      for (const m of ['select', 'eq', 'in', 'is', 'gt', 'order', 'limit', 'range'])
-        b[m] = (...args: unknown[]) => {
-          if (table === 'club_members' && m === 'select') memberWalletReads.push(args[0]);
-          return b;
-        };
-      const answer = () => {
-        if (table === 'tournaments') return { data: target, error: null };
-        if (table === 'clubs') return { data: arenaClub, error: null };
-        if (table === 'profiles')
-          return {
-            data: [
-              {
-                id: rich,
-                display_name: rich,
-                username: rich,
-                use_real_name: false,
-                diamonds: 100_000,
-              },
-              {
-                id: broke,
-                display_name: broke,
-                username: broke,
-                use_real_name: false,
-                diamonds: 5,
-              },
-            ],
-            error: null,
-          };
-        return { data: [], error: null };
+  it.each([0, 6, 12, 18])(
+    'at %i UTC, a horse whose Diamonds cannot carry the entry is not registered; one that can is',
+    async (hourUTC) => {
+      vi.spyOn(Date.prototype, 'getUTCHours').mockReturnValue(hourUTC);
+      const [rich, broke] = eventLaneIds('dss-horse', 2, hourUTC);
+      const tables: string[] = [];
+      const memberWalletReads: unknown[] = [];
+      const target = {
+        club_id: ARENA,
+        union_id: null,
+        buy_in_amount: 9,
+        buy_in_fee: 1,
       };
-      b.maybeSingle = async () => answer();
-      b.then = (resolve: (v: unknown) => unknown) => Promise.resolve(answer()).then(resolve);
-      return b as never;
-    }) as never);
-    const rpc = vi.fn(async (name: string, _args?: unknown) =>
-      name === 'fn_horse_tournament_entry_ticket_hints'
-        ? { data: { ok: true, holder_ids: [] }, error: null }
-        : { data: { ok: true, registration_id: 'r' }, error: null }
-    );
-    vi.spyOn(supabase, 'rpc').mockImplementation(rpc as never);
+      vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
+        tables.push(table);
+        const b: Record<string, any> = {};
+        for (const m of ['select', 'eq', 'in', 'is', 'gt', 'order', 'limit', 'range'])
+          b[m] = (...args: unknown[]) => {
+            if (table === 'club_members' && m === 'select') memberWalletReads.push(args[0]);
+            return b;
+          };
+        const answer = () => {
+          if (table === 'tournaments') return { data: target, error: null };
+          if (table === 'clubs') return { data: arenaClub, error: null };
+          if (table === 'profiles')
+            return {
+              data: [
+                {
+                  id: rich,
+                  display_name: rich,
+                  username: rich,
+                  use_real_name: false,
+                  diamonds: 100_000,
+                },
+                {
+                  id: broke,
+                  display_name: broke,
+                  username: broke,
+                  use_real_name: false,
+                  diamonds: 5,
+                },
+              ],
+              error: null,
+            };
+          return { data: [], error: null };
+        };
+        b.maybeSingle = async () => answer();
+        b.then = (resolve: (v: unknown) => unknown) => Promise.resolve(answer()).then(resolve);
+        return b as never;
+      }) as never);
+      const rpc = vi.fn(async (name: string, _args?: unknown) =>
+        name === 'fn_horse_tournament_entry_ticket_hints'
+          ? { data: { ok: true, holder_ids: [] }, error: null }
+          : { data: { ok: true, registration_id: 'r' }, error: null }
+      );
+      vi.spyOn(supabase, 'rpc').mockImplementation(rpc as never);
 
-    const svc = new TournamentRecurringService() as any;
-    vi.spyOn(svc, 'horseLoadMap').mockResolvedValue(new Map());
-    vi.spyOn(svc, 'clubMemberIdsForTournament').mockResolvedValue(new Set([rich, broke]));
-    await svc.registerHorses(TID, 2);
+      const svc = new TournamentRecurringService() as any;
+      vi.spyOn(svc, 'horseLoadMap').mockResolvedValue(new Map());
+      vi.spyOn(svc, 'clubMemberIdsForTournament').mockResolvedValue(new Set([rich, broke]));
+      await svc.registerHorses(TID, 2);
 
-    const entered = rpc.mock.calls
-      .filter(([name]) => name === 'fn_register_horse_for_tournament')
-      .map(([, args]) => (args as unknown as { p_user_id: string }).p_user_id);
-    expect(entered).toEqual([rich]);
-    // The arena has no chip wallet for a Deep Stack horse; it was never consulted.
-    expect(memberWalletReads).toEqual([]);
-  });
+      const entered = rpc.mock.calls
+        .filter(([name]) => name === 'fn_register_horse_for_tournament')
+        .map(([, args]) => (args as unknown as { p_user_id: string }).p_user_id);
+      expect(entered).toEqual([rich]);
+      // The arena has no chip wallet for a Deep Stack horse; it was never consulted.
+      expect(memberWalletReads).toEqual([]);
+    }
+  );
 });
 
 describe('the overlay guard covers the arena while its tournaments are on', () => {

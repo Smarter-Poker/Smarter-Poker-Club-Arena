@@ -37,3 +37,11 @@ Live baseline read-only health: status ok, serving version d936ef6c, daily 04:00
 ## Final review correction
 
 The assigned permission review found a realistic stale-chair seam: tournament elimination can leave a seat row temporarily present. Changed the helper cash-seat branch to require a cash table; tournament entitlement comes only from the current playing tournament_players association. Added a stale live-tournament seat fixture. The prior committed candidate fails this new native regression with the expected denial assertion; corrected actual migration passes the native suite and final source contracts (9 tests). Engine source is unchanged from the compiled/tested candidate. This supersedes the first PR head and requires new exact-head hosted checks.
+
+## Required CI blocker recovery
+
+Current head 856bb13059d53d62dc3a644e80bac04a7d8160a9 passed normal local pre-push. Exact-head CI run 40053321669 began; superseded run 40053082112 was cancelled, then force-cancelled because ordinary cancellation left always() matrix jobs active. Confirmed completed/cancelled with zero unfinished jobs; no other task's run touched.
+
+Required server shard 1/4 job 120751197773 failed in unchanged theDiamondArenaRunsTheMidwaySchedule.test.ts:523: rich fixture expected registration but selected horse was asleep at real 02:00 UTC. Its production source/fixture is unchanged on current main. Reproduced locally (14 passed, 1 failed). Finite supporting repair is TEST ONLY: choose awake event-lane fixture IDs at a controlled UTC hour, test 0/6/12/18, preserve rich-enters/broke-refused/no-chip-wallet assertions, restore clock spies through existing afterEach. No gameplay, horse funding, roster or admission source changed. Full failed-job log saved with task evidence. This directly resolves the demonstrated required-check blocker rather than retrying unchanged failure.
+
+The same CI head's repository-check job 120750622052 also found the new RPC missing from the additive schema declaration. Added task-owned schema-manifest.d/agent-downline-watch.json, explicitly marked queued/not installed, backed by the actual daily-window migration. The shared LIVE base snapshot is untouched. Local phantom-reference check now passes. This is an assigned new-RPC declaration correction; no allowlist or gate weakening.

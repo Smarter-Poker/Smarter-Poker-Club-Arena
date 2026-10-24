@@ -18,6 +18,60 @@ const PG =
   (process.platform === 'darwin'
     ? '/opt/homebrew/opt/postgresql@17/bin'
     : '/usr/lib/postgresql/17/bin');
+// Retained public metadata shape from hand45902146; no holdings or identities.
+const retainedPublicNode = {
+  pot: 5,
+  ante: 2,
+  mode: 'cash',
+  asset: 'chips',
+  seats: [
+    [1, 293.2, 0, 0, 0, 0, 0],
+    [2, 199, 0, 0, 0, 0, 0],
+    [3, 406.5, 1, 1, 0, 0, 0],
+    [4, 550.5, 2, 4, 2, 0, 0],
+    [5, 418.02, 0, 0, 0, 0, 0],
+    [6, 310.4, 0, 0, 0, 0, 0],
+  ],
+  boards: [''],
+  status: 'captured',
+  street: 'preflop',
+  toCall: 2,
+  bombPot: false,
+  variant: 'plo5',
+  version: 1,
+  anteType: 'big_blind',
+  bigBlind: 2,
+  chipUnit: 0.01,
+  actorSeat: 5,
+  structure: 'pot_limit',
+  boardCount: 1,
+  currentBet: 2,
+  dealerSeat: 2,
+  deductions: {
+    bbj: { feeBB: 0.25, enabled: true, minPotBB: 10, minPlayersDealt: 3 },
+    rake: {
+      cap: 5,
+      percent: 10,
+      noFlopNoDrop: true,
+      playerCountCaps: [
+        [2, 2.5],
+        [3, 5],
+        [4, 5],
+      ],
+    },
+    rules: 'controller-rake-bbj-v1',
+    status: 'captured',
+    version: 1,
+  },
+  maxRaiseTo: 9,
+  minRaiseTo: 4,
+  smallBlind: 1,
+  allInOrFold: false,
+  fixedBetSize: null,
+  legalActions: ['fold', 'call', 'raise', 'all_in'],
+  wagersCapped: false,
+  tournamentStage: { status: 'not_applicable', version: 1 },
+};
 const uid = '10000000-0000-4000-8000-000000000001';
 const other = '10000000-0000-4000-8000-000000000002';
 const directory = mkdtempSync(join(tmpdir(), 'horse-opponent-memory-'));
@@ -25,6 +79,7 @@ let client: Client;
 let port: number;
 let started = false;
 let repairTransaction: string;
+let boundedTransaction: string;
 const hand = (
   id: string,
   action = 'raise',
@@ -135,6 +190,11 @@ beforeAll(async () => {
       userId,
       stage,
       action: stage === 'preflop' ? 'raise' : 'bet',
+      publicNode: {
+        ...retainedPublicNode,
+        actorSeat: capacityIds.indexOf(userId) + 1,
+        street: stage,
+      },
     }))
   );
   await client.query(
@@ -196,6 +256,12 @@ beforeAll(async () => {
   await client.query(indexPreamble);
   repairTransaction = 'BEGIN;\n' + replacement;
   await client.query(repairTransaction);
+  const bounded = readdirSync(path).find((f) =>
+    f.endsWith('_horse_opponent_bounded_original_request_reads.sql')
+  );
+  if (!bounded) throw new Error('bounded original-request opponent migration missing');
+  boundedTransaction = readFileSync(join(path, bounded), 'utf8');
+  await client.query(boundedTransaction);
 }, 30000);
 
 afterAll(async () => {
@@ -286,7 +352,7 @@ describe('durable opponent memory with real PostgreSQL', () => {
     }
   });
 
-  it('recovers a full ten-player legacy horizon inside the decision read budget', async () => {
+  it('advances exactly one rich-publicNode full legacy actor per bounded original request', async () => {
     const ids = Array.from(
       { length: 10 },
       (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -322,41 +388,165 @@ describe('durable opponent memory with real PostgreSQL', () => {
     process.stdout.write('OPPONENT_MEMORY_LEGACY_INDEX ' + index.definition + '\n');
     expect(index.indisvalid && index.indisready).toBe(true);
     expect(index.definition).toContain('WHERE (NOT horse_exploit_recorded)');
+    const payload = (
+      await client.query(
+        `select jsonb_array_length(actions) AS actions,octet_length(actions::text) AS decoded_bytes,pg_column_size(actions) AS stored_bytes from hand_history where id='a0000000-0000-4000-8000-000000000001'`
+      )
+    ).rows[0];
+    process.stdout.write('OPPONENT_MEMORY_RICH_PAYLOAD ' + JSON.stringify(payload) + '\n');
     await client.query("set statement_timeout='1500ms'");
     try {
-      const started = performance.now();
+      const elapsedMs: number[] = [];
+      let rows: any[] = [];
+      for (let request = 1; request <= 10; request++) {
+        const started = performance.now();
+        rows = (
+          await client.query(
+            "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
+            [ids]
+          )
+        ).rows;
+        elapsedMs.push(performance.now() - started);
+        expect(rows.filter((p) => p.initialized)).toHaveLength(request);
+        expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
+      }
+      const expected = freshExploitCounters();
+      const increment = exploitHandIncrements(
+        ids.flatMap((userId) =>
+          ['preflop', 'flop', 'turn', 'river'].map((stage) => ({
+            userId,
+            stage,
+            action: stage === 'preflop' ? 'raise' : 'bet',
+          }))
+        )
+      ).get(ids[0])!;
+      for (let n = 0; n < 1024; n++) decayAndAdd(expected, increment);
+      for (const field of Object.keys(expected) as (keyof typeof expected)[])
+        expect(rows[0].counters[field]).toBeCloseTo(expected[field], 8);
+      process.stdout.write(
+        'OPPONENT_MEMORY_BOUNDED_COLD_READ ' +
+          JSON.stringify({ players: rows.length, horizon: 1024, requests: 10, elapsedMs }) +
+          '\n'
+      );
+    } finally {
+      await client.query('reset statement_timeout');
+    }
+  });
+
+  it('never queues cold work behind another process and preserves partial accepted learning', async () => {
+    const holder = new Client({
+      host: '127.0.0.1',
+      port,
+      database: 'postgres',
+      user: process.env.USER ?? 'postgres',
+    });
+    await holder.connect();
+    const cold = '93000000-0000-4000-8000-000000000001';
+    const known = '90000000-0000-4000-8000-000000000000';
+    await client.query(
+      `insert into hand_history(id,game_variant,players,actions,horse_exploit_dealt_count)
+      values($1,'plo5',$2,$3,6)`,
+      [
+        cold,
+        JSON.stringify([{ userId: cold }]),
+        JSON.stringify([
+          { userId: cold, stage: 'preflop', action: 'raise', publicNode: retainedPublicNode },
+        ]),
+      ]
+    );
+    try {
+      await holder.query('begin');
+      await holder.query(
+        "select pg_advisory_xact_lock(hashtextextended('horse-opponent-legacy-initialization-v1',0))"
+      );
+      await client.query("set statement_timeout='100ms'");
+      const heldStarted = performance.now();
       const rows = (
         await client.query(
           "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
-          [ids]
+          [[cold, known]]
         )
       ).rows;
-      console.info(
-        'OPPONENT_MEMORY_COLD_READ',
-        JSON.stringify({
-          players: rows.length,
-          horizon: 1024,
-          elapsedMs: performance.now() - started,
-        })
+      process.stdout.write(
+        'OPPONENT_MEMORY_LOCK_BUSY ' +
+          JSON.stringify({ elapsedMs: performance.now() - heldStarted }) +
+          '\n'
       );
-      expect(rows).toHaveLength(10);
-      expect(rows.every((p) => p.initialized && p.legacy_hands === 1024)).toBe(true);
+      expect(rows).toHaveLength(2);
+      expect(
+        (
+          await client.query(
+            "select * from fn_horse_exploit_profiles_read($1,'plo4','cash','full')",
+            [[cold]]
+          )
+        ).rows
+      ).toEqual([]);
+      expect(rows.find((p) => p.user_id === known).initialized).toBe(true);
+      expect(rows.find((p) => p.user_id === cold)).toMatchObject({
+        initialized: false,
+        legacy_hands: 0,
+        observed_hands: '1',
+      });
+      await client.query('reset statement_timeout');
+      await holder.query('commit');
+      const rowsAfter = (
+        await client.query(
+          "select * from fn_horse_exploit_profiles_read($1,'plo5','cash','full')",
+          [[cold, known]]
+        )
+      ).rows;
+      expect(rowsAfter.find((p) => p.user_id === cold)).toMatchObject({
+        initialized: true,
+        legacy_hands: 0,
+        observed_hands: '1',
+      });
+      expect(rowsAfter.find((p) => p.user_id === cold).counters.hands).toBe(1);
     } finally {
       await client.query('reset statement_timeout');
+      await holder.query('rollback');
+      await holder.end();
     }
   });
 
   it('actor-targeted legacy parsing matches every public-action actor', async () => {
     const actions: unknown[] = [
       ...publicActions.hands.map((h) => h.actions),
+      [{ userId: uid, action: 'check', stage: 'flop', publicNode: retainedPublicNode }],
+      [],
+      [[]],
+      [[{ userId: uid, action: 'check', stage: 'flop' }]],
+      [null],
+      [3],
+      ['malformed'],
       [
         null,
+        [],
+        true,
         3,
         'malformed',
         { userId: uid, action: 'check', stage: 'flop' },
         { userId: other, action: 'raise', stage: 'turn', isFullRaise: true },
       ],
     ];
+    const original = readdirSync(join(process.cwd(), '../supabase/migrations')).find((f) =>
+      f.endsWith('_durable_variant_scoped_horse_opponent_memory.sql')
+    )!;
+    const source = readFileSync(join(process.cwd(), '../supabase/migrations', original), 'utf8');
+    const actor = source
+      .slice(
+        source.indexOf('CREATE FUNCTION public.fn_horse_exploit_actor_increments'),
+        source.indexOf('CREATE FUNCTION public.fn_horse_exploit_increments')
+      )
+      .replace('public.fn_horse_exploit_actor_increments', 'pg_temp.original_actor_increments');
+    await client.query(actor);
+    expect(
+      (
+        await client.query(
+          `select bool_and(fn_horse_exploit_actor_increments(x,$2)=pg_temp.original_actor_increments(x,$2)) matched from jsonb_array_elements($1)x`,
+          [JSON.stringify(actions), uid]
+        )
+      ).rows[0].matched
+    ).toBe(true);
     const result = await client.query(
       `with hands as (select x from jsonb_array_elements($1) x),
       counted as (select x,fn_horse_exploit_increments(x) counts from hands)
@@ -481,7 +671,10 @@ describe('durable opponent memory with real PostgreSQL', () => {
     }
   });
 
-  it('refuses a valid but wrong same-name index before changing the reader', async () => {
+  it('refuses a wrong predecessor index without changing the bounded reader or restoring revoked access', async () => {
+    await client.query(
+      'revoke execute on function fn_horse_exploit_profiles_read(text[],text,text,text) from service_role'
+    );
     const before = (
       await client.query(`select pg_get_functiondef(
       'fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure) AS body`)
@@ -489,13 +682,23 @@ describe('durable opponent memory with real PostgreSQL', () => {
     await client.query(`alter index idx_hand_history_horse_legacy_context rename to horse_qualified_index;
       create index idx_hand_history_horse_legacy_context on hand_history(id)`);
     try {
-      await expect(client.query(repairTransaction)).rejects.toThrow(
+      await expect(client.query(boundedTransaction)).rejects.toThrow(
         /index missing, invalid or definition differs/
       );
+      await client.query('rollback');
+      expect(
+        (
+          await client.query(
+            "select has_function_privilege('service_role','fn_horse_exploit_profiles_read(text[],text,text,text)','EXECUTE') allowed"
+          )
+        ).rows[0].allowed
+      ).toBe(false);
     } finally {
       await client.query('rollback');
       await client.query(`drop index idx_hand_history_horse_legacy_context;
         alter index horse_qualified_index rename to idx_hand_history_horse_legacy_context`);
+      // Later tests must retain the bounded reader, never the installed old reader.
+      await client.query(boundedTransaction);
     }
     expect(
       (

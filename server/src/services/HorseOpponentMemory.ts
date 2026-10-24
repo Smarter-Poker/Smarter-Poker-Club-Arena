@@ -44,43 +44,118 @@ export function createOpponentMemorySchemaProbe(now = Date.now) {
 }
 export const horseOpponentMemorySchema = createOpponentMemorySchemaProbe();
 
+/** Process-wide admission, shared by decision and completed-hand readers. No
+ * queued work survives a turn or launches later without an original request. */
+export function createOpponentMemoryReadAdmission(now = () => Date.now()) {
+  let active = 0;
+  let retryAt = 0;
+  return async <T>(read: () => Promise<T>): Promise<T> => {
+    if (active >= 8 || now() < retryAt) throw new Error('opponent memory unavailable: busy');
+    active++;
+    try {
+      return await read();
+    } catch (error) {
+      // A canceled HTTP request is not proof that PostgreSQL stopped. Keep new
+      // requests out for one HTTP request budget; the DB also owns its lock.
+      retryAt = now() + 1500;
+      throw error;
+    } finally {
+      active--;
+    }
+  };
+}
+const admitOpponentMemoryRead = createOpponentMemoryReadAdmission();
+
+/** Bounded last-validated snapshots survive transient load, never cross a
+ * game context, and never let an older in-flight receipt regress knowledge. */
+export function createOpponentMemoryProfileCache() {
+  const profiles = new Map<string, DurableOpponentProfile>();
+  const key = (id: string, variant: string, mode: MemoryMode, size: MemorySize) =>
+    JSON.stringify([variant, mode, size, id]);
+  return {
+    remember(rows: DurableOpponentProfile[]) {
+      for (const row of rows) {
+        if (!validOpponentProfile(row) || !row.initialized) continue;
+        const k = key(row.user_id, row.variant, row.mode, row.size);
+        const previous = profiles.get(k);
+        if (previous && previous.observed_hands > row.observed_hands) continue;
+        profiles.delete(k);
+        profiles.set(k, structuredClone(row));
+      }
+      while (profiles.size > 20_000) profiles.delete(profiles.keys().next().value!);
+    },
+    read(ids: string[], variant: string, mode: MemoryMode, size: MemorySize) {
+      return ids.flatMap((id) => {
+        const row = profiles.get(key(id, variant, mode, size));
+        return row ? [structuredClone(row)] : [];
+      });
+    },
+  };
+}
+const validatedOpponentProfiles = createOpponentMemoryProfileCache();
+
 /** One bounded read in the original hand/decision path. The database owns
  * persistence and duplicate protection; there is no flush timer or repair job. */
 export async function readHorseOpponentProfiles(
   userIds: string[],
   variant: string,
   mode: MemoryMode,
-  size: MemorySize
+  size: MemorySize,
+  signal?: AbortSignal
 ): Promise<DurableOpponentProfile[]> {
   const v = memoryVariant(variant);
   if (!v) return [];
   const ids = [...new Set(userIds)].sort();
   if (ids.length < 1 || ids.length > 10) throw new Error('invalid opponent memory roster');
-  const { data, error } = await supabase
-    .rpc('fn_horse_exploit_profiles_read', {
-      p_user_ids: ids,
-      p_variant: v,
-      p_mode: mode,
-      p_size: size,
-    })
-    .abortSignal(AbortSignal.timeout(1500));
-  if (error) throw new Error(`opponent memory unavailable: ${error.code ?? 'query'}`);
-  if (
-    !Array.isArray(data) ||
-    data.length !== ids.length ||
-    data.some(
-      (p) =>
-        !validOpponentProfile(p) ||
-        !p.initialized ||
-        p.variant !== v ||
-        p.mode !== mode ||
-        p.size !== size ||
-        !ids.includes(p.user_id)
-    ) ||
-    new Set(data.map((p) => p.user_id)).size !== ids.length
-  )
-    throw new Error('opponent memory receipt incomplete');
-  return data as DurableOpponentProfile[];
+  signal?.throwIfAborted();
+  return admitOpponentMemoryRead(async () => {
+    const { data, error } = await supabase
+      .rpc('fn_horse_exploit_profiles_read', {
+        p_user_ids: ids,
+        p_variant: v,
+        p_mode: mode,
+        p_size: size,
+      })
+      .abortSignal(
+        signal ? AbortSignal.any([signal, AbortSignal.timeout(1500)]) : AbortSignal.timeout(1500)
+      );
+    if (error) throw new Error(`opponent memory unavailable: ${error.code ?? 'query'}`);
+    if (
+      !Array.isArray(data) ||
+      data.length > ids.length ||
+      data.some(
+        (p) =>
+          !validOpponentProfile(p) ||
+          p.variant !== v ||
+          p.mode !== mode ||
+          p.size !== size ||
+          !ids.includes(p.user_id)
+      ) ||
+      new Set(data.map((p) => p.user_id)).size !== data.length
+    )
+      throw new Error('opponent memory receipt incomplete');
+    // Cold actors remain explicitly uninitialized until their own complete
+    // legacy horizon commits. Preserve every already initialized actor.
+    validatedOpponentProfiles.remember(data as DurableOpponentProfile[]);
+    return validatedOpponentProfiles.read(ids, v, mode, size);
+  }).catch((error) => {
+    const known = validatedOpponentProfiles.read(ids, v, mode, size);
+    if (!known.length) throw error;
+    reportError(error, 'HorseOpponentMemory.decisionRead');
+    return known;
+  });
+}
+
+/** Stop waiting at the caller deadline, including a shared schema/hand read.
+ * The underlying HTTP request also receives its abort signal when owned here. */
+function awaitOpponentMemory<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return pending;
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
 }
 
 /** Fetch once per table hand, before enqueueing compute. Database latency on
@@ -89,9 +164,12 @@ export async function readHorseOpponentProfiles(
 export function createDecisionOpponentProfileReader(schema = horseOpponentMemorySchema) {
   const pending = new Map<string, Promise<DurableOpponentProfile[]>>();
   return async (
-    request: import('../engine/horseDecision/protocol.js').LiveHorseDecisionSnapshot
+    request: import('../engine/horseDecision/protocol.js').LiveHorseDecisionSnapshot,
+    signal?: AbortSignal
   ): Promise<DurableOpponentProfile[] | undefined> => {
-    if ((await schema()) !== 'installed') return undefined;
+    signal?.throwIfAborted();
+    if ((await awaitOpponentMemory(schema(), signal)) !== 'installed') return undefined;
+    signal?.throwIfAborted();
     const gs = request.gameState,
       variant = memoryVariant(gs.gameVariant);
     if (!variant) return [];
@@ -102,14 +180,27 @@ export function createDecisionOpponentProfileReader(schema = horseOpponentMemory
     // ServerTableEngineTurns constructs fence as table:hand:seat:lease:turn.
     const key = JSON.stringify([request.fence.split(':').slice(0, 2), variant, mode, size, ids]);
     const existing = pending.get(key);
-    if (existing) return existing;
-    const read = readHorseOpponentProfiles(ids, variant, mode, size).catch((error) => {
-      pending.delete(key);
+    const latestKnown = (profiles: DurableOpponentProfile[]) => {
+      const merged = new Map(profiles.map((profile) => [profile.user_id, profile]));
+      for (const profile of validatedOpponentProfiles.read(ids, variant, mode, size)) {
+        const previous = merged.get(profile.user_id);
+        if (!previous || profile.observed_hands >= previous.observed_hands)
+          merged.set(profile.user_id, profile);
+      }
+      return ids.flatMap((id) => {
+        const profile = merged.get(id);
+        return profile ? [profile] : [];
+      });
+    };
+    if (existing) return awaitOpponentMemory(existing, signal).then(latestKnown);
+    const read = readHorseOpponentProfiles(ids, variant, mode, size, signal).catch((error) => {
+      // A failed hand is retained too: later streets must not repeatedly
+      // launch the same cold initializer. A new hand may try after admission.
       reportError(error, 'HorseOpponentMemory.decisionRead');
-      return [];
+      return validatedOpponentProfiles.read(ids, variant, mode, size);
     });
     pending.set(key, read);
     while (pending.size > 2000) pending.delete(pending.keys().next().value!);
-    return read;
+    return awaitOpponentMemory(read, signal).then(latestKnown);
   };
 }

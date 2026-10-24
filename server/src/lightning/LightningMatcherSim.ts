@@ -89,7 +89,8 @@ export const LIGHTNING_SIM_DEFAULTS: Readonly<LightningSimOptions> = Object.free
   onThreshold: 27,
   offThreshold: 18,
   passIntervalMs: 1_000,
-  firstEntryRule: 'any_seat',
+  // The live rule (20261024195059). 'any_seat' is an offline what-if only.
+  firstEntryRule: 'big_blind',
   positionFairness: true,
   candidateThinWeight: null,
   candidateDiversityScale: 1,
@@ -308,7 +309,7 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
           bbUnresolved: false,
           debtSinceMs: p.enteredAtMs,
           handsSinceBb: p.handsSinceBb,
-          newcomer: !p.seenInHand,
+          newcomer: p.lastBbAtMs === null,
           positions: { ...p.positions },
         });
       }

@@ -31,10 +31,12 @@ const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   reportError: vi.fn(),
+  watchedClubs: [] as string[],
 }));
 
 vi.mock('../../src/lightning/lightningOperatorEvents', () => ({
   watchLightningOperator: (_club: string, _cluster: string, onChange: () => void) => {
+    state.watchedClubs.push(_club);
     state.changed = onChange;
     return () => {
       if (state.changed === onChange) state.changed = null;
@@ -136,6 +138,7 @@ const SOURCES = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.watchedClubs = [];
 });
 
 afterEach(() => {
@@ -147,6 +150,7 @@ describe('the operator doors are parsed from the shapes the database produces', 
     const union = 'fade0000-0000-0000-0000-000000000001';
     doors({
       fn_club_union_context: ok([{ own_union_id: null, member_union_id: union }]),
+      fn_lightning_operator_cluster: ok(clusterAnswer()),
       fn_lightning_operator_overview: (args) => ({
         data: args.p_club_id === union ? overviewAnswer() : { ...overviewAnswer(), clusters: [] },
         error: null,
@@ -157,6 +161,9 @@ describe('the operator doors are parsed from the shapes the database produces', 
       expect(state.rpc).toHaveBeenCalledWith('fn_lightning_operator_overview', { p_club_id: union })
     );
     expect(screen.getByTestId('where').textContent).toContain(`/clubs/${CLUB_ID}/lightning`);
+    fireEvent.click((await screen.findAllByText('Open Cluster'))[0]);
+    await screen.findByText('Stack Reconcile');
+    expect(state.watchedClubs.at(-1)).toBe(union);
   });
   it('does not read an assumed owner when union scope cannot be verified', async () => {
     doors({ fn_club_union_context: () => ({ data: null, error: { message: 'Unavailable' } }) });

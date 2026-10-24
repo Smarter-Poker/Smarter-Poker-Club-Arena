@@ -104,6 +104,8 @@ type Door = (args: Record<string, any>) => { data: unknown; error: unknown } | P
 
 function doors(map: Record<string, Door>) {
   state.rpc.mockImplementation(async (fn: string, args: Record<string, unknown>) => {
+    if (fn === 'fn_club_union_context')
+      return { data: [{ own_union_id: null, member_union_id: null }], error: null };
     const door = map[fn];
     if (!door) return { data: null, error: { ...MISSING_FUNCTION_ERROR } };
     return door(args);

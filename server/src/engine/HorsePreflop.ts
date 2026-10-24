@@ -123,6 +123,14 @@ export interface PreflopCtx {
     bbFlatBar: number | null;
     noBluffThreeBet: boolean;
   };
+  /**
+   * 2026-10-24 V53 PRESSURE (HorseOpponentExploit.aggressiveOpenerPressure):
+   * the single raiser is a credibly WIDE opener. Heads-up against them the
+   * value 3-bet widens to these bars - in position the most - and the
+   * rundown/broadway "take a flop" flats give way to the 3-bet. Undefined =
+   * unchanged (the neutrality contract).
+   */
+  exploitPressure?: { ipThreeBetBar: number; oopThreeBetBar: number };
   /** 2026-10-16: the last re-raiser's read (preflopVsReRaiser), facing a
    *  3-bet or more. Undefined = unchanged. */
   exploitReRaiser?: { fourBetBar: number; callBar: number };
@@ -1221,6 +1229,18 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       if (flat !== null) callThresh = Math.min(callThresh, tCall(flat));
     }
     const noBluff3 = vsOpener?.noBluffThreeBet === true;
+    // 2026-10-24 V53 PRESSURE: heads-up against a credibly wide opener, the
+    // top of the flatting range 3-bets instead (measured: horses that 3-bet
+    // WooWoo won 61 of 101 such pots, horses that flatted won 176 of 420).
+    // Hero is in position unless hero is a blind facing a non-blind opener.
+    const pressure = callers === 0 ? ctx.exploitPressure : undefined;
+    const pressureIp = position !== 'sb' && (position !== 'bb' || vs === 'sb');
+    if (pressure) {
+      threeBetThresh = Math.min(
+        threeBetThresh,
+        t(pressureIp ? pressure.ipThreeBetBar : pressure.oopThreeBetBar)
+      );
+    }
     threeBetThresh = phase6CapBar(threeBetThresh);
     callThresh = phase6CapBar(callThresh);
     const bbDiscount = position === 'bb' ? 0.06 : 0;
@@ -1247,13 +1267,19 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // multiway flop, and widening or narrowing their 3-bet threshold does
       // the opposite of what the hand wants either way. The price still has
       // to be a flatting price - past that the bars decide as before.
-      if (!premiumValue && ctx.classNeverThreeBet === true && toCall <= ctx.stack * 0.12) {
+      if (
+        !premiumValue &&
+        !pressure &&
+        ctx.classNeverThreeBet === true &&
+        toCall <= ctx.stack * 0.12
+      ) {
         return { a: 'call' };
       }
       if (
         ctx.isOmaha &&
         ctx.omahaAA === false &&
         !premiumValue &&
+        !pressure &&
         strength < threeBetThresh + 0.05 &&
         toCall <= ctx.stack * 0.08
       ) {

@@ -39,8 +39,11 @@ NEW PLAYERS."
 - `LightningHandHost.settle`: calls it the moment settlement commits, before
   the post-commit drain and before anyone is released, so the next hand any of
   these players is matched into already includes this one. Not awaited.
-- `LightningHandHost` PLAYER_ACTION: carries `isFullRaise` exactly as
-  `ServerTableEngineHandEvents` does.
+- `LightningHandHost` PLAYER_ACTION: carries `isFullRaise` and the
+  controller's public action node (pot, current bet, every seat's street bet)
+  exactly as `ServerTableEngineHandEvents` does, so `HorseMind.bandFor` and
+  `initialPublicMoney` rebuild a Lightning player's range from the exact price
+  they faced instead of the approximate replay.
 - `HorseOpponentMemory.blendOpponentMemory` / `opponentMemoryDonors`: when the
   exact bucket has fewer than 12 effective hands, the other multiway bucket of
   the same variant and mode is added at weight 0.6 (rates kept, evidence

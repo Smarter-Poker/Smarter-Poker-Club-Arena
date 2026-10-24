@@ -1176,6 +1176,13 @@ export class LightningHandHost {
           amount: event.amount,
           timestamp: event.record?.timestamp ?? now,
           stage,
+          // THE PRICE OF EVERY ACTION (2026-10-24): the controller's public
+          // action node (pot, current bet, every seat's street bet), carried as
+          // the physical engine carries it. HorseMind.bandFor and
+          // initialPublicMoney rebuild a player's range from the exact price
+          // they faced; without the node a Lightning hand fell back to the
+          // approximate replay.
+          ...(event.publicNode ? { publicNode: event.publicNode } : {}),
           ...(event.origin ? { origin: event.origin } : {}),
           // A SHOVE IS AGGRESSION (2026-10-24). The physical engine carries the
           // controller's full-raise flag into the accepted action (V12.3,

@@ -148,3 +148,20 @@ describe('LAW: a Lightning shove is aggression', () => {
     expect(observed[0]!.isFullRaise).toBe(true);
   });
 });
+
+describe('LAW: a Lightning action carries the price it was taken at', () => {
+  it('every voluntary action carries the controller public action node, as at a table', async () => {
+    const t = await playHand(8600);
+    const actions = (t.host as any).actions as Array<Record<string, any>>;
+    const voluntary = actions.filter((a) => a.origin !== 'forced' && a.action !== 'return');
+    expect(voluntary.length).toBeGreaterThan(0);
+    for (const a of voluntary) {
+      expect(a.publicNode).toBeTruthy();
+      expect(a.publicNode.status).toBe('captured');
+      expect(a.publicNode.street).toBe(a.stage);
+      expect(a.publicNode.actorSeat).toBe(a.seat);
+    }
+    const observed = t.horseLane.observed[0]!.actions!.filter((a) => a.publicNode);
+    expect(observed.length).toBe(voluntary.length);
+  });
+});

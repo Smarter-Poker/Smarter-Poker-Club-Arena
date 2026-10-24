@@ -647,6 +647,13 @@ if [ "$kind" = image ]; then
   esac
   exit 0
 fi
+# A run-owned prepared candidate exists beside the healthy desired engine.
+# It has the engine labels, but no process and no restart policy. Recovery
+# must address only the canonical serving name, never promote this object.
+if [ "$kind" = container ] && [ "$ref" = club-arena-engine-prepared-42-1 ]; then
+  printf '%s\\n' '{"Image":"sha256:${'b'.repeat(64)}","State":{"Status":"created","Running":false,"StartedAt":"0001-01-01T00:00:00Z"},"HostConfig":{"RestartPolicy":{"Name":"no"}},"Config":{"Labels":{"sp.role":"engine","autoheal":"true"}}}'
+  exit 0
+fi
 [ "$kind" = container ] && [ "$ref" = sp-autoheal ] && [ "$format" = '{{.State.Status}}' ] \
   && { printf 'running\\n'; exit 0; }
 [ "$kind" = container ] && [ "$ref" = club-arena-engine ] || exit 1
@@ -1776,7 +1783,13 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(authorize).toBeGreaterThan(0);
     expect(immutable).toBeGreaterThan(authorize);
     expect(run).toBeGreaterThan(immutable);
-    expect(runBlock).toContain('"$AUTHORIZED_IMAGE_ID"');
+    expect(runBlock).toContain('"${RUN_SPEC[@]}"');
+    const canonicalSpec = engineUp.slice(
+      engineUp.indexOf('RUN_SPEC=('),
+      engineUp.indexOf('\n)\n', engineUp.indexOf('RUN_SPEC=('))
+    );
+    expect(canonicalSpec).toContain('"$AUTHORIZED_IMAGE_ID"');
+    expect(canonicalSpec).not.toMatch(/^\s*"\$IMAGE"\s*$/m);
     expect(runBlock).not.toMatch(/^\s*"\$IMAGE"\s*$/m);
   });
 
@@ -1792,7 +1805,13 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(classBranch).toContain('desired) RESTART_POLICY=always');
     expect(classBranch).toContain('pending)');
     expect(classBranch).toContain('RESTART_POLICY=no');
-    expect(run).toContain('--restart "$RESTART_POLICY"');
+    expect(run).toContain('"${RUN_SPEC[@]}"');
+    const canonicalSpec = engineUp.slice(
+      engineUp.indexOf('RUN_SPEC=('),
+      engineUp.indexOf('\n)\n', engineUp.indexOf('RUN_SPEC=('))
+    );
+    expect(canonicalSpec).toContain('--restart "$RESTART_POLICY"');
+    expect(canonicalSpec).not.toContain('--restart always');
     expect(run).not.toContain('--restart always');
 
     const prove = transaction.indexOf('"$DATABASE_PROOF" --env-file');

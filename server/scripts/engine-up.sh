@@ -171,6 +171,31 @@ if [ ! -x "$RELEASE_SEAL" ]; then
   log "FATAL: release authority is missing or not executable: $RELEASE_SEAL"
   exit 1
 fi
+# Preparation may create Docker metadata, but cannot execute engine bytes or
+# consume release authority. Only the original transaction supplies a run key.
+STAGED_RUN="${ENGINE_UP_STAGED_RUN:-}"
+PREPARE_STOPPED="${ENGINE_UP_PREPARE_STOPPED:-0}"
+REMOVE_STOPPED="${ENGINE_UP_REMOVE_STOPPED:-0}"
+if [ -n "$STAGED_RUN" ]; then
+  [[ "$STAGED_RUN" =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || exit 1
+fi
+if [ "$PREPARE_STOPPED" = 1 ] || [ "$REMOVE_STOPPED" = 1 ]; then
+  [ -n "$STAGED_RUN" ] || exit 1
+  [ -z "${ENGINE_RELEASE_TOKEN_FD:-}${ENGINE_RELEASE_TOKEN:-}" ] || exit 1
+  # Inspect immutable image properties; this is not an authorization to run.
+  IDENTITY="$(docker image inspect "$IMAGE" | python3 -c '
+import json,sys,re
+x=json.load(sys.stdin)[0]; c=x.get("Config",{}); labels=c.get("Labels") or {}
+s=labels.get("org.opencontainers.image.revision","")
+e=[v.split("=",1)[1] for v in c.get("Env",[]) if v.startswith("GIT_COMMIT_SHA=")]
+assert re.fullmatch("[0-9a-f]{40}",s) and e==[s]
+assert re.fullmatch("sha256:[0-9a-f]{64}",x["Id"])
+print("pending",s,x["Id"])
+')" || exit 1
+  read -r _ PREPARED_SHA _ <<< "$IDENTITY"
+  [ "$PREPARED_SHA" = "${ENGINE_UP_PREPARED_SHA:-}" ] || exit 1
+  AUTHORIZATION="$IDENTITY"
+else
 AUTH_ARGS=(authorize --image "$IMAGE")
 TOKEN_VALUE=''
 [ -z "${ENGINE_RELEASE_TOKEN:-}" ] \
@@ -189,6 +214,7 @@ else
   AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")"
 fi \
   || { log "FATAL: release seal rejected image $IMAGE — refusing to touch the running engine"; exit 1; }
+fi
 read -r AUTHORIZED_CLASS AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
 case "$AUTHORIZED_CLASS" in
   desired) RESTART_POLICY=always ;;
@@ -285,6 +311,70 @@ finally:
     signal.alarm(0)
 HORSE_JOURNAL_PREFLIGHT
 
+RUN_SPEC=(
+  --restart "$RESTART_POLICY"
+  --health-interval="$HEALTH_INTERVAL"
+  --health-timeout="$HEALTH_TIMEOUT"
+  --health-start-period="$HEALTH_START_PERIOD"
+  --health-retries="$HEALTH_RETRIES"
+  --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\""
+  --label autoheal=true
+  --label sp.role=engine
+  --label "sp.release.sha=$AUTHORIZED_SHA"
+  --log-driver json-file
+  --log-opt max-size=50m
+  --log-opt max-file=5
+  -p "${PORT}:8080"
+  --env-file "$ENV_FILE"
+  --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR"
+  --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR"
+  --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR"
+  --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR"
+  "$AUTHORIZED_IMAGE_ID"
+)
+
+# Bind stopped preparation to every canonical argument, private configuration
+# bytes, image and this script. Hashes never emit environment values.
+STAGED_CONTAINER="${CONTAINER}-prepared-${STAGED_RUN}"
+SPEC_HASH="$( { printf '%s\0' "${RUN_SPEC[@]}"; sha256sum "$ENV_FILE" "$0"; } | sha256sum | cut -d' ' -f1)"
+verify_stopped_candidate() {
+  docker container inspect "$STAGED_CONTAINER" | python3 -c '
+import json,sys
+x=json.load(sys.stdin)[0]; image,sha,run,spec=sys.argv[1:]
+s=x["State"]; labels=x["Config"].get("Labels") or {}
+assert x["Image"]==image and labels.get("sp.release.sha")==sha
+assert labels.get("sp.release.prepared-run")==run and labels.get("sp.release.prepared-spec")==spec
+assert s["Status"]=="created" and not s["Running"] and not s.get("Restarting",False)
+assert s["StartedAt"] in ("0001-01-01T00:00:00Z","0001-01-01T00:00:00.000000000Z")
+assert x["HostConfig"]["RestartPolicy"]["Name"]=="no"
+' "$AUTHORIZED_IMAGE_ID" "$AUTHORIZED_SHA" "$STAGED_RUN" "$SPEC_HASH"
+}
+if [ "$REMOVE_STOPPED" = 1 ]; then
+  # Never force-remove a running candidate or another run's object. A renamed
+  # candidate belongs to ordinary sealed recovery, not preparation cleanup.
+  if docker container inspect "$STAGED_CONTAINER" >/dev/null 2>&1; then
+    verify_stopped_candidate || exit 1
+    docker rm "$STAGED_CONTAINER" >/dev/null
+  fi
+  exit 0
+fi
+if [ "$PREPARE_STOPPED" = 1 ]; then
+  if ! docker container inspect "$STAGED_CONTAINER" >/dev/null 2>&1; then
+    phase create-start
+    docker create --name "$STAGED_CONTAINER" \
+      --label "sp.release.prepared-run=$STAGED_RUN" \
+      --label "sp.release.prepared-spec=$SPEC_HASH" "${RUN_SPEC[@]}" >/dev/null
+    phase create-returned
+  fi
+  verify_stopped_candidate || exit 1
+  log "prepared never-started candidate for run $STAGED_RUN ($AUTHORIZED_SHA)"
+  exit 0
+fi
+if [ -n "$STAGED_RUN" ]; then
+  [ "$AUTHORIZED_CLASS" = pending ] || { log 'FATAL: stopped candidate requires original pending authorization'; exit 1; }
+  verify_stopped_candidate || { log 'FATAL: prepared candidate identity/configuration/state changed'; exit 1; }
+fi
+
 log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
@@ -353,27 +443,18 @@ fi
 # host supervisor must start the container identically, and this is the one
 # place both of them read.
 phase launch-start
-STARTED_CONTAINER_ID="$(docker run -d \
-  --name "$CONTAINER" \
-  --restart "$RESTART_POLICY" \
-  --health-interval="$HEALTH_INTERVAL" \
-  --health-timeout="$HEALTH_TIMEOUT" \
-  --health-start-period="$HEALTH_START_PERIOD" \
-  --health-retries="$HEALTH_RETRIES" \
-  --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\"" \
-  --label autoheal=true \
-  --label sp.role=engine \
-  --label "sp.release.sha=$AUTHORIZED_SHA" \
-  --log-driver json-file \
-  --log-opt max-size=50m \
-  --log-opt max-file=5 \
-  -p "${PORT}:8080" \
-  --env-file "$ENV_FILE" \
-  --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
-  --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
-  --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
-  --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
-  "$AUTHORIZED_IMAGE_ID")"
+if [ -n "$STAGED_RUN" ]; then
+  # The original token was consumed above; the serving engine has now drained
+  # and exited under the same lock. Docker refuses a still-occupied name.
+  docker rename "$STAGED_CONTAINER" "$CONTAINER"
+  phase start-start
+  STARTED_CONTAINER_ID="$(docker inspect -f '{{.Id}}' "$CONTAINER")"
+  docker start "$CONTAINER" >/dev/null
+  phase start-returned
+else
+  # Sealed desired recovery retains its original authority and canonical spec.
+  STARTED_CONTAINER_ID="$(docker run -d --name "$CONTAINER" "${RUN_SPEC[@]}")"
+fi
 phase launch-returned
 printf '%s\n' "$STARTED_CONTAINER_ID"
 

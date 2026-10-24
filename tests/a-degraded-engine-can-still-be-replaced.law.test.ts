@@ -95,7 +95,7 @@ describe('a degraded engine can still be replaced', () => {
     expect(supervisor).toContain('case "$http_code" in\n    200|503)');
     expect(supervisor).not.toMatch(/curl\s+-[^\n]*f/);
 
-    const engineUp = transaction.indexOf('"$ENGINE_UP"');
+    const engineUp = transaction.indexOf('bounded_break_command 75 env');
     const candidateCheck = transaction.indexOf(
       'CANDIDATE_INSTANCE="$(health_instance \'http://127.0.0.1:8080/health\')"',
       engineUp
@@ -225,6 +225,10 @@ printf '%s\\n' database-proof >> '${eventLog}'
       writeFileSync(
         join(generation, 'engine-up.sh'),
         `#!/usr/bin/env bash
+if [ "\${ENGINE_UP_PREPARE_STOPPED:-0}" = 1 ] || [ "\${ENGINE_UP_REMOVE_STOPPED:-0}" = 1 ]; then
+  printf 'stopped-only-%s-%s\\n' "\${ENGINE_UP_PREPARE_STOPPED:-0}" "\${ENGINE_UP_REMOVE_STOPPED:-0}" >> '${eventLog}'
+  exit 0
+fi
 touch '${mutationMarker}'
 printf '%s\\n' MUTATION-engine-up >> '${eventLog}'
 exit 88
@@ -429,7 +433,12 @@ exit 91
       expect(sourceProofs).toHaveLength(4);
       expect(databaseProof).toBeGreaterThan(sourceProofs[1].index);
       expect(databaseProof).toBeLessThan(sourceProofs[2].index);
-      expect(events[events.length - 1]).toBe('seal-prepare');
+      expect(events[events.length - 2]).toBe('seal-prepare');
+      expect(events[events.length - 1]).toBe('stopped-only-0-1');
+      expect(events.indexOf('stopped-only-1-0')).toBeGreaterThan(events.indexOf('builder'));
+      expect(events.indexOf('stopped-only-1-0')).toBeLessThan(
+        events.findIndex((event) => event.startsWith('certificate-503:'))
+      );
       expect(events.some((event) => event.startsWith('MUTATION'))).toBe(false);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });

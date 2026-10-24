@@ -24,6 +24,7 @@ const directory = mkdtempSync(join(tmpdir(), 'horse-opponent-memory-'));
 let client: Client;
 let port: number;
 let started = false;
+let repairTransaction: string;
 const hand = (
   id: string,
   action = 'raise',
@@ -142,12 +143,59 @@ beforeAll(async () => {
     now()-n*interval '1 minute','plo5',null,$1,$2 from generate_series(1,1024)n`,
     [JSON.stringify(capacityIds.map((userId) => ({ userId }))), JSON.stringify(capacityActions)]
   );
+  // The capacity actors also have a newer context-miss run, followed by a
+  // much older eligible tail. Page boundaries cannot discard its earlier
+  // 1024 actual PLO observations or needlessly parse the older tail.
+  await client.query(
+    `insert into hand_history
+    select md5('context-noise-'||n)::uuid,now()-n*interval '1 millisecond','nlh',null::uuid,$1::jsonb,$2::jsonb
+      from generate_series(1,2048)n
+    union all select md5('old-tail-'||n)::uuid,now()-(30000+n)*interval '1 minute','plo5',null::uuid,$1::jsonb,$2::jsonb
+      from generate_series(1,4096)n;`,
+    [JSON.stringify(capacityIds.map((userId) => ({ userId }))), JSON.stringify(capacityActions)]
+  );
+  // Production has millions of unrelated hands; the old tiny fixture hid
+  // the global JSON roster scan. Preserve the actual accepted-player indexes.
+  await client.query(`insert into hand_history
+    select md5('unrelated-'||n)::uuid,now()-n*interval '1 second','nlh',null,
+      '[{"userId":"60000000-0000-4000-8000-000000000001"}]'::jsonb,
+      '[{"userId":"60000000-0000-4000-8000-000000000001","action":"fold","stage":"preflop"}]'::jsonb
+    from generate_series(1,50000)n;
+    create table ca_hand_player_idx(user_id uuid not null,created_at timestamptz not null,
+      hand_id uuid not null,primary key(user_id,hand_id));
+    create index idx_ca_hand_player_idx_user_time on ca_hand_player_idx(user_id,created_at desc);
+    create index idx_ca_hand_player_idx_hand_id on ca_hand_player_idx(hand_id);
+    insert into ca_hand_player_idx select distinct (p->>'userId')::uuid,h.created_at,h.id
+      from hand_history h cross join lateral jsonb_array_elements(h.players)p;
+    create table hand_projection_outbox(hand_id uuid primary key);
+    create table ca_hand_fact_revisions(user_id uuid,hand_id uuid,kind text);
+    create index ca_hand_fact_revisions_user on ca_hand_fact_revisions(user_id);
+    insert into hand_projection_outbox values
+      ('20000000-0000-4000-8000-000000000000'),
+      ('20000000-0000-4000-8000-000000000002'),
+      (md5('unrelated-1')::uuid);
+    insert into ca_hand_fact_revisions values
+      ('${uid}','20000000-0000-4000-8000-000000000001','void');
+    delete from ca_hand_player_idx where user_id='${uid}' and hand_id in
+      ('20000000-0000-4000-8000-000000000000','20000000-0000-4000-8000-000000000001');
+    analyze hand_history; analyze ca_hand_player_idx;`);
   const path = join(process.cwd(), '../supabase/migrations');
   const migration = readdirSync(path).find((f) =>
     f.endsWith('_durable_variant_scoped_horse_opponent_memory.sql')
   );
   if (!migration) throw new Error('durable opponent migration missing');
   await client.query(readFileSync(join(path, migration), 'utf8'));
+  const repair = readdirSync(path).find((f) =>
+    f.endsWith('_horse_opponent_legacy_context_index.sql')
+  );
+  if (!repair) throw new Error('indexed opponent migration missing');
+  const [indexPreamble, replacement] = readFileSync(join(path, repair), 'utf8').split('\nBEGIN;\n');
+  if (!indexPreamble || !replacement) throw new Error('concurrent repair migration shape missing');
+  // Real CONCURRENTLY execution, outside the replacement transaction, matching
+  // the existing production applier rather than stripping its safety property.
+  await client.query(indexPreamble);
+  repairTransaction = 'BEGIN;\n' + replacement;
+  await client.query(repairTransaction);
 }, 30000);
 
 afterAll(async () => {
@@ -243,6 +291,37 @@ describe('durable opponent memory with real PostgreSQL', () => {
       { length: 10 },
       (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
     );
+    const repairSql = readFileSync(
+      join(
+        process.cwd(),
+        '../supabase/migrations/20261024005333_horse_opponent_legacy_context_index.sql'
+      ),
+      'utf8'
+    );
+    const selection = repairSql
+      .slice(
+        repairSql.indexOf('     SELECT id,created_at,actions FROM public.hand_history'),
+        repairSql.indexOf('\n    ), observations AS MATERIALIZED')
+      )
+      .replace(/\buid\b/g, `'${ids[0]}'`)
+      .replace(/\bp_variant\b/g, "'plo5'")
+      .replace(/\bp_mode\b/g, "'cash'")
+      .replace(/\bp_size\b/g, "'full'");
+    const plan = JSON.stringify((await client.query('explain(format json) ' + selection)).rows);
+    expect(plan).toContain('idx_hand_history_horse_legacy_context');
+    expect(
+      JSON.stringify(
+        (await client.query('explain(format json) ' + selection.replaceAll("'plo5'", "'plo4'")))
+          .rows
+      )
+    ).toContain('idx_hand_history_horse_legacy_context');
+    const index = (
+      await client.query(`select indisvalid,indisready,pg_get_indexdef(indexrelid) AS definition
+      from pg_index where indexrelid='idx_hand_history_horse_legacy_context'::regclass`)
+    ).rows[0];
+    process.stdout.write('OPPONENT_MEMORY_LEGACY_INDEX ' + index.definition + '\n');
+    expect(index.indisvalid && index.indisready).toBe(true);
+    expect(index.definition).toContain('WHERE (NOT horse_exploit_recorded)');
     await client.query("set statement_timeout='1500ms'");
     try {
       const started = performance.now();
@@ -286,6 +365,22 @@ describe('durable opponent memory with real PostgreSQL', () => {
       [JSON.stringify(actions)]
     );
     expect(result.rows[0].matched).toBe(true);
+  });
+
+  it('reads canonical history when player index projection is pending or a fact was voided', async () => {
+    const row = await profile();
+    expect(row.legacy_hands).toBe(40);
+    expect(row.initialized).toBe(true);
+    expect(
+      (
+        await client.query(
+          `select count(*)::int AS n from ca_hand_player_idx
+      where user_id=$1 and hand_id in
+      ('20000000-0000-4000-8000-000000000000','20000000-0000-4000-8000-000000000001')`,
+          [uid]
+        )
+      ).rows[0].n
+    ).toBe(0);
   });
 
   it('reconstructs old sessions and survives new connections without forgetting or double counting', async () => {
@@ -384,6 +479,30 @@ describe('durable opponent memory with real PostgreSQL', () => {
     } finally {
       await Promise.all([a.end(), b.end()]);
     }
+  });
+
+  it('refuses a valid but wrong same-name index before changing the reader', async () => {
+    const before = (
+      await client.query(`select pg_get_functiondef(
+      'fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure) AS body`)
+    ).rows[0].body;
+    await client.query(`alter index idx_hand_history_horse_legacy_context rename to horse_qualified_index;
+      create index idx_hand_history_horse_legacy_context on hand_history(id)`);
+    try {
+      await expect(client.query(repairTransaction)).rejects.toThrow(
+        /index missing, invalid or definition differs/
+      );
+    } finally {
+      await client.query('rollback');
+      await client.query(`drop index idx_hand_history_horse_legacy_context;
+        alter index horse_qualified_index rename to idx_hand_history_horse_legacy_context`);
+    }
+    expect(
+      (
+        await client.query(`select pg_get_functiondef(
+      'fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure) AS body`)
+      ).rows[0].body
+    ).toBe(before);
   });
 
   it('restricts durable reads to the engine service identity', async () => {

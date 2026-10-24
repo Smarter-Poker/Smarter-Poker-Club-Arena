@@ -60,11 +60,11 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
   }) => {
     const tablist = await openTradeCashier(page);
     await openTradeRecord(page, tablist);
-    const panel = page.getByRole('tabpanel', { name: 'Trade Record' });
+    const panel = page.getByRole('tabpanel', { name: 'Transaction History' });
     await expect(panel).toBeVisible();
 
     const rows = panel.getByRole('button', { name: /^Open Receipt For/ });
-    const empty = panel.getByText('No Trades Recorded Yet.', { exact: true });
+    const empty = panel.getByText('No Transactions Recorded Yet.', { exact: true });
     const retry = panel.getByRole('button', { name: 'Retry', exact: true });
     await expect
       .poll(async () => (await rows.count()) + (await empty.count()) + (await retry.count()), {
@@ -82,7 +82,9 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
       await page.keyboard.press('Escape');
       await expect(receipt).toBeHidden();
     } else if ((await retry.count()) > 0) {
-      await expect(panel.getByRole('alert')).toContainText('Could not load your trade record.');
+      await expect(panel.getByRole('alert')).toContainText(
+        'Could not load your transaction history.'
+      );
     } else {
       await expect(empty).toBeVisible();
     }

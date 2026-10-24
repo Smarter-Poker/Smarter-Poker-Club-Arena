@@ -6,12 +6,12 @@ export async function openTradeRecord(page: Page, tablist: Locator): Promise<voi
     page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().includes('/rest/v1/rpc/fn_club_trade_ledger'),
+        response.url().includes('/rest/v1/rpc/fn_cashier_transaction_history'),
       { timeout: 30_000 }
     ),
-    tablist.getByRole('tab', { name: 'Trade Record', exact: true }).click(),
+    tablist.getByRole('tab', { name: 'Transaction History', exact: true }).click(),
   ]);
-  await expect(page.getByRole('tabpanel', { name: 'Trade Record' })).toHaveAttribute(
+  await expect(page.getByRole('tabpanel', { name: 'Transaction History' })).toHaveAttribute(
     'aria-busy',
     'false',
     { timeout: 30_000 }

@@ -356,7 +356,7 @@ describe('CashierTradePage club load ordering', () => {
       return builder as never;
     });
     installRpc((name: string) => {
-      if (name === 'fn_club_trade_ledger') {
+      if (name === 'fn_cashier_transaction_history') {
         return Promise.resolve({
           data: [
             {
@@ -389,11 +389,12 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     if (screen.queryByRole('button', { name: /^Advanced/ }))
       fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Transaction History' }));
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
     expect(screen.getAllByText('50')).toHaveLength(2);
-    expect(supabase.rpc).toHaveBeenCalledWith('fn_club_trade_ledger', {
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
       p_club_id: CLUB_ID,
+      p_scope: 'club',
       p_limit: 51,
       p_offset: 0,
     });

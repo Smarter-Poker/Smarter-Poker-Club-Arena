@@ -63,7 +63,7 @@ describe('the Cashier trade ledger uses one server-owned visibility matrix', () 
   });
 
   it('calls the RPC and never re-imposes a self-only browser filter', () => {
-    expect(page).toContain("supabase.rpc('fn_club_trade_ledger'");
+    expect(page).toContain("supabase.rpc('fn_cashier_transaction_history'");
     expect(page).not.toContain(".from('chip_transactions')");
     expect(page).not.toContain('from_user_id.eq.${user.id},to_user_id.eq.${user.id}');
   });

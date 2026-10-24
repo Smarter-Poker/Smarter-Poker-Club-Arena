@@ -293,6 +293,45 @@ describe('a Lightning horse that is already folding folds right away (the host)'
     expect(t.calls.fastFold.find((f) => f.playerId === sb)?.foldType).toBe('normal');
   });
 
+  it("a horse account's own client taking the seat stops an early look's fold", async () => {
+    fake();
+    const formed = formedHand(3, 4350);
+    const controlled = new Set<string>();
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => (release = r));
+    const t2 = buildHost(formed, [100, 100, 100], {
+      horses: new Set(formed.players),
+      deps: {
+        sleep: () => Promise.resolve(),
+        isClientControlling: (p: string) => controlled.has(p),
+      },
+    });
+    hosts.push(t2.host);
+    const brain = t2.horseLane.raw.decideFast.getMockImplementation()!;
+    t2.horseLane.raw.decideFast.mockImplementation(async (snap: any) => {
+      const r = await brain(snap);
+      if (snap.player.user_id === formed.sb) await gate;
+      const action = snap.player.user_id === formed.btn ? 'call' : 'fold';
+      const amount = action === 'call' ? snap.gameState.toCall : undefined;
+      return { ...r, decision: { ...r.decision, action, amount, thinkTime: 4_000 } };
+    });
+    await t2.host.start();
+    await flush();
+    expect(
+      t2.horseLane.calls.filter(
+        (c: any) => c.player.user_id === formed.sb && String(c.fence).endsWith(':early')
+      ).length
+    ).toBe(1);
+    controlled.add(formed.sb);
+    release!();
+    await flush();
+    const sbFolds = ((t2.host as any).actions as Array<{ userId?: string; action: string }>).filter(
+      (a) => a.userId === formed.sb && a.action === 'fold'
+    );
+    expect(sbFolds).toEqual([]);
+    expect(t2.calls.fastFold.find((f) => f.playerId === formed.sb)).toBeUndefined();
+  });
+
   it("the operator's fast-fold switch stops horses as it stops people", async () => {
     fake();
     const t = await scriptedHand(4400, () => 'fold', {

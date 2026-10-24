@@ -1430,6 +1430,8 @@ export class LightningHandHost {
       this.hc === hc &&
       hc.getState().stage === stage &&
       this.turnUser !== userId &&
+      // The account's own client took the seat meanwhile: its person decides.
+      !this.clientControls(userId) &&
       this.horseLooks.get(userId)?.abort === abort;
     void decideLightningHorse(
       {

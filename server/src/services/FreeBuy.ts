@@ -66,7 +66,7 @@ export interface FreeBuyConfig {
 export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
   standard: {
     tier: 'standard',
-    guarantee: 500,
+    guarantee: 250,
     buyIn: 0,
     startingChips: 3000,
     rebuyCost: 1,
@@ -80,7 +80,7 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
   },
   feature: {
     tier: 'feature',
-    guarantee: 1000,
+    guarantee: 500,
     buyIn: 0,
     startingChips: 3000,
     rebuyCost: 1,
@@ -109,9 +109,9 @@ export interface FreeBuySlot {
  *  A DAY $250'S EACH. 8PM IS $500."
  *
  *  2026-10-16 (Dan): the five slots start on the half hour, 8:30 AM to 12:30
- *  AM (FREE_BUY_SLOT_MINUTE), and "DOUBLE ALL THE OTHER CURRENT GUARANTEES,
- *  THEN ROUND THEM ALL UP TO THE NEAREST 1000 OR 500", so the standard tier
- *  guarantees 500 and the 8:30 PM feature 1,000.
+ *  AM (FREE_BUY_SLOT_MINUTE). Owner October 22: morning and midnight are
+ *  250; midday, afternoon and Prime Time are 500 in every room, every day.
+ *  The tier still controls the existing field size, not the slot guarantee.
  *
  *  These are CHICAGO hours, not UTC. The existing recurring board matches on
  *  `getUTCHours()`, which would drift by an hour twice a year and quietly move
@@ -191,9 +191,19 @@ export function slotForChicagoHour(hour: number): FreeBuySlot | null {
   return FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour) ?? null;
 }
 
-/** Guarantee exposure per host per day. 4 x 500 + 1,000 = 3,000. */
+/** Owner October 22: guarantees are authored by slot, shared by both creators.
+ * Keep the existing field sizes and purchase terms when midday/afternoon
+ * use the 500 guarantee; changing a guarantee must not change their capacity. */
+export function freeBuyConfigForSlot(slot: FreeBuySlot): FreeBuyConfig {
+  return {
+    ...FREE_BUY_TIERS[slot.tier],
+    guarantee: slot.chicagoHour === 8 || slot.chicagoHour === 0 ? 250 : 500,
+  };
+}
+
+/** Guarantee exposure per host per day. 2 x 250 + 3 x 500 = 2,000. */
 export function dailyGuaranteePerHost(): number {
-  return FREE_BUY_SLOTS.reduce((sum, s) => sum + FREE_BUY_TIERS[s.tier].guarantee, 0);
+  return FREE_BUY_SLOTS.reduce((sum, s) => sum + freeBuyConfigForSlot(s).guarantee, 0);
 }
 
 /** A Free Buy's prize pool is fed by rebuys and add-ons, so the house only
@@ -247,26 +257,34 @@ export function rebuysOpen(nowMs: number, startMs: number, cfg: FreeBuyConfig): 
 /* Horse behaviour                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Dan: "HORSES ALWAYS ADD ON, 35% RIGHT AWAY, 100% OF THE HORSES STILL IN
- *  WHEN REBUYS ARE OVER." One add-on each; the split is only about WHEN. */
+/** Owner update 2026-10-22: 90% of surviving funded horses take an add-on.
+ * Keep the existing early timing split inside that stable participation cohort. */
 export const HORSE_ADDON_IMMEDIATE_RATE = 0.35;
+export const HORSE_ADDON_PARTICIPATION_RATE = 0.9;
+
+export function horseTakesAddOn(horseId: string, eventId: string): boolean {
+  return (
+    shHash(horseId, eventId, 'addon-participation') % 1000 < HORSE_ADDON_PARTICIPATION_RATE * 1000
+  );
+}
 
 export function horseAddsOnImmediately(horseId: string, eventId: string): boolean {
   return shHash(horseId, eventId, 'addon-immediate') % 1000 < HORSE_ADDON_IMMEDIATE_RATE * 1000;
 }
 
-export type AddOnTiming = 'immediate' | 'at_break' | 'busted_before_break';
+export type AddOnTiming = 'immediate' | 'at_break' | 'busted_before_break' | 'declined';
 
 /**
  * When this horse takes its add-on. Every horse still alive when the rebuy
- * period closes takes one, so the only horses that never add on are the ones
- * already out - and a horse that is out has nothing to add on to.
+ * period closes belongs to the 90% participation policy. Busted entries
+ * cannot buy chips, and the canonical purchase RPC still owns funding checks.
  */
 export function horseAddOnTiming(
   horseId: string,
   eventId: string,
   aliveAtBreak: boolean
 ): AddOnTiming {
+  if (!horseTakesAddOn(horseId, eventId)) return 'declined';
   if (horseAddsOnImmediately(horseId, eventId)) return 'immediate';
   return aliveAtBreak ? 'at_break' : 'busted_before_break';
 }
@@ -648,7 +666,7 @@ export function freeBuyTournamentRow(opts: {
   tableSize: number;
   lateRegLevels: number;
 }): Record<string, unknown> {
-  const cfg = FREE_BUY_TIERS[opts.due.slot.tier];
+  const cfg = freeBuyConfigForSlot(opts.due.slot);
   return {
     club_id: opts.host.clubId,
     union_id: opts.host.unionId,
@@ -785,7 +803,7 @@ export function auditFreeBuyRow(
     Number(row.guaranteed_prize) === FREE_BUY_PREVIOUS_GUARANTEES[slot.tier];
   let cfg = publishedAtPreviousGuarantee
     ? { ...FREE_BUY_TIERS[slot.tier], guarantee: FREE_BUY_PREVIOUS_GUARANTEES[slot.tier] }
-    : FREE_BUY_TIERS[slot.tier];
+    : freeBuyConfigForSlot(slot);
   // The owner standardized Midway's structures and reduced three guarantees
   // on October 20. Already-registered events retain their original contract.
   let revisedMidway = false;

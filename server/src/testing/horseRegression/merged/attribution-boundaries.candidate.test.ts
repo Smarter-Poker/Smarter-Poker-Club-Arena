@@ -130,8 +130,10 @@ describe('prepared actual client and retained-reader attribution boundaries', ()
       await stopping;
     } else {
       await expect(pending).rejects.toThrow('invalid policy receipt');
-      expect(client.status().phase).toBe('failed');
-      await client.stop();
+      expect(client.status().phase).toBe('ready');
+      const stopping = client.stop();
+      worker.emit('message', { type: 'STOPPED' });
+      await stopping;
     }
   });
   it.each([

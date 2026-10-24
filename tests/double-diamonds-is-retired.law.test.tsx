@@ -130,11 +130,13 @@ describe('Double Diamonds is retired', () => {
   });
 
   it('the server refuses a new doubled start, after the replay of an older one', () => {
-    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).sort();
+    // Find the newest declaration directly. Reading every historical migration
+    // for each function exceeded the case budget under shared SSD contention.
+    const migrations = readdirSync(join(ROOT, 'supabase/migrations')).sort().reverse();
     const latest = (fn: string) =>
-      migrations
-        .filter((file) => read(`supabase/migrations/${file}`).includes(`FUNCTION public.${fn}(`))
-        .at(-1);
+      migrations.find((file) =>
+        read(`supabase/migrations/${file}`).includes(`FUNCTION public.${fn}(`)
+      );
     for (const fn of ['fn_wheel_bonus_start', 'fn_diamond_bonus_start']) {
       const file = latest(fn);
       expect(file, fn).toBeDefined();

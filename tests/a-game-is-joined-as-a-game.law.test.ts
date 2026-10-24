@@ -82,6 +82,8 @@ describe('a game is joined as a game', () => {
     );
     expect(panel).toMatch(/label: game \? 'Join Game' : 'Join Table'/);
     expect(panel).toMatch(/label: game \? 'Return To Game' : 'Return To Table'/);
-    expect(panel).toMatch(/secondaryLabel: entry\.game \? 'View Game' : 'View Table'/);
+    expect(panel).toMatch(
+      /secondaryLabel: isCash \? \(entry\.game \? 'View Game' : 'View Table'\)/
+    );
   });
 });

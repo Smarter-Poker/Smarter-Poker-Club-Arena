@@ -1,11 +1,12 @@
 {
-  "_owner": "feat/mystery-bounty-chests-only-pick-one-of-three. Migrations 20261022162651, 20261022162714, 20261022162733, 20261022170421, 20261022170611, 20261022173156, 20261022180857: chests-only mystery terms, no bounty before the money, pick 1 of 3 offers.",
+  "_owner": "feat/mystery-bounty-chests-only-pick-one-of-three. Migrations 20261022162651, 20261022162714, 20261022162733, 20261022170421, 20261022170611, 20261022173156, 20261022180857, 20261022223610, 20261023012108: chests-only mystery terms, no bounty before the money, pick 1 of 3 offers.",
   "tables": ["tournament_bounty_award_offers"],
   "functions": [
     "fn_ca_mystery_mtt_terms",
     "fn_ca_offer_mystery_award_companions",
     "fn_mystery_bounty_pick",
-    "fn_mystery_bounty_offer"
+    "fn_mystery_bounty_offer",
+    "fn_ca_refresh_mystery_award_companions"
   ],
   "columns": {}
 }

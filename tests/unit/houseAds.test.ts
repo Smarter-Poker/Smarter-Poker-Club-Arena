@@ -51,13 +51,14 @@ describe('an advert is a picture now (Dan 2026-09-03)', () => {
     expect(LOBBY).not.toMatch(/LobbyAdStrip/);
   });
 
-  it('BOTH surfaces mount the rotator - the mount, not just the file', () => {
-    /* The house bug shape, and this time it actually happened: #1759 rebuilt
-       the lobby top and dropped the strip's mount. The component, its CSS, its
-       placements and 85 pins on its internals all survived, so nothing went
-       red, and the busiest ad surface served nobody for five days. */
-    expect(LOBBY).toMatch(/import HouseAdRotator from '\.\.\/components\/ads\/HouseAdRotator'/);
-    expect(LOBBY).toMatch(/<HouseAdRotator[\s\n]+slot="lobby_strip"/);
+  it('removes middle lobby ads while keeping the empty-state and session placements', () => {
+    // Owner October 22: remove the Spins and BBJ promotions between controls
+    // and the games. Actual games and jackpot information keep their doors.
+    expect(LOBBY).not.toMatch(/<HouseAdRotator[\s\n]+slot="lobby_strip"/);
+    expect(LOBBY).toMatch(/<HouseAdRotator[\s\n]+slot="empty_state"/);
+    expect(LOBBY).toContain('<BBJInfoModal');
+    expect(LOBBY).toContain('<ClubBBJShell');
+    expect(LOBBY).toContain('!isAutomaticArena && club.banner_url');
     expect(SESSION).toMatch(/import HouseAdRotator from '\.\.\/ads\/HouseAdRotator'/);
     expect(SESSION).toMatch(/<HouseAdRotator[\s\n]+slot="session_summary"/);
   });
@@ -603,8 +604,8 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
       LOBBY_PAGE.indexOf('Nothing On This Tab Right Now')
     );
     expect(emptyBlock).toMatch(/<HouseAdRotator[\s\n]+slot="empty_state"/);
-    // Exactly two rotators on the page: the strip and the empty state.
-    expect(LOBBY_PAGE.match(/<HouseAdRotator/g)?.length).toBe(2);
+    // Only the empty-state rotator remains after the owner removed the middle strip.
+    expect(LOBBY_PAGE.match(/<HouseAdRotator/g)?.length).toBe(1);
   });
 
   it('the rotator logs the click before it navigates', () => {
@@ -1383,7 +1384,7 @@ describe('platform ads cannot be controlled by clubs or unions', () => {
       /show_smarter_poker_ads|rotating_banners|saveClubAdVisibility|ClubAdVisibilityControl/
     );
     expect(ROTATOR).not.toMatch(/visible\??:\s*boolean|if\s*\(!visible\)/);
-    expect(page).toMatch(/<HouseAdRotator\s+slot="lobby_strip"/);
+    expect(page).not.toMatch(/<HouseAdRotator\s+slot="lobby_strip"/);
     expect(editor.replace(/\s+/g, ' ')).toContain(
       'Smarter.Poker Ads Are Managed By The Platform And Cannot Be Changed Or Turned Off By Clubs Or Unions.'
     );

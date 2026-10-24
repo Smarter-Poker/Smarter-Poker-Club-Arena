@@ -1,3 +1,4 @@
+import { createDecisionOpponentProfileReader } from '../../services/HorseOpponentMemory.js';
 import {
   horsePlanBatchBindingIsValid,
   horsePlanBatchBindingMatchesRequest,
@@ -94,6 +95,7 @@ export interface HorseDecisionJobOptions {
 
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
+  opponentProfiles?: ReturnType<typeof createDecisionOpponentProfileReader>;
   /** This client's position among its decision-lane peers (LiveHorseDecisionWorkerPool
    * passes it); reaches the spawned worker so its journal writer opens its own
    * archive instead of sharing one with every other shard. Absent is shard 0,
@@ -502,6 +504,7 @@ export class LiveHorseDecisionWorkerClient {
   private static readonly DEFAULT_MAX_IN_FLIGHT = 32;
   private static readonly STATUS_INTERVAL_MS = 1_000;
   private readonly worker: WorkerLike;
+  private readonly opponentProfiles?: ReturnType<typeof createDecisionOpponentProfileReader>;
   private readonly onFatal?: (error: Error) => void;
   private readonly jobTimeoutMs: number;
   private readonly observationDeadlineMs: number;
@@ -573,6 +576,9 @@ export class LiveHorseDecisionWorkerClient {
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
+    this.opponentProfiles =
+      options.opponentProfiles ??
+      (options.workerFactory ? undefined : createDecisionOpponentProfileReader());
     // A lane start (re)admits the main scheduler's copy of the committed
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
@@ -710,18 +716,41 @@ export class LiveHorseDecisionWorkerClient {
     signal?: AbortSignal,
     options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
-    const request: FastHorseDecisionRequest = {
-      ...snapshot,
-      type: 'DECIDE_FAST',
-      requestId: this.nextRequestId++,
+    const captured = this.opponentProfiles ? structuredClone(snapshot) : snapshot;
+    const startedAt = Date.now();
+    const callerBudget =
+      typeof options?.deadlineMs === 'number' &&
+      Number.isFinite(options.deadlineMs) &&
+      options.deadlineMs > 0
+        ? options.deadlineMs
+        : this.jobTimeoutMs;
+    const memorySignal =
+      callerBudget && Number.isFinite(callerBudget) && callerBudget > 0
+        ? signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(Math.ceil(callerBudget))])
+          : AbortSignal.timeout(Math.ceil(callerBudget))
+        : signal;
+    const enqueue = (profiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[]) => {
+      const request: FastHorseDecisionRequest = {
+        ...captured,
+        ...(profiles !== undefined ? { durableOpponentProfiles: profiles } : {}),
+        type: 'DECIDE_FAST',
+        requestId: this.nextRequestId++,
+      };
+      return this.enqueue<FastHorseDecisionResult>(
+        request,
+        'FAST_RESULT',
+        signal,
+        false,
+        Math.max(1, callerBudget - (Date.now() - startedAt))
+      );
     };
-    return this.enqueue<FastHorseDecisionResult>(
-      request,
-      'FAST_RESULT',
-      signal,
-      false,
-      options?.deadlineMs
-    );
+    return this.opponentProfiles
+      ? this.opponentProfiles(captured, memorySignal).then((profiles) => {
+          memorySignal?.throwIfAborted();
+          return enqueue(profiles);
+        })
+      : enqueue();
   }
 
   decideDeep(
@@ -1223,6 +1252,63 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   /** The head's terminal answer arrived: retire it and start its successor's clock. */
+  /**
+   * ONE REFUSED DECISION NEVER TAKES DOWN THE ENGINE (2026-10-22).
+   *
+   * Every engine crash on record - 18 on 2026-10-18 (reference_shape) and 13
+   * on 2026-10-22 (route_gate), across every archived log since 2026-10-07 -
+   * was this client refusing ONE decision's receipt and escalating it through
+   * fail() to onFatal, which drains and restarts the whole process: every
+   * table, every live hand, for one horse's one turn. The worker that
+   * answered is alive and its FIFO and lifecycle fence are intact (those
+   * transport checks still run, and stay fatal, above); only the content of
+   * this answer is refused.
+   *
+   * So a refused decision is isolated exactly as a recoverable request error
+   * already is: the job is retired and rejected to its own caller, whose
+   * existing liveness fallback checks or folds that seat
+   * (ServerTableEngineTurns, horse_decision_worker_failed is reported there),
+   * and the queue keeps dispatching. A plan the worker issued for the refused
+   * decision is retired with its own binding when that binding is valid, so
+   * no staged effect outlives the decision. Nothing refused is ever applied.
+   */
+  private refuseDecision(
+    active: QueuedJob,
+    message: HorseDecisionWorkerResponse,
+    error: Error
+  ): void {
+    this.retireHead(active);
+    this.lastCompletedAt = Date.now();
+    this.recoverableRequestErrors += 1;
+    this.lastRecoverableRequestErrorAt = this.lastCompletedAt;
+    this.lastRecoverableRequestErrorType = active.request.type;
+    this.lastRecoverableRequestError = error.message;
+    noteFire('horse_decision_refused_isolated');
+    if (
+      message.type === 'FAST_RESULT' &&
+      active.request.type === 'DECIDE_FAST' &&
+      message.planIssueDisposition === 'issued' &&
+      horsePlanBatchBindingMatchesRequest(message.planBinding, active.request)
+    ) {
+      void this.enqueue<HorseDecisionWorkerAck>(
+        {
+          type: 'RETIRE_DECISION_EFFECTS',
+          requestId: this.nextRequestId++,
+          generation: message.planBinding.generation,
+          fence: message.planBinding.fence,
+          planBinding: structuredClone(message.planBinding),
+          reason: 'decision_finalized',
+        },
+        'ACK'
+      ).catch(() => noteFire('phase15_plan_retirement_unconfirmed'));
+    }
+    if (!active.settled) {
+      active.settled = true;
+      active.reject(error);
+    }
+    this.maybeDispatch();
+  }
+
   private retireHead(job: QueuedJob): void {
     if (this.inFlight[0] === job) this.inFlight.shift();
     this.clearActiveDeadline();
@@ -1456,7 +1542,11 @@ export class LiveHorseDecisionWorkerClient {
         (message.effects.length > 0 &&
           (!message.decision || !horseReferenceWagerWasRetained(message.decision))))
     ) {
-      this.fail(new Error('horse decision worker returned invalid decision effects'));
+      this.refuseDecision(
+        active,
+        message,
+        new Error('horse decision worker returned invalid decision effects')
+      );
       return;
     }
 
@@ -1465,7 +1555,11 @@ export class LiveHorseDecisionWorkerClient {
       active.request.type === 'DECIDE_DEEP' &&
       !horsePlanContextMatchesRequest(message.planContext, active.request)
     ) {
-      this.fail(new Error('horse decision worker returned invalid plan context'));
+      this.refuseDecision(
+        active,
+        message,
+        new Error('horse decision worker returned invalid plan context')
+      );
       return;
     }
 
@@ -1480,7 +1574,11 @@ export class LiveHorseDecisionWorkerClient {
         (message.decision.policyFallback !== undefined &&
           message.decision.policyFallback !== 'brain_exception')
       ) {
-        this.fail(new Error('horse decision worker returned invalid fallback provenance'));
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse decision worker returned invalid fallback provenance')
+        );
         return;
       }
       // P10 audit F8: a shadow-only PLO4 receipt (shadow mode, not applied,
@@ -1564,7 +1662,11 @@ export class LiveHorseDecisionWorkerClient {
         noteFire('phase13_shadow_receipt_binding_dropped');
       }
       if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
-        this.fail(new Error('horse decision worker returned invalid policy receipt'));
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse decision worker returned invalid policy receipt')
+        );
         return;
       }
       // A Phase 6 receipt whose declared coordinate disagrees with the
@@ -1572,7 +1674,9 @@ export class LiveHorseDecisionWorkerClient {
       // silently accepted or silently dropped.
       const phase6Mismatch = horsePhase6AttributionMismatch(message.decision, active.request);
       if (phase6Mismatch !== null) {
-        this.fail(
+        this.refuseDecision(
+          active,
+          message,
           new Error(`horse decision worker returned invalid policy receipt: ${phase6Mismatch}`)
         );
         return;
@@ -1581,7 +1685,9 @@ export class LiveHorseDecisionWorkerClient {
       // the same way, before the execution witness commits to its evidence.
       const phase7Mismatch = horsePhase7EvidenceMismatch(message.decision, active.request);
       if (phase7Mismatch !== null) {
-        this.fail(
+        this.refuseDecision(
+          active,
+          message,
           new Error(`horse decision worker returned invalid policy receipt: ${phase7Mismatch}`)
         );
         return;

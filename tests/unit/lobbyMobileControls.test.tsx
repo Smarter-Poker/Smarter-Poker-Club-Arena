@@ -56,89 +56,17 @@ const LOBBY_CARD = read('src/components/lobby/game-cards/ArenaLobbyGameCard.tsx'
    ITEM 3 — THE MOBILE SORT BAR
    ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('the mobile sort bar', () => {
-  it('is built from the same columns and the same click handler as the desktop headings', () => {
-    /*
-     * The point of the design, and why there is no second sort implementation
-     * to drift: same keys, same asc/desc flip, same per-club per-tab memory.
-     * If these stop matching, a phone and a desktop can order the same board
-     * differently.
-     */
-    expect(TABLE).toMatch(/const sortableColumns = columns\s*\.filter\(\(col\) => col\.sortable\)/);
-    /* Dan 2026-09-03: the Variant heading is the game selector and opens a
-       menu instead; every other chip still goes straight to the one handler. */
-    expect(TABLE).toMatch(/lobby-sortbar__chip[\s\S]{0,1800}handleHeaderClick\(col\);/);
+describe('compact mobile browsing', () => {
+  it('uses shared column sorting and no duplicate toolbar', () => {
+    expect(TABLE).toContain('className="compact-lobby"');
+    expect(TABLE).toContain('handleHeaderClick(col)');
+    expect(TABLE).not.toContain('className="lobby-sortbar"');
+    expect(TABLE).not.toContain('<ArenaLobbyGameCard');
   });
-
-  it('renders BEFORE the card list, never between it and the desktop table', () => {
-    /*
-     * LobbyTable.css hides the dense desktop table on a phone with the
-     * ADJACENT-SIBLING selector `.arena-lobby-card-list + .lobby-table-wrap`.
-     * Anything inserted between those two breaks the adjacency and puts the
-     * table back on every phone - a full-width regression no snapshot of the
-     * sort bar itself would catch.
-     */
-    const bar = TABLE.indexOf('className="lobby-sortbar"');
-    const cards = TABLE.indexOf('className="arena-lobby-card-list"');
-    const table = TABLE.indexOf('className="lobby-table-wrap"');
-    expect(bar).toBeGreaterThan(-1);
-    expect(bar).toBeLessThan(cards);
-    expect(cards).toBeLessThan(table);
-    expect(TABLE_CSS).toContain('.arena-lobby-card-list + .lobby-table-wrap');
-  });
-
-  it('is hidden above 900px, where the heading row already does this job', () => {
-    expect(TABLE_CSS).toMatch(/\.lobby-sortbar\s*\{\s*display:\s*none;\s*\}/);
-    expect(TABLE_CSS).toMatch(
-      /@media \(max-width: 900px\)[\s\S]*?\.lobby-sortbar\s*\{[^}]*display:\s*flex/
-    );
-  });
-
-  it('declares BOTH overflow axes on its scroller', () => {
-    /*
-     * `overflow-x` alone computes `overflow-y` to `auto`, making the element
-     * an accidental scroll container - the declaration
-     * footer-stays-on-the-footer.law.test.ts exists to ban, because on iOS it
-     * is how the fixed bottom nav comes unstuck from the bottom of the screen.
-     */
-    const chips = TABLE_CSS.match(/\.lobby-sortbar__chips\s*\{[^}]*\}/s)?.[0] || '';
-    expect(chips).toContain('overflow-x: auto');
-    expect(chips).toContain('overflow-y: hidden');
-  });
-
-  it('gives its toolbar role the roving tabindex that role promises', () => {
-    /*
-     * A toolbar is a composite widget: one tab stop, arrows moving inside it.
-     * The role shipped without that, which told a screen reader the arrows
-     * worked and then ignored them, and left six tab stops in the middle of
-     * the lobby for a keyboard user to walk past on the way to the games.
-     */
-    expect(TABLE).toContain('role="toolbar"');
-    expect(TABLE).toContain('onKeyDown={handleSortbarKeyDown}');
-    expect(TABLE).toMatch(
-      /tabIndex=\{index === Math\.min\(sortFocus, sortableColumns\.length - 1\)/
-    );
-    for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End']) {
-      expect(TABLE).toContain(`case '${key}'`);
-    }
-  });
-
-  it('announces the sort on the one surface where the other live region is hidden', () => {
-    // `.lobby-table-wrap` is display:none on a phone and a hidden element
-    // announces nothing, so without this, sorting was silent on mobile.
-    expect(TABLE).toMatch(/lobby-sortbar[\s\S]{0,1400}role="status"/);
-  });
-});
-
-describe('mobile live-table selector metadata', () => {
-  it('keeps table identity and live occupancy on the wrapper that is visible on a phone', () => {
-    expect(LOBBY_CARD).toContain('data-testid="arena-lobby-game-card"');
-    expect(LOBBY_CARD).toContain('data-id={entry.id}');
-    expect(LOBBY_CARD).toContain('data-kind={entry.kind}');
-    expect(LOBBY_CARD).toContain("data-live={entry.live ? 'true' : 'false'}");
-    expect(LOBBY_CARD).toContain('data-players={entry.players}');
-    expect(LOBBY_CARD).toContain("data-target={entry.game ? 'game' : 'table'}");
-    expect(LOBBY_CARD).toContain('presentation="mobile"');
+  it('keeps detailed card actions in the selected game panel', () => {
+    const panel = read('src/components/lobby/GameLobbyPanel.tsx');
+    expect(panel).toContain('<ArenaGameCard');
+    expect(panel).toContain('primaryDisabled: ctaDisabled');
   });
 });
 

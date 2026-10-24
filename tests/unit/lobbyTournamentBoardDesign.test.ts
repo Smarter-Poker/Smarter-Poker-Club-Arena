@@ -200,12 +200,25 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).not.toContain('Cashier For More');
   });
 
-  it('fits every mobile control without a horizontal reveal row', () => {
-    const mobileConsole = pageCss.slice(pageCss.lastIndexOf('MOBILE LOBBY FINAL CONTRACT'));
-    expect(mobileConsole).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
-    expect(pageCss).toContain('display: contents');
-    expect(mobileConsole).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(mobileConsole).toContain('overflow: visible');
+  it('keeps game types and refinements in two compact rows without changing filter state', () => {
+    const compact = pageCss.slice(pageCss.lastIndexOf('/* Two browsing rows:'));
+    expect(compact).toContain('.game-bar__types');
+    expect(compact).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(compact).toContain('box-sizing: border-box');
+    expect(compact).toContain('min-height: 44px');
+    expect(compact).toContain('flex-wrap: nowrap');
+    expect(compact).toContain('overflow-x: auto');
+    expect(compact).toContain('.lobby-refinements .quickprefs__row--status');
+    expect(compact).toContain('.lobby-refinements .game-bar__filter-btn');
+    expect(compact).not.toContain('position: sticky');
+    const refinements = page.slice(page.indexOf('className="lobby-refinements"'));
+    expect(refinements.indexOf('aria-label="Game Status"')).toBeLessThan(
+      refinements.indexOf('className={`game-bar__filter-btn')
+    );
+    expect(refinements).toContain("gameType === 'ALL' ? 'Sort' : 'Filters And Sort'");
+    expect(refinements).toContain('persistAdvFilters(resolvedClubId, next)');
+    expect(refinements).toContain('selectFavoritesOnly(!favoritesOnly)');
+    expect(refinements).toContain('isFilterActive(fSpec, fVal)');
   });
 
   it('uses the same self-contained identity card on mobile and a smaller two-line club notice', () => {

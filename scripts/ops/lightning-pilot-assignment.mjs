@@ -9,11 +9,16 @@ import { resolveCurrentPilotTargets } from './lightning-pilot-targets.mjs';
 const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const PHASES = ['prepare', 'assign', 'withdraw', 'release', 'report'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The standing reviewed manifest. 2026-10-23 (owner: "USE AS MANY FUNDED PILOT
+ * HORSES AS YOU NEED"): the original funded 72 plus the 72 added and funded by
+ * lightning-pilot-roster-expansion-20261023. The 2026-10-17 manifest stays
+ * admissible in the database for its own exact 72. */
 export const ASSIGNMENT_MANIFEST_SHA256 =
-  '121f80d2529012e532b4d3a702e2772cde9aa7778a82df26f5a02082d2b0ba8a';
+  '3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820';
+export const ASSIGNMENT_SIZE = 144;
 export function assignmentScope() {
   const raw = readFileSync(
-    new URL('../../docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-17.json', import.meta.url),
+    new URL('../../docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-23.json', import.meta.url),
     'utf8'
   );
   const scope = JSON.parse(raw);
@@ -21,8 +26,8 @@ export function assignmentScope() {
     createHash('sha256').update(raw).digest('hex') !== ASSIGNMENT_MANIFEST_SHA256 ||
     scope.clubId !== 'e14bc9f7-736d-425f-8f2c-e78305ebac1d' ||
     !Array.isArray(scope.participants) ||
-    scope.participants.length !== 72 ||
-    new Set(scope.participants).size !== 72 ||
+    scope.participants.length !== ASSIGNMENT_SIZE ||
+    new Set(scope.participants).size !== ASSIGNMENT_SIZE ||
     scope.participants.some((id) => !UUID.test(id)) ||
     !isDeepStrictEqual(scope.participants, [...scope.participants].sort())
   )
@@ -78,7 +83,7 @@ export async function assertAssignmentRoster(admin) {
     all.some(
       (r) => departed(r) && (scope.participants.includes(r.user_id) || r.user_id === PILOT.ownerId)
     ) ||
-    rows.length !== 73 ||
+    rows.length !== ASSIGNMENT_SIZE + 1 ||
     !rows.some((r) => r.user_id === PILOT.ownerId && r.role === 'owner') ||
     !isDeepStrictEqual(
       rows
@@ -91,11 +96,15 @@ export async function assertAssignmentRoster(admin) {
   )
     throw new Error('Assignment Roster Changed');
   const profiles = data(
-    await admin.from('profiles').select('id,is_horse,status').in('id', scope.participants).limit(73)
+    await admin
+      .from('profiles')
+      .select('id,is_horse,status')
+      .in('id', scope.participants)
+      .limit(ASSIGNMENT_SIZE + 1)
   );
   if (
     !Array.isArray(profiles) ||
-    profiles.length !== 72 ||
+    profiles.length !== ASSIGNMENT_SIZE ||
     !isDeepStrictEqual(profiles.map((p) => p.id).sort(), scope.participants) ||
     profiles.some((p) => p.is_horse !== true || p.status !== 'active')
   )

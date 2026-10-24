@@ -495,11 +495,15 @@ export function SignUpHost() {
 
           {(o.bountyAmount ?? 0) > 0 && (
             <div className="signup-row">
-              <span className="signup-label sc-label sc-ink--blue">Bounty</span>
+              <span className="signup-label sc-label sc-ink--blue">
+                {o.isMysteryBounty ? 'Mystery Pool' : 'Bounty'}
+              </span>
               <span className="signup-value signup-value--bounty">
                 {headText}
                 {o.isPko && ' (PKO)'}
-                {o.isMysteryBounty && ' (Mystery)'}
+                {/* A mystery head is what the entry puts in the chest pool,
+                    not a flat bounty on the player (Dan 2026-10-22). */}
+                {o.isMysteryBounty && ' Per Entry'}
               </span>
             </div>
           )}

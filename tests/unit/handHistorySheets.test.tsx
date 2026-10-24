@@ -25,12 +25,19 @@
  * "tapping it closes the sheet" is.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/react';
+import { render, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import HandHistoryPanel, { type HandRecord } from '@/components/table/HandHistoryPanel';
 import { HandDetailModal } from '@/components/table/HandDetailModal';
 import { adaptServiceHandToPanel } from '@/lib/handHistoryAdapter';
+import HandReplay from '@/components/replay/HandReplay';
+
+vi.mock('@/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: null }) }));
+vi.mock('@/services/SoundService', () => ({
+  soundService: new Proxy({}, { get: () => vi.fn() }),
+  haptic: new Proxy({}, { get: () => vi.fn() }),
+}));
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const HDM_CSS = read('src/components/table/HandDetailModal.css');
@@ -229,6 +236,233 @@ function record(over: Record<string, unknown> = {}): HandRecord {
   return adaptServiceHandToPanel(serviceRow(over), HERO);
 }
 
+describe('fold wins retain their recorded monetary awards without a showdown', () => {
+  function foldWin(withAwards = true) {
+    const stored = serviceRow();
+    return record({
+      id: 'f1f335cb-08bc-4a27-bbb9-a284e0cba89a',
+      hand_number: 45462869,
+      game_type: 'NLH',
+      main_pot: 96,
+      side_pots: [],
+      rake: 2.5,
+      bbj_fee: 0.25,
+      bomb_pot: { board_count: 2, ante_amount: 4 },
+      community_cards2: RIT_BOARDS_RAW[0],
+      actions: [{ player_id: VILLAIN, action: 'fold', street: 'river', timestamp: 1 }],
+      players: stored.players.map((p) => ({
+        ...p,
+        hole_cards: [],
+        showdown_reveal: undefined,
+        result: p.user_id === HERO ? 47.25 : -50,
+        private_hole_cards:
+          p.user_id === HERO
+            ? [
+                { rank: 'Q', suit: 'hearts' },
+                { rank: '6', suit: 'hearts' },
+              ]
+            : undefined,
+      })),
+      winners: [{ user_id: HERO, amount: 93.25, pot_index: 0 }],
+      winners_by_board: withAwards
+        ? [
+            { board: 1, user_id: HERO, amount: 46.62, pots: [{ index: 0, amount: 46.62 }] },
+            { board: 2, user_id: HERO, amount: 46.63, pots: [{ index: 0, amount: 46.63 }] },
+          ]
+        : [],
+    });
+  }
+
+  it('shows the live fold-win shares in Summary, Detail and Replay Rundown as money only', () => {
+    const hand = foldWin();
+    expect(hand.replay!.showdown).toEqual([]);
+    const check = () => {
+      const awards = screen.getByRole('region', { name: 'Pot Awards' });
+      expect(awards.textContent).toContain('Board 1');
+      expect(awards.textContent).toContain('Board 2');
+      expect(awards.textContent).toContain('Main 46.62');
+      expect(awards.textContent).toContain('Main 46.63');
+      expect(awards.textContent).not.toMatch(/Mucked|Pair|Flush|Shown/i);
+      expect(within(awards).queryAllByRole('img')).toHaveLength(0);
+    };
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    expect(screen.getByText(/No Showdown/)).toBeTruthy();
+    check();
+    const summaryAwards = screen.getByRole('region', { name: 'Pot Awards' });
+    expect(summaryAwards.classList.contains('hdm-showdown')).toBe(true);
+    expect(summaryAwards.classList.contains('hdv__showdown')).toBe(false);
+    expect(summaryAwards.querySelectorAll('.hdm-sd')).toHaveLength(2);
+    expect(summaryAwards.querySelector('.hdm-section-head')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    check();
+    expect(
+      screen.getByRole('region', { name: 'Pot Awards' }).classList.contains('hdv__showdown')
+    ).toBe(true);
+    view.unmount();
+    render(
+      <HandReplay
+        source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+      />
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+    check();
+  });
+
+  it('does not invent board allocations when a legacy fold win recorded none', () => {
+    const hand = foldWin(false);
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    expect(screen.queryByRole('region', { name: 'Pot Awards' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    expect(screen.queryByRole('region', { name: 'Pot Awards' })).toBeNull();
+    view.unmount();
+    render(
+      <HandReplay
+        source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+      />
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+    expect(screen.queryByRole('region', { name: 'Pot Awards' })).toBeNull();
+  });
+
+  it('does not duplicate allocations already rendered in the matching showdown rows', () => {
+    const hand = record({
+      winners_by_board: [
+        { board: 1, user_id: HERO, amount: 1470, pots: [{ index: 0, amount: 1470 }] },
+      ],
+    });
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    expect(screen.queryByRole('region', { name: 'Pot Awards' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    expect(screen.queryByRole('region', { name: 'Pot Awards' })).toBeNull();
+    view.unmount();
+    render(
+      <HandReplay
+        source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+      />
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+    expect(screen.queryByRole('region', { name: 'Pot Awards' })).toBeNull();
+  });
+});
+
+describe('recorded per-board pot allocations reach every review surface', () => {
+  function allocated(asset: 'chips' | 'diamonds', slices = true) {
+    const fractional = asset === 'chips';
+    return record({
+      arenaAsset: asset,
+      game_type: 'PLO8',
+      main_pot: 100,
+      side_pots: [50],
+      rit_boards: [RIT_BOARDS_RAW[0]],
+      winners_by_board: [1, 2].flatMap((board) => [
+        {
+          board,
+          user_id: HERO,
+          amount: 60,
+          hand_name: 'High',
+          ...(slices
+            ? {
+                pots: [
+                  { index: 0, amount: fractional ? 40.25 : 40 },
+                  { index: 1, amount: fractional ? 19.75 : 20 },
+                ],
+              }
+            : {}),
+        },
+        {
+          board,
+          user_id: VILLAIN,
+          amount: 15,
+          hand_name: 'Low',
+          low: true,
+          ...(slices
+            ? {
+                pots: [
+                  { index: 0, amount: fractional ? 9.75 : 10 },
+                  { index: 1, amount: fractional ? 5.25 : 5 },
+                ],
+              }
+            : {}),
+        },
+      ]),
+    });
+  }
+
+  it.each(['chips', 'diamonds'] as const)(
+    'prints exact %s high/low slices in Summary, Detail and Replay Rundown',
+    (asset) => {
+      const hand = allocated(asset);
+      const expected =
+        asset === 'chips'
+          ? ['Main 40.25', 'Side 1 19.75', 'Main 9.75', 'Side 1 5.25']
+          : ['Main 40', 'Side 1 20', 'Main 10', 'Side 1 5'];
+      const check = (root: Element | null) => {
+        expect(root).toBeTruthy();
+        for (const text of expected) expect(root!.textContent).toContain(text);
+        expect(root!.textContent).toMatch(/Board 1 High/i);
+        expect(root!.textContent).toMatch(/Board 1 Low/i);
+        expect(root!.textContent).toMatch(/Board 2 High/i);
+        expect(root!.textContent).toMatch(/Board 2 Low/i);
+      };
+      const view = render(
+        <HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />
+      );
+      check(view.container.querySelector('.hdm-showdown'));
+      fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+      check(view.container.querySelector('.hdv__showdown'));
+      view.unmount();
+      const replay = render(
+        <HandReplay
+          source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+        />
+      );
+      fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+      check(replay.container.querySelector('.hdv__showdown'));
+    }
+  );
+
+  it('leaves legacy board shares without invented pot amounts in both tabs and Replay Rundown', () => {
+    const hand = allocated('chips', false);
+    const check = (root: Element | null) => {
+      expect(root!.textContent).toMatch(/Board 1 High/i);
+      expect(root!.textContent).toMatch(/Board 1 Low/i);
+      expect(root!.textContent).not.toMatch(/(?:Main|Side 1) \d/);
+    };
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    check(view.container.querySelector('.hdm-showdown'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    check(view.container.querySelector('.hdv__showdown'));
+    view.unmount();
+    const replay = render(
+      <HandReplay
+        source={{ model: hand.replay!, tableName: 'Recorded', handNumber: hand.handNumber }}
+      />
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+    check(replay.container.querySelector('.hdv__showdown'));
+  });
+
+  it('prints a recorded zero slice while leaving an absent slice unprinted', () => {
+    const hand = record({
+      winners_by_board: [
+        {
+          board: 1,
+          user_id: HERO,
+          amount: 1470,
+          pots: [
+            { index: 0, amount: 1470 },
+            { index: 1, amount: 0 },
+          ],
+        },
+      ],
+    });
+    const view = render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    expect(view.container.querySelector('.hdm-showdown')!.textContent).toContain('Side 1 0.00');
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    expect(view.container.querySelector('.hdv__showdown')!.textContent).toContain('Side 1 0.00');
+  });
+});
+
 describe('the backdrop closes the sheet, and the sheet itself does not', () => {
   it('Hand Detail closes when the exposed overlay is tapped', () => {
     const onClose = vi.fn();
@@ -332,7 +566,7 @@ describe('both surfaces show every board a hand ran', () => {
   it('says nothing about runs on an ordinary single-board hand', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[record()]} heroId={HERO} />);
     expect(document.querySelectorAll('.hdm-board__badge')).toHaveLength(0);
-    expect(document.querySelector('.hdm-section-head')?.textContent).toContain('Board');
+    expect(document.querySelector('.hdm-boards .hdm-section-head')?.textContent).toContain('Board');
   });
 
   it('the adapter carries rit_boards from the service row onto the view model', () => {
@@ -370,7 +604,7 @@ describe('both surfaces show every board a hand ran', () => {
      runs 2 and 3 rather than the whole-hand net repeated three times. */
   it('with no per-run record, the extra runs carry no invented share', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
-    const nets = Array.from(document.querySelectorAll('.hdm-sd__net'));
+    const nets = Array.from(document.querySelectorAll('.hdm-showdown .hdm-sd__net'));
     // Two players x three boards.
     expect(nets).toHaveLength(6);
     expect(nets.filter((n) => n.classList.contains('is-blank'))).toHaveLength(4);

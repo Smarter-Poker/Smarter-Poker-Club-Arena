@@ -70,7 +70,8 @@ function fakeBin(): string {
     'git',
     `while [ "$1" = -C ]; do shift 2; done
 case "$1" in
-  fetch|cat-file) exit 0 ;;
+  fetch) [ -n "\${FETCH_FAILS:-}" ] && exit 1; echo fetched >> "$FETCH_LOG"; exit 0 ;;
+  cat-file) exit 0 ;;
   rev-parse)
     case "$3" in *:server) echo ${TREE} ;; *) echo "$MAIN" ;; esac ;;
   log) echo "$LATEST" ;;
@@ -89,11 +90,15 @@ function run({
   main,
   latest,
   highWater,
+  mode = '',
+  fetchFails = false,
 }: {
   target: string;
   main: string;
   latest: string;
   highWater: string;
+  mode?: '' | 'local-main';
+  fetchFails?: boolean;
 }) {
   const bin = fakeBin();
   // C > B > A, and C > X where X is a sibling of the sealed line.
@@ -112,9 +117,11 @@ REPO_DIR=/nonexistent
 RELEASE_SEAL="$BIN/seal"
 SHA="$TARGET"
 SUPERSEDED_BY=''
+sleep() { :; }
 ${SOURCE}
-source_target_is_current
-echo "SUPERSEDED_BY=$SUPERSEDED_BY"`,
+source_target_is_current ${mode}
+echo "SUPERSEDED_BY=$SUPERSEDED_BY"
+if [ -f "$FETCH_LOG" ]; then echo "FETCHES=$(grep -c . "$FETCH_LOG")"; else echo "FETCHES=0"; fi`,
     ],
     {
       encoding: 'utf8',
@@ -129,6 +136,8 @@ echo "SUPERSEDED_BY=$SUPERSEDED_BY"`,
         LATEST: latest,
         HIGH_WATER: highWater,
         ANCESTRY: ancestry,
+        FETCH_LOG: join(bin, 'fetches'),
+        ...(fetchFails ? { FETCH_FAILS: '1' } : {}),
       },
     }
   );
@@ -193,5 +202,56 @@ describe('3. a target off the sealed line keeps its own refusal', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('does not contain the sealed high-water release');
     expect(result.stderr).not.toContain('is stale');
+  });
+});
+
+describe('4. the post-cutover recheck proves against the main it already fetched', () => {
+  // 2026-10-23 05:10 UTC, release 734578ad: the candidate was healthy and
+  // public, five seconds of proof budget remained, and a GitHub re-fetch inside
+  // the recheck could not fit. The release was rolled back and re-run an hour
+  // later - three restarts of every table for one release.
+  it('local-main never fetches and still proceeds when GitHub is unreachable', () => {
+    const result = run({
+      target: C,
+      main: C,
+      latest: C,
+      highWater: B,
+      mode: 'local-main',
+      fetchFails: true,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).not.toContain('FATAL');
+    expect(result.stdout).toContain('FETCHES=0');
+  });
+
+  it('local-main still refuses a target a newer sealed release carries', () => {
+    const result = run({ target: A, main: C, latest: C, highWater: B, mode: 'local-main' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`target ${A} is stale; protected main requires ${B}`);
+  });
+
+  it('local-main still refuses a target off the sealed line', () => {
+    const result = run({ target: X, main: C, latest: C, highWater: B, mode: 'local-main' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('does not contain the sealed high-water release');
+  });
+
+  it('every other stage still fetches protected main and refuses when it cannot', () => {
+    const fetched = run({ target: C, main: C, latest: C, highWater: B });
+    expect(fetched.status, fetched.stderr).toBe(0);
+    expect(fetched.stdout).toContain('FETCHES=1');
+    const refused = run({ target: C, main: C, latest: C, highWater: B, fetchFails: true });
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('bounded protected-main fetch failed after three attempts');
+  });
+
+  it('only the post-cutover recheck uses local-main', () => {
+    const transaction = TRANSACTION;
+    expect(transaction.match(/source_target_is_current local-main/g)).toHaveLength(1);
+    const publicProof = transaction.indexOf('PUBLIC_INSTANCE="$(health_instance');
+    const local = transaction.indexOf('source_target_is_current local-main');
+    const seal = transaction.indexOf('"$RELEASE_SEAL" commit', local);
+    expect(local).toBeGreaterThan(publicProof);
+    expect(seal).toBeGreaterThan(local);
   });
 });

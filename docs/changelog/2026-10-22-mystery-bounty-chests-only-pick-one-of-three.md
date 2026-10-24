@@ -93,3 +93,42 @@ cent by the serving engine is sealed as 500 + 500 and reported as 1,000.00; a
 whole-chip cut is sealed as given. The first combined
 attempt timed out twice on `DROP TRIGGER IF EXISTS`, whose ACCESS EXCLUSIVE
 lock queues behind every reader; new triggers need no drop.
+
+## Follow-Up: Every Surface Says The Same Thing (#7744)
+
+- The chest reveal names the chest that held the prize for every seat, and
+  labels each of the other chests by number.
+- The Create Tournament form shows the half-entry bounty (read only) and that
+  chests open at the money, instead of activation and pool settings the
+  database would replace.
+- The Rewards rule, the detail tab, the sign-up dialog and the seat badges no
+  longer describe a flat bounty per knockout on a chests-only event.
+- `20261022223610`: `fn_mystery_bounty_pick` refuses once the award is
+  revealed (or void), so the record of which chest was picked cannot move
+  after the chest has opened. Proved on production: a pick against a
+  completed award answers `already_revealed`.
+
+## Review Pass (fix/mystery-bounty-review-pass)
+
+An independent review of both PRs found no money defects and these gaps, all fixed:
+
+- **The other chests could show the next prize.** Companions drawn when the
+  award was reserved could include a chest another knockout reserved a moment
+  later. `20261023012108` re-checks them when the award is revealed and
+  replaces any chest that is no longer available. Proved on production in a
+  rolled-back probe: a taken companion was replaced by a still-available chest.
+- **A late pick could be refused.** A slower Animation Speed stretched the
+  winner's window past the engine's deadline. The window now always closes
+  800 ms inside it, and the auto-open timer no longer restarts on every table
+  render (the inline reveal callback is read through a ref).
+- **Other seats missed the pick.** The tap broadcast carries the award and the
+  slot; other seats show it at once and read the offer 1.5 s and 4 s later.
+  A slow pre-reveal read can no longer overwrite the revealed one.
+- **The wording now matches what happened.** The offer returns `chosen`, and
+  a chest that opened by itself reads "Chest N Held The Prize".
+- **Horses pick like people (law 10.5).** The engine picks a horse's chest
+  after 1.8 to 6 s through `fn_mystery_bounty_pick` and sends the same
+  `mystery_chest_opened` broadcast a browser sends. The deadline reveal still
+  settles and pays the award, exactly as for a person.
+- **Whole-chip range.** The advertised min and max are whole chips. The create
+  form refuses an entry too small to fund a whole-chip half.

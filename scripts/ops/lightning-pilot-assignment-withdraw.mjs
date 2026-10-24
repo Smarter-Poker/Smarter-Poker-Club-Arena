@@ -7,9 +7,10 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const ASSIGNMENT_MANIFEST_SHA256 =
-  '121f80d2529012e532b4d3a702e2772cde9aa7778a82df26f5a02082d2b0ba8a';
+  '3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820';
+const ASSIGNMENT_SIZE = 144;
 const raw = readFileSync(
-  new URL('../../docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-17.json', import.meta.url)
+  new URL('../../docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-23.json', import.meta.url)
 );
 const hash = (x) =>
   createHash('sha256')
@@ -23,12 +24,12 @@ const manifest = JSON.parse(raw);
 export const ASSIGNMENT_CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 if (
   manifest.clubId !== ASSIGNMENT_CLUB ||
-  manifest.participants.length !== 72 ||
-  new Set(manifest.participants).size !== 72 ||
+  manifest.participants.length !== ASSIGNMENT_SIZE ||
+  new Set(manifest.participants).size !== ASSIGNMENT_SIZE ||
   manifest.participants.some((x) => !UUID.test(x)) ||
   !isDeepStrictEqual(manifest.participants, [...manifest.participants].sort())
 )
-  fail('EXACT_72_REQUIRED');
+  fail('EXACT_REVIEWED_MANIFEST_REQUIRED');
 export const ASSIGNMENT_MEMBERS = Object.freeze([...manifest.participants]);
 const OPERATION = 'lightning-pilot-assignment-withdraw';
 const scope = (x) => {

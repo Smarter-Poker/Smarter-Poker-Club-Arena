@@ -1326,7 +1326,8 @@ function HomePageInner() {
       <div className={styles.mainContent}>
         <h1 className={`${styles.arenaTitle} sc-ink--silver`}>Poker Arena</h1>
         {/* ═══════════════════════════════════════════════════════════════════════
-                    HORIZONTAL ACTION BAR
+                    HORIZONTAL ACTION BAR — Dan 2026-10-23: Create A Club, Find A Player
+                    and Join A Club lead the arena again; the Play Poker plate is retired.
                 ═══════════════════════════════════════════════════════════════════════ */}
         <ClubEntryActionBar
           flags={entryFlags}

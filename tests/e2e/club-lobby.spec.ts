@@ -5,7 +5,7 @@
  *
  * Rewritten 2026-08-22 alongside the Lobby V2 refactor: the card grid
  * (.ngc-*) was replaced by the dense line-based table (.lt-*) plus the
- * CasinoPlaque game lobby panel (.glp / .cplaque). Every assertion still
+ * approved game-card lobby panel (.glp / .arena-game-card). Every assertion still
  * corresponds to a real defect class:
  *
  *   - the result count claimed a total that did not match the list
@@ -111,27 +111,8 @@ test.describe('Club lobby', () => {
     }
   });
 
-  /**
-   * A TOURNAMENT goes to its own screen. A CASH game opens the panel.
-   *
-   * Dan 2026-08-25: "when you click any of the MTT fields in the display
-   * inside of ALL or MTT, it should open to the tournament lobby." The old
-   * rule here was narrower — only a tournament already RUNNING / in LATE REG /
-   * COMPLETED routed, and a REGISTERING one fell through to the pre-commit
-   * panel. Same row, same tab, two destinations depending on a status the
-   * player cannot see. `openEntry` now short-circuits on `kind === 'mtt'`
-   * alone, so this selector drops the status classes with it.
-   *
-   * The contract this spec defends is UNCHANGED and still asserted on both
-   * destinations: selecting a row never JOINS, REGISTERS or SPENDS. A
-   * read-only tournament screen does none of those (verified: `registerMtt`
-   * is reachable only from the sign-up modal's onClick, and the auto-open-seat
-   * effect requires an existing `tournament_players` row). Only WHERE the
-   * review happens changed.
-   *
-   * Lobby rows carry `data-kind`, so which of the two a row is can be read off
-   * the row itself instead of guessed from its position.
-   */
+  /* October 22: every kind reviews its game card first. The full tournament
+     screen remains one explicit Details click away. Selection never spends. */
   const ROUTED_MTT = '[data-kind="mtt"]';
 
   /**
@@ -159,7 +140,7 @@ test.describe('Club lobby', () => {
     test.skip(rows === 0, 'no games in this lobby right now');
 
     const i = await firstRow(page, 'panel');
-    test.skip(i < 0, 'every game in this lobby is a tournament, which routes instead');
+    test.skip(i < 0, 'no cash or seat-first game in this lobby');
 
     const row = page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i);
     const kind = await row.getAttribute('data-kind');
@@ -168,19 +149,12 @@ test.describe('Club lobby', () => {
     const before = page.url();
     await row.click();
 
-    // The panel opens with the approved presentation for that game; the URL
-    // must not move — a row click reviews the game, it never joins, registers,
-    // or spends. Cash tables deliberately use the live Arena machine while
-    // tournament-derived games use the Casino Plaque.
+    // Every selected game uses its approved card before an explicit action.
     const panel = page.locator('.glp');
     await expect(panel, 'selecting a row did not open the game lobby panel').toBeVisible({
       timeout: 8000,
     });
-    if (kind === 'cash') {
-      await expect(panel.locator('.arena-game-card')).toBeVisible();
-    } else {
-      await expect(panel.locator('.cplaque')).toBeVisible();
-    }
+    await expect(panel.locator('.arena-game-card')).toBeVisible();
 
     /* The panel deep-links itself: ClubHomePage writes `?game=<id>` while it
        is open so the selection survives a refresh and can be shared. That is
@@ -201,7 +175,7 @@ test.describe('Club lobby', () => {
     await expect(panel, 'Escape did not close the game lobby panel').toBeHidden({ timeout: 8000 });
   });
 
-  test('selecting a tournament at ANY status opens its own screen, and still does not register', async ({
+  test('selecting a tournament reviews its card, then Details opens that event', async ({
     page,
   }) => {
     const ok = await expectRoute(page, LOBBY);
@@ -216,6 +190,12 @@ test.describe('Club lobby', () => {
     expect(id, 'a lobby row rendered without a data-id').toBeTruthy();
 
     await row.click();
+
+    const panel = page.locator('.glp');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.arena-game-card')).toBeVisible();
+    await expect(page).not.toHaveURL(new RegExp(`/tournaments/${id}(?:[/?#]|$)`));
+    await panel.getByRole('button', { name: 'Details', exact: true }).click();
 
     // It reviews the tournament. It must be THAT tournament, and it must not
     // have committed the player to anything on the way there.

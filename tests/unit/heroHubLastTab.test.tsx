@@ -41,11 +41,9 @@ describe('the hub remembers the last-used tab across opens (this session)', () =
     cleanup();
   });
 
-  it('a fresh session opens on Throwables', () => {
+  it('a fresh session opens on Stats', () => {
     render(<HeroHubPanel {...hubProps} />);
-    expect(screen.getByRole('tab', { name: 'Throwables' }).getAttribute('aria-selected')).toBe(
-      'true'
-    );
+    expect(screen.getByRole('tab', { name: 'Stats' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('close and reopen lands on the tab that was in use', () => {
@@ -61,9 +59,7 @@ describe('the hub remembers the last-used tab across opens (this session)', () =
   it('junk in storage falls back to the default, never crashes the hub', () => {
     sessionStorage.setItem(HERO_HUB_TAB_KEY, 'not-a-tab');
     render(<HeroHubPanel {...hubProps} />);
-    expect(screen.getByRole('tab', { name: 'Throwables' }).getAttribute('aria-selected')).toBe(
-      'true'
-    );
+    expect(screen.getByRole('tab', { name: 'Stats' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('blocked storage is survived on read AND write', () => {
@@ -74,7 +70,7 @@ describe('the hub remembers the last-used tab across opens (this session)', () =
       throw new Error('blocked');
     });
     try {
-      expect(readInitialHubTab()).toBe('throwables');
+      expect(readInitialHubTab()).toBe('stats');
       expect(() => rememberHubTab('stats')).not.toThrow();
     } finally {
       getSpy.mockRestore();

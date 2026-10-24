@@ -8,6 +8,7 @@
  */
 
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import { claimChunkErrorForBoundary, reportExhaustedChunkLoad } from '../../utils/lazyWithRetry';
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,8 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  /** A stale chunk is being replaced by a cache-busted reload. */
+  chunkRecovering?: boolean;
 }
 
 export class TableErrorBoundary extends Component<Props, State> {
@@ -32,6 +35,18 @@ export class TableErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     const componentName = this.props.componentName || 'Component';
+    // A table chunk retired by a publish is not a table crash (client_crash_log
+    // 3015, 2026-10-23: "Importing a module script failed." on an iPhone).
+    // Recovery replaces the document; nothing is reported and nothing paints.
+    const chunk = claimChunkErrorForBoundary(error);
+    if (chunk === 'recovering') {
+      this.setState({ chunkRecovering: true });
+      return;
+    }
+    if (chunk === 'exhausted') {
+      reportExhaustedChunkLoad(error, `club-arena-table:${componentName}`);
+      return;
+    }
     console.error(`[TableErrorBoundary] ${componentName} crashed:`, error, info.componentStack);
 
     // Enhancement #6: Emit crash event for admin monitoring
@@ -73,6 +88,7 @@ export class TableErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      if (this.state.chunkRecovering) return null;
       return this.props.fallback || null;
     }
     return this.props.children;

@@ -170,7 +170,7 @@ import {
   type StageFirstLevel,
   type StageRpcOutcome,
 } from './multiDayStages.js';
-import { horseAddsOnImmediately } from '../services/FreeBuy.js';
+import { horseAddsOnImmediately, horseTakesAddOn } from '../services/FreeBuy.js';
 import { refreshTournamentBrainContextAfterClockCommit } from '../services/TournamentBrainContext.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
@@ -188,10 +188,7 @@ import {
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
 import { levelResumeRemainingMs } from './levelClockOutage.js';
-import {
-  everyOtherTableIsAtAHandBoundary,
-  unprovedHandNeedsSuccessorGeneration,
-} from './unprovedHandSuccessor.js';
+import { unprovedHandNeedsSuccessorGeneration } from './unprovedHandSuccessor.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -676,6 +673,9 @@ export abstract class TournamentManagerBase {
   protected addOnPeriodTriggered: boolean = false;
   /** Prevent two async level/hand edges from opening the same persisted window. */
   protected addOnPeriodOpening: boolean = false;
+  /** Current hands drain before a paid event starts its full stopped offer minute. */
+  private addOnDrainPending = false;
+  private addOnClosingDrainOpening = false;
   /** One close check for the persisted window; re-arming replaces the old one. */
   private addOnPeriodEndTimer: NodeJS.Timeout | null = null;
   /** Bounded delivery retry for the shifted deadline after maintenance thaw. */
@@ -963,7 +963,7 @@ export abstract class TournamentManagerBase {
   /** Horses already offered the current add-on window in this process. */
   protected addOnAttemptedHorseIds = new Set<string>();
   /** Round-robin cursor keeps one transient refusal from starving the field. */
-  protected addOnBatchCursor = 0;
+  protected addOnBatchCursor: string | null = null;
   protected pendingAddOnPeriod: boolean = false;
   // Hand-for-hand bubble
   protected handForHandActive: boolean = false;
@@ -1796,11 +1796,12 @@ export abstract class TournamentManagerBase {
    */
   protected releaseManagedTablePauseIfUnowned(engine: ServerTableEngine): void {
     if (!this.running || !engine.requiresExplicitPauseResume()) return;
+    if (this.successorDrainRequested) return;
     // Every authority that may still own this hold, in the order the arm
     // considered them. While one of these is true the pause has a living
     // owner and a release here would deal through it.
     if (this.onBreak || this.stageEndPause || this.handForHandActive) return;
-    if (this.addOnBreakActive && this.addOnBreakOwnsPause) return;
+    if (this.addOnDrainPending || (this.addOnBreakActive && this.addOnBreakOwnsPause)) return;
     try {
       engine.resumeDealing();
     } catch (err) {
@@ -1813,9 +1814,13 @@ export abstract class TournamentManagerBase {
   /** A replacement inherits every pause authority before it can deal. */
   protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
+    if (this.successorDrainRequested) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      return;
+    }
     // The day is ending: a replacement dealer inherits the stage-end pause
     // before it can deal, exactly as it inherits a synchronized break.
-    if (this.stageEndPause) {
+    if (this.stageEndPause || this.addOnDrainPending) {
       engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
         beforeNextHand: true,
         untilResumed: true,
@@ -2112,16 +2117,28 @@ export abstract class TournamentManagerBase {
    *
    * Returns true only when the hand-off was requested.
    */
-  getStalledEliminationSweep(
-    now = Date.now()
-  ): { msInFlight: number; msBustWaiting: number; stage: number } | null {
+  getStalledEliminationSweep(now = Date.now()): {
+    msInFlight: number;
+    msBustWaiting: number;
+    stage: number;
+    step: string | null;
+    msInStep: number;
+  } | null {
     const msInFlight =
       this.isProcessingEliminations && this.eliminationSweepStartedAt > 0
         ? now - this.eliminationSweepStartedAt
         : 0;
     const msBustWaiting = this.bustAwaitingSinceMs > 0 ? now - this.bustAwaitingSinceMs : 0;
     if (msInFlight <= 0 && msBustWaiting <= 0) return null;
-    return { msInFlight, msBustWaiting, stage: this.currentEliminationSweepStage() };
+    const step = msInFlight > 0 ? (this.eliminationSweepStep ?? null) : null;
+    return {
+      msInFlight,
+      msBustWaiting,
+      stage: this.currentEliminationSweepStage(),
+      step,
+      msInStep:
+        step && (this.eliminationSweepStepAt ?? 0) > 0 ? now - this.eliminationSweepStepAt : 0,
+    };
   }
 
   /** The stage the in-flight sweep is in; the eliminations layer knows it. */
@@ -2129,19 +2146,44 @@ export abstract class TournamentManagerBase {
     return -1;
   }
 
-  requestSuccessorForStalledEliminationSweep(): boolean {
-    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+  // A successor request owns its pause until this exact manager retires.
+  // Otherwise onPauseReady treats it as an abandoned tournament-break hold
+  // and resumes each dealer before the rest of the field can finish draining.
+  protected successorDrainRequested = false;
+  private successorHandoffIssued = false;
+
+  private requestSuccessorDrain(): boolean {
+    if (!this.isRunning() || this.successorDrainRequested) return false;
+    this.successorDrainRequested = true;
     for (const table of this.tableEngines.values()) {
-      if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
+      if (table.isRunning())
+        table.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
     }
+    this.completeSuccessorDrain();
+    // Acceptance reserves the caller's existing bounded handoff allowance.
+    // The last park edge completes it; repeated requests spend no allowance.
+    return true;
+  }
+
+  private completeSuccessorDrain(): boolean {
+    if (!this.successorDrainRequested || this.successorHandoffIssued || !this.isRunning())
+      return false;
     for (const table of this.tableEngines.values()) {
       if (table.isRunning() && !table.isBetweenHands()) return false;
     }
+    // Mark before calling the owner: a synchronous callback or duplicate park
+    // edge must never submit another handoff of this generation.
+    this.successorHandoffIssued = true;
     console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination sweep stalled - no bust can be recorded; handing the event to a successor generation`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Every live table drained; handing the event to a successor generation`
     );
     this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
     return true;
+  }
+
+  requestSuccessorForStalledEliminationSweep(): boolean {
+    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+    return this.requestSuccessorDrain();
   }
 
   requestSuccessorForStuckTable(tableId: string): boolean {
@@ -2149,19 +2191,7 @@ export abstract class TournamentManagerBase {
       return false;
     const stuck = this.tableEngines.get(tableId);
     if (stuck?.isRunning()) return false;
-    for (const other of this.tableEngines.values()) {
-      if (other !== stuck && other.isRunning())
-        other.pauseAfterHand(undefined, { untilResumed: true });
-    }
-    for (const other of this.tableEngines.values()) {
-      if (other === stuck || !other.isRunning()) continue;
-      if (!other.isBetweenHands()) return false;
-    }
-    console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for too long - handing the event to a successor generation`
-    );
-    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
-    return true;
+    return this.requestSuccessorDrain();
   }
 
   private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
@@ -2173,18 +2203,8 @@ export abstract class TournamentManagerBase {
       })
     )
       return false;
-    for (const other of this.tableEngines.values()) {
-      // No table of this generation deals another hand: the event is leaving it.
-      if (other !== engine && other.isRunning())
-        other.pauseAfterHand(undefined, { untilResumed: true });
-    }
-    if (!everyOtherTableIsAtAHandBoundary(this.tableEngines.values(), engine)) return false;
-    console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] A stopped table holds a hand this lease generation cannot resolve - handing the event to a successor generation`
-    );
     // Not awaited: the manager's stop drains this very recovery job.
-    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
-    return true;
+    return this.requestSuccessorDrain();
   }
 
   private async performManagedTableEngineRecovery(
@@ -2618,6 +2638,7 @@ export abstract class TournamentManagerBase {
       });
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
+      if (this.successorDrainRequested) this.prepareManagedTableEngineForPlay(engine);
       await engine.start();
     })().catch(async (error) => {
       reportError(error, errorContext, metadata);
@@ -3044,6 +3065,21 @@ export abstract class TournamentManagerBase {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
+      if (this.successorDrainRequested) {
+        if (this.tableIdForManagedEngine(engine)) this.completeSuccessorDrain();
+        return;
+      }
+      // The last parked dealer starts the actual paid add-on minute. This is
+      // the original hand-boundary event, not a timer or repair poll.
+      if (this.addOnDrainPending && !this.addOnPeriodOpening && !this.lifecycleOperation) {
+        this.dispatchLifecycleCallback(
+          () =>
+            this.addOnPeriodTriggered
+              ? this.continueFreeBuyClosingDrain()
+              : this.triggerAddOnPeriod(),
+          'TournamentManagerBase.addon_drain_open_failed'
+        );
+      }
       // A parked table is the edge a held mystery activation waits for.
       if (this.mysteryActivationBoundaryPending)
         this.requestEliminationSweep('mystery_activation_boundary');
@@ -3175,7 +3211,7 @@ export abstract class TournamentManagerBase {
     // own: the maintenance resume, hand-for-hand and the bubble burst all ask
     // this before releasing a table, so none of them can deal a day-ending
     // event back into play.
-    return this.onBreak || this.addOnBreakActive || !!this.stageEndPause;
+    return this.onBreak || this.addOnDrainPending || this.addOnBreakActive || !!this.stageEndPause;
   }
 
   /**
@@ -3714,6 +3750,7 @@ export abstract class TournamentManagerBase {
       lifecycle &&
       !this.blindClockTerminalCommitted &&
       !this.pendingBlindTransition &&
+      !this.addOnDrainPending &&
       !this.addOnBreakActive &&
       !(Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()) &&
       structure.length > 0
@@ -4009,14 +4046,19 @@ export abstract class TournamentManagerBase {
        Hand pause ownership to that break rather than dealing for the seconds
        between the two deadlines. Hand-for-hand independently owns its pause
        when active. */
-    const addOnBreakStillActive = this.addOnBreakActive;
+    const addOnBreakStillActive = this.addOnDrainPending || this.addOnBreakActive;
     if (addOnBreakStillActive) {
       this.addOnBreakOwnsPause = true;
       this.addOnBreakOwnsLevelClock = true;
     }
     // A day-ending event keeps its tables held: the break was never the
     // stage-end pause's owner and may not lift it.
-    if (!this.handForHandActive && !addOnBreakStillActive && !this.stageEndPause) {
+    if (
+      !this.successorDrainRequested &&
+      !this.handForHandActive &&
+      !addOnBreakStillActive &&
+      !this.stageEndPause
+    ) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -4319,6 +4361,20 @@ export abstract class TournamentManagerBase {
     // add-on chips keep the pool mutable until the persisted add-on deadline.
     if (result.finalization_deferred === true && result.reason === 'addon_required') {
       this.tournamentEntryRepricePending = false;
+      if (
+        this.addOnPeriodTriggered &&
+        this.tournamentCache?.addon_from_start === true &&
+        Date.parse(String(this.tournamentCache.addon_period_ends_at)) -
+          Date.parse(String(this.tournamentCache.addon_period_started_at)) >
+          this.addOnBreakDurationMs()
+      ) {
+        // The database's earliest entry boundary also ends FreeBuy's early
+        // purchase phase. A thaw-shifted offer deadline must not leave play
+        // running after registration has closed. The existing drain still
+        // waits for every hand and owns the one full closing minute.
+        await this.continueFreeBuyClosingDrain();
+        if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      }
       if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
         if (this.onBreak) {
           this.pendingAddOnPeriod = true;
@@ -4489,7 +4545,12 @@ export abstract class TournamentManagerBase {
     if (!this.running) return;
     // A break, a stage end or an owning add-on break already parks every
     // table before its next deal; their release is theirs, not ours.
-    if (this.onBreak || this.stageEndPause || (this.addOnBreakActive && this.addOnBreakOwnsPause))
+    if (
+      this.onBreak ||
+      this.stageEndPause ||
+      this.addOnDrainPending ||
+      (this.addOnBreakActive && this.addOnBreakOwnsPause)
+    )
       return;
     this.mysteryActivationBoundaryPending = true;
     if (!this.handForHandActive) {
@@ -4529,6 +4590,7 @@ export abstract class TournamentManagerBase {
     if (
       this.onBreak ||
       this.stageEndPause ||
+      this.addOnDrainPending ||
       (this.addOnBreakActive && this.addOnBreakOwnsPause) ||
       this.satelliteQualifierBoundaryPending
     )
@@ -4536,7 +4598,7 @@ export abstract class TournamentManagerBase {
     for (const engine of engines) {
       if (![...this.tableEngines.values()].includes(engine)) continue;
       try {
-        engine.resumeDealing();
+        if (!this.successorDrainRequested) engine.resumeDealing();
       } catch (err) {
         reportError(err, 'Tournament.mystery_activation_boundary_release_failed', {
           tournamentId: this.tournamentId,
@@ -5002,6 +5064,7 @@ export abstract class TournamentManagerBase {
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
     );
+    if (this.successorDrainRequested) return;
     for (const engine of engines) engine!.resumeDealing();
 
     if (this.handForHandRePauseTimer) {
@@ -7391,6 +7454,17 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       noteTerminalFinishClub(this.tournamentId, tournament.club_id);
+      // Restore the persisted closing drain before any dealer is admitted.
+      this.addOnDrainPending =
+        this.isFreeBuyClosingDrain(tournament) ||
+        (tournament.addon_from_start === true &&
+          tournament.addon_period_triggered === true &&
+          tournament.prize_pool_finalized !== true &&
+          tournament.add_on_available === true &&
+          Date.parse(String(tournament.addon_period_ends_at)) -
+            Date.parse(String(tournament.addon_period_started_at)) >
+            this.addOnBreakDurationMs() &&
+          this.addOnBreakStartMs(tournament.addon_period_ends_at) <= Date.now());
       // Restore the durable hold before admitting replacement dealers. Even
       // an expired countdown remains paused until its release is acknowledged.
       this.onBreak = tournament.on_break === true;
@@ -7594,7 +7668,7 @@ export abstract class TournamentManagerBase {
       // restart mid-add-on doesn't re-broadcast ADDON_PERIOD_START or skip
       // finalizeAfterAddOn forever (they previously reset to defaults).
       this.addOnPeriodTriggered = !!tournament.addon_period_triggered;
-      if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+      if (this.addOnPeriodTriggered && !this.prizePoolFinalized && !this.addOnDrainPending) {
         this.scheduleAddOnPeriodEnd(tournament.addon_period_ends_at);
       }
       // Initialize broadcast channel on resume
@@ -7848,7 +7922,8 @@ export abstract class TournamentManagerBase {
          grant another entitlement. A pool finalized just before the old
          process died receives a bounded, detached tail replay: no funding RPC
          is reachable from it and resume itself never waits. */
-      if (this.addOnPeriodTriggered) {
+      if (this.addOnDrainPending) await this.continueFreeBuyClosingDrain(true);
+      if (this.addOnPeriodTriggered && !this.addOnDrainPending) {
         const addOnStartedMs = Date.parse(String(tournament.addon_period_started_at ?? ''));
         const addOnEndsMs = Date.parse(String(tournament.addon_period_ends_at ?? ''));
         const validAddOnDeadline =
@@ -8637,6 +8712,7 @@ export abstract class TournamentManagerBase {
     this.addOnBreakEndTimer = null;
     this.addOnFinalTailReplayTimer = null;
     this.addOnPeriodOpening = false;
+    this.addOnDrainPending = false;
     this.addOnPeriodFinalizing = false;
     this.addOnBreakActive = false;
     this.addOnBreakEndsAtMs = 0;
@@ -10720,6 +10796,18 @@ export abstract class TournamentManagerBase {
     }
 
     if (endMs <= Date.now()) {
+      if (
+        this.tournamentCache?.addon_from_start === true &&
+        !this.prizePoolFinalized &&
+        endMs - Date.parse(String(this.tournamentCache.addon_period_started_at)) >
+          this.addOnBreakDurationMs()
+      ) {
+        this.dispatchLifecycleCallback(
+          () => this.continueFreeBuyClosingDrain(),
+          'TournamentManagerBase.addon_closing_drain_failed'
+        );
+        return;
+      }
       if (this.addOnBreakActive) {
         this.dispatchLifecycleCallback(
           () =>
@@ -10755,6 +10843,149 @@ export abstract class TournamentManagerBase {
     }, breakStartMs - Date.now());
   }
 
+  private isFreeBuyClosingDrain(
+    row: {
+      addon_from_start?: boolean;
+      addon_period_triggered?: boolean;
+      addon_period_started_at?: string | null;
+      addon_period_ends_at?: string | null;
+      add_on_available?: boolean;
+      prize_pool_finalized?: boolean;
+      status?: string;
+    } | null
+  ): boolean {
+    return (
+      row?.addon_from_start === true &&
+      row.addon_period_triggered === true &&
+      row.add_on_available === true &&
+      row.prize_pool_finalized !== true &&
+      row.status === 'RUNNING' &&
+      row.addon_period_started_at === null &&
+      row.addon_period_ends_at === null
+    );
+  }
+
+  private async continueFreeBuyClosingDrain(admissionRestored = false): Promise<void> {
+    if (this.addOnClosingDrainOpening || this.prizePoolFinalized) return;
+    // A pause-ready edge from the first restored dealer is not the whole
+    // field. resumeLifecycle explicitly continues after every admission and
+    // overlapping break has settled; ordinary start callbacks retain their
+    // existing scheduler edge until that lifecycle operation finishes.
+    if (this.lifecycleOperation && !admissionRestored) {
+      this.requestAddOnDeadlineRetry(TournamentManagerBase.ADD_ON_RETRY_MS);
+      return;
+    }
+    if (isMaintenanceFrozen()) {
+      this.scheduleAddOnResumeBroadcastRetry();
+      return;
+    }
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    this.addOnClosingDrainOpening = true;
+    this.addOnDrainPending = true;
+    for (const engine of this.tableEngines.values()) {
+      engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
+        beforeNextHand: true,
+        untilResumed: true,
+      });
+    }
+    if (this.addOnPeriodEndTimer) {
+      this.clearLifecycleTimeout(this.addOnPeriodEndTimer);
+      this.addOnPeriodEndTimer = null;
+    }
+    const projection =
+      'addon_from_start, addon_period_triggered, addon_period_started_at, addon_period_ends_at, add_on_available, prize_pool_finalized, status';
+    try {
+      const oldStart = this.tournamentCache?.addon_period_started_at;
+      const oldEnd = this.tournamentCache?.addon_period_ends_at;
+      if (
+        oldStart &&
+        oldEnd &&
+        Date.parse(oldEnd) - Date.parse(oldStart) > this.addOnBreakDurationMs()
+      ) {
+        const { error } = await supabase
+          .from('tournaments')
+          .update({ addon_period_started_at: null, addon_period_ends_at: null })
+          .eq('id', this.tournamentId)
+          .eq('addon_from_start', true)
+          .eq('addon_period_triggered', true)
+          .eq('prize_pool_finalized', false)
+          .eq('status', 'RUNNING')
+          .eq('addon_period_started_at', oldStart)
+          .eq('addon_period_ends_at', oldEnd);
+        if (error) reportError(error, 'TournamentManagerBase.addon_closing_drain_write');
+      }
+      // Always read back: neither a lost acknowledgement nor a CAS loser may
+      // extend an already bounded minute or replay a purchase.
+      const { data: state, error } = await supabase
+        .from('tournaments')
+        .select(projection)
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (error || !state) throw new Error('Could not prove the FreeBuy closing drain');
+      if (this.isFreeBuyClosingDrain(state)) {
+        if (this.tournamentCache) {
+          this.tournamentCache.addon_period_started_at = null;
+          this.tournamentCache.addon_period_ends_at = null;
+        }
+        if (isMaintenanceFrozen()) {
+          this.scheduleAddOnResumeBroadcastRetry();
+          return;
+        }
+        if (!this.areAllTablesParked()) return;
+        const start = new Date().toISOString();
+        const end = new Date(Date.parse(start) + this.addOnBreakDurationMs()).toISOString();
+        const { error: openError } = await supabase
+          .from('tournaments')
+          .update({ addon_period_started_at: start, addon_period_ends_at: end })
+          .eq('id', this.tournamentId)
+          .eq('addon_from_start', true)
+          .eq('addon_period_triggered', true)
+          .eq('prize_pool_finalized', false)
+          .eq('add_on_available', true)
+          .eq('status', 'RUNNING')
+          .is('addon_period_started_at', null)
+          .is('addon_period_ends_at', null);
+        if (openError) reportError(openError, 'TournamentManagerBase.addon_closing_minute_write');
+        const { data: proven, error: proofError } = await supabase
+          .from('tournaments')
+          .select(projection)
+          .eq('id', this.tournamentId)
+          .maybeSingle();
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        if (proofError || !proven) throw new Error('Could not prove the FreeBuy closing minute');
+        Object.assign(state, proven);
+      }
+      const startMs = Date.parse(String(state.addon_period_started_at ?? ''));
+      const endMs = Date.parse(String(state.addon_period_ends_at ?? ''));
+      if (
+        state.addon_period_triggered !== true ||
+        state.add_on_available !== true ||
+        state.prize_pool_finalized === true ||
+        state.status !== 'RUNNING' ||
+        !Number.isFinite(startMs) ||
+        !Number.isFinite(endMs) ||
+        endMs <= startMs ||
+        endMs - startMs > this.addOnBreakDurationMs()
+      ) {
+        throw new Error('FreeBuy closing minute is not durably bounded');
+      }
+      if (this.tournamentCache) {
+        this.tournamentCache.addon_period_started_at = state.addon_period_started_at;
+        this.tournamentCache.addon_period_ends_at = state.addon_period_ends_at;
+      }
+      this.addOnDrainPending = false;
+      this.scheduleAddOnPeriodEnd(state.addon_period_ends_at);
+      this.scheduleAddOnBreak(state.addon_period_ends_at);
+    } catch (error) {
+      reportError(error, 'TournamentManagerBase.addon_closing_drain_failed');
+      this.requestAddOnDeadlineRetry(TournamentManagerBase.ADD_ON_RETRY_MS);
+    } finally {
+      this.addOnClosingDrainOpening = false;
+    }
+  }
+
   private async beginAddOnBreak(endMs: number): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (
@@ -10763,6 +10994,19 @@ export abstract class TournamentManagerBase {
       this.prizePoolFinalized ||
       endMs <= Date.now()
     ) {
+      return;
+    }
+    // FreeBuy keeps its early purchase entitlement, but its final minute is
+    // still a fully parked minute. Retire the early deadline durably before
+    // waiting on hands; the null pair refuses purchases/finalization and is
+    // restored before dealers on restart. Never renew a closing minute.
+    const startedMs = Date.parse(String(this.tournamentCache?.addon_period_started_at ?? ''));
+    if (
+      this.tournamentCache?.addon_from_start === true &&
+      !this.addOnBreakActive &&
+      endMs - startedMs > this.addOnBreakDurationMs()
+    ) {
+      await this.continueFreeBuyClosingDrain();
       return;
     }
     const maintenanceFrozen = isMaintenanceFrozen();
@@ -10796,6 +11040,18 @@ export abstract class TournamentManagerBase {
       // not announce or offer money during maintenance. The thaw callback
       // shifts the same deadline and re-enters this method to extend the hold.
       return;
+    }
+
+    if (this.tournamentCache?.addon_from_start === true) {
+      await this.broadcast('ADDON_PERIOD_START', {
+        message: 'The Add-On Period Has Begun',
+        addOnCost: this.tournamentCache.addon_cost || this.tournamentCache.buy_in_amount || 0,
+        addOnChips: this.tournamentCache.addon_chips || this.tournamentCache.starting_chips || 0,
+        addOnFee: 0,
+        durationSeconds: Math.max(0, Math.ceil((endMs - Date.now()) / 1000)),
+        endsAt: new Date(endMs).toISOString(),
+      });
+      if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
     }
 
     await this.broadcast('addon_break', {
@@ -10835,7 +11091,12 @@ export abstract class TournamentManagerBase {
     // Hand-for-hand may have ended while the add-on owned this shared gate.
     // With neither tournament pause remaining, release it even when the
     // add-on originally inherited the parked table from hand-for-hand.
-    if (!this.onBreak && !this.handForHandActive && !this.stageEndPause) {
+    if (
+      !this.successorDrainRequested &&
+      !this.onBreak &&
+      !this.handForHandActive &&
+      !this.stageEndPause
+    ) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -10900,7 +11161,11 @@ export abstract class TournamentManagerBase {
     this.addOnBreakOwnsPause = false;
     if (!this.running) return;
 
-    const releasePause = !this.onBreak && !this.handForHandActive && !this.stageEndPause;
+    const releasePause =
+      !this.successorDrainRequested &&
+      !this.onBreak &&
+      !this.handForHandActive &&
+      !this.stageEndPause;
     for (const engine of this.tableEngines.values()) {
       try {
         // The absolute hold was placed for the deadline that no longer exists.
@@ -11006,7 +11271,17 @@ export abstract class TournamentManagerBase {
     ) {
       return;
     }
+    let pendingHorseIds: string[] = [];
+    let completedOffers = 0;
     try {
+      if (
+        this.addOnDrainPending &&
+        this.addOnPeriodTriggered &&
+        this.tournamentCache.addon_from_start === true
+      ) {
+        await this.continueFreeBuyClosingDrain();
+        return;
+      }
       const persistedEndMs = Date.parse(String(this.tournamentCache.addon_period_ends_at ?? ''));
       if (
         this.addOnPeriodTriggered &&
@@ -11082,7 +11357,9 @@ export abstract class TournamentManagerBase {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
       }
-      let eligibleHorseRows = horseRead.rows;
+      let eligibleHorseRows = horseRead.rows.filter((horse) =>
+        horseTakesAddOn(horse.id, this.tournamentId)
+      );
       if (this.tournamentCache.addon_from_start === true) {
         const breakStartMs = this.addOnBreakStartMs(this.tournamentCache.addon_period_ends_at);
         if (!Number.isFinite(breakStartMs)) {
@@ -11095,7 +11372,7 @@ export abstract class TournamentManagerBase {
           return;
         }
         // Dan's split is WHEN, not WHETHER: the deterministic 35% tranche may
-        // buy before the break; every remaining live horse buys once it starts.
+        // buy before the break; the selected remaining live horses buy at the break.
         if (Date.now() < breakStartMs) {
           eligibleHorseRows = eligibleHorseRows.filter((horse) =>
             horseAddsOnImmediately(horse.id, this.tournamentId)
@@ -11105,42 +11382,57 @@ export abstract class TournamentManagerBase {
       const pendingHorseRows = eligibleHorseRows
         .filter((horse) => !this.addOnAttemptedHorseIds.has(horse.id))
         .sort((a, b) => a.id.localeCompare(b.id));
-      const start = Math.min(this.addOnBatchCursor, Math.max(0, pendingHorseRows.length - 1));
+      pendingHorseIds = pendingHorseRows.map((horse) => horse.id);
+      // The pending list shrinks after every receipt. A numeric offset into
+      // that new list skips players; retain the last identity instead.
+      const next = this.addOnBatchCursor
+        ? pendingHorseRows.findIndex((horse) => horse.id > this.addOnBatchCursor!)
+        : 0;
+      const start = Math.max(0, next);
       const horseRows = pendingHorseRows.slice(
         start,
         start + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE
       );
       if (horseRows.length === 0) return;
-      this.addOnBatchCursor =
-        start + horseRows.length >= pendingHorseRows.length ? 0 : start + horseRows.length;
-      if (pendingHorseRows.length > horseRows.length) this.requestEliminationSweep();
 
       let taken = 0;
       const declined = new Map<string, number>();
-      for (const h of horseRows) {
+      // Bound concurrent requests as well as total work per admission. The
+      // canonical RPC still owns the wallet, seat, price and receipt checks.
+      for (let offset = 0; offset < horseRows.length; offset += 4) {
         if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: h.id,
-          p_rebuy_type: 'addon',
-          // null: let the server price it (add-ons are charged at face value).
-          p_cost: null,
-          p_chips: null,
-          p_current_level: this.currentLevel,
-        });
-        if (!this.eliminationMutationAllowed()) return;
-        if (error) {
-          declined.set(error.message, (declined.get(error.message) || 0) + 1);
-          // Ambiguous transport failure can follow a committed idempotent
-          // purchase. Keep it retryable inside this same offer window; the
-          // canonical RPC safely answers already-taken on replay.
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          continue;
+        const group = horseRows.slice(offset, offset + 4);
+        const replies = await Promise.allSettled(
+          group.map(async (h) => {
+            if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return null;
+            return supabase.rpc('process_tournament_rebuy', {
+              p_tournament_id: this.tournamentId,
+              p_user_id: h.id,
+              p_rebuy_type: 'addon',
+              p_cost: null,
+              p_chips: null,
+              p_current_level: this.currentLevel,
+            });
+          })
+        );
+        if (!this.running || this.eliminationSweepSignal?.aborted) return;
+        for (let index = 0; index < group.length; index++) {
+          const h = group[index];
+          const reply = replies[index];
+          this.addOnBatchCursor = h.id;
+          if (reply.status === 'rejected' || reply.value?.error) {
+            const message =
+              reply.status === 'rejected' ? String(reply.reason) : reply.value!.error!.message;
+            declined.set(message, (declined.get(message) || 0) + 1);
+            // A lost response may follow a committed receipt. Retain this
+            // identity for the same idempotent RPC on its next admission.
+            continue;
+          }
+          if (!reply.value) continue;
+          this.addOnAttemptedHorseIds.add(h.id);
+          completedOffers++;
+          if ((reply.value.data as { success?: boolean } | null)?.success === true) taken++;
         }
-        // A clean grant or semantic refusal has made a final decision for this
-        // window, so later bounded batches can reach the rest of the field.
-        this.addOnAttemptedHorseIds.add(h.id);
-        if ((data as { success?: boolean } | null)?.success === true) taken++;
       }
 
       // Quiet when nothing happened: this is called repeatedly across the
@@ -11155,6 +11447,19 @@ export abstract class TournamentManagerBase {
       }
     } catch (err) {
       reportError(err, 'Tournament.tournament_addon_threw');
+    } finally {
+      const more = pendingHorseIds.some((id) => !this.addOnAttemptedHorseIds.has(id));
+      if (more && this.running && !isMaintenanceFrozen() && !this.prizePoolFinalized) {
+        // Twenty seconds is the retry cadence once the field has been served,
+        // not a cooldown between pieces of its first offer. Yield each bounded
+        // batch to the existing scheduler and continue the same offer now.
+        // An entirely ambiguous batch retains the ordinary short retry.
+        this.requestAddOnDeadlineRetry(
+          completedOffers > 0 || this.eliminationWorkBudgetExpired()
+            ? 0
+            : TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+        );
+      }
     }
   }
 
@@ -11186,10 +11491,22 @@ export abstract class TournamentManagerBase {
 
          A paid event's offer lasts its configured break. The default remains
          one minute; a five-minute break must not be truncated to 60 seconds. */
-      const requestedStart = new Date().toISOString();
-      const requestedStartMs = Date.parse(requestedStart);
       const fromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
         ?.addon_from_start;
+      if (!fromStart) {
+        this.addOnDrainPending = true;
+        for (const engine of this.tableEngines.values()) {
+          engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
+            beforeNextHand: true,
+            untilResumed: true,
+          });
+        }
+        // The offer does not exist until every current hand has settled.
+        // onPauseReady re-enters this exact operation when the last one parks.
+        if (!this.areAllTablesParked()) return;
+      }
+      const requestedStart = new Date().toISOString();
+      const requestedStartMs = Date.parse(requestedStart);
       const lateRegMs =
         (((this.tournamentCache as { late_reg_mins?: number } | null)?.late_reg_mins ??
           60) as number) * 60_000;
@@ -11293,7 +11610,7 @@ export abstract class TournamentManagerBase {
       this.addOnPeriodTriggered = true;
       durableWindowProven = true;
       this.addOnAttemptedHorseIds.clear();
-      this.addOnBatchCursor = 0;
+      this.addOnBatchCursor = null;
       if (this.tournamentCache) {
         this.tournamentCache.addon_period_started_at = startedAt;
         this.tournamentCache.addon_period_ends_at = endsAt;
@@ -11303,6 +11620,7 @@ export abstract class TournamentManagerBase {
       // effect. A Realtime failure must not strand an open offer forever.
       this.scheduleAddOnPeriodEnd(endsAt);
       this.scheduleAddOnBreak(endsAt);
+      this.addOnDrainPending = false;
 
       // A freeze that began while the CAS/read-back was in flight owns every
       // operational effect. The committed window is safe and thaw will adopt
@@ -11360,7 +11678,12 @@ export abstract class TournamentManagerBase {
          edge can retry; if the write actually committed but its response was
          lost, the read-back branch adopts that existing window without moving
          its end time. */
-      if (!durableWindowProven) this.addOnPeriodTriggered = false;
+      if (!durableWindowProven) {
+        this.addOnPeriodTriggered = false;
+        if (this.addOnDrainPending) {
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+        }
+      }
       reportError(err, 'Tournament.addon_period_open_failed');
     } finally {
       this.addOnPeriodOpening = false;
@@ -11613,6 +11936,16 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    if (
+      this.isFreeBuyClosingDrain({
+        ...state,
+        addon_from_start: this.tournamentCache?.addon_from_start,
+      })
+    ) {
+      await this.continueFreeBuyClosingDrain();
+      return;
+    }
+
     const endsAt = String(state.addon_period_ends_at ?? '');
     const endMs = Date.parse(endsAt);
     const startMs = Date.parse(String(state.addon_period_started_at ?? ''));
@@ -11630,6 +11963,14 @@ export abstract class TournamentManagerBase {
     if (this.tournamentCache) {
       this.tournamentCache.addon_period_started_at = String(state.addon_period_started_at);
       this.tournamentCache.addon_period_ends_at = endsAt;
+    }
+    if (
+      this.tournamentCache?.addon_from_start === true &&
+      endMs - startMs > this.addOnBreakDurationMs() &&
+      this.addOnBreakStartMs(endsAt) <= Date.now()
+    ) {
+      await this.continueFreeBuyClosingDrain();
+      return;
     }
     this.scheduleAddOnBreak(endsAt);
 
@@ -11986,6 +12327,19 @@ export abstract class TournamentManagerBase {
    * every pass, or fails in a loop all leave it running.
    */
   protected bustAwaitingSinceMs = 0;
+  /**
+   * The awaited step the in-flight elimination sweep last entered, and when.
+   * A sweep that stalls logs nothing on its own (Coffee Break Freeroll
+   * f5a98d7e, 2026-10-22); the hand-off alert names this step so the stall is
+   * attributable to one call.
+   */
+  protected eliminationSweepStep: string | null = null;
+  protected eliminationSweepStepAt = 0;
+
+  protected noteEliminationSweepStep(step: string): void {
+    this.eliminationSweepStep = step;
+    this.eliminationSweepStepAt = Date.now();
+  }
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

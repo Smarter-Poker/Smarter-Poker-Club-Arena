@@ -1,4 +1,5 @@
 import { DiamondJackpotReadout } from '../components/bbj/DiamondJackpotReadout';
+import { capture } from '../lib/analytics';
 import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
 import { isNamedReferralId, referralIdFor } from '../lib/referralId';
 import { isDiamondJackpotAdvertTarget } from '../components/bbj/diamondJackpotAdvertDoor';
@@ -28,7 +29,7 @@ import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { withClubContext } from '../utils/clubScopedPath';
+import { matchesClubParam, withClubContext } from '../utils/clubScopedPath';
 /* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
    INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
    /tournaments/:id destination must render in the tab rather than change the
@@ -1092,6 +1093,31 @@ function ClubHomePageContent({
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
+  const browseScope = `${currentUserId ?? 'guest'}:${clubId}`;
+  const browseJourney = useRef({
+    scope: browseScope,
+    start: Date.now(),
+    ready: false,
+    selected: false,
+  });
+  if (browseJourney.current.scope !== browseScope) {
+    browseJourney.current = {
+      scope: browseScope,
+      start: Date.now(),
+      ready: false,
+      selected: false,
+    };
+  }
+  useEffect(() => {
+    const journey = browseJourney.current;
+    return () => {
+      if (currentUserId)
+        capture('lobby_browse_ended', {
+          duration_ms: Math.max(0, Date.now() - journey.start),
+          selected_game: journey.selected,
+        });
+    };
+  }, [browseScope, currentUserId]);
   const [openingBankError, setOpeningBankError] = useState(false);
   const [openingBankRead, setOpeningBankRead] = useState(0);
   useEffect(() => {
@@ -3596,19 +3622,8 @@ function ClubHomePageContent({
     const cmpPlayers = (a: TableData, b: TableData) =>
       (b.current_players || 0) - (a.current_players || 0);
     const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
-    /* Dan 2026-08-25: "GAMES NEED TO BE ORGANIZED BY TYPE ... SHOW ALL PLO 4
-       CARDS GAMES AND STAKES, THEN BELOW IT PLO5, THEN PLO6 THEN PLO8."
-
-       The tab was one undifferentiated list: a PLO6 5/10 sat between a PLO4
-       2/4 and a PLO4 10/25, so a player who only plays four-card had to read
-       every row to find their game. Variant leads every comparator now, and
-       the chosen sort orders the stakes WITHIN each variant — which is what
-       "and stakes" asks for. Keyed off the same variantKey the Omaha filter
-       chips use, so the group a table lands in and the chip that hides it can
-       never disagree.
-
-       Only Omaha is grouped: the other tabs are a single variant, where a
-       leading variant term is a comparator that always returns 0. */
+    /* Canonical Omaha variants break ties inside each stake when a stakes
+       direction is chosen (Dan 2026-10-23). Other sorts keep variant groups. */
     const cmpVariant = (a: TableData, b: TableData) =>
       gameType === 'OMAHA'
         ? (VARIANT_GROUP_ORDER[variantKey(a.game_variant)] ?? 99) -
@@ -3618,11 +3633,11 @@ function ClubHomePageContent({
     switch (sortKey) {
       case 'stakes_high':
         return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+          (a, b) => cmpStakes(a, b) || cmpVariant(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
       case 'stakes_low':
         return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+          (a, b) => cmpStakesLow(a, b) || cmpVariant(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
       case 'players':
       case 'starting_soon':
@@ -3975,7 +3990,7 @@ function ClubHomePageContent({
       clubIdOverride ||
       searchParams.get('invite') !== '1' ||
       !club ||
-      club.id !== clubId ||
+      !matchesClubParam(club, clubId) ||
       !isOwner
     )
       return;
@@ -4184,12 +4199,12 @@ function ClubHomePageContent({
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
       haptic.selection();
-      // Kind alone decides, never status. Cash, Spin and Sit & Go keep the
-      // pre-commit drawer: their buy-in is chosen there.
-      if (entry.kind === 'mtt') {
-        openTournamentLobby(entry.id);
-        return;
-      }
+      browseJourney.current.selected = true;
+      capture('lobby_game_details_opened', {
+        kind: entry.kind,
+        duration_ms: Math.max(0, Date.now() - browseJourney.current.start),
+      });
+      // Every row opens its game card before an explicit participation action.
       setSelectedId(entry.id);
       setPanelOpen(true);
       // Perf pass 2026-08-24: opening the game lobby panel is the strongest
@@ -4594,6 +4609,15 @@ function ClubHomePageContent({
     resolvedClubId,
     toast,
   ]);
+
+  useEffect(() => {
+    if (loading || !currentUserId || browseJourney.current.ready) return;
+    browseJourney.current.ready = true;
+    capture('lobby_list_ready', {
+      duration_ms: Math.max(0, Date.now() - browseJourney.current.start),
+      game_count: lobbyEntries.length,
+    });
+  }, [loading, currentUserId, lobbyEntries.length, browseScope]);
 
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),
@@ -5540,9 +5564,8 @@ function ClubHomePageContent({
             deliberately standing still. Renders nothing outside a break. */}
         <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
-          /* The deck and the sort row leave while the reader travels down the
-             games and come back on the way up (Dan 2026-10-11), but never
-             while the Filters sheet is open over them. */
+          /* Controls stay in document flow and return only at their original
+             position. Opening the sheet never changes that scroll contract. */
           holdFilters={filtersOpen}
           resetKey={clubId ?? ''}
           welcome={
@@ -5617,7 +5640,125 @@ function ClubHomePageContent({
                     </button>
                   ))}
                 </div>
+              </div>
 
+              {/* ═══════════════════════════════════════════════════════════════════
+          QUICK PREFERENCES — the one-tap shortcuts under the action bar
+          ───────────────────────────────────────────────────────────────────
+          Dan 2026-08-21: "you never added the quick preference link under the
+          action bar."
+
+          Two rows, matching the reference: the stakes/buy-in TIERS, and the
+          seat-status chips. The tier chips are not a separate filter - they
+          write the same saved range the Advanced Filters sheet does, so the
+          two can never disagree, and the icon on the right opens that sheet
+          for everything the row has no space for.
+      ═══════════════════════════════════════════════════════════════════ */}
+              <div className="lobby-refinements">
+                {gameType === 'ALL' ? (
+                  <div className="quickprefs">
+                    <div
+                      className="quickprefs__row quickprefs__row--status"
+                      aria-label="Game Status"
+                    >
+                      {ALL_STATUS_FILTERS.map((status) => (
+                        <button
+                          key={status.key}
+                          type="button"
+                          className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                          aria-pressed={allStatusFilter === status.key}
+                          onClick={() => {
+                            haptic.selection();
+                            setAllStatusFilter(status.key);
+                          }}
+                        >
+                          {status.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  (() => {
+                    const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                    if (!qSpec) return null;
+                    const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+
+                    return (
+                      <div className="quickprefs">
+                        <div
+                          className="quickprefs__row quickprefs__row--status"
+                          aria-label="Game Status"
+                        >
+                          <button
+                            type="button"
+                            className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                            aria-pressed={qVal.statuses.length === 0}
+                            onClick={() => {
+                              haptic.selection();
+                              const next: FilterStore = {
+                                ...advFilters,
+                                [gameType]: { ...qVal, statuses: [] },
+                              };
+                              setAdvFilters(next);
+                              if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                            }}
+                          >
+                            All
+                          </button>
+                          {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                    chosen by showsCash, which disagreed with the sheet on the
+                    same screen - Spin-It offered Full/Empty/Open Seats inside
+                    Advanced Filters and Running/Registering out here. Both now
+                    read spec.statuses, so there is one vocabulary per game type
+                    and one place to change it.
+
+                    They also write the SAVED filter now rather than the local
+                    sub-filter state, which is what makes them agree with the
+                    sheet after a reload instead of resetting. */}
+                          {qSpec.statuses.map((sf) => {
+                            const on = qVal.statuses.includes(sf.key);
+                            return (
+                              <button
+                                key={sf.key}
+                                className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                                aria-pressed={on}
+                                onClick={() => {
+                                  haptic.selection();
+                                  const next: FilterStore = {
+                                    ...advFilters,
+                                    [gameType]: {
+                                      ...qVal,
+                                      statuses: on
+                                        ? qVal.statuses.filter((k) => k !== sf.key)
+                                        : [...qVal.statuses, sf.key],
+                                    },
+                                  };
+                                  setAdvFilters(next);
+                                  if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                                }}
+                              >
+                                {sf.label}
+                              </button>
+                            );
+                          })}
+                          {currentUserId && showsCash && (
+                            <button
+                              type="button"
+                              className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                              aria-pressed={favoritesOnly}
+                              onClick={() => {
+                                haptic.selection();
+                                selectFavoritesOnly(!favoritesOnly);
+                              }}
+                            >
+                              Favorites
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
                 {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
@@ -5652,120 +5793,6 @@ function ClubHomePageContent({
                   <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
                 </button>
               </div>
-
-              {/* ═══════════════════════════════════════════════════════════════════
-          QUICK PREFERENCES — the one-tap shortcuts under the action bar
-          ───────────────────────────────────────────────────────────────────
-          Dan 2026-08-21: "you never added the quick preference link under the
-          action bar."
-
-          Two rows, matching the reference: the stakes/buy-in TIERS, and the
-          seat-status chips. The tier chips are not a separate filter - they
-          write the same saved range the Advanced Filters sheet does, so the
-          two can never disagree, and the icon on the right opens that sheet
-          for everything the row has no space for.
-      ═══════════════════════════════════════════════════════════════════ */}
-              {gameType === 'ALL' ? (
-                <div className="quickprefs">
-                  <div className="quickprefs__row quickprefs__row--status" aria-label="Game Status">
-                    {ALL_STATUS_FILTERS.map((status) => (
-                      <button
-                        key={status.key}
-                        type="button"
-                        className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
-                        aria-pressed={allStatusFilter === status.key}
-                        onClick={() => {
-                          haptic.selection();
-                          setAllStatusFilter(status.key);
-                        }}
-                      >
-                        {status.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                (() => {
-                  const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-                  if (!qSpec) return null;
-                  const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
-
-                  return (
-                    <div className="quickprefs">
-                      <div
-                        className="quickprefs__row quickprefs__row--status"
-                        aria-label="Game Status"
-                      >
-                        <button
-                          type="button"
-                          className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
-                          aria-pressed={qVal.statuses.length === 0}
-                          onClick={() => {
-                            haptic.selection();
-                            const next: FilterStore = {
-                              ...advFilters,
-                              [gameType]: { ...qVal, statuses: [] },
-                            };
-                            setAdvFilters(next);
-                            if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                          }}
-                        >
-                          All
-                        </button>
-                        {/* AUDIT 2026-08-21: these chips used to be a hand-written list
-                    chosen by showsCash, which disagreed with the sheet on the
-                    same screen - Spin-It offered Full/Empty/Open Seats inside
-                    Advanced Filters and Running/Registering out here. Both now
-                    read spec.statuses, so there is one vocabulary per game type
-                    and one place to change it.
-
-                    They also write the SAVED filter now rather than the local
-                    sub-filter state, which is what makes them agree with the
-                    sheet after a reload instead of resetting. */}
-                        {qSpec.statuses.map((sf) => {
-                          const on = qVal.statuses.includes(sf.key);
-                          return (
-                            <button
-                              key={sf.key}
-                              className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                              aria-pressed={on}
-                              onClick={() => {
-                                haptic.selection();
-                                const next: FilterStore = {
-                                  ...advFilters,
-                                  [gameType]: {
-                                    ...qVal,
-                                    statuses: on
-                                      ? qVal.statuses.filter((k) => k !== sf.key)
-                                      : [...qVal.statuses, sf.key],
-                                  },
-                                };
-                                setAdvFilters(next);
-                                if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                              }}
-                            >
-                              {sf.label}
-                            </button>
-                          );
-                        })}
-                        {currentUserId && showsCash && (
-                          <button
-                            type="button"
-                            className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                            aria-pressed={favoritesOnly}
-                            onClick={() => {
-                              haptic.selection();
-                              selectFavoritesOnly(!favoritesOnly);
-                            }}
-                          >
-                            Favorites
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()
-              )}
             </section>
           }
           /* The chip-club campaign opens announcements, an operator surface
@@ -5834,35 +5861,8 @@ function ClubHomePageContent({
           onResolved={latchOpeningChecklist}
         />
 
-        {/* ═══════════════════════════════════════════════════════════════════
-          AD STRIP - directly under the action bar. THREE ROTATING PICTURES.
-          (Dan 2026-09-03.) The text strip that lived here was dropped by the
-          lobby rebuild in #1759 and nothing noticed for five days: this mount
-          is now pinned by tests/unit/houseAds.test.ts. The rotator renders
-          nothing at all when no creative has a picture, so it never takes
-          space it cannot fill.
-      ═══════════════════════════════════════════════════════════════════ */}
-        <HouseAdRotator
-          slot="lobby_strip"
-          clubId={resolvedClubId || club.id}
-          onNavigate={(path) => {
-            haptic.selection();
-            if (
-              isDiamondJackpotAdvertTarget(path, isAutomaticArena, [
-                clubId,
-                resolvedClubId,
-                club.id,
-              ])
-            ) {
-              setShowBBJInfo(true);
-              return;
-            }
-            navigate(path);
-          }}
-        />
-
         {/* The footer is the permanent Diamond Spins entry. Keep the
-            eligible zero-chip invitation without an extra box under ads.
+            eligible zero-chip invitation without a middle promotional strip.
 
             NOT IN THE DIAMOND ARENA (2026-09-19). "Out Of Chips? ... Chip
             Prizes Paid Into Your Club Wallet" invites the player to a wheel

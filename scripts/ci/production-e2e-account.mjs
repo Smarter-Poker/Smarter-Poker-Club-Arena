@@ -17,10 +17,10 @@ const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 export const DEFAULT_E2E_LIGHTNING_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const PROFILE_ATTEMPTS = 24;
-// The explicit natural-multirun certificate can own its account for 98 minutes.
+// The explicit natural-multirun certificate can own its account for 143 minutes.
 // Recovery must never retire it while that job can still be running; preserve
-// the existing fourteen minutes of provider/clock headroom (98 + 14 = 112).
-export const STALE_ACCOUNT_AGE_MS = 112 * 60_000;
+// the existing fourteen minutes of provider/clock headroom (143 + 14 = 157).
+export const STALE_ACCOUNT_AGE_MS = 157 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
 const FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS = Object.freeze([
   2_000, 4_000, 8_000, 16_000, 30_000, 60_000, 120_000, 90_000,

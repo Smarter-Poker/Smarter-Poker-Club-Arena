@@ -1,0 +1,15 @@
+{
+  "_comment": "Declared by migration 20261023183513; queued for the owner-authorized maintenance transaction, not evidence of installation. Runtime probes gate all optional reads.",
+  "tables": ["horse_exploit_profiles"],
+  "functions": [
+    "fn_horse_exploit_add",
+    "fn_horse_exploit_increments",
+    "fn_horse_exploit_accept_hand",
+    "fn_horse_exploit_mark_hand",
+    "fn_horse_exploit_profiles_read",
+    "fn_horse_exploit_actor_increments"
+  ],
+  "columns": {
+    "hand_history": ["horse_exploit_recorded", "horse_exploit_dealt_count"]
+  }
+}

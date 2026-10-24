@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../services/HorseOpponentMemory.js', () => ({
+  horseOpponentMemorySchema: vi.fn(async () => 'installed'),
+}));
+
 vi.mock('../../services/HorseMindPersistence.js', () => ({
   hydrateHorseMindFromDb: vi.fn(async () => null),
   startHorseMindPersistence: vi.fn(),
@@ -36,6 +40,7 @@ vi.mock('../../gto/SolverPolicyArtifactLoader.js', () => ({
 
 import { defaultHorseDecisionWorkerDependencies as worker } from './workerRuntime.js';
 import * as future from '../HorseTournamentFutureHand.js';
+import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import {
   hydrateHorseMindFromDb,
@@ -52,6 +57,12 @@ afterEach(async () => {
 });
 
 describe('real worker-owned startup preparation', () => {
+  it('keeps an unrelated engine release compatible before the declared schema window', async () => {
+    vi.mocked(horseOpponentMemorySchema).mockResolvedValueOnce('unavailable');
+    await expect(worker.startServices()).resolves.toBeDefined();
+    expect(horseOpponentMemorySchema).toHaveBeenCalledTimes(1);
+  });
+
   it('finishes hydration and fixed card preparation before readiness, once per startup', async () => {
     vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
     vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});

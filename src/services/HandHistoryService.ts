@@ -300,7 +300,10 @@ class HandHistoryServiceClass {
    * existing mapHandHistoryRow mapper, and resolve profile names from the
    * JSONB `players` array.
    */
-  async getHand(handId: string): Promise<HandRecord | null> {
+  async getHand(
+    handId: string,
+    opts: { throwOnPrivateError?: boolean } = {}
+  ): Promise<HandRecord | null> {
     const { data, error } = await supabase
       .from('hand_history')
       .select(HAND_HISTORY_COLUMNS)
@@ -319,7 +322,7 @@ class HandHistoryServiceClass {
     const [profileMap, discards, privateCards, tableNames] = await Promise.all([
       this.fetchProfileMap(userIds),
       this.fetchOwnDiscards([rowAny]),
-      this.fetchOwnHoleCards([rowAny]),
+      this.fetchOwnHoleCards([rowAny], opts.throwOnPrivateError),
       this.fetchTableNames([rowAny]),
     ]);
 
@@ -592,7 +595,8 @@ class HandHistoryServiceClass {
    * hands the viewer folded for free (the writer NULLs cards nobody paid into).
    */
   private async fetchOwnHoleCards(
-    rows: Array<{ id?: string | null }>
+    rows: Array<{ id?: string | null }>,
+    throwOnError = false
   ): Promise<Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>> {
     const out = new Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>();
     const ids = [...new Set(rows.map((r) => r?.id).filter(Boolean))] as string[];
@@ -611,9 +615,11 @@ class HandHistoryServiceClass {
       if (error) {
         // A rundown without your own folded cards is the pre-2026-09-04 rundown,
         // which is complete and correct about the table. Never fail history for it.
+        if (throwOnError) throw error;
         reportError(error, 'HandHistoryService.fetchOwnHoleCards');
         return out;
       }
+      if (readLocalSession()?.userId !== viewerId) return out;
       const num = (v: unknown): number | null =>
         v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v);
       for (const d of data || []) {
@@ -645,6 +651,7 @@ class HandHistoryServiceClass {
       }
     } catch (e) {
       reportError(e, 'HandHistoryService.fetchOwnHoleCards_threw');
+      if (throwOnError) throw e;
     }
     return out;
   }

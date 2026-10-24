@@ -11,6 +11,12 @@ import {
   msUntilNextAnnouncement,
 } from '../scripts/ci/await-engine-gameplay.mjs';
 import { HUD_RESERVE_MS, MTT_HUD_LEVEL_CAP_MS } from './e2e/support/tournamentHudWitness';
+import {
+  MTT_MAX_CASE_MS,
+  MTT_MAX_SUBJECT_MS,
+  MTT_SUBJECT_STARTUP_MS,
+} from './e2e/support/mttSubjectBudget';
+import { MAX_NATURAL_COMPLETION_RESELECTIONS } from './e2e/support/tournamentBoardEnding';
 
 const SHA = 'a'.repeat(40);
 const health = (maintenance: object, releaseSha = SHA) =>
@@ -249,11 +255,12 @@ describe('the existing certification waits only for its engine maintenance bound
       expect(caseMs + handMs).toBe(390_000);
       expect(suite).toContain('mttCaseTimeoutMs(');
       expect(suite).toContain('testInfo.setTimeout(mttTimeoutMs)');
-      // Worst case the MTT case ever reaches: everything already spent on the
-      // shared 390s case budget, plus a level right at the certifiable cap,
-      // plus its unchanged 60s reserve. mttCaseTimeoutMs can only grow a case's
-      // timeout, never shrink it below that shared 390s floor.
-      const mttWorstCaseMs = caseMs + handMs + MTT_HUD_LEVEL_CAP_MS + HUD_RESERVE_MS;
+      // Each proven natural ending may require another complete subject. The
+      // startup, actual HUD clock and both replacement limits remain bounded.
+      expect(MTT_SUBJECT_STARTUP_MS).toBe(caseMs + handMs);
+      expect(MTT_MAX_SUBJECT_MS).toBe(caseMs + handMs + MTT_HUD_LEVEL_CAP_MS + HUD_RESERVE_MS);
+      expect(MTT_MAX_CASE_MS).toBe((MAX_NATURAL_COMPLETION_RESELECTIONS + 1) * MTT_MAX_SUBJECT_MS);
+      const mttWorstCaseMs = MTT_MAX_CASE_MS;
       // The cash case now starts at the same 300s + 90s as every tournament case
       // (cash hands are long: p90 87s, p99 149s over 20,488 hands, 2026-09-29).
       expect(suite).toMatch(
@@ -262,6 +269,9 @@ describe('the existing certification waits only for its engine maintenance bound
       expect(
         jobMs -
           (multirun ? 22 * 60_000 : 0) -
+          // awaitEngineGameplay can first pause until the daily announcement
+          // passes, before its separate GAMEPLAY_WAIT_MS deadline begins.
+          (CERTIFICATE_LEAD_MS + 30_000) -
           GAMEPLAY_WAIT_MS -
           (tournamentCount - 1) * (caseMs + handMs) -
           mttWorstCaseMs -

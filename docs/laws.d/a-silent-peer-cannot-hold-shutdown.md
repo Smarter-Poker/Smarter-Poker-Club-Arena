@@ -1,0 +1,3 @@
+# server/src/transport/aSilentPeerCannotHoldShutdown.law.test.ts
+
+2026-10-23: 13 of 14 engine drains on Oct 22-23 logged "Shutdown complete." about 7 s after SIGTERM, then waited until the 40 s hard deadline and exited 1. Keep-alive HTTP sockets and WebSocket peers that never answered the close frame (ws waits 30 s per peer) held the transports open, which spent the release transaction's cutover budget (run 39902613436-1). After ownership release, the HTTP server now drops idle sockets and closes the rest after 3 s, and both WebSocket servers terminate unanswered peers after 3 s. The law closes a real server against a paused peer inside the grace and pins the HTTP and channel close paths.

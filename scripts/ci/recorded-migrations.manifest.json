@@ -1015,9 +1015,7 @@
       "recoveredOn": "2026-10-22",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7652",
-      "refusedBy": [
-        "check-no-new-band-aids"
-      ],
+      "refusedBy": ["check-no-new-band-aids"],
       "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: this version created fn_ca_sweep_orphaned_certification_accounts() and pg_cron job ca-orphaned-certification-account-sweep, a periodic sweep that CLAUDE.md 10.12 refuses. It was withdrawn 24 minutes later by 20261022021302_remove_ca_orphaned_certification_account_sweep: cron.job has no row of that name and pg_proc has no function of that name. The root cause (a single-attempt teardown DELETE in scripts/ci/qualify-agent-boundary.mjs) is fixed in the same pull request."
     },
     {
@@ -1079,6 +1077,65 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-22 03:20 UTC: schema_migrations holds this version with ONE statement. It dropped fn_ca_payout_structure(integer,integer) after proving its pinned pre-image (md5 320527cd...), that the (integer,numeric) door exists, and that no public function calls the generator with one argument; exactly one fn_ca_payout_structure overload remains. No pg_depend dependents existed. Its live callers (fn_finalize_tournament_entry_pool_locked, fn_ca_fund_overlay_on_lock, fn_ca_provisional_payout_structure) pass a numeric depth and resolve to the remaining door; fn_ca_provisional_payout_structure read back a 16-place ladder for a 125-entrant registering MTT. Creates no trigger."
+    },
+    {
+      "version": "20261022163616",
+      "name": "anti_cheat_multi_account_v2_true_multi_accounts_only",
+      "file": "supabase/migrations/20261022163616_anti_cheat_multi_account_v2_true_multi_accounts_only.sql",
+      "md5": "087b584832c1bf6ce18d1cd4fb4f4487",
+      "appliedToProductionAt": "2026-10-22T16:36:16Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7723",
+      "refusedBy": ["check-explicit-table-access"],
+      "liveVerdict": "Read-only production check 2026-10-22 19:25 UTC: schema_migrations holds this version with ONE statement whose md5 equals this file. public.anti_cheat_shared_ip_ranges has RLS enabled and grants only to postgres and service_role (no anon, no authenticated). fn_anti_cheat_is_staff, fn_anti_cheat_never_flag, detect_multi_account_v2 and fn_anti_cheat_flags_skip_exempt are executable by postgres and service_role only. Migration 20261022185836 in the same PR makes the table boundary explicit (REVOKE ALL FROM PUBLIC, anon, authenticated, service_role; GRANT to service_role) and drops detect_multi_account_ips."
+    },
+    {
+      "version": "20261022170343",
+      "name": "anti_cheat_multi_account_v2_collapse_before_join",
+      "file": "supabase/migrations/20261022170343_anti_cheat_multi_account_v2_collapse_before_join.sql",
+      "md5": "f7ea794e30915ec933dd7c05802f095a",
+      "appliedToProductionAt": "2026-10-22T17:03:43Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7723",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 19:25 UTC: schema_migrations holds this version with ONE statement whose md5 equals this file. public.anti_cheat_shared_ip_ranges has RLS enabled and grants only to postgres and service_role (no anon, no authenticated). fn_anti_cheat_is_staff, fn_anti_cheat_never_flag, detect_multi_account_v2 and fn_anti_cheat_flags_skip_exempt are executable by postgres and service_role only. Migration 20261022185836 in the same PR makes the table boundary explicit (REVOKE ALL FROM PUBLIC, anon, authenticated, service_role; GRANT to service_role) and drops detect_multi_account_ips."
+    },
+    {
+      "version": "20261022173217",
+      "name": "anti_cheat_multi_account_v2_use_ip_index",
+      "file": "supabase/migrations/20261022173217_anti_cheat_multi_account_v2_use_ip_index.sql",
+      "md5": "dc1e44f876ea7ede372fb2687ef84b84",
+      "appliedToProductionAt": "2026-10-22T17:32:17Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7723",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 19:25 UTC: schema_migrations holds this version with ONE statement whose md5 equals this file. public.anti_cheat_shared_ip_ranges has RLS enabled and grants only to postgres and service_role (no anon, no authenticated). fn_anti_cheat_is_staff, fn_anti_cheat_never_flag, detect_multi_account_v2 and fn_anti_cheat_flags_skip_exempt are executable by postgres and service_role only. Migration 20261022185836 in the same PR makes the table boundary explicit (REVOKE ALL FROM PUBLIC, anon, authenticated, service_role; GRANT to service_role) and drops detect_multi_account_ips."
+    },
+    {
+      "version": "20261022220915",
+      "name": "anti_cheat_multi_account_v3_device_hands_auto_ranges",
+      "file": "supabase/migrations/20261022220915_anti_cheat_multi_account_v3_device_hands_auto_ranges.sql",
+      "md5": "56c5f2b3397b1c10427bb85db66747c0",
+      "appliedToProductionAt": "2026-10-22T22:09:15Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7723",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 22:10 UTC: schema_migrations holds this version with ONE statement whose md5 equals this file. anti_cheat_device_sightings, anti_cheat_shared_ip_ranges and anti_cheat_shared_ip_sources have RLS enabled and grant only to service_role; ca_record_device_sighting is executable by authenticated and service_role (not anon) and acts only for auth.uid(); fn_anti_cheat_replace_shared_ip_ranges and detect_multi_account_v3 are executable by service_role only. Applied directly while the CI queue was backed up; tested beforehand against a local PostgreSQL 16 with the same statements."
+    },
+    {
+      "version": "20261023014339",
+      "name": "entry_close_and_rebuy_use_the_earliest_configured_deadline",
+      "file": "supabase/migrations/20261023014339_entry_close_and_rebuy_use_the_earliest_configured_deadline.sql",
+      "md5": "8bd1349bd7e523ecaa533c84b842c40f",
+      "appliedToProductionAt": "2026-10-23T01:43:39Z",
+      "recoveredOn": "2026-10-23",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": ["check-definer-authorization: anon rule"],
+      "liveVerdict": "Both replaced functions preserve postgres/service_role-only ACL. Live read after installation: has_function_privilege false for anon and authenticated, true for service_role on both functions. Exact proacl {postgres=X/postgres,service_role=X/postgres}; migration asserts owner and ACL preimages. No browser execution introduced."
     }
   ]
 }

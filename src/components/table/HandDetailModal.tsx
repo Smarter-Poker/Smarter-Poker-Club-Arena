@@ -55,6 +55,7 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import type { HandRecord, HandHistoryLoadState } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
+import RecordedPotAwards from '../handdetail/RecordedPotAwards';
 import CardImage, { CardBack } from './CardImage';
 import { replayRabbitOffer } from './replayRabbitOffer';
 import { useRabbitHuntReveal } from './useRabbitHuntReveal';
@@ -62,9 +63,17 @@ import type { RabbitHuntRevealResult } from './RabbitHunt';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailModal.css';
-import { blindLabel, gameTypeLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
+import {
+  blindLabel,
+  gameTypeLabel,
+  money,
+  moneyForHand,
+  potShareLabels,
+  stamp,
+} from '../../utils/handFormat';
 import { handDeepLink } from '../../lib/handHistoryLive';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { useHandReviewDetails } from '../../hooks/useHandReviewDetails';
 
 export interface HandDetailModalProps {
   isOpen: boolean;
@@ -311,6 +320,11 @@ function SummaryRow({
             ? `${row.boardLabel} · ${row.potLabel}`
             : row.boardLabel || row.potLabel}
         </span>
+        {potShareLabels(row.potSlices, { arenaAsset }).map((label, index) => (
+          <span className="hdm-sd__pot" key={index}>
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -377,7 +391,10 @@ export function HandDetailModal({
      hand, that hand becomes the subject by id; the navigator's total grows
      and the arrows still reach the new one. */
   useEffect(() => {
-    if (isOpen && subjectId === null && hands.length > 0) setSubjectId(hands[0].id);
+    if (isOpen && subjectId === null && hands.length > 0) {
+      // Preserve a requested hand queued by the opening effect in this same commit.
+      setSubjectId((current) => current ?? hands[0].id);
+    }
   }, [isOpen, subjectId, hands]);
 
   const index = useMemo(() => {
@@ -388,7 +405,7 @@ export function HandDetailModal({
     }
     return 0;
   }, [hands, subjectId]);
-  const hand: HandRecord | undefined = hands[index];
+  const { hand, privateState, refresh } = useHandReviewDetails(hands[index], heroId, isOpen);
   const total = hands.length;
   const displayPos = total - index;
 
@@ -701,6 +718,69 @@ export function HandDetailModal({
             aria-labelledby={tab === 'summary' ? 'hdm-tab-summary' : 'hdm-tab-detail'}
             tabIndex={0}
           >
+            {(() => {
+              const me = model.players.find((p) => p.userId === heroId);
+              if (!me) return null;
+              const cards = me.hole?.length ? me.hole : me.privateHole;
+              const folded = hand.streets.some((street) =>
+                street.actions.some(
+                  (action) => action.playerId === heroId && action.action === 'fold'
+                )
+              );
+              return (
+                <section className="hdm-yours" aria-label="Your Cards">
+                  <header className="hdm-section-head">
+                    <span>Your Cards</span>
+                    <span className="hdm-section-count">
+                      {me.hole?.length ? 'Shown' : folded ? 'Folded, Not Shown' : 'Not Shown'}
+                    </span>
+                  </header>
+                  <div className="hdm-sd is-you">
+                    <div className="hdm-sd__who">
+                      <span className="hdm-sd__name">{me.username}</span>
+                      <span className="hdm-sd__pos">{me.position}</span>
+                    </div>
+                    <div className="hdm-sd__cards">
+                      {cards?.map((card, i) => (
+                        <CardImage
+                          key={i}
+                          card={card}
+                          size="sm"
+                          className={me.hole?.length ? undefined : 'hdm-private'}
+                        />
+                      ))}
+                    </div>
+                    <div className="hdm-sd__right">
+                      {me.won > 0 && (
+                        <span className="hdm-sd__collected">Collected {money(me.won)}</span>
+                      )}
+                      <span
+                        className={`hdm-sd__net${me.net < 0 ? ' is-down' : me.net > 0 ? ' is-up' : ''}`}
+                      >
+                        {`${me.net > 0 ? '+' : me.net < 0 ? '-' : ''}${money(Math.abs(me.net))}`}
+                      </span>
+                    </div>
+                  </div>
+                  {!cards?.length && (
+                    <div className="hdm-empty hdm-empty--inline" role="status">
+                      {privateState === 'loading'
+                        ? 'Loading Your Cards'
+                        : privateState === 'failed'
+                          ? 'Could Not Load Your Cards'
+                          : 'No Cards Available In This Record'}
+                      <button
+                        type="button"
+                        className="hdm-word-btn"
+                        disabled={privateState === 'loading'}
+                        onClick={refresh}
+                      >
+                        Refresh Your Cards
+                      </button>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
             {tab === 'detail' ? (
               <HandDetailView
                 model={model}
@@ -734,6 +814,7 @@ export function HandDetailModal({
                   />
                 ) : null}
 
+                <RecordedPotAwards model={model} variant="summary" />
                 {showdownRows.length === 0 ? (
                   <div className="hdm-empty hdm-empty--inline">
                     No Showdown{takenBy ? ` · Pot Taken By ${takenBy}` : ''}
@@ -756,40 +837,6 @@ export function HandDetailModal({
                     ))}
                   </section>
                 )}
-
-                {/* Your own cards on a hand you folded: the table never saw them,
-                    so they are not a showdown row. They are still yours to see. */}
-                {(() => {
-                  const me = model.players.find((p) => p.userId === heroId);
-                  if (!me?.privateHole?.length || showdownRows.some((r) => r.userId === heroId))
-                    return null;
-                  return (
-                    <section className="hdm-yours" aria-label="Your Cards">
-                      <header className="hdm-section-head">
-                        <span>Your Cards</span>
-                        <span className="hdm-section-count">Folded, Not Shown</span>
-                      </header>
-                      <div className="hdm-sd is-you">
-                        <div className="hdm-sd__who">
-                          <span className="hdm-sd__name">{me.username}</span>
-                          <span className="hdm-sd__pos">{me.position}</span>
-                        </div>
-                        <div className="hdm-sd__cards">
-                          {me.privateHole.map((c, i) => (
-                            <CardImage key={i} card={c} size="sm" className="hdm-private" />
-                          ))}
-                        </div>
-                        <div className="hdm-sd__right">
-                          <span
-                            className={`hdm-sd__net${me.net < 0 ? ' is-down' : me.net > 0 ? ' is-up' : ''}`}
-                          >
-                            {`${me.net > 0 ? '+' : me.net < 0 ? '-' : ''}${money(Math.abs(me.net))}`}
-                          </span>
-                        </div>
-                      </div>
-                    </section>
-                  );
-                })()}
               </>
             )}
           </div>

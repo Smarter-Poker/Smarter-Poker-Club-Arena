@@ -1668,11 +1668,6 @@ function CashierContent() {
     try {
       const recovery = await recoverCashoutOperation(start);
       assertCashoutStartCurrent(start);
-      if (!recovery.found) {
-        const lock = await checkSettlementLock(start.clubId);
-        assertCashoutStartCurrent(start);
-        if (lock.locked) throw new Error('Settlement In Progress. Cashout Requests Are Frozen');
-      }
       const receipt = recovery.found ? recovery.result : await runCashoutOperation(start);
       assertCashoutStartCurrent(start);
       showCashoutResult(value, receipt);
@@ -1794,8 +1789,9 @@ function CashierContent() {
       setIsProcessing(true);
       setMessage(null);
 
-      // SETTLEMENT FREEZE CHECK — Block all chip movements during settlement
-      if (clubId) {
+      // Cashout custody is validated atomically by its own transaction.
+      // Settlement admission applies only to the other cashier actions.
+      if (clubId && action !== 'cashout') {
         try {
           const lockResult = await checkSettlementLock(cashoutStart?.clubId ?? clubId);
           if (cashoutStart) assertCashoutStartCurrent(cashoutStart);
@@ -3351,8 +3347,12 @@ function CashierContent() {
                     </div>
                   )}
 
-                  {/* Presets */}
-                  <div className={styles.presetGrid} hidden={tableRouteOnly}>
+                  {/* Presets. A player's cashout carries none (Dan 2026-10-23): the
+                      player types the amount they want to cash out. */}
+                  <div
+                    className={styles.presetGrid}
+                    hidden={tableRouteOnly || action === 'cashout'}
+                  >
                     {preset.map((val) => (
                       <button
                         key={val}

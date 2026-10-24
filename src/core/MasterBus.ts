@@ -1404,6 +1404,15 @@ class MasterBusCore {
     'OPEN_MUST_MOVE_LOBBY',
   ];
 
+  // Navigation belongs to the browser tab where the player requested it.
+  // Reject incoming commands too: older open bundles still broadcast them.
+  private static readonly LOCAL_NAVIGATION_EVENTS = new Set<BusEventType>([
+    'OPEN_LOBBY_TAB',
+    'OPEN_HUB_TAB',
+    'OPEN_OBSERVE_TABLE',
+    'OPEN_MUST_MOVE_LOBBY',
+  ]);
+
   // #4b Channel factory registry for auto-recovery
   private channelFactoryRegistry: Map<string, () => void> = new Map();
 
@@ -1535,6 +1544,8 @@ class MasterBusCore {
     payload: K extends keyof BusPayloadMap ? BusPayloadMap[K] : unknown,
     fromBroadcast: boolean = false
   ): void {
+    if (fromBroadcast && MasterBusCore.LOCAL_NAVIGATION_EVENTS.has(type)) return;
+
     // Private account invalidations can also travel over this browser's shared
     // BroadcastChannel. Refuse another account before any subscriber sees them.
     if (['PROFILE_UPDATED', 'SETTINGS_UPDATED', 'DIAMOND_BALANCE_CHANGED'].includes(type)) {
@@ -1574,7 +1585,11 @@ class MasterBusCore {
     }
 
     // Phase 7: Cross-tab synchronization
-    if (!fromBroadcast && this.broadcastChannel) {
+    if (
+      !fromBroadcast &&
+      !MasterBusCore.LOCAL_NAVIGATION_EVENTS.has(type) &&
+      this.broadcastChannel
+    ) {
       try {
         this.broadcastChannel.postMessage({ type, payload });
       } catch (e: any) {

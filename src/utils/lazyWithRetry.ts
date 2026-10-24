@@ -21,9 +21,81 @@
 import { lazy, ComponentType } from 'react';
 import { STORAGE_KEYS } from '../lib/storage';
 
-const RELOAD_KEY = STORAGE_KEYS.CHUNK_RELOAD;
-const MAX_RELOADS = 2; // Max full-page reloads before giving up
+/**
+ * THE RELOAD GUARD IS KEYED BY BUILD (2026-10-23, client_crash_log 3015: an
+ * iPhone at a live table, "Importing a module script failed.", on a URL that
+ * already carried the `_cb` of an earlier recovery reload). The guard used to
+ * be one counter per tab with a budget of two, so a tab that had spent its
+ * reloads on one publish had none left for the next, and the stale import
+ * fell through to the table's error boundary as a "crash". Each build now
+ * gets exactly one hard reload: the document that reloads into a newer build
+ * starts that build's own budget, while a build whose chunks genuinely cannot
+ * load still stops after one reload instead of looping.
+ */
+const BUILD_ID: string = (() => {
+  try {
+    const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+    const version = env?.VITE_APP_VERSION;
+    return typeof version === 'string' && version.trim() !== '' ? version.trim() : 'dev';
+  } catch {
+    return 'dev';
+  }
+})();
+const RELOAD_KEY = `${STORAGE_KEYS.CHUNK_RELOAD}:${BUILD_ID}`;
+const MAX_RELOADS = 1; // One guarded hard reload per build
 let recoveryStarted = false;
+
+/** The sessionStorage key that guards this build's single recovery reload. */
+export function chunkReloadGuardKey(): string {
+  return RELOAD_KEY;
+}
+
+/**
+ * A PAGE THAT IS LEAVING IS NOT A STALE PAGE (2026-10-23, production
+ * post-deploy: "Navigation to /hub/club-arena/ is interrupted by another
+ * navigation to /clubs/kings-club?_cb=..."). When a player navigates away,
+ * the browser cancels the old document's in-flight requests, its lazy chunks
+ * and preloads included. Those cancellations reject exactly like a retired
+ * chunk ("Importing a module script failed", "Load failed"), and recovery
+ * answered them with a cache-busted reload of the page being LEFT, which
+ * hijacked the navigation the player had just started and sent them back.
+ *
+ * While a navigation is under way, recovery waits. If the page is still here
+ * once the grace period ends, the navigation was cancelled or never happened
+ * and the failure was real, so recovery runs then. If the navigation
+ * completed, this document no longer exists and nothing runs.
+ */
+export const NAVIGATION_GRACE_MS = 10_000;
+let leavingAt = Number.NEGATIVE_INFINITY;
+let deferredRecovery: ReturnType<typeof setTimeout> | null = null;
+
+function markLeaving(): void {
+  leavingAt = Date.now();
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('beforeunload', markLeaving);
+  window.addEventListener('pagehide', markLeaving);
+  // Restored from the back/forward cache: this document is in use again.
+  window.addEventListener('pageshow', (event) => {
+    if ((event as PageTransitionEvent).persisted) leavingAt = Number.NEGATIVE_INFINITY;
+  });
+}
+
+/** True while this document is being navigated away from. */
+export function documentIsNavigatingAway(now = Date.now()): boolean {
+  return now - leavingAt < NAVIGATION_GRACE_MS;
+}
+
+/** Run `recover` once the current navigation has had its chance to finish. */
+function afterNavigationGrace(recover: () => void): void {
+  if (deferredRecovery !== null) return;
+  const wait = Math.max(0, leavingAt + NAVIGATION_GRACE_MS - Date.now());
+  deferredRecovery = setTimeout(() => {
+    deferredRecovery = null;
+    recover();
+  }, wait);
+}
 
 /**
  * Retry a deferred, non-render-blocking module during an atomic publish.
@@ -68,6 +140,9 @@ function incrementReloadCount(): void {
 export function clearChunkRecoveryState(): void {
   try {
     sessionStorage.removeItem(RELOAD_KEY);
+    // The per-tab counter this build-keyed guard replaced.
+    sessionStorage.removeItem(STORAGE_KEYS.CHUNK_RELOAD);
+    sessionStorage.removeItem('ca-chunk-hardreload');
   } catch {
     // sessionStorage unavailable
   }
@@ -107,6 +182,10 @@ export function isChunkLoadError(error: unknown): boolean {
  * query so the browser and the edge are both forced to fetch a fresh document.
  */
 export async function hardReload(): Promise<void> {
+  if (documentIsNavigatingAway()) {
+    afterNavigationGrace(() => void hardReload());
+    return;
+  }
   try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -122,6 +201,11 @@ export async function hardReload(): Promise<void> {
     }
   } catch {
     /* ignore — best effort */
+  }
+  // The purge above is asynchronous; a navigation may have started meanwhile.
+  if (documentIsNavigatingAway()) {
+    afterNavigationGrace(() => void hardReload());
+    return;
   }
   try {
     const url = new URL(window.location.href);
@@ -142,9 +226,53 @@ function canOwnChunkRecovery(error: unknown): boolean {
   return isChunkLoadError(error) && (recoveryStarted || getReloadCount() < MAX_RELOADS);
 }
 
+export type BoundaryChunkOutcome = 'not-chunk' | 'recovering' | 'exhausted';
+
+/**
+ * ONE ANSWER FOR EVERY ERROR BOUNDARY. A lazy component that failed to load
+ * reaches whichever boundary sits above it - the table tile, the page, a stats
+ * panel, the route, the root - and React.lazy() call sites that do not use
+ * lazyWithRetry reach them directly. Each boundary asks here first:
+ *
+ * - 'not-chunk': an ordinary render error; report it as a crash as before.
+ * - 'recovering': a stale or missing chunk this document is now replacing
+ *   with a cache-busted reload. Not a crash, and never written to
+ *   client_crash_log; the boundary paints nothing while the page navigates.
+ * - 'exhausted': a chunk/module load failure after this build's one reload
+ *   was already spent. The boundary shows its fallback (with its reload
+ *   action), and the failure goes to the first-party error sink with code
+ *   CHUNK_LOAD_EXHAUSTED (see reportExhaustedChunkLoad) - an asset or network
+ *   outage stays visible, but it is not a render crash and is not written to
+ *   client_crash_log.
+ */
+export function claimChunkErrorForBoundary(error: unknown): BoundaryChunkOutcome {
+  if (!isChunkLoadError(error)) return 'not-chunk';
+  if (!canOwnChunkRecovery(error)) return 'exhausted';
+  void recoverFromStaleChunk(error);
+  return 'recovering';
+}
+
+export function reportExhaustedChunkLoad(error: unknown, surface: string): void {
+  // Lazy import: the reporter must not ride in this module's import graph
+  // just to record a rare outage, and a failure here must never throw.
+  void import('./errorReporter')
+    .then((m) =>
+      m?.captureClientError?.(error, `chunk-load-exhausted:${surface}`, {
+        code: 'CHUNK_LOAD_EXHAUSTED',
+        build: BUILD_ID,
+      })
+    )
+    .catch(() => undefined);
+}
+
 export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
   if (!canOwnChunkRecovery(error)) return false;
   if (recoveryStarted) return true;
+  // A cancelled load during navigation spends no reload budget.
+  if (documentIsNavigatingAway()) {
+    afterNavigationGrace(() => void recoverFromStaleChunk(error));
+    return true;
+  }
 
   recoveryStarted = true;
   incrementReloadCount();
@@ -153,9 +281,10 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
 }
 
 /**
- * Vite emits this before a failed preload rejects. Installing the listener at
- * boot prevents its default uncaught-error path and gives the cache-busting
- * recovery above ownership of the stale document.
+ * Vite emits this before a failed preload rejects. JavaScript importers own
+ * retry and recovery so optional imports cannot replace a usable document.
+ * Failed CSS still needs document recovery: Vite remembers that dependency
+ * as seen even after its failed link is removed, so retry alone can skip it.
  */
 /**
  * A STYLESHEET THAT FAILED IS NOT A STYLESHEET THAT LOADED (Dan 2026-10-14,
@@ -166,14 +295,18 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
  * Vite's preloader skips a CSS dependency whose <link> is already in the
  * document, and it does not distinguish a link that LOADED from one that
  * ERRORED. So after one failed CSS fetch, every retry of that route "found"
- * its stylesheet and rendered without it. The failed link is removed here so
- * the next attempt fetches it again and waits for it.
+ * its stylesheet and rendered without it. Removing the failed link clears the
+ * DOM entry, but Vite also remembers it in an internal seen-dependency map.
+ * The guarded document recovery below resets that map for the next load.
  */
-export function dropFailedStylesheet(error: unknown): boolean {
+function failedStylesheetHref(error: unknown): string | undefined {
   const message = (error as { message?: string } | null)?.message ?? '';
-  const match = /Unable to preload CSS for (\S+)/.exec(message);
-  if (!match || typeof document === 'undefined') return false;
-  const href = match[1];
+  return /Unable to preload CSS for (\S+)/.exec(message)?.[1];
+}
+
+export function dropFailedStylesheet(error: unknown): boolean {
+  const href = failedStylesheetHref(error);
+  if (!href || typeof document === 'undefined') return false;
   let removed = false;
   document.querySelectorAll('link[rel="stylesheet"]').forEach((node) => {
     const link = node as HTMLLinkElement;
@@ -189,15 +322,17 @@ export function dropFailedStylesheet(error: unknown): boolean {
 export function installVitePreloadErrorRecovery(): () => void {
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
-    // A failed stylesheet must be fetched again by whatever retries next.
-    const cssFailed = dropFailedStylesheet(payload);
-    // Vite propagates the original import error only if this event remains
-    // uncancelled. An exhausted budget must reach the route's retry/error
-    // boundary. A CSS failure is never cancelled: cancelling makes Vite hand
-    // back the module anyway, and the route renders with no styles.
-    if (!canOwnChunkRecovery(payload)) return;
-    if (!cssFailed) event.preventDefault();
-    void recoverFromStaleChunk(payload);
+    // Let Vite reject into the importing caller. Cancelling here resolves its
+    // import to undefined and skips both importWithRetry's non-disruptive
+    // retries and lazyWithRetry's bounded retries. Automatically recovering
+    // JavaScript here would interrupt optional warmers that handle errors.
+    // Critical lazy imports still request recovery after exhausting retries.
+    // CSS is different: Vite marks dependencies seen before fetching, so a
+    // retry in this document can silently skip the failed stylesheet. Preserve
+    // guarded recovery for CSS, without cancelling its original rejection.
+    const failedCss = failedStylesheetHref(payload) !== undefined;
+    dropFailedStylesheet(payload);
+    if (failedCss) void recoverFromStaleChunk(payload);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => window.removeEventListener('vite:preloadError', onPreloadError);
@@ -229,12 +364,11 @@ export function lazyWithRetry<T extends ComponentType<any>>(
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const module = await importFn();
-        // Vite resolves a cancelled preloadError to undefined. Our listener
-        // cancels it only when document recovery owns the failure. Keep React
-        // suspended until navigation, instead of handing it an invalid module
-        // that crashes in React's lazy initializer on module.default.
+        // Another preload listener can cancel Vite's event and resolve to
+        // undefined. If recovery or navigation already owns that failure,
+        // keep React suspended instead of passing it an invalid module.
         if (module == null || module.default == null) {
-          if (recoveryStarted) return new Promise<never>(() => {});
+          if (recoveryStarted || documentIsNavigatingAway()) return new Promise<never>(() => {});
           throw new Error('Lazy route module has no default export');
         }
         // Another lazy module succeeding does not prove the failed route

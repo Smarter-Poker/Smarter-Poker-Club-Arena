@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/hooks/useButtonImage', () => ({
   useButtonImage: () => '/time-bank.webp',
+  useTimebankIcon: () => '/time-bank.webp',
 }));
 
 import { TimebankCounter } from '../../src/components/table/TimebankCounter';

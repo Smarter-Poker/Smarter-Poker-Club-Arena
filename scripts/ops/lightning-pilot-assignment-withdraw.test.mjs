@@ -198,8 +198,8 @@ const execute = (f, baseline, extra = {}) =>
     ...extra,
   });
 test('exact approved72 and deterministic registration-bound request identities', async () => {
-  assert.equal(ASSIGNMENT_MEMBERS.length, 72);
-  assert.equal(new Set(ASSIGNMENT_MEMBERS).size, 72);
+  assert.equal(ASSIGNMENT_MEMBERS.length, 144);
+  assert.equal(new Set(ASSIGNMENT_MEMBERS).size, 144);
   assert.notEqual(
     assignmentWithdrawalRequestId(operationId, scopes[0]),
     assignmentWithdrawalRequestId(operationId, { ...scopes[0], bookingId: id(70) })

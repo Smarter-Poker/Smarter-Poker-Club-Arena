@@ -216,7 +216,9 @@ describe('the transaction runs a drill under every release control', () => {
     const drillReturn = request.indexOf('[ -z "${DRILL_MODE:-}" ] || return 0');
     expect(drillReturn).toBeGreaterThan(0);
     expect(drillReturn).toBeLessThan(request.indexOf('recovery_window_reason'));
-    expect(transactionCode).toContain('if [ -z "${DRILL_MODE:-}" ] && URGENT_HIGH_WATER=');
+    expect(transactionCode).toContain(
+      'if [ -z "${DRILL_MODE:-}" ] \\\n  && TRANSITION_HIGH_WATER='
+    );
     const marker = between(
       transactionCode,
       'if [ -n "${DRILL_MODE:-}" ]; then\n  echo',

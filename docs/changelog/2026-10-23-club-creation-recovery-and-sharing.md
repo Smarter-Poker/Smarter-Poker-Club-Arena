@@ -1,0 +1,13 @@
+# Club Creation Recovery And Sharing
+
+A committed club creation whose response was lost could be blocked on return by its own occupied name or membership slot. The creation console now resolves the account's original request receipt before new-creation admission, keeps unreadable outcomes explicit, and refuses to write without preserving the request on the device. It recovers the original club rather than creating another. Restored draft fields are validated so malformed saved data cannot crash the form or discard a valid recovery request.
+
+Creation and its later setup, card, and navigation work remain bound to the submitting account and request. Account changes discard stale callbacks while retaining the original account's recoverable intent. Invite link, statistics, and sharing feedback likewise belong to one open club/account session; delayed results cannot appear under another club or account. Statistics failures offer an explicit retry.
+
+Deferred-promise regressions reproduce the recovery and stale-response failures. Production certification now captures the untouched default screen, clicks the real Send Link action through Chromium's clipboard fallback, reads back the attributed invite, and retains the default/share/copied screenshots in both the report and evidence artifact. The disposable production club still uses its required cleanup name through optional customization; this certificate does not claim a zero-typing production submission or delivery to a message recipient. Existing default-submission component tests and protected fixture cleanup remain in place.
+
+No engine runtime change or new database migration is required.
+
+The required server check exposed an unrelated nondeterministic Lightning handoff fixture. Its real policy action remains intact; its disconnect decision now receives a fixed 1-second fixture think time rather than a randomized delay that can extend beyond the assertion's interval. All original action/clock assertions remain. The focused eight-test suite passes; production engine source is unchanged.
+
+Required CSS qualification exposed two existing fixture limits: the 60-case spectator sweep exhausted its 150-second shared budget, and occupied-ring measurement could run before the animation-end placement frame. Reuse PR7760's seat-count partition with all 60 cases and dock/geometry assertions retained, and wait for the pending frame before occupied-ring measurement. The unchanged 320px case passed locally; the intermittent hosted overlap is therefore not claimed as a locally reproduced runtime defect. No table runtime or artwork changed.

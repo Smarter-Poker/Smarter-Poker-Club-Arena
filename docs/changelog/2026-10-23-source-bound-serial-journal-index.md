@@ -23,3 +23,14 @@ read-only session preflight separately verified worker zero and stable backend.
 The new module is included in the existing accounting CI input classification;
 its routing regression fails before that input is registered and passes afterward.
 Source preparation is not migration installation or completed cleanup proof.
+
+The existing hosted installer also accepts the explicit `serial_journal_index`
+dispatch input. Only that mode selects session port 5432 from the configured
+provider endpoint; the project, role, database and credential remain unchanged.
+Unverified endpoints and other ports refuse. The option remains present when
+recovery inputs are also supplied so the applier rejects mixed modes, rather
+than silently discarding the serial request. Eighteen focused installer tests
+cover the hosted wiring and connection selection as well as the original guards.
+Integration retains the newer Chicago recovery and maintenance owner behavior
+and both parents' historical qualification records. Only current classifier and
+nested source-binding identities are refreshed; no financial result is restamped.

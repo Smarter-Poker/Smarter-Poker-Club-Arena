@@ -22,6 +22,7 @@ export type HudClockRejectionCategory =
   | 'not_mtt_format'
   | 'not_running'
   | 'on_break'
+  | 'synchronized_break_window'
   | 'accelerated'
   | 'insufficient_players'
   | 'not_started'
@@ -122,6 +123,16 @@ export function isMttFormatContract(value: unknown): boolean {
  *  tests/await-engine-gameplay.test.ts. */
 export const MTT_HUD_LEVEL_CAP_MS = 15 * 60_000;
 
+/** Tournament synchronized breaks run :55–:00 independently of engine maintenance. */
+function synchronizedBreakOverlaps(row: Row, now: number, until: number): boolean {
+  if (row.synchronized_breaks === false) return false;
+  const hourStart = Math.floor(now / 3_600_000) * 3_600_000;
+  const breakStart = hourStart + 55 * 60_000;
+  // The persisted on_break flag may lag admission; neither the active break
+  // nor an event/render reserve crossing its start can qualify a natural clock.
+  return now >= breakStart || until >= breakStart;
+}
+
 /**
  * Qualification only: unknown, paused, terminal, malformed and longer-than-
  * the-certifiable-cap clocks are not witnesses. A level that fits under
@@ -189,6 +200,7 @@ export function eligibleHudClock(
     remainingMs <= 20_000
   )
     return null;
+  if (synchronizedBreakOverlaps(row, now, now + requiredObservationMs)) return null;
   if (typeof row.id !== 'string') return null;
   return {
     tournamentId: row.id,
@@ -277,6 +289,12 @@ export function hudClockRejectionCategory(
   if (!row.started_at) return 'not_started';
   if (row.addon_period_started_at && Date.parse(String(row.addon_period_ends_at)) > now)
     return 'addon_period_open';
+  const uninterrupted = eligibleHudClock({ ...row, synchronized_breaks: false }, now, levelCapMs);
+  if (
+    uninterrupted &&
+    synchronizedBreakOverlaps(row, now, now + uninterrupted.requiredObservationMs)
+  )
+    return 'synchronized_break_window';
   return eligibleHudClock(row, now, levelCapMs)
     ? 'selection_lookahead_ineligible'
     : 'clock_or_schedule_ineligible';
@@ -487,7 +505,7 @@ export async function createHudClockReader() {
   const qualificationBatches: HudQualificationBatchEvidence[] = [];
   const discoveries: HudDiscoveryEvidence[] = [];
   const tournamentClockColumns =
-    'id,format_contract,status,current_players,current_level,blind_structure,started_at,level_started_at,on_break,accelerated_mtt,addon_period_started_at,addon_period_ends_at';
+    'id,format_contract,status,current_players,current_level,blind_structure,started_at,level_started_at,on_break,synchronized_breaks,accelerated_mtt,addon_period_started_at,addon_period_ends_at';
   return {
     qualifications,
     qualificationBatches,
@@ -761,9 +779,7 @@ export async function createHudClockReader() {
       return facts;
     },
     /** The persisted add-on window and synchronized break of one tournament, read-only; null when unreadable. */
-    async addOnBreakWindow(
-      tournamentId: string
-    ): Promise<{
+    async addOnBreakWindow(tournamentId: string): Promise<{
       addonPeriodEndsAt: string | null;
       addonBreakMinutes: number | null;
       breakStartedAt: string | null;

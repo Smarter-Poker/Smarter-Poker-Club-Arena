@@ -22,13 +22,26 @@ import {
   variantInfo,
 } from './HorseEval.js';
 import { Deck } from './PokerEngine.js';
+import { isPostflopManiac, maniacRaiseWidth } from './HorseOpponentExploit.js';
 import {
   controllerDecisionState,
   controllerSpotRandom,
 } from './remainingVariants/RemainingVariantControllerSpots.test-support.js';
 import type { RemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
 
-export type ManiacKind = 'jammer' | 'potter';
+/** jammer: shoves every hand preflop. potter: pots every street.
+ *  limppotter (2026-10-22): calls or checks preflop, then pots every street.
+ *  nit (2026-10-22): checks when it can, otherwise folds - the style a
+ *  maniac switches to in a style-change run. */
+export type ManiacKind = 'jammer' | 'potter' | 'limppotter' | 'nit';
+
+export interface PressureOptions {
+  /** from this hand on the seat plays `then` instead of `kind` */
+  switchAt?: number;
+  then?: ManiacKind;
+  /** starting stacks in big blinds (default 100 cash / 60 tournament) */
+  stackBB?: number;
+}
 
 export interface PressureTally {
   /** facing the maniac's preflop all-in, hero not yet in voluntarily */
@@ -54,6 +67,12 @@ export interface PressureTally {
    */
   postflopFolds: { equity: number; price: number }[];
   postflopCalls: number;
+  /** 2026-10-22: per hand, at its start, is the seat read as a preflop maniac */
+  maniacReadByHand: boolean[];
+  /** ...and as a postflop maniac (isPostflopManiac) */
+  postflopManiacByHand: boolean[];
+  /** preflop opens a horse made first in while the maniac was still to act: shoves vs raises */
+  firstInVsManiac: { jam: number; raise: number };
 }
 
 const STYLES: readonly HorseStyle[] = ['tag', 'lag', 'balanced', 'tricky', 'grinder'];
@@ -66,7 +85,8 @@ export function playManiacPressure(
   kind: ManiacKind,
   hands: number,
   seed = 11,
-  warm = 15
+  warm = 15,
+  options: PressureOptions = {}
 ): PressureTally {
   const tally: PressureTally = {
     vsJam: { call: 0, fold: 0, callScores: [], foldScores: [] },
@@ -79,6 +99,9 @@ export function playManiacPressure(
     rtfByStreet: {},
     postflopFolds: [],
     postflopCalls: 0,
+    maniacReadByHand: [],
+    postflopManiacByHand: [],
+    firstInVsManiac: { jam: 0, raise: 0 },
   };
   const secure = Deck.prototype.shuffle;
   let handSeed = 0;
@@ -104,7 +127,7 @@ export function playManiacPressure(
         seat: i + 1,
         user_id,
         username: `P${i + 1}`,
-        stack: (mode === 'cash' ? 100 : 60) * bb,
+        stack: (options.stackBB ?? (mode === 'cash' ? 100 : 60)) * bb,
         bet: 0,
         totalInvested: 0,
         cards: [],
@@ -133,6 +156,13 @@ export function playManiacPressure(
       const aggrStreet = new Map<string, string>();
       const counted = hand >= warm;
       if (counted) tally.hands++;
+      const seatStyle =
+        options.switchAt !== undefined && hand >= options.switchAt ? (options.then ?? kind) : kind;
+      HorseMind.setDecisionScope(readScopeOf(variant, seats), variant);
+      const startRead = HorseMind.opponentRead(PRESSURE_MANIAC);
+      HorseMind.setDecisionScope(null);
+      tally.maniacReadByHand.push(maniacRaiseWidth(startRead) !== null);
+      tally.postflopManiacByHand.push(isPostflopManiac(startRead));
       for (let step = 0; step < 200; step++) {
         const live = c.getState();
         if (live.stage === 'pineapple_discard') {
@@ -149,7 +179,23 @@ export function playManiacPressure(
         const menu = c.getAuthoritativeActionState(spot.hero.user_id)!;
         if (spot.hero.user_id === PRESSURE_MANIAC) {
           let done = false;
-          if (kind === 'jammer') {
+          if (seatStyle === 'nit') {
+            done = c.performAction(
+              spot.hero.seat,
+              menu.legalActions.includes('check') ? 'check' : 'fold'
+            );
+            if (!done) break;
+            continue;
+          }
+          if (seatStyle === 'limppotter' && live.stage === 'preflop') {
+            done = c.performAction(
+              spot.hero.seat,
+              menu.legalActions.includes('check') ? 'check' : 'call'
+            );
+            if (!done) break;
+            continue;
+          }
+          if (seatStyle === 'jammer') {
             if (live.stage === 'preflop' && menu.legalActions.includes('all_in'))
               done = c.performAction(spot.hero.seat, 'all_in');
           } else {
@@ -207,6 +253,16 @@ export function playManiacPressure(
         );
         const act = decision.action;
         const aggressive = act === 'bet' || act === 'raise' || act === 'all_in';
+        if (
+          counted &&
+          street === 'preflop' &&
+          aggressive &&
+          !pre.some((a) => a.action === 'raise' || a.action === 'all_in') &&
+          !pre.some((a) => a.userId === PRESSURE_MANIAC)
+        ) {
+          if (act === 'all_in') tally.firstInVsManiac.jam++;
+          else tally.firstInVsManiac.raise++;
+        }
         if (counted) {
           if (facingJam) {
             const score =

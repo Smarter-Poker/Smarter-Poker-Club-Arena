@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { _clearGtoCharts, setGtoCharts } from './GtoCharts.js';
 
 import {
@@ -422,8 +422,10 @@ describe('Phase 6B mismatch refusal names its reason', () => {
     'the live worker client refuses a returned receipt from a different %s and names the reason',
     async (_axis, overrides, reason) => {
       const worker = new FakeWorker();
+      const onFatal = vi.fn();
       const client = new LiveHorseDecisionWorkerClient({
         workerFactory: () => worker as never,
+        onFatal,
       });
       worker.emit('message', ready);
       const pending = client.decideFast(s);
@@ -443,8 +445,34 @@ describe('Phase 6B mismatch refusal names its reason', () => {
         effects: [],
       });
       await expect(pending).rejects.toThrow(`invalid policy receipt: ${reason}`);
-      expect(client.status().phase).toBe('failed');
-      await client.stop();
+      // ONE REFUSED DECISION NEVER TAKES DOWN THE ENGINE (2026-10-22): the
+      // refusal is isolated to its own caller and counted; the worker stays
+      // ready, onFatal never runs, and the next decision is served normally.
+      expect(client.status().phase).toBe('ready');
+      expect(client.status().recoverableRequestErrors).toBe(1);
+      expect(client.status().lastRecoverableRequestError).toContain(reason);
+      const next = client.decideFast(s);
+      worker.emit('message', {
+        type: 'FAST_RESULT',
+        requestId: 2,
+        planBinding: horsePlanBatchBindingFromRequest({ ...s, requestId: 2 }),
+        planIssueDisposition: 'no_effects',
+        generation: s.generation,
+        fence: s.fence,
+        decision: structuredClone(decision),
+        rngBefore: 22,
+        rngAfter: 33,
+        computeMs: 1,
+        governorScale: 1,
+        effects: [],
+      });
+      await expect(next).resolves.toMatchObject({ requestId: 2 });
+      await Promise.resolve();
+      expect(onFatal).not.toHaveBeenCalled();
+      expect(client.status().phase).toBe('ready');
+      const stopping = client.stop();
+      worker.emit('message', { type: 'STOPPED' });
+      await stopping;
     }
   );
 

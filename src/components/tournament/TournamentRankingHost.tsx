@@ -39,9 +39,9 @@
  */
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  clearSessionSummary,
+  dismissSessionSummary,
   peekSessionSummary,
   subscribeSessionSummary,
   type SessionSummaryPayload,
@@ -58,77 +58,24 @@ import { reportError } from '../../utils/errorReporter';
    payload that shows it waits the few milliseconds the chunk takes. */
 const TournamentRankingCard = lazy(() => import('./TournamentRankingCard'));
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 export function TournamentRankingHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
   const navigate = useNavigate();
-  const location = useLocation();
   /* One tap only: a double-tap on Play Again while the sibling lookup is in
      flight must not start a second lookup or navigate twice. */
   const playAgainBusyRef = useRef(false);
 
   useEffect(() => subscribeSessionSummary(setPayload), []);
+  // A reload can mount before an expired SSO token finishes refreshing.
+  // The existing auth event restores only the newly authenticated owner's cache.
+  useMasterBusSubscription('AUTH_STATE_CHANGED', () => setPayload(peekSessionSummary()));
 
-  const close = useCallback(() => clearSessionSummary(), []);
+  const close = useCallback(() => dismissSessionSummary(), []);
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════
-   *  THE CARD BELONGS TO THE PAGE YOU LANDED ON (Dan 2026-09-05)
-   * ═══════════════════════════════════════════════════════════════════════════
-   *
-   * Dan: "YOUR RESULT CARD SHOULD ONLY DISPLAY ON THE WINDOW OR SMARTER.POKER
-   * LOBBY TAB YOU ARE IN, NOT EVERY SINGLE PAGE INSIDE THE CLUB ARENA."
-   *
-   * This host is mounted at the app root, OUTSIDE <Routes>, and that placement
-   * is deliberate and still right: the player is mid-navigation when the
-   * result arrives and a route-level mount would be torn down under them. But
-   * "survives the navigate off the table" was implemented as "survives every
-   * navigate forever", so the card rode along to the cashier, the promotions
-   * page and everywhere else until the X was pressed. It is a result, not a
-   * companion.
-   *
-   * So: remember the route the card actually became visible on, and let go
-   * when the player leaves it. Leaving IS a deliberate act - they tapped
-   * something to get to the next page - so this does not weaken Dan's earlier
-   * ruling ("IT SHOULD NEVER 'AUTO CLOSE', USER MUST CLICK THE 'X'",
-   * 2026-08-30). Nothing here is on a timer, and a card sitting on the lobby
-   * the player is reading stays until they dismiss it.
-   *
-   * `clearSessionSummary` rather than a local hide, because the module holds
-   * one pending value and a hidden-but-pending card would resurface on the
-   * next route change. It also surfaces anything held behind this one, which
-   * is what a second finished table is waiting for.
-   *
-   * ── WHY THE TABLE ROUTE CANNOT BE THE ANCHOR ──────────────────────────────
-   *
-   * TablePage publishes the payload and THEN navigates, so the card's very
-   * first render is on `/table/<id>` - the page being left. Anchoring there
-   * would clear the card on the exit navigation itself and Dan would never see
-   * it at all, which is a far worse bug than the one being fixed. The anchor
-   * is therefore the first NON-table route: the lobby the exit lands on, which
-   * is the page Dan is naming. A multi-table session that publishes without
-   * navigating simply never anchors, and keeps today's behaviour - up until
-   * the X, or until the player moves to a real page.
-   */
-  const cardRouteRef = useRef<string | null>(null);
-  const hasCard = !!payload?.tournament;
-  useEffect(() => {
-    if (!hasCard) {
-      cardRouteRef.current = null;
-      return;
-    }
-    // Still on the felt: in transit, not landed. Nothing to anchor yet.
-    if (location.pathname.includes('/table/')) return;
-    if (cardRouteRef.current === null) {
-      // The page the exit landed on. This card belongs to it.
-      cardRouteRef.current = location.pathname;
-      return;
-    }
-    if (cardRouteRef.current !== location.pathname) {
-      cardRouteRef.current = null;
-      clearSessionSummary();
-    }
-  }, [hasCard, location.pathname]);
+  // October22: route changes during an exit are not an acknowledgement.
+  // Keep the report until its own dismissal or Play Again gesture.
 
   const tournamentId = payload?.tournament?.tournamentId;
 
@@ -222,8 +169,20 @@ export function TournamentRankingHost() {
   }, [tournamentId, payload?.tournament]);
 
   const playAgain = useCallback(() => {
+    const requested = payload?.tournament;
+    const isCurrentReport = () => {
+      const current = peekSessionSummary()?.tournament;
+      return (
+        !!requested &&
+        !!current &&
+        current.tournamentId === requested.tournamentId &&
+        current.finishSequence === requested.finishSequence &&
+        (!requested.userId || requested.userId === readLocalSession()?.userId)
+      );
+    };
     /* The card's own fallback (tournaments list) handles the no-id case. */
     const fallback = () => {
+      if (!isCurrentReport()) return;
       close();
       navigate(payload?.tournament?.isSpin ? '/tournaments?type=spin' : '/tournaments');
     };
@@ -240,13 +199,17 @@ export function TournamentRankingHost() {
         // Keep it inside the action's existing failure/fallback boundary.
         const { readTournamentFormat, isSeatFirstTournamentFormat, isTournamentEntryUnavailable } =
           await import('../../utils/tournamentPresentation');
-        const { data: origin, error: originErr } = await supabase
-          .from('tournaments')
-          .select(
-            'format_contract, club_id, buy_in_amount, game_type, variant, tournament_type, satellite_target_id, satellite_target, max_players'
-          )
-          .eq('id', tournamentId)
-          .maybeSingle();
+        const { awaitTournamentResultEnrichment } =
+          await import('../../utils/tournamentResultEnrichment');
+        const { data: origin, error: originErr } = (await awaitTournamentResultEnrichment(
+          supabase
+            .from('tournaments')
+            .select(
+              'format_contract, club_id, buy_in_amount, game_type, variant, tournament_type, satellite_target_id, satellite_target, max_players'
+            )
+            .eq('id', tournamentId)
+            .maybeSingle()
+        )) ?? { data: null, error: new Error('Play Again Origin Read Timed Out') };
         if (originErr) throw originErr;
 
         /* Seat-first games only: an MTT's "again" genuinely is the list. */
@@ -275,7 +238,9 @@ export function TournamentRankingHost() {
         q = q.eq('format_contract', readTournamentFormat(origin));
         const target = origin.satellite_target_id ?? origin.satellite_target;
         if (target) q = q.or(`satellite_target_id.eq.${target},satellite_target.eq.${target}`);
-        const { data: siblings, error: siblingErr } = await q;
+        const { data: siblings, error: siblingErr } = (await awaitTournamentResultEnrichment(
+          q
+        )) ?? { data: null, error: new Error('Play Again Sibling Read Timed Out') };
         if (siblingErr) throw siblingErr;
 
         const sibling = siblings?.find(
@@ -288,12 +253,15 @@ export function TournamentRankingHost() {
           return;
         }
 
-        const liveTable = await tableService.resolveTournamentLiveTable(String(sibling.id));
+        const liveTable = await awaitTournamentResultEnrichment(
+          tableService.resolveTournamentLiveTable(String(sibling.id))
+        );
         if (!liveTable) {
           fallback();
           return;
         }
 
+        if (!isCurrentReport()) return;
         close();
         navigate(`/table/${liveTable}`);
       } catch (err) {
@@ -305,9 +273,11 @@ export function TournamentRankingHost() {
         playAgainBusyRef.current = false;
       }
     })();
-  }, [tournamentId, payload?.tournament?.isSpin, close, navigate]);
+  }, [tournamentId, payload?.tournament, close, navigate]);
 
   if (!payload?.tournament) return null;
+  if (payload.tournament.userId && payload.tournament.userId !== readLocalSession()?.userId)
+    return null;
 
   return (
     <Suspense fallback={null}>
@@ -316,8 +286,8 @@ export function TournamentRankingHost() {
         tableName={payload.tableName}
         /* The payload has always carried these; the card simply never asked for
          them. See the props on TournamentRankingCard. */
-        durationSeconds={payload.duration}
-        handsPlayed={payload.handsPlayed}
+        durationSeconds={payload.resultOnly ? undefined : payload.duration}
+        handsPlayed={payload.resultOnly ? undefined : payload.handsPlayed}
         /* THE GRID THIS EVENT PAID ON (2026-09-20). The payload has carried the
          table's arena asset since the wallet learned the Diamond Arena, and
          `parseArenaIdentity` only ever writes 'diamonds' for a row that

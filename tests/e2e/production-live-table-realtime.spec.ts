@@ -26,6 +26,7 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import { captureEngineFailureHealth } from './support/liveTableFailureHealth';
 import {
   refreshPreNavigationSelection,
   nextHandAdvanced,
@@ -57,6 +58,7 @@ import {
   type StalledSubject,
 } from './support/certifiableSubject';
 import { recordNonVerdict } from './support/nonVerdict';
+import { admitMttReplacementBudget, MTT_MAX_SUBJECT_MS } from './support/mttSubjectBudget';
 import {
   createHudClockReader,
   hudCandidateTableIdBatches,
@@ -411,7 +413,7 @@ async function selectOccupiedRunningCashTables(
 
   await page
     .locator(
-      '.club-home__games [data-testid="arena-lobby-game-card"], .club-home__games .empty-tables'
+      '.club-home__games [data-testid="arena-lobby-game-card"], .club-home__games [data-testid="lobby-game-row"], .club-home__games .empty-tables'
     )
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 });
@@ -1064,6 +1066,7 @@ async function certifyReadOnlyTournamentFormat(
   const attritions: Array<Record<string, unknown>> = [];
   const holds: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
+  let subjectMaxTimeoutMs = MTT_MAX_SUBJECT_MS;
   try {
     for (let attempt = 0; ; attempt++) {
       const attemptPage = attempt === 0 ? page : await page.context().newPage();
@@ -1072,6 +1075,7 @@ async function certifyReadOnlyTournamentFormat(
         await observeTournamentBoard(attemptPage, request, testInfo, gameFormat, {
           caseStartedAt,
           observationDeadline: caseStartedAt + testInfo.timeout,
+          subjectMaxTimeoutMs,
           boardReader,
           hudReader,
           watched,
@@ -1088,8 +1092,22 @@ async function certifyReadOnlyTournamentFormat(
         if (error instanceof PreHudCandidateAttrition) attritions.push(error.evidence);
         else if (error instanceof AuthoritativeHoldDuringObservation) holds.push(error.evidence);
         else endings.push(error.evidence);
-        // Reselection shares the existing case deadline, including any clock
-        // already admitted by the HUD; it never resets the case.
+        // A normal MTT closure can arrive near the end of its HUD clock.
+        // Fund the next complete subject only after that durable proof,
+        // retaining the replacement count and one overall finite case cap.
+        if (gameFormat === 'mtt' && error instanceof NaturalCompletionDuringObservation) {
+          const budget = admitMttReplacementBudget({
+            outcome: 'natural-completion',
+            reselectionsUsed: attempt,
+            caseElapsedMs: Date.now() - caseStartedAt,
+          });
+          if (!budget)
+            throw Object.assign(new Error('The finite MTT replacement budget is exhausted'), {
+              cause: error,
+            });
+          subjectMaxTimeoutMs = budget.subjectMaxTimeoutMs;
+          testInfo.setTimeout(budget.startupTimeoutMs);
+        }
         const decision = decideReselection({
           reselectionsUsed: attempt,
           remainingMs: caseStartedAt + testInfo.timeout - Date.now(),
@@ -1139,6 +1157,7 @@ async function observeTournamentBoard(
   clock: {
     caseStartedAt: number;
     observationDeadline: number;
+    subjectMaxTimeoutMs: number;
     boardReader: BoardReader | undefined;
     hudReader: BoardReader | undefined;
     watched: string[];
@@ -1550,10 +1569,9 @@ async function observeTournamentBoard(
         // Whatever this real clock needs is what the case gets: never a fixed
         // guess a natural blind level can outrun by luck. This only ever grows
         // the case's one deadline (never shrinks it) - see mttCaseTimeoutMs.
-        const mttTimeoutMs = mttCaseTimeoutMs(
-          hudClock.observedAt - caseStartedAt,
-          hudClock,
-          testInfo.timeout
+        const mttTimeoutMs = Math.min(
+          clock.subjectMaxTimeoutMs,
+          mttCaseTimeoutMs(hudClock.observedAt - caseStartedAt, hudClock, testInfo.timeout)
         );
         testInfo.setTimeout(mttTimeoutMs);
         const mttDeadline = caseStartedAt + mttTimeoutMs;
@@ -1677,6 +1695,23 @@ async function observeTournamentBoard(
     }
   } catch (error) {
     if (error instanceof PreHudCandidateAttrition) throw error;
+    if (gameFormat === 'mtt') {
+      // Capture the blocked step before closeout reads can outlast the stall.
+      // This evidence never changes the original assertion or its classification.
+      const failureHealth = await captureEngineFailureHealth(
+        request.get.bind(request),
+        ENGINE_HEALTH_URL,
+        candidate.id
+      );
+      try {
+        await testInfo.attach(`${tag}-engine-at-failure`, {
+          body: Buffer.from(JSON.stringify(failureHealth, null, 2)),
+          contentType: 'application/json',
+        });
+      } catch {
+        console.warn('[MTT continuity] Engine failure evidence could not be attached');
+      }
+    }
     /* Say WHY the case failed, from evidence, before the failure leaves this
        function. Nothing here turns a failure into a pass: a proven natural
        ending routes to another running board (bounded, inside the same case
@@ -1962,10 +1997,16 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     // The engine-progress wait above can outlast the optional invitation's
     // arrival. Own its dismissal before the unchanged View visibility check.
     await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    const row = page.locator(`[data-testid="lobby-game-row"][data-id="${candidate.id}"]`);
+    if (await row.isVisible()) {
+      await row.getByRole('button', { name: /^Details:/ }).click();
+    }
     const card = page.locator(
       `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
     );
-    const view = card.getByRole('button', { name: CASH_SPECTATOR_ACTION });
+    const view = (await row.isVisible())
+      ? page.getByRole('dialog').getByRole('button', { name: CASH_SPECTATOR_ACTION })
+      : card.getByRole('button', { name: CASH_SPECTATOR_ACTION });
     await expect(
       view,
       `occupied table ${candidate.name} lost its visible read-only View/Watch Table or Game action`

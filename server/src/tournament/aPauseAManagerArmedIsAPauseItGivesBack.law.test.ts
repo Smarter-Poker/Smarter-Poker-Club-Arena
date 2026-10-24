@@ -231,6 +231,94 @@ function attach(manager: any, engine: any, publish = true) {
 }
 
 describe('a pause a tournament manager armed is a pause it gives back', () => {
+  it.each(['sweep', 'dealer', 'retained-hand'])(
+    'retains the %s successor drain across real park callbacks and hands off at its last edge',
+    async (cause) => {
+      const manager = managerFixture();
+      const first = dealer();
+      const last = dealer();
+      last.tableId = 'ca280000-0000-4000-8000-000000000004';
+      last.handController = {};
+      attach(manager, first);
+      manager.wireEliminationWake(last);
+      manager.tableEngines.set(last.tableId, last);
+      manager.isProcessingEliminations = true;
+      const handoff = vi.fn();
+      manager.gameServer.handTournamentToSuccessorGeneration = handoff;
+      manager.tableAdmissionFailingSince.set('missing-dealer', Date.now());
+      const retained = {
+        isRunning: () => false,
+        hasReleasedProcessOwnership: () => true,
+        getF06RetainedPermit: () => ({
+          phase: 'attempted',
+          binding: { lease_generation: AUTH.leaseGeneration },
+        }),
+      };
+      if (cause === 'retained-hand') manager.tableEngines.set('retained', retained);
+      const request = () =>
+        cause === 'sweep'
+          ? manager.requestSuccessorForStalledEliminationSweep()
+          : cause === 'dealer'
+            ? manager.requestSuccessorForStuckTable('missing-dealer')
+            : manager.handUnprovedOriginalToSuccessorGeneration(retained);
+      let firstReleased = false;
+      let firstGate: Promise<void> | undefined;
+      let lastGate: Promise<void> | undefined;
+      try {
+        expect(request()).toBe(true);
+        firstGate = first.awaitPauseGate().then(() => {
+          firstReleased = true;
+        });
+        await flush();
+        expect(firstReleased).toBe(false);
+        expect(first.requiresExplicitPauseResume()).toBe(true);
+        expect(handoff).not.toHaveBeenCalled();
+        manager.onBreak = true;
+        await manager.resumeFromBreak();
+        await flush();
+        expect(firstReleased).toBe(false);
+        expect(first.requiresExplicitPauseResume()).toBe(true);
+        const replacement = dealer();
+        manager.prepareManagedTableEngineForPlay(replacement);
+        expect(replacement.requiresExplicitPauseResume()).toBe(true);
+        expect(replacement.holdBeforeNextHand).toBe(true);
+        replacement.resumeDealing();
+
+        // The final live hand finishes naturally. Its own park event must
+        // complete the original request without another watchdog pass.
+        last.handController = null;
+        lastGate = last.awaitPauseGate();
+        await flush();
+        expect(handoff).toHaveBeenCalledTimes(1);
+        expect(handoff).toHaveBeenCalledWith(T, manager);
+        expect(firstReleased).toBe(false);
+        expect(last.requiresExplicitPauseResume()).toBe(true);
+        request();
+        expect(handoff).toHaveBeenCalledTimes(1);
+      } finally {
+        first.resumeDealing();
+        last.resumeDealing();
+        await Promise.all([firstGate, lastGate]);
+      }
+    }
+  );
+
+  it('a stopped manager cannot finish an already requested successor drain', async () => {
+    const manager = managerFixture();
+    const engine = dealer();
+    engine.handController = {};
+    attach(manager, engine);
+    manager.isProcessingEliminations = true;
+    const handoff = vi.fn();
+    manager.gameServer.handTournamentToSuccessorGeneration = handoff;
+    expect(manager.requestSuccessorForStalledEliminationSweep()).toBe(true);
+    manager.running = false;
+    engine.handController = null;
+    expect(manager.completeSuccessorDrain()).toBe(false);
+    expect(handoff).not.toHaveBeenCalled();
+    engine.resumeDealing();
+  });
+
   it('surrenders its claim when it releases, even while another authority still holds the table', async () => {
     const manager = managerFixture();
     const engine = dealer();

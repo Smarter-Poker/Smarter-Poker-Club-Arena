@@ -8,6 +8,12 @@ import {
 } from '../e2e/support/tournamentBoardEnding';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  admitMttReplacementBudget,
+  MTT_MAX_CASE_MS,
+  MTT_MAX_SUBJECT_MS,
+  MTT_SUBJECT_STARTUP_MS,
+} from '../e2e/support/mttSubjectBudget';
 
 // Production evidence: a board closed during a 321s HUD witness. Reuse the
 // actual ownership and durable ending classifiers; no browser/API writes.
@@ -98,5 +104,98 @@ describe('closed MTT board retires its HUD witness before reselection loses its 
     );
     expect(source).toContain('observationDeadline: caseStartedAt + testInfo.timeout');
     expect(source).toContain('remainingMs: caseStartedAt + testInfo.timeout - Date.now()');
+    expect(source).toContain(
+      "gameFormat === 'mtt' && error instanceof NaturalCompletionDuringObservation"
+    );
+    expect(source).toContain('testInfo.setTimeout(budget.startupTimeoutMs)');
+    expect(source).toContain('subjectMaxTimeoutMs = budget.subjectMaxTimeoutMs');
+    expect(source).toContain('clock.subjectMaxTimeoutMs,');
+    expect(source).toMatch(
+      /if \(!budget\)\s+throw Object\.assign\(new Error\('The finite MTT replacement budget is exhausted'\)/
+    );
   });
+
+  it('funds a complete replacement after the production closure left only 60237ms', () => {
+    const elapsedMs = 430_000;
+    const previousDeadlineMs = elapsedMs + 60_237;
+    expect(
+      decideReselection({
+        reselectionsUsed: 0,
+        remainingMs: previousDeadlineMs - elapsedMs,
+      }).reselect
+    ).toBe(false);
+    const budget = admitMttReplacementBudget({
+      outcome: 'natural-completion',
+      reselectionsUsed: 0,
+      caseElapsedMs: elapsedMs,
+    });
+    expect(budget).toEqual({
+      startupTimeoutMs: elapsedMs + MTT_SUBJECT_STARTUP_MS,
+      subjectMaxTimeoutMs: elapsedMs + MTT_MAX_SUBJECT_MS,
+    });
+    expect(
+      decideReselection({
+        reselectionsUsed: 0,
+        remainingMs: budget!.startupTimeoutMs - elapsedMs,
+      })
+    ).toEqual({ reselect: true });
+    // Only a newly read actual HUD clock can spend the larger subject cap.
+    expect(budget!.startupTimeoutMs - elapsedMs).toBe(390_000);
+    expect(budget!.subjectMaxTimeoutMs - elapsedMs).toBe(1_350_000);
+  });
+
+  it('keeps both replacements and their real clocks inside one fixed overall maximum', () => {
+    expect(MTT_MAX_CASE_MS).toBe(4_050_000);
+    const first = admitMttReplacementBudget({
+      outcome: 'natural-completion',
+      reselectionsUsed: 0,
+      caseElapsedMs: MTT_MAX_SUBJECT_MS,
+    })!;
+    const second = admitMttReplacementBudget({
+      outcome: 'natural-completion',
+      reselectionsUsed: 1,
+      caseElapsedMs: first.subjectMaxTimeoutMs,
+    })!;
+    expect(second.subjectMaxTimeoutMs).toBe(MTT_MAX_CASE_MS);
+    expect(
+      admitMttReplacementBudget({
+        outcome: 'natural-completion',
+        reselectionsUsed: 2,
+        caseElapsedMs: second.startupTimeoutMs,
+      })
+    ).toBeNull();
+    expect(
+      admitMttReplacementBudget({
+        outcome: 'natural-completion',
+        reselectionsUsed: 1,
+        caseElapsedMs: MTT_MAX_CASE_MS - MTT_SUBJECT_STARTUP_MS + 1,
+      })
+    ).toBeNull();
+  });
+
+  it.each(['unproven', 'table-engine-restarted'] as const)(
+    'never admits replacement time for %s failures',
+    (outcome) => {
+      expect(
+        admitMttReplacementBudget({
+          outcome,
+          reselectionsUsed: 0,
+          caseElapsedMs: 430_000,
+        })
+      ).toBeNull();
+    }
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    'refuses an unreadable elapsed budget %s',
+    (caseElapsedMs) => {
+      expect(
+        admitMttReplacementBudget({
+          outcome: 'natural-completion',
+          reselectionsUsed: 0,
+          caseElapsedMs,
+        })
+      ).toBeNull();
+    }
+  );
 });

@@ -127,9 +127,11 @@ describe('Item 1 - a running tournament can be watched', () => {
     // Not the exact select string — adding a column must not break this.
     for (const feed of [DETAILS, ENTRIES_HOOK]) {
       const src = code(read(feed));
-      const playersQuery = src.slice(src.indexOf(".from('tournament_players')"));
-      expect(playersQuery.startsWith(".from('tournament_players')")).toBe(true);
-      expect(sliceCall(playersQuery, '.select(')).toMatch(/\btable_id\b/);
+      const playersQuery = sliceCall(src, 'readTournamentStandings(');
+      expect(playersQuery).toMatch(/\btable_id\b/);
+      const reader = code(read('src/services/readTournamentStandings.ts'));
+      expect(reader).toContain(".from('tournament_players')");
+      expect(reader).toContain('.select(projection,');
       expect(src).toMatch(/table_id: \(e\.table_id as string \| null\) \|\| null/);
     }
 
@@ -269,7 +271,9 @@ describe('Item 5 - the bounty badge sits on the avatar corner, clear of the acti
   const css = read(SEAT_CSS);
 
   const topOf = (selector: string): number => {
-    const start = css.indexOf(selector + ' {');
+    // The base rule at column 0, not a compound selector ending in it (the
+    // hero's `.seat--hero .seat__action` stands on its own art) nor a media copy.
+    const start = css.indexOf('\n' + selector + ' {');
     expect(start, `${selector} must exist`).toBeGreaterThan(-1);
     const block = css.slice(start, css.indexOf('}', start));
     const m = block.match(/top:\s*(-?\d+)px/);
@@ -289,6 +293,26 @@ describe('Item 5 - the bounty badge sits on the avatar corner, clear of the acti
     expect(topOf('.seat__bounty')).toBe(0);
     expect(block).not.toMatch(/translateX\(-50%\)/);
     expect(css).not.toContain('.seat:has(.seat__action) .seat__bounty');
+  });
+
+  // Dan 2026-10-22, from a real phone: "there needs to be some space between
+  // them to allow for action bar and bounty amount above their heads." On a
+  // phone the pill moves into the lane above the head, standing on the crown
+  // of the art, or on the action tag when there is one; the tag itself stands
+  // on the crown measured per seat (--sp-art-rise), not at a fixed offset.
+  it('on a phone stands in the lane above the head, over the action tag', () => {
+    const start = css.indexOf('═══ THE LANE ABOVE THE HEAD');
+    expect(start, 'the phone lane rule must exist').toBeGreaterThan(-1);
+    const lane = css.slice(start, css.indexOf('\n}\n', start));
+    expect(lane).toContain('@media (max-width: 480px) and (orientation: portrait)');
+    expect(lane).toMatch(
+      /\.seat__action \{\s*top: auto;\s*bottom: calc\(100% \+ var\(--sp-art-rise, 12px\) \+ var\(--sp-tag-gap, 3px\)\);/
+    );
+    expect(lane).toMatch(
+      /\.seat:has\(> \.seat__action\) \.seat__bounty \{[^}]*var\(--sp-tag-h, 20px\)/
+    );
+    const tsx = read('src/components/table/SeatSlot.tsx');
+    expect(tsx).toContain("'--sp-art-rise'");
   });
 
   it('never shares the action badge lane above the head', () => {

@@ -243,8 +243,10 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
     // (2026-09-05, no lone horse) the lone-table stand in standLoneHorses, and
     // (2026-09-06) the stand for an imminent tournament booking in
     // leaveCashForTournaments - a horse leaving cash the way a person with a
-    // tournament in an hour does. Every one of them is engine.leaveTable.
-    expect((ROTATOR.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(4);
+    // tournament in an hour does. (2026-10-23) A fifth: the roster walk-out,
+    // a benched horse or one off the PLO roster standing up at hand end.
+    // Every one of them is engine.leaveTable.
+    expect((ROTATOR.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(5);
     expect(ROTATOR).toContain('private async leaveCashForTournaments(');
   });
 

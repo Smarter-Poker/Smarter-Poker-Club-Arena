@@ -257,6 +257,13 @@ test('partial browser failure retains bounded live phases and requested hand ide
             payload: { type, hand_number: 7, action: 'bet', amount: 999, cards: ['SECRET'] },
           }),
         });
+      // The app's own Time Bank request (no witness click in flight) is retained
+      // apart and never counted as the witness's one request.
+      handlers.request({
+        method: () => 'POST',
+        url: () => 'https://engine.smarter.poker/timebank',
+        postDataJSON: () => ({ tableId: room }),
+      });
       handlers.request({
         method: () => 'POST',
         url: () => 'https://engine.smarter.poker/preaction',
@@ -313,6 +320,8 @@ test('partial browser failure retains bounded live phases and requested hand ide
   assert.equal(result.controlsQualified, false);
   assert.equal(result.preactionRequestHandId, history);
   assert.deepEqual(result.requests, { timebank: 0, preaction: 1 });
+  assert.deepEqual(result.appRequests, { timebank: 1 });
+  assert.deepEqual(result.foldWatch, { accepted: 0, refused: 0, unknown: 0 });
   assert.deepEqual(result.observedHands, [
     { handNumber: 7, betting: true, showdown: true, hand_complete: false, historyId: null },
   ]);
@@ -374,6 +383,94 @@ test('a disappearing optional control is clicked once with a bounded response an
     source,
     /if \(!response\) \{\s*report\[key\] = 'click_or_response_unknown';\s*continue;/
   );
-  assert.match(source, /report.requests.timebank === 1/);
+  assert.match(source, /report\.requests\.timebank - report\.staleRefusals\.timebank === 1/);
+  assert.match(source, /report\.requests\.preaction - report\.staleRefusals\.preaction === 1/);
+  // Only an ended-hand refusal is retried, once; any other refusal still stops.
+  assert.match(
+    source,
+    /if \(!stale \|\| retried\.has\(key\)\) throw new Error\('Optional Action Refused'\)/
+  );
+  assert.match(source, /answer\?\.code === 'STALE_HAND'/);
   assert.match(source, /report.timebank === 'accepted'/);
+});
+
+test('a client-held turn is answered once per hand with the normal Fold & Watch, never a wager', () => {
+  const src = readFileSync(new URL('./lightning-pilot-cycle.mjs', import.meta.url), 'utf8');
+  assert.match(src, /getByTestId\('lightning-fold-watch'\)/);
+  assert.match(src, /foldedHands\.has\(hand\)/);
+  assert.match(src, /foldedHands\.add\(hand\)/);
+  // The witness never reaches for a wagering control.
+  assert.doesNotMatch(
+    src,
+    /lightning-(call|raise|bet)|getByRole\('button', \{ name: '(Call|Raise|Bet)/
+  );
+  // The pre-action is offered first; the Time Bank needs the player's own turn.
+  assert.ok(src.indexOf("['preaction', preaction") < src.indexOf("'timebank',\n        timebank"));
+});
+
+test('an armed Time Bank turn waits for the bank before Fold & Watch; the pre-action gets a longer offer window', () => {
+  const src = readFileSync(new URL('./lightning-pilot-cycle.mjs', import.meta.url), 'utf8');
+  const watch = src.slice(src.indexOf('const watchOwnTurn'));
+  assert.ok(
+    watch.indexOf("report.timebank === 'accepted'") < watch.indexOf('foldedHands.add(hand)')
+  );
+  assert.match(watch, /!\(bankActivated && deadlineExtended\)/);
+  assert.match(src, /key === 'preaction' \? 60000 : 20000/);
+});
+
+test('an unknown control acknowledgment records a fixed cause, never a message', async () => {
+  const page = {
+    waitForResponse: async () => {
+      throw Object.assign(new Error('SECRET'), { name: 'TimeoutError' });
+    },
+  };
+  for (const [err, cause] of [
+    [new Error('Selected Pool Unverified'), 'selected_pool_unverified'],
+    [Object.assign(new Error('x'), { name: 'TimeoutError' }), 'control_not_clickable'],
+    [new Error('SECRET_DOM'), 'click_failed'],
+  ]) {
+    const why = {};
+    const r = await clickCycleControlOnce(
+      page,
+      {
+        click: async () => {
+          throw err;
+        },
+      },
+      () => false,
+      () => 60000,
+      why
+    );
+    assert.equal(r, null);
+    assert.deepEqual(why, { click: cause, response: 'no_matching_response' });
+  }
+});
+
+test('a click whose pointer is taken keeps only the blocking tag and class tokens', async () => {
+  const page = {
+    waitForResponse: async () => {
+      throw Object.assign(new Error('x'), { name: 'TimeoutError' });
+    },
+  };
+  const why = {};
+  await clickCycleControlOnce(
+    page,
+    {
+      click: async () => {
+        throw Object.assign(
+          new Error(
+            'locator.click: Timeout 2500ms exceeded.\n  - <div id="secret" class="daily-bonus-sheet open">SECRET TEXT</div> intercepts pointer events\n  - retrying click action'
+          ),
+          { name: 'TimeoutError' }
+        );
+      },
+    },
+    () => false,
+    () => 60000,
+    why
+  );
+  assert.equal(why.click, 'control_not_clickable');
+  assert.equal(why.reason, 'pointer_intercepted');
+  assert.equal(why.interceptedBy, 'div.daily-bonus-sheet.open');
+  assert.doesNotMatch(JSON.stringify(why), /SECRET|secret/);
 });

@@ -447,6 +447,11 @@ DAILY
 source_target_is_current() {
   local main_sha latest remaining lock_wait fetch_wait attempt fetched source_deadline
   local high_water high_water_contained target_already_sealed_past
+  # `local-main`: prove against the protected-main ref this transaction already
+  # fetched under the engine lock before cutover, without a network fetch.
+  # Every proof below still runs. See the post-cutover call for why.
+  local use_local_main=0
+  [ "${1:-}" != local-main ] || use_local_main=1
   remaining="$(remaining_seconds)" || die 'deadline expired before protected-main verification'
   source_deadline="$DEADLINE"
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -461,7 +466,9 @@ source_target_is_current() {
   exec 8>"$SOURCE_LOCK"
   flock -w "$lock_wait" 8 || die 'could not acquire the source-object lock'
   fetched=0
+  [ "$use_local_main" = 0 ] || fetched=1
   for attempt in 1 2 3; do
+    [ "$fetched" = 0 ] || break
     remaining=$((source_deadline - $(date +%s)))
     [ "$remaining" -gt 6 ] || die 'source verification deadline expired before protected-main fetch'
     fetch_wait=$((remaining - 5))
@@ -718,7 +725,7 @@ maintenance_certificate() {
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" RECOVERY_URGENT="${RECOVERY_URGENT:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -729,7 +736,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 local=datetime.now(ZoneInfo("America/Chicago"))
 daily=(local.hour==4 and local.minute<5)
-emergency=(m.get("reason")=="Deployment Recovery" or os.environ.get("RECOVERY_URGENT")=="1")
+emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
 remaining=int(m.get("remainingMs") or 0)
@@ -876,7 +883,7 @@ legacy_checkpoint_countdown() {
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 1 ;; esac
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) RECOVERY_URGENT="${RECOVERY_URGENT:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -887,7 +894,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 local=datetime.now(ZoneInfo("America/Chicago"))
 daily=(local.hour==4 and local.minute<5)
-emergency=(m.get("reason")=="Deployment Recovery" or os.environ.get("RECOVERY_URGENT")=="1")
+emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
 
@@ -926,22 +933,11 @@ print(math.floor(ends/1000))
 # cutover safe - maintenance_certificate, the ladder, the rollback reserve,
 # the database witness and the locked read are untouched:
 #
-#   1. A reason is required. An ordinary release waits for the scheduled :55
-#      break. It may ask for an off-cycle window only when
-#        urgent          a commit this release adds carries the trailer
-#                        RECOVERY_URGENT_TRAILER;
-#        engine-degraded /health says the serving engine is wedged
-#                        (liveness dead, wholeFleetStalled) or the scheduled
-#                        break is not certifying (breaksSinceRestartCertified
-#                        at or over RECOVERY_UNCERTIFIED_BREAKS), or it holds
-#                        RECOVERY_QUARANTINED_MANAGERS quarantined managers;
-#        deadline        no scheduled break can admit it before its own
-#                        certificate deadline.
-#      Nothing else is a reason (owner ruling 2026-10-04, one scheduled break
-#      an hour): a failed release that has not shipped and a scheduled break
-#      this release waited through are NOT causes, the seal answers both
-#      `unavailable`, and so a release without one of the three reasons above
-#      never takes the engine lock or asks the seal at all.
+#   1. A measured engine emergency is required. Ordinary releases wait for
+#      04:00 America/Chicago. Commit text (including an urgent trailer), a
+#      missed window and a request deadline never authorize a global pause.
+#      Only current liveness=dead, wholeFleetStalled or at least
+#      RECOVERY_QUARANTINED_MANAGERS quarantined managers may ask the seal.
 #   2. The newest release owns the window: a release never asks while a
 #      release of a newer protected-main engine SHA is queued or running on
 #      this host.
@@ -966,7 +962,6 @@ RECOVERY_REFUSED_STUCK=0
 # wedge that took hands/min to ~0 (#5298) quarantined 338. A quarantine count
 # is only a reason to pause every table when it is wedge-sized.
 RECOVERY_QUARANTINED_MANAGERS=100
-RECOVERY_URGENT_TRAILER='Engine-Release: urgent'
 
 # A certificate this release could not use counts as a missed scheduled
 # break only when the release was already waiting while that break could
@@ -989,10 +984,6 @@ note_missed_admission() {
 # Prints "<class> <detail>" for the first reason that applies, or nothing.
 recovery_window_reason() {
   local health="$1" degraded now past next_break last_admission
-  if [ "${RECOVERY_URGENT:-0}" = 1 ]; then
-    echo "urgent $RECOVERY_URGENT_TRAILER"
-    return 0
-  fi
   degraded="$(printf '%s' "$health" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
@@ -1011,6 +1002,80 @@ print(",".join(signs))
   # A routine request's expiry is never an emergency. It waits for the next
   # daily producer invocation rather than manufacturing a daytime freeze.
   return 0
+}
+
+# OWNER-ORDERED WINDOW (2026-10-23)
+# ───────────────────────────────────
+# The 04:00 America/Chicago rule stays binding "absent a later explicit narrow
+# human exception" (#7777). This is that exception's only carrier: an entry in
+# server/release/owner-maintenance-windows.json, merged through protected main,
+# that quotes the owner's order and names the exact commit that must be inside
+# the release, a bounded validity window (at most six hours) and the Chicago
+# minutes at which the announcement may be made. Commit text is still never
+# authority. The entry is read from the TARGET's own immutable tree, so it
+# cannot be granted by anything other than reviewed source, and it expires on
+# its own. Everything after the reason is unchanged: newest-owner, lock, a
+# fresh health read, the seal's one-window-per-hour limit, drain, freeze,
+# certificate, rollback reserve and thaw.
+# Prints "owner-ordered <id>" or nothing; never fails the caller.
+owner_window_reason() {
+  local windows now picked id contains serving
+  windows="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" show "$SHA:server/release/owner-maintenance-windows.json" 2>/dev/null)" || return 0
+  now="$(date +%s)"
+  picked="$(printf '%s' "$windows" | python3 -c '
+import json, re, sys
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+now = datetime.fromtimestamp(int(sys.argv[1]), timezone.utc)
+local = now.astimezone(ZoneInfo("America/Chicago"))
+doc = json.load(sys.stdin)
+if not isinstance(doc, dict) or doc.get("version") != 1: raise SystemExit(0)
+for w in doc.get("windows") or []:
+    try:
+        wid, contains, order = str(w["id"]), str(w["contains"]), str(w["ownerOrder"])
+        nb = datetime.fromisoformat(str(w["notBefore"]).replace("Z", "+00:00"))
+        na = datetime.fromisoformat(str(w["notAfter"]).replace("Z", "+00:00"))
+        minutes = w.get("announceAtChicagoMinutes")
+    except Exception:
+        continue
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", wid): continue
+    if not re.fullmatch(r"[0-9a-f]{40}", contains) or len(order.strip()) < 10: continue
+    if nb.tzinfo is None or na.tzinfo is None: continue
+    if not (0 < (na - nb).total_seconds() <= 6 * 3600) or not (nb <= now <= na): continue
+    if minutes is not None and (not isinstance(minutes, list) or local.minute not in minutes): continue
+    print(wid, contains)
+    break
+' "$now" 2>/dev/null)" || return 0
+  [ -n "$picked" ] || return 0
+  id="${picked%% *}"
+  contains="${picked#* }"
+  timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$SHA" 2>/dev/null || return 0
+  # ONCE (2026-10-23): the order is "make this commit live". When the serving
+  # engine already contains it, the window grants nothing more, so later
+  # merges inside the window never earn another reset. An unreadable serving
+  # identity grants nothing either.
+  serving="$(printf '%s' "${1:-}" | python3 -c '
+import json, re, sys
+v = json.load(sys.stdin).get("releaseSha")
+print(v if isinstance(v, str) and re.fullmatch(r"[0-9a-f]{40}", v) else "")
+' 2>/dev/null)" || return 0
+  [ -n "$serving" ] || return 0
+  if timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$serving" 2>/dev/null; then
+    return 0
+  fi
+  echo "owner-ordered $id"
+}
+
+# The seal and the serving engine already know one explicit owner cause,
+# `urgent`; an owner-ordered window is presented to both as that cause.
+recovery_cause() {
+  case "$1" in
+    owner-ordered) echo urgent ;;
+    *) echo "$1" ;;
+  esac
 }
 
 # The run key and SHA of a release of a NEWER engine SHA that is queued or
@@ -1124,6 +1189,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   reason="$(recovery_window_reason "$health")"
+  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
   # NO LOCK WITHOUT AN EMERGENCY (2026-10-04). The seal answers `unavailable`
   # to every reservation that names no cause, so a routine release (no
   # reason, or only a scheduled break it waited through) has nothing to ask.
@@ -1131,7 +1197,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   # releases for up to the whole lock wait and could end this one in `die`.
   # It waits for the scheduled break without touching the lock or the seal.
   case "${reason%% *}" in
-    urgent|engine-degraded) ;;
+    engine-degraded|owner-ordered) ;;
     *) return 0 ;;
   esac
   cause_key="$RECOVERY_ADMISSION_MISSED:${reason%% *}"
@@ -1150,8 +1216,24 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     fi
     return 0
   fi
+  # Lock/source/newest-owner checks can outlive the degradation sample.
+  # Revalidate immediately before reserving a pause; recovered play must not
+  # be interrupted by the old observation. Unknown health authorizes nothing.
+  health="$(curl -sS --max-time 5 http://127.0.0.1:8080/health 2>/dev/null)" || {
+    release_engine_lock
+    return 0
+  }
+  reason="$(recovery_window_reason "$health")"
+  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  case "${reason%% *}" in
+    engine-degraded|owner-ordered) ;;
+    *)
+      release_engine_lock
+      return 0
+      ;;
+  esac
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
-  reserve_args+=(--cause "${reason%% *}")
+  reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")
   if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
     "${reserve_args[@]}")"; then
     # NOT FATAL (2026-10-02). A refused or slow reservation asks for nothing:
@@ -1186,7 +1268,7 @@ print(1 if (json.load(sys.stdin).get("maintenance") or {}).get("recoveryWindowCa
   # A lost response is UNKNOWN; observe the certificate, never allocate a new
   # timestamp or send another announcement in this invocation.
   outcome="$(timeout --signal=TERM --kill-after=1s 20s docker exec -i "$CONTAINER" \
-    node - "$stamp" "${reason%% *}" "$cause_required" <<'NODE'
+    node - "$stamp" "$(recovery_cause "${reason%% *}")" "$cause_required" <<'NODE'
 const announcedAt=Number(process.argv[2]);
 const cause=process.argv[3];
 const causeRequired=process.argv[4]==="1";
@@ -1605,6 +1687,44 @@ print(contract)
   TARGET_IMAGE_ID="${IMAGE_FIELDS[0]}"
 }
 
+# THE CANDIDATE IMAGE IS WARMED BEFORE THE BREAK (2026-10-23).
+# A freshly built image has never had a container. On engine-01 (containerd
+# snapshotter) the first `docker run` of a new image spent 13-40 s unpacking
+# its snapshot and another 18-52 s joining the bridge network, while a second
+# run of the same image takes 0.3 s for both. Measured over every cutover since
+# 2026-10-17: rollback restarts of an already-run image never exceeded 0.3 s,
+# and first runs of new images reached 81.5 s (stop 12.9 + create 23.9 +
+# join 44.7) on 2026-10-22 06:28 UTC, which alone exceeds the 75 s cutover
+# budget (run 39728449445-1). The engine is down for every one of those
+# seconds. One throwaway container is therefore run to completion from the
+# exact candidate image here, outside any break, with the engine command
+# replaced so nothing connects to production. It carries no engine labels,
+# no env file and only an ephemeral loopback port. Publishing exercises the
+# port-mapper path that the old bridge-only warm-up skipped. The command still
+# never starts the engine or binds the serving port. It is never fatal:
+# an unwarmed image only costs time that the existing cutover budget bounds.
+prewarm_candidate_image() {
+  local remaining warm_timeout warm_name started finished
+  remaining="$(remaining_seconds)" || return 0
+  warm_timeout=$((remaining - 30))
+  [ "$warm_timeout" -le 120 ] || warm_timeout=120
+  [ "$warm_timeout" -ge 10 ] || return 0
+  warm_name="club-arena-engine-prewarm-$RUN_ID"
+  timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
+  started="$(date +%s)"
+  if timeout --signal=TERM --kill-after=5s "${warm_timeout}s" docker run --rm --pull never \
+    --name "$warm_name" --restart no --network bridge \
+    --publish 127.0.0.1::8080 --entrypoint node \
+    "$IMAGE_REF" -e 'process.exit(0)' >/dev/null 2>&1; then
+    finished="$(date +%s)"
+    echo "ENGINE_IMAGE_PREWARM_SECONDS=$((finished - started))"
+  else
+    echo '[engine-release-transaction] candidate image prewarm did not finish; cutover remains bounded' >&2
+    timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
 read_pending_owner() {
   local description remaining
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -1767,6 +1887,7 @@ BUILD_TIMEOUT=$((BUILD_REMAINING - 16))
 timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
   "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" \
   || die 'bounded immutable engine image build failed'
+prewarm_candidate_image
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
 # This is a compatibility operation for three pinned immutable predecessors, not a
@@ -1797,30 +1918,22 @@ if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1
   die 'this run key already opened the one-shot legacy checkpoint and its durable intent is still on disk; whether that entry acted is UNKNOWN, so it may not be entered again - dispatch a new run key'
 fi
 
-# What the proportionate off-cycle policy above needs to know about this wait:
-# when it began, and whether any commit this release adds over the sealed
-# high-water asks to be urgent.
-# Unreadable urgency is ordinary: it can only ever make a release wait for
-# the scheduled break, never admit a cutover.
+# Commit messages are descriptive source data, never authority to stop games.
+# In particular, an urgent trailer in this target or any ancestor cannot turn
+# routine deployment into off-cycle maintenance. Only current measured engine
+# degradation in recovery_window_reason may request that separate emergency.
 RECOVERY_WAIT_STARTED_EPOCH="$(date +%s)"
-RECOVERY_URGENT=0
 DAILY_TRANSITION=0
-if [ -z "${DRILL_MODE:-}" ] && URGENT_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
-  "$RELEASE_SEAL" get high-water-sha 2>/dev/null)" \
-  && [[ "$URGENT_HIGH_WATER" =~ ^[0-9a-f]{40}$ ]] \
-  && URGENT_MESSAGES="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
-    git -C "$REPO_DIR" log --format=%B "$URGENT_HIGH_WATER..$SHA" 2>/dev/null)" \
-  && grep -Fqx -- "$RECOVERY_URGENT_TRAILER" <<<"$URGENT_MESSAGES"; then
-  RECOVERY_URGENT=1
-  echo "[engine-release-transaction] a commit in $URGENT_HIGH_WATER..$SHA carries '$RECOVERY_URGENT_TRAILER'; this release may ask for an off-cycle window without waiting for evidence"
-fi
 
 # Owner-authorized initial installation, 2026-10-20: one final existing :55
 # window, only while the serving engine lacks the new daily schedule. This
 # marker cannot request recovery, and a daily engine closes it permanently.
-if [ -z "${DRILL_MODE:-}" ] && [ -n "${URGENT_HIGH_WATER:-}" ] \
+if [ -z "${DRILL_MODE:-}" ] \
+  && TRANSITION_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
+    "$RELEASE_SEAL" get high-water-sha 2>/dev/null)" \
+  && [[ "$TRANSITION_HIGH_WATER" =~ ^[0-9a-f]{40}$ ]] \
   && TRANSITION_MESSAGES="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
-    git -C "$REPO_DIR" log --format=%B "$URGENT_HIGH_WATER..$SHA" 2>/dev/null)" \
+    git -C "$REPO_DIR" log --format=%B "$TRANSITION_HIGH_WATER..$SHA" 2>/dev/null)" \
   && grep -Fqx 'Engine-Release: daily-maintenance-transition' <<<"$TRANSITION_MESSAGES"; then
   DAILY_TRANSITION=1
 fi
@@ -2118,7 +2231,20 @@ done
 
 # Main and the durable high-water may advance during the cold-start/public
 # proof. Recheck containment and forward ordering before committing this seal.
-source_target_is_current
+#
+# AGAINST THE MAIN ALREADY FETCHED (2026-10-23). This recheck used to fetch
+# protected main from GitHub again, inside what was left of the break after the
+# candidate's cold start and public proof. 2026-10-23 05:10 UTC, release
+# 734578ad: the candidate was healthy and public at 05:11:13, five seconds of
+# proof budget remained, and the transaction died "source verification
+# deadline expired before protected-main fetch". The supervisor restored the
+# previous release and the break was re-run an hour later: three restarts of
+# every table for one release. A fetch adds nothing here. New protected-main
+# merges never revoke a forward target (see source_target_is_current), main is
+# rewind-guarded, and the one thing that can revoke this target during the
+# proof - a newer sealed high-water - is read from the local seal, which the
+# local-main mode still does, together with every containment proof.
+source_target_is_current local-main
 assert_break_proof_time
 ACTUAL_CID="$(bounded_break_command 10 docker container inspect -f '{{.Id}}' "$CONTAINER")"
 ACTUAL_STARTED_AT="$(bounded_break_command 10 docker container inspect -f '{{.State.StartedAt}}' "$CONTAINER")"

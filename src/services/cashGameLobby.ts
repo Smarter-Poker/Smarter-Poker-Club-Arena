@@ -8,6 +8,7 @@
  * The database decides everything; this file only asks and repeats.
  */
 
+import { capture } from '../lib/analytics';
 import { supabase } from '../lib/supabase';
 import { cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
@@ -394,19 +395,45 @@ export interface CashGameJoinResult {
  * held on the game's waitlist, where the OPEN rule counts them as a buyer.
  * Seating itself stays the table's own buy-in door.
  */
+function captureAdmission(event: string, properties: Record<string, unknown>): void {
+  try {
+    capture(event, properties);
+  } catch {
+    /* Optional analytics never changes admission. */
+  }
+}
+
 export async function joinCashGame(gameId: string): Promise<CashGameJoinResult> {
-  const { data, error } = await supabase.rpc('fn_cash_game_join', { p_game_id: gameId });
-  if (error) throw error;
-  if (data?.ok !== true) {
-    throw new Error(String(data?.reason ?? data?.action ?? 'Game admission was not confirmed'));
+  const started = Date.now();
+  captureAdmission('cash_game_admission_started', { game_id: gameId });
+  try {
+    const { data, error } = await supabase.rpc('fn_cash_game_join', { p_game_id: gameId });
+    if (error) throw error;
+    if (data?.ok !== true) {
+      throw new Error(String(data?.reason ?? data?.action ?? 'Game admission was not confirmed'));
+    }
+    if (
+      !['seat', 'seated', 'waitlisted'].includes(data.action) ||
+      (data.action !== 'waitlisted' && (typeof data.table_id !== 'string' || !data.table_id.trim()))
+    ) {
+      throw new Error('Game admission did not name a destination or queue place');
+    }
+    captureAdmission('cash_game_admission_completed', {
+      duration_ms: Math.max(0, Date.now() - started),
+      outcome: data.action,
+      table_id: data.table_id ?? null,
+    });
+    return data as CashGameJoinResult;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const code =
+      Object.keys(JOIN_GAME_REFUSALS).find((key) => message.includes(key)) ?? 'UNCONFIRMED';
+    captureAdmission('cash_game_admission_failed', {
+      duration_ms: Math.max(0, Date.now() - started),
+      error_code: code,
+    });
+    throw error;
   }
-  if (
-    !['seat', 'seated', 'waitlisted'].includes(data.action) ||
-    (data.action !== 'waitlisted' && (typeof data.table_id !== 'string' || !data.table_id.trim()))
-  ) {
-    throw new Error('Game admission did not name a destination or queue place');
-  }
-  return data as CashGameJoinResult;
 }
 
 export const JOIN_GAME_REFUSALS: Record<string, string> = {

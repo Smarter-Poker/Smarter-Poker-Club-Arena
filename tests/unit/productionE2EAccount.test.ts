@@ -1062,13 +1062,13 @@ describe('post-deploy production account', () => {
     const query = decodeURIComponent(String(fetchMock.mock.calls[0]?.[0]));
     expect(query).toContain('/rpc/fn_ca_stale_certification_accounts');
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:08:00.000Z' });
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T21:23:00.000Z' });
   });
 
   it('keeps the ordinary job ceiling and grants only the explicit multirun observation its extra time', () => {
     expect(workflowJobBudget(POST_DEPLOY_WORKFLOW, 'live-table-e2e')).toEqual({
-      ordinary: 76,
-      optIn: 98,
+      ordinary: 121,
+      optIn: 143,
     });
   });
 

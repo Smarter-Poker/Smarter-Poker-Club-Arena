@@ -178,11 +178,38 @@ async function openOtherPool(page, admin, pin, remaining, progress) {
   const row = result.data[0];
   if (!ids.includes(row.id) || row.cluster_id !== pin.clusterId || row.club_id !== pin.clubId)
     throw new Error('Manual Pool Row Unknown');
-  progress.step = 'view_existing_game';
-  await page
-    .locator(`tr[data-kind="cash"][data-id="${row.id}"]`)
-    .getByRole('button', { name: /^View Game / })
-    .click({ timeout: Math.min(5000, remaining()) });
+  const lobbyRow = page.locator(`tr[data-kind="cash"][data-id="${row.id}"]`);
+  const view = lobbyRow.getByRole('button', { name: /^View Game / });
+  if ((await view.count()) === 1 && (await view.isVisible())) {
+    progress.step = 'view_existing_game';
+    await view.click({ timeout: Math.min(5000, remaining()) });
+    return;
+  }
+  // A lobby without the View Game control (the multi-table Open Lobby) offers a
+  // seated player only "Return To <game>", which re-opens the seat the player
+  // already holds and buys nothing. Join, Sit Down and Waitlist are never used.
+  progress.step = 'return_to_existing_game';
+  const back = lobbyRow.getByRole('button', { name: /^Return To / });
+  if ((await back.count()) !== 1 || !(await back.isVisible())) {
+    // Retain only what kind of controls the row offered: fixed data-act values,
+    // disabled and visible flags. No labels, names or other page text.
+    progress.rowControls = await lobbyRow
+      .locator('button')
+      .evaluateAll((els) =>
+        els.slice(0, 8).map((e) => ({
+          act: ['view', 'join', 'waitlist', 'closed', 'register', 'spinjoin'].includes(
+            e.dataset.act
+          )
+            ? e.dataset.act
+            : 'other',
+          disabled: e.disabled === true,
+          visible: !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length),
+        }))
+      )
+      .catch(() => 'unreadable');
+    throw new Error('Manual Pool Door Unavailable');
+  }
+  await back.click({ timeout: Math.min(5000, remaining()) });
 }
 export function recoveryDiagnosticBudget(started, timeoutMs, now = Date.now()) {
   return Math.max(1, Math.min(1500, started + timeoutMs - now - 10000));

@@ -32,6 +32,7 @@ import {
   withClusterFigures,
   type LobbyTableRow,
 } from '../src/components/lobby/lobbyEntries';
+import { arenaGameCardDataFromEntry } from '../src/components/lobby/game-cards/arenaGameCardAdapter';
 import { lobbyPlayerStateOf } from '../src/components/lobby/lobbyCardContext';
 import {
   FILTER_SPECS,
@@ -420,16 +421,24 @@ describe('the status chips judge the game, not its Main 1', () => {
  * seat meter were a table's furniture on a game.
  */
 describe('the game lobby panel says players and tables', () => {
-  it('the plaque takes the game shape and drops the denominator and the pips', () => {
-    const PLAQUE = readFileSync(
-      join(__dirname, '..', 'src/components/lobby/CasinoPlaque.tsx'),
-      'utf8'
-    );
-    const start = PLAQUE.indexOf('export function PlaqueSeats');
-    const body = PLAQUE.slice(start, PLAQUE.indexOf('if (bareCount) {', start));
-    expect(body).toMatch(/gameTables\?: number \| null;/);
-    expect(body).toMatch(/cplaque__seats--game/);
-    expect(body).not.toMatch(/cplaque__seats-pips/);
+  it('the selected game card prints the aggregate count without a seat denominator', () => {
+    const entry = cashEntry({
+      id: 'main-table',
+      name: 'NLH Action',
+      game_variant: 'nlh',
+      cluster_id: 'game',
+      cluster_players: 57,
+      cluster_tables: 3,
+      current_players: 6,
+      max_players: 6,
+      small_blind: 1,
+      big_blind: 2,
+      min_buy_in: 80,
+      max_buy_in: 400,
+      status: 'active',
+    });
+    expect(entry.game?.tables).toBe(3);
+    expect(arenaGameCardDataFromEntry(entry).players).toBe('57');
   });
 
   it('the panel hands it the count and prints Tables beside Players', () => {
@@ -437,7 +446,9 @@ describe('the game lobby panel says players and tables', () => {
       join(__dirname, '..', 'src/components/lobby/GameLobbyPanel.tsx'),
       'utf8'
     );
-    expect(PANEL).toMatch(/gameTables=\{entry\.game \? entry\.game\.tables : null\}/);
+    expect(PANEL).toContain('arenaGameCardDataFromEntry(entry)');
+    expect(PANEL).toContain('{entry.players.toLocaleString()}');
+    expect(PANEL).toContain('{entry.game.tables.toLocaleString()}');
     expect(PANEL).toMatch(/<dt>Tables<\/dt>/);
   });
 });

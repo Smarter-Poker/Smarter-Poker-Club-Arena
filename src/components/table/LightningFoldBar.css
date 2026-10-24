@@ -10,7 +10,9 @@
 .lightning-fold-bar {
   position: fixed;
   right: 12px;
-  bottom: calc(var(--sp-bottom-row-h, 64px) + env(safe-area-inset-bottom, 0px) + 6px);
+  bottom: calc(
+    var(--sp-bottom-row-h, 64px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)) + 6px
+  );
   z-index: var(--z-action-panel, 100);
   display: flex;
   gap: 4px;

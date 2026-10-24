@@ -93,15 +93,15 @@ describe('the tablist follows the WAI-ARIA tab pattern', () => {
       screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')!
         .textContent;
 
-    expect(sel()).toBe('Throwables');
-    fireEvent.keyDown(list, { key: 'ArrowRight' });
     expect(sel()).toBe('Stats');
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    expect(sel()).toBe('Profile');
     fireEvent.keyDown(list, { key: 'ArrowLeft' });
-    expect(sel()).toBe('Throwables');
+    expect(sel()).toBe('Stats');
     fireEvent.keyDown(list, { key: 'End' });
-    expect(sel()).toBe('Table');
-    fireEvent.keyDown(list, { key: 'Home' });
     expect(sel()).toBe('Throwables');
+    fireEvent.keyDown(list, { key: 'Home' });
+    expect(sel()).toBe('Stats');
   });
 });
 

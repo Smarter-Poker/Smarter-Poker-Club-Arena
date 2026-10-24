@@ -358,3 +358,15 @@
   position: relative;
   overflow: visible;
 }
+
+/* Owner October 22: natural flow, matching the selector deck. */
+@media (max-width: 900px) {
+  .lobby-sortbar {
+    position: relative;
+    top: auto;
+    z-index: 3;
+  }
+  [data-lobby-scrollport='true'] {
+    scroll-padding-top: calc(var(--ca-global-header-height, 0px) + var(--mtt-ticker-h, 0px));
+  }
+}

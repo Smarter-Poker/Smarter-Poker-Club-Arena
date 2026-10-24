@@ -45,9 +45,10 @@ async function mountTable(page: Page) {
       <div class="deal-animation" id="dealLayer" style="--da-flight-duration:320ms"></div>
       <div class="seat-wrapper" id="sw" style="position:absolute;left:50%;top:80%">
         <div class="seat" id="seat">
+          <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
           <div class="seat__info" id="info"></div>
           <div class="seat__bet-chips"><div class="chip-physics cp--compact cp--none" id="chips"><div class="cp-stacks"><div class="cp-stack"><div class="cp-chip"></div></div></div></div></div>
-          <div class="seat__cards seat__cards--hero" id="cards"><div class="seat__card"></div><div class="seat__card"></div></div>
+          <div class="seat__cards seat__cards--hero" id="cards"><div class="seat__card"><div class="card-image"></div></div><div class="seat__card"><div class="card-image"></div></div></div>
         </div>
       </div>
       <div class="community-area"><div class="community-cards" id="board"><div class="community-cards__container" id="bc"></div></div></div>
@@ -79,6 +80,45 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
   test.beforeEach(async ({ page }) => {
     await loadLiveCss(page);
     await mountTable(page);
+  });
+
+  test('turn and all-in glows breathe without animating a full-screen blur', async ({ page }) => {
+    for (const [state, animation, blur] of [
+      ['hero-turn', 'heroTurnPulse', '80px'],
+      ['allin-mode', 'allInTensionGlow', '60px'],
+    ]) {
+      const glow = await page.evaluate(
+        async ({ state, animation }) => {
+          const root = document.querySelector('.table-page')!;
+          root.className = `table-page table-page--${state}`;
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          );
+          const running = document
+            .getAnimations()
+            .find((a) => (a as CSSAnimation).animationName === animation);
+          const style = getComputedStyle(root, '::before');
+          return {
+            frames: running?.effect?.getKeyframes(),
+            duration: running?.effect?.getTiming().duration,
+            shadow: style.boxShadow,
+            pointerEvents: style.pointerEvents,
+          };
+        },
+        { state, animation }
+      );
+      expect(glow.duration).toBe(2000);
+      expect(glow.frames?.map((frame) => frame.opacity)).toEqual(['0', '1', '0']);
+      expect(glow.frames?.every((frame) => frame.boxShadow === undefined)).toBe(true);
+      expect(glow.shadow).toContain(blur);
+      expect(glow.pointerEvents).toBe('none');
+      const paused = await page.evaluate(() => {
+        const root = document.querySelector('.table-page')!;
+        root.classList.add('table-page--backgrounded');
+        return getComputedStyle(root, '::before').animationPlayState;
+      });
+      expect(paused).toBe('paused');
+    }
   });
 
   test('every beat of a hand actually animates, at the right duration', async ({ page }) => {
@@ -378,6 +418,15 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       if (!el) return { ms: -2, transform: '' };
       document.getElementById('mbc')!.className = 'mbc mbc--locked';
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      // The previous opening beat has already started the lid transition.
+      // Finish its return to locked before measuring a fresh full opening;
+      // otherwise WebKit correctly shortens the reversed transition.
+      await Promise.all(
+        el
+          .getAnimations()
+          .filter((a) => (a as CSSTransition).transitionProperty === 'transform')
+          .map((a) => a.finished.catch(() => {}))
+      );
       document.getElementById('mbc')!.className = 'mbc mbc--opening';
       /* FLAKE FIX (2026-08-29): two rAFs was a guess at when the browser
          lists the CSSTransition, and on a loaded CI runner it guessed wrong

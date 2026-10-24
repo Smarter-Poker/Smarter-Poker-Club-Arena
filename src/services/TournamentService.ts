@@ -2153,7 +2153,11 @@ class TournamentService {
       if (!Number.isInteger(persistedLevel) || persistedLevel < 0) {
         return { allowed: false, reason: 'Could not verify the current tournament level' };
       }
-      if (persistedLevel >= rebuyLevelCap && !addonWindowOpen) {
+      const minutes = Number(tournament.late_reg_mins ?? 0);
+      const startedAt = Date.parse(String(tournament.started_at || ''));
+      const clockClosed =
+        minutes > 0 && (!Number.isFinite(startedAt) || now >= startedAt + minutes * 60_000);
+      if ((persistedLevel >= rebuyLevelCap || clockClosed) && !addonWindowOpen) {
         return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
       }
     } else {
@@ -2337,7 +2341,7 @@ class TournamentService {
     tournamentId: string,
     userId: string,
     clientToken: string
-  ): Promise<{ success: true; newStack: number }> {
+  ): Promise<{ success: true; newStack: number; tableId: string; seatNumber: number }> {
     if (typeof clientToken !== 'string' || !clientToken.trim()) {
       throw new Error('A rebuy prompt token is required');
     }
@@ -2346,7 +2350,7 @@ class TournamentService {
       throw new Error('The rebuy prompt token is invalid');
     }
 
-    const newStack = await withTournamentPurchaseIntent(
+    const purchase = await withTournamentPurchaseIntent(
       { tournamentId, userId, kind: 'rebuy', token: normalizedClientToken },
       async () => {
         // Never put a mutable eligibility read in front of an idempotent money
@@ -2399,7 +2403,20 @@ class TournamentService {
           reportError(error, 'TournamentService.Rebuy_RPC_outcome_unconfirmed');
           throw error;
         }
-        return confirmedTournamentPurchaseStack(data, request.p_rebuy_type);
+        const newStack = confirmedTournamentPurchaseStack(data, request.p_rebuy_type);
+        const receipt = data as Record<string, unknown>;
+        if (
+          receipt.atomic_tournament_chip_purchase !== 'v1' ||
+          receipt.seated !== true ||
+          typeof receipt.table_id !== 'string' ||
+          !receipt.table_id ||
+          !Number.isSafeInteger(receipt.seat_number) ||
+          Number(receipt.seat_number) < 1 ||
+          Number(receipt.seat_number) > 10
+        ) {
+          throw new Error('The Tournament Purchase Seat Could Not Be Confirmed.');
+        }
+        return { newStack, tableId: receipt.table_id, seatNumber: Number(receipt.seat_number) };
       }
     );
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
@@ -2411,7 +2428,7 @@ class TournamentService {
        the event. The engine's own tournament manager announces what a table
        needs to know. */
 
-    return { success: true, newStack };
+    return { success: true, ...purchase };
   }
 
   /**

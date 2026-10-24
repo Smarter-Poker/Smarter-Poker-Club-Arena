@@ -3082,24 +3082,41 @@ export class HandController {
         ? (() => {
             const byKey = new Map<
               string,
-              { board: 1 | 2 | 3; userId: string; amount: number; handName?: string; low?: boolean }
+              {
+                board: 1 | 2 | 3;
+                userId: string;
+                amount: number;
+                handName?: string;
+                low?: boolean;
+                pots: Array<{ index: number; amount: number }>;
+              }
             >();
             for (const a of scaledPerPot) {
               const board = ((a.board ?? 1) as 1 | 2 | 3) || 1;
               const low = a.low === true;
               const key = `${board}|${a.userId}|${low ? 'lo' : 'hi'}`;
               const existing = byKey.get(key);
-              if (existing) existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
-              else
+              if (existing) {
+                existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
+                const slice = existing.pots.find((p) => p.index === a.potIndex);
+                if (slice) slice.amount = Math.round((slice.amount + a.amount) * 100) / 100;
+                else existing.pots.push({ index: a.potIndex, amount: a.amount });
+              } else
                 byKey.set(key, {
                   board,
                   userId: a.userId,
                   amount: a.amount,
                   handName: a.hand?.name,
+                  pots: [{ index: a.potIndex, amount: a.amount }],
                   ...(low ? { low: true } : {}),
                 });
             }
-            return [...byKey.values()].sort((x, y) => x.board - y.board);
+            return [...byKey.values()]
+              .map((w) => ({
+                ...w,
+                pots: w.pots.sort((x, y) => x.index - y.index),
+              }))
+              .sort((x, y) => x.board - y.board);
           })()
         : undefined;
 

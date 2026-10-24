@@ -1,3 +1,7 @@
+import { registerCompactLobbyRowsCases } from './support/compactLobbyRowsCases';
+registerCompactLobbyRowsCases();
+import { registerGameLobbyCardCases } from './support/gameLobbyCardCases';
+registerGameLobbyCardCases();
 import { registerDiamondJackpotReadoutCases } from './helpers/diamond-jackpot-readout-cases';
 
 // The live Diamond plaque is part of this existing, required lobby chrome suite.
@@ -584,6 +588,7 @@ const SHEETS = [
   'src/components/lobby/ClubLobbyCommandTop.css',
   'src/components/lobby/LobbyTable.css',
   'src/components/lobby/LobbySortBar.css',
+  'src/components/lobby/CompactLobbyRows.css',
   'src/pages/ClubHomeMobilePremium.css',
   'src/components/club/ClubBottomNav.module.css',
 ]
@@ -653,8 +658,8 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
                     )
                     .join('')}
                 </div>
-                <button type="button" class="game-bar__filter-btn"><span>Filters</span></button>
               </div>
+              <div class="lobby-refinements">
               <div class="quickprefs"><div class="quickprefs__row quickprefs__row--status">
                 ${['All', 'Full', 'Empty', 'Open Seats', 'Favorites']
                   .map(
@@ -663,6 +668,8 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
                   )
                   .join('')}
               </div></div>
+              <button type="button" class="game-bar__filter-btn"><span>Filters</span></button>
+              </div>
             </section>
           </div>
           <div class="club-lobby-command-top__campaign"><div class="fx-plaque"></div></div>
@@ -679,11 +686,9 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
                 .join('')}
             </div>
           </div>
-          <div class="arena-lobby-card-list" aria-label="Game Cards">
-            <div><div class="fx-card"></div></div>
-            <div><div class="fx-card"></div></div>
-            <div><div class="fx-card"></div></div>
-            <div><div class="fx-card"></div></div>
+          <div class="arena-lobby-card-list" aria-label="Game Rows">
+            <table class="compact-lobby"><thead><tr>${['Game', 'Stakes', 'Players', 'Status'].map((t) => `<th><button class="compact-lobby__sort">${t}</button></th>`).join('')}</tr></thead>
+            <tbody>${Array.from({ length: 30 }, (_, i) => `<tr><td><button class="compact-lobby__open"><span class="compact-lobby__title">PLO6 1/2</span><span class="compact-lobby__meta">Classic ${i + 1}</span></button></td><td>1/2</td><td>6</td><td>Running</td></tr>`).join('')}</tbody></table>
           </div>
         </div>
       </section>
@@ -789,54 +794,65 @@ async function measureChrome(page: Page) {
   });
 }
 
+for (const width of [320, 393]) {
+  test(`simplified filter rows stay contained and reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 852 });
+    await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
+    await settle(page);
+    const metrics = await page.locator('.lobby-controls').evaluate((controls) => {
+      const types = controls.querySelector<HTMLElement>('.game-bar__types')!;
+      const status = controls.querySelector<HTMLElement>('.quickprefs__row--status')!;
+      const filter = controls.querySelector<HTMLElement>('.game-bar__filter-btn')!;
+      const box = filter.getBoundingClientRect();
+      const tops = [...types.children].map((el) => el.getBoundingClientRect().top);
+      types.scrollLeft = types.scrollWidth;
+      const lastType = types.lastElementChild!.getBoundingClientRect();
+      status.scrollLeft = status.scrollWidth;
+      const lastStatus = status.lastElementChild!.getBoundingClientRect();
+      return {
+        oneTypeRow: Math.max(...tops) - Math.min(...tops),
+        filter: { left: box.left, right: box.right, height: box.height },
+        typeReachable: lastType.left >= 0 && lastType.right <= innerWidth,
+        statusReachable: lastStatus.left >= 0 && lastStatus.right <= box.left,
+        pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      };
+    });
+    expect(metrics.oneTypeRow).toBeLessThanOrEqual(1);
+    expect(metrics.filter.left).toBeGreaterThanOrEqual(0);
+    expect(metrics.filter.right).toBeLessThanOrEqual(width);
+    expect(metrics.filter.height).toBeGreaterThanOrEqual(44);
+    expect(metrics.typeReachable).toBe(true);
+    expect(metrics.statusReachable).toBe(true);
+    expect(metrics.pageOverflow).toBeLessThanOrEqual(1);
+  });
+}
+
 test.describe('mobile lobby chrome', () => {
   test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
 
-  for (const width of [375, 393]) {
+  for (const width of [375, 393, 768]) {
     for (const inTab of [false, true]) {
-      test(`the ticker band clears the entire sticky deck and row at ${width}px ${inTab ? 'in a tab' : 'standalone'}`, async ({
+      test(`filters stay in their original page position at ${width}px ${inTab ? 'in a tab' : 'standalone'}`, async ({
         page,
       }) => {
         await page.setViewportSize({ width, height: 852 });
         await page.setContent(
           lobby({ countText: '5 Balances', publishControlsHeight: true, inTab })
         );
-        for (const height of [38, 54, 0]) {
-          await page.evaluate(
-            (h) => document.documentElement.style.setProperty('--mtt-ticker-h', `${h}px`),
-            height
-          );
-          await page.evaluate(() => window.scrollTo(0, 700));
-          const m = await measureChrome(page);
-          expect(
-            Math.abs(m.deckTop - m.headerBottom - height),
-            'the ticker covers the selector deck'
-          ).toBeLessThan(1);
-          expect(
-            Math.abs(m.sortbarTop - m.deckBottom),
-            'the sort row does not follow the shifted deck'
-          ).toBeLessThan(1);
-          expect(m.sortbarIsTopmost).toBe(true);
-          if (!inTab) {
-            const focus = await page.evaluate(() => {
-              const root = document.documentElement;
-              const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
-              root.setAttribute('data-lobby-scrollport', 'true');
-              root.style.setProperty('--ca-lobby-sortbar-h', `${row.height}px`);
-              return {
-                padding: parseFloat(getComputedStyle(root).scrollPaddingTop),
-                bottom: row.bottom,
-                // Mobile WebKit reports client rects relative to its panned
-                // visual viewport; scroll padding uses layout coordinates.
-                visualOffset: window.visualViewport?.offsetTop ?? 0,
-              };
-            });
-            expect(
-              Math.abs(focus.padding - focus.bottom - focus.visualOffset),
-              'native focus scrolls behind the ticker'
-            ).toBeLessThan(1);
-          }
-        }
+        await settle(page);
+        const deck = page.locator('.club-lobby-command-top__controls');
+        const home = await deck.evaluate((el) => el.getBoundingClientRect().top);
+        await expect(deck).toHaveCSS('position', 'relative');
+        await page.evaluate(() => window.scrollTo(0, 1200));
+        await page.evaluate(() => window.scrollTo(0, 1000));
+        await expect
+          .poll(() => deck.evaluate((el) => el.getBoundingClientRect().bottom))
+          .toBeLessThan(0);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect
+          .poll(() => deck.evaluate((el) => el.getBoundingClientRect().top))
+          .toBeCloseTo(home, 0);
+        await expect(page.locator('.lobby-sortbar')).toBeHidden();
       });
     }
   }
@@ -857,80 +873,18 @@ test.describe('mobile lobby chrome', () => {
     expect(empty.text.trim()).toBe('');
   });
 
-  test('the filter row locks flush under Find Your Game and stays above the cards', async ({
-    page,
-  }) => {
+  test('compact game rows fit the phone and keep touch targets', async ({ page }) => {
     await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
-    await page.evaluate(() => window.scrollTo(0, 700));
-    const m = await measureChrome(page);
-    expect(m.sortbarPosition).toBe('sticky');
-    expect(m.sortbarOnScreen).toBe(true);
-    expect(Math.abs(m.sortbarTop - m.deckBottom), 'gap between deck and row').toBeLessThan(1);
-    expect(m.sortbarIsTopmost, 'a card is painting over the sort row').toBe(true);
-  });
-
-  test('without the published deck height the row degrades to the header, never off the page', async ({
-    page,
-  }) => {
-    await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: false }));
-    await page.evaluate(() => window.scrollTo(0, 700));
-    const m = await measureChrome(page);
-    expect(m.sortbarPosition).toBe('sticky');
-    expect(m.sortbarOnScreen).toBe(true);
-    // With no deck height to add, the row parks at the header, exactly where
-    // the deck parks: under it, never off the page.
-    expect(Math.abs(m.sortbarTop - m.deckTop), 'row should park where the deck parks').toBeLessThan(
-      1
-    );
-  });
-
-  test('the Variant menu opens under the stuck row and above the cards', async ({ page }) => {
-    /* Dan 2026-09-05: the dropdowns "aren't clickable ... you click what's
-       behind the page". Giving the row a z-index made it a stacking context
-       around the menus that anchor inside it, so this proves the menu still
-       paints above every card once the row is stuck. */
-    await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
-    await page.evaluate(() => window.scrollTo(0, 700));
     await settle(page);
-    const m = await page.evaluate(() => {
-      const bar = document.querySelector('.lobby-sortbar')!;
-      const anchor = document.createElement('div');
-      anchor.className = 'lt-variant-menu-anchor lt-variant-menu-anchor--bar';
-      anchor.innerHTML =
-        '<div class="lt-variant-menu" role="menu">' +
-        ['No Limit', 'Pineapple', 'Short Deck']
-          .map(
-            (g) =>
-              `<button type="button" class="lt-variant-menu__item" role="menuitemcheckbox">${g}</button>`
-          )
-          .join('') +
-        '</div>';
-      bar.appendChild(anchor);
-      const item = anchor.querySelector('.lt-variant-menu__item')!;
-      const i = item.getBoundingClientRect();
-      const b = bar.getBoundingClientRect();
-      const hit = document.elementFromPoint(i.left + i.width / 2, i.top + i.height / 2);
-      return {
-        menuBelowBar: anchor.getBoundingClientRect().top - b.bottom,
-        itemIsTopmost: hit === item,
-        itemOnScreen: i.top >= 0 && i.bottom <= innerHeight,
-      };
-    });
-    expect(m.itemOnScreen).toBe(true);
-    expect(m.menuBelowBar).toBeGreaterThanOrEqual(0);
-    expect(m.menuBelowBar).toBeLessThan(12);
-    expect(m.itemIsTopmost, 'a card is painting over the open menu').toBe(true);
-  });
-
-  test('inside the multi-table tab the row reads the tab header height', async ({ page }) => {
-    await page.setContent(
-      lobby({ countText: '5 Balances', publishControlsHeight: true, inTab: true })
-    );
-    await page.evaluate(() => window.scrollTo(0, 700));
-    const m = await measureChrome(page);
-    expect(m.sortbarPosition).toBe('sticky');
-    expect(Math.abs(m.sortbarTop - m.deckBottom), 'gap between deck and row').toBeLessThan(1);
-    expect(m.sortbarOnScreen).toBe(true);
+    const metrics = await page.locator('.compact-lobby').evaluate((table) => ({
+      width: table.getBoundingClientRect().width,
+      available: table.parentElement!.getBoundingClientRect().width,
+      targets: [...table.querySelectorAll('.compact-lobby__open')].map(
+        (el) => el.getBoundingClientRect().height
+      ),
+    }));
+    expect(metrics.width).toBeLessThanOrEqual(metrics.available + 1);
+    expect(metrics.targets.every((h) => h >= 44 && h <= 80)).toBe(true);
   });
 
   test('the footer frame sits on the bottom edge with nothing under it', async ({ page }) => {
@@ -951,7 +905,16 @@ test.describe('mobile lobby chrome on the narrowest phone', () => {
     await page.evaluate(() => window.scrollTo(0, 700));
     const m = await measureChrome(page);
     expect(Math.abs(m.viewportBottom - m.frameBottom), 'strip under the frame').toBeLessThan(1);
-    expect(Math.abs(m.sortbarTop - m.deckBottom), 'gap between deck and row').toBeLessThan(1);
+    const gap = await page
+      .locator('.compact-lobby')
+      .evaluate(
+        (el) =>
+          el.getBoundingClientRect().top -
+          document.querySelector('.club-lobby-command-top__campaign')!.getBoundingClientRect()
+            .bottom -
+          parseFloat(getComputedStyle(document.querySelector('.club-home__games')!).paddingTop)
+      );
+    expect(Math.abs(gap), 'gap before compact games').toBeLessThan(1);
   });
 });
 

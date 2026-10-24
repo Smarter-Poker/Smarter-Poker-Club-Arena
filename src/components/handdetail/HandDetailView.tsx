@@ -35,13 +35,14 @@
  */
 
 import { useMemo } from 'react';
+import RecordedPotAwards from './RecordedPotAwards';
 import CardImage, { CardBack } from '../table/CardImage';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
 import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { computeEquity, type EquityResult } from '../../utils/equity';
 import './HandDetailView.css';
-import { blindLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
+import { blindLabel, money, moneyForHand, potShareLabels, stamp } from '../../utils/handFormat';
 
 export interface HandDetailViewProps {
   model: ReplayModel;
@@ -334,6 +335,11 @@ function ShowdownRow({
             ? `${row.boardLabel} · ${row.potLabel}`
             : row.boardLabel || row.potLabel}
         </span>
+        {potShareLabels(row.potSlices, { arenaAsset }).map((label, index) => (
+          <span className="hdv__sd-pot" key={index}>
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -559,6 +565,7 @@ export function HandDetailView({
 
       {viewerFacts && <AllInFacts facts={viewerFacts} arenaAsset={model.arenaAsset} />}
 
+      <RecordedPotAwards model={model} />
       {model.showdown.length > 0 && (
         <section className="hdv__showdown">
           <header className="hdv__section-head">Showdown</header>

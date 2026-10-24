@@ -7,7 +7,7 @@
  * RealtimeChannelService, and BroadcastChannel. Full unit testing requires
  * integration-level mocking. These tests verify the TYPE EXPORTS are correct.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.unmock('../../src/core/MasterBus');
 
@@ -124,5 +124,80 @@ describe('MasterBus', () => {
       timestamp: new Date().toISOString(),
     };
     expect(mockEvent.type).toBe('BALANCE_UPDATED');
+  });
+});
+
+describe('MasterBus browser navigation isolation', () => {
+  let channel: {
+    onmessage: ((event: { data: unknown }) => void) | null;
+    postMessage: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    masterBus.reset();
+    channel = { onmessage: null, postMessage: vi.fn(), close: vi.fn() };
+    vi.stubGlobal(
+      'BroadcastChannel',
+      class {
+        constructor() {
+          return channel;
+        }
+      }
+    );
+    masterBus.init();
+  });
+  afterEach(() => {
+    masterBus.reset();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const commands = [
+    ['OPEN_OBSERVE_TABLE', { tableId: 'observed-table', tableName: 'Cash table' }],
+    ['OPEN_HUB_TAB', { path: '/hub/social' }],
+    ['OPEN_LOBBY_TAB', { requestedBy: 'table-header' }],
+    ['OPEN_MUST_MOVE_LOBBY', { tableId: 'observed-table' }],
+  ] as const;
+
+  it.each(commands)(
+    'delivers %s locally without navigating another browser tab',
+    (type, payload) => {
+      const local = vi.fn();
+      masterBus.subscribe(type, local);
+      masterBus.emit(type, payload);
+      expect(local).toHaveBeenCalledOnce();
+      expect(local.mock.calls[0][0].payload).toEqual(payload);
+      expect(channel.postMessage).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(commands)(
+    'ignores legacy-tab incoming %s before subscribers and deduplication',
+    (type, payload) => {
+      const local = vi.fn();
+      masterBus.subscribe(type, local);
+      channel.onmessage!({ data: { type, payload } });
+      expect(local).not.toHaveBeenCalled();
+      masterBus.emit(type, payload);
+      expect(local).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('continues sharing player appearance data without rebroadcasting incoming updates', () => {
+    const subscriber = vi.fn();
+    masterBus.subscribe('PLAYER_APPEARANCE_CHANGED', subscriber);
+    const outgoing = { userId: 'player-one' };
+    masterBus.emit('PLAYER_APPEARANCE_CHANGED', outgoing);
+    expect(channel.postMessage).toHaveBeenCalledExactlyOnceWith({
+      type: 'PLAYER_APPEARANCE_CHANGED',
+      payload: outgoing,
+    });
+    channel.onmessage!({
+      data: { type: 'PLAYER_APPEARANCE_CHANGED', payload: { userId: 'player-two' } },
+    });
+    expect(subscriber).toHaveBeenCalledTimes(2);
+    expect(channel.postMessage).toHaveBeenCalledTimes(1);
   });
 });

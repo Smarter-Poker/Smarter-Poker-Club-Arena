@@ -26,13 +26,12 @@
  *   4. under fixed chrome, page does NOT scroll -> REPORTED (nowhere to go)
  *   5. overlapped by an ordinary sibling        -> REPORTED (a real defect)
  *
- * The rule under test is copied from the sweep rather than imported, because
- * the sweep's copy lives inside a `page.evaluate` callback and cannot be
- * imported. `the sweep still contains this rule` below is what stops the two
- * copies drifting apart: it reads the real spec file and fails if the
- * expressions that make the rule are gone.
+ * The older fixed-chrome cases model the established exclusion below. The
+ * horizontal-rail regressions execute the same browser-side measurement as
+ * the production sweep, including genuine sibling-overlap failures.
  */
 import { test, expect } from '@playwright/test';
+import { measureMobileTapTargets } from './support/mobileTapTargets';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -198,21 +197,27 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
   });
 
   test('the sweep still contains the rule these beats model', () => {
-    /* The rule lives inside a page.evaluate callback in the sweep, so it cannot
-       be imported and shared. If it is ever removed or rewritten, these beats
-       would keep passing against a copy that no longer ships - so read the real
-       file and fail loudly instead. */
+    // Keep the older fixed-chrome model tied to the maintained measurement,
+    // and keep route-provenance assertions in the live sweep.
     const src = readFileSync(
       resolve(process.cwd(), 'tests/e2e/mobile-tap-targets.spec.ts'),
       'utf8'
     );
-    expect(src, 'the sweep no longer computes whether the page scrolls').toContain('pageScrolls');
-    expect(src, 'the sweep no longer asks whether the blocker is fixed chrome').toContain(
+    const measurement = readFileSync(
+      resolve(process.cwd(), 'tests/e2e/support/mobileTapTargets.ts'),
+      'utf8'
+    );
+    expect(src).toContain('page.evaluate(measureMobileTapTargets, { REACH })');
+    expect(measurement, 'the sweep no longer computes whether the page scrolls').toContain(
+      'pageScrolls'
+    );
+    expect(measurement, 'the sweep no longer asks whether the blocker is fixed chrome').toContain(
       'firstBlockersAreFixedChrome'
     );
-    expect(src, 'the fixed-chrome exclusion no longer records an unmeasured control').toContain(
-      'under fixed chrome'
-    );
+    expect(
+      measurement,
+      'the fixed-chrome exclusion no longer records an unmeasured control'
+    ).toContain('under fixed chrome');
     expect(src, 'Club Data no longer accepts only its rendered canonical club link').toContain(
       "const canonicalHref = await dataLink.getAttribute('href')"
     );
@@ -227,3 +232,37 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
     );
   });
 });
+
+// A horizontal filter rail clips later buttons inside the viewport. Reveal the
+// actual control before measuring it; a neighbouring Filters button is not it.
+for (const blocked of [false, true]) {
+  test(`horizontal filter scroll is measured after reveal, sibling overlap ${blocked}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.setContent(`<style>
+      #main-content { margin: 50px 20px; display:flex; width:335px; }
+      .rail { display:flex; flex:0 0 240px; overflow-x:auto; gap:6px; }
+      button { height:44px; flex:0 0 90px; }
+      .rail > span { position:relative; flex:0 0 90px; }
+      .rail > span button { width:90px; }
+      .blocker { position:absolute; inset:0; background:black; }
+    </style><main id="main-content"><div class="rail">
+      <button>All</button><button>Running</button><button>Open Reg</button>
+      <span><button>Late Reg</button>${blocked ? '<i class="blocker"></i>' : ''}</span>
+    </div><button>Filters</button></main>`);
+    const before = await page
+      .getByRole('button', { name: 'Late Reg', exact: true })
+      .evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === el;
+      });
+    expect(before).toBe(false);
+    const result = await page.evaluate(measureMobileTapTargets, { REACH });
+    expect(result.out.filter((control) => control.text === 'Late Reg')).toHaveLength(
+      blocked ? 1 : 0
+    );
+    expect(result.n).toBe(5);
+    expect(await page.locator('.rail').evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  });
+}

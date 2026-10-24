@@ -237,28 +237,16 @@ export interface HorsePhase10AuthoritySelection {
  * with their evidence and are retained for refusal in
  * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_22_*.
  *
- * October 22: generation 5. The locked P10.2 matrix on the exact maniac-
- * pressure source 8ea7564b (run 39757485267, 111 of 111 shards, 2,557,440
- * pairs) qualifies with no reasons: +6.93 [+6.25, +7.62] bb/100 cash after
- * rake against the horse population, at policy digest 42ee2bf5.... Phase 10
- * has no completion stage of its own (generation 2 precedent, #6901). Cash only.
+ * October 22, later: generation 5 (8ea7564b, #7706) requalified that source,
+ * and the second maniac-pressure pass (docs/changelog/2026-10-22-horses-adjust-
+ * to-maniacs-part-two.md: a fast style-change window, the limp-then-pot
+ * player, thicker value into stations, the short tournament stack shoving
+ * into a maniac) changed HorseLogic.ts and HorseOpponentExploit.ts again.
+ * Same precedent: the selection is null until the locked matrix requalifies
+ * the exact new source as generation 6; generation 5 is retained as
+ * RETIRED_2026_10_22B_PHASE10_SELECTION.
  */
-export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null =
-  Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase10',
-    sourceSha: '8ea7564bc44ddead3189e76dd0b4c00d5dbcc3d8',
-    packVersion: 'plo4-policy-round3-v2',
-    contractVersion: 'plo4-strength-contract-v1',
-    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
-    domain: 'plo4-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase10/8ea7564b/phase10-qualification-2026-10-22.json',
-    qualificationSha256: '6d49906c6c60ad4651d217ff82c440a92b66cfa1e047a0a4094feb14df9fe9b5',
-    approvalGeneration: 5,
-    issuedAt: '2026-10-22T16:00:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const);
+export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null = null;
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

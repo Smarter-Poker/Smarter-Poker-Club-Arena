@@ -1,0 +1,86 @@
+/* Approved two-bay holder. Only live ink is rendered in CSS; all chrome is art. */
+.tournament-entry-holder {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  width: min(calc(100vw - 24px), calc(var(--sp-bottom-row-h, 56px) * 4.6127), 420px);
+  aspect-ratio: 2108 / 457;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  background: url('/assets/club-buttons/tournament-spectating-holder-v1.webp') center / contain
+    no-repeat;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+  container-type: inline-size;
+  -webkit-tap-highlight-color: transparent;
+}
+.tournament-entry-holder:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 3px;
+}
+.tournament-entry-holder:active {
+  transform: translateY(1px);
+}
+.tournament-entry-holder__clock,
+.tournament-entry-holder__face {
+  position: absolute;
+  top: 20%;
+  height: 60%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1cqw;
+  text-align: center;
+  min-width: 0;
+}
+.tournament-entry-holder__clock {
+  left: 8%;
+  width: 21%;
+}
+.tournament-entry-holder__face {
+  left: 38%;
+  width: 54%;
+}
+.tournament-entry-holder__label {
+  color: #45adff;
+  font-size: 2.4cqw;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tournament-entry-holder__clock-line,
+.tournament-entry-holder__title-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+.tournament-entry-holder__time {
+  display: inline-block;
+  color: #45adff;
+  font-size: calc(7.4cqw * var(--fit, 1));
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 1cqw rgb(49 168 255 / 55%);
+}
+.tournament-entry-holder__title {
+  display: inline-block;
+  color: #f4f7fb;
+  font-size: calc(6.2cqw * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 #6d747c,
+    0 2px 0 #050607;
+}

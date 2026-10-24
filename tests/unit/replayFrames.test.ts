@@ -115,3 +115,48 @@ describe('the replay frames come off the one model', () => {
     expect(frames[frames.length - 1].caption).toContain('kingfish Takes Main 200.00');
   });
 });
+
+it('the result caption includes the winner of every run, not just board one', () => {
+  const model = buildReplay({
+    ...HAND,
+    extraBoards: [['7c', '2c', '9h', 'Ah', 'Ac']],
+    holeCards: { [HERO]: ['9c', '9d'], [VIL]: ['Ad', 'As'] },
+    showdown: [
+      { user_id: HERO, mucked: false, reveal_order: 0 },
+      { user_id: VIL, mucked: false, reveal_order: 1 },
+    ],
+    winners: [
+      { userId: HERO, amount: 100, potIndex: 0 },
+      { userId: VIL, amount: 100, potIndex: 0 },
+    ],
+    winnersByBoard: [
+      { board: 1, userId: HERO, amount: 100 },
+      { board: 2, userId: VIL, amount: 100 },
+    ],
+  } as never);
+  const final = buildReplayFrames(model).at(-1)!;
+  expect(final.caption).toBe('kingfish, Emerson Split Main 200.00');
+  expect(final.extraBoards).toHaveLength(1);
+});
+
+it('the result caption includes a low-only winner as well as the high winner', () => {
+  const model = buildReplay({
+    ...HAND,
+    gameVariant: 'plo8',
+    board: ['2c', '3d', '4h', 'Ks', 'Qd'],
+    holeCards: { [HERO]: ['Kc', 'Kh', 'Jc', 'Td'], [VIL]: ['Ac', '5d', '8c', '9d'] },
+    showdown: [
+      { user_id: HERO, mucked: false, reveal_order: 0 },
+      { user_id: VIL, mucked: false, reveal_order: 1 },
+    ],
+    winners: [
+      { userId: HERO, amount: 100, potIndex: 0 },
+      { userId: VIL, amount: 100, potIndex: 0 },
+    ],
+    winnersByBoard: [
+      { board: 1, userId: HERO, amount: 100 },
+      { board: 1, userId: VIL, amount: 100, low: true },
+    ],
+  } as never);
+  expect(buildReplayFrames(model).at(-1)!.caption).toBe('kingfish, Emerson Split Main 200.00');
+});

@@ -986,6 +986,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase14'
   ),
   table(
+    'horse_exploit_profiles',
+    'per_hand',
+    'HorseOpponentMemory via fn_horse_exploit_profiles_read; worker prerequisite read and monotonic import',
+    'private public-action counters, retained across sessions by exact variant, cash/tournament and dealt size; accepted hand trigger owns persistence',
+    'V50',
+    { dayColumn: 'updated_at', freshnessDays: 1 }
+  ),
+  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',
@@ -1291,6 +1299,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // so a healthy day never trips them and a dead layer always does.
   // ─────────────────────────────────────────────────────────────────────────
   receipt('decide', 'HorseLogic.decide', 'every live decision', 'V15'),
+  receipt(
+    'horse_decision_refused_isolated',
+    'LiveHorseDecisionWorkerClient.refuseDecision',
+    'a worker decision whose receipt or effects the client refused; isolated to its own seat (check or fold), never engine-fatal',
+    '2026-10-22'
+  ),
   receipt('decide_tournament', 'HorseLogic.decide', 'every live tournament decision', 'Phase6'),
   receipt(
     'decide_tournament_preflop',
@@ -1519,6 +1533,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'maniac_call_down_checked',
     'HorseLogic (maniac pressure)',
     "a fold facing a maniac's bet was re-checked against equity versus its preflop range",
+    'OPPX'
+  ),
+  receipt(
+    'postflop_maniac_call_down_checked',
+    'HorseLogic (maniac pressure)',
+    'a fold facing the bet of a player who limps and then pots every street was re-checked against equity (2026-10-22)',
+    'OPPX'
+  ),
+  receipt(
+    'maniac_short_stack_jam',
+    'HorseLogic (maniac pressure)',
+    'a short tournament stack opening into a maniac moved all in instead of raising to fold to the shove (2026-10-22)',
     'OPPX'
   ),
   receipt(
@@ -2839,6 +2865,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
    * job failed or expired) from the client.
    */
   receipt(
+    'horse_continuation_*',
+    'HorseLogic premium 3-bet, terminal flop and call-side barrel budget',
+    'real-card value raise, funded short-stack flop wager or next-street call budget; no holdings or player identifiers',
+    'V50'
+  ),
+  receipt(
+    'horse_opponent_memory_*',
+    'HorseDecisionWorkerRuntime durable profile import',
+    'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
+    'V50'
+  ),
+  receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
     'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',
@@ -2887,6 +2925,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V43)',
     'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
     'V43'
+  ),
+  receipt(
+    'wager_rules_commit_correction',
+    'ServerTableEngineTurns (final wager rules at commit)',
+    'the fresh commit-time menu turned a passive river-nuts action into a legal raise, or a 90-100% pot wager into full pot',
+    'RiverNuts'
   ),
 
   // TAGS. Every leak tag the review system emits, with its reader.

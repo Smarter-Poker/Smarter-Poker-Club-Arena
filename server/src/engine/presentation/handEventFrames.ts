@@ -336,6 +336,8 @@ export function potWinFrame(a: {
     userId: string;
     amount: number;
     handName?: string;
+    low?: boolean;
+    pots?: Array<{ index: number; amount: number }>;
   }>;
   capturedPotAwards: unknown;
 }): Record<string, unknown> {
@@ -379,6 +381,8 @@ export function potWinFrame(a: {
       user_id: w.userId,
       amount: w.amount,
       hand_name: w.handName,
+      ...(w.low === undefined ? {} : { low: w.low }),
+      ...(w.pots?.length ? { pots: w.pots.map((p) => ({ ...p })) } : {}),
     })),
     pot_awards: a.capturedPotAwards,
   };

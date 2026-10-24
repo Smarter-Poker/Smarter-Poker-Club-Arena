@@ -110,6 +110,113 @@ function roundTrip(input: ReplayInput, heroUserId: string | null = HERO) {
   return { model, shared, decoded, rebuilt: replayFromShareable(decoded) };
 }
 
+describe('recorded board awards do not require a showdown', () => {
+  const foldedBomb = (over: Partial<ReplayInput> = {}) =>
+    ritHiLoInput({
+      gameVariant: 'nlh',
+      bombPot: true,
+      potSize: 96,
+      rakeAmount: 2.5,
+      bbjAmount: 0.25,
+      holeCards: {},
+      showdown: [],
+      privateHoleCards: {
+        [HERO]: [
+          { rank: 'Q', suit: 'h' },
+          { rank: '6', suit: 'h' },
+        ],
+      },
+      actions: [
+        { seat: 1, userId: HERO, action: 'bomb_ante', amount: 48, stage: 'preflop', dead: true },
+        { seat: 2, userId: VILLAIN, action: 'bomb_ante', amount: 48, stage: 'preflop', dead: true },
+        { seat: 2, userId: VILLAIN, action: 'fold', amount: 0, stage: 'flop' },
+      ],
+      winners: [{ userId: HERO, amount: 93.25 }],
+      winnersByBoard: [
+        { board: 1, userId: HERO, amount: 46.62, pots: [{ index: 0, amount: 46.62 }] },
+        { board: 2, userId: HERO, amount: 46.63, pots: [{ index: 0, amount: 46.63 }] },
+      ],
+      ...over,
+    });
+
+  it('retains both fold-win allocations as money facts without inventing showdown cards', () => {
+    const model = buildReplay(foldedBomb());
+    expect(model.showdown).toEqual([]);
+    expect(model.recordedBoardAwards).toMatchObject([
+      {
+        userId: HERO,
+        name: 'Hero',
+        seat: 1,
+        boardIndex: 0,
+        low: false,
+        amount: 46.62,
+        potSlices: [{ index: 0, amount: 46.62 }],
+      },
+      {
+        userId: HERO,
+        name: 'Hero',
+        seat: 1,
+        boardIndex: 1,
+        low: false,
+        amount: 46.63,
+        potSlices: [{ index: 0, amount: 46.63 }],
+      },
+    ]);
+    expect(
+      model.recordedBoardAwards!.every(
+        (award) => !('hole' in award) && !('privateHole' in award) && !('made' in award)
+      )
+    ).toBe(true);
+  });
+
+  it('shares and rebuilds every recorded fold-win board and pot allocation', () => {
+    const { decoded, rebuilt } = roundTrip(foldedBomb());
+    expect(decoded.winners).toMatchObject([
+      { board: 1, amount: 46.62, pots: [{ index: 0, amount: 46.62 }] },
+      { board: 2, amount: 46.63, pots: [{ index: 0, amount: 46.63 }] },
+    ]);
+    expect(
+      rebuilt.recordedBoardAwards?.map((award) => [award.boardIndex, award.amount, award.potSlices])
+    ).toEqual([
+      [0, 46.62, [{ index: 0, amount: 46.62 }]],
+      [1, 46.63, [{ index: 0, amount: 46.63 }]],
+    ]);
+  });
+
+  it('keeps high/low and known zero slices while leaving legacy absence unknown', () => {
+    const model = buildReplay(
+      foldedBomb({
+        winnersByBoard: [
+          {
+            board: 1,
+            userId: HERO,
+            amount: 1,
+            pots: [
+              { index: 0, amount: 1 },
+              { index: 1, amount: 0 },
+            ],
+          },
+          { board: 1, userId: HERO, amount: 2, low: true },
+        ],
+      })
+    );
+    expect(model.recordedBoardAwards).toMatchObject([
+      {
+        boardIndex: 0,
+        low: false,
+        amount: 1,
+        potSlices: [
+          { index: 0, amount: 1 },
+          { index: 1, amount: 0 },
+        ],
+      },
+      { boardIndex: 0, low: true, amount: 2 },
+    ]);
+    expect(model.recordedBoardAwards![1].potSlices).toBeUndefined();
+    expect(buildReplay(foldedBomb({ winnersByBoard: [] })).recordedBoardAwards).toEqual([]);
+  });
+});
+
 describe('share link v4 carries what the reconstruction knows', () => {
   it('decodes as v4 and reads its money in cents', () => {
     const { decoded } = roundTrip(ritHiLoInput());
@@ -411,6 +518,32 @@ describe('there is one replayer', () => {
  * share carries nothing extra, so an ordinary link is byte-identical.
  */
 describe('share link v4 carries which pot each board share came out of', () => {
+  it('preserves an explicitly recorded main-only allocation, including a known zero slice', () => {
+    const { decoded, rebuilt } = roundTrip(
+      ritHiLoInput({
+        winnersByBoard: [
+          {
+            board: 1,
+            userId: HERO,
+            amount: 1,
+            pots: [
+              { index: 0, amount: 1 },
+              { index: 1, amount: 0 },
+            ],
+          },
+          { board: 2, userId: HERO, amount: 1, pots: [{ index: 0, amount: 1 }] },
+        ],
+      })
+    );
+    expect(decoded.winners.find((w) => w.board === 2)!.pots).toEqual([{ index: 0, amount: 1 }]);
+    expect(rebuilt.showdown.find((r) => r.boardIndex === 1 && r.isWinner)!.potSlices).toEqual([
+      { index: 0, amount: 1 },
+    ]);
+    expect(rebuilt.showdown.find((r) => r.boardIndex === 0 && r.isWinner)!.potSlices).toEqual([
+      { index: 0, amount: 1 },
+      { index: 1, amount: 0 },
+    ]);
+  });
   it('a two-pot share survives encode -> URL -> decode -> rebuild', () => {
     const input = ritHiLoInput({
       winnersByBoard: [

@@ -40,6 +40,14 @@
     "public/assets/diamond-spins/wheel-selector-matte-v1.png": {
       "pct": 1.0,
       "reason": "Matte steel pointer, inspected at full size on black on 2026-09-19. The detector removes 6072 pixels with mean RGB luminance 93.14, only two above 200; 5928 lie in the top 20% of the image along the pointed steel crest and upper shoulders. An in-memory cleaned copy reads 0.0031%, but removes the matte metal contour, not a white background. Preserve the blue crystal and matte housing and pin the measured reading."
+    },
+    "public/assets/club-buttons/tournament-info-dock-v1/bottom.webp": {
+      "pct": 4.0,
+      "reason": "Cropped machined chrome rail, verified against a cleaned copy on October22. Before/after comparison shows cleaning tears the lower silver bevel into transparent streaks and nicks both corner rails. The cleaned copy still reads2.6percent, so it does not converge to zero. These are structural chrome highlights touching the cropped border, not an exterior matte."
+    },
+    "public/assets/club-buttons/tournament-info-dock-v1/middle.webp": {
+      "pct": 0.5,
+      "reason": "Eight-pixel tiling strip cropped from the same approved holder. Its two border rails occupy the full strip height; the detector sees their neutral silver edges. Cleaner leaves the copy unchanged at0.5percent, its own floor, and inspection confirms no exterior white field."
     }
   },
   "generated": "2026-09-21"

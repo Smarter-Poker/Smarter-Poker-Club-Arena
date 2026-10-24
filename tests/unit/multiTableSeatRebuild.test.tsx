@@ -2,6 +2,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { clearSessionSummary, peekSessionSummary } from '../../src/services/pendingSessionSummary';
 
 type QueryResult = { data: unknown; error: unknown };
 type SeatRead = {
@@ -15,12 +16,15 @@ const state = vi.hoisted(() => ({
   listeners: new Map<string, Set<(event: { payload: unknown }) => void>>(),
   reads: [] as SeatRead[],
   metadata: [] as string[][],
+  finishRead: vi.fn(),
+  reportAtUnmount: new Map<string, number | null>(),
   metadataResults: [] as (QueryResult | Promise<QueryResult>)[],
   reports: new Map<string, (info: Record<string, unknown>) => void>(),
   inserts: [] as ((payload: unknown) => void)[],
   toast: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), success: vi.fn() },
 }));
 
+vi.mock('../../src/services/tournamentResult', () => ({ fetchTournamentResult: state.finishRead }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from(table: string) {
@@ -200,6 +204,15 @@ vi.mock('../../src/utils/lazyWithRetry', () => ({
       onTableInfoUpdate: (info: Record<string, unknown>) => void;
     }) {
       state.reports.set(embeddedTableId, onTableInfoUpdate);
+      React.useEffect(
+        () => () => {
+          state.reportAtUnmount.set(
+            embeddedTableId,
+            peekSessionSummary()?.tournament?.finishPlace ?? null
+          );
+        },
+        [embeddedTableId]
+      );
       return <div data-testid={'felt-' + embeddedTableId}>Felt {embeddedTableId}</div>;
     };
   },
@@ -249,6 +262,8 @@ beforeEach(() => {
   state.metadataResults.length = 0;
   state.inserts.length = 0;
   state.reports.clear();
+  state.reportAtUnmount.clear();
+  for (let i = 0; i < 6; i++) clearSessionSummary();
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
@@ -265,7 +280,50 @@ describe('Rendered MultiTable authoritative seat rebuild', () => {
     const metadataBefore = state.metadata.length;
     await settle(read, []);
     expect(screen.queryByTestId('felt-A')).toBeNull();
-    expect(state.metadata.length).toBe(metadataBefore);
+    // Zero live seats still need one bounded read of the removed table:
+    // its durable tournament result must be delivered before unmount.
+    expect(state.metadata.length).toBe(metadataBefore + 1);
+    expect(state.metadata.at(-1)).toEqual(['A']);
+  });
+  it('publishes the durable tournament finish before pruning unmounts its felt', async () => {
+    await seatA();
+    const read = await reconnect();
+    state.metadataResults.push({
+      data: [
+        {
+          id: 'A',
+          name: 'Nightly',
+          tournament_id: 'nightly-finish',
+          club_id: 'club',
+          union_id: null,
+          arena: { id: 'club', asset: 'chips', is_platform: false, union_id: null },
+        },
+      ],
+      error: null,
+    });
+    state.finishRead.mockResolvedValue({
+      tournamentId: 'nightly-finish',
+      userId: 'account-a',
+      entryStatus: 'eliminated',
+      finishPlace: 353,
+      entrants: 375,
+      prize: 0,
+      bountyWinnings: 0,
+      knockouts: 0,
+      rebuys: 1,
+      addOns: 1,
+      buyInAmount: 35,
+    });
+    await settle(read, []);
+    expect(screen.queryByTestId('felt-A')).toBeNull();
+    expect(state.finishRead).toHaveBeenCalledWith('nightly-finish', 'account-a');
+    expect(state.reportAtUnmount.get('A')).toBe(353);
+    expect(peekSessionSummary()?.tournament).toMatchObject({
+      finishPlace: 353,
+      rebuys: 1,
+      addOns: 1,
+      buyInAmount: 35,
+    });
   });
   it('preserves spectator and pending-buy-in tabs when only another table had a seat', async () => {
     mount();

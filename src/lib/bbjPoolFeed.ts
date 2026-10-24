@@ -189,7 +189,9 @@ export function watchBbjPool(clubId: string, listener: BbjPoolListener): () => v
  * Every raked hand's drop is split three ways, and `fn_bbj_allocate` reads the
  * split from ONE authority: `ca_bbj_policy`. Below the pivot a drop is 50%
  * main / 25% backup / 25% promo; at or above 100,000 in main it becomes
- * 25 / 25 / 50.
+ * 25 / 25 / 50. A pool with its own row in `ca_bbj_pool_policy` uses that
+ * instead (Dan 2026-10-22: the Midway Union, 10 / 30 / 60 for the time being),
+ * so the read takes the pool it is describing.
  *
  * That threshold was written down in four places - the policy table, both
  * halves of `RakeConfig.ts` as `BBJ_PIVOT_THRESHOLD`, and twice more as bare
@@ -222,23 +224,33 @@ export interface BbjAllocationPolicy {
   pivotPromo: number;
 }
 
-let policyCache: BbjAllocationPolicy | null = null;
-let policyInFlight: Promise<BbjAllocationPolicy | null> | null = null;
+/* Keyed by pool (Dan 2026-10-22: the Midway Union pool has its own split);
+   '' is the platform rule every other pool follows. */
+const policyCache = new Map<string, BbjAllocationPolicy>();
+const policyInFlight = new Map<string, Promise<BbjAllocationPolicy | null>>();
 
 const rate = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : NaN;
 };
 
-export async function getBbjAllocationPolicy(): Promise<BbjAllocationPolicy | null> {
-  if (policyCache) return policyCache;
+export async function getBbjAllocationPolicy(
+  poolId?: string | null
+): Promise<BbjAllocationPolicy | null> {
+  const key = poolId ?? '';
+  const cached = policyCache.get(key);
+  if (cached) return cached;
   /* One flight, however many surfaces ask at once. Without this, a page that
      mounts three jackpot components makes three identical reads on load. */
-  if (policyInFlight) return policyInFlight;
+  const pending = policyInFlight.get(key);
+  if (pending) return pending;
 
-  policyInFlight = (async () => {
+  const flight = (async () => {
     try {
-      const { data, error } = await supabase.rpc('fn_bbj_allocation_policy');
+      const { data, error } = await supabase.rpc(
+        'fn_bbj_allocation_policy',
+        poolId ? { p_pool_id: poolId } : {}
+      );
       if (error) {
         reportError(error, 'bbjPoolFeed.allocation_policy_failed');
         return null;
@@ -266,17 +278,17 @@ export async function getBbjAllocationPolicy(): Promise<BbjAllocationPolicy | nu
         return null;
       }
 
-      policyCache = parsed;
+      policyCache.set(key, parsed);
       return parsed;
     } catch (e) {
       reportError(e, 'bbjPoolFeed.allocation_policy_threw');
       return null;
     } finally {
-      policyInFlight = null;
+      policyInFlight.delete(key);
     }
   })();
-
-  return policyInFlight;
+  policyInFlight.set(key, flight);
+  return flight;
 }
 
 /**
@@ -295,6 +307,6 @@ export const BBJ_PIVOT_APPROACH_FRACTION = 0.8;
 export function __resetBbjPoolFeedForTests(): void {
   for (const feed of feeds.values()) if (feed.timer !== null) clearInterval(feed.timer);
   feeds.clear();
-  policyCache = null;
-  policyInFlight = null;
+  policyCache.clear();
+  policyInFlight.clear();
 }

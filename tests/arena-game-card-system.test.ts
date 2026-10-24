@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { createElement } from 'react';
@@ -26,6 +26,8 @@ import {
   SPADE_PLO_CANVAS,
   SPADE_PLO_ZONES,
 } from '../src/components/lobby/game-cards/SpadePloCard';
+
+import { NLH_PREMIUM_ASSETS } from '../src/components/lobby/game-cards/nlhPremiumTemplate';
 
 const ROOT = resolve(__dirname, '..');
 const CARD_CSS = readFileSync(
@@ -174,9 +176,9 @@ describe('Arena game-card creation', () => {
       SPADE_PLO_ZONES.styleNote.y - 60
     );
     // A two-line note at full size fits its zone (2 x 2.55cqw x 1.12 line height).
-    expect((SPADE_PLO_ZONES.styleNote.height / SPADE_PLO_CANVAS.width) * 100).toBeGreaterThanOrEqual(
-      2 * 2.55 * 1.12
-    );
+    expect(
+      (SPADE_PLO_ZONES.styleNote.height / SPADE_PLO_CANVAS.width) * 100
+    ).toBeGreaterThanOrEqual(2 * 2.55 * 1.12);
     const asset = resolveArenaGameCardTemplate({ family: 'plo', presentation: 'mobile' }).skin
       .mobile.asset;
     expect(asset).toBe(`${import.meta.env.BASE_URL}assets/club-buttons/game-cards/${file}`);
@@ -374,5 +376,15 @@ describe('Arena game-card creation', () => {
     expect(
       arenaGameCardActionsForEntry(headsUp, lobbyContext({ registeredIds: new Set([headsUp.id]) }))
     ).toMatchObject({ primaryLabel: 'Return To Game', primaryTone: 'green' });
+  });
+});
+
+// The selected card must build from source, without relying on an old origin pool.
+describe('selected game card source assets', () => {
+  it('contains every referenced approved NLH layer', () => {
+    for (const [name, url] of Object.entries(NLH_PREMIUM_ASSETS)) {
+      const path = resolve(ROOT, 'public/assets', url.split('assets/')[1]);
+      expect(existsSync(path), `Missing ${name}: ${path}`).toBe(true);
+    }
   });
 });

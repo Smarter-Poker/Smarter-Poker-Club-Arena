@@ -1,0 +1,3 @@
+# tests/a-new-engine-image-is-warmed-before-the-break.law.test.ts
+
+2026-10-23: the first container ever run from a freshly built engine image spent up to 40 s unpacking its snapshot and up to 52 s joining the bridge network on engine-01, inside the 75 s cutover budget while the engine was down. Run 39728449445-1 measured 81.5 s and was refused. The release transaction now runs one throwaway container from the exact candidate image right after the build, outside any break. The law pins that the warm-up follows the build and precedes the cutover, that it never names the engine container or carries its ports, labels or env file, and that it is bounded and never fatal.

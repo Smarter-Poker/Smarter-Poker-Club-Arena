@@ -1,3 +1,8 @@
+import {
+  usePreActionBoundary,
+  acceptedActionSpendsPreAction,
+  latestHeroActionTimestamp,
+} from '../hooks/usePreActionBoundary';
 import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
 import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
@@ -99,9 +104,17 @@ import {
   useMemo,
   useSyncExternalStore,
 } from 'react';
-import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
+import {
+  publishSessionSummary,
+  hasAcknowledgedTournamentReport,
+} from '../services/pendingSessionSummary';
+import {
+  fetchTournamentResult,
+  canRestoreFinishedTournamentReport,
+} from '../services/tournamentResult';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { heroMayReopenBetting } from '../lib/raiseReopen';
+import { TOURNAMENT_CHAMPION_DISPLAY_MS } from '../utils/tournamentChampion';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 import {
   readMySatelliteQualifierResult,
@@ -180,7 +193,7 @@ import { FaceDeckContext } from '../components/table/faceDeckContext';
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
-import { useButtonImage } from '../hooks/useButtonImage';
+import { useButtonImage, useTimebankIcon } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
@@ -346,6 +359,7 @@ import {
   portraitTableTransform,
   portraitBoardWidthOfFeltPct,
   boardCardWidthPx,
+  tabledCardWidthPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -488,7 +502,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
+import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { NATIVE_PAUSE_EVENT, NATIVE_RESUME_EVENT, isNativeAppActive } from '../lib/nativeResume';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import { useTableArt } from '../hooks/useTableArt';
@@ -533,6 +547,7 @@ import IdentityModal from '../components/table/IdentityModal';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
+import { useBombPotCountdown } from '../hooks/useBombPotCountdown';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
@@ -541,7 +556,7 @@ import { MustMoveLobbyModal } from '../components/table/MustMoveLobbyModal';
 import { CashClusterHUD } from '../components/table/CashClusterHUD';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
-import { CASH_TEMPLATES } from '../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../config/cashGames';
 import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { EquityBadgeLayer, type EquityBadge } from '../components/table/EquityBadgeLayer';
@@ -629,13 +644,13 @@ import {
   MYSTERY_BOUNTIES_LIVE_TEXT,
   claimMysteryLiveAnnouncement,
   mysteryChestsLiveFromRow,
+  mysteryChestsOnlyFromRow,
   seatBountyBadge,
   seatedPlayersSignature,
 } from '../utils/mysteryBountyTable';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
 import { MastheadGameLine } from '../components/table/MastheadGameLine';
-import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RESULT — what the Session Complete popup shows instead of chips
@@ -656,125 +671,6 @@ import { MysteryBountyService, playerTotalsFromAwards } from '../services/Myster
  * that would be actively wrong. The exit caller also gives this optional read
  * a deadline because a stalled browser transport may never report a failure.
  */
-async function fetchTournamentResult(
-  tournamentId: string,
-  userId: string
-): Promise<TournamentResult> {
-  const empty: TournamentResult = {
-    finishPlace: null,
-    entrants: null,
-    prize: 0,
-    bountyWinnings: 0,
-    knockouts: 0,
-    rebuys: 0,
-    addOns: 0,
-    isSpin: false,
-  };
-
-  try {
-    /* AUDIT 2026-08-20 — entrants is COUNTED, not read off the tournament row.
-
-       `tournaments.current_players` is an entry counter incremented on register
-       and decremented only on UNregister; no elimination path touches it. It is
-       close to the field size and drifts from it, which is why TournamentClock
-       already stopped trusting it ("the clock showed the starting field for the
-       whole tournament"). Counting tournament_players is the same source the
-       clock uses, so the two agree, and it stays right for re-entry events.
-       current_players remains the fallback if the count cannot be read. */
-    /* A FAILED READ MAY NOT BE REPORTED AS A PRIZE OF ZERO (2026-08-28 audit).
-       These three destructured `data`/`count` and discarded `error`. This
-       function's own header promises that "on any failure it returns a result
-       with nulls, so the summary shows '—' … rather than falling back to a
-       chip panel that would be actively wrong" — but that only held for the
-       outer catch, which a Supabase query-level error never reaches (it
-       RESOLVES with `{data: null, error}`). So winning a 100x Spin and hitting
-       a transient error on the entry read told the player they finished
-       nowhere and won 0, with the Spin branding stripped off the card too.
-       Throwing hands the failure to the outer catch, which already returns
-       the honest all-nulls result. */
-    const [entryRes, tourneyRes, countRes] = await Promise.all([
-      supabase
-        .from('tournament_players')
-        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status')
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', userId)
-        .maybeSingle(),
-      supabase
-        .from('tournaments')
-        /* format_contract identifies a known settled format. Unmarked historical
-           rows keep their results without claiming a Spin format.
-
-           is_mystery_bounty gates the second read below, so an ordinary
-           freezeout makes no extra RPC calls on the way out of the table. */
-        .select(
-          'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty'
-        )
-        .eq('id', tournamentId)
-        .maybeSingle(),
-      supabase
-        .from('tournament_players')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId),
-    ]);
-
-    if (entryRes.error) throw entryRes.error;
-    if (tourneyRes.error) throw tourneyRes.error;
-    if (countRes.error) throw countRes.error;
-    const entry = entryRes.data;
-    const tourney = tourneyRes.data;
-    const entryCount = countRes.count;
-
-    /* MYSTERY BOUNTY (sections 43, 44). The chest half of what this player won,
-       from the RPCs - `tournament_bounty_awards` has RLS on with no select
-       policy, so reading the table directly returns nothing and no error. */
-    let mystery: { bounties: number; cents: number; largestCents: number } | null = null;
-    if ((tourney as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty) {
-      const [board, awards] = await Promise.all([
-        MysteryBountyService.getLeaderboard(tournamentId),
-        MysteryBountyService.getAllAwards(tournamentId),
-      ]);
-      const boardRow = board.find((r) => r.userId === userId);
-      const fromAwards = playerTotalsFromAwards(awards.rows).get(userId);
-      const bounties = boardRow?.bountiesWon ?? fromAwards?.bountiesWon ?? 0;
-      const cents = boardRow?.earningsCents ?? fromAwards?.earningsCents ?? 0;
-      if (bounties > 0 || cents > 0) {
-        mystery = { bounties, cents, largestCents: fromAwards?.largestCents ?? 0 };
-      }
-    }
-
-    const qualification =
-      entry?.status === 'winner' && entry.position === null
-        ? await readMySatelliteQualifierResult(tournamentId, userId)
-        : null;
-    return {
-      satelliteQualification: qualification?.qualified
-        ? {
-            targetId: qualification.targetId,
-            deliveryKind: qualification.deliveryKind as 'seat' | 'ticket' | 'cash',
-            amount: qualification.amount,
-          }
-        : undefined,
-      name: tourney?.name || undefined,
-      finishPlace: entry?.position ?? null,
-      entrants: entryCount ?? tourney?.current_players ?? null,
-      prize: Number(entry?.prize) || 0,
-      bountyWinnings: Number(entry?.bounty_winnings) || 0,
-      knockouts: Number(entry?.bounties_collected) || 0,
-      mysteryBounties: mystery?.bounties,
-      mysteryBountyCents: mystery?.cents,
-      largestMysteryBountyCents: mystery?.largestCents,
-      rebuys: Number(entry?.rebuys) || 0,
-      // add_on is a count on some rows and a boolean on older ones; both mean
-      // "how many add-ons", so coerce rather than trusting the column type.
-      addOns:
-        typeof entry?.add_on === 'boolean' ? (entry.add_on ? 1 : 0) : Number(entry?.add_on) || 0,
-      isSpin: getTournamentFormatKind(tourney) === 'spin',
-    };
-  } catch (err) {
-    reportError(err, 'TablePage.fetchTournamentResult');
-    return empty;
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -1597,7 +1493,7 @@ function LiveTablePage({
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
-  const timebankIconPage = useButtonImage('icon-timebank');
+  const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const requestedTableId = embeddedTableId || routeTableId;
   // Every table effect receives a database ID or no scope. A URL segment
@@ -1637,7 +1533,7 @@ function LiveTablePage({
      mounted and laid out at once. */
   const pageRootRef = useRef<HTMLDivElement | null>(null);
 
-  // Prevent Chrome from throttling this tab (keeps horse timers alive)
+  // Own bounded decision-timer cleanup; game decisions run on the server.
   useTabKeepAlive();
   /* ONCE. This read `useTableEnvironment(tableId);` on two consecutive lines,
      and the duplicate was not harmless: the hook's viewport effect saves the
@@ -1800,8 +1696,21 @@ function LiveTablePage({
      from, which one was picked, and, once the award is revealed, what every
      one of them held. Read from fn_mystery_bounty_offer, never inferred. */
   const [chestOffers, setChestOffers] = useState<
-    Record<string, { slots: number; pickedSlot: number | null; choices?: MysteryChestChoice[] }>
+    Record<
+      string,
+      {
+        slots: number;
+        pickedSlot: number | null;
+        chosen?: boolean;
+        revealed?: boolean;
+        choices?: MysteryChestChoice[];
+      }
+    >
   >({});
+  /* The slot the revealer's tap broadcast, per award: the rest of the table
+     shows it until the server's offer (with every chest's amount) arrives. */
+  const [chestRemoteSlots, setChestRemoteSlots] = useState<Record<string, number>>({});
+  const loadChestOfferRef = useRef<(awardId: string) => Promise<void>>(async () => {});
   const loadChestOffer = useCallback(async (awardId: string) => {
     if (!awardId) return;
     try {
@@ -1811,15 +1720,22 @@ function LiveTablePage({
       if (error) return;
       const offer = parseMysteryChestOffer(data);
       if (!offer) return;
-      setChestOffers((prev) => ({ ...prev, [awardId]: offer }));
+      // A slow read from before the reveal must never replace the revealed
+      // answer that already arrived (it would wipe what the chests held).
+      setChestOffers((prev) =>
+        prev[awardId]?.revealed && !offer.revealed ? prev : { ...prev, [awardId]: offer }
+      );
     } catch (err) {
       reportError(err, 'TablePage.loadChestOffer');
     }
   }, []);
+  loadChestOfferRef.current = loadChestOffer;
   /* THE CHESTS ARE LIVE (2026-10-05). Read from the tournament row on load and
      flipped by the engine's `mystery_bounty_activated`; drives the seat badges
      and the one popup per event per table. See utils/mysteryBountyTable. */
   const [mysteryChestsLive, setMysteryChestsLive] = useState(false);
+  /* Chests only (Dan 2026-10-22): no head is advertised before the money. */
+  const [mysteryChestsOnly, setMysteryChestsOnly] = useState(false);
   const mysteryLiveAnnouncedRef = useRef<Set<string>>(new Set());
   /* The bounty re-read the load effect publishes; the seat-list effect calls it
      when the set of seated players changes (utils/mysteryBountyTable rule 3). */
@@ -1838,11 +1754,13 @@ function LiveTablePage({
   const mysteryChest = useMemo<MysteryChestData | null>(() => {
     if (!queuedChest) return null;
     const offer = queuedChest.awardId ? chestOffers[queuedChest.awardId] : undefined;
+    const remoteSlot = queuedChest.awardId ? chestRemoteSlots[queuedChest.awardId] : undefined;
     const offered: MysteryChestData = offer
       ? {
           ...queuedChest,
           offerSlots: offer.slots,
-          pickedSlot: offer.pickedSlot,
+          pickedSlot: offer.pickedSlot ?? remoteSlot ?? null,
+          chosen: offer.revealed ? offer.chosen : remoteSlot != null ? true : undefined,
           choices: offer.choices,
         }
       : queuedChest;
@@ -1857,7 +1775,10 @@ function LiveTablePage({
       isJackpot: revealed.isJackpot ?? queuedChest.isJackpot,
       recipients: revealed.recipients ?? queuedChest.recipients,
     };
-  }, [queuedChest, chestReveals, chestOffers]);
+  }, [queuedChest, chestReveals, chestOffers, chestRemoteSlots]);
+  /* The chest on screen, for the tap broadcast (whose callback stays stable). */
+  const currentChestAwardRef = useRef<string | null>(null);
+  currentChestAwardRef.current = queuedChest?.awardId ?? null;
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
@@ -1916,21 +1837,25 @@ function LiveTablePage({
    * locally the instant they tap, so their tap feels immediate. This send
    * exists purely so the other seats open at the same moment.
    */
-  const broadcastChestOpen = useCallback((slot?: number) => {
-    const chan = chestChannelRef.current;
-    if (!chan) return;
-    try {
-      chan.send({
-        type: 'broadcast',
-        event: 'mystery_chest_opened',
-        payload: { tableId, at: Date.now(), slot: slot ?? null },
-      });
-    } catch (err) {
-      // A failed broadcast degrades to each spectator's own failsafe timer.
-      // It must never stop the winner from seeing their prize.
-      reportError(err, 'TablePage.broadcastChestOpen');
-    }
-  }, [tableId]);
+  const broadcastChestOpen = useCallback(
+    (slot?: number) => {
+      const awardId = currentChestAwardRef.current;
+      const chan = chestChannelRef.current;
+      if (!chan) return;
+      try {
+        chan.send({
+          type: 'broadcast',
+          event: 'mystery_chest_opened',
+          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId },
+        });
+      } catch (err) {
+        // A failed broadcast degrades to each spectator's own failsafe timer.
+        // It must never stop the winner from seeing their prize.
+        reportError(err, 'TablePage.broadcastChestOpen');
+      }
+    },
+    [tableId]
+  );
 
   /**
    * THE TAP (Dan sections 19, 51-54).
@@ -2108,8 +2033,22 @@ function LiveTablePage({
     if (!tableId) return;
     const chan = masterBus.getOrCreateChannel(`mystery-chest-${tableId}`);
     chestChannelRef.current = chan;
-    chan.on('broadcast', { event: 'mystery_chest_opened' }, () => {
+    chan.on('broadcast', { event: 'mystery_chest_opened' }, (msg: { payload?: unknown }) => {
       setChestRemoteOpened(true);
+      /* PICK 1 OF 3: the tap carries the chest the revealer picked. Show it at
+         once, then read the offer as soon as the reveal can have landed, so
+         every seat sees what the other chests held before its overlay closes. */
+      const p = (msg?.payload ?? {}) as { awardId?: unknown; slot?: unknown };
+      const awardId = typeof p.awardId === 'string' ? p.awardId : '';
+      if (!awardId) return;
+      const slot = Math.floor(Number(p.slot));
+      if (slot >= 1 && slot <= 3) {
+        setChestRemoteSlots((prev) => ({ ...prev, [awardId]: slot }));
+      }
+      for (const wait of [1500, 4000]) {
+        const t = setTimeout(() => void loadChestOfferRef.current(awardId), wait);
+        (t as unknown as { unref?: () => void }).unref?.();
+      }
     });
     if (chan.state !== 'joined') {
       try {
@@ -3198,6 +3137,7 @@ function LiveTablePage({
    * as it stood when the handler closed over it.
    */
   const preActionArmedRef = useRef<typeof preAction>(null);
+  const preActionPriorHeroActionAtRef = useRef(0);
   useEffect(() => {
     preActionArmedRef.current = preAction;
   }, [preAction]);
@@ -4320,6 +4260,8 @@ function LiveTablePage({
   // previous-hand card; the animated replay + share live INSIDE it now.
   const [showHandDetail, setShowHandDetail] = useState(false);
   const [lastHandId, setLastHandId] = useState<string | null>(null);
+  // A saved-hand event updates the newest hand, never the history replay being watched.
+  const [replaySubjectId, setReplaySubjectId] = useState<string | null>(null);
   const [showGameRules, setShowGameRules] = useState(false);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
 
@@ -5639,7 +5581,8 @@ function LiveTablePage({
       tableState.heroSeat,
       tableState.lastActions,
       tableState.lastBetAmounts,
-    ])
+    ]),
+    `${tableId}:${tableState.handNumber ?? 0}`
   );
 
   useEffect(() => {
@@ -6707,8 +6650,7 @@ function LiveTablePage({
       isFixedLimit,
       fixedBetSize: flBetSize,
     });
-    const canRaise =
-      heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
+    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
     if (!canRaise || maxRaiseTo < minRaiseTo) return '';
     const r = (n: number) => Math.round(n * 100) / 100;
     return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
@@ -7883,8 +7825,8 @@ function LiveTablePage({
   /**
    * TIMED BOMB CLOCK 2026-08-28 (spec §15.2): the engine publishes
    * bomb_pot_next_at (epoch ms) for timed-mode tables; the felt pill counts
-   * down to it in m:ss. The one-second tick runs ONLY while a due timestamp
-   * exists — every other table pays nothing for this.
+   * down to it in m:ss. Its display clock sleeps outside the announcement
+   * window, at zero and while hidden; the engine owns the actual schedule.
    */
   /**
    * SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): the felt banner for a player
@@ -7908,26 +7850,14 @@ function LiveTablePage({
     []
   );
 
-  const [bombClockNowMs, setBombClockNowMs] = useState(() => Date.now());
-  const bombPotNextAtLive = tableState.bombPotNextAt;
-  useEffect(() => {
-    if (bombPotNextAtLive == null) return;
-    const t = window.setInterval(() => setBombClockNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [bombPotNextAtLive == null]);
-  const bombClockLabel = useMemo(() => {
-    if (bombPotNextAtLive == null) return null;
-    const remainMs = bombPotNextAtLive - bombClockNowMs;
-    if (remainMs <= 0) return 'NEXT HAND';
-    // ANNOUNCE WINDOW (spec §3): the host can keep the clock quiet until the
-    // bomb is close — 0/absent means always show.
-    const announce = bombPotRules?.announceSeconds ?? 0;
-    if (announce > 0 && remainMs > announce * 1000) return null;
-    const totalSec = Math.ceil(remainMs / 1000);
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }, [bombPotNextAtLive, bombClockNowMs, bombPotRules?.announceSeconds]);
+  const bombClockLabel = useBombPotCountdown(
+    tableState.bombPotNextAt,
+    bombPotRules?.announceSeconds ?? 0,
+    isVisible &&
+      !bombPotActive &&
+      tableState.bombPotWaitingFor == null &&
+      bombPotRules?.triggerMode !== 'bomb_pot_only'
+  );
 
   /**
    * ONE SENTENCE, TWO PLACES (Dan 2026-09-05).
@@ -9528,7 +9458,7 @@ function LiveTablePage({
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
   useEffect(() => {
-    if (!showHandReplay || lastHandId || !userId || userId === 'guest') return;
+    if (!showHandReplay || replaySubjectId || lastHandId || !userId || userId === 'guest') return;
     let cancelled = false;
     (async () => {
       try {
@@ -9543,7 +9473,7 @@ function LiveTablePage({
     return () => {
       cancelled = true;
     };
-  }, [showHandReplay, lastHandId, userId]);
+  }, [showHandReplay, replaySubjectId, lastHandId, userId]);
 
   /* The per-table hand cache is gone (see `handHistory` above). Keys written
      by earlier builds are removed once so they stop taking storage; nothing
@@ -13213,6 +13143,7 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
+        let loadedFinishedReportReady = false;
         let durableParticipantWitnessed = false;
         setTableState((prev) => {
           if (!isMounted) return prev;
@@ -13596,7 +13527,8 @@ function LiveTablePage({
                 return;
               }
               const template = String(game?.template_name ?? '').toLowerCase();
-              const label = CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+              const label =
+                CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(template))?.label ?? null;
               if (!label) return;
               setTableState((prev) =>
                 prev.gameStyle === label ? prev : { ...prev, gameStyle: label }
@@ -13689,7 +13621,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_regular_pool_percent, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time, is_rebuy, is_reentry'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13919,7 +13851,7 @@ function LiveTablePage({
             if (userId && isUUID(userId)) {
               const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
-                .select('status, table_id')
+                .select('status, table_id, elimination_sequence')
                 .eq('tournament_id', table.tournament_id)
                 .eq('user_id', userId)
                 .maybeSingle();
@@ -13935,7 +13867,24 @@ function LiveTablePage({
                   tournamentId: table.tournament_id,
                 });
               } else {
-                if (myEntry) durableParticipantWitnessed = true;
+                if (myEntry) {
+                  durableParticipantWitnessed = true;
+                  loadedFinishedReportReady =
+                    canRestoreFinishedTournamentReport({
+                      entryStatus: myEntry.status,
+                      tournamentStatus: tournData?.status,
+                      prizePoolFinalized: tournData?.prize_pool_finalized,
+                      isRebuy: tournData?.is_rebuy,
+                      isReentry: tournData?.is_reentry,
+                    }) &&
+                    !hasAcknowledgedTournamentReport(
+                      table.tournament_id,
+                      userId,
+                      myEntry.elimination_sequence == null
+                        ? undefined
+                        : String(myEntry.elimination_sequence)
+                    );
+                }
                 const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
                 // "Seated" is table_seats, NEVER tournament_players.table_id.
                 // createTablesAndSeatPlayers historically wrote the seat row and
@@ -13974,7 +13923,10 @@ function LiveTablePage({
             setSeatFirstBuyIn(null);
           }
 
-          if (isMounted) setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
+          if (isMounted) {
+            setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
+            setMysteryChestsOnly(mysteryChestsOnlyFromRow(tournData));
+          }
           if (
             tournData &&
             (tournData.is_bounty || tournData.is_pko || tournData.is_mystery_bounty)
@@ -14148,9 +14100,12 @@ function LiveTablePage({
             exitStarted = true;
 
             const tid = table.tournament_id || tableStateRef.current.tournamentId;
+            const resultEnrichment = tid
+              ? awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
+              : Promise.resolve(undefined);
 
             /* Held so the effect's cleanup can cancel it. Without that, a
-               player who closes this tab (or is moved off it) inside the 7s
+               player who closes this tab (or is moved off it) inside the 20s
                winner beat is force-navigated out of wherever they went next —
                which, in multi-table, is somebody else's live table. */
             tournamentExitTimerRef.current = setTimeout(() => {
@@ -14163,10 +14118,10 @@ function LiveTablePage({
                    a no-op. The bounded fallback preserves the broadcast's
                    authoritative position/prize and always reaches the card,
                    close signals and navigation below. */
-                const full = tid
-                  ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
-                  : undefined;
+                const full = await resultEnrichment;
                 publishSessionSummary({
+                  // Initial result recovery has no surviving play-session counters.
+                  resultOnly: loadedFinishedReportReady || loadedTournamentStatus === 'COMPLETED',
                   arenaAsset: tableState.arenaAsset,
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                   handsPlayed: handsPlayedRef.current,
@@ -14338,6 +14293,66 @@ function LiveTablePage({
 
           let durableCompletionLookupInFlight = false;
           let durableCompletionHandled = false;
+          // Spectators watch the same committed champion announcement, but never
+          // receive somebody else's result card or clear another table's session.
+          let championAnnouncementInFlight = false;
+          async function announceSpectatorChampion(): Promise<void> {
+            if (!isMounted || exitStarted || championAnnouncementInFlight) return;
+            championAnnouncementInFlight = true;
+            try {
+              const outcome = await awaitTournamentResultEnrichment(
+                supabase
+                  .from('tournament_players')
+                  .select('user_id, username, prize')
+                  .eq('tournament_id', durableTournamentId)
+                  .eq('status', 'winner')
+                  .eq('position', 1)
+                  .maybeSingle()
+              );
+              const { data: champion, error } = outcome ?? {
+                data: null,
+                error: new Error('Champion Result Read Timed Out'),
+              };
+              if (!isMounted || exitStarted) return;
+              const prize = Number(champion?.prize);
+              if (
+                error ||
+                !champion?.user_id ||
+                champion.prize == null ||
+                !Number.isFinite(prize) ||
+                prize < 0
+              ) {
+                if (error) reportError(error, 'TablePage.spectator_champion_unreadable');
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              exitStarted = true;
+              durableCompletionHandled = true;
+              setTournamentWinner({
+                prize,
+                name: formatGameTitle(durableTournamentName) || 'Tournament',
+                championName: champion.username || 'Champion',
+              });
+              tournamentExitTimerRef.current = setTimeout(() => {
+                if (!isMounted) return;
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: tableId ?? '',
+                  action: 'CLOSE_TABLE_TAB',
+                });
+                if (embeddedTableId) return;
+                const clubId = lobbyClubIdRef.current;
+                navigate(
+                  clubId ? `/clubs/${clubId}` : `/tournament-results?id=${durableTournamentId}`
+                );
+              }, TOURNAMENT_CHAMPION_DISPLAY_MS);
+            } catch (error) {
+              reportError(error, 'TablePage.spectator_champion_unreadable');
+              scheduleDurableCompletionRetry();
+            } finally {
+              championAnnouncementInFlight = false;
+            }
+          }
+
           function scheduleDurableCompletionRetry(): void {
             if (!isMounted || durableCompletionHandled || durableCompletionRetryTimer) return;
             const delayMs = Math.min(30_000, 1_000 * 2 ** Math.min(durableCompletionRetryCycle, 5));
@@ -14348,13 +14363,11 @@ function LiveTablePage({
             }, delayMs);
           }
           async function exitFromDurableCompletion(): Promise<void> {
-            if (
-              durableCompletionLookupInFlight ||
-              durableCompletionHandled ||
-              !isMounted ||
-              !userId ||
-              userId === 'guest'
-            ) {
+            if (durableCompletionLookupInFlight || durableCompletionHandled || !isMounted) {
+              return;
+            }
+            if (!userId || userId === 'guest') {
+              await announceSpectatorChampion();
               return;
             }
             durableCompletionLookupInFlight = true;
@@ -14362,13 +14375,14 @@ function LiveTablePage({
               status?: string | null;
               position?: number | null;
               prize?: number | null;
+              username?: string | null;
             } | null = null;
             let lastError: unknown = null;
             try {
               for (let attempt = 1; attempt <= 3; attempt++) {
                 const { data, error: resultError } = await supabase
                   .from('tournament_players')
-                  .select('status, position, prize')
+                  .select('status, position, prize, username')
                   .eq('tournament_id', durableTournamentId)
                   .eq('user_id', userId)
                   .maybeSingle();
@@ -14416,11 +14430,7 @@ function LiveTablePage({
                       seat.tables.tournament_id === durableTournamentId
                   );
                   if (completeReadableHistory && !participated) {
-                    durableCompletionHandled = true;
-                    if (durableCompletionRetryTimer) {
-                      clearTimeout(durableCompletionRetryTimer);
-                      durableCompletionRetryTimer = null;
-                    }
+                    await announceSpectatorChampion();
                     return;
                   }
                   if (!seatError && participated) durableParticipantWitnessed = true;
@@ -14485,9 +14495,14 @@ function LiveTablePage({
                 setTournamentWinner({
                   prize,
                   name: formatGameTitle(durableTournamentName) || 'Tournament',
+                  championName: result.username || 'Champion',
                 });
               }
-              goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
+              goToLobbyWithResult(
+                position,
+                prize,
+                position === 1 ? TOURNAMENT_CHAMPION_DISPLAY_MS : 2500
+              );
             } finally {
               durableCompletionLookupInFlight = false;
             }
@@ -14525,7 +14540,7 @@ function LiveTablePage({
             scheduleDurableCompletionRetry();
           }
 
-          if (loadedTournamentStatus === 'COMPLETED') {
+          if (loadedTournamentStatus === 'COMPLETED' || loadedFinishedReportReady) {
             void exitFromDurableCompletion();
           }
 
@@ -14960,7 +14975,7 @@ function LiveTablePage({
                       prize: elimData.prize || 0,
                       name: tournamentName,
                     });
-                    goToLobbyWithResult(1, elimData.prize || 0, 7000);
+                    goToLobbyWithResult(1, elimData.prize || 0, TOURNAMENT_CHAMPION_DISPLAY_MS);
                   } else {
                     const paidPosition = Number(elimData.position) || 0;
                     const paidPrize = Number(elimData.prize) || 0;
@@ -15044,7 +15059,7 @@ function LiveTablePage({
                    an elimination toast on that event — announcing the
                    champion as knocked out is worse than saying nothing.
 
-                   Same 7s beat as the winner branch above, for the same
+                   Same 20s beat as the winner branch above, for the same
                    reason: the celebration overlay has to play before the
                    player is moved. */
                 const winData = data.payload || {};
@@ -15053,8 +15068,13 @@ function LiveTablePage({
                   setTournamentWinner({
                     prize,
                     name: tableStateRef.current.tableName || 'Tournament',
+                    championName:
+                      tableStateRef.current.players.find((p) => p?.id === userId)?.name ||
+                      'Champion',
                   });
-                  goToLobbyWithResult(1, prize, 7000);
+                  goToLobbyWithResult(1, prize, TOURNAMENT_CHAMPION_DISPLAY_MS);
+                } else {
+                  void announceSpectatorChampion();
                 }
               } else if (data?.type === 'late_reg_closed') {
                 // Late registration window has closed
@@ -15693,6 +15713,7 @@ function LiveTablePage({
       }
       bountyMapRefreshRef.current = null;
       setMysteryChestsLive(false);
+      setMysteryChestsOnly(false);
       addOnPresentationEpochRef.current += 1;
       refreshPersistedAddOnOfferRef.current = null;
       // P1-4 FIX: tear down the tournament channels in the SAME effect that
@@ -15710,7 +15731,7 @@ function LiveTablePage({
         addOnChannelRef.current = null;
       }
       /* AUDIT 2026-08-22: a scheduled tournament exit must not outlive the
-         subscription that scheduled it. The winner's beat is 7s long; a player
+         subscription that scheduled it. The winner's beat is 20s long; a player
          whose tab is closed inside it used to be force-navigated out of
          whatever they were looking at when it fired. */
       if (tournamentExitTimerRef.current) {
@@ -17076,6 +17097,15 @@ function LiveTablePage({
         const actionSeat = (data.seat as number) || 0;
         const actionAmount = (data.amount as number) || 0;
         const seatIdx = actionSeat - 1;
+        if (
+          acceptedActionSpendsPreAction({
+            heroSeat: tableStateRef.current.heroSeat,
+            handNumber: tableStateRef.current.handNumber,
+            knownHeroActionAtArm: preActionPriorHeroActionAtRef.current,
+            event: data,
+          })
+        )
+          setPreAction(null);
 
         // DEAD-WIRING FIX 2026-08-15: record the action for Share Hand.
         // handActionsRef was declared 2,000 lines up and had ZERO writers and
@@ -20506,18 +20536,24 @@ function LiveTablePage({
   );
 
   const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  // Spectators use the desktop reference's unprojected oval on phones.
+  const tablePerspectiveTaper = tableState.players.some((p) => p?.isHero) ? undefined : 0;
   const seatPositions = useMemo(() => {
     const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
     return seatRotationMap.map(({ pos }) =>
       fitSeatToViewport(
         pos,
-        scalerSize,
+        { ...scalerSize, portraitTaper: tablePerspectiveTaper },
         seatViewportWidth,
-        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
-        canvasLeft
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w, {
+          seats: seatRotationMap.length,
+          canvasHeightPx: scalerSize.h,
+        }),
+        canvasLeft,
+        seatRotationMap.length
       )
     );
-  }, [seatRotationMap, scalerSize, seatViewportWidth]);
+  }, [seatRotationMap, scalerSize, seatViewportWidth, tablePerspectiveTaper]);
   // Published for the deferred chip flights; the ref is declared far above
   // (see seatPositionsRef) so the event handlers can read it.
   seatPositionsRef.current = seatPositions;
@@ -22348,15 +22384,9 @@ function LiveTablePage({
     // values below are exactly what it is built from.
   }, [preAction, preActionCallDue]);
 
-  /* Dan 2026-10-18: a pre-action armed for a decision that is no longer
-     coming is spent. Once the hero has answered the street and owes nothing
-     the bar is down, so nothing on screen could show it armed - clear it
-     rather than leave an invisible arm for a later bet to inherit. Not while
-     the engine is mid-beat executing it (suppressPanelForPreAction). */
-  useEffect(() => {
-    if (preAction === null) return;
-    if (!heroFacesADecision && !suppressPanelForPreAction) setPreAction(null);
-  }, [preAction, heroFacesADecision, suppressPanelForPreAction]);
+  // The decision gate controls visibility only. An intermediate snapshot can
+  // temporarily owe zero while labels catch up; it cannot cancel a user's
+  // arm. Accepted hero actions and hand/street boundaries own cancellation.
 
   /**
    * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
@@ -22428,19 +22458,6 @@ function LiveTablePage({
       bigBlindsWon: s?.bigBlindsWon ?? null,
     };
   })();
-
-  /**
-   * The Table tab's inline switches (2026-08-30). Derived from the SAME meta
-   * list that drives the full settings panel, filtered by its `quick` flag —
-   * so adding or removing one is a single edit next to the setting itself,
-   * and this can never drift into a second hand-maintained list of keys.
-   */
-  const heroHubQuickSettings = TABLE_SETTINGS_META.filter((m) => m.quick).map((m) => ({
-    key: m.key as string,
-    label: m.label,
-    description: m.description,
-    value: !!v8Settings[m.key as keyof typeof v8Settings],
-  }));
 
   /**
    * Dan 2026-09-05: "IT NEEDS A DISABLE OR HIDE OPTION IN THE TABLE SETTINGS
@@ -23738,6 +23755,7 @@ function LiveTablePage({
          anything a tap on their own X does not already do. */
       setShowHandDetail(false);
       setShowHandReplay(false);
+      setReplaySubjectId(null);
       setShowTournamentInfo(false);
       setShowTimeBankStore(false);
       setShowThrowableSelector(false);
@@ -23972,15 +23990,14 @@ function LiveTablePage({
   // boardStageKey is gone with the key itself (see the state declaration).
   // CommunityCards owns all per-street animation and sound.
 
-  // Clear pre-action if game state changes significantly (new hand, new street, or hero acts)
-  // Dan 2026-08-24: "THE CHECK FOLD BUTTON SHOULD ONLY APPLY FOR ONE ACTION AND ONE STREET"
-  const heroLastAction =
-    tableState.heroSeat > 0 ? tableState.lastActions?.[tableState.heroSeat - 1] : null;
-  useEffect(() => {
-    // If the hand ended, the street advanced, or the hero successfully acted (meaning the pre-action
-    // executed or they manually acted), clear the armed pre-action.
-    setPreAction(null);
-  }, [tableState.boardStage, tableState.isHandInProgress, heroLastAction]);
+  // One tap owns one hand/street. A display label changing is not another
+  // accepted action; the discrete hero PLAYER_ACTION above spends the choice.
+  usePreActionBoundary(
+    tableState.handNumber,
+    tableState.boardStage,
+    tableState.isHandInProgress,
+    useCallback(() => setPreAction(null), [])
+  );
 
   /* ═══ LIGHTNING PHASE 6: ONE ROOM, MANY HANDS ══════════════════════════════
      Everything in this block runs only in a Lightning room (a pool session)
@@ -24163,6 +24180,7 @@ function LiveTablePage({
     lightningCaps
   );
   const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
+  const lightningFoldBusyRef = useRef(false);
   const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
     () => readLightningPrefs().preferFoldWatch
   );
@@ -24173,6 +24191,8 @@ function LiveTablePage({
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
+      if (lightningFoldBusyRef.current) return;
+      lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
       setLightningFoldBusy(true);
@@ -24196,6 +24216,7 @@ function LiveTablePage({
           soundService.playFold();
         }
       } finally {
+        lightningFoldBusyRef.current = false;
         setLightningFoldBusy(false);
       }
     },
@@ -24224,9 +24245,9 @@ function LiveTablePage({
   const lightningRenderAckedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!lightningRenderHandId || lightningRenderAckedRef.current === lightningRenderHandId) return;
-    return scheduleLightningRenderAck(lightningRenderHandId, (handId, deltaMs) => {
+    return scheduleLightningRenderAck(lightningRenderHandId, (handId, deltaMs, resumed) => {
       lightningRenderAckedRef.current = handId;
-      sendEngineRenderAck(handId, deltaMs);
+      sendEngineRenderAck(handId, deltaMs, resumed);
     });
   }, [lightningRenderHandId, sendEngineRenderAck]);
 
@@ -24234,6 +24255,8 @@ function LiveTablePage({
      through, so this tab follows their chair into the pool-session room. */
   const lightningHandoff = useLightningAnchorHandoff({
     tableId,
+    clusterId: tableState.clusterId,
+    userId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
     follow: (poolSessionId) => {
@@ -25434,17 +25457,30 @@ function LiveTablePage({
           style={
             {
               '--table-w': `${scalerSize.w}px`,
-              '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
+              /* The dense-ring pods (SeatSlot.css) size from the felt's
+                 height as well as its width. */
+              '--table-h': `${scalerSize.h}px`,
+              '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct(tablePerspectiveTaper)}%`,
               /* A shown hand is drawn at the board's own card size (Dan
                  2026-10-22). SeatSlot.css reads it on the revealed row. */
               '--sp-board-card-w': `${boardCardWidthPx(
                 scalerSize.w,
                 seatViewportWidth,
-                seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
+                seatViewportWidth <= 480 &&
+                  scalerSize.h > scalerSize.w &&
+                  tablePerspectiveTaper !== 0
+              )}px`,
+              '--sp-tabled-card-w': `${tabledCardWidthPx(
+                scalerSize.w,
+                seatViewportWidth,
+                seatViewportWidth <= 480 &&
+                  scalerSize.h > scalerSize.w &&
+                  tablePerspectiveTaper !== 0,
+                tableState.maxPlayers
               )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
-                  ? portraitTableTransform(scalerSize)
+                  ? portraitTableTransform({ ...scalerSize, portraitTaper: tablePerspectiveTaper })
                   : 'none',
             } as React.CSSProperties
           }
@@ -25718,7 +25754,11 @@ function LiveTablePage({
                               See MastheadGameLine. */}
                           <span className="table-brand__line table-brand__line--level">
                             <MastheadGameLine className="table-brand__game">
-                              {tableState.gameStyle ? `${tableState.gameStyle} ` : ''}
+                              {lightningRoom
+                                ? 'Lightning Games '
+                                : tableState.gameStyle
+                                  ? `${tableState.gameStyle} `
+                                  : ''}
                               {gameShort} {tableState.blinds || '1/2'}
                               {tableState.ante > 0 &&
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
@@ -26540,13 +26580,15 @@ function LiveTablePage({
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
               pos.y >= 100 && pos.x === 50,
-              scalerSize.w
+              scalerSize.w,
+              { seats: seatPositions.length, canvasHeightPx: scalerSize.h }
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
             const markerSize = {
               ...scalerSize,
               railBets: seatViewportWidth <= 480 && scalerSize.h > scalerSize.w,
+              portraitTaper: tablePerspectiveTaper,
             };
             const betOffset = betChipOffsetPx(pos, markerSize, seatPod);
             const betOffsetX = betOffset.x;
@@ -26763,6 +26805,7 @@ function LiveTablePage({
                     seatBountyBadge({
                       isBountyTournament: Boolean(tableState.isBountyTournament),
                       mysteryChestsLive,
+                      chestsOnly: mysteryChestsOnly,
                       playerId: player?.id,
                       playerStatus: player?.status,
                       bountyMap: tableState.bountyMap,
@@ -26772,6 +26815,7 @@ function LiveTablePage({
                     seatBountyBadge({
                       isBountyTournament: Boolean(tableState.isBountyTournament),
                       mysteryChestsLive,
+                      chestsOnly: mysteryChestsOnly,
                       playerId: player?.id,
                       playerStatus: player?.status,
                       bountyMap: tableState.bountyMap,
@@ -27271,7 +27315,7 @@ function LiveTablePage({
           bottom rows pad themselves by its height (TournamentHUD.css). On
           every MTT, Spin and heads-up match alike (isTournament covers all
           three). Never render it on the felt again. */}
-      {tableState.isTournament && tableState.tournamentId && !tournamentDockClosed && (
+      {tableState.isTournament && tableState.tournamentId && (
         <TournamentHUD
           tournamentId={tableState.tournamentId}
           spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
@@ -27279,6 +27323,7 @@ function LiveTablePage({
              its dock must know it is off screen and stop asking. */
           hidden={!isVisible}
           collapsed={tournamentDockCollapsed}
+          closed={tournamentDockClosed}
           onToggleCollapsed={toggleTournamentDock}
           onClose={() => setTournamentDockClosed(true)}
         />
@@ -27739,6 +27784,13 @@ function LiveTablePage({
             {lightningHandoff.joining && !lightningRoom ? (
               <LightningJoining onCancel={lightningHandoff.cancel} />
             ) : null}
+            {lightningHandoff.readyPoolSessionId && !lightningRoom && !lightningHandoff.joining ? (
+              <LightningEndedNotice
+                eyebrow="Lightning Games"
+                text="Your Game Is Now Lightning. Your Seat Is Ready."
+                onViewGame={lightningHandoff.viewReady}
+              />
+            ) : null}
             {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
                 and this room will deal no more. Never a dead felt: the notice
                 and the player's own way back to their seat. The player moves
@@ -27934,7 +27986,10 @@ function LiveTablePage({
                            The engine refuses a raise there; the button must not
                            offer one. */
                         canRaise={
-                          heroStack > callAmount && allInTo >= minRaise && !wagersCapped && mayReopen
+                          heroStack > callAmount &&
+                          allInTo >= minRaise &&
+                          !wagersCapped &&
+                          mayReopen
                         }
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
@@ -28108,6 +28163,18 @@ function LiveTablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={(next) => {
+                    // Lightning Fold is an immediate request to release this
+                    // hand and join the next table, including out of turn.
+                    if (lightningRoom && next === 'fold') {
+                      void handleLightningFold('fast_fold');
+                      return;
+                    }
+                    preActionPriorHeroActionAtRef.current = next
+                      ? latestHeroActionTimestamp(
+                          engineSnapshotRef.current?.action_history,
+                          tableStateRef.current.heroSeat
+                        )
+                      : 0;
                     // Snapshot whether checking was free at arm time so the
                     // effect above can send auto_check_fold vs auto_fold.
                     preActionCanCheckRef.current =
@@ -28440,7 +28507,7 @@ function LiveTablePage({
            this, because a zero-argument function is assignable to a
            one-argument prop type. Pinned by handHistoryMoneyAgreement. */
         onReplay={(hand) => {
-          setLastHandId(hand.id);
+          setReplaySubjectId(hand.id);
           setShowHandDetail(false);
           setShowHandReplay(true);
         }}
@@ -28541,8 +28608,11 @@ function LiveTablePage({
         onClosePlayerNotes={() => setShowPlayerNotes(false)}
         // Hand Replay
         showHandReplay={showHandReplay}
-        lastHandId={lastHandId}
-        onCloseHandReplay={() => setShowHandReplay(false)}
+        lastHandId={replaySubjectId ?? lastHandId}
+        onCloseHandReplay={() => {
+          setShowHandReplay(false);
+          setReplaySubjectId(null);
+        }}
         // Game Rules
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
@@ -29167,6 +29237,20 @@ function LiveTablePage({
                stack out of the tournament they just paid to stay in. */
             bustHoldRef.current.pendingExit = null;
             releaseBustHold();
+            // The atomic receipt owns the paid seat. Do not wait for a later
+            // broadcast, another hand, or a page refresh to restore the player.
+            masterBus.emit('TABLE_SEATED', {
+              tableId: purchase.tableId,
+              userId,
+              tableName: tableState.tableName,
+            });
+            if (purchase.tableId !== tableId) {
+              navigate(`/table/${purchase.tableId}`);
+            } else {
+              heroSeatRef.current = purchase.seatNumber;
+              setTableState((prev) => ({ ...prev, heroSeat: purchase.seatNumber }));
+              requestEngineSnapshot();
+            }
           } catch (error) {
             if (!isCurrentPurchase()) return;
             if (error instanceof TournamentPurchaseNotSubmittedError) {
@@ -29259,7 +29343,7 @@ function LiveTablePage({
         handHistoryViewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         onCloseHandHistory={handleCloseHandHistory}
         onReplay={(hand) => {
-          setLastHandId(hand.id);
+          setReplaySubjectId(hand.id);
           setShowHandDetail(false);
           setShowHandHistory(false);
           setShowHandReplay(true);
@@ -29352,7 +29436,6 @@ function LiveTablePage({
           onOpenProfileView={() => setShowProfileModal(true)}
           onOpenAvatarPicker={() => avatarService.openAvatarSelector()}
           onOpenIdentity={() => setShowIdentityModal(true)}
-          onOpenTableSettings={() => setShowSettings(true)}
           /* 2026-08-29: the hub knows who it belongs to, shows the figures
              inline instead of one tap away, and hands the felt back the
              moment the turn arrives (a menu must never time out a hand). */
@@ -29360,14 +29443,6 @@ function LiveTablePage({
           heroAvatarUrl={heroAvatarUrl || undefined}
           stats={heroHubStats}
           isHeroTurn={isHeroTurnContext}
-          /* 2026-08-30: the quick toggles come from TABLE_SETTINGS_META's
-             `quick` flag — one list, beside the settings' single owner — and
-             write through the same toggleSetting the full panel uses. The hub
-             adds a surface, never a second owner. */
-          quickSettings={heroHubQuickSettings}
-          onToggleQuickSetting={(key) => {
-            void toggleV8Setting(key as keyof typeof v8Settings);
-          }}
         />
       )}
       {/* AUDIT 2026-08-25 — A MENU ITEM THAT DID NOTHING.

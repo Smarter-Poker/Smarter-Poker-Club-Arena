@@ -150,7 +150,7 @@ def write(path: Path, text: str) -> None:
 def run_drill(*, desired=SHA, serving=SHA, label=SHA, image=IMAGE, policy='always',
               autoheal='running', restart=True, ready=True, remaining_ms=280_000,
               clock_skew_ms=0, after_instance=AFTER_INSTANCE, busy_unit='', pending='',
-              leader_rc=0, post_rc=0, leave_break_after=3, admission_seconds=8,
+              leader_rc=0, post_rc=0, leave_break_after=3, admission_seconds=30,
               restart_seconds=5, authorization='DA08 crash rehearsal approved by owner',
               adopt_after_reads=0, adopt_break_shift_ms=0):
     with tempfile.TemporaryDirectory(prefix='crash-drill-') as temp:
@@ -214,6 +214,11 @@ while True:
             'leave_break_after': leave_break_after,
             'adopt_after_reads': adopt_after_reads, 'adopt_break_shift_ms': adopt_break_shift_ms,
         }))
+        # Positive cases must reach the crash/recovery assertions, rather than
+        # expire while starting the stubbed host prerequisites. The full hook
+        # measured these reads beyond the former eight-second allowance.
+        # Negative admission cases still explicitly pass four seconds; the
+        # production 900-second reserve and all drill guards are unchanged.
         not_after = int(time.time()) + 900 + admission_seconds
         env = {
             **os.environ,
@@ -222,7 +227,13 @@ while True:
             'ENGINE_LOCK_FILE': str(temp / 'engine.lock'), 'ENGINE_DRILL_LOCK_FILE': str(temp / 'drill.lock'),
             'ENGINE_DRILL_STATE_DIR': str(state_dir), 'ENGINE_DRILL_POLL_SECONDS': '1',
             'ENGINE_DRILL_RESTART_SECONDS': str(restart_seconds),
-            'ENGINE_DRILL_HEALTH_SECONDS': '12',
+            # The real drill reserves at least 10s for database leadership.
+            # A 12s fixture left only 2s for supervisor/public-health checks;
+            # Python subprocess startup on the loaded Mac consumed that before
+            # the delayed-adoption assertion could run. Keep the same guards
+            # and negative outcomes with a bounded 30s fixture recovery budget.
+            # Production still owns its separate 180s ceiling.
+            'ENGINE_DRILL_HEALTH_SECONDS': '30',
             'DRILL_TEST_STATE': str(state), 'DRILL_TEST_EVENTS': str(events),
             'DRILL_TEST_DESIRED_SHA': desired, 'DRILL_TEST_BUSY_UNIT': busy_unit,
             'DRILL_TEST_PENDING': pending, 'DRILL_TEST_LEADER_RC': str(leader_rc),

@@ -166,7 +166,7 @@ describe('the rake snapshot on a union', () => {
     expect(screen.getByRole('button', { name: /Empty Club/ })).toBeInTheDocument();
   });
 
-  it('counts Chicago days and shows Running MTT Entries beside finished MTT Winnings', async () => {
+  it('counts Chicago days and shows Unfinished MTT Entries beside finished MTT Winnings', async () => {
     const report = {
       ...payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
       accounting_basis: 'chicago_net_money_flow',
@@ -191,7 +191,7 @@ describe('the rake snapshot on a union', () => {
     );
     expect(await screen.findByText(/Net Entries And Payouts In Chicago Time/)).toBeInTheDocument();
     expect(screen.getByText(/MTT Winnings Count Finished MTTs Only/)).toBeInTheDocument();
-    expect(screen.getByTitle('-59,073.00')).toHaveTextContent('Running MTT Entries');
+    expect(screen.getByTitle('-59,073.00')).toHaveTextContent('Unfinished MTT Entries');
     expect(screen.getByTitle('7.00')).toHaveTextContent('7.00');
     expect(screen.getAllByText('Chicago Time').length).toBeGreaterThan(0);
   });

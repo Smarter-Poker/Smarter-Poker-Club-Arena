@@ -10,10 +10,14 @@ vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const { reportError } = await import('../services/errorReporter.js');
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
 const event = 'aaaaaaaa-0000-4000-8000-000000000001';
+const bustHands = new Map<string, number>();
 const users = Array.from(
   { length: 20 },
   (_, i) => `aaaaaaaa-0000-4000-8000-${String(i + 2).padStart(12, '0')}`
 );
+
+const willingUsers = [0, 2, 3, 4, 5, 8, 12, 15].map((i) => users[i]);
+for (const id of users) bustHands.set(id, 123);
 
 function setup(window: unknown = { open: false, reason: 'tournament_not_rebuyable' }) {
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
@@ -24,10 +28,14 @@ function setup(window: unknown = { open: false, reason: 'tournament_not_rebuyabl
     requestEliminationSweep: vi.fn(),
     requestUrgentEliminationSweepAfter: vi.fn(),
   });
+  let selectedUsers = users;
   const query = {
     select: vi.fn(() => query),
-    in: vi.fn(() => query),
-    eq: vi.fn(async () => ({ data: users.map((id) => ({ id })), error: null })),
+    in: vi.fn((_column: string, ids: string[]) => {
+      selectedUsers = ids;
+      return query;
+    }),
+    eq: vi.fn(async () => ({ data: selectedUsers.map((id) => ({ id })), error: null })),
   };
   fixture.from.mockReturnValue(query);
   fixture.rpc.mockImplementation(async (name: string) => {
@@ -59,7 +67,7 @@ describe('the tournament input device reads the authoritative closed window once
       const manager = setup();
       manager.tournamentCache.tournament_type = format;
       const start = Date.now();
-      const result = await manager.tryTournamentRebuys(users);
+      const result = await manager.tryTournamentRebuys(users, bustHands);
       expect(fixture.rpc.mock.calls.map((call) => call[0])).toEqual([
         'fn_ca_tournament_rebuy_window',
       ]);
@@ -89,11 +97,11 @@ describe('the tournament input device reads the authoritative closed window once
         ? { data: window, error: null }
         : { data: { success: true }, error: null }
     );
-    const result = await manager.tryTournamentRebuys(users);
+    const result = await manager.tryTournamentRebuys(users, bustHands);
     expect(
       fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
-    ).toHaveLength(20);
-    expect([...result.rebought]).toEqual(users);
+    ).toHaveLength(willingUsers.length);
+    expect([...result.rebought]).toEqual(willingUsers);
     expect([...result.answered]).toEqual(users);
   });
 
@@ -104,10 +112,10 @@ describe('the tournament input device reads the authoritative closed window once
         ? { data: { open: false }, error: { message: 'unavailable' } }
         : { data: { success: false }, error: null }
     );
-    const result = await manager.tryTournamentRebuys(users);
+    const result = await manager.tryTournamentRebuys(users, bustHands);
     expect(
       fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
-    ).toHaveLength(20);
+    ).toHaveLength(willingUsers.length);
     expect(result.rebought.size).toBe(0);
     expect(result.answered.size).toBe(20);
   });
@@ -115,18 +123,18 @@ describe('the tournament input device reads the authoritative closed window once
   it('retains the executable re-entry product when the authoritative window is open', async () => {
     const manager = setup({ open: true });
     manager.tournamentCache = { is_reentry: true };
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
     const purchases = fixture.rpc.mock.calls.filter(
       (call) => call[0] === 'process_tournament_rebuy'
     );
-    expect(purchases).toHaveLength(20);
+    expect(purchases).toHaveLength(willingUsers.length);
     expect(purchases.every((call) => call[1].p_rebuy_type === 'reentry')).toBe(true);
   });
 
   it('does no reads or purchases during maintenance', async () => {
     const manager = setup();
     fixture.frozen = true;
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
     expect(fixture.rpc).not.toHaveBeenCalled();
     expect(fixture.from).not.toHaveBeenCalled();
   });
@@ -137,11 +145,11 @@ describe('the tournament input device reads the authoritative closed window once
       if (name === 'fn_ca_tournament_rebuy_window') throw new Error('transport rejected');
       return { data: { success: true }, error: null };
     });
-    const result = await manager.tryTournamentRebuys(users);
+    const result = await manager.tryTournamentRebuys(users, bustHands);
     expect(
       fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
-    ).toHaveLength(20);
-    expect([...result.rebought]).toEqual(users);
+    ).toHaveLength(willingUsers.length);
+    expect([...result.rebought]).toEqual(willingUsers);
     expect([...result.answered]).toEqual(users);
   });
 
@@ -152,14 +160,14 @@ describe('the tournament input device reads the authoritative closed window once
         ? { data: { open: true }, error: null }
         : { data: { success: false }, error: null }
     );
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
     fixture.rpc.mockClear();
     fixture.from.mockClear();
     fixture.rpc.mockResolvedValue({
       data: { open: false, reason: 'rebuy_window_closed' },
       error: null,
     });
-    const result = await manager.tryTournamentRebuys(users);
+    const result = await manager.tryTournamentRebuys(users, bustHands);
     expect(fixture.rpc.mock.calls.map((call) => call[0])).toEqual([
       'fn_ca_tournament_rebuy_window',
     ]);
@@ -173,7 +181,7 @@ describe('the tournament input device reads the authoritative closed window once
       manager.eliminationMutationAllowed.mockReturnValue(false);
       return { data: { open: true }, error: null };
     });
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
     expect(fixture.rpc.mock.calls.map((call) => call[0])).toEqual([
       'fn_ca_tournament_rebuy_window',
     ]);
@@ -194,10 +202,10 @@ describe('a rebuy-window policy the engine cannot read names itself once (2026-0
         ? { data: null, error: denied }
         : { data: { success: false }, error: null }
     );
-    const result = await manager.tryTournamentRebuys(users);
+    const result = await manager.tryTournamentRebuys(users, bustHands);
     expect(
       fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
-    ).toHaveLength(20);
+    ).toHaveLength(willingUsers.length);
     expect(result.answered.size).toBe(20);
     const reports = vi
       .mocked(reportError)
@@ -215,10 +223,10 @@ describe('a rebuy-window policy the engine cannot read names itself once (2026-0
         ? { data: null, error }
         : { data: { success: false }, error: null }
     );
-    await manager.tryTournamentRebuys(users);
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
+    await manager.tryTournamentRebuys(users, bustHands);
     error = { code: '57014', message: 'canceling statement due to statement timeout' };
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
     const codes = vi
       .mocked(reportError)
       .mock.calls.filter((call) => call[1] === 'Tournament.rebuy_window_unreadable')
@@ -228,11 +236,43 @@ describe('a rebuy-window policy the engine cannot read names itself once (2026-0
 
   it('says nothing when the window is read', async () => {
     const manager = setup();
-    await manager.tryTournamentRebuys(users);
+    await manager.tryTournamentRebuys(users, bustHands);
     expect(
       vi
         .mocked(reportError)
         .mock.calls.filter((call) => call[1] === 'Tournament.rebuy_window_unreadable')
     ).toHaveLength(0);
+  });
+});
+
+describe('a horse answers once for the recorded bust', () => {
+  it('never sends a purchase for a decline on repeated sweeps or a replacement manager', async () => {
+    const declined = users[1];
+    for (const manager of [setup({ open: true }), setup({ open: true })]) {
+      await manager.tryTournamentRebuys([declined], new Map([[declined, 123]]));
+      await manager.tryTournamentRebuys([declined], new Map([[declined, 123]]));
+    }
+    expect(
+      fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
+    ).toHaveLength(0);
+  });
+
+  it('keeps an unidentified bust unresolved without charging or declaring a decline', async () => {
+    const manager = setup({ open: true });
+    const result = await manager.tryTournamentRebuys(users, new Map());
+    expect(result.answered.size).toBe(0);
+    expect(result.rebought.size).toBe(0);
+    expect(
+      fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
+    ).toHaveLength(0);
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+  });
+
+  it('keeps an ambiguous purchase unresolved while other horses decline', async () => {
+    const manager = setup({ open: true });
+    const result = await manager.tryTournamentRebuys(users, bustHands);
+    expect([...result.answered]).toEqual(users.filter((id) => !willingUsers.includes(id)));
+    expect(result.rebought.size).toBe(0);
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
   });
 });

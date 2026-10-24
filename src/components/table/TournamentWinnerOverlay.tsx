@@ -54,6 +54,7 @@ interface TournamentWinnerOverlayProps {
   unitCents: number | null;
   tournamentName: string;
   position?: number;
+  championName?: string;
   onDismiss: () => void;
 }
 
@@ -64,6 +65,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
   unitCents,
   tournamentName,
   position = 1,
+  championName,
   onDismiss,
 }) => {
   const [visible, setVisible] = useState(false);
@@ -181,10 +183,13 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         className="winner-console winner-entrance winner-golden"
         eyebrow={tournamentName}
         title={paidFinish ? 'Paid Finish!' : 'Champion!'}
-        pill={paidFinish ? positionLabel : 'Winner'}
+        pill={paidFinish ? positionLabel : '1st Place'}
         pillInk="gold"
         foot="foot"
       >
+        {!paidFinish && championName && (
+          <p className="sc-copy winnerChampionName">{championName}</p>
+        )}
         {unitCents != null && (
           <div className="winnerAwardArt trophy-bounce" aria-hidden="true">
             <WheelPrizeArt
@@ -192,7 +197,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
             />
           </div>
         )}
-        {prize > 0 && unitCents != null && (
+        {prize >= 0 && unitCents != null && (
           <div className="winnerPrize prize-counter">
             {/* To the cent (2026-09-09): this is the banner shown at the
                 moment a player cashes, and a prize of 98.72 read "99".

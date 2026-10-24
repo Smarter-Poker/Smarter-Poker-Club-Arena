@@ -32,6 +32,7 @@ jobs:
       target_sha: ${{ steps.change.outputs.target_sha }}
       offer_reason: ${{ steps.change.outputs.offer_reason }}
       admission_allowed: ${{ steps.admission.outputs.allowed }}
+      owner_window_id: ${{ steps.admission.outputs.owner_window_id }}
     steps:
       # Do not use push.paths here. GitHub only evaluates a bounded portion of
       # a very large diff for path filters, which can omit a real server change
@@ -53,7 +54,8 @@ jobs:
       # Owner 2026-10-20 explicitly requests daily routine updates. Both UTC
       # candidates run; only 03:30 Chicago prepares the 04:00 window. No repair
       # timer, secondary publisher or automatic deadline-emergency exists.
-      - name: Admit daily preparation or an explicit urgent release
+      # Commit-message urgency is not authorization to interrupt live games.
+      - name: Admit daily preparation or a measured engine emergency
         id: admission
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -64,6 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           allowed=false
+          owner_window_id=''
           if [ "$EVENT_NAME" = schedule ]; then
             # Admission belongs to the nominal scheduled instant, not when a
             # queued runner finally executes. A delayed 03:30 preparation may
@@ -89,8 +92,43 @@ jobs:
             then
               allowed=true
             fi
-          elif git log -1 --format=%B | grep -Eq '^Engine-Release: (urgent|daily-maintenance-transition)$'; then
+          elif git log -1 --format=%B | grep -Eq '^Engine-Release: daily-maintenance-transition$'; then
             allowed=true
+          elif [ -f server/release/owner-maintenance-windows.json ]; then
+            # OWNER-ORDERED WINDOW (2026-10-23): a reviewed, expiring entry
+            # naming the owner's order and the exact commit this release must
+            # contain. Commit text is never consulted. The host transaction
+            # re-reads the same entry from the target tree and owns timing.
+            if OWNER_CONTAINS=$(python3 - <<'PYTHON'
+          import json
+          from datetime import datetime, timezone
+          doc = json.load(open("server/release/owner-maintenance-windows.json"))
+          now = datetime.now(timezone.utc)
+          for w in (doc.get("windows") or []) if doc.get("version") == 1 else []:
+              try:
+                  nb = datetime.fromisoformat(w["notBefore"].replace("Z", "+00:00"))
+                  na = datetime.fromisoformat(w["notAfter"].replace("Z", "+00:00"))
+              except Exception:
+                  continue
+              if 0 < (na - nb).total_seconds() <= 6 * 3600 and nb <= now <= na:
+                  print(w["contains"])
+                  break
+          PYTHON
+            ) && [[ "$OWNER_CONTAINS" =~ ^[0-9a-f]{40}$ ]] \
+              && git merge-base --is-ancestor "$OWNER_CONTAINS" HEAD; then
+              # Once: a window whose commit is already serving admits nothing.
+              SERVING=$(curl -sS --max-time 15 https://engine.smarter.poker/health \
+                | python3 -c 'import json,re,sys; v=json.load(sys.stdin).get("releaseSha"); print(v if isinstance(v,str) and re.fullmatch(r"[0-9a-f]{40}",v) else "")' 2>/dev/null) || SERVING=''
+              if [ -z "$SERVING" ]; then
+                echo "Owner-ordered window: serving identity unreadable; not admitted."
+              elif git merge-base --is-ancestor "$OWNER_CONTAINS" "$SERVING"; then
+                echo "Owner-ordered window already served ($OWNER_CONTAINS is in $SERVING); not admitted."
+              else
+                echo "Owner-ordered window admits this release (contains $OWNER_CONTAINS)."
+                allowed=true
+                owner_window_id=$(python3 -c 'import json,sys; d=json.load(open("server/release/owner-maintenance-windows.json")); print(next((w["id"] for w in d["windows"] if w["contains"] == sys.argv[1] and w.get("migrations")), ""))' "$OWNER_CONTAINS")
+              fi
+            fi
           fi
           if [ "$allowed" = false ]; then
             HEALTH=$(curl -sS --max-time 15 https://engine.smarter.poker/health) || HEALTH='{}'
@@ -107,6 +145,7 @@ jobs:
             fi
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+          echo "owner_window_id=$owner_window_id" >> "$GITHUB_OUTPUT"
           if [ "$allowed" = false ]; then
             echo 'Routine engine updates are queued for 04:00 America/Chicago.'
           fi
@@ -231,7 +270,7 @@ jobs:
   window-migrations:
     name: Install Queued Daily-Maintenance Migrations
     needs: detect
-    if: github.event_name == 'schedule' && needs.detect.outputs.admission_allowed == 'true'
+    if: needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')
     runs-on: ubuntu-latest
     timeout-minutes: 75
     concurrency:
@@ -242,6 +281,9 @@ jobs:
     steps:
       - name: Checkout protected main
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Use the production Node major
         uses: actions/setup-node@v4
@@ -255,8 +297,11 @@ jobs:
       - name: Install every queued window migration inside the 04:00 break
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OWNER_WINDOW_ID: ${{ needs.detect.outputs.owner_window_id }}
         run: |
-          node scripts/ci/install-window-migrations.mjs \
+          owner_args=()
+          if [ -n "$OWNER_WINDOW_ID" ]; then owner_args=(--owner-window "$OWNER_WINDOW_ID"); fi
+          node scripts/ci/install-window-migrations.mjs "${owner_args[@]}" \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt
 
   signal:

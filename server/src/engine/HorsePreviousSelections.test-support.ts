@@ -347,6 +347,28 @@ export const RETIRED_2026_10_22_PHASE10_SELECTION: HorsePhase10AuthoritySelectio
   withdrawn: null,
 } as const);
 
+/**
+ * PLO4 generation 5 (8ea7564b, selected 2026-10-22 in #7706), retired the same
+ * day when the second maniac-pressure pass (style-change window, postflop-only
+ * aggressor, thicker value into stations, short-stack jam into a maniac)
+ * moved the hashed policy digest again. Its evidence stays committed.
+ */
+export const RETIRED_2026_10_22B_PHASE10_SELECTION: HorsePhase10AuthoritySelection = Object.freeze({
+  schema: 'horse-qualified-authority-selection-v1',
+  phase: 'phase10',
+  sourceSha: '8ea7564bc44ddead3189e76dd0b4c00d5dbcc3d8',
+  packVersion: 'plo4-policy-round3-v2',
+  contractVersion: 'plo4-strength-contract-v1',
+  contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
+  domain: 'plo4-cash-single-board-after-rake-horse-population',
+  qualificationPath: 'docs/evidence/phase10/8ea7564b/phase10-qualification-2026-10-22.json',
+  qualificationSha256: '6d49906c6c60ad4651d217ff82c440a92b66cfa1e047a0a4094feb14df9fe9b5',
+  approvalGeneration: 5,
+  issuedAt: '2026-10-22T16:00:00.000Z',
+  expiresAt: null,
+  withdrawn: null,
+} as const);
+
 export const RETIRED_2026_10_22_PHASE11_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection>
 > = Object.freeze({

@@ -425,7 +425,7 @@ function publicReferencePosition(heroSeat: number, snapshot: Phase6Snapshot) {
 }
 /** Necessary source-input gates only. Chart hydration, adherence/mixed draws
  * and successful equity work remain worker observations, never replayed here. */
-function necessaryReferenceRouteGates(
+export function necessaryReferenceRouteGates(
   route: Phase6ReferenceRoute,
   snapshot: Phase6Snapshot
 ): boolean {
@@ -464,17 +464,24 @@ function necessaryReferenceRouteGates(
   if (!straddle && history.length === 0 && s.currentBet > bb * 1.05)
     raises = s.currentBet > bb * 4.5 ? 2 : 1;
   if (route === 'variant_price') {
-    if (
-      (o.v38Ev ?? true) === false ||
-      toCall <= 0 ||
-      !(omaha || short || holes !== 2 || fixed) ||
-      last < 0 ||
-      s.allInOrFold === true
-    )
+    if ((o.v38Ev ?? true) === false || toCall <= 0 || last < 0 || s.allInOrFold === true)
       return false;
     const raiser = s.players.find((x) => x.seat === last),
       call = Math.min(toCall, p.stack);
-    if (!raiser || !(raiser.is_all_in === true || call >= p.stack * 0.4)) return false;
+    if (!raiser) return false;
+    // The solverless variants price a shove or a 40%-of-stack wager here.
+    const variantShape =
+      (omaha || short || holes !== 2 || fixed) &&
+      (raiser.is_all_in === true || call >= p.stack * 0.4);
+    // MANIAC PRESSURE (#7683, 2026-10-22): every variant, hold'em included,
+    // prices a maniac's shove, re-raise or quarter-stack raise on this route
+    // (HorseLogic maniacPrice38). The maniac read itself is private to
+    // HorseMind, so the gate admits the public shape of that price. Without
+    // it every hold'em maniac price was refused as route_gate, and a refused
+    // receipt is fatal: release 0bbe3ebd restarted the engine 8 times between
+    // 20:29 and 22:28 UTC on 2,810 such refusals.
+    const maniacShape = raiser.is_all_in === true || raises >= 2 || call >= p.stack * 0.25;
+    if (!variantShape && !maniacShape) return false;
     const committed = s.players.filter(
       (x) =>
         !x.is_folded &&
@@ -775,7 +782,7 @@ export function horsePhase6AttributionMismatch(
     const graph = decision.policyGraph,
       first = graph?.transitions?.[0];
     if (
-      graph?.version !== 'horse-policy-order-v1' ||
+      (graph?.version !== 'horse-policy-order-v1' && graph?.version !== 'horse-policy-order-v2') ||
       !Array.isArray(graph.transitions) ||
       !exact(first, ['node', 'before', 'after', 'changed', 'elapsedMs']) ||
       first.node !== 'reference' ||

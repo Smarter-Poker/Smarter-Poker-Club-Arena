@@ -42,6 +42,17 @@ export function moneyForHand(hand: { arenaAsset?: 'chips' | 'diamonds' } | null 
   return (amount: number | null | undefined) => money(amount, precision);
 }
 
+/** Only recorded pot slices receive amounts; legacy absence stays unknown. */
+export function potShareLabels(
+  slices: ReadonlyArray<{ index: number; amount: number }> | null | undefined,
+  hand: { arenaAsset?: 'chips' | 'diamonds' }
+): string[] {
+  const format = moneyForHand(hand);
+  return (slices || []).map(
+    (slice) => `${slice.index === 0 ? 'Main' : `Side ${slice.index}`} ${format(slice.amount)}`
+  );
+}
+
 /**
  * Stakes print as typed: 0.05/0.1, never 0.05/0.10.
  *

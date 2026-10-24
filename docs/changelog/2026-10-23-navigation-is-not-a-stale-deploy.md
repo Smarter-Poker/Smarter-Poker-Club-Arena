@@ -1,0 +1,7 @@
+# A navigation is not a stale deploy
+
+When a player navigates away, the browser cancels the old page's in-flight loads, including lazy route chunks. Those cancellations reject with the same messages as a retired chunk ("Importing a module script failed.", "Failed to fetch"), and stale-deploy recovery answered them with a cache-busted reload of the page being left. That reload hijacked the player's navigation and sent them back where they started. It is the post-deploy failure "Play Poker opens an eligible club without opening setup options", seen in both Chromium and WebKit as "Navigation to /hub/club-arena/ is interrupted by another navigation to /clubs/kings-club?\_cb=...".
+
+Recovery now notes `beforeunload` and `pagehide`. While a navigation is under way it waits, without spending the reload budget. If the page is still present after the grace period, the navigation was cancelled and the failure was real, so recovery runs once. The route and general error boundaries skip their automatic reload while the page is leaving. Real stale chunks with no navigation under way recover immediately, as before.
+
+A browser probe confirmed the event order in both engines: `beforeunload` fires before the old page's fetches and imports are cancelled. Unit tests cover the leaving page, the unchanged immediate recovery, recovery after a cancelled navigation, a deferred direct hard reload and a lazy route that stays suspended while the page leaves.

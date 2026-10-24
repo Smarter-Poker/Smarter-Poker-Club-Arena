@@ -57,15 +57,15 @@ describe('LAW 1: every advert on every surface is a responsive fluid image, and 
     expect(adDir.filter((f) => /card|strip/i.test(f))).toEqual([]);
   });
 
-  it('every Club Arena ad surface is mounted through the one rotator', () => {
-    // lobby_strip, empty_state, session_summary. hub_promotions is the Hub's.
-    expect(LOBBY).toMatch(/<HouseAdRotator[\s\n]+slot="lobby_strip"/);
+  it('remaining Club Arena ad surfaces use one rotator and the middle strip stays retired', () => {
+    // Owner October 22 removed lobby_strip. Preserve the other placements.
+    expect(LOBBY).not.toMatch(/<HouseAdRotator[\s\n]+slot="lobby_strip"/);
     expect(LOBBY).toMatch(/<HouseAdRotator[\s\n]+slot="empty_state"/);
     expect(SESSION).toMatch(/<HouseAdRotator[\s\n]+slot="session_summary"/);
     // And through nothing else: no other component renders an ad_event surface.
     const srcAdRenderers =
       [LOBBY, SESSION].join('\n').match(/slot="(lobby_strip|empty_state|session_summary)"/g) ?? [];
-    expect(srcAdRenderers).toHaveLength(3);
+    expect(srcAdRenderers).toHaveLength(2);
   });
 
   it('the rotator renders a picture in a fixed-shape box, contained, and no text', () => {

@@ -19,11 +19,15 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseRiverNuts.ts':
+      'the final river-nuts raise and full-pot near-pot wager invariants after all strategy owners',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':
       'the Phase 6 tournament preflop atlas the bars shift by',
     'src/engine/AnteMath.ts': 'the ante orbit cost behind the M-zones',
+    'src/engine/HorseContinuation.ts':
+      'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',
     'src/engine/GtoCharts.ts': 'the open-jam and big-blind-versus-small-blind jam charts',
     'src/engine/GtoPostflop.ts': 'the heads-up NLH postflop solver consult',
@@ -47,6 +51,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/IcmModel.ts': 'the ICM bubble factor the survival premium uses',
     'src/engine/HorseHandClasses.ts': 'the Omaha hand-class bar shifts',
     'src/engine/pineappleDiscardChoice.ts': 'the Pineapple discard',
+    'src/engine/HorseOpponentMemory.ts':
+      'durable variant and context keys and validated snapshots used in opponent decisions',
     'src/engine/HorseOpponentExploit.ts':
       'the opponent-exploit read, its measured envelope and every effect it has on the reference and the packs',
     'src/engine/BettingStructure.ts':

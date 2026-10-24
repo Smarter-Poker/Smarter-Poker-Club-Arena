@@ -518,6 +518,16 @@ echo '  ok  matcher signature mismatch refuses atomically and preserves both doo
 grep '^  ok  11' "$fixture/authoritative.out"
 proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration_uses_the_authoritative_plan_snapshot.sql")
 [ "$(Q "SELECT ($proof)")" = t ] || { echo 'FAIL: authoritative calibration live proof'; exit 1; }
+# Today's port implements the owner's five/six policy. Preserve every
+# historical-chain assertion above, then install exact captured production
+# preimages and the complete source-admitted migration before NEW comparisons.
+# Never compare a new TS policy to an old SQL policy or rebind old A/A rows.
+"${PSQL[@]}" -f "$F/lightning-five-ready-preimages.sql" \
+  -f "$M/20261023230001_classic_and_lightning_five_ready_waits_three_seconds_for_six.sql" \
+  -f "$F/lightning-current-policy-parity.sql" > "$fixture/current-policy.out" 2>&1 || {
+  cat "$fixture/current-policy.out"; exit 1;
+}
+grep '^  ok  12' "$fixture/current-policy.out"
 n=$(Q "SELECT count(*) FROM pp.out")
 Q "SELECT jsonb_build_object('fixtures', jsonb_agg(doc || jsonb_build_object('discriminates', discriminates) ORDER BY n)) FROM pp.out" > "$fixture/fixtures.json"
 groups=$(Q "SELECT sum(jsonb_array_length(doc -> 'plan' -> 'groups')) FROM pp.out")
@@ -543,4 +553,4 @@ grep -q "^PARITY $n fixtures $groups groups identical" "$fixture/parity.out" \
   || { echo "FAIL: the parity check did not cover every fixture and group ($n fixtures, $groups groups)"; exit 1; }
 grep -q '^DISCRIMINATES ' "$fixture/parity.out" \
   || { echo "FAIL: the pre-remediation port was not shown to differ on the tie fixtures"; exit 1; }
-echo "PASS: the TypeScript matcher port (m1-port and m1) decides exactly what the real fn_lightning_match_plan decides, on PostgreSQL 17 over the real Lightning chain through the 20261015214203 authoritative calibration correction under production's default ACLs and autorevoke trigger: 10 matcher sections plus before/after source-bound calibration, $n fixtures ($players open-pool players, $horses of them horses at capture), $groups groups, every group's seats, big blind, small blind and button identical, the same legal count and pool diversity score - ties on idle_since and pool entry, blind debt, several groups per pass, the thin, medium and large bands, the first-entry rule, nine-handed tables, two hands at one instant and a new epoch; and the port without the remediation's keys (the Cluster join, the slot's opening, the hand ids) is shown to differ on the two tie fixtures"
+echo "PASS: the TypeScript matcher port (m1-port and m1) decides exactly what the real fn_lightning_match_plan decides, on PostgreSQL 17 over the real Lightning chain through the 20261015214203 authoritative calibration correction followed by exact production preimages and the complete source-admitted 20261023230001 five/six policy under production's default ACLs and autorevoke trigger: 10 historical matcher sections plus before/after source-bound calibration and fresh current-policy parity, $n fixtures ($players open-pool players, $horses of them horses at capture), $groups groups, every group's seats, big blind, small blind and button identical, the same legal count and pool diversity score - ties on idle_since and pool entry, blind debt, several groups per pass, the thin, medium and large bands, the first-entry rule, legacy nine-handed configuration constrained to current six-max, two hands at one instant and a new epoch; and the port without the remediation's keys (the Cluster join, the slot's opening, the hand ids) is shown to differ on the two tie fixtures"

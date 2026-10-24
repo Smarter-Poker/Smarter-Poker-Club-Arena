@@ -346,4 +346,27 @@ describe('the REPLAY button replays the hand on screen', () => {
     expect(wiring).toContain('onReplay={(hand)');
     expect(wiring).toContain('onShare={(hand)');
   });
+
+  it('keeps an explicitly selected replay separate from newly saved hand metadata', () => {
+    const page = readSrc('src/pages/TablePage.tsx');
+    expect(page).toContain(
+      'const [replaySubjectId, setReplaySubjectId] = useState<string | null>(null)'
+    );
+    const replayHandlers = [...page.matchAll(/onReplay=\{\(hand\) => \{([\s\S]*?)\}\}/g)];
+    expect(replayHandlers).toHaveLength(2);
+    for (const [, handler] of replayHandlers) {
+      expect(handler).toContain('setReplaySubjectId(hand.id)');
+      expect(handler).not.toContain('setLastHandId(hand.id)');
+    }
+    expect(page).toContain('lastHandId={replaySubjectId ?? lastHandId}');
+    const saved = page.slice(
+      page.indexOf('const savedId = handState.hand_id'),
+      page.indexOf('const savedId = handState.hand_id') + 450
+    );
+    expect(saved).toContain('setLastHandId(savedId)');
+    expect(saved).not.toContain('setReplaySubjectId');
+    expect(page).toMatch(
+      /onCloseHandReplay=\{\(\) => \{\s*setShowHandReplay\(false\);\s*setReplaySubjectId\(null\);/
+    );
+  });
 });

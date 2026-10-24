@@ -47,10 +47,11 @@ const openEntryBody = (() => {
   return src.slice(start, end);
 })();
 
-describe('an MTT row opens the tournament lobby at every status', () => {
-  it('routes on the kind alone', () => {
-    expect(openEntryBody).toContain("if (entry.kind === 'mtt') {");
-    expect(openEntryBody).toContain('openTournamentLobby(entry.id);');
+describe('every game row opens its card before participation', () => {
+  it('opens the shared detail panel without navigating or committing', () => {
+    expect(openEntryBody).toContain('setSelectedId(entry.id);');
+    expect(openEntryBody).toContain('setPanelOpen(true);');
+    expect(openEntryBody).not.toContain('openTournamentLobby(entry.id);');
   });
 
   it('never reads a status to decide', () => {
@@ -65,7 +66,7 @@ describe('an MTT row opens the tournament lobby at every status', () => {
 
 describe('a cash row still opens the game lobby panel', () => {
   it('falls through to the panel for everything that is not an MTT', () => {
-    const afterGuard = openEntryBody.slice(openEntryBody.indexOf('openTournamentLobby(entry.id);'));
+    const afterGuard = openEntryBody;
     expect(afterGuard).toContain('setSelectedId(entry.id);');
     expect(afterGuard).toContain('setPanelOpen(true);');
   });

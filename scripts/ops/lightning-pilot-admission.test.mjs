@@ -815,3 +815,45 @@ test('daily bonus dismissal contract matches its real named secondary plate', ()
     /secondary:\s*\{[\s\S]*?label: 'Not Now'[\s\S]*?onClick: onClose,[\s\S]*?'aria-label': 'Close'/
   );
 });
+
+test('admission accepts exactly the consented witness players and refuses anyone else first', async () => {
+  const { WITNESS_PLAYERS } = await import('./lightning-pilot-player.mjs');
+  assert.ok(WITNESS_PLAYERS.includes(ADMISSION_PLAYER));
+  assert.ok(WITNESS_PLAYERS.length >= 3);
+  let auth = 0;
+  const f = fixture();
+  f.args.admin.auth.admin.getUserById = async () => {
+    auth++;
+    throw new Error();
+  };
+  const r = await witnessAdmission({
+    ...f.args,
+    pin: { ...pin, playerId: '23040e91-e0d0-430d-b18e-f9f67c385d90' },
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.playerId, null);
+  assert.equal(auth, 0);
+});
+
+test('a consented witness on another house email domain signs in; an account with no email never does', async () => {
+  for (const [email, ok] of [
+    ['milehigh@hydra.smarter.poker', true],
+    ['player009@smarter.poker', true],
+    ['', false],
+    [null, false],
+  ]) {
+    const f = fixture();
+    f.args.admin.auth.admin.getUserById = async () => ({
+      data: { user: { id: ADMISSION_PLAYER, email } },
+    });
+    const r = await witnessAdmission({
+      ...f.args,
+      withAdmittedSession: async () => ({ status: 'observed' }),
+    });
+    if (ok) assert.notEqual(r.phase, 'authentication');
+    else {
+      assert.equal(r.status, 'unknown');
+      assert.deepEqual(f.actions, []);
+    }
+  }
+});

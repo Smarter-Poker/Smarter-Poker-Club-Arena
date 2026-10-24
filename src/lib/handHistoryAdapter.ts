@@ -41,7 +41,7 @@ export { toShareVariant };
  * record shaped by an older producer. Built by the same `buildReplay` from
  * the record's own fields, so there is still exactly one algorithm; this is
  * only a second way of feeding it. `HandHistoryService` attaches the model
- * built from the raw row, which is richer (stacks, showdown order, pots).
+ * built from the raw row, which is richer (stacks and showdown order).
  */
 export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
   const [sbRaw, bbRaw] = String(h.stakes || '').split('/');
@@ -68,10 +68,11 @@ export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
   for (const p of h.players || []) {
     if (p.private_hole_cards?.length) privateHoleCards[p.user_id] = p.private_hole_cards as never;
   }
-  return buildReplay({
+  const replay = buildReplay({
     handNumber: h.hand_number ?? null,
     playedAt: h.played_at ?? null,
     gameVariant: h.game_type ?? null,
+    bombPot: h.bomb_pot != null,
     smallBlind: Number(sbRaw) || 0,
     bigBlind: Number(bbRaw) || 0,
     potSize:
@@ -115,13 +116,16 @@ export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
     holeCards,
     privateHoleCards,
     showdown,
-    pots: null,
+    // The service already separates these; preserve that axis in the fallback too.
+    pots: [h.main_pot, ...(h.side_pots || [])].map((amount, index) => ({ index, amount })),
     discardedCards: Object.fromEntries(
       (h.actions || [])
         .filter((a) => a.discarded_card)
         .map((a) => [a.player_id, a.discarded_card as { rank: string; suit: string }])
     ),
   });
+  replay.arenaAsset = h.arenaAsset;
+  return replay;
 }
 
 export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHandRecord {

@@ -65,9 +65,8 @@ let viewportMetaCreated: HTMLMetaElement | null = null;
  * The wake lock did not: every mounted table requested its own sentinel and
  * attached its own `visibilitychange` listener, so four tables meant four
  * sentinels for one screen and four simultaneous re-requests on every
- * visibility change. `useTabKeepAlive` refcounts its AudioContext and Worker
- * for exactly this reason; this is the same shape, and it was the one that
- * was missed.
+ * visibility change. This is a document resource, so its ownership must
+ * follow the viewport holder count rather than each individual table.
  */
 let wakeLockHolders = 0;
 let wakeLockSentinel: WakeLockSentinel | null = null;

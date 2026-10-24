@@ -121,7 +121,7 @@ describe('no surface prints the multiplier on its own again', () => {
     'src/components/lobby/lobbyEntries.ts',
     'src/components/lobby/LobbyTable.tsx',
     'src/components/lobby/GameLobbyPanel.tsx',
-    'src/components/lobby/CasinoPlaque.tsx',
+    'src/components/lobby/game-cards/arenaGameCardAdapter.ts',
   ];
 
   it('a lobby surface either goes through the gate or never touches the column', () => {

@@ -5,7 +5,7 @@
  *
  * Dan, 2026-10-22: Club Data and Union Data count days by the America/Chicago
  * calendar day (DST aware), not UTC; "MTT Winnings" covers finished MTTs only,
- * and a running MTT's entries are shown separately as "Running MTT Entries".
+ * and a running MTT's entries are shown separately as "Unfinished MTT Entries".
  * Totals still reconcile: total = cash + every tournament flow.
  *
  * The bucket is fixed at the source (20261022103651): the one live writer
@@ -113,20 +113,26 @@ describe('MTT Winnings are finished MTTs; running MTT entries are their own figu
   });
 
   it('the Union Data window does the same, finding MTTs from tournaments', () => {
-    const b = squash(latest('fn_ca_rake_window_v2'));
+    // 20261022165130: fn_ca_rake_window_v2 delegates to the one-pass reader,
+    // which carries the split for the whole union and for every club.
+    expect(squash(latest('fn_ca_rake_window_v2'))).toContain(
+      'public.fn_ca_rake_windows_v3(p_clubs, p_start, p_end, false)->\'all\''
+    );
+    const b = squash(latest('fn_ca_rake_windows_v3'));
     expect(b).toContain("bool_or(COALESCE(tr.status IN ('COMPLETED','CANCELLED'),false)) finished");
-    expect(b).toContain("WHERE tr.tournament_type='MTT' GROUP BY d.game_id");
-    expect(b).toContain('sum(fee) FILTER(WHERE finished)');
-    expect(b).toContain('sum(winnings) FILTER(WHERE NOT finished)');
+    expect(b).toContain("tr.tournament_type='MTT' GROUP BY");
+    expect(b).toContain('FILTER (WHERE m.finished)');
+    expect(b).toContain('FILTER (WHERE NOT m.finished)');
     expect(b).toContain("'running_mtt_entries',round(a.rw,2)");
   });
 });
 
 describe('the union reads count each thing once (20261022134523)', () => {
   it('the per-club list reads each club window once', () => {
-    expect(squash(latest('fn_ca_rake_by_club_v2'))).toContain(
-      'CROSS JOIN LATERAL(SELECT public.fn_ca_rake_window_v2(ARRAY[c.id],p_start,p_end) s OFFSET 0) w)'
-    );
+    // 20261022165130: once for every club together, not once per club.
+    const b = squash(latest('fn_ca_rake_by_club_v2'));
+    expect(b).toContain('public.fn_ca_rake_windows_v3(p_clubs, p_start, p_end, true)->\'clubs\'');
+    expect(b).not.toContain('CROSS JOIN LATERAL');
   });
 
   it('the union game page and game lists count hands in one grouped pass', () => {

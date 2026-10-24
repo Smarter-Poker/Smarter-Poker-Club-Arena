@@ -19,6 +19,7 @@ import { describe, it, expect } from 'vitest';
 import {
   adaptServiceHandToPanel,
   panelHandToShareable,
+  replayFromServiceRecord,
   toShareVariant,
 } from '../../src/lib/handHistoryAdapter';
 
@@ -89,6 +90,36 @@ function baseHand(over: Record<string, unknown> = {}) {
 }
 
 describe('the money', () => {
+  it('retains known side pots and denomination when an older producer has no replay', () => {
+    const replay = replayFromServiceRecord(baseHand({ arenaAsset: 'diamonds' }));
+    expect(replay.pots).toEqual([
+      { label: 'Main', amount: 100 },
+      { label: 'Side 1', amount: 20 },
+      { label: 'Side 2', amount: 5 },
+    ]);
+    expect(replay.arenaAsset).toBe('diamonds');
+  });
+
+  it('never invents blinds over ordinary ante rows on a recorded bomb hand', () => {
+    const replay = replayFromServiceRecord(
+      baseHand({
+        bomb_pot: { ante_amount: 3, board_count: 2 },
+        main_pot: 6,
+        side_pots: [],
+        actions: [
+          { street: 'preflop', player_id: HERO, action: 'ante', amount: 3 },
+          { street: 'preflop', player_id: VILLAIN, action: 'ante', amount: 3 },
+        ],
+        winners: [{ user_id: HERO, amount: 6, pot_index: 0 }],
+      })
+    );
+    expect(replay.reconciles).toBe(true);
+    expect(replay.players.map((p) => p.invested)).toEqual([3, 3]);
+    expect(replay.players.map((p) => p.net)).toEqual([3, -3]);
+    expect(replay.streets.flatMap((s) => s.rows).map((r) => r.verb)).not.toContain('sb');
+    expect(replay.streets.flatMap((s) => s.rows).map((r) => r.verb)).not.toContain('bb');
+  });
+
   it('adds the side pots to the main pot', () => {
     expect(adaptServiceHandToPanel(baseHand(), HERO).potTotal).toBe(125);
   });

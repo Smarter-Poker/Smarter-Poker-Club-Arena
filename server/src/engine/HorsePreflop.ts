@@ -31,6 +31,7 @@
  */
 
 import { potLimitRaiseTo } from './BettingStructure.js';
+import { completePreflopCommitment } from './HorseContinuation.js';
 import {
   tournamentMZone,
   tournamentNextLevelProjectionApplies,
@@ -82,6 +83,7 @@ export interface PreflopCtx {
   sizingMultiplier: number;
   isOmaha: boolean;
   isPotLimit: boolean;
+  isFixedLimit?: boolean;
   /** tournament survival premium, 0 for cash (see HorseLogic.icmRisk) */
   riskAdd: number;
   /** V10: widen the isolation-raise range vs limpers in position (percentile
@@ -185,6 +187,11 @@ export interface PreflopCtx {
    *  AAxx 3-bets below the generic percentile bar; a speculative rundown
    *  WITHOUT it flats at the margin instead of bloating the pot OOP. */
   omahaAA?: boolean;
+  /** Real-card suited AA / double-suited KK anchor, not a percentile proxy.
+   * Only selects value 3-bets versus one open; never a 4-bet stack-off. */
+  omahaSuitedPremium?: 'aces' | 'kings';
+  /** Exact Hold’em AA/KK, so score jitter cannot demote a value squeeze. */
+  holdemPremiumPair?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -430,7 +437,7 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   if (ctx.classFoldAlways === true && ctx.toCall > 0) {
     return { a: 'fold' };
   }
-  const out = decidePreflopV7Core(ctx);
+  const out = completePreflopCommitment(decidePreflopV7Core(ctx), ctx);
   if (ctx.v13 === false) return out;
   if (out.a !== 'fold') return out;
   const stack = ctx.stack;
@@ -1228,18 +1235,25 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // that dominates them.
     let effThreeBetThresh = threeBetThresh;
     if (ctx.isOmaha && ctx.omahaAA === true) effThreeBetThresh = threeBetThresh - 0.04;
-    if (strength >= effThreeBetThresh) {
+    const premiumValue =
+      priceOK &&
+      (ctx.holdemPremiumPair === true ||
+        (ctx.isOmaha &&
+          (ctx.omahaSuitedPremium === 'aces' ||
+            (ctx.omahaSuitedPremium === 'kings' && vsOpener?.wide !== false))));
+    if (premiumValue || strength >= effThreeBetThresh) {
       // ═══ V46 (2026-09-05) ═══ a rundown, a broadway hand and a dangler
       // FLAT. This is the thing a bar cannot say: those hands want a cheap
       // multiway flop, and widening or narrowing their 3-bet threshold does
       // the opposite of what the hand wants either way. The price still has
       // to be a flatting price - past that the bars decide as before.
-      if (ctx.classNeverThreeBet === true && toCall <= ctx.stack * 0.12) {
+      if (!premiumValue && ctx.classNeverThreeBet === true && toCall <= ctx.stack * 0.12) {
         return { a: 'call' };
       }
       if (
         ctx.isOmaha &&
         ctx.omahaAA === false &&
+        !premiumValue &&
         strength < threeBetThresh + 0.05 &&
         toCall <= ctx.stack * 0.08
       ) {

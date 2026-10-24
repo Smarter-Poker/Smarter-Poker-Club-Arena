@@ -1,3 +1,4 @@
+import { MEMORY_VARIANTS, opponentMemoryKey } from './HorseOpponentMemory.js';
 import {
   horsePlanContextIsValid,
   horsePlanContextKey,
@@ -123,13 +124,19 @@ function boundary(players: readonly Pick<SeatPlayer, 'user_id'>[], handKey: stri
     (handKey !== null && (typeof handKey !== 'string' || handKey.length > 512))
   )
     return fail();
-  const scoped = new Set<string>(),
+  const exploit = new Set<string>(),
+    scoped = new Set<string>(),
     pairs = new Set<string>(),
     plans = new Set<string>(),
     streets = new Set<string>();
   for (const id of actors) {
     for (const family of ['holdem', 'omaha', 'sixplus'])
       for (const size of ['hu', 'short', 'full']) scoped.add(`${family}:${size}|${id}`);
+    for (const key of scoped) exploit.add(key);
+    for (const variant of MEMORY_VARIANTS)
+      for (const mode of ['cash', 'tournament'] as const)
+        for (const size of ['hu', 'short', 'full'] as const)
+          exploit.add(opponentMemoryKey(id, variant, mode, size));
     for (const other of actors) pairs.add(`${id}|${other}`);
     if (handKey !== null) {
       const key = `${handKey}|${id}`;
@@ -137,7 +144,7 @@ function boundary(players: readonly Pick<SeatPlayer, 'user_id'>[], handKey: stri
       for (const street of ['preflop', 'flop', 'turn', 'river']) streets.add(`${key}|${street}`);
     }
   }
-  return { actors, stats: new Set(actors), scoped, pairs, plans, streets };
+  return { actors, stats: new Set(actors), scoped, exploit, pairs, plans, streets };
 }
 
 function validRows(
@@ -213,7 +220,7 @@ function validateBody(
       (v) => object(v) && exact(v, ['good', 'scare']) && cards(v.good) && cards(v.scare)
     ) ||
     (value.version === EXPLOIT_VERSION &&
-      !validRows(value.exploit, b.scoped, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length)))
+      !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length)))
   )
     return fail();
   if (windowed(value.version)) {
@@ -265,7 +272,7 @@ export function encodeHorseDecisionReads(
   // Do not alter predecessor bytes for metadata-absent historical views.
   const boundedStats = bounded(view.stats, b.stats.size);
   const boundedScoped = bounded(view.scoped, b.scoped.size);
-  const exploitRows: Rows<number[]> = bounded(view.exploit ?? new Map(), b.scoped.size).map(
+  const exploitRows: Rows<number[]> = bounded(view.exploit ?? new Map(), b.exploit.size).map(
     ([id, row]: [string, ExploitCounters]): [string, number[]] => {
       if (!object(row) || !exact(row, EXPLOIT_COUNTER_FIELDS)) return fail();
       return [id, EXPLOIT_COUNTER_FIELDS.map((f) => row[f])];

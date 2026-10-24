@@ -5,7 +5,8 @@ import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import { tournamentService } from '../../services/TournamentService';
 import { tournamentEntryWindowOpen } from '../../utils/tournamentEntryWindow';
 import { serverNow } from '../../utils/serverClock';
-import './WaitlistCallToAction.css';
+import { reportError } from '../../utils/errorReporter';
+import './TournamentLateRegCallToAction.css';
 
 /**
  * THE TOURNAMENT SPECTATOR CALL TO ACTION (Dan 2026-10-21)
@@ -18,8 +19,8 @@ import './WaitlistCallToAction.css';
  *
  * A tournament has no waiting list. A spectator at a tournament table can do
  * exactly one thing: enter the event while late registration is open. So
- * this prints the time left in the entry window on the same painted action
- * shell the cash call to action uses (#ClubArenaConsole, nothing drawn here),
+ * this prints the time left in the entry window on its dedicated approved
+ * two-compartment painted holder (#ClubArenaConsole, nothing drawn here),
  * and the tap takes the player to the tournament's own page, which owns the
  * real registration flow (buy-in sheet, tickets, Diamonds, refusals).
  *
@@ -41,7 +42,7 @@ export interface TournamentLateRegCallToActionProps {
 type LateRegRow = LobbyTournamentRow & { status?: string | null };
 
 export function fmtLateRegClock(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
+  const s = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0;
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -58,7 +59,7 @@ export function lateRegCallToActionCopy(
   if (!row) return null;
   if (!tournamentEntryWindowOpen(row, nowMs)) return null;
   const endsAt = lateRegEndMs(row);
-  const title = 'Tap Here To Register';
+  const title = 'Tap Here To Enter';
   if (endsAt === null) return { eyebrow: 'Late Registration Is Open', title };
   const left = (endsAt - nowMs) / 1000;
   if (left <= 0) return null;
@@ -72,15 +73,25 @@ export function TournamentLateRegCallToAction({
   onRegister,
   fallback,
 }: TournamentLateRegCallToActionProps) {
-  const [row, setRow] = useState<LateRegRow | null>(null);
+  const [loaded, setLoaded] = useState<{ id: string; row: LateRegRow | null } | null>(null);
+  const row = loaded?.id === tournamentId ? loaded.row : null;
   const [nowMs, setNowMs] = useState(() => serverNow());
 
   useEffect(() => {
     if (hidden) return;
     let cancelled = false;
-    void tournamentService.getTournament(tournamentId).then((t) => {
-      if (!cancelled) setRow((t as unknown as LateRegRow | null) ?? null);
-    });
+    setNowMs(serverNow());
+    void tournamentService
+      .getTournament(tournamentId, { throwOnError: true })
+      .then((t) => {
+        if (!cancelled)
+          setLoaded({ id: tournamentId, row: (t as unknown as LateRegRow | null) ?? null });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLoaded({ id: tournamentId, row: null });
+        reportError(error, 'TournamentLateRegCallToAction.Load');
+      });
     return () => {
       cancelled = true;
     };
@@ -97,8 +108,9 @@ export function TournamentLateRegCallToAction({
 
   const eyebrow = copy?.eyebrow ?? '';
   const title = copy?.title ?? '';
-  const socketRef = useFitText<HTMLSpanElement>('+', 1, 0.5);
-  const eyebrowRef = useFitText<HTMLSpanElement>(eyebrow, 1, 0.5);
+  const deadline = row ? lateRegEndMs(row) : null;
+  const clock = deadline === null ? 'Open' : fmtLateRegClock((deadline - nowMs) / 1000);
+  const clockRef = useFitText<HTMLSpanElement>(clock, 1, 0.35);
   const titleRef = useFitText<HTMLSpanElement>(title, 1, 0.5);
 
   if (!copy) return <>{fallback}</>;
@@ -106,24 +118,28 @@ export function TournamentLateRegCallToAction({
   return (
     <button
       type="button"
-      className="waitlist-cta"
+      className="tournament-entry-holder"
       data-testid="tournament-late-reg-cta"
-      onClick={onRegister}
+      onClick={() => {
+        // A suspended tab must never navigate on an expired cached clock.
+        const now = serverNow();
+        if (!hidden && lateRegCallToActionCopy(row, now)) onRegister();
+        else setNowMs(now);
+      }}
       aria-label={`${eyebrow}. ${title}`}
     >
-      <span className="waitlist-cta__socket" aria-hidden="true">
-        <span ref={socketRef} className="waitlist-cta__socket-text">
-          +
-        </span>
-      </span>
-      <span className="waitlist-cta__face" aria-hidden="true">
-        <span className="waitlist-cta__line">
-          <span ref={eyebrowRef} className="waitlist-cta__eyebrow">
-            {eyebrow}
+      <span className="tournament-entry-holder__clock" aria-hidden="true">
+        <span className="tournament-entry-holder__label">Reg Closes In</span>
+        <span className="tournament-entry-holder__clock-line">
+          <span ref={clockRef} className="tournament-entry-holder__time">
+            {clock}
           </span>
         </span>
-        <span className="waitlist-cta__line">
-          <span ref={titleRef} className="waitlist-cta__title">
+      </span>
+      <span className="tournament-entry-holder__face" aria-hidden="true">
+        <span className="tournament-entry-holder__label">Tournament Spectating</span>
+        <span className="tournament-entry-holder__title-line">
+          <span ref={titleRef} className="tournament-entry-holder__title">
             {title}
           </span>
         </span>

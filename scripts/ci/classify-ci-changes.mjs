@@ -371,8 +371,13 @@ export function classifyChangedPaths(paths) {
   );
   const devMatches = (pattern) => devPaths.some((p) => pattern.test(p));
   return {
-    src: broad || cashLobbyBrowser || paths.some(cssBeatInput) || buildProvenance || matches(/^src\//),
+    src:
+      broad || cashLobbyBrowser || paths.some(cssBeatInput) || buildProvenance || matches(/^src\//),
     server:
+      // Default opening reuses funded welcome reserves and the real publisher.
+      matches(
+        /^(src\/services\/Club(?:QuickStart|OpeningSetup|WelcomePackage)Service\.ts|scripts\/ci\/test-quick-club-opening\.py|tests\/unit\/clubQuickStart\.test\.ts)$/
+      ) ||
       matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||

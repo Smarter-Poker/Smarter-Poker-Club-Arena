@@ -1,0 +1,5 @@
+# The live table check measures the painted avatar
+
+Post-deploy run 39963913337 failed "393px live mobile table containment" with "Player Or Bet Covers Board: seat\_\_avatar-img" on a live six-seat No-Limit Hold'em table. The trace was replayed at 393x852. The acting left-side player used `free_musician` bust art, which has the library's largest per-character gain (1.171). Bust art is a 125x170 canvas drawn `object-fit: contain` into a square box, and the gain and the acting seat's 1.04 scale enlarge that box. The box's transparent sides crossed the board's left edge (104.6px against 101.8px). The painted character ended at 89.6px, 12px clear of the board. No player covered the board on screen.
+
+The live check now measures the painted art inside an image's `object-fit` box rather than the whole box. Replaying the failed state: the old check reported the avatar and the new check does not. Moving the painted character 14px or 30px onto the board, the new check reports it both times. Information plates, action tags and wagers are measured exactly as before.

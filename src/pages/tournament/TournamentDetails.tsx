@@ -1,3 +1,4 @@
+import { readTournamentStandings } from '../../services/readTournamentStandings';
 import {
   tournamentEntryWindow,
   tournamentEntryWindowOpen,
@@ -95,6 +96,7 @@ import { formatBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { useTournamentStageView } from '../../hooks/useTournamentStageView';
+import { subscribeTournamentStandings } from '../../services/tournamentStandingsUpdates';
 import { openTableAsObserver } from '../../utils/observeTable';
 import { titleCase } from '../../utils/titleCase';
 import { publicOrigin } from '../../lib/appBase';
@@ -1058,13 +1060,10 @@ export default function TournamentDetails({
            * pretending the database records how many.
            */
           owner.entryPatches = [];
-          const { data: playersData, error } = await supabase
-            .from('tournament_players')
-            .select(
-              'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
-            )
-            .eq('tournament_id', data.id)
-            .order('registered_at', { ascending: true });
+          const { data: playersData, error } = await readTournamentStandings(
+            data.id,
+            'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+          );
 
           if (getIsMounted && !getIsMounted()) return;
 
@@ -1237,6 +1236,15 @@ export default function TournamentDetails({
     })();
     return owner.inFlight;
   };
+
+  useEffect(() => {
+    if (!tournamentId) return;
+    // The existing snapshot owner serializes reads and drops retired answers.
+    // Ordinary settled hands arrive from every table on the tournament channel.
+    return subscribeTournamentStandings(tournamentId, () => {
+      void loadTournament(undefined, { quiet: true });
+    });
+  }, [tournamentId, user?.id]);
 
   /**
    * Dan 2026-08-25 (binding): "you don't need a secondary confirmation for buy

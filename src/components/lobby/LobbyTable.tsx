@@ -12,12 +12,14 @@ import { useSharedSecondTick } from './useSharedSecondTick';
  * (stakesValue / buyInValue / startValue), never the formatted strings.
  */
 
-import { memo, useMemo, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
-import { observeLobbyScrollClearance } from './lobbyScrollClearance';
+import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
+import { compactChips } from '../../utils/format';
 import {
   cashTitleLines,
+  formatClock,
+  lateRegEndMs,
   levelSpeedLabel,
   mttPhaseText,
   mttTitleLine,
@@ -30,11 +32,12 @@ import {
   stackFormatRank,
   styleCountsLine,
 } from './lobbyEntries';
-import { cashTemplateNote } from '../../config/cashGames';
+import LightningGamesIcon from './LightningGamesIcon';
+import { cashTemplateNote, cashTemplateKey } from '../../config/cashGames';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
+import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
-import { ArenaLobbyGameCard } from './game-cards';
 import {
   lobbyPlayerStateOf as playerStateOf,
   type LobbyPlayerState as PlayerState,
@@ -44,6 +47,7 @@ export type { LobbyRowContext } from './lobbyCardContext';
 import { featuredNow } from '../../lib/featuredOnItsDay';
 import './LobbyTable.css';
 import './LobbySortBar.css';
+import './CompactLobbyRows.css';
 
 type SortDir = 'asc' | 'desc';
 
@@ -222,6 +226,194 @@ const PLAYER_STATE_LABEL: Record<Exclude<PlayerState, null>, string> = {
   waitlisted: 'You Are Waitlisted',
   registered: 'You Are Registered',
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A TOURNAMENT ROW THAT LOOKS ALIVE (Dan 2026-10-23)
+   ---------------------------------------------------------------------------
+   "THE TOURNAMENTS NEED TO LOOK COOLER, MAYBE HAVE SOME SPECIAL ICONS NEXT TO
+   EACH GAME FOR LIKE BOUNTY, HIGHLIGHT ALL GUARANTEES OVER 2.5K, ADD TIMERS
+   FOR STARTING IN... OR LATE REG ENDS IN... (FREE ROLLS SHOULD ALSO BE
+   HIGHLIGHTED)".
+
+   Every fact here is read from the entry the row already carries: the bounty
+   family and the freeroll deal from the same medallions the game panel prints
+   (tournamentMedallions decides them from the trait columns), the guarantee
+   from guaranteeValue, and the clocks from the start time and lateRegEndMs,
+   the same window the server enforces. Seat-first games (Spins, Heads-Up)
+   start on their last seat, so they get no clock.
+   ═══════════════════════════════════════════════════════════════════════════ */
+export const HOT_GUARANTEE_THRESHOLD = 2500;
+
+export type TournamentSignal = 'freeroll' | 'pko' | 'mystery' | 'bounty' | 'satellite' | 'hot-gtd';
+
+export function tournamentSignals(entry: LobbyEntry): TournamentSignal[] {
+  if (entry.kind === 'cash') return [];
+  const keys = new Set(entry.rules.map((r) => r.key));
+  const out: TournamentSignal[] = [];
+  if (keys.has('freeroll') || (entry.kind !== 'unknown' && entry.buyInValue <= 0))
+    out.push('freeroll');
+  if (keys.has('pko')) out.push('pko');
+  else if (keys.has('mystery')) out.push('mystery');
+  else if (keys.has('bounty')) out.push('bounty');
+  if (keys.has('satellite')) out.push('satellite');
+  if (entry.guaranteeValue >= HOT_GUARANTEE_THRESHOLD) out.push('hot-gtd');
+  return out;
+}
+
+/** The live clock line: "Starts In 4:31" or "Late Reg Ends In 12:03". */
+export function tournamentClockLine(
+  entry: LobbyEntry,
+  now: number
+): { tone: 'start' | 'soon' | 'late'; text: string } | null {
+  if (entry.kind !== 'mtt') return null;
+  if (entry.status === 'registering' || entry.status === 'starting_soon') {
+    const startMs = entry.startTime ? new Date(entry.startTime).getTime() : NaN;
+    if (!Number.isFinite(startMs)) return null;
+    const left = Math.max(0, startMs - now);
+    return {
+      tone: entry.status === 'starting_soon' ? 'soon' : 'start',
+      text: `Starts In ${formatClock(left)}`,
+    };
+  }
+  if (entry.status === 'late_reg' || entry.status === 'running') {
+    const end = lateRegEndMs(entry.raw as LobbyTournamentRow);
+    if (end == null || end <= now) return null;
+    return { tone: 'late', text: `Late Reg Ends In ${formatClock(end - now)}` };
+  }
+  return null;
+}
+
+function SignalIcon({ kind }: { kind: TournamentSignal }) {
+  /* Drawn strokes, sized by the badge, coloured by currentColor. */
+  const common = {
+    viewBox: '0 0 16 16',
+    width: 12,
+    height: 12,
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+    focusable: false,
+  };
+  switch (kind) {
+    case 'pko':
+    case 'bounty':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.2" />
+          <circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none" />
+          <path d="M8 1v3M8 12v3M1 8h3M12 8h3" />
+        </svg>
+      );
+    case 'mystery':
+      return (
+        <svg {...common}>
+          <rect x="2.2" y="5.5" width="11.6" height="8.3" rx="1.2" />
+          <path d="M1.6 5.5h12.8M8 5.5v8.3M8 5.5C6.6 3 4.4 2.6 4.4 4.1 4.4 5.2 8 5.5 8 5.5s3.6-.3 3.6-1.4c0-1.5-2.2-1.1-3.6 1.4" />
+        </svg>
+      );
+    case 'freeroll':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="6" />
+          <circle cx="8" cy="8" r="3.4" />
+          <path d="M8 2v2M8 12v2M2 8h2M12 8h2" />
+        </svg>
+      );
+    case 'satellite':
+      return (
+        <svg {...common}>
+          <path d="M8 2.2l1.7 3.6 3.9.5-2.9 2.7.7 3.9L8 11l-3.4 1.9.7-3.9-2.9-2.7 3.9-.5z" />
+        </svg>
+      );
+    case 'hot-gtd':
+    default:
+      return (
+        <svg {...common}>
+          <path d="M3 5.2l2.6 2.4L8 3.2l2.4 4.4L13 5.2l-1.2 6.6H4.2z" />
+          <path d="M4.2 13.6h7.6" />
+        </svg>
+      );
+  }
+}
+
+function signalLabel(kind: TournamentSignal, entry: LobbyEntry): string {
+  switch (kind) {
+    case 'freeroll':
+      return 'Freeroll';
+    case 'pko':
+      return 'PKO';
+    case 'mystery':
+      return 'Mystery Bounty';
+    case 'bounty':
+      return 'Bounty';
+    case 'satellite':
+      return 'Satellite';
+    case 'hot-gtd':
+    default:
+      return `${compactChips(entry.guaranteeValue)} GTD`;
+  }
+}
+
+/** Row-level accents: the rail colour says the best thing about the game. */
+function compactRowClass(entry: LobbyEntry): string | undefined {
+  const signals = tournamentSignals(entry);
+  if (signals.length === 0 && entry.kind === 'cash') return undefined;
+  const cls: string[] = [];
+  if (entry.kind !== 'cash') cls.push('compact-lobby__row--tourney');
+  if (signals.includes('freeroll')) cls.push('is-freeroll');
+  else if (signals.includes('hot-gtd')) cls.push('is-hot-gtd');
+  else if (signals.some((k) => k === 'pko' || k === 'mystery' || k === 'bounty'))
+    cls.push('is-bounty');
+  if (entry.status === 'starting_soon' || entry.status === 'late_reg') cls.push('is-urgent');
+  return cls.join(' ') || undefined;
+}
+
+function TournamentRowSignals({
+  entry,
+  badgesOnly = false,
+}: {
+  entry: LobbyEntry;
+  /** The wide board already prints its clock in the title's second line. */
+  badgesOnly?: boolean;
+}) {
+  const signals = tournamentSignals(entry);
+  const hasClock =
+    !badgesOnly && entry.kind === 'mtt' && tournamentClockLine(entry, Date.now()) !== null;
+  /* One shared 1Hz tick for every clock on the board, and none at all for a
+     row with nothing to count. */
+  const now = useSharedSecondTick(hasClock);
+  const clock = hasClock ? tournamentClockLine(entry, now) : null;
+  /* A guarantee under the highlight threshold still says what it is, quietly. */
+  const plainGtd =
+    !badgesOnly && !signals.includes('hot-gtd') && entry.guaranteeValue > 0
+      ? `${compactChips(entry.guaranteeValue)} GTD`
+      : null;
+  if (signals.length === 0 && !clock && !plainGtd) return null;
+  return (
+    <span className="lt-signals">
+      {signals.length > 0 || plainGtd ? (
+        <span className="lt-signals__badges">
+          {signals.map((kind) => (
+            <span key={kind} className={`lt-signal lt-signal--${kind}`}>
+              <SignalIcon kind={kind} />
+              <span>{signalLabel(kind, entry)}</span>
+            </span>
+          ))}
+          {plainGtd && <span className="lt-signal lt-signal--gtd">{plainGtd}</span>}
+        </span>
+      ) : null}
+      {clock && (
+        <span className={`lt-clock lt-clock--${clock.tone}`} data-motion="keep">
+          <i className="lt-clock__dot" aria-hidden="true" />
+          <span className="lt-clock__text">{clock.text}</span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 function PlayerStateChip({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
   const state = playerStateOf(entry, ctx);
@@ -440,6 +632,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <TournamentRowSignals entry={e} badgesOnly />
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
         </span>
@@ -457,7 +650,11 @@ const COL_NAME: ColumnDef = {
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
-            {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
+            {cashTemplateKey(e.game?.template ?? '') === 'madness' ? (
+              <LightningGamesIcon />
+            ) : e.live ? (
+              <i className="lt-live" aria-hidden="true" title="Live" />
+            ) : null}
             {headline}
           </span>
           {subtitle && (
@@ -1124,6 +1321,11 @@ const LobbyRow = memo(function LobbyRow({
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
       className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
+      data-cash-format={
+        entry.kind === 'cash' && entry.game?.template
+          ? cashTemplateKey(entry.game.template)
+          : undefined
+      }
       role="row"
       aria-selected={selected}
       id={`lt-row-${entry.id}`}
@@ -1503,10 +1705,11 @@ export default function LobbyTable({
   selectedVariants,
   onVariantsChange,
   styleChoices,
-  selectedStyles,
+  selectedStyles: savedStyles,
   onStylesChange,
   styleCounts,
 }: LobbyTableProps) {
+  const selectedStyles = savedStyles?.map(cashTemplateKey);
   /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
      weekly flagship (Sunday 200) keeps its pin all week. Rows that lose the pin
      lose the FEATURED chip too, since the chip says "Pinned To The Top Of The
@@ -1633,17 +1836,16 @@ export default function LobbyTable({
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
+  /* A HEADING THE PLAYER CHOSE IS OBEYED (Dan 2026-10-23: "PLAYERS AND STATUS
+     DON'T CHANGE WHEN THEY ARE CLICKED"). The featured pin used to float the
+     club's featured games above every ordering, so on a board whose first
+     rows were featured a Players or Status tap reordered only the rows under
+     them and the top of the list never moved. The pin now decorates the
+     default order only; once the player picks a heading, that heading decides
+     the whole list. Dead seat-first games and empty cash tables still sink. */
+  const [sortChosen, setSortChosen] = useState<boolean>(() => readSort(clubId, category) != null);
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
-  const sortbarRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (sortbarRef.current && mobileCardsRef.current) {
-      return observeLobbyScrollClearance(sortbarRef.current, mobileCardsRef.current);
-    }
-  }, [category]);
-  /* Which chip of the mobile sort toolbar owns the single tab stop. */
-  const sortChipsRef = useRef<HTMLDivElement>(null);
-  const [sortFocus, setSortFocus] = useState(0);
   /* Which row the keyboard is on. Deliberately separate from `selectedId`:
      selecting a row opens (and for a running MTT, navigates), and arrowing
      through a list must not do either. */
@@ -1667,6 +1869,7 @@ export default function LobbyTable({
     if (lastCategoryRef.current === category) return;
     lastCategoryRef.current = category;
     setSort(readSort(clubId, category) ?? defaultSortFor(category));
+    setSortChosen(readSort(clubId, category) != null);
   }, [category, clubId]);
 
   /* Dan 2026-08-25: a Spin or Heads-Up with every seat gone "NEEDS TO BE
@@ -1675,56 +1878,63 @@ export default function LobbyTable({
      seats or status should ever float a game nobody can enter back up between
      two they can. Array.prototype.sort is stable in every engine we ship to,
      so the chosen order survives inside each partition. */
-  const sink = useCallback((rows: LobbyEntry[]) => {
-    /* ONE pass. The previous version called seatFirstJoinable once per row for
+  const sink = useCallback(
+    (rows: LobbyEntry[]) => {
+      /* ONE pass. The previous version called seatFirstJoinable once per row for
        `.some` and then ~2 n log n more times inside a comparator, on an array
        that had just been copied — and copied it again. Partitioning is O(n),
        preserves the incoming order inside each half (which is what the stable
        sort was there for), and evaluates the predicate exactly once per row.
        The identical array reference is returned when nothing needs to sink, so
        the memo below still sees no change. */
-    const pinned: LobbyEntry[] = [];
-    const open: LobbyEntry[] = [];
-    /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
+      const pinned: LobbyEntry[] = [];
+      const open: LobbyEntry[] = [];
+      /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
        cash table with nobody seated sinks below every table with a game on,
        whatever the chosen sort - and, because the sink runs per variant group
        (see `sorted`), below the tables of ITS OWN game, never into another's. */
-    const empty: LobbyEntry[] = [];
-    const gone: LobbyEntry[] = [];
-    for (const r of rows) {
-      /* FEATURED floats and a dead seat-first game sinks, in one pass.
+      const empty: LobbyEntry[] = [];
+      const gone: LobbyEntry[] = [];
+      for (const r of rows) {
+        /* FEATURED floats and a dead seat-first game sinks, in one pass.
 
          A featured game nobody can enter does NOT float. The host meant "look
          at this game", not "look at this result", and a full table pinned above
          forty joinable ones is worse than not pinning it at all. seatFirstJoinable
          alone is not that test - it returns true for every cash row by design,
          so the status has to be checked here too. */
-      const enterable =
-        seatFirstJoinable(r) &&
-        r.status !== 'full' &&
-        r.status !== 'closed' &&
-        r.status !== 'completed';
-      if (!seatFirstJoinable(r)) gone.push(r);
-      else if (r.featured && enterable) pinned.push(r);
-      else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
-      else open.push(r);
-    }
-    if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
-    return pinned.concat(open, empty, gone);
-  }, []);
+        const enterable =
+          seatFirstJoinable(r) &&
+          r.status !== 'full' &&
+          r.status !== 'closed' &&
+          r.status !== 'completed';
+        if (!seatFirstJoinable(r)) gone.push(r);
+        else if (r.featured && enterable && !sortChosen) pinned.push(r);
+        else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
+        else open.push(r);
+      }
+      if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
+      return pinned.concat(open, empty, gone);
+    },
+    [sortChosen]
+  );
 
   const sorted = useMemo(() => {
-    /* GAMES ARE NEVER MIXED (Dan 2026-09-03). On the cash tabs every ordering
-       - the default, or whichever heading the player chose - runs INSIDE the
-       canonical variant groups: all the No Limit tables in stake order, then
-       all the Pineapple, then Short Deck; PLO, then PLO5, PLO6, PLO8o. The
-       group order is fixed; the player's sort and its direction decide the
-       order within each group, and the empty-table sink runs per group. */
+    /* Stakes sorting leads with the selected price direction across variants
+       (Dan 2026-10-23). Canonical variant order breaks ties at each stake;
+       other headings retain their variant groups. */
     const grouped = groupsByVariant(category);
     const col = sort ? columns.find((c) => c.key === sort.key) : undefined;
     const sv = col?.sortValue;
     const dir = sort?.dir === 'desc' ? -1 : 1;
+    const stakesFirst = grouped && col?.key === 'stakes';
     const compare = (a: LobbyEntry, b: LobbyEntry): number => {
+      if (stakesFirst) {
+        const aBad = !Number.isFinite(a.stakesValue);
+        const bBad = !Number.isFinite(b.stakesValue);
+        if (aBad !== bBad) return aBad ? 1 : -1;
+        if (!aBad && a.stakesValue !== b.stakesValue) return (a.stakesValue - b.stakesValue) * dir;
+      }
       if (grouped) {
         const ra = variantRank(a);
         const rb = variantRank(b);
@@ -1746,7 +1956,17 @@ export default function LobbyTable({
         const aBad = !Number.isFinite(va);
         const bBad = !Number.isFinite(vb);
         if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
-        return (va - vb) * dir;
+        if (va !== vb) return (va - vb) * dir;
+        /* Equal status: the sooner start leads, then the busier game, so a
+           Status tap always produces a deliberate order rather than leaving
+           ties in whatever order the rows arrived. */
+        if (col?.key === 'status') {
+          const sa = Number.isFinite(a.startValue) ? a.startValue : Infinity;
+          const sb = Number.isFinite(b.startValue) ? b.startValue : Infinity;
+          if (sa !== sb) return sa === Infinity ? 1 : sb === Infinity ? -1 : sa - sb;
+          return (b.players || 0) - (a.players || 0);
+        }
+        return 0;
       }
       return String(va).localeCompare(String(vb)) * dir;
     };
@@ -1754,22 +1974,29 @@ export default function LobbyTable({
       if (!sv) return sink(entries);
       return sink([...entries].sort(compare));
     }
-    /* Sort the whole list, then sink within each variant run so an empty
-       No Limit table never drops below a running Pineapple one. */
+    /* Sink only inside a variant run, also bounded by stake when stakes
+       leads. An empty game must not cross either selected grouping. */
     const ordered = [...entries].sort(compare);
     const out: LobbyEntry[] = [];
     let run: LobbyEntry[] = [];
     let runRank: number | null = null;
     let runLabel = '';
+    let runStakes: number | null = null;
     for (const e of ordered) {
       const rank = variantRank(e);
       const label = String(e.gameLabel);
-      if (runRank !== null && (rank !== runRank || (rank === 40 && label !== runLabel))) {
+      if (
+        runRank !== null &&
+        (rank !== runRank ||
+          (rank === 40 && label !== runLabel) ||
+          (stakesFirst && !Object.is(e.stakesValue, runStakes)))
+      ) {
         out.push(...sink(run));
         run = [];
       }
       runRank = rank;
       runLabel = label;
+      runStakes = e.stakesValue;
       run.push(e);
     }
     if (run.length) out.push(...sink(run));
@@ -1783,6 +2010,7 @@ export default function LobbyTable({
     if (!col.sortable) return;
     const next = { key: col.key, dir };
     setSort(next);
+    setSortChosen(true);
     writeSort(clubId, category, next);
   };
 
@@ -1818,6 +2046,7 @@ export default function LobbyTable({
           ? { key: col.key, dir: 'asc' }
           : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
       setSort(next);
+      setSortChosen(true);
       writeSort(clubId, category, next);
     }
   };
@@ -1877,61 +2106,14 @@ export default function LobbyTable({
     [sorted, selectedId, keyboardFocusId, onActivate]
   );
 
-  const sortableColumns = columns
-    .filter((col) => col.sortable)
-    .filter((col) => {
-      // Mobile controls expose the decisions that help choose a game. All desktop columns remain.
-      if (category !== 'MTT' && !groupsByVariant(category)) return true;
-      const useful =
-        category === 'MTT'
-          ? ['starts', 'variant', 'buyin', 'gtd', 'players', 'status']
-          : ['stakes', 'variant', 'players', 'buyin', 'status'];
-      return useful.includes(col.key);
-    });
-
-  /**
-   * Roving focus for the mobile sort toolbar.
-   *
-   * Focus is moved imperatively rather than by rendering `autoFocus`, because
-   * the chips are a horizontal scroller: `focus()` brings the target into view
-   * on its own, which is the behaviour a keyboard user wants when the sixth
-   * chip is off the right edge of a 375px phone.
-   */
-  const moveSortFocus = (nextIndex: number) => {
-    const count = sortableColumns.length;
-    if (count === 0) return;
-    const wrapped = ((nextIndex % count) + count) % count;
-    setSortFocus(wrapped);
-    sortChipsRef.current?.querySelectorAll<HTMLButtonElement>('button')[wrapped]?.focus();
-  };
-
-  const handleSortbarKeyDown = (e: React.KeyboardEvent) => {
-    const current = Math.min(sortFocus, sortableColumns.length - 1);
-    switch (e.key) {
-      case 'ArrowRight':
-        e.preventDefault();
-        moveSortFocus(current + 1);
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        moveSortFocus(current - 1);
-        break;
-      case 'Home':
-        e.preventDefault();
-        moveSortFocus(0);
-        break;
-      case 'End':
-        e.preventDefault();
-        moveSortFocus(sortableColumns.length - 1);
-        break;
-      default:
-      /* Enter and Space are the button's own business; anything else belongs
-         to the page. Deliberately NOT swallowed: the grid below listens for
-         its own keys and only acts when the event started on itself. */
-    }
-  };
-
   const warmLayoutKey = sorted.map((entry) => `${entry.kind}:${entry.id}`).join(',');
+  useEffect(() => {
+    const rows = mobileCardsRef.current;
+    const heading = rows?.querySelector('thead');
+    if (!rows || !heading) return;
+    return observeLobbyScrollClearance(heading, rows);
+  }, []);
+
   useEffect(() => {
     const roots = [bodyRef.current, mobileCardsRef.current].filter(
       (root): root is HTMLTableSectionElement | HTMLDivElement => root !== null
@@ -1941,170 +2123,166 @@ export default function LobbyTable({
 
   return (
     <>
-      {/* ═══════════════════════════════════════════════════════════════════
-          MOBILE SORT BAR — the phone's copy of the column headings
-          -------------------------------------------------------------------
-          Dan 2026-09-02: "THERE IS NOT FILTERS FOR THE GAME CARDS BELOW, LIKE
-          THERE IS ON DESK TOP, YOU NEED TO ADD THAT TO THE BOTTOM, RIGHT
-          BELOW THE DYNAMIC ADD, SO MOBILE USERS CAN FILTER AND DISPLAY THE
-          RESULTS ACCORDINGLY."
-
-          Below 900px this file stops being a table - `thead` is display:none
-          and every row becomes a card - so GAME / STAKES / VARIANT / PLAYERS /
-          BUY-IN / STATUS, which on a monitor ARE the sort control, had no
-          phone equivalent at all. The board could be ordered on a desktop and
-          not on a phone.
-
-          Built from `columns` and driven by `handleHeaderClick` deliberately,
-          rather than as a parallel control: same keys, same asc/desc flip,
-          same per-club per-tab memory, and the chip set changes with the tab
-          exactly as the heading row does. A second implementation would be a
-          second set of bugs, and would drift the first time a column moved.
-
-          POSITION IS LOAD-BEARING. This renders BEFORE
-          `.arena-lobby-card-list`, never between the list and
-          `.lobby-table-wrap`: LobbyTable.css hides the desktop table on a
-          phone with the ADJACENT-SIBLING selector
-          `.arena-lobby-card-list + .lobby-table-wrap`, so anything inserted
-          between those two would put the dense table back on every phone. */}
-      {sortableColumns.length > 0 && (
-        <div
-          className="lobby-sortbar"
-          ref={sortbarRef}
-          role="toolbar"
-          aria-label="Sort Games"
-          aria-orientation="horizontal"
-          /* A toolbar is a COMPOSITE widget: ARIA expects ONE tab stop for the
-             whole group, with the arrow keys moving inside it. Shipping the
-             role without that contract told a screen reader "arrows work here"
-             and then ignored them, and left six separate tab stops in the
-             middle of the lobby for a keyboard user to walk through on the way
-             to the games. The roving tabindex below gives the role what it
-             promises. */
-          onKeyDown={handleSortbarKeyDown}
-        >
-          <span className="lobby-sortbar__eyebrow">Sort</span>
-          {/* The scroller below announces the sort, but it is display:none on a
-              phone and a hidden element announces nothing - so on the one
-              surface that has just gained a sort control, sorting was silent. */}
-          <span className="sr-only" role="status" aria-live="polite">
-            {sort
-              ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
-                  sort.dir === 'asc' ? 'Ascending' : 'Descending'
-                }`
-              : 'Default Order'}
-          </span>
-          <div className="lobby-sortbar__chips" ref={sortChipsRef}>
-            {sortableColumns.map((col, index) => {
-              const active = sort?.key === col.key;
-              return (
-                <button
-                  key={col.key}
-                  type="button"
-                  className={`lobby-sortbar__chip${active ? ' is-active' : ''}`}
-                  aria-pressed={active}
-                  /* The chip set changes with the tab, so a remembered index
-                     can outlive the list it pointed into. Clamped rather than
-                     reset, so the cursor stays roughly where the hand left
-                     it. */
-                  tabIndex={index === Math.min(sortFocus, sortableColumns.length - 1) ? 0 : -1}
-                  onFocus={() => setSortFocus(index)}
-                  aria-haspopup={
-                    (col.key === 'variant' && hasVariantMenu) ||
-                    (col.key === 'stakes' && hasStakesMenu)
-                      ? 'menu'
-                      : undefined
-                  }
-                  aria-expanded={
-                    col.key === 'variant' && hasVariantMenu
-                      ? variantMenuOpen
-                      : col.key === 'stakes' && hasStakesMenu
-                        ? stakesMenuOpen
-                        : undefined
-                  }
-                  onClick={() => {
-                    /* The Variant heading is the game selector (Dan 2026-09-03):
-                       it opens the menu; sorting by variant is an item in it. */
-                    if (col.key === 'variant' && hasVariantMenu) {
-                      setVariantMenuOpen((open) => !open);
-                      return;
-                    }
-                    /* The Stakes heading is the style selector and carries
-                       its own sort (Dan 2026-09-04). */
-                    if (col.key === 'stakes' && hasStakesMenu) {
-                      setStakesMenuOpen((open) => !open);
-                      return;
-                    }
-                    handleHeaderClick(col);
-                  }}
-                >
-                  <span className="lobby-sortbar__label">{col.label}</span>
-                  <span className="lobby-sortbar__mark" aria-hidden="true">
-                    {(col.key === 'variant' && hasVariantMenu) ||
-                    (col.key === 'stakes' && hasStakesMenu && !active)
-                      ? '▾'
-                      : active
-                        ? sort!.dir === 'asc'
-                          ? '▴'
-                          : '▾'
-                        : '▴▾'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {hasVariantMenu && variantMenuOpen && (
-            <div
-              /* NO stopPropagation HERE. React calls the native
-                 stopPropagation() too, and the Escape handler is a plain
-                 listener on `document` - below the React root - so swallowing
-                 keydown here would make Escape stop closing the menu. The
-                 desktop heading's copy carries it because its ancestor is a
-                 sortable <th> whose click must not fire; this anchor has no
-                 such ancestor, and containment is by closest() now anyway. */
-              className="lt-variant-menu-anchor lt-variant-menu-anchor--bar"
-            >
-              <VariantMenu
-                choices={variantChoices!}
-                selected={selectedVariants ?? []}
-                onToggle={toggleVariant}
-                sortedByVariant={sort?.key === 'variant'}
-                onSortByVariant={() => handleHeaderClick(COL_VARIANT)}
-                onClose={() => setVariantMenuOpen(false)}
-              />
-            </div>
-          )}
-          {hasStakesMenu && stakesMenuOpen && (
-            <div
-              /* No stopPropagation - see the Variant anchor above. */
-              className="lt-variant-menu-anchor lt-variant-menu-anchor--bar"
-            >
-              <StakesMenu
-                choices={styleChoices!}
-                selected={selectedStyles ?? []}
-                counts={styleCounts}
-                onToggle={toggleStyle}
-                sortDir={sort?.key === 'stakes' ? sort.dir : null}
-                onSort={(dir) => applySort(COL_STAKES, dir)}
-                onClose={() => setStakesMenuOpen(false)}
-              />
-            </div>
-          )}
-        </div>
-      )}
+      {/* Compact browsing uses the same numeric column sort as desktop.
+          The selected row opens the approved game card before any commitment. */}
       <div
         ref={mobileCardsRef}
         className="arena-lobby-card-list"
-        aria-label={`Game Cards, ${sorted.length} Games`}
+        aria-label={`Game Rows, ${sorted.length} Games`}
       >
-        {sorted.map((entry) => (
-          <ArenaLobbyGameCard
-            key={entry.id}
-            entry={entry}
-            ctx={rowCtx}
-            selected={entry.id === selectedId}
-          />
-        ))}
+        <span className="sr-only" role="status" aria-live="polite">
+          {sort
+            ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${sort.dir === 'asc' ? 'Ascending' : 'Descending'}`
+            : 'Default Order'}
+        </span>
+        <table className="compact-lobby" aria-label="Games">
+          <thead>
+            <tr>
+              {[
+                COL_NAME,
+                category === 'ALL'
+                  ? COL_COST
+                  : ['MTT', 'SPIN', 'SNG'].includes(category)
+                    ? COL_BUYIN
+                    : COL_STAKES,
+                COL_PLAYERS,
+                COL_STATUS,
+              ].map((col) => (
+                <th
+                  key={col.key}
+                  scope="col"
+                  aria-sort={
+                    sort?.key === col.key
+                      ? sort.dir === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : 'none'
+                  }
+                >
+                  <button
+                    type="button"
+                    className="compact-lobby__sort"
+                    aria-haspopup={
+                      (col.key === 'name' && hasVariantMenu) ||
+                      (col.key === 'stakes' && hasStakesMenu)
+                        ? 'menu'
+                        : undefined
+                    }
+                    aria-expanded={
+                      col.key === 'name' && hasVariantMenu
+                        ? variantMenuOpen
+                        : col.key === 'stakes' && hasStakesMenu
+                          ? stakesMenuOpen
+                          : undefined
+                    }
+                    onClick={() => {
+                      if (col.key === 'name' && hasVariantMenu) setVariantMenuOpen((open) => !open);
+                      else if (col.key === 'stakes' && hasStakesMenu)
+                        setStakesMenuOpen((open) => !open);
+                      else handleHeaderClick(col);
+                    }}
+                  >
+                    {col.label}
+                    {sort?.key === col.key && (
+                      <span aria-hidden="true">{sort.dir === 'asc' ? ' ▴' : ' ▾'}</span>
+                    )}
+                  </button>
+                  {col.key === 'name' && hasVariantMenu && variantMenuOpen && (
+                    <div className="lt-variant-menu-anchor compact-lobby__menu">
+                      <VariantMenu
+                        choices={variantChoices!}
+                        selected={selectedVariants ?? []}
+                        onToggle={toggleVariant}
+                        sortedByVariant={sort?.key === 'variant'}
+                        onSortByVariant={() => handleHeaderClick(COL_VARIANT)}
+                        onClose={() => setVariantMenuOpen(false)}
+                      />
+                    </div>
+                  )}
+                  {col.key === 'stakes' && hasStakesMenu && stakesMenuOpen && (
+                    <div className="lt-variant-menu-anchor compact-lobby__menu">
+                      <StakesMenu
+                        choices={styleChoices!}
+                        selected={selectedStyles ?? []}
+                        counts={styleCounts}
+                        onToggle={toggleStyle}
+                        sortDir={sort?.key === 'stakes' ? sort.dir : null}
+                        onSort={(dir) => applySort(COL_STAKES, dir)}
+                        onClose={() => setStakesMenuOpen(false)}
+                      />
+                    </div>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((entry) => (
+              <tr
+                key={entry.id}
+                data-testid="lobby-game-row"
+                data-id={entry.id}
+                data-kind={entry.kind}
+                data-cash-format={
+                  entry.kind === 'cash' && entry.game?.template
+                    ? cashTemplateKey(entry.game.template)
+                    : undefined
+                }
+                data-status={entry.status}
+                data-live={entry.live ? 'true' : 'false'}
+                data-players={entry.players}
+                data-capacity={entry.capacity}
+                data-target={entry.game ? 'game' : 'table'}
+                data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
+                className={compactRowClass(entry)}
+                onClick={() => onSelect(entry)}
+              >
+                <td>
+                  <button
+                    type="button"
+                    className="compact-lobby__open"
+                    aria-label={`Details: ${entry.kind === 'cash' ? cashTitleLines(entry).headline : entry.name}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={entry.id === selectedId}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelect(entry);
+                    }}
+                    {...prefetchIntent(`/table/${entry.id}`)}
+                  >
+                    <span className="compact-lobby__title">
+                      {entry.kind === 'cash' ? cashTitleLines(entry).headline : entry.name}
+                    </span>
+                    <span className="compact-lobby__meta">
+                      {entry.kind === 'cash' ? (
+                        <>
+                          {cashTitleLines(entry).subtitle}
+                          {cashTemplateNote(entry.game?.template) && (
+                            <> | {cashTemplateNote(entry.game?.template)}</>
+                          )}
+                        </>
+                      ) : (
+                        entry.variantLabel
+                      )}
+                    </span>
+                    {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
+                    <PlayerStateChip entry={entry} ctx={rowCtx} />
+                  </button>
+                </td>
+                <td>{COL_COST.render(entry, rowCtx)}</td>
+                <td>{COL_PLAYERS.render(entry, rowCtx)}</td>
+                <td>{COL_STATUS.render(entry, rowCtx)}</td>
+              </tr>
+            ))}
+            {loading && sorted.length === 0 && (
+              <tr>
+                <td colSpan={4} role="status">
+                  Loading Games
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
       <div
         className="lobby-table-wrap"

@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  CHICAGO_FILE,
+  CHICAGO_INDEX,
+  recoveryCatalog,
   cleanupStatement,
   validateRecoveryPair,
   RECOVERY_SNAPSHOTS,
@@ -387,7 +390,7 @@ test('current admission cannot filter readers using the historical failed-operat
 // The same required installer regression job covers the source-bound serial option.
 import {
   SERIAL_JOURNAL_FILE, validateSerialJournalIndex, validateSerialJournalConnection,
-  bindSerialJournalIndex,
+  bindSerialJournalIndex, serialJournalConnection,
 } from './serial-journal-index.mjs';
 const serialSql = readFileSync(new URL('../../supabase/migrations/' + SERIAL_JOURNAL_FILE, import.meta.url), 'utf8');
 const serialRequest = { enabled: true, file: SERIAL_JOURNAL_FILE, sql: serialSql,
@@ -408,6 +411,31 @@ test('serial option refuses transaction pool and unverified session hosts', () =
     'postgres://postgres.kuklfnapbkmacvwxktbh@aws-1-us-west-2.pooler.supabase.com:5432/postgres',
     'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:5432/other']) assert.throws(() => validateSerialJournalConnection(new URL(u)));
 });
+test('explicit serial mode selects only the configured provider session port', () => {
+  for (const port of ['5432', '6543']) {
+    const configured = new URL(`postgres://postgres.kuklfnapbkmacvwxktbh:fixture%40password@aws-0-us-west-2.pooler.supabase.com:${port}/postgres?sslmode=require`);
+    const session = serialJournalConnection(configured);
+    assert.equal(configured.port, port);
+    assert.equal(session.port, '5432');
+    for (const key of ['hostname', 'username', 'password', 'pathname', 'search'])
+      assert.equal(session[key], configured[key]);
+  }
+  for (const raw of [
+    'postgres://postgres.kuklfnapbkmacvwxktbh@unverified.example:6543/postgres',
+    'postgres://postgres.other@aws-0-us-west-2.pooler.supabase.com:6543/postgres',
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:6432/postgres',
+    'postgres://postgres.kuklfnapbkmacvwxktbh@aws-0-us-west-2.pooler.supabase.com:6543/other',
+  ]) assert.throws(() => serialJournalConnection(new URL(raw)));
+});
+test('existing hosted installer exposes the serial option through explicit dispatch only', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/apply-merged-migration.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /serial_journal_index:\s*\n\s*description:/);
+  assert.match(workflow, /SERIAL_JOURNAL_INDEX: \$\{\{ inputs\.serial_journal_index \}\}/);
+  assert.match(workflow, /if \[\[ "\$SERIAL_JOURNAL_INDEX" == "true" \]\]; then\s*recovery_args\+=\(--serial-journal-index\)/);
+  assert.doesNotMatch(workflow, /client_payload\.serial_journal_index/);
+  assert.match(workflow, /recovery_args\+=\(--recover-index/);
+  assert.match(workflow, /group: apply-merged-migration\s*cancel-in-progress: false/);
+});
 test('serial setting is applied and read back before the index, never assumed from startup', async () => {
   for (const scenario of ['good', 'wrong-setting', 'different-backend', 'missing-row', 'set-error', 'wrong-user', 'replica', 'wrong-db']) {
     const calls = [];
@@ -427,10 +455,56 @@ test('serial setting is applied and read back before the index, never assumed fr
 test('maintained applier invokes the serial guard immediately before concurrent index send', () => {
   const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
   assert.match(source, /validateSerialJournalIndex\(\{/);
-  assert.match(source, /validateSerialJournalConnection\(connectionURL\)/);
+  assert.match(source, /connectionURL = serialJournalConnection\(connectionURL\)/);
   assert.match(source, /if \(serialJournalIndex\) \{\s*try \{\s*await bindSerialJournalIndex\(client\);/);
   const bound = source.indexOf('await bindSerialJournalIndex(client);');
   const refusal = source.indexOf("refused('serial journal session identity or worker bound unproven. No index was sent.');", bound);
   const send = source.indexOf('await client.query(ix.statement);', bound);
   assert.ok(bound > 0 && refusal > bound && send > refusal);
+});
+
+test('Chicago cash recovery binds exact source, predicate, OID and sole index', () => {
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + CHICAGO_FILE, import.meta.url),
+    'utf8'
+  );
+  const r = recoveryRequest(CHICAGO_FILE, sql, CHICAGO_INDEX, '232930889', '2026-10-23T22:25:14Z');
+  assert.equal(recoveryStatement(r), 'REINDEX INDEX CONCURRENTLY ' + CHICAGO_INDEX);
+  assert.match(recoveryCatalog(r), /ca_hand_facts_cash_member_time_idx/);
+  const cash = {
+    ...row,
+    oid: r.oid,
+    name: 'ca_hand_facts_cash_member_time_idx',
+    table_name: 'ca_hand_facts',
+    definition:
+      'CREATE INDEX ca_hand_facts_cash_member_time_idx ON public.ca_hand_facts USING btree (user_id, played_at) WHERE (tournament_id IS NULL)',
+    no_predicate: false,
+  };
+  assert.equal(validateRecoveryCatalog([cash], r), cash);
+  for (const patch of [
+    { no_predicate: true },
+    { definition: cash.definition.replace('NULL', 'NOT NULL') },
+    { valid: true },
+    { oid: '232930890' },
+    { no_builder: false },
+    { no_transients: false },
+    { no_constraints: false },
+  ])
+    assert.throws(() => validateRecoveryCatalog([{ ...cash, ...patch }], r));
+  assert.throws(() => validateRecoveryCatalog([{ ...cash, valid: true }], r, true));
+  assert.doesNotThrow(() =>
+    validateRecoveryCatalog([{ ...cash, oid: '232930890', valid: true }], r, true)
+  );
+  assert.throws(() => recoveryRequest(CHICAGO_FILE, sql + ' ', CHICAGO_INDEX, r.oid, r.before));
+  assert.throws(() =>
+    recoveryRequest(CHICAGO_FILE, sql, CHICAGO_INDEX, r.oid, r.before, '232930890')
+  );
+  assert.throws(() => cleanupStatement(r));
+});
+test('installer binds and verifies backend identity after pool startup replacement', () => {
+  const s = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  const connected = s.indexOf('await client.connect()');
+  const bound = s.indexOf(`SET application_name = 'apply-recorded-migration'`, connected);
+  const checked = s.indexOf(`identity.rows[0]?.name !== 'apply-recorded-migration'`, bound);
+  assert.ok(connected < bound && bound < checked && checked < s.indexOf('let already;'));
 });

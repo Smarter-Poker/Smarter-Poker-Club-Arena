@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { partitionMigrations, reportRecorded } from './recording-only.mjs';
 
 // Keep identifiers and SQL syntax, masking comments, strings and function/DO
 // bodies. Anonymous DO declarations are checked; uncalled stored functions
@@ -80,8 +81,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const base = process.argv[2] || process.env.TABLE_ACCESS_BASE || 'origin/main';
   const paths = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${base}...HEAD`, '--', 'supabase/migrations'], { encoding: 'utf8' })
     .trim().split('\n').filter(path => path.endsWith('.sql'));
+  // A verified recording (scripts/ci/recorded-migrations.manifest.json) is SQL
+  // production already ran; its live grants are asked of production by
+  // check-recorded-migrations-evidence.mjs, as for the other migration guards.
+  const { judge, recorded, unknown } = partitionMigrations(paths);
+  reportRecorded('explicit-table-access', recorded, unknown);
   let failures = 0;
-  for (const path of paths) {
+  for (const path of judge) {
     const issues = auditMigration(readFileSync(path, 'utf8'));
     for (const issue of issues) { console.error(`${path}: ${issue}`); failures++; }
   }

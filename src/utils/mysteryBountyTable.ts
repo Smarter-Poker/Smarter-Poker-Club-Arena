@@ -61,6 +61,11 @@ export function seatBountyBadge(input: {
   playerId: string | null | undefined;
   playerStatus?: string | null;
   bountyMap: Record<string, number> | null | undefined;
+  /**
+   * A chests-only mystery event (Dan 2026-10-22): no bounty is paid before the
+   * money, so before the chests open a seat advertises no head at all.
+   */
+  chestsOnly?: boolean;
 }): SeatBountyBadge {
   if (!input.isBountyTournament || !input.playerId) return { value: undefined, mystery: false };
   if (input.mysteryChestsLive) {
@@ -68,7 +73,25 @@ export function seatBountyBadge(input: {
     const out = String(input.playerStatus ?? '').toLowerCase() === 'eliminated';
     return { value: undefined, mystery: !out };
   }
+  if (input.chestsOnly) return { value: undefined, mystery: false };
   return { value: input.bountyMap?.[input.playerId], mystery: false };
+}
+
+/** Is this tournament row a chests-only mystery event? Unknown reads as no. */
+export function mysteryChestsOnlyFromRow(
+  row:
+    | { is_mystery_bounty?: unknown; mystery_bounty_regular_pool_percent?: unknown }
+    | null
+    | undefined
+): boolean {
+  const regular = row?.mystery_bounty_regular_pool_percent;
+  return (
+    Boolean(row?.is_mystery_bounty) &&
+    regular !== null &&
+    regular !== undefined &&
+    regular !== '' &&
+    Number(regular) === 0
+  );
 }
 
 /**

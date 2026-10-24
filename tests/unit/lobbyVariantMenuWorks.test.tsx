@@ -75,8 +75,8 @@ function renderLobby(selected: string[] = [], onVariantsChange = vi.fn()) {
       />
     </MemoryRouter>
   );
-  const bar = screen.getByRole('toolbar', { name: 'Sort Games' });
-  const chip = within(bar).getByRole('button', { name: /variant/i });
+  const bar = document.querySelector<HTMLElement>('.arena-lobby-card-list')!;
+  const chip = within(bar).getByRole('button', { name: /^game$/i });
   /* The same menu is rendered under the phone bar AND under the desktop
      heading (one is display:none per breakpoint), so every query here is
      scoped to the bar's copy. */
@@ -147,7 +147,7 @@ describe('the Variant heading on the phone sort bar', () => {
   it('shows how many games are chosen on the heading', () => {
     const { chip } = renderLobby(['nlh', 'pineapple']);
     // The desktop heading prints the count; the phone chip keeps the label.
-    expect(chip.textContent).toMatch(/variant/i);
+    expect(chip.textContent).toMatch(/game/i);
     expect(document.body.textContent).toContain('2 ▾');
   });
 
@@ -198,8 +198,8 @@ describe('the Variant heading on the phone sort bar', () => {
         />
       </MemoryRouter>
     );
-    const bar = screen.getByRole('toolbar', { name: 'Sort Games' });
-    const chip = within(bar).getByRole('button', { name: /variant/i });
+    const bar = document.querySelector<HTMLElement>('.arena-lobby-card-list')!;
+    const chip = within(bar).getByRole('button', { name: /^game$/i });
     expect(chip).not.toHaveAttribute('aria-haspopup');
     fireEvent.click(chip);
     expect(screen.queryByRole('group', { name: 'Game Variant' })).toBeNull();

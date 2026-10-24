@@ -24,6 +24,7 @@
  */
 
 import React from 'react';
+import { claimChunkErrorForBoundary, reportExhaustedChunkLoad } from '../../utils/lazyWithRetry';
 
 interface Props {
   children: React.ReactNode;
@@ -51,6 +52,14 @@ export class PanelBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // A chunk retired by a publish is recovered by a cache-busted reload, not
+    // recorded as a panel crash.
+    const chunk = claimChunkErrorForBoundary(error);
+    if (chunk === 'recovering') return;
+    if (chunk === 'exhausted') {
+      reportExhaustedChunkLoad(error, `club-arena-panel:${this.props.name}`);
+      return;
+    }
     console.error(`[PanelBoundary] ${this.props.name} failed to render:`, error, errorInfo);
     void this.report(error, errorInfo);
   }

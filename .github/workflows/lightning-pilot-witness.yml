@@ -52,8 +52,10 @@ on:
         default: '100'
 permissions:
   contents: read
+# One witness at a time PER PLAYER: a player's runs (financial included) never
+# overlap, while different witness players run side by side. Replay reads only.
 concurrency:
-  group: lightning-pilot-witness
+  group: lightning-pilot-witness-${{ inputs.player_id || 'replay' }}
   cancel-in-progress: false
 jobs:
   witness:
@@ -68,9 +70,26 @@ jobs:
       - name: Verify The Finite Witness Before Acting
         run: node --test scripts/ops/lightning-pilot-financial.test.mjs scripts/ops/lightning-pilot-targets.test.mjs scripts/ops/lightning-pilot-admission.test.mjs scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs scripts/ops/lightning-pilot-cycle.test.mjs scripts/ops/lightning-pilot-recovery.test.mjs scripts/ops/lightning-pilot-latency-workload.test.mjs
       - run: npm ci --ignore-scripts
+      - name: Read The Playwright Version
+        if: inputs.mode != 'replay'
+        id: playwright
+        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore The Playwright Browser Cache
+        if: inputs.mode != 'replay'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # The runner image already carries Chrome's system libraries, so the slow
+      # system package step runs only when a real launch proves one is missing.
       - name: Install Chromium For The Explicit Player Witness
         if: inputs.mode != 'replay'
-        run: npx playwright install --with-deps chromium
+        run: |
+          npx playwright install chromium
+          if ! node -e "require('playwright').chromium.launch({headless:true}).then(b=>b.close()).catch(()=>process.exit(1))"; then
+            echo "Chromium could not launch; installing its system libraries."
+            npx playwright install-deps chromium
+          fi
       - name: Collect The Explicit Witness
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -46,19 +46,28 @@ groups:
       # install. Nothing alerted, because every individual break looks like a
       # break that simply had tables still finishing.
       #
-      # Three hours is three consecutive missed breaks: past that, releases
-      # have stopped and somebody has to look.
+      # ONE MISSED DAILY BREAK (2026-10-23). Owner update 2026-10-20: the
+      # engine restarts once a day, in the 04:00 America/Chicago window
+      # (09:00 UTC in CDT, 10:00 UTC in CST); the hourly :55 breaks no longer
+      # open this gate. The old 3h window therefore paged every day at 12:11
+      # UTC, three hours after a healthy 04:00 break, and stayed firing until
+      # the next one (2026-10-21, -22, -23) - a page that is always on says
+      # nothing. 26h covers one daily window plus the CST/CDT shift and a late
+      # gate: if a whole scheduled break passes without the gate opening,
+      # releases have stopped and somebody has to look. That is one missed
+      # break, where the hourly rule waited for three.
       - alert: EngineReleaseGateNeverOpens
-        expr: max_over_time(poker_maintenance_break_ready_for_restart[3h]) == 0
+        expr: max_over_time(poker_maintenance_break_ready_for_restart[26h]) == 0
         for: 10m
         labels:
           severity: critical
           component: club-arena-engine
         annotations:
-          summary: 'The restart gate has not opened once in three hours'
+          summary: 'The restart gate did not open in the daily 04:00 Chicago break'
           description: >-
             poker_maintenance_break_ready_for_restart has been 0 for every
-            scrape in three hours, so no release can have installed. Read
+            scrape in 26 hours, so the daily break passed and no release can
+            have installed. Read
             poker_maintenance_unparked_tables by reason: cards_in_air means
             hands are still finishing, and the rest mean a table's park
             checkpoint never became durable - accounting_pending and

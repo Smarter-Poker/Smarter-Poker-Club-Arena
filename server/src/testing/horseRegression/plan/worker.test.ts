@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HorseMind } from '../../../engine/HorseMind.js';
 import { HorseLogic } from '../../../engine/HorseLogic.js';
+import { HORSE_POLICY_GRAPH_VERSION } from '../../../engine/HorsePolicyGraph.js';
 import { seedFastRandom } from '../../../engine/HorseEval.js';
 import { horsePlanContextFromDecision } from '../../../engine/HorsePlanHandIdentity.js';
 import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
@@ -558,7 +559,7 @@ describe('Phase 15.1 durable accepted-effect receipt and fresh-process recovery'
         effects: result.effects,
         issuedAction: { action: 'bet', amount: 6 },
         acceptance: acceptanceOf(result),
-        policy: { graph: 'horse-policy-order-v1', candidates: [] },
+        policy: { graph: HORSE_POLICY_GRAPH_VERSION, candidates: [] },
         sourceRelease: release,
         workerEpoch: a.h.runtime.planEpoch,
         disposition: 'applied',

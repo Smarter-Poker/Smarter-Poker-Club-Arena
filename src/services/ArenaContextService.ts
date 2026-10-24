@@ -27,7 +27,10 @@ export async function getArenaContext(clubKey: string): Promise<ArenaAccessConte
     if (timer !== undefined) clearTimeout(timer);
   }
   const { data, error } = response;
-  if (error) throw new Error(error.message || 'Could Not Verify Arena Access');
+  if (error)
+    throw Object.assign(new Error(error.message || 'Could Not Verify Arena Access'), {
+      code: error.code,
+    });
   if (data === null) return null;
   const arena = parseArenaIdentity(data.arena);
   if (typeof data.member !== 'boolean') throw new Error('Invalid Arena Access Response');

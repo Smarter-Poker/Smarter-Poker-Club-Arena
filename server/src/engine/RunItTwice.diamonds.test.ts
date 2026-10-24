@@ -142,7 +142,15 @@ describe('Run it twice pays whole Diamonds', () => {
     [[101, 101] as number[], 3 as const],
     [[5, 5, 5] as number[], 2 as const],
   ])('conserves every Diamond and leaves no fraction: %j over %i runs', (stacks, runs) => {
-    const { st, complete, totalBuyin } = diamondRitHarness(stacks, runs);
+    const { st, complete, totalBuyin, e } = diamondRitHarness(stacks, runs);
+    for (const row of e.currentHandWinnersByBoard as Array<{
+      amount: number;
+      pots: Array<{ index: number; amount: number }>;
+    }>) {
+      expect(row.pots.length).toBeGreaterThan(0);
+      expect(row.pots.every((p) => Number.isSafeInteger(p.amount))).toBe(true);
+      expect(row.pots.reduce((n, p) => n + p.amount, 0)).toBe(row.amount);
+    }
     expect(complete).toBeDefined();
     /* A Diamond hand carries no rake and no jackpot fee; the whole pot is
        still on the table when the boards are done. */

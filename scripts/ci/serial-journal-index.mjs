@@ -16,6 +16,16 @@ export function validateSerialJournalConnection(url) {
       decodeURIComponent(url.username) !== 'postgres.kuklfnapbkmacvwxktbh' || url.pathname !== '/postgres')
     throw new Error('serial journal index requires supported Supavisor session port 5432');
 }
+// Use the configured credential unchanged on the provider's session port.
+// Only this explicit source-bound mode may select the documented sibling port.
+export function serialJournalConnection(url) {
+  if (!['5432', '6543'].includes(url.port))
+    throw new Error('serial journal index requires a configured Supavisor endpoint');
+  const session = new URL(url);
+  session.port = '5432';
+  validateSerialJournalConnection(session);
+  return session;
+}
 export async function bindSerialJournalIndex(client) {
   const before = await client.query('SELECT pg_backend_pid() AS pid, session_user AS session_user, current_user AS current_user, pg_is_in_recovery() AS recovery, current_database() AS database');
   if (before.rows.length !== 1 || !Number.isInteger(before.rows[0].pid) || before.rows[0].pid <= 0 ||

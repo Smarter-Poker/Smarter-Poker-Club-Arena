@@ -337,3 +337,8 @@
     background: rgb(255 255 255 / 3%);
   }
 }
+
+/* The shared note row must remain flex after the NLH zone's grid default. */
+.agc-nlh-premium__zone.agc-nlh-premium__style-row {
+  display: flex;
+}

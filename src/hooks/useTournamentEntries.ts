@@ -1,3 +1,4 @@
+import { readTournamentStandings } from '../services/readTournamentStandings';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  useTournamentEntries — the field, loaded once, with failure kept separate
@@ -30,22 +31,18 @@
  *
  * ── WHAT KEEPS IT FRESH ──────────────────────────────────────────────────────
  *
- * RankingTab carries its own `tournament_players` subscription and patches
- * chips, status, position and table_id onto whatever it is given, so this hook
- * does NOT need to be realtime for a stack to move. What only a refetch can
- * deliver is a row that did not exist yet - a late registration - so it polls,
- * at the same 30s the retired component used, and skips the poll entirely while
- * the tab is hidden.
+ * The tournament engine channel invalidates the field after every accepted
+ * hand across all tables and on lifecycle changes. Reconnect and visibility
+ * recovery read a new snapshot; overlapping reads have one trailing request.
+ * The hot tournament_players table is deliberately not in Postgres Changes.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { subscribeTournamentStandings } from '../services/tournamentStandingsUpdates';
 import { useIsMounted } from './useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import type { TournamentEntry } from '../components/tournament/details/types';
-
-/** How often the field is re-read for rows that did not exist before. */
-const POLL_MS = 30000;
 
 export interface UseTournamentEntriesResult {
   entries: TournamentEntry[];
@@ -92,21 +89,17 @@ export function useTournamentEntries(
     let cancelled = false;
     setLoading(true);
 
-    const load = async () => {
+    const readOnce = async () => {
       /**
        * The same projection TournamentDetails uses, because the tabs read the
        * same fields wherever they are mounted. The `profiles` embed rides
        * `fk_tournament_players_user_id_profiles` - one join for the whole
        * list, never one request per player.
        */
-      const { data, error, count } = await supabase
-        .from('tournament_players')
-        .select(
-          'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)',
-          { count: 'exact' }
-        )
-        .eq('tournament_id', tournamentId)
-        .order('registered_at', { ascending: true });
+      const { data, error, count } = await readTournamentStandings(
+        tournamentId,
+        'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+      );
 
       if (cancelled || !isMounted.current) return;
 
@@ -133,7 +126,7 @@ export function useTournamentEntries(
           username: (e.username as string) || 'Player',
           avatar_url: profile?.avatar_url || null,
           player_code: profile?.player_number ? String(profile.player_number) : null,
-          chips: Number(e.chips) || startingChips,
+          chips: e.chips == null ? startingChips : Number(e.chips),
           position: (e.position as number) || undefined,
           prize:
             e.prize !== null && e.prize !== undefined && Number.isFinite(Number(e.prize))
@@ -155,12 +148,26 @@ export function useTournamentEntries(
       setLoading(false);
     };
 
+    let inFlight = false;
+    let pending = false;
+    const load = async () => {
+      if (cancelled) return;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      try {
+        do {
+          pending = false;
+          await readOnce();
+        } while (pending && !cancelled);
+      } finally {
+        inFlight = false;
+      }
+    };
     void load();
-
-    const iv = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      void load();
-    }, POLL_MS);
+    const stopStandings = subscribeTournamentStandings(tournamentId, () => void load());
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') void load();
@@ -171,12 +178,12 @@ export function useTournamentEntries(
 
     return () => {
       cancelled = true;
-      clearInterval(iv);
+      stopStandings();
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisible);
       }
     };
-  }, [tournamentId, active, startingChips, nonce, isMounted]);
+  }, [tournamentId, active, startingChips, nonce, isMounted, refresh]);
 
   return { entries, entryCount, loading, loadFailed, refresh };
 }

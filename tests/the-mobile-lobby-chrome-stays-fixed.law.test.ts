@@ -137,14 +137,11 @@ describe('the lobby filter row', () => {
    * Dan, verbatim: it "should lock under the FIND YOUR GAME row when it scrolls
    * up, it should not be able to scroll past that."
    */
-  it('sticks under the selector deck, at an offset that is measured and not guessed', () => {
+  it('keeps sorting in natural flow under the October 22 owner instruction', () => {
     const body = lastRuleFor(SORT, '.lobby-sortbar');
-    expect(body).toContain('position: sticky');
-    expect(body).toMatch(/--ca-global-header-height/);
-    expect(body).toMatch(/--ca-lobby-controls-h/);
-    // Under the deck's 30, so if the two ever meet this row passes beneath it.
-    const z = Number(body.match(/z-index:\s*(\d+)/)?.[1]);
-    expect(z).toBeLessThan(30);
+    expect(body).toContain('position: relative');
+    expect(body).toContain('top: auto');
+    expect(body).not.toContain('position: sticky');
   });
 
   it('the deck measures and publishes the height the row reads', () => {

@@ -1078,7 +1078,7 @@ export default function RakeSnapshotPanel({
 
       {snapshot?.accounting_basis === 'chicago_net_money_flow' && !isAgent ? (
         <p className={`sc-ink--muted ${styles.meta}`}>
-          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only.
+          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
           {scope === 'union' ? ' All Member Clubs And Union Account.' : ''}
         </p>
       ) : null}
@@ -1202,7 +1202,7 @@ export default function RakeSnapshotPanel({
                     maximumFractionDigits: 2,
                   })}
                 >
-                  Running MTT Entries {money(summary.running_mtt_entries)}
+                  Unfinished MTT Entries {money(summary.running_mtt_entries)}
                 </dd>
               ) : null}
             </div>

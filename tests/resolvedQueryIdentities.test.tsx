@@ -16,6 +16,8 @@ vi.mock('../src/utils/clubIdResolver', async (original) => ({
   resolveClubUUID: mocks.resolve,
 }));
 import { isUUID } from '../src/utils/clubIdResolver';
+import { canRestoreFinishedTournamentReport } from '../src/services/tournamentResult';
+import { hasAcknowledgedTournamentReport } from '../src/services/pendingSessionSummary';
 import UnionService from '../src/services/UnionService';
 import ClubAnnouncementBanner from '../src/components/club/ClubAnnouncementBanner';
 
@@ -103,8 +105,23 @@ describe('resolved query identities at actual callers', () => {
       'isMounted',
       'setAwaitingTournamentSeat',
       'isUUID',
-      source.slice(start, end)
-    )(userId, { tournament_id: ID }, { from: mocks.from }, mocks.report, true, setAwaiting, isUUID);
+      'canRestoreFinishedTournamentReport',
+      'hasAcknowledgedTournamentReport',
+      'tournData',
+      'let durableParticipantWitnessed=false; let loadedFinishedReportReady=false;' +
+        source.slice(start, end)
+    )(
+      userId,
+      { tournament_id: ID },
+      { from: mocks.from },
+      mocks.report,
+      true,
+      setAwaiting,
+      isUUID,
+      canRestoreFinishedTournamentReport,
+      hasAcknowledgedTournamentReport,
+      { status: 'RUNNING', prize_pool_finalized: false, is_rebuy: false, is_reentry: false }
+    );
     return setAwaiting;
   }
   it('does not send the pre-authentication guest identity to tournament_players', async () => {

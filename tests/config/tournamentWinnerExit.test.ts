@@ -59,6 +59,7 @@ import {
   awaitTournamentResultEnrichment,
   TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS,
 } from '../../src/utils/tournamentResultEnrichment';
+import { TOURNAMENT_CHAMPION_DISPLAY_MS } from '../../src/utils/tournamentChampion';
 import type { TournamentResult } from '../../src/services/pendingSessionSummary';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -166,10 +167,10 @@ describe("The champion's exit", () => {
     expect(end).toBeGreaterThan(start);
     const fallback = tablePage.slice(start, end);
     expect(fallback).toMatch(
-      /\.from\('tournament_players'\)[\s\S]*?\.select\('status, position, prize'\)/
+      /\.from\('tournament_players'\)[\s\S]*?\.select\('status, position, prize, username'\)/
     );
     expect(fallback).toMatch(/\['winner', 'eliminated'\]\.includes/);
-    expect(fallback).toMatch(/goToLobbyWithResult\(position, prize/);
+    expect(fallback).toMatch(/goToLobbyWithResult\(\s*position,\s*prize/);
     expect(fallback).toMatch(/scheduleDurableCompletionRetry\(\)/);
     expect(tablePage).toMatch(
       /table: 'tournaments'[\s\S]*?payload\.new\?\.status === 'COMPLETED'[\s\S]*?exitFromDurableCompletion\(\)/
@@ -237,10 +238,8 @@ describe("The champion's exit", () => {
 
   it('bounds optional result enrichment before publishing and closing the table', () => {
     const fn = exitFnBody();
-    expect(fn).toMatch(
-      /await awaitTournamentResultEnrichment\(fetchTournamentResult\(tid, userId\)\)/
-    );
-    expect(fn.indexOf('await awaitTournamentResultEnrichment(')).toBeLessThan(
+    expect(fn).toMatch(/awaitTournamentResultEnrichment\(fetchTournamentResult\(tid, userId\)\)/);
+    expect(fn.indexOf('awaitTournamentResultEnrichment(')).toBeLessThan(
       fn.indexOf('publishSessionSummary(')
     );
     expect(fn.indexOf('publishSessionSummary(')).toBeLessThan(fn.indexOf("emit('TABLE_LEFT'"));
@@ -399,7 +398,7 @@ describe('The exit actually leaves the table', () => {
   });
 
   it('cancels a pending exit when the subscription is torn down', () => {
-    // The winner's beat is 7s. A player moved off this tab inside it used to be
+    // The winner's beat is 20s. A player moved off this tab inside it used to be
     // force-navigated out of wherever they had gone.
     expect(exitFnBody()).toMatch(/tournamentExitTimerRef\.current = setTimeout\(/);
     expect(tablePage).toMatch(/clearTimeout\(tournamentExitTimerRef\.current\)/);
@@ -444,11 +443,12 @@ describe('One card, one carrier', () => {
      */
     expect(card).not.toMatch(/'SPIN'/);
     expect(card).toMatch(/!result\.isSpin && <span className="trc2__brand-mark">TOURNAMENT/);
-    expect(tablePage).toContain("isSpin: getTournamentFormatKind(tourney) === 'spin'");
+    const reader = tsCode(read('src/services/tournamentResult.ts'));
+    expect(reader).toContain("isSpin: getTournamentFormatKind(tourney) === 'spin'");
     // The persisted format identifies Spin; the mystery flag independently
     // controls the chest receipt read. Both must reach the result mapper.
-    expect(tablePage).toMatch(
-      /select\(\s*'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty'\s*\)/
+    expect(reader).toMatch(
+      /select\(\s*'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty, buy_in_amount, buy_in_fee'\s*\)/
     );
   });
 });
@@ -523,6 +523,8 @@ describe('The actual TablePage qualifier completion caller', () => {
        let durableParticipantWitnessed=${Boolean(options.known)};
        const durableTournamentId=${JSON.stringify(tid)}, userId=${JSON.stringify(uid)};
        const durableTournamentName='Native Satellite', formatGameTitle=(s)=>s;
+       const TOURNAMENT_CHAMPION_DISPLAY_MS=20000;
+       const announceSpectatorChampion=async()=>{durableCompletionHandled=true;};
        ${compiled}
        return { run:exitFromDurableCompletion, dispose:()=>{isMounted=false},
          qualification:()=>committedSatelliteQualification };`
@@ -655,8 +657,12 @@ describe('The actual TablePage qualifier completion caller', () => {
     const c = actualCaller({ status: 'winner', position: 1, prize: 100 });
     await c.run();
     expect(receiptTransport.rpc).not.toHaveBeenCalled();
-    expect(c.champion).toHaveBeenCalledWith({ prize: 100, name: 'Native Satellite' });
-    expect(c.exit).toHaveBeenCalledWith(1, 100, 7000);
+    expect(c.champion).toHaveBeenCalledWith({
+      prize: 100,
+      name: 'Native Satellite',
+      championName: 'Champion',
+    });
+    expect(c.exit).toHaveBeenCalledWith(1, 100, TOURNAMENT_CHAMPION_DISPLAY_MS);
   });
   it('connects the named event and initial/reconnect recovery to this same receipt reader', () => {
     const branch = sliceBetween(

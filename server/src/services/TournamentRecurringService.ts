@@ -42,7 +42,7 @@ import {
   rakeRateFor,
   wholeChips,
 } from '../config/buyIn.js';
-import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
+import { horseHash, isActiveNow } from './HorseBehavior.js';
 import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { getFleetPolicy } from './HorseFleetPolicy.js';
@@ -66,7 +66,7 @@ import {
   FREE_BUY_BOARD_NAMES,
   FREE_BUY_HOSTS,
   FREE_BUY_SLOTS,
-  FREE_BUY_TIERS,
+  freeBuyConfigForSlot,
   freeBuyBoardName,
   auditFreeBuyBoard,
   freeBuySlotsDue,
@@ -1037,17 +1037,14 @@ export function rampQueueRotation(
 export function selectHorseCandidates(
   fleetIds: string[],
   busy: ReadonlySet<string>,
-  allLanes: boolean,
+  _allLanes: boolean,
   hourUTC: number
 ): string[] {
   return fleetIds.filter((id) => {
     if (!id || busy.has(id)) return false;
-    // Freeroll override: every horse that is currently PLAYING is eligible,
-    // cash lane included. See topUpWithHorses opts.allLanes.
-    if (allLanes) return isActiveNow(id, hourUTC);
-    // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
-    // tournaments, spins and heads-up draw from the events/both lanes.
-    return gameLaneFor(id) !== 'cash';
+    // Owner October 23: every scheduled horse may play every game lane.
+    // Busy commitments and the normal admission/bankroll doors still apply.
+    return isActiveNow(id, hourUTC);
   });
 }
 
@@ -1098,9 +1095,8 @@ export function humanSeatsOwed(
 }
 
 /**
- * The candidate list for a waiting human's game: the events/both lanes first,
- * then any cash-lane horse that is playing right now, never a busy horse.
- * Each tier keeps its input order; the caller shuffles within a tier.
+ * The candidate list for a waiting human's game is the full scheduled fleet,
+ * never a busy horse. The historical second tier is retained for API compatibility.
  */
 export function selectHumanFillCandidates(
   fleetIds: string[],
@@ -2990,7 +2986,7 @@ export function fixedFreeBuyRow(
 ): Record<string, unknown> | null {
   const slot = FREE_BUY_SLOTS.find((s) => freeBuyBoardName(s) === slotName);
   if (!slot) return null;
-  const cfg = FREE_BUY_TIERS[slot.tier];
+  const cfg = freeBuyConfigForSlot(slot);
   const dayKey = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Chicago',
     year: 'numeric',
@@ -3556,7 +3552,7 @@ export class TournamentRecurringService {
         this.freeBuyHostPublishRefused.delete(host.hostId);
         for (const d of due) {
           if (isMaintenanceFrozen()) return;
-          const cfg = FREE_BUY_TIERS[d.slot.tier];
+          const cfg = freeBuyConfigForSlot(d.slot);
           const row = freeBuyTournamentRow({
             host,
             due: d,
@@ -7256,13 +7252,8 @@ export class TournamentRecurringService {
         // The ticket is the lane: its value is already committed to this
         // tournament contract and must reach the atomic ticket-first door.
         if (ticketHintIds.has(h.id)) return true;
-        // Freeroll override (Dan 2026-08-27): free money is not a lane
-        // decision - every horse currently playing enters. Otherwise the
-        // 2026-08-26 rule stands: cash-only horses never register for
-        // events.
-        const ok = allLanes
-          ? isActiveNow(h.id, new Date().getUTCHours())
-          : gameLaneFor(h.id) !== 'cash';
+        // The full scheduled fleet is eligible, regardless of historical lane.
+        const ok = isActiveNow(h.id, new Date().getUTCHours());
         if (!ok) laneDropped++;
         return ok;
       });

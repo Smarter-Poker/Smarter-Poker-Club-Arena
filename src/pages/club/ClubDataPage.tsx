@@ -30,7 +30,7 @@
  * included (Dan, 2026-10-22), because the facts every figure comes from are
  * keyed on Chicago days (20261022103651, 20261022120121). The range chip says
  * Chicago Time rather than showing a bare date. MTT Winnings are finished MTTs
- * only; a running MTT's entries are shown as Running MTT Entries.
+ * only; a running MTT's entries are shown as Unfinished MTT Entries.
  */
 
 import {
@@ -3311,7 +3311,7 @@ export default function ClubDataPage() {
               summary.running_mtt_entries !== undefined &&
               Number.isFinite(Number(summary.running_mtt_entries)) && (
                 <dd className={`sc-ink--muted ${styles.figureMeta}`}>
-                  Running MTT Entries {money(summary.running_mtt_entries)}
+                  Unfinished MTT Entries {money(summary.running_mtt_entries)}
                 </dd>
               )}
           </div>

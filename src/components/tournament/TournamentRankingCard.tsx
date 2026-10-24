@@ -811,13 +811,19 @@ export default function TournamentRankingCard({
               no room for a zero, and a zero says nothing. Same rule for rebuys
               and add-ons, which the payload has always carried and the card has
               never shown: in a rebuy event they are most of the story. */}
-          {(result.knockouts > 0 ||
+          {(result.buyInAmount != null ||
+            result.knockouts > 0 ||
             result.bountyWinnings > 0 ||
             mysteryCents > 0 ||
             mysteryBounties > 0 ||
             result.rebuys > 0 ||
             result.addOns > 0) && (
             <div className="trc2__extras">
+              {result.buyInAmount != null && (
+                <span className="trc2__extra">
+                  Buy-In: <strong>{moneyAtUnit(result.buyInAmount, unitCents)}</strong>
+                </span>
+              )}
               {result.knockouts > 0 && (
                 <span className="trc2__extra">
                   <strong>{result.knockouts}</strong> Knockout{result.knockouts === 1 ? '' : 's'}

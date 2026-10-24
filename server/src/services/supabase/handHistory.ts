@@ -1,3 +1,5 @@
+import { horseOpponentMemorySchema, readHorseOpponentProfiles } from '../HorseOpponentMemory.js';
+import { memoryVariant, type DurableOpponentProfile } from '../../engine/HorseOpponentMemory.js';
 /**
  * Supabase helpers — the 4-tier hand history writer (Bible V8 §2.18).
  *
@@ -498,7 +500,7 @@ export async function logHandHistory(params: {
    * recorded as "Two Pair"; a split was two totals with no board on either
    * (Dan, hand #6145364: "results that weren't accurate"). This is the
    * per-board record the felt reads off pot_win, persisted. Amounts are the
-   * engine's pre-rake board shares. Written as NULL when there is one board,
+   * engine's exact post-rake board shares. Written as NULL when there is one board,
    * so ordinary rows are unchanged. Column: hand_history.winners_by_board.
    */
   winnersByBoard?: {
@@ -508,6 +510,8 @@ export async function logHandHistory(params: {
     handName?: string;
     /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
     low?: boolean;
+    /** Exact post-deduction shares, main pot first, summing to amount. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
@@ -522,7 +526,7 @@ export async function logHandHistory(params: {
    * fold-around hand look the same to a reader.
    */
   pots?: { index: number; amount: number; eligible: string[] }[];
-  /** Exact tournament pot/half awards; merged winner totals lose later pots. */
+  /** Exact paid pot/board/half awards; merged winner totals lose later pots. */
   perPotAwards?: {
     userId: string;
     amount: number;
@@ -726,7 +730,13 @@ export async function logHandHistory(params: {
       : record;
   });
 
+  const opponentDealtCount = params.holeCardsAll?.size;
   const row = {
+    // The RLS roster can include non-dealt chairs. Only the authoritative
+    // dealt-card map can state the population the opponent read belongs to.
+    ...(opponentDealtCount !== undefined && opponentDealtCount >= 2 && opponentDealtCount <= 10
+      ? { horse_exploit_dealt_count: opponentDealtCount }
+      : {}),
     // See `handId` on the params above. Omitted entirely when the caller did
     // not mint one, so the column keeps its gen_random_uuid() default and
     // every other caller of this function is byte-identical to before.
@@ -881,7 +891,32 @@ export async function logHandHistory(params: {
     );
     // P14.2: private only. Absent (never undefined-valued) is the explicit unknown.
     const acceptedRosterField = acceptedActorRoster ? { acceptedActorRoster } : {};
+    const variant = memoryVariant(params.gameVariant);
+    const dealt = params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0;
+    let durableOpponentProfiles: DurableOpponentProfile[] | undefined;
+    if (variant && (await horseOpponentMemorySchema()) === 'installed') {
+      durableOpponentProfiles = [];
+      try {
+        const actors = [
+          ...new Set(
+            acceptedActions
+              .map((a) => a.userId)
+              .filter((id): id is string => typeof id === 'string' && id.length > 0)
+          ),
+        ];
+        if (actors.length)
+          durableOpponentProfiles = await readHorseOpponentProfiles(
+            actors,
+            variant,
+            params.tournamentId ? 'tournament' : 'cash',
+            dealt <= 2 ? 'hu' : dealt <= 5 ? 'short' : 'full'
+          );
+      } catch (error) {
+        reportError(error, 'HandHistory.durable_opponent_read');
+      }
+    }
     const observation = getLiveHorseDecisionWorker().observeCompletedHand({
+      durableOpponentProfiles,
       generation: params.handNumber,
       fence: [
         params.tableId,

@@ -28,7 +28,7 @@ describe('executable Horse policy order', () => {
       }).decision;
     }
     const result = graph.finish(decision!);
-    expect(calls).toBe(8);
+    expect(calls).toBe(HORSE_POLICY_ORDER.length);
     expect(result.policyGraph?.transitions.map((t) => t.node)).toEqual(HORSE_POLICY_ORDER);
     expect(result.policyGraph?.transitions.every((t) => t.elapsedMs === 0 && !t.changed)).toBe(
       true

@@ -8,6 +8,24 @@ const root = resolve(__dirname, '../..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 
 describe('Create Club production certification contract', () => {
+  it('exercises Send Link and retains the default and sharing screens', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    expect(spec).toContain("name: 'Send Link', exact: true }).click()");
+    expect(spec).toContain('navigator.clipboard.readText()');
+    expect(spec).toContain('expect(copiedInvite).toContain(shortUrl)');
+    expect(spec).toContain("name: 'Link Copied', exact: true }");
+    expect(spec).toContain("await testInfo.attach('Immediate Send Link'");
+    for (const file of [
+      'create-club-defaults-mobile.png',
+      'create-club-send-link-mobile.png',
+      'create-club-link-copied-mobile.png',
+    ]) {
+      expect(spec).toContain(file);
+      expect(workflow).toContain(`test-results/${file}`);
+    }
+  });
+
   it.each([
     'scripts/ci/check-club-create-capacity.mjs',
     'tests/unit/clubCreateCapacity.test.ts',
@@ -236,6 +254,8 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain('p_promo_budget: 0');
     expect(spec).toContain('p_leaderboard_prize_budget: 0');
     expect(spec).toContain('Number(openingReceipt.club_bank_after)).toBe(99700)');
+    expect(spec).toContain('response.request().postDataJSON().p_request_id');
+    expect(spec).toContain('defaults.request().postDataJSON().p_operation_id).not.toBe(');
     expect(spec).toContain("getByLabel('Your Invite Link'");
     expect(spec).toContain("clubLocation.searchParams.delete('invite')");
   });

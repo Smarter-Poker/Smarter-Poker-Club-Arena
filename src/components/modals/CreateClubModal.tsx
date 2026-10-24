@@ -72,6 +72,7 @@ import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { uuid } from '../../utils/uuid';
 import { completeDefaultClubOpening } from '../../services/ClubQuickStartService';
+import type { Club } from '../../types/club.types';
 
 const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
 
@@ -193,11 +194,24 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   /** The account whose draft the form holds. Nothing is saved until it is known. */
   const [draftHydratedFor, setDraftHydratedFor] = useState<string | null>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [recoveredCreation, setRecoveredCreation] = useState<{
+    ownerId: string;
+    requestId: string;
+    club: Club;
+  } | null>(null);
+  const [receiptStatus, setReceiptStatus] = useState<'ready' | 'checking' | 'error'>('ready');
+  const [receiptRetry, setReceiptRetry] = useState(0);
   const trapRef = useFocusTrap(isOpen);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creationRequestIdRef = useRef<string>(uuid());
   const creatingRef = useRef(false);
+  const activeCreationRef = useRef<object | null>(null);
+  const pendingRequestRef = useRef(false);
+  const accountRef = useRef({ id: user?.id ?? null, generation: 0 });
+  if (accountRef.current.id !== (user?.id ?? null)) {
+    accountRef.current = { id: user?.id ?? null, generation: accountRef.current.generation + 1 };
+  }
   const defaultName = `Poker Club ${creationRequestIdRef.current.slice(0, 8)}`;
   const effectiveName = clubName.trim() || defaultName;
   const eligibilitySequenceRef = useRef(0);
@@ -219,6 +233,14 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     requiresApproval ||
     (selectedPresetId !== null && selectedPresetId !== DEFAULT_LOGO.id)
   );
+
+  // A revoked/signed-out account invalidates its UI operation even when the
+  // same account signs back in before the old network promise settles.
+  useEffect(() => {
+    activeCreationRef.current = null;
+    creatingRef.current = false;
+    setIsCreating(false);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -258,11 +280,15 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       setDraftHydratedFor(null);
       return;
     }
+    pendingRequestRef.current = false;
     const previousOwner = formOwnerRef.current;
     formOwnerRef.current = userId;
     if (previousOwner && previousOwner !== userId) {
       // This component stays mounted while closed, so another account's text
       // and request id can still be in memory. None of it crosses accounts.
+      activeCreationRef.current = null;
+      creatingRef.current = false;
+      setIsCreating(false);
       setClubName('');
       setDescription('');
       setIsPublic(true);
@@ -280,13 +306,21 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     try {
       const saved = window.localStorage.getItem(createDraftKeyFor(userId));
       if (saved) {
-        const draft = JSON.parse(saved) as {
-          name?: string;
-          description?: string;
-          isPublic?: boolean;
-          requiresApproval?: boolean;
-          logoPresetId?: string;
-          requestId?: string;
+        const parsed: unknown = JSON.parse(saved);
+        const fields =
+          parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {};
+        // Browser storage is untrusted. Preserve a valid operation identity
+        // without admitting malformed display values into controlled inputs.
+        const draft = {
+          name: typeof fields.name === 'string' ? fields.name : '',
+          description: typeof fields.description === 'string' ? fields.description : '',
+          isPublic: typeof fields.isPublic === 'boolean' ? fields.isPublic : true,
+          requiresApproval:
+            typeof fields.requiresApproval === 'boolean' ? fields.requiresApproval : false,
+          logoPresetId: typeof fields.logoPresetId === 'string' ? fields.logoPresetId : undefined,
+          requestId: typeof fields.requestId === 'string' ? fields.requestId : undefined,
         };
         setClubName(draft.name || '');
         setDescription(draft.description || '');
@@ -297,8 +331,13 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
           setSelectedPresetId(restoredLogo.id);
           setLogoPreview(defaultLogoUrl(restoredLogo.file));
         }
-        if (/^[0-9a-f-]{36}$/i.test(draft.requestId || '')) {
+        if (
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            draft.requestId || ''
+          )
+        ) {
           creationRequestIdRef.current = draft.requestId!;
+          pendingRequestRef.current = true;
         }
         const restored = Boolean(
           draft.name ||
@@ -319,6 +358,33 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   }, [isOpen, user?.id]);
 
   useEffect(() => {
+    setRecoveredCreation(null);
+    if (!isOpen || !user?.id || draftHydratedFor !== user.id || !pendingRequestRef.current) {
+      setReceiptStatus('ready');
+      return;
+    }
+    const ownerId = user.id;
+    const requestId = creationRequestIdRef.current;
+    const generation = accountRef.current.generation;
+    let cancelled = false;
+    setReceiptStatus('checking');
+    ClubsService.resolveCreationRequest(requestId, ownerId)
+      .then((club) => {
+        if (cancelled || !isMounted.current || accountRef.current.generation !== generation) return;
+        setRecoveredCreation(club ? { ownerId, requestId, club } : null);
+        setReceiptStatus('ready');
+      })
+      .catch((error) => {
+        reportError(error, 'CreateClubModal.RecoverCreation');
+        if (!cancelled && isMounted.current && accountRef.current.generation === generation)
+          setReceiptStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user?.id, draftHydratedFor, receiptRetry, isMounted]);
+
+  useEffect(() => {
     // Nothing is written until this account's own draft has been read, so one
     // account's text can never be filed under another account's key.
     const userId = user?.id;
@@ -333,7 +399,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       requestId: creationRequestIdRef.current,
     };
     try {
-      if (hasPersistableDraft) window.localStorage.setItem(draftKey, JSON.stringify(draft));
+      if (hasPersistableDraft || pendingRequestRef.current)
+        window.localStorage.setItem(draftKey, JSON.stringify(draft));
       else window.localStorage.removeItem(draftKey);
     } catch (error) {
       reportError(error, 'CreateClubModal.SaveDraft');
@@ -435,16 +502,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   };
 
   const handleCreate = async () => {
-    if (effectiveName.length < 3) {
-      toast.error('Club name must be at least 3 characters');
-      return;
-    }
-
-    if (!logoPreview) {
-      toast.error('Please Select Or Upload A Club Logo');
-      return;
-    }
-
     if (!hasAgreed) {
       toast.error('Please accept the terms to continue');
       return;
@@ -457,67 +514,100 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
 
     if (isCreating || creatingRef.current) return;
-    if (nameStatus !== 'available') {
-      toast.error(
-        nameStatus === 'taken'
-          ? 'That club name is already taken'
-          : 'Wait for the name availability check'
-      );
-      return;
-    }
-    if (!allowance?.canCreate) {
-      toast.error(
-        (allowance && allowanceLine(allowance).refusal) ||
-          'Your Club Allowance Is Not Verified Yet. Please Try Again.'
-      );
-      return;
-    }
-    // Even an untouched default needs a durable intent before the first write.
-    // Reloading after a lost response must recover this request, not mint a club.
-    try {
-      window.localStorage.setItem(
-        createDraftKeyFor(user.id),
-        JSON.stringify({
-          name: effectiveName,
-          description,
-          isPublic,
-          requiresApproval,
-          logoPresetId: selectedPresetId,
-          requestId: creationRequestIdRef.current,
-        })
-      );
-    } catch (storageError) {
-      reportError(storageError, 'CreateClubModal.SaveCreationIntent');
-    }
-    setClubName(effectiveName);
+    const ownerId = user.id;
+    const requestId = creationRequestIdRef.current;
+    const generation = accountRef.current.generation;
+    const operation = {};
+    const isCurrent = () =>
+      isMounted.current &&
+      accountRef.current.id === ownerId &&
+      accountRef.current.generation === generation &&
+      activeCreationRef.current === operation;
+    activeCreationRef.current = operation;
     creatingRef.current = true;
     setIsCreating(true);
     const startedAt = performance.now();
     ClubEntryTrustService.track('create', 'submitted', { outcome: 'started' });
 
     try {
-      const clubData = await ClubsService.create({
-        request_id: creationRequestIdRef.current,
-        name: effectiveName,
-        description: description.trim(),
-        is_public: isPublic,
-        requires_approval: requiresApproval,
-        logoPreview: selectedPresetId ? null : logoPreview,
-        logoUrl: selectedPresetId ? logoPreview : null,
-      });
+      // A committed request belongs to this account even when its name/last
+      // membership slot is now occupied. An unreadable receipt is not absence.
+      const existing = pendingRequestRef.current
+        ? await ClubsService.resolveCreationRequest(requestId, ownerId)
+        : null;
+      if (!isCurrent()) return;
+      if (!existing) {
+        if (effectiveName.length < 3) {
+          toast.error('Club name must be at least 3 characters');
+          return;
+        }
+        if (!logoPreview) {
+          toast.error('Please Select Or Upload A Club Logo');
+          return;
+        }
+        if (nameStatus !== 'available') {
+          toast.error(
+            nameStatus === 'taken'
+              ? 'That club name is already taken'
+              : 'Wait for the name availability check'
+          );
+          return;
+        }
+        if (!allowance?.canCreate) {
+          toast.error(
+            (allowance && allowanceLine(allowance).refusal) ||
+              'Your Club Allowance Is Not Verified Yet. Please Try Again.'
+          );
+          return;
+        }
+        // Persist before the first write, including untouched defaults.
+        try {
+          window.localStorage.setItem(
+            createDraftKeyFor(ownerId),
+            JSON.stringify({
+              name: effectiveName,
+              description,
+              isPublic,
+              requiresApproval,
+              logoPresetId: selectedPresetId,
+              requestId,
+            })
+          );
+        } catch (storageError) {
+          reportError(storageError, 'CreateClubModal.SaveCreationIntent');
+          toast.error('Club Creation Could Not Be Saved On This Device. Please Try Again.');
+          return;
+        }
+        pendingRequestRef.current = true;
+        setClubName(effectiveName);
+      }
+      const clubData =
+        existing ||
+        (await ClubsService.create({
+          request_id: requestId,
+          expectedOwnerId: ownerId,
+          isCurrent,
+          name: effectiveName,
+          description: description.trim(),
+          is_public: isPublic,
+          requires_approval: requiresApproval,
+          logoPreview: selectedPresetId ? null : logoPreview,
+          logoUrl: selectedPresetId ? logoPreview : null,
+        }));
+      if (!isCurrent()) return;
 
       // Creation has committed. A setup failure must never send this owner
       // back through Create and accidentally open another club.
       try {
-        await completeDefaultClubOpening(clubData.id, creationRequestIdRef.current);
+        await completeDefaultClubOpening(clubData.id, requestId);
       } catch (setupError) {
         reportError(setupError, 'CreateClubModal.DefaultOpening');
-        if (isMounted.current)
+        if (isCurrent())
           toast.warning(
             'Club Created. Default Setup Could Not Be Confirmed. Open Setup In Your Club To Continue.'
           );
       }
-      if (!isMounted.current) return;
+      if (!isCurrent()) return;
 
       haptic.success();
       /* THE SERVER NAMES THE CLUB, NOT THE TEXT BOX. A retry after a lost
@@ -538,10 +628,12 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       setHasAgreed(false);
       setDraftRestored(false);
       try {
-        window.localStorage.removeItem(createDraftKeyFor(user.id));
+        window.localStorage.removeItem(createDraftKeyFor(ownerId));
       } catch (storageError) {
         reportError(storageError, 'CreateClubModal.ClearDraft');
       }
+      pendingRequestRef.current = false;
+      setRecoveredCreation(null);
       creationRequestIdRef.current = uuid();
       ClubEntryTrustService.track('create', 'completed', {
         outcome: 'succeeded',
@@ -555,6 +647,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       // the owner auto-join inside joinClub(). This modal's second emit made
       // every subscriber refetch twice per created club.
     } catch (err: any) {
+      if (!isCurrent()) return;
       ClubEntryTrustService.track('create', 'completed', {
         outcome: 'failed',
         durationMs: Math.round(performance.now() - startedAt),
@@ -562,9 +655,13 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       });
       reportError(err, 'CreateClubModal.Failed_to_create_club');
       if (isMounted.current) toast.error(err.message || 'Failed to create club');
+      if (pendingRequestRef.current) setReceiptRetry((attempt) => attempt + 1);
     } finally {
-      creatingRef.current = false;
-      if (isMounted.current) setIsCreating(false);
+      if (activeCreationRef.current === operation) {
+        activeCreationRef.current = null;
+        creatingRef.current = false;
+        if (isMounted.current) setIsCreating(false);
+      }
     }
   };
 
@@ -600,14 +697,19 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
   });
 
+  const hasRecoveredCreation =
+    recoveredCreation?.ownerId === user?.id &&
+    recoveredCreation?.requestId === creationRequestIdRef.current;
   const canCreate =
+    receiptStatus === 'ready' &&
     !isCreating &&
     !isOptimizingLogo &&
     hasAgreed &&
-    effectiveName.length >= 3 &&
-    !!logoPreview &&
-    nameStatus === 'available' &&
-    allowance?.canCreate === true;
+    (hasRecoveredCreation ||
+      (effectiveName.length >= 3 &&
+        !!logoPreview &&
+        nameStatus === 'available' &&
+        allowance?.canCreate === true));
   const allowanceStatus = allowance ? allowanceLine(allowance) : null;
 
   const closeGuardMessage = !draftIsSaved
@@ -915,7 +1017,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             can never scroll out of sight while the name is being typed. */}
           <footer className={styles.pageFooter}>
             <p className={`sc-label ${styles.status}`} aria-live="polite">
-              {allowanceStatus ? (
+              {hasRecoveredCreation ? (
+                <span className="sc-ink--green">Your Created Club Is Ready To Open</span>
+              ) : allowanceStatus ? (
                 <span className={allowanceStatus.ink}>{allowanceStatus.text}</span>
               ) : allowanceError ? (
                 <button
@@ -928,7 +1032,19 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
               ) : (
                 <span className="sc-ink--muted">Verifying Club Allowance</span>
               )}
-              {nameStatus !== 'idle' && (
+              {receiptStatus === 'checking' && (
+                <span className="sc-ink--muted">Checking Previous Club Creation</span>
+              )}
+              {receiptStatus === 'error' && (
+                <button
+                  type="button"
+                  className={`${styles.word} sc-ink--gold`}
+                  onClick={() => setReceiptRetry((attempt) => attempt + 1)}
+                >
+                  Retry Club Creation Status
+                </button>
+              )}
+              {!hasRecoveredCreation && nameStatus !== 'idle' && (
                 <span className={NAME_STATUS_INK[nameStatus]}>{NAME_STATUS_TEXT[nameStatus]}</span>
               )}
             </p>

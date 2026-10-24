@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 230210,
-      "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+      "bytes": 232055,
+      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41097,
-      "sha256": "843281f8506b206eb0702c03a32e13298ed76a923c58a1df8544b725d00277a5"
+      "bytes": 41375,
+      "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3620,6 +3620,29 @@
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
     }
   },
+  "quickClubOpeningInputRouting20261023": {
+    "reason": "Route default opening services and their native regression through the existing required accounting lane. Current classifier identity only; historical financial inputs, assertions and qualification states unchanged. Not an execution or installation certificate.",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous": {
+      "bytes": 41071,
+      "sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6"
+    },
+    "current": {
+      "bytes": 41349,
+      "sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+    }
+  },
+  "handReviewAwardLayoutCiInput20261023": {
+    "reason": "Add the real HandDetailModal award-row geometry regression to the existing required CSS Beat command. Refresh only current workflow input identity; preserve financial inputs, assertions, historical pins and qualification statuses. This is not a financial execution certificate.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 230753,
+      "sha256": "e837d1bd48aaebdbf4a32c0241f37e5239b28da87b9ddaf7cc7cb62f3003970e"
+    }
+  },
   "serialJournalIndexCurrentInput20261023": {
     "reason": "Add the source-bound serial journal index module to the existing required contract-index recovery CI selector. Refresh only the reviewed current classifier identity. Historical financial source pins, certificates, assertions, fixed input inventory and SOURCE_ONLY_UNRUN status remain unchanged; source binding is not financial qualification or installation.",
     "source_revision": "5e99927a442dbbf9fd34f06dcd4e7ca8b9e7b6b2",
@@ -3631,5 +3654,9 @@
       "bytes": 41097,
       "sha256": "843281f8506b206eb0702c03a32e13298ed76a923c58a1df8544b725d00277a5"
     }
+  },
+  "migrationAuditIntegration20261024": {
+    "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
+    "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
   }
 }

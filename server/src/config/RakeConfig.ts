@@ -149,6 +149,9 @@ export function getPlayerCountCaps(
 // banking time; `LAW 6` in tests/the-jackpot-is-one-allocator-with-an-opening-
 // balance.law.test.ts is what keeps the mirror honest, and any surface that
 // needs the live rule reads `fn_bbj_allocation_policy()`.
+// The platform rule. Since Dan's 2026-10-22 order the Midway Union pool alone
+// takes 10% main / 30% backup / 60% promo at any size, from its own row in
+// ca_bbj_pool_policy; every other pool follows these numbers.
 export const BBJ_POOL_ALLOCATION = {
   mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
   backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)

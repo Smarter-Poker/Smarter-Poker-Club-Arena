@@ -525,6 +525,15 @@ describe('PER-POT AWARD BREAKDOWN (spec 16/19/33)', () => {
     expect(hi?.userId).toBe('u1');
     expect(lo?.userId).toBe('u2');
     expect(lo?.hand?.name ?? '').toMatch(/^Low: /);
+    for (const w of ev.winnersByBoard) {
+      const expected = perPot
+        .filter((a) => a.userId === w.userId && a.low === !!w.low)
+        .map((a) => ({ index: a.potIndex, amount: a.amount }));
+      expect(w.pots).toEqual(expected);
+      expect(Math.round(w.pots.reduce((n: number, p: any) => n + p.amount, 0) * 100)).toBe(
+        Math.round(w.amount * 100)
+      );
+    }
     // Both hands must be shown - a lo-only winner can never be mucked.
     const results = h.showdown();
     for (const r of results) expect(r.mucked).toBe(false);

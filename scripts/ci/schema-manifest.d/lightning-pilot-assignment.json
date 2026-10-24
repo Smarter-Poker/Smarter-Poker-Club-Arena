@@ -1,8 +1,9 @@
 {
-  "_owner": "Exact72 owner-authorized private Lightning assignment, 2026-10-17. Native qualification is source evidence; activation/install remains explicit.",
+  "_owner": "Exact72 owner-authorized private Lightning assignment, 2026-10-17. Native qualification is source evidence; activation/install remains explicit. 2026-10-23: the reviewed 144 (original 72 plus the owner-authorized expansion) is admissible beside the 72.",
   "tables": ["lightning_pilot_assignment", "lightning_pilot_assignment_receipts"],
   "functions": [
     "fn_lightning_pilot_assignment_players",
+    "fn_lightning_pilot_assignment_players_20261023",
     "fn_lightning_pilot_assignment_status",
     "fn_lightning_pilot_assignment_set",
     "fn_lightning_pilot_assignment_blocks",

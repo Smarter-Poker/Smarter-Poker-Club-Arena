@@ -81,3 +81,35 @@ grep -q 'lock timeout' "$scratch/lock.log"
 wait "$holder"
 test "$("${psql[@]}" -Atc "SELECT count(*) FROM lightning_pilot_assignment_receipts WHERE request_id='70000000-0000-0000-0000-000000000030'")" = 0
 echo 'PASS shared admission / exclusive toggle serialization; timeout leaves no receipt'
+
+# 2026-10-23 expansion: the reviewed 144 manifest becomes admissible beside the
+# 72; readiness keeps recognizing exactly the reviewed control; replay refused.
+expansion="$root/supabase/migrations/20261023161412_lightning_pilot_assignment_admits_the_expanded_funded_roster.sql"
+"${psql[@]}" -f "$expansion" >/dev/null
+"${psql[@]}" >/dev/null <<'SQL'
+DO $$ BEGIN
+ IF witness.readiness_law() IS DISTINCT FROM true THEN RAISE EXCEPTION 'readiness no longer recognizes the reviewed control'; END IF;
+ IF cardinality(fn_lightning_pilot_assignment_players_20261023())<>144 OR NOT (fn_lightning_pilot_assignment_players() <@ fn_lightning_pilot_assignment_players_20261023()) THEN RAISE EXCEPTION 'expanded manifest shape'; END IF;
+ IF has_function_privilege('anon','fn_lightning_pilot_assignment_players_20261023()','EXECUTE') OR has_function_privilege('authenticated','fn_lightning_pilot_assignment_players_20261023()','EXECUTE') THEN RAISE EXCEPTION 'expanded list exposed'; END IF;
+ IF pg_get_functiondef('fn_lightning_pilot_withdraw_zero(uuid,uuid,uuid)'::regprocedure) NOT LIKE '%fn_lightning_pilot_assignment_players_20261023()%' THEN RAISE EXCEPTION 'withdrawal door not repointed'; END IF;
+ BEGIN
+  UPDATE lightning_pilot_assignment SET player_ids=fn_lightning_pilot_assignment_players_20261023();
+  RAISE EXCEPTION 'MIXED_MANIFEST_ADMITTED';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END $$;
+SELECT set_config('request.jwt.claim.sub','2d1cd6c3-5700-4af9-a271-d4863fdab20d',false);
+SELECT set_config('witness.live','true',false);
+DO $$ BEGIN
+ PERFORM fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001023','3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820',fn_lightning_pilot_assignment_players(),'native wrong list for manifest');
+ RAISE EXCEPTION 'WRONG_LIST_ADMITTED';
+EXCEPTION WHEN invalid_parameter_value THEN NULL; END $$;
+DO $$ DECLARE r jsonb; BEGIN
+ r:=fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001024','3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820',fn_lightning_pilot_assignment_players_20261023(),'native expanded release');
+ IF (SELECT manifest_sha256 FROM lightning_pilot_assignment)<>'3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820' OR (SELECT cardinality(player_ids) FROM lightning_pilot_assignment)<>144 THEN RAISE EXCEPTION 'expanded manifest not recorded'; END IF;
+ r:=fn_lightning_pilot_assignment_set(false,'7a000000-0000-4000-a000-000000001025','121f80d2529012e532b4d3a702e2772cde9aa7778a82df26f5a02082d2b0ba8a',fn_lightning_pilot_assignment_players(),'native original release');
+ IF (SELECT cardinality(player_ids) FROM lightning_pilot_assignment)<>72 THEN RAISE EXCEPTION 'original manifest not restorable'; END IF;
+END $$;
+SQL
+if "${psql[@]}" -f "$expansion" >"$scratch/expansion-replay.log" 2>&1; then echo 'FAIL expansion replay accepted'; exit 1; fi
+grep -q 'predecessor mismatch' "$scratch/expansion-replay.log"
+echo 'PASS expansion: reviewed 144 admitted beside 72; mixed rows/wrong lists refused; readiness recognizes the new control; withdrawal repointed; replay refused'

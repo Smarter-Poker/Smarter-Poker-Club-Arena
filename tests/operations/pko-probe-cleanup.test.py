@@ -36,7 +36,7 @@ class CleanupTests(unittest.TestCase):
                                lambda match: match.group(1) + '\nprintf "%s" "$TMP" > "$PKO_TEST_RECORD"',
                                prefix, flags=re.MULTILINE)
         self.assertEqual(count, 1)
-        with tempfile.TemporaryDirectory(prefix='pko-cleanup-', dir='/tmp') as work:
+        with tempfile.TemporaryDirectory(prefix='pko-cleanup-', dir=os.environ.get('RUNNER_TEMP', '/tmp')) as work:
             work = Path(work)
             binary = work / 'bin'
             binary.mkdir()

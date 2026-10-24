@@ -178,8 +178,9 @@ describe('7 + 8: a seat already leaving, or inside a stay clock, is not asked ag
   });
 
   it('every leave result is noted, and LEAVE_LOCKED holds the seat for the clock it named', () => {
-    expect((ROT.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(4);
-    expect((ROT.match(/this\.noteLeaveResult\(/g) ?? []).length).toBe(4);
+    // Five since 2026-10-23: the roster walk-out (benched, or off the PLO roster).
+    expect((ROT.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(5);
+    expect((ROT.match(/this\.noteLeaveResult\(/g) ?? []).length).toBe(5);
     expect(ROT).toMatch(/if \(result\.code === 'LEAVE_LOCKED'\) \{/);
     expect(ROT).toMatch(/this\.leaveHeld\.set\(key, Date\.now\(\) \+ remaining \+ 1_000\);/);
     expect((ROT.match(/this\.isLeaveHeld\(/g) ?? []).length).toBeGreaterThanOrEqual(4);

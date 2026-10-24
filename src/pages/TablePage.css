@@ -109,7 +109,9 @@
   /* Seated: the action bar's own floor, plus the home-indicator strip its
      wrapper pads itself by. Identical to the wrapper's `min-height`
      (ActionPanel.css), which is what it is standing in for. */
-  --sp-action-reserve: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
+  --sp-action-reserve: calc(
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
   position: fixed;
   inset: 0;
   z-index: 1100;
@@ -139,7 +141,12 @@
   overscroll-behavior: none;
 }
 
-/* ─── THERE IS NO SPECTATOR SIZE. THERE IS ONE SIZE. (Dan 2026-08-28) ───────
+/* ─── STATIC RESERVES / HISTORICAL ONE-SIZE PRESENTATION (2026-08-28) ─────
+ *
+ * October 22 owner update: portrait mobile spectating now has the full-width
+ * desktop-preview canvas defined at the foot of this file. This supersedes
+ * the historical same-size observer/player presentation below for phones only.
+ * The fixed reserves and prohibition on hand/action-driven resizing remain.
  *
  * A `.table-page[data-hero='false']` rule used to sit here, shrinking the
  * reserve to the 22px spectator line, with a matching
@@ -275,34 +282,46 @@
   z-index: 1;
 }
 
-/* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
-.table-page--hero-turn {
+/* The same breathing glows, painted once on their own layer. Animating the
+   page's blur/box-shadow repaints the full phone surface every frame. Opacity
+   keeps the two-second cue while the compositor reuses its static pixels. */
+.table-page--hero-turn::before,
+.table-page--allin-mode::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.table-page--hero-turn::before {
+  box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
   animation: heroTurnPulse 2s ease-in-out infinite;
 }
 
 @keyframes heroTurnPulse {
   0%,
   100% {
-    box-shadow: inset 0 0 0 0 transparent;
+    opacity: 0;
   }
   50% {
-    box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
+    opacity: 1;
   }
 }
 
-/* ─── All-In Dramatic Mode — darken non-essential UI ─── */
-.table-page--allin-mode {
-  /* Tension border glow */
+.table-page--allin-mode::before {
+  box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
   animation: allInTensionGlow 2s ease-in-out infinite;
 }
 
 @keyframes allInTensionGlow {
   0%,
   100% {
-    box-shadow: inset 0 0 0 0 transparent;
+    opacity: 0;
   }
   50% {
-    box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
+    opacity: 1;
   }
 }
 
@@ -614,7 +633,24 @@
      desktop has a 720px-wide table and no bottom-corner HUD stack crowding it.
      Phones need more than the floor and get it from the <=768px block near the
      end of this file - see the derivation there, and change it there. */
-  --sp-hero-clear: 60px;
+  /* Dan 2026-10-22, desktop: "the bottom user display gets cut off by the
+     action bar at the bottom." The hero plate hangs below the scaler by about
+     a tenth of the felt's width plus 27px (measured 503px to 2560px wide:
+     60px at a 274px felt, 75 at 503, 97 at 704), and a flat 60px only covered
+     the smallest felt. The felt's width comes from this reserve, so it is
+     solved here rather than read: with W = 0.605 * table height, the strip
+     that leaves 6px of air is C = (0.0605 * (page - top - bar) + 33px) / 1.0605;
+     a width-bound felt is capped by 10vw + 33px. 60px stays the floor. */
+  --sp-hero-clear: max(
+    60px,
+    min(
+      calc(
+        (0.0605 * (var(--sp-page-h) - var(--sp-table-top) - var(--sp-action-reserve)) + 33px) /
+          1.0605
+      ),
+      calc(10vw + 33px)
+    )
+  );
 
   /* ─── THE TABLE'S VERTICAL BUDGET, in ONE place ────────────────────────────
      Dan 2026-08-25, item 3: "the entire table needs to be moved up and the
@@ -2472,7 +2508,7 @@
      with the breakpoint. A second copy here could only ever disagree with
      them - which is what it was doing, at the 96px of a bar that no longer
      exists on a phone. Read --sp-bottom-row-h; do not restate it. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--sp-bar-inset, env(safe-area-inset-bottom, 0px));
   justify-content: flex-end;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -2708,20 +2744,33 @@
   display: block;
 }
 
-/* White count overlaid on the image */
+/* Dan 2026-10-22: the remaining count is a notification badge on the tile's
+   corner, the same treatment as the HUD time-bank tile (TimebankCounter.css). */
+.control-strip__btn--icon-img:has(.control-strip__count-overlay) {
+  overflow: visible;
+}
 .control-strip__count-overlay {
   position: absolute;
-  bottom: 3px;
-  right: 3px;
+  top: -5px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e5262d;
+  border: 1.5px solid rgba(8, 8, 12, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   font-size: 10px;
   font-weight: 800;
   color: #ffffff;
   line-height: 1;
-  text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.9),
-    0 0 6px rgba(0, 0, 0, 0.7);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+  z-index: 2;
 }
 
 .control-strip__timer {
@@ -3391,7 +3440,8 @@
    SCREEN SHAKE — Triggered on big all-in or massive win
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.table-page--shake {
+/* Celebrate on the table artwork; tabled cards and wagers keep their slots. */
+.table-page--shake > .table-art {
   animation: tableWinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
@@ -3699,6 +3749,9 @@
    BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+.table-page--backgrounded,
+.table-page--backgrounded::before,
+.table-page--backgrounded::after,
 .table-page--backgrounded *,
 .table-page--backgrounded *::before,
 .table-page--backgrounded *::after {
@@ -3903,7 +3956,7 @@
   bottom: calc(
     var(
         --sp-action-reserve,
-        calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))
+        calc(var(--sp-bottom-row-h, 52px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)))
       ) +
       var(--sp-hero-clear, 60px) + 8px
   );
@@ -4619,7 +4672,21 @@ button.post-bb-overlay-button {
        gets the room. On Dan's phone the reserve frees 11.1px, 6 of it buys the
        slide, and the felt still ends up ~5px longer than it was. */
     /* The compact readable player plate needs six more pixels below the felt. */
-    --sp-hero-clear: clamp(56px, calc(14.6vw + 6px), 74px);
+    /* Dan 2026-10-22: the hero plate hangs a tenth of the felt's width plus
+       27px below the scaler. A phone's felt is edge to edge, so the width term
+       is the viewport's; a portrait tablet's felt is height-bound and narrower
+       than the screen, so it takes the same solved height term as desktop
+       (see the base rule) and the smaller of the two wins. */
+    --sp-hero-clear: max(
+      56px,
+      min(
+        calc(10vw + 33px),
+        calc(
+          (0.0605 * (var(--sp-page-h) - var(--sp-table-top) - var(--sp-action-reserve)) + 33px) /
+            1.0605
+        )
+      )
+    );
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px
@@ -5034,7 +5101,9 @@ button.post-bb-overlay-button {
     --sp-page-h: 100dvh;
     --sp-hero-clear: clamp(60px, calc(12vw + 8px), 68px);
     /* Compact upper pods use the empty rail band below the jackpot. */
-    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 12px + var(--sp-page-inset-top));
+    --sp-table-top: calc(
+      var(--sp-bbj-h, 22px) + 12px + var(--sp-page-inset-top) + var(--sp-bar-drop, 0px)
+    );
   }
   .table-page--embedded .table-container {
     /* Reserve the ticker's maximum band even when it is absent. A promotion
@@ -5124,5 +5193,46 @@ button.post-bb-overlay-button {
   }
   .table-page .table-brand__line--identity {
     font-size: 6px;
+  }
+}
+
+/* Owner October 22: a phone spectator sees the broad, tall desktop preview,
+   rather than the compact playing layout. Reclaim only the unused hero-card
+   band; 34px still clears the bottom observer seat. Hand/action/dock changes
+   never feed these dimensions. Taking a seat enters the existing player view. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page[data-hero='false'] .table-scaler {
+    width: 100%;
+    /* Small rings retain their declared downward offset; it cannot also
+       consume the bottom observer seat's clearance. */
+    height: calc(
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px - var(--sp-short-table-drop, 0px)
+    );
+    max-height: none;
+    flex-shrink: 0;
+  }
+  /* The wider painted rail must not widen five board cards into the
+     screen-edge action labels. Keep the live board in the centre lane. */
+  .table-page[data-hero='false'] .community-area {
+    max-width: 52vw;
+  }
+  /* Six-seat pods have wider plates than the dense ring. */
+  .table-page[data-hero='false'][data-seats='6'] .community-area {
+    max-width: 48vw;
+  }
+}
+
+/* Short phones need a full card and marker lane above the board. Keep the
+   six-seat oval shorter than nine seats while reserving this space for every
+   hand, so an all-in cannot change the table geometry. */
+@media (max-width: 375px) and (max-height: 700px) and (orientation: portrait) {
+  .table-page[data-seats='6'] .table-container {
+    /* The normal 60px hero strip misses the ticker case by 2.2px.
+       Four permanent pixels keep the plate clear, including safe areas. */
+    --sp-hero-clear: 64px;
+  }
+  .table-page[data-seats='6'] .table-scaler {
+    --sp-seat-h-scale: 0.96;
+    margin-top: calc(var(--sp-table-h, 100svh) * 0.02);
   }
 }

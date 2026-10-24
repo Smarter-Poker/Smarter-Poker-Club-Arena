@@ -5,6 +5,7 @@ export type TableViewerAccessReason =
   | 'diamond_member'
   | 'seated'
   | 'club_member'
+  | 'agent_downline'
   | 'membership_required'
   | 'observers_restricted'
   | 'table_not_found'
@@ -62,6 +63,18 @@ export async function authorizeTableViewer(
   }
   if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
   if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
+
+  // The relationship belongs to the agent's club, not necessarily the table's
+  // owner. The database checks active recursive downlines against current live
+  // seats across cash, union and tournament tables. It grants observation only;
+  // the existing private-card projection remains unchanged.
+  const downlineResult = await supabase.rpc('fn_agent_can_watch_table', {
+    p_table_id: tableId,
+    p_viewer_user_id: userId,
+  });
+  if (!downlineResult.error && downlineResult.data === true) {
+    return { allowed: true, reason: 'agent_downline', clubId: accessScopeId };
+  }
 
   if (arena.kind === 'diamond_arena') {
     return table.restrict_observers === true

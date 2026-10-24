@@ -138,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 24 tests');
+  expect(result.stderr).toContain('Ran 34 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {
@@ -2094,6 +2094,16 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(installer).toContain('ENGINE_CONTROL_INSTALL_GENERATION=$ACTIVE_TARGET');
     expect(intake).toContain('INSTALLED_GENERATION=');
     expect(intake).toContain('"$CANONICAL_GENERATION/launch-engine-release.sh"');
+  });
+
+  it('activates a newer canonical control generation without downgrading or replacing the same SHA', () => {
+    const result = spawnSync('python3', ['-B', 'tests/operations/engine-control-activation.py'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stderr).toContain('Ran 1 test');
   });
 
   it('activates one complete control-plane generation atomically under the engine lock', () => {

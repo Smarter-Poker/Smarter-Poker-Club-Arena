@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/chicago-stats-midnight-01a16a9f. Promise for migration 20261023213635; install through Apply Merged Migration after protected merge, then verify history and both readers. This fragment is not installation evidence.",
+  "functions": ["ca_club_member_chicago_today_cash"],
+  "tables": [],
+  "columns": {}
+}

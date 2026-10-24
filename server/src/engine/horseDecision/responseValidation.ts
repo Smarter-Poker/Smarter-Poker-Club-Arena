@@ -8,7 +8,7 @@ import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '..
 import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { MAX_UTILITY_OUTCOMES } from '../HorseTournamentUtility.js';
 import { jointStateKey } from '../multiway/JointRangeSampler.js';
-import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
+import { horsePolicyOrderForVersion, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
 import { PHASE8_POLICY } from '../HorseTournamentPostflop.js';
@@ -627,6 +627,56 @@ function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'am
   return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
 }
 
+function policyGraphIsValid(value: RecordValue): boolean {
+  if (value.policyGraph === undefined) return true;
+  const graph = value.policyGraph;
+  const order = record(graph) ? horsePolicyOrderForVersion(graph.version) : null;
+  if (
+    !record(graph) ||
+    !exact(graph, ['version', 'transitions', 'finalAction']) ||
+    order === null ||
+    !Array.isArray(graph.transitions) ||
+    graph.transitions.length !== order.length ||
+    !action(graph.finalAction)
+  )
+    return false;
+  let previous: HorsePolicyAction | null = null;
+  for (let i = 0; i < order.length; i++) {
+    const transition = graph.transitions[i];
+    if (
+      !record(transition) ||
+      !exact(transition, ['node', 'before', 'after', 'changed', 'elapsedMs']) ||
+      transition.node !== order[i] ||
+      !action(transition.after) ||
+      !nonnegative(transition.elapsedMs)
+    )
+      return false;
+    if (
+      previous === null
+        ? transition.before !== null
+        : !action(transition.before) || !same(previous, transition.before)
+    )
+      return false;
+    const changed = previous !== null && !same(previous, transition.after);
+    if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
+    if (
+      transition.node === 'wager_rules' &&
+      changed &&
+      !['bet', 'raise', 'all_in'].includes(transition.after.action)
+    )
+      return false;
+    previous = transition.after;
+  }
+  return (
+    previous !== null &&
+    same(previous, graph.finalAction) &&
+    same(graph.finalAction, {
+      action: value.action as HorseDecision['action'],
+      amount: (value.amount as number | undefined) ?? null,
+    })
+  );
+}
+
 export function horseDecisionReceiptIsValid(
   value: unknown,
   expectedVariant?: string
@@ -650,6 +700,15 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtilityRefusal !== undefined)
   )
     return false;
+  if (!policyGraphIsValid(value)) return false;
+  // The final nuts rule can supersede an owner without rewriting what that
+  // owner actually selected. Bind its receipt to the graph's verified input
+  // to the final rule; the graph itself still binds the executed output.
+  const graph = value.policyGraph as HorseDecision['policyGraph'];
+  const beforeNuts = graph?.transitions.find((t) => t.node === 'wager_rules')?.before;
+  const selected: RecordValue = beforeNuts
+    ? { ...value, action: beforeNuts.action, amount: beforeNuts.amount ?? undefined }
+    : value;
   // A Phase 7 refusal is a finite name, never beside the ledger it says is absent.
   if (
     value.tournamentUtilityRefusal !== undefined &&
@@ -660,20 +719,20 @@ export function horseDecisionReceiptIsValid(
     return false;
   if (
     value.tournamentUtility !== undefined &&
-    !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(value))
+    !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(selected))
   )
     return false;
-  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, value)) return false;
+  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return false;
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
     return false;
-  if (!horsePhase10SelectionIsValid(value.plo4Policy, value)) return false;
+  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return false;
   // P11.1: a Phase 11 receipt's input binding is shape-checked at the boundary.
   if (
     value.omahaVariantPolicy !== undefined &&
     !omahaVariantReceiptBindingIsValid(value.omahaVariantPolicy)
   )
     return false;
-  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, value)) return false;
+  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return false;
   // P12.1: a Phase 12 receipt's bindings (inputs, and the P12-B net-action
   // economics) are re-checked at the boundary.
   if (
@@ -681,13 +740,13 @@ export function horseDecisionReceiptIsValid(
     !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
   )
     return false;
-  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, value)) return false;
+  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected)) return false;
   // P13.1: a Phase 13 receipt's input binding, pack versions and selection
   // refusal are re-checked at the boundary.
   if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
     return false;
   // P13.3: and its selection, by the Phase 10/11/12 law.
-  if (!horsePhase13SelectionIsValid(value.jointPolicy, value)) return false;
+  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)
@@ -700,44 +759,5 @@ export function horseDecisionReceiptIsValid(
     (value.policyOwnership as HorseDecision['policyOwnership'])?.variant !== expectedVariant
   )
     return false;
-  if (value.policyGraph === undefined) return true;
-  const graph = value.policyGraph;
-  if (
-    !record(graph) ||
-    !exact(graph, ['version', 'transitions', 'finalAction']) ||
-    graph.version !== 'horse-policy-order-v1' ||
-    !Array.isArray(graph.transitions) ||
-    graph.transitions.length !== HORSE_POLICY_ORDER.length ||
-    !action(graph.finalAction)
-  )
-    return false;
-  let previous: HorsePolicyAction | null = null;
-  for (let i = 0; i < HORSE_POLICY_ORDER.length; i++) {
-    const transition = graph.transitions[i];
-    if (
-      !record(transition) ||
-      !exact(transition, ['node', 'before', 'after', 'changed', 'elapsedMs']) ||
-      transition.node !== HORSE_POLICY_ORDER[i] ||
-      !action(transition.after) ||
-      !nonnegative(transition.elapsedMs)
-    )
-      return false;
-    if (
-      previous === null
-        ? transition.before !== null
-        : !action(transition.before) || !same(previous, transition.before)
-    )
-      return false;
-    const changed = previous !== null && !same(previous, transition.after);
-    if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
-    previous = transition.after;
-  }
-  return (
-    previous !== null &&
-    same(previous, graph.finalAction) &&
-    same(graph.finalAction, {
-      action: value.action as HorseDecision['action'],
-      amount: (value.amount as number | undefined) ?? null,
-    })
-  );
+  return true;
 }

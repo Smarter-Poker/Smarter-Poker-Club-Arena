@@ -1,5 +1,5 @@
-/** Actual card and chrome CSS, with measured selector-deck/header stand-ins.
- * Art requests are blocked: percentage hitboxes use the production aspect ratio.
+/** Compact row and chrome CSS, with measured header/footer stand-ins.
+ * Art requests are blocked; rows use the production compact stylesheet.
  * No application server, account, force-click or changed stacking order.
  */
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ export async function createLobbyScrollFixture() {
       contents: `
       import React from 'react';
       import {createRoot} from 'react-dom/client';
-      import ArenaGameCard from './src/components/lobby/game-cards/ArenaGameCard';
+      import './src/components/lobby/CompactLobbyRows.css';
       import {observeLobbyScrollClearance} from './src/components/lobby/lobbyScrollClearance';
       import header from './src/components/navigation/GlobalHeader.module.css';
       import footer from './src/components/club/ClubBottomNav.module.css';
@@ -24,15 +24,11 @@ export async function createLobbyScrollFixture() {
       import './src/components/lobby/ClubLobbyCommandTop.css';
       import './src/components/lobby/LobbyTable.css';
       import './src/components/lobby/LobbySortBar.css';
-      const data={id:'cash',family:'nlh',gameType:'NLH',title:'No Limit Holdem',status:'running',statusLabel:'Running',
-        stakes:'1 / 2',buyIn:'80 - 400',players:'4 / 6',rules:[],badges:[],dataState:'loaded'};
       function Fixture(){return <><header id="global-header" className={header.header}>
         <div className={header.desktopArtwork}/></header>
-        <main className="club-home club-home--unified-mobile"><section className="club-lobby-machine"><div id="deck" style={{height:240,position:'sticky',top:'var(--ca-global-header-height)',zIndex:30}}>Selectors</div>
-        <div className="club-home__games club-home__games--v2"><div className="lobby-sortbar" role="toolbar"><span className="lobby-sortbar__eyebrow">Sort</span>
-        <div className="lobby-sortbar__chips"><button className="lobby-sortbar__chip">Game</button><button className="lobby-sortbar__chip">Players</button></div></div>
-        <div className="arena-lobby-card-list">{[0,1,2,3,4].map(i=><div key={i}><ArenaGameCard
-          data={{...data,id:'cash-'+i}} presentation="mobile" actions={{primaryLabel:'Join Game',secondaryLabel:'View Game',onSecondary:()=>window.clicked.push(i)}}/></div>)}</div>
+        <main className="club-home club-home--unified-mobile"><section className="club-lobby-machine"><div id="deck" style={{height:240,position:'relative'}}>Selectors</div>
+        <div className="club-home__games club-home__games--v2">
+        <div className="arena-lobby-card-list"><table className="compact-lobby"><thead><tr><th>Game</th><th>Stakes</th><th>Players</th><th>Status</th></tr></thead><tbody>{Array.from({length:40},(_,i)=><tr key={i}><td><button className="compact-lobby__open" onClick={()=>window.clicked.push(i)}>Details {i}</button></td><td>1/2</td><td>4/6</td><td>Running</td></tr>)}</tbody></table></div>
         </div></section></main>
         <nav aria-label="Poker Arena" className={footer.bottomNav}><div className={footer.viewport}><div className={footer.artwork}/></div></nav></>}
       window.clicked=[];
@@ -42,7 +38,7 @@ export async function createLobbyScrollFixture() {
         document.documentElement.style.setProperty('--ca-lobby-controls-h',document.getElementById('deck').getBoundingClientRect().height+'px');
       };
       window.attach=()=>{
-        window.dispose=observeLobbyScrollClearance(document.querySelector('.lobby-sortbar'),document.querySelector('.arena-lobby-card-list'));
+        window.dispose=observeLobbyScrollClearance(document.querySelector('.compact-lobby thead'),document.querySelector('.arena-lobby-card-list'));
       };
     `,
     },
@@ -73,9 +69,12 @@ export async function verifyLobbyScrollClearance(page, width, onProof) {
   );
   await page.addStyleTag({ content: css });
   await page.addScriptTag({ content: javascript });
-  await page.getByRole('button', { name: 'View Game', exact: true }).first().waitFor();
+  await page
+    .getByRole('button', { name: /^Details / })
+    .first()
+    .waitFor();
   await page.evaluate(() => window.publishChrome());
-  const target = page.getByRole('button', { name: 'View Game', exact: true }).nth(2);
+  const target = page.getByRole('button', { name: /^Details / }).nth(20);
   await target.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   assert.equal(
     await target.evaluate((el) => {
@@ -83,7 +82,7 @@ export async function verifyLobbyScrollClearance(page, width, onProof) {
       return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2));
     }),
     false,
-    'without scrollport clearance the View hitbox is covered'
+    'without scrollport clearance the detail hitbox is covered'
   );
   await page.evaluate(() => {
     window.attach();
@@ -94,7 +93,7 @@ export async function verifyLobbyScrollClearance(page, width, onProof) {
     await target.evaluate((el, block) => el.scrollIntoView({ block }), alignment);
     const proof = await target.evaluate((el) => {
       const b = el.getBoundingClientRect();
-      const bar = document.querySelector('.lobby-sortbar').getBoundingClientRect();
+      const bar = document.querySelector('.compact-lobby thead').getBoundingClientRect();
       const nav = document.querySelector('nav').getBoundingClientRect();
       return {
         top: b.top,
@@ -107,28 +106,13 @@ export async function verifyLobbyScrollClearance(page, width, onProof) {
       };
     });
     onProof?.({ width, alignment, ...proof });
-    assert.ok(proof.top >= proof.barBottom, JSON.stringify(proof));
+    assert.ok(proof.top >= 0, JSON.stringify(proof));
     assert.ok(proof.bottom <= proof.navTop, JSON.stringify(proof));
     assert.equal(proof.hit, true, JSON.stringify(proof));
     await target.click({ timeout: 1500 });
   }
-  assert.deepEqual(await page.evaluate(() => window.clicked), [2, 2, 2, 2]);
-  await page.evaluate(() => {
-    document.querySelector('.lobby-sortbar').setAttribute('style', 'height:100px');
-  });
-  await page.waitForFunction(
-    () => parseFloat(document.documentElement.style.getPropertyValue('--ca-lobby-sortbar-h')) >= 100
-  );
-  await target.evaluate((el) => el.scrollIntoView({ block: 'start' }));
-  assert.equal(
-    await target.evaluate(
-      (el) =>
-        el.getBoundingClientRect().top >=
-        document.querySelector('.lobby-sortbar').getBoundingClientRect().bottom
-    ),
-    true
-  );
-  const last = page.getByRole('button', { name: 'View Game', exact: true }).last();
+  assert.deepEqual(await page.evaluate(() => window.clicked), [20, 20, 20, 20]);
+  const last = page.getByRole('button', { name: /^Details / }).last();
   await last.evaluate((el) => el.scrollIntoView({ block: 'end' }));
   await last.click({ timeout: 1500 });
   assert.equal(

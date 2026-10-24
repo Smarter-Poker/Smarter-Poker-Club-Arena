@@ -1353,9 +1353,10 @@
    directly over their heads because a villain pod has no tall card row
    between badge and avatar. */
 .seat--hero .seat__action {
-  /* Just clear of the avatar's crown. -26px was the old slot; -8px puts the
-     badge's bottom edge a breath above the head. */
-  top: -8px;
+  /* Dan 2026-10-22: above the hero's crown, not across it. --sp-art-rise is
+     measured on the hero's own (larger) art, and there is open felt above it. */
+  top: auto;
+  bottom: calc(100% + var(--sp-art-rise, 12px) + var(--sp-tag-gap, 3px));
 }
 
 .seat--hero .seat__bet-chips {
@@ -2128,7 +2129,9 @@
      test harness — the hero plate sat 26px off its true position, and the
      number looked deliberate enough that nobody would question it.
      A fallback that disagrees with every declared value is not a safety net. */
-  bottom: calc(50% - var(--sp-hero-clear, 60px) - env(safe-area-inset-bottom, 0px));
+  bottom: calc(
+    50% - var(--sp-hero-clear, 60px) - var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
   transform: none;
   display: flex;
   align-items: center;
@@ -2434,11 +2437,19 @@
    * overlaps the tag with the avatar's crown; attached but clear of the
    * position badge (top -6px, ~16px tall) that lives on the seat's
    * top-right corner — live shot showed FOLD printed over MP+1. */
+  /* Fixed height so the bounty pill can be stacked on it exactly. On a phone
+     (and for the hero everywhere) the tag stands on the top of the ART instead
+     of this fixed offset: see "THE LANE ABOVE THE HEAD" under the bounty. */
   position: absolute;
   top: -26px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 4px 12px;
+  height: var(--sp-tag-h, 20px);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
   border-radius: 14px;
   font-size: 0.72rem;
   font-weight: 800;
@@ -2450,17 +2461,6 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   animation: actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   pointer-events: none;
-}
-
-/* Dan 2026-10-21: "A FOLD SHOULD NEVER BLOCK OUT ANOTHER USER'S INFO." On a
-   short phone the side chairs are less than a whole pod apart, and a tag
-   floating a full 26px above the head reached the plate of the chair above.
-   There the tag overlaps the avatar's crown instead, the way the PokerBros
-   reference draws it, so the pod adds no height above the head. */
-@media (max-width: 480px) and (max-height: 760px) and (orientation: portrait) {
-  .seat__action {
-    top: -12px;
-  }
 }
 
 @keyframes actionPopIn {
@@ -2513,7 +2513,7 @@
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: #fff;
   font-size: 0.875rem;
-  padding: 4px 14px;
+  padding: 0 14px;
   animation:
     actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275),
     allInPulse 1.5s ease-in-out infinite;
@@ -2862,6 +2862,7 @@
    "WHEN A PLAYER IS ALL IN THEIR CHIPS NEED TO BE ON THE TABLE AND AN ALL IN
    BUTTON SHOULD APPEAR IN FRONT OF THAT USER (LIKE A DEALER BUTTON, BUT FOR ALL
    INS) AS WELL AS IT APPEARING ABOVE THEIR HEAD."
+   Owner correction 2026-10-22: only on the felt, never above their head.
 
    A puck the size of the dealer button, carried in the player's wager slot on
    the felt. The old `.seat__allin-badge` hung below the plate, in the next
@@ -2923,9 +2924,10 @@
   top: 0px;
   left: 0;
   transform: translateZ(0);
-  padding: 2px 7px;
-  min-width: 28px;
-  min-height: 18px;
+  padding: 0 8px;
+  min-width: 30px;
+  height: var(--sp-bounty-h, 20px);
+  box-sizing: border-box;
   justify-content: center;
   border-radius: 999px;
   background: #1877f2;
@@ -2942,6 +2944,35 @@
   pointer-events: none;
 }
 
+/* ═══ THE LANE ABOVE THE HEAD (Dan 2026-10-22, from a real phone) ═══
+   "There needs to be some space between them to allow for action bar and
+   bounty amount above their heads", and "the raise, fold and other actions
+   should be slightly higher, above the avatar, not overlapping the top of
+   them." On a phone the tag stands on the top of the ART, not of the seat
+   box: bust art is scaled up from its feet, so its crown rises --sp-art-rise
+   above the box (measured per seat in SeatSlot.tsx), and the old fixed -26px
+   landed on some heads and not others. The bounty sits on the crown, or
+   directly above the tag when there is one. The dense-ring rule at the foot
+   of this file sizes 7 to 9 max seats so the whole lane fits between chairs.
+   Desktop keeps the corner pill and the -26px tag, which already fit. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat__action {
+    top: auto;
+    bottom: calc(100% + var(--sp-art-rise, 12px) + var(--sp-tag-gap, 3px));
+  }
+  .seat__bounty {
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%) translateZ(0);
+    bottom: calc(100% + var(--sp-art-rise, 12px) + var(--sp-tag-gap, 3px));
+  }
+  .seat:has(> .seat__action) .seat__bounty {
+    bottom: calc(
+      100% + var(--sp-art-rise, 12px) + var(--sp-tag-gap, 3px) + var(--sp-tag-h, 20px) + 2px
+    );
+  }
+}
+
 .seat__bounty-val {
   /* Third formatted amount on the seat, same treatment — see `.seat__stack`. */
   font-family: var(--sp-amount-font);
@@ -2952,6 +2983,11 @@
 
 /* Hero and villain use the same close attachment at every viewport. */
 @media (max-width: 480px) {
+  .seat__bounty {
+    --sp-bounty-h: 17px;
+    padding: 0 6px;
+    min-width: 24px;
+  }
   .seat__bounty-val {
     font-size: 0.64rem;
   }
@@ -3443,27 +3479,27 @@
    SHOWDOWN CARD FLIP — 3D card reveal animation
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.seat__cards--showdown .seat__card {
+.seat__cards--showdown .seat__card > .card-image {
   animation: cardShowdownFlip calc(0.35s * var(--animation-speed, 1)) ease-out forwards;
   perspective: 600px;
 }
 
-.seat__cards--showdown .seat__card:nth-child(2) {
+.seat__cards--showdown .seat__card:nth-child(2) > .card-image {
   /* 2026-08-27: scaled — see the folding delay note above. */
   animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 
 @keyframes cardShowdownFlip {
   0% {
-    transform: rotateY(180deg) scale(0.9);
+    transform: rotateY(180deg);
     opacity: 0.5;
   }
   50% {
-    transform: rotateY(90deg) scale(1.05);
+    transform: rotateY(90deg);
     opacity: 0.8;
   }
   100% {
-    transform: rotateY(0deg) scale(1);
+    transform: rotateY(0deg);
     opacity: 1;
   }
 }
@@ -3611,9 +3647,13 @@
     font-size: 0.4rem;
     padding: 0 2px;
   }
+  .seat {
+    /* Read by the tag AND by the bounty stacked above it. */
+    --sp-tag-h: 15px;
+  }
   .seat__action {
     font-size: 0.5625rem;
-    padding: 1px 6px;
+    padding: 0 6px;
   }
   .seat__hand-name {
     font-size: 0.625rem;
@@ -3683,7 +3723,7 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* Winner pop — scale bounce triggered by TSX */
-.seat--winner-pop {
+.seat--winner-pop > .seat__avatar-wrap {
   /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
   animation: seatWinnerPop calc(0.6s * var(--animation-speed, 1))
     var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
@@ -3708,7 +3748,7 @@
    2026-08-27: now scales with --animation-speed like its JS removal window
    (SeatSlot.tsx removed the class at 400ms * speed while this ran a fixed
    0.4s — at Fast the shake was cut at 50% and the seat snapped back). */
-.seat--allin-shake {
+.seat--allin-shake > .seat__avatar-wrap {
   animation: seatAllinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
@@ -4133,7 +4173,9 @@
      test harness — the hero plate sat 26px off its true position, and the
      number looked deliberate enough that nobody would question it.
      A fallback that disagrees with every declared value is not a safety net. */
-  bottom: calc(50% - var(--sp-hero-clear, 60px) - env(safe-area-inset-bottom, 0px));
+  bottom: calc(
+    50% - var(--sp-hero-clear, 60px) - var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
   transform: none;
   align-items: center;
   justify-content: flex-start;
@@ -4185,6 +4227,26 @@
    added for in the first place. */
 .seat-wrapper.seat-wrapper--hero {
   --hero-lift: 0px;
+}
+
+/* Dan 2026-10-22, from a real phone: "lower the hero avatar down so it's not
+   messing with the table layout for buttons, chips etc." The hero's bust is
+   scaled up from its feet, so its crown reached a third of the way up the
+   bottom of the felt and the hero's own bet and the dealer button had nowhere
+   to land in front of it (the bet was being parked in front of the next
+   player). The block drops up to 22px, and only into SLACK: a phone's felt is
+   width-bound, and the scaler is pinned to the top of its box, so the
+   difference between the height the felt was allowed (--sp-table-h) and the
+   height it painted (--table-h, measured) is empty page below the felt and
+   above the reserved strip (~50px on every phone measured, 375x667 to
+   430x932). A height-bound felt has none, and its hero does not move, so the
+   strip still holds the plate and the hand read on every device. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat-wrapper.seat-wrapper--hero {
+    --hero-lift: calc(
+      -1 * clamp(0px, calc(var(--sp-table-h) - var(--table-h, var(--sp-table-h))), 22px)
+    );
+  }
 }
 
 /* 2026-08-26: the revealed row's separate over-the-plate anchor was DELETED
@@ -4672,14 +4734,46 @@
    outboard edge and grows inboard, and useProtectedCardLayout moves it off
    the board, the pot and the plates when it would land on them. */
 .seat .seat__cards--opponent.seat__cards--revealed {
-  --vh-card-w: var(
-    --sp-board-card-w,
-    calc(var(--seat-avatar-full, 84px) * 0.346 * 1.6 * 0.714)
-  );
+  --vh-card-w: var(--sp-board-card-w, calc(var(--seat-avatar-full, 84px) * 0.346 * 1.6 * 0.714));
   --vh-card-h: calc(var(--vh-card-w) * 92 / 64);
 }
 .seat .seat__cards--opponent.seat__cards--revealed .seat__card {
   z-index: calc(1 + var(--vh-i, 0));
+}
+
+/* Dan 2026-10-22: "make sure that when a player is all in and or the cards
+   are shown down, that they are clearly displayed - a player said they could
+   not see the players cards they lost to in PLO6." The rule above fits every
+   tabled card SIDE BY SIDE inside the plate's width, so on a phone a PLO6
+   hand was six cards about 12px wide, and even a two-card hand was 14 to 20px:
+   unreadable. Dan, the same day: "villain cards shown at showdown must be the
+   same size as the board cards, overlapped but not covered so all are clearly
+   readable." On a phone every tabled card is now the board's painted card
+   width (--sp-board-card-w, measured by useProtectedCardLayout; a share of the
+   table's width before a board is out), the same at every seat, and a hand of
+   four or more OVERLAPS like a held hand, stepped half a card apart, and each card is stacked over the one to
+   its left, so every card's rank and suit corner stays in view. A PLO6 row is
+   3.5 cards wide. The painted-layout pass (useProtectedCardLayout) still moves
+   the row clear of the board, the pot and every player. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat .seat__cards--opponent.seat__cards--revealed {
+    --vh-card-w: var(--sp-board-card-w, max(24px, calc(var(--table-w, 320px) * 0.088)));
+    --vh-card-h: calc(var(--vh-card-w) * 1.4);
+  }
+  .seat .seat__cards--opponent.seat__cards--revealed:has(> :nth-child(4)) {
+    --vh-step-f: 0.5;
+  }
+  .seat .seat__cards--opponent.seat__cards--revealed:has(> :nth-child(4)) > .seat__card {
+    z-index: calc(1 + var(--vh-i, 0));
+  }
+}
+/* The first generation SE (320px) is the one felt too small for board-size
+   tabled hands beside nine players' wagers; its tabled cards are 8 percent of
+   the table's width (about 21px), every corner still in view. */
+@media (max-width: 340px) and (orientation: portrait) {
+  .seat .seat__cards--opponent.seat__cards--revealed {
+    --vh-card-w: calc(var(--table-w, 262px) * 0.08);
+  }
 }
 
 /* The top pod clears Mini BBJ and spends less of the centre pot lane. */
@@ -4699,10 +4793,44 @@
    Dan 2026-10-21: every top-cap chair, tournaments included (whose full-size
    top pods carry no `--top` tag), so a tag above a top player's head can
    never be cut off by the top of the screen. */
+/* Dan 2026-10-22: above a top player's head is the jackpot banner, so on a
+   phone neither the tag nor the bounty may go there. */
 @media (max-width: 480px) and (orientation: portrait) {
   .seat-wrapper--top .seat__action,
   .seat-wrapper--cap .seat__action {
     top: calc(100% + 2px);
+    bottom: auto;
+  }
+  /* A top player's head is under the jackpot banner, so the bounty cannot
+     ride above it. It sits beside the avatar instead, on the outboard side
+     (the side away from the middle of the table), clear of the banner and of
+     the tag below the plate. */
+  .seat-wrapper--top .seat__bounty,
+  .seat-wrapper--cap .seat__bounty,
+  .seat-wrapper--top .seat:has(> .seat__action) .seat__bounty,
+  .seat-wrapper--cap .seat:has(> .seat__action) .seat__bounty {
+    top: 2px;
+    bottom: auto;
+    left: auto;
+    right: calc(100% - 2px);
+    transform: translateZ(0);
+  }
+  /* The hero's head reaches the felt's printing on a short phone; its pill
+     sits beside the avatar, on the side away from the hero's cards. */
+  .seat-wrapper--hero .seat__bounty,
+  .seat-wrapper--hero .seat:has(> .seat__action) .seat__bounty {
+    top: 6px;
+    bottom: auto;
+    left: auto;
+    right: calc(100% - 4px);
+    transform: translateZ(0);
+  }
+  .seat-wrapper--top .seat--cards-right .seat__bounty,
+  .seat-wrapper--cap .seat--cards-right .seat__bounty,
+  .seat-wrapper--top .seat--cards-right:has(> .seat__action) .seat__bounty,
+  .seat-wrapper--cap .seat--cards-right:has(> .seat__action) .seat__bounty {
+    right: auto;
+    left: calc(100% - 2px);
   }
 }
 
@@ -4727,7 +4855,54 @@
   }
 }
 
-/* Dan 2026-10-21: the smallest phones (an iPhone SE is 320 x 568) cannot fit a
+/* ═══════════════════════════════════════════════════════════════════════════
+   DENSE RINGS ON A PHONE (Dan 2026-10-22, from a real phone)
+   ═══════════════════════════════════════════════════════════════════════════
+   "For 9 max games the avatars and frames are too large, they are still
+   overlapping each other, and there needs to be some space between them to
+   allow for 'action bar' and 'bounty amount' above their heads."
+
+   A side column on a 7-9 max ring holds three chairs about 0.29 of the felt's
+   height apart, and each chair now needs its whole pod PLUS the lane above the
+   head (tag 15px + bounty 17px + gaps). On a notched phone the felt is
+   ~450-520px tall, so a pod sized from the felt's WIDTH alone (0.158w) did not
+   fit. Here the avatar is the smaller of a width share and a HEIGHT share
+   (--table-h is the scaler's measured height, published by TablePage), so a
+   shorter felt draws proportionally smaller players instead of stacking them.
+   The plate keeps the readable name and stack at a slightly smaller size.
+   tableGeometry.ts `seatPodPx(..., { seats, canvasHeightPx })` mirrors these
+   numbers for chip and button clearance; change both together. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat {
+    --seat-avatar-full: clamp(
+      34px,
+      min(calc(var(--table-w, 360px) * 0.14), calc(var(--table-h, 600px) * 0.085)),
+      52px
+    );
+    --seat-avatar-base: var(--seat-avatar-full);
+  }
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat__info {
+    min-height: 36px;
+    padding: 2px 4px;
+  }
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat__name {
+    font-size: 0.6875rem;
+  }
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat__stack {
+    font-size: 0.8125rem;
+  }
+}
+
+/* Declared after the dense-ring rule so it wins it on source order.
+   Dan 2026-10-21: the smallest phones (an iPhone SE is 320 x 568) cannot fit a
    nine-handed side column of full pods without one player's plate covering the
    next. Below 620px of height the villain avatars shrink to the compact top-pod
    size, so every player stays fully readable instead of overlapping. */
@@ -4736,10 +4911,38 @@
     --seat-avatar-base: 40px;
     --seat-avatar-full: 40px;
   }
-  /* A full-size top pod's tag below its plate reaches the pot pill on a felt
-     this short; its crown is well clear of the screen top, so it rides there. */
-  .table-page .seat-wrapper--cap:not(.seat-wrapper--top) .seat__action {
-    top: -12px;
+  /* There is not a whole lane of headroom per chair on a felt this short
+     (an iPhone SE first generation), so the bounty moves beside the avatar,
+     as it does on the top seats, and only the tag stands above the head. */
+  .table-page .seat-wrapper:not(.seat-wrapper--hero) .seat .seat__bounty,
+  .table-page .seat-wrapper:not(.seat-wrapper--hero) .seat:has(> .seat__action) .seat__bounty {
+    /* Inboard: a side chair is pinned to the screen edge, so outboard is off
+       the screen. */
+    top: 2px;
+    bottom: auto;
+    right: auto;
+    left: calc(100% - 8px);
+    transform: translateZ(0);
+  }
+  .table-page .seat-wrapper:not(.seat-wrapper--hero) .seat--cards-right .seat__bounty,
+  .table-page
+    .seat-wrapper:not(.seat-wrapper--hero)
+    .seat--cards-right:has(> .seat__action)
+    .seat__bounty {
+    left: auto;
+    right: calc(100% - 8px);
+  }
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat {
+    --seat-avatar-full: 32px;
+    --seat-avatar-base: 32px;
+  }
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat__info {
+    min-height: 32px;
+    padding: 1px 3px;
   }
   /* Three all-in pucks have to share a very small felt. */
   .seat__allin-puck {
@@ -4748,4 +4951,99 @@
   .seat__bet-chips:has(.seat__allin-puck) {
     gap: 1px;
   }
+}
+
+/* On a 320px nine-seat table the top actions use their own narrow lanes
+   between the side columns and the pot. Wrap the full label, never clip it. */
+@media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
+  .table-page[data-seats='9'] .seat-wrapper--top .seat__action {
+    width: 42px;
+    height: auto;
+    min-height: 13px;
+    min-width: 0;
+    white-space: nowrap;
+    line-height: 1;
+    padding: 2px;
+    left: calc(50% - 12px);
+  }
+  .table-page[data-seats='9'] .seat-wrapper--top .seat--cards-right .seat__action {
+    left: calc(50% + 12px);
+  }
+}
+
+@media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
+  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(5))
+    .seat-wrapper--top
+    .seat__bet-chips
+    .chip-physics {
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+@media (max-width: 340px) and (max-height: 620px) and (orientation: portrait) {
+  .table-page[data-seats='9']:has(.seat__cards--opponent.seat__cards--revealed > :nth-child(5))
+    .seat-wrapper--top
+    .seat__bet-chips
+    .cp-amount {
+    padding: 0;
+    line-height: 1;
+  }
+}
+
+/* Phones place the puck and chips independently in the same owner's lane.
+   Roomier layouts keep their original side-by-side wager assembly. */
+.seat__wager-group {
+  display: contents;
+}
+@media (min-width: 481px), (orientation: landscape) {
+  .seat__wager-group:has(.seat__allin-puck) {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(
+      calc(-50% + var(--bet-offset-x, 0px)),
+      calc(-50% + var(--bet-offset-y, 0px))
+    );
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    z-index: 5;
+  }
+  /* Preserve the same hero lift as the ordinary wager above. */
+  .seat--hero .seat__wager-group:has(.seat__allin-puck) {
+    transform: translate(
+      calc(-50% + var(--bet-offset-x, 0px)),
+      calc(-50% + var(--bet-offset-y, 0px) - 30px)
+    );
+  }
+  .seat__wager-group:has(.seat__allin-puck) > .seat__bet-chips {
+    position: static;
+    transform: none;
+  }
+}
+
+/* PLO5/PLO6 tabled hands keep board-sized cards and a fixed readable index
+   lane. The placement owner must never shrink or close these lanes mid-runout.
+   Hero and opponents use the same table token, independent of avatar caps. */
+.seat .seat__cards.seat__cards--revealed:is([data-card-count='5'], [data-card-count='6']) {
+  --vh-card-w: var(
+    --sp-tabled-card-w,
+    var(--sp-board-card-w, max(24px, calc(var(--table-w, 320px) * 0.088)))
+  );
+  --vh-card-h: calc(var(--vh-card-w) * 92 / 64);
+  --vh-step-f: 0.5;
+  --sp-hero-card-w: var(--vh-card-w);
+  --sp-hero-card-h: var(--vh-card-h);
+  --sp-hero-card-step: calc(var(--sp-hero-card-w) * 0.5);
+  transition: none;
+}
+.seat .seat__cards.seat__cards--revealed:is([data-card-count='5'], [data-card-count='6']) > *,
+.seat
+  .seat__cards.seat__cards--revealed:is([data-card-count='5'], [data-card-count='6'])
+  .seat__card {
+  transition:
+    box-shadow 0.3s ease,
+    filter 0.3s ease;
+  transform: none;
 }

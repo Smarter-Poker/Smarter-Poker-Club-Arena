@@ -72,6 +72,8 @@ import {
 
 import { useRecentRecipients } from '../hooks/useRecentRecipients';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
+import AgentCashoutPanel from '../components/agent/AgentCashoutPanel';
+import { useClubPendingCashouts } from '../hooks/useClubPendingCashouts';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { Link, useParams, useNavigate } from 'react-router-dom';
@@ -2847,6 +2849,16 @@ function CashierTradeWorkspace() {
    * retry after a lost response replays rather than moving chips twice.
    */
   const managementClaims = myRole === 'owner' || myRole === 'co_owner' || myRole === 'admin';
+  /* CASH OUT REQUESTS FOR MANAGEMENT (Dan 2026-10-23): "OWNERS, CO OWNERS OR
+     ADMINS SHOULD BE ABLE TO SEE ALL CASH OUT REQUESTS AND PULL THOSE CHIPS
+     ... THERE SHOULD BE AN ICON ON THE CASHIER THAT MANAGEMENT AND OWNERS CAN
+     SEE, BELOW THE CURRENT 'REQUEST CASH OUT'". The queue is fn_cashout_queue's
+     scope (every request in a club this viewer runs); pulling the chips is
+     AgentCashoutPanel's approval, which moves the verified hold into the
+     approver's agent wallet. No notification is involved: the request's
+     message goes to the player's own agent only. */
+  const pendingCashouts = useClubPendingCashouts(clubUuid, roleResolved && managementClaims);
+  const [showCashoutQueue, setShowCashoutQueue] = useState(false);
   /** The one player a management claim acts on: the dialog's, else the single selection. */
   const managementClaimTarget: DownlineRow | null = !managementClaims
     ? null
@@ -3492,6 +3504,24 @@ function CashierTradeWorkspace() {
                 </span>
               </button>
             )}
+            {managementClaims && roleResolved && (
+              <button
+                type="button"
+                className={`${styles.cashoutQueueButton} ${pendingCashouts.requests.length > 0 ? styles.cashoutQueueLive : ''}`}
+                aria-label={`Cash Out Requests. ${pendingCashouts.requests.length.toLocaleString()} Pending`}
+                aria-describedby="cashier-cashout-queue-count"
+                onClick={() => setShowCashoutQueue(true)}
+              >
+                <span className={styles.cashoutLabel}>Cash Out Requests</span>
+                <span id="cashier-cashout-queue-count" className={styles.cashoutQueueCount}>
+                  {!pendingCashouts.loaded
+                    ? 'Loading'
+                    : pendingCashouts.requests.length > 0
+                      ? `${pendingCashouts.requests.length.toLocaleString()} Pending`
+                      : 'None Pending'}
+                </span>
+              </button>
+            )}
             {!advanced && (
               // Dan 2026-10-16: a healthy cashier prints no "Balances Synchronized"
               // line. The status stays announced to assistive technology, and any
@@ -4094,6 +4124,9 @@ function CashierTradeWorkspace() {
                             {r.name}
                             {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
                           </span>
+                          {pendingCashouts.playerIds.has(r.userId) && (
+                            <span className={styles.rowCashoutRequested}>Cash Out Requested</span>
+                          )}
                           {advanced && (
                             <span className={styles.rowSub}>
                               {titleCase(roleLabel(r.role as ClubRole))}
@@ -4881,6 +4914,29 @@ function CashierTradeWorkspace() {
           currentBalance={loading ? null : myBalance}
           onComplete={() => void loadClub(true)}
         />
+      )}
+
+      {showCashoutQueue && managementClaims && clubUuid && (
+        <div className={styles.modalOverlay} onClick={() => setShowCashoutQueue(false)}>
+          <div
+            className={styles.consoleDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="agent-cashout-title"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <AgentCashoutPanel
+              clubId={clubUuid}
+              eyebrow="Club Cashier"
+              onClose={() => setShowCashoutQueue(false)}
+              onCashoutProcessed={() => {
+                pendingCashouts.reload();
+                void loadClub(true);
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {/* Amount modal */}

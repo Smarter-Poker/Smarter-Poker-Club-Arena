@@ -30,7 +30,7 @@ describe('Phase 6C exact-input replay through the worker runtime', () => {
     expect(first.authority.same).toBe(true);
     expect(first.latency.computeMs).toBeGreaterThanOrEqual(0);
     expect(first.latency.wallMs).toBeGreaterThan(0);
-    expect(first.work.nodeVisits).toBe(8);
+    expect(first.work.nodeVisits).toBe(9);
     expect(first.work.equitySamples).toBeGreaterThan(0);
     expect(first.engineSha).toBe(ENGINE);
     expect(first.recordedRelease).toMatch(/^[0-9a-f]{40}$/);

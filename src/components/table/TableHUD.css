@@ -37,7 +37,7 @@
   --sp-hud-line: calc(
     var(
         --sp-action-reserve,
-        calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))
+        calc(var(--sp-bottom-row-h, 52px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)))
       ) +
       8px
   );

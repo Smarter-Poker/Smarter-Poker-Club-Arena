@@ -150,8 +150,8 @@ const engineWs = new EngineWebSocketServer({
     gameServer.lightningRooms.disconnect(tableId, userId);
   },
   // Lightning Phase 12: the client rendered its room's hand (hand_to_first_render).
-  onRenderAck: (tableId, userId, handId) => {
-    gameServer.lightningRooms.renderAck(tableId, userId, handId);
+  onRenderAck: (tableId, userId, handId, resumed) => {
+    gameServer.lightningRooms.renderAck(tableId, userId, handId, resumed);
   },
 });
 
@@ -429,10 +429,24 @@ function scheduleFailedShutdownExit(error: unknown, kind: string): void {
   setTimeout(() => process.exit(1), 2_000);
 }
 
+// THE TRANSPORTS CANNOT HOLD THE PROCESS AFTER OWNERSHIP IS RELEASED
+// (2026-10-23). Production logged "Shutdown complete." 6.7 s after SIGTERM and
+// then sat until the 40 s hard deadline (exit 1) on 13 of 14 drains on
+// 2026-10-22/23: keep-alive HTTP sockets (130 s idle window behind Caddy) and
+// WebSocket peers that never answer the close handshake (ws waits 30 s per
+// socket) kept server.close()/wss.close() pending. That idle wait consumed the
+// release transaction's 75 s cutover budget (runs 39728449445-1 and
+// 39902613436-1). Once GameServer.stop() has certified ownership release the
+// sockets carry nothing durable, so each transport gets a short grace and is
+// then closed outright.
+const LOCAL_TRANSPORT_GRACE_MS = 3_000;
+
 function closeHttpServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       httpServer.close((error) => (error ? reject(error) : resolve()));
+      httpServer.closeIdleConnections();
+      setTimeout(() => httpServer.closeAllConnections(), LOCAL_TRANSPORT_GRACE_MS).unref();
     } catch (error) {
       reject(error);
     }

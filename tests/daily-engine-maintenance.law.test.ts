@@ -1,6 +1,6 @@
 import { queuedDailyRelease } from '../scripts/ci/daily-engine-provenance.mjs';
 import { describe, expect, it } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -18,16 +18,28 @@ function admit(
   message: string,
   health: string,
   schedule = '30 8 * * *',
-  createdAt = '2026-10-21T08:30:01Z'
+  createdAt = '2026-10-21T08:30:01Z',
+  owner?: { windows: string; ancestor: boolean; served?: boolean }
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'daily-admission-'));
   try {
+    // The admission reads server/release/owner-maintenance-windows.json from
+    // its checkout; run in an isolated tree so the repository's own live entry
+    // can never change these verdicts with the wall clock.
+    if (owner) {
+      mkdirSync(join(dir, 'server/release'), { recursive: true });
+      writeFileSync(join(dir, 'server/release/owner-maintenance-windows.json'), owner.windows);
+    }
     const result = spawnSync(
       'bash',
       [
         '-c',
         `
-      git() { printf '%s' "$MESSAGE"; }
+      git() {
+        if [ "$1" = merge-base ] && [ "$4" = HEAD ]; then [ "$OWNER_ANCESTOR" = 1 ]; return; fi
+        if [ "$1" = merge-base ]; then [ "$OWNER_SERVED" = 1 ]; return; fi
+        printf '%s' "$MESSAGE"
+      }
       date() { printf '%s' "$HOUR"; }
       gh() { printf '%s' "$RUN_CREATED_AT"; }
       curl() { printf '%s' "$HEALTH"; }
@@ -37,8 +49,11 @@ function admit(
       ],
       {
         encoding: 'utf8',
+        cwd: dir,
         env: {
           ...process.env,
+          OWNER_ANCESTOR: owner?.ancestor ? '1' : '0',
+          OWNER_SERVED: owner?.served ? '1' : '0',
           EVENT_NAME: event,
           HOUR: hour,
           SCHEDULE_EXPRESSION: schedule,
@@ -89,13 +104,73 @@ describe('daily routine admission uses the existing protected receiver only', ()
       admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 8 * * *', '2026-10-22T00:01:00Z')
     ).toBe(false);
   });
-  it('keeps explicit urgency and measured degradation as emergency causes', () => {
-    expect(admit('push', '14', 'fix\n\nEngine-Release: urgent', '{}')).toBe(true);
+  it('refuses commit urgency while retaining measured engine emergencies', () => {
+    expect(admit('push', '14', 'fix\n\nEngine-Release: urgent', '{}')).toBe(false);
     expect(admit('push', '14', 'routine', '{"liveness":"dead"}')).toBe(true);
     expect(admit('push', '14', 'routine', '{"wholeFleetStalled":true}')).toBe(true);
     expect(admit('push', '14', 'routine', '{"tournamentManagersQuarantined":100}')).toBe(true);
     expect(admit('push', '14', 'routine', '{"tournamentManagersQuarantined":27}')).toBe(false);
     expect(admit('push', '14', 'routine', 'unreadable')).toBe(false);
+  });
+  it('admits an explicit owner-ordered window only while it is valid and names a contained commit', () => {
+    const iso = (offsetMin: number) => new Date(Date.now() + offsetMin * 60_000).toISOString();
+    const doc = (notBefore: string, notAfter: string, contains = 'a'.repeat(40)) =>
+      JSON.stringify({
+        version: 1,
+        windows: [
+          { id: 'fixture', ownerOrder: 'Owner order: live now.', contains, notBefore, notAfter },
+        ],
+      });
+    const healthy = `{"liveness":"ok","releaseSha":"${'e'.repeat(40)}"}`;
+    const open = doc(iso(-10), iso(60));
+    // Once: when the serving engine already contains the commit, nothing more.
+    expect(
+      admit('push', '14', 'routine', healthy, undefined, undefined, {
+        windows: open,
+        ancestor: true,
+        served: true,
+      })
+    ).toBe(false);
+    expect(
+      admit('push', '14', 'routine', '{"liveness":"ok"}', undefined, undefined, {
+        windows: open,
+        ancestor: true,
+      })
+    ).toBe(false);
+    expect(
+      admit('push', '14', 'routine', healthy, undefined, undefined, {
+        windows: open,
+        ancestor: true,
+      })
+    ).toBe(true);
+    expect(
+      admit('push', '14', 'routine', healthy, undefined, undefined, {
+        windows: open,
+        ancestor: false,
+      })
+    ).toBe(false);
+    for (const closed of [
+      doc(iso(-120), iso(-60)),
+      doc(iso(30), iso(90)),
+      doc(iso(-10), iso(400)),
+      doc(iso(-10), iso(60), 'nope'),
+      '{"version":2}',
+      'not json',
+    ]) {
+      expect(
+        admit('push', '14', 'routine', healthy, undefined, undefined, {
+          windows: closed,
+          ancestor: true,
+        })
+      ).toBe(false);
+    }
+    // Commit text still grants nothing, with or without an owner file.
+    expect(
+      admit('push', '14', 'fix\n\nEngine-Release: urgent', healthy, undefined, undefined, {
+        windows: doc(iso(-120), iso(-60)),
+        ancestor: true,
+      })
+    ).toBe(false);
   });
   it('keeps tournament breaks at :55 independently of global daily maintenance', () => {
     const server = readFileSync(join(root, 'server/src/GameServer.ts'), 'utf8');
@@ -123,7 +198,13 @@ const transaction = readFileSync(
 );
 const guardAt = transaction.indexOf('# Protect mixed-version rollout too:');
 const policy = transaction.slice(guardAt, transaction.indexOf('remaining=int(', guardAt));
-function certificatePolicy(at: string, reason: string, transition = false, schedule?: object) {
+function certificatePolicy(
+  at: string,
+  reason: string,
+  transition = false,
+  schedule?: object,
+  legacyUrgent = false
+) {
   const code =
     `import json,sys\nm=json.load(sys.stdin)\n` +
     policy.replace(
@@ -136,7 +217,7 @@ function certificatePolicy(at: string, reason: string, transition = false, sched
     env: {
       ...process.env,
       FIXTURE_AT: at,
-      RECOVERY_URGENT: '0',
+      RECOVERY_URGENT: legacyUrgent ? '1' : '0',
       DAILY_TRANSITION: transition ? '1' : '0',
     },
   }).status;
@@ -157,6 +238,17 @@ describe('routine activation and the owner-approved initial transition stay boun
     ]) {
       expect(certificatePolicy(at, 'Scheduled Engine Maintenance')).not.toBe(0);
     }
+  });
+  it('refuses a legacy urgency flag as off-cycle certificate authority', () => {
+    expect(
+      certificatePolicy(
+        '2026-10-23T05:08:37+00:00',
+        'Scheduled Engine Maintenance',
+        false,
+        undefined,
+        true
+      )
+    ).not.toBe(0);
   });
   it('permits the initial old-engine :55 certificate and closes that exception on the daily engine', () => {
     expect(
@@ -229,4 +321,30 @@ describe('provenance distinguishes a legitimate daily queue from a missed releas
     expect(audit).toContain('QUEUED (not deployed)');
     expect(audit).toContain('ENGINE PROVENANCE MISMATCH');
   });
+});
+
+const receiver = parse(
+  readFileSync(join(root, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8')
+);
+const liveProof = receiver.jobs.deploy.steps
+  .find((s: { id?: string }) => s.id === 'verify')
+  .run.split("<<'PYTHON'\n")[1]
+  .split('\nPYTHON')[0];
+
+it('proves installed routine refusal during the existing countdown without requiring an early thaw', () => {
+  const result = spawnSync(
+    'python3',
+    [
+      '-c',
+      `
+import io, urllib.request
+urllib.request.urlopen = lambda *args, **kwargs: io.BytesIO(b'{"running":true,"liveness":"ok","wholeFleetStalled":false,"tournamentManagersQuarantined":0,"maintenance":{"active":true}}')
+${liveProof}
+`,
+      join(root, 'server/scripts/engine-release-transaction.sh'),
+    ],
+    { encoding: 'utf8' }
+  );
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stdout).toContain('refuses legacy urgency against live healthy play');
 });

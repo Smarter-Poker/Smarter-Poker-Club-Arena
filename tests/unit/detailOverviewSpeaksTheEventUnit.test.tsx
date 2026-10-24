@@ -140,4 +140,15 @@ describe('the detail tab speaks the event unit', () => {
     renderTab(diamond);
     expect(fact('Bounty')).toBe('5 Diamonds per KO - 50% to knocker, 50% to bounty');
   });
+
+  it('a chests-only mystery event never advertises a flat head per KO', () => {
+    // Dan 2026-10-22: no bounty is paid before the money.
+    const mystery = completedBountyEvent(CHIP_CLUB);
+    Object.assign(mystery.tournament as unknown as Record<string, unknown>, {
+      is_mystery_bounty: true,
+      mystery_bounty_regular_pool_percent: 0,
+    });
+    renderTab(mystery);
+    expect(fact('Bounty')).toBe('5 Per Entry To The Mystery Pool - No Bounty Before The Money');
+  });
 });

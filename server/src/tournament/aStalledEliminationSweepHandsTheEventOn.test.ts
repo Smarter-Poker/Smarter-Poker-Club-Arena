@@ -23,6 +23,8 @@ function eng(running: boolean, betweenHands: boolean) {
 
 function manager(engines: [string, any][], processing: boolean, startedAt: number, bustSince = 0) {
   const m = Object.create(TournamentManagerBase.prototype) as any;
+  m.running = true;
+  m.tournamentLeaseAuthorityIsCurrent = () => true;
   m.bustAwaitingSinceMs = bustSince;
   m.tournamentId = 'eeeeeeee-0000-4000-8000-000000000001';
   m.tableEngines = new Map(engines);
@@ -39,7 +41,30 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
       msInFlight: 180_000,
       msBustWaiting: 0,
       stage: -1,
+      step: null,
+      msInStep: 0,
     });
+  });
+
+  it('names the step a stalled sweep is stuck in, and for how long', () => {
+    const m = manager([], true, 1_000);
+    m.eliminationSweepStep = 'recoverPendingBountyObligations';
+    m.eliminationSweepStepAt = 61_000;
+    expect(m.getStalledEliminationSweep(181_000)).toEqual({
+      msInFlight: 180_000,
+      msBustWaiting: 0,
+      stage: -1,
+      step: 'recoverPendingBountyObligations',
+      msInStep: 120_000,
+    });
+  });
+
+  it('records each step the sweep enters', () => {
+    const m = manager([], true, 1);
+    const before = Date.now();
+    m.noteEliminationSweepStep('eliminatePlayer');
+    expect(m.eliminationSweepStep).toBe('eliminatePlayer');
+    expect(m.eliminationSweepStepAt).toBeGreaterThanOrEqual(before);
   });
 
   it('reports nothing while no sweep is in flight', () => {
@@ -59,8 +84,14 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
       1
     );
     expect(m.requestSuccessorForStalledEliminationSweep()).toBe(true);
-    expect(a.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
-    expect(b.pauseAfterHand).toHaveBeenCalledWith(undefined, { untilResumed: true });
+    expect(a.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
+    expect(b.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+      beforeNextHand: true,
+      untilResumed: true,
+    });
     expect(m.gameServer.handTournamentToSuccessorGeneration).toHaveBeenCalledWith(
       m.tournamentId,
       m
@@ -70,7 +101,7 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
   it('never cuts a hand short: waits while a table still has cards in the air', () => {
     const a = eng(true, false);
     const m = manager([[A, a]], true, 1);
-    expect(m.requestSuccessorForStalledEliminationSweep()).toBe(false);
+    expect(m.requestSuccessorForStalledEliminationSweep()).toBe(true);
     expect(a.pauseAfterHand).toHaveBeenCalled();
     expect(m.gameServer.handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
   });
@@ -83,6 +114,8 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
       msInFlight: 0,
       msBustWaiting: 120_000,
       stage: -1,
+      step: null,
+      msInStep: 0,
     });
   });
 

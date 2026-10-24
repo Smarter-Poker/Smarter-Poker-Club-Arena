@@ -89,7 +89,11 @@ describe('Phase 2 create experience', () => {
   it('restores drafts and checks allowance plus exact name availability', () => {
     expect(modal).toContain('CREATE_DRAFT_KEY');
     expect(modal).toContain('creationRequestIdRef');
-    expect(modal).toContain('request_id: creationRequestIdRef.current');
+    // The request is captured once; a late account change must not substitute
+    // a different mutable ref after an await.
+    expect(modal).toContain('const requestId = creationRequestIdRef.current');
+    expect(modal).toContain('request_id: requestId');
+    expect(modal).toContain('expectedOwnerId: ownerId');
     expect(modal).toContain('Draft Restored');
     expect(modal).toContain('ClubsService.checkNameAvailability');
     expect(modal).toContain('ClubsService.getCreationEligibility');

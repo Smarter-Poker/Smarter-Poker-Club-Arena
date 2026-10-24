@@ -1,0 +1,3 @@
+# tests/a-deploy-shipped-by-its-own-retry-is-not-a-failure.law.test.ts
+
+2026-10-23: the daily digest raised DailyDigest.deploy_failed for attempt row 1166 (run 39902613436-1, 734578ad), a safe refusal whose own retry, row 1167 (attempt 2, same SHA), shipped an hour later. Migration 20261023140557 counts a not-shipped attempt as shipped when the same exact target shipped later within twelve hours, reports it as `retried` beside `superseded`, and refuses to rewrite the function if the expression has moved. The law pins the single transaction, the exact-SHA and twelve-hour match, and the refusal.

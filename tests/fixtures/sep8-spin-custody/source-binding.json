@@ -27,7 +27,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "843281f8506b206eb0702c03a32e13298ed76a923c58a1df8544b725d00277a5",
+    "scripts/ci/classify-ci-changes.mjs": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1338,11 +1338,21 @@
       }
     ]
   },
+  "quickClubOpeningInputRouting20261023": {
+    "reason": "Admit the default club opening services and native regression to the existing accounting lane. Current classifier identity only; historical evidence, financial inputs, assertions and qualification states unchanged. No financial certificate restamp.",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6",
+    "current_sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+  },
   "serialJournalIndexCiInput20261023": {
     "reason": "Add the source-bound serial journal index module to the existing required contract-index recovery CI selector. Refresh only the current classifier input identity; preserve all historical financial certificates, qualification states, assertions and source inventories. This is not financial execution or installation evidence.",
     "source_revision": "f133610656b1cf6ee94757629efe9214a67671a1",
     "file": "scripts/ci/classify-ci-changes.mjs",
     "previous_sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6",
     "current_sha256": "843281f8506b206eb0702c03a32e13298ed76a923c58a1df8544b725d00277a5"
+  },
+  "migrationAuditIntegration20261024": {
+    "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
+    "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
   }
 }

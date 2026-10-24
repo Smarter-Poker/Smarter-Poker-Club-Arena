@@ -60,6 +60,7 @@ import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName, isTournamentGameCode } from '../utils/gameCode';
 import { readTournamentTabInfo, tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import { reportError } from '../utils/errorReporter';
+import { reportRemovedTournamentSeats } from '../services/tournamentSeatExitReport';
 import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
 import {
@@ -1095,10 +1096,19 @@ export default function MultiTablePage() {
         const previousSeatedIds = tablesRef.current
           .filter((tab) => isTableTab(tab) && tab.seated === true)
           .map((tab) => tab.id);
+        // Publish a durable finish before pruning can unmount TablePage and
+        // cancel its delayed elimination report. A balancer move publishes none.
+        const retainedReportTabs = await reportRemovedTournamentSeats(
+          previousSeatedIds.filter((id) => !ids.includes(id)),
+          user.id,
+          isCurrent,
+          new Set(tblRows.map((row) => row.tournament_id).filter((id): id is string => !!id))
+        );
+        if (!isCurrent()) return;
         reconciliationQueued = true;
         setTables((prev) => {
           if (!isCurrent()) return prev;
-          const liveSeatIds = new Set(ids);
+          const liveSeatIds = new Set([...ids, ...retainedReportTabs]);
           const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
           const known = new Set(survivors.map((t) => t.id));
           const room = Math.max(0, MAX_TABLES - survivors.length);

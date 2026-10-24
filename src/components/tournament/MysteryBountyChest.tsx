@@ -105,6 +105,11 @@ export interface MysteryChestData {
   /** The slot the revealer picked (1-based), once the server has it. */
   pickedSlot?: number | null;
   /**
+   * False when nobody picked and the chest opened by itself: the slot is then
+   * the server's, not a choice. Absent on an older server answer.
+   */
+  chosen?: boolean;
+  /**
    * Every chest that was on offer, with what it held. Only present once the
    * award is revealed: the picked one is the prize, the others are real chests
    * of this event that stay in the pool.
@@ -128,7 +133,13 @@ export interface MysteryChestChoice {
  */
 export function parseMysteryChestOffer(
   raw: unknown
-): { slots: number; pickedSlot: number | null; choices?: MysteryChestChoice[] } | null {
+): {
+  slots: number;
+  pickedSlot: number | null;
+  chosen?: boolean;
+  revealed?: boolean;
+  choices?: MysteryChestChoice[];
+} | null {
   const o = (raw ?? {}) as Record<string, unknown>;
   if (o.ok !== true) return null;
   const slots = Math.floor(Number(o.slots));
@@ -146,7 +157,13 @@ export function parseMysteryChestOffer(
     }))
     .filter((c) => c.slot >= 1 && c.slot <= slots && Number.isFinite(c.amount) && c.amount > 0)
     .sort((a, b) => a.slot - b.slot);
-  return { slots, pickedSlot, choices: choices.length === slots ? choices : undefined };
+  return {
+    slots,
+    pickedSlot,
+    ...(typeof o.chosen === 'boolean' ? { chosen: o.chosen } : {}),
+    ...(typeof o.revealed === 'boolean' ? { revealed: o.revealed } : {}),
+    choices: choices.length === slots ? choices : undefined,
+  };
 }
 
 export interface MysteryBountyChestProps {
@@ -223,6 +240,18 @@ const CHEST_IMG = mediaUrl('images/mystery-chest.webp');
 const CHEST_BURST_VIDEO = mediaUrl('videos/mystery-chest-burst.mp4');
 
 const AUTO_OPEN_MS = 9000;
+/**
+ * The engine reveals the award on its own deadline (landing + AUTO_OPEN_MS
+ * after it reserved the chest, mysteryBountySpec). A slower Animation Speed
+ * used to stretch the winner's window past that deadline, so a late pick was
+ * refused and the prize appeared in a chest the player had not tapped. The
+ * winner's window now always closes this far inside the engine's.
+ */
+const SERVER_DEADLINE_MARGIN_MS = 800;
+export function winnerAutoOpenMs(speed: number): number {
+  const s = Number.isFinite(speed) && speed > 0 ? speed : 1;
+  return Math.min(AUTO_OPEN_MS * s, AUTO_OPEN_MS - SERVER_DEADLINE_MARGIN_MS);
+}
 /** Spectator failsafe: only used if no broadcast ever lands. */
 const SPECTATOR_FAILSAFE_MS = 14000;
 
@@ -468,6 +497,12 @@ export default function MysteryBountyChest({
   /** One reveal request per chest — section 54: the tap and the failsafe are
    *  the same request, never two. */
   const revealRequestedRef = useRef<string | null>(null);
+  /* Read through a ref: TablePage passes an inline arrow, so depending on it
+     gave requestReveal, runOpen and the auto-open effect a new identity on
+     every table render, and the winner's auto-open timer restarted each time
+     (2026-10-22). The latest callback is still the one called. */
+  const onRequestRevealRef = useRef(onRequestReveal);
+  onRequestRevealRef.current = onRequestReveal;
   const requestReveal = useCallback((slot?: number) => {
     if (!chestKey) return;
     // SECTIONS 52/53: only the designated revealer opens the chest. Everyone
@@ -480,12 +515,12 @@ export default function MysteryBountyChest({
     if (revealRequestedRef.current === chestKey) return;
     revealRequestedRef.current = chestKey;
     try {
-      onRequestReveal?.(slot);
+      onRequestRevealRef.current?.(slot);
     } catch {
       // The engine reveals this award authoritatively on its own deadline, so
       // a failed request costs the tapper their head start and nothing else.
     }
-  }, [chestKey, isWinner, onRequestReveal]);
+  }, [chestKey, isWinner]);
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout);
@@ -716,7 +751,7 @@ export default function MysteryBountyChest({
           /* ignore */
         }
         runOpen();
-      }, AUTO_OPEN_MS * getAnimationSpeed());
+      }, winnerAutoOpenMs(getAnimationSpeed()));
       timersRef.current.push(t);
       return () => clearTimeout(t);
     }
@@ -1009,6 +1044,19 @@ export default function MysteryBountyChest({
         {/* ── Reveal ── */}
         {phase === 'revealed' && (
           <div className="mbc__reveal">
+            {/* PICK 1 OF 3: which chest held this prize. The server's record
+                (the slot picked, or the one the self-opened chest stood in) is
+                what every seat shows; the revealer's own tap fills the gap
+                until it arrives. */}
+            {choosing && (data.pickedSlot ?? localPick) != null && (
+              <div className="mbc__picked-slot">
+                {data.chosen === false
+                  ? `Chest ${data.pickedSlot} Held The Prize`
+                  : `${isWinner ? 'You Picked' : `${data.knockerName} Picked`} Chest ${
+                      data.pickedSlot ?? localPick
+                    }`}
+              </div>
+            )}
             <div className="mbc__tier" style={{ color: tier.color }}>
               {tier.label}
             </div>
@@ -1047,6 +1095,7 @@ export default function MysteryBountyChest({
                     .filter((c) => !c.picked)
                     .map((c) => (
                       <span className="mbc__other" key={c.slot}>
+                        <span className="mbc__other-slot">Chest {c.slot}</span>
                         <span className="mbc__other-amount">{figure(c.amount)}</span>
                         {c.tierLabel && <span className="mbc__other-tier">{c.tierLabel}</span>}
                       </span>

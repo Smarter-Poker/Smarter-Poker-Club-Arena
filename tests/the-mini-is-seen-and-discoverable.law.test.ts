@@ -299,7 +299,9 @@ describe('the felt: a thinner frame, and the mini under it', () => {
   it('it opens the same popup the plate opens', () => {
     const row = plate.slice(plate.indexOf('className="bbj-mini-plate"'));
     expect(row).toMatch(/onClick=\{\(\) => onOpenDetails\?\.\(\)\}/);
-    expect(row).toMatch(/if \(e\.key === 'Enter' \|\| e\.key === ' '\)/);
+    // Native buttons supply Enter/Space without a second keydown click.
+    expect(row).toMatch(/<button\s+type="button"\s+className="bbj-mini-plate__details"/);
+    expect(row).toContain('aria-label="Mini Bad Beat Jackpot - View Recent Jackpots"');
   });
 
   it('the felt reserves the row it draws, and only the row it draws', () => {

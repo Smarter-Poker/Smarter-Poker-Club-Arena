@@ -130,3 +130,57 @@ describe('against a seat that pots every street', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2026-10-22 second pass: style changes, the limp-then-pot player, value into
+// stations and the short tournament stack. Measured on the same harness
+// before each change (same seeds):
+//   - a potter who turns into a nit stayed read as a maniac for 38 (NLH) and
+//     43 (PLO4) hands after the switch; a nit who turns into a potter was
+//     first read 15 (NLH) / 11 (PLO4) hands after the switch;
+//   - against a player who calls preflop and pots every street, heads-up
+//     postflop folds holding more than the price plus twelve points of
+//     equity: 12 of 46 (NLH) and 43 of 87 (PLO4).
+// ─────────────────────────────────────────────────────────────────────────
+
+const firstFrom = (a: boolean[], from: number, v: boolean) => {
+  for (let i = from; i < a.length; i++) if (a[i] === v) return i - from;
+  return Infinity;
+};
+
+describe('a style change is seen in a handful of hands, both ways', () => {
+  for (const v of ['nlh', 'plo4']) {
+    it(`${v}: a maniac who calms down stops being read as one within 25 hands`, () => {
+      const t = playManiacPressure(v, 'cash', 'potter', 100, 11, 15, { switchAt: 60, then: 'nit' });
+      expect(firstFrom(t.maniacReadByHand, 0, true)).toBeLessThanOrEqual(8);
+      expect(firstFrom(t.maniacReadByHand, 60, false)).toBeLessThanOrEqual(25);
+    });
+    it(`${v}: a nit who turns into a maniac is read within 12 hands`, () => {
+      const t = playManiacPressure(v, 'cash', 'nit', 90, 11, 15, { switchAt: 60, then: 'potter' });
+      expect(t.maniacReadByHand.slice(0, 60).some(Boolean)).toBe(false);
+      expect(firstFrom(t.maniacReadByHand, 60, true)).toBeLessThanOrEqual(12);
+    });
+  }
+});
+
+describe('a player who limps and then pots every street', () => {
+  for (const v of ['nlh', 'plo4']) {
+    it(`${v}: is read as a postflop maniac and called down by equity`, () => {
+      const t = playManiacPressure(v, 'cash', 'limppotter', HANDS);
+      expect(firstFrom(t.postflopManiacByHand, 0, true)).toBeLessThanOrEqual(10);
+      expect(t.postflopCalls).toBeGreaterThan(t.postflopFolds.length * 2);
+      expect(t.postflopFolds.filter((f) => f.equity > f.price + 0.12)).toEqual([]);
+    });
+  }
+});
+
+describe('a short tournament stack never raise-folds into a maniac', () => {
+  for (const kind of ['jammer', 'potter'] as const) {
+    it(`at 20 big blinds against a ${kind} behind, the open is the shove`, () => {
+      const t = playManiacPressure('nlh', 'tournament', kind, HANDS, 11, 15, { stackBB: 20 });
+      expect(t.firstInVsManiac.jam).toBeGreaterThan(10);
+      expect(t.firstInVsManiac.raise).toBe(0);
+      expect(t.rtfByStreet['preflop->preflop'] ?? 0).toBe(0);
+    });
+  }
+});

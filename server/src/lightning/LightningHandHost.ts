@@ -549,7 +549,7 @@ export class LightningHandHost {
       // there were six. Refusals are still judged in the same order, and
       // nothing is written before begin_dealing has answered.
       const handNumberP = this.deps.backend.nextHandNumber();
-      const participantsP = this.deps.backend.loadParticipants(this.handId);
+      const participantsP = this.deps.backend.loadParticipants(this.handId, this.formed.players);
       handNumberP.catch(() => undefined);
       participantsP.catch(() => undefined);
       const begun = await this.deps.backend.beginDealing(

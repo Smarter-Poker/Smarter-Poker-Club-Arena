@@ -128,16 +128,27 @@ describe('approved premium cash-table machine contract', () => {
     expect(GAME_PANEL).toContain("className={`glp${isCash ? ' glp--cash' : ''}`}");
     expect(GAME_PANEL).toContain('className="glp__arena-card"');
     expect(GAME_PANEL).toContain('arenaGameCardDataFromEntry(entry)');
-    expect(GAME_PREMIUM).toContain('lobby-command-chassis-v2.png');
     expect(GAME_PREMIUM).toContain('.glp--cash .glp__arena-card');
+  });
+
+  /* ONE FRAME: THE GAME CARD (Dan 2026-10-23). "ONLY THE 'GAME CARD' SHOULD
+     HAVE A FRAME, ALL THE REST OF THE INFO SHOULD BE DISPLAYED IN ITS REGULAR
+     WEB PAGE LAYOUT, NOT THE BULKY FRAME BELOW IT." This replaces the pin that
+     required the drawer chassis behind the panel. */
+  it('frames only the game card; the sections under it are plain page sections', () => {
+    const code = GAME_PREMIUM.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(code).not.toContain('lobby-command-chassis-v2.png');
+    expect(code).not.toContain('shark-panel-v1/');
+    expect(GAME_PANEL).not.toContain('<SpadeConsole');
+    expect(GAME_PANEL).toContain('<PanelSection');
   });
 
   it('retains real join and observe actions', () => {
     // Gate 6 (2026-09-05): a game says Join Game, a manual table Join Table.
     expect(GAME_PANEL).toContain("label: game ? 'Join Game' : 'Join Table'");
     expect(GAME_PANEL).toContain('onJoinTable(entry.id)');
-    expect(GAME_PANEL).toContain('to={`/table/${entry.id}`}');
-    expect(GAME_PANEL).toContain('Observe Table');
+    expect(GAME_PANEL).toContain('isCash ? `/table/${entry.id}`');
+    expect(GAME_PANEL).toContain("entry.game ? 'View Game' : 'View Table'");
   });
 
   it('keeps the table machine vertically scrollable', () => {

@@ -76,6 +76,10 @@ vi.mock('@/core/MasterBus', () => ({
   },
 }));
 
+vi.mock('@/services/tournamentStandingsUpdates', () => ({
+  subscribeTournamentStandings: () => () => {},
+}));
+
 const reportErrorMock = vi.fn();
 vi.mock('@/utils/errorReporter', () => ({
   reportError: (...args: unknown[]) => reportErrorMock(...args),

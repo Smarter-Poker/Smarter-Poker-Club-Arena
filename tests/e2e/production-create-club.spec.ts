@@ -10,7 +10,9 @@ test.describe('Production Create A Club Certificate', () => {
   test.describe.configure({ retries: 0 });
   test.skip(!certificationEnabled, 'Runs only with an isolated production certification account.');
 
-  test('a brand-new player creates and opens a real standalone club', async ({ page }) => {
+  test('a brand-new player creates and opens a real standalone club', async ({
+    page,
+  }, testInfo) => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width: 393, height: 852 });
     const stamp = `${Date.now()}`.slice(-9);
@@ -29,6 +31,15 @@ test.describe('Production Create A Club Certificate', () => {
     const dialog = page.getByRole('dialog', { name: 'Create A Club', exact: true });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
     await expect(dialog.getByText('Club Crest Vault', { exact: true })).toBeHidden();
+    await expect(dialog.getByLabel('Club Name', { exact: true })).toBeHidden();
+    const defaultsScreenshot = 'test-results/create-club-defaults-mobile.png';
+    await page.screenshot({ path: defaultsScreenshot, fullPage: true });
+    await testInfo.attach('Default Create Club Screen', {
+      path: defaultsScreenshot,
+      contentType: 'image/png',
+    });
+    // The production fixture needs its guarded retirement name. This optional
+    // customization is fixture identification, not a required user step.
     await dialog.getByRole('button', { name: 'Customize Club (Optional)', exact: true }).click();
     await expect(dialog.getByText('Club Crest Vault', { exact: true })).toBeVisible();
     await expect(dialog.getByRole('radio')).toHaveCount(10);
@@ -107,7 +118,14 @@ test.describe('Production Create A Club Certificate', () => {
     clubLocation.searchParams.delete('invite');
     const createdClubUrl = clubLocation.toString();
     const defaults = await defaultResponse;
-    expect(defaults.ok(), 'default opening RPC must succeed').toBe(true);
+    const openingReceipt = await defaults.json();
+    expect(
+      defaults.ok(),
+      `default opening RPC must succeed: ${JSON.stringify(openingReceipt)}`
+    ).toBe(true);
+    expect(defaults.request().postDataJSON().p_operation_id).not.toBe(
+      response.request().postDataJSON().p_request_id
+    );
     expect(defaults.request().postDataJSON()).toMatchObject({
       p_rake_percent: -1,
       p_rake_cap_bb: -1,
@@ -119,18 +137,39 @@ test.describe('Production Create A Club Certificate', () => {
       p_leaderboard_prize_budget: 0,
       p_leaderboard_overlay_enabled: false,
     });
-    const openingReceipt = await defaults.json();
     expect(openingReceipt.success).toBe(true);
     expect(Number(openingReceipt.club_bank_after)).toBe(99700);
     const invite = page.getByRole('dialog', { name: 'Your Club Is Created', exact: true });
     await expect(invite).toBeVisible();
-    await expect(invite.getByLabel('Your Invite Link', { exact: true })).toHaveValue(
-      /^https:\/\/smarter\.poker\/i\/[A-HJ-NP-Z2-9]{7}$/
-    );
+    const inviteInput = invite.getByLabel('Your Invite Link', { exact: true });
+    await expect(inviteInput).toHaveValue(/^https:\/\/smarter\.poker\/i\/[A-HJ-NP-Z2-9]{7}$/);
     await expect(invite.getByRole('button', { name: 'Send Link', exact: true })).toBeEnabled();
     await page.screenshot({
       path: 'test-results/create-club-send-link-mobile.png',
       fullPage: true,
+    });
+    await testInfo.attach('Immediate Send Link', {
+      path: 'test-results/create-club-send-link-mobile.png',
+      contentType: 'image/png',
+    });
+    // Desktop Chromium exposes the supported clipboard fallback. Exercise the
+    // real button and clipboard without sending a message to any recipient.
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(page.url()).origin,
+    });
+    expect(await page.evaluate(() => typeof navigator.share)).toBe('undefined');
+    const shortUrl = await inviteInput.inputValue();
+    await invite.getByRole('button', { name: 'Send Link', exact: true }).click();
+    await expect(invite.getByRole('button', { name: 'Link Copied', exact: true })).toBeVisible();
+    const copiedInvite = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copiedInvite).toContain(shortUrl);
+    expect(copiedInvite).toContain(`Invited You To Join ${clubName} On Smarter.Poker!`);
+    expect(copiedInvite).toMatch(/Club ID: \S+/);
+    const copiedScreenshot = 'test-results/create-club-link-copied-mobile.png';
+    await page.screenshot({ path: copiedScreenshot, fullPage: true });
+    await testInfo.attach('Send Link Clipboard Result', {
+      path: copiedScreenshot,
+      contentType: 'image/png',
     });
     await invite.getByRole('button', { name: 'Open Club', exact: true }).click();
     await page.getByText('Customize Club (Optional)', { exact: true }).click();
@@ -358,7 +397,7 @@ test.describe('Production Create A Club Certificate', () => {
       await page.screenshot({ path: 'test-results/rotating-banners-mobile.png', fullPage: true });
       await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
       await expect(page.locator('.club-lobby-command-top__campaign-button img')).toHaveCount(0);
-      await expect(page.locator('.ad-rotator--lobby-strip img')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.ad-rotator--lobby-strip')).toHaveCount(0);
       await expect(page.locator('img[src*="shark-club-championship-ad"]')).toHaveCount(0);
       expect(bannerUploadCount, 'Only The Top Club Banner May Upload An Image').toBe(1);
     } finally {

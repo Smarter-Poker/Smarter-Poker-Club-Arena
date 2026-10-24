@@ -51,8 +51,8 @@ describe('the tag book is read, and the club is resolved before it', () => {
 
 describe('EVERY TAG GATE FAILS OPEN', () => {
   it('the lane gate falls back to the old hash rule when there is no tag', () => {
-    expect(SRC).toContain(
-      "if (cashOk === undefined && gameLaneFor(h.id) === 'events') return false;"
+    expect(SRC).toMatch(
+      /if \(!bankrollOnly && cashOk === undefined && gameLaneFor\(h\.id\) === 'events'\)\s*return false;/
     );
   });
 
@@ -67,7 +67,7 @@ describe('EVERY TAG GATE FAILS OPEN', () => {
 
   it('no gate refuses on `undefined` - only on an explicit false', () => {
     for (const g of ['cashOk', 'variantOk', 'stakeOk']) {
-      expect(SRC).toContain(`if (${g} === false`);
+      expect(SRC).toContain(`if (${g === 'stakeOk' ? '' : '!bankrollOnly && '}${g} === false`);
       expect(SRC, `${g} must not refuse an unknown answer`).not.toContain(`if (!${g})`);
     }
   });
@@ -82,7 +82,7 @@ describe('EVERY TAG GATE FAILS OPEN', () => {
 describe('A WAITING HUMAN OUTRANKS EVERY TEXTURE RULE', () => {
   it('variant, stake, rest day and daily cap are all bypassed on rescue', () => {
     for (const guard of [
-      'if (variantOk === false && !humanNeedsRescue)',
+      'if (!bankrollOnly && variantOk === false && !humanNeedsRescue)',
       'if (stakeOk === false && !humanNeedsRescue)',
       'if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday))',
       'if (!humanNeedsRescue && dailyCapReached(st, todayKey))',

@@ -55,7 +55,7 @@ import {
 } from '../../services/cashGameLobby';
 import { formatChips } from '../../lib/utils';
 import { formatPrizeAtUnit } from '../../utils/format';
-import { CASH_TEMPLATES } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import { useToast } from '../common/Toast';
 import { lobbyReadErrorText } from './mustMoveLobbyCopy';
 import { useCashGameLobby } from './useCashGameLobby';
@@ -228,8 +228,8 @@ export function MustMoveLobbyModal({
   const me = lobby?.me ?? null;
   const game = lobby?.game ?? null;
   const styleLabel = game
-    ? (CASH_TEMPLATES.find((t) => t.id === String(game.template_name ?? '').toLowerCase())?.label ??
-      null)
+    ? (CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(String(game.template_name ?? '')))
+        ?.label ?? null)
     : null;
   const playersTotal = (lobby?.tables ?? []).reduce((n, t) => n + Number(t.seated ?? 0), 0);
   const tablesOpen = (lobby?.tables ?? []).length;

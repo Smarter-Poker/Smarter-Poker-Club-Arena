@@ -245,3 +245,56 @@ describe('BOMB POT - a fold win carries its award units', () => {
     expect(Math.round(summed * 100)).toBe(Math.round(w.winners[0].amount * 100));
   });
 });
+
+it.each([2, 3] as const)(
+  'records exact post-fee side-pot slices across %i bomb boards',
+  (boardCount) => {
+    const h = harness(
+      mkConfig({
+        rakeConfig: { percent: 10, cap: 3, noFlopNoDrop: true },
+        bbjConfig: { enabled: true, feeBB: 0.25, minPotBB: 5, minPlayersDealt: 3 },
+        bombPot: { anteMultiplier: 2, doubleBoard: true, boardCount } as any,
+      }),
+      mkPlayers([200, 8, 200])
+    );
+    h.hc.start();
+    h.act('all_in');
+    h.act('call');
+    h.act('call');
+    expect(h.st().stage).toBe('turn');
+    h.act('bet', 6);
+    h.act('call');
+    checkDown(h);
+    const win = h.events.find((e) => e.type === 'WINNERS') as any;
+    expect(win.perPotAwards.some((a: any) => a.potIndex === 1)).toBe(true);
+    expect(new Set(win.perPotAwards.map((a: any) => a.board)).size).toBe(boardCount);
+    for (const w of win.winnersByBoard) {
+      const awards = win.perPotAwards.filter(
+        (a: any) => a.board === w.board && a.userId === w.userId && !!a.low === !!w.low
+      );
+      const expected = [...new Set<number>(awards.map((a: any) => a.potIndex))]
+        .sort((a, b) => a - b)
+        .map((index) => ({
+          index,
+          amount:
+            Math.round(
+              awards
+                .filter((a: any) => a.potIndex === index)
+                .reduce((n: number, a: any) => n + a.amount, 0) * 100
+            ) / 100,
+        }));
+      expect(w.pots).toEqual(expected);
+      expect(Math.round(w.pots.reduce((n: number, p: any) => n + p.amount, 0) * 100)).toBe(
+        Math.round(w.amount * 100)
+      );
+    }
+    const paid = win.winners.reduce((n: number, w: any) => n + w.amount, 0);
+    expect(
+      Math.round(win.winnersByBoard.reduce((n: number, w: any) => n + w.amount, 0) * 100)
+    ).toBe(Math.round(paid * 100));
+    const complete = h.events.find((e) => e.type === 'HAND_COMPLETE') as any;
+    expect(complete.rake).toBe(3);
+    expect(complete.bbjFee).toBe(0.5);
+    expect(Math.round(paid * 100)).toBe(3250);
+  }
+);

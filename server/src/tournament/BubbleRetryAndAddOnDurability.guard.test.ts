@@ -43,7 +43,7 @@ describe('the add-on window follows durable database truth', () => {
     expect(latch).toBeGreaterThan(validation);
     expect(closeTimer).toBeGreaterThan(latch);
     expect(broadcast).toBeGreaterThan(closeTimer);
-    expect(trigger).toMatch(/if \(!durableWindowProven\) this\.addOnPeriodTriggered = false/);
+    expect(trigger).toMatch(/if \(!durableWindowProven\) \{\s*this\.addOnPeriodTriggered = false/);
     const lifecycle = trigger.indexOf('const lifecycle = this.captureLifecycleToken()');
     const update = trigger.indexOf('.update({', lifecycle);
     const writeReceipt = trigger.indexOf('.select(projection)', update);

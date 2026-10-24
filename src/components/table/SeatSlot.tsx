@@ -1110,6 +1110,108 @@ export const SeatSlot = memo(
     }, [hasPlayer]);
 
     /**
+     * HOW FAR THE ART RISES ABOVE THE SEAT BOX (Dan 2026-10-22: "the raise,
+     * fold and other actions should be slightly higher, above the avatar, not
+     * overlapping the top of them").
+     *
+     * Bust art is scaled up from its bottom edge (`--sp-bust-effective-scale`,
+     * per character), so its visible top sits above the seat box by an amount
+     * no stylesheet can know: it depends on the character's own gain. The
+     * action tag and the bounty pill stand on `--sp-art-rise` (SeatSlot.css),
+     * which is computed here from LAYOUT offsets plus the art's own resolved
+     * transform (`translateY(clip) scale(s)` about `50% (100% - clip)`), never
+     * from getBoundingClientRect, so a transform on an ancestor (a tab slide,
+     * a scaled tab strip) cannot skew it, and nothing is read while an
+     * animation is moving the art.
+     */
+    const artRiseRef = useRef<{ seat: HTMLElement; stop: () => void } | null>(null);
+    useLayoutEffect(() => {
+      // Bound to whichever element is the seat NOW: the root is re-created on
+      // some state changes without any prop this component could key on, and
+      // observers left on a detached node measure nothing.
+      const seat = seatRef.current;
+      if (artRiseRef.current?.seat === seat) return;
+      artRiseRef.current?.stop();
+      artRiseRef.current = null;
+      if (!seat) return;
+      let frame: number | null = null;
+      let watched: HTMLElement | null = null;
+      const measure = () => {
+        frame = null;
+        // The rig (`.seat__avatar-rive`) is mounted alongside the image and is
+        // empty until it plays, so take whichever of the two is actually drawn.
+        const candidates = Array.from(
+          seat.querySelectorAll<HTMLElement>('.seat__avatar-img, .seat__avatar-rive')
+        );
+        const art = candidates.find((el) => el.offsetHeight > 0) ?? candidates[0] ?? null;
+        if (art && art !== watched) {
+          // The art is laid out (or swapped) after the seat; its own size
+          // change is the signal that its resting geometry exists.
+          if (watched) resized.unobserve(watched);
+          resized.observe(art);
+          watched = art;
+        }
+        if (!art || !art.offsetHeight) return;
+        let top = 0;
+        for (let el: HTMLElement | null = art; el && el !== seat; ) {
+          top += el.offsetTop;
+          const parent = el.offsetParent as HTMLElement | null;
+          if (!parent || !seat.contains(parent)) break;
+          el = parent;
+        }
+        const style = getComputedStyle(art);
+        // `--sp-bust-effective-scale` resolves to e.g. "calc(1.45 * 0.915)":
+        // a product, so the product of its numbers is the scale. Read from the
+        // declaration rather than the live transform, which an idle or gesture
+        // animation may be driving at this instant.
+        const factors = (
+          style.getPropertyValue('--sp-bust-effective-scale').match(/-?\d*\.?\d+/g) ?? ['1']
+        ).map(Number);
+        const scale = factors.reduce((a, b) => a * b, 1) || 1;
+        const clip = (parseFloat(style.getPropertyValue('--sp-bust-clip')) || 0) / 100;
+        const h = art.offsetHeight;
+        // translateY(clip) scale(s) about 50% (100% - clip): the art's visual
+        // top, relative to its own layout box.
+        const artTop = clip * h + (1 - clip) * h * (1 - scale);
+        const rise = Math.max(0, Math.round(-(top + artTop)));
+        const value = `${rise}px`;
+        if (seat.style.getPropertyValue('--sp-art-rise') !== value)
+          seat.style.setProperty('--sp-art-rise', value);
+        // The tag's width, so a bounty can share its row (SeatSlot.css).
+        const tag = seat.querySelector<HTMLElement>(':scope > .seat__action');
+        const tagWidth = `${tag ? tag.offsetWidth : 0}px`;
+        if (seat.style.getPropertyValue('--sp-tag-w') !== tagWidth)
+          seat.style.setProperty('--sp-tag-w', tagWidth);
+      };
+      const schedule = () => {
+        if (frame === null) frame = requestAnimationFrame(measure);
+      };
+      const resized = new ResizeObserver(schedule);
+      resized.observe(seat);
+      measure();
+      // The art mounts after the seat and swaps on a skin change.
+      const changed = new MutationObserver(schedule);
+      changed.observe(seat, { childList: true, subtree: true, characterData: true });
+      seat.addEventListener('load', schedule, true);
+      artRiseRef.current = {
+        seat,
+        stop: () => {
+          resized.disconnect();
+          changed.disconnect();
+          seat.removeEventListener('load', schedule, true);
+          if (frame !== null) cancelAnimationFrame(frame);
+        },
+      };
+    });
+    useEffect(
+      () => () => {
+        artRiseRef.current?.stop();
+        artRiseRef.current = null;
+      },
+      []
+    );
+
+    /**
      * Animate stack gains only. Contributions update the stack without a delta float.
      *
      * AUDIT 2026-08-25: the effect keyed on `player?.stack` ALONE while its
@@ -2758,10 +2860,13 @@ export const SeatSlot = memo(
     // Eligible art (VIP bust, not broken, not rigged) AND on the clock. Never
     // an idle seat, never a seat the action is not on.
     const showHolo = holoEligible && holoOnClockDelayMs !== null;
-    // Dan 2026-10-21: ALL IN above the head and an ALL IN puck on the felt
-    // in front of the player, for the whole time the player is all in.
-    const showAllInPuck = player.status === 'all_in' && !isWinner;
-    const shownAction: LastAction = showAllInPuck ? 'all_in' : lastAction;
+    // Dan 2026-10-22: ALL IN belongs on the felt in front of its player,
+    // never above the avatar. Keep the marker for the whole all-in runout.
+    // Only while the hand is still being played out: not once a result is on
+    // the table (winner presentation), when "all in" no longer means anything.
+    const showAllInPuck = player.status === 'all_in' && !isWinner && !winnerDisplayActive;
+    const shownAction: LastAction =
+      player.status === 'all_in' || lastAction === 'all_in' ? null : lastAction;
 
     return (
       <div
@@ -2781,10 +2886,8 @@ export const SeatSlot = memo(
         aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
-        {/* Last Action Badge - floats ABOVE the seat (premium style).
-            Dan 2026-10-21: a player who is all in shows ALL IN above the head
-            for as long as they are all in, not only on the street they shoved,
-            so the tag and the felt puck below always agree. */}
+        {/* Ordinary actions stay above the avatar. ALL IN is printed only on
+            the felt puck below, in front of its own player. */}
         {shownAction && (
           <div
             className={`seat__action seat__action--${shownAction}`}
@@ -2799,21 +2902,19 @@ export const SeatSlot = memo(
             when the parent flips `isCollectingChips` (on COMMUNITY_CARDS_DEALT
             or HAND_COMPLETE), these chips animate into the pot before being
             cleared. Otherwise the chip stack slides in on fresh bets/raises. */}
-        {(lastBetAmount && lastBetAmount > 0) || showAllInPuck ? (
-          <div className="seat__bet-chips">
-            {/* Dan 2026-10-21: "an ALL IN button should appear in front of that
-                user, like a dealer button". It rides in the wager slot, so it
-                sits on the felt in front of the player wherever their chips
-                rest, and the felt placement treats puck and chips as one. It is
-                not part of ChipPhysics, so a street's collect flies the chips
-                to the pot and leaves the puck in front of the player. */}
-            {showAllInPuck && (
-              <div className="seat__allin-puck" aria-hidden="true">
+        <div className="seat__wager-group">
+          {showAllInPuck && (
+            <div className="seat__bet-chips">
+              {/* Its own felt slot keeps the marker in front of this player
+                even when a six-card hand leaves a narrow gap for the chips. */}
+              <div className="seat__allin-puck" role="status" aria-label={`${player.name}: All In`}>
                 <span>ALL</span>
                 <span>IN</span>
               </div>
-            )}
-            {lastBetAmount && lastBetAmount > 0 ? (
+            </div>
+          )}
+          {lastBetAmount && lastBetAmount > 0 ? (
+            <div className="seat__bet-chips">
               <ChipPhysics
                 amount={lastBetAmount}
                 animate={
@@ -2825,9 +2926,9 @@ export const SeatSlot = memo(
                 }
                 compact={true}
               />
-            ) : null}
-          </div>
-        ) : null}
+            </div>
+          ) : null}
+        </div>
 
         {/* Hole Cards — opponents: ONE small rotational cluster for every hand
             size (Dan 2026-08-26, PokerBros reference). The count comes from
@@ -2854,6 +2955,7 @@ export const SeatSlot = memo(
             isMucking) && (
             <div
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              data-card-count={opponentCardCount}
               style={
                 {
                   /* PHASE 3 2026-08-31: the flying card still counts toward
@@ -2881,7 +2983,7 @@ export const SeatSlot = memo(
                      they are not the same number. */
                   displayHoleCards.map(({ card, dealtIndex }, row) => (
                     <HoleCard
-                      key={dealtIndex}
+                      key={row}
                       card={card}
                       /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
@@ -3342,6 +3444,7 @@ export const SeatSlot = memo(
                   ? ' seat__cards--squeeze-open'
                   : '')
             }
+            data-card-count={player.holeCards.length}
             ref={squeezeRowRef}
             role={squeezeDown ? 'button' : undefined}
             tabIndex={squeezeDown ? 0 : undefined}
@@ -3393,6 +3496,7 @@ export const SeatSlot = memo(
                  nothing is exposed at the table until the hand ends. */
               <span
                 key={i}
+                style={{ zIndex: i + 1 }}
                 className={
                   'seat__card-pick' +
                   /* THE BADGE FOLLOWS THE CLICK. `--marked` draws a gold eye on
@@ -3618,7 +3722,7 @@ export const SeatSlot = memo(
 
         {/* All-In Badge: retired 2026-10-21. It hung below the plate, in the
             next seat's airspace, and printed over that player's bounty and
-            action tag. ALL IN is now the tag above the head and the puck on
+            action tag. ALL IN is now only the puck on
             the felt in front of the player (see `.seat__allin-puck`). */}
 
         {/* The per-seat "BOMB" pill that used to sit here is gone (Dan

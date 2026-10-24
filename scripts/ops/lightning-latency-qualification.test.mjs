@@ -218,6 +218,12 @@ function reader({ windows = [], cfg = config(), error = null } = {}) {
         if (error) return { data: null, error };
         const to = Date.parse(args.p_to),
           from = Date.parse(args.p_from);
+        // As the database does: a window that does not move forward is refused.
+        if (!(from < to))
+          return {
+            data: { ok: false, code: 'INVALID_WINDOW', reason: 'INVALID_WINDOW' },
+            error: null,
+          };
         const rows = windows
           .filter((w) => Date.parse(w.window_from) < to && Date.parse(w.window_to) > from)
           .sort((a, b) => Date.parse(b.window_from) - Date.parse(a.window_from))
@@ -378,4 +384,26 @@ test('pooled span: thin windows under the ceiling pass on their union, never wea
     win(5, thinLeg(13, 900)),
   ];
   assert.equal(evaluate(gapped).legs.match_to_hand.verdict, 'INSUFFICIENT');
+});
+
+test('a lookback filled by exactly four full pages ends at the lookback start, never asks for an inverted window', async () => {
+  // Production 2026-10-23: 240 one-minute windows, lookback starting 8 s after a
+  // minute boundary. The oldest window begins before the lookback start.
+  const start = Date.parse('2026-10-23T09:59:00Z');
+  const windows = Array.from({ length: 240 }, (_, i) => ({
+    window_from: new Date(start + i * 60000).toISOString(),
+    window_to: new Date(start + (i + 1) * 60000).toISOString(),
+    legs: good(),
+  }));
+  const admin = reader({ windows });
+  const r = await readLatencyWindows(
+    admin,
+    CLUSTER,
+    '2026-10-23T09:59:51.905Z',
+    new Date(start + 240 * 60000).toISOString()
+  );
+  assert.equal(new Set(r.windows.map((w) => w.window_from)).size, 240);
+  assert.equal(r.truncated, false);
+  for (const c of admin.calls.filter((c) => c.name === 'fn_lightning_operator_cluster'))
+    assert.ok(Date.parse(c.args.p_from) < Date.parse(c.args.p_to));
 });

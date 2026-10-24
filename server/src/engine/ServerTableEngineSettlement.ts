@@ -1,4 +1,9 @@
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
+import {
+  observeCommittedHandRiverValue,
+  type RiverValueAuditInput,
+} from './HorseRiverValueAudit.js';
+import { publishSettledTournamentHand } from './settledTournamentStandings.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
 import { diamondCashJackpotVerdict } from './diamondCashJackpot.js';
 import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
@@ -1575,6 +1580,37 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // POST-HAND TASKS
   // ═════════════════════════════════════════════════════════════════════════════
 
+  /** Horse river value alarm (2026-10-23): pure in-memory audit of a committed
+   * hand's horse actions from its settled snapshot, scheduled after the
+   * current turn. No database reads; never throws (HorseRiverValueAudit). */
+  protected observeHorseRiverValueAfterCommit(
+    snap: {
+      handNumber: number;
+      variant?: string | null;
+      holeCards: RiverValueAuditInput['holeCards'];
+      actions: unknown;
+    },
+    tableInfo: {
+      game_variant?: string | null;
+      cap_enabled?: boolean | null;
+      cap_bb?: unknown;
+      big_blind?: unknown;
+    }
+  ): void {
+    const handNumber = snap.handNumber;
+    const input: RiverValueAuditInput = {
+      variant: snap.variant || tableInfo.game_variant || 'nlh',
+      holeCards: snap.holeCards,
+      actions: snap.actions as RiverValueAuditInput['actions'],
+      capEnabled: tableInfo.cap_enabled === true,
+      capBb: Number(tableInfo.cap_bb) || 0,
+      bigBlind: Number(tableInfo.big_blind) || 0,
+    };
+    setImmediate(() =>
+      observeCommittedHandRiverValue({ tableId: this.tableId, handNumber }, input)
+    );
+  }
+
   protected async postHandTasks(
     players: SeatedPlayer[],
     persistenceGeneration: number
@@ -2428,7 +2464,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             pots: snap.pots,
             // Keep later-pot and hi/lo identities without changing paid totals.
             // Written atomically with the same accepted hand, never rebuilt later.
-            perPotAwards: this.isTournamentTable() ? snap.perPotAwards : undefined,
+            perPotAwards: snap.perPotAwards,
             /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
              `players @> [{userId}]`, so a hand whose roster is missing a
              participant is a hand that participant can never open, and one
@@ -2570,6 +2606,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           result = await commitAuthoritativeHand();
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
+          }
+          // HORSE RIVER VALUE ALARM (2026-10-23): audit the committed hand after
+          // this turn. Guarded: the alarm can never touch settlement.
+          try {
+            this.observeHorseRiverValueAfterCommit(snap, tableInfo);
+          } catch {
+            /* the alarm never affects a committed hand */
           }
         } catch (err) {
           const message = describeError(err);
@@ -2821,6 +2864,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       throw new Error(
         `authoritative hand commit was not proved for ${this.tableId}#${snap.handNumber}`
       );
+    }
+
+    // The field's chip mirror committed with this exact hand, not with its
+    // earlier animation event. Fan out to the whole MTT, including viewers
+    // at other tables. This carries no cards or player-private state.
+    const standingsTournamentId = this.tableInfo?.tournament_id;
+    if (standingsTournamentId && this.lifecycleCanMutate()) {
+      publishSettledTournamentHand(standingsTournamentId, this.tableId, snap.handNumber);
     }
 
     /* The exact settlement committed an immutable post-commit envelope before

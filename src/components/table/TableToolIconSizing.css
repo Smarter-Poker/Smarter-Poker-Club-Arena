@@ -18,7 +18,8 @@
   --sp-tool-art-y: 0.025126;
 }
 
-.table-page img[src*='/buttons/black/icon-timebank.webp'] {
+.table-page img[src*='/buttons/black/icon-timebank.webp'],
+.table-page img[src*='timebank-centered-black'] {
   --sp-tool-art-scale: 1.24878049;
   --sp-tool-art-x: 0.009756;
   --sp-tool-art-y: 0.012195;
@@ -42,7 +43,8 @@
   --sp-tool-art-y: 0.014563;
 }
 
-.table-page img[src*='/buttons/blue/icon-timebank.webp'] {
+.table-page img[src*='/buttons/blue/icon-timebank.webp'],
+.table-page img[src*='timebank-centered-blue'] {
   --sp-tool-art-scale: 1.19069767;
   --sp-tool-art-x: 0.016279;
   --sp-tool-art-y: 0.016279;

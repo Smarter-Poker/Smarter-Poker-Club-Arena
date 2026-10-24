@@ -104,14 +104,39 @@ export function recordCycleEvent(hands, e, armedHandNumber = null) {
 /** A disappearing optional control cannot consume the remaining natural-cycle witness.
  * One click only. An unknown acknowledgment is retained and never re-clicked.
  */
-export async function clickCycleControlOnce(page, control, matches, remaining) {
+export async function clickCycleControlOnce(page, control, matches, remaining, why = {}) {
   const timeout = Math.min(5000, remaining());
   const responseP = page.waitForResponse(matches, { timeout });
-  const [response] = await Promise.allSettled([
+  const [response, click] = await Promise.allSettled([
     responseP,
     control.click({ timeout: Math.min(2500, remaining()) }),
   ]);
-  if (response.status !== 'fulfilled') return null;
+  // Why an acknowledgment is unknown, from fixed categories only (no messages).
+  if (click.status === 'rejected') {
+    const m = String(click.reason?.message ?? '');
+    why.click = /Selected Pool|Pool Tab/.test(m)
+      ? 'selected_pool_unverified'
+      : click.reason?.name === 'TimeoutError' || /Timeout/i.test(m)
+        ? 'control_not_clickable'
+        : 'click_failed';
+    // Playwright names the element that took the pointer; keep only its tag and
+    // class tokens (no text, ids or attributes), and Playwright's fixed reasons.
+    const blocker = m.match(
+      /<(\w{1,12})(?:[^>]*?class="([\w\s-]{0,80})")?[^>]*>[^\n]*intercepts pointer events/
+    );
+    if (blocker)
+      why.interceptedBy = `${blocker[1]}.${(blocker[2] || '').trim().split(/\s+/).slice(0, 4).join('.')}`;
+    if (/not visible/.test(m)) why.reason = 'not_visible';
+    else if (/not enabled|disabled/.test(m)) why.reason = 'not_enabled';
+    else if (/not stable/.test(m)) why.reason = 'not_stable';
+    else if (/intercepts pointer events/.test(m)) why.reason = 'pointer_intercepted';
+    else if (/outside of the viewport/.test(m)) why.reason = 'outside_viewport';
+  } else why.click = 'clicked';
+  if (response.status !== 'fulfilled') {
+    why.response = 'no_matching_response';
+    return null;
+  }
+  why.response = 'observed';
   return response.value;
 }
 
@@ -194,6 +219,10 @@ export async function witnessCycle({
     preactionExecution: 'not_observed',
     controlsQualified: false,
     requests: { timebank: 0, preaction: 0 },
+    appRequests: { timebank: 0 },
+    staleRefusals: { timebank: 0, preaction: 0 },
+    clickOutcomes: { timebank: [], preaction: [] },
+    foldWatch: { accepted: 0, refused: 0, unknown: 0 },
     preactionRequestHandId: null,
     timebankContextHandId: null,
     observedHands: [],
@@ -221,6 +250,10 @@ export async function witnessCycle({
       bankBefore = null;
     let armedHandId = null,
       armedHandNumber = null;
+    // The control this witness is clicking right now. A request outside that
+    // click is the app's own (for example its automatic Time Bank) and is
+    // retained separately, never counted as the witness's one request.
+    let clicking = null;
     page.on('request', (request) => {
       try {
         const endpoint = new URL(request.url());
@@ -229,6 +262,10 @@ export async function witnessCycle({
         const body = request.postDataJSON();
         if (body.tableId !== pin.poolSessionId) return;
         if (endpoint.pathname === '/timebank') {
+          if (clicking !== 'timebank') {
+            report.appRequests.timebank++;
+            return;
+          }
           report.requests.timebank++;
           report.timebankContextHandId = UUID.test(bankBefore?.hand_id) ? bankBefore.hand_id : null;
         } else if (
@@ -291,19 +328,26 @@ export async function witnessCycle({
     report.cause = 'first_render_unobserved';
     while (!rendered) await page.waitForTimeout(Math.min(100, remaining()));
     // Optional single clicks only while the maintained UI already offers them.
-    for (const [key, requested, selector, path] of [
+    const controls = [
+      // A pre-action is offered while others act, so it is tried first; the
+      // Time Bank needs the player's own turn and comes second.
+      ['preaction', preaction, '.pre-action-btn.check', '/preaction'],
       [
         'timebank',
         timebank,
         '.control-strip button[title="Time Bank"], .control-strip button[title="Unlimited Lifetime VIP Time Banks"]',
         '/timebank',
       ],
-      ['preaction', preaction, '.pre-action-btn.check', '/preaction'],
-    ]) {
+    ];
+    const retried = new Set();
+    for (let ci = 0; ci < controls.length; ci++) {
+      const [key, requested, selector, path] = controls[ci];
       if (!requested) continue;
       const control = page.locator(selector);
       // Observe the ordinary UI for one short opportunity; never repeat a click.
-      const offeredUntil = Date.now() + Math.min(20000, remaining());
+      // A check pre-action is offered only while the player faces no bet, so it
+      // gets a longer window than the Time Bank, which is offered every turn.
+      const offeredUntil = Date.now() + Math.min(key === 'preaction' ? 60000 : 20000, remaining());
       while (Date.now() < offeredUntil) {
         if ((await bound(control.isVisible())) && (await bound(control.isEnabled()))) break;
         await page.waitForTimeout(Math.min(100, offeredUntil - Date.now(), remaining()));
@@ -327,6 +371,8 @@ export async function witnessCycle({
       }
       report.subphase = key;
       report.cause = 'optional_action_unverified';
+      clicking = key;
+      const why = {};
       const response = await clickCycleControlOnce(
         page,
         { click: (options) => clickSelectedPoolControl(page, pin, control, remaining, options) },
@@ -351,8 +397,11 @@ export async function witnessCycle({
             return false;
           }
         },
-        remaining
+        remaining,
+        why
       );
+      clicking = null;
+      report.clickOutcomes[key].push(why);
       if (!response) {
         report[key] = 'click_or_response_unknown';
         continue;
@@ -360,18 +409,81 @@ export async function witnessCycle({
       const answer = await bound(response.json());
       report[key] = response.ok() && answer.success === true ? 'accepted' : 'refused';
       if (key === 'preaction' && report[key] === 'accepted') report.preaction = 'armed';
-      if (report[key] === 'refused') throw new Error('Optional Action Refused');
+      if (report[key] === 'refused') {
+        // A hand that ended between the offer and the click is refused with no
+        // effect. That one case is tried once more on the next hand; any other
+        // refusal, or a second one, stops the witness as before.
+        const stale =
+          answer?.code === 'STALE_HAND' ||
+          /hand is over|left this hand|no active hand/i.test(String(answer?.error ?? ''));
+        if (!stale || retried.has(key)) throw new Error('Optional Action Refused');
+        retried.add(key);
+        report.staleRefusals[key]++;
+        report[key] = 'not_available';
+        if (key === 'preaction') {
+          armedHandId = null;
+          armedHandNumber = null;
+        }
+        const staleHand = clock.hand_id;
+        const nextHandBy = Date.now() + Math.min(20000, remaining());
+        while (Date.now() < nextHandBy && clock.hand_id === staleHand)
+          await page.waitForTimeout(Math.min(100, remaining()));
+        controls.splice(ci + 1, 0, controls[ci]);
+      }
     }
     report.subphase = 'natural_cycle';
     report.cause = 'natural_showdown_history_unobserved';
+    // The account's own client holds its turns (#7738), so a passive witness
+    // times out, leaves every hand and never sees a showdown. On its own turn
+    // it takes the normal non-wager Fold & Watch, once per hand, and watches
+    // the hand play to showdown. It never bets, calls or raises.
+    const foldWatch = page.getByTestId('lightning-fold-watch');
+    const foldedHands = new Set();
+    const watchOwnTurn = async () => {
+      const hand = clock.hand_id;
+      if (!UUID.test(hand) || foldedHands.has(hand)) return;
+      // An armed Time Bank opens only when the clock runs out on that same turn:
+      // that turn waits for the bank to open and extend the deadline first.
+      if (
+        report.timebank === 'accepted' &&
+        !(bankActivated && deadlineExtended) &&
+        bankBefore &&
+        hand === bankBefore.hand_id &&
+        clock.action_context === bankBefore.action_context
+      )
+        return;
+      if (!(await bound(foldWatch.isVisible())) || !(await bound(foldWatch.isEnabled()))) return;
+      foldedHands.add(hand);
+      const response = await clickCycleControlOnce(
+        page,
+        { click: (options) => clickSelectedPoolControl(page, pin, foldWatch, remaining, options) },
+        (r) => {
+          if (r.request().method() !== 'POST') return false;
+          try {
+            return r.request().postDataJSON()?.tableId === pin.poolSessionId;
+          } catch {
+            return false;
+          }
+        },
+        remaining
+      );
+      if (!response) report.foldWatch.unknown++;
+      else {
+        const answer = await bound(response.json()).catch(() => null);
+        if (response.ok() && answer?.success === true) report.foldWatch.accepted++;
+        else report.foldWatch.refused++;
+      }
+    };
     while (
       !rendered ||
       ![...hands.values()].some((h) => h.betting && h.showdown && h.hand_complete && h.historyId) ||
       (report.preaction === 'armed' &&
         Number.isSafeInteger(armedHandNumber) &&
         !hands.get(armedHandNumber)?.historyId)
-    )
+    ) {
+      await watchOwnTurn();
       await page.waitForTimeout(Math.min(100, remaining()));
+    }
     const observed = [...hands.values()].find(
       (h) => h.betting && h.showdown && h.hand_complete && h.historyId
     );
@@ -440,8 +552,8 @@ export async function witnessCycle({
       }
     }
     report.controlsQualified =
-      report.requests.timebank === 1 &&
-      report.requests.preaction === 1 &&
+      report.requests.timebank - report.staleRefusals.timebank === 1 &&
+      report.requests.preaction - report.staleRefusals.preaction === 1 &&
       report.timebank === 'accepted' &&
       report.timebankExecution === 'activated_and_deadline_extended' &&
       report.preaction === 'armed' &&

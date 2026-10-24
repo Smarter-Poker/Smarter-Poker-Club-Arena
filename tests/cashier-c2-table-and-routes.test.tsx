@@ -62,7 +62,7 @@ describe('C2-17: the table top-up sheet', () => {
     expect(timer().textContent).toContain('Balance Unavailable');
     expect(document.body.textContent).not.toContain('Available To Add');
     expect(
-      screen.getByText('Your Balance').parentElement?.querySelector('strong')?.textContent
+      screen.getByText('Wallet Balance').parentElement?.querySelector('strong')?.textContent
     ).toBe('Unavailable');
     expect(document.querySelector('.addon-console__messages')).toBeNull();
     const plate = screen.getByRole('button', { name: 'Retry' });

@@ -429,7 +429,11 @@ describe('hero hole-card row geometry', () => {
         `${rule.selector} must read --sp-cardrev-w; --sp-card2-w now carries the PLO size ` +
           'and would overflow a tabled PLO6 row'
       ).not.toMatch(/--sp-card2-w/);
-      expect(rule.body).toMatch(/var\(--sp-cardrev-w,/);
+      if (rule.selector.includes('data-card-count')) {
+        // PLO5/PLO6 share the board size with opponents (owner 2026-10-23).
+        expect(rule.body).toMatch(/--vh-card-w:\s*var\(\s*--sp-tabled-card-w,/);
+        expect(rule.body).toMatch(/--sp-hero-card-w:\s*var\(--vh-card-w\)/);
+      } else expect(rule.body).toMatch(/var\(--sp-cardrev-w,/);
     }
 
     const hits = cssNoComments.match(/--sp-cardrev-w:/g);

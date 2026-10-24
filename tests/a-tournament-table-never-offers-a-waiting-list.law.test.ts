@@ -72,13 +72,15 @@ describe('late registration copy', () => {
     const copy = lateRegCallToActionCopy(base as never, now);
     expect(copy).toEqual({
       eyebrow: '38:00 Left Before Registration Closes',
-      title: 'Tap Here To Register',
+      title: 'Tap Here To Enter',
     });
   });
 
   it('offers nothing once late registration has closed', () => {
     expect(lateRegCallToActionCopy({ ...base, current_level: 9 } as never, now)).toBeNull();
-    expect(lateRegCallToActionCopy({ ...base, prize_pool_finalized: true } as never, now)).toBeNull();
+    expect(
+      lateRegCallToActionCopy({ ...base, prize_pool_finalized: true } as never, now)
+    ).toBeNull();
     expect(lateRegCallToActionCopy(null, now)).toBeNull();
   });
 

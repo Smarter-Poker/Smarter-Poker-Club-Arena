@@ -269,17 +269,12 @@ export default function CreateTournamentModal({
   const [bountyAmount, setBountyAmount] = useState('5');
 
   // ── Mystery Bounty Config ──
-  // Mystery bounty options (Dan section 72). Defaults are the spec's own:
-  // the classic ladder, chests opening at the money, and half the bounty pool
-  // held back for them.
+  // The prize ladder is the owner's choice (Dan section 72). Everything else
+  // is fixed (Dan 2026-10-22): chests only, opened at the money, the whole
+  // bounty pool in the chests, half of each entry as the bounty.
   const [mysteryProfile, setMysteryProfile] = useState<'balanced' | 'classic' | 'jackpot'>(
     'classic'
   );
-  const [mysteryActivation, setMysteryActivation] = useState<
-    'at_the_money' | 'percent_field' | 'player_count'
-  >('at_the_money');
-  const [mysteryActivationValue, setMysteryActivationValue] = useState('20');
-  const [mysteryPoolPercent, setMysteryPoolPercent] = useState('50');
 
   // ── Spin Config ──
   const [spinType, setSpinType] = useState<'standard' | 'hyper'>('standard');
@@ -949,15 +944,11 @@ export default function CreateTournamentModal({
         maxRebuys: isRebuy ? maxRebuysNum : undefined,
         maxReentries: isReentry ? maxRebuysNum : undefined,
         mysteryBountyProfile: format === 'mystery_bounty' ? mysteryProfile : undefined,
-        mysteryBountyActivation: format === 'mystery_bounty' ? mysteryActivation : undefined,
-        mysteryBountyActivationValue:
-          format === 'mystery_bounty' && mysteryActivation !== 'at_the_money'
-            ? Math.max(1, Math.round(Number(mysteryActivationValue)) || 20)
-            : undefined,
-        mysteryBountyPoolPercent:
-          format === 'mystery_bounty'
-            ? Math.min(100, Math.max(1, Math.round(Number(mysteryPoolPercent)) || 50))
-            : undefined,
+        // Chests only, opened at the money, the whole bounty pool sealed in
+        // them (Dan 2026-10-22). The database enforces the same terms.
+        mysteryBountyActivation: format === 'mystery_bounty' ? 'at_the_money' : undefined,
+        mysteryBountyActivationValue: undefined,
+        mysteryBountyPoolPercent: format === 'mystery_bounty' ? 100 : undefined,
       };
 
       // ── Weekly recurring schedule (2026-08-22): save the recurrence with
@@ -1052,6 +1043,22 @@ export default function CreateTournamentModal({
   // The bounty is therefore FUNDED, not minted, which means the owner cannot
   // configure a bounty that leaves nothing for the prize pool. Compute the
   // split here so the form can both block it and show the owner the breakdown.
+  /* MYSTERY BOUNTY TERMS (Dan 2026-10-22): half of the WHOLE entry funds the
+     bounty pool, in whole chips, and the fee comes out of the prize-pool half;
+     every bounty is a mystery chest opened at the money. The database writes
+     the same terms on every insert (a4_mystery_mtt_terms), so the form shows
+     the real figure instead of offering a setting the server would replace. */
+  const mysteryHalfEntry =
+    format === 'mystery_bounty' && split.total > 0
+      ? Math.max(0, Math.min(Math.floor(split.total / 2), split.prize))
+      : 0;
+  useEffect(() => {
+    if (format !== 'mystery_bounty') return;
+    // An entry too small to fund a whole-chip half reads 0, which the bounty
+    // validation refuses, rather than leaving an old figure nobody can edit.
+    setBountyAmount(String(Math.max(0, mysteryHalfEntry)));
+  }, [format, mysteryHalfEntry]);
+
   const bountySplit = (() => {
     if (!isBountyFormat || split.total <= 0) return null;
     const bountyNum = Math.round(Number(bountyAmount)) || 0;
@@ -1752,6 +1759,7 @@ export default function CreateTournamentModal({
                         className={`${styles.input}${!isWholeBuyIn(bountyAmount) ? ` ${styles.invalid}` : ''}`}
                         aria-invalid={!isWholeBuyIn(bountyAmount)}
                         value={bountyAmount}
+                        readOnly={format === 'mystery_bounty'}
                         onChange={(e) => setBountyAmount(digitsOnly(e.target.value))}
                         min={1}
                         step={1}
@@ -1760,7 +1768,7 @@ export default function CreateTournamentModal({
                       />
                       <span className={styles.helperText}>
                         {format === 'mystery_bounty'
-                          ? 'Bounty Contribution Per Entry'
+                          ? 'Half Of Each Entry, In Whole Chips. The Fee Comes Out Of The Prize Pool Half'
                           : 'Amount Awarded For Each Knockout'}
                       </span>
                     </div>
@@ -1792,70 +1800,10 @@ export default function CreateTournamentModal({
                       </div>
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label htmlFor="tournament-mystery-activation">Chests Open</label>
-                          <select
-                            id="tournament-mystery-activation"
-                            className={styles.input}
-                            value={mysteryActivation}
-                            onChange={(e) =>
-                              setMysteryActivation(e.target.value as typeof mysteryActivation)
-                            }
-                          >
-                            <option value="at_the_money">At The Money</option>
-                            <option value="percent_field">At A Percent Of The Field</option>
-                            <option value="player_count">At A Player Count</option>
-                          </select>
+                          <span className={styles.sectionLabel}>Chests Open At The Money</span>
                           <span className={styles.helperText}>
-                            Never Before Late Registration Closes
-                          </span>
-                        </div>
-                      </div>
-                      {mysteryActivation !== 'at_the_money' && (
-                        <div className={styles.col}>
-                          <div className={styles.formGroup}>
-                            <label htmlFor="tournament-mystery-activation-value">
-                              {mysteryActivation === 'percent_field'
-                                ? 'Percent Of Field Left'
-                                : 'Players Left'}
-                            </label>
-                            <input
-                              id="tournament-mystery-activation-value"
-                              type="number"
-                              className={styles.input}
-                              value={mysteryActivationValue}
-                              onChange={(e) =>
-                                setMysteryActivationValue(digitsOnly(e.target.value))
-                              }
-                              min={mysteryActivation === 'percent_field' ? 1 : 2}
-                              step={1}
-                              inputMode="numeric"
-                            />
-                            <span className={styles.helperText}>
-                              {mysteryActivation === 'percent_field'
-                                ? 'E.G. 20 Opens Chests With The Last Fifth Left'
-                                : 'E.G. 27 Opens Chests With 27 Players Left'}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label htmlFor="tournament-mystery-pool-percent">
-                            Percent Of Bounties In Chests
-                          </label>
-                          <input
-                            id="tournament-mystery-pool-percent"
-                            type="number"
-                            className={styles.input}
-                            value={mysteryPoolPercent}
-                            onChange={(e) => setMysteryPoolPercent(digitsOnly(e.target.value))}
-                            min={1}
-                            max={100}
-                            step={1}
-                            inputMode="numeric"
-                          />
-                          <span className={styles.helperText}>
-                            The Rest Pays Ordinary Bounties Before The Chests Open
+                            No Bounties Are Paid Before The Money. The Whole Bounty Pool Is Sealed
+                            In The Chests, And Every Knockout In The Money Picks 1 Of 3.
                           </span>
                         </div>
                       </div>
@@ -1874,9 +1822,9 @@ export default function CreateTournamentModal({
                 )}
                 {format === 'mystery_bounty' && (
                   <span className={styles.helperText}>
-                    The Chest Inventory Is Built From The Funded Mystery Pool When The Selected
-                    Phase Opens, After Registration And Purchases Close. The Selected Prize Ladder
-                    Sets The Chest Amounts And Counts. Knockouts Draw From That Inventory.
+                    The Chest Inventory Is Built In Whole Chips From The Funded Bounty Pool When
+                    The Tournament Reaches The Money, After Registration And Purchases Close. The
+                    Selected Prize Ladder Sets The Chest Amounts And Counts.
                   </span>
                 )}
                 {bountySplit && (

@@ -36,6 +36,7 @@ const fx = vi.hoisted(() => ({
   presentation: new Set<(event: any) => void>(),
   bus: new Map<string, Set<(event: any) => void>>(),
   channelKeys: [] as string[],
+  standings: new Map<string, { change: () => void; status: (status: string) => void }>(),
   channels: [] as Array<{ topic: string; state: string; joinPush: { ref: string } }>,
   tournamentReads: [] as string[],
   playerReads: [] as string[],
@@ -79,10 +80,23 @@ vi.mock('../../src/core/MasterBus', () => ({
     },
     getOrCreateChannel: (key: string) => {
       fx.channelKeys.push(key);
-      const channel: any = { on: () => channel, subscribe: () => channel };
+      const handlers = { change: () => {}, status: (_status: string) => {} };
+      fx.standings.set(key, handlers);
+      const channel: any = {
+        on: (_type: string, _filter: unknown, cb: () => void) => {
+          handlers.change = cb;
+          return channel;
+        },
+        subscribe: (cb: (s: string) => void) => {
+          handlers.status = cb;
+          return channel;
+        },
+      };
       return channel;
     },
-    removeRegisteredChannel: () => {},
+    removeRegisteredChannel: (key: string) => {
+      fx.standings.delete(key);
+    },
   },
 }));
 /**
@@ -115,6 +129,8 @@ vi.mock('../../src/lib/supabase', () => ({
           return chain;
         },
         in: () => chain,
+        order: () => chain,
+        range: () => chain,
         maybeSingle: () => answer(),
         then: (ok: any, no: any) => answer().then(ok, no),
       };
@@ -249,6 +265,7 @@ beforeEach(() => {
   fx.presentation.clear();
   fx.bus.clear();
   fx.channelKeys.length = 0;
+  fx.standings.clear();
   fx.channels.length = 0;
   fx.tournamentReads.length = 0;
   fx.playerReads.length = 0;
@@ -707,14 +724,14 @@ describe('a finished event retires every listener', () => {
 });
 
 describe('unmount leaves nothing that can still read', () => {
-  it('holds no channel of its own, and a relay after unmount reaches nothing', async () => {
+  it('releases its committed-field subscription, and a relay after unmount reaches nothing', async () => {
     fx.channels.push({ topic: 'realtime:t-break-t1', state: 'joined', joinPush: { ref: '1' } });
     for (let i = 0; i < 3; i++) {
       const { unmount } = await mount();
       unmount();
     }
     const before = fx.tournamentReads.length;
-    expect(fx.channelKeys, 'the HUD binds nothing a sibling could keep alive').toEqual([]);
+    expect(fx.standings.size, 'no roster listener survives its last consumer').toBe(0);
 
     // TablePage still holds t-break-t1 and keeps relaying.
     await broadcast('level_up', { level: 3 });
@@ -911,4 +928,80 @@ it('shows actual manager hand-for-hand state in the mounted table HUD without re
   });
   expect(screen.queryByText(/Hand For Hand/)).toBeNull();
   expect(screen.getByText('Last Rebuy Level')).toBeTruthy();
+});
+
+it('keeps the final rebuy-level notice at the top even with the bottom dock closed', async () => {
+  fx.tournamentAnswer = () =>
+    ok(running({ late_reg_levels: 9, rebuy_levels: 9, current_level: 8, rebuy_cost: 35 }));
+  await mount({ closed: true });
+  expect(screen.getByTestId('last-level-for-rebuy').textContent).toBe('Last Level For Rebuy');
+  expect((hudBar() as HTMLElement).style.display).toBe('none');
+});
+it('removes the final rebuy notice when the clock closes entry before the level ends', async () => {
+  fx.tournamentAnswer = () =>
+    ok(
+      running({
+        late_reg_levels: 9,
+        rebuy_levels: 9,
+        current_level: 8,
+        rebuy_cost: 35,
+        late_reg_mins: 90,
+        started_at: iso(Date.now() - 90 * 60_000),
+      })
+    );
+  await mount();
+  expect(screen.queryByTestId('last-level-for-rebuy')).toBeNull();
+});
+
+describe('settled hands across the entire MTT update the HUD', () => {
+  const rank = () =>
+    screen.getByText('Rank').parentElement?.querySelector('.tournament-dock__value')?.textContent;
+  const hand = async () => {
+    await act(async () => {
+      for (const notify of [...fx.presentation]) notify({ type: 'standings_changed', payload: {} });
+      await vi.advanceTimersByTimeAsync(100);
+    });
+  };
+
+  it('updates when another table changes chips without an elimination', async () => {
+    fx.playersAnswer = () =>
+      ok([
+        { user_id: 'viewer', chips: 1000 },
+        { user_id: 'other-table', chips: 500 },
+      ]);
+    await mount();
+    expect(rank()).toBe('1');
+    fx.playersAnswer = () =>
+      ok([
+        { user_id: 'viewer', chips: 1000 },
+        { user_id: 'other-table', chips: 1500 },
+      ]);
+    await hand();
+    expect(rank()).toBe('2');
+    expect(fx.tournamentReads).toHaveLength(1);
+  });
+
+  it('reads rank even when Left and Avg were supplied by a parent', async () => {
+    fx.playersAnswer = () => ok([{ user_id: 'viewer', chips: 1000 }]);
+    await mount({ playersRemaining: 20, averageStack: 5000 });
+    expect(rank()).toBe('1');
+    await hand();
+    expect(fx.playerReads).toHaveLength(2);
+  });
+
+  it('catches up on a roster rejoin and shares tied ranks', async () => {
+    fx.playersAnswer = () => ok([{ user_id: 'viewer', chips: 1000 }]);
+    await mount();
+    fx.playersAnswer = () =>
+      ok([
+        { user_id: 'viewer', chips: 1000 },
+        { user_id: 'equal', chips: 1000 },
+        { user_id: 'leader', chips: 2000 },
+      ]);
+    await act(async () => {
+      for (const notify of [...fx.engineListeners]) notify('connected');
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(rank()).toBe('2');
+  });
 });

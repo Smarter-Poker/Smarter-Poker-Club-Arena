@@ -6,6 +6,7 @@ import ClubRosterService, {
 } from '../services/ClubRosterService';
 import { reportError } from '../utils/errorReporter';
 import { computeRosterRetryDelay } from '../utils/rosterReadReliability';
+import { useChicagoStatsDay } from './useChicagoStatsDay';
 
 /**
  * The figures for one window, plus the members whose figures could not be read.
@@ -58,7 +59,8 @@ export function useRosterWinLoss(
   const ownerRef = useRef({ scope: '', revision: refreshRevision, epoch: 0 });
   const [version, setVersion] = useState(0);
   const [retryTick, setRetryTick] = useState(0);
-  const scope = `${clubId ?? ''}:${viewerId ?? ''}:${enabled}`;
+  const day = useChicagoStatsDay();
+  const scope = `${clubId ?? ''}:${viewerId ?? ''}:${enabled}:${day}`;
   // Rotate during render: an old viewer must never receive even one cached
   // render, and a late promise cannot become current after an A/B/A switch.
   if (ownerRef.current.scope !== scope) {

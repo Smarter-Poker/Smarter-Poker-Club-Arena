@@ -71,6 +71,7 @@ import {
   REAUTH_INTERVAL_MS,
   REAUTH_MAX_PER_SWEEP,
   MAX_SOCKETS_PER_USER,
+  SHUTDOWN_CLOSE_GRACE_MS,
 } from './EngineWebSocketServer.js';
 
 /** B13: how long a club-membership verdict may be reused. */
@@ -353,7 +354,16 @@ export class ChannelWebSocketServer {
         /* ignore */
       }
     }
+    // A peer that never answers the close frame would hold wss.close() for
+    // ws's 30 s closeTimeout per socket. Shutdown runs after ownership release,
+    // so an unanswered socket is terminated after a short grace instead.
+    const forceClose = setTimeout(() => {
+      for (const ws of this.wss.clients) ws.terminate();
+      for (const [ws] of this.connections) ws.terminate();
+    }, SHUTDOWN_CLOSE_GRACE_MS);
+    forceClose.unref();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
+    clearTimeout(forceClose);
   }
 
   connectionCount(): number {

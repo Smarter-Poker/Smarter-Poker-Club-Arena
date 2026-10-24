@@ -229,6 +229,7 @@ interface RewardColumns {
   is_bounty?: boolean | null;
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
+  mystery_bounty_regular_pool_percent?: number | string | null;
   bounty_amount?: number | null;
   bounty_pool?: number | null;
   bounty_pool_paid?: number | null;
@@ -903,6 +904,12 @@ export default function RewardsTab({
 
               {isMystery && (
                 <p className="rw-rule">
+                  {/* Chests only (Dan 2026-10-22): an unknown split reads as
+                      the older terms, never as chests only. */}
+                  {t.mystery_bounty_regular_pool_percent != null &&
+                  Number(t.mystery_bounty_regular_pool_percent) === 0
+                    ? 'No Bounties Are Paid Before The Money. Once The Tournament Reaches The Money, Every Knockout Picks 1 Of 3 Sealed Chests. '
+                    : ''}
                   Every Chest Is Sealed Until It Is Pulled. The Full Ladder, And Who Has Pulled
                   What, Is Below.
                 </p>

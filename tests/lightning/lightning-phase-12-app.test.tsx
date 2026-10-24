@@ -48,16 +48,24 @@ describe('the render acknowledgement (hand creation → first client render)', (
     expect(lightningRenderAckFrame(ROOM, HAND, -5).d).toBe(0);
     expect(lightningRenderAckFrame(ROOM, HAND, 1e9).d).toBe(LIGHTNING_RENDER_ACK_MAX_DELTA_MS);
     expect(lightningRenderAckFrame(ROOM, HAND, Number.NaN).d).toBe(0);
+    // 2026-10-23: a resume carries one more flag, still no card.
+    const r = lightningRenderAckFrame(ROOM, HAND, 5, true);
+    expect(r).toEqual({ type: 'RENDER_ACK', tableId: ROOM, hand_id: HAND, d: 5, r: 1 });
   });
 
   it('acknowledges once, after the next painted frame; a cancelled hand sends nothing', async () => {
     const send = vi.fn();
     let t = 100;
-    const cancel = scheduleLightningRenderAck(HAND, send, () => t);
+    const cancel = scheduleLightningRenderAck(
+      HAND,
+      send,
+      () => t,
+      () => false
+    );
     t = 117;
     await new Promise((r) => setTimeout(r, 40));
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(HAND, 17);
+    expect(send).toHaveBeenCalledWith(HAND, 17, false);
     cancel();
     const never = vi.fn();
     const stop = scheduleLightningRenderAck(HAND, never);
@@ -66,16 +74,48 @@ describe('the render acknowledgement (hand creation → first client render)', (
     expect(never).not.toHaveBeenCalled();
   });
 
+  it('a hand that reached React while the tab was hidden is acknowledged as a resume (2026-10-23)', async () => {
+    const send = vi.fn();
+    scheduleLightningRenderAck(
+      HAND,
+      send,
+      () => 0,
+      () => true
+    );
+    await new Promise((r) => setTimeout(r, 40));
+    expect(send).toHaveBeenCalledWith(HAND, 0, true);
+    // Hidden after commit but before the paint: still a resume.
+    let hidden = false;
+    const late = vi.fn();
+    scheduleLightningRenderAck(
+      HAND,
+      late,
+      () => 0,
+      () => hidden
+    );
+    hidden = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+    hidden = false;
+    await new Promise((r) => setTimeout(r, 40));
+    expect(late).toHaveBeenCalledWith(HAND, 0, true);
+  });
+
   it('the socket client sends RENDER_ACK only on an open socket, with the hand id and the delta only', () => {
     const src = read('src/services/EngineStateClient.ts');
-    const body = sliceMethod(src, 'sendRenderAck(handId: string, deltaMs: number): void {');
+    const body = sliceMethod(
+      src,
+      'sendRenderAck(handId: string, deltaMs: number, resumed = false): void {'
+    );
     expect(body).toContain('this.ws?.readyState !== 1');
-    expect(body).toMatch(
-      /JSON\.stringify\(\s*\{ type: 'RENDER_ACK', tableId: this\.opts\.tableId, hand_id: handId, d \}\s*\)/
+    expect(body).toContain(
+      "{ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d, r: 1 }"
+    );
+    expect(body).toContain(
+      "{ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d }"
     );
     expect(body).not.toMatch(/card|hole|seat|stack/i);
     expect(read('src/hooks/useEngineTableState.ts')).toContain(
-      'clientRef.current?.sendRenderAck(handId, deltaMs)'
+      'clientRef.current?.sendRenderAck(handId, deltaMs, resumed === true)'
     );
   });
 
@@ -92,7 +132,7 @@ describe('the render acknowledgement (hand creation → first client render)', (
       1
     );
     expect(effect).toContain('lightningRenderAckedRef.current === lightningRenderHandId');
-    expect(effect).toContain('sendEngineRenderAck(handId, deltaMs)');
+    expect(effect).toContain('sendEngineRenderAck(handId, deltaMs, resumed)');
   });
 });
 

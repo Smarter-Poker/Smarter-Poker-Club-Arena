@@ -49,6 +49,24 @@ describe('real mobile payout presentation evidence', () => {
       violations: ['Payout Disappeared Before Reaching Its Recipient'],
     });
   });
+  it('preserves an explicit landing when its recipient moves during the endpoint hold', async () => {
+    const f = await flight();
+    f.bounds.mockReturnValue(rect(100, 100));
+    f.chip.dataset.chipPhase = 'landed';
+    await Promise.resolve();
+    // The recipient can reflow after the endpoint was visibly committed.
+    // A later sample must not rewrite that completed flight as never landed.
+    vi.mocked(document.querySelector('.seat__info')!.getBoundingClientRect).mockReturnValue(
+      rect(100, 124)
+    );
+    await vi.advanceTimersByTimeAsync(32);
+    f.chip.remove();
+    await Promise.resolve();
+    expect(f.evidence()).toMatchObject({
+      landings: [{ recipient: 'winner', distance: 0 }],
+      violations: [],
+    });
+  });
   it('refuses a flight that passes the recipient then ends elsewhere', async () => {
     const f = await flight();
     f.bounds.mockReturnValue(rect(100, 100));

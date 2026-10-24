@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migration.mjs';
 /**
  * ===========================================================================
  *  APPLY ONE MERGED-BUT-UNAPPLIED MIGRATION, FROM ITS OWN BYTES
@@ -50,7 +51,7 @@
  * on the owning backend before CREATE INDEX. No global setting is changed.
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { validateSerialJournalIndex, validateSerialJournalConnection, bindSerialJournalIndex } from './serial-journal-index.mjs';
+import { validateSerialJournalIndex, serialJournalConnection, bindSerialJournalIndex } from './serial-journal-index.mjs';
 import { join } from 'node:path';
 import { supersededBy } from './check-migrations-are-live.mjs';
 import {
@@ -60,11 +61,11 @@ import {
 
 import {
   recoveryRequest,
+  recoveryCatalog,
   cleanupStatement,
   RECOVERY_TRANSIENT_CATALOG,
   validateRecoveryPair,
   recoveryStatement,
-  RECOVERY_CATALOG,
   RECOVERY_SNAPSHOTS,
   validateRecoveryCatalog,
   validateRecoverySnapshots,
@@ -219,6 +220,15 @@ try {
 // A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
 // (2026-10-22). A file that declares "-- @install-window: daily-maintenance"
 // is installed only by the window route, and only after these static rules.
+let ownerWindow = null;
+if (args.includes('--owner-window')) {
+  if (!MAINTENANCE_WINDOW) refused('owner window requires the maintained window route');
+  try {
+    ownerWindow = readOwnerMigrationWindow(argValue('--owner-window'), file);
+  } catch (e) {
+    refused(e.message);
+  }
+}
 let windowMigration = false;
 try {
   windowMigration = windowDeclaration(sql) === 'daily-maintenance';
@@ -300,7 +310,7 @@ try {
 if (!['postgres:', 'postgresql:'].includes(connectionURL.protocol))
   refused('database connection protocol is invalid');
 if (serialJournalIndex) {
-  try { validateSerialJournalConnection(connectionURL); } catch (e) { refused(e.message); }
+  try { connectionURL = serialJournalConnection(connectionURL); } catch (e) { refused(e.message); }
 }
 if (connectionURL.searchParams.has('sslcert') || connectionURL.searchParams.has('sslkey'))
   refused('client-certificate transport requires its maintained qualified route');
@@ -332,6 +342,10 @@ client.on('error', () =>
 
 try {
   await client.connect();
+  await client.query("SET application_name = 'apply-recorded-migration'");
+  const identity = await client.query("SELECT current_setting('application_name') AS name");
+  if (identity.rows[0]?.name !== 'apply-recorded-migration')
+    throw new Error('Installer backend identity did not bind');
 } catch (e) {
   unknown(`could not connect: ${e.message}`);
 }
@@ -431,7 +445,9 @@ async function refusalNow() {
   if (MAINTENANCE_WINDOW) {
     let state;
     try {
-      state = (await client.query(WINDOW_STATE_QUERY)).rows[0];
+      state = (
+        await client.query(ownerWindow ? ownerWindowState(ownerWindow, 150) : WINDOW_STATE_QUERY)
+      ).rows[0];
     } catch (e) {
       await client.end().catch(() => {});
       unknown(`could not read the maintenance window state: ${e.message}`);
@@ -477,7 +493,7 @@ if (recovery) {
     const deadline = performance.now() + 600000;
     async function freshAdmission(withTransient) {
       await client.query("SET statement_timeout = '3s'");
-      const original = (await client.query(RECOVERY_CATALOG)).rows;
+      const original = (await client.query(recoveryCatalog(recovery))).rows;
       if (withTransient)
         validateRecoveryPair(
           original,
@@ -517,7 +533,7 @@ if (recovery) {
       await client.query("SET statement_timeout = '3s'");
       if ((await client.query(RECOVERY_TRANSIENT_CATALOG)).rows.length !== 0)
         throw new Error('transient cleanup not proven');
-      validateRecoveryCatalog((await client.query(RECOVERY_CATALOG)).rows, recovery);
+      validateRecoveryCatalog((await client.query(recoveryCatalog(recovery))).rows, recovery);
       console.log(
         `[apply] exact interrupted transient OID ${recovery.transientOid} removed; original OID ${recovery.oid} unchanged`
       );
@@ -526,7 +542,7 @@ if (recovery) {
     await sendOnce(recoveryStatement(recovery));
     await client.query("SET statement_timeout = '3s'");
     const replacement = validateRecoveryCatalog(
-      (await client.query(RECOVERY_CATALOG)).rows,
+      (await client.query(recoveryCatalog(recovery))).rows,
       recovery,
       true
     );
@@ -559,6 +575,7 @@ for (const ix of preamble) {
     if (serialJournalIndex) {
       try {
         await bindSerialJournalIndex(client);
+        console.log('[apply] serial journal backend verified; parallel maintenance workers=0');
       } catch {
         await client.end().catch(() => {});
         refused('serial journal session identity or worker bound unproven. No index was sent.');
@@ -635,7 +652,7 @@ try {
     : accountingAdmissionSQL(file, sql, atomicSQL);
   // A window file is never an accounting-admission file (validated above), so
   // the line before returned atomicSQL unchanged; wrap it in the window.
-  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);
+  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL, ownerWindow);
   transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});

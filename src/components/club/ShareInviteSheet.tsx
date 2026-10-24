@@ -22,6 +22,7 @@ import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useUserStore } from '../../stores/useUserStore';
 import { reportError } from '../../utils/errorReporter';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import {
@@ -72,6 +73,14 @@ export function ShareInviteSheet({
   canSeeClubStats,
   quickStart = false,
 }: ShareInviteSheetProps) {
+  const accountId = useUserStore((state) => state.user?.id);
+  const scopeIdentity = JSON.stringify([isOpen, clubId, accountId, quickStart, canSeeClubStats]);
+  const renderedScope = useRef(scopeIdentity);
+  // Reject old completions immediately on a new render, before effect cleanup.
+  renderedScope.current = scopeIdentity;
+  const scopeEpoch = useRef(0);
+  const statsBusy = useRef(false);
+  const [clubStatsError, setClubStatsError] = useState(false);
   const [link, setLink] = useState<InviteLink | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [stats, setStats] = useState<InviteStats | null>(null);
@@ -106,55 +115,65 @@ export function ShareInviteSheet({
     []
   );
 
-  // The club page stays mounted when the club changes, so nothing from the
-  // previous club (its link, QR, figures or stats table) may carry over.
+  // Every asynchronous result belongs to one open club/account session.
+  // Cleanup invalidates pending actions as well as reads, including close/reopen.
   useEffect(() => {
+    const epoch = ++scopeEpoch.current;
+    const current = () => scopeEpoch.current === epoch && renderedScope.current === scopeIdentity;
+    statsBusy.current = false;
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
     setLink(null);
     setStats(null);
     setClubRows(null);
     setClubScope(null);
-  }, [clubId]);
-
-  useEffect(() => {
-    if (!isOpen || !clubId) return;
-    let alive = true;
-    setLink(null);
+    setClubStatsError(false);
     setLinkError(null);
     setCopied(false);
     setCopyError(false);
     setShareError(false);
     setShowClubStats(false);
-    getMyInviteLink(clubId)
-      .then((l) => {
-        if (alive) setLink(l);
-      })
-      .catch((err) => {
-        reportError(err, 'ShareInviteSheet.link');
-        if (alive) setLinkError('Your Invite Link Could Not Be Created. Please Try Again.');
-      });
-    if (!quickStart)
-      getMyInviteStats(clubId)
-        .then((s) => {
-          if (alive) setStats(s);
+    if (isOpen && clubId) {
+      getMyInviteLink(clubId)
+        .then((l) => {
+          if (current()) setLink(l);
         })
-        .catch((err) => reportError(err, 'ShareInviteSheet.myStats'));
+        .catch((err) => {
+          reportError(err, 'ShareInviteSheet.link');
+          if (current()) setLinkError('Your Invite Link Could Not Be Created. Please Try Again.');
+        });
+      if (!quickStart)
+        getMyInviteStats(clubId)
+          .then((s) => {
+            if (current()) setStats(s);
+          })
+          .catch((err) => reportError(err, 'ShareInviteSheet.myStats'));
+    }
     return () => {
-      alive = false;
+      ++scopeEpoch.current;
     };
-  }, [isOpen, clubId, linkAttempt, quickStart]);
+  }, [isOpen, clubId, accountId, linkAttempt, quickStart, canSeeClubStats, scopeIdentity]);
 
   const loadClubStats = useCallback(async () => {
+    if (!isOpen || !canSeeClubStats || statsBusy.current) return;
     setShowClubStats(true);
     if (clubRows) return;
+    const epoch = scopeEpoch.current;
+    statsBusy.current = true;
+    setClubStatsError(false);
     try {
       const r = await getClubInviteStats(clubId);
+      if (scopeEpoch.current !== epoch || renderedScope.current !== scopeIdentity) return;
       setClubRows(r.allowed ? r.rows : []);
       setClubScope(r.scope);
     } catch (err) {
       reportError(err, 'ShareInviteSheet.clubStats');
-      setClubRows([]);
+      if (scopeEpoch.current === epoch && renderedScope.current === scopeIdentity)
+        setClubStatsError(true);
+    } finally {
+      if (scopeEpoch.current === epoch && renderedScope.current === scopeIdentity)
+        statsBusy.current = false;
     }
-  }, [clubId, clubRows]);
+  }, [clubId, clubRows, isOpen, canSeeClubStats, scopeIdentity]);
 
   if (!isOpen) return null;
 
@@ -162,24 +181,31 @@ export function ShareInviteSheet({
 
   const handleCopy = async () => {
     if (!link) return;
+    const epoch = scopeEpoch.current;
     setCopyError(false);
     try {
       await navigator.clipboard.writeText(`${shareText}\n\n${link.shortUrl}`);
     } catch (err) {
       reportError(err, 'ShareInviteSheet.copy');
-      setCopyError(true);
+      if (scopeEpoch.current === epoch && renderedScope.current === scopeIdentity)
+        setCopyError(true);
       return;
     }
+    if (scopeEpoch.current !== epoch || renderedScope.current !== scopeIdentity) return;
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    copiedTimer.current = setTimeout(() => {
+      if (scopeEpoch.current === epoch && renderedScope.current === scopeIdentity) setCopied(false);
+    }, 2000);
   };
 
   const handleShare = async () => {
     if (!link) return;
+    const epoch = scopeEpoch.current;
     setShareError(false);
     try {
       if (await shareInviteOnNative(clubName, shareText, link.shortUrl)) return;
+      if (scopeEpoch.current !== epoch || renderedScope.current !== scopeIdentity) return;
       if (navigator.share) {
         await navigator.share({ title: clubName, text: shareText, url: link.shortUrl });
       } else {
@@ -189,7 +215,8 @@ export function ShareInviteSheet({
       // AbortError is the player closing the share sheet, not a failure.
       if ((err as Error)?.name !== 'AbortError') {
         reportError(err, 'ShareInviteSheet.share');
-        setShareError(true);
+        if (scopeEpoch.current === epoch && renderedScope.current === scopeIdentity)
+          setShareError(true);
       }
     }
   };
@@ -320,6 +347,13 @@ export function ShareInviteSheet({
                 <button type="button" className="rfc-word sc-ink--blue" onClick={loadClubStats}>
                   View Invite Stats
                 </button>
+              ) : clubStatsError ? (
+                <p className="sc-copy sc-ink--red" role="alert">
+                  Invite Stats Could Not Be Loaded.
+                  <button type="button" className="rfc-word sc-ink--blue" onClick={loadClubStats}>
+                    Retry Invite Stats
+                  </button>
+                </p>
               ) : clubRows == null ? (
                 <span className="sc-label sc-ink--silver">Loading Invite Stats...</span>
               ) : clubRows.length === 0 ? (

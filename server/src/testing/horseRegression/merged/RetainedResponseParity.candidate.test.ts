@@ -29,7 +29,10 @@ import {
   horseDecisionReceiptIsValid,
   horseSamplingStateIsValid,
 } from '../../../engine/horseDecision/responseValidation.js';
-import { HORSE_POLICY_ORDER } from '../../../engine/HorsePolicyGraph.js';
+import {
+  HORSE_POLICY_ORDER,
+  HORSE_POLICY_GRAPH_VERSION,
+} from '../../../engine/HorsePolicyGraph.js';
 import { horsePolicyOwnership } from '../../../engine/HorsePolicyRegistry.js';
 import { captureHorseHandJournalContext } from '../../../engine/HorseDecisionHandBinding.js';
 import { HandController } from '../../../engine/HandController.js';
@@ -57,7 +60,7 @@ afterEach(() => {
 
 function graph() {
   return {
-    version: 'horse-policy-order-v1',
+    version: HORSE_POLICY_GRAPH_VERSION,
     transitions: HORSE_POLICY_ORDER.map((node: any, i: number) => ({
       node,
       before: i ? { action: 'call', amount: null } : null,

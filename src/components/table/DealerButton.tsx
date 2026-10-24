@@ -457,10 +457,16 @@ export function DealerButton({
       const h = host.offsetHeight;
       if (w <= 0 || h <= 0) return;
       const railBets = window.innerWidth <= 480 && h > w;
+      const portraitTaper =
+        host.closest('.table-page')?.getAttribute('data-hero') === 'false' ? 0 : undefined;
       setScalerSize((prev) =>
-        prev && prev.w === w && prev.h === h && prev.railBets === railBets
+        prev &&
+        prev.w === w &&
+        prev.h === h &&
+        prev.railBets === railBets &&
+        prev.portraitTaper === portraitTaper
           ? prev
-          : { w, h, railBets }
+          : { w, h, railBets, portraitTaper }
       );
     };
     read();
@@ -537,6 +543,10 @@ export function DealerButton({
     <div
       ref={elRef}
       className="dealer-button"
+      // The seat this puck belongs to, so the painted-layout pass in
+      // useProtectedCardLayout can keep it nearer its own player than any other.
+      data-owner-x={pos.x}
+      data-owner-y={pos.y}
       style={{
         left: `${btnX}%`,
         top: `${btnY}%`,

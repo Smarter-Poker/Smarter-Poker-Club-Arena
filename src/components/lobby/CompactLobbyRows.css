@@ -1,0 +1,376 @@
+/* Compact desktop-style browsing on phones. The approved game card is shown
+   only after selection, in GameLobbyPanel. Rows never commit a buy-in. */
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    display: block;
+    padding: 0 0 var(--bottom-nav-clearance, 74px);
+  }
+  .compact-lobby {
+    width: 100%;
+    display: table;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0 4px;
+    font-family: var(--font-primary, 'Inter', sans-serif);
+    font-size: 12px;
+    color: #e4e7ec;
+    background: #080b11;
+    border: 1px solid rgb(88 142 235 / 25%);
+    box-shadow: 0 14px 30px rgb(0 0 0 / 65%);
+  }
+  .compact-lobby thead {
+    display: table-header-group;
+  }
+  .compact-lobby tbody {
+    display: table-row-group;
+  }
+  .compact-lobby tr {
+    display: table-row;
+  }
+  .compact-lobby th,
+  .compact-lobby td {
+    display: table-cell;
+  }
+  .club-lobby-machine .lobby-sortbar {
+    display: none;
+  }
+  .compact-lobby__sort {
+    min-height: 44px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .compact-lobby__sort:focus-visible {
+    outline: 2px solid #45adff;
+  }
+  .compact-lobby__menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 190px;
+    z-index: 5;
+  }
+  .compact-lobby th:first-child .compact-lobby__menu {
+    left: 0;
+    right: auto;
+  }
+  .compact-lobby th {
+    position: relative;
+    padding: 8px 3px;
+    text-align: center;
+    /* Dan 2026-10-23: "THE GAMES STAKES PLAYERS AND STATUS FONT NEED TO BE
+       LARGER." */
+    font-family: 'Roboto Condensed', Inter, sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #e4e7ec;
+    background: linear-gradient(180deg, #14161c 0%, #0e1014 100%);
+    border-top: 1px solid rgb(217 222 229 / 35%);
+    border-right: 1px solid rgb(255 255 255 / 8%);
+    border-bottom: 2px solid #000;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 12%),
+      0 3px 7px rgb(0 0 0 / 70%);
+    text-shadow: 0 1px 1px #000;
+  }
+  .compact-lobby th[aria-sort='ascending'],
+  .compact-lobby th[aria-sort='descending'] {
+    color: #45adff;
+    text-shadow: 0 0 6px rgb(69 173 255 / 45%);
+  }
+  .compact-lobby th:first-child {
+    width: 42%;
+    text-align: left;
+    padding-left: 6px;
+  }
+  .compact-lobby th:nth-child(2) {
+    width: 20%;
+  }
+  .compact-lobby th:nth-child(3) {
+    width: 18%;
+  }
+  .compact-lobby th:nth-child(4) {
+    width: 20%;
+  }
+  .compact-lobby td {
+    padding: 4px 3px;
+    text-align: center;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+    background: linear-gradient(180deg, #111722 0%, #080b11 100%);
+    border-top: 1px solid rgb(105 137 193 / 14%);
+    border-bottom: 1px solid rgb(0 0 0 / 68%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+    font-variant-numeric: tabular-nums;
+  }
+  .compact-lobby td:first-child {
+    padding: 0;
+    text-align: left;
+  }
+  /* The same recessed board and raised rows as the wider live-event table. */
+  .compact-lobby tbody tr:nth-child(even) td {
+    background: linear-gradient(180deg, #0d1928 0%, #080b11 100%);
+  }
+  .compact-lobby tbody td:first-child {
+    box-shadow:
+      inset 3px 0 0 rgb(88 137 225 / 28%),
+      inset 0 1px 0 rgb(255 255 255 / 3%);
+  }
+  .compact-lobby tbody tr:active td {
+    background: #07111d;
+  }
+  .compact-lobby tr {
+    cursor: pointer;
+  }
+  .compact-lobby tr:focus-within {
+    outline: 2px solid #45adff;
+    outline-offset: -2px;
+  }
+  .compact-lobby__open {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+    min-height: 48px;
+    padding: 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .compact-lobby__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    text-shadow: 0 1px 1px #000;
+    line-height: 1.25;
+  }
+  .compact-lobby__meta {
+    width: 100%;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+    color: #9aa5b3;
+    line-height: 1.25;
+  }
+  .compact-lobby .lt-seats {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 2px;
+  }
+  .compact-lobby .lt-seats__num {
+    min-width: 0;
+    max-width: 100%;
+    text-align: center;
+  }
+  .compact-lobby .lt-seats__bar {
+    max-width: 100%;
+  }
+  .compact-lobby .lt-seats__tables {
+    font-size: 9px;
+  }
+  .compact-lobby .lt-status {
+    display: inline;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    color: #45adff;
+    font-size: 10px;
+    white-space: normal;
+  }
+  .compact-lobby .lt-mono {
+    font-size: 11px;
+    white-space: normal;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENT ROWS THAT LOOK ALIVE (Dan 2026-10-23)
+   Badges for the bounty family, freerolls, satellites and guarantees of 2.5K
+   or more, plus a live clock: "Starts In" before the cards fly and "Late Reg
+   Ends In" while late registration is open. Inks are the schema's own:
+   green for free, gold for a guarantee, red for a bounty, blue for a mystery
+   draw, silver for a satellite.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.lt-signals {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.lt-signals__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lt-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 2px 5px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #161c25 0%, #07090d 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    0 1px 2px rgb(0 0 0 / 80%);
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px #000;
+}
+
+.lt-signal svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+
+.lt-signal--freeroll {
+  border-color: rgb(53 217 90 / 65%);
+  background: linear-gradient(180deg, rgb(53 217 90 / 24%), rgb(53 217 90 / 6%)), #050607;
+  color: #c8ffd2;
+  box-shadow:
+    inset 0 1px 0 rgb(200 255 210 / 18%),
+    0 0 8px rgb(53 217 90 / 45%);
+}
+
+.lt-signal--hot-gtd {
+  border-color: rgb(255 215 0 / 70%);
+  background: linear-gradient(180deg, rgb(255 215 0 / 22%), rgb(255 215 0 / 5%)), #050607;
+  color: #ffd700;
+  box-shadow:
+    inset 0 1px 0 rgb(255 235 120 / 22%),
+    0 0 8px rgb(255 215 0 / 40%);
+}
+
+.lt-signal--pko,
+.lt-signal--bounty {
+  border-color: rgb(240 40 73 / 65%);
+  background: linear-gradient(180deg, rgb(240 40 73 / 24%), rgb(240 40 73 / 6%)), #050607;
+  color: #ff5b6e;
+  box-shadow:
+    inset 0 1px 0 rgb(255 140 155 / 16%),
+    0 0 7px rgb(240 40 73 / 38%);
+}
+
+.lt-signal--mystery {
+  border-color: rgb(69 173 255 / 70%);
+  background: linear-gradient(180deg, rgb(69 173 255 / 26%), rgb(69 173 255 / 6%)), #050607;
+  color: #a8ddff;
+  box-shadow:
+    inset 0 1px 0 rgb(168 221 255 / 18%),
+    0 0 8px rgb(69 173 255 / 42%);
+}
+
+.lt-signal--satellite {
+  border-color: rgb(228 231 236 / 45%);
+  color: #e4e7ec;
+}
+
+.lt-signal--gtd {
+  color: #9aa5b3;
+}
+
+.lt-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  color: #45adff;
+  text-shadow: 0 0 6px rgb(69 173 255 / 45%);
+  white-space: nowrap;
+}
+
+.lt-clock__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: lt-clock-pulse 1.4s ease-in-out infinite;
+}
+
+.lt-clock--soon {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgb(255 215 0 / 45%);
+}
+
+.lt-clock--late {
+  color: #ff5b6e;
+  text-shadow: 0 0 6px rgb(240 40 73 / 45%);
+}
+
+@keyframes lt-clock-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+
+@media (max-width: 900px) {
+  /* The rail on the row's left edge carries its best fact at a glance. */
+  .compact-lobby tbody tr.is-freeroll td:first-child {
+    box-shadow:
+      inset 3px 0 0 #35d95a,
+      inset 14px 0 18px -14px rgb(53 217 90 / 55%);
+  }
+  .compact-lobby tbody tr.is-hot-gtd td:first-child {
+    box-shadow:
+      inset 3px 0 0 #ffd700,
+      inset 14px 0 18px -14px rgb(255 215 0 / 50%);
+  }
+  .compact-lobby tbody tr.is-bounty td:first-child {
+    box-shadow:
+      inset 3px 0 0 #f02849,
+      inset 14px 0 18px -14px rgb(240 40 73 / 45%);
+  }
+  .compact-lobby tbody tr.is-freeroll td {
+    background: linear-gradient(180deg, rgb(53 217 90 / 9%), rgb(53 217 90 / 2%)), #080b11;
+  }
+  .compact-lobby tbody tr.is-hot-gtd td {
+    background: linear-gradient(180deg, rgb(255 215 0 / 8%), rgb(255 215 0 / 2%)), #080b11;
+  }
+  .compact-lobby tbody tr.compact-lobby__row--tourney.is-urgent .lt-status {
+    color: #ffd700;
+    text-shadow: 0 0 6px rgb(255 215 0 / 45%);
+  }
+}

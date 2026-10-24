@@ -1,4 +1,5 @@
 import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
+import { horseRiverValueAlarmSnapshot } from './engine/HorseRiverValueAudit.js';
 import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
 import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
@@ -5369,6 +5370,9 @@ export class GameServer {
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.
       liveHorseDecision,
+      // Horse river value alarm (2026-10-23): proof the per-hand audit is
+      // running (handsAudited, riverActionsAudited) and whether it is firing.
+      horseRiverValueAlarm: horseRiverValueAlarmSnapshot(),
       adaptiveJournalWorker: horseAdaptiveJournalWorker.status(),
       // HTTP and WebSocket handlers are reachable before the leader boot has
       // finished. This is the exact admission gate they await before any table
@@ -9154,10 +9158,10 @@ export class GameServer {
         reportError(
           new Error(
             `Tournament ${tournamentId} table ${tableId} had no running dealer for ` +
-              `${Math.round((now - since) / 1000)}s - handed the event to a successor generation ` +
+              `${Math.round((now - since) / 1000)}s - requested a successor after its live hands drain ` +
               `(hand-off ${handoffs + 1} of ${GameServer.STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS})`
           ),
-          'GameServer.stuck_tournament_table_handed_on',
+          'GameServer.stuck_tournament_successor_drain_requested',
           { tournamentId, tableId }
         );
       }
@@ -9182,15 +9186,21 @@ export class GameServer {
         new Error(
           `Tournament ${tournamentId} bust stage stalled (sweep in flight ` +
             `${Math.round(stalled.msInFlight / 1000)}s, oldest bust waiting ` +
-            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}) - no bust ` +
-            `could be recorded; handed the event to a successor generation`
+            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}` +
+            (stalled.step
+              ? `, stuck in ${stalled.step} for ${Math.round(stalled.msInStep / 1000)}s`
+              : '') +
+            `) - no bust ` +
+            `could be recorded; requested a successor after its live hands drain`
         ),
-        'GameServer.stalled_elimination_sweep_handed_on',
+        'GameServer.stalled_elimination_successor_drain_requested',
         {
           tournamentId,
           stage: stalled.stage,
           msInFlight: stalled.msInFlight,
           msBustWaiting: stalled.msBustWaiting,
+          step: stalled.step,
+          msInStep: stalled.msInStep,
         }
       );
     }

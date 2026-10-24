@@ -679,3 +679,59 @@ describe('a schedule whose times move never doubles a date', () => {
     expect(src).toMatch(/resolveTimeChange\(dueNew, duePrev, change, claimedSet!, schedule\.id\)/);
   });
 });
+
+// Owner October 22: the same guarantees in both rooms, on every weekday.
+describe('daily Free Buy guarantees in both live schedule creators', () => {
+  const cases = Array.from({ length: 7 }, (_, day) =>
+    [midwaySchedule, arenaSchedule].flatMap((schedule) =>
+      [
+        [8, 'Morning', 250],
+        [12, 'Midday', 500],
+        [16, 'Afternoon', 500],
+        [20, 'Prime Time', 500],
+        [0, 'Midnight', 250],
+      ].map(([hour, label, guarantee]) => ({
+        day,
+        hour: Number(hour),
+        guarantee: Number(guarantee),
+        schedule: schedule(`${label} Free Buy (NLH)`),
+      }))
+    )
+  ).flat();
+  it.each(cases)(
+    'day $day / $schedule.club_id / $schedule.name is $guarantee GTD',
+    ({ day, hour, guarantee, schedule }) => {
+      const start = new Date(Date.UTC(2026, 9, 25 + day, hour + 5, 30));
+      const row = fixedBoardRow(schedule, { fixedBoard: schedule.name }, start);
+      expect(row).not.toBeNull();
+      expect(row!.guaranteed_prize).toBe(guarantee);
+      expect(row!.buy_in_amount).toBe(0);
+      expect(row!.buy_in_fee).toBe(0);
+      expect(row!.starting_chips).toBe(3000);
+      expect(row!.start_time).toBe(start.toISOString());
+      expect(row!.schedule_id).toBe(schedule.id);
+      if (schedule.club_id === ARENA) {
+        const converted = diamondSpawnConfig(row!, {}, start);
+        expect(converted.ok).toBe(true);
+        if (converted.ok) expect(converted.config.guaranteedPrize).toBe(guarantee);
+      }
+    }
+  );
+});
+
+// This operator action must never bypass the existing registered-player law.
+it('the one-time guarantee update locks and rechecks before changing eligible listings', () => {
+  const sql = readFileSync(join(__dirname, '../../../scripts/ops/free-buy-guarantees.sql'), 'utf8');
+  expect(sql).toContain('FOR UPDATE OF t');
+  expect(sql).toContain('public.fn_platform_frozen()');
+  for (const field of [
+    'entry_contract_locked',
+    'prize_pool_finalized',
+    'current_players',
+    'prize_pool',
+  ])
+    expect(sql).toContain(`current_event.${field}`);
+  expect(sql).toContain('FROM public.tournament_players p');
+  expect(sql).toContain('current_event.start_time <= clock_timestamp()');
+  expect(sql).not.toMatch(/DISABLE|session_replication_role|DELETE FROM|TRUNCATE/i);
+});

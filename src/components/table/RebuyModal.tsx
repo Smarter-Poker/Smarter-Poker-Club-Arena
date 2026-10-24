@@ -142,7 +142,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
               </strong>
             </React.Fragment>,
             <React.Fragment key="balance">
-              <span>Your Balance</span>
+              <span>Wallet Balance</span>
               <strong>
                 <PurchaseText>
                   {balanceUnknown || !fundingUnit

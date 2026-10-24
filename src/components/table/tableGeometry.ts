@@ -109,22 +109,26 @@ export interface Size {
   h: number;
   /** Portrait phones place resting bets directly inside the painted rail. */
   railBets?: boolean;
+  /** Zero uses the desktop oval while retaining portrait rail bet placement. */
+  portraitTaper?: number;
 }
 
 /** Owner October 20: the far rail is 80% of the near rail. This one
  * homography paints the art and projects marker coordinates. UI stays upright. */
 export const PORTRAIT_TABLE_TAPER = 0.25;
-export function projectPortraitTable(p: Pos): Pos {
-  const denominator = 1 + PORTRAIT_TABLE_TAPER * (1 - p.y / 100);
+export function projectPortraitTable(p: Pos, taper = PORTRAIT_TABLE_TAPER): Pos {
+  if (taper === 0) return { ...p };
+  const denominator = 1 + taper * (1 - p.y / 100);
   return { x: 50 + (p.x - 50) / denominator, y: p.y / denominator };
 }
-export function unprojectPortraitTable(p: Pos): Pos {
-  const y = (p.y * (1 + PORTRAIT_TABLE_TAPER)) / (1 + (PORTRAIT_TABLE_TAPER * p.y) / 100);
-  return { x: 50 + (p.x - 50) * (1 + PORTRAIT_TABLE_TAPER * (1 - y / 100)), y };
+export function unprojectPortraitTable(p: Pos, taper = PORTRAIT_TABLE_TAPER): Pos {
+  if (taper === 0) return { ...p };
+  const y = (p.y * (1 + taper)) / (1 + (taper * p.y) / 100);
+  return { x: 50 + (p.x - 50) * (1 + taper * (1 - y / 100)), y };
 }
-export function portraitBoardWidthOfFeltPct(): number {
+export function portraitBoardWidthOfFeltPct(taper = PORTRAIT_TABLE_TAPER): number {
   const boardY = (FELT_WINDOW.top + FELT_WINDOW.height * 0.425) / 100;
-  return (95 * (1 + PORTRAIT_TABLE_TAPER * boardY)) / (1 + PORTRAIT_TABLE_TAPER);
+  return (95 * (1 + taper * boardY)) / (1 + taper);
 }
 
 /**
@@ -135,16 +139,34 @@ export function portraitBoardWidthOfFeltPct(): number {
  * (2px on a phone, 4px to 1024px, 6px above - TablePage.css), and the felt is
  * FELT_WINDOW.width of the scaler.
  */
-export function boardCardWidthPx(scalerW: number, viewportW: number, portraitTaper: boolean): number {
+export function boardCardWidthPx(
+  scalerW: number,
+  viewportW: number,
+  portraitTaper: boolean
+): number {
   if (!(scalerW > 0)) return 0;
   const felt = (scalerW * FELT_WINDOW.width) / 100;
   const rowPct = portraitTaper ? portraitBoardWidthOfFeltPct() : 95;
   const gap = viewportW <= 480 ? 2 : viewportW <= 1024 ? 4 : 6;
   return Math.max(0, Math.round((((felt * rowPct) / 100 - 4 * gap) / 5) * 10) / 10);
 }
+/** Dense mobile rings and the narrowest phones reserve a fixed side lane beside the board. At 7.8%
+ * of the canvas, a six-card half-step row clears that lane's four-pixel
+ * gutter at every phone width. Every player shares it, with a 20px legibility
+ * floor; roomy rings use the board size. No hand-dependent resizing. */
+export function tabledCardWidthPx(
+  scalerW: number,
+  viewportW: number,
+  portrait: boolean,
+  seats: number
+): number {
+  return viewportW <= 340 || (viewportW <= 480 && seats >= 8)
+    ? Math.min(boardCardWidthPx(scalerW, viewportW, portrait), Math.max(20, scalerW * 0.078))
+    : boardCardWidthPx(scalerW, viewportW, portrait);
+}
 export function portraitTableTransform(size: Size): string {
   if (!(size.w > 0 && size.h > 0)) return 'none';
-  const k = PORTRAIT_TABLE_TAPER;
+  const k = size.portraitTaper ?? PORTRAIT_TABLE_TAPER;
   return `matrix3d(1,0,0,0,${(-size.w * k) / (2 * size.h)},1,0,${-k / size.h},0,0,1,0,${(size.w * k) / 2},0,0,${1 + k})`;
 }
 
@@ -401,7 +423,32 @@ export const SEAT_POD_LADDER: ReadonlyArray<{
  * `outboardCardSide` gives in tableSeatGeometry.ts: an index means a different
  * chair on every ring.
  */
-export function seatPodPx(viewportWidthPx: number, isHero: boolean, canvasWidthPx?: number): Size {
+export function seatPodPx(
+  viewportWidthPx: number,
+  isHero: boolean,
+  canvasWidthPx?: number,
+  ring?: { seats?: number; canvasHeightPx?: number }
+): Size {
+  /* DENSE RINGS ON A PHONE (Dan 2026-10-22) - mirrors the rule of the same
+     name at the foot of SeatSlot.css: a 7-9 max villain pod on a portrait
+     phone is sized from the smaller of the felt's width and its height. */
+  if (
+    !isHero &&
+    viewportWidthPx <= 480 &&
+    canvasWidthPx &&
+    Number.isFinite(canvasWidthPx) &&
+    (ring?.seats ?? 0) >= 7
+  ) {
+    const h = ring?.canvasHeightPx && ring.canvasHeightPx > 0 ? ring.canvasHeightPx : 600;
+    const avatar = Math.min(52, Math.max(34, Math.min(canvasWidthPx * 0.14, h * 0.085)));
+    const minWidth = Math.min(112, Math.max(66, canvasWidthPx * 0.235));
+    // 11px name + 13px stack at 1.3 line height, 2px pads, 1.5px borders.
+    const plateHeight = Math.max(36, (11 + 13) * 1.3 + 4 + 3);
+    return {
+      w: Math.max(minWidth, avatar * 1.143),
+      h: avatar + plateHeight - Math.max(3, avatar * 0.0714),
+    };
+  }
   const rung =
     SEAT_POD_LADDER.find((r) => viewportWidthPx <= r.maxViewportWidthPx) ??
     SEAT_POD_LADDER[SEAT_POD_LADDER.length - 1];
@@ -431,7 +478,8 @@ export function fitSeatToViewport(
   canvas: Size,
   viewportWidthPx: number,
   pod: Size,
-  canvasLeftPx = (viewportWidthPx - canvas.w) / 2
+  canvasLeftPx = (viewportWidthPx - canvas.w) / 2,
+  maxPlayers = 0
 ): Pos {
   if (!Number.isFinite(canvas.w) || canvas.w <= 0 || viewportWidthPx <= 0) return seat;
   const edge = pod.w / 2 + 2;
@@ -448,20 +496,30 @@ export function fitSeatToViewport(
   // tag and bounty. They now keep their ring x (27/73 on 7-9 max), which puts
   // them over the top of the rail, clear of both side columns.
   const portraitPhone = viewportWidthPx <= 480 && canvas.h > canvas.w;
+  // Full-width spectator caps keep their desktop ring positions. The very
+  // shortest phones retain the separate compact cap lanes.
+  const desktopCaps = portraitPhone && canvas.portraitTaper === 0 && viewportWidthPx > 340;
   // A top cap also stays inboard of the side column, which on a phone is a
   // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
   // cap keeps 4px of air beyond it (only binds on the narrowest phones).
   const capClearX = ((2 + pod.w + 4 + pod.w / 2 - canvasLeftPx) / canvas.w) * 100;
+  // The 320px nine-seat ring needs separate cap and side lanes.
+  const compactNine = portraitPhone && viewportWidthPx <= 340 && maxPlayers === 9;
   const targetX =
     portraitPhone && seat.y >= 20 && seat.y < 100
       ? seat.x < 50
         ? minX
         : maxX
-      : portraitPhone && seat.y < 20 && seat.x !== 50 && canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX
+      : portraitPhone &&
+          !desktopCaps &&
+          seat.y < 20 &&
+          seat.x !== 50 &&
+          canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
+          !compactNine
         ? seat.x < 50
           ? 15
           : 85
-        : portraitPhone && seat.y < 20 && seat.x !== 50
+        : portraitPhone && !desktopCaps && seat.y < 20 && seat.x !== 50
           ? seat.x < 50
             ? Math.min(50, Math.max(seat.x, capClearX))
             : Math.max(50, Math.min(seat.x, 100 - capClearX))
@@ -474,14 +532,22 @@ export function fitSeatToViewport(
   // On a phone the side pods live in the screen's outboard lanes, clear of the
   // board, so the board's band does not bind there and the chair can move up
   // to even the column.
+  // Equal 29.75-point gaps between the three side chairs leave room for
+  // each existing avatar, plate and action label on the 324px canvas.
   const y =
-    portraitPhone &&
-    canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
-    seat.x !== 50 &&
-    seat.y > 50 &&
-    seat.y < 70
-      ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
-      : seat.y;
+    compactNine && canvas.h <= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX && seat.y >= 20 && seat.y < 100
+      ? seat.y < 35
+        ? 23
+        : seat.y < 70
+          ? 52.75
+          : 82.5
+      : portraitPhone &&
+          canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
+          seat.x !== 50 &&
+          seat.y > 50 &&
+          seat.y < 70
+        ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
+        : seat.y;
   return x === seat.x && y === seat.y ? seat : { ...seat, x, y };
 }
 
@@ -492,9 +558,11 @@ export const PORTRAIT_LOW_SIDE_SEAT_LIFT = 4;
 /** The smallest phone felts (an iPhone SE table is about 262 x 324px) need
  * every wager slot the original layout gives them: nine bets only fit around
  * the outer lanes there. Below these sizes the top caps keep the outboard
- * 15/85 lanes and the lower side chair is not lifted. */
-export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 290;
-export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 400;
+ * 15/85 lanes and the lower side chair is not lifted. Every notched iPhone
+ * (a 375px-wide felt is ~307 x 450 after the safe areas) is above both, so
+ * gets the spread-out ring (Dan 2026-10-22). */
+export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 270;
+export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 360;
 
 /**
  * Clear felt between a chip's edge and its own pod, as a percentage of the
@@ -1068,7 +1136,7 @@ function insideStadiumPx(px: number, py: number, box: ReturnType<typeof feltBoxP
  * daylight rather than take the constant's word for it.
  */
 export function feltEdgeClearanceWidthPct(p: Pos, size: Size = NOMINAL_SCALER): number {
-  if (size.railBets) p = unprojectPortraitTable(p);
+  if (size.railBets) p = unprojectPortraitTable(p, size.portraitTaper);
   const box = feltBoxPx(size, 0);
   const d = spineDistancePx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
   return ((box.r - d) / size.w) * 100;
@@ -1128,7 +1196,7 @@ export function isInsideFelt(
   size: Size = NOMINAL_SCALER,
   marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
 ): boolean {
-  if (size.railBets) p = unprojectPortraitTable(p);
+  if (size.railBets) p = unprojectPortraitTable(p, size.portraitTaper);
   const box = feltBoxPx(size, marginWidthPct);
   return insideStadiumPx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
 }
@@ -1167,7 +1235,12 @@ export function clampIntoFelt(
 ): Pos {
   if (size.railBets)
     return projectPortraitTable(
-      clampIntoFelt(unprojectPortraitTable(p), { ...size, railBets: false }, marginWidthPct)
+      clampIntoFelt(
+        unprojectPortraitTable(p, size.portraitTaper),
+        { ...size, railBets: false },
+        marginWidthPct
+      ),
+      size.portraitTaper
     );
   const s = feltExitScale(p, size, marginWidthPct);
   if (!Number.isFinite(s) || s >= 1) return { x: p.x, y: p.y };
@@ -1406,10 +1479,13 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
       const dy = py - sy;
       const length = Math.hypot(dx, dy);
       if (length < 1e-6) return { ...source };
-      return projectPortraitTable({
-        x: ((sx + (dx / length) * box.r) / size.w) * 100,
-        y: ((sy + (dy / length) * box.r) / size.h) * 100,
-      });
+      return projectPortraitTable(
+        {
+          x: ((sx + (dx / length) * box.r) / size.w) * 100,
+          y: ((sy + (dy / length) * box.r) / size.h) * 100,
+        },
+        size.portraitTaper
+      );
     };
     // The amount label is wider than the disc. At short phone heights the
     // cap bends toward the board; walk along that same edge until the whole
@@ -1632,7 +1708,10 @@ export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
  */
 export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
   if (size.railBets)
-    return projectPortraitTable(dealerButtonPosition(seat, { ...size, railBets: false }, pod));
+    return projectPortraitTable(
+      dealerButtonPosition(seat, { ...size, railBets: false }, pod),
+      size.portraitTaper
+    );
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);

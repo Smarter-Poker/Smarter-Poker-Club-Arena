@@ -1,0 +1,69 @@
+name: A close proving loop stops on the statement clock
+
+# fn_settle_accounting_commission_advance() and
+# fn_settle_accounting_rakeback_advance() (migration 20261015181721). Runs
+# scripts/ci/test-a-close-proving-loop-stops-on-the-statement-clock.py against
+# a throwaway PostgreSQL 17 cluster, never production: the exact production
+# definitions captured 2026-10-15 (pg_get_functiondef md5 equal to the live
+# functions) must start windows and the round-3 plan with under a minute of
+# the statement left and be cancelled with nothing kept, and the migration
+# must start none then, keep what it proved, leave the attempt rules and a
+# finished round unchanged, and reproduce production's derived postimage
+# md5s. No timer (CLAUDE.md 10.85): pull_request only, scoped to the paths it
+# proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015181721_a_close_proving_loop_stops_on_the_statement_clock.sql
+      - scripts/ci/fixtures/a-close-proving-loop-stops-on-the-statement-clock/**
+      - scripts/ci/test-a-close-proving-loop-stops-on-the-statement-clock.py
+      - .github/workflows/a-close-proving-loop-stops-on-the-statement-clock.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a-close-proving-loop-stops-on-the-statement-clock-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  a-close-proving-loop-stops-on-the-statement-clock:
+    name: A close proving loop stops on the statement clock
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: A close proving loop stops on the statement clock
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-a-close-proving-loop-stops-on-the-statement-clock.py --output artifacts/a-close-proving-loop-stops-on-the-statement-clock
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-close-proving-loop-stops-on-the-statement-clock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/a-close-proving-loop-stops-on-the-statement-clock/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

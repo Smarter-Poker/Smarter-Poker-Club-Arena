@@ -30,8 +30,24 @@ describe('fn_search_players final migration-order contract', () => {
   const final = finalDefinition();
 
   it('is restored by a forward migration after every older replacement', () => {
-    expect(final.name).toMatch(/^20261024\d{6}_agents_can_watch_every_live_downline_table\.sql$/);
+    expect(final.name).toBe(
+      '20261024193818_agent_downline_watch_functions_before_window_policy.sql'
+    );
     expect(final.lastTouch).toBe(final.name);
+  });
+
+  it('matches the queued daily-window file that re-installs it later in production', () => {
+    // 20261024020328 is older by version but installs after 20261024193818 in
+    // production (it waits for a frozen break). Identical bodies mean that
+    // later install cannot change the final definition.
+    const queued = migrationCorpus().find(
+      ({ name }) => name === '20261024020328_agents_can_watch_every_live_downline_table.sql'
+    );
+    expect(queued).toBeDefined();
+    const queuedBody = queued!.sql.match(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_search_players\s*\([\s\S]*?AS\s+\$fn\$([\s\S]*?)\$fn\$;/i
+    )?.[1];
+    expect(queuedBody).toBe(final.body);
   });
 
   it('keeps indexed trigram matching and tells the client when fuzzy matching ran', () => {

@@ -2,9 +2,15 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { migrationCorpus } from './helpers/migrationCorpus';
 
-const migration = migrationCorpus()
+const corpus = migrationCorpus();
+const migration = corpus
   .filter(({ sql }) => /CREATE OR REPLACE FUNCTION public\.fn_agent_can_watch_table\(/.test(sql))
   .at(-1)!;
+const windowPolicy = corpus.find(
+  ({ name }) => name === '20261024020328_agents_can_watch_every_live_downline_table.sql'
+)!;
+const functionBlock = (sql: string) =>
+  sql.slice(sql.indexOf('BEGIN;'), sql.indexOf('\nDO $assert$'));
 
 describe('agents can observe every live downline table', () => {
   it('authenticates the viewer and uses active, cycle-safe recursive relationships', () => {
@@ -22,10 +28,10 @@ describe('agents can observe every live downline table', () => {
   });
 
   it('connects metadata, search, click-time and engine gates to the same exception', () => {
-    expect(migration.sql).toContain(
+    expect(windowPolicy.sql).toContain(
       'CREATE POLICY agent_downline_table_observation ON public.tables'
     );
-    expect(migration.sql).toContain('-- @install-window: daily-maintenance');
+    expect(windowPolicy.sql).toContain('-- @install-window: daily-maintenance');
     expect(migration.sql).toContain(
       'v_downline := public.fn_agent_can_watch_table(p_table_id, v_uid)'
     );
@@ -35,6 +41,24 @@ describe('agents can observe every live downline table', () => {
     expect(engine).toContain('p_viewer_user_id: userId');
     expect(engine.indexOf("reason: 'agent_downline'")).toBeLessThan(
       engine.indexOf("arena.kind === 'diamond_arena'")
+    );
+  });
+
+  it('ships the functions without a break and leaves only the policy to the window', () => {
+    expect(migration.name).toBe(
+      '20261024193818_agent_downline_watch_functions_before_window_policy.sql'
+    );
+    expect(migration.sql).not.toContain('@install-window');
+    expect(migration.sql).not.toMatch(/^\s*CREATE POLICY/m);
+    // Byte-identical function bodies: the later window install cannot change them.
+    expect(functionBlock(migration.sql)).toBe(functionBlock(windowPolicy.sql));
+    expect(migration.sql.slice(migration.sql.indexOf('\nDO $assert$'))).toBe(
+      windowPolicy.sql
+        .slice(
+          windowPolicy.sql.indexOf('\nDO $assert$'),
+          windowPolicy.sql.indexOf('\n-- TablePage')
+        )
+        .trimEnd() + '\n\nCOMMIT;\n'
     );
   });
 

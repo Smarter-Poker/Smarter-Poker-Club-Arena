@@ -98,10 +98,19 @@ describe('the hand rests before the next one', () => {
     // to click Rabbit Hunt is still the rest and nothing but the rest.
     const requestedPauseGate =
       /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(\s*!this\.adminPauseLock\s*&&\s*!this\.maintenanceLock\s*&&\s*!this\.dealingHaltLock\s*&&\s*!this\.operatorFloorPaused\s*\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    // 2026-10-24: the synchronous seat-boundary last look is the one other
+    // admitted term. It awaits nothing, so the Rabbit Hunt window is still the
+    // rest and nothing but the rest (server/src/engine/aMainSeatTakesTheNextHand.law.test.ts).
+    const lastLook = /if \(this\.seatBoundaryChangedUnderRest\(\)\) continue;/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
+    expect(betweenRestAndDeal.match(lastLook)).toHaveLength(1);
     expect(
-      betweenRestAndDeal.replace(boundaryGate, '').replace(requestedPauseGate, '').trim()
+      betweenRestAndDeal
+        .replace(boundaryGate, '')
+        .replace(requestedPauseGate, '')
+        .replace(lastLook, '')
+        .trim()
     ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 

@@ -160,6 +160,11 @@ import {
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
+import {
+  movesPlannedGeneration,
+  noteSeatArrival,
+  seatArrivalGeneration,
+} from '../cluster/seatBoundarySignals.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import {
   claimMovedPresence,
@@ -4593,6 +4598,13 @@ export abstract class ServerTableEngineBase {
    * pending list no longer carries their move (it was cancelled or expired).
    */
   protected heldForSwap: Set<string> = new Set();
+  /**
+   * SEAT-BOUNDARY GENERATIONS (2026-10-24), captured before this table's
+   * pending-move read and roster read; compared, synchronously, immediately
+   * before dealHand. See server/src/cluster/seatBoundarySignals.ts.
+   */
+  protected seatMovePlanGenerationAtRead = 0;
+  protected seatArrivalGenerationAtRoster = 0;
 
   /**
    * WHAT THIS ENGINE STILL HOLDS FOR A MOVE, AGAINST WHAT IS STILL PENDING
@@ -4677,6 +4689,9 @@ export abstract class ServerTableEngineBase {
   protected async announcePendingSeatMoves(): Promise<boolean> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return true;
     if (!this.lifecycleCanMutate()) return false;
+    // Captured BEFORE the read: a plan committed after this instant reaches
+    // the synchronous check before dealHand even if this read missed it.
+    this.seatMovePlanGenerationAtRead = movesPlannedGeneration(this.tableInfo?.cluster_id);
     const pending = await this.readPendingSeatMoves();
     // A fresh engine has no local swap holds. Unknown durable readiness must
     // defer its next deal too, rather than move a player out of a live hand.
@@ -4748,6 +4763,30 @@ export abstract class ServerTableEngineBase {
     }
     if (fresh.length > 0) await announceSeatMoves(fresh);
     return this.lifecycleCanMutate();
+  }
+
+  /** Captured immediately before the roster read of each loop iteration. */
+  protected captureSeatArrivalGeneration(): void {
+    this.seatArrivalGenerationAtRoster = seatArrivalGeneration(this.tableId);
+  }
+
+  /**
+   * THE LAST LOOK BEFORE THE DEAL (2026-10-24). Synchronous by design: it
+   * sits between the two-second rest and dealHand, where nothing may wait
+   * (the-next-hand-deals-two-seconds-after-completion). True only when a
+   * must-move plan for this table's game, or a seat arriving at this table,
+   * committed after this iteration read them; the loop then goes round once
+   * more so the plan is executed before another feeder hand and the arrival
+   * is dealt into Main's next hand. Every ordinary deal returns false here.
+   */
+  protected seatBoundaryChangedUnderRest(): boolean {
+    if (this.isTournamentTable()) return false;
+    const planned =
+      movesPlannedGeneration(this.tableInfo?.cluster_id) !== this.seatMovePlanGenerationAtRead;
+    const arrived = seatArrivalGeneration(this.tableId) !== this.seatArrivalGenerationAtRoster;
+    if (!planned && !arrived) return false;
+    this.setLoopPhase(planned ? 'seat_move_planned_under_rest' : 'seat_arrived_under_rest');
+    return true;
   }
 
   /**
@@ -4872,6 +4911,14 @@ export abstract class ServerTableEngineBase {
       incomplete = error;
     }
     const { done, held, refused } = outcome;
+    // Each landed move is a committed seat at its destination: tell that table
+    // now, before any lifecycle check, so its next deal adopts the arrival
+    // instead of dealing the roster it read under the rest. A swap partner
+    // arrived HERE. See seatBoundarySignals.
+    for (const landed of done) {
+      noteSeatArrival(landed.to_table_id);
+      if (landed.partner) noteSeatArrival(this.tableId);
+    }
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     const afterMoves = this.lifecycleCanMutate();

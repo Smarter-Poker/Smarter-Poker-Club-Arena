@@ -248,6 +248,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const previousOccupancies: Map<string, SeatedPlayer['occupancy_id']> =
           deferredRosterBeforeArrival ??
           new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
+        // Before the read: an arrival committed after this instant is caught by
+        // the synchronous last look before dealHand (seatBoundarySignals).
+        this.captureSeatArrivalGeneration();
         const nextRoster = await this.prepareNextHand();
         if (!this.lifecycleCanMutate()) return;
         // A leave and rejoin can both commit between reads. User identity is
@@ -1100,6 +1103,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (!this.running) break;
           continue;
         }
+
+        // THE LAST LOOK (2026-10-24): a Main seat planned, or a player arriving
+        // here, after this iteration's reads goes round once more instead of
+        // dealing a stale roster. Synchronous, so the rest stays two seconds.
+        if (this.seatBoundaryChangedUnderRest()) continue;
 
         /* The event loop may have resumed after the local lease deadline but
            before its raw timeout callback got CPU. Re-prove authority at the

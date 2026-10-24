@@ -34,3 +34,11 @@ cover the hosted wiring and connection selection as well as the original guards.
 Integration retains the newer Chicago recovery and maintenance owner behavior
 and both parents' historical qualification records. Only current classifier and
 nested source-binding identities are refreshed; no financial result is restamped.
+
+Required client qualification exposed a pre-existing clock-dependent Club Data
+fixture: its 60-second heartbeat could cross Chicago midnight while its snapshot
+still described the previous day. The resulting integrity refusal reproduced
+the hosted timeout on demand. The fixture now pins one reporting day before
+snapshot construction and restores/reapplies that clock around each test.
+Timer tests start from the same instant. Product code, integrity assertions,
+pagination sizes and timeout budgets are unchanged.

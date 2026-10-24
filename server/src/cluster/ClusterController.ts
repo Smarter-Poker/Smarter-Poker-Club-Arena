@@ -49,6 +49,7 @@ import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { clusterMetrics } from './ClusterMetrics.js';
+import { noteMovesPlanned, tickReportsMovesPlanned } from './seatBoundarySignals.js';
 
 export const CLUSTER_TICK_MS = 5000;
 
@@ -174,6 +175,17 @@ export interface ClusterTickSummary {
   /** Wall time of the pass, ms. Logged when it exceeds the cadence. */
   elapsedMs: number;
   actions: Array<{ game_id: string; actions: unknown[] }>;
+}
+
+/** Signal each game the pass reported `moves_planned` for. Never throws. */
+function noteCommittedPlans(data: unknown): void {
+  const results = (data as { results?: unknown } | null)?.results;
+  if (!Array.isArray(results)) return;
+  for (const entry of results) {
+    const game = (entry as { game_id?: unknown } | null)?.game_id;
+    if (typeof game !== 'string') continue;
+    if (tickReportsMovesPlanned((entry as { result?: unknown }).result)) noteMovesPlanned(game);
+  }
 }
 
 /**
@@ -412,6 +424,9 @@ export class ClusterController {
       p_eligible_horses: eligible,
     });
     if (!wakeIsCurrent()) return;
+    // Tell the game's feeders now, before anything below awaits
+    // (seatBoundarySignals). Like the pass, a fenced wake signals nothing.
+    if (!error && tickReportsMovesPlanned(data)) noteMovesPlanned(gameId);
     if (error) {
       reportError(error, 'ClusterController.wake_rpc_failed', { game_id: gameId });
       return;
@@ -524,6 +539,11 @@ export class ClusterController {
         summary.rpcs++;
         const { data, error } = await rpc('fn_cash_clusters_tick_all', { p_eligible: eligible });
         if (!passIsCurrent()) return summary;
+        // Every plan this current pass committed reaches its game's feeders
+        // now, before the per-game follow-up below awaits anything
+        // (seatBoundarySignals). A fenced pass signals nothing; its committed
+        // plans are still found by each feeder's next pending-move read.
+        if (!error) noteCommittedPlans(data);
         if (error) {
           reportError(error, 'ClusterController.pass_failed');
           summary.errors++;

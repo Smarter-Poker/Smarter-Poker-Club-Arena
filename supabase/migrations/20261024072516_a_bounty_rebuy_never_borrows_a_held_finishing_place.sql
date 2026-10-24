@@ -52,6 +52,8 @@
 -- no hot-table lock is taken, so it does not need the daily install window.
 --
 -- Pinned by tests/a-bounty-rebuy-never-borrows-a-held-finishing-place.law.test.ts.
+--
+-- @live-proof: (SELECT position('A BOUNTY REBUY NEVER BORROWS A HELD FINISHING PLACE' IN pg_get_functiondef('public.fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid)'::regprocedure))>0)
 
 BEGIN;
 

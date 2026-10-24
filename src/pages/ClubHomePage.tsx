@@ -177,9 +177,9 @@ import {
   emptyFilterValue,
   rowPassesFilter,
   isFilterActive,
-  variantKey,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
+import { cashBoardComparator } from '../components/lobby/cashBoardOrder';
 import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
@@ -199,21 +199,9 @@ import { usePageTitle } from '../hooks/usePageTitle';
    also carry. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/kings-club-logo.png`;
 
-/**
- * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
- * first because it is the game most players mean by "PLO", then five, six, and
- * hi-lo last because it is a different game rather than a deeper one.
- *
- * A variant with no entry sorts after all of them rather than to the top: an
- * unrecognised game should be visible at the end of the list, never presented
- * as the headline.
- */
-const VARIANT_GROUP_ORDER: Record<string, number> = {
-  plo4: 0,
-  plo5: 1,
-  plo6: 2,
-  plo8: 3,
-};
+/* The Omaha tab's variant order (Dan 2026-08-25: PLO, PLO5, PLO6, then hi-lo,
+   unrecognised games last) now comes from the one canonical table in
+   components/lobby/variantRank.ts, through cashBoardComparator. */
 
 // SWR cache helpers for instant club data display.
 //
@@ -3616,40 +3604,10 @@ function ClubHomePageContent({
       return true;
     });
 
-    const bb = (t: TableData) => Number(t.big_blind) || 0;
-    const cmpStakes = (a: TableData, b: TableData) => bb(b) - bb(a);
-    const cmpStakesLow = (a: TableData, b: TableData) => bb(a) - bb(b);
-    const cmpPlayers = (a: TableData, b: TableData) =>
-      (b.current_players || 0) - (a.current_players || 0);
-    const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
-    /* Canonical Omaha variants break ties inside each stake when a stakes
-       direction is chosen (Dan 2026-10-23). Other sorts keep variant groups. */
-    const cmpVariant = (a: TableData, b: TableData) =>
-      gameType === 'OMAHA'
-        ? (VARIANT_GROUP_ORDER[variantKey(a.game_variant)] ?? 99) -
-          (VARIANT_GROUP_ORDER[variantKey(b.game_variant)] ?? 99)
-        : 0;
-
-    switch (sortKey) {
-      case 'stakes_high':
-        return rows.sort(
-          (a, b) => cmpStakes(a, b) || cmpVariant(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
-      case 'stakes_low':
-        return rows.sort(
-          (a, b) => cmpStakesLow(a, b) || cmpVariant(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
-      case 'players':
-      case 'starting_soon':
-        return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b)
-        );
-      case 'recommended':
-      default:
-        return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
-    }
+    /* One pure comparator (cashBoardOrder.ts): a stakes sort breaks every
+       price tie in canonical variant order on EVERY tab, ALL included (Dan
+       2026-10-23); the other sorts keep the Omaha tab's variant groups. */
+    return rows.sort(cashBoardComparator(sortKey, gameType));
   }, [boardTables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
 
   /**

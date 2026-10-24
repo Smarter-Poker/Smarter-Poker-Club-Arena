@@ -45,6 +45,7 @@ import {
 } from './lobbyCardContext';
 export type { LobbyRowContext } from './lobbyCardContext';
 import { featuredNow } from '../../lib/featuredOnItsDay';
+import { variantRank, UNLISTED_VARIANT_RANK } from './variantRank';
 import './LobbyTable.css';
 import './LobbySortBar.css';
 import './CompactLobbyRows.css';
@@ -691,28 +692,9 @@ const COL_STAKES: ColumnDef = {
   sortValue: (e) => e.stakesValue,
   render: (e) => (e.stakesLabel ? <span className="lt-mono">{e.stakesLabel}</span> : null),
 };
-/**
- * THE ORDER OF THE GAMES (Dan 2026-09-03): "NLH SHOULD BE NO LIMIT, PINEAPPLE
- * AND SHORT DECK, PLO SHOULD BE PLO, PLO5, PLO6, PLO8o ... game variations are
- * never to be mixed together." This is the canonical rank by the lobby's
- * short game label; anything unlisted sorts after the known ones, by name.
- */
-export const VARIANT_RANK: Readonly<Record<string, number>> = {
-  NLH: 0,
-  PNPL: 1,
-  '6+': 2,
-  PLO: 10,
-  PLO5: 11,
-  PLO6: 12,
-  PLO8: 13,
-  FLH: 20,
-  FLO: 21,
-  FLO8: 22,
-};
-
-export function variantRank(e: Pick<LobbyEntry, 'gameLabel'>): number {
-  return VARIANT_RANK[String(e.gameLabel || '').toUpperCase()] ?? 40;
-}
+/* THE ORDER OF THE GAMES lives in ./variantRank (one table for this board and
+   the page-level Sort By comparator); re-exported here for existing callers. */
+export { VARIANT_RANK, variantRank, UNLISTED_VARIANT_RANK } from './variantRank';
 
 /** The menu wording for a variant chip: "No Limit", "Pineapple", "Short Deck",
     "PLO", "PLO5", "PLO6", "PLO8o". */
@@ -1928,21 +1910,39 @@ export default function LobbyTable({
     const sv = col?.sortValue;
     const dir = sort?.dir === 'desc' ? -1 : 1;
     const stakesFirst = grouped && col?.key === 'stakes';
+    /* Numeric stakes in the chosen direction; a row with no price goes last
+       both ways. Shared by the stakes-led order and the Sort By Variant
+       order, which lists each variant's stakes the same way. */
+    const byStakes = (a: LobbyEntry, b: LobbyEntry): number => {
+      const aBad = !Number.isFinite(a.stakesValue);
+      const bBad = !Number.isFinite(b.stakesValue);
+      if (aBad !== bBad) return aBad ? 1 : -1;
+      if (!aBad && a.stakesValue !== b.stakesValue) return (a.stakesValue - b.stakesValue) * dir;
+      return 0;
+    };
+    const byCanonicalVariant = (a: LobbyEntry, b: LobbyEntry): number => {
+      const ra = variantRank(a);
+      const rb = variantRank(b);
+      if (ra !== rb) return ra - rb;
+      return ra === UNLISTED_VARIANT_RANK
+        ? String(a.gameLabel).localeCompare(String(b.gameLabel))
+        : 0;
+    };
     const compare = (a: LobbyEntry, b: LobbyEntry): number => {
       if (stakesFirst) {
-        const aBad = !Number.isFinite(a.stakesValue);
-        const bBad = !Number.isFinite(b.stakesValue);
-        if (aBad !== bBad) return aBad ? 1 : -1;
-        if (!aBad && a.stakesValue !== b.stakesValue) return (a.stakesValue - b.stakesValue) * dir;
+        const s = byStakes(a, b);
+        if (s !== 0) return s;
       }
       if (grouped) {
-        const ra = variantRank(a);
-        const rb = variantRank(b);
-        if (ra !== rb) return ra - rb;
-        if (ra === 40) {
-          const byName = String(a.gameLabel).localeCompare(String(b.gameLabel));
-          if (byName !== 0) return byName;
-        }
+        const v = byCanonicalVariant(a, b);
+        if (v !== 0) return v;
+        /* SORT BY VARIANT LISTS EACH GAME'S STAKES (2026-10-24). Inside a
+           variant every row ranked equal, so the board kept whatever order the
+           rows arrived in - stakes scattered by player count - and the second
+           tap flipped a direction nothing read. The variant order stays
+           canonical; the stakes inside it follow the chosen direction, Low To
+           High first ("STAKES SHOULD ALWAYS BE ORGANIZED LOW TO HIGH"). */
+        if (col?.key === 'variant') return byStakes(a, b);
       }
       if (!sv) return 0;
       const va = sv(a);
@@ -1957,6 +1957,14 @@ export default function LobbyTable({
         const bBad = !Number.isFinite(vb);
         if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
         if (va !== vb) return (va - vb) * dir;
+        /* THE ALL TAB'S STAKES HEADING (2026-10-24). Two cash games at one
+           price are the same rule as on the cash tabs: "game variations are
+           never to be mixed together", so they meet in canonical variant
+           order instead of the order the rows arrived in. */
+        if (col?.key === 'cost' && a.kind === 'cash' && b.kind === 'cash') {
+          const v = byCanonicalVariant(a, b);
+          if (v !== 0) return v;
+        }
         /* Equal status: the sooner start leads, then the busier game, so a
            Status tap always produces a deliberate order rather than leaving
            ties in whatever order the rows arrived. */
@@ -1988,7 +1996,7 @@ export default function LobbyTable({
       if (
         runRank !== null &&
         (rank !== runRank ||
-          (rank === 40 && label !== runLabel) ||
+          (rank === UNLISTED_VARIANT_RANK && label !== runLabel) ||
           (stakesFirst && !Object.is(e.stakesValue, runStakes)))
       ) {
         out.push(...sink(run));

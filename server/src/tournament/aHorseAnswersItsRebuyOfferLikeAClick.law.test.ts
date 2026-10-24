@@ -39,7 +39,14 @@ const declining = ids.filter((id) => !willing.includes(id));
 
 type Purchase = 'ok' | 'transport';
 
-function setup(opts: { horses?: string[]; offers?: string[]; purchase?: Purchase } = {}) {
+function setup(
+  opts: {
+    horses?: string[];
+    offers?: string[];
+    purchase?: Purchase;
+    decline?: 'ok' | 'refused';
+  } = {}
+) {
   const horses = opts.horses ?? ids;
   const offers = opts.offers ?? ids;
   const purchase = opts.purchase ?? 'ok';
@@ -86,6 +93,11 @@ function setup(opts: { horses?: string[]; offers?: string[]; purchase?: Purchase
   });
   fixture.rpc.mockImplementation(async (name: string) => {
     if (name === 'fn_ca_tournament_rebuy_window') return { data: { open: true }, error: null };
+    if (name === 'fn_decline_tournament_rebuy') {
+      return opts.decline === 'refused'
+        ? { data: null, error: { message: 'fetch failed' } }
+        : { data: { ok: true, declined: true }, error: null };
+    }
     if (name === 'process_tournament_rebuy') {
       return purchase === 'ok'
         ? { data: { success: true }, error: null }
@@ -95,6 +107,11 @@ function setup(opts: { horses?: string[]; offers?: string[]; purchase?: Purchase
   });
   return manager;
 }
+
+const declines = () =>
+  fixture.rpc.mock.calls
+    .filter((call) => call[0] === 'fn_decline_tournament_rebuy')
+    .map((call) => call[1] as { p_tournament_id: string; p_user_id: string });
 
 const purchases = () =>
   fixture.rpc.mock.calls
@@ -126,6 +143,59 @@ describe('a horse answers its rebuy offer like a click', () => {
     await manager.answerOpenHorseRebuyOffers();
     expect(purchases()).not.toContain(human);
     for (const id of declining) expect(purchases()).not.toContain(id);
+  });
+
+  // 2026-10-24 horse capability audit: a horse's "no" closes its offer through
+  // the same door a human's Cancel uses, so the event's live field is complete
+  // again at once instead of 30 seconds later (TournamentBrainContext marks the
+  // whole field incomplete while any busted player holds an open offer).
+  it('closes the offer of every declining horse, exactly as a human Cancel does', async () => {
+    await setup().answerOpenHorseRebuyOffers();
+    expect(
+      declines()
+        .map((d) => d.p_user_id)
+        .sort()
+    ).toEqual([...declining].sort());
+    for (const d of declines()) expect(d.p_tournament_id).toBe(event);
+    // A willing horse buys; it never declines.
+    for (const id of willing) expect(declines().map((d) => d.p_user_id)).not.toContain(id);
+  });
+
+  it('never declines on behalf of a human', async () => {
+    const human = declining[0];
+    await setup({ horses: ids.filter((id) => id !== human) }).answerOpenHorseRebuyOffers();
+    expect(declines().map((d) => d.p_user_id)).not.toContain(human);
+  });
+
+  it('a refused decline leaves the offer to expire on its own clock and keeps answering', async () => {
+    const again = await setup({ decline: 'refused' }).answerOpenHorseRebuyOffers();
+    expect(again).toBe(false);
+    expect(purchases().sort()).toEqual([...willing].sort());
+    expect(declines()).toHaveLength(declining.length);
+  });
+
+  it('a free-buy horse past its allowance declines like any other "no"', async () => {
+    const manager = setup();
+    manager.tournamentCache = { is_rebuy: true, is_reentry: false, free_buy: true };
+    const base = fixture.from.getMockImplementation()!;
+    fixture.from.mockImplementation((table: string) => {
+      if (table !== 'tournament_players') return base(table);
+      const q: Record<string, unknown> = {};
+      q.select = vi.fn(() => q);
+      q.eq = vi.fn(() => q);
+      q.in = vi.fn(async () => ({
+        data: ids.map((id) => ({ user_id: id, rebuys: 1_000 })),
+        error: null,
+      }));
+      return q;
+    });
+    await manager.answerOpenHorseRebuyOffers();
+    expect(purchases()).toEqual([]);
+    expect(
+      declines()
+        .map((d) => d.p_user_id)
+        .sort()
+    ).toEqual([...ids].sort());
   });
 
   it('asks again while a willing horse is unanswered, and not for a human', async () => {

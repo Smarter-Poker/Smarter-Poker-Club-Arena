@@ -2205,6 +2205,50 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return stillOpen;
   }
 
+  /**
+   * A HORSE'S "NO" CLOSES ITS OFFER, EXACTLY AS A HUMAN'S CANCEL DOES
+   * (2026-10-24, horse capability audit).
+   *
+   * A human who declines clicks Cancel, and the table's /reject_rebuy route
+   * calls fn_decline_tournament_rebuy, which ends the offer at once
+   * (ServerTableEngineBase.rejectRebuy). A declining horse only stopped
+   * asking: its offer stayed open for the full 30 seconds. While any busted
+   * player holds an open offer, TournamentBrainContext marks the WHOLE event's
+   * live field incomplete (`live_field_recovery_pending` and
+   * `live_field_stack_cardinality_mismatch`), and the Phase 7 ICM utility is
+   * skipped for every decision at every table of that event. Production
+   * 2026-10-22..24: 832,983 such decisions, 1,050,467 Phase 7 skips in all.
+   * With horses rebuying 75% of the time, the other 25% held that window open
+   * for nothing.
+   *
+   * The same service-role door, the same row-locked transaction, the same
+   * knockout generation; nothing here prices, eliminates or seats anybody.
+   * A refusal or transport error leaves the offer to expire on its own clock,
+   * exactly as before this change.
+   */
+  private async declineHorseRebuyOffer(userId: string): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_decline_tournament_rebuy', {
+        p_tournament_id: this.tournamentId,
+        p_user_id: userId,
+      });
+      if (error || (data as { ok?: boolean } | null)?.ok !== true) {
+        reportError(
+          new Error(
+            `horse rebuy decline was not persisted: ${error?.message ?? 'database refused the decision'}`
+          ),
+          'Tournament.horse_rebuy_decline_unpersisted',
+          { tournamentId: this.tournamentId, userId }
+        );
+      }
+    } catch (error) {
+      reportError(error, 'Tournament.horse_rebuy_decline_unpersisted', {
+        tournamentId: this.tournamentId,
+        userId,
+      });
+    }
+  }
+
   private async tryTournamentRebuys(
     bustedUserIds: string[],
     bustHandNumbers: ReadonlyMap<string, number>,
@@ -2317,6 +2361,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
         if (!horseChoosesTournamentRebuy(this.tournamentId, h.id, bustHandNumber)) {
           answered.add(h.id);
+          await this.declineHorseRebuyOffer(h.id);
           continue;
         }
         if (freeBuyReloads) {
@@ -2327,6 +2372,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
           if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
             answered.add(h.id);
+            await this.declineHorseRebuyOffer(h.id);
             continue;
           }
         }

@@ -2248,20 +2248,27 @@ CANDIDATE_STARTED_AT="$(bounded_break_command 10 docker container inspect -f '{{
 [[ "$CANDIDATE_CID" =~ ^[0-9a-f]{64}$ ]] || die 'candidate container ID is invalid'
 [ -n "$CANDIDATE_STARTED_AT" ] || die 'candidate start generation is missing'
 
-for attempt in $(seq 1 36); do
+# THE CANDIDATE IS NOTICED THE SECOND IT IS READY (2026-10-24). These loops
+# polled every 5 s, so on average 2.5 s (up to 5 s) of a ready candidate's
+# break was spent asleep, twice, before the final database proof. Release
+# e4f793b6 reached that proof 7-10 s too late for its 17 s floor above the
+# rollback reserve and rolled back. The candidate is polled every second; the
+# total windows (180 s local, 90 s public), every proof and every budget are
+# unchanged. A poll is one bounded loopback or public health read.
+for attempt in $(seq 1 180); do
   assert_time_remaining
   assert_break_proof_time
   CANDIDATE_INSTANCE="$(health_instance 'http://127.0.0.1:8080/health')" && break
-  [ "$attempt" = 36 ] && die 'candidate never served exact local release health'
-  bounded_sleep 5
+  [ "$attempt" = 180 ] && die 'candidate never served exact local release health'
+  bounded_sleep 1
 done
-for attempt in $(seq 1 18); do
+for attempt in $(seq 1 90); do
   assert_time_remaining
   assert_break_proof_time
   PUBLIC_INSTANCE="$(health_instance "$PUBLIC_URL/health?nocache=$(date +%s%N)")" || PUBLIC_INSTANCE=''
   [ "$PUBLIC_INSTANCE" = "$CANDIDATE_INSTANCE" ] && break
-  [ "$attempt" = 18 ] && die 'public proxy never served the exact candidate release'
-  bounded_sleep 5
+  [ "$attempt" = 90 ] && die 'public proxy never served the exact candidate release'
+  bounded_sleep 1
 done
 
 # Main and the durable high-water may advance during the cold-start/public

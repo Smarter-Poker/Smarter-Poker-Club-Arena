@@ -1,0 +1,59 @@
+name: F06 guard unbinds bare park request
+
+# smarter_private.f06_source_guard()'s `bound` check used to treat a bare,
+# abandoned park_requested F06 operation as a live move forever, which is
+# what left production tournament bfcfaf17-2879-4e58-b8e1-1c749ceb3b2f stuck
+# RUNNING for nine days (Production Alerts board,
+# Smarter-Poker/Smarter-Poker-Club-Arena#5070). This runs the executable
+# red-before/green-after proof against a throwaway PostgreSQL cluster -
+# never production - plus the vitest test that pins the migration text the
+# proof depends on. It adds no timer (CLAUDE.md 10.85): pull_request only,
+# scoped to the paths this fix touches.
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/20260927201810_f06_source_guard_unbinds_bare_park_requests.sql
+      - scripts/dev/probe-f06-source-guard-unbinds-bare-park-request-pg16.sh
+      - scripts/dev/fixtures/f06-bare-park-request/**
+      - server/src/tournament/F06GuardUnbindsBareParkRequest.guard.test.ts
+      - .github/workflows/f06-guard-unbinds-bare-park-request.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: f06-guard-unbinds-bare-park-request-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-proof:
+    name: Red before, green after (throwaway PostgreSQL, never production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 16 server
+        run: |
+          if ! command -v initdb >/dev/null 2>&1 && [[ ! -x /usr/lib/postgresql/16/bin/initdb ]]; then
+            sudo apt-get update -y
+            sudo apt-get install -y postgresql-16
+          fi
+      - name: Run the executable red/green proof
+        run: bash scripts/dev/probe-f06-source-guard-unbinds-bare-park-request-pg16.sh
+
+  pin-test:
+    name: Migration text pinned by the regression test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npx vitest run src/tournament/F06GuardUnbindsBareParkRequest.guard.test.ts --reporter=verbose

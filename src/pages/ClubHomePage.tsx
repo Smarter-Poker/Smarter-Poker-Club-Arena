@@ -3622,19 +3622,8 @@ function ClubHomePageContent({
     const cmpPlayers = (a: TableData, b: TableData) =>
       (b.current_players || 0) - (a.current_players || 0);
     const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
-    /* Dan 2026-08-25: "GAMES NEED TO BE ORGANIZED BY TYPE ... SHOW ALL PLO 4
-       CARDS GAMES AND STAKES, THEN BELOW IT PLO5, THEN PLO6 THEN PLO8."
-
-       The tab was one undifferentiated list: a PLO6 5/10 sat between a PLO4
-       2/4 and a PLO4 10/25, so a player who only plays four-card had to read
-       every row to find their game. Variant leads every comparator now, and
-       the chosen sort orders the stakes WITHIN each variant — which is what
-       "and stakes" asks for. Keyed off the same variantKey the Omaha filter
-       chips use, so the group a table lands in and the chip that hides it can
-       never disagree.
-
-       Only Omaha is grouped: the other tabs are a single variant, where a
-       leading variant term is a comparator that always returns 0. */
+    /* Canonical Omaha variants break ties inside each stake when a stakes
+       direction is chosen (Dan 2026-10-23). Other sorts keep variant groups. */
     const cmpVariant = (a: TableData, b: TableData) =>
       gameType === 'OMAHA'
         ? (VARIANT_GROUP_ORDER[variantKey(a.game_variant)] ?? 99) -
@@ -3644,11 +3633,11 @@ function ClubHomePageContent({
     switch (sortKey) {
       case 'stakes_high':
         return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+          (a, b) => cmpStakes(a, b) || cmpVariant(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
       case 'stakes_low':
         return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b)
+          (a, b) => cmpStakesLow(a, b) || cmpVariant(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
       case 'players':
       case 'starting_soon':

@@ -257,17 +257,28 @@ describe('the actual cash selector scans across lobby tabs', () => {
     'utf8'
   );
   const body = source.slice(
-    source.indexOf('async function selectOccupiedRunningCashTables('),
+    source.indexOf('async function selectCashLobbyTab('),
     source.indexOf('async function proveTableProgressedBeforeNavigation(')
   );
   async function select(rows: Record<string, string[]>, removed: string[] = []) {
     let active = 'default';
+    const navigation = source.slice(
+      source.indexOf('    // The engine-progress wait above can outlast'),
+      source.indexOf('    const navigationStartedAt = Date.now();')
+    );
     const visited: string[] = [];
     const reads: string[][] = [];
     const page = {
       goto: async () => {},
       url: () => 'https://example.invalid/clubs/fixture',
-      locator: () => ({ first: () => ({ waitFor: async () => {} }) }),
+      locator: (selector: string) => ({
+        first: () => ({ waitFor: async () => {} }),
+        // Exercise the real card branch; a hidden off-tab row is not visible.
+        isVisible: async () => false,
+        getByRole: () => ({
+          viewId: /data-id="([^"]+)"/.exec(selector)?.[1],
+        }),
+      }),
       getByRole: (_: string, { name }: { name: string }) => ({
         click: async () => {
           active = name;
@@ -283,11 +294,28 @@ describe('the actual cash selector scans across lobby tabs', () => {
       'visibleRunningCashCandidates',
       'readEngineHealth',
       'healthyRunningTable',
-      transpileModule(body, {}).outputText + '\nreturn selectOccupiedRunningCashTables;'
+      'CASH_SPECTATOR_ACTION',
+      transpileModule(body, {}).outputText +
+        transpileModule(
+          `async function openWinner(page, selected) {
+          const engineBeforeNavigation = { selected };
+          const { candidate } = selected;
+          ${navigation}
+          return view;
+        }`,
+          {}
+        ).outputText +
+        '\nreturn { select: selectOccupiedRunningCashTables, open: openWinner };'
     )(
       'https://example.invalid/clubs/fixture',
       8,
-      () => ({ toBeVisible: async () => {}, toHaveAttribute: async () => {} }),
+      (locator: { viewId?: string }) => ({
+        toBeVisible: async () => {
+          if (locator.viewId && !(rows[active] ?? []).includes(locator.viewId))
+            throw new Error(`View ${locator.viewId} is hidden on ${active}`);
+        },
+        toHaveAttribute: async () => {},
+      }),
       async () => {},
       async () => {
         visited.push(active);
@@ -300,9 +328,16 @@ describe('the actual cash selector scans across lobby tabs', () => {
       (health: { sequence: number; tableIds: string[] }, id: string) =>
         health.tableIds.includes(id) && !(health.tableIds.length > 1 && removed.includes(id))
           ? { tableId: id, handCount: health.sequence }
-          : null
+          : null,
+      /View|Watch/
     );
-    return { result: await selector(page, {}), visited, reads };
+    return {
+      result: await selector.select(page, {}),
+      visited,
+      reads,
+      open: (selected: unknown) => selector.open(page, selected),
+      active: () => active,
+    };
   }
 
   it('keeps the first NLH table and discovers PLO and LIMIT witnesses without duplicates', async () => {
@@ -312,7 +347,7 @@ describe('the actual cash selector scans across lobby tabs', () => {
       PLO: ['plo'],
       LIMIT: ['limit'],
     });
-    expect(visited).toEqual(['default', 'NLH', 'PLO', 'LIMIT']);
+    expect(visited).toEqual(['NLH', 'PLO', 'LIMIT']);
     expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['nlh', 'plo', 'limit']);
     expect(reads.at(-1)).toEqual(['nlh', 'plo', 'limit']);
     expect(result.tables.every((row: any) => row.table.handCount === result.health.sequence)).toBe(
@@ -333,9 +368,27 @@ describe('the actual cash selector scans across lobby tabs', () => {
   });
 
   it('removes a witness that is no longer healthy at the shared baseline read', async () => {
-    const { result } = await select({ default: ['departed'], PLO: ['live'] }, ['departed']);
+    const { result } = await select({ NLH: ['departed'], PLO: ['live'] }, ['departed']);
     expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['live']);
   });
+
+  it.each(['NLH', 'PLO'])(
+    'restores the selected %s witness after the scan leaves LIMIT active',
+    async (winnerTab) => {
+      const fixture = await select({
+        default: ['nlh'],
+        NLH: ['nlh'],
+        PLO: ['plo'],
+        LIMIT: ['limit'],
+      });
+      expect(fixture.active()).toBe('LIMIT');
+      const id = winnerTab === 'NLH' ? 'nlh' : 'plo';
+      const winner = fixture.result.tables.find((entry: any) => entry.candidate.id === id);
+      await expect(fixture.open(winner)).resolves.toMatchObject({ viewId: id });
+      expect(fixture.active()).toBe(winnerTab);
+      expect(winner.tabName).toBe(winnerTab);
+    }
+  );
 
   it('refuses a lobby without any healthy occupied witness', async () => {
     await expect(select({})).rejects.toThrow('no occupied');

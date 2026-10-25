@@ -1,5 +1,22 @@
 {
   "status": "source_changed_unrun_pending_qualification",
+  "routePerformanceGateInputs20261025": {
+    "reason": "Route-performance gate inputs (PR #7985): classify-ci-changes.mjs now routes the four route-performance gate scripts to the Production Build job so a change to the gate is executed before it merges. Current source identity only; historical audits, financial pins/assertions and qualification states unchanged. No financial certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335",
+        "current": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "8d1f21a95a74424d5c244fb627ef0ded931b3fa22b5415aabfbec676b8cc4101",
+        "current": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "f5ae154b3da17b4449989bb247e8e7ac0027e55d08ba980a254a66655367a746",
+        "current": "a60e85bc07af4ac52c5505b0ef9f1f3885e44ec59bac10a77e669027a24654f6"
+      }
+    }
+  },
   "diamondLaunchMainInputMerge20261013": {
     "reason": "Preserve latest protected-main0152591fbeb scoped reset/recovery qualification and unchanged Lightning reallocation with Diamond bounded budget. Current source identity only; historical audits/financial pins/assertions and qualification states unchanged.",
     "changes": {
@@ -465,10 +482,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335",
+    "scripts/ci/classify-ci-changes.mjs": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "8d1f21a95a74424d5c244fb627ef0ded931b3fa22b5415aabfbec676b8cc4101",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +504,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "ae6af1a638cd9f726baf4f46f248c57f041562b19eac26cde8818fdc794aadf8",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5334,6 +5351,15 @@
           "bytes": 33047,
           "sha256": "026a00420b274a2e38654545a1b8569add55450cd83359b103b0db3b9903bead"
         }
+      }
+    }
+  },
+  "routePerformanceMainIntegration20261025": {
+    "reason": "Preserve both route-performance gate classification and current protected-main changes. Refresh active source identity only; historical audits, financial bodies, assertions and qualification states unchanged. Not a financial certificate.",
+    "changes": {
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "a60e85bc07af4ac52c5505b0ef9f1f3885e44ec59bac10a77e669027a24654f6",
+        "current": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f"
       }
     }
   }

@@ -473,6 +473,7 @@ export interface TableModalsLayerProps {
   onCloseRebuyModal: () => void;
 
   // Tournament Break
+  tableAnchorRef?: React.RefObject<HTMLElement | null>;
   tournamentBreak: {
     active: boolean;
     timeRemaining: number;
@@ -715,6 +716,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onConfirmRebuy,
     onCloseRebuyModal,
     // Tournament Break
+    tableAnchorRef,
     tournamentBreak,
     // Announcement
     announcement,
@@ -1400,6 +1402,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           "players remaining" - four falsehoods on every break. */}
       {isTournament && (
         <TournamentBreakScreen
+          tableAnchorRef={tableAnchorRef}
           isVisible={tournamentBreak.active}
           breakTimeRemaining={tournamentBreak.timeRemaining}
           tournamentName={tableName}

@@ -29786,6 +29786,7 @@ function LiveTablePage({
           }
         }}
         // Tournament Break
+        tableAnchorRef={tableScalerRef}
         tournamentBreak={tournamentBreak as any}
         // Announcement
         announcement={announcement}

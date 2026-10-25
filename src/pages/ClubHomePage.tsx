@@ -2192,7 +2192,9 @@ function ClubHomePageContent({
       setFavoritesOnly(p.favoritesOnly);
     };
 
-    if (!viewPrefsTouched.current && !browseJourney.current.selected) applyView(saved);
+    if (!browseJourney.current.selected) {
+      if (!viewPrefsTouched.current) applyView(saved);
+    }
 
     /* The initial view is applied (or the player already chose their own):
        either way the landing request is spent. Reported once per mount. */
@@ -2232,7 +2234,8 @@ function ClubHomePageContent({
     void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
-      if (viewPrefsTouched.current || browseJourney.current.selected) return;
+      if (viewPrefsTouched.current) return;
+      if (browseJourney.current.selected) return;
       setViewPrefs(remote);
       applyView(remote);
       // Bring this browser's cache forward so the next cold open is already

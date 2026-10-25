@@ -43,3 +43,29 @@ With either missing, the plan, the barrier and the release trigger behave exactl
 - `server/src/lightning/LightningEntryBigBlind.test.ts` pins the deal through HandController. The post comes out of the stack and goes into the pot, and the price for everyone else is unchanged. The poster keeps the option, and a raise costs the raise less the live post. A short poster is all in for less. A seat-1 poster leaves the small blind dead and still acts first after the flop. Unknown roles are refused. Forty seeded hands settle and conserve chips, with the post reaching the books.
 
 Horses are players (CLAUDE.md 10.5): nothing here reads a horse marker. No money moves in SQL: the entry post is the engine's, at the felt, and reaches the books through the hand's settlement like every posted blind.
+
+## Recovered and integrated on October 25
+
+Installs after protected-main conversion-seat migration 20261024213844.
+Its exact plan preimage was recomputed on PostgreSQL 17 over the real chain
+(definition MD5 f35a6343a51e57c032bde2fcf7372d4b), with matching production
+body identity read without writing production. The barrier now snapshots the
+same conversion-seat exemption into its locked candidate rows, so it cannot
+charge entry posts to existing conversion seats while the plan exempts them.
+
+Both sides of the parity harness conflict remain: the fresh-conversion case
+and all entry-post cases. A new mixed thin-pool fixture proves three conversion
+seats with no previous big blind are dealt without entry posts beside two true
+newcomers. The SQL plan and TypeScript models agree on 14 fixtures and 47 groups
+on PostgreSQL 17; real formation, void stamp/ledger restoration and settlement
+run. The original migration refuses this predecessor; the repaired one installs.
+
+The secondary shadow model now receives entry posts from the live worker and
+counts them in blind history and fairness gaps, with a connected worker test.
+It still cannot move chips or control live play. The known clock fixture repair
+from PR #7985 is retained so off-turn early looks cannot consume the tank test.
+
+Local focused checks: 82 engine tests and 1,130 client/source checks passed.
+Full Lightning checks, exact-candidate hooks, protected checks, migration
+installation, certified daily engine activation and live behavior remain
+separate requirements; no production installation is claimed by these results.

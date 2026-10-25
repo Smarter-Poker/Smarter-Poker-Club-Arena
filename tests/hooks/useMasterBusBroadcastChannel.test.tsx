@@ -62,10 +62,12 @@ vi.mock('../../src/utils/errorReporter', () => ({
 }));
 
 import { useMasterBusBroadcastChannel } from '../../src/hooks/useMasterBusBroadcastChannel';
+import { __resetRealtimeTransportLossForTests } from '../../src/lib/realtimeTransportLoss';
 
 describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetRealtimeTransportLossForTests();
     mocks.identityListener = undefined;
     mocks.identitySubscribe.mockImplementation((_event, listener) => {
       mocks.identityListener = listener;
@@ -644,5 +646,70 @@ describe('useMasterBusBroadcastChannel', () => {
       authEvent('TOKEN_REFRESHED');
     });
     expect(mocks.setAuth).toHaveBeenCalledTimes(1);
+  });
+  /* 2026-10-24: a dropped shared socket fans CHANNEL_ERROR out to every
+     channel with no reason. Production filed ~1,100 of these a day, 3 to 10
+     per drop. One report per outage; every consumer still hears its own. */
+  it('reports a reasonless socket drop once across every channel, but tells every consumer', async () => {
+    const errors = [vi.fn(), vi.fn(), vi.fn()];
+    const names = ['profile-account:u', 'profile-appearance:u', 'daily-mission-completion:u'];
+    names.forEach((channelName, i) =>
+      renderHook(() =>
+        useMasterBusBroadcastChannel({
+          channelName,
+          event: 'changed',
+          onPayload: vi.fn(),
+          onSubscriptionError: errors[i],
+        })
+      )
+    );
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(3));
+    act(() => mocks.subscriptionCallbacks.forEach((callback) => callback('CHANNEL_ERROR')));
+
+    const filed = mocks.reportError.mock.calls.map(([, source]) => source);
+    expect(filed).toEqual(['Realtime.transport_lost']);
+    for (const error of errors)
+      expect(error).toHaveBeenCalledExactlyOnceWith('CHANNEL_ERROR', undefined);
+  });
+
+  it('files a refused private topic once per mount, not on every recovery attempt', async () => {
+    const refused = new Error(
+      '"Unauthorized: You do not have permissions to read from this Channel topic: table-appearance:x"'
+    );
+    const onSubscriptionError = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'table-appearance:x',
+        event: 'appearance_changed',
+        onPayload: vi.fn(),
+        onSubscriptionError,
+      })
+    );
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    const recover = mocks.registerChannelFactory.mock.calls[0][1] as () => void;
+    act(() => mocks.subscriptionCallbacks[0]('CHANNEL_ERROR', refused));
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      act(() => recover());
+      await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(attempt + 1));
+      act(() => mocks.subscriptionCallbacks[attempt]('CHANNEL_ERROR', refused));
+    }
+    expect(
+      mocks.reportError.mock.calls.filter(
+        ([, source]) => source === 'useMasterBusBroadcastChannel.CHANNEL_ERROR.appearance_changed'
+      )
+    ).toHaveLength(1);
+    expect(onSubscriptionError).toHaveBeenCalledTimes(4);
+  });
+
+  it('still files a channel-specific failure every time', async () => {
+    renderHook(() =>
+      useMasterBusBroadcastChannel({ channelName: 'one', event: 'changed', onPayload: vi.fn() })
+    );
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    act(() => mocks.subscriptionCallbacks[0]('TIMED_OUT'));
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Realtime TIMED_OUT on one' }),
+      'useMasterBusBroadcastChannel.TIMED_OUT.changed'
+    );
   });
 });

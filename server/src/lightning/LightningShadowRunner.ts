@@ -133,6 +133,8 @@ export const LIGHTNING_SHADOW_SAMPLE_CAP = 2_048;
 export interface LightningDecidedGroup {
   players: readonly string[];
   bb: string;
+  /** Live entry posts count as paid big blinds in the shadow history too. */
+  entryBb?: readonly string[];
   sb?: string | null;
   btn?: string | null;
   /** The formed hand's id (live 'form' passes): P5's window tie-break. */
@@ -321,7 +323,11 @@ export function scoreLightningDecision(
       if (p) out.waits.push(Math.max(0, snapshot.nowMs - p.idleSinceMs));
     }
     const bb = byId.get(g.bb);
-    if (bb && bb.handsSinceBb !== null) out.bbGaps.push(bb.handsSinceBb);
+    const posters = new Set([g.bb, ...(g.entryBb ?? []).filter((id) => members.includes(id))]);
+    for (const id of posters) {
+      const poster = byId.get(id);
+      if (poster && poster.handsSinceBb !== null) out.bbGaps.push(poster.handsSinceBb);
+    }
     if (bb && !topBbs.has(g.bb)) out.bbOrderViolations++;
     const btnId =
       g.btn ?? (members.length > 2 ? members[members.length - 1] : (g.sb ?? members[1]));
@@ -624,7 +630,9 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         bbUnresolved: false,
         debtSinceMs: m.enteredAtMs,
         handsSinceBb: m.handsSinceBb,
-        newcomer: !m.seenInHand,
+        // The engine cannot see which seats the epoch's conversion made, so
+        // its estimate of the pool keeps the plain key (never the big blind).
+        newcomer: m.lastBbAtMs === null,
         positions: { ...m.positions },
       });
     };
@@ -763,7 +771,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         m.inHand = true;
         m.inHandSinceMs = pass.nowMs;
         m.seenInHand = true;
-        if (id === g.bb) {
+        if (id === g.bb || g.entryBb?.includes(id)) {
           m.lastBbAtMs = stampMs;
           m.handsSinceBb = 0;
         } else if (m.handsSinceBb !== null) {

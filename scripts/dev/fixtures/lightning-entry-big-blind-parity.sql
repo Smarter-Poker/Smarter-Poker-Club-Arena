@@ -70,6 +70,7 @@ BEGIN
   END IF;
   UPDATE pp.out SET doc = jsonb_set(jsonb_set(doc, '{config}', public.fn_lightning_config(p_game)), '{plan}', v_match)
    WHERE name = p_name;
+  PERFORM pp.refresh_newcomer((SELECT n FROM pp.out WHERE name = p_name));
   RETURN v_match;
 END $f$;
 
@@ -220,3 +221,44 @@ BEGIN
   END IF;
 END $$;
 \echo '  ok  13C ENTRY BIG BLIND  the second pass after four newcomers and eight regulars: the next newcomer is the big blind, the other two post entry big blinds'
+
+-- 13D: a conversion seat with no prior big blind is not a newcomer.
+-- Reset only the regulars' blind history (fixture boundary), preserving the
+-- actual cash-session / epoch timestamps created by the real conversion.
+DO $$
+DECLARE v_g uuid; p jsonb; r jsonb; h jsonb; v_new uuid[]; v_conversion uuid[];
+BEGIN
+  v_g := pp.entry_pool('ENTRY CONVERSION 2+3', 3, 2);
+  SELECT array_agg(sl.player_id) FILTER (WHERE cs.opened_at < ep.started_at),
+         array_agg(sl.player_id) FILTER (WHERE cs.opened_at >= ep.started_at)
+    INTO v_conversion, v_new
+    FROM public.lightning_pool_slot sl
+    JOIN public.lightning_pool_session ps ON ps.id = sl.pool_session_id
+    JOIN public.cash_player_session cs ON cs.id = ps.cash_player_session_id
+    JOIN public.cash_cluster_epoch ep ON ep.cluster_id = sl.cluster_id AND ep.epoch = sl.cluster_epoch
+   WHERE sl.cluster_id = v_g AND sl.closed_at IS NULL;
+  IF cardinality(v_conversion) IS DISTINCT FROM 3 OR cardinality(v_new) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'FAIL 13D: expected three actual conversion sessions and two later buy-ins';
+  END IF;
+  UPDATE public.lightning_pool_slot SET last_bb_at = NULL, hands_since_bb = 0
+   WHERE cluster_id = v_g AND closed_at IS NULL AND player_id = ANY(v_conversion);
+  p := pp.capture_entry('entry big blind: three unposted conversion seats and two newcomers (6-max, 5)', v_g);
+  IF pp.ngroups(p) <> 1 OR jsonb_array_length(p -> 'groups' -> 0 -> 'players') <> 5
+     OR jsonb_array_length(p -> 'groups' -> 0 -> 'entry_bb') <> 1
+     OR NOT ((p -> 'groups' -> 0 ->> 'bb')::uuid = ANY(v_new))
+     OR NOT ((p -> 'groups' -> 0 -> 'entry_bb' ->> 0)::uuid = ANY(v_new))
+     OR NOT ((p -> 'groups' -> 0 -> 'keys' -> 'p2' ->> 'sb')::uuid = ANY(v_conversion)) THEN
+    RAISE EXCEPTION 'FAIL 13D: the plan charged or held a conversion seat: %', p;
+  END IF;
+  PERFORM public.fxr_lease(public.fn_cash_cluster_front_table(v_g), true);
+  r := public.fn_lightning_match_and_form(v_g, clock_timestamp(), NULL, NULL, gen_random_uuid());
+  IF coalesce((r ->> 'formed')::integer, 0) <> 1 THEN RAISE EXCEPTION 'FAIL 13D: formation %', r; END IF;
+  h := r -> 'hands' -> 0;
+  IF (SELECT count(*) FROM public.lightning_hand_player WHERE hand_id = (h ->> 'hand_id')::uuid AND blind_role = 'entry_bb') <> 1
+     OR EXISTS (SELECT 1 FROM public.lightning_hand_player WHERE hand_id = (h ->> 'hand_id')::uuid
+                  AND player_id = ANY(v_conversion) AND blind_role = 'entry_bb') THEN
+    RAISE EXCEPTION 'FAIL 13D: the locked barrier charged a conversion seat an entry post';
+  END IF;
+  PERFORM pp.finish(v_g, (h ->> 'instance_id')::uuid, (h ->> 'hand_id')::uuid);
+END $$;
+\echo '  ok  13D ENTRY BIG BLIND  three conversion seats without a previous big blind are dealt without entry posts; the two genuine newcomers supply the big blind and one live entry post; real barrier and settlement'

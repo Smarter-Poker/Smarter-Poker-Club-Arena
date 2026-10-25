@@ -226,12 +226,17 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
         return slice.fromMs === request.fromMs && slice.throughMs === request.throughMs
           ? result('admitted')
           : result('unknown');
+      // HORSE CAPTURE DRAINS IN ORDER (2026-10-25): the next slice is the rest
+      // of the request, and the claim ends it at the 512-hand boundary
+      // (20261025042223). The earlier 3x growth is still accepted, so an
+      // engine and a database on either side of that migration agree.
       if (
         data.sliceFromMs !== slice.fromMs ||
         data.sliceThroughMs !== slice.throughMs ||
         data.nextFromMs !== slice.throughMs ||
-        data.nextThroughMs !==
-          Math.min(request.throughMs, slice.throughMs + 2 * (slice.throughMs - slice.fromMs)) ||
+        (data.nextThroughMs !== request.throughMs &&
+          data.nextThroughMs !==
+            Math.min(request.throughMs, slice.throughMs + 2 * (slice.throughMs - slice.fromMs))) ||
         !count(data.segments, data.status === 'captured' ? 2 : 1, 2048) ||
         !count(data.capturedObservations, expected.observations, data.segments * 20000)
       )
@@ -240,13 +245,19 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
         return result('unknown');
       return result(data.status as 'continued' | 'captured');
     }
+    // A refused or timed-out read is refined to a strictly narrower slice from
+    // the same start: the hand boundary inside the budget, or the boundary of
+    // half its hands, or half its time (20261025042223). Before that
+    // migration only a budget refusal was refined, always to the midpoint.
     if (
       data.status === 'refined' &&
       payload === null &&
-      reason === 'source_budget_exceeded' &&
+      (reason === 'source_budget_exceeded' || reason === 'source_unavailable') &&
       slice.throughMs - slice.fromMs > 1 &&
       data.nextFromMs === slice.fromMs &&
-      data.nextThroughMs === slice.fromMs + Math.floor((slice.throughMs - slice.fromMs) / 2)
+      Number.isSafeInteger(data.nextThroughMs) &&
+      data.nextThroughMs > slice.fromMs &&
+      data.nextThroughMs < slice.throughMs
     )
       return result('refined');
     if (

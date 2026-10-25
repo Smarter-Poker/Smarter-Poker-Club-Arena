@@ -51,9 +51,18 @@ describe('the CSS Beat gate requires both halves', () => {
     expect(squash(gate.if)).toMatch(/^always\(\) && /);
   });
 
+  // The halves start `!cancelled() && ` (a run cancelled because its head was
+  // replaced lets them stop) and the gate keeps `always() && ` (a cancelled run
+  // still reports red, never skipped-as-green). Everything after that prefix is
+  // one admission. tests/superseded-ci-stops-at-the-push.law.test.ts.
+  const admission = (s: string | undefined, prefix: string) => {
+    expect(squash(s).startsWith(prefix)).toBe(true);
+    return squash(s).slice(prefix.length);
+  };
   it('is admitted exactly when each half is', () => {
-    expect(squash(gate.if)).toBe(squash(ci.jobs['css-beats-e2e'].if));
-    expect(squash(gate.if)).toBe(squash(ci.jobs['diamond-playfield-e2e'].if));
+    const own = admission(gate.if, 'always() && ');
+    expect(admission(ci.jobs['css-beats-e2e'].if, '!cancelled() && ')).toBe(own);
+    expect(admission(ci.jobs['diamond-playfield-e2e'].if, '!cancelled() && ')).toBe(own);
     // The fail-closed admission css-beats-e2e has always had.
     expect(squash(gate.if)).toContain("needs.changes.result != 'success'");
   });

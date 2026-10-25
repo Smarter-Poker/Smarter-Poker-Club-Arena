@@ -66,6 +66,11 @@ import {
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
 import { horseChoosesTournamentRebuy } from './horseTournamentRebuyChoice.js';
+import {
+  horseRebuyAnswerDueAtMs,
+  horseRebuyOfferTimingOf,
+  type HorseRebuyOfferTiming,
+} from './horseTournamentRebuyTiming.js';
 import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
 /** A verified close and exact engine retirement, never an attempted move. */
@@ -825,6 +830,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // pass closed because partial order evidence is not an order.
           const bustHandNumbers = new Map<string, number>();
           const bustStartingStacks = new Map<string, number>();
+          const bustOfferTimings = new Map<string, HorseRebuyOfferTiming>();
           const bustOrderLookupSize = 40;
           for (let offset = 0; offset < busted.length; offset += bustOrderLookupSize) {
             const userIds = busted
@@ -846,9 +852,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               count: bustHandsCount,
             } = await supabase
               .from('tournament_knockout_candidates')
-              .select('id, eliminated_user_id, hand_number, stack_before, state', {
-                count: 'exact',
-              })
+              .select(
+                'id, eliminated_user_id, hand_number, stack_before, state, created_at, rebuy_prompt_until',
+                { count: 'exact' }
+              )
               .eq('tournament_id', this.tournamentId)
               .in('eliminated_user_id', userIds)
               .order('hand_number', { ascending: false });
@@ -869,6 +876,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             for (const [uid, bust] of bindLatestKnockoutCandidates(bustHands ?? [])) {
               bustHandNumbers.set(uid, bust.handNumber);
               bustStartingStacks.set(uid, bust.stackBefore);
+            }
+            // The bound generation's bust moment and deadline: a horse's
+            // answer is due a human think time after the bust (see
+            // horseTournamentRebuyTiming.ts), on this path as on the device.
+            for (const row of bustHands ?? []) {
+              const uid = String(row.eliminated_user_id ?? '');
+              const timing = horseRebuyOfferTimingOf(row);
+              if (!timing || bustHandNumbers.get(uid) !== timing.handNumber) continue;
+              if (!bustOfferTimings.has(uid)) bustOfferTimings.set(uid, timing);
             }
           }
 
@@ -895,10 +911,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           this.noteEliminationSweepStep('tryTournamentRebuys');
-          const { rebought } = await this.tryTournamentRebuys(
+          const { rebought, deferredUntil } = await this.tryTournamentRebuys(
             busted.map((b) => b.user_id),
-            bustHandNumbers
+            bustHandNumbers,
+            bustOfferTimings
           );
+          // A willing horse whose think time has not passed keeps its decision
+          // grace below; the input device is woken exactly when it is due.
+          if (deferredUntil.size > 0) {
+            this.armHorseRebuyInput(Math.min(...deferredUntil.values()), 0);
+          }
           if (sweepStopped()) return;
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
@@ -921,10 +943,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * The table no longer pauses (ServerTableEngineDealing skips the
            * rebuy pause on tournament tables), so the WINDOW moves here: a
            * busted player whose rebuy offer is still open is not eliminated
-           * until they answer or the grace expires. Horses answer inside
-           * tryTournamentRebuys in this same pass (`answered`), so the window
-           * is identical for everyone — a horse simply replies immediately,
-           * which is its input device, not a different deal. A rebuy that
+           * until they answer or the grace expires. Horses answer through
+           * tryTournamentRebuys (this pass or the input device), so the window
+           * is identical for everyone - and since 2026-10-24 a willing horse
+           * answers a human think time after its bust, not instantly
+           * (horseTournamentRebuyTiming.ts). A rebuy that
            * lands mid-grace raises chips above zero, drops the player out of
            * the next bust snapshot. The rebuy transaction itself restores the
            * exact playable chair — same table and seat whenever still legal —
@@ -2106,15 +2129,50 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * so whichever arrives second replays the first. An offer whose bust row has
    * not landed yet, or whose purchase hit a transient error, is asked again
    * every two seconds until its own deadline - never after it.
+   *
+   * A HORSE TAKES A HUMAN MOMENT TO REBUY (2026-10-24). "Immediately" was its
+   * own tell: horses were back in at p50 2.3 s, while every human rebuy ever
+   * recorded inside the window took 9-15 s. A willing horse's answer is now
+   * due a deterministic think time after its bust (horseTournamentRebuyTiming:
+   * 3.5-16 s, never later than 8 s before its deadline). Until then it is not
+   * answered and keeps its grace like an undecided human; the device is woken
+   * exactly at the earliest due moment instead of polling, and a wait for a
+   * due moment does not spend one of the sixteen retry passes.
    */
   private horseRebuyInputInFlight = false;
   private horseRebuyInputAgain = false;
   private horseRebuyInputTimer: ReturnType<typeof setTimeout> | null = null;
+  private horseRebuyInputTimerAtMs = Number.POSITIVE_INFINITY;
+  /** The earliest due moment a pass of the device saw deferred, epoch ms. */
+  private horseRebuyInputNextDueAtMs: number | null = null;
   static readonly HORSE_REBUY_INPUT_RETRY_MS = 2_000;
   static readonly HORSE_REBUY_INPUT_MAX_PASSES = 16;
 
   protected override horseRebuyOfferMayHaveOpened(): void {
     this.answerHorseRebuyOffersNow(0);
+  }
+
+  /**
+   * Wake the input device at `atMs` (epoch ms). An earlier wake already armed
+   * is kept: every pass re-reads all open offers and re-arms for the earliest
+   * moment still pending, so a later one is never lost.
+   */
+  private armHorseRebuyInput(atMs: number, pass: number): void {
+    if (!this.running || !Number.isFinite(atMs)) return;
+    if (this.horseRebuyInputTimer) {
+      if (this.horseRebuyInputTimerAtMs <= atMs) return;
+      clearTimeout(this.horseRebuyInputTimer);
+    }
+    this.horseRebuyInputTimerAtMs = atMs;
+    this.horseRebuyInputTimer = setTimeout(
+      () => {
+        this.horseRebuyInputTimer = null;
+        this.horseRebuyInputTimerAtMs = Number.POSITIVE_INFINITY;
+        this.answerHorseRebuyOffersNow(pass);
+      },
+      Math.max(0, atMs - Date.now())
+    );
+    this.horseRebuyInputTimer.unref?.();
   }
 
   private answerHorseRebuyOffersNow(pass: number): void {
@@ -2126,11 +2184,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.horseRebuyInputInFlight = true;
     void (async () => {
       let retryPass: number | null = null;
+      let current = pass;
+      let nextDueAtMs: number | null = null;
       try {
-        let current = pass;
         do {
           this.horseRebuyInputAgain = false;
           const unanswered = await this.answerOpenHorseRebuyOffers();
+          nextDueAtMs = this.horseRebuyInputNextDueAtMs;
           if (this.horseRebuyInputAgain) current = 0;
           else if (
             unanswered &&
@@ -2147,29 +2207,36 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       } finally {
         this.horseRebuyInputInFlight = false;
       }
-      if (retryPass !== null && this.running && !this.horseRebuyInputTimer) {
-        const next = retryPass;
-        this.horseRebuyInputTimer = setTimeout(() => {
-          this.horseRebuyInputTimer = null;
-          this.answerHorseRebuyOffersNow(next);
-        }, TournamentManagerEliminations.HORSE_REBUY_INPUT_RETRY_MS);
-        this.horseRebuyInputTimer.unref?.();
+      if (!this.running) return;
+      // A failed answer is asked again in two seconds; a willing horse whose
+      // think time has not passed is asked exactly when it is due, and that
+      // wait does not spend a retry pass. The earlier of the two wins; the
+      // pass it runs re-arms for whatever is still pending.
+      if (retryPass !== null) {
+        this.armHorseRebuyInput(
+          Date.now() + TournamentManagerEliminations.HORSE_REBUY_INPUT_RETRY_MS,
+          retryPass
+        );
       }
+      if (nextDueAtMs !== null) this.armHorseRebuyInput(nextDueAtMs, current);
     })();
   }
 
   /**
    * One pass of the horse input device. Returns true while a horse that chose
-   * to rebuy still holds an open, unanswered offer (worth asking again).
+   * to rebuy, and whose answer is due, still holds an open, unanswered offer
+   * (worth asking again). A horse that is not due yet is not "unanswered": its
+   * due moment is left in horseRebuyInputNextDueAtMs for the device to wake at.
    */
   private async answerOpenHorseRebuyOffers(): Promise<boolean> {
+    this.horseRebuyInputNextDueAtMs = null;
     if (!this.running || isMaintenanceFrozen()) return false;
     const t = this.tournamentCache as { is_rebuy?: boolean; is_reentry?: boolean } | undefined;
     if (!t?.is_rebuy && !t?.is_reentry) return false;
     const nowIso = new Date().toISOString();
     const { data: offers, error } = await supabase
       .from('tournament_knockout_candidates')
-      .select('eliminated_user_id, hand_number, rebuy_prompt_until')
+      .select('eliminated_user_id, hand_number, created_at, rebuy_prompt_until')
       .eq('tournament_id', this.tournamentId)
       .eq('state', 'pending')
       .gt('rebuy_prompt_until', nowIso)
@@ -2179,41 +2246,74 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (offers.length === 0) return false;
 
     const handNumbers = new Map<string, number>();
-    for (const offer of offers as { eliminated_user_id: string; hand_number: unknown }[]) {
-      const hand = Number(offer.hand_number);
-      if (!Number.isSafeInteger(hand) || hand <= 0) continue;
+    const timings = new Map<string, HorseRebuyOfferTiming>();
+    for (const offer of offers as {
+      eliminated_user_id: string;
+      hand_number: unknown;
+      created_at?: unknown;
+      rebuy_prompt_until?: unknown;
+    }[]) {
+      const timing = horseRebuyOfferTimingOf(offer);
+      if (!timing) continue;
       const prior = handNumbers.get(offer.eliminated_user_id);
-      if (prior === undefined || hand > prior) handNumbers.set(offer.eliminated_user_id, hand);
+      if (prior === undefined || timing.handNumber > prior) {
+        handNumbers.set(offer.eliminated_user_id, timing.handNumber);
+        timings.set(offer.eliminated_user_id, timing);
+      }
     }
     const userIds = [...handNumbers.keys()];
     if (userIds.length === 0) return false;
 
     const mayAnswer = () => this.running && !isMaintenanceFrozen();
     let stillOpen = false;
+    let nextDueAtMs: number | null = null;
     for (let i = 0; i < userIds.length; i += TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {
       if (!mayAnswer()) return false;
       const batch = userIds.slice(i, i + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-      const { answered, horses } = await this.tryTournamentRebuys(batch, handNumbers, mayAnswer);
-      // A human's click is their own; only a horse that chose to rebuy and was
-      // not answered yet is worth asking again.
+      const { answered, horses, deferredUntil } = await this.tryTournamentRebuys(
+        batch,
+        handNumbers,
+        timings,
+        mayAnswer
+      );
+      for (const due of deferredUntil.values()) {
+        if (nextDueAtMs === null || due < nextDueAtMs) nextDueAtMs = due;
+      }
+      // A human's click is their own; only a horse that chose to rebuy, is
+      // due, and was not answered yet is worth asking again.
       for (const userId of batch) {
-        if (!horses.has(userId) || answered.has(userId)) continue;
+        if (!horses.has(userId) || answered.has(userId) || deferredUntil.has(userId)) continue;
         const hand = handNumbers.get(userId);
         if (horseChoosesTournamentRebuy(this.tournamentId, userId, hand)) stillOpen = true;
       }
     }
+    this.horseRebuyInputNextDueAtMs = nextDueAtMs;
     return stillOpen;
   }
 
   private async tryTournamentRebuys(
     bustedUserIds: string[],
     bustHandNumbers: ReadonlyMap<string, number>,
+    // The bust moment and offer deadline of each player's bound generation
+    // (horseTournamentRebuyTiming.ts). A horse that chooses to rebuy is not
+    // answered before its human think time has passed; without its timing it
+    // is not answered at all this pass.
+    offerTimings: ReadonlyMap<string, HorseRebuyOfferTiming>,
     // The sweep passes its own work-budget fence. The horse input device
     // (answerHorseRebuyOffersNow) is not a sweep and answers to manager stop
     // and the maintenance freeze only, exactly as a human's click does.
     mayMutate: () => boolean = () => this.eliminationMutationAllowed()
-  ): Promise<{ rebought: Set<string>; answered: Set<string>; horses: Set<string> }> {
+  ): Promise<{
+    rebought: Set<string>;
+    answered: Set<string>;
+    horses: Set<string>;
+    deferredUntil: Map<string, number>;
+  }> {
     const rebought = new Set<string>();
+    /** Horses that chose to rebuy but whose answer is not due yet, with the
+     *  epoch ms it is due. NOT answered: they keep the decision grace exactly
+     *  like an undecided human, and the caller wakes the input device then. */
+    const deferredUntil = new Map<string, number>();
     /** Players whose rebuy decision is FINAL this pass: horses that were asked
      *  (the RPC either granted or refused). Everyone else — humans, and any
      *  horse the profile read could not identify — still holds an open
@@ -2227,7 +2327,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // is database-owned, so maintenance never advances or reconstructs it in
     // process memory; thaw emits the causal sweep that re-reads the same offer.
     if (isMaintenanceFrozen()) {
-      return { rebought, answered, horses };
+      return { rebought, answered, horses, deferredUntil };
     }
     const t = this.tournamentCache as
       | {
@@ -2239,13 +2339,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
       | undefined;
     if ((!t?.is_rebuy && !t?.is_reentry) || bustedUserIds.length === 0) {
-      return { rebought, answered, horses };
+      return { rebought, answered, horses, deferredUntil };
     }
     // The horse input device follows the event's executable recovery product.
     // Prefer a rebuy when both legacy flags are present; a re-entry-only event
     // must not silently eliminate every horse while humans retain the option.
     const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry';
-    if (!mayMutate()) return { rebought, answered, horses };
+    if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
 
@@ -2270,8 +2370,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       } catch (error) {
         reportError(error, 'Tournament.rebuy_window_read_failed');
       }
-      if (!mayMutate()) return { rebought, answered, horses };
-      if (closedWindow) return { rebought, answered, horses };
+      if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
+      if (closedWindow) return { rebought, answered, horses, deferredUntil };
       // Open, malformed or unreadable policy retains the original purchase
       // authority, including its exact receipt replay and fresh locked checks.
       const { data: horseRows, error: horseErr } = await supabase
@@ -2279,8 +2379,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('id')
         .in('id', batch)
         .eq('is_horse', true);
-      if (!mayMutate()) return { rebought, answered, horses };
-      if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered, horses };
+      if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
+      if (horseErr || !horseRows || horseRows.length === 0)
+        return { rebought, answered, horses, deferredUntil };
       for (const horse of horseRows) horses.add(String(horse.id));
 
       const declined = new Map<string, number>();
@@ -2292,12 +2393,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .select('user_id, rebuys')
           .eq('tournament_id', this.tournamentId)
           .in('user_id', horseIds);
-        if (!mayMutate()) return { rebought, answered, horses };
+        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
         if (reloadErr || !Array.isArray(reloadRows)) {
           // Unknown allowance state is not a decline. Preserve the decision
           // window and retry rather than either charging or eliminating.
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          return { rebought, answered, horses };
+          return { rebought, answered, horses, deferredUntil };
         }
         freeBuyReloads = new Map(
           reloadRows.map((row) => [
@@ -2307,7 +2408,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
       }
       for (const h of horseRows) {
-        if (!mayMutate()) return { rebought, answered, horses };
+        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
         const bustHandNumber = bustHandNumbers.get(h.id);
         if (!Number.isSafeInteger(bustHandNumber) || Number(bustHandNumber) <= 0) {
           // Unknown identity is not a decline or permission to charge. Keep
@@ -2330,6 +2431,30 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             continue;
           }
         }
+        // A HORSE TAKES A HUMAN MOMENT TO REBUY (2026-10-24, CLAUDE.md 10.5).
+        // Never before bust + its deterministic think time, never past the
+        // window's safety margin. Both answering paths pass through here.
+        const timing = offerTimings.get(h.id);
+        const dueAtMs =
+          timing && timing.handNumber === Number(bustHandNumber)
+            ? horseRebuyAnswerDueAtMs(
+                this.tournamentId,
+                h.id,
+                Number(bustHandNumber),
+                timing.bustAtMs,
+                timing.promptUntilMs
+              )
+            : null;
+        if (dueAtMs === null) {
+          // The bust moment is unknown, so "due" is unknown: keep the grace
+          // and read the generation again rather than answer early.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          continue;
+        }
+        if (Date.now() < dueAtMs) {
+          deferredUntil.set(h.id, dueAtMs);
+          continue;
+        }
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
@@ -2340,7 +2465,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           p_chips: null,
           p_current_level: this.currentLevel,
         });
-        if (!mayMutate()) return { rebought, answered, horses };
+        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
         if (error) {
           declined.set(error.message, (declined.get(error.message) || 0) + 1);
           // A transport error can follow a committed purchase. Keep the
@@ -2367,7 +2492,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     } catch (err) {
       reportError(err, 'Tournament.tournament_rebuy_threw');
     }
-    return { rebought, answered, horses };
+    return { rebought, answered, horses, deferredUntil };
   }
 
   /**

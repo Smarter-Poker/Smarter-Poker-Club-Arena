@@ -18,6 +18,10 @@
 -- deals three; a pass after "4 newcomers + 8 regulars" too. Production pools
 -- hold 8-39 players today, so it is rare, and real for every thin pool.
 --
+-- Installs after 20261024213844: the plan and the locked barrier both use
+-- its exact conversion-seat exemption, so existing players never post an
+-- entry big blind merely because the game converted to Lightning.
+--
 -- THE FIX, at the line that decides it (CLAUDE.md 10.11/10.12): the pass is
 -- not stalled (it still deals), and a newcomer it seats outside the big blind
 -- POSTS A LIVE ENTRY BIG BLIND from their seat ("post to play", the standard
@@ -35,8 +39,8 @@
 --     with nobody else (a pool of only newcomers) gives it to an entry poster,
 --     whose small blind is then dead and who posts the entry big blind instead.
 --   - fn_lightning_form_hand: the barrier derives the same set from its own
---     locked P2 row (a candidate with last_bb_at NULL who is not the big
---     blind), records each as blind_role 'entry_bb', takes the small blind
+--     locked P2 row (a candidate with last_bb_at NULL who is neither a
+--     conversion seat nor the big blind), records each as blind_role 'entry_bb', takes the small blind
 --     from the others first, stamps every entry poster like the big blind
 --     (last_bb_at, hands_since_bb = 0, bb_count + 1) and never stamps a small
 --     blind it did not post. Its re-check accepts a dead small blind in seat 1
@@ -85,6 +89,17 @@ DECLARE
   e record;
   s text;
   n text;
+  -- Same authoritative newcomer expression as the conversion-seat predecessor.
+  v_newcomer CONSTANT text := $expr$(sl.last_bb_at IS NULL AND NOT coalesce((
+             -- LIGHTNING_CONVERSION_SEAT (20261024213844): the epoch's conversion
+             -- entered this seat for a player already at the tables.
+             SELECT cs_cps.opened_at < cs_ep.started_at
+                    AND cs_ps.entered_at < cs_ep.started_at + interval '5 seconds'
+                    AND sl.opened_at < cs_ep.started_at + interval '5 seconds'
+               FROM public.lightning_pool_session cs_ps
+               JOIN public.cash_player_session cs_cps ON cs_cps.id = cs_ps.cash_player_session_id
+               JOIN public.cash_cluster_epoch cs_ep ON cs_ep.cluster_id = sl.cluster_id AND cs_ep.epoch = sl.cluster_epoch
+              WHERE cs_ps.id = sl.pool_session_id), false))$expr$;
   -- THE GATE, once. A plpgsql block that sets v_entry_on; the plan and the
   -- barrier each run it where they decide (@@ENTRY_GATE@@ below).
   v_gate CONSTANT text := $g$  -- THE ENTRY BIG BLIND GATE (20261025050528). Open only when the calling
@@ -106,7 +121,7 @@ DECLARE
 $g$;
 BEGIN
   FOR r IN SELECT * FROM (VALUES
-    ('public.fn_lightning_match_plan(uuid,timestamptz,uuid[],text,integer,jsonb)', '94892943ee2a9cba3f495e507f2ff0d3'),
+    ('public.fn_lightning_match_plan(uuid,timestamptz,uuid[],text,integer,jsonb)', 'f35a6343a51e57c032bde2fcf7372d4b'),
     ('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamptz,text,uuid,jsonb)', '9dfe2626d4dbed01843f67cc69c430ad'),
     ('public.fn_lightning_instance_releases_its_reservations()', 'c939c6325086f93f6b9fce077348125d')
   ) x(sig, want) LOOP
@@ -166,6 +181,12 @@ $a$,
     'groups', v_groups,
 $b$),
       -- ── fn_lightning_form_hand ──────────────────────────────────────────
+      ('fn_lightning_form_hand', 0,
+       $a$           'last_bb_at',      bo.last_bb_at,
+$a$,
+       $b$           'last_bb_at',      bo.last_bb_at,
+           'newcomer',        @@NEWCOMER@@,
+$b$),
       ('fn_lightning_form_hand', 1,
        $a$  v_btn       uuid;
 $a$,
@@ -187,8 +208,9 @@ $b$),
    ORDER BY t.ord LIMIT 1;
 $a$,
        $b$  -- ENTRY BIG BLIND (20261025050528). A candidate who has never been the
-  -- big blind (last_bb_at NULL on the barrier's own locked P2 row) and is not
-  -- this hand's big blind posts a live entry big blind from their seat. Only
+  -- big blind (last_bb_at NULL on the barrier's own locked P2 row), is not a
+  -- conversion seat and is not this hand's big blind posts a live entry big
+  -- blind from their seat. Only
   -- when the calling engine posts it and the row can record it (the gate);
   -- otherwise the set is empty and the barrier is the barrier before this
   -- change. The small blind is taken from the others first; a hand with
@@ -198,7 +220,7 @@ $a$,
     v_entry := ARRAY(SELECT (t.e ->> 'player_id')::uuid
                        FROM jsonb_array_elements(v_pool) WITH ORDINALITY t(e, ord)
                       WHERE (t.e ->> 'player_id')::uuid IS DISTINCT FROM v_bb
-                        AND jsonb_typeof(t.e -> 'last_bb_at') = 'null'
+                        AND coalesce((t.e ->> 'newcomer')::boolean, false)
                       ORDER BY t.ord);
   END IF;
   SELECT (t.e ->> 'player_id')::uuid INTO v_sb
@@ -264,9 +286,9 @@ $b$)
       IF (length(n) - length(replace(n, e.old_text, ''))) / length(e.old_text) <> 1 THEN
         RAISE EXCEPTION 'Lightning entry big blind anchor % of % is not exactly once', e.k, e.fn;
       END IF;
-      n := replace(n, e.old_text, replace(e.new_text, '@@ENTRY_GATE@@', v_gate));
+      n := replace(n, e.old_text, replace(replace(e.new_text, '@@ENTRY_GATE@@', v_gate), '@@NEWCOMER@@', v_newcomer));
     END LOOP;
-    IF n = s OR position('@@ENTRY_GATE@@' IN n) > 0 THEN
+    IF n = s OR position('@@ENTRY_GATE@@' IN n) > 0 OR position('@@NEWCOMER@@' IN n) > 0 THEN
       RAISE EXCEPTION 'Lightning entry big blind replacement did not take: %', r.sig;
     END IF;
     EXECUTE n;

@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/a-parked-table-never-freezes-on-an-unproven-move",
+  "_comment": "Migration 20261025052423 adds fn_f06_withdraw_unproven_movement_park. PROMISED, not yet observed: this branch did not apply it; it installs through Apply Merged Migration after merge. The engine treats the door's absence (PGRST202/42883) as no withdrawal, so the engine half is safe to ship before the database half.",
+  "tables": [],
+  "functions": ["fn_f06_withdraw_unproven_movement_park"],
+  "columns": {}
+}

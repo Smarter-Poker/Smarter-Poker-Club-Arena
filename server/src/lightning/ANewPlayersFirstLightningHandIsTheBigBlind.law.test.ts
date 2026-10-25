@@ -129,18 +129,24 @@ function plan(
 const seated = (p: LightningMatchPlan) => new Set(p.groups.flatMap((g) => g.players));
 /** Newcomers dealt into a seat other than the big blind. */
 const newcomersOffTheBigBlind = (p: LightningMatchPlan, pool: LightningPoolPlayer[]) => {
-  const nc = new Set(pool.filter((x) => x.lastBbAtMs === null).map((x) => x.playerId));
+  const nc = new Set(
+    pool.filter((x) => x.lastBbAtMs === null && x.newcomer).map((x) => x.playerId)
+  );
   return p.groups.flatMap((g) => g.players.slice(1)).filter((id) => nc.has(id));
 };
 /** Newcomers dealt neither the big blind nor an entry big blind: must be none. */
 const newcomersWhoPostNoBigBlind = (p: LightningMatchPlan, pool: LightningPoolPlayer[]) => {
-  const nc = new Set(pool.filter((x) => x.lastBbAtMs === null).map((x) => x.playerId));
+  const nc = new Set(
+    pool.filter((x) => x.lastBbAtMs === null && x.newcomer).map((x) => x.playerId)
+  );
   return p.groups.flatMap((g) =>
     g.players.filter((id) => nc.has(id) && id !== g.bb && !g.entryBb.includes(id))
   );
 };
 const isNewcomerIn = (pool: LightningPoolPlayer[]) => {
-  const nc = new Set(pool.filter((x) => x.lastBbAtMs === null).map((x) => x.playerId));
+  const nc = new Set(
+    pool.filter((x) => x.lastBbAtMs === null && x.newcomer).map((x) => x.playerId)
+  );
   return (id: string) => nc.has(id);
 };
 /** Every structural promise of an entry plan, for every group. */
@@ -226,8 +232,10 @@ describe("a new player's first Lightning hand is the big blind", () => {
     }
   );
 
-  it('reads the slot that has never been the big blind, never the stored newcomer flag', () => {
-    // The flag disagrees with last_bb_at both ways; the plan follows last_bb_at.
+  it('reads the slot that has never been the big blind; the stored flag can only exempt a conversion seat', () => {
+    // 20261024213844: the database's `newcomer` is false for a seat the
+    // epoch's conversion made (n01). It can never make a newcomer of a slot
+    // that has been the big blind (r00 carries a stray true and is not one).
     const pool = [
       player('n00', null),
       player('n01', null, { newcomer: false }),
@@ -235,9 +243,10 @@ describe("a new player's first Lightning hand is the big blind", () => {
     ];
     const p = plan(pool);
     expect(p.groups[0].bb).toBe('n00');
-    expect(seated(p).has('n01')).toBe(false);
+    expect(seated(p).has('n01')).toBe(true);
     expect(seated(p).has('r00')).toBe(true);
-    expect(isLightningNewcomer(player('x', null, { newcomer: false }))).toBe(true);
+    expect(isLightningNewcomer(player('x', null, { newcomer: false }))).toBe(false);
+    expect(isLightningNewcomer(player('x', null, { newcomer: true }))).toBe(true);
     expect(isLightningNewcomer(player('x', 5, { newcomer: true }))).toBe(false);
   });
 
@@ -257,6 +266,21 @@ describe("a new player's first Lightning hand is the big blind", () => {
 });
 
 describe('when holding would leave no hand, a newcomer posts a live entry big blind (20261025050528)', () => {
+  it.each(VERSIONS)(
+    'conversion seats without a previous big blind never pay entry posts (%s)',
+    (v) => {
+      const converted = newcomers(3, 'c').map((p) => ({ ...p, newcomer: false }));
+      const pool = [...converted, ...newcomers(2)];
+      const p = plan(pool, v);
+      expect(p.groups).toHaveLength(1);
+      expect(p.groups[0].players).toHaveLength(5);
+      expect(p.groups[0].bb).toBe('n00');
+      expect(p.groups[0].entryBb).toEqual(['n01']);
+      expect(p.groups[0].sb).toBe('c00');
+      expectEntryPlanSound(p, pool, v);
+    }
+  );
+
   it.each(VERSIONS)(
     'two newcomers and three regulars: the second posts an entry big blind, a regular is the small blind (%s)',
     (v) => {
@@ -453,7 +477,10 @@ describe('the entry big blind in SQL, and its activation order (20261025050528, 
     expect(ENTRY_SQL).toContain(
       `'blind_role', CASE WHEN s.pid = ANY (v_entry) THEN '${LIGHTNING_ENTRY_BIG_BLIND_ROLE}'`
     );
-    expect(ENTRY_SQL).toContain("AND jsonb_typeof(t.e -> 'last_bb_at') = 'null'");
+    expect(ENTRY_SQL).toContain("AND coalesce((t.e ->> 'newcomer')::boolean, false)");
+    expect(ENTRY_SQL).toContain("'newcomer',        @@NEWCOMER@@,");
+    expect(ENTRY_SQL).toContain('LIGHTNING_CONVERSION_SEAT');
+    expect(ENTRY_SQL).toContain("'@@NEWCOMER@@', v_newcomer");
     expect(ENTRY_SQL).toContain(
       'last_bb_at     = CASE WHEN sl.player_id = v_bb OR sl.player_id = ANY (v_entry) THEN p_now'
     );

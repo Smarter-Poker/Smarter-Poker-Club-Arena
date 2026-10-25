@@ -67,6 +67,7 @@ import {
   GREETER_MIN_HANDS_SEATED,
   HORSE_LINES_PER_HOUR,
   HORSE_MIN_HANDS_BETWEEN_LINES,
+  PHRASE_HORSE_WINDOW_MS,
   PHRASE_TABLE_WINDOW_MS,
   SPEAK_CHANCE_PCT,
   TABLE_MIN_HANDS_BETWEEN_LINES,
@@ -81,6 +82,7 @@ import {
   fillLine,
   greetArrival,
   lineIndexFor,
+  heardPhrases,
   normalizePhrase,
   pickCandidate,
   sanitizeLine,
@@ -94,9 +96,22 @@ import {
   type TalkTable,
 } from './HorseTableTalk.js';
 import { _resetTableTalkGateForTests } from './HorseTableTalkGate.js';
+import { LINES, TALK_EVENTS, TALK_VOICES } from './horseTableTalkLines.js';
 import { _setHumanPacingForTests, humanBeatMs } from './horsePacing.js';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
+
+function everyPoolLine(): Array<{
+  event: (typeof TALK_EVENTS)[number];
+  voice: (typeof TALK_VOICES)[number];
+  line: string;
+}> {
+  return TALK_EVENTS.flatMap((event) =>
+    TALK_VOICES.flatMap((voice) =>
+      LINES[event][voice].lines.map((line) => ({ event, voice, line }))
+    )
+  );
+}
 
 const TABLE = '11111111-1111-4111-8111-111111111111';
 const HORSE_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -313,7 +328,8 @@ describe('the line is a hash, never a roll', () => {
     const a = chooseLine('big_pot_won', 'needler', HORSE_A, 4242, facts);
     const b = chooseLine('big_pot_won', 'needler', HORSE_A, 4242, facts);
     expect(a).toEqual(b);
-    expect(a?.line).toBe('52 bb on the river, somebody wanted to see my cards');
+    expect(LINES.big_pot_won.needler.lines).toContain(a!.template);
+    expect(a!.line).toBe(fillLine(a!.template, facts));
   });
 
   it('over 1,000 hand numbers the choice covers every line of a pool and favours none', () => {
@@ -338,7 +354,12 @@ describe('the line is a hash, never a roll', () => {
     expect(fillLine('welcome to the table seat {seat}, good luck', { seat: 4 })).toBe(
       'welcome to the table seat 4, good luck'
     );
-    expect(chooseLine('showdown_loss', 'friendly', HORSE_A, 1, { hand: 'two pair' })).toBeNull();
+    // with only {hand} held, the chooser passes over every line that needs a street or a seat
+    for (let hand = 1; hand <= 200; hand++) {
+      const c = chooseLine('showdown_loss', 'friendly', HORSE_A, hand, { hand: 'two pair' })!;
+      expect(c.template).not.toMatch(/\{(street|seat|potBB)\}/);
+      expect(c.line).not.toContain('{');
+    }
   });
 });
 
@@ -386,7 +407,21 @@ describe('the one door every line passes', () => {
   it('a phrase is its template: numbers fold, punctuation and braces drop', () => {
     expect(normalizePhrase('nice pot, {potBB} bb, gg')).toBe('nice pot potbb bb gg');
     expect(normalizePhrase('nice pot, 52 bb, gg')).toBe('nice pot n bb gg');
-    expect(normalizePhrase('  GL  ')).toBe('gl');
+    expect(normalizePhrase('  GL  ')).toBe('good luck');
+  });
+  it('a phrase is what the player reads: the shorthand the styler swaps is the same phrase', () => {
+    // horseVoiceStyle types "nice hand" as "nh" and "gl" as "good luck"; one horse's
+    // "nh" and another's "nice hand" are the same line on the screen
+    expect(normalizePhrase('nh')).toBe(normalizePhrase('nice hand'));
+    expect(normalizePhrase('gl gl')).toBe(normalizePhrase('good luck good luck'));
+    expect(normalizePhrase('ty ty')).toBe(normalizePhrase('thank you thank you'));
+    expect(normalizePhrase("can't believe that got there")).toBe(
+      normalizePhrase('cant believe that got there')
+    );
+    // idempotent: a ledger row written under the older identity folds the same way
+    for (const { line } of everyPoolLine()) {
+      expect(normalizePhrase(normalizePhrase(line))).toBe(normalizePhrase(line));
+    }
   });
 });
 
@@ -436,6 +471,10 @@ describe('speakAtTheFelt', () => {
   });
 
   it('claims the hand in the ledger BEFORE writing the chat row, and the row is the browser shape', async () => {
+    const expected = chooseLine('big_pot_won', 'friendly', HORSE_A, 30, {
+      potBB: 60,
+      street: 'river',
+    })!;
     expect(await speakAtTheFelt(bigPotHand(30))).toBe('spoken');
     const order = h.state.calls.filter((c) => c.op === 'insert').map((c) => c.table);
     expect(order).toEqual(['horse_table_talk_ledger', 'table_chat']);
@@ -446,14 +485,14 @@ describe('speakAtTheFelt', () => {
       horse_id: HORSE_A,
       event: 'big_pot_won',
       voice: 'friendly',
-      phrase_norm: 'nice pot potbb bb gg',
+      phrase_norm: normalizePhrase(expected.template),
     });
     const chat = inserts('table_chat')[0].payload!;
     expect(Object.keys(chat).sort()).toEqual(['message', 'message_type', 'table_id', 'user_id']);
     expect(chat).toEqual({
       table_id: TABLE,
       user_id: HORSE_A,
-      message: 'nice pot, 60 bb, gg',
+      message: expected.line,
       message_type: 'player',
     });
     // the reads before the claim: the horse's day, the table's newest lines, the mute
@@ -592,34 +631,89 @@ describe('speakAtTheFelt', () => {
     expect(await speakAtTheFelt(bigPotHand(11000))).toBe('table_too_soon');
   });
 
-  it('a phrase this horse used within 24 h is not said again', async () => {
+  it('a phrase this horse used within 24 h is never chosen: it says a different line', async () => {
+    const usual = chooseLine('big_pot_won', 'friendly', HORSE_A, 40, {
+      potBB: 60,
+      street: 'river',
+    })!;
     h.state.answers.horse_table_talk_ledger = (call) =>
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'horse_id')
         ? {
-            data: [ledgerRow({ phrase_norm: 'nice pot potbb bb gg', table_id: 'other' })],
-            error: null,
-          }
-        : { data: [], error: null };
-    expect(await speakAtTheFelt(bigPotHand(40))).toBe('phrase_horse_24h');
-    expect(inserts('horse_table_talk_ledger')).toHaveLength(0);
-  });
-
-  it('a phrase anyone used at this table inside the table window is not said again here', async () => {
-    h.state.answers.horse_table_talk_ledger = (call) =>
-      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
-        ? {
             data: [
               ledgerRow({
-                phrase_norm: 'nice pot potbb bb gg',
-                horse_id: HORSE_B,
-                hand_number: 5,
-                said_at: new Date(NOW - PHRASE_TABLE_WINDOW_MS / 2).toISOString(),
+                phrase_norm: normalizePhrase(usual.template),
+                table_id: 'other',
+                said_at: new Date(NOW - PHRASE_HORSE_WINDOW_MS + 60_000).toISOString(),
               }),
             ],
             error: null,
           }
         : { data: [], error: null };
-    expect(await speakAtTheFelt(bigPotHand(41))).toBe('phrase_table_2h');
+    expect(await speakAtTheFelt(bigPotHand(40))).toBe('spoken');
+    const claimed = inserts('horse_table_talk_ledger')[0].payload!.phrase_norm;
+    expect(claimed).not.toBe(normalizePhrase(usual.template));
+    expect(inserts('table_chat')[0].payload!.message).not.toBe(usual.line);
+  });
+
+  it('a phrase anyone used at this table inside the table window is never chosen here', async () => {
+    // Dan 2026-10-24: two horses typed the same big-pot line 23 minutes apart.
+    const usual = chooseLine('big_pot_won', 'friendly', HORSE_A, 1041, {
+      potBB: 60,
+      street: 'river',
+    })!;
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
+        ? {
+            data: [
+              ledgerRow({
+                phrase_norm: normalizePhrase(usual.template),
+                horse_id: HORSE_B,
+                hand_number: 1000,
+                said_at: new Date(NOW - 23 * 60_000).toISOString(),
+              }),
+            ],
+            error: null,
+          }
+        : { data: [], error: null };
+    h.state.answers.hand_history = () => ({
+      data: Array.from({ length: 11 }, (_, i) => ({ hand_number: 1040 - i })),
+      error: null,
+    });
+    expect(PHRASE_TABLE_WINDOW_MS).toBeGreaterThanOrEqual(24 * 60 * 60_000);
+    expect(await speakAtTheFelt(bigPotHand(1041))).toBe('spoken');
+    const claimed = inserts('horse_table_talk_ledger')[0].payload!.phrase_norm;
+    expect(claimed).not.toBe(normalizePhrase(usual.template));
+  });
+
+  it('when the table has heard every line of the voice, the horse says nothing rather than repeat', async () => {
+    const spent = LINES.big_pot_won.friendly.lines.map((t, i) =>
+      ledgerRow({
+        phrase_norm: normalizePhrase(t),
+        horse_id: HORSE_B,
+        hand_number: 100 + i,
+        said_at: new Date(NOW - 6 * 60 * 60_000).toISOString(),
+      })
+    );
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
+        ? { data: spent, error: null }
+        : { data: [], error: null };
+    expect(await speakAtTheFelt(bigPotHand(5000))).toBe('no_fresh_line');
+    expect(h.state.calls.filter((c) => c.op === 'insert')).toHaveLength(0);
+  });
+
+  it('a history read that fills its cap could be missing a phrase: silence, never a guess', async () => {
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
+        ? {
+            data: Array.from({ length: 2_000 }, (_, i) =>
+              ledgerRow({ horse_id: HORSE_B, hand_number: i, phrase_norm: `filler ${i}` })
+            ),
+            error: null,
+          }
+        : { data: [], error: null };
+    expect(await speakAtTheFelt(bigPotHand(9000))).toBe('unreadable');
+    expect(h.state.calls.filter((c) => c.op === 'insert')).toHaveLength(0);
   });
 
   it('a muted horse writes nothing', async () => {
@@ -661,11 +755,16 @@ describe('speakAtTheFelt', () => {
   });
 
   it('a line never names a seated player: a username that collides with a word is refused', async () => {
+    const line = chooseLine('big_pot_won', 'friendly', HORSE_A, 60, {
+      potBB: 60,
+      street: 'river',
+    })!.line;
+    const word = line.split(/[^a-z]+/i).find((w) => w.length >= 2)!;
     const named = bigPotHand(60, {
       seated: [
         seat(HORSE_A, 1, true),
         seat(HORSE_B, 2, true),
-        seat(HUMAN, 3, false, { username: 'gg' }),
+        seat(HUMAN, 3, false, { username: word }),
       ],
     });
     expect(await speakAtTheFelt(named)).toBe('unsafe_line');
@@ -725,7 +824,10 @@ describe('greetArrival', () => {
     expect(inserts('table_chat')).toHaveLength(1);
     const chat = inserts('table_chat')[0].payload!;
     expect([HORSE_A, HORSE_B]).toContain(chat.user_id);
-    expect(chat.message).toBe('welcome to the table seat 3, good luck');
+    const greetings = TALK_VOICES.flatMap((v) =>
+      LINES.arrival[v].lines.map((t) => fillLine(t, { seat: 3 }))
+    );
+    expect(greetings).toContain(chat.message);
     expect(inserts('horse_table_talk_ledger')[0].payload).toMatchObject({
       event: 'arrival',
       hand_number: 10,
@@ -880,5 +982,65 @@ describe('who is listening, and how the night is going', () => {
     h.state.calls = [];
     expect(await speakAtTheFelt(lost(4000 + STREAK_HANDS))).toBe('spoken');
     expect(inserts('horse_table_talk_ledger')[0].payload).toMatchObject({ event: 'tilt' });
+  });
+});
+
+describe('LAW: a table never hears the same line twice (Dan 2026-10-24)', () => {
+  // "HORSES CAN NEVER EVER EVER BE REPEATING THE SAME LINES ... INSIDE OF CHAT!
+  // ... THIS IS SCREAMING I AM A BOT!!" Two horses typed "N bb on the river,
+  // somebody wanted to see my cards" 23 minutes apart at one table.
+  const FULL = { potBB: 52, street: 'river' as const, hand: 'full house', seat: 7 };
+  const FLEET = [
+    HORSE_A,
+    HORSE_B,
+    '33333333-3333-4333-8333-333333333333',
+    '55555555-5555-4555-8555-555555555555',
+  ];
+
+  it('every cell of the pool is deep enough that a voice is never stuck on one sentence', () => {
+    for (const event of TALK_EVENTS) {
+      for (const voice of TALK_VOICES) {
+        const ids = new Set(LINES[event][voice].lines.map(normalizePhrase));
+        expect(
+          ids.size,
+          `${event}/${voice} has only ${ids.size} distinct phrases`
+        ).toBeGreaterThanOrEqual(8);
+      }
+    }
+  });
+
+  it('horses taking turns at one table never repeat a phrase until the voice is spent, then fall silent', () => {
+    for (const event of TALK_EVENTS) {
+      for (const voice of TALK_VOICES) {
+        const heard = new Set<string>();
+        const distinct = new Set(LINES[event][voice].lines.map(normalizePhrase)).size;
+        let said = 0;
+        for (let turn = 0; turn < distinct + 5; turn++) {
+          const horse = FLEET[turn % FLEET.length];
+          const c = chooseLine(event, voice, horse, 7000 + turn * 13, FULL, heard);
+          if (!c) break;
+          const id = normalizePhrase(c.template);
+          expect(heard.has(id), `${event}/${voice} repeated "${c.template}"`).toBe(false);
+          heard.add(id);
+          said++;
+        }
+        expect(said).toBe(distinct);
+        expect(chooseLine(event, voice, HORSE_A, 99_999, FULL, heard)).toBeNull();
+      }
+    }
+  });
+
+  it('the ledger rows a table holds become the phrases it has heard, inside the windows only', () => {
+    const recent = ledgerRow({
+      phrase_norm: 'nh',
+      said_at: new Date(NOW - 23 * 60_000).toISOString(),
+    });
+    const stale = ledgerRow({
+      phrase_norm: 'stale line',
+      said_at: new Date(NOW - PHRASE_TABLE_WINDOW_MS - 60_000).toISOString(),
+    });
+    const heard = heardPhrases({ horseRows: [], tableRows: [recent, stale] as never }, NOW);
+    expect(heard.has(normalizePhrase('nice hand'))).toBe(true);
+    expect(heard.has('stale line')).toBe(false);
   });
 });

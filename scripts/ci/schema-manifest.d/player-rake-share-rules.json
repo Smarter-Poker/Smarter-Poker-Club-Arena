@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/a-standing-rake-share-replaces-the-woowoo-cron. PROMISED, not yet observed: migration 20261025030629_a_standing_rake_share_replaces_the_woowoo_cron is installed through apply-merged-migration.yml after the protected merge, never from a branch (CLAUDE.md section 2; a probe never carries DDL). The standing rake share rule table and the hand-fact share helper the player rake statistics readers call.",
+  "tables": ["smarter_private.player_rake_share_rules"],
+  "functions": ["smarter_private.fn_player_rake_share_hand_cents"]
+}

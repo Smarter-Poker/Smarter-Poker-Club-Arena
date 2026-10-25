@@ -103,9 +103,9 @@ const REGISTER = {
     ].join('\n'),
   },
   'server/src/engine/ServerTableEngineSettlement.ts': {
-    allowed: 1,
+    allowed: 2,
     kind: 'IDENTIFICATION',
-    why: 'Horse cash-out plumbing: picks the horses that have hit their deterministic stack target and stands them up on their big blind. Fleet steering, and it denies a horse nothing.',
+    why: "Horse cash-out plumbing: picks the horses that have hit their deterministic stack target and stands them up on their big blind. Fleet steering, and it denies a horse nothing. And the PLO5 horse top-up step (Dan 2026-10-24, 30% Auto Top Up / 70% add-on): it selects the horses because a human refills through their own Auto Top Up switch or Add Chips button in the client; this is the horse's input device for the same two features, paid from its own wallet like a human's. It gives a horse what a human has, and denies it nothing.",
   },
   'server/src/handlers/faultInjection.ts': {
     allowed: 1,

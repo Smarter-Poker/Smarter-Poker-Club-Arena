@@ -2048,6 +2048,16 @@ export abstract class ServerTableEngineBase {
   }> = [];
 
   /**
+   * Dan 2026-10-24: two or more hands reached showdown and at least one of
+   * them is an all-in player's. Read once, at SHOWDOWN (or when a run-it-
+   * multiple hand records its results), while the hand's players are still
+   * live, and handed to handCompletionHoldMs so the felt keeps the tabled
+   * hands and the winner up for HAND_COMPLETION.ALL_IN_SHOWDOWN_EXTRA_MS
+   * longer. Reset with the showdown results at every deal.
+   */
+  protected currentHandAllInShowdown = false;
+
+  /**
    * SHOWDOWN SYSTEM 2026-08-25: true when the player mucked at showdown and
    * has not voluntarily shown the WHOLE hand — the one question every reveal
    * gate asks. A whole-hand voluntary show (showHandPlayers) overrides the

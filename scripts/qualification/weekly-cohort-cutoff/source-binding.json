@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 232055,
-      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+      "bytes": 234392,
+      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -251,6 +251,21 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "supersededCiStopsAtThePush20261025": {
+    "reason": "Restamped for the CI load change only (docs/changelog/2026-10-25-superseded-ci-stops-at-the-push.md): ci.yml gates its heavy jobs on !cancelled() instead of always() and documents ci-supersede.yml; the two CI routing tests follow that prefix. No suite, step, shard, financial source, fixture, assertion, deadline or qualification status changed. Matching source hashes are not production or financial execution proof; fresh hosted qualification is still required.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+        },
+        "current": {
+          "bytes": 234392,
+          "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+        }
+      }
     }
   }
 }

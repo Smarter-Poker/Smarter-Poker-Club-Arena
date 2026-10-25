@@ -5045,6 +5045,7 @@ export class GameServer {
           secsIdle: Math.round(t.msFailing / 1000),
           admission: 'failing' as const,
           refusal: t.refusal,
+          stuckOn: t.stuckOn,
         })),
     ];
     // LIVENESS RACE FIX (2026-08-22): the per-table recovery chain (watchdog
@@ -6205,17 +6206,32 @@ export class GameServer {
    * 120 s stall threshold, oldest first. Between retries such a table has no
    * engine, so tableLivenessSnapshot() cannot see it.
    */
-  private tournamentTablesFailingAdmission(
-    now: number
-  ): Array<{ tableId: string; msFailing: number; refusal: string | null }> {
-    const failing: Array<{ tableId: string; msFailing: number; refusal: string | null }> = [];
+  private tournamentTablesFailingAdmission(now: number): Array<{
+    tableId: string;
+    msFailing: number;
+    refusal: string | null;
+    stuckOn: { code: string; count: number } | null;
+  }> {
+    const failing: Array<{
+      tableId: string;
+      msFailing: number;
+      refusal: string | null;
+      stuckOn: { code: string; count: number } | null;
+    }> = [];
     for (const manager of this.tournamentEngines.values()) {
       const refusals = new Map(
         (manager.getTableAdmissionRefusals?.() ?? []).map((r) => [r.tableId, r.refusal])
       );
       for (const table of manager.getTablesFailingAdmission?.(now) ?? []) {
-        if (table.msFailing > 120_000)
-          failing.push({ ...table, refusal: refusals.get(table.tableId) ?? null });
+        if (table.msFailing <= 120_000) continue;
+        // The refusal this table is stuck on and how many times it was met
+        // (A STALLED TABLE PAGES ITS REAL REFUSAL, 2026-10-25).
+        const streak = manager.getTableAdmissionRefusalStreak?.(table.tableId) ?? null;
+        failing.push({
+          ...table,
+          refusal: refusals.get(table.tableId) ?? null,
+          stuckOn: streak ? { code: streak.code, count: streak.count } : null,
+        });
       }
     }
     return failing.sort((x, y) => y.msFailing - x.msFailing);

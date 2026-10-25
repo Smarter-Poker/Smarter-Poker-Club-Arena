@@ -284,6 +284,38 @@ function horseSolverStoreIdentity() {
 }
 
 /**
+ * One line per worker boot step, so the container log shows which read held
+ * READY (2026-10-24, engine boot time). Timing only: each operation's result
+ * and rejection pass through unchanged.
+ */
+function bootStepTimer(
+  shardIndex: number
+): (<T>(name: string, operation: () => Promise<T>) => Promise<T>) & { ready(): void } {
+  const startedAt = Date.now();
+  const step = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+    const stepStartedAt = Date.now();
+    let outcome = 'failed';
+    try {
+      const value = await operation();
+      outcome = 'ok';
+      return value;
+    } finally {
+      const now = Date.now();
+      console.log(
+        `[HorseDecisionWorker] shard ${shardIndex} boot step ${name} ${outcome} in ` +
+          `${now - stepStartedAt}ms (${now - startedAt}ms since worker services began)`
+      );
+    }
+  };
+  return Object.assign(step, {
+    ready: () =>
+      console.log(
+        `[HorseDecisionWorker] shard ${shardIndex} services ready ${Date.now() - startedAt}ms after they began`
+      ),
+  });
+}
+
+/**
  * Start every mutable service consumed by HorseLogic inside the worker that
  * owns HorseLogic. READY is withheld until the durable mind and all solver
  * stores have completed their initial hydration. `shard` names this worker's
@@ -314,7 +346,8 @@ export async function startOwnedServices(shard?: {
     // is not the brain the packs qualified with (client.ts,
     // horseDecisionWorkerEnv). Refuse readiness rather than decide with it.
     assertDecisionWorkerRunsFullSample();
-    const opponentSchema = await horseOpponentMemorySchema();
+    const step = bootStepTimer(shard?.index ?? 0);
+    const opponentSchema = await step('opponent_memory_schema', () => horseOpponentMemorySchema());
     noteFire(`horse_opponent_memory_schema_${opponentSchema}`);
     // Persistence starts before hydration, matching the production invariant:
     // a slow read may never prevent newly learned rows from becoming flushable.
@@ -325,20 +358,39 @@ export async function startOwnedServices(shard?: {
     startSolverPolicyArtifactLoader();
 
     if (opponentSchema === 'installed') HorseMind.enableDurableOpponentMemory();
-    const lastFlush = await hydrateHorseMindFromDb();
-    await Promise.all([
-      hydrateHorseMind(lastFlush),
+    /* THE MIND'S OWN CHAIN NO LONGER HOLDS THE OTHER LOADS (2026-10-24).
+       The durable mind read (pairs, scoped, stats) used to be awaited on its
+       own before anything else started, and its pair read alone is twenty
+       serial PostgREST pages (156 ms mean each in pg_stat_statements). Only
+       the replay depends on it - it needs the last flush mark, and it must
+       follow the import so it never double-counts - so that ordering is kept
+       as one chain. The exploit replay, the chart, open-node and V31 stores
+       touch none of the stats/pairs/scoped maps (the exploit replay writes
+       only the exploit counters, through mergeSandboxExploit), so they start
+       at the same instant instead of after it. READY is still withheld until
+       every one of them has finished, exactly as before. */
+    const bootLoads = await Promise.allSettled([
+      step('horse_mind_db', () => hydrateHorseMindFromDb()).then((lastFlush) =>
+        step('horse_mind_replay', () => hydrateHorseMind(lastFlush))
+      ),
       // 2026-10-22: the maniac read survives the daily reset - replay the
       // recent human hands into the decayed exploit counters before READY.
-      hydrateHorseExploitReads(),
-      loadGtoCharts(),
-      loadGtoPostflop(),
-      loadGtoPostflopV31(),
+      step('exploit_reads', () => hydrateHorseExploitReads()),
+      step('gto_charts', () => loadGtoCharts()),
+      step('gto_postflop', () => loadGtoPostflop()),
+      step('gto_postflop_v31', () => loadGtoPostflopV31()),
     ]);
+    // A failed load must not drain writers while another load can still
+    // hydrate or replay into them. Join every started operation before the
+    // catch below owns teardown; never publish READY for a partial boot.
+    for (const result of bootLoads) {
+      if (result.status === 'rejected') throw result.reason;
+    }
 
     // The fixed rollout population belongs to this worker. Prepare its card
     // facts before READY so the first eligible decisions pay no scoring cost.
-    prepareTournamentFutureHandFacts();
+    await step('tournament_future_hand_facts', async () => prepareTournamentFutureHandFacts());
+    step.ready();
 
     // Periodic refresh begins only after the first authoritative load. The
     // loader start functions are idempotent and own unref'd timers.

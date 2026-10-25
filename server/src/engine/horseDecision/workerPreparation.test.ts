@@ -47,6 +47,10 @@ import {
   stopHorseMindPersistence,
 } from '../../services/HorseMindPersistence.js';
 import { loadGtoCharts } from '../../services/GtoChartLoader.js';
+import { loadGtoPostflop } from '../../services/GtoPostflopLoader.js';
+import { loadGtoPostflopV31 } from '../../services/GtoPostflopV31Loader.js';
+import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
+import { hydrateHorseExploitReads } from '../../services/HorseExploitHydrator.js';
 import { gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 
@@ -98,6 +102,39 @@ describe('real worker-owned startup preparation', () => {
     expect(prepare).toHaveBeenCalledTimes(1);
   });
 
+  it('starts the solver and exploit loads beside the durable mind read, and replays only after it', async () => {
+    vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
+    vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});
+    vi.spyOn(future, 'prepareTournamentFutureHandFacts').mockImplementation(() => {});
+    let releaseMind!: (lastFlush: string | null) => void;
+    vi.mocked(hydrateHorseMindFromDb).mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          releaseMind = resolve;
+        })
+    );
+    let ready = false;
+    const startup = worker.startServices().then(() => {
+      ready = true;
+    });
+    // Every independent load has begun while the mind read is still pending.
+    await vi.waitFor(() => {
+      expect(hydrateHorseMindFromDb).toHaveBeenCalledTimes(1);
+      expect(loadGtoCharts).toHaveBeenCalledTimes(1);
+      expect(loadGtoPostflop).toHaveBeenCalledTimes(1);
+      expect(loadGtoPostflopV31).toHaveBeenCalledTimes(1);
+      expect(hydrateHorseExploitReads).toHaveBeenCalledTimes(1);
+    });
+    // The replay needs the flush mark, so it has not started, and READY waits.
+    expect(hydrateHorseMind).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(ready).toBe(false);
+    releaseMind('2026-10-24T08:00:00.000Z');
+    await startup;
+    expect(hydrateHorseMind).toHaveBeenCalledWith('2026-10-24T08:00:00.000Z');
+    expect(ready).toBe(true);
+  });
+
   it('reports the content identity of the stores it decides with, at READY and beside every decision', async () => {
     vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
     vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});
@@ -107,6 +144,43 @@ describe('real worker-owned startup preparation', () => {
     expect(readiness.solverStoreIdentity).toEqual(expected);
     expect(worker.workerReadiness().solverStoreIdentity).toEqual(expected);
     expect(expected.charts.digest).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('joins outstanding boot reads before draining after a parallel load fails', async () => {
+    vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
+    vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});
+    const prepare = vi.spyOn(future, 'prepareTournamentFutureHandFacts');
+    let releaseMind!: () => void;
+    vi.mocked(hydrateHorseMindFromDb).mockImplementationOnce(
+      () =>
+        new Promise<null>((resolve) => {
+          releaseMind = () => resolve(null);
+        })
+    );
+    const failure = new Error('chart load failed');
+    vi.mocked(loadGtoCharts).mockRejectedValueOnce(failure);
+    let finished = false;
+    const startup = worker.startServices().then(
+      () => {
+        throw new Error('failed boot reported ready');
+      },
+      (error) => {
+        finished = true;
+        return error;
+      }
+    );
+    await vi.waitFor(() => expect(loadGtoCharts).toHaveBeenCalled());
+    try {
+      expect(finished).toBe(false);
+      expect(stopHorseMindPersistence).not.toHaveBeenCalled();
+      expect(prepare).not.toHaveBeenCalled();
+    } finally {
+      releaseMind();
+      expect(await startup).toBe(failure);
+    }
+    expect(hydrateHorseMind).toHaveBeenCalledTimes(1);
+    expect(stopHorseMindPersistence).toHaveBeenCalledTimes(1);
+    expect(prepare).not.toHaveBeenCalled();
   });
 
   it('rejects readiness and drains owned services if preparation fails', async () => {

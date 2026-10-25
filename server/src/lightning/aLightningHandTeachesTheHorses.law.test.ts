@@ -105,18 +105,23 @@ describe('LAW: every Lightning hand teaches the horses', () => {
     expect(t.horseLane.observed[0]!.durableOpponentProfiles).toEqual([]);
   });
 
-  it('a game with no durable memory is still observed (fixed-limit, FLO8, short deck)', async () => {
-    const readProfiles = vi.fn(async () => []);
-    const t = await playHand(8300, {
-      rules: { game_variant: 'short_deck' },
-      deps: {
-        horseObservation: { schema: async () => 'installed', readProfiles, report: () => {} },
-      },
-    });
-    expect(t.horseLane.observed.length).toBe(1);
-    expect(readProfiles).not.toHaveBeenCalled();
-    expect(t.horseLane.observed[0]!.scope).toBe(readScopeOf('short_deck', 3));
-  });
+  it.each(['flh', 'flo8', 'short_deck'])(
+    '%s reads its own durable memory and is observed',
+    async (variant) => {
+      const readProfiles = vi.fn(async () => []);
+      const t = await playHand(8300, {
+        rules: { game_variant: variant },
+        deps: {
+          horseObservation: { schema: async () => 'installed', readProfiles, report: () => {} },
+        },
+      });
+      expect(t.horseLane.observed.length).toBe(1);
+      expect(readProfiles).toHaveBeenCalledTimes(1);
+      expect(readProfiles).toHaveBeenCalledWith(expect.any(Array), variant, 'cash', 'short');
+      expect(t.horseLane.observed[0]!.scope).toBe(readScopeOf(variant, 3));
+      expect(t.horseLane.observed[0]!.durableOpponentProfiles).toEqual([]);
+    }
+  );
 
   it('a failing lane never holds or repeats the settled hand', async () => {
     const report = vi.fn();

@@ -28,6 +28,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/AnteMath.ts': 'the ante orbit cost behind the M-zones',
     'src/engine/OmahaFlushBlocker.ts':
       'physical two-hole three-board nut-flush and straight-flush blockers consumed by the reference decision',
+    'src/engine/HorsePloPairedBoardFold.ts':
+      'the PLO5/PLO6 paired-board fold applied to the final decision after every other layer (Dan 2026-10-25)',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
     'src/engine/HorseContinuation.ts':

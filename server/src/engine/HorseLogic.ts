@@ -233,6 +233,7 @@ import {
   nextCardOutlook,
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
+import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
@@ -1963,6 +1964,10 @@ export interface HorseDecideOpts {
    *  board, and non-nut made hands stop firing pot on the turn and river.
    *  Disable to ablate (default: enabled). */
   v40Omaha?: boolean;
+  /** Dan 2026-10-25: PLO5/PLO6 never call off without a full house on a
+   *  paired turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
+   *  false exists only so an ablation can measure an older layer alone. */
+  ploPairedBoardFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
@@ -2940,6 +2945,46 @@ function enforceAuthoritativeDecision(
   return { action: wagerAction, amount, thinkTime: 0 };
 }
 
+/**
+ * Dan 2026-10-25: in PLO5/PLO6 a horse without a full house never calls or
+ * raises a committing bet on a paired turn or river. See
+ * HorsePloPairedBoardFold.ts. Applied after every other layer so no later
+ * tweak to an equity cap can reopen the call.
+ */
+function pairedBoardFold(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  if (opts.ploPairedBoardFold === false) return decision;
+  if (decision.action !== 'call' && decision.action !== 'raise' && decision.action !== 'all_in') {
+    return decision;
+  }
+  const hiLo = gs.variantRules
+    ? gs.variantRules.splitLow8OrBetter
+    : variantInfo(gs.gameVariant).isHiLo;
+  const mustFold = ploPairedBoardMustFold({
+    gameVariant: gs.gameVariant,
+    hiLo,
+    multiBoard: !!(gs.communityCards2?.length || gs.communityCards3?.length),
+    board: gs.communityCards ?? [],
+    hero: player,
+    players: gs.players ?? [],
+    currentBet: gs.currentBet,
+    toCall: gs.toCall,
+    pot: gs.pot,
+  });
+  if (!mustFold) return decision;
+  if (telemetryOn(opts)) noteFire('plo_paired_board_fold');
+  if (Array.isArray(gs.legalActions) && !gs.legalActions.includes('fold')) return decision;
+  // Keep the brain's own think time: a fold that snaps faster than the call
+  // it replaced would be a tell.
+  const folded: HorseDecision = { ...decision, action: 'fold' };
+  delete folded.amount;
+  return folded;
+}
+
 export class HorseLogic {
   static decide(
     player: SeatPlayer,
@@ -2992,12 +3037,22 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return this.decideInternal(player, gameState, style, mods, opts);
+          return pairedBoardFold(
+            this.decideInternal(player, gameState, style, mods, opts),
+            player,
+            gameState,
+            opts
+          );
         } finally {
           setEquityDepth(1);
         }
       }
-      return this.decideInternal(player, gameState, style, mods, opts);
+      return pairedBoardFold(
+        this.decideInternal(player, gameState, style, mods, opts),
+        player,
+        gameState,
+        opts
+      );
     } catch (err) {
       // Absolute safety net: never let a horse hang the table.
       // V13: it used to swallow the error entirely. This is the innermost and

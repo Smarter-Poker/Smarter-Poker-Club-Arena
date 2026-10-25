@@ -653,6 +653,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40'
   ),
   flag(
+    'ploPairedBoardFold',
+    'PLO5/PLO6 no full house on a paired turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
+    'PLO paired-board fold'
+  ),
+  flag(
     'deepEquity',
     'V44 second look: every Monte Carlo read at this multiple of its sample; set only by the engine replay inside the think time',
     'V44'
@@ -1848,6 +1853,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40',
     'decide_omaha',
     0.05
+  ),
+  receipt(
+    'plo_paired_board_fold',
+    'HorseLogic.decide (HorsePloPairedBoardFold)',
+    'PLO5/PLO6 call, raise or jam without a full house on a paired turn or river turned into a fold',
+    'PLO paired-board fold'
   ),
   receipt(
     'v40_omaha_pressure_cap',

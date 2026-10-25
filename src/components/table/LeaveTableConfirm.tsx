@@ -13,6 +13,7 @@ import './LeaveTableConfirm.css';
 interface LeaveTableConfirmProps {
   isOpen: boolean;
   currentStack: number;
+  currentStackPending?: boolean;
   tableName: string;
   isTournament?: boolean;
   /**
@@ -28,6 +29,7 @@ interface LeaveTableConfirmProps {
 export default function LeaveTableConfirm({
   isOpen,
   currentStack,
+  currentStackPending = false,
   tableName,
   isTournament = false,
   lockedLabel = null,
@@ -138,7 +140,12 @@ export default function LeaveTableConfirm({
           {isTournament ? 'Leave Tournament Table?' : 'Leave Table?'}
         </h3>
         <p id="leave-confirm-desc" className="leave-confirm__desc">
-          {isTournament ? (
+          {currentStackPending ? (
+            <>
+              Current Balance Unavailable. Your Chips Will Be Returned To Your Wallet When You
+              Leave.
+            </>
+          ) : isTournament ? (
             <>
               You Have{' '}
               <strong>

@@ -106,6 +106,7 @@ export interface TableModalsLayerProps {
   maxPlayers: number;
   players: (SeatPlayer | null)[];
   heroStack: number;
+  heroStackPending?: boolean;
   rakePercent: number | undefined;
   rakeCap: number | undefined;
   runItTwice: boolean | undefined;
@@ -546,6 +547,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     maxPlayers,
     players,
     heroStack,
+    heroStackPending = false,
     runItTwice,
     isHandInProgress,
     v8Settings,
@@ -1178,6 +1180,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         // is what threw the success flag away originally.
         onAddChips={onAddChips}
         currentStack={heroStack}
+        currentStackPending={heroStackPending}
         accountBalance={accountBalance}
         /* The in-table Retry for an unread balance (cashier launch B-1). The
            buy-in sheet already had it; without it here the top-up sheet sat on
@@ -1261,6 +1264,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       <LeaveTableConfirm
         isOpen={showLeaveConfirm}
         currentStack={heroStack}
+        currentStackPending={heroStackPending}
         tableName={tableName || 'this table'}
         isTournament={isTournament}
         lockedLabel={leaveLockedLabel}

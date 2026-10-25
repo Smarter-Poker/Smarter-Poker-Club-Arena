@@ -86,7 +86,7 @@ def main():
         r=command([PG/'pg_ctl','-D',data,'-l',Path(raw)/'postgres.log','-o',f'-k {sock} -p 55497 -c listen_addresses= -c fsync=off','-w','start'])
         if r.returncode: raise RuntimeError(r.stderr)
         try:
-            run("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions; CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid); CREATE TABLE hand_atomic_commits(hand_id uuid PRIMARY KEY,table_id uuid,post_commit_payload jsonb);")
+            run("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions; CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid); CREATE TABLE hand_atomic_commits(hand_id uuid PRIMARY KEY,table_id uuid,post_commit_payload jsonb); CREATE TABLE lightning_hand(hand_id uuid PRIMARY KEY,host_table_id uuid);")
             run((FIXTURE/'schema.sql').read_text())
             run((FIXTURE/'add.sql').read_text())
             run((FIXTURE/'projector-before.sql').read_text()+';')
@@ -135,6 +135,15 @@ def main():
             accept('midnight',midnight)
             run("SET TIME ZONE 'America/Chicago'; SELECT ca_project_hand_stats_facts('"+uid('midnight')+"');")
             check('UTC day survives a different database session timezone',counts()==[4,4,5])
+            lightning=payload('lightning')
+            for arm in ['nets','play']:lightning['horse_rollups'][arm][0]['format']='lightning_2bb'
+            run("INSERT INTO lightning_hand VALUES ('"+uid('lightning')+"','"+uid('table')+"');")
+            accept('lightning',lightning);project('lightning');project('lightning')
+            check('durable Lightning identity preserves its separate paired bucket',counts()==[5,5,6])
+            forged=payload('forged-lightning')
+            for arm in ['nets','play']:forged['horse_rollups'][arm][0]['format']='lightning_2bb'
+            accept('forged-lightning',forged)
+            check('ordinary hand cannot claim a Lightning bucket','paired_fact_scope' in project('forged-lightning',False))
             print(json.dumps(dict(passed=True,checks=checks,migration_sha256=hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),production_mutations=False),indent=2))
         finally:
             command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])

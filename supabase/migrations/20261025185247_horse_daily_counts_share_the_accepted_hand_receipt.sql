@@ -30,6 +30,7 @@ DECLARE
   v_conflict jsonb;
   v_rollups jsonb;
   v_rollup_count integer;
+  v_lightning boolean;
 BEGIN
   IF current_user NOT IN ('postgres','service_role') THEN
     RAISE EXCEPTION 'ca_project_hand_stats_facts is engine/service only' USING ERRCODE='42501';
@@ -173,6 +174,9 @@ BEGIN
   -- Optional on rolling engines; never reconstruct or replay the old buffers.
   v_rollups := v_stats->'horse_rollups';
   IF v_rollups IS NOT NULL THEN
+    -- Durable hand identity, never a table's mutable current game scope.
+    SELECT EXISTS(SELECT 1 FROM public.lightning_hand h
+      WHERE h.hand_id=p_hand_id AND h.host_table_id=v_table) INTO v_lightning;
     IF v_rollups->>'version' IS DISTINCT FROM '1'
        OR jsonb_typeof(v_rollups->'nets') IS DISTINCT FROM 'array'
        OR jsonb_typeof(v_rollups->'play') IS DISTINCT FROM 'array' THEN
@@ -193,7 +197,9 @@ BEGIN
         OR n->>'day' IS DISTINCT FROM p.p->>'day'
         OR (n->>'day')::date IS DISTINCT FROM (f.played_at AT TIME ZONE 'UTC')::date
         OR n->>'format' IS DISTINCT FROM p.p->>'format'
-        OR n->>'format' IS DISTINCT FROM CASE WHEN f.tournament_id IS NOT NULL THEN 'tournament'
+        OR n->>'format' IS DISTINCT FROM CASE WHEN v_lightning THEN
+             'lightning_' || round(f.big_blind,2)::double precision::text || 'bb'
+             WHEN f.tournament_id IS NOT NULL THEN 'tournament'
              WHEN f.players_dealt=2 THEN 'hu_cash' ELSE 'cash' END
         OR n->>'game_variant' IS DISTINCT FROM f.game_variant
         OR n->>'hands' IS DISTINCT FROM '1' OR p.p->>'hands' IS DISTINCT FROM '1'

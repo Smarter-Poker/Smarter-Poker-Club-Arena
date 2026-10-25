@@ -147,6 +147,7 @@ import {
 } from './LightningHorseObservation.js';
 import { recordLightningHorseResults } from './LightningHorseResults.js';
 import { buildLightningStatsFacts, type LightningFactsBuilder } from './LightningHandFacts.js';
+import { horseDailyRollupContract } from '../services/HorseDailyRollupContract.js';
 import { writeHandFacts } from '../services/supabase/handFacts.js';
 import { lightningVpipFloor } from './LightningHorseResults.js';
 import type { HorseReviewInput } from '../services/HorseHandReview.js';
@@ -2662,7 +2663,12 @@ export class LightningHandHost {
   }
 
   /** LightningHandFacts: the accepted-hand stats payload, keyed by this hand's id. */
-  private statsFactsFor(state: GameState, rake: number, handRow: Record<string, unknown>) {
+  private async statsFactsFor(
+    state: GameState,
+    rake: number,
+    bbj: number,
+    handRow: Record<string, unknown>
+  ) {
     const participants = [...this.participants.values()];
     return buildLightningStatsFacts(
       {
@@ -2673,6 +2679,11 @@ export class LightningHandHost {
         playedAtIso: String(handRow.ended_at ?? new Date(this.now()).toISOString()),
         buttonSeat: participants.find((p) => p.position === 'btn')?.seat ?? null,
         rake,
+        bbj,
+        dailyRollups:
+          process.env.HORSE_NET_ROLLUP_ENABLED !== 'false' &&
+          process.env.HORSE_PLAY_ROLLUP_ENABLED !== 'false' &&
+          (await horseDailyRollupContract()),
         board: this.boards[0] ?? [],
         holeCards: this.holeCards,
         players: state.players,
@@ -2692,7 +2703,9 @@ export class LightningHandHost {
     results: LightningSettleResult[],
     rake: number,
     bbj: number,
-    handHistoryId: string
+    handHistoryId: string,
+    rollupsInAcceptedFacts = false,
+    playedAtMs = this.now()
   ) {
     const participants = [...this.participants.values()];
     void recordLightningHorseResults(
@@ -2700,7 +2713,8 @@ export class LightningHandHost {
         handHistoryId,
         hostTableId: this.hostTableId,
         rules: this.rules ?? {},
-        playedAtMs: this.now(),
+        playedAtMs,
+        rollupsInAcceptedFacts,
         potSize: state.pot,
         board: this.boards[0],
         holeCards: this.holeCards,
@@ -2760,7 +2774,7 @@ export class LightningHandHost {
     // A LIGHTNING HAND IS A HAND IN THE STATS (2026-10-24): the physical
     // hand's private per-hand facts, built once so every retry sends the same
     // request. Without them the hand settles exactly as before.
-    const statsFacts = await this.statsFactsFor(state, rake, handRow);
+    const statsFacts = await this.statsFactsFor(state, rake, bbj, handRow);
     if (statsFacts) handRow._accepted_post_commit_facts = { stats_facts: statsFacts };
     for (let attempt = 1; attempt <= SETTLE_ATTEMPTS; attempt++) {
       const lease = this.deps.leaseFor(this.hostTableId);
@@ -2789,7 +2803,15 @@ export class LightningHandHost {
         this.observeForHorses(state, lease.generation, out.value.handHistoryId, results);
         // A LIGHTNING HAND IS ON THE HORSE SCOREBOARD (2026-10-24): the
         // physical path's recordHorseHandReviews, filed under lightning_<bb>bb.
-        this.recordForHorseScoreboard(state, results, rake, bbj, out.value.handHistoryId);
+        this.recordForHorseScoreboard(
+          state,
+          results,
+          rake,
+          bbj,
+          out.value.handHistoryId,
+          Boolean(statsFacts?.horse_rollups) && out.value.handHistoryId === this.handId,
+          Date.parse(String(handRow.ended_at))
+        );
         await this.drainPostCommit(out.value.handHistoryId);
         // This is the committed hand's receipt, including for a player freed
         // by an earlier fold. Gameplay frames still go only to watching rooms.

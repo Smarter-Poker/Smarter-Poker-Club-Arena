@@ -30,9 +30,16 @@ existing per-hand receipt and both daily aggregates in one transaction, only
 on that receipt's first insertion. Duplicate, concurrent or restarted
 projection cannot increment either denominator twice. Review publication
 continues, with the old count writer bypassed for this captured payload and
-seat touches preserved. Legacy/Lightning callers retain their existing path;
+seat touches preserved. Lightning now uses that same private capture, keyed by its durable hand identity
+and its separate stake bucket. Its legacy writer stands down only when the
+settlement retains that identity; an older settlement dropping the payload
+keeps the old writer. Legacy physical callers retain their existing path;
 forced-only dealt hands count in both legacy denominators too. Explicit
 rollup kill switches retain their old behavior.
+
+A service-only capability installed with the projector prevents rolling
+engines from handing counts to an older projector. Unknown or incompatible
+capability responses retain the existing writer and report that decision.
 
 The function-only migration pins the current projector preimage and preserves
 its facts, transfers, permissions and source-hash conflict checks. Native

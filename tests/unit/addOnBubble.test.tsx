@@ -141,3 +141,32 @@ describe('the wiring is the real one', () => {
     );
   });
 });
+
+describe('add-on notices retain their player and receipt across reconnects', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  it('removes a notice when another player takes the same chair', () => {
+    const evt = { type: 'add_on_applied', seat: 2, user_id: 'hero', amount: 20, timestamp: 123 };
+    const view = render(<Harness event={evt} />);
+    expect(screen.getByText('Has Added On For 20.00')).toBeTruthy();
+    view.rerender(<Harness event={evt} seats={['villain', 'replacement', null, 'third']} />);
+    expect(screen.queryByText('Has Added On For 20.00')).toBeNull();
+    view.rerender(<Harness event={evt} seats={SEATS} />);
+    expect(screen.queryByText('Has Added On For 20.00')).toBeNull();
+  });
+  it('does not reannounce the same receipt when a reconnect delivers a fresh object', () => {
+    const evt = { type: 'add_on_applied', seat: 2, user_id: 'hero', amount: 20, timestamp: 123 };
+    const view = render(<Harness event={evt} />);
+    act(() => {
+      vi.advanceTimersByTime(ADD_ON_BUBBLE_LIFETIME_MS);
+    });
+    expect(screen.queryByText('Has Added On For 20.00')).toBeNull();
+    view.rerender(<Harness event={{ ...evt }} />);
+    expect(screen.queryByText('Has Added On For 20.00')).toBeNull();
+  });
+  it('does not render non-finite money', () => {
+    expect(isAddOnAppliedEvent({ type: 'add_on_applied', user_id: 'hero', amount: Infinity })).toBe(
+      false
+    );
+  });
+});

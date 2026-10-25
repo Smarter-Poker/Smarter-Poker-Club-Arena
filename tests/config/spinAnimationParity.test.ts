@@ -97,8 +97,10 @@ describe('1. a Spin resolves its own theme, not the MTT default', () => {
 });
 
 describe('2. the sub-10bb warning runs wherever a stack is short', () => {
-  it('applies the stack depth class unconditionally', () => {
-    expect(seat).toMatch(/\$\{getStackDepthClass\(player\.stack, bigBlind\)\}/);
+  it('applies the stack depth class to every known balance', () => {
+    expect(seat).toMatch(
+      /\$\{player\.stackPending \? '' : getStackDepthClass\(player\.stack, bigBlind\)\}/
+    );
     expect(seat).not.toMatch(/showStackInBB \|\| !isTournament \? getStackDepthClass/);
   });
 

@@ -75,8 +75,22 @@ export const BATCH_BUDGET_FRACTION = 0.6;
  * idx_rake_attributions_rake_record_id in place: ~290 ms to settle one cash
  * source through fn_process_cash_accounting_source end to end. Re-measure this
  * when the accrual path changes; that is the whole point of naming it.
+ *
+ * RE-MEASURED 2026-10-25, AND IT HAD FALLEN BY HALF. Production 2026-10-24
+ * 18:00-23:20 UTC, receipts grouped by the call that wrote them (gaps under
+ * 0.35 s), first attempts only: 6,173 five-item calls spent p50 46 / p90 99 /
+ * p99 155 ms per item in the database; 295 ten-item calls p50 61 / p90 97 /
+ * p99 144; 32 fifteen-item calls p50 71 / p99 120. The PostgREST origin time
+ * of fn_credit_agent_commissions_batch over 7,266 calls was p50 410 ms, p99
+ * 2.78 s for five items. A rolled-back probe at 04:20 UTC on unaccrued
+ * sources ran 5 items in 307 ms, 10 in 272 ms and 20 in 595 ms (no deferral).
+ * So 290 ms per item - sized when an unindexed join made each item ~947 ms and
+ * then ~290 ms - kept the batch at 5 for a cost that is now the per-item p99
+ * of ~150 ms. The value below is that p99, rounded up, not the median: the
+ * commission-key budget it feeds must hold for the slow calls, not the
+ * typical one.
  */
-export const PER_ITEM_MS = 290;
+export const PER_ITEM_MS = 150;
 
 /** Never ship a batch of nothing, whatever arithmetic says. */
 export const MIN_BATCH = 1;
@@ -118,6 +132,12 @@ export const MAX_BATCH = 250;
  * of COMMISSION_KEY_HOLD_MS / PER_ITEM_MS items is 5 at 290 ms, and at 4,800
  * cash raked hands an hour (1.3 a second) the settler still clears more than
  * three items a second.
+ *
+ * 2026-10-25: the budget is unchanged; the measured cost is not. At the
+ * re-measured 150 ms per item (the p99) the same 1.5 s buys 10 items, whose
+ * key hold measured p50 ~0.55 s and p99 ~1.3 s on production - inside the
+ * hold a finish was promised. Inflow is now 13-15k cash hands an hour, three
+ * times the figure above, which is why the batch has to follow the cost.
  */
 export const COMMISSION_KEY_HOLD_MS = 1_500;
 

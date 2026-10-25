@@ -1505,6 +1505,12 @@ jobs:
         if: matrix.shard == 4
         timeout-minutes: 8
         run: python3 -B scripts/dr/build-native-export-client.py --scratch "${{ runner.temp }}" --pg-bin /usr/lib/postgresql/17/bin
+      - name: Digest counts original alerts rather than source updates
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-digest-original-alerts.py
       - name: Owner alerts preserve the actual finding through the real PostgreSQL trigger
         if: matrix.shard == 1
         env:

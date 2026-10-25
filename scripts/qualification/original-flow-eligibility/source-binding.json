@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 234485,
-      "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
+      "bytes": 234747,
+      "sha256": "dc5d170065f2760905fee670a83f3a117ca87858bb28c5e9524bc03063f64362"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -323,6 +323,23 @@
     "current": {
       "bytes": 234485,
       "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
+    }
+  },
+  "actionAudioDigestIntegration20261025": {
+    "reason": "Preserve concurrent digest accounting qualification and action audio/layout browser checks in the existing CI workflow. Source identity only; financial assertions and historical qualification states unchanged.",
+    "previous": {
+      "candidate": {
+        "bytes": 234485,
+        "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
+      },
+      "incoming": {
+        "bytes": 234654,
+        "sha256": "1d2bade3ab161c09cae558282205bb7f31291e78b262b89a88dd014de2d4353b"
+      }
+    },
+    "current": {
+      "bytes": 234747,
+      "sha256": "dc5d170065f2760905fee670a83f3a117ca87858bb28c5e9524bc03063f64362"
     }
   }
 }

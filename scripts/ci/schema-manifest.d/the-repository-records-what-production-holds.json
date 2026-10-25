@@ -1,0 +1,5 @@
+{
+  "_owner": "chore/the-repository-records-what-production-holds",
+  "_comment": "increment_club_table_count and decrement_club_table_count were dropped from production on 2026-09-20 by the migration recorded in this branch as three_watchers_whose_defects_were_fixed_stop_running. Confirmed absent from pg_proc against the live database before this tombstone was written. The nightly refresh absorbs this and goes red if either is still live.",
+  "removedFunctions": ["decrement_club_table_count", "increment_club_table_count"]
+}

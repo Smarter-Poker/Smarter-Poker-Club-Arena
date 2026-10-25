@@ -337,7 +337,12 @@ describe('purpose-only independently verified qualification issuer', () => {
     if (fault === 'population-json')
       control.population = JSON.parse(JSON.stringify(control.population));
     if (fault === 'requests-substituted') input.producerRequestsDigest = 'f'.repeat(64);
-    if (fault === 'losing-holdout') control.review!.measurement!.lowerGainBb = -0.1;
+    if (fault === 'losing-holdout') {
+      const measurement = control.review!.measurement;
+      if (!measurement || !('lowerGainBb' in measurement))
+        throw Error('expected genuine cash measurement fixture');
+      measurement.lowerGainBb = -0.1;
+    }
     if (fault === 'rollback-json') control.rollback = JSON.parse(JSON.stringify(control.rollback));
     if (fault === 'source-changed') control.changeSource = true;
     if (fault === 'extra-gate')
@@ -372,4 +377,194 @@ describe('purpose-only independently verified qualification issuer', () => {
       ).toMatchObject({ status: 'unavailable', reason: 'issuer_request_invalid' });
     expect(key.reads()).toBe(0);
   });
+});
+
+import {
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  TOURNAMENT_KERNEL_UTILITY_UNIT,
+  TOURNAMENT_RIVER_CORRECTION_KERNEL,
+  TOURNAMENT_RIVER_DECISION_MODEL,
+} from './kernelTournamentDefinition.js';
+import {
+  verifyFunctionalKernelApproval,
+  validateFunctionalKernelCatalog,
+} from './kernelObjective.js';
+function tournamentFixture() {
+  const { maximumAbsoluteDeltaBb: _cashBound, ...cash } = control.predeclaration!
+    .plan as unknown as { maximumAbsoluteDeltaBb: number } & Record<string, unknown>;
+  const plan = {
+    ...cash,
+    objective: TOURNAMENT_KERNEL_OBJECTIVE,
+    utilityUnit: TOURNAMENT_KERNEL_UTILITY_UNIT,
+    domain: { variant: 'nlh', format: 'spin', mode: 'tournament' },
+    producerDigest: correctiveKernelProducerDigest(
+      control.source,
+      control.policy,
+      TOURNAMENT_KERNEL_OBJECTIVE
+    ),
+    maximumAbsoluteDelta: 0.05,
+    modelVersion: TOURNAMENT_RIVER_DECISION_MODEL.version,
+    policyVersion: TOURNAMENT_RIVER_CORRECTION_KERNEL.version,
+  };
+  control.predeclaration!.plan = plan as never;
+  control.population!.planDigest = evidenceDigest(plan);
+  for (const request of control.population!.requests)
+    (request.input as unknown as Record<string, unknown>).domain = plan.domain;
+  control.population!.requestsDigest = correctiveKernelRequestsDigest(control.population!.requests);
+  control.review!.measurement = {
+    objective: TOURNAMENT_KERNEL_OBJECTIVE,
+    utilityUnit: TOURNAMENT_KERNEL_UTILITY_UNIT,
+    modelVersion: TOURNAMENT_RIVER_DECISION_MODEL.version,
+    policyVersion: TOURNAMENT_RIVER_CORRECTION_KERNEL.version,
+    status: 'measured',
+    reasons: [],
+    samples: 128,
+    changed: 128,
+    meanGain: 0.03,
+    lowerGain: 0.03 - 0.05 * Math.sqrt((2 * Math.log(45 / 0.05)) / 128),
+    measurementDigest: '6'.repeat(64),
+    qualified: false,
+    activationAllowed: false,
+  } as never;
+}
+describe('single issuer strict tournament branch', () => {
+  it('preserves every owner gate then signs v2 neutral prize-share measurement and roundtrips its production consumer', async () => {
+    tournamentFixture();
+    const key = keyEnvironment(),
+      result = await createCorrectiveKernelIssuer(key.environment)(request());
+    expect(result.status).toBe('issued_qualification');
+    expect(key.reads()).toBe(1);
+    expect(control.rollbackCalls).toBe(1);
+    expect(control.controlCalls).toBe(2);
+    expect(control.generationCalls).toBe(2);
+    if (result.status !== 'issued_qualification') throw Error(result.reason);
+    expect(result.qualification.schema).toBe('horse-phase14-kernel-qualification-v2');
+    expect(result.qualification.approval.approval).toMatchObject({
+      version: 2,
+      objective: TOURNAMENT_KERNEL_OBJECTIVE,
+      utilityUnit: 'prize_share',
+      baselineSelectionsDigest: control.baseline,
+      approvalGeneration: 8,
+      measurement: { maximumAbsoluteDelta: 0.05 },
+    });
+    expect(result.qualification.approval.approval.measurement).not.toHaveProperty('meanGainBb');
+    const verified = verifyFunctionalKernelApproval(
+      result.qualification.approval,
+      control.pin!,
+      Date.now()
+    );
+    expect(verified).not.toBeNull();
+    expect(
+      validateFunctionalKernelCatalog(result.qualification.catalog, verified, {
+        policyDigest: control.policy,
+        baselineSelectionsDigest: control.baseline,
+        nowMs: Date.now(),
+      }).status
+    ).toBe('validated');
+    expect(result.activationAllowed).toBe(false);
+  });
+  it.each(['mixed-measurement', 'cash-producer', 'negative-holdout', 'wrong-model'] as const)(
+    'refuses tournament %s before purpose key access',
+    async (fault) => {
+      tournamentFixture();
+      const key = keyEnvironment();
+      if (fault === 'mixed-measurement')
+        (control.review!.measurement as unknown as Record<string, unknown>).meanGainBb = 1;
+      if (fault === 'cash-producer')
+        (control.predeclaration!.plan as unknown as Record<string, unknown>).producerDigest =
+          correctiveKernelProducerDigest(control.source, control.policy);
+      if (fault === 'negative-holdout')
+        (control.review!.measurement as unknown as Record<string, unknown>).lowerGain = -0.01;
+      if (fault === 'wrong-model')
+        (control.review!.measurement as unknown as Record<string, unknown>).modelVersion =
+          RIVER_DECISION_MODEL.version;
+      expect(await createCorrectiveKernelIssuer(key.environment)(request())).toMatchObject({
+        status: 'unavailable',
+        qualified: false,
+        activationAllowed: false,
+      });
+      expect(key.reads()).toBe(0);
+    }
+  );
+});
+
+import {
+  CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+  CLOSED_HU_TOURNAMENT_RIVER_DECISION_MODEL,
+  CLOSED_HU_TOURNAMENT_RIVER_CORRECTION_KERNEL,
+} from './kernelTournamentDefinition.js';
+function closedLadderFixture() {
+  tournamentFixture();
+  const plan = control.predeclaration!.plan;
+  Object.assign(plan, {
+    objective: CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+    domain: { variant: 'nlh', format: 'mtt', mode: 'tournament' },
+    modelVersion: CLOSED_HU_TOURNAMENT_RIVER_DECISION_MODEL.version,
+    policyVersion: CLOSED_HU_TOURNAMENT_RIVER_CORRECTION_KERNEL.version,
+    producerDigest: correctiveKernelProducerDigest(
+      control.source,
+      control.policy,
+      CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE
+    ),
+  });
+  control.population!.planDigest = evidenceDigest(plan);
+  for (const request of control.population!.requests)
+    (request.input as unknown as Record<string, unknown>).domain = plan.domain;
+  control.population!.requestsDigest = correctiveKernelRequestsDigest(control.population!.requests);
+  Object.assign(control.review!.measurement!, {
+    objective: CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+    modelVersion: CLOSED_HU_TOURNAMENT_RIVER_DECISION_MODEL.version,
+    policyVersion: CLOSED_HU_TOURNAMENT_RIVER_CORRECTION_KERNEL.version,
+  });
+}
+it('issues the registered closed-HU ladder protocol through the same independently gated issuer', async () => {
+  closedLadderFixture();
+  const key = keyEnvironment(),
+    result = await createCorrectiveKernelIssuer(key.environment)(request());
+  expect(result.status).toBe('issued_qualification');
+  expect(key.reads()).toBe(1);
+  if (result.status !== 'issued_qualification') throw Error(result.reason);
+  expect(result.qualification.approval.approval).toMatchObject({
+    objective: CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+    domain: { variant: 'nlh', format: 'mtt', mode: 'tournament' },
+    modelVersion: CLOSED_HU_TOURNAMENT_RIVER_DECISION_MODEL.version,
+    kernelVersion: CLOSED_HU_TOURNAMENT_RIVER_CORRECTION_KERNEL.version,
+  });
+  const checked = verifyFunctionalKernelApproval(
+    result.qualification.approval,
+    control.pin!,
+    Date.now()
+  );
+  expect(checked).not.toBeNull();
+  expect(
+    validateFunctionalKernelCatalog(result.qualification.catalog, checked, {
+      policyDigest: control.policy,
+      baselineSelectionsDigest: control.baseline,
+      nowMs: Date.now(),
+    }).status
+  ).toBe('validated');
+  expect(control.rollbackCalls).toBe(1);
+  expect(control.controlCalls).toBe(2);
+  expect(control.generationCalls).toBe(2);
+  expect(
+    correctiveKernelProducerDigest(
+      control.source,
+      control.policy,
+      CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE
+    )
+  ).not.toBe(
+    correctiveKernelProducerDigest(control.source, control.policy, TOURNAMENT_KERNEL_OBJECTIVE)
+  );
+});
+it('refuses a closed-family plan paired with a WTA model measurement before key access', async () => {
+  closedLadderFixture();
+  Object.assign(control.review!.measurement!, {
+    modelVersion: TOURNAMENT_RIVER_DECISION_MODEL.version,
+  });
+  const key = keyEnvironment();
+  expect(await createCorrectiveKernelIssuer(key.environment)(request())).toMatchObject({
+    status: 'unavailable',
+    qualified: false,
+  });
+  expect(key.reads()).toBe(0);
 });

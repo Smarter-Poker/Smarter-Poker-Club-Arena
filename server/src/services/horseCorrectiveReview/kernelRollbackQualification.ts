@@ -18,6 +18,7 @@ export const CORRECTIVE_ROLLBACK_FILES = Object.freeze([
   'src/engine/HorsePhase14Acceptance.test.ts',
   'src/engine/horseDecision/phase14Controller.test.ts',
   'src/engine/horseDecision/phase14Replay.test.ts',
+  'src/engine/horseDecision/phase14Tournament.test.ts',
 ]);
 const REQUIRED: readonly (readonly [string, string])[] = Object.freeze([
   [
@@ -72,6 +73,26 @@ const REQUIRED: readonly (readonly [string, string])[] = Object.freeze([
   [
     CORRECTIVE_ROLLBACK_FILES[4]!,
     'exactly replays the bound accepted DEEP decision with original FAST selected=true',
+  ],
+  [
+    CORRECTIVE_ROLLBACK_FILES[5]!,
+    'executes actual FAST/DEEP v2 with retained FAST hashes and selected Phase8 baseline receipt',
+  ],
+  [
+    CORRECTIVE_ROLLBACK_FILES[5]!,
+    'withdrawal of selected phase8: prevents DEEP correction using the earlier original',
+  ],
+  [
+    CORRECTIVE_ROLLBACK_FILES[5]!,
+    'withdrawal of selected phase14:nlh-spin prevents DEEP correction using the earlier original',
+  ],
+  [
+    CORRECTIVE_ROLLBACK_FILES[5]!,
+    'feeds actual accepted DEEP v2 callback bytes through SQLite fleet without claiming unobserved horses',
+  ],
+  [
+    CORRECTIVE_ROLLBACK_FILES[5]!,
+    'keeps missing original tournament capture unknown and only known nonriver geometry outside',
   ],
 ]);
 export interface CorrectiveRollbackBinding {

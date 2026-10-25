@@ -14,6 +14,15 @@ import { resolveKernelOriginalInput } from './kernelOriginalInput.js';
 import { evidenceDigest } from './authority.js';
 import type { RiverReferenceInput } from './riverReference.js';
 import { produceRiverCallFoldReference } from './riverReference.js';
+import { isTournamentKernelReferenceInput } from './kernelModel.js';
+import { priceClosedHeadsUpTournamentRiver } from './tournamentRiverReference.js';
+import { priceClosedHeadsUpTournamentLadderRiver } from './closedHeadsUpTournamentRiverReference.js';
+import {
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  type TournamentKernelObjective,
+} from './kernelTournamentDefinition.js';
+import { independentlyPriceAcceptedTournamentRiver } from './tournamentAcceptedUtility.js';
+import { tournamentOriginalFundingMatchesAccepted } from './tournamentAcceptedFunding.js';
 import {
   settleJointBoardReference,
   type JointReferenceVariant,
@@ -43,7 +52,24 @@ export type RiverAcceptedOracleResult = OracleFlags &
         readonly status: 'accepted_source_oracle';
         readonly playedAt: string;
         readonly committedAt: string;
-        readonly oracle: Readonly<{ foldBb: 0; callBb: number }>;
+        readonly oracle: Readonly<
+          | {
+              foldBb: 0;
+              callBb: number;
+              fold?: never;
+              call?: never;
+              objective?: never;
+              utilityUnit?: never;
+            }
+          | {
+              objective: TournamentKernelObjective;
+              utilityUnit: 'prize_share';
+              fold: number;
+              call: number;
+              foldBb?: never;
+              callBb?: never;
+            }
+        >;
         readonly custodyDigest: string;
         readonly oracleDigest: string;
       }
@@ -139,7 +165,10 @@ function acceptedHoldings(
       fact.seat !== actor.seat ||
       fact.game_variant !== input.domain.variant ||
       fact.big_blind !== input.bigBlind ||
-      fact.tournament_id !== null ||
+      fact.tournament_id !==
+        (isTournamentKernelReferenceInput(input)
+          ? input.original.snapshot.gameState.tournament?.tournamentId
+          : null) ||
       typeof fact.played_at !== 'string' ||
       Date.parse(fact.played_at) !== ended ||
       typeof fact.invested !== 'number' ||
@@ -280,8 +309,23 @@ export function createRiverAcceptedOracleReader(
         horseJournalJson(resolved.original.readFrame) !== horseJournalJson(input.original.readFrame)
       )
         return no('oracle_binding_refused');
-      if (produceRiverCallFoldReference(input).status !== 'produced')
-        return no('oracle_binding_refused');
+      const referenceValid = isTournamentKernelReferenceInput(input)
+        ? (input.objective === TOURNAMENT_KERNEL_OBJECTIVE
+            ? priceClosedHeadsUpTournamentRiver({
+                version: 'horse-wta-spin-river-reference-v1',
+                original: input.original,
+                range: input.range,
+                rangeReadFrameDigest: input.rangeReadFrameDigest,
+              })
+            : priceClosedHeadsUpTournamentLadderRiver({
+                version: 'horse-closed-hu-ladder-river-reference-v1',
+                original: input.original,
+                range: input.range,
+                rangeReadFrameDigest: input.rangeReadFrameDigest,
+              })
+          ).status === 'priced'
+        : produceRiverCallFoldReference(input).status === 'produced';
+      if (!referenceValid) return no('oracle_binding_refused');
     } catch {
       return no('oracle_binding_refused');
     }
@@ -335,7 +379,16 @@ export function createRiverAcceptedOracleReader(
       if (
         custody.status !== 'reconstructed_unsigned' ||
         raw.game_variant !== input.domain.variant ||
-        raw.tournament_id !== null
+        raw.tournament_id !==
+          (isTournamentKernelReferenceInput(input) ? gs.tournament?.tournamentId : null)
+      )
+        return no('oracle_binding_refused');
+      if (
+        isTournamentKernelReferenceInput(input) &&
+        !tournamentOriginalFundingMatchesAccepted(
+          input.original.snapshot,
+          JSON.parse(String(raw.stack_result_text))
+        )
       )
         return no('oracle_binding_refused');
       if (
@@ -389,16 +442,29 @@ export function createRiverAcceptedOracleReader(
         return no('oracle_holdings_unavailable');
       if (heroCards && horseJournalJson(heroCards) !== horseJournalJson(input.hero))
         return no('oracle_binding_refused');
-      let callBb: number | null;
-      try {
-        callBb = independentCall(input, opponentCards);
-      } catch {
-        return no('oracle_numerics_unavailable');
+      let oracle: Extract<
+        RiverAcceptedOracleResult,
+        { status: 'accepted_source_oracle' }
+      >['oracle'];
+      if (isTournamentKernelReferenceInput(input)) {
+        const priced = independentlyPriceAcceptedTournamentRiver({
+          original: input.original,
+          opponentCards,
+        });
+        if (priced.status !== 'priced') return no('oracle_numerics_unavailable');
+        oracle = Object.freeze({
+          objective: priced.objective,
+          utilityUnit: priced.utilityUnit,
+          fold: priced.fold.expectedPrizeShare,
+          call: priced.call.expectedPrizeShare,
+        });
+      } else {
+        const callBb = independentCall(input, opponentCards);
+        if (callBb === null) return no('oracle_numerics_unavailable');
+        oracle = Object.freeze({ foldBb: 0 as const, callBb });
       }
-      if (callBb === null) return no('oracle_numerics_unavailable');
       await client.query('COMMIT');
       begun = false;
-      const oracle = Object.freeze({ foldBb: 0 as const, callBb });
       return Object.freeze({
         ...flags,
         status: 'accepted_source_oracle',
@@ -407,7 +473,9 @@ export function createRiverAcceptedOracleReader(
         oracle,
         custodyDigest: custody.custodyDigest,
         oracleDigest: evidenceDigest({
-          version: 'horse-river-accepted-oracle-v2',
+          version: isTournamentKernelReferenceInput(input)
+            ? 'horse-tournament-prize-share-accepted-oracle-v1'
+            : 'horse-river-accepted-oracle-v2',
           binding,
           custodyDigest: custody.custodyDigest,
           playedAt,

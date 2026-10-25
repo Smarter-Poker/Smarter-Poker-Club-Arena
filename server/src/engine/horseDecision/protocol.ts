@@ -158,10 +158,19 @@ export function validatedHorsePolicySamplingKey(
   // Legacy v41Leaks now controls diagnostic telemetry only.
   const opts = project(input.opts, ['v41Leaks']);
   const tournament = input.gameState.tournament;
+  const captureKeys = [
+    'contextProvenance',
+    'payoutTermsVersion',
+    'prizePoolFinalized',
+    'bubbleProtection',
+    'prizeUnitCents',
+    'finalizedPrizeLadder',
+  ];
   const gameState =
-    tournament?.contextProvenance === undefined
+    !tournament ||
+    !captureKeys.some((key) => (tournament as Record<string, unknown>)[key] !== undefined)
       ? input.gameState
-      : { ...input.gameState, tournament: project(tournament, ['contextProvenance']) };
+      : { ...input.gameState, tournament: project(tournament, captureKeys) };
   return mods === input.mods &&
     opts === input.opts &&
     gameState === input.gameState &&

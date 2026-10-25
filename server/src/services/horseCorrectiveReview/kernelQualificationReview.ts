@@ -28,7 +28,23 @@ import {
   type RiverModelHoldoutCase,
   type RiverModelHoldoutResult,
 } from './riverModelHoldout.js';
-import { buildOriginalRiverDecision } from './riverDecisionModel.js';
+import {
+  buildFunctionalRiverDecision as buildOriginalRiverDecision,
+  isTournamentKernelReferenceInput,
+} from './kernelModel.js';
+import {
+  evaluateTournamentDecisionModelHoldout,
+  type TournamentModelHoldoutPlan,
+  type TournamentModelHoldoutCase,
+  type TournamentModelHoldoutResult,
+} from './tournamentModelHoldout.js';
+import { reviewTournamentModelNumerics } from './tournamentIndependentReview.js';
+import {
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  TOURNAMENT_KERNEL_UTILITY_UNIT,
+  tournamentKernelObjectiveIsKnown,
+  tournamentKernelDefinitionFor,
+} from './kernelTournamentDefinition.js';
 
 /** Resolve executing checkout independently of the operator plan. A deployed
  * image without this retained Git/source verification is unavailable here;
@@ -76,7 +92,7 @@ export interface CorrectiveKernelEvidenceReview {
   sourceCustodyDigest: string | null;
   numericReviewDigest: string | null;
   predeclarationDigest: string | null;
-  measurement: RiverModelHoldoutResult | null;
+  measurement: RiverModelHoldoutResult | TournamentModelHoldoutResult | null;
   requiredBeforeIssuance: readonly string[];
   qualified: false;
   completePopulation: false;
@@ -94,7 +110,7 @@ export function createCorrectiveKernelEvidenceReviewer(
   environment: Readonly<Record<string, string | undefined>>,
   dependencies?: ReviewDependencies
 ): (
-  plan: RiverModelHoldoutPlan,
+  plan: RiverModelHoldoutPlan | TournamentModelHoldoutPlan,
   requests: readonly RiverAcceptedOracleRequest[],
   predeclaration?: Readonly<CorrectivePredeclaration>
 ) => Promise<CorrectiveKernelEvidenceReview> {
@@ -144,7 +160,7 @@ export function createCorrectiveKernelEvidenceReviewer(
     // Detach all asynchronous inputs once. This is bounded per record and per
     // case; serializing a whole population under the journal limit is forbidden.
     let inputs: RiverAcceptedOracleRequest[];
-    let lockedPlan: RiverModelHoldoutPlan;
+    let lockedPlan: RiverModelHoldoutPlan | TournamentModelHoldoutPlan;
     try {
       lockedPlan = JSON.parse(horseJournalJson(plan));
       if (predeclaration !== undefined) {
@@ -195,7 +211,10 @@ export function createCorrectiveKernelEvidenceReviewer(
     const source = createHash('sha256')
       .update(CORRECTIVE_KERNEL_REVIEW_VERSION + '\0')
       .update(predeclarationDigest ?? 'unverified_predeclaration');
-    const rows: RiverModelHoldoutCase[] = [];
+    const rows: RiverModelHoldoutCase[] = [],
+      tournamentRows: TournamentModelHoldoutCase[] = [];
+    const tournament =
+      'objective' in lockedPlan && tournamentKernelObjectiveIsKnown(lockedPlan.objective);
     try {
       for (const request of inputs) {
         const binding = request.input.binding;
@@ -260,6 +279,8 @@ export function createCorrectiveKernelEvidenceReviewer(
           ...model.input,
           finalRake: model.prices.finalRake,
         };
+        if (tournament !== isTournamentKernelReferenceInput(input))
+          return finish('review_objective_mismatch');
         const oracle = await readOracle({ ...request, input });
         if (
           oracle.status !== 'accepted_source_oracle' ||
@@ -290,17 +311,43 @@ export function createCorrectiveKernelEvidenceReviewer(
           !['fold', 'check', 'call', 'bet', 'raise', 'all_in'].includes(baselineDecision.action)
         )
           return finish('review_baseline_outside_family');
-        rows.push({
-          handKey: request.handKey,
-          playedAt,
-          input,
-          baselineDecision,
-          baseline: {
-            action: baselineDecision.action as CorrectiveAction['action'],
-            amount: baselineDecision.action === 'fold' ? 0 : (baselineDecision.amount ?? 0),
-          },
-          oracle: oracle.oracle,
-        });
+        if (tournament) {
+          if (
+            !('objective' in lockedPlan) ||
+            oracle.oracle.objective !== lockedPlan.objective ||
+            oracle.oracle.utilityUnit !== TOURNAMENT_KERNEL_UTILITY_UNIT ||
+            typeof oracle.oracle.fold !== 'number' ||
+            typeof oracle.oracle.call !== 'number'
+          )
+            return finish('review_oracle_objective_mismatch');
+          tournamentRows.push({
+            handKey: request.handKey,
+            playedAt,
+            sourceRelease: input.binding.sourceRelease,
+            producerDigest: input.producerDigest,
+            qualificationId: input.qualificationId,
+            evidenceClass: input.evidenceClass,
+            decisionDigest: input.binding.decisionDigest,
+            acceptedHandDigest: input.binding.acceptedHandDigest,
+            original: input.original,
+            baselineDecision,
+            oracle: { fold: oracle.oracle.fold, call: oracle.oracle.call },
+          });
+        } else {
+          if (oracle.oracle.foldBb !== 0 || typeof oracle.oracle.callBb !== 'number')
+            return finish('review_oracle_objective_mismatch');
+          rows.push({
+            handKey: request.handKey,
+            playedAt,
+            input,
+            baselineDecision,
+            baseline: {
+              action: baselineDecision.action as CorrectiveAction['action'],
+              amount: baselineDecision.action === 'fold' ? 0 : (baselineDecision.amount ?? 0),
+            },
+            oracle: { foldBb: 0, callBb: oracle.oracle.callBb },
+          });
+        }
         source.update('\n').update(
           evidenceDigest({
             handKey: request.handKey,
@@ -318,14 +365,42 @@ export function createCorrectiveKernelEvidenceReviewer(
         );
         checkedCases++;
       }
-      const numeric = reviewCorrectiveKernelNumerics(rows.map((row) => row.input));
+      const numeric = tournament
+        ? (() => {
+            const hash = createHash('sha256').update('horse-wta-spin-numerical-batch-v1\0');
+            let checkedCases = 0;
+            for (const row of tournamentRows) {
+              const value = reviewTournamentModelNumerics(row.original);
+              if (value.status !== 'reviewed')
+                return { status: 'unavailable', checkedCases, reviewDigest: null };
+              hash.update('\n').update(
+                evidenceDigest({
+                  decision: row.decisionDigest,
+                  accepted: row.acceptedHandDigest,
+                  value,
+                })
+              );
+              checkedCases++;
+            }
+            return {
+              status: 'numerically_consistent',
+              checkedCases,
+              reviewDigest: hash.digest('hex'),
+            };
+          })()
+        : reviewCorrectiveKernelNumerics(rows.map((row) => row.input));
       if (
         numeric.status !== 'numerically_consistent' ||
         numeric.checkedCases !== inputs.length ||
         !numeric.reviewDigest
       )
         return finish('review_independent_numerics_refused');
-      const measurement = evaluateRiverDecisionModelHoldout(lockedPlan, rows);
+      const measurement = tournament
+        ? evaluateTournamentDecisionModelHoldout(
+            lockedPlan as TournamentModelHoldoutPlan,
+            tournamentRows
+          )
+        : evaluateRiverDecisionModelHoldout(lockedPlan as RiverModelHoldoutPlan, rows);
       if (
         measurement.status !== 'measured' ||
         measurement.samples !== inputs.length ||

@@ -36,6 +36,12 @@ import {
 } from '../../engine/horseDecision/replay/qualifiedAuthority.js';
 import { correctiveKernelReceiptIsValid } from '../horseCorrectiveReview/kernelReceipt.js';
 import { correctiveRiverSnapshotRefusal } from '../horseCorrectiveReview/kernelEligibility.js';
+import { classifyTournamentRiverSnapshot } from '../horseCorrectiveReview/kernelTournamentEligibility.js';
+import {
+  isValidatedFunctionalKernelCatalog,
+  functionalKernelSnapshotRefusal,
+  functionalKernelCatalogDigest,
+} from '../horseCorrectiveReview/kernelObjective.js';
 import { horseJournalJson, journalHash } from './record.js';
 import type { HorsePlanEffectsReview } from './review.js';
 
@@ -365,6 +371,12 @@ export class HorseFleetPhaseInterpreter {
     }
 
     const variant = gs.gameVariant;
+    // Tournament metadata has three outcomes: a genuine missing capture must
+    // not be silently counted as a known outside-family hand. DEEP uses its
+    // uniquely reconciled retained FAST information set, never a later state.
+    const tournamentCorrectiveFamily = tournament
+      ? classifyTournamentRiverSnapshot(originalFast?.snapshot ?? c.snapshot)
+      : null;
     const policies = [
       [
         'phase8',
@@ -399,10 +411,16 @@ export class HorseFleetPhaseInterpreter {
         null,
         d.correctivePolicy?.domain ?? '',
         // This owner reads only player/gameState, shared by both request lanes.
-        correctiveRiverSnapshotRefusal(c.snapshot as FastHorseDecisionRequest) === null,
+        tournamentCorrectiveFamily
+          ? tournamentCorrectiveFamily.status === 'eligible'
+          : correctiveRiverSnapshotRefusal(c.snapshot as FastHorseDecisionRequest) === null,
       ],
     ] as const;
     for (const [owner, receipt, binding, option, pack, domain] of policies) {
+      if (owner === 'phase14' && tournamentCorrectiveFamily?.status === 'gap') {
+        out[owner] = unknown('corrective_original_metadata_unavailable', true);
+        continue;
+      }
       if (!domain) {
         out[owner] = outside();
         continue;
@@ -478,7 +496,9 @@ export class HorseFleetPhaseInterpreter {
             'samplingContractDigest',
           ].every((key) => (input as any)[key] === r[key]) ||
           c.replayState?.corrective?.domain !== r.domain ||
-          c.replayState?.corrective?.catalogDigest !== r.catalogDigest
+          c.replayState?.corrective?.catalogDigest !== r.catalogDigest ||
+          (r.version === 'horse-corrective-live-kernel-v2' &&
+            r.tournamentContextDigest !== digest(original.snapshot.gameState.tournament))
         ) {
           out[owner] = refused('corrective_original_input_mismatch');
           continue;
@@ -496,6 +516,23 @@ export class HorseFleetPhaseInterpreter {
         )
           throw Error();
         const restore = qualifiedReplayAuthorityHolders(d, variant, this.replayAdmissions);
+        const correctiveAttachment =
+          owner === 'phase14' ? this.replayAdmissions.admitPhase14Attachment(pack ?? '') : null;
+        if (
+          owner === 'phase14' &&
+          (!correctiveAttachment ||
+            !isValidatedFunctionalKernelCatalog(correctiveAttachment.catalog) ||
+            !originalFast ||
+            functionalKernelSnapshotRefusal(
+              originalFast.snapshot as FastHorseDecisionRequest,
+              correctiveAttachment.catalog
+            ) !== null ||
+            functionalKernelCatalogDigest(correctiveAttachment.catalog) !== r.catalogDigest ||
+            ('objective' in correctiveAttachment.catalog &&
+              (correctiveAttachment.catalog.objective !== r.objective ||
+                correctiveAttachment.catalog.utilityUnit !== r.utilityUnit)))
+        )
+          throw Error();
         const admission: HorseAuthorityAdmission =
           owner === 'phase8'
             ? this.replayAdmissions.admitPhase8Authority()
@@ -507,7 +544,7 @@ export class HorseFleetPhaseInterpreter {
                   ? this.replayAdmissions.admitPhase12Authority(variant as any)
                   : owner === 'phase13'
                     ? this.replayAdmissions.admitPhase13Authority(variant as any)
-                    : this.replayAdmissions.admitPhase14Attachment(pack ?? '').admission;
+                    : correctiveAttachment!.admission;
         const holder = HorseQualifiedAuthorityHolder.fromReplayReceipt(
           receiptAuthority,
           admission,
@@ -520,7 +557,7 @@ export class HorseFleetPhaseInterpreter {
             const authority = value as any;
             const h = restore(
               baseline as any,
-              baseline === 'phase10' ? null : variant,
+              baseline === 'phase8' || baseline === 'phase10' ? null : variant,
               authority.continuationVersion,
               authority.epoch
             );

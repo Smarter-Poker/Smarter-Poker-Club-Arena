@@ -25,13 +25,16 @@ import {
   admitCorrectiveKernelAttachment,
   type CorrectiveKernelAttachmentAdmission,
 } from '../services/horseCorrectiveReview/kernelAdmission.js';
+import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../services/horseCorrectiveReview/kernelCatalog.js';
 import {
-  CORRECTIVE_KERNEL_CATALOG_VERSION,
-  isValidatedCorrectiveKernelCatalog,
-  type CorrectiveKernelCatalog,
-} from '../services/horseCorrectiveReview/kernelCatalog.js';
+  functionalKernelCatalogVersionIsKnown,
+  isValidatedFunctionalKernelCatalog as isValidatedCorrectiveKernelCatalog,
+  type CorrectiveFunctionalKernelCatalog as CorrectiveKernelCatalog,
+} from '../services/horseCorrectiveReview/kernelObjective.js';
 import {
   canonical,
+  PHASE8_PROTECTED_RELEASE_SELECTION,
+  liveHorsePhase8Authority,
   HorsePhase8AuthorityGate,
   isoMs,
   repositoryEvidenceReader,
@@ -46,6 +49,7 @@ import {
 import { CORRECTIVE_CATALOG_VERSION } from '../services/horseCorrectiveReview/candidateCatalog.js';
 import {
   CORRECTIVE_DOMAIN_KEYS,
+  CORRECTIVE_DOMAINS,
   correctiveDomainKey,
 } from '../services/horseCorrectiveReview/domain.js';
 
@@ -176,7 +180,7 @@ export function admitHorsePhase14QualifiedAuthority(
     transient,
   });
   if (selection === null) return refuse('unselected');
-  if (selection.catalogVersion === CORRECTIVE_KERNEL_CATALOG_VERSION)
+  if (functionalKernelCatalogVersionIsKnown(selection.catalogVersion))
     return admitCorrectiveKernelAttachment(domain, selection, reader, nowMs).admission;
   if (!isHorsePhase14Domain(domain) || !selectionIsWellFormed(selection))
     return refuse('invalid_selection');
@@ -288,9 +292,8 @@ export function selectedHorsePhase14Authority(
     admission.authority.phase === 'phase14' &&
     isHorsePhase14Domain(domain) &&
     admission.authority.domain === domain &&
-    [HORSE_PHASE14_CATALOG_VERSION, CORRECTIVE_KERNEL_CATALOG_VERSION].includes(
-      admission.authority.packId ?? ''
-    ) &&
+    (admission.authority.packId === HORSE_PHASE14_CATALOG_VERSION ||
+      functionalKernelCatalogVersionIsKnown(admission.authority.packId)) &&
     admission.authority.continuationVersion ===
       horsePhase14ContinuationVersion(domain, admission.authority.packId)
     ? admission.authority
@@ -343,6 +346,14 @@ export function horsePhase14CorrectiveMode(input: {
   };
 }
 
+/** Running continuation derives solely from the protected domain selection. */
+export function horsePhase14RunningCatalogVersion(domain: string): string {
+  const selected = PHASE14_PROTECTED_RELEASE_SELECTIONS[domain]?.catalogVersion;
+  return functionalKernelCatalogVersionIsKnown(selected)
+    ? selected
+    : CORRECTIVE_KERNEL_CATALOG_VERSION;
+}
+
 /**
  * Main-thread Phase 14 gates: Phase 8's gate class, one per corrective domain,
  * each with that domain's admission and running continuation, so a withdrawal,
@@ -356,7 +367,7 @@ export const liveHorsePhase14Authorities: Readonly<Record<string, HorsePhase8Aut
         new HorsePhase8AuthorityGate(
           () => admitHorsePhase14ReleaseAuthority(domain),
           undefined,
-          horsePhase14ContinuationVersion(domain, CORRECTIVE_KERNEL_CATALOG_VERSION)
+          horsePhase14ContinuationVersion(domain, horsePhase14RunningCatalogVersion(domain))
         ),
       ])
     )
@@ -370,17 +381,21 @@ export function horsePhase14AuthorityVerdict(receipt: {
   baselineSelectionsDigest: string;
   authority?: HorseAuthorityReceipt;
   baselineAuthorities?: Partial<
-    Record<'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
+    Record<'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
   >;
 }): HorseAuthorityVerdict {
   const gate = liveHorsePhase14Authorities[receipt.domain],
     checked = gate?.check(receipt.authority) ?? 'mismatched',
     authority = gate?.mainAuthority();
   if (checked === 'usable') {
-    const variant = receipt.domain.slice(0, -5),
+    const correctiveDomain = CORRECTIVE_DOMAINS.find(
+      (d) => correctiveDomainKey(d) === receipt.domain
+    );
+    if (!correctiveDomain) return 'mismatched';
+    const variant = correctiveDomain.variant,
       now = Date.now();
     const baselineGateUsable = (
-      owner: 'phase10' | 'phase11' | 'phase12' | 'phase13',
+      owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
       selected: unknown,
       gate: HorsePhase8AuthorityGate | undefined
     ) => {
@@ -393,6 +408,11 @@ export function horsePhase14AuthorityVerdict(receipt: {
       );
     };
     if (
+      !baselineGateUsable(
+        'phase8',
+        correctiveDomain.mode === 'tournament' ? PHASE8_PROTECTED_RELEASE_SELECTION : null,
+        liveHorsePhase8Authority
+      ) ||
       !baselineGateUsable(
         'phase10',
         variant === 'plo4' ? PHASE10_PROTECTED_RELEASE_SELECTION : null,

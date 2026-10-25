@@ -1,6 +1,7 @@
 import type { CorrectiveAction } from './contract.js';
 import type { RiverReferenceInput } from './riverReference.js';
 import { produceRiverCallFoldReference } from './riverReference.js';
+import { chipCents } from './eligibility.js';
 import { proposeRiverCallFoldCorrection } from './riverKernel.js';
 import { evidenceDigest } from './authority.js';
 import { createHash } from 'node:crypto';
@@ -41,6 +42,62 @@ export interface RiverHoldoutResult {
   activationAllowed: false;
   measurementDigest?: string;
 }
+/** Compare B against numerator/denominator using B's exact binary value.
+ * The predictable 1/20 sampling probability and whole-cent geometry avoid
+ * rounding a slightly insufficient predeclared bound upward into acceptance. */
+function coversPredictableCashSupport(
+  bound: number,
+  numerator: number,
+  denominator: number
+): boolean {
+  const bytes = new DataView(new ArrayBuffer(8));
+  bytes.setFloat64(0, bound);
+  const bits = bytes.getBigUint64(0),
+    exponent = Number((bits >> 52n) & 0x7ffn);
+  const fraction = bits & ((1n << 52n) - 1n);
+  const mantissa = exponent === 0 ? fraction : fraction + (1n << 52n);
+  const shift = exponent === 0 ? -1074 : exponent - 1075;
+  const left = BigInt(numerator),
+    right = mantissa * BigInt(denominator);
+  return shift >= 0 ? left <= right << BigInt(shift) : left << BigInt(-shift) <= right;
+}
+/** Independent of hidden outcomes. With public contributions S and call c,
+ * pots+refunds conserve S+c, fees only remove funds, so call utility lies in
+ * [-c/BB,S/BB], fold utility is0. The conservative 1/20*(S+2c)/BB bound covers
+ * either direction of the deterministic fold/call proposal for every holding.
+ * Only the live closed two-dealt-seat/zero-dead-money family may change. */
+function cashSupportIsCovered(input: RiverReferenceInput, bound: number): boolean {
+  const g = input.original.snapshot.gameState,
+    h = input.original.snapshot.player;
+  if (
+    g.players.length !== 2 ||
+    !Array.isArray(g.dealtSeatIds) ||
+    g.dealtSeatIds.length !== 2 ||
+    new Set(g.dealtSeatIds).size !== 2 ||
+    g.players.some(
+      (p) =>
+        !g.dealtSeatIds!.includes(p.seat) ||
+        (p.deadInvested ?? 0) !== 0 ||
+        (p.individualAnteInvested ?? 0) !== 0
+    ) ||
+    (g.ante ?? 0) !== 0 ||
+    input.toCall >= h.stack
+  )
+    return false;
+  const contributions = g.players.map((p) => chipCents(p.totalInvested)),
+    call = chipCents(input.toCall),
+    bb = chipCents(input.bigBlind);
+  if (contributions.some((n) => n === null) || call === null || bb === null || call <= 0 || bb <= 0)
+    return false;
+  const numerator = contributions.reduce<number>((sum, n) => sum + n!, 0) + 2 * call,
+    denominator = 20 * bb;
+  return (
+    Number.isSafeInteger(numerator) &&
+    Number.isSafeInteger(denominator) &&
+    coversPredictableCashSupport(bound, numerator, denominator)
+  );
+}
+
 /** Measurement only. Source custody and oracle independence need separate
  * trusted review; caller-supplied JSON cannot grant either property. */
 export function evaluateRiverHoldout(
@@ -120,6 +177,17 @@ export function evaluateRiverHoldout(
         row.input.evidenceClass !== plan.evidenceClass
       )
         return no('holdout_source_or_window_mismatch');
+      const reference = produceRiverCallFoldReference(row.input);
+      if (reference.status !== 'produced') return no(`holdout_reference:${reference.reason}`);
+      const proposal = row.retainedByPolicy
+        ? { status: 'retained' as const, reason: row.retainedByPolicy }
+        : proposeRiverCallFoldCorrection(row.input, row.baseline, reference.reference);
+      if (proposal.status === 'unavailable') return no(`holdout_policy:${proposal.reason}`);
+      if (
+        proposal.status === 'proposed' &&
+        !cashSupportIsCovered(row.input, plan.maximumAbsoluteDeltaBb)
+      )
+        return no('holdout_predeclared_support_unproven');
       if (
         !Number.isFinite(row.oracle.foldBb) ||
         row.oracle.foldBb !== 0 ||
@@ -127,12 +195,6 @@ export function evaluateRiverHoldout(
         Math.abs(row.oracle.callBb) > 1e12
       )
         return no('holdout_oracle_invalid');
-      const reference = produceRiverCallFoldReference(row.input);
-      if (reference.status !== 'produced') return no(`holdout_reference:${reference.reason}`);
-      const proposal = row.retainedByPolicy
-        ? { status: 'retained' as const, reason: row.retainedByPolicy }
-        : proposeRiverCallFoldCorrection(row.input, row.baseline, reference.reference);
-      if (proposal.status === 'unavailable') return no(`holdout_policy:${proposal.reason}`);
       let delta = 0;
       if (proposal.status === 'proposed') {
         const utility = (action: CorrectiveAction) =>

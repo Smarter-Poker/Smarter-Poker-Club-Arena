@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runHorseRiverReference } from '../../scripts/horseRiverReference.js';
-import { riverReferenceFixture } from './riverReference.test-support.js';
+import { riverReferenceFixture, bind } from './riverReference.test-support.js';
 import { evidenceDigest } from './authority.js';
 import { produceRiverCallFoldReference } from './riverReference.js';
 import { RIVER_DECISION_MODEL } from './riverDecisionModel.js';
@@ -68,6 +68,12 @@ describe('explicit private river qualification ingress', () => {
     (mode) => {
       const rows = [0, 1].map((n) => {
         const input = riverReferenceFixture();
+        // Raw holdout changes use the same call<stack family as live play;
+        // model-holdout retains its separate all-in-alias denominator case.
+        if (mode === 'holdout') {
+          input.stack = 200;
+          bind(input);
+        }
         input.binding.decisionDigest = evidenceDigest(['decision', n]);
         input.binding.acceptedHandDigest = evidenceDigest(['accepted', n]);
         return {

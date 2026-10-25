@@ -16,17 +16,20 @@ import {
 } from '../../engine/HorseQualifiedAuthority.js';
 import type { HorsePhase14AuthoritySelection } from '../../engine/HorsePhase14Authority.js';
 import { CORRECTIVE_DOMAIN_KEYS, correctiveDomainKey } from './domain.js';
+import {} from './kernelCatalog.js';
 import {
-  CORRECTIVE_KERNEL_CATALOG_VERSION,
-  validateCorrectiveKernelCatalog,
-  type CorrectiveKernelCatalog,
-} from './kernelCatalog.js';
-import { verifyCorrectiveKernelApproval } from './kernelApproval.js';
+  verifyFunctionalKernelApproval as verifyCorrectiveKernelApproval,
+  validateFunctionalKernelCatalog as validateCorrectiveKernelCatalog,
+  functionalKernelCatalogVersionIsKnown,
+  type CorrectiveFunctionalKernelCatalog as CorrectiveKernelCatalog,
+} from './kernelObjective.js';
+import { TOURNAMENT_KERNEL_CATALOG_VERSION } from './kernelTournamentCatalog.js';
 import {
   correctiveKernelPolicyDigest,
   correctiveKernelBaselineSelectionsDigest,
 } from './kernelPolicyDigest.js';
 export const CORRECTIVE_KERNEL_QUALIFICATION_SCHEMA = 'horse-phase14-kernel-qualification-v1';
+export const TOURNAMENT_KERNEL_QUALIFICATION_SCHEMA = 'horse-phase14-kernel-qualification-v2';
 export interface CorrectiveKernelAuthoritySelection extends HorsePhase14AuthoritySelection {
   readonly trustedSignerKeySha256: string;
 }
@@ -56,7 +59,7 @@ export function admitCorrectiveKernelAttachment(
     s.phase !== 'phase14' ||
     s.domain !== domain ||
     !/^[a-f0-9]{40}$/.test(s.sourceSha) ||
-    s.catalogVersion !== CORRECTIVE_KERNEL_CATALOG_VERSION ||
+    !functionalKernelCatalogVersionIsKnown(s.catalogVersion) ||
     ![s.catalogDigest, s.holdoutDigest, s.qualificationSha256, s.trustedSignerKeySha256].every(
       (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
     ) ||
@@ -110,7 +113,10 @@ export function admitCorrectiveKernelAttachment(
       !file ||
       Array.isArray(file) ||
       Object.keys(file).sort().join(',') !== 'approval,catalog,schema' ||
-      file.schema !== CORRECTIVE_KERNEL_QUALIFICATION_SCHEMA
+      file.schema !==
+        (s.catalogVersion === TOURNAMENT_KERNEL_CATALOG_VERSION
+          ? TOURNAMENT_KERNEL_QUALIFICATION_SCHEMA
+          : CORRECTIVE_KERNEL_QUALIFICATION_SCHEMA)
     )
       return refuse('evidence_mismatch');
   } catch {
@@ -140,15 +146,17 @@ export function admitCorrectiveKernelAttachment(
     nowMs,
   });
   if (checked.status !== 'validated') return refuse('policy_digest_mismatch');
+  // The signed catalog and protected S4 selection must name the same protocol.
+  if (checked.catalog.version !== s.catalogVersion) return refuse('evidence_mismatch');
   if (!phase14LedgerSelectionAllowed(readPhase14GenerationLedger(reader), domain, s))
     return refuse('evidence_mismatch');
   const identity = {
     schema: 'horse-qualified-authority-v1' as const,
     phase: 'phase14' as const,
     sourceSha: s.sourceSha,
-    continuationVersion: `${CORRECTIVE_KERNEL_CATALOG_VERSION}/${domain}`,
+    continuationVersion: `${s.catalogVersion}/${domain}`,
     policyDigest: s.catalogDigest,
-    packId: CORRECTIVE_KERNEL_CATALOG_VERSION,
+    packId: s.catalogVersion,
     domain,
     evidencePath: s.qualificationPath,
     evidenceSha256: s.qualificationSha256,

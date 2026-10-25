@@ -25,9 +25,9 @@ const rows = (): RiverHoldoutCase[] =>
     handKey: evidenceDigest(['holdout', n]),
     playedAt: '2026-10-25T00:01:00.000Z',
     input: {
-      ...riverReferenceFixture(),
+      ...bind({ ...riverReferenceFixture(), stack: 200 }),
       binding: {
-        ...riverReferenceFixture().binding,
+        ...bind({ ...riverReferenceFixture(), stack: 200 }).binding,
         decisionEventId: `decision-${n}`,
         decisionDigest: evidenceDigest(['decision', n]),
         acceptedHandDigest: evidenceDigest(['hand', n]),

@@ -32,12 +32,19 @@ const titles = [
     'exactly replays the bound accepted DEEP decision with original FAST selected=false',
     'exactly replays the bound accepted DEEP decision with original FAST selected=true',
   ],
+  [
+    'executes actual FAST/DEEP v2 with retained FAST hashes and selected Phase8 baseline receipt',
+    'withdrawal of selected phase8: prevents DEEP correction using the earlier original',
+    'withdrawal of selected phase14:nlh-spin prevents DEEP correction using the earlier original',
+    'feeds actual accepted DEEP v2 callback bytes through SQLite fleet without claiming unobserved horses',
+    'keeps missing original tournament capture unknown and only known nonriver geometry outside',
+  ],
 ];
 function report() {
   return {
     success: true,
-    numTotalTests: 14,
-    numPassedTests: 14,
+    numTotalTests: 19,
+    numPassedTests: 19,
     numFailedTests: 0,
     numPendingTests: 0,
     numTodoTests: 0,
@@ -110,4 +117,24 @@ describe('finite executed rollback report and custody', () => {
       )
     ).toEqual({ status: 'unavailable', reason: 'rollback_binding_invalid' });
   });
+});
+
+it('requires the exact sixth native tournament suite and each of its verdicts', () => {
+  expect(CORRECTIVE_ROLLBACK_FILES).toHaveLength(6);
+  expect(CORRECTIVE_ROLLBACK_FILES[5]).toBe('src/engine/horseDecision/phase14Tournament.test.ts');
+  const oldFive = report();
+  oldFive.testResults.pop();
+  oldFive.numTotalTests = 14;
+  oldFive.numPassedTests = 14;
+  expect(correctiveRollbackReportIsComplete(oldFive, server)).toBe(false);
+  for (let i = 0; i < titles[5]!.length; i++) {
+    const omitted = report();
+    omitted.testResults[5]!.assertionResults.splice(i, 1);
+    omitted.numTotalTests--;
+    omitted.numPassedTests--;
+    expect(correctiveRollbackReportIsComplete(omitted, server)).toBe(false);
+    const skipped = report();
+    skipped.testResults[5]!.assertionResults[i]!.status = 'skipped';
+    expect(correctiveRollbackReportIsComplete(skipped, server)).toBe(false);
+  }
 });

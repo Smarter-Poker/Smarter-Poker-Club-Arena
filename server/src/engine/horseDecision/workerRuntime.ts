@@ -1,4 +1,5 @@
-import { correctiveRiverSnapshotRefusal } from '../../services/horseCorrectiveReview/kernelEligibility.js';
+import { horsePhase14RunningCatalogVersion } from '../HorsePhase14Authority.js';
+import { functionalKernelSnapshotRefusal } from '../../services/horseCorrectiveReview/kernelObjective.js';
 import { correctiveBaselineCompositionIsUsable } from '../../services/horseCorrectiveReview/kernelComposition.js';
 import { PHASE10_PROTECTED_RELEASE_SELECTION } from '../HorsePhase10Authority.js';
 import { PHASE11_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase11Authority.js';
@@ -11,10 +12,8 @@ import {
   horsePhase14ContinuationVersion,
   horsePhase14CorrectiveMode,
 } from '../HorsePhase14Authority.js';
-import {
-  CORRECTIVE_KERNEL_CATALOG_VERSION,
-  type CorrectiveKernelCatalog,
-} from '../../services/horseCorrectiveReview/kernelCatalog.js';
+import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../../services/horseCorrectiveReview/kernelCatalog.js';
+import type { CorrectiveFunctionalKernelCatalog as CorrectiveKernelCatalog } from '../../services/horseCorrectiveReview/kernelObjective.js';
 import type { CorrectiveKernelAttachmentAdmission } from '../../services/horseCorrectiveReview/kernelAdmission.js';
 import {
   createCorrectiveKernelEvaluator,
@@ -23,7 +22,9 @@ import {
 import {
   correctiveDecisionDomain,
   correctiveDomainKey,
+  CORRECTIVE_DOMAINS,
 } from '../../services/horseCorrectiveReview/domain.js';
+import { validHorseTournamentPayoutTerms } from '../HorseTournamentPayoutTerms.js';
 import { validOpponentDonorProfiles, type MemorySize } from '../HorseOpponentMemory.js';
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { observeHandResults } from '../HorseWinnerRead.js';
@@ -122,6 +123,7 @@ import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import type { HorseDecision } from '../../types.js';
 import {
   admitHorsePhase8ReleaseAuthority,
+  PHASE8_PROTECTED_RELEASE_SELECTION,
   HorseQualifiedAuthorityHolder,
   type HorseAuthorityAdmission,
   type HorseAuthorityReceipt,
@@ -780,7 +782,7 @@ export class HorseDecisionWorkerRuntime {
           authorityHolder(
             'phase14',
             domain,
-            horsePhase14ContinuationVersion(domain, CORRECTIVE_KERNEL_CATALOG_VERSION),
+            horsePhase14ContinuationVersion(domain, horsePhase14RunningCatalogVersion(domain)),
             phase14Epoch
           ),
         ])
@@ -1535,6 +1537,9 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
     }
     const status = tournament.contextStatus;
+    if (!validHorseTournamentPayoutTerms(tournament)) {
+      throw new Error('Phase 6 tournament payout capture is invalid');
+    }
     if (!(TOURNAMENT_CONTEXT_STATUSES as readonly string[]).includes(status ?? '')) {
       throw new Error('Phase 6 tournament context status is invalid');
     }
@@ -2202,6 +2207,11 @@ export class HorseDecisionWorkerRuntime {
       });
       return correctiveBaselineCompositionIsUsable([
         requirement(
+          d?.mode === 'tournament' && PHASE8_PROTECTED_RELEASE_SELECTION !== null,
+          request.opts?.phase8Postflop,
+          this.phase8Authority
+        ),
+        requirement(
           variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION !== null,
           request.opts?.phase10Plo4,
           this.phase10Authority
@@ -2244,7 +2254,7 @@ export class HorseDecisionWorkerRuntime {
       }).mode === 'candidate' &&
       // Unselected decisions do not allocate or inspect a corrective snapshot.
       // The shared fields are identical for FAST and DEEP; normalize only type.
-      correctiveRiverSnapshotRefusal({ ...request, type: 'DECIDE_FAST' }) === null &&
+      functionalKernelSnapshotRefusal({ ...request, type: 'DECIDE_FAST' }, catalog) === null &&
       baselineUsable();
     return {
       receipt,
@@ -2264,10 +2274,16 @@ export class HorseDecisionWorkerRuntime {
   ): void {
     if (decision.correctivePolicy && receipt) {
       decision.correctivePolicy.authority = receipt;
-      const variant = decision.correctivePolicy.domain.slice(0, -5),
+      const correctiveDomain = CORRECTIVE_DOMAINS.find(
+        (d) => correctiveDomainKey(d) === decision.correctivePolicy!.domain
+      );
+      if (!correctiveDomain) throw Error('corrective authority domain unavailable');
+      const variant = correctiveDomain.variant,
         baselineAuthorities: NonNullable<
           NonNullable<HorseDecision['correctivePolicy']>['baselineAuthorities']
         > = {};
+      if (correctiveDomain.mode === 'tournament' && PHASE8_PROTECTED_RELEASE_SELECTION)
+        baselineAuthorities.phase8 = this.phase8Authority.receipt();
       if (variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION)
         baselineAuthorities.phase10 = this.phase10Authority.receipt();
       if (isOmahaPolicyVariant(variant) && PHASE11_PROTECTED_RELEASE_SELECTIONS[variant])

@@ -30,7 +30,13 @@ import {
   resolveKernelOriginalInput,
   kernelReconciledExecutionDisposition,
 } from './kernelOriginalInput.js';
-import { buildOriginalRiverDecision } from './riverDecisionModel.js';
+import { buildFunctionalRiverDecision as buildOriginalRiverDecision } from './kernelModel.js';
+import {
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  tournamentKernelObjectiveIsKnown,
+  tournamentKernelDefinitionFor,
+} from './kernelTournamentDefinition.js';
+import { classifyTournamentRiverSnapshot } from './kernelTournamentEligibility.js';
 import type { RiverAcceptedOracleRequest } from './riverAcceptedOracle.js';
 import { evidenceDigest } from './authority.js';
 import {
@@ -145,12 +151,14 @@ export function createRiverSourcePopulationReviewer(
     if (!isAuthenticatedCorrectivePredeclaration(predeclaration))
       return no('population_predeclaration_or_journal_refused');
     const plan = predeclaration.plan,
+      tournament = tournamentKernelObjectiveIsKnown(plan.objective),
       domain = (plan as typeof plan & { domain?: CorrectiveReferenceDomain }).domain;
     if (
       plan.populationBasis !== 'accepted-commit-and-immutable-played-v1' ||
       !correctiveDomainIsValid(domain) ||
-      domain.mode !== 'cash' ||
-      domain.format !== 'cash' ||
+      (tournament
+        ? !tournamentKernelDefinitionFor(plan.objective, domain)
+        : domain.mode !== 'cash' || domain.format !== 'cash') ||
       plan.evidenceClass !== 'reviewed_reference' ||
       plan.familySize < 45
     )
@@ -254,8 +262,8 @@ export function createRiverSourcePopulationReviewer(
               actors.filter((a) => a.classification === 'horse').map((a) => a.userId)
             );
           // Scope exclusions are derived from authenticated acceptance, not outcomes.
-          if (raw.tournament_id !== null) {
-            exclude('non_cash_hand');
+          if (tournament ? raw.tournament_id === null : raw.tournament_id !== null) {
+            exclude(tournament ? 'cash_hand' : 'non_cash_hand');
             continue;
           }
           if (raw.game_variant !== domain.variant) {
@@ -297,7 +305,7 @@ export function createRiverSourcePopulationReviewer(
               fact.seat !== actor.seat ||
               fact.game_variant !== raw.game_variant ||
               fact.big_blind !== Number(raw.big_blind) ||
-              fact.tournament_id !== null
+              fact.tournament_id !== raw.tournament_id
             )
               return no('population_stats_scope_conflict');
           }
@@ -428,9 +436,30 @@ export function createRiverSourcePopulationReviewer(
               continue;
             }
             const originalDomain = correctiveDecisionDomain(capture.snapshot.gameState);
-            if (!originalDomain || evidenceDigest(originalDomain) !== evidenceDigest(domain))
+            if (!originalDomain || originalDomain.variant !== domain.variant)
               return no('population_original_domain_mismatch');
-            const refusal = correctiveRiverSnapshotRefusal(capture.snapshot);
+            if (
+              tournament &&
+              capture.snapshot.gameState.tournament?.tournamentId !== raw.tournament_id
+            )
+              return no('population_original_tournament_mismatch');
+            if (tournament && originalDomain.format !== domain.format) {
+              exclude('other_tournament_format');
+              continue;
+            }
+            if (evidenceDigest(originalDomain) !== evidenceDigest(domain))
+              return no('population_original_domain_mismatch');
+            const classified = tournament
+              ? classifyTournamentRiverSnapshot(capture.snapshot)
+              : null;
+            if (classified?.status === 'gap')
+              return no('population_original_model_gap:' + classified.reason);
+            const refusal =
+              classified?.status === 'excluded'
+                ? classified.reason
+                : tournament
+                  ? null
+                  : correctiveRiverSnapshotRefusal(capture.snapshot);
             if (refusal === 'original_model_metadata_unavailable')
               return no('population_original_model_gap');
             if (refusal) {

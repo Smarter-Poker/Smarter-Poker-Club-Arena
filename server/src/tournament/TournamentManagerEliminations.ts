@@ -209,6 +209,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
   /** A queued continuation can finish later stages without revisiting these busts. */
   private unresolvedBustsInSweepCycle = false;
+  /** A hand arriving during a bust read/assignment is outside that snapshot. */
+  private bustObservationInFlight: { firstNewBustAt: number | null } | null = null;
 
   /**
    * A BUST IS RECORDED BEFORE THE BREAK IT BLOCKS IS RETRIED (2026-09-29).
@@ -222,6 +224,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * TournamentSweepWorkCursor), so the balance stage keeps its turn too.
    */
   protected override bustAwaitsItsStage(): void {
+    const observation = this.bustObservationInFlight;
+    if (observation && observation.firstNewBustAt === null) {
+      observation.firstNewBustAt = Date.now();
+    }
     this.eliminationSweepCursor.rewindTo(0);
   }
   /** Latest level-triggered generation observed for each durable wake identity. */
@@ -653,6 +659,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       bustStage: {
         if (this.eliminationSweepCursor.nextStage > 1) break bustStage;
+        const bustObservation = { firstNewBustAt: null as number | null };
+        this.bustObservationInFlight = bustObservation;
         // Find ALL busted players (0 chips) in a single query
         this.noteEliminationSweepStep('db:tournament_players');
         // eslint-disable-next-line prefer-const
@@ -669,16 +677,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // error was discarded, so a failed read looked exactly like "nobody
         // busted" — and the sweep then fell straight through to the finish
         // check below and could complete the tournament on the strength of it.
-        if (bustedErr) {
+        if (bustedErr || !Array.isArray(busted)) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr.message}) - skipping this sweep entirely`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr?.message ?? 'authoritative rows missing'}) - skipping this sweep entirely`
             ),
             'Tournament.busted_list_unavailable'
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
           return; // the finally block clears isProcessingEliminations
         }
+
+        // Consume only authoritative receipts from this captured roster. The
+        // input array still contains players after eliminatePlayer succeeds;
+        // its length is not a pending-bust count. A newer hand observed while
+        // awaiting I/O keeps the exact first new hand's observation time.
+        const pendingBustIds = new Set(busted.map((player) => player.user_id));
+        const recordBustProgress = (): void => {
+          this.bustAwaitingSinceMs =
+            pendingBustIds.size > 0 ? Date.now() : (bustObservation.firstNewBustAt ?? 0);
+        };
 
         this.unresolvedBustsInSweepCycle = (busted?.length ?? 0) > 0;
 
@@ -923,11 +941,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
           if (sweepStopped()) return;
           if (rebought.size > 0) {
+            for (const userId of rebought) pendingBustIds.delete(userId);
             busted = busted.filter((b) => !rebought.has(b.user_id));
             if (busted.length === 0) {
               // The rebuy transaction owns its exact playable chair and stack.
               // This process consumes only the success receipt; it never scans
               // for a seatless roster or performs a later compensating write.
+              // These busts have been resolved, so their old wait cannot
+              // trigger a successor. Any untouched batch keeps a fresh clock.
+              recordBustProgress();
               return; // everyone bought back in; nobody is eliminated this pass
             }
           }
@@ -998,6 +1020,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                when the deadline it was given has passed. */
             const openUntilMs = rebuyDecisionDeadlines(decisionsRaw);
             const nowMs = Date.now();
+            for (const player of busted) {
+              if (!decisions.has(player.user_id)) pendingBustIds.delete(player.user_id);
+            }
             busted = busted.filter((b) => {
               // Omitted means the locked row was no longer a playing zero -
               // most commonly a concurrent rebuy. Never eliminate from the
@@ -1011,7 +1036,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 Math.min(...nextDeadline) - nowMs + REBUY_DEADLINE_MARGIN_MS
               );
             }
-            if (busted.length === 0) return;
+            if (busted.length === 0) {
+              // A locked decision read proved either an open rebuy window or
+              // a concurrent rebuy. Neither is an elimination stalled since
+              // the original bust. Keep the clock only for still-pending work;
+              // unreadable/refused decisions above retain the original age.
+              const openDecisions = [...decisions].filter(([, open]) => open);
+              if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
+                recordBustProgress();
+              }
+              return;
+            }
           }
 
           /**
@@ -1378,6 +1413,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 continue;
               }
               this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+              pendingBustIds.delete(bustedOrdered[i].user_id);
+              recordBustProgress();
               committedThisPass++;
               takenPositions.add(place);
               nextPosition = Math.min(nextPosition, place) - 1;
@@ -1421,9 +1458,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
-        // The bust stage ran to its end: restart the wait clock from now for
-        // any bust still inside its rebuy decision grace, or stop it.
-        this.bustAwaitingSinceMs = (busted?.length ?? 0) > 0 ? Date.now() : 0;
+        // Later cursor stages must not carry a wait for already-settled busts.
+        recordBustProgress();
         if (completedStage(2)) return;
       }
 
@@ -2037,6 +2073,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
       }
       if (this.eliminationSweepSignal === signal) this.eliminationSweepSignal = null;
+      this.bustObservationInFlight = null;
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;
       this.eliminationSweepStartedAt = 0;

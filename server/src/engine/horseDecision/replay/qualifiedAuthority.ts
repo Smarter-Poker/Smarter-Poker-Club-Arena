@@ -84,12 +84,12 @@ export function qualifiedReplayAuthorityHolders(
     original.correctivePolicy?.baselineAuthorities ?? {}
   )) {
     if (
-      !['phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
+      !['phase8', 'phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
       !horseAuthorityReceiptIsWellFormed(receipt) ||
       receipt.state !== 'usable'
     )
       throw new HorseReplayAuthorityRefusal(`${owner}:missing_baseline_receipt`);
-    const key = `${owner}:${owner === 'phase10' ? '' : variant}`;
+    const key = `${owner}:${owner === 'phase8' || owner === 'phase10' ? '' : variant}`;
     const prior = receipts.get(key);
     if (prior && JSON.stringify(prior) !== JSON.stringify(receipt))
       throw new HorseReplayAuthorityRefusal(`${owner}:conflicting_baseline_receipt`);

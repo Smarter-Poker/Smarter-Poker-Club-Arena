@@ -3,7 +3,8 @@
  *
  * Phase 7 evaluates resulting stack vectors rather than applying one global
  * bubble multiplier. Final tables of up to ten live players use exact
- * Malmuth-Harville recursion. Larger fields use direct deterministic Monte
+ * Malmuth-Harville recursion; winner-take-all curves use exact chip share at
+ * every field size. Larger multi-place fields use direct deterministic Monte
  * Carlo of the same Plackett-Luce finishing-order distribution: independent
  * exponential clocks with stack-sized rates. No player or paid place is
  * bucketed, merged, or discarded.
@@ -71,7 +72,8 @@ export function isFlatPayoutCurve(payouts: number[]): boolean {
 /**
  * Exact Malmuth-Harville equity for one player.
  *
- * A bit-mask dynamic program visits at most 2^10 states. Zero-stack entries
+ * Winner-take-all needs only exact chip share. Otherwise a bit-mask dynamic
+ * program visits at most 2^10 states. Zero-stack entries
  * are compacted first, so ten live finalists remain exact even when the input
  * vector retains already-busted identities.
  */
@@ -99,6 +101,13 @@ function exactCleanIcmEquity(
     prizeMass <= 0
   ) {
     return 0;
+  }
+
+  // First-place probability in Malmuth-Harville is chip share, independent
+  // of field size. No finishing-order recursion or sampling is required.
+  if (isWinnerTakeAll(prizes)) {
+    if (!Number.isSafeInteger(heroIdx)) return 0;
+    return (original[heroIdx] / original.reduce((sum, stack) => sum + stack, 0)) * prizes[0];
   }
 
   const clean: number[] = [];
@@ -174,8 +183,12 @@ function lowerBound(sorted: Float64Array, target: number, maximumRank = sorted.l
   return low;
 }
 
+function isWinnerTakeAll(prizes: number[]): boolean {
+  return prizes[0] > 0 && prizes.slice(1).every((prize) => prize === 0);
+}
+
 /**
- * Build a direct Plackett-Luce estimator with common random numbers.
+ * Build an exact WTA or direct Plackett-Luce estimator with common random numbers.
  *
  * Independent exponential clocks are still the exact MH ranking model. For
  * an action, remote stacks never change, so their clocks are sorted once per
@@ -197,6 +210,39 @@ export function createIcmEquityEstimator(
     .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < reference.length)
     .sort((left, right) => left - right);
   const mutableSet = new Set(mutable);
+  if (
+    isWinnerTakeAll(prizes) &&
+    Number.isSafeInteger(heroIdx) &&
+    heroIdx >= 0 &&
+    heroIdx < reference.length
+  ) {
+    return {
+      method: 'exact_mh',
+      trials: 0,
+      randomClockDraws: 0,
+      estimate(vector: number[]): IcmEstimate {
+        if (vector.length !== reference.length) {
+          throw new Error('ICM candidate vector length changed inside one action');
+        }
+        const clean = cleanStacks(vector);
+        let total = 0;
+        let modeledPlayers = 0;
+        for (let index = 0; index < reference.length; index++) {
+          if (!mutableSet.has(index) && Math.abs(clean[index] - reference[index]) > 0.005) {
+            throw new Error('ICM remote stack changed inside one action');
+          }
+          total += clean[index];
+          if (clean[index] > 0) modeledPlayers++;
+        }
+        return {
+          equity: total > 0 ? (clean[heroIdx] / total) * prizes[0] : 0,
+          errorBound: 0,
+          method: 'exact_mh',
+          modeledPlayers,
+        };
+      },
+    };
+  }
   if (live <= EXACT_MAX_PLAYERS) {
     // One bounded buffer per action instead of one per candidate/rollout vector.
     // Each estimate clears every reachable mask, including after a bust/revival.

@@ -1,4 +1,8 @@
 import {
+  CORRECTIVE_DOMAINS,
+  correctiveDomainKey,
+} from '../../services/horseCorrectiveReview/domain.js';
+import {
   evidenceDigest,
   sha256 as correctiveSha256,
 } from '../../services/horseCorrectiveReview/authority.js';
@@ -1900,8 +1904,20 @@ export class LiveHorseDecisionWorkerClient {
       }
       const correctiveReceipt = message.decision.correctivePolicy;
       if (correctiveReceipt?.baselineAuthorities) {
-        const variant = correctiveReceipt.domain.slice(0, -5);
+        const correctiveDomain = CORRECTIVE_DOMAINS.find(
+          (d) => correctiveDomainKey(d) === correctiveReceipt.domain
+        );
+        if (!correctiveDomain) {
+          this.refuseDecision(
+            active,
+            message,
+            new Error('horse corrective baseline domain invalid')
+          );
+          return;
+        }
+        const variant = correctiveDomain.variant;
         const mirrors = {
+          phase8: message.phase8Authority,
           phase10: message.phase10Authority,
           phase11:
             message.phase11Authority?.[
@@ -1928,15 +1944,19 @@ export class LiveHorseDecisionWorkerClient {
             return;
           }
           const gate =
-            owner === 'phase10'
-              ? liveHorsePhase10Authority
-              : owner === 'phase11'
-                ? liveHorsePhase11Authorities[variant as keyof typeof liveHorsePhase11Authorities]
-                : owner === 'phase12'
-                  ? liveHorsePhase12Authorities[variant as keyof typeof liveHorsePhase12Authorities]
-                  : liveHorsePhase13Authorities[
-                      variant as keyof typeof liveHorsePhase13Authorities
-                    ];
+            owner === 'phase8'
+              ? liveHorsePhase8Authority
+              : owner === 'phase10'
+                ? liveHorsePhase10Authority
+                : owner === 'phase11'
+                  ? liveHorsePhase11Authorities[variant as keyof typeof liveHorsePhase11Authorities]
+                  : owner === 'phase12'
+                    ? liveHorsePhase12Authorities[
+                        variant as keyof typeof liveHorsePhase12Authorities
+                      ]
+                    : liveHorsePhase13Authorities[
+                        variant as keyof typeof liveHorsePhase13Authorities
+                      ];
           if (!gate) {
             this.refuseDecision(
               active,

@@ -2,6 +2,12 @@ import type { HorseDecision } from '../../types.js';
 import { horseAuthorityReceiptIsWellFormed } from '../../engine/HorseQualifiedAuthority.js';
 import { CORRECTIVE_DOMAIN_KEYS } from './domain.js';
 import { CORRECTIVE_KERNEL_CATALOG_VERSION } from './kernelCatalog.js';
+import { TOURNAMENT_KERNEL_CATALOG_VERSION } from './kernelTournamentCatalog.js';
+import {
+  tournamentKernelDefinitionFor,
+  TOURNAMENT_KERNEL_UTILITY_UNIT,
+  TOURNAMENT_RIVER_CORRECTION_KERNEL,
+} from './kernelTournamentDefinition.js';
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 const sha = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
@@ -22,6 +28,8 @@ const same = (
 export function correctiveKernelReceiptIsValid(decision: HorseDecision): boolean {
   const v = decision.correctivePolicy;
   if (v === undefined) return true;
+  if (!object(v)) return false;
+  const tournament = v.version === 'horse-corrective-live-kernel-v2';
   if (
     !object(v) ||
     ![
@@ -35,7 +43,9 @@ export function correctiveKernelReceiptIsValid(decision: HorseDecision): boolean
       'readFrameDigest',
       'samplingContractDigest',
       'conditionalProbability',
-      'modelGainLowerBb',
+      ...(tournament
+        ? ['objective', 'utilityUnit', 'modelGainLowerPrizeShare', 'tournamentContextDigest']
+        : ['modelGainLowerBb']),
       'baseline',
       'proposed',
       'selected',
@@ -44,24 +54,30 @@ export function correctiveKernelReceiptIsValid(decision: HorseDecision): boolean
       'authority',
       'baselineAuthorities',
     ].every((k) => Object.hasOwn(v, k)) ||
-    Object.keys(v).length !== 18
+    Object.keys(v).length !== (tournament ? 21 : 18)
   )
     return false;
   if (
     !object(v.baselineAuthorities) ||
-    Object.keys(v.baselineAuthorities).length > 4 ||
+    Object.keys(v.baselineAuthorities).length > (tournament ? 5 : 4) ||
     Object.entries(v.baselineAuthorities).some(
       ([owner, r]) =>
-        !['phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
+        !(
+          tournament
+            ? ['phase8', 'phase10', 'phase11', 'phase12', 'phase13']
+            : ['phase10', 'phase11', 'phase12', 'phase13']
+        ).includes(owner) ||
         !horseAuthorityReceiptIsWellFormed(r) ||
         r.state !== 'usable'
     )
   )
     return false;
   if (
-    v.version !== 'horse-corrective-live-kernel-v1' ||
+    (!tournament && v.version !== 'horse-corrective-live-kernel-v1') ||
     !CORRECTIVE_DOMAIN_KEYS.includes(v.domain) ||
-    !v.domain.endsWith('-cash') ||
+    (tournament
+      ? !['nlh-spin', 'nlh-mtt', 'nlh-sng', 'nlh-hu_sng'].includes(v.domain)
+      : !v.domain.endsWith('-cash')) ||
     !sha(v.catalogDigest) ||
     !sha(v.policyDigest) ||
     !sha(v.baselineSelectionsDigest) ||
@@ -70,8 +86,19 @@ export function correctiveKernelReceiptIsValid(decision: HorseDecision): boolean
     !sha(v.samplingContractDigest) ||
     !/^[a-f0-9]{40}$/.test(v.sourceSha) ||
     v.conditionalProbability !== 0.05 ||
-    !Number.isFinite(v.modelGainLowerBb) ||
-    v.modelGainLowerBb <= 0.01 ||
+    (tournament
+      ? !tournamentKernelDefinitionFor(v.objective, {
+          variant: 'nlh',
+          format: v.domain.slice(4),
+          mode: 'tournament',
+        }) ||
+        v.utilityUnit !== TOURNAMENT_KERNEL_UTILITY_UNIT ||
+        !sha(v.tournamentContextDigest) ||
+        !Number.isFinite(v.modelGainLowerPrizeShare) ||
+        v.modelGainLowerPrizeShare <=
+          TOURNAMENT_RIVER_CORRECTION_KERNEL.minimumModelGainPrizeShare ||
+        v.modelGainLowerPrizeShare > 1
+      : !Number.isFinite(v.modelGainLowerBb) || v.modelGainLowerBb <= 0.01) ||
     !choice(v.baseline) ||
     !choice(v.proposed) ||
     !choice(v.selected) ||
@@ -83,7 +110,10 @@ export function correctiveKernelReceiptIsValid(decision: HorseDecision): boolean
   if (
     !horseAuthorityReceiptIsWellFormed(v.authority) ||
     v.authority.state !== 'usable' ||
-    v.authority.continuationVersion !== CORRECTIVE_KERNEL_CATALOG_VERSION + '/' + v.domain ||
+    v.authority.continuationVersion !==
+      (tournament ? TOURNAMENT_KERNEL_CATALOG_VERSION : CORRECTIVE_KERNEL_CATALOG_VERSION) +
+        '/' +
+        v.domain ||
     v.authority.sourceSha !== v.sourceSha
   )
     return false;

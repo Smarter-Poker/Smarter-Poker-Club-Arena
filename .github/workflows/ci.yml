@@ -1811,6 +1811,27 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+      - name: Accepted horse window index preserves exact concurrent identity
+        id: accepted_horse_window_index
+        if: matrix.shard == 4
+        timeout-minutes: 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: >-
+          python3 -B scripts/ci/test-accepted-horse-window-index-postgres.py
+          --root "$GITHUB_WORKSPACE"
+          --scratch-parent "$RUNNER_TEMP"
+          --output "$GITHUB_WORKSPACE/artifacts/accepted-horse-window-index"
+          --pg-bin "$PG_BIN"
+      - name: Retain exact accepted horse window index proof
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.accepted_horse_window_index.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: accepted-horse-window-index-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/accepted-horse-window-index/
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Settlement conservation preserves full results through a narrow online index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py

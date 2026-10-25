@@ -8,6 +8,15 @@ import {
 } from './riverModelHoldout.js';
 import { evidenceDigest } from './authority.js';
 import {
+  tournamentModelHoldoutPlanIsValid,
+  type TournamentModelHoldoutPlan,
+} from './tournamentModelHoldout.js';
+import {
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  tournamentKernelObjectiveIsKnown,
+  tournamentKernelDefinitionFor,
+} from './kernelTournamentDefinition.js';
+import {
   CORRECTIVE_DOMAIN_KEYS,
   correctiveDomainIsValid,
   type CorrectiveReferenceDomain,
@@ -18,10 +27,15 @@ const REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena';
 export const CORRECTIVE_PREDECLARATION_VERSION = 'horse-corrective-provider-predeclaration-v1';
 const verified = new WeakSet<object>();
 export const CORRECTIVE_KERNEL_POPULATION_BASIS = 'accepted-commit-and-immutable-played-v1';
-export interface CorrectiveKernelPredeclaredPlan extends RiverModelHoldoutPlan {
+export interface CashCorrectiveKernelPredeclaredPlan extends RiverModelHoldoutPlan {
+  objective?: never;
+  utilityUnit?: never;
   populationBasis: typeof CORRECTIVE_KERNEL_POPULATION_BASIS;
   domain: CorrectiveReferenceDomain;
 }
+export type CorrectiveKernelPredeclaredPlan =
+  | CashCorrectiveKernelPredeclaredPlan
+  | TournamentModelHoldoutPlan;
 export interface CorrectivePredeclarationRequest {
   commitSha: string;
   path: string;
@@ -158,21 +172,38 @@ export function readCorrectivePredeclaration(
     )
       return no('predeclaration_content_hash_mismatch');
     const value: unknown = JSON.parse(bytes.toString('utf8'));
-    if (!object(value) || Object.keys(value).sort().join(',') !== keys)
+    if (!object(value)) return no('predeclaration_plan_invalid');
+    const tournament = tournamentKernelObjectiveIsKnown(value.objective);
+    const expectedKeys = tournament
+      ? [
+          ...keys.split(',').filter((k) => k !== 'maximumAbsoluteDeltaBb'),
+          'maximumAbsoluteDelta',
+          'objective',
+          'utilityUnit',
+        ]
+          .sort()
+          .join(',')
+      : keys;
+    if (Object.keys(value).sort().join(',') !== expectedKeys)
       return no('predeclaration_plan_invalid');
     const plan = value as unknown as CorrectiveKernelPredeclaredPlan;
     if (
       !correctiveDomainIsValid(plan.domain) ||
-      plan.domain.mode !== 'cash' ||
-      plan.domain.format !== 'cash'
+      (tournament
+        ? !tournamentKernelDefinitionFor(plan.objective, plan.domain)
+        : plan.domain.mode !== 'cash' || plan.domain.format !== 'cash')
     )
       return no('predeclaration_domain_invalid');
     if (plan.populationBasis !== CORRECTIVE_KERNEL_POPULATION_BASIS)
       return no('predeclaration_population_basis_invalid');
-    const validation = evaluateRiverDecisionModelHoldout(plan, []);
+    const validation = tournament
+      ? null
+      : evaluateRiverDecisionModelHoldout(plan as CashCorrectiveKernelPredeclaredPlan, []);
     if (
-      validation.reasons.length !== 1 ||
-      validation.reasons[0] !== 'holdout_sample_count_invalid' ||
+      (tournament
+        ? !tournamentModelHoldoutPlanIsValid(plan)
+        : validation?.reasons.length !== 1 ||
+          validation.reasons[0] !== 'holdout_sample_count_invalid') ||
       plan.minimumSamples > 10000 ||
       plan.familySize < CORRECTIVE_DOMAIN_KEYS.length
     )

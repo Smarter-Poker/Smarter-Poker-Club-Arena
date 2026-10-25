@@ -482,10 +482,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+    "scripts/ci/classify-ci-changes.mjs": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "00ef978f495b95509aa764d0f1f84ca3259e82e4dbd29d560f18dfb9a161fde4",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -504,7 +504,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "b3be7e105db2df95867c07898f4751069088885d85521cea8bd75b02a6e89a70",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5375,5 +5375,26 @@
       "tests/fixtures/earlybird-fee-custody/source-binding.json": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
       "tests/fixtures/sep8-spin-custody/source-binding.json": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5"
     }
+  },
+  "acceptedWindowNativeInputIdentity20261025": {
+    "reason": "Admit only the exact accepted-horse-window native PG17 harness and its source contract into the existing required index-recovery accounting path. Refresh current classifier and dependent binding identities only. Historical financial evidence, assertions, source inventories and qualification states are unchanged; no financial or production certificate is restamped.",
+    "sourceRevision": "dd0a798995cb4c20ae9eb568bdc2fadcfd1e4203",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+        "current": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e"
+      },
+      {
+        "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9",
+        "current": "00ef978f495b95509aa764d0f1f84ca3259e82e4dbd29d560f18dfb9a161fde4"
+      },
+      {
+        "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5",
+        "current": "b3be7e105db2df95867c07898f4751069088885d85521cea8bd75b02a6e89a70"
+      }
+    ]
   }
 }

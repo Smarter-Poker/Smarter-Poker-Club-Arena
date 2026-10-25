@@ -1,3 +1,4 @@
+import type { TournamentKernelObjective } from './kernelTournamentDefinition.js';
 import { correctiveBaselineRefusal } from './kernelEligibility.js';
 import type { HorseDecision } from '../../types.js';
 import type { RiverDecisionInput } from './riverReference.js';
@@ -5,13 +6,14 @@ import type { CorrectiveAction } from './contract.js';
 import type { HorseAuthorityReceipt } from '../../engine/HorseQualifiedAuthority.js';
 import { correctiveDecisionDomain, correctiveDomainKey } from './domain.js';
 import {
-  isValidatedCorrectiveKernelCatalog,
-  correctiveKernelCatalogDigest,
-  type CorrectiveKernelCatalog,
-} from './kernelCatalog.js';
+  isValidatedFunctionalKernelCatalog as isValidatedCorrectiveKernelCatalog,
+  functionalKernelCatalogDigest as correctiveKernelCatalogDigest,
+  type CorrectiveFunctionalKernelCatalog as CorrectiveKernelCatalog,
+} from './kernelObjective.js';
+import { TOURNAMENT_KERNEL_CATALOG_VERSION } from './kernelTournamentCatalog.js';
+import { proposeOriginalTournamentRiverCorrection } from './tournamentRiverKernel.js';
 import { proposeOriginalRiverCorrection, RIVER_CORRECTION_KERNEL } from './riverKernel.js';
-export interface CorrectiveLiveKernelReceipt {
-  version: 'horse-corrective-live-kernel-v1';
+interface CorrectiveLiveKernelReceiptBase {
   domain: string;
   catalogDigest: string;
   sourceSha: string;
@@ -21,7 +23,6 @@ export interface CorrectiveLiveKernelReceipt {
   readFrameDigest: string;
   samplingContractDigest: string;
   conditionalProbability: 0.05;
-  modelGainLowerBb: number;
   baseline: CorrectiveAction;
   proposed: CorrectiveAction;
   selected: CorrectiveAction;
@@ -29,9 +30,20 @@ export interface CorrectiveLiveKernelReceipt {
   reason: 'sampled' | 'not_sampled' | 'illegal_candidate' | 'withdrawn_before_acceptance';
   authority?: HorseAuthorityReceipt;
   baselineAuthorities?: Partial<
-    Record<'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
+    Record<'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
   >;
 }
+export type CorrectiveLiveKernelReceipt = CorrectiveLiveKernelReceiptBase &
+  (
+    | { version: 'horse-corrective-live-kernel-v1'; modelGainLowerBb: number }
+    | {
+        version: 'horse-corrective-live-kernel-v2';
+        objective: TournamentKernelObjective;
+        utilityUnit: 'prize_share';
+        modelGainLowerPrizeShare: number;
+        tournamentContextDigest: string;
+      }
+  );
 /** Pure decision-time consumer of an already validated functional catalog.
  * The worker owns S4 admission before invoking this function and checks it
  * again at acceptance/effect commit. No key, file, network or hidden outcome
@@ -56,9 +68,17 @@ export function evaluateAdmittedRiverKernel(
       : (baseline.amount ??
         Math.min(original.snapshot.player.stack, Number(original.snapshot.gameState.toCall)));
   const choice: CorrectiveAction = { action: baseline.action, amount };
-  const proposal = proposeOriginalRiverCorrection(original, choice);
+  const tournament = catalog.version === TOURNAMENT_KERNEL_CATALOG_VERSION;
+  const proposal = tournament
+    ? proposeOriginalTournamentRiverCorrection(original, baseline)
+    : proposeOriginalRiverCorrection(original, choice);
   if (
     proposal.status !== 'proposed' ||
+    (catalog.version === TOURNAMENT_KERNEL_CATALOG_VERSION &&
+      (!('objective' in proposal) ||
+        proposal.objective !== catalog.objective ||
+        proposal.modelVersion !== catalog.modelVersion ||
+        proposal.kernelVersion !== catalog.kernelVersion)) ||
     !proposal.inputDigest ||
     !proposal.readFrameDigest ||
     !proposal.samplingContractDigest
@@ -73,7 +93,18 @@ export function evaluateAdmittedRiverKernel(
   if (!Number.isFinite(sample) || sample < 0 || sample >= 1) return unchanged();
   const applied = sample < proposal.conditionalProbability;
   const receipt: CorrectiveLiveKernelReceipt = {
-    version: 'horse-corrective-live-kernel-v1',
+    ...('modelGainLowerPrizeShare' in proposal
+      ? {
+          version: 'horse-corrective-live-kernel-v2' as const,
+          objective: proposal.objective,
+          utilityUnit: proposal.utilityUnit,
+          modelGainLowerPrizeShare: proposal.modelGainLowerPrizeShare,
+          tournamentContextDigest: proposal.tournamentContextDigest,
+        }
+      : {
+          version: 'horse-corrective-live-kernel-v1' as const,
+          modelGainLowerBb: proposal.modelGainLowerBb,
+        }),
     domain: correctiveDomainKey(domain),
     catalogDigest: correctiveKernelCatalogDigest(catalog),
     sourceSha: catalog.sourceRelease,
@@ -83,7 +114,6 @@ export function evaluateAdmittedRiverKernel(
     readFrameDigest: proposal.readFrameDigest,
     samplingContractDigest: proposal.samplingContractDigest,
     conditionalProbability: RIVER_CORRECTION_KERNEL.conditionalProbability,
-    modelGainLowerBb: proposal.modelGainLowerBb,
     baseline: choice,
     proposed: { ...proposal.to },
     selected: applied ? { ...proposal.to } : { ...choice },

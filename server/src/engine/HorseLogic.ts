@@ -1047,6 +1047,12 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  heuristic is a legacy fallback only - ServerTableEngine always passes
    *  gameMode, and isTournamentMode() trusts it first. */
   tournament?: {
+    /** Original observed payout terms; legacy absence remains unknown. */
+    payoutTermsVersion?: 1;
+    prizePoolFinalized?: boolean | null;
+    bubbleProtection?: boolean | null;
+    prizeUnitCents?: number | null;
+    finalizedPrizeLadder?: import('./HorseTournamentPayoutTerms.js').HorseFinalizedPrizeLadder;
     /** Phase 6 context contract. Every live tournament decision carries it. */
     schemaVersion?: 1;
     contextStatus?: TournamentContextStatus;
@@ -1506,7 +1512,9 @@ function icmRisk(
   // were counted as "legacy" fallbacks in the proof-of-receipt numbers. Same
   // for a context that simply has not arrived yet (empty tournament object
   // during the first fetch): that is "warming", not a degraded model.
-  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) {
+  // An absent/untrusted payout context is unknown, not evidence of one
+  // paid place. Keep the existing warming/fallback path until it arrives.
+  if (gs.format === 'spin' && explicit?.spotsPaid === 1) {
     lastIcmPath = 'spin_cev';
     return 0;
   }

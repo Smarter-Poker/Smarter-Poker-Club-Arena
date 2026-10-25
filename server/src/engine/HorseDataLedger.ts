@@ -192,6 +192,12 @@ const PHASE13_TELEMETRY_PREFIXES = [
 ] as const;
 
 export const RETIRED_RECEIPTS: LedgerEntry[] = [
+  retiredReceipt(
+    'horse_winner_read_*',
+    'source',
+    'the floor-wide winner telemetry was replaced by individual original-participant completion receipts under horse_observer_*; the winner policy remains active inside each private observer sandbox',
+    'V53'
+  ),
   ...PHASE12_TELEMETRY_PREFIXES.flatMap((prefix) =>
     RETIRED_PHASE12_REASONS.map((reason) =>
       retiredReceipt(
@@ -2891,21 +2897,21 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V50'
   ),
   receipt(
+    'horse_observer_*',
+    'HorseDecisionWorkerRuntime',
+    'individual public-read admission, original-participant completion learning, unscoped-profile refusal and explicit missing-context/cutoff/capacity gaps; counters alone never prove independent fleet coverage or strategy qualification',
+    'V45'
+  ),
+  receipt(
     'horse_opponent_memory_*',
     'HorseDecisionWorkerRuntime durable profile import',
     'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
     'V50'
   ),
   receipt(
-    'horse_winner_read_*',
-    'HorseDecisionWorkerRuntime.executeObservation (HorseWinnerRead)',
-    'a completed hand whose per-player nets reached the proven-winner read (hand) or were refused as unusable (refused); no player identifiers or cards leave the worker',
-    'V53'
-  ),
-  receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
-    'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',
+    'a bounded cross-shard completion delivery was shed or unavailable; a delivered mirror learns only for the original individual participants registered on that worker and never authorizes pooled reads',
     'V50'
   ),
   receipt(

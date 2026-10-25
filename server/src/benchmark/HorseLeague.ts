@@ -1112,6 +1112,15 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // V15 BOATS (2026-09-28): default OFF. a turns it on, b is today's brain.
   // Ship it default ON only after this resolves significant positive.
   { name: 'plo5_v15_boats', variant: 'plo5', pairs: 6000, a: { v15Boats: true }, b: {} },
+  // V56 (2026-10-25): PLO6 paired-board river nut discipline. a is today's
+  // brain with it (default ON), b is the brain without it.
+  {
+    name: 'plo6_v56_river_nuts',
+    variant: 'plo6',
+    pairs: 6000,
+    a: {},
+    b: { v56Plo6RiverNuts: false },
+  },
   /*
    * LEAGUE-GATED SELF-TUNER (Dan 2026-10-19: "League-gated nudges"). The
    * nightly tuner proposes +/-0.02 moves on three dials. A move reaches a live

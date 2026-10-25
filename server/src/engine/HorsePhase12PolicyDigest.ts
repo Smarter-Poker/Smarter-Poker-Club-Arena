@@ -108,6 +108,8 @@ export const HORSE_PHASE12_POLICY_SOURCE_FILES: readonly string[] = Object.freez
  * change a Phase 12 candidate decision or its legal form. */
 export const HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/BrainTelemetry.ts':
+      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
     'src/engine/omaha/OmahaVariantPolicyPack.ts':
       'imported by OmahaVariantEquity only for isOmahaPolicyVariant, which gates the Phase 11 entry (omahaVariantEquity); the Phase 12 sampler calls variantEquityFromShowdowns directly, and the registry reads only Phase 11 pack versions from it',
     'src/engine/CryptoRandom.ts':

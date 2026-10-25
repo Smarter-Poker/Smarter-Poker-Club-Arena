@@ -11,6 +11,7 @@ import {
   type MemorySize,
 } from './HorseOpponentMemory.js';
 import { respectWinner } from './HorseWinnerRead.js';
+import { noteFire } from './BrainTelemetry.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -68,6 +69,7 @@ import {
   observeExploitRow,
   openerRangeWidth,
   opponentExploitRead,
+  presumedAggressorRead,
   postflopBluffMod,
   reRaiseLineWidth,
   reRaiseWidth,
@@ -439,6 +441,8 @@ export class HorseMind {
   private static durableOpponentMemory = false;
   private static durableOpponentVersions = new Map<string, number>();
   private static decisionVariant: string | null = null;
+  /** PLO PRESUMPTION: the people at the decision's table; null outside one. */
+  private static decisionHumans: ReadonlySet<string> | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
@@ -831,14 +835,45 @@ export class HorseMind {
           )
         )
       : undefined;
-    return opponentExploitRead(
+    // A KNOWN MANIAC IS A MANIAC AT EVERY TABLE SIZE (2026-10-25): the same
+    // game's sibling table size, read against ITS own envelope, may
+    // corroborate a statistic this size already places past every horse.
+    const family = scope.split(':')[0];
+    const siblings =
+      durable && variant
+        ? opponentMemoryDonors(this.decisionMode, size).map(([mode, donorSize]) =>
+            opponentExploitRead(
+              this.exploitCounters.get(opponentMemoryKey(userId, variant, mode, donorSize)),
+              `${family}:${donorSize}` as ReadScope,
+              this.decisionVariant
+            )
+          )
+        : [];
+    const read = opponentExploitRead(
       durable ??
         (this.durableOpponentMemory && variant
           ? undefined
           : this.exploitCounters.get(`${scope}|${userId}`)),
       scope,
-      this.decisionVariant
+      this.decisionVariant,
+      siblings
     );
+    if (read?.corroborated) noteFire('opponent_exploit_corroborated');
+    // PLO PRESUMPTION (Dan 2026-10-25): "TAG THEM ALL FROM THE START, UNLESS
+    // OTHERWISE PROVEN DIFFERENTLY" - every person at an Omaha table is read
+    // as an aggressive raiser until their own hands prove otherwise.
+    if (family === 'omaha' && this.decisionHumans?.has(userId)) {
+      const presumed = presumedAggressorRead(
+        read,
+        durable ?? this.exploitCounters.get(`${scope}|${userId}`),
+        scope,
+        this.decisionVariant
+      );
+      if (presumed.outcome === 'presumed') noteFire('plo_human_presumed_aggressive');
+      else if (presumed.outcome === 'disproved') noteFire('plo_human_presumption_disproved');
+      return presumed.read;
+    }
+    return read;
   }
 
   static targetingOf(heroId: string, oppId: string): number {
@@ -885,11 +920,13 @@ export class HorseMind {
   static setDecisionScope(
     scope: ReadScope | null,
     variant: string | null = null,
-    mode: MemoryMode = 'cash'
+    mode: MemoryMode = 'cash',
+    humans: readonly string[] | null = null
   ): void {
     this.decisionMode = mode;
     this.decisionScope = scope;
     this.decisionVariant = scope ? variant : null;
+    this.decisionHumans = scope && humans ? new Set(humans) : null;
   }
 
   static currentScope(): ReadScope | null {

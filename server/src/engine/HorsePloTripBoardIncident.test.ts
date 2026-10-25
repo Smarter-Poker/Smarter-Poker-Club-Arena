@@ -180,7 +180,23 @@ describe('PLO trip-board full house incident 45872846', () => {
     expect(omahaBoatsAbove(aces.hero.cards, aces.state.communityCards).boats).toBe(2);
     expect(omahaBoatsAbove(tens.hero.cards, tens.state.communityCards).boats).toBe(0);
   });
-  for (const variant of variants)
+  // PLO6 is ruled separately since 2026-10-25 (Dan: "IN PLO6 IF ITS NOT THE
+  // NUTS, ITS PROBABLY NOT GOOD"; V56, HorsePlo6RiverNuts.test.ts): on this
+  // river the under-full (beaten by a random six-card hand ~40% of the time)
+  // folds to the bet, the top boat (~15%, only the last deuce) calls without
+  // raising, and quads keeps its value raise. PLO4, PLO5 and PLO8 keep the
+  // original incident ruling below unchanged.
+  for (const style of styles) {
+    it(`plo6/${style} folds the under-full and flats the top boat (V56)`, () => {
+      for (let seed = 100; seed < 112; seed++)
+        expect(decide(configured('plo6'), style, seed).action).toBe('fold');
+      expect(decide(configured('plo6', 'jj', 'raised'), style).action).toBe('fold');
+      expect(decide(configured('plo6', 'jj', 'allinprice'), style).action).toBe('fold');
+      expect(['call', 'all_in']).toContain(decide(configured('plo6', 'top'), style).action);
+      expect(['raise', 'all_in']).toContain(decide(configured('plo6', 'quads'), style).action);
+    });
+  }
+  for (const variant of variants.filter((v) => v !== 'plo6'))
     for (const style of styles) {
       it(`${variant}/${style} flats a first bet or later raise without adding the extra 186.90`, () => {
         for (let seed = 100; seed < 112; seed++) {

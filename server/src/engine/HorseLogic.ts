@@ -212,6 +212,7 @@ import {
   omahaNutStatus,
   omahaBoatsAbove,
   omahaBoatDominated,
+  omahaRiverBeatProbability,
   type OmahaNutStatus,
   omahaMadeClass,
   type OmahaMadeInfo,
@@ -990,6 +991,12 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** Phase 5 Round 1 canonical live-decision contract. Offline fixtures may
    * omit it; every live worker request is runtime-validated at version 1. */
   stateSchemaVersion?: 1;
+  /**
+   * PLO PRESUMPTION (Dan 2026-10-25): the user ids of the seats a person
+   * plays. Server-side decision input only, never serialised to a client.
+   * Absent (offline fixtures, replays) means nobody is presumed.
+   */
+  humanUserIds?: string[];
   /** Public deal census captured before stripping private cards. Connectivity
    * and folding never return a dealt hand to the physical deck. */
   dealtSeatIds?: number[];
@@ -2009,6 +2016,11 @@ export interface HorseDecideOpts {
    *  to ablate (default: enabled; league matchups v53_pressure, plo4/plo5/
    *  plo6_v53_pressure). */
   v53Pressure?: boolean;
+  /** V56 (2026-10-25): PLO6 river nut discipline on a paired board. Facing a
+   *  river bet, a hand one random hand beats 15%+ of the time folds (unless
+   *  the price is tiny), and one beaten 5%+ calls instead of raising. Disable to ablate (default: enabled; league
+   *  matchup plo6_v56_river_nuts). */
+  v56Plo6RiverNuts?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -2934,6 +2946,82 @@ function enforceAuthoritativeDecision(
   return { action: wagerAction, amount, thinkTime: 0 };
 }
 
+// ═══ V56 PLO6 RIVER NUT DISCIPLINE (2026-10-25) ═══
+// Dan: "YOU HAVE TO INSURE THAT HORSES ARE NOT CALLING OFF THERE STACKS ON
+// PAIRED BOARDS IN PLO6" and "IN PLO6 IF ITS NOT THE NUTS, ITS PROBABLY NOT
+// GOOD". Measured on production 2026-10-25 (SELECT only): 324 PLO6 cash
+// river decisions facing a bet on a paired board, 3 hours. Each hand was
+// scored by the chance one random six-card hand beats it
+// (omahaRiverBeatProbability) and the decision measured from that moment
+// against folding:
+//   call,  beaten < 5%       11 spots  won 55%     -37 bb
+//   call,  beaten 5-15%      14 spots  won 36%    -215 bb
+//   call,  beaten 15-30%     87 spots  won 22%  -1,870 bb
+//   call,  beaten 30-50%     86 spots  won  6%  -2,322 bb
+//   raise, beaten 5-30%      53 spots           -1,544 bb
+// A river bet on a paired PLO6 board comes from a range far stronger than a
+// random hand, so a hand a random hand beats 15% of the time is beaten much
+// more often by the bettor. The rule runs in the policy graph's final
+// wager_rules node, after every owner, so no strategy branch can call
+// around it and the graph still binds the executed action.
+/** Beaten this often by one random hand: fold to a river bet. */
+export const PLO6_RIVER_FOLD_BEAT_PROB = 0.15;
+/** Beaten this often: call at most, never raise. */
+export const PLO6_RIVER_RAISE_BEAT_PROB = 0.05;
+/** A call priced below this share of the final pot is cheap enough to keep. */
+export const PLO6_RIVER_CHEAP_PRICE = 0.1;
+function plo6RiverNutDiscipline(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  try {
+    if ((opts.v56Plo6RiverNuts ?? true) === false) return decision;
+    if (String(gs.gameVariant ?? '').toLowerCase() !== 'plo6' || gs.stage !== 'river')
+      return decision;
+    if (decision.action !== 'call' && decision.action !== 'raise' && decision.action !== 'all_in')
+      return decision;
+    const board = gs.communityCards ?? [];
+    if (board.length !== 5 || (gs.boardCount ?? 1) > 1) return decision;
+    const ranks = new Map<string, number>();
+    for (const c of board) ranks.set(c.rank, (ranks.get(c.rank) ?? 0) + 1);
+    if (![...ranks.values()].some((n) => n >= 2)) return decision;
+    const stack = Number.isFinite(player.stack) ? Math.max(0, player.stack) : 0;
+    const toCall = Number.isFinite(gs.toCall)
+      ? Math.max(0, gs.toCall as number)
+      : Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
+    if (toCall <= 0.005) return decision;
+    const beaten = omahaRiverBeatProbability(player.cards, board, 6);
+    if (beaten === null) return decision;
+    const pot = Number.isFinite(gs.pot) ? Math.max(0, gs.pot) : 0;
+    const price = Math.min(toCall, stack) / Math.max(1e-9, pot + Math.min(toCall, stack));
+    const callFor = (): HorseDecision =>
+      toCall >= stack - 0.005
+        ? { ...decision, action: 'all_in', amount: undefined }
+        : { ...decision, action: 'call', amount: Math.round(toCall * 100) / 100 };
+    // A shove for no more than the call is a call, not a raise.
+    const isRaise =
+      decision.action === 'raise' || (decision.action === 'all_in' && stack > toCall + 0.005);
+    if (beaten >= PLO6_RIVER_FOLD_BEAT_PROB) {
+      if (price <= PLO6_RIVER_CHEAP_PRICE) {
+        if (!isRaise) return decision;
+        noteFire('v56_plo6_river_raise_to_call');
+        return callFor();
+      }
+      noteFire('v56_plo6_river_fold');
+      return { ...decision, action: 'fold', amount: undefined };
+    }
+    if (isRaise && beaten >= PLO6_RIVER_RAISE_BEAT_PROB) {
+      noteFire('v56_plo6_river_raise_to_call');
+      return callFor();
+    }
+    return decision;
+  } catch {
+    return decision;
+  }
+}
+
 export class HorseLogic {
   static decide(
     player: SeatPlayer,
@@ -2967,7 +3055,8 @@ export class HorseLogic {
             : 0
         ),
         typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
-        gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
+        gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash',
+        Array.isArray(gameState.humanUserIds) ? gameState.humanUserIds : null
       );
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
@@ -3900,7 +3989,12 @@ export class HorseLogic {
       return { decision };
     }).decision;
     decision = graph.run('wager_rules', decision, () => ({
-      decision: fullPotNearPotWager(riverNutsRaise(decision, player, gs), player, gs),
+      decision: fullPotNearPotWager(
+        // V56: PLO6 paired-board river nut discipline, after every owner.
+        plo6RiverNutDiscipline(riverNutsRaise(decision, player, gs), player, gs, opts),
+        player,
+        gs
+      ),
     })).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(

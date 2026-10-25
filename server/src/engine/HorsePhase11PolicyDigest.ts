@@ -106,6 +106,8 @@ export const HORSE_PHASE11_POLICY_DIAGNOSTIC_BOUNDARY: readonly string[] = Objec
  */
 export const HORSE_PHASE11_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/BrainTelemetry.ts':
+      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
     'src/engine/CryptoRandom.ts':
       'the physical deck shuffle of a live hand (PokerEngine.Deck); no policy or sampler call reads it, the sampler uses the HorseEval fast random stream',
     'src/engine/HorseTournamentContinuation.ts':

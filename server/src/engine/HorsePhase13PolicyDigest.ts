@@ -169,6 +169,8 @@ export const HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string
       'imported by HorseEval for the Phase 8 tournament continuation capture, which no joint call requests',
     'src/engine/HorseDecisionEffects.ts':
       'HorseMind decision-effect bookkeeping; it holds no value a joint proposal reads',
+    'src/engine/BrainTelemetry.ts':
+      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
     'src/engine/HorseMindHandIdentity.ts':
       'HorseMind hand-identity binding; it holds no value a joint proposal reads',
     'src/engine/HorsePlanHandIdentity.ts':

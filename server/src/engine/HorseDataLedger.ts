@@ -688,6 +688,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V53'
   ),
   flag(
+    'v56Plo6RiverNuts',
+    'PLO6 paired-board river nut discipline: facing a bet, fold a hand a random six-card hand beats 15% of the time unless the price is tiny, and call instead of raising one beaten 5% of the time (league plo6_v56_river_nuts)',
+    'V56'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -884,6 +889,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'every public seat: stack, bet, folded/all-in/sitting-out, totalInvested; private cards are always empty here and hero cards travel separately'
   ),
   state('stateSchemaVersion', 'canonical live decision schema; production requires version 1'),
+  state(
+    'humanUserIds',
+    'PLO presumption: the seats a person plays, from the engine roster; server-side only'
+  ),
   state('heroSeat', 'seat whose private cards and action are being decided'),
   state('currentPlayerSeat', 'authoritative HandController turn owner'),
   state('legalActions', 'authoritative action menu including reopen and structure rules'),
@@ -1584,6 +1593,36 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'opponent_exploit_calldown',
     'HorseLogic (opponent exploit)',
     "the current bettor's own read priced the call instead of the table average",
+    'OPPX'
+  ),
+  receipt(
+    'v56_plo6_river_fold',
+    'HorseLogic (V56 PLO6 river nuts)',
+    "a PLO6 river bet on a paired board was folded because a random hand beats the hand 15% of the time or more (Dan: 'IF ITS NOT THE NUTS, ITS PROBABLY NOT GOOD')",
+    'V56'
+  ),
+  receipt(
+    'v56_plo6_river_raise_to_call',
+    'HorseLogic (V56 PLO6 river nuts)',
+    'a PLO6 river raise on a paired board became a call because a better hand was possible',
+    'V56'
+  ),
+  receipt(
+    'opponent_exploit_corroborated',
+    'HorseMind (opponent exploit)',
+    "a statistic past every horse at this table size engaged because the same player's other table size engaged it (2026-10-25)",
+    'OPPX'
+  ),
+  receipt(
+    'plo_human_presumed_aggressive',
+    'HorseMind (PLO presumption)',
+    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'OPPX'
+  ),
+  receipt(
+    'plo_human_presumption_disproved',
+    'HorseMind (PLO presumption)',
+    "a person's own hands showed raising no higher than the average horse, so the PLO presumption came off",
     'OPPX'
   ),
   receipt(

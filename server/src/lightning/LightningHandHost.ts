@@ -1608,6 +1608,9 @@ export class LightningHandHost {
         userId,
         seat: me.seat,
         horseProfile: this.participants.get(userId)?.horseProfile,
+        humanUserIds: [...this.participants.entries()]
+          .filter(([, participant]) => participant.isHorse === false)
+          .map(([id]) => id),
         variant: String(rules.game_variant || 'nlh'),
         bigBlind: Number(rules.big_blind) || 2,
         smallBlind: Number(rules.small_blind) || 1,
@@ -1964,6 +1967,9 @@ export class LightningHandHost {
         userId,
         seat: me.seat,
         horseProfile: this.participants.get(userId)?.horseProfile,
+        humanUserIds: [...this.participants.entries()]
+          .filter(([, participant]) => participant.isHorse === false)
+          .map(([id]) => id),
         variant: String(rules.game_variant || 'nlh'),
         bigBlind: Number(rules.big_blind) || 2,
         smallBlind: Number(rules.small_blind) || 1,

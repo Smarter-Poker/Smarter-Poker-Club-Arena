@@ -48,6 +48,17 @@ async function horseHand(base: number, controlled: Set<string>) {
     },
   });
   hosts.push(t.host);
+  // These tests own the turn clock, not the policy's cards: a horse that is
+  // already folding folds at once through the Lightning Fold door (Dan
+  // 2026-10-24), which would end the turn under test before it starts. So the
+  // brain's answer here never folds; it calls or checks instead.
+  const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
+  t.horseLane.raw.decideFast.mockImplementation(async (snapshot: any) => {
+    const result = await brain(snapshot);
+    if (result.decision.action !== 'fold') return result;
+    const action = snapshot.gameState.toCall > 0 ? 'call' : 'check';
+    return { ...result, decision: { ...result.decision, action, amount: undefined } };
+  });
   await t.host.start();
   await flush();
   const h = t.host as any;
@@ -55,6 +66,12 @@ async function horseHand(base: number, controlled: Set<string>) {
   expect(user).toBeTruthy();
   return { ...t, h, user, formed };
 }
+
+/** The lane requests made for one player (early looks included). */
+const callsFor = (
+  t: { horseLane: { calls: Array<{ player: { user_id: string } }> } },
+  user: string
+) => t.horseLane.calls.filter((c) => c.player.user_id === user).length;
 
 const timeBankFrames = (t: Awaited<ReturnType<typeof horseHand>>, user: string) =>
   // One frame per room shown the hand; the player's own room is enough.
@@ -166,7 +183,7 @@ describe('a horse account driven by its own client plays on the human clock (Lig
     const controlled = new Set<string>();
     const t = await horseHand(3400, controlled);
     // The brain was asked and its answer is waiting out its think time.
-    expect(t.horseLane.calls.length).toBe(1);
+    expect(callsFor(t, t.user)).toBe(1);
     controlled.add(t.user);
     t.host.noteClientControl(t.user);
     await vi.advanceTimersByTimeAsync(14_000);

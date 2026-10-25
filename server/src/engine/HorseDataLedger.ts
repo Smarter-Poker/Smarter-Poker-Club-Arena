@@ -678,6 +678,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V52'
   ),
   flag(
+    'v53Pressure',
+    'read-gated pressure on a credibly aggressive human: wider in-position 3-bets, flop/turn value and semi-bluff raises of a wide bettor, river bluffs into a credible over-folder (league v53_pressure)',
+    'V53'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -2906,6 +2911,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic committed branch (V51)',
     'a committed river one-pair hand flatted where it used to jam',
     'V51'
+  ),
+  // No floor: every V53 receipt is read-gated on a credibly aggressive or
+  // over-folding human, so a horse-only hour is silent by design.
+  receipt(
+    'v53_*',
+    'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
+    'a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold\'em solver spot handed to the exploit layer',
+    'V53'
   ),
   receipt(
     'v46_class_read',

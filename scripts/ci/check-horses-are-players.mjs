@@ -113,11 +113,12 @@ const REGISTER = {
     why: 'Refuses a chaos DRILL on any table with a real person at it. Drills are deliberate damage; declining to inflict it on humans is not a benefit withheld from horses.',
   },
   'server/src/lightning/LightningHandHost.ts': {
-    allowed: 2,
+    allowed: 3,
     kind: 'IDENTIFICATION',
     why: [
       'Sets has_human on the Lightning hand_history row exactly as services/supabase/handHistory.ts does for a physical hand, so sp_prune_hand_history applies the same retention rule. Storage policy only: the horse is matched, dealt, timed and settled identically.',
       "clientControls() (2026-10-22) answers false for a non-horse participant: it only decides WHO supplies a horse's input, the brain or the account's own authenticated client (the Lightning pilot witnesses). A horse whose client controls its seat gets exactly the human clock, time bank, timeout and decision announcement; nothing is withheld. See docs/changelog/2026-10-22-a-horse-accounts-own-client-drives-its-seat.md.",
+      "offerHorseEarlyLooks() (Dan 2026-10-24, \"HORSES SHOULD FOLD RIGHT AWAY IF THEY WERE ALREADY FOLDING\") skips a non-horse participant because it is the horse INPUT DEVICE pressing Lightning Fold: a person presses the same fast_fold door with their own button, and the horse's press goes through that identical door (handlePlayerAction 'fast_fold', foldAvailable, the operator switch). Nothing is withheld from either. See docs/changelog/2026-10-24-lightning-horses-four-games-and-fast-fold.md.",
     ].join('\n'),
   },
   'server/src/engine/ServerTableEngineTurns.ts': {

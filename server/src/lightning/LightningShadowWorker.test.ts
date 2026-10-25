@@ -504,9 +504,11 @@ describe('the engine and GameServer wiring', () => {
     expect(report.clusterId).toBe(CLUSTER_A);
     expect(report.players).toEqual([
       { userId: P1, presence: 'connected' },
-      { userId: P2, presence: 'connected' },
+      // A horse's input device is the engine: it reports the desktop class a
+      // browser would (Dan 2026-10-24, "4 GAMES MAX"). Presence is unchanged.
+      { userId: P2, presence: 'connected', platform: 'desktop' },
       { userId: P3, presence: 'unknown' },
-      { userId: P4, presence: 'disconnected' },
+      { userId: P4, presence: 'disconnected', platform: 'desktop' },
     ]);
     e.preciseTimer?.dispose?.();
     vi.doUnmock('../services/supabase/client.js');

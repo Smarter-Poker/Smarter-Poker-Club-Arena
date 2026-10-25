@@ -125,6 +125,7 @@ import {
   aggressiveBettorPressure,
   riverFoldLowerBound,
   riverBluffFrequency,
+  pressureTargetFoldMul,
   type AggressiveOpenerPressure,
   preflopVsReRaiser,
   trapMultiplier,
@@ -1985,6 +1986,11 @@ export interface HorseDecideOpts {
    *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
    *  (default: enabled; league matchup v51_river_flat). */
   v51RiverFlat?: boolean;
+  /** V55: river Omaha sets/trips on a board permitting stronger hands do
+   * not turn a qualified call into a raise. Opt-in until the separate
+   * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
+   * 6000-pair probe; no production default is changed. */
+  v55OmahaRiverTripsFlat?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -4576,10 +4582,51 @@ export class HorseLogic {
           // MANIAC PRESSURE: a call that is not all-in still has streets to
           // play, out of the maniac's way only when hero is all-in or the
           // maniac is; the equity is realised a little short of the sample.
-          const realization38 =
+          // ═══ V53 FACING THE AGGRESSIVE HUMAN'S 3-BET (2026-10-24) ═══
+          // Measured on production (WooWoo, PLO5, 4 days): when a horse opened
+          // and he 3-bet, the horse's call lost 14.9 bb a hand over 88 hands
+          // and its 4-bet won 17.4 bb a hand over 26. The flat of a pot-sized
+          // 3-bet realizes far less than its raw equity, worst out of position
+          // against the player who then has the initiative. Hero opened, a
+          // pressure target re-raised it, the re-raiser is not all in: the
+          // flat needs 10 points of realization out of position (5 in
+          // position) and a hand clear of that bar by 6 points 4-bets.
+          let v53ThreeBet = false;
+          let v53Realization = 0;
+          if (
+            (opts.v53Pressure ?? true) !== false &&
+            opts.mind !== false &&
+            raises === 2 &&
+            !raiserAllIn38 &&
+            effCall38 < player.stack &&
+            (gs.actionHistory ?? []).some(
+              (a) =>
+                a.stage === 'preflop' &&
+                a.userId === player.user_id &&
+                (a.action === 'raise' || a.action === 'all_in')
+            )
+          ) {
+            try {
+              if (aggressiveBettorPressure(HorseMind.opponentRead(raiser38.user_id)) !== null) {
+                const order53 = (seat: number): number => {
+                  const d = seat - (gs.dealerSeat ?? 0);
+                  return d <= 0 ? d + 1024 : d;
+                };
+                const heroIp53 = order53(player.seat) > order53(raiser38.seat);
+                v53ThreeBet = true;
+                v53Realization = heroIp53 ? 0.05 : 0.1;
+              }
+            } catch {
+              v53ThreeBet = false;
+              v53Realization = 0;
+            }
+          }
+          const realization38 = Math.max(
             maniacPrice38 && !variantPrice38 && !raiserAllIn38 && effCall38 < player.stack
               ? 0.03
-              : 0;
+              : 0,
+            v53Realization
+          );
           const required38 = Math.min(
             0.99,
             effCall38 / ((pot38 + effCall38) * (1 - rake38)) +
@@ -4589,6 +4636,22 @@ export class HorseLogic {
           );
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
+          if (
+            v53ThreeBet &&
+            gap38 >= 0.06 &&
+            gs.legalActions?.includes('raise') &&
+            gs.minRaiseTo != null &&
+            gs.maxRaiseTo != null &&
+            gs.maxRaiseTo >= gs.minRaiseTo
+          ) {
+            const target53 = vi.isPotLimit
+              ? gs.maxRaiseTo
+              : Math.min(gs.maxRaiseTo, Math.max(gs.minRaiseTo, gs.currentBet * 2.3));
+            if (telemetryOn(opts)) noteFire('v53_pressure_four_bet');
+            notePhase6Route('variant_fallback', 'variant_price');
+            return { action: 'raise', amount: Math.round(target53 * 100) / 100, thinkTime: 0 };
+          }
+          if (v53ThreeBet && telemetryOn(opts)) noteFire('v53_pressure_three_bet_priced');
           const callIt = Math.abs(gap38) <= 0.015 ? fastRandom() < 0.5 + gap38 / 0.03 : gap38 > 0;
           if (callIt) {
             // Clearly ahead of the price with chips behind and others still
@@ -5224,6 +5287,18 @@ export class HorseLogic {
     // PROOF OF RECEIPT: declared once, up front — several stamped blocks run
     // before the equity/risk section.
     const tele15 = telemetryOn(opts);
+    // V53 CONTINUED PRESSURE (2026-10-24): while hero holds the initiative, a
+    // bet into a pressure target is priced at that target's own fold rate
+    // (HorseOpponentExploit.pressureTargetFoldMul). Resolved lazily: the
+    // initiative read is assigned further down, before any EV bet consults it.
+    let initiative53: () => boolean = () => false;
+    const v53BarrelFoldMul = (base: number, userId: string): number => {
+      if ((opts.v53Pressure ?? true) === false || !initiative53()) return base;
+      const mul = pressureTargetFoldMul(HorseMind.opponentRead(userId), gs.gameVariant);
+      if (mul === null || mul <= base) return base;
+      if (tele15) noteFire('v53_pressure_barrel');
+      return mul;
+    };
     /** V17: live non-all-in players acting AFTER hero this street (-1 = unknown). */
     let playersBehind17 = -1;
     /**
@@ -5678,6 +5753,7 @@ export class HorseLogic {
 
     // ═══ V4: street IQ — initiative, position, made class, scare, geometry ═══
     let initiative: 'hero' | 'opp' | 'none' = 'none';
+    initiative53 = () => initiative === 'hero';
     let ip = false;
     let cat = 0; // made-hand category right now (0 = unknown)
     let scare = NO_SCARE;
@@ -6813,6 +6889,7 @@ export class HorseLogic {
             if (useMind) {
               try {
                 foldMul = HorseMind.exploit(o.user_id, useCounterAdapt).bluffMod;
+                foldMul = v53BarrelFoldMul(foldMul, o.user_id);
               } catch {
                 /* an unavailable read keeps the neutral fold model */
               }
@@ -7291,6 +7368,7 @@ export class HorseLogic {
           if (useMind) {
             try {
               foldMul = HorseMind.exploit(o.user_id, useCounterAdapt).bluffMod;
+              foldMul = v53BarrelFoldMul(foldMul, o.user_id);
             } catch {
               /* reads are best-effort */
             }
@@ -7967,6 +8045,14 @@ export class HorseLogic {
       0,
       Number((player as { totalInvested?: number }).totalInvested ?? 0)
     );
+    const riverTripsFlat55 =
+      opts.v55OmahaRiverTripsFlat === true &&
+      vi.isOmaha &&
+      !vi.isHiLo &&
+      !vi.isFixedLimit &&
+      isRiver &&
+      cat === 4 &&
+      made40?.weak === true;
     const committed =
       spr < 1.2 ||
       toCall >= stack ||
@@ -8037,7 +8123,8 @@ export class HorseLogic {
           (boatDominated15 && raisedAfterAggr) ||
           tripBoardDominatedBoat15 ||
           (useV21 && dominated21) ||
-          planCallOnly23;
+          planCallOnly23 ||
+          riverTripsFlat55;
         // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
         // earlier line: it denies equity and can fold out a draw. On the
         // river there is nothing to deny, and the only hands that call a jam
@@ -8052,6 +8139,7 @@ export class HorseLogic {
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard));
         if (toCall >= stack || preferFlat15) {
+          if (tele15 && riverTripsFlat55) noteFire('v55_omaha_river_trips_flat');
           if (tele15 && tripBoardDominatedBoat15)
             noteFire('horse_continuation_trip_board_boat_flat');
           return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -8158,8 +8246,9 @@ export class HorseLogic {
       // V15 BOATS: a full house that a bigger boat beats, raised after it
       // bet, calls. The range that raises a boat on a paired board is the
       // bigger boat; re-raising only ever gets called by it.
-      if (tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)) {
-        if (tele15)
+      if (riverTripsFlat55 || tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)) {
+        if (tele15 && riverTripsFlat55) noteFire('v55_omaha_river_trips_flat');
+        if (tele15 && (tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)))
           noteFire(
             tripBoardDominatedBoat15 ? 'horse_continuation_trip_board_boat_flat' : 'v15_boat_gate'
           );

@@ -35,8 +35,8 @@ describe('the Cashier trade ledger uses one server-owned visibility matrix', () 
 
   it("honors the UI's 250-row window plus its truthful sentinel row", () => {
     expect(migration).toContain('least(greatest(coalesce(p_limit, 50), 1), 251)');
-    expect(page).toContain('p_limit: recordsLimit + 1');
-    expect(page).toContain('Math.min(limit + 50, 250)');
+    expect(page).toContain('p_limit: HISTORY_PAGE + 1');
+    expect(page).toContain('const HISTORY_PAGE = 50;');
     expect(migration.match(/ORDER BY ct\.created_at DESC, ct\.id DESC/g)).toHaveLength(3);
   });
 
@@ -63,7 +63,7 @@ describe('the Cashier trade ledger uses one server-owned visibility matrix', () 
   });
 
   it('calls the RPC and never re-imposes a self-only browser filter', () => {
-    expect(page).toContain("supabase.rpc('fn_cashier_transaction_history'");
+    expect(page).toContain("supabase.rpc('fn_cashier_history_feed'");
     expect(page).not.toContain(".from('chip_transactions')");
     expect(page).not.toContain('from_user_id.eq.${user.id},to_user_id.eq.${user.id}');
   });

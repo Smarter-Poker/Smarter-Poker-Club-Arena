@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  cashoutRowTitle,
   describeChipTransaction,
   ledgerDirection,
   walletRoute,
@@ -88,6 +89,46 @@ describe('the cashier transaction history', () => {
     );
   });
 
+  it('titles each cash-out leg in plain words, never as a transfer to the agent it was sent to', () => {
+    // The request: the player sees where it went; the agent it was sent to
+    // sees a request, not chips; anyone else sees who asked whom.
+    expect(cashoutRowTitle(hold, 'Golddigger', 'DarthBayter', PLAYER)).toBe(
+      'Cash-Out Request To DarthBayter'
+    );
+    expect(cashoutRowTitle(hold, 'Golddigger', 'DarthBayter', ASSIGNED)).toBe(
+      'Golddigger Requested A Cash-Out From You'
+    );
+    expect(cashoutRowTitle(hold, 'Golddigger', 'DarthBayter', ACCEPTER)).toBe(
+      'Golddigger Requested A Cash-Out From DarthBayter'
+    );
+    // The acceptance names who took the chips.
+    expect(cashoutRowTitle(accepted, 'Golddigger', 'KingFish', ACCEPTER)).toBe(
+      "You Accepted Golddigger's Cash-Out"
+    );
+    expect(cashoutRowTitle(accepted, 'Golddigger', 'KingFish', PLAYER)).toBe(
+      'KingFish Accepted Your Cash-Out'
+    );
+    expect(cashoutRowTitle(accepted, 'Golddigger', 'KingFish', ASSIGNED)).toBe(
+      "KingFish Accepted Golddigger's Cash-Out"
+    );
+    expect(cashoutRowTitle(declined, 'DarthBayter', 'Golddigger', PLAYER)).toBe(
+      'DarthBayter Cancelled Your Cash-Out'
+    );
+    expect(cashoutRowTitle({ transaction_type: 'agent_wallet_send' }, 'A', 'B', PLAYER)).toBeNull();
+  });
+
+  it("reads direction by the Full Statement's rule: a self move and a pot move are managed", () => {
+    const self = {
+      transaction_type: 'agent_wallet_self_stake',
+      from_user_id: 'a',
+      to_user_id: 'a',
+    };
+    expect(ledgerDirection(self, 'a')).toBe('managed');
+    const mint = { transaction_type: 'mint', from_user_id: 'a', to_user_id: 'b' };
+    expect(ledgerDirection(mint, 'b')).toBe('managed');
+    expect(ledgerDirection(mint, 'a')).toBe('managed');
+  });
+
   it('reads every other row by its sides, as before', () => {
     const send = { transaction_type: 'agent_wallet_send', from_user_id: 'a', to_user_id: 'b' };
     expect(ledgerDirection(send, 'a')).toBe('out');
@@ -111,13 +152,18 @@ describe('the cashier transaction history', () => {
     expect(page).toContain("return role === 'owner' || role === 'co_owner' || role === 'admin';");
     expect(page).toContain("['club', 'All Club Transactions'],");
     expect(page).toContain("['mine', 'My Transactions'],");
-    expect(page).toContain('{roleResolved && isClubStaffRole(myRole) ? (');
-    expect(page).toContain(
-      "roleResolved && isClubStaffRole(myRole) && historyScope === 'club' ? 'club' : 'mine';"
+    // Staff choose between the club and their own; agents between their own
+    // and their downline (Dan's Club Data rule); a player has one book.
+    expect(page).toMatch(
+      /isClubStaffRole\(myRole\)\s*\?\s*\[\s*\['club', 'All Club Transactions'\],\s*\['mine', 'My Transactions'\],?\s*\]/
     );
-    expect(page).toContain("supabase.rpc('fn_cashier_transaction_history', {");
+    expect(page).toMatch(
+      /isAgentRole\(myRole\)\s*\?\s*\[\s*\['mine', 'My Transactions'\],\s*\['downline', 'My Downline'\],?\s*\]/
+    );
+    expect(page).toMatch(/isClubStaffRole\(myRole\) && historyScope === 'club'\s*\?\s*'club'/);
+    expect(page).toContain("supabase.rpc('fn_cashier_history_feed', {");
     expect(page).toContain('p_scope: historyBook,');
-    expect(page).toContain('const direction = ledgerDirection(r, user.id);');
+    expect(page).toContain('const direction = ledgerDirection(r, viewer);');
   });
 
   it('pins the installed door in the post-deploy cashier contract', () => {
@@ -148,5 +194,29 @@ describe('the cashier transaction history', () => {
         'public.fn_arena_name(pt.alias, pt.username, pt.display_name, pt.first_name, pt.last_name, pt.full_name)'
       )
     ).toHaveLength(3);
+  });
+
+  it('searches, pages, narrows and totals on the server (Dan 2026-10-24, second round)', () => {
+    const page = read('src/pages/CashierTradePage.tsx');
+    // Search runs over the whole history, debounced, never over the rows on screen.
+    expect(page).toContain('p_search: historySearch || null,');
+    expect(page).toContain(
+      "setTimeout(() => setHistorySearch(typed.length >= 2 ? typed : ''), 350)"
+    );
+    // Older pages come from the last row on screen, never an offset.
+    expect(page).not.toContain('p_offset');
+    expect(page).toContain('p_before_at: last.createdAt,');
+    // An agent picks only a player inside his downline; the server refuses anyone else.
+    expect(page).toContain('.filter((row) => row.depth >= 1 && row.userId !== user?.id)');
+    expect(page).toContain("historyBook === 'downline' && downlinePeople.length > 0");
+    expect(page).toContain('p_person: historyPerson,');
+    // The club book shows the whole club's totals; a total still being
+    // counted says so and is asked again.
+    expect(page).toContain("supabase.rpc('fn_cashier_history_summary', {");
+    expect(page).toContain('Adding Up Earlier Days...');
+    // A cash-out nobody has decided shows how long it has waited, and its
+    // receipt carries its invoice number.
+    expect(page).toContain('waitingFor(r.requestCreatedAt ?? r.createdAt)');
+    expect(page).toContain('{receipt.invoiceNumber}');
   });
 });

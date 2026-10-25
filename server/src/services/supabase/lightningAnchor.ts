@@ -315,3 +315,37 @@ export async function lightningSeatsWhosePoolSessionEnded(
   }
   return out;
 }
+
+/**
+ * THE OPEN POOL SESSIONS THAT CARRY A DISCONNECT STAMP (2026-10-24).
+ *
+ * Of these players, which hold an OPEN pool session in this Cluster whose
+ * `disconnected_at` is set: player id -> pool_session_id (the player's room).
+ * The anchor engine asks it for the horses it is heartbeating, so its live
+ * heartbeat can clear the stamp through the presence door exactly as a
+ * returning room socket does (ServerTableEngineDealing
+ * .reportHorsesTheEngineHeartbeatKeepsHere).
+ *
+ * READS ONLY, and it throws when it cannot answer: an unreadable pool is not
+ * an empty one (10.86 rule 2).
+ */
+export async function lightningStampedPoolSessions(
+  clusterId: string,
+  playerIds: string[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const players = [...new Set(playerIds.filter(isUuid))];
+  if (!isUuid(clusterId) || players.length === 0) return out;
+  const { data, error } = await supabase
+    .from('lightning_pool_session')
+    .select('id, player_id')
+    .eq('cluster_id', clusterId)
+    .in('player_id', players)
+    .is('exited_at', null)
+    .not('disconnected_at', 'is', null);
+  if (error) throw new Error(`lightning_pool_session read failed: ${error.message}`);
+  for (const r of (data ?? []) as Array<{ id?: unknown; player_id?: unknown }>) {
+    if (isUuid(r.id) && isUuid(r.player_id)) out.set(r.player_id, r.id);
+  }
+  return out;
+}

@@ -67,6 +67,18 @@ function localStorageHasPrefix(prefix: string): boolean {
   return false;
 }
 
+const downloads = vi.hoisted(() => ({ calls: [] as Array<{ name: string; csv: string }> }));
+vi.mock('../src/utils/downloadCsv', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/utils/downloadCsv')>();
+  return {
+    ...actual,
+    downloadCsv: (name: string, csv: string) => {
+      downloads.calls.push({ name, csv });
+      return true;
+    },
+  };
+});
+
 vi.mock('../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: USER_ID }, isHydrating: false }),
 }));
@@ -356,8 +368,17 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    installRpc((name: string) => {
-      if (name === 'fn_cashier_transaction_history') {
+    installRpc((name: string, args?: { p_scope?: string }) => {
+      if (name === 'fn_cashier_history_summary') {
+        return Promise.resolve({
+          data:
+            args?.p_scope === 'club'
+              ? { mode: 'club', entries: 1, volume: '50.00', cashouts_paid: '0.00', complete: true }
+              : { mode: 'wallet', incoming: '0.00', outgoing: '0.00', net: '0.00', entries: 0 },
+          error: null,
+        }) as never;
+      }
+      if (name === 'fn_cashier_history_feed') {
         return Promise.resolve({
           data: [
             {
@@ -388,35 +409,110 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
-    if (screen.queryByRole('button', { name: /^Advanced/ }))
-      fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Transaction History' }));
+    // The simple Players heading is the requested entry into history. It has
+    // a hidden tab strip and must still expose the named history panel.
+    fireEvent.click(screen.getByRole('button', { name: 'Transaction History', exact: true }));
+    expect(await screen.findByRole('tabpanel', { name: 'Transaction History' })).toBeVisible();
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
-    expect(screen.getAllByText('50')).toHaveLength(2);
-    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
+    // The club book's totals are the whole club's, read from the server:
+    // one entry, 50 chips moved (the row prints its own 50 too), none paid out.
+    expect(await screen.findByText('Chips Moved')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('50')).toHaveLength(2));
+    expect(screen.getByText('Cash-Outs Paid')).toBeInTheDocument();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_history_summary', {
       p_club_id: CLUB_ID,
       p_scope: 'club',
+      p_kind: 'all',
+      p_from: null,
+      p_to: null,
+      p_person: null,
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_history_feed', {
+      p_club_id: CLUB_ID,
+      p_scope: 'club',
+      p_kind: 'all',
+      p_from: null,
+      p_to: null,
+      p_person: null,
+      p_search: null,
+      p_before_at: null,
+      p_before_id: null,
       p_limit: 51,
-      p_offset: 0,
     });
 
     // An owner's own book is one tap away and is read from the server.
     fireEvent.click(screen.getByRole('button', { name: 'My Transactions' }));
     await waitFor(() =>
-      expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_history_feed', {
         p_club_id: CLUB_ID,
         p_scope: 'mine',
+        p_kind: 'all',
+        p_from: null,
+        p_to: null,
+        p_person: null,
+        p_search: null,
+        p_before_at: null,
+        p_before_id: null,
         p_limit: 51,
-        p_offset: 0,
       })
     );
+    // His own wallet's totals: nothing in or out of it in this book.
+    expect(await screen.findAllByText('+0')).toHaveLength(2);
+
+    // A name typed in the search is asked of the server over the whole history.
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Transaction History' }), {
+      target: { value: 'Alice' },
+    });
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_feed',
+        expect.objectContaining({ p_scope: 'mine', p_search: 'Alice' })
+      )
+    );
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Transaction History' }), {
+      target: { value: '' },
+    });
 
     // A balance moving while the history is open (a cash-out accepted, a
     // send made) re-reads it without a manual refresh.
     const historyReads = () =>
-      vi
-        .mocked(supabase.rpc)
-        .mock.calls.filter(([name]) => name === 'fn_cashier_transaction_history').length;
+      vi.mocked(supabase.rpc).mock.calls.filter(([name]) => name === 'fn_cashier_history_feed')
+        .length;
+    // Type and date chips are asked of the server, not filtered on screen.
+    fireEvent.click(screen.getByRole('button', { name: 'Cash-Outs' }));
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_feed',
+        expect.objectContaining({ p_scope: 'mine', p_kind: 'cashout', p_from: null })
+      )
+    );
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_summary',
+        expect.objectContaining({ p_kind: 'cashout', p_from: expect.any(String) })
+      )
+    );
+    const lastPage = vi
+      .mocked(supabase.rpc)
+      .mock.calls.filter(([name]) => name === 'fn_cashier_history_feed')
+      .at(-1)?.[1] as { p_from: string };
+    const sevenDays = Date.now() - new Date(lastPage.p_from).getTime();
+    expect(sevenDays).toBeGreaterThan(6.9 * 24 * 3600 * 1000);
+    expect(sevenDays).toBeLessThan(7.1 * 24 * 3600 * 1000);
+
+    // Download writes the filtered book as a CSV with a header row.
+    downloads.calls.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Download These Transactions' }));
+    await waitFor(() => expect(downloads.calls).toHaveLength(1));
+    expect(downloads.calls[0].name).toMatch(
+      /^transaction-history-mine-cashout-7d-\d{4}-\d{2}-\d{2}\.csv$/
+    );
+    expect(downloads.calls[0].csv.split('\n')[0]).toBe(
+      'Date,Type,Direction,From,To,Chips,Route,Detail,Invoice,Cash-Out Status,Entry'
+    );
+    expect(downloads.calls[0].csv).toContain('Alice Agent');
+
     const before = historyReads();
     // The suite's MasterBus is a mock: call the handler the open history
     // registered, as the real bus would on a cash-out accept.

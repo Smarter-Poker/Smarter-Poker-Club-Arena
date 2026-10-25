@@ -299,4 +299,18 @@ describe('seated appearance uses the private source signal', () => {
     await flush();
     expect(change).toHaveBeenCalled();
   });
+  it('joins no appearance topic for a room with no tables row, and still reads (2026-10-24)', async () => {
+    model.rows = [row('/pool.webp')];
+    const change = vi.fn();
+    const { result } = renderHook(() =>
+      useSeatedProfileSync(T, [A], change, { appearanceSignal: false })
+    );
+    await flush();
+    expect(model.options.channelName).toBeNull();
+    expect(model.reads).toEqual([[A]]);
+    expect(change).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: A, avatar: '/pool.webp' })
+    );
+    expect(result.current.state).toBe('local');
+  });
 });

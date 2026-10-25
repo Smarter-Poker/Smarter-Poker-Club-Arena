@@ -62,7 +62,10 @@ function setup(opts: { horses?: string[]; offers?: string[]; purchase?: Purchase
         data: offers.map((id) => ({
           eliminated_user_id: id,
           hand_number: HAND,
-          rebuy_prompt_until: new Date(Date.now() + 20_000).toISOString(),
+          // Busted 20 s ago in a 30 s offer: every willing horse's human think
+          // time (2026-10-24, aHorseTakesAHumanMomentToRebuy) has passed.
+          created_at: new Date(Date.now() - 20_000).toISOString(),
+          rebuy_prompt_until: new Date(Date.now() + 10_000).toISOString(),
         })),
         error: null,
       }));

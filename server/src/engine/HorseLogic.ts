@@ -1988,7 +1988,8 @@ export interface HorseDecideOpts {
   v51RiverFlat?: boolean;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
-   * plo4/5/6_v55_river_trips_flat cards qualify it. */
+   * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
+   * 6000-pair probe; no production default is changed. */
   v55OmahaRiverTripsFlat?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots

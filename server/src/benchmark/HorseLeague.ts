@@ -1175,14 +1175,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
     a: { v55OmahaRiverTripsFlat: true },
     b: {},
   },
-  {
-    name: 'plo6_v55_river_trips_flat',
-    variant: 'plo6',
-    stackBB: 400,
-    pairs: 6000,
-    a: { v55OmahaRiverTripsFlat: true },
-    b: {},
-  },
+  // PLO6 is not on the standing card: the declared 6000-pair probe at
+  // seed20261024 had zero divergent pairs. It remains scenario-tested and
+  // opt-in, with no measured edge or promotion claim.
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
   { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
   // Measurable because playHand's sandbox settlement now feeds

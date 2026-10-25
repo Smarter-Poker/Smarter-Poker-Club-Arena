@@ -94,8 +94,9 @@ describe('V55 Omaha river trips flat', () => {
       expect(decide(seed, true, 'plo4', 'turn')).toEqual(decide(seed, false, 'plo4', 'turn'));
     }
   });
-  it('keeps independent default-off deep-cash league arms', () => {
-    for (const variant of ['plo4', 'plo5', 'plo6']) {
+  it('keeps measurable default-off deep-cash arms and refuses the inert PLO6 card', () => {
+    expect(LEAGUE_MATCHUPS.some((m) => m.name === 'plo6_v55_river_trips_flat')).toBe(false);
+    for (const variant of ['plo4', 'plo5']) {
       const matchup = LEAGUE_MATCHUPS.find((m) => m.name === `${variant}_v55_river_trips_flat`)!;
       expect(matchup.a.v55OmahaRiverTripsFlat).toBe(true);
       expect(matchup.b).toEqual({});

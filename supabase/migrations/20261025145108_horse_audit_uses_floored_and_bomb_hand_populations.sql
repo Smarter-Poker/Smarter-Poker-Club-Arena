@@ -6,11 +6,20 @@
 -- actual bomb hands, not today's mutable table settings. Missing population
 -- stays unknown (no rate); no guessed zero or fallback to fleet decides.
 -- Child VPIP counters describe outcomes within vpip_floor, not execution.
+-- Exact preimages refuse concurrent function changes instead of overwriting them.
 -- No DDL on hot tables, no scans of ca_hand_facts, no production writes,
 -- no retained-history rewrite, no schedules and no strategy promotion.
 BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
+DO $guard$
+BEGIN
+  IF md5(pg_get_functiondef('public.fn_audit_layer_drift(date)'::regprocedure)) <> '6255f9a05638d5803075e03e40571fc9'
+     OR md5(pg_get_functiondef('public.fn_run_horse_daily_audit(date)'::regprocedure)) <> '080cf44ebca4b5095e9aabbd3e6be2f8' THEN
+    RAISE EXCEPTION 'horse audit preimage changed; inspect the owning functions before installation';
+  END IF;
+END
+$guard$;
 CREATE OR REPLACE FUNCTION public.fn_audit_layer_drift(p_day date)
  RETURNS jsonb
  LANGUAGE plpgsql

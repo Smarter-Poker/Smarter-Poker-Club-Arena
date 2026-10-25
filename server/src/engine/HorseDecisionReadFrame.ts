@@ -26,7 +26,8 @@ export interface HorseDecisionReadFrame {
     | 'horse-decision-reads-v1'
     | 'horse-decision-reads-v2'
     | 'horse-decision-reads-v3'
-    | 'horse-decision-reads-v4';
+    | 'horse-decision-reads-v4'
+    | 'horse-decision-reads-v5';
   readonly bytes: number;
   readonly sha256: string;
   readonly json: string;
@@ -38,7 +39,10 @@ const WINDOW_VERSION = 'horse-decision-reads-v3';
 /** 2026-10-16: v3 plus the decayed opponent-exploit counters. Written only
  * when the view carries any, so every earlier frame keeps its exact bytes. */
 const EXPLOIT_VERSION = 'horse-decision-reads-v4';
-const windowed = (version: unknown) => version === WINDOW_VERSION || version === EXPLOIT_VERSION;
+/** v4 plus the exact winner belief consumed for every actor, including false. */
+const WINNER_VERSION = 'horse-decision-reads-v5';
+const exploited = (version: unknown) => version === EXPLOIT_VERSION || version === WINNER_VERSION;
+const windowed = (version: unknown) => version === WINDOW_VERSION || exploited(version);
 const FIELDS = [
   'hands',
   'vpip',
@@ -85,10 +89,12 @@ type Body = {
     | typeof VERSION
     | typeof ALLOCATED_VERSION
     | typeof WINDOW_VERSION
-    | typeof EXPLOIT_VERSION;
+    | typeof EXPLOIT_VERSION
+    | typeof WINNER_VERSION;
   statsWindows?: Rows<HorseObservationWindow>;
   scopedWindows?: Rows<HorseObservationWindow>;
   exploit?: Rows<number[]>;
+  winnerReads?: Rows<boolean>;
   planContext?: HorsePlanContext;
   actors: string[];
   handKey: string | null;
@@ -185,7 +191,8 @@ function validateBody(
     !exact(value, [
       'version',
       ...(windowed(value.version) ? ['statsWindows', 'scopedWindows'] : []),
-      ...(value.version === EXPLOIT_VERSION ? ['exploit'] : []),
+      ...(exploited(value.version) ? ['exploit'] : []),
+      ...(value.version === WINNER_VERSION ? ['winnerReads'] : []),
       ...(planContext === undefined ? [] : ['planContext']),
       'actors',
       'handKey',
@@ -219,8 +226,11 @@ function validateBody(
       b.streets,
       (v) => object(v) && exact(v, ['good', 'scare']) && cards(v.good) && cards(v.scare)
     ) ||
-    (value.version === EXPLOIT_VERSION &&
-      !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length)))
+    (exploited(value.version) &&
+      !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length))) ||
+    (value.version === WINNER_VERSION &&
+      (!validRows(value.winnerReads, b.stats, (v) => typeof v === 'boolean') ||
+        (value.winnerReads as Rows<boolean>).length !== b.actors.length))
   )
     return fail();
   if (windowed(value.version)) {
@@ -278,7 +288,8 @@ export function encodeHorseDecisionReads(
       return [id, EXPLOIT_COUNTER_FIELDS.map((f) => row[f])];
     }
   );
-  const hasExploit = exploitRows.length > 0;
+  const hasWinnerReads = view.winnerReads !== undefined;
+  const hasExploit = hasWinnerReads || exploitRows.length > 0;
   const hasWindows =
     hasExploit ||
     [boundedStats, boundedScoped].some((rows) =>
@@ -287,17 +298,20 @@ export function encodeHorseDecisionReads(
   const windows = (map: Map<string, OpponentStats>): Rows<HorseObservationWindow> =>
     [...map].map(([id, row]) => [id, normalizeHorseObservationWindow(row.sourceWindow)]);
   const body: Body = {
-    version: hasExploit
-      ? EXPLOIT_VERSION
-      : hasWindows
-        ? WINDOW_VERSION
-        : planContext === undefined
-          ? VERSION
-          : ALLOCATED_VERSION,
+    version: hasWinnerReads
+      ? WINNER_VERSION
+      : hasExploit
+        ? EXPLOIT_VERSION
+        : hasWindows
+          ? WINDOW_VERSION
+          : planContext === undefined
+            ? VERSION
+            : ALLOCATED_VERSION,
     ...(hasWindows
       ? { statsWindows: windows(view.stats), scopedWindows: windows(view.scoped) }
       : {}),
     ...(hasExploit ? { exploit: exploitRows } : {}),
+    ...(hasWinnerReads ? { winnerReads: bounded(view.winnerReads!, b.actors.length) } : {}),
     ...(planContext === undefined ? {} : { planContext }),
     actors: b.actors,
     handKey,
@@ -389,5 +403,6 @@ export function decodeHorseDecisionReads(
       ) as unknown as ExploitCounters,
     ])
   );
+  if (body.winnerReads !== undefined) view.winnerReads = new Map(body.winnerReads);
   return view;
 }

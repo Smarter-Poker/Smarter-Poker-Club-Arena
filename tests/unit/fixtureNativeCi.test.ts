@@ -1154,6 +1154,12 @@ describe('required CI owns native fixture verification', () => {
     expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
     expect(ci.jobs.typecheck.steps[0].with.ref).toBe('${{ github.event.pull_request.head.sha }}');
     expect(ci.jobs.typecheck.steps[0].with['persist-credentials']).toBe(false);
+    expect(ci.jobs.typecheck['timeout-minutes']).toBe(2);
+    expect(ci.jobs.typecheck.steps[0].with.filter).toBe('blob:none');
+    expect(ci.jobs.typecheck.steps[0].with['sparse-checkout-cone-mode']).toBe(false);
+    expect(ci.jobs.typecheck.steps[0].with['sparse-checkout']).toBe(
+      '/scripts/ci/fixture-native-gate.mjs\n'
+    );
     expect(ci.jobs.typecheck.steps.at(-1).run).toBe('node scripts/ci/fixture-native-gate.mjs');
     expect(ci.jobs.typecheck.steps.at(-1).env.NATIVE_RESULT).toBe(
       '${{ needs.fixture_native.result }}'

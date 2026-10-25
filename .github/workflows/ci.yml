@@ -342,6 +342,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/ci/fixture-native-gate.mjs
       - name: Require compilation and every applicable native fixture proof
         env:
           CI_EVENT_NAME: ${{ github.event_name }}

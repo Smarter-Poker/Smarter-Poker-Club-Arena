@@ -2,6 +2,7 @@ import {
   recheckHorsePhase14BeforeAcceptance,
   observeHorsePhase14Execution,
 } from '../engine/HorsePhase14Acceptance.js';
+import { bindLightningHorseObservationIdentity } from '../engine/HorseObservationIdentity.js';
 import { captureLightningHorseJournalCoordinate } from '../engine/HorseDecisionHandBinding.js';
 import { cashRakeScope } from '../config/cashRakePolicy.js';
 /**
@@ -2756,9 +2757,10 @@ export class LightningHandHost {
   /** LightningHorseObservation: teach the live horse lane this committed hand. */
   private observeForHorses(
     state: GameState,
-    leaseGeneration: string,
+    leaseGeneration: string | null,
     handHistoryId: string,
-    results?: LightningSettleResult[]
+    results?: LightningSettleResult[],
+    acceptedActions: ReadonlyArray<Record<string, unknown>> = this.actions
   ) {
     const rules = this.rules!;
     const lane = this.deps.horseLane ?? getLiveHorseDecisionWorker;
@@ -2772,7 +2774,7 @@ export class LightningHandHost {
         variant: String(rules.game_variant || 'nlh'),
         bigBlind: Number(rules.big_blind) || 2,
         dealtCount: state.players.length,
-        actions: this.actions,
+        actions: acceptedActions,
         showdown: this.showdown,
         ...(results ? { results } : {}),
       },
@@ -2798,6 +2800,25 @@ export class LightningHandHost {
     // request. Without them the hand settles exactly as before.
     const statsFacts = await this.statsFactsFor(state, rake, bbj, handRow);
     if (statsFacts) handRow._accepted_post_commit_facts = { stats_facts: statsFacts };
+    // The sole accepted producer stamps original formation-session lineage
+    // before persistence. Supplied identities and later receipt UUIDs cannot
+    // retroactively manufacture the identity of an old/no-facts hand.
+    handRow.actions = this.actions.map((action, ordinal) => {
+      const { observationIdentity: _supplied, ...record } = action;
+      return action.publicNode
+        ? {
+            ...record,
+            observationIdentity: bindLightningHorseObservationIdentity(action as never, ordinal, {
+              handId: statsFacts ? this.handId : undefined,
+              tableId: this.hostTableId,
+              poolSessionId:
+                typeof action.userId === 'string'
+                  ? this.participants.get(action.userId)?.poolSessionId
+                  : undefined,
+            }),
+          }
+        : record;
+    });
     for (let attempt = 1; attempt <= SETTLE_ATTEMPTS; attempt++) {
       const lease = this.deps.leaseFor(this.hostTableId);
       if (!lease) {
@@ -2822,7 +2843,22 @@ export class LightningHandHost {
         // and before anyone is released, so the next hand any of these players
         // is matched into is read with this one already in it. Not awaited:
         // it can never hold or endanger the settled hand.
-        this.observeForHorses(state, lease.generation, out.value.handHistoryId, results);
+        // The immutable first acceptance, including after a lost ACK/replay.
+        // Old receipts still teach ordinary learning under explicit unknown
+        // capture identity; the latest table lease is never historical proof.
+        const originalGeneration = out.value.acceptedLeaseGeneration ?? null;
+        if (originalGeneration === null || !statsFacts || out.value.handHistoryId !== this.handId)
+          reportError(
+            new Error('Lightning original journal identity unavailable'),
+            'lightning.horseObservation.identity'
+          );
+        this.observeForHorses(
+          state,
+          originalGeneration,
+          out.value.handHistoryId,
+          results,
+          handRow.actions as ReadonlyArray<Record<string, unknown>>
+        );
         // A LIGHTNING HAND IS ON THE HORSE SCOREBOARD (2026-10-24): the
         // physical path's recordHorseHandReviews, filed under lightning_<bb>bb.
         this.recordForHorseScoreboard(

@@ -272,6 +272,7 @@ export function anchorHorseDecisionHand(
   const context = snapshot.handJournalContext;
   if (!context) return unavailable('missing_prior_actions');
   if (
+    Object.keys(context).sort().join(',') !== 'actionCount,actionsDigest,version' ||
     context.version !== 1 ||
     !Number.isSafeInteger(context.actionCount) ||
     context.actionCount < 0 ||
@@ -351,7 +352,9 @@ export function bindHorseDecisionToCommittedHand(
       witness.executionStatus !== 'intended' ||
       witness.selected.action !== 'fold' ||
       !witness.acceptedActions[0]!.intended ||
-      accepted.action !== 'fold'
+      accepted.action !== 'fold' ||
+      witness.executedAction !== 'fold' ||
+      accepted.amount !== 0
     )
       return unavailable('execution_unavailable');
     // Other players can act between an out-of-turn look and its actual fold.
@@ -362,6 +365,18 @@ export function bindHorseDecisionToCommittedHand(
         ordinal >= anchor.actionOrdinal && candidate.userId?.toLowerCase() === anchor.actorId
     );
     if (actionOrdinal < 0) return unavailable('accepted_action_mismatch');
+    const matches = hand.actions.filter(
+      (candidate, ordinal) =>
+        ordinal >= anchor.actionOrdinal &&
+        horsePriorActionsDigest([candidate]) === horsePriorActionsDigest([accepted])
+    );
+    if (matches.length !== 1) return unavailable('accepted_action_mismatch');
+    if (
+      hand.actions
+        .slice(anchor.actionOrdinal, actionOrdinal)
+        .some((candidate) => candidate.stage !== accepted.stage)
+    )
+      return unavailable('prior_actions_mismatch');
   }
   const action = hand.actions[actionOrdinal]!;
   const digest = horsePriorActionsDigest([accepted]);

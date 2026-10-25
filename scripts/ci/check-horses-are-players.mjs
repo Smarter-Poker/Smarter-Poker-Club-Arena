@@ -82,6 +82,16 @@ const EXCLUDE = [
  * identification or an equal outcome - and to say so here.
  */
 const REGISTER = {
+  'server/src/services/HorseReplacementBoarding.ts': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: 'The explicit original replacement boarding command verifies that the reserved Auth identity still belongs to an eligible horse before generating that horse’s subject session. This prevents the horse-control input device from signing in or joining for a human account. Every admitted horse uses the ordinary player membership transaction, limits and receipt; no horse player benefit or evidence is excluded.',
+  },
+  'server/src/services/HorseOnboarding.ts': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: 'The original reserved replacement signup checks whether its own profile is already a horse. A false flag continues the normal onboarding conversion; a true flag resumes completion while preserving that horse’s learned brain and social identity. This identifies partial versus completed onboarding, never excludes a horse from play, evidence, earnings or a player feature.',
+  },
   'server/src/engine/ServerTableEngineBase.ts': {
     allowed: 1,
     kind: 'EQUAL OUTCOME',

@@ -5,6 +5,8 @@ import { withPhase6Provenance } from '../../testing/horseRegression/merged/fixtu
 import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
+import { observeHandResults, resetWinnerReads } from '../HorseWinnerRead.js';
+import { decodeHorseDecisionReads } from '../HorseDecisionReadFrame.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import {
@@ -1822,6 +1824,68 @@ describe('HorseDecisionWorkerRuntime', () => {
     }
   });
 
+  it.each(['late_learning', 'late_reset'] as const)(
+    'FAST capture, portable replay and the actual DEEP lane retain winner beliefs after %s',
+    async (change) => {
+      HorseMind.reset();
+      resetWinnerReads();
+      const learn = () => {
+        for (let n = 0; n < 400; n++)
+          observeHandResults(`frozen-winner:${n}`, [{ user_id: 'horse-3', net: 2 }], 2);
+      };
+      try {
+        if (change === 'late_reset') learn();
+        const h = harness();
+        const reads: number[] = [];
+        const decide = h.deps.decide;
+        h.deps.decide = (...args) => {
+          reads.push(HorseMind.exploit('horse-3').bluffMod);
+          return decide(...args);
+        };
+        const request = fastRequest(1);
+        h.runtime.receive(request);
+        await h.runtime.drain();
+        const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+        const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
+        expect(entry.frame.version).toBe('horse-decision-reads-v5');
+        const original = reads[0];
+        expect(original).toBe(change === 'late_reset' ? 0.6 : 1);
+        expect(JSON.parse(entry.frame.json).winnerReads).toContainEqual([
+          'horse-3',
+          change === 'late_reset',
+        ]);
+        if (change === 'late_reset') resetWinnerReads();
+        else learn();
+        const body = JSON.parse(entry.frame.json);
+        const replay = decodeHorseDecisionReads(
+          entry.frame,
+          body.actors.map((user_id: string) => ({ user_id })),
+          body.handKey,
+          body.planContext
+        );
+        expect(HorseMind.runInSandbox(replay, () => HorseMind.exploit('horse-3').bluffMod)).toBe(
+          original
+        );
+        h.runtime.receive({
+          ...request,
+          type: 'DECIDE_DEEP',
+          requestId: 2,
+          rngBefore: fast.rngBefore,
+          deepEquity: 2,
+        });
+        await h.runtime.drain();
+        expect(h.messages.at(-1)?.type).toBe('DEEP_RESULT');
+        expect(reads).toEqual([original, original]);
+        expect(HorseMind.exploit('horse-3').bluffMod).toBe(change === 'late_reset' ? 1 : 0.6);
+        expect(JSON.stringify(fast)).not.toContain('winnerReads');
+      } finally {
+        HorseMind.reset();
+        resetWinnerReads();
+      }
+    }
+  );
+
   it.each([false, true])(
     'refuses a corrupted private frame before changing the canonical RNG or invoking a second decision (windows=%s)',
     async (windows) => {
@@ -1842,9 +1906,7 @@ describe('HorseDecisionWorkerRuntime', () => {
         const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
         if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
         const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
-        expect(entry.frame.version).toBe(
-          windows ? 'horse-decision-reads-v3' : 'horse-decision-reads-v2'
-        );
+        expect(entry.frame.version).toBe('horse-decision-reads-v5');
         if (windows)
           expect(JSON.parse(entry.frame.json).statsWindows[0][1]).toMatchObject({
             fromMs: 100,
@@ -2741,7 +2803,7 @@ describe('HorseDecisionWorkerRuntime', () => {
     if (first?.type !== 'FAST_RESULT') throw Error('missing fast result');
     expect(records[0].payload).toMatchObject({
       snapshot: { requestId: 1 },
-      readFrame: { version: 'horse-decision-reads-v2' },
+      readFrame: { version: 'horse-decision-reads-v5' },
       rngBefore: first.rngBefore,
       rngAfter: first.rngAfter,
       runtimePins: 'incomplete',

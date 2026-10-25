@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 235919,
-      "sha256": "3d666d2b816734eacc1f758947f26b5b66c3acea3c7f00d5474918399b32fd3e"
+      "bytes": 236067,
+      "sha256": "0eb2213abff63137192b3248d4b2b842a0c8db714f2738f6ca7472ab0f9f4fb7"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -351,6 +351,43 @@
     "currentWorkflowPin": {
       "bytes": 235919,
       "sha256": "3d666d2b816734eacc1f758947f26b5b66c3acea3c7f00d5474918399b32fd3e"
+    }
+  },
+  "_typecheck_summary_sparse_checkout_20261025": {
+    "reason": "The required TypeScript summary fetches only its standalone Node gate after a full-repository fetch exhausted its two-minute budget. Exact source, native prerequisites, result assertions and timeout remain unchanged. Current input identity only; historical financial evidence and verdicts are retained.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235095,
+        "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235514,
+        "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
+      }
+    },
+    "integration": "Preserves the protected Messenger native qualification step added concurrently; only current input identities updated, historical evidence retained."
+  },
+  "lightningAndDailyCountCurrentCIIntegration20261025": {
+    "reason": "Preserve protected daily-count and Messenger native proof and the standalone TypeScript summary together. Only current workflow input identity changes; all historical qualification evidence and financial assertions are retained. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235736,
+      "sha256": "c859f64182dc13820d4b1ded05802d371690d7bdff3207c832ebdb20d9706957"
+    }
+  },
+  "lightningAndPressurePopulationCurrentCIIntegration20261025": {
+    "reason": "Preserve protected multiboard audit population qualification and the standalone TypeScript summary together. Only current workflow input identity changes; all historical qualification evidence and financial assertions are retained. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235744,
+      "sha256": "c7e6cf9c03217d7a3ef399e7ffebf98b85facff34f735118f8f3af2b43abaca3"
+    }
+  },
+  "horsePhase14LightningIntegration20261025": {
+    "reason": "Preserve frozen Lightning819 source and functional Phase14 qualification together. Update current workflow identity only; retain all historical pins, financial assertions and qualification states. Companion protected merge and final combined qualification remain required.",
+    "currentWorkflowPin": {
+      "bytes": 236067,
+      "sha256": "0eb2213abff63137192b3248d4b2b842a0c8db714f2738f6ca7472ab0f9f4fb7"
     }
   }
 }

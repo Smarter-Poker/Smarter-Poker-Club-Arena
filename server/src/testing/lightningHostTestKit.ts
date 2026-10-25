@@ -222,7 +222,13 @@ export function fakeBackend(
     settle: vi.fn(
       async (
         a: LightningSettleArgs
-      ): Promise<LightningCallOutcome<{ handHistoryId: string; receiptHash: string | null }>> => {
+      ): Promise<
+        LightningCallOutcome<{
+          handHistoryId: string;
+          receiptHash: string | null;
+          acceptedLeaseGeneration?: string | null;
+        }>
+      > => {
         calls.settle.push(structuredClone(a));
         const next = script.length > 1 ? script.shift()! : script[0];
         if (next === 'transport')
@@ -230,7 +236,14 @@ export function fakeBackend(
         if (next === 'refuse') return { ok: false, reason: 'lease_mismatch' };
         if (next === 'frozen') return { ok: false, reason: 'stack_invariant_failed', frozen: true };
         if (next === 'cluster_frozen') return { ok: false, reason: 'cluster_frozen' };
-        return { ok: true, value: { handHistoryId: uid(7777), receiptHash: 'r' } };
+        return {
+          ok: true,
+          value: {
+            handHistoryId: uid(7777),
+            receiptHash: 'r',
+            acceptedLeaseGeneration: a.leaseGeneration,
+          },
+        };
       }
     ),
     postCommit: vi.fn(async (id: string) => {

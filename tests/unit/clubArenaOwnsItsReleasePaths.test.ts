@@ -38,8 +38,11 @@ describe('Club Arena owns every Club Arena release path', () => {
   });
 
   it('executes production-credential workflows only through default-branch events', () => {
+    expect(engineDeploy).toContain("if: github.event.action == 'observe-club-arena-horse-fleet'");
     expect(publisher).toContain('types: [publish-club-arena]');
-    expect(engineDeploy).toContain('types: [deploy-club-arena-engine, withdraw-club-arena-engine]');
+    expect(engineDeploy).toContain(
+      'types: [deploy-club-arena-engine, withdraw-club-arena-engine, observe-club-arena-horse-fleet]'
+    );
     expect(engineDeploy).toContain("if: github.event.action == 'deploy-club-arena-engine'");
     expect(engineDeploy).toContain("if: github.event.action == 'withdraw-club-arena-engine'");
     expect(monitoringDeploy).toContain('types: [deploy-club-arena-monitoring]');

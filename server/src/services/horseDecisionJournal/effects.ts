@@ -94,10 +94,11 @@ export function horseRetainedPlanContext(
   const hasBinding = Object.hasOwn(value, 'planBinding');
   const frame = value.readFrame as { version?: unknown; json?: unknown } | null | undefined;
   let allocatedFrame = frame?.version === 'horse-decision-reads-v2';
-  // v4 (2026-10-16) is v3 plus the opponent-exploit counters: same rules.
+  // v4/v5 add opponent counters/winner beliefs: the same allocation rules.
   if (
     frame?.version === 'horse-decision-reads-v3' ||
-    frame?.version === 'horse-decision-reads-v4'
+    frame?.version === 'horse-decision-reads-v4' ||
+    frame?.version === 'horse-decision-reads-v5'
   ) {
     if (typeof frame.json !== 'string' || frame.json.length > HORSE_DECISION_READ_FRAME_MAX_BYTES)
       return { kind: 'invalid' };

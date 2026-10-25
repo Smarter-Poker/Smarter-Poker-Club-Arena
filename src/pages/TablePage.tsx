@@ -319,7 +319,12 @@ import {
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
-import { lightningSessionStackFor, lightningWaitingHero } from '../lightning/lightningWaitingHero';
+import {
+  lightningIdleBalanceFor,
+  type LightningIdleBalanceSnapshot,
+  lightningSessionStackFor,
+  lightningWaitingHero,
+} from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
@@ -4509,8 +4514,10 @@ function LiveTablePage({
   });
   /* LIGHTNING: THE HERO BETWEEN HANDS (Dan 2026-10-24). "IT SHOUDN'T SAY
      SITTING OUT... IT SHOULD NEVER SAY 0.00". A fold answers with an idle room
-     (no players), so the hero's chair is drawn from these two facts instead
-     of the cash seat-row placeholder. See lightning/lightningWaitingHero.ts. */
+     (no players), so the hero's chair is drawn from these facts instead of
+     the cash seat-row placeholder: the engine's own `player_balance` on that
+     idle room, then the last roster, then the pool session read. See
+     lightning/lightningWaitingHero.ts. */
   const lightningHeroInRoster = lightningRoom
     ? (tableState.players.find((p) => !!p && !!userId && p.id === userId) ?? null)
     : null;
@@ -4520,6 +4527,8 @@ function LiveTablePage({
     lightningLastSeenStackRef.current = lightningHeroInRoster.stack;
   }
   const [lightningSessionStack, setLightningSessionStack] = useState<number | null>(null);
+  /* The idle snapshot whose engine balance chips added since have made stale. */
+  const lightningEngineStackSupersededRef = useRef<unknown>(null);
   /* Chips added between hands (a manual add-on or the auto top-up) make the
      last roster stack stale: it is dropped and the pool balance read again. */
   const [lightningBalanceVersion, setLightningBalanceVersion] = useState(0);
@@ -4545,6 +4554,7 @@ function LiveTablePage({
         if (askedAtVersion > lightningBalanceVersionAppliedRef.current) {
           lightningBalanceVersionAppliedRef.current = askedAtVersion;
           lightningLastSeenStackRef.current = null;
+          lightningEngineStackSupersededRef.current = engineSnapshotRef.current;
         }
         setLightningSessionStack(lightningSessionStackFor(tableId, session));
         setLightningSessionHoldsRoom(
@@ -4561,9 +4571,22 @@ function LiveTablePage({
       cancelled = true;
     };
   }, [lightningHeroWaiting, lightningRoomClusterId, tableId, lightningBalanceVersion]);
+  /* The engine's own figure for this room's player, on the idle snapshot it
+     sends after a fold or an abandon. Absent on an engine that predates it. */
+  const lightningEngineIdleStack =
+    lightningRoom &&
+    !lightningHeroInRoster &&
+    engineSnapshot !== lightningEngineStackSupersededRef.current
+      ? lightningIdleBalanceFor(
+          tableId,
+          userId,
+          engineSnapshot as unknown as LightningIdleBalanceSnapshot | null
+        )
+      : null;
   const lightningWaitingSeat = lightningRoom
     ? lightningWaitingHero({
         sittingOut: lightningSitOut.sittingOut,
+        engineStack: lightningEngineIdleStack,
         lastSeenStack: lightningLastSeenStackRef.current,
         sessionStack: lightningSessionStack,
       })

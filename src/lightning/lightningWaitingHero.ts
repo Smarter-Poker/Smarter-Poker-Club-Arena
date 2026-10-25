@@ -30,6 +30,13 @@ export interface LightningWaitingHeroInput {
   /** The player's own Sit Out, as the Lightning sit-out state reports it. */
   sittingOut: boolean;
   /**
+   * The engine's own answer: `lightning.player_balance` on the idle snapshot
+   * of this room, for this player (lightningIdleBalanceFor). The chips behind
+   * them as the hand left them. Top precedence when present. An engine that
+   * predates the field sends nothing, and the two fallbacks below decide.
+   */
+  engineStack?: number | null | undefined;
+  /**
    * The hero's stack the last time this room's roster carried them: the
    * engine's own number for the chips behind them at the moment they folded,
    * which is exactly what they hold now. First, because it is live.
@@ -49,6 +56,10 @@ function chips(value: number | null | undefined): number | null {
 }
 
 export function lightningWaitingHero(input: LightningWaitingHeroInput): LightningWaitingHero {
+  const engine = chips(input.engineStack);
+  if (engine !== null) {
+    return { status: input.sittingOut ? 'sitting_out' : 'active', stack: engine };
+  }
   const seen = chips(input.lastSeenStack);
   /* A last-seen zero is the one roster number that may not be the balance: an
      all-in hero reads 0 behind until the pot is paid. The database knows
@@ -71,4 +82,29 @@ export function lightningSessionStackFor(
 ): number | null {
   if (!roomId || !session || session.poolSessionId !== roomId) return null;
   return chips(session.stack);
+}
+
+/** The part of an idle engine snapshot that carries the room owner's balance. */
+export interface LightningIdleBalanceSnapshot {
+  table_id?: unknown;
+  stage?: unknown;
+  lightning?: { player_balance?: { user_id?: unknown; stack?: unknown } | null } | null;
+}
+
+/**
+ * The balance the engine put on this room's idle snapshot, adopted only when
+ * it names THIS player and the snapshot is THIS room's (or names no room).
+ * Null on an older engine, which sends no `player_balance`.
+ */
+export function lightningIdleBalanceFor(
+  roomId: string | null | undefined,
+  userId: string | null | undefined,
+  snapshot: LightningIdleBalanceSnapshot | null | undefined
+): number | null {
+  if (!roomId || !userId || !snapshot) return null;
+  const balance = snapshot.lightning?.player_balance;
+  if (!balance || balance.user_id !== userId) return null;
+  if (snapshot.table_id != null && snapshot.table_id !== roomId) return null;
+  const stack = typeof balance.stack === 'string' ? Number(balance.stack) : balance.stack;
+  return chips(typeof stack === 'number' ? stack : null);
 }

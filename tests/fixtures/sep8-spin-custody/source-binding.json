@@ -48,7 +48,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894",
+    "tests/unit/fixtureNativeCi.test.ts": "7a047e98d8a281855cefee168816c2db7d4f2f4d9c84ceb17d1a39de3e83789d",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1354,5 +1354,16 @@
   "migrationAuditIntegration20261024": {
     "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
     "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+  },
+  "supersededRunYield20261025": {
+    "reason": "Reviewed CI capacity change: each heavy ci.yml job (client, server and accounting shards, build, browser suites) first asks whether its sha is still the pull request head and, only when a newer run for the newer head is proven, cancels its own obsolete run. The accounting job's token gains actions: write and pull-requests: read for that one step; fixtureNativeCi.test.ts pins the new permissions. Financial fixture SQL, assertions, source inventories, deadlines and qualification states unchanged; current source identity only, no financial certificate restamp.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894",
+        "current": "7a047e98d8a281855cefee168816c2db7d4f2f4d9c84ceb17d1a39de3e83789d"
+      }
+    ]
   }
 }

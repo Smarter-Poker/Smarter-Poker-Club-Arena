@@ -1199,9 +1199,20 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
 
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Yield this run's runners if the PR head moved on while this job queued.
+      # Proven-obsolete runs only, fails open; see scripts/ci/yield-superseded-pr-ci.mjs.
+      - name: Yield if this sha is no longer the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/yield-superseded-pr-ci.mjs"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1332,10 +1343,17 @@ jobs:
         shard: [1, 2, 3, 4]
     permissions:
       contents: read
-      actions: read
+      pull-requests: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Yield this run's runners if the PR head moved on while this job queued.
+      # Proven-obsolete runs only, fails open; see scripts/ci/yield-superseded-pr-ci.mjs.
+      - name: Yield if this sha is no longer the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/yield-superseded-pr-ci.mjs"
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -3126,9 +3144,20 @@ jobs:
       run:
         working-directory: server
 
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Yield this run's runners if the PR head moved on while this job queued.
+      # Proven-obsolete runs only, fails open; see scripts/ci/yield-superseded-pr-ci.mjs.
+      - name: Yield if this sha is no longer the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/yield-superseded-pr-ci.mjs"
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -3337,6 +3366,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -3346,6 +3379,13 @@ jobs:
           # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
+
+      # Yield this run's runners if the PR head moved on while this job queued.
+      # Proven-obsolete runs only, fails open; see scripts/ci/yield-superseded-pr-ci.mjs.
+      - name: Yield if this sha is no longer the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/yield-superseded-pr-ci.mjs"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -3797,6 +3837,10 @@ jobs:
     # Preserve every suite and its own deadlines, with room for cleanup.
     timeout-minutes: 30
 
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     steps:
       - name: Reserve disk for browser checks
         # This browser-only job does not invoke the separate Android build.
@@ -3817,6 +3861,13 @@ jobs:
           # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
+
+      # Yield this run's runners if the PR head moved on while this job queued.
+      # Proven-obsolete runs only, fails open; see scripts/ci/yield-superseded-pr-ci.mjs.
+      - name: Yield if this sha is no longer the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/yield-superseded-pr-ci.mjs"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -4145,9 +4196,20 @@ jobs:
     # 7.1 minutes measured inside the old job; room for a slow browser install.
     timeout-minutes: 25
 
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Yield this run's runners if the PR head moved on while this job queued.
+      # Proven-obsolete runs only, fails open; see scripts/ci/yield-superseded-pr-ci.mjs.
+      - name: Yield if this sha is no longer the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/yield-superseded-pr-ci.mjs"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4

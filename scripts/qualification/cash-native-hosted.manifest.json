@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 232055,
-      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+      "bytes": 234708,
+      "sha256": "173c131ecde397c53ecab480c72871e60bec7e8b4c24b53d98627b9e3bf4d78c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114286,
-      "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+      "bytes": 114476,
+      "sha256": "7a047e98d8a281855cefee168816c2db7d4f2f4d9c84ceb17d1a39de3e83789d"
     }
   },
   "nativePgCron": {
@@ -3658,5 +3658,32 @@
   "migrationAuditIntegration20261024": {
     "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
     "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+  },
+  "supersededRunYield20261025": {
+    "reason": "Reviewed CI capacity change: each heavy ci.yml job (client, server and accounting shards, build, browser suites) first asks whether its sha is still the pull request head and, only when a newer run for the newer head is proven, cancels its own obsolete run. The accounting job's token gains actions: write and pull-requests: read for that one step; fixtureNativeCi.test.ts pins the new permissions. Financial fixture SQL, assertions, source inventories, deadlines and qualification states unchanged; current source identity only, no financial certificate restamp.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+        },
+        "current": {
+          "bytes": 234708,
+          "sha256": "173c131ecde397c53ecab480c72871e60bec7e8b4c24b53d98627b9e3bf4d78c"
+        }
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 114286,
+          "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+        },
+        "current": {
+          "bytes": 114476,
+          "sha256": "7a047e98d8a281855cefee168816c2db7d4f2f4d9c84ceb17d1a39de3e83789d"
+        }
+      }
+    ]
   }
 }

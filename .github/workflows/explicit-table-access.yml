@@ -1,9 +1,27 @@
 name: Explicit table access
+# The check reads only the migrations a change adds or edits (git diff --
+# supabase/migrations), so a change touching none of these paths cannot change
+# its answer. Not a required check. 2026-10-25: 54 of 99 pull request runs in six
+# hours were on pull requests that touched no migration.
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/ci/check-explicit-table-access.mjs'
+      - 'scripts/ci/recording-only.mjs'
+      - 'scripts/ci/recorded-migrations.manifest.json'
+      - 'tests/explicit-table-access.test.mjs'
+      - '.github/workflows/explicit-table-access.yml'
   push:
     branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/ci/check-explicit-table-access.mjs'
+      - 'scripts/ci/recording-only.mjs'
+      - 'scripts/ci/recorded-migrations.manifest.json'
+      - 'tests/explicit-table-access.test.mjs'
+      - '.github/workflows/explicit-table-access.yml'
 # Pull request runs are pure checks on refs/pull/N/merge: a newer push
 # supersedes the older run, so it is cancelled. A push to main checks its own
 # before..after range, which a later main push does not re-read, so each main

@@ -67,6 +67,16 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
     'src/engine/HorseObserverReadContext.ts':
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
+    'src/engine/horseDecision/ownPublicHistory.ts':
+      'the closed individual public-history schema, original availability cutoff, bounded cache and payload acknowledgement',
+    'src/engine/horseDecision/observerParticipants.ts':
+      'the original validated FAST participant registry and exact same-observer cross-shard completion admission',
+    'src/engine/horseDecision/completedHandActions.ts':
+      'the canonical public-action projection used by individual historical and live completed-hand learning',
+    'src/engine/horseDecision/lane.ts':
+      'boundary: actual pool wiring admits original validated observers and propagates public completions only to the same observer; read owners are separately hashed',
+    'src/services/HorseOwnPublicHistory.ts':
+      'boundary: the individual service-only public reader pins its exact native-qualified database definition, context and bounded query; provider transport is not strategy authority',
     'src/engine/horseDecision/observerReads.ts':
       'the individual observation admission, cutoff, completion and read-state ownership used by FAST decisions',
     'src/engine/horseDecision/client.ts':
@@ -99,6 +109,8 @@ export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freez
   'src/engine/HorseTournamentUtility.ts',
   'src/engine/horseDecision/workerRuntime.ts',
   'src/engine/horseDecision/client.ts',
+  'src/engine/horseDecision/lane.ts',
+  'src/services/HorseOwnPublicHistory.ts',
 ]);
 
 /**

@@ -1,3 +1,8 @@
+import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
+import {
+  horseObserverReadContextFromRequest,
+  type HorseObserverReadContext,
+} from '../HorseObserverReadContext.js';
 import type { DecisionOpponentProfilePacket } from '../../services/HorseOpponentMemory.js';
 import {
   horsePlanBatchBindingIsValid,
@@ -94,6 +99,7 @@ export interface HorseDecisionJobOptions {
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
+  ownPublicHistory?: (context: HorseObserverReadContext) => Promise<unknown>;
   workerFactory?: () => WorkerLike;
   /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
   opponentProfiles?: (
@@ -567,6 +573,7 @@ export class LiveHorseDecisionWorkerClient {
   private startupCancellationInProgress = false;
   private fatalNotified = false;
   private terminationPromise: Promise<void> | null = null;
+  private readonly ownPublicHistory: HorseOwnPublicHistoryCache | null;
   private readonly readyTimer: ReturnType<typeof setTimeout>;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -583,6 +590,9 @@ export class LiveHorseDecisionWorkerClient {
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
+    this.ownPublicHistory = options.ownPublicHistory
+      ? new HorseOwnPublicHistoryCache(options.ownPublicHistory)
+      : null;
     // A lane start (re)admits the main scheduler's copy of the committed
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
@@ -722,6 +732,7 @@ export class LiveHorseDecisionWorkerClient {
   ): Promise<FastHorseDecisionResult> {
     const startedAt = Date.now();
     const captured = structuredClone(snapshot);
+    const context = horseObserverReadContextFromRequest(captured);
     const callerBudget =
       typeof options?.deadlineMs === 'number' &&
       Number.isFinite(options.deadlineMs) &&
@@ -734,6 +745,11 @@ export class LiveHorseDecisionWorkerClient {
       ...captured,
       type: 'DECIDE_FAST',
       requestId: this.nextRequestId++,
+      // Never accept a caller-authored history packet through the snapshot.
+      ownPublicHistory: context
+        ? this.ownPublicHistory?.forSnapshot(context, captured.decisionTimeMs)
+        : undefined,
+      ownPublicHistoryState: context ? this.ownPublicHistory?.state(context) : undefined,
     };
     return this.enqueue<FastHorseDecisionResult>(
       request,
@@ -741,7 +757,11 @@ export class LiveHorseDecisionWorkerClient {
       signal,
       false,
       Math.max(1, callerBudget - (Date.now() - startedAt))
-    );
+    ).then((result) => {
+      if (context)
+        this.ownPublicHistory?.acknowledge(context, result.observerHistoryAckDigest ?? null);
+      return result;
+    });
   }
 
   decideDeep(

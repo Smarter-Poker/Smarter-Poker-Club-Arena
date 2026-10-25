@@ -1,3 +1,5 @@
+import { ownPublicHistoryIsValid } from './ownPublicHistory.js';
+import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
 import { HorseObserverReads, type HorseObserverReadReceipt } from './observerReads.js';
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
@@ -1467,6 +1469,21 @@ export class HorseDecisionWorkerRuntime {
       }
       this.assertPhase6TournamentSnapshot(request);
     }
+    if (request.type === 'DECIDE_FAST') {
+      if (
+        request.ownPublicHistoryState !== undefined &&
+        !['pending', 'available', 'unavailable'].includes(request.ownPublicHistoryState)
+      )
+        throw Error('Invalid individual history state');
+      if (request.ownPublicHistory !== undefined) {
+        const context = horseObserverReadContextFromRequest(request);
+        if (
+          !context ||
+          !ownPublicHistoryIsValid(request.ownPublicHistory, context, request.decisionTimeMs)
+        )
+          throw Error('Individual public history does not bind original observer and cutoff');
+      }
+    }
     if (request.decisionKey !== buildHorseDecisionKey(request)) {
       throw new Error('decisionKey does not bind the canonical decision snapshot');
     }
@@ -2097,6 +2114,12 @@ export class HorseDecisionWorkerRuntime {
     )
       this.deps.noteFeature('horse_observer_unscoped_profiles_refused');
     const observerReceipt = this.observerReads.receipt(request);
+    if (request.ownPublicHistory)
+      this.deps.noteFeature(
+        observerReceipt?.version === 2
+          ? 'horse_observer_history_loaded'
+          : 'horse_observer_history_refused'
+      );
     if (observerReceipt)
       this.deps.noteFeature(`horse_observer_reads_${observerReceipt.disposition}`);
     const planBinding = horsePlanBatchBindingFromRequest(request);
@@ -2276,6 +2299,7 @@ export class HorseDecisionWorkerRuntime {
     try {
       this.send({
         type: 'FAST_RESULT',
+        observerHistoryAckDigest: this.observerReads.historyAcknowledgement(request),
         requestId: request.requestId,
         planBinding,
         planIssueDisposition,

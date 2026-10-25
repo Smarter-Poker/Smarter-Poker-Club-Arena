@@ -4,6 +4,10 @@ import { HorseMind } from '../HorseMind.js';
 import { observeHandResults, winnerReadout } from '../HorseWinnerRead.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import { HorseObserverReads } from './observerReads.js';
+import {
+  HorseObserverParticipantRegistry,
+  observerParticipantsBind,
+} from './observerParticipants.js';
 import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
 import type { FastHorseDecisionRequest, ObserveCompletedHandRequest } from './protocol.js';
 const table = '10000000-0000-4000-8000-000000000001';
@@ -31,6 +35,7 @@ function request(
       gameVariant: variant,
       format,
       gameMode: format === 'cash' ? 'cash' : 'tournament',
+      ...(format === 'cash' ? {} : { tournament: { contextStatus: 'complete' } }),
       dealtSeatIds: [1, 2],
       players: [
         { user_id: id, seat: 1 },
@@ -252,5 +257,64 @@ describe('each horse learns only its own public observations', () => {
     bank.run(r, () => expect(HorseMind.getStats(opponent)).toBeDefined());
     expect(bank.receipt(r)?.context?.observerId).toBe(actor);
     bank.run(request(other), () => expect(HorseMind.getStats(opponent)).toBeUndefined());
+  });
+});
+
+describe('original observer routing and retained window evidence', () => {
+  it('preserves admission after an uncommitted notification, refuses another lease and consumes once', () => {
+    const registry = new HorseObserverParticipantRegistry();
+    registry.capture(request());
+    expect(registry.take({ ...completion(), committedHandId: undefined }).status).toBe('unknown');
+    expect(registry.take({ ...completion(), fence: `${table}:1000001:99:observe` }).status).toBe(
+      'unknown'
+    );
+    const bound = registry.take(completion());
+    expect(bound.status).toBe('bound');
+    expect(bound.contexts.map((c) => c.observerId)).toEqual([actor]);
+    expect(observerParticipantsBind(bound, completion())).toBe(true);
+    expect(observerParticipantsBind({ ...bound, extra: true }, completion())).toBe(false);
+    expect(
+      observerParticipantsBind(
+        { ...bound, contexts: [...bound.contexts, ...bound.contexts] },
+        completion()
+      )
+    ).toBe(false);
+    expect(registry.take(completion()).status).toBe('unknown');
+  });
+  it('refuses conflicting partitions and treats bounded eviction as unknown', () => {
+    const registry = new HorseObserverParticipantRegistry(1);
+    registry.capture(request());
+    registry.capture(request(other, 'mtt'));
+    expect(registry.take(completion()).status).toBe('conflict');
+    registry.capture(request());
+    registry.capture(request(actor, 'cash', 'nlh', 1000002));
+    expect(registry.take(completion()).status).toBe('unknown');
+    expect(registry.take(completion(1000002)).status).toBe('bound');
+    expect(() => new HorseObserverParticipantRegistry(0)).toThrow();
+  });
+  it('requires a closed bounded v2 history receipt at or before the original cutoff', () => {
+    const r = request();
+    const bank = new HorseObserverReads();
+    bank.run(r, () => undefined);
+    const receipt = {
+      ...bank.receipt(r)!,
+      version: 2,
+      history: 'own_public_window',
+      historyDigest: 'a'.repeat(64),
+      historyAvailableAtMs: 0,
+      historyHands: 64,
+      historyCapped: true,
+    };
+    expect(horseObserverReadsWereIndependent(receipt, r)).toBe(true);
+    for (const changed of [
+      { ...receipt, historyAvailableAtMs: 1001 },
+      { ...receipt, historyHands: 65 },
+      { ...receipt, historyHands: -1 },
+      { ...receipt, historyDigest: 'a'.repeat(63) },
+      { ...receipt, historyCapped: 'true' },
+      { ...receipt, history: 'volatile_only' },
+      { ...receipt, extra: true },
+    ])
+      expect(horseObserverReadsWereIndependent(changed, r)).toBe(false);
   });
 });

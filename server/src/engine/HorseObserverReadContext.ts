@@ -63,6 +63,9 @@ export function horseObserverReadContextFromRequest(
   // cards do not reconstruct participation. Never infer format from stack size.
   if (
     !variant ||
+    // Incomplete tournament context can carry the transport's MTT fallback.
+    // It cannot attest an exact MTT/SNG/Spin read partition.
+    (gs.gameMode === 'tournament' && gs.tournament?.contextStatus !== 'complete') ||
     !Array.isArray(gs.players) ||
     !Array.isArray(dealt) ||
     new Set(dealt).size !== dealt.length ||

@@ -30,6 +30,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'physical two-hole three-board nut-flush and straight-flush blockers consumed by the reference decision',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
+    'src/engine/HorseOmahaTournamentPressure.ts':
+      'the V53 Omaha tournament ICM price of the pot-limit risk behind the PLO tournament preflop bars (default off)',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',

@@ -2719,6 +2719,24 @@
   animation: handNameAppear 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
+/* Dan 2026-10-24 ("PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS BETTER"):
+   the winner's line reads gold, the colour of the board's winning-hand band,
+   so the seat that took the pot is the one the eye lands on. Text colour and
+   glow only; the label is not a control and gets no frame. */
+.seat__hand-name--winner {
+  color: #ffe097;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 10px rgba(240, 170, 50, 0.55);
+}
+
+/* ...and a beaten hand that is still face up names itself, muted, so every
+   hand on the felt says what it was without competing with the winner. */
+.seat__hand-name--shown {
+  color: rgba(226, 232, 240, 0.7);
+  font-weight: 600;
+}
+
 /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this hand
    muckable — cards stay private, the seat says MUCKED. Deliberately muted
    next to the gold winner label: the mucked seat is the hand's footnote. */

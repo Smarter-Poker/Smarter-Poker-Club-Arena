@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/horse-capture-drains-in-order",
+  "_comment": "Migration 20261025042223 adds fn_horse_capture_hand_budget_through. PROMISED, not yet observed: this branch did not apply it; it installs through Apply Merged Migration after merge. Only the claim and snapshot functions replaced in the same migration call it, and the engine mirror accepts both the old and the new slice shapes, so either half may land first.",
+  "tables": [],
+  "functions": ["fn_horse_capture_hand_budget_through"],
+  "columns": {}
+}

@@ -73,6 +73,13 @@ export interface CommunityCardsProps {
    * "LOW WINNER" context. Empty/absent when no low was awarded.
    */
   lowWinnerLabel?: string;
+  /**
+   * Dan 2026-10-24 ("PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS BETTER"):
+   * WHO won, printed on the band above the hand's name - "Danimal Wins",
+   * "Danimal And Ace Split The Pot". The parent supplies it only for a
+   * contested single-board showdown (showdownWinnerLine); absent otherwise.
+   */
+  winningPlayerLabel?: string;
   deckStyle?: '4color' | '2color';
   /**
    * The player's chosen card-back design.
@@ -588,6 +595,7 @@ function CommunityCardsComponent({
   winningHandName: requestedWinningHandName,
   winningHandDescription,
   lowWinnerLabel,
+  winningPlayerLabel,
   deckStyle,
   cardBack,
   playSounds = true,
@@ -1231,7 +1239,14 @@ function CommunityCardsComponent({
 
       {/* Winning Hand Name — premium-style "Straight" label below community cards */}
       {winningHandName && (
-        <div className="community-cards__hand-name">
+        /* Dan 2026-10-24: the band is announced, not only painted. A polite
+           live region reads the winner and the hand once, as it lands. */
+        <div className="community-cards__hand-name" role="status" aria-live="polite">
+          {winningPlayerLabel && (
+            <div className="community-cards__winner-line">
+              {formatPopupText(winningPlayerLabel)}
+            </div>
+          )}
           {/* POKERBROS PARITY 2026-08-26: the name is its own span so the
               band background (parent) and the gold gradient fill
               (background-clip: text on this span) can coexist.
@@ -1272,6 +1287,7 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   if (prev.winningHandDescription !== next.winningHandDescription) return false;
   // SHOWDOWN POLISH 2026-08-25: the hi-lo low line must re-render too.
   if (prev.lowWinnerLabel !== next.lowWinnerLabel) return false;
+  if (prev.winningPlayerLabel !== next.winningPlayerLabel) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
   // POKERBROS PARITY 2026-08-26: the all-in mode changes which

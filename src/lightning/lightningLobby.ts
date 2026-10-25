@@ -224,6 +224,15 @@ export function lightningRoute(clusterId: string): string {
   return `/lightning/${clusterId}`;
 }
 
+/**
+ * JOIN LIGHTNING, as one tap (Dan 2026-10-24): the game's door with the
+ * amount question already open. A player who already holds a pool session
+ * still goes straight to their room; one already seated is shown their seat.
+ */
+export function lightningJoinRoute(clusterId: string): string {
+  return `${lightningRoute(clusterId)}?join=1`;
+}
+
 interface LightningBoardRow {
   cluster_id?: string | null;
   cluster_mode?: string | null;

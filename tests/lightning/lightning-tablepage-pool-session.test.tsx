@@ -196,8 +196,8 @@ describe('player-visible terminology', () => {
   });
   it('the controls use only the approved terms', async () => {
     const hand = await import('../../src/lightning/lightningHand');
-    expect(hand.LIGHTNING_FOLD_LABEL).toBe('LIGHTNING FOLD');
-    expect(hand.LIGHTNING_FOLD_WATCH_LABEL).toBe('FOLD & WATCH');
+    expect('LIGHTNING_FOLD_LABEL' in hand).toBe(false);
+    expect('LIGHTNING_FOLD_WATCH_LABEL' in hand).toBe(false);
     const lobby = await import('../../src/lightning/lightningLobby');
     expect(
       lobby.lightningLobbyBadge({ clusterMode: 'lightning', state: null, boardPlayers: 0 }).label

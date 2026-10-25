@@ -201,3 +201,42 @@ describe('MasterBus browser navigation isolation', () => {
     expect(channel.postMessage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('MasterBus critical channel health report (2026-10-24)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    masterBus.reset();
+    vi.stubGlobal(
+      'BroadcastChannel',
+      class {
+        onmessage = null;
+        postMessage = vi.fn();
+        close = vi.fn();
+      }
+    );
+  });
+  afterEach(() => {
+    masterBus.reset();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('reports a dead factory-less t-break channel once, not every 30s tick', async () => {
+    const reporter = await import('../../src/utils/errorReporter');
+    const spy = vi.spyOn(reporter, 'reportError').mockImplementation(() => undefined);
+    const dead = { on: vi.fn(), subscribe: vi.fn(), state: 'closed' };
+    vi.mocked(supabase.channel).mockReturnValueOnce(dead as any);
+    const key = 't-break-827a1b52-2814-4998-9b47-8c4afea22418';
+    masterBus.init();
+    masterBus.getOrCreateChannel(key);
+    vi.advanceTimersByTime(30_000 * 10);
+    const reports = spy.mock.calls.filter(
+      ([, src]) => src === 'MasterBus.Critical_channel_no_factory'
+    );
+    expect(reports).toHaveLength(1);
+    // Still left in place for the SDK's own rejoin, as before.
+    expect(masterBus.hasChannel(key)).toBe(true);
+    spy.mockRestore();
+  });
+});

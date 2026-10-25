@@ -1415,6 +1415,8 @@ class MasterBusCore {
 
   // #4b Channel factory registry for auto-recovery
   private channelFactoryRegistry: Map<string, () => void> = new Map();
+  /** Dead critical channels already reported by the health monitor. */
+  private reportedDeadCriticalChannels: WeakSet<object> = new WeakSet();
 
   /**
    * Initialize the Master Bus
@@ -2031,10 +2033,19 @@ class MasterBusCore {
           // Supabase channel and abort its own auto-rejoin, leaving the hero
           // permanently blind for the session. Leave it in place so Supabase's
           // realtime client keeps attempting to rejoin, and surface it loudly.
-          reportError(
-            new Error(`Critical realtime channel dead with no recovery factory: ${key}`),
-            'MasterBus.Critical_channel_no_factory'
-          );
+          //
+          // ONCE PER DEAD CHANNEL, NOT EVERY 30s (2026-10-24). The same object
+          // is found dead on every tick until something replaces it, and it
+          // was reported on every tick: 247 reports in a day for 6 channels,
+          // one of them for 2h40m. The first report is the signal.
+          const dead = this.channelRegistry.get(key);
+          if (dead && !this.reportedDeadCriticalChannels.has(dead)) {
+            this.reportedDeadCriticalChannels.add(dead);
+            reportError(
+              new Error(`Critical realtime channel dead with no recovery factory: ${key}`),
+              'MasterBus.Critical_channel_no_factory'
+            );
+          }
           console.warn(
             `[BUS HEALTH] Critical channel "${key}" dead but has no factory -- leaving in place for Supabase auto-rejoin (NOT reaping)`
           );

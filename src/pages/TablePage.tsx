@@ -321,6 +321,7 @@ import {
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
 import { lightningSessionStackFor, lightningWaitingHero } from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
+import { LightningAddOnHold, isLightningAddOnRefusal } from '../lightning/lightningAddOnHold';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
@@ -534,7 +535,13 @@ import GameServerAPI, {
   postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
 } from '../services/GameServerAPI';
-import { HEARTBEAT_NOT_DELIVERED } from '../services/heartbeatCodes';
+import { HEARTBEAT_NOT_DELIVERED, HEARTBEAT_TABLE_NOT_RUNNING } from '../services/heartbeatCodes';
+import {
+  shouldAskTableRow,
+  shouldHeartbeatOverHttp,
+  tableRowSaysClosed,
+  type HeartbeatRowCheck,
+} from '../lib/heartbeatTarget';
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
@@ -3757,6 +3764,11 @@ function LiveTablePage({
   /* A PAUSED TABLE SAYS SO (2026-10-15): the one "this table is paused" notice
      per pause, claimed by the 4404 effect, released when the socket connects. */
   const tablePausedToastShownRef = useRef(false);
+  /* The heartbeat asked the `tables` row after a 404 and the row said closed
+     (2026-10-24, src/lib/heartbeatTarget.ts). Cleared when the engine socket
+     connects, exactly like the verdict above, so a table that comes back is
+     beaten again at once. */
+  const heartbeatRowClosedRef = useRef(false);
   /* Read by the heartbeat below without joining its dependency list, which
      would restart the five-second interval on every render. */
   const probeEngineLinkRef = useRef(probeEngineLink);
@@ -3774,6 +3786,10 @@ function LiveTablePage({
     // meanwhile sees a perfectly normal table. Tell them.
     let consecutiveMisses = 0;
     let warned = false;
+    let notRunningBeats = 0;
+    let rowCheckInFlight = false;
+    let heartbeatAlive = true;
+    heartbeatRowClosedRef.current = false;
     const beat = async () => {
       /* A TABLE THAT IS NO LONGER RUNNING IS NOT HEARTBEATED (2026-10-04).
          Once the page has established that the engine holds no game for this
@@ -3786,6 +3802,13 @@ function LiveTablePage({
          socket connects again or the row turns out to be wakeable, so a table
          that comes back is beaten again at once. */
       if (tableClosedToastShownRef.current) return;
+      /* 2026-10-24: and two more cases the verdict above never reached
+         (src/lib/heartbeatTarget.ts). A Lightning pool-session room has no
+         table engine - every beat from one was a 404, 666 in a day - and its
+         presence is its own socket. And a table whose ROW says closed is not
+         beaten again until the engine socket connects (776 a day). */
+      if (!shouldHeartbeatOverHttp({ isLightningRoom: !!lightningRoomRef.current })) return;
+      if (heartbeatRowClosedRef.current) return;
       if (!isNativeAppActive() || document.visibilityState === 'hidden') return;
       /* PHASE 2 (2026-08-31): tell the engine whether this client has actually
          PUT THE ACTION IN FRONT OF THE PLAYER, not merely that it is online.
@@ -3816,7 +3839,34 @@ function LiveTablePage({
         // longer are. On its own it just announces a problem after the fact.
         warned = false;
         consecutiveMisses = 0;
+        notRunningBeats = 0;
         return;
+      }
+      /* The engine holds no game for this table. Ask the row ONCE per run of
+         404s (not per beat); only a row that says closed or deleted stops the
+         beat. A live or unreadable row keeps beating - an engine restart
+         re-claims its tables within minutes, and that is the beat that has
+         to land. */
+      if (res?.code === HEARTBEAT_TABLE_NOT_RUNNING) {
+        notRunningBeats += 1;
+        if (shouldAskTableRow(notRunningBeats) && !rowCheckInFlight) {
+          rowCheckInFlight = true;
+          void Promise.resolve(
+            supabase.from('tables').select('status, is_deleted').eq('id', tableId).maybeSingle()
+          )
+            .then(({ data, error }) => {
+              if (!heartbeatAlive || error) return;
+              if (tableRowSaysClosed(data as HeartbeatRowCheck | null)) {
+                heartbeatRowClosedRef.current = true;
+              }
+            })
+            .catch(() => undefined)
+            .finally(() => {
+              rowCheckInFlight = false;
+            });
+        }
+      } else {
+        notRunningBeats = 0;
       }
       // A pre-start seat-first table has no engine game to heartbeat AT — the
       // 404 is the expected answer until every seat is paid, not a miss. See
@@ -3863,6 +3913,7 @@ function LiveTablePage({
     window.addEventListener('pageshow', onResume);
     document.addEventListener('visibilitychange', onResume);
     return () => {
+      heartbeatAlive = false;
       clearInterval(heartbeatInterval);
       window.removeEventListener(NATIVE_RESUME_EVENT, onResume);
       window.removeEventListener('pageshow', onResume);
@@ -4169,6 +4220,7 @@ function LiveTablePage({
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
       tablePausedToastShownRef.current = false;
+      heartbeatRowClosedRef.current = false;
       // A socket that reached OPEN is proof the engine accepted this token.
       // Nothing weaker clears it (see the comment above).
       setEngineRefusedAuth(false);
@@ -4218,7 +4270,10 @@ function LiveTablePage({
     resetEngineCircuitBreaker();
     if (!tableId) return;
     const live = tableStateRef.current;
-    if (live.heroSeat > 0 || heroSeatRef.current > 0) {
+    if (
+      (live.heroSeat > 0 || heroSeatRef.current > 0) &&
+      shouldHeartbeatOverHttp({ isLightningRoom: !!lightningRoomRef.current })
+    ) {
       void sendHeartbeat(tableId, { turnRendered: heroActionRenderedRef.current });
       const hero = live.players[live.heroSeat - 1];
       const blind =
@@ -8396,6 +8451,28 @@ function LiveTablePage({
   /** The hand in which the engine last answered "already at the maximum" to
    *  an automatic top-up; no retry until the hand number changes. */
   const autoTopUpRefusedForHandRef = useRef<number | null>(null);
+  /* A LIGHTNING "NOT NOW" WAITS FOR THE HAND (2026-10-24). An anchor table is
+     halted while its game is Lightning, so the Auto Top Up effect below sees
+     "between hands" on every snapshot and asked again on every one: 392
+     refusals and 392 error toasts for one player in sixteen minutes. The
+     refusal now engages this hold; automatic top-ups stop asking until the
+     database says the player's chips are out of the hand, and the release
+     bumps `lightningHoldRelease` so the effect runs once more and tops up.
+     See src/lightning/lightningAddOnHold.ts. */
+  const [lightningHoldRelease, setLightningHoldRelease] = useState(0);
+  const lightningAddOnHoldRef = useRef<LightningAddOnHold | null>(null);
+  if (!lightningAddOnHoldRef.current) {
+    lightningAddOnHoldRef.current = new LightningAddOnHold({
+      inHand: async (clusterId) => (await fetchMyLightningSession(clusterId)).inHand,
+      onRelease: () => setLightningHoldRelease((n) => n + 1),
+    });
+  }
+  useEffect(() => {
+    const hold = lightningAddOnHoldRef.current;
+    return () => hold?.reset();
+  }, [tableId, userId]);
+  /** Announced once per hold, whichever path heard the refusal first. */
+  const lightningHoldToastedRef = useRef(false);
   /* The cashier is offered to a seat that has a funded top-up writer behind it:
      every chip seat, and a Diamond CASH seat. A Diamond tournament seat has no
      such writer (prize escrow is a later phase and the custody door refuses a
@@ -8468,6 +8545,26 @@ function LiveTablePage({
           // snapshot (`tableState.players` is a new array each time), and
           // the answer cannot change until the queued chips land.
           autoTopUpRefusedForHandRef.current = tableStateRef.current.handNumber ?? null;
+          return false;
+        }
+        /* The player's chips are in a live Lightning hand: nothing was taken
+           and the engine is saying "when it finishes". Not an incident to
+           report, and not an error. Every automatic retry is held until the
+           hand settles and the automatic path says so once per hold. A
+           manual press is a question the player asked, so it is answered. */
+        if (isLightningAddOnRefusal(res.error)) {
+          lastAddChipsResultRef.current = { applied: 0, queued: false };
+          const hold = lightningAddOnHoldRef.current;
+          if (!hold?.isHeld()) lightningHoldToastedRef.current = false;
+          hold?.engage(lightningRoomRef.current?.clusterId ?? tableStateRef.current.clusterId);
+          if (typeof window !== 'undefined') {
+            if (opts?.source !== 'auto') {
+              toast.info(String(res.error));
+            } else if (!lightningHoldToastedRef.current) {
+              lightningHoldToastedRef.current = true;
+              toast.info('Auto Top Up Will Add Chips When Your Lightning Hand Finishes');
+            }
+          }
           return false;
         }
         reportError(
@@ -9177,7 +9274,8 @@ function LiveTablePage({
       userId === 'guest' ||
       v8SettingsLoading ||
       !isNativeAppActive() ||
-      document.visibilityState === 'hidden'
+      document.visibilityState === 'hidden' ||
+      !shouldHeartbeatOverHttp({ isLightningRoom: !!lightningRoomRef.current })
     )
       return;
     // Send an explicit false too. Transport pongs never change this choice.
@@ -24716,6 +24814,9 @@ function LiveTablePage({
       if (
         !lightningRoomRef.current &&
         isAutoRebuyEnabled &&
+        /* Chips in a live Lightning hand: wait for the hold to release
+           (lightningHoldRelease below) rather than ask on every snapshot. */
+        !lightningAddOnHoldRef.current?.isHeld() &&
         /* A CASH SEAT WITH A FUNDED WRITER, WHICHEVER ASSET FUNDS IT
            (2026-09-12). This read `=== 'chips'`, so a Diamond cash seat could
            switch Auto Top Up on and never be topped up. The effect already
@@ -24824,6 +24925,7 @@ function LiveTablePage({
     accountBalance,
     tableId,
     handleSitOut,
+    lightningHoldRelease,
   ]);
   // -------------------------------------------------------------------
 

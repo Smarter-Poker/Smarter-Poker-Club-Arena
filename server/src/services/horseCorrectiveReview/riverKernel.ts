@@ -1,7 +1,19 @@
 import type { AlternativeActionReference, CorrectiveAction } from './contract.js';
-import { produceRiverCallFoldReference, type RiverReferenceInput } from './riverReference.js';
+import {
+  produceRiverCallFoldReference,
+  type RiverReferenceInput,
+  type RiverDecisionInput,
+} from './riverReference.js';
 import { evidenceDigest } from './authority.js';
 import { correctiveActionIsLegal } from './review.js';
+import { buildOriginalRiverDecision, RIVER_DECISION_MODEL } from './riverDecisionModel.js';
+
+export const RIVER_CORRECTION_KERNEL = Object.freeze({
+  version: 'river-call-fold-correction-v1',
+  modelVersion: RIVER_DECISION_MODEL.version,
+  conditionalProbability: 0.05 as const,
+  minimumModelGainBb: 0.01,
+});
 
 export type RiverCorrectionProposal =
   | {
@@ -13,6 +25,54 @@ export type RiverCorrectionProposal =
       activationAllowed: false;
     }
   | { status: 'retained' | 'unavailable'; reason: string };
+function proposalFromMenu(
+  menu: AlternativeActionReference['alternatives'],
+  baseline: CorrectiveAction
+): RiverCorrectionProposal {
+  const from = menu.find((a) => evidenceDigest(a.choice) === evidenceDigest(baseline));
+  if (!from) return { status: 'unavailable', reason: 'baseline_outside_reference_menu' };
+  const to = menu.find((a) => a !== from);
+  if (!to) return { status: 'unavailable', reason: 'reference_menu_incomplete' };
+  const gain = to.lower - from.upper;
+  if (gain <= RIVER_CORRECTION_KERNEL.minimumModelGainBb)
+    return { status: 'retained', reason: 'no_conservative_gain' };
+  return {
+    status: 'proposed',
+    from: { ...from.choice },
+    to: { ...to.choice },
+    conditionalProbability: RIVER_CORRECTION_KERNEL.conditionalProbability,
+    modelGainLowerBb: gain,
+    activationAllowed: false,
+  };
+}
+export type OriginalRiverCorrectionProposal = RiverCorrectionProposal & {
+  modelVersion?: string;
+  inputDigest?: string;
+  readFrameDigest?: string;
+  samplingContractDigest?: string;
+};
+/** Deterministic proposal only. The worker must separately admit authority,
+ * sample the bounded change and recheck final action/effect acceptance. */
+export function proposeOriginalRiverCorrection(
+  original: RiverDecisionInput['original'],
+  baseline: CorrectiveAction
+): OriginalRiverCorrectionProposal {
+  try {
+    const model = buildOriginalRiverDecision(original);
+    if (model.status !== 'built') return { status: 'unavailable', reason: model.reason };
+    if (!correctiveActionIsLegal(model.input.original.snapshot, baseline))
+      return { status: 'unavailable', reason: 'baseline_outside_reference_menu' };
+    return {
+      ...proposalFromMenu(model.prices.alternatives, baseline),
+      modelVersion: model.modelVersion,
+      inputDigest: model.prices.inputDigest,
+      readFrameDigest: model.prices.readFrameDigest,
+      samplingContractDigest: model.prices.samplingContractDigest,
+    };
+  } catch {
+    return { status: 'unavailable', reason: 'original_policy_unreadable' };
+  }
+}
 
 export function proposeRiverCallFoldCorrection(
   input: RiverReferenceInput,
@@ -80,19 +140,7 @@ export function proposeRiverCallFoldCorrection(
       )
         return no('reference_interval_invalid');
     }
-    const from = r.alternatives.find((a) => same(a.choice, baseline));
-    if (!from) return no('baseline_outside_reference_menu');
-    const to = r.alternatives.find((a) => a !== from)!;
-    const gain = to.lower - from.upper;
-    if (gain <= 0.01) return { status: 'retained', reason: 'no_conservative_gain' };
-    return {
-      status: 'proposed',
-      from: { ...from.choice },
-      to: { ...to.choice },
-      conditionalProbability: 0.05,
-      modelGainLowerBb: gain,
-      activationAllowed: false,
-    };
+    return proposalFromMenu(r.alternatives, baseline);
   } catch {
     return no('reference_unreadable');
   }

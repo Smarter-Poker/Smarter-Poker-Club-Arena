@@ -42,7 +42,7 @@ export const bind = (i: RiverReferenceInput): RiverReferenceInput => {
       player: hero,
       gameState: {
         stateSchemaVersion: 1,
-        players: [hero, opponent],
+        players: [{ ...hero, cards: [] }, opponent],
         communityCards: i.board,
         stage: i.stage,
         gameVariant: i.domain.variant,

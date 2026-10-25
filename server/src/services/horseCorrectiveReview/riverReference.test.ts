@@ -1,9 +1,63 @@
 import { describe, expect, it } from 'vitest';
-import { produceRiverCallFoldReference, type RiverReferenceInput } from './riverReference.js';
+import {
+  produceRiverCallFoldReference,
+  priceRiverCallFoldDecision,
+  type RiverReferenceInput,
+} from './riverReference.js';
 import { cards, bind, riverReferenceFixture as input } from './riverReference.test-support.js';
 import { evidenceDigest } from './authority.js';
 
 describe('offline Phase 14 river call/fold reference producer', () => {
+  it('refuses a public hero snapshot that disagrees with the private original player', () => {
+    const i = input();
+    i.original.snapshot.gameState.players[0]!.stack++;
+    i.binding.inputDigest = evidenceDigest(i.original.snapshot);
+    expect(produceRiverCallFoldReference(i).status).toBe('unavailable');
+  });
+  it('uses the incremental short all-in call and refunds the opponent uncalled excess', () => {
+    const i = input();
+    i.stack = 20;
+    i.toCall = 20;
+    i.contestablePot = 70;
+    bind(i);
+    const s = i.original.snapshot;
+    s.gameState.toCall = 50;
+    s.gameState.currentBet = 50;
+    s.gameState.players[1]!.bet = 50;
+    i.binding.inputDigest = evidenceDigest(s);
+    const r = produceRiverCallFoldReference(i);
+    expect(r.status).toBe('produced');
+    if (r.status === 'produced')
+      expect(r.reference.alternatives[1]).toMatchObject({
+        choice: { action: 'call', amount: 20 },
+        mean: 33,
+      });
+  });
+  it('rejects an actual second board even if boardCount claims one', () => {
+    const i = input();
+    i.original.snapshot.gameState.communityCards2 = cards('2s 3s 4s 5s 6s');
+    i.binding.inputDigest = evidenceDigest(i.original.snapshot);
+    expect(produceRiverCallFoldReference(i).status).toBe('unavailable');
+  });
+  it('derives a decision-time deduction quote without a future settlement amount', () => {
+    const facts = input();
+    delete (facts as Partial<RiverReferenceInput>).finalRake;
+    expect(priceRiverCallFoldDecision(facts)).toMatchObject({ status: 'priced', finalRake: 4 });
+    expect(produceRiverCallFoldReference(facts).status).toBe('unavailable');
+  });
+  it('prices the original decision without a future execution or accepted-hand record', () => {
+    const { binding, sourceId, qualificationId, producerDigest, evidenceClass, ...facts } = input();
+    void binding;
+    void sourceId;
+    void qualificationId;
+    void producerDigest;
+    void evidenceClass;
+    const result = priceRiverCallFoldDecision(facts);
+    expect(result.status).toBe('priced');
+    if (result.status === 'priced') expect(result.alternatives[1]!.mean).toBe(48);
+    expect(result).not.toHaveProperty('binding');
+    expect(result).not.toHaveProperty('authority');
+  });
   it.each([
     'nlh',
     'flh',

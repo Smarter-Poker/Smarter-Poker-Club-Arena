@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { proposeRiverCallFoldCorrection } from './riverKernel.js';
+import { proposeRiverCallFoldCorrection, proposeOriginalRiverCorrection } from './riverKernel.js';
 import { produceRiverCallFoldReference } from './riverReference.js';
 import { cards, bind, riverReferenceFixture } from './riverReference.test-support.js';
 
 describe('bounded Phase 14 river call/fold policy kernel', () => {
+  it('proposes from the original state without a retrospective reference or outcome', () => {
+    expect(
+      proposeOriginalRiverCorrection(riverReferenceFixture().original, {
+        action: 'fold',
+        amount: 0,
+      })
+    ).toMatchObject({
+      status: 'proposed',
+      to: { action: 'call', amount: 50 },
+      conditionalProbability: 0.05,
+      modelGainLowerBb: 48,
+      activationAllowed: false,
+    });
+  });
   it('proposes a maximum five-point move from a fold to a conservatively profitable call', () => {
     const i = riverReferenceFixture(),
       r = produceRiverCallFoldReference(i);

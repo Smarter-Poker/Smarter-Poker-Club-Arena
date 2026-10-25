@@ -13,6 +13,9 @@ import { join } from 'node:path';
 import { runHorseRiverReference } from '../../scripts/horseRiverReference.js';
 import { riverReferenceFixture } from './riverReference.test-support.js';
 import { evidenceDigest } from './authority.js';
+import { produceRiverCallFoldReference } from './riverReference.js';
+import { RIVER_DECISION_MODEL } from './riverDecisionModel.js';
+import { RIVER_CORRECTION_KERNEL } from './riverKernel.js';
 const dirs: string[] = [];
 afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -26,46 +29,73 @@ const setup = (value: unknown) => {
   return { dir, input, output };
 };
 describe('explicit private river qualification ingress', () => {
-  it('invokes the holdout evaluator while preserving its unqualified verdict', () => {
-    const rows = [0, 1].map((n) => {
-      const input = riverReferenceFixture();
-      input.binding.decisionDigest = evidenceDigest(['decision', n]);
-      input.binding.acceptedHandDigest = evidenceDigest(['accepted', n]);
-      return {
-        handKey: evidenceDigest(['hand', n]),
-        playedAt: '2026-10-25T01:00:00.000Z',
-        input,
-        baseline: { action: 'fold', amount: 0 },
-        oracle: { foldBb: 0, callBb: 48 },
-      };
-    });
-    const s = setup({
-      version: 1,
-      rows,
-      plan: {
-        sourceRelease: '1'.repeat(40),
-        producerDigest: 'a'.repeat(64),
-        qualificationId: 'qualification-required',
-        evidenceClass: 'synthetic_fixture',
-        declaredAt: '2026-10-23T00:00:00.000Z',
-        holdoutStartsAt: '2026-10-25T00:00:00.000Z',
-        holdoutEndsAt: '2026-10-26T00:00:00.000Z',
-        selectionHandKeys: [evidenceDigest('selection')],
-        minimumSamples: 2,
-        maximumAbsoluteDeltaBb: 5,
-        familyWiseAlpha: 0.05,
-        familySize: 45,
-      },
-    });
-    expect(runHorseRiverReference(['holdout', s.input, s.output]).code).toBe(0);
+  it('builds the fixed original-state model without requiring future hand records', () => {
+    const s = setup({ version: 1, original: riverReferenceFixture().original });
+    expect(runHorseRiverReference(['model', s.input, s.output]).code).toBe(0);
     expect(JSON.parse(readFileSync(s.output, 'utf8'))).toMatchObject({
-      status: 'measured',
-      samples: 2,
-      changed: 2,
+      status: 'built',
+      prices: { status: 'priced' },
       qualified: false,
       activationAllowed: false,
     });
   });
+  it('routes numerical verification through the independent reference', () => {
+    const input = riverReferenceFixture(),
+      r = produceRiverCallFoldReference(input);
+    if (r.status !== 'produced') throw Error(r.reason);
+    const s = setup({ version: 1, input, reference: r.reference });
+    expect(runHorseRiverReference(['verify', s.input, s.output]).code).toBe(0);
+    expect(JSON.parse(readFileSync(s.output, 'utf8'))).toMatchObject({
+      status: 'numerically_consistent',
+      qualified: false,
+      activationAllowed: false,
+    });
+  });
+  it.each(['holdout', 'model-holdout'])(
+    'invokes %s while preserving its unqualified verdict',
+    (mode) => {
+      const rows = [0, 1].map((n) => {
+        const input = riverReferenceFixture();
+        input.binding.decisionDigest = evidenceDigest(['decision', n]);
+        input.binding.acceptedHandDigest = evidenceDigest(['accepted', n]);
+        return {
+          handKey: evidenceDigest(['hand', n]),
+          playedAt: '2026-10-25T01:00:00.000Z',
+          input,
+          baseline: { action: 'fold', amount: 0 },
+          oracle: { foldBb: 0, callBb: 48 },
+        };
+      });
+      const s = setup({
+        version: 1,
+        rows,
+        plan: {
+          modelVersion: RIVER_DECISION_MODEL.version,
+          policyVersion: RIVER_CORRECTION_KERNEL.version,
+          sourceRelease: '1'.repeat(40),
+          producerDigest: 'a'.repeat(64),
+          qualificationId: 'qualification-required',
+          evidenceClass: 'synthetic_fixture',
+          declaredAt: '2026-10-23T00:00:00.000Z',
+          holdoutStartsAt: '2026-10-25T00:00:00.000Z',
+          holdoutEndsAt: '2026-10-26T00:00:00.000Z',
+          selectionHandKeys: [evidenceDigest('selection')],
+          minimumSamples: 2,
+          maximumAbsoluteDeltaBb: 5,
+          familyWiseAlpha: 0.05,
+          familySize: 45,
+        },
+      });
+      expect(runHorseRiverReference([mode, s.input, s.output]).code).toBe(0);
+      expect(JSON.parse(readFileSync(s.output, 'utf8'))).toMatchObject({
+        status: 'measured',
+        samples: 2,
+        changed: 2,
+        qualified: false,
+        activationAllowed: false,
+      });
+    }
+  );
   it('writes an unsigned reference privately without leaking source to stdout', () => {
     const s = setup({ version: 1, input: riverReferenceFixture() });
     const result = runHorseRiverReference(['produce', s.input, s.output]);

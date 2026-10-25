@@ -18,7 +18,7 @@ are measured. Other approved client, engine and database deliveries continue.
 1. Build a bounded offline reference producer. Begin with river heads-up cash
    call/fold against an already all-in opponent, enumerating an explicitly
    declared weighted range. Bind the original snapshot, private read frame,
-   exact legal menu, committed source and prices. Reuse actual pot rights,
+   declared fold/call menu, committed source and prices. Reuse actual pot rights,
    odd-chip allocation and deductions. A result is conditional on its declared
    model and is unsigned/unqualified; it is neither calibrated GTO nor admission.
    Unsupported boards, future decisions, unknown utility and malformed inputs
@@ -84,3 +84,27 @@ acceptance/effect wiring remain separate unfinished parts of this assignment.
 The coordinating winner-belief read-frame repair must be integrated before
 replacement Phase 8 and Phase 10-13 measurements; no replacement matrix has
 been dispatched against superseded source.
+
+## Original-state model and independent numerical review
+
+The calculator now derives the hypothetical call's fee quote from original
+settings without requiring future accepted-hand or execution records. The
+retrospective wrapper still requires their exact binding. A versioned finite
+32-combination original-state prior and a shared bounded proposal rule are
+implemented; model holdout reconstructs that policy rather than accepting
+post-hoc supplied range rows. Its calibration remains explicitly unqualified.
+
+The independent numerical reviewer uses the existing separately implemented
+benchmark scorer and contribution layers, and exact integer-rational rounding
+for residual cents. It detects a deliberately wrong producer even when the
+producer reproduces the same wrong result. The private CLI now exposes model,
+model-holdout and independent verify operations alongside produce and holdout.
+
+A real in-memory HandController hand reaches the river, exposes its actual
+fold/call/all-in menu, accepts the call and conserves both starting stacks.
+This caught the overly narrow two-entry menu guard: the correction prices only
+fold/call and leaves the other baseline action families unchanged. Short-stack
+calls retain the full controller price while paying only the remaining stack,
+and the opponent's uncalled excess is refunded. An actual second board is
+refused even if boardCount incorrectly claims one. This is connected local
+controller proof, not production worker/acceptance/effect or fleet proof.

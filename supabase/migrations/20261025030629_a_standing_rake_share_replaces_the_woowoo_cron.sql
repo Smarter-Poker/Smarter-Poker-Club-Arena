@@ -94,6 +94,16 @@ BEGIN
   IF to_regclass('smarter_private.player_rake_share_rules') IS NOT NULL THEN
     RAISE EXCEPTION 'player_rake_share_rules already exists; nothing changed';
   END IF;
+  -- One retirement of the cron, not two. A write-time split (PR #7995:
+  -- smarter_private.tr_woowoo_half_rake_split on public.ca_hand_facts) writes
+  -- the same split rows this removes; with both, the share would count twice.
+  IF to_regprocedure('smarter_private.tr_woowoo_half_rake_split()') IS NOT NULL
+     OR to_regprocedure('smarter_private.fn_woowoo_half_rake_day_cents(date)') IS NOT NULL
+     OR EXISTS (SELECT 1 FROM pg_trigger t
+                 WHERE t.tgrelid = 'public.ca_hand_facts'::regclass AND NOT t.tgisinternal
+                   AND t.tgfoid::regproc::text ILIKE '%woowoo%') THEN
+    RAISE EXCEPTION 'a write-time WooWoo split is installed; one retirement of the cron only; nothing changed';
+  END IF;
 END
 $guard$;
 

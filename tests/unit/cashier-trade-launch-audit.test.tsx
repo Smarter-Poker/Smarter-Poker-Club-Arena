@@ -862,16 +862,18 @@ describe('P-16: money on the page is summed in cents', () => {
     expect(sumChips([100.1, 200.2, -300.3])).toBe(0);
     expect(sumChips([Number.NaN, 5])).toBe(5);
     expect(TRADE).toContain('sumChips(recipients.map((r) => r.chipBalance))');
-    expect(TRADE).toContain("sumChips(amountsIn('in'))");
     expect(TRADE).toContain('sumChips(picked.map((r) => r.chipBalance))');
     expect(TRADE).toContain('sumChips(downline.filter((r) => r.isMine).map((r) => r.chipBalance))');
     expect(TRADE).not.toMatch(/reduce\(\(sum, r\) => sum \+/);
   });
 
+  // The Transaction History's In / Out / Net now come from the server over the
+  // whole filtered book (fn_cashier_history_totals sums in numeric, exact to
+  // the cent), not from the rows on screen (Dan 2026-10-24, "true totals").
   it('computes the ledger net in cents so cancelling legs read +0, never -0', () => {
-    expect(TRADE).toContain(
-      'const net = (Math.round(incoming * 100) - Math.round(outgoing * 100)) / 100;'
-    );
+    expect(TRADE).toContain("supabase.rpc('fn_cashier_history_totals'");
+    expect(TRADE).not.toContain("sumChips(amountsIn('in'))");
+    expect(TRADE).toContain("historyTotals.net >= 0 ? '+' : '-'");
     const incoming = sumChips([100.1, 200.2]);
     const outgoing = sumChips([300.3]);
     const net = (Math.round(incoming * 100) - Math.round(outgoing * 100)) / 100;

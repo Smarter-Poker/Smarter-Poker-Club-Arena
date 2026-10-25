@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { canonicalCards, normalizeCard, normalizeCards } from '../../src/utils/tableGeometry';
 import { cardKey } from '../../src/utils/handEvaluator';
+import { heroDisplayHoleCards } from '../../src/lib/tableCardDisplay';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 
@@ -42,6 +43,20 @@ describe('one card, one spelling', () => {
 
   it('card matching ignores spelling', () => {
     expect(cardKey({ rank: '10', suit: 'clubs' } as any)).toBe(cardKey({ rank: 'T', suit: 'c' }));
+  });
+
+  it('the same hand in another spelling keeps the row exactly as it is', () => {
+    const row = [
+      { rank: 'K', suit: 's' },
+      { rank: 'J', suit: 'c' },
+      { rank: 'T', suit: 'h' },
+    ] as any[];
+    const sameCardsOtherSpelling = [
+      { rank: '10', suit: 'hearts' },
+      { rank: 'K', suit: 'spades' },
+      { rank: 'J', suit: 'clubs' },
+    ] as any[];
+    expect(heroDisplayHoleCards(sameCardsOtherSpelling, row, true)).toBe(row);
   });
 
   it('every way cards enter the table goes through the converter', () => {

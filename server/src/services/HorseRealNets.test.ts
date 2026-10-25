@@ -10,7 +10,12 @@ vi.mock('./supabase/client.js', () => ({
 }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
 
-import { accumulateHorseNets, drainHorseNets, type HorseReviewInput } from './HorseHandReview.js';
+import {
+  accumulateHorseNets,
+  drainHorseNets,
+  drainHorsePlay,
+  type HorseReviewInput,
+} from './HorseHandReview.js';
 import { diagnoseAndNudge, MIN_REAL_HANDS_FOR_BB100, type PlayStats } from './HorseSelfTuner.js';
 
 function input(over: Partial<HorseReviewInput> = {}): HorseReviewInput {
@@ -184,5 +189,60 @@ describe('the regression rule on real bb100', () => {
   it('a winning real sample never triggers the regression', () => {
     const { reasons } = diagnoseAndNudge(stats, { tightness: 1.1 }, 12, 5000);
     expect(reasons.join(' ')).not.toContain('real bb100');
+  });
+});
+
+describe('the play and net denominators use the same dealt horses', () => {
+  function count(over: Partial<HorseReviewInput>) {
+    drainHorseNets(10000);
+    drainHorsePlay(10000);
+    accumulateHorseNets(
+      input({
+        actions: [
+          { userId: 'horse-a', seat: 1, stage: 'preflop', action: 'bet', amount: 10, timestamp: 1 },
+          { userId: 'human-1', seat: 3, stage: 'preflop', action: 'call', amount: 4, timestamp: 2 },
+        ],
+        ...over,
+      })
+    );
+    return { nets: drainHorseNets(10000), play: drainHorsePlay(10000) };
+  }
+  it('does not turn an undealt public-action actor into a dealt horse', () => {
+    const result = count({
+      holeCardsAll: new Map([
+        ['horse-a', { seat: 1, cards: [] }],
+        ['human-1', { seat: 3, cards: [] }],
+      ]),
+      actions: [
+        { userId: 'horse-a', seat: 1, stage: 'preflop', action: 'bet', amount: 10, timestamp: 1 },
+        { userId: 'horse-b', seat: 2, stage: 'preflop', action: 'fold', amount: 0, timestamp: 2 },
+      ],
+    });
+    expect(result.nets.map((r) => r.horse_user_id)).toEqual(['horse-a']);
+    expect(result.play.map((r) => r.horse_user_id)).toEqual(['horse-a']);
+  });
+  it('uses the same chip-movement fallback when no deal map is available', () => {
+    const result = count({
+      holeCardsAll: new Map(),
+      contributions: new Map([
+        ['horse-a', 10],
+        ['human-1', 4],
+      ]),
+    });
+    expect(result.nets.map((r) => r.horse_user_id)).toEqual(['horse-a']);
+    expect(result.play.map((r) => r.horse_user_id)).toEqual(['horse-a']);
+  });
+  it('retains a genuinely dealt zero-cost fold in both denominators', () => {
+    const result = count({
+      contributions: new Map([
+        ['horse-a', 10],
+        ['human-1', 4],
+      ]),
+    });
+    expect(result.nets.find((r) => r.horse_user_id === 'horse-b')).toMatchObject({
+      hands: 1,
+      net_bb: 0,
+    });
+    expect(result.play.find((r) => r.horse_user_id === 'horse-b')).toMatchObject({ hands: 1 });
   });
 });

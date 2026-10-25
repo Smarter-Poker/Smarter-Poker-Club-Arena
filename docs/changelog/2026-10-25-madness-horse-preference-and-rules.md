@@ -7,3 +7,5 @@ Read hands and bb/100 in the existing roster request. Invalid, stale or failed r
 Regression coverage exercises the reader and selector together, sample-size boundaries, stale/failed data and other profiles. Real HandController and HorseLogic tests cover six-player PLO5 1/2 ordinary BB-ante hands, double-board 3BB bomb pots, a short stack, action acceptance and chip conservation. Existing fleet funding, policy and seating tests remain applicable.
 
 Local qualification passes 59 tests across seven suites and server TypeScript. Protected CI, merge, the existing engine release route, installed identity and natural new-seat behavior remain separate delivery gates. Routine engine activation is at 04:00 America/Chicago; no emergency admission is requested.
+
+The full hosted engine shard exposed an older exact-select contract ending at `main_index`. Extend that assertion to retain its lifecycle/retirement columns and verify the four added Madness rule inputs. No production retirement behavior or test requirement is removed.

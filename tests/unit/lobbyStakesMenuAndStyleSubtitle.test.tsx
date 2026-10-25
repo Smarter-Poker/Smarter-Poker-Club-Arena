@@ -111,7 +111,7 @@ describe('the Game Style filter', () => {
   });
 
   it('is offered on every cash tab, in the vocabulary order, and on no tournament tab', () => {
-    expect(CASH_STYLES.map((s) => s.key)).toEqual(['classic', 'madness']);
+    expect(CASH_STYLES.map((s) => s.key)).toEqual(['classic', 'madness', 'straight_madness']);
     for (const tab of ['HOLDEM', 'OMAHA', 'LIMIT'] as const) {
       expect(FILTER_SPECS[tab].styles).toBe(CASH_STYLES);
     }
@@ -150,7 +150,7 @@ describe('the Game Style filter', () => {
 
   it('the club home hands the row its template and the sheet has a Game Style section', () => {
     const page = read('src/pages/ClubHomePage.tsx');
-    expect(page).toMatch(/style: table\.cluster_template \?\? null,/);
+    expect(page).toMatch(/style: cashStyleKeyOf\(table as unknown as LobbyTableRow\),/);
     expect(page).toMatch(/styleChoices: sSpec\.styles,/);
     expect(page).toMatch(
       /gameType === 'HOLDEM' \|\| gameType === 'OMAHA' \|\| gameType === 'LIMIT'/
@@ -240,7 +240,14 @@ describe('the Stakes heading on the phone sort bar', () => {
     const items = within(m!)
       .getAllByRole('button')
       .map((b) => b.textContent?.trim());
-    expect(items).toEqual(['All', 'Classic', 'Lightning Games', 'High To Low', 'Low To High']);
+    expect(items).toEqual([
+      'All',
+      'Classic',
+      'Lightning Games',
+      'Madness',
+      'High To Low',
+      'Low To High',
+    ]);
     expect(within(m!).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
   });
 

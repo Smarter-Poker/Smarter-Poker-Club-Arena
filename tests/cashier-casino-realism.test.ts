@@ -36,7 +36,7 @@ describe('cashier navigation and ledger controls stay operational', () => {
   });
 
   it('loads ledger pages with a truthful sentinel row', () => {
-    expect(PAGE).toContain("supabase.rpc('fn_club_trade_ledger'");
+    expect(PAGE).toContain("supabase.rpc('fn_cashier_transaction_history'");
     expect(PAGE).toContain('p_limit: recordsLimit + 1');
     expect(PAGE).toContain('setRecordsHasMore((data || []).length > recordsLimit)');
     expect(PAGE).toContain('setRecordsLimit((limit) => Math.min(limit + 50, 250))');

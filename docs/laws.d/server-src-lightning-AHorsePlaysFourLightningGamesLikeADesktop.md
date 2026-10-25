@@ -1,0 +1,3 @@
+# server/src/lightning/AHorsePlaysFourLightningGamesLikeADesktop.law.test.ts
+
+Dan 2026-10-24, "SEATING SHOULD BE DONE ACCORDINGLY TO HOW IT WAS ALWAYS DONE. 4 GAMES MAX.": a horse's input device is the engine, and the engine reports the desktop device class for a horse seat (ENGINE_INPUT_DEVICE_PLATFORM) in the Lightning presence feed, so fn_lightning_player_legality holds a horse to the desktop limit of 4 rather than the unreported-class default of mobile 2; the fleet's seating source stays at four games (MAX_TABLES_PER_HORSE, CONCURRENT_GAME_LIMIT); a human's class never comes from the engine; the narrower report still wins; the human device limits stay desktop 4, tablet 3, mobile 2.

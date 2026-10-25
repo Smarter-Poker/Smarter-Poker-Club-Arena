@@ -13,8 +13,10 @@ const seatExitCandidates = readdirSync(MIGRATIONS).filter(
 );
 if (seatExitCandidates.length !== 1) throw new Error('Stage-B contraction migration is ambiguous');
 const SEAT_EXIT = seatExitCandidates[0];
-const COMPOSED_CLOSE =
-  '20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql';
+// 20260909192240 composed the close helper; 20261024230029 restates it as
+// production runs it (with the 20260910035435 lane rewrite) and adds the one
+// lifecycle assignment, so it is now the latest literal definition.
+const COMPOSED_CLOSE = '20261024230029_closing_a_table_closes_its_lifecycle.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
 const cancellation = readFileSync(resolve(MIGRATIONS, CANCELLATION), 'utf8');
 const seatExit = readFileSync(resolve(MIGRATIONS, SEAT_EXIT), 'utf8');

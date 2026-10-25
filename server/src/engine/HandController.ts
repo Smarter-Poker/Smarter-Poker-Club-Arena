@@ -1132,8 +1132,18 @@ export class HandController {
   }
 
   /** Explicit Lightning fold: final now, even while another player owes a decision. */
-  performImmediateFold(seat: number): boolean {
-    return this.performBettingAction(seat, 'fold', undefined, 'player', undefined, true);
+  /**
+   * An early (Lightning) fold. `origin` labels the record exactly as the
+   * turn door does: 'player' for a person's request, 'horse_policy' for a
+   * horse's own decision (Dan 2026-10-24, "HORSES SHOULD FOLD RIGHT AWAY IF
+   * THEY WERE ALREADY FOLDING"). The rules are the same for both.
+   */
+  performImmediateFold(
+    seat: number,
+    origin: AcceptedActionOrigin = 'player',
+    onAccepted?: (record: Readonly<ActionRecord>) => void
+  ): boolean {
+    return this.performBettingAction(seat, 'fold', undefined, origin, onAccepted, true);
   }
 
   private performBettingAction(
@@ -3893,13 +3903,21 @@ export class HandController {
    * as performAction(), rather than asking either consumer to infer reopening,
    * fixed-limit or pot-limit rights from a reduced state object.
    */
-  public getAuthoritativeActionState(userId: string): AuthoritativeActionState | null {
+  public getAuthoritativeActionState(
+    userId: string,
+    opts: { asIfToAct?: boolean } = {}
+  ): AuthoritativeActionState | null {
     const player = this.state.players.find((p) => p.user_id === userId);
     if (!player) return null;
 
+    // `asIfToAct` (read-only): the menu this seat would hold if the action
+    // reached it with the table exactly as it stands now. Lightning's early
+    // fold asks it for a horse that is not yet on the turn; nothing here can
+    // act on it, and performAction still demands the real turn.
+    const asIfToAct = opts.asIfToAct === true;
     const bettingState = this.buildBettingState(player);
     const canAct =
-      this.state.currentPlayerSeat === player.seat &&
+      (asIfToAct || this.state.currentPlayerSeat === player.seat) &&
       !player.is_folded &&
       !player.is_all_in &&
       !player.is_sitting_out &&
@@ -3937,7 +3955,7 @@ export class HandController {
     return {
       schemaVersion: 1,
       heroSeat: player.seat,
-      currentPlayerSeat: this.state.currentPlayerSeat,
+      currentPlayerSeat: asIfToAct ? player.seat : this.state.currentPlayerSeat,
       canAct,
       legalActions,
       toCall: cents(Math.max(0, bettingState.toCall)),

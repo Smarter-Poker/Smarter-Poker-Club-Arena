@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/classic-games-never-move-players",
+  "_comment": "Migration 20261024213758: a Classic game never moves its players. Declares the predicate and the cash_seat_moves trigger function. Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": ["fn_cash_game_never_moves_players", "fn_cash_seat_move_refuses_classic"],
+  "columns": {}
+}

@@ -1,3 +1,4 @@
+import { cashGameNeverMovesPlayers } from '../../config/classicNeverMovesPlayers';
 import {
   getTournamentEntryCapacity,
   getTournamentFormatKind,
@@ -63,7 +64,7 @@ import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { tournamentRowUnitCents, type TournamentArenaEmbed } from '../tournament/details/types';
 import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
-import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey, cashTemplateNote } from '../../config/cashGames';
 import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -102,6 +103,8 @@ export interface LobbyTableRow extends CashFeatureSource {
   lifecycle?: string | null;
   cluster_must_move?: boolean | null;
   cluster_template?: string | null;
+  /** The game's ruleset rules_profile (the chain's cluster embed). */
+  cluster_rules_profile?: string | null;
   /** `cash_games.handedness` when the read embeds it; else the table's max_players. */
   cluster_handedness?: number | null;
   cluster_state?: string | null;
@@ -265,6 +268,13 @@ export interface LobbyEntry {
      */
     /** LIGHTNING PHASE 13: `joinsClosed` while an operator has stopped new players. */
     lightning?: { players: number; status: LightningPoolStatus; joinsClosed?: true } | null;
+    /**
+     * MADNESS WITHOUT LIGHTNING (Dan 2026-10-24). An ordinary must-move game
+     * whose tables play Madness rules - a big blind ante and a VPIP floor -
+     * without Lightning. Read from the table's own rule columns, so the card
+     * can only say Madness when the engine is actually enforcing it.
+     */
+    style?: { label: string; note: string } | null;
   };
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
@@ -1382,6 +1392,64 @@ function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
   return clusterFigures([t]).get(String(t.cluster_id)) ?? { players: 0, tables: 0 };
 }
 
+/**
+ * MADNESS WITHOUT LIGHTNING (Dan 2026-10-24): "JUST A REGULAR PLO5 MADNESS
+ * GAME 50% VPIP WITH BB ANTE". Lightning Games own the Madness template, so
+ * this game is a Classic must-move game whose tables carry the Madness rules.
+ * The card names it Madness from what the engine enforces at the table: a big
+ * blind ante and a VPIP floor. Neither is ever set on a plain Classic table.
+ */
+type StyleRuleRow = { cluster_template?: string | null } & Partial<
+  Pick<
+    LobbyTableRow,
+    'big_blind_ante_enabled' | 'nit_game' | 'maintain_percent_min' | 'bomb_pot_enabled'
+  >
+>;
+
+/** "Big Blind Ante, 50% Minimum VPIP" for a Classic table that enforces both, else null. */
+function classicAnteFloorNoteOf(t: StyleRuleRow): string | null {
+  if (cashTemplateKey(String(t.cluster_template ?? '')) !== 'classic') return null;
+  const floor = Number(t.maintain_percent_min) || 0;
+  if (t.big_blind_ante_enabled !== true || t.nit_game !== true || floor <= 0) return null;
+  return `Big Blind Ante, ${floor}% Minimum VPIP`;
+}
+
+/**
+ * Madness is the ante and the floor WITH bomb pots. PLO5 and PLO6 Classic
+ * carry the ante and the floor without bombs (Dan 2026-10-24: "MAKE ALL PLO5
+ * AND PLO6 CLASSIC GAMES ... 50% VPIP AND BB ANTE FOR ALL STAKES"), and they
+ * stay Classic.
+ */
+export function plainMadnessStyleOf(t: StyleRuleRow): { label: string; note: string } | null {
+  const note = classicAnteFloorNoteOf(t);
+  if (!note || t.bomb_pot_enabled !== true) return null;
+  return { label: 'Madness', note };
+}
+
+/** What a cash card prints for its style: Madness, or Classic with its ante and floor. */
+export function cashRulesStyleOf(t: StyleRuleRow): { label: string; note: string } | null {
+  const madness = plainMadnessStyleOf(t);
+  if (madness) return madness;
+  const note = classicAnteFloorNoteOf(t);
+  return note ? { label: 'Classic', note } : null;
+}
+
+/** The filter and count key for Madness without Lightning; Lightning Games keep `madness`. */
+export const STRAIGHT_MADNESS_STYLE = 'straight_madness';
+
+/**
+ * The style a cash game counts and filters under: Classic, Lightning Games
+ * (`madness`, historical `action` folded in) or Madness without Lightning.
+ */
+export function cashStyleKeyOf(t: StyleRuleRow): string | null {
+  if (plainMadnessStyleOf(t)) return STRAIGHT_MADNESS_STYLE;
+  const historicalKey = String(t.cluster_template ?? '')
+    .trim()
+    .toLowerCase();
+  if (!historicalKey) return null;
+  return historicalKey === 'action' ? 'madness' : historicalKey;
+}
+
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
   const figures = t.cluster_id ? clusterFiguresOf(t) : null;
@@ -1410,6 +1478,7 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           id: t.cluster_id,
           mustMove: t.cluster_must_move !== false,
           template: t.cluster_template ?? null,
+          ...(cashRulesStyleOf(t) ? { style: cashRulesStyleOf(t) } : {}),
           tables: figures.tables,
           state: t.cluster_state ?? null,
           /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
@@ -1506,14 +1575,26 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
                       detail: lightningStatus,
                       tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
                     }
-                  : {
-                      key: cluster.mustMove ? 'must_move' : 'manual_table',
-                      label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
-                      detail: cluster.template ? cluster.template.toUpperCase() : undefined,
-                      tip: cluster.mustMove
-                        ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
-                        : 'One Table The Host Runs By Hand.',
-                    },
+                  : /* A CLASSIC GAME NEVER MOVES ITS PLAYERS (Dan 2026-10-24: "PLAYERS
+                       SHOULD NOT BE MOVING ON CLASSIC GAMES PERIOD"). The database refuses
+                       every automatic move on a Classic game
+                       (20261024213758), so its card never promises one. */
+                    cluster.mustMove &&
+                      cashGameNeverMovesPlayers(cluster.template, t.cluster_rules_profile)
+                    ? {
+                        key: 'classic_seat_stays',
+                        label: 'CLASSIC',
+                        detail: undefined,
+                        tip: 'Regular Ring Game. Your Seat Is Yours Until You Leave Or Ask To Change It.',
+                      }
+                    : {
+                        key: cluster.mustMove ? 'must_move' : 'manual_table',
+                        label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+                        detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+                        tip: cluster.mustMove
+                          ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+                          : 'One Table The Host Runs By Hand.',
+                      },
               ]),
           ...cashRuleMedallions(t),
         ]
@@ -1867,6 +1948,11 @@ const VARIANT_HEAD =
  */
 const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\.\d+)/;
 
+/** The note printed beside a cash game's style: its own rules first, then the template's. */
+export function cashStyleNote(entry: Pick<LobbyEntry, 'game'>): string | null {
+  return entry.game?.style?.note ?? cashTemplateNote(entry.game?.template);
+}
+
 /** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
 export function cashTemplateLabel(template: string | null | undefined): string | null {
   if (!template) return null;
@@ -1884,16 +1970,15 @@ export function cashTemplateLabel(template: string | null | undefined): string |
  */
 export function countStylesOnBoard(
   rows: ReadonlyArray<
-    Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & { cluster_template?: string | null }
+    Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & {
+      cluster_template?: string | null;
+    } & StyleRuleRow
   >
 ): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const r of rows) {
     if (!r.cluster_id || !isClusterFront(r)) continue;
-    const historicalKey = String(r.cluster_template ?? '')
-      .trim()
-      .toLowerCase();
-    const key = historicalKey === 'action' ? 'madness' : historicalKey;
+    const key = cashStyleKeyOf(r);
     if (!key) continue;
     counts[key] = (counts[key] ?? 0) + 1;
   }
@@ -1915,7 +2000,7 @@ export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle:
      parsed back out of a table name. Dan 2026-09-04: "UNDER ALL THE GAMES
      TITLES INSTEAD OF REPEATING THE STAKES AGAIN, SHOULD JUST SAY 'CLASSIC'
      'ACTION' OR 'MADNESS'." */
-  const templateLabel = cashTemplateLabel(entry.game?.template);
+  const templateLabel = entry.game?.style?.label ?? cashTemplateLabel(entry.game?.template);
   if (templateLabel) {
     return { headline: headline || String(entry.name || ''), subtitle: templateLabel };
   }

@@ -307,13 +307,21 @@ describe('a six-handed table is shorter than a nine-handed one', () => {
     // Prettier breaks the :where() list across lines, so the pin is on the
     // construct rather than on one formatting of it.
     expect(SEAT_CSS).toMatch(/\.table-page:where\(\s*\[data-seats='2'\]/);
-    const shortRule = SEAT_CSS.slice(SEAT_CSS.indexOf('.table-page:where('));
-    expect(shortRule.slice(0, shortRule.indexOf('}'))).toContain(
-      '--seat-avatar-base: min(var(--seat-avatar-full), 56px)'
+    /* Dan 2026-10-24: the short rings are no longer capped at all. With the
+       BBJ plates in the left corner nothing is above their one top seat, so it
+       is "FULL SCREEN" like every other villain, slot and bust alike. */
+    const shortSlot = SEAT_CSS.match(
+      /\.table-page:where\(\s*\[data-seats='2'\][^{]*\.seat-wrapper--top\s+\.seat\s*\{([^}]*)\}/
     );
+    expect(shortSlot?.[1]).toContain('--seat-avatar-base: var(--seat-avatar-full)');
+    const shortWrapper = SEAT_CSS.match(
+      /\.table-page:where\(\s*\[data-seats='2'\][^{]*\.seat-wrapper--top\s*\{([^}]*)\}/
+    );
+    expect(shortWrapper?.[1]).toContain('--sp-bust-scale: 1.45');
+    expect(SEAT_CSS).not.toContain('min(var(--seat-avatar-full), 56px)');
   });
 
-  it('the bust scale the clearance was measured at has not moved', () => {
+  it('the bust scale the 7-9 clearance was measured at has not moved', () => {
     expect(SEAT_CSS).toContain('--sp-bust-scale: 1.05');
   });
 });

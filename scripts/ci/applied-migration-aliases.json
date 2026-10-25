@@ -57,6 +57,14 @@
       "file": "supabase/migrations/20261021183705_bind_private_club_helper_reads_to_the_caller.sql",
       "sameBytes": true,
       "basis": "Installed once successfully 2026-10-21T18:46:21Z from qualified source66875d4c19. History17264bytes and SQL MD5 equal exact source. Four raw actor-taking helpers authenticated/anon EXECUTE false; four caller-bound wrappers postgres-owned SECURITY DEFINER public,pg_temp with authenticated/service EXECUTE and anon denied. Seven RLS policies use wrappers, zero remaining raw policy calls. Both grantable-role definitions caller-bound and read back. Never replay."
+    },
+    {
+      "appliedVersion": "20261024213348",
+      "appliedName": "plo5_plo6_classic_fifty_vpip_bb_ante",
+      "appliedMd5": "cac2e6204fd2fa2468226748fc01c3d2",
+      "file": "supabase/migrations/20261024213131_plo5_plo6_classic_fifty_vpip_bb_ante.sql",
+      "sameBytes": true,
+      "basis": "Installed 2026-10-24T21:33:48Z under the MCP-stamped version. public.fn_ca_migration_text('20261024213348') is 6243 bytes with md5 cac2e6204fd2fa2468226748fc01c3d2, byte-identical to the file (md5 cac2e6204fd2fa2468226748fc01c3d2, 6243 bytes), whose first line names 20261024213131. Live: fn_cash_template_defaults('classic','plo5') vpip_floor 50, plo6 regular_ante bb, plo4 vpip_floor 0. Never replay."
     }
   ],
   "superseded": [

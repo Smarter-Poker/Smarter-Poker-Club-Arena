@@ -1267,10 +1267,28 @@ for (const width of [320, 375, 393, 430, 480])
             for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
               if (overlaps(box(action), box(plaque)))
                 violations.push('Action Badge Covers Jackpot');
+          // Dan 2026-10-24: the compact top pod belongs to 7-9 max only. A 2-6
+          // ring's single top seat is full size ("CAN BE FULL SCREEN NOW THAT
+          // THE BBJ IS REMOVED FROM ABOVE THEM"), so there it must match the
+          // other villains instead.
+          const ringSeats = Number(document.documentElement.dataset.seats);
+          const villainAvatars = [
+            ...document.querySelectorAll(
+              '.seat-wrapper:not(.seat-wrapper--top):not(.seat-wrapper--hero) .seat__avatar'
+            ),
+          ].map((e) => box(e).width);
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar-img'))
-            if (box(e).height > 40.5) violations.push('Top Avatar Is Not Compact');
+            if (ringSeats >= 7 && box(e).height > 40.5)
+              violations.push('Top Avatar Is Not Compact');
+          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar'))
+            if (
+              ringSeats <= 6 &&
+              villainAvatars.length &&
+              Math.abs(box(e).width - Math.max(...villainAvatars)) > 1.5
+            )
+              violations.push('Top Avatar Is Not Full Size');
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__info'))
-            if (box(e).width > 64.5) violations.push('Top Plate Is Not Compact');
+            if (ringSeats >= 7 && box(e).width > 64.5) violations.push('Top Plate Is Not Compact');
           const canvas = box(document.querySelector('.table-scaler')!);
           const felt = box(document.querySelector('.table-surface')!);
           // The browser's inverse homography maps a DOM rectangle to a

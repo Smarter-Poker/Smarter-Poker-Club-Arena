@@ -409,9 +409,10 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
-    if (screen.queryByRole('button', { name: /^Advanced/ }))
-      fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Transaction History' }));
+    // The simple Players heading is the requested entry into history. It has
+    // a hidden tab strip and must still expose the named history panel.
+    fireEvent.click(screen.getByRole('button', { name: 'Transaction History', exact: true }));
+    expect(await screen.findByRole('tabpanel', { name: 'Transaction History' })).toBeVisible();
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
     // The club book's totals are the whole club's, read from the server:
     // one entry, 50 chips moved (the row prints its own 50 too), none paid out.

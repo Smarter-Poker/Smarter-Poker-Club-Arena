@@ -76,7 +76,9 @@ describe('LAW 1 - every caller passes a key', () => {
   it('the manual cashier mints and sends one', () => {
     const fn = sliceMethod(CASHIER, 'const handleConfirm = useCallback(async () => {');
     expect(fn).toContain('opIdRef.current = uuid()');
-    expect(fn).toContain('onAddChips(amount, opIdRef.current)');
+    expect(fn).toContain('const originalId = opIdRef.current');
+    expect(fn).toContain('onAddChips(amount, originalId, () => {');
+    expect(fn).toContain('if (opIdRef.current === originalId) opIdRef.current = null');
   });
 });
 
@@ -137,11 +139,15 @@ describe('LAW 2/3 - held across retries, keyed by amount, released when spent', 
 
 describe('LAW 4 - the key survives every hop of the prop chain', () => {
   it('TableModalsLayer declares opId rather than dropping it', () => {
-    expect(LAYER).toMatch(/onAddChips: \(amount: number, opId\?: string\) => Promise<boolean>/);
+    expect(LAYER).toMatch(
+      /onAddChips: \(amount: number, opId\?: string, onTerminalRefusal\?: \(\) => void\) => Promise<boolean>/
+    );
   });
 
   it('CashierModal declares it too, and the two agree', () => {
-    expect(CASHIER).toMatch(/onAddChips: \(amount: number, opId\?: string\) => Promise<boolean>/);
+    expect(CASHIER).toMatch(
+      /onAddChips: \(amount: number, opId\?: string, onTerminalRefusal\?: \(\) => void\) => Promise<boolean>/
+    );
   });
 
   it('the layer forwards the function, it does not wrap and narrow it', () => {

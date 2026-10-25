@@ -493,6 +493,10 @@ export interface ActionResult {
    */
   applied?: number;
   queued?: boolean;
+  /** Lightning pending requests are uncharged until their terminal receipt. */
+  charged?: boolean;
+  requested?: number;
+  request_id?: string;
 }
 
 export interface PlayerActions {
@@ -1138,7 +1142,18 @@ export async function addChips(
         typeof errorData?.error === 'string' &&
         errorData.error
       ) {
-        return { success: false, error: errorData.error };
+        return {
+          success: false,
+          error: errorData.error,
+          ...(opId &&
+          errorData.request_id === opId &&
+          errorData.status === 'refused' &&
+          errorData.charged === false &&
+          errorData.queued === false &&
+          errorData.applied === 0
+            ? { code: 'LIGHTNING_TOP_UP_TERMINAL_REFUSAL', request_id: opId }
+            : {}),
+        };
       }
       throw new Error(errorData.error || 'Failed to add chips via GameServerAPI');
     }
@@ -1152,6 +1167,9 @@ export async function addChips(
       error: data.error,
       applied: typeof data.applied === 'number' ? data.applied : undefined,
       queued: data.queued === true,
+      charged: typeof data.charged === 'boolean' ? data.charged : undefined,
+      requested: typeof data.requested === 'number' ? data.requested : undefined,
+      request_id: typeof data.request_id === 'string' ? data.request_id : undefined,
     };
   } catch (err: any) {
     console.error(`[GameServerAPI] addChips error:`, err);

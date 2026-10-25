@@ -164,6 +164,8 @@ export function validatedHorsePolicySamplingKey(
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
+  /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
+  durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   type: 'DECIDE_FAST';
   requestId: number;

@@ -1,6 +1,15 @@
 import { EXPLOIT_COUNTER_FIELDS, type ExploitCounters } from './HorseOpponentExploit.js';
 
-export const MEMORY_VARIANTS = ['nlh', 'plo4', 'plo5', 'plo6', 'plo8'] as const;
+export const MEMORY_VARIANTS = [
+  'nlh',
+  'plo4',
+  'plo5',
+  'plo6',
+  'plo8',
+  'flh',
+  'flo8',
+  'short_deck',
+] as const;
 export type MemoryVariant = (typeof MEMORY_VARIANTS)[number];
 export type MemoryMode = 'cash' | 'tournament';
 export type MemorySize = 'hu' | 'short' | 'full';
@@ -135,4 +144,28 @@ export function blendOpponentMemory(
   for (const f of EXPLOIT_COUNTER_FIELDS)
     out[f] = (exact?.[f] ?? 0) + OPPONENT_MEMORY_DONOR_WEIGHT * (best[f] ?? 0);
   return out;
+}
+
+/** Separate bounded donor batch: never another game, mode or heads-up read. */
+export function validOpponentDonorProfiles(
+  rows: unknown,
+  ids: readonly string[],
+  variant: string,
+  mode: MemoryMode,
+  size: MemorySize
+): rows is DurableOpponentProfile[] {
+  const donorSize = opponentMemoryDonors(mode, size)[0]?.[1];
+  return (
+    Array.isArray(rows) &&
+    rows.length <= 10 &&
+    new Set(rows.map((p) => p?.user_id)).size === rows.length &&
+    rows.every(
+      (p) =>
+        validOpponentProfile(p) &&
+        ids.includes(p.user_id) &&
+        p.variant === variant &&
+        p.mode === mode &&
+        p.size === donorSize
+    )
+  );
 }

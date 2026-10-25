@@ -212,6 +212,18 @@ class SessionStatsServiceClass {
     });
   }
 
+  /** Canonical cumulative funding, reused from PR7835's receipt accounting.
+   * Restores funding without adding the same receipt to a snapshot stack. */
+  restoreFunding(tableId: string, total: number): void {
+    const session = this.sessions.get(tableId);
+    if (!session || !Number.isFinite(total) || total <= 0) return;
+    session.buyInTotal = cents(total);
+    session.profitLoss = cents(session.currentStack - session.buyInTotal);
+    session.bigBlindsWon =
+      session.bigBlind > 0 ? Math.round((session.profitLoss / session.bigBlind) * 100) / 100 : 0;
+    this.debouncedEmit(tableId, session);
+  }
+
   /**
    * Get current session stats for a table
    */

@@ -1,0 +1,12 @@
+[
+  {
+    "signature": "fn_ca_player_restriction_for(uuid,text)",
+    "md5": "72c44173f0a52d74bb5cb25806dbb211",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_player_restriction_for(p_user_id uuid, p_scope text)\n RETURNS ca_player_restrictions\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  select r.*\n    from public.ca_player_restrictions r\n   where r.user_id = p_user_id\n     and r.status = 'active'\n     and (r.expires_at is null or r.expires_at > now())\n     and (r.scope = p_scope or r.scope = 'account')\n   order by (r.scope = 'account') desc, r.applied_at asc\n   limit 1;\n$function$\n"
+  },
+  {
+    "signature": "fn_lightning_pool_exposure(uuid,uuid)",
+    "md5": "4f45f32b8d61cbb3a4d1cabda1a83e43",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_pool_exposure(p_player_id uuid, p_cluster_id uuid)\n RETURNS numeric\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n-- THE EXPOSURE READER KEEPS ITS PLAN (2026-10-09, Phase 12 load and chaos):\n-- the same query and the same answer, in PL/pgSQL, whose statement plan is\n-- cached for the session. As a SQL function with a pinned search_path it\n-- could not be inlined and was planned again on every call (0.7 ms of\n-- planning for 0.1 ms of execution), and legality calls it once per open\n-- player on every pass.\nBEGIN\n  RETURN (\n  SELECT coalesce(sum(coalesce(hp.committed_at_fold, hp.stack_before, 0)), 0)::numeric\n    FROM public.lightning_instance i\n    JOIN public.lightning_hand_player hp ON hp.hand_id = i.hand_id AND hp.player_id = p_player_id\n   WHERE i.cluster_id = p_cluster_id\n     AND i.state IN ('forming', 'reserved', 'dealing', 'settling')\n     AND hp.folded_at IS NOT NULL\n     AND hp.fold_type IN ('fast', 'normal'));\nEND\n$function$\n"
+  }
+]

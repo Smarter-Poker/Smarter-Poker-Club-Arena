@@ -383,6 +383,7 @@ export interface LightningHandHostDeps {
     handId: string;
     bigBlind: number;
     players: Array<{ playerId: string; stackAfter: number }>;
+    horsePlayers?: Array<{ playerId: string }>;
   }): Promise<void> | void;
   now?: () => number;
   /** The live horse decision lane (injected for tests; the process lane otherwise). */
@@ -929,6 +930,7 @@ export class LightningHandHost {
     for (const [playerId, room] of this.rooms()) {
       this.deps.hub.publish(room, {
         ...base,
+        lightning_original_top_up: true,
         table_id: room,
         hand_id: this.handId,
         lightning: this.lightningBlock(playerId, state),
@@ -1009,6 +1011,7 @@ export class LightningHandHost {
         : null;
     return {
       table_id: room,
+      lightning_original_top_up: true,
       hand_id: null,
       lightning: {
         hand_id: null,
@@ -2739,12 +2742,16 @@ export class LightningHandHost {
     const players = results
       .filter((r) => r.foldType !== 'fast' && r.foldType !== 'normal')
       .map((r) => ({ playerId: r.playerId, stackAfter: r.stackAfter }));
-    if (players.length === 0) return;
+    const horsePlayers = [...this.participants.values()]
+      .filter((p) => p.isHorse)
+      .map((p) => ({ playerId: p.playerId }));
+    if (players.length === 0 && horsePlayers.length === 0) return;
     try {
       await this.deps.onHandSettled({
         handId: this.handId,
         bigBlind: Number(this.rules.big_blind) || 0,
         players,
+        horsePlayers,
       });
     } catch (err) {
       this.logger.error(`[LightningHost:${this.instanceId}] settled boundary report failed`, err);

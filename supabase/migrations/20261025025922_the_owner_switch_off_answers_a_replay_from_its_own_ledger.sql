@@ -110,7 +110,7 @@ COMMENT ON TABLE public.cash_game_switch_off_requests IS
   'One row per request fn_cash_game_switch_off has acted on, written in the same transaction as its game_switched_off_by_owner event (event_id). The door answers a replayed request from here by primary key; reading the cluster event log for it took 41 s on a busy game. No foreign keys: it must never lock cash_games or cash_cluster_events.';
 
 ALTER TABLE public.cash_game_switch_off_requests ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.cash_game_switch_off_requests FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.cash_game_switch_off_requests FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT ON TABLE public.cash_game_switch_off_requests TO service_role;
 
 -- Every switch-off the door has made so far, read in full on 2026-10-25.

@@ -26,7 +26,8 @@ const latestDoor = (): { file: string; body: string } => {
   const re = /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_cash_game_switch_off\s*\(/i;
   for (const f of files().reverse()) {
     const sql = read(f);
-    if (/^--\s*SUPERSEDED BY\s+\d{14}/m.test(sql.slice(0, 400))) continue;
+    // The marker is the file's first line by convention (check-migrations-are-live).
+    if (/^--\s*SUPERSEDED BY\s+\d{14}/.test(sql.split('\n', 1)[0])) continue;
     if (re.test(sql)) return { file: f, body: sql.slice(sql.search(re)) };
   }
   throw new Error('no migration defines fn_cash_game_switch_off');

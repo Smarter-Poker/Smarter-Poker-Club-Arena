@@ -18,3 +18,15 @@ the existing lock, reservation and request path. Existing negative cases retain
 expired, malformed, already-served and spent-hour refusals. Installation and
 natural-hand behavior remain pending until the owning release seals and live
 verification passes; the task checkpoint retains the actual run identities.
+
+The pre-cutover production roster showed that separately rounding each table
+would choose 32 of 86 horses (37%) instead of the whole-game total of 26 (30%).
+Before first engine activation, scope the planner across each Classic PLO5
+Cluster and let each existing table boundary update only its own immutable seat
+ids. No cross-table funding or preference writer is introduced. Bounded keyset
+pagination refuses incomplete cohorts; the joined metadata excludes other
+variants, Diamond, deleted and tournament tables and refuses changed Lightning
+state. Normal cohorts still share one roster plus two local funding reads.
+Tests reproduce the over-rounding before the fix, verify 18 horses across three
+tables converge to five Auto Top Up choices, and pin the actual settlement
+caller's Cluster parameter, metadata failures and pagination.

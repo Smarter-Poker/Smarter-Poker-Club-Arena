@@ -91,3 +91,9 @@ and conserve chips. Focused final run passed all 162 tests in nine files
 (58.48 seconds), including V53, data ledger, maniac pressure, exploit
 neutrality, premium continuation, Lightning clocks, shared-worker wiring and
 the real full-brain worker. Exact-head normal hooks and hosted CI still remain.
+
+Final preflight reading: full canonical reader at 2026-10-25T14:42:25.181Z,
+same policy version, manifest and file hashes as above. Candidate runtime and
+test tree is 13b7305659; final formatted server compilation passed. This
+checkpoint update changes documentation only. Normal protected submission is
+next; no hosted, merged or live status is inferred from local qualification.

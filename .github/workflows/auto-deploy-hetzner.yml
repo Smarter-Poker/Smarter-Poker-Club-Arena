@@ -1,5 +1,5 @@
 name: Auto-Deploy Hetzner Engine (on server/ changes)
-run-name: ${{ github.event.action == 'withdraw-club-arena-engine' && format('Engine Withdrawal {0}', github.event.client_payload.withdrawal.runKey) || format('Engine Release {0}', github.event.client_payload.ref_sha) }}
+run-name: ${{ github.event.action == 'observe-club-arena-horse-fleet' && format('Private Horse Fleet Observation {0}', github.event.client_payload.source_sha) || github.event.action == 'withdraw-club-arena-engine' && format('Engine Withdrawal {0}', github.event.client_payload.withdrawal.runKey) || format('Engine Release {0}', github.event.client_payload.ref_sha) }}
 
 # Club Arena owns this release lane. World Hub, database jobs, timers, and
 # operator laptops cannot publish or restart the game engine. Protected main
@@ -8,7 +8,7 @@ run-name: ${{ github.event.action == 'withdraw-club-arena-engine' && format('Eng
 # break, cuts over, proves local/public/database identity, and seals or recovers.
 on:
   repository_dispatch:
-    types: [deploy-club-arena-engine, withdraw-club-arena-engine]
+    types: [deploy-club-arena-engine, withdraw-club-arena-engine, observe-club-arena-horse-fleet]
 
 permissions: {}
 
@@ -16,10 +16,93 @@ permissions: {}
 # main SHAs still reach the durable Hetzner intake immediately and let host
 # locks plus freshness decide which release owns the next certified break.
 concurrency:
-  group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}
+  group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}${{ github.event.action == 'observe-club-arena-horse-fleet' && format('-private-observation-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 
 jobs:
+  observe-private-horse-fleet:
+    name: Observe One Private Natural Horse Cohort
+    if: github.event.action == 'observe-club-arena-horse-fleet'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: club-arena-private-horse-fleet-observation
+      cancel-in-progress: false
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      SSH_USER: root
+      FLEET_SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
+      FLEET_FROM_UTC: ${{ github.event.client_payload.from_utc }}
+      FLEET_TO_UTC: ${{ github.event.client_payload.to_utc }}
+    steps:
+      - name: Checkout protected observer control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/ci/horse-fleet-packet.py
+            /server/scripts/phase6d-population.mjs
+          persist-credentials: false
+      - name: Refuse unprotected source and unavailable local clients
+        run: |
+          set -euo pipefail
+          [[ "$FLEET_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$FLEET_SOURCE_SHA" origin/main
+          git ls-tree "$FLEET_SOURCE_SHA" -- server/src/services/horseDecisionJournal/fleet.ts \
+            | grep -Eq '^100644 blob [0-9a-f]{40}[[:space:]]server/src/services/horseDecisionJournal/fleet\.ts$'
+          psql --version >/dev/null
+          node --version >/dev/null
+          PRIVATE_DIR="$RUNNER_TEMP/horse-fleet-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install -d -m 0700 "$PRIVATE_DIR"
+          echo "PRIVATE_DIR=$PRIVATE_DIR" >> "$GITHUB_ENV"
+      - name: Read one canonical cohort and original accepted coordinates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=2s 20s python3 -B scripts/ci/horse-fleet-packet.py \
+            "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json"
+      - name: Establish existing pinned SSH service identity
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [ -n "$SSH_KEY" ] && [ -n "$HOST_KEY" ]
+          printf '%s\n' "$SSH_KEY" > "$PRIVATE_DIR/key"
+          chmod 0600 "$PRIVATE_DIR/key"
+          ssh-keygen -y -f "$PRIVATE_DIR/key" >/dev/null
+          printf '%s\n' "$HOST_KEY" > "$PRIVATE_DIR/known_hosts"
+          chmod 0600 "$PRIVATE_DIR/known_hosts"
+          ssh-keygen -l -f "$PRIVATE_DIR/known_hosts" >/dev/null
+          HSSH="$PRIVATE_DIR/hssh"
+          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
+            "$PRIVATE_DIR/key" "$PRIVATE_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
+          chmod 0700 "$HSSH"
+          echo "HSSH=$HSSH" >> "$GITHUB_ENV"
+      - name: Observe the installed CLI without release or maintenance actions
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=5s 115s node server/scripts/phase6d-population.mjs fleet \
+            --packet "$PRIVATE_DIR/packet.json" --ssh-command "$HSSH" --out "$PRIVATE_DIR/result.json"
+      - name: Reconcile canonical cohort and retained capture witnesses
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/horse-fleet-packet.py --summarize \
+            "$PRIVATE_DIR/attestation.json" "$PRIVATE_DIR/result.json"
+      - name: Remove private packet and exact ephemeral transport
+        if: always()
+        run: |
+          set -euo pipefail
+          PRIVATE_DIR="$RUNNER_TEMP/horse-fleet-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf -- "$PRIVATE_DIR"
+
   withdraw-waiting-release:
     name: Withdraw One Exact Waiting Original Transaction
     if: github.event.action == 'withdraw-club-arena-engine'

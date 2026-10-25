@@ -129,6 +129,78 @@ function fixture() {
 }
 
 describe('canonical accepted-hand decision binding', () => {
+  function earlyFixture() {
+    const { snapshot, observation, record } = fixture();
+    const lease = '50000000-0000-4000-8000-000000000001';
+    snapshot.fence = `${TABLE}:12:1:7:early`;
+    snapshot.handJournalContext = {
+      ...snapshot.handJournalContext!,
+      lightningIdentity: { version: 1, leaseGeneration: lease },
+    };
+    snapshot.decisionKey = buildHorseDecisionKey(snapshot);
+    const witness = createHorseExecutionWitness(
+      snapshot,
+      { action: 'fold', thinkTime: 100 },
+      { requestId: 8, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    const folded = { ...record, action: 'fold' as const, amount: 0 };
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: [{ record: folded, intended: true }],
+    });
+    const original = observation.actions![3] as any;
+    observation.fence = `${TABLE}:12:${lease}:observe`;
+    observation.actions = [
+      ...prefix,
+      { ...record, seat: 2, userId: TABLE },
+      {
+        ...folded,
+        origin: 'horse_policy',
+        publicNode: { ...original.publicNode, legalActions: ['fold'] },
+        observationIdentity: {
+          ...original.observationIdentity,
+          actionOrdinal: 4,
+          observationId: `${HAND}:4`,
+        },
+      },
+    ];
+    return { snapshot, witness, observation, folded };
+  }
+  it('binds an exact Lightning early fold at its actual controller ordinal while retaining the original prefix', () => {
+    const { witness, observation } = earlyFixture();
+    expect(witness.handAnchor).toMatchObject({
+      actionOrdinal: 3,
+      priorActionsDigest: horsePriorActionsDigest(prefix),
+      lightningEarlyFold: true,
+    });
+    expect(bindHorseDecisionToCommittedHand(witness, observation)).toMatchObject({
+      status: 'bound',
+      actionOrdinal: 4,
+    });
+  });
+  it.each(['prefix', 'duplicate', 'hero_acted', 'lease', 'street', 'not_early', 'non_fold'])(
+    'refuses later early-fold binding with %s rather than guessing another action',
+    (fault) => {
+      const { witness, observation } = earlyFixture();
+      const actions = observation.actions! as any[];
+      if (fault === 'prefix') actions[0] = { ...actions[0], amount: 2 };
+      if (fault === 'duplicate') actions.push(structuredClone(actions[4]));
+      if (fault === 'hero_acted') actions[3] = { ...actions[3], userId: HORSE };
+      if (fault === 'lease')
+        observation.fence = `${TABLE}:12:50000000-0000-4000-8000-000000000002:observe`;
+      if (fault === 'street') actions[3] = { ...actions[3], stage: 'flop' };
+      if (fault === 'not_early')
+        (witness as any).handAnchor = { ...witness.handAnchor, lightningEarlyFold: undefined };
+      if (fault === 'non_fold')
+        witness.acceptedActions = [
+          {
+            record: { ...witness.acceptedActions[0]!.record, action: 'call', amount: 1 },
+            intended: true,
+          },
+        ];
+      expect(bindHorseDecisionToCommittedHand(witness, observation).status).toBe('unavailable');
+    }
+  );
   it.each(['50000000-0000-4000-8000-000000000001', 'ABCDEF12-3456-4789-ABCD-0123456789AB'])(
     'binds the exact current UUID lease %s without changing original fence or sampling bytes',
     (generation) => {

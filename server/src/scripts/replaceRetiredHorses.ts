@@ -7,12 +7,24 @@ export function replacementExecutionMode(args: string[]): boolean {
   throw new Error('Use --inspect or --execute for the original 62-horse replacement batch');
 }
 
+/** Public provider logs contain counts, never the private reservation map. */
+export function replacementLogSummary(result: Awaited<ReturnType<typeof replacePatternedHorses>>) {
+  const { replacements: _privateMappings, ...summary } = result as typeof result & {
+    replacements?: unknown;
+  };
+  return summary;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
       throw new Error('Configured Supabase service environment is required');
     console.log(
-      JSON.stringify(await replacePatternedHorses(replacementExecutionMode(process.argv.slice(2))))
+      JSON.stringify(
+        replacementLogSummary(
+          await replacePatternedHorses(replacementExecutionMode(process.argv.slice(2)))
+        )
+      )
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

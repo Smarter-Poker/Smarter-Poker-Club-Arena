@@ -59,6 +59,8 @@ export interface LightningHorseTurn {
   /** Prior accepted actions of this hand (the hand journal binding). */
   actions: readonly unknown[];
   generation: number;
+  /** Journal-only current owner at this decision; not part of the policy fence. */
+  journalLeaseGeneration?: string | null;
   fence: string;
   turnStartMs: number;
   now: number;
@@ -159,8 +161,16 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
     straddleActive: false,
     format: 'cash' as const,
   } as unknown as HorseGameStateV2;
+  const prefix = captureHorseHandJournalContext(turn.actions);
+  const handJournalContext =
+    prefix && turn.journalLeaseGeneration !== undefined
+      ? {
+          ...prefix,
+          lightningIdentity: { version: 1 as const, leaseGeneration: turn.journalLeaseGeneration },
+        }
+      : prefix;
   const snapshot: LiveHorseDecisionSnapshot = {
-    handJournalContext: captureHorseHandJournalContext(turn.actions),
+    handJournalContext,
     generation: turn.generation,
     fence: turn.fence,
     decisionKey: '',

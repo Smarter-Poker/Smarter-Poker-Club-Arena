@@ -14,6 +14,18 @@ on:
       - scripts/ci/fixtures/patterned-horse-*.json
       - scripts/ci/fixtures/scheduled-horses.sql
       - .github/workflows/horse-patterned-replacements.yml
+      - scripts/ci/horse-fleet-packet.py
+      - scripts/ci/test-horse-fleet-packet.py
+      - server/scripts/phase6d-population.mjs
+      - server/src/services/horseDecisionJournal/fleet*.ts
+      - server/src/lightning/LightningHandHost.ts
+      - server/src/lightning/LightningHandBackend.ts
+      - server/src/lightning/LightningJournalIdentity.test.ts
+      - supabase/migrations/*_lightning_retains_the_original_private_journal_coordinate.sql
+      - scripts/ci/test-lightning-journal-coordinate.py
+      - scripts/ci/fixtures/lightning-journal-*.sql
+      - tests/unit/horseFleetObservation.test.ts
+      - .github/workflows/auto-deploy-hetzner.yml
   workflow_dispatch:
     inputs:
       mode:
@@ -62,6 +74,16 @@ jobs:
           sudo apt-get "${pg_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Qualify bounded private fleet packet against isolated PostgreSQL 17
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-horse-fleet-packet.py
+      - name: Qualify original private Lightning lease against isolated PostgreSQL 17
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-lightning-journal-coordinate.py
       - name: Qualify private reservation concurrency and actual canonical roster owners
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

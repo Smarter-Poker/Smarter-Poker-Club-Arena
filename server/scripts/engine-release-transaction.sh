@@ -2237,7 +2237,12 @@ bounded_break_command 20 docker stop -t 15 sp-autoheal >/dev/null
 [ "$(bounded_break_command 10 docker container inspect -f '{{.State.Status}}' sp-autoheal)" = exited ] \
   || die 'autoheal did not stop before the compatibility trial'
 
-bounded_break_command 75 env \
+# The replacement consumes the same absolute candidate-proof deadline as its
+# subsequent identity/database proof. A second 75-second cap rejected a valid
+# owner window after a measured 63-second outgoing stop (40220380663). The
+# bounded helper clamps this request to the time actually left, minus its
+# TERM/KILL slack; the 135-second rollback reserve is never available here.
+bounded_break_command "$BREAK_CUTOVER_PROOF_SECONDS" env \
   ENGINE_UP_LOCK_HELD=1 ENGINE_RELEASE_TOKEN_FD=3 IMAGE="$TARGET_IMAGE_ID" \
   CONTAINER="$CONTAINER" ENV_FILE="$ENV_FILE" "$ENGINE_UP" 3<<<"$TOKEN" \
   || die 'candidate replacement exceeded its bounded cutover budget'

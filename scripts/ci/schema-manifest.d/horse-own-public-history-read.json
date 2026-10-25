@@ -1,0 +1,5 @@
+{
+  "_owner": "horse-independent-20261025 / PR8075",
+  "_comment": "Source declaration only: NOT INSTALLED. Current PUBLISHING.md requires protected merge before Apply Merged Migration can install the exact file 20261025214230_horse_own_public_history_read.sql. This fragment is not live evidence. Require exact definition MD5, ACL and schema_migrations readback after installation; production engine doors and live verification remain mandatory.",
+  "functions": ["fn_horse_own_public_history_read"]
+}

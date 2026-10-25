@@ -157,7 +157,7 @@ describe('closed client navigation recovery certificate', () => {
     expect(selected.run).toContain(`--grep '^.*${lobbyTitle}$'`);
     expect(selected.run).toContain('--project=chromium --project=webkit-footer');
     expect(selected.run.match(/--retries=0/g)).toHaveLength(2);
-    expect(selected.run).toContain('client-navigation-certificate.mjs reports');
+    expect(selected.run).toContain('node "$RUNNER_TEMP/client-navigation-certificate.mjs" reports');
     for (const name of [
       'Run the specs that need a deployed page',
       'Certify the authenticated production Cashier',
@@ -173,5 +173,16 @@ describe('closed client navigation recovery certificate', () => {
       expect(workflow.jobs[name].if).toContain("client_navigation != 'true'");
     }
     expect(workflow.jobs['seo-contract'].if).toContain("github.event_name == 'workflow_run'");
+  });
+  it('preserves the trusted validator before aligning to a retained older runtime', () => {
+    const stage = client.steps.find((s: any) => s.id === 'navigation_validator');
+    expect(stage.if).toBe("needs.publication-gate.outputs.client_navigation == 'true'");
+    expect(stage.run).toBe(
+      'cp scripts/ci/client-navigation-certificate.mjs "$RUNNER_TEMP/client-navigation-certificate.mjs"'
+    );
+    expect(client.steps.indexOf(stage)).toBeLessThan(
+      client.steps.findIndex((s: any) => s.id === 'align')
+    );
+    expect(selected.run).not.toContain('node scripts/ci/client-navigation-certificate.mjs');
   });
 });

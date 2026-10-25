@@ -458,6 +458,13 @@ jobs:
       # specs from that ancestor too. Unknown and divergent provenance fail
       # closed because a mismatched assertion set cannot produce a verdict.
       # ───────────────────────────────────────────────────────────────────
+      # A tooling-only merge can retain an older qualified runtime. Preserve
+      # only this trusted report validator before aligning specs to that runtime.
+      - name: Preserve the closed navigation report validator
+        id: navigation_validator
+        if: needs.publication-gate.outputs.client_navigation == 'true'
+        run: cp scripts/ci/client-navigation-certificate.mjs "$RUNNER_TEMP/client-navigation-certificate.mjs"
+
       - name: Take the specs from the commit production is actually serving
         if: steps.live.outputs.ready == 'true'
         id: align
@@ -1041,7 +1048,7 @@ jobs:
             --project=chromium --project=webkit-footer --reporter=line,json --workers=1 --retries=0 \
             --trace=retain-on-failure --output=test-results/navigation-lobby
           lobby_rc=$?
-          node scripts/ci/client-navigation-certificate.mjs reports e2e-report/navigation-table.json e2e-report/navigation-lobby.json
+          node "$RUNNER_TEMP/client-navigation-certificate.mjs" reports e2e-report/navigation-table.json e2e-report/navigation-lobby.json
           proof_rc=$?
           [ "$table_rc" -eq 0 ] && [ "$lobby_rc" -eq 0 ] && [ "$proof_rc" -eq 0 ]
 

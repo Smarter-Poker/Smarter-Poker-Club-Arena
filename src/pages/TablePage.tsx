@@ -17450,8 +17450,17 @@ function LiveTablePage({
         const isHeroEcho = actionSeat > 0 && actionSeat === resolveHeroSeat();
         if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho) {
           if (action === 'all_in' || action === 'allin') soundService.playAllIn();
-          else if (action === 'bet' || action === 'raise' || action === 'call')
-            soundService.playChips();
+          /* Dan 2026-10-24: "A RAISE SHOULD HAVE A DIFFERENT SOUND EFFECT
+             THEN A CALL." A bet and a raise used to share the call's chip
+             clink here, so every opponent raise sounded like a call. They
+             take the raise cue — the same split the hand replay already
+             makes (replayMotion VERB_CUE: bet/raise -> 'raise') — scaled by
+             the raise-to amount like the hero's own. */ else if (
+            action === 'bet' ||
+            action === 'raise'
+          )
+            soundService.playRaise(actionAmount, safeBB(tableStateRef.current.blinds, 1));
+          else if (action === 'call') soundService.playChips();
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
           /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was

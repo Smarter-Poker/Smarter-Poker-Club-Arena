@@ -1,0 +1,13 @@
+# Horse read compatibility and private fleet evidence
+
+The deployed eight-variant reader encountered the older database's five-variant boundary. Each refusal entered the shared request cooldown, affecting supported games and subsequent donor reads. The service now preserves the database error code and contains only the known new-variant boundary refusal. Unsupported contexts use a bounded, request-driven 60-second retry state; hand-cache epochs permit the same original hand to recover after installation. Supported contexts, validated cached knowledge, normal concurrency limits, timeouts and other failure cooldowns remain intact. Unavailable knowledge is reported as incomplete, never as a successful read.
+
+An isolated PostgreSQL transition reproduces the old refusal, keeps all five supported variants available, installs the exact queued variant migration, and recovers the three added contexts through the original requests after expiry. This does not install the migration or certify live eight-variant availability.
+
+The separate original replacement boarding command uses ordinary subject-authenticated club admission, stable original join requests and durable receipt recovery. It creates no accounts, funds no wallets, forces no seats and changes no accounting agreements. Original identity verification, admission settings, capacity drift and final membership checks remain authoritative.
+
+Fleet evidence requires a canonical cohort snapshot, original accepted coordinates, a matching installed source and retained controller acceptance. Samples, worker counts, supplied UUIDs and incomplete capture cannot certify all 1,000 horses or all 15 phases. Production activation and complete live evidence remain separate delivery requirements.
+
+Lightning settlement now retains the validated original lease generation only in the existing private accepted-hand facts. First responses and replays return that original value; a later lease cannot rewrite the original journal coordinate. Historical receipts without the metadata return an explicit unknown. The request hash, stored settlement receipt, public hand-row fields and financial transaction rules retain their existing definitions. A paired preimage/candidate native fixture compares the same original financial input after normal post-commit processing, including nonzero fees and accepted stats preservation.
+
+A real SDK transport regression also preserves only a sanitized abort/timeout class when PostgREST returns an empty SQLSTATE. The original error payload is never copied, and genuine SQL errors keep their original codes and existing cooldown.

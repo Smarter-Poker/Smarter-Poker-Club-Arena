@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/lightning-pilot-switch-off-within-budget (2026-10-25). PROMISED, not yet observed: migration 20261025025922_the_owner_switch_off_answers_a_replay_from_its_own_ledger is applied through apply-merged-migration.yml after the protected merge. fn_cash_game_switch_off answers a replayed request from this ledger by primary key instead of reading 1.2 M cluster events per busy game.",
+  "tables": ["cash_game_switch_off_requests"]
+}

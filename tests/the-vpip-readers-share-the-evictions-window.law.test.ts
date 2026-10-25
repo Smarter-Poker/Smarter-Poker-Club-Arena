@@ -68,6 +68,14 @@ describe('one window, three readers', () => {
       /FULL JOIN public\.fn_nit_evictions\(t\.id\) ev ON ev\.user_id = st\.user_id/
     );
     expect(SQL).toMatch(/where the VPIP reader and the eviction still disagree/);
+    // Bounded and fair: the floored-mid-sitting tables first, few enough to
+    // finish well inside the 8 s statement budget, and only where the two
+    // functions are comparable (no career rule; a profile row on both sides).
+    expect(SQL).toMatch(
+      /ORDER BY \(g\.ruleset_snapshot \? 'vpip_floor_since'\) DESC, tb\.id\s+LIMIT 6/
+    );
+    expect(SQL).toMatch(/coalesce\(tb\.career_percent_min, 0\) = 0/);
+    expect(SQL).toMatch(/EXISTS \(SELECT 1 FROM public\.profiles p WHERE p\.id = st\.user_id\)/);
   });
 
   it('is md5-guarded, keeps the helper off the public API, and is one transaction', () => {

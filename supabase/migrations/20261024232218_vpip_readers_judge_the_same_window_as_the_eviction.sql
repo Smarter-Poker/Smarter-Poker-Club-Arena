@@ -260,8 +260,15 @@ GRANT EXECUTE ON FUNCTION public.fn_nit_status(uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_cash_vpip_status(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_cash_vpip_status(uuid) TO authenticated, service_role;
 
--- The readers and the enforcer now agree on every live floored table: a seat
--- the reader flags is exactly a seat the enforcer would stand up.
+-- The readers and the enforcer now agree on live floored tables: a seat the
+-- reader flags is exactly a seat the enforcer would stand up. A smoke test
+-- on the tables where the window actually moves, not the proof - the proof is
+-- that the window is now one function. Six tables, the floored-mid-sitting
+-- ones first: an independent review measured twelve at 7.1 s cold against
+-- this transaction's 8 s statement budget. Only tables with no career rule
+-- (fn_nit_evictions reports maintain_vpip alone, so a career failure would
+-- read as a disagreement) and only seats with a profile row (the eviction
+-- query joins profiles; the reader does not).
 DO $agree$
 DECLARE
   t record;
@@ -269,14 +276,17 @@ DECLARE
 BEGIN
   FOR t IN
     SELECT tb.id FROM public.tables tb
+      JOIN public.cash_games g ON g.id = tb.cluster_id
      WHERE tb.nit_game AND tb.maintain_percent_min > 0
-       AND tb.cluster_id IS NOT NULL
+       AND coalesce(tb.career_percent_min, 0) = 0
        AND tb.lifecycle <> 'closed' AND NOT coalesce(tb.is_deleted, false)
        AND EXISTS (SELECT 1 FROM public.table_seats s WHERE s.table_id = tb.id AND s.left_at IS NULL)
-     LIMIT 12
+     ORDER BY (g.ruleset_snapshot ? 'vpip_floor_since') DESC, tb.id
+     LIMIT 6
   LOOP
     SELECT v_disagree + count(*) INTO v_disagree
-      FROM public.fn_nit_status(t.id) st
+      FROM (SELECT st.* FROM public.fn_nit_status(t.id) st
+             WHERE EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = st.user_id)) st
       FULL JOIN public.fn_nit_evictions(t.id) ev ON ev.user_id = st.user_id
      WHERE coalesce(st.evict, false) IS DISTINCT FROM (ev.user_id IS NOT NULL);
   END LOOP;

@@ -687,7 +687,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v56OmahaPressureRange',
-    'direct pressure value sampling; opt-in until clock- and governor-controlled qualification resolves',
+    'river vulnerable set/trips versus tier-three pressure on one Omaha-high cash board; qualified fixed400bb cash card, explicit off arm retained',
     'V56'
   ),
   flag(
@@ -2939,7 +2939,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v56_omaha_pressure_range',
     'HorseLogic to HorseEval pressure-conditioned Omaha reservoir',
-    'a PLO public aggressor range used the direct value stratum instead of accepting bounded rejection misses',
+    'a tier-three public river aggressor range used the direct value stratum for a vulnerable set/trips on one Omaha-high cash board',
     'V56'
   ),
   receipt(

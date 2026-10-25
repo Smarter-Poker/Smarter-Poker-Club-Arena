@@ -653,7 +653,7 @@ const RANK_WORD = (r: string): string =>
     K: 'King',
     A: 'Ace',
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
-import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+import { canonicalCards, normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 // The unit a printed amount is named in: Chips, or Diamonds at a Diamond seat.
@@ -943,7 +943,6 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 // to sit inline in this file; the seat rings in particular carry measured rail
 // positions that must not be casually rewritten. See those files for why.
 import {
-  ENGINE_SUIT_MAP,
   sortCardsByRank,
   heroDisplayHoleCards,
   getGameVariantLabel,
@@ -9025,21 +9024,8 @@ function LiveTablePage({
         return { success: false, error: result.error };
       }
 
-      // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
-      const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-        hearts: 'h',
-        diamonds: 'd',
-        clubs: 'c',
-        spades: 's',
-        h: 'h',
-        d: 'd',
-        c: 'c',
-        s: 's',
-      };
-      const parsedCards = result.cards.map((c) => ({
-        rank: String(c.rank) as any,
-        suit: suitMap[String(c.suit)] || 'h',
-      }));
+      // Server card format -> the one client spelling (2026-10-25).
+      const parsedCards = canonicalCards(result.cards) as Card[];
       // Explicit hand requests belong to the replayer, which renders its own
       // result. A replayer purchase must never replace the live felt.
       if (handNumber === undefined) {
@@ -11428,10 +11414,9 @@ function LiveTablePage({
               rawCards = row.cards as any;
             }
 
-            let formattedCards = (rawCards || []).map((c: any) => ({
-              rank: c.rank,
-              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
-            }));
+            /* One spelling for every card (2026-10-25): canonicalCards folds
+               'clubs'/'c' and '10'/'T' so this row and the board agree. */
+            let formattedCards = canonicalCards(rawCards || []) as Card[];
             /* ═══ THE ENGINE'S OWN CARD ORDER, KEPT SEPARATELY (2026-08-31) ═══
                `submitDiscard` takes an INDEX into the engine's `player.cards`
                array. Two lines below, cards_pre_sort re-orders this array for
@@ -11734,10 +11719,8 @@ function LiveTablePage({
             } catch (e) {
               rawCards = data.cards as any;
             }
-            let parsedCards = (rawCards || []).map((c: any) => ({
-              rank: c.rank,
-              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
-            }));
+            /* Same door as the realtime path above (2026-10-25). */
+            let parsedCards = canonicalCards(rawCards || []) as Card[];
             /* The same record the realtime path keeps, for the same reason: a
                Crazy Pineapple discard is an INDEX into the engine's order, and
                cards_pre_sort is about to reorder this array. Without it, a hero
@@ -17333,7 +17316,7 @@ function LiveTablePage({
                   sp.user_id === userId
                     ? sp.cards?.length
                       ? heroDisplayHoleCards(
-                          sp.cards,
+                          canonicalCards(sp.cards) as Card[],
                           existing?.holeCards,
                           !!cardsPreSortRef.current
                         )

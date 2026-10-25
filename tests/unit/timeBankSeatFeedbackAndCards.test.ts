@@ -76,7 +76,7 @@ describe("a resync must not wipe the hero's hole cards", () => {
        itself is intact and still pinned here - what changed is that a holding
        the incoming board has already disproved is dropped instead of carried. */
     expect(TABLE_PAGE).toMatch(
-      /holeCards:\s*sp\.user_id === userId\s*\?\s*sp\.cards\?\.length\s*\?\s*heroDisplayHoleCards\(\s*sp\.cards,\s*existing\?\.holeCards,\s*!!cardsPreSortRef\.current\s*\)\s*:\s*heroHoldIsExpired\(existing\?\.holeCards\)\s*\?\s*\[\]\s*:\s*existing\?\.holeCards/
+      /holeCards:\s*sp\.user_id === userId\s*\?\s*sp\.cards\?\.length\s*\?\s*heroDisplayHoleCards\(\s*canonicalCards\(sp\.cards\) as Card\[\],\s*existing\?\.holeCards,\s*!!cardsPreSortRef\.current\s*\)\s*:\s*heroHoldIsExpired\(existing\?\.holeCards\)\s*\?\s*\[\]\s*:\s*existing\?\.holeCards/
     );
   });
 

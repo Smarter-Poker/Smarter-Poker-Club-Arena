@@ -1449,7 +1449,7 @@ jobs:
         if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/horse-layer-populations.sql --candidate supabase/migrations/20261025145108_horse_audit_uses_floored_and_bomb_hand_populations.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/horse-layer-populations.sql --candidate supabase/migrations/20261025203617_horse_multiboard_descendants_use_their_decision_population.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
       - name: Club entry news is shown once across devices
         if: matrix.shard == 2
         env:

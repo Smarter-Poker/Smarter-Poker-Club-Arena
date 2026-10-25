@@ -56,6 +56,8 @@ Record the staging run, selected runtime component revision and receiving engine
 
 If the assigned change includes monitoring, use its existing **deploy-monitoring.yml** route and final loaded-configuration verification. If it includes a database change, qualify and apply the exact migration through the configured authorized installation path, then read back the installed state and migration history. A merged migration file is not an installation. Do not replay installed migrations or assume an engine deployment applies them automatically. Preserve any actual application compatibility/cutover prerequisites.
 
+Install a merged migration through Apply Merged Migration (repository_dispatch apply-merged-migration, payload {migration}). The Supabase MCP apply_migration records the apply time as the version, not the file's version.
+
 ## Concurrent deliveries and completion
 
 Continue other authorized work while provider jobs run. Keep the exact pending run/revision and inspect the result afterward; do not create a watcher, scheduler or repair loop. A provider may serialize a shared production resource or publish a newer protected revision containing several agents' changes. Record the actual selected revision and prove it contains your merged change; do not force an older revision over a newer release merely to obtain a matching number.

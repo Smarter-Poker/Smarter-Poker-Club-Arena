@@ -99,6 +99,7 @@ describe('an earlier refunded entry is not a second entry', () => {
     );
     expect(later).toEqual([
       '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
     ]);
     const next = readFileSync(join(MIGRATIONS, later[0]), 'utf8');
     expect(next).toContain("IF md5(v_pre) <> '631844035961b4995aab130e8e53e6b6'");

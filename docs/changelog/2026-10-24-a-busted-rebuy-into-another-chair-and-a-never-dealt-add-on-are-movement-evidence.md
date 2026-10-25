@@ -28,3 +28,21 @@ The rule from `20261024232734` admitted another receipt of the player if observe
 No row is written and no chip moves. Once installed, the engine's existing park re-admission takes the proof. No repair job.
 
 Pinned by `tests/a-busted-rebuy-into-another-chair-is-movement-evidence.law.test.ts`; the earlier F06 laws name this migration as their successor.
+
+## Re-based as 20261025082356 (2026-10-25)
+
+`20261025030421` merged (#7996), but its install was refused and rolled back whole, so nothing was applied: `F06_NEVER_DEALT_ADDON_PREIMAGE_DRIFT: f06_movement_never_dealt_prior is 35dbc3c7`. Another session had installed `20261025052637` (a refunded diamond or free entry is not a second entry, file `20261025042215` on PR #8019) first. `20261025030421` now starts with `-- SUPERSEDED BY 20261025082356`. The new file `20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql` carries the same passages byte for byte:
+
+- **`f06_movement_prior`:** pre `ddbca56b` / `d21b415b`, post `0c3f0b7c` / `ab72d645`, unchanged from 030421.
+- **`f06_movement_never_dealt_prior`:** pre `35dbc3c7` / `2962ab89`, post `0ff3bcae` / `dbda1e1d`.
+
+Every never-dealt anchor is found exactly once in 35dbc3c7. Only the R anchor sits inside 052637's passage, on the one line both rules share. 052637's diamond custody and free-entry rules, and its chip-only refund sum, are kept intact.
+
+Proved again:
+
+- **Live:** one read-only, rolled-back MCP call against the live 35dbc3c7 / ddbca56b pair gave `same=34 diff=0` across the open park_requested/begun operations.
+- **Local PG16:** loaded with the 35dbc3c7 pre-image, every earlier case gives exactly the same outcome. New cases cover 052637's free and diamond refunded entries, which compose with this file:
+  - A free or diamond refunded earlier entry gives byte-identical output.
+  - With add-ons, such an entry is admitted by the new proof only.
+  - A free earlier entry recorded after the registration refuses under the new proof only.
+  - An active diamond custody refuses under both.

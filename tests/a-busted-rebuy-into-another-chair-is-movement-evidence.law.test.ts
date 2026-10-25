@@ -15,7 +15,10 @@
  * R. The refunded-earlier-entry rule now also requires that other receipt to
  * predate the current registration itself.
  *
- * 20261025030421 inserts anchored passages into both installed definitions.
+ * 20261025082356 inserts anchored passages into both installed definitions.
+ * It replaces 20261025030421 (merged, never installed: its never-dealt
+ * pre-image had moved to 35dbc3c7 under 20261025052637, a refunded diamond
+ * or free entry is not a second entry), with the same passages re-based.
  * This law rebuilds both pre-images from the migrations that installed them,
  * applies the file's own anchor pairs, and checks the result is exactly the
  * post-image the file asserts; that removing every passage is the pre-image;
@@ -29,7 +32,8 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..');
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
-const FILE = '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql';
+const FILE = '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql';
+const REPLACED = '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql';
 const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
 const read = (f: string) => readFileSync(join(MIGRATIONS, f), 'utf8');
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
@@ -38,10 +42,14 @@ const PRIOR_PRE_SRC = 'd21b415b4754a19147cce0160de59479';
 const PRIOR_PRE_DEF = 'ddbca56b65a99f017fb86e791b2fb971';
 const PRIOR_POST_SRC = 'ab72d64575eae5cf77e6b004dd5ee5f6';
 const PRIOR_POST_DEF = '0c3f0b7cb997eb761a7295d49df24bc9';
-const ND_PRE_SRC = 'e0677c7a9a3e1bbed2cd00026caee54a';
-const ND_PRE_DEF = '631844035961b4995aab130e8e53e6b6';
-const ND_POST_SRC = 'f0fd3fdfbdbb25c9390ad3f987e6e0cf';
-const ND_POST_DEF = '6a9e1ad06394df37b6a9f0f76f910dad';
+const ND_PRE_SRC = '2962ab899304584d3ad1ae1d14b3e8dc';
+const ND_PRE_DEF = '35dbc3c7dd7b152d8e55892b4af9ae3b';
+const ND_POST_SRC = 'dbda1e1dab654980f31706a04f8b6de5';
+const ND_POST_DEF = '0ff3bcaef0476a3dc46d6d6931515bb7';
+// The same passages proved against the never-dealt body before 052637
+// (20261025030421: pre e0677c7a, post f0fd3fdf).
+const ND_BEFORE_DIAMOND_SRC = 'e0677c7a9a3e1bbed2cd00026caee54a';
+const ND_BEFORE_DIAMOND_POST_SRC = 'f0fd3fdfbdbb25c9390ad3f987e6e0cf';
 
 /** The body between `AS <tag>` and the closing tag of the first CREATE of fn in sql. */
 function body(sql: string, fn: string, tag: string): string {
@@ -96,31 +104,44 @@ const PRIOR_PRE = body(
   'f06_movement_prior',
   '$cross_table_rebuy_prior$'
 );
-function neverDealtPre(): string {
+/** One anchored replace of a migration written as v_find := ...; replace(v_src, v_find, ...). */
+function anchoredEdit(sql: string, src: string): string {
+  const find = sqlConcat(
+    sql.slice(sql.indexOf('v_find :='), sql.indexOf(';', sql.indexOf('v_find :=')))
+  );
+  const key = 'v_src := replace(v_src, v_find,';
+  const at = sql.indexOf(key) + key.length;
+  const repl = sqlConcat(sql.slice(at, sql.indexOf('));', at) + 1));
+  expect(once(src, find)).toBe(1);
+  return src.replace(find, () => repl);
+}
+/** 20261025052637's file, found by its block tag (installed; its PR may not be on main yet). */
+const DIAMOND_FILE = readdirSync(MIGRATIONS).find(
+  (f) => f.endsWith('.sql') && read(f).includes('DO $refunded_diamond_entry$')
+);
+function neverDealtBeforeDiamond(): string {
   const base = body(
     read('20261021172832_never_dealt_arrivals_keep_their_committed_move.sql'),
     'f06_movement_never_dealt_prior',
     '$function$'
   );
   // 20261024232734 edits that body by one anchored replace.
-  const refunded = read('20261024232734_a_refunded_earlier_entry_is_not_a_second_entry.sql');
-  const find = sqlConcat(
-    refunded.slice(
-      refunded.indexOf('v_find :='),
-      refunded.indexOf(';', refunded.indexOf('v_find :='))
-    )
+  return anchoredEdit(
+    read('20261024232734_a_refunded_earlier_entry_is_not_a_second_entry.sql'),
+    base
   );
-  const replStart =
-    refunded.indexOf('v_src := replace(v_src, v_find,') + 'v_src := replace(v_src, v_find,'.length;
-  const repl = sqlConcat(refunded.slice(replStart, refunded.indexOf('));', replStart) + 1));
-  expect(once(base, find)).toBe(1);
-  return base.replace(find, () => repl);
 }
-const ND_PRE = neverDealtPre();
+const ND_BEFORE_DIAMOND = neverDealtBeforeDiamond();
+// 052637 edits it by one more anchored replace. Until its file reaches this
+// tree the full chain cannot be rebuilt here; the migration itself asserts the
+// live pre-image (35dbc3c7) before it edits anything.
+const ND_PRE = DIAMOND_FILE ? anchoredEdit(read(DIAMOND_FILE), ND_BEFORE_DIAMOND) : null;
 const [PRIOR_FIND, PRIOR_REPL] = pairs('rechaired');
 const [ND_FIND, ND_REPL] = pairs('never_dealt_addon');
 const PRIOR_POST = apply(PRIOR_PRE, PRIOR_FIND, PRIOR_REPL);
-const ND_POST = apply(ND_PRE, ND_FIND, ND_REPL);
+const ND_POST = ND_PRE === null ? null : apply(ND_PRE, ND_FIND, ND_REPL);
+/** The never-dealt post-image this tree can rebuild, for the shape checks. */
+const ND_SHAPE = ND_POST ?? apply(ND_BEFORE_DIAMOND, ND_FIND, ND_REPL);
 const CODE = SQL.split('\n')
   .filter((l) => !l.trim().startsWith('--'))
   .join('\n');
@@ -128,9 +149,18 @@ const CODE = SQL.split('\n')
 describe('a busted rebuy into another chair, and a never-dealt add-on, are movement evidence', () => {
   it('starts from exactly the bodies production holds and installs exactly the stated post-images', () => {
     expect(md5(PRIOR_PRE)).toBe(PRIOR_PRE_SRC);
-    expect(md5(ND_PRE)).toBe(ND_PRE_SRC);
     expect(md5(PRIOR_POST)).toBe(PRIOR_POST_SRC);
-    expect(md5(ND_POST)).toBe(ND_POST_SRC);
+    // The never-dealt passages are exactly the ones proved before 052637 ...
+    expect(md5(ND_BEFORE_DIAMOND)).toBe(ND_BEFORE_DIAMOND_SRC);
+    const beforeDiamond = apply(ND_BEFORE_DIAMOND, ND_FIND, ND_REPL);
+    expect(md5(beforeDiamond)).toBe(ND_BEFORE_DIAMOND_POST_SRC);
+    expect(unapply(beforeDiamond, ND_FIND, ND_REPL)).toBe(ND_BEFORE_DIAMOND);
+    expect(read(REPLACED)).toContain(`<> '${ND_BEFORE_DIAMOND_POST_SRC}'`);
+    // ... and, once 052637's file is in the tree, on its post-image.
+    if (ND_PRE !== null && ND_POST !== null) {
+      expect(md5(ND_PRE)).toBe(ND_PRE_SRC);
+      expect(md5(ND_POST)).toBe(ND_POST_SRC);
+    }
     expect(SQL).toContain(`IF md5(v_pre) <> '${PRIOR_PRE_DEF}'`);
     expect(SQL).toContain(
       `(SELECT md5(prosrc) FROM pg_proc WHERE oid = v_fn) <> '${PRIOR_PRE_SRC}'`
@@ -149,11 +179,23 @@ describe('a busted rebuy into another chair, and a never-dealt add-on, are movem
     }
   });
 
+  it('replaces 20261025030421, which is marked never to run', () => {
+    expect(read(REPLACED).startsWith('-- SUPERSEDED BY 20261025082356\n')).toBe(true);
+    // The same passages, re-based: the two DO blocks differ only in their md5s.
+    for (const tag of ['rechaired', 'never_dealt_addon']) {
+      const block = (sql: string) =>
+        sql.slice(sql.indexOf(`DO $${tag}$`), sql.indexOf(`$${tag}$;`));
+      const strip = (b: string) => b.replace(/'[0-9a-f]{32}'/g, "'md5'");
+      expect(strip(block(SQL))).toBe(strip(block(read(REPLACED))));
+    }
+  });
+
   it('only inserts: removing every passage is each pre-image byte for byte, and the file asserts it', () => {
     expect(PRIOR_FIND).toHaveLength(6);
     expect(ND_FIND).toHaveLength(9);
     expect(unapply(PRIOR_POST, PRIOR_FIND, PRIOR_REPL)).toBe(PRIOR_PRE);
-    expect(unapply(ND_POST, ND_FIND, ND_REPL)).toBe(ND_PRE);
+    if (ND_PRE !== null && ND_POST !== null)
+      expect(unapply(ND_POST, ND_FIND, ND_REPL)).toBe(ND_PRE);
     // Every replacement keeps its anchor's text, in order, with text added.
     [
       ...PRIOR_FIND.map((f, i) => [f, PRIOR_REPL[i]]),
@@ -245,10 +287,10 @@ describe('a busted rebuy into another chair, and a never-dealt add-on, are movem
     expect(ND_REPL[8]).toContain(
       "||CASE WHEN topped='{}' THEN '{}'::jsonb ELSE jsonb_build_object('addons',tops) END);"
     );
-    const roster = ND_POST.indexOf(
+    const roster = ND_SHAPE.indexOf(
       " roster:=roster||jsonb_build_array(jsonb_build_object('seat',to_jsonb(seat)"
     );
-    expect(roster).toBeGreaterThan(ND_POST.indexOf(' seat:=topseat; registration:=topreg;'));
+    expect(roster).toBeGreaterThan(ND_SHAPE.indexOf(' seat:=topseat; registration:=topreg;'));
   });
 
   it('R: another receipt of the player must also predate this registration', () => {
@@ -256,7 +298,7 @@ describe('a busted rebuy into another chair, and a never-dealt add-on, are movem
       'OR f.observed_at>=fund.observed_at OR registration.registered_at IS NULL OR f.observed_at>=registration.registered_at OR f.registration_id IS NULL'
     );
     // The refund-leg sum rule is unchanged.
-    expect(ND_POST).toContain('AND l.created_at<fund.observed_at),0)');
+    expect(ND_SHAPE).toContain('AND l.created_at<fund.observed_at),0)');
   });
 
   it('never borrows a plpgsql variable name for a query alias', () => {

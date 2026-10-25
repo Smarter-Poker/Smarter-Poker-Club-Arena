@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261025082356
 -- 20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

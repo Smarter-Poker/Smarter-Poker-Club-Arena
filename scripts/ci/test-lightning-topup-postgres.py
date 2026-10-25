@@ -13,7 +13,9 @@ out=parser.parse_args().output;out.mkdir(parents=True,exist_ok=True)
 PG=pathlib.Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin'))
 env=dict(os.environ,LC_ALL='C',LANG='C');results=[]
 # Short socket path on the external work volume on the Mac; CI's TMPDIR is local runner scratch.
-cluster=pathlib.Path(tempfile.mkdtemp(prefix='ltu-',dir=os.environ.get('TMPDIR',str(ROOT/'work'))))
+scratch=pathlib.Path(os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or str(ROOT/'work'))
+scratch.mkdir(parents=True,exist_ok=True)
+cluster=pathlib.Path(tempfile.mkdtemp(prefix='ltu-',dir=scratch))
 sock=cluster/'s';sock.mkdir()
 owner=['runuser','-u','postgres','--'] if os.geteuid()==0 else []
 if owner: shutil.chown(cluster,'postgres');shutil.chown(sock,'postgres')

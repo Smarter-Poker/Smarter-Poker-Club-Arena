@@ -6,6 +6,7 @@
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
+import type { PloPerformance } from './HorseMadnessSelection.js';
 
 export const PLO_ROSTER_TTL_MS = 60_000;
 
@@ -20,6 +21,16 @@ let cashRoster: Set<string> | null = null;
 let exemptClubs: Set<string> = new Set();
 let loadedAt = 0;
 let inflight: Promise<void> | null = null;
+let performance: ReadonlyMap<string, PloPerformance> = new Map();
+let performanceLoadedAt = 0;
+const NO_PERFORMANCE: ReadonlyMap<string, PloPerformance> = new Map();
+
+/** Advisory only. Unknown/expired evidence falls back to the existing draw. */
+export function getPloPerformance(): ReadonlyMap<string, PloPerformance> {
+  return performanceLoadedAt > 0 && Date.now() - performanceLoadedAt < PLO_ROSTER_TTL_MS
+    ? performance
+    : NO_PERFORMANCE;
+}
 
 /** Is this game variant (or tournament game_type such as 'PLO4') in the Omaha family? */
 export function isPloVariant(variant: unknown): boolean {
@@ -30,13 +41,28 @@ async function load(): Promise<void> {
   try {
     const { data, error } = await supabase
       .from('ca_horse_plo_roster')
-      .select('horse_id')
+      .select('horse_id,plo_hands,plo_bb100')
       .limit(5000);
     if (error || !Array.isArray(data)) {
       reportError(
         new Error(`[HorsePloRoster] roster read failed: ${error?.message ?? 'no rows'}`),
         'HorsePloRoster.read_failed'
       );
+    }
+    performance = new Map();
+    performanceLoadedAt = 0;
+    if (!error && Array.isArray(data)) {
+      const measured = new Map<string, PloPerformance>();
+      for (const row of data) {
+        if (typeof row.horse_id !== 'string' || row.plo_hands == null || row.plo_bb100 == null)
+          continue;
+        const hands = Number(row.plo_hands),
+          bb100 = Number(row.plo_bb100);
+        if (Number.isFinite(hands) && hands > 0 && Number.isFinite(bb100))
+          measured.set(row.horse_id, { hands, bb100 });
+      }
+      performance = measured;
+      performanceLoadedAt = Date.now();
     }
     const cash = await supabase.from('ca_horse_active_roster').select('horse_id').limit(5000);
     if (cash.error || !Array.isArray(cash.data)) {
@@ -75,6 +101,8 @@ async function load(): Promise<void> {
     cashRoster = cashIds.length > 0 ? new Set(cashIds) : null;
     loadedAt = Date.now();
   } catch (err) {
+    performance = NO_PERFORMANCE;
+    performanceLoadedAt = 0;
     reportError(err, 'HorsePloRoster.read_threw');
   }
 }

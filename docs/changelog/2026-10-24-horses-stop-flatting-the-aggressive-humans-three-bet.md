@@ -97,3 +97,27 @@ same policy version, manifest and file hashes as above. Candidate runtime and
 test tree is 13b7305659; final formatted server compilation passed. This
 checkpoint update changes documentation only. Normal protected submission is
 next; no hosted, merged or live status is inferred from local qualification.
+
+Submission blocker recovery: the first normal pre-push did not upload. It
+passed 132 root contracts, 454 related client checks, the five V53 behavior
+checks and 11 ledger checks. The broad related engine run passed 13,466,
+with 167 existing opt-in/platform skips, and failed one real journal
+throughput fixture at `shutdown_timeout` after 5.5 seconds. Isolated old
+fixture passed in 3.96 seconds: it launched cold TypeScript workers, enqueued
+the burst and immediately called the production five-second `stop()` before
+either worker was required to be ready. The test describes warm steady-state
+throughput. Its maintained fixture now waits for both real READY states with
+a bounded ten-second startup wait under the existing thirty-second test
+ceiling, then submits the same 128-record burst per shard and retains every
+zero-drop, zero-lock-retry, completed-drain assertion. Production shutdown
+deadlines and journal implementation are unchanged. The corrected throughput
+case plus the full publisher regression passed 120/120 (63.23 seconds).
+This test-only correction is in scope because it blocked required delivery.
+The same failed hook also caught missing sparse monitoring/runbook inputs;
+restoring unchanged tracked infra and audits makes the actual monitoring
+guard pass. No failing gate was bypassed. Final normal hook retry is required.
+
+Independent #7963 delivery proof: engine receiver 40176926495 sealed
+0eae61b20fb4c0224618941d947fb7cdcb72b653 and recorded deployment attempt 1193
+as shipped at 2026-10-25T09:02:55Z. Its serving ancestry and natural barrel
+receipts were independently read above. This does not deliver #7986.

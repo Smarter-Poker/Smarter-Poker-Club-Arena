@@ -241,6 +241,9 @@ $function$
 
 -- Installed in the same transaction as the owner change. Older projectors
 -- have no contract, so rolling engines retain the legacy writer explicitly.
+REVOKE ALL ON FUNCTION public.ca_project_hand_stats_facts(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_project_hand_stats_facts(uuid) TO service_role;
+
 CREATE FUNCTION public.fn_horse_daily_rollup_contract()
 RETURNS integer LANGUAGE sql STABLE SET search_path TO 'pg_catalog'
 AS $contract$ SELECT 1 $contract$;

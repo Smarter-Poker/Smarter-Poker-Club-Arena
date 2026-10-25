@@ -250,7 +250,7 @@ describe('the Trade record cannot print a horse label (round 3, contract 2)', ()
   it('builds every Trade record row from that presentation, and no code names a horse', () => {
     const page = readFileSync(join(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
     const load = page.slice(
-      page.indexOf("supabase.rpc('fn_cashier_transaction_history'"),
+      page.indexOf("supabase.rpc('fn_cashier_history_page'"),
       page.indexOf("reportError(e, 'CashierTradePage.records')")
     );
     expect(load.length).toBeGreaterThan(0);

@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-lightning-horses-and-anchor-seats",
+      "ownerOrder": "Dan, 2026-10-24 17:56 Chicago, on the Lightning work (horses four games and fast fold #7958, stranded anchor seats #7973, next-hand wait #7948): \"PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. ONCE YOU HAVE VERIFIED THAT ALL CODE IS CORRECT ... PUSH AND PUBLISH AND DO AN ENGINE RESTART IF NECESSARY TO ACTIVATE IT.\" Applies only to making protected main containing a05d6b865 (#7958 and #7973) live at the next :55 Chicago break.",
+      "contains": "a05d6b86585e4fc260cc3745e0d7c627d1c4c0c0",
+      "notBefore": "2026-10-25T02:30:33Z",
+      "notAfter": "2026-10-25T08:20:33Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-horse-publish-asap-1855",
       "ownerOrder": "Dan, 2026-10-24 17:52 Chicago: \"NO, PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. PUSH EVERYTHING WHEN YOUR DONE.\" Off-cycle release at the next hourly :55 break (18:55 Chicago, later breaks as fallback) for everything merged on main since b1f5e761: the horse work and the merged cash, table, tournament and Lightning fixes.",
       "contains": "6aba0e019a22243f65566608827a7252070a1b5e",

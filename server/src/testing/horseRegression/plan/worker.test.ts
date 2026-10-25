@@ -6,6 +6,7 @@ import { seedFastRandom } from '../../../engine/HorseEval.js';
 import { horsePlanContextFromDecision } from '../../../engine/HorsePlanHandIdentity.js';
 import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
 import { buildHorseDecisionKey } from '../../../engine/horseDecision/protocol.js';
+import { evidenceDigest } from '../../../services/horseCorrectiveReview/authority.js';
 import {
   workerHarness,
   requestAt,
@@ -410,7 +411,15 @@ describe('actual worker issue ownership and volatile plan application', () => {
       });
       expect(h.applied()).toBe(1);
       expect(h.captures).toHaveLength(2);
-      expect(h.captures[1]).not.toHaveProperty('effects');
+      expect(h.captures[1]!.effects).toEqual([]);
+      expect(h.captures[1]!.planBinding).toBeNull();
+      expect(h.captures[1]!.replayState).toMatchObject({
+        version: 'horse-decision-replay-state-v3',
+      });
+      expect(h.captures[1]!.originalFastBinding).toEqual({
+        inputDigest: evidenceDigest(h.captures[0]!.snapshot),
+        readFrameDigest: evidenceDigest(h.captures[0]!.readFrame),
+      });
       expect((h.captures[1]!.readFrame as any).sha256).toBe(
         (h.captures[0]!.readFrame as any).sha256
       );

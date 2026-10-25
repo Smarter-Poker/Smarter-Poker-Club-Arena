@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  lightningIdleBalanceFor,
   lightningSessionStackFor,
   lightningWaitingHero,
 } from '../src/lightning/lightningWaitingHero';
@@ -63,7 +64,104 @@ describe('a Lightning player between hands', () => {
     expect(lightningSessionStackFor(null, { poolSessionId: 'room-a', stack: 150 })).toBeNull();
   });
 
+  describe('the engine says the balance on the idle room itself', () => {
+    const idle = (room: string, user: string, stack: unknown) => ({
+      table_id: room,
+      stage: 'waiting',
+      lightning: { player_balance: { user_id: user, stack } },
+    });
+
+    it('takes the engine figure over the roster and the database', () => {
+      expect(
+        lightningWaitingHero({
+          sittingOut: false,
+          engineStack: 163.25,
+          lastSeenStack: 187.5,
+          sessionStack: 200,
+        }).stack
+      ).toBe(163.25);
+      expect(
+        lightningWaitingHero({
+          sittingOut: false,
+          engineStack: 0,
+          lastSeenStack: 0,
+          sessionStack: 9,
+        }).stack
+      ).toBe(0);
+    });
+
+    it('still keeps the player own Sit Out with the engine figure', () => {
+      expect(
+        lightningWaitingHero({
+          sittingOut: true,
+          engineStack: 50,
+          lastSeenStack: null,
+          sessionStack: null,
+        })
+      ).toEqual({ status: 'sitting_out', stack: 50 });
+    });
+
+    it('falls back when the engine sends nothing usable (an older engine)', () => {
+      for (const engineStack of [undefined, null, Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+        expect(
+          lightningWaitingHero({
+            sittingOut: false,
+            engineStack,
+            lastSeenStack: 187.5,
+            sessionStack: 200,
+          }).stack
+        ).toBe(187.5);
+        expect(
+          lightningWaitingHero({
+            sittingOut: false,
+            engineStack,
+            lastSeenStack: null,
+            sessionStack: 200,
+          }).stack
+        ).toBe(200);
+      }
+    });
+
+    it('adopts the engine figure only for this player in this room', () => {
+      expect(lightningIdleBalanceFor('room-a', 'me', idle('room-a', 'me', 142.5))).toBe(142.5);
+      expect(
+        lightningIdleBalanceFor('room-a', 'me', idle('room-a', 'someone-else', 142.5))
+      ).toBeNull();
+      expect(lightningIdleBalanceFor('room-a', 'me', idle('room-b', 'me', 142.5))).toBeNull();
+      expect(lightningIdleBalanceFor(null, 'me', idle('room-a', 'me', 142.5))).toBeNull();
+      expect(lightningIdleBalanceFor('room-a', null, idle('room-a', 'me', 142.5))).toBeNull();
+      expect(lightningIdleBalanceFor('room-a', 'me', idle('room-a', 'me', -3))).toBeNull();
+      expect(lightningIdleBalanceFor('room-a', 'me', idle('room-a', 'me', 'nope'))).toBeNull();
+      expect(
+        lightningIdleBalanceFor('room-a', 'me', {
+          table_id: 'room-a',
+          stage: 'waiting',
+          lightning: {},
+        })
+      ).toBeNull();
+      expect(lightningIdleBalanceFor('room-a', 'me', null)).toBeNull();
+    });
+  });
+
   describe('the Lightning room around that chair', () => {
+    const pageForEngine = readFileSync('src/pages/TablePage.tsx', 'utf8');
+
+    it('hands the engine figure for this room and player to the waiting chair first', () => {
+      expect(pageForEngine).toMatch(
+        /lightningIdleBalanceFor\(\s*tableId,\s*userId,\s*engineSnapshot as unknown as LightningIdleBalanceSnapshot \| null\s*\)/
+      );
+      expect(pageForEngine).toMatch(
+        /sittingOut: lightningSitOut\.sittingOut,\s*engineStack: lightningEngineIdleStack,\s*lastSeenStack:/
+      );
+      // Chips added between hands make the fold-time engine figure stale too.
+      expect(pageForEngine).toMatch(
+        /lightningLastSeenStackRef\.current = null;\s*lightningEngineStackSupersededRef\.current = engineSnapshotRef\.current;/
+      );
+      expect(pageForEngine).toMatch(
+        /engineSnapshot !== lightningEngineStackSupersededRef\.current\s*\?\s*lightningIdleBalanceFor\(/
+      );
+    });
+
     const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
 
     it('remembers the roster stack and reads the pool balance while the hero waits', () => {

@@ -18,6 +18,12 @@
 -- deals three; a pass after "4 newcomers + 8 regulars" too. Production pools
 -- hold 8-39 players today, so it is rare, and real for every thin pool.
 --
+-- Requalified against the installed original-intent top-up boundary, source
+-- 20261025151354 (recorded in production as 20261025154522). The guarded
+-- formation and reservation-release definitions retain its pending-intent
+-- admission check and final-boundary drain verbatim. The exact installed
+-- source is a sealed native fixture, never a production replay.
+--
 -- Installs after 20261024213844: the plan and the locked barrier both use
 -- its exact conversion-seat exemption, so existing players never post an
 -- entry big blind merely because the game converted to Lightning.
@@ -122,8 +128,8 @@ $g$;
 BEGIN
   FOR r IN SELECT * FROM (VALUES
     ('public.fn_lightning_match_plan(uuid,timestamptz,uuid[],text,integer,jsonb)', 'f35a6343a51e57c032bde2fcf7372d4b'),
-    ('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamptz,text,uuid,jsonb)', '9dfe2626d4dbed01843f67cc69c430ad'),
-    ('public.fn_lightning_instance_releases_its_reservations()', 'c939c6325086f93f6b9fce077348125d')
+    ('public.fn_lightning_form_hand(uuid,uuid[],smallint,smallint,uuid,interval,interval,timestamptz,text,uuid,jsonb)', '7b61caed8bde5127d965292c73e57915'),
+    ('public.fn_lightning_instance_releases_its_reservations()', '8b237f0f6891ff1bd1abb6008b343498')
   ) x(sig, want) LOOP
     s := pg_get_functiondef(r.sig::regprocedure);
     IF md5(s) IS DISTINCT FROM r.want THEN

@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -29,6 +30,26 @@ const HCODE = HARNESS.split('\n')
   .join('\n');
 
 describe('the parity harness', () => {
+  it('qualifies the exact already-installed top-up predecessor before entry blinds', () => {
+    const source = read('scripts', 'dev', 'fixtures', 'lightning-entry-top-up-predecessor.sql');
+    expect(createHash('md5').update(source).digest('hex')).toBe('4db48e1284bab7718d0ac32ae24b5179');
+    const before = HCODE.indexOf('-f "$F/lightning-entry-top-up-preimages.sql"');
+    const topup = HCODE.indexOf('-f "$F/lightning-entry-top-up-predecessor.sql"');
+    const entry = HCODE.indexOf(
+      '-f "$M/20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql"'
+    );
+    expect(before).toBeGreaterThan(0);
+    expect(topup).toBeGreaterThan(before);
+    expect(entry).toBeGreaterThan(topup);
+    const migration = read(
+      'supabase',
+      'migrations',
+      '20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql'
+    );
+    expect(migration).toContain('7b61caed8bde5127d965292c73e57915');
+    expect(migration).toContain('8b237f0f6891ff1bd1abb6008b343498');
+  });
+
   it('builds the real chain through 20261009151825 on the proven grounds, on its own port', () => {
     expect(HCODE).toContain('port=${LIGHTNING_PARITY_PORT:-55563}');
     for (const f of [
@@ -173,13 +194,14 @@ describe('the parity harness', () => {
     expect(header).toBeGreaterThan(window);
     expect(current).toBeGreaterThan(header);
     expect(fixtureAt).toBeGreaterThan(current);
-    expect(HCODE).toContain("grep -c '^  ok  13[ABCD] ENTRY BIG BLIND'");
+    expect(HCODE).toContain("grep -c '^  ok  13[ABCDE] ENTRY BIG BLIND'");
     const fixture = read('scripts', 'dev', 'fixtures', 'lightning-entry-big-blind-parity.sql');
     for (const s of [
       '13A ENTRY BIG BLIND',
       '13B ENTRY BIG BLIND',
       '13C ENTRY BIG BLIND',
       '13D ENTRY BIG BLIND',
+      '13E ENTRY BIG BLIND',
     ])
       expect(fixture).toContain(`\\echo '  ok  ${s}`);
     expect(fixture).toContain(

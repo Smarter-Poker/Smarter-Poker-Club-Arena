@@ -534,6 +534,8 @@ proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration
   -f "$M/20261024195059_lightning_new_players_are_always_the_big_blind_first.sql" \
   -f "$M/20261024213844_lightning_conversion_seats_are_not_newcomers_and_a_newcomer_.sql" \
   -f "$M/20261024231549_lightning_voided_hand_returns_its_blind_stamps.sql" \
+  -f "$F/lightning-entry-top-up-preimages.sql" \
+  -f "$F/lightning-entry-top-up-predecessor.sql" \
   -f "$M/20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql" \
   -f "$M/20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql" \
   -c "SET request.headers = '{\"x-smarter-lightning-entry-bb\":\"1\"}'" \
@@ -542,8 +544,8 @@ proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration
   cat "$fixture/current-policy.out"; exit 1;
 }
 grep '^  ok  12' "$fixture/current-policy.out"
-[ "$(grep -c '^  ok  13[ABCD] ENTRY BIG BLIND' "$fixture/current-policy.out")" = 4 ] \
-  || { cat "$fixture/current-policy.out"; echo 'FAIL: section 13 (entry big blind) did not report four scenarios'; exit 1; }
+[ "$(grep -c '^  ok  13[ABCDE] ENTRY BIG BLIND' "$fixture/current-policy.out")" = 5 ] \
+  || { cat "$fixture/current-policy.out"; echo 'FAIL: section 13 (entry big blind) did not report five scenarios'; exit 1; }
 grep '^  ok  13' "$fixture/current-policy.out"
 n=$(Q "SELECT count(*) FROM pp.out")
 Q "SELECT jsonb_build_object('fixtures', jsonb_agg(doc || jsonb_build_object('discriminates', discriminates) ORDER BY n)) FROM pp.out" > "$fixture/fixtures.json"

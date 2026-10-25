@@ -262,3 +262,69 @@ BEGIN
   PERFORM pp.finish(v_g, (h ->> 'instance_id')::uuid, (h ->> 'hand_id')::uuid);
 END $$;
 \echo '  ok  13D ENTRY BIG BLIND  three conversion seats without a previous big blind are dealt without entry posts; the two genuine newcomers supply the big blind and one live entry post; real barrier and settlement'
+
+-- 13E: a top-up intent arrives after the plan. Admission must retain the
+-- installed original-intent boundary before any blind stamp or reservation.
+DO $$
+DECLARE v_g uuid; p jsonb; g jsonb; r jsonb; h jsonb; ps record;
+        v_player uuid; v_table uuid; v_request text := gen_random_uuid()::text; v_stack numeric;
+BEGIN
+  v_g := pp.entry_pool('ENTRY PENDING INTENT', 3, 2);
+  p := pp.capture_entry('entry big blind: stale plan waits for an original top-up intent (6-max, 5)', v_g);
+  g := p -> 'groups' -> 0;
+  v_player := (g -> 'entry_bb' ->> 0)::uuid;
+  SELECT * INTO STRICT ps FROM public.lightning_pool_session
+   WHERE cluster_id=v_g AND player_id=v_player AND exited_at IS NULL;
+  SELECT table_id,stack INTO STRICT v_table,v_stack FROM public.table_seats WHERE id=ps.anchor_seat_id;
+  -- Fixture boundary: an uncharged original intent with a stale occupancy.
+  -- No wallet/debit function is called; cancellation must spend nothing.
+  INSERT INTO smarter_private.lightning_top_up_intents
+    (table_id,user_id,request_id,anchor_seat_id,occupancy_id,pool_session_id,cluster_id,cash_session_id,requested)
+  VALUES(v_table,v_player,v_request,ps.anchor_seat_id,gen_random_uuid(),ps.id,v_g,ps.cash_player_session_id,1);
+  IF NOT EXISTS (SELECT 1 FROM public.fn_lightning_player_legality(v_g,clock_timestamp(),NULL,NULL)
+                  WHERE player_id=v_player AND legal=false AND reason_code='TOP_UP_PENDING') THEN
+    RAISE EXCEPTION 'FAIL 13E: the installed legality gate lost the original intent';
+  END IF;
+  r := public.fn_lightning_form_hand(v_g,ARRAY(SELECT jsonb_array_elements_text(g -> 'players')::uuid),
+         p_bb_player=>(g ->> 'bb')::uuid,p_matcher_version=>'m1',p_request_id=>gen_random_uuid());
+  IF (r ->> 'reason') IS DISTINCT FROM 'top_up_pending' OR (r ->> 'formed')::boolean IS DISTINCT FROM false
+     OR EXISTS(SELECT 1 FROM public.lightning_hand_player WHERE cluster_id=v_g)
+     OR EXISTS(SELECT 1 FROM public.lightning_pool_slot WHERE cluster_id=v_g AND player_id=v_player AND last_bb_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'FAIL 13E: a stale plan bypassed the top-up boundary: %',r;
+  END IF;
+  -- The real cancellation door completes the uncharged intent atomically.
+  PERFORM smarter_private.lightning_top_up_finish(v_table,v_player,'fixture_cancel');
+  IF NOT EXISTS(SELECT 1 FROM smarter_private.lightning_top_up_intents WHERE table_id=v_table
+                 AND user_id=v_player AND request_id=v_request AND status='refused' AND applied=0)
+     OR (SELECT stack FROM public.table_seats WHERE id=ps.anchor_seat_id) IS DISTINCT FROM v_stack THEN
+    RAISE EXCEPTION 'FAIL 13E: cancelling an uncharged intent changed the stack';
+  END IF;
+  PERFORM public.fxr_lease(public.fn_cash_cluster_front_table(v_g),true);
+  r := public.fn_lightning_match_and_form(v_g,clock_timestamp(),NULL,NULL,gen_random_uuid());
+  IF coalesce((r ->> 'formed')::integer,0)<>1 THEN RAISE EXCEPTION 'FAIL 13E: resolved intent did not readmit the hand: %',r; END IF;
+  h := r -> 'hands' -> 0;
+  IF (SELECT blind_role FROM public.lightning_hand_player WHERE hand_id=(h ->> 'hand_id')::uuid AND player_id=v_player) IS DISTINCT FROM 'entry_bb' THEN
+    RAISE EXCEPTION 'FAIL 13E: the actual newcomer lost its live entry post';
+  END IF;
+  -- An intent created while this hand owns the anchor must also complete at
+  -- the real terminal boundary. A void cancels it, refunds no fake debit,
+  -- and restores the entry poster's blind history before the next formation.
+  v_request := gen_random_uuid()::text;
+  INSERT INTO smarter_private.lightning_top_up_intents
+    (table_id,user_id,request_id,anchor_seat_id,occupancy_id,pool_session_id,cluster_id,cash_session_id,requested)
+  VALUES(v_table,v_player,v_request,ps.anchor_seat_id,gen_random_uuid(),ps.id,v_g,ps.cash_player_session_id,1);
+  PERFORM public.fn_lightning_instance_abandon((h ->> 'instance_id')::uuid,'fixture_void_original_intent',clock_timestamp());
+  IF NOT EXISTS(SELECT 1 FROM smarter_private.lightning_top_up_intents WHERE table_id=v_table
+                 AND user_id=v_player AND request_id=v_request AND status='refused'
+                 AND applied=0 AND reason='hand_abandoned')
+     OR (SELECT stack FROM public.table_seats WHERE id=ps.anchor_seat_id) IS DISTINCT FROM v_stack
+     OR EXISTS(SELECT 1 FROM public.lightning_pool_slot WHERE cluster_id=v_g AND player_id=v_player AND last_bb_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'FAIL 13E: voiding the hand lost the original-intent drain or the entry blind rollback';
+  END IF;
+  PERFORM public.fxr_lease(public.fn_cash_cluster_front_table(v_g),true);
+  r := public.fn_lightning_match_and_form(v_g,clock_timestamp(),NULL,NULL,gen_random_uuid());
+  IF coalesce((r ->> 'formed')::integer,0)<>1 THEN RAISE EXCEPTION 'FAIL 13E: voided intent did not readmit the hand: %',r; END IF;
+  h := r -> 'hands' -> 0;
+  PERFORM pp.finish(v_g,(h ->> 'instance_id')::uuid,(h ->> 'hand_id')::uuid);
+END $$;
+\echo '  ok  13E ENTRY BIG BLIND  a stale plan retains the pending original-intent gate before blind stamps; real cancellation spends nothing; the void boundary cancels its original intent and restores entry stamps; resolved intents readmit the entry post and settle'

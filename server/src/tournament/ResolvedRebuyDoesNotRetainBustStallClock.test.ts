@@ -15,15 +15,19 @@ const EVENT = 'aaaaaaaa-0000-4000-8000-000000000001';
 function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [USER]) {
   fixture.from.mockImplementation((table: string) => {
     let head = false;
+    let columns = '';
     const query: any = {
       select: (_columns: string, options?: { head?: boolean }) => {
         head = options?.head === true;
+        columns = _columns;
         return query;
       },
       eq: () => query,
       lte: () => query,
       in: () => query,
       order: () => query,
+      not: () => query,
+      is: () => query,
       then: (resolve: (value: unknown) => unknown) =>
         Promise.resolve(
           table === 'tournament_knockout_candidates'
@@ -41,7 +45,11 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
               }
             : head
               ? { count: users.length + 4, data: null, error: null }
-              : { data: users.map((user_id) => ({ user_id, chips: 0 })), error: null }
+              : {
+                  data:
+                    columns === 'position' ? [] : users.map((user_id) => ({ user_id, chips: 0 })),
+                  error: null,
+                }
         ).then(resolve),
     };
     return query;
@@ -75,6 +83,25 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
     gameServer: { handTournamentToSuccessorGeneration: vi.fn() },
   }) as any;
   manager.eliminationSweepCursor.advanceTo(1);
+  return manager;
+}
+
+/** A real bust assignment and cursor yield; only the authoritative door is isolated. */
+function assignmentManager(accepted: boolean) {
+  const manager = setup('concurrent-rebuy');
+  fixture.rpc.mockResolvedValue({ data: [{ user_id: USER, decision_open: false }], error: null });
+  Object.assign(manager, {
+    // The door's durable success/refusal is the input. Spend the work budget
+    // after it answers so actual completedStage(2) retains a continuation.
+    eliminatePlayer: vi.fn(async () => {
+      vi.setSystemTime(Date.now() + 5001);
+      return accepted;
+    }),
+    checkSatelliteQualifierCompletion: vi.fn(async () => {
+      vi.setSystemTime(Date.now() + 5001);
+      return 'continue';
+    }),
+  });
   return manager;
 }
 
@@ -172,5 +199,123 @@ describe('resolved rebuys do not manufacture a stalled tournament manager', () =
       msInFlight: 0,
       msBustWaiting: 120000,
     });
+  });
+
+  it('retires a fully committed bust before later cursor stages can age it into a stall', async () => {
+    const manager = assignmentManager(true);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminatePlayer).toHaveBeenCalledWith(USER, 5);
+    expect(manager.eliminationSweepNextStage).toBe(2);
+    // A later admission consumes its real continuation, without another bust
+    // read. Successful assignment must already have retired that obligation.
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.checkSatelliteQualifierCompletion).toHaveBeenCalledOnce();
+    expect(manager.eliminationSweepNextStage).toBe(3);
+    expect(manager.isProcessingEliminations).toBe(false);
+    expect(fixture.reportError).not.toHaveBeenCalled();
+    expect(manager.getStalledEliminationSweep(Date.now() + 120000)).toBeNull();
+  });
+
+  it('keeps a refused assignment pending across later cursor stages', async () => {
+    const manager = assignmentManager(false);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminatePlayer).toHaveBeenCalledWith(USER, 5);
+    expect(manager.eliminationSweepNextStage).toBe(2);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminationSweepNextStage).toBe(3);
+    expect(manager.getStalledEliminationSweep(Date.now() + 120000)).toMatchObject({
+      msInFlight: 0,
+      msBustWaiting: 125001,
+    });
+  });
+
+  it('retains a new hand-complete bust that arrives while the captured assignment is awaited', async () => {
+    const manager = assignmentManager(true);
+    let handComplete: ((tableId: string, stacks: Array<{ stack: number }>) => void) | undefined;
+    const engine = {
+      onHandComplete: (callback: typeof handComplete) => {
+        handComplete = callback;
+      },
+      onPauseReady: vi.fn(),
+      onRestartRequired: vi.fn(),
+    };
+    Object.assign(manager, {
+      isCohortSatellite: () => false,
+      mysteryActivationMayOpenOnBust: () => false,
+      declareFieldDecidedIfOneStackRemains: vi.fn(),
+      horseRebuyOfferMayHaveOpened: vi.fn(),
+    });
+    manager.wireEliminationWake(engine);
+    manager.eliminatePlayer.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      vi.setSystemTime(Date.now() + 5001);
+      handComplete!('another-table', [{ stack: 0 }, { stack: 2000 }]);
+      return true;
+    });
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminatePlayer).toHaveBeenCalledOnce();
+    expect(manager.requestEliminationSweep).toHaveBeenCalled();
+    expect(manager.bustAwaitingSinceMs).toBeGreaterThan(0);
+    expect(manager.getStalledEliminationSweep(Date.now() + 120000)).toMatchObject({
+      msInFlight: 0,
+      msBustWaiting: 120000,
+    });
+  });
+
+  it('keeps the first of two new hand-complete bust times during an awaited receipt', async () => {
+    const manager = assignmentManager(true);
+    let handComplete: ((tableId: string, stacks: Array<{ stack: number }>) => void) | undefined;
+    const engine = {
+      onHandComplete: (callback: typeof handComplete) => {
+        handComplete = callback;
+      },
+      onPauseReady: vi.fn(),
+      onRestartRequired: vi.fn(),
+    };
+    Object.assign(manager, {
+      isCohortSatellite: () => false,
+      mysteryActivationMayOpenOnBust: () => false,
+      declareFieldDecidedIfOneStackRemains: vi.fn(),
+      horseRebuyOfferMayHaveOpened: vi.fn(),
+    });
+    manager.wireEliminationWake(engine);
+    manager.eliminatePlayer.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      vi.setSystemTime(135001);
+      handComplete!('first-table', [{ stack: 0 }, { stack: 2000 }]);
+      vi.setSystemTime(136001);
+      handComplete!('second-table', [{ stack: 0 }, { stack: 3000 }]);
+      return true;
+    });
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.bustAwaitingSinceMs).toBe(135001);
+    expect(manager.getStalledEliminationSweep(255001)).toMatchObject({
+      msInFlight: 0,
+      msBustWaiting: 120000,
+    });
+    expect(manager.bustObservationInFlight).toBeNull();
+    expect(fixture.reportError).not.toHaveBeenCalled();
+  });
+
+  it('retains the old clock when a successful bust query has no authoritative rows', async () => {
+    const manager = assignmentManager(true);
+    const query: any = {
+      select: () => query,
+      eq: () => query,
+      lte: () => Promise.resolve({ data: null, error: null }),
+    };
+    fixture.from.mockImplementationOnce(() => query);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminatePlayer).not.toHaveBeenCalled();
+    expect(manager.getStalledEliminationSweep(130000)).toMatchObject({
+      msInFlight: 0,
+      msBustWaiting: 129000,
+    });
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('authoritative rows missing') }),
+      'Tournament.busted_list_unavailable'
+    );
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(5000);
+    expect(manager.bustObservationInFlight).toBeNull();
   });
 });

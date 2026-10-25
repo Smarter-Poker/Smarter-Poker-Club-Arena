@@ -126,7 +126,7 @@ describe('P12.2 Phase 12 policy digest', () => {
     }
     for (const reason of Object.values(HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES))
       expect(reason.length).toBeGreaterThan(20);
-    expect(HORSE_PHASE12_POLICY_DIGEST_DEFINITION).toBe('horse-phase12-policy-digest-v2');
+    expect(HORSE_PHASE12_POLICY_DIGEST_DEFINITION).toBe('horse-phase12-policy-digest-v3');
   });
 
   it('gives each pack its own digest, moves with any hashed byte, and fails closed', () => {

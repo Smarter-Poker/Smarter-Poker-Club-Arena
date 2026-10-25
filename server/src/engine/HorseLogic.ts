@@ -1043,6 +1043,12 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  heuristic is a legacy fallback only - ServerTableEngine always passes
    *  gameMode, and isTournamentMode() trusts it first. */
   tournament?: {
+    /** Original observed payout terms; legacy absence remains unknown. */
+    payoutTermsVersion?: 1;
+    prizePoolFinalized?: boolean | null;
+    bubbleProtection?: boolean | null;
+    prizeUnitCents?: number | null;
+    finalizedPrizeLadder?: import('./HorseTournamentPayoutTerms.js').HorseFinalizedPrizeLadder;
     /** Phase 6 context contract. Every live tournament decision carries it. */
     schemaVersion?: 1;
     contextStatus?: TournamentContextStatus;

@@ -44,6 +44,7 @@ export interface UseEngineTableStateResult {
    * EngineStateClient.probeLink). A no-op unless the socket is open.
    */
   probeLink: () => void;
+  lightningOriginalTopUpReady: boolean;
   snapshot: EngineSnapshot | null;
   seq: number;
   status: EngineConnectionStatus;
@@ -82,6 +83,7 @@ export function useEngineTableState(
 ): UseEngineTableStateResult {
   const enabled = opts?.enabled ?? true;
   const scheduledRestartUntil = opts?.scheduledRestartUntil ?? null;
+  const [topUpCapabilityRoom, setTopUpCapabilityRoom] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<EngineSnapshot | null>(null);
   const [seq, setSeq] = useState<number>(0);
   const [status, setStatus] = useState<EngineConnectionStatus>('idle');
@@ -112,10 +114,18 @@ export function useEngineTableState(
       // in the same microtask; getSession() runs only when a refresh is due.
       getToken: getFreshAccessToken,
       onSnapshot: (snap, s) => {
+        if (clientRef.current !== client) return;
+        setTopUpCapabilityRoom(
+          snap.table_id === tableId && snap.lightning_original_top_up === true ? tableId : null
+        );
         setSnapshot(snap);
         setSeq(s);
       },
-      onStatus: (s) => setStatus(s),
+      onStatus: (s) => {
+        if (clientRef.current !== client) return;
+        if (s !== 'connected') setTopUpCapabilityRoom(null);
+        setStatus(s);
+      },
       onError: (e) => setLastError(e),
       // A timer boundary does not guarantee a React commit. Discrete events
       // must reach consumers before a later event replaces their state slot.
@@ -139,6 +149,7 @@ export function useEngineTableState(
     return () => {
       client.disconnect();
       clientRef.current = null;
+      setTopUpCapabilityRoom(null);
       setSnapshot(null);
       setSeq(0);
       setStatus('idle');
@@ -157,6 +168,7 @@ export function useEngineTableState(
     []
   );
   return {
+    lightningOriginalTopUpReady: status === 'connected' && topUpCapabilityRoom === tableId,
     snapshot,
     seq,
     status,

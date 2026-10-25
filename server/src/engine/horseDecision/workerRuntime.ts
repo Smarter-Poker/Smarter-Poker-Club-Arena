@@ -1,4 +1,6 @@
+import { validOpponentDonorProfiles, type MemorySize } from '../HorseOpponentMemory.js';
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
+import { observeHandResults } from '../HorseWinnerRead.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
 import {
@@ -2030,6 +2032,28 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
+    if (request.durableOpponentDonorProfiles !== undefined) {
+      try {
+        const gs = request.gameState;
+        const count = gs.dealtSeatIds?.length ?? gs.players.length;
+        const size: MemorySize = count <= 2 ? 'hu' : count <= 5 ? 'short' : 'full';
+        const mode = gs.gameMode === 'tournament' || gs.tournament ? 'tournament' : 'cash';
+        if (
+          !validOpponentDonorProfiles(
+            request.durableOpponentDonorProfiles,
+            gs.players.map((p) => p.user_id),
+            gs.gameVariant,
+            mode,
+            size
+          )
+        )
+          throw new Error('invalid opponent memory donor context');
+        if (HorseMind.importDurableOpponentProfiles(request.durableOpponentDonorProfiles) > 0)
+          this.deps.noteFeature('horse_opponent_memory_donor_snapshot_applied');
+      } catch {
+        this.deps.noteFeature('horse_opponent_memory_donor_snapshot_refused');
+      }
+    }
     if (request.durableOpponentProfiles !== undefined) {
       try {
         if (HorseMind.importDurableOpponentProfiles(request.durableOpponentProfiles) > 0)
@@ -2393,6 +2417,14 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
+    // A PROVEN WINNER IS RESPECTED (HorseWinnerRead): every shard learns
+    // every hand's results, owner and mirror alike; deduplicated by hand key.
+    try {
+      if (observeHandResults(received.handKey, received.results, received.bigBlind))
+        this.deps.noteFeature('horse_winner_read_hand');
+    } catch {
+      this.deps.noteFeature('horse_winner_read_refused');
+    }
     if (received.durableOpponentProfiles !== undefined) {
       try {
         if (HorseMind.importDurableOpponentProfiles(received.durableOpponentProfiles) > 0)

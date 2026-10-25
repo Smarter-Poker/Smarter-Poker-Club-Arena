@@ -326,6 +326,7 @@ import {
   lightningWaitingHero,
 } from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
+import { useLightningTopUpReceipts } from '../lightning/useLightningTopUpReceipts';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
@@ -2282,6 +2283,7 @@ function LiveTablePage({
 
   const {
     snapshot: rawEngineSnapshot,
+    lightningOriginalTopUpReady,
     status: engineWsStatus,
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
@@ -8449,10 +8451,32 @@ function LiveTablePage({
      such writer (prize escrow is a later phase and the custody door refuses a
      tournament table), so it is not offered a control that cannot work. */
   const canTopUpSeat = seatCanAddFunds(tableState.arenaAsset, tableState.isTournament);
+  const lightningAddChipsScope = `${userId}/${tableId ?? ''}/${lightningRoom?.poolSessionId ?? ''}/${lightningRoom?.clusterId ?? ''}`;
+  const lightningAddChipsOwnerRef = useRef({
+    key: lightningAddChipsScope,
+    generation: 0,
+    mounted: false,
+  });
+  if (lightningAddChipsOwnerRef.current.key !== lightningAddChipsScope) {
+    lightningAddChipsOwnerRef.current.key = lightningAddChipsScope;
+    lightningAddChipsOwnerRef.current.generation++;
+  }
+  useEffect(() => {
+    lightningAddChipsOwnerRef.current.mounted = true;
+    return () => {
+      lightningAddChipsOwnerRef.current.mounted = false;
+      lightningAddChipsOwnerRef.current.generation++;
+    };
+  }, []);
   const handleAddChips = async (
     amount: number,
     opId?: string,
-    opts?: { source?: 'manual' | 'auto'; isCurrent?: () => boolean; isScopeCurrent?: () => boolean }
+    opts?: {
+      source?: 'manual' | 'auto';
+      isCurrent?: () => boolean;
+      isScopeCurrent?: () => boolean;
+      onTerminalRefusal?: () => void;
+    }
   ): Promise<boolean> => {
     if (opts?.isCurrent && !opts.isCurrent()) return false;
     /* A Diamond seat tops up too, through the same engine call. What differs is
@@ -8484,8 +8508,15 @@ function LiveTablePage({
          room id answered "Player not seated"). Read fresh, never cached. */
       let addOnTableId: string = tableId;
       const addOnRoom = lightningRoomRef.current;
+      const scopeKey = `${userId}/${tableId ?? ''}/${addOnRoom?.poolSessionId ?? ''}/${addOnRoom?.clusterId ?? ''}`;
+      const scopeGeneration = lightningAddChipsOwnerRef.current.generation;
+      const ownLightningScope = () =>
+        lightningAddChipsOwnerRef.current.mounted &&
+        lightningAddChipsOwnerRef.current.key === scopeKey &&
+        lightningAddChipsOwnerRef.current.generation === scopeGeneration;
+      let anchor: LightningAnchorSeat | null = null;
       if (addOnRoom) {
-        let anchor: LightningAnchorSeat | null = null;
+        if (!ownLightningScope()) return false;
         try {
           anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId, addOnRoom.poolSessionId);
         } catch (anchorErr) {
@@ -8493,6 +8524,7 @@ function LiveTablePage({
             clusterId: addOnRoom.clusterId,
           });
         }
+        if (!ownLightningScope()) return false;
         if (!anchor) {
           toast.error(`Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
           return false;
@@ -8501,16 +8533,49 @@ function LiveTablePage({
       }
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
+      if (addOnRoom) {
+        if (!ownLightningScope()) return false;
+        // This is one bounded custody read for the original request, never a
+        // retry. A reseat must not apply an old response to a new cashier.
+        let currentAnchor: LightningAnchorSeat | null;
+        try {
+          currentAnchor = await fetchLightningAnchorSeat(
+            addOnRoom.clusterId,
+            addOnRoom.poolSessionId
+          );
+        } catch (error) {
+          reportError(error, 'TablePage.lightning_addon_receipt_anchor_read_failed');
+          return false;
+        }
+        if (
+          !ownLightningScope() ||
+          !anchor ||
+          !currentAnchor ||
+          currentAnchor.anchorTableId !== anchor.anchorTableId ||
+          currentAnchor.seatNumber !== anchor.seatNumber ||
+          currentAnchor.occupancyId !== anchor.occupancyId
+        )
+          return false;
+      }
       // Opting out prevents the next debit; an already committed response still
       // updates this same player/pool's ordinary balance and session records.
       if (opts?.isScopeCurrent && !opts.isScopeCurrent()) return false;
       if (!res.success) {
+        if (
+          addOnRoom &&
+          res.code === 'LIGHTNING_TOP_UP_TERMINAL_REFUSAL' &&
+          res.request_id === opId
+        )
+          opts?.onTerminalRefusal?.();
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
            (the engine caps on stack + pending). "Already at the maximum" is
            then the ordinary answer, not an incident: no toast, no report,
            the next snapshot re-evaluates. A manual request still hears it. */
-        if (opts?.source === 'auto' && /maximum buy-in/i.test(String(res.error || ''))) {
+        if (
+          opts?.source === 'auto' &&
+          /maximum buy-in|top up is already pending/i.test(String(res.error || ''))
+        ) {
           lastAddChipsResultRef.current = { applied: 0, queued: false };
           // And do not ask again this hand: the effect below re-runs on every
           // snapshot (`tableState.players` is a new array each time), and
@@ -8538,6 +8603,25 @@ function LiveTablePage({
           }
         }
         return false;
+      }
+      // A Lightning queue is a durable UNCHARGED request. Only the own
+      // terminal receipt updates funding/accounting, including after reconnect.
+      if (addOnRoom && res.charged !== undefined) {
+        if (
+          res.pool_session_id !== addOnRoom.poolSessionId ||
+          res.occupancy_id !== anchor?.occupancyId
+        ) {
+          // A completed original purchase from an earlier seat is not a new
+          // purchase here. Only a known terminal key may be released.
+          if (res.charged && res.request_id === opId && res.requested === amount)
+            opts?.onTerminalRefusal?.();
+          return false;
+        }
+        lastAddChipsResultRef.current = { applied: res.applied ?? 0, queued: res.queued === true };
+        setLightningBalanceVersion((v) => v + 1);
+        if (res.queued)
+          toast.info('Your Lightning Top Up Is Queued. Your Wallet Has Not Been Charged.');
+        return true;
       }
       /* Cashier audit 2026-08-27 (P0-2): the engine caps the top-up to the
          seat's headroom and reports what actually moved as `applied`. The
@@ -16137,7 +16221,13 @@ function LiveTablePage({
     }
     if (!payload.userId || payload.userId === userId) {
       if (payload.balance !== undefined) {
+        // The newer authoritative wallet event invalidates older awaited
+        // reads, including a Lightning funding receipt issued before it.
+        balanceRevisionRef.current += 1;
         setAccountBalance(payload.balance);
+        // If that event invalidated the only terminal receipt read, replace
+        // it once so a paused/waiting hero still learns its funding and stack.
+        if (lightningRoomRef.current) setLightningBalanceVersion((v) => v + 1);
       } else {
         /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
            collapses failures wrote a 0 into the on-screen balance whenever a
@@ -24700,12 +24790,46 @@ function LiveTablePage({
     // see heroPromptedToAct.
     !suppressPanelForPreAction;
 
+  const lightningTopUpCountRef = useRef({ pool: null as string | null, count: 0 });
+  useLightningTopUpReceipts({
+    ready: lightningOriginalTopUpReady,
+    pool: lightningRoom?.poolSessionId ?? null,
+    user: userId,
+    event: engineLastEvent,
+    version: lightningBalanceVersion,
+    connection: engineWsStatus,
+    revision: readBalanceRevision,
+    apply: (funding, revision) => {
+      if (revision !== readBalanceRevision()) return;
+      setBalanceIfCurrent(revision, funding.balance);
+      totalBuyInRef.current = funding.baseline;
+      const count = lightningTopUpCountRef.current;
+      if (count.pool !== funding.pool_session_id) {
+        count.pool = funding.pool_session_id;
+        count.count = 0;
+      }
+      if (funding.applied_count > count.count) {
+        totalRebuysRef.current += funding.applied_count - count.count;
+        count.count = funding.applied_count;
+        // This committed purchase also supersedes ordinary balance reads
+        // issued before it; new Lightning requests have no optimistic debit.
+        balanceRevisionRef.current += 1;
+        // A queued purchase did not change the idle hero's stack. Its first
+        // canonical completion (including reconnect) invalidates that cached
+        // stack once; the count guard makes the follow-up read idempotent.
+        setLightningBalanceVersion((v) => v + 1);
+      }
+      if (tableId) sessionStatsService.restoreFunding(tableId, funding.baseline);
+    },
+  });
+
   // A Lightning idle room intentionally has no hand seat. Its normal opt-in
   // top-up is triggered by the committed receipt, including after an early fold.
   useLightningAutoTopUp({
     room: lightningRoom,
     userId,
     enabled: isAutoRebuyEnabled,
+    originalIntentReady: lightningOriginalTopUpReady,
     balance: accountBalance,
     event: engineLastEvent,
     add: (amount, opId, isCurrent, isScopeCurrent) =>
@@ -29241,7 +29365,9 @@ function LiveTablePage({
         cashoutMinBuyIn={cashoutMinBuyIn}
         buyInProcessingRef={buyInProcessingRef}
         onCloseCashier={() => setShowCashier(false)}
-        onAddChips={handleAddChips}
+        onAddChips={(amount, opId, onTerminalRefusal) =>
+          handleAddChips(amount, opId, { source: 'manual', onTerminalRefusal })
+        }
         // Bust Rebuy
         bustRebuyOpen={bustRebuyOpen}
         bustWalletBalance={bustWalletBalance}

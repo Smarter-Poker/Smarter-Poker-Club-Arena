@@ -131,7 +131,25 @@ describe('LAW: a Lightning hand’s money moves only through settlement', () => 
     );
     const money =
       /\.from\(['"][a-z_]+['"]\)[\s\S]{0,120}?\.(update|insert|upsert|delete)\(|fn_ca_commit_hand|fn_cash_|wallet|table_seats/;
-    for (const f of files) expect(code(f), f).not.toMatch(money);
+    for (const f of files) {
+      const source = code(f);
+      if (f === 'LightningHorseTopUp.ts') {
+        // The horse's input device reads its current anchor and wallet, then
+        // submits the same uncharged intent as the browser. It cannot write
+        // either balance or call a financial RPC of its own.
+        expect(source).not.toMatch(
+          /\.from\(['"][a-z_]+['"]\)[\s\S]{0,120}?\.(update|insert|upsert|delete)\(|\.rpc\(|fn_ca_commit_hand|fn_cash_/
+        );
+        expect(source).toContain(".from('table_seats')");
+        expect(source).toContain('readClubChipBalances(own.clubId, [playerId])');
+        expect(source).toContain(
+          'await requestLightningTopUp(seat.table_id, playerId, key, amount)'
+        );
+      } else expect(source, f).not.toMatch(money);
+    }
+    const topUp = code('LightningTopUp.ts');
+    expect(topUp.match(/\.rpc\(/g)).toHaveLength(1);
+    expect(topUp).toContain("supabase.rpc('fn_lightning_top_up_request'");
     // The one money door, and the only settlement call site.
     const backend = code('LightningHandBackend.ts');
     expect(backend.match(/'fn_lightning_settle_hand'/g)?.length).toBe(1);

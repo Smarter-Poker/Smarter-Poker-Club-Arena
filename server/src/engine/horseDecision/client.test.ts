@@ -3812,3 +3812,31 @@ describe('P13.3 per-variant joint authority at the client boundary', () => {
     }
   );
 });
+
+it('posts exact and nearest-size donor receipts as separate bounded worker batches', async () => {
+  const { freshExploitCounters } = await import('../HorseOpponentExploit.js');
+  const donor = {
+    user_id: '91000000-0000-4000-8000-000000000001',
+    variant: 'flh' as const,
+    mode: 'cash' as const,
+    size: 'short' as const,
+    observed_hands: 60,
+    initialized: true,
+    counters: freshExploitCounters(),
+  };
+  const worker = new FakeWorker();
+  const client = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => worker,
+    opponentProfiles: async () => ({ profiles: [], donorProfiles: [donor] }),
+  });
+  worker.emitMessage(ready);
+  const pending = client.decideFast(snapshot('packet-memory'));
+  for (let i = 0; i < 10 && worker.sent.length === 0; i++) await Promise.resolve();
+  expect(worker.sent[0]).toMatchObject({
+    type: 'DECIDE_FAST',
+    durableOpponentProfiles: [],
+    durableOpponentDonorProfiles: [donor],
+  });
+  worker.emitMessage(fastResult(1, 'packet-memory'));
+  await expect(pending).resolves.toMatchObject({ fence: 'packet-memory' });
+});

@@ -1,0 +1,219 @@
+{
+  "scope": "Fixed duplicate-deal 400bb cash qualification, solver not hydrated. No production or solver certification claim.",
+  "predeclaredAcceptance": "Per variant fixed pooled bb100 >2stderr; no seed negative beyond2stderr; nonzero divergence; zero illegal/truncated.",
+  "runs": [
+    {
+      "variant": "plo4",
+      "pooledBB100": 6.836033950617282,
+      "pooledStderr": 3.3910307011164087,
+      "passes": true,
+      "evidence": {
+        "plan": {
+          "pairs": 6000,
+          "seeds": [2026102501, 2026102502, 2026102503],
+          "variants": ["plo4", "plo5", "plo6"],
+          "stackBB": 400,
+          "solverHydrated": false,
+          "acceptance": "per-variant fixed pooled bb100 >2stderr, no negative-seed result beyond2stderr, nonzero divergence, zero illegal/truncated. No automatic promotion.",
+          "source": {
+            "HorseEval.ts": "85118c98a621babfdf407dc4bd5b1e47927629d05a626cff22affb502b786a62",
+            "HorseLogic.ts": "c36ce63778b65cb9887c5342c643445ceae5d316194ea953d1e59e4dd2147f41"
+          }
+        },
+        "variant": "plo4",
+        "results": [
+          {
+            "seed": 2026102501,
+            "matchup": "plo4_v56_pressure_range",
+            "hands": 12000,
+            "bb100": -6.8946759259259265,
+            "stderr": 5.772286885703937,
+            "durationMs": 128967,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 979,
+            "inert": false
+          },
+          {
+            "seed": 2026102502,
+            "matchup": "plo4_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 24.411111111111108,
+            "stderr": 5.79602338286638,
+            "durationMs": 128800,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1080,
+            "inert": false
+          },
+          {
+            "seed": 2026102503,
+            "matchup": "plo4_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 2.9916666666666663,
+            "stderr": 6.048026124085684,
+            "durationMs": 129864,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1010,
+            "inert": false
+          }
+        ]
+      }
+    },
+    {
+      "variant": "plo5",
+      "pooledBB100": 5.284876543209876,
+      "pooledStderr": 3.4360657112347837,
+      "passes": false,
+      "evidence": {
+        "plan": {
+          "pairs": 6000,
+          "seeds": [2026102501, 2026102502, 2026102503],
+          "variants": ["plo4", "plo5", "plo6"],
+          "stackBB": 400,
+          "solverHydrated": false,
+          "acceptance": "per-variant fixed pooled bb100 >2stderr, no negative-seed result beyond2stderr, nonzero divergence, zero illegal/truncated. No automatic promotion.",
+          "source": {
+            "HorseEval.ts": "85118c98a621babfdf407dc4bd5b1e47927629d05a626cff22affb502b786a62",
+            "HorseLogic.ts": "c36ce63778b65cb9887c5342c643445ceae5d316194ea953d1e59e4dd2147f41"
+          }
+        },
+        "variant": "plo5",
+        "results": [
+          {
+            "seed": 2026102501,
+            "matchup": "plo5_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 9.028472222222222,
+            "stderr": 6.031669382116407,
+            "durationMs": 184062,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1083,
+            "inert": false
+          },
+          {
+            "seed": 2026102502,
+            "matchup": "plo5_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 2.7631944444444443,
+            "stderr": 6.156939244739167,
+            "durationMs": 183271,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1129,
+            "inert": false
+          },
+          {
+            "seed": 2026102503,
+            "matchup": "plo5_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 4.062962962962962,
+            "stderr": 5.654201247633547,
+            "durationMs": 179351,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1078,
+            "inert": false
+          }
+        ]
+      }
+    },
+    {
+      "variant": "plo6",
+      "pooledBB100": 8.09807098765432,
+      "pooledStderr": 3.8740421617376235,
+      "passes": true,
+      "evidence": {
+        "plan": {
+          "pairs": 6000,
+          "seeds": [2026102501, 2026102502, 2026102503],
+          "variants": ["plo4", "plo5", "plo6"],
+          "stackBB": 400,
+          "solverHydrated": false,
+          "acceptance": "per-variant fixed pooled bb100 >2stderr, no negative-seed result beyond2stderr, nonzero divergence, zero illegal/truncated. No automatic promotion.",
+          "source": {
+            "HorseEval.ts": "85118c98a621babfdf407dc4bd5b1e47927629d05a626cff22affb502b786a62",
+            "HorseLogic.ts": "c36ce63778b65cb9887c5342c643445ceae5d316194ea953d1e59e4dd2147f41"
+          }
+        },
+        "variant": "plo6",
+        "results": [
+          {
+            "seed": 2026102501,
+            "matchup": "plo6_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 16.38611111111111,
+            "stderr": 6.760264583555496,
+            "durationMs": 255510,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1212,
+            "inert": false
+          },
+          {
+            "seed": 2026102502,
+            "matchup": "plo6_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 1.932638888888889,
+            "stderr": 6.22577247471476,
+            "durationMs": 246195,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1141,
+            "inert": false
+          },
+          {
+            "seed": 2026102503,
+            "matchup": "plo6_v56_pressure_range",
+            "hands": 12000,
+            "bb100": 5.975462962962964,
+            "stderr": 7.114239516047781,
+            "durationMs": 250123,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 1178,
+            "inert": false
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -51,6 +51,19 @@ function input(over: Partial<HorseReviewInput> = {}): HorseReviewInput {
 }
 
 describe('a hand is every hand dealt (2026-09-28)', () => {
+  it('counts a forced-only zero-action deal in both daily denominators', () => {
+    drainHorseNets(10_000);
+    drainHorsePlay(10_000);
+    accumulateHorseNets(input());
+    expect(drainHorseNets().map((r) => [r.horse_user_id, r.hands])).toEqual([
+      ['horse-a', 1],
+      ['horse-b', 1],
+    ]);
+    expect(drainHorsePlay().map((r) => [r.horse_user_id, r.hands])).toEqual([
+      ['horse-a', 1],
+      ['horse-b', 1],
+    ]);
+  });
   it('counts a hand a horse folded without posting, at zero net', () => {
     drainHorseNets(10_000);
     // horse-b was dealt in and folded preflop: no contribution, no return.

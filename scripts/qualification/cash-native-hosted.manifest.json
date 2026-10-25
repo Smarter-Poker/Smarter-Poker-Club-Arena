@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235095,
-      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      "bytes": 235317,
+      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3715,6 +3715,13 @@
     "current_workflow": {
       "bytes": 235095,
       "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+    }
+  },
+  "horseDailyCountsNative20261025": {
+    "reason": "Add isolated PG17 accepted-hand paired horse counts qualification to existing accounting shard4. Refresh only current workflow identity; preserve historical pins, financial inputs, assertions and qualification verdicts. Not production execution evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235317,
+      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
     }
   }
 }

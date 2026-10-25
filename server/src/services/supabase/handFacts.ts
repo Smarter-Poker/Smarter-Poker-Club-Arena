@@ -991,6 +991,7 @@ export interface HandFactsInput {
 }
 
 export interface DurableStatsFactPayload {
+  horse_rollups?: import('../HorseDailyRollupFacts.js').HorseDailyRollupFacts;
   version: 2;
   facts: Record<string, unknown>[];
   transfers: Record<string, unknown>[];

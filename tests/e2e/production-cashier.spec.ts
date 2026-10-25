@@ -677,4 +677,200 @@ test.describe('Production Cashier Certification', () => {
       { timeout: 15_000 }
     );
   });
+  test('reads Transaction History through the installed feed and scopes, with real receipts', async ({
+    page,
+  }, testInfo) => {
+    // Cold route, scoped reads, one older page, search, receipts and four renders.
+    test.setTimeout(360_000);
+    await page.setViewportSize({ width: 393, height: 852 });
+    const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+    const read = (name: string, scope?: string) =>
+      page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith(`/rpc/${name}`) &&
+          (!scope || response.request().postDataJSON()?.p_scope === scope),
+        { timeout: 50_000 }
+      );
+    await page.goto(`clubs/${clubId}/cashier`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page.locator('[data-cashier-mode="simple"]')).toBeVisible({ timeout: 60_000 });
+    const firstFeed = read('fn_cashier_history_feed');
+    const firstSummary = read('fn_cashier_history_summary');
+    await page.getByRole('button', { name: 'Transaction History', exact: true }).click();
+    // The simple entry hides its tab strip but still names the history panel.
+    const panel = page.getByRole('tabpanel', { name: 'Transaction History', exact: true });
+    await expect(panel).toBeVisible();
+    const feed = await firstFeed;
+    expect(feed.status()).toBe(200);
+    const request = feed.request().postDataJSON();
+    expect(request).toMatchObject({
+      p_club_id: clubId,
+      p_limit: 51,
+      p_before_at: null,
+      p_before_id: null,
+    });
+    expect(request).not.toHaveProperty('p_offset');
+    const rows = await feed.json();
+    expect(Array.isArray(rows)).toBe(true);
+    const summary = await firstSummary;
+    expect(summary.status()).toBe(200);
+    expect(summary.request().postDataJSON()).toMatchObject({
+      p_club_id: clubId,
+      p_scope: request.p_scope,
+    });
+    const totals = await summary.json();
+    expect(['club', 'wallet', 'group']).toContain(totals.mode);
+    const fields =
+      totals.mode === 'club'
+        ? ['entries', 'volume', 'cashouts_paid']
+        : ['incoming', 'outgoing', 'net'];
+    for (const field of fields) {
+      expect(['number', 'string']).toContain(typeof totals[field]);
+      expect(String(totals[field]).trim()).not.toBe('');
+      expect(Number.isFinite(Number(totals[field]))).toBe(true);
+    }
+    await expect(panel).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 });
+    // A working history read is required here. A retryable error is useful UX,
+    // but does not certify the installed history API as working.
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    if (rows.length > 50) {
+      const nextPage = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+          response.request().postDataJSON()?.p_before_id != null,
+        { timeout: 30_000 }
+      );
+      await panel.getByRole('button', { name: 'Load 50 Older Entries', exact: true }).click();
+      const older = await nextPage;
+      expect(older.status()).toBe(200);
+      expect(older.request().postDataJSON()).toMatchObject({
+        p_before_at: rows[49].created_at,
+        p_before_id: rows[49].id,
+        p_scope: request.p_scope,
+      });
+      expect((await older.json()).length).toBeGreaterThan(0);
+      await expect
+        .poll(() => panel.getByRole('button', { name: /^Open Receipt For/ }).count())
+        .toBeGreaterThan(50);
+    }
+    if (rows.length) {
+      const visible = panel.getByRole('button', { name: /^Open Receipt For/ });
+      await expect(visible.first()).toBeVisible();
+      await visible.first().click();
+      const receipt = page.getByRole('dialog', { name: 'Transaction Receipt' });
+      await expect(receipt).toBeVisible();
+      await expect(receipt.getByText('Recorded In Ledger', { exact: true })).toBeVisible();
+      await expect(receipt.getByText(/^[0-9a-f-]{36}$/i)).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(receipt).toBeHidden();
+    } else {
+      await expect(panel.getByText('No Transactions Recorded Yet.', { exact: true })).toBeVisible();
+    }
+    const allClub = panel.getByRole('button', { name: 'All Club Transactions', exact: true });
+    let approvedReceiptChecked = false;
+    if (await allClub.count()) {
+      expect(request.p_scope).toBe('club');
+      await expect(allClub).toHaveAttribute('aria-pressed', 'true');
+      expect(totals.mode).toBe('club');
+      await expect(panel.getByLabel('Club Totals For These Filters')).toBeVisible();
+      await expect(panel.getByLabel('Club Totals For These Filters')).not.toContainText('--');
+      const cashouts = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+          response.request().postDataJSON()?.p_kind === 'cashout',
+        { timeout: 30_000 }
+      );
+      await panel.getByRole('button', { name: 'Cash-Outs', exact: true }).click();
+      const cashoutResponse = await cashouts;
+      expect(cashoutResponse.status()).toBe(200);
+      const cashoutRows = await cashoutResponse.json();
+      const approved = cashoutRows.find(
+        (row: { transaction_type: string }) => row.transaction_type === 'cashout_approved'
+      );
+      // This maintained club already holds audited approvals. Their absence is
+      // a missing proof, never a reason to manufacture a cash-out to test it.
+      expect(approved).toBeTruthy();
+      expect(approved.to_user_id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(approved.to_name).toBeTruthy();
+      expect(approved.invoice_number).toMatch(/^CA-/);
+      await panel
+        .getByRole('button', { name: /^Open Receipt For/ })
+        .filter({ hasText: 'Cash-Out Accepted' })
+        .first()
+        .click();
+      const accepted = page.getByRole('dialog', { name: 'Transaction Receipt' });
+      await expect(accepted).toBeVisible();
+      await expect(accepted.getByText(approved.id, { exact: true })).toBeVisible();
+      await expect(accepted.getByText(approved.invoice_number, { exact: true })).toBeVisible();
+      await expect(accepted).toContainText(approved.to_name);
+      await expect(accepted).toContainText('Agent Wallet');
+      await attachCashierScreenshot(page, testInfo, 'cash-out-actual-accepter-and-invoice');
+      await page.keyboard.press('Escape');
+      await expect(accepted).toBeHidden();
+      approvedReceiptChecked = true;
+      const ownFeed = read('fn_cashier_history_feed', 'mine');
+      const ownSummary = read('fn_cashier_history_summary', 'mine');
+      await panel.getByRole('button', { name: 'My Transactions', exact: true }).click();
+      expect((await ownFeed).status()).toBe(200);
+      const own = await ownSummary;
+      expect(own.status()).toBe(200);
+      expect((await own.json()).mode).toBe('wallet');
+      await expect(panel.getByLabel('My Wallet Totals For These Filters')).toBeVisible();
+      await expect(panel.getByLabel('My Wallet Totals For These Filters')).not.toContainText('--');
+    } else {
+      expect(request.p_scope).toBe('mine');
+      expect(totals.mode).toBe('wallet');
+      await expect(panel.getByLabel('My Wallet Totals For These Filters')).not.toContainText('--');
+    }
+    const searchText = '__cashier_readonly_history_probe__';
+    const searched = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+        response.request().postDataJSON()?.p_search === searchText,
+      { timeout: 30_000 }
+    );
+    await panel.getByRole('searchbox', { name: 'Search Transaction History' }).fill(searchText);
+    const searchResponse = await searched;
+    expect(searchResponse.status()).toBe(200);
+    expect(await searchResponse.json()).toEqual([]);
+    await expect(
+      panel.getByText('Nothing Matches That Name Or Invoice Number.', { exact: true })
+    ).toBeVisible();
+    const restored = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+        response.request().postDataJSON()?.p_search === null,
+      { timeout: 30_000 }
+    );
+    await panel.getByRole('searchbox', { name: 'Search Transaction History' }).fill('');
+    expect((await restored).status()).toBe(200);
+    await expect(panel).toHaveAttribute('aria-busy', 'false');
+    for (const width of [375, 393, 768, 1440]) {
+      await page.setViewportSize({ width, height: 852 });
+      await expect(panel).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+        )
+      ).toBe(true);
+      await attachCashierScreenshot(page, testInfo, `transaction-history-${width}`);
+    }
+    await testInfo.attach('cashier-history-installed-contract.json', {
+      body: JSON.stringify(
+        {
+          scope: request.p_scope,
+          summaryMode: totals.mode,
+          rowsRead: rows.length,
+          feedStatus: feed.status(),
+          summaryStatus: summary.status(),
+          searchStatus: searchResponse.status(),
+          approvedReceiptChecked,
+          roleCoverage:
+            'Maintained read-only identity only; other roles qualified separately on PostgreSQL 17',
+        },
+        null,
+        2
+      ),
+      contentType: 'application/json',
+    });
+  });
 });

@@ -8,6 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'tests/fixtures/messenger-inbox-equipment'
 MIGRATION = ROOT / 'supabase/migrations/20261025185834_messenger_excludes_certification_conversations.sql'
+RETIREMENT = ROOT / 'supabase/migrations/20261025201533_messenger_hides_soft_deleted_counterpart_profiles.sql'
 PG = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 OWNER = ['runuser', '-u', 'postgres', '--'] if os.geteuid() == 0 else []
 ENV = dict(os.environ, LC_ALL='C')
@@ -61,6 +62,23 @@ with tempfile.TemporaryDirectory(prefix='msg-inbox-') as directory:
         command(psql, "UPDATE social_conversation_participants SET context_entity_id='30000000-0000-4000-8000-000000000001' WHERE conversation_id='20000000-0000-4000-8000-000000000003';")
         result = command(psql, "SET test.actor='10000000-0000-4000-8000-000000000001'; SELECT count(*) FROM fn_get_user_conversations('10000000-0000-4000-8000-000000000001',null) WHERE conversation_id='20000000-0000-4000-8000-000000000003';")
         assert result.stdout.strip() == '0', result.stdout
-        print('PASS: baseline fails; candidate isolates equipment, orders unread first, retains real names, refuses forged actors/stale replay, and preserves stored state and hidden/deleted read semantics.')
+        # A separate database reproduces live ledger-backed identity retirement:
+        # the profile survives but the reserved certification email is gone.
+        command(psql, 'CREATE DATABASE retired_case;')
+        retired_psql = [*psql[:-1], 'retired_case']
+        for filename in ['schema.sql', 'installed-inbox-pre-retirement.sql', 'fixtures.sql', 'retired-counterparts.sql']:
+            command(retired_psql, (FIXTURE / filename).read_text())
+        retired_assertions = (FIXTURE / 'retired-assertions.sql').read_text()
+        before = command(retired_psql, retired_assertions, check=False)
+        assert before.returncode != 0 and 'Retired counterpart remains visible' in before.stderr
+        retired_state = state + " SELECT json_agg(u ORDER BY id)::text FROM auth.users u; SELECT json_build_array(proowner,proacl,prosecdef,provolatile,proconfig)::text FROM pg_proc WHERE oid='public.fn_get_user_conversations(uuid,uuid)'::regprocedure;"
+        original = command(retired_psql, retired_state).stdout
+        command(retired_psql, RETIREMENT.read_text())
+        command(retired_psql, retired_assertions)
+        assert command(retired_psql, retired_state).stdout == original, 'Retirement projection mutated stored history or identities'
+        replay = command(retired_psql, RETIREMENT.read_text(), check=False)
+        assert replay.returncode != 0 and 'preimage changed' in replay.stderr
+        command(retired_psql, retired_assertions)
+        print('PASS: both live preimages reproduce their defects; candidates isolate active equipment and retired counterparts, retain genuine names/groups/history, preserve unread semantics and refuse stale replay.')
     finally:
         command(OWNER + [PG / 'pg_ctl', '-D', cluster, '-m', 'immediate', 'stop'])

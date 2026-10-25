@@ -43,3 +43,13 @@ still grants no activation authority or complete-fleet claim.
 A recovery regression also reproduced a valid Lightning intent being refused
 as `lease_superseded`: recovery read the transport turn counter as a physical
 lease. It now resolves the same original private coordinate used at issue.
+
+The full normal pre-push exposed 25 stale expectations across seven existing
+worker/plan/completion suites. Those tests now inspect the actual owning private
+view, retain global-empty checks, and register original participant FASTs before
+learning public completions. The Phase 7 controller case retains the real legal
+action and accepted witness, now learning its own exact NLH/HU/MTT histories;
+it no longer imports the contrasting pooled prior into FAST. Donor/restart
+coverage explicitly requires pooled profiles to remain unavailable. All 158
+tests in those seven suites pass, and the server compiler passes. These are
+isolated fixtures, not production or natural-use qualification.

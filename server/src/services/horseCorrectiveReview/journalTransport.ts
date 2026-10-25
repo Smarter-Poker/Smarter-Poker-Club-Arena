@@ -2,7 +2,7 @@
  * identity. Neither operator JSON nor an uploaded artifact authenticates a journal. */
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstatSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import {
   validateHorseJournalRecord,
@@ -20,15 +20,15 @@ export const JOURNAL_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
 const SHA = /^[a-f0-9]{40}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const verified = new WeakSet<object>();
-export const PRIVATE_JOURNAL_REMOTE_COMMAND = [
-  'set -eu',
-  "horse_journal_container=$(docker inspect --format '{{.Id}}' club-arena-engine)",
-  'case "$horse_journal_container" in \'\'|*[!0-9a-f]*) exit 3;; esac',
-  '[ "${#horse_journal_container}" -eq 64 ]',
-  'horse_journal_image=$(docker inspect --format \'{{.Image}}\' "$horse_journal_container")',
-  'docker image inspect --format \'{{index .Config.Labels "org.opencontainers.image.revision"}}\' "$horse_journal_image"',
-  'docker exec -i "$horse_journal_container" node dist/scripts/horsePrivateJournalExport.js',
-].join('; ');
+// Maintained machine command, shipped with src/ in the existing image. It is
+// private SSH syntax, never user-facing display text or operator-supplied code.
+export const PRIVATE_JOURNAL_REMOTE_COMMAND = readFileSync(
+  new URL(
+    '../../../src/services/horseCorrectiveReview/private-journal-command.sh',
+    import.meta.url
+  ),
+  'utf8'
+).trim();
 export interface CanonicalJournalExport {
   version: 1;
   status: 'canonical_journal_export';

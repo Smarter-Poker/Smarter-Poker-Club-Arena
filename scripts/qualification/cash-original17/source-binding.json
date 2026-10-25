@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235588,
-      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+      "bytes": 235911,
+      "sha256": "63ce14b8a81e7a7b12a1f888a2ee6e9d12f81d35f6d07732c8a3521861a62959"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -550,6 +550,17 @@
     "currentWorkflowPin": {
       "bytes": 235588,
       "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    }
+  },
+  "horsePhase14GenerationGuard20261025": {
+    "reason": "Adds the Phase14 generation publication guard and finite negative scenarios to the existing required TypeScript job. Refresh only current workflow input identity; preserve historical pins, financial source/assertions and qualification verdicts. This is not native financial or production execution evidence.",
+    "previousWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    },
+    "currentWorkflowPin": {
+      "bytes": 235911,
+      "sha256": "63ce14b8a81e7a7b12a1f888a2ee6e9d12f81d35f6d07732c8a3521861a62959"
     }
   }
 }

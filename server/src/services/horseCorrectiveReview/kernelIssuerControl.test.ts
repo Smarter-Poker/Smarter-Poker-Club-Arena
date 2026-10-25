@@ -20,6 +20,7 @@ describe('current protected privileged control bytes', () => {
   });
   it.each([
     'server/src/services/horseCorrectiveReview/kernelRollbackQualification.ts',
+    'server/src/services/horseCorrectiveReview/private-journal-command.sh',
     'server/src/services/horseCorrectiveReview/authority.ts',
     'server/src/services/horseCorrectiveReview/domain.ts',
     'server/src/services/horseCorrectiveReview/review.ts',

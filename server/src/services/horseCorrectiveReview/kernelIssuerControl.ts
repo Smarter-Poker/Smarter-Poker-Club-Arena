@@ -23,6 +23,7 @@ export const CORRECTIVE_ISSUER_CONTROL_FILES = Object.freeze(
       'kernelGenerationLedgerRules.d.mts',
       'riverSourcePopulation.ts',
       'journalTransport.ts',
+      'private-journal-command.sh',
       'riverAcceptedWindow.ts',
       'riverAcceptedOracle.ts',
       'kernelQualificationReview.ts',

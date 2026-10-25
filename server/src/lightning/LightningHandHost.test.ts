@@ -599,7 +599,15 @@ describe('the clock, the time bank and a horse', () => {
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      const think = thinkTime(n++);
+      // A Lightning fold is committed at once whatever the think time (every
+      // fold is a Lightning fold, #7896), so a TANK that happens to be a fold
+      // never reaches the clock or the bank. When the brain's dealt answer was
+      // fold, the test failed for that deal (about 1 deal in 3). A tank is
+      // pinned to a decision that actually waits: call instead of fold.
+      const tanks = think >= HorseLogic.THINK_TIMEBANK_SENTINEL;
+      const action = tanks && r.decision.action === 'fold' ? 'call' : r.decision.action;
+      return { ...r, decision: { ...r.decision, action, thinkTime: think } };
     });
   }
 

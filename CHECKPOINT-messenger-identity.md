@@ -1,0 +1,15 @@
+# Messenger unread and identity repair
+
+Owner request October 25, 2026: unread/new messages first and visibly unread; remove PostDeploy entries and use actual people names; owner and agent welcomes share the same person thread.
+
+Scope: inbox projection and ordering, certification residue, welcome thread verification. Preserve read boundaries, privacy, blocks, financial history, equipment ownership and every genuine user/horse. No engine replacement.
+
+Owned branch: fix/messenger-certification-peers-20261025. Source base: origin/main. This chat owns delivery; no other writer or operation has been started.
+
+Read canonical AGENTS.md, AGENT-OPERATING-LAW.md, AGENT-HARDENING-STANDARD.md, AGENT-REFERENCE-INDEX.md through policy reader at 2026-10-25T18:52:28.563Z. Policy 2.9; manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b. File hashes: owner b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349; operating a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5; hardening d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e; reference adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555. Read MAC-STORAGE.md; external SSD disk5s4 had 88 GiB available. Read both owning repository entrypoints, complete CLAUDE.md, playbook, PUBLISHING.md and CA deploy-paths. World Hub shared schema migrations belong in Club Arena.
+
+Evidence: screenshot's six PostDeploy identities have full_name Post-Deploy Certification, no sent messages, and reserved certification auth identity. Existing fn_ca_is_cert_account classifies them as equipment. Current welcome trigger already refuses new equipment welcomes; old retained profiles still leak through inbox join. No user has been renamed or deleted. KingFish's welcomes to screenshot peer 5d9979cb-fa87-41c9-8500-43b91f6c1137 contain both downline and club_owner kinds in conversation 157b3025-260b-4e9a-b866-9f358e87153d. Existing sender-pair lock and two-person thread lookup already consolidate owner/agent.
+
+Plan: exclude authoritative certification peers from real-person direct inboxes, preserving groups and certification equipment's own inbox; sort unread before recency at RPC boundary. Keep actual public profile names; equipment has no real person's name to substitute. No private full_name exposure.
+
+Native PostgreSQL baseline reproduces wrong order and equipment inclusion. Candidate passes unread-first, real username resembling PostDeploy retained, exact names preserved, forged actor refused, equipment's own inbox retained. Scratch server localhost:56425 under task SSD scratch. Production is read-only so far. Required checks, protected merge, exact migration installation/readback and affected live proof remain pending.

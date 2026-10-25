@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-24-horse-publish-asap-1855",
+      "ownerOrder": "Dan, 2026-10-24 17:52 Chicago: \"NO, PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. PUSH EVERYTHING WHEN YOUR DONE.\" Off-cycle release at the next hourly :55 break (18:55 Chicago, later breaks as fallback) for everything merged on main since b1f5e761: the horse work and the merged cash, table, tournament and Lightning fixes.",
+      "contains": "6aba0e019a22243f65566608827a7252070a1b5e",
+      "notBefore": "2026-10-24T22:56:00Z",
+      "notAfter": "2026-10-25T02:58:00Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-v52-range-advantage-1555",
       "ownerOrder": "Dan, 2026-10-24 14:33 Chicago, on the V52 range-advantage measurement (#7915) being left for the routine 04:00 release: \"NO LAUNCH IT AT THE 3:55 BREAK.\" Applies only to making protected ebe9363e (#7915, v52RangeAdvantage switch default on and its nightly league cards) live at the 15:55 Chicago break, with 16:55 as the fallback if 15:55 is missed.",
       "contains": "ebe9363ec3189b17c655f8c87954cae1010c21f4",

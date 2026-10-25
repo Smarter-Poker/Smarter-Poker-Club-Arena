@@ -360,8 +360,6 @@ describe('backed payout discovery is the same accounting question in a batch', (
       expect(native).toContain(proof);
   });
 
-  // Full-corpus and local Git-fixture I/O measured beyond the default5s.
-  // Preserve the assertions with a finite30s harness budget, not a runtime change.
   it('requires renewed batch qualification when the maintained scalar formula changes', () => {
     // A matching parsed declaration necessarily contains this exact identifier.
     // Parse only candidate files; preserve every definition and version ordering.
@@ -437,7 +435,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
     expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
       "ROOT/'scripts/ci/test-spin-conservation-postgres.py'"
     );
-  }, 30_000);
+  });
 
   it('reads a platform Diamond event from its own escrow and keeps it out of the chip sweep', () => {
     expect(createHash('md5').update(diamondScalar).digest('hex')).toBe(

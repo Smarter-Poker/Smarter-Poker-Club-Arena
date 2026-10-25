@@ -112,8 +112,6 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(admit('push', '14', 'routine', '{"tournamentManagersQuarantined":27}')).toBe(false);
     expect(admit('push', '14', 'routine', 'unreadable')).toBe(false);
   });
-  // Full-corpus and local Git-fixture I/O measured beyond the default5s.
-  // Preserve the assertions with a finite30s harness budget, not a runtime change.
   it('admits an explicit owner-ordered window only while it is valid and names a contained commit', () => {
     const iso = (offsetMin: number) => new Date(Date.now() + offsetMin * 60_000).toISOString();
     const doc = (notBefore: string, notAfter: string, contains = 'a'.repeat(40)) =>
@@ -173,7 +171,7 @@ describe('daily routine admission uses the existing protected receiver only', ()
         ancestor: true,
       })
     ).toBe(false);
-  }, 30_000);
+  });
   it('keeps tournament breaks at :55 independently of global daily maintenance', () => {
     const server = readFileSync(join(root, 'server/src/GameServer.ts'), 'utf8');
     expect(server).toContain('private static readonly BREAK_START_MINUTE = 55;');

@@ -852,8 +852,6 @@ describe('prospective lifetime-first club welcome package database contract', ()
 });
 
 describe('the current opening authority retains welcome reserve reuse', () => {
-  // Full maintained-corpus I/O measured up to20.1s on the shared SSD.
-  // Keep every assertion and a finite30s scan budget; this is not a runtime deadline.
   it('checks the newest maintained function body or asserted patch, not only the original migration', () => {
     const dir = resolve(__dirname, '../supabase/migrations');
     const definitions = readdirSync(dir)
@@ -873,5 +871,5 @@ describe('the current opening authority retains welcome reserve reuse', () => {
     expect(current.text, current.name).toContain('p_bbj_enabled AND v_welcome.club_id IS NULL');
     const ci = readFileSync(resolve(__dirname, '../.github/workflows/ci.yml'), 'utf8');
     expect(ci).toContain('python3 -B scripts/ci/test-quick-club-opening.py');
-  }, 30_000);
+  });
 });

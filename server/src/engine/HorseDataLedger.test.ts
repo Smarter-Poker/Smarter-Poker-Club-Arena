@@ -79,6 +79,7 @@ const BRAIN_FILES = [
   // V48: the voluntary straddle is decided at the deal, which is the only
   // place that knows the hand number and the seat order.
   'engine/ServerTableEngineDealing.ts',
+  'engine/HorsePhase14Acceptance.ts',
 ];
 const BRAIN_SOURCE = BRAIN_FILES.map(read).join('\n');
 

@@ -77,6 +77,24 @@ export function qualifiedReplayAuthorityHolders(
       throw new HorseReplayAuthorityRefusal(`${owner}:${receipt.state}`);
     receipts.set(`${owner}:${pack ?? ''}`, receipt);
   }
+  // An admitted corrective composition can depend on selected baseline owners
+  // even though none of their proposals applied on this decision. Their exact
+  // recorded generations remain replay inputs and require independent admission.
+  for (const [owner, receipt] of Object.entries(
+    original.correctivePolicy?.baselineAuthorities ?? {}
+  )) {
+    if (
+      !['phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
+      !horseAuthorityReceiptIsWellFormed(receipt) ||
+      receipt.state !== 'usable'
+    )
+      throw new HorseReplayAuthorityRefusal(`${owner}:missing_baseline_receipt`);
+    const key = `${owner}:${owner === 'phase10' ? '' : variant}`;
+    const prior = receipts.get(key);
+    if (prior && JSON.stringify(prior) !== JSON.stringify(receipt))
+      throw new HorseReplayAuthorityRefusal(`${owner}:conflicting_baseline_receipt`);
+    receipts.set(key, receipt);
+  }
   return (owner, pack, runningVersion, epoch) => {
     const receipt = receipts.get(`${owner}:${pack ?? ''}`);
     if (!receipt) return new HorseQualifiedAuthorityHolder(epoch, runningVersion);

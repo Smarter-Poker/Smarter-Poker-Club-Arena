@@ -224,3 +224,94 @@ export async function lightningFrontTable(clusterId: string): Promise<string | n
   if (error) throw new Error(`fn_cash_cluster_front_table failed: ${error.message}`);
   return isUuid(data) ? data : null;
 }
+
+/** One seated occupancy, as the ended-session read needs it. */
+export interface LightningSeatOccupancy {
+  /** table_seats.id: what lightning_pool_session.anchor_seat_id names. */
+  seatId: string;
+  userId: string;
+  /** table_seats.joined_at of THIS occupancy (a seat row can be re-owned). */
+  joinedAt: string;
+}
+
+/**
+ * THE SEATS WHOSE POOL SESSION ENDED WHILE THEIR OCCUPANT STAYED (2026-10-24).
+ *
+ * For a Cluster that IS Lightning right now (`cluster_mode` 'lightning' and
+ * `lightning_enabled`), which of these occupancies entered the pool from this
+ * very seat during this very occupancy, saw that pool session close, and has
+ * no open pool session anywhere in the Cluster since. Answers seat id ->
+ * the closed session's exit_reason. A seat that never entered the pool in
+ * this occupancy is not here (nothing ended), nor is one whose player plays
+ * on from another seat, nor any seat of a Cluster that is not Lightning (a
+ * draining or frozen Cluster owns its own sessions).
+ *
+ * READS ONLY, and it throws when it cannot answer: an unreadable pool is not
+ * an empty one, and the caller does nothing on a throw (10.86 rule 2).
+ */
+export async function lightningSeatsWhosePoolSessionEnded(
+  clusterId: string,
+  seats: LightningSeatOccupancy[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const valid = seats.filter(
+    (s) => isUuid(s.seatId) && isUuid(s.userId) && Number.isFinite(Date.parse(s.joinedAt))
+  );
+  if (!isUuid(clusterId) || valid.length === 0) return out;
+
+  const { data: game, error: gameError } = await supabase
+    .from('cash_games')
+    .select('cluster_mode, lightning_enabled')
+    .eq('id', clusterId)
+    .maybeSingle();
+  if (gameError) throw new Error(`cash_games read failed: ${gameError.message}`);
+  const g = game as { cluster_mode?: unknown; lightning_enabled?: unknown } | null;
+  if (!g || g.cluster_mode !== 'lightning' || g.lightning_enabled !== true) return out;
+
+  const players = [...new Set(valid.map((s) => s.userId))];
+  const { data: open, error: openError } = await supabase
+    .from('lightning_pool_session')
+    .select('player_id')
+    .eq('cluster_id', clusterId)
+    .in('player_id', players)
+    .is('exited_at', null);
+  if (openError) throw new Error(`lightning_pool_session read failed: ${openError.message}`);
+  const playing = new Set(
+    ((open ?? []) as Array<{ player_id?: unknown }>)
+      .map((r) => r.player_id)
+      .filter((v): v is string => isUuid(v))
+  );
+
+  const { data: closed, error: closedError } = await supabase
+    .from('lightning_pool_session')
+    .select('player_id, anchor_seat_id, entered_at, exit_reason')
+    .eq('cluster_id', clusterId)
+    .in(
+      'anchor_seat_id',
+      valid.map((s) => s.seatId)
+    )
+    .not('exited_at', 'is', null);
+  if (closedError) throw new Error(`lightning_pool_session read failed: ${closedError.message}`);
+  const rows = (closed ?? []) as Array<{
+    player_id?: unknown;
+    anchor_seat_id?: unknown;
+    entered_at?: unknown;
+    exit_reason?: unknown;
+  }>;
+  for (const seat of valid) {
+    if (playing.has(seat.userId)) continue;
+    const joined = Date.parse(seat.joinedAt);
+    let latest: { at: number; reason: string } | null = null;
+    for (const r of rows) {
+      if (r.anchor_seat_id !== seat.seatId || r.player_id !== seat.userId) continue;
+      const at = typeof r.entered_at === 'string' ? Date.parse(r.entered_at) : NaN;
+      // Only a session THIS occupancy entered: a re-owned seat row keeps the
+      // sessions of everyone who sat in it before.
+      if (!Number.isFinite(at) || at < joined) continue;
+      if (!latest || at > latest.at)
+        latest = { at, reason: typeof r.exit_reason === 'string' ? r.exit_reason : 'unknown' };
+    }
+    if (latest) out.set(seat.seatId, latest.reason);
+  }
+  return out;
+}

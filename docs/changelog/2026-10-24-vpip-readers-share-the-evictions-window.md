@@ -25,13 +25,3 @@ source with only that block substituted). The migration then proves, on live
 floored tables, that the reader and the eviction flag exactly the same seats.
 
 Law: `tests/the-vpip-readers-share-the-evictions-window.law.test.ts`.
-
-## Also: the Classic card in the create flow
-
-The create flow's Classic card printed "Standard Ring Game. No Antes, No
-Bombs, No Minimum VPIP." for every variant, including PLO5 and PLO6 Classic,
-which now play a big blind ante and a 50% floor. Once the defaults for the
-chosen variant load, the card now reads them (`classicBlurbFor`), so it says
-"Big Blind Ante, No Bombs, 50% Minimum VPIP" for those two and the old promise
-for the rest. The lobby was already right: its rule medallions read each
-table's own ante and floor columns.

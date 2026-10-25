@@ -38,7 +38,8 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
   {
     id: 'classic',
     label: 'Classic',
-    blurb: 'Standard Ring Game. No Antes, No Bombs, No Minimum VPIP.',
+    blurb:
+      'Standard Ring Game. No Bombs. PLO5 And PLO6 Play A Big Blind Ante And 50% Minimum VPIP; Every Other Game Has No Ante And No Minimum VPIP.',
   },
   {
     id: 'madness',
@@ -46,6 +47,35 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
     blurb: `${LIGHTNING_RULES_SUMMARY}. Five Players Minimum, Three Seconds For The Sixth.`,
   },
 ];
+
+/**
+ * The Classic variants that play a big blind ante and a 50% minimum VPIP
+ * (owner 2026-10-24, migration 20261024213131): "MAKE THIS ADJUSTMENT NOW TO
+ * ALL PLO5 AND PLO6 CLASSIC GAMES. 50% VPIP AND BB ANTE FOR ALL STAKES."
+ * Mirrors fn_cash_template_defaults('classic', v), which is the authority.
+ */
+export const CLASSIC_ANTE_AND_FLOOR_VARIANTS: readonly string[] = ['plo5', 'plo6'];
+
+export const CLASSIC_PLO5_PLO6_BLURB =
+  'Standard Ring Game. Big Blind Ante, 50% Minimum VPIP, No Bombs.';
+
+/**
+ * The template card's promise for the variant being created. The card is a
+ * promise, so a Classic PLO5 or PLO6 game never reads "No Antes".
+ */
+export function cashTemplateBlurb(
+  template: CashTemplate | string,
+  variant: string | null | undefined
+): string {
+  const id = cashTemplateKey(String(template));
+  if (
+    id === 'classic' &&
+    CLASSIC_ANTE_AND_FLOOR_VARIANTS.includes(String(variant ?? '').toLowerCase())
+  ) {
+    return CLASSIC_PLO5_PLO6_BLURB;
+  }
+  return CASH_TEMPLATES.find((t) => t.id === id)?.blurb ?? '';
+}
 
 /**
  * Render the cadence stored in a game snapshot. Historical tokens remain
@@ -216,29 +246,6 @@ export function templateLabel(t: CashTemplate | string | null | undefined): stri
  * thing the blurb names; the VPIP window rides with the floor because the
  * floor is meaningless without it.
  */
-/**
- * THE CLASSIC CARD SAYS WHAT THE CHOSEN VARIANT GETS (2026-10-24). Classic is
- * no longer one promise: PLO5 and PLO6 Classic play a big blind ante and a 50%
- * floor (20261024213131), every other variant has neither. Once the defaults
- * for the chosen variant are loaded, the card reads them instead of the
- * generic blurb, so it can never promise "No Minimum VPIP" over a game that
- * stands players up at 50%.
- */
-export function classicBlurbFor(
-  s: Pick<CashRulesetSnapshot, 'regular_ante' | 'vpip_floor' | 'bombs'> | null | undefined
-): string {
-  if (!s) return CASH_TEMPLATES[0].blurb;
-  const ante =
-    s.regular_ante === 'bb'
-      ? 'Big Blind Ante'
-      : s.regular_ante === 'sb'
-        ? 'Small Blind Ante'
-        : 'No Antes';
-  const bombs = s.bombs?.enabled ? 'Bomb Pots' : 'No Bombs';
-  const vpip = (s.vpip_floor ?? 0) > 0 ? `${s.vpip_floor}% Minimum VPIP` : 'No Minimum VPIP';
-  return `Standard Ring Game. ${ante}, ${bombs}, ${vpip}.`;
-}
-
 export function templatePromiseLines(
   s: Pick<CashRulesetSnapshot, 'template' | 'regular_ante' | 'vpip_floor' | 'vpip_window' | 'bombs'>
 ): ReadonlyArray<{ key: 'ante' | 'vpip' | 'bombs'; label: string; value: string; note: string }> {

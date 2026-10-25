@@ -1,0 +1,7 @@
+# Classic PLO5 And PLO6: The Card Says What The Game Plays, And The Old Floor File Never Runs
+
+Found in the 2026-10-24 sweep of the day's merges.
+
+- **The create-flow Classic card promised "No Antes ... No Minimum VPIP" next to a PLO5 or PLO6 selection.** Since 20261024213131 (owner: "50% VPIP AND BB ANTE FOR ALL STAKES" on PLO5 and PLO6 Classic), `fn_cash_template_defaults('classic','plo5'|'plo6')` returns a big blind ante and a 50% floor. The card now reads its promise through `cashTemplateBlurb(template, variant)`: Classic PLO5/PLO6 says "Big Blind Ante, 50% Minimum VPIP, No Bombs"; every other variant is unchanged. Pinned in `tests/unit/createTableHelpAndSwitches.test.tsx`.
+- **20261024212524 could never apply and broke a rebuild from the files.** It guarded the same `fn_cash_template_defaults` pre-image as 20261024213131 and was superseded by it. Dispatched now it aborts; on a rebuild in version order it would run first and change the body that 213131's md5 guard and `replace()` anchors read, so the rebuild would abort there. Its first line is now `-- SUPERSEDED BY 20261024213131`, which the applier, both migration gates and the throwaway-Postgres rebuild honour.
+- **20261024213348 read as "installed with no file".** It is 20261024213131 under the MCP-stamped version, byte-identical (md5 `cac2e6204fd2fa2468226748fc01c3d2`, 6243 bytes). Recorded in `scripts/ci/applied-migration-aliases.json`.

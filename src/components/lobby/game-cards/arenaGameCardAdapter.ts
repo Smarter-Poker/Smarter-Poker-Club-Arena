@@ -1,8 +1,8 @@
 import { compactChips } from '../../../utils/format';
-import { cashTemplateNote } from '../../../config/cashGames';
 import {
   cashTemplateLabel,
   cashTitleLines,
+  cashStyleNote,
   levelSpeedLabel,
   mttTitleLine,
   spinPayoutLabel,
@@ -94,7 +94,7 @@ export function cashCardTitle(entry: LobbyEntry): { title: string; subtitle?: st
      shows one, rides after the style; the variant gives way to it, as it does
      on the desktop. The stakes and the player count are separate zones of the
      card and are never touched by this line. */
-  const style = cashTemplateLabel(entry.game?.template);
+  const style = entry.game?.style?.label ?? cashTemplateLabel(entry.game?.template);
   const titleSaysStyle = style ? normalizedWords(title).includes(style.toLowerCase()) : false;
   if (style && !titleSaysStyle) {
     const subtitle = [style, entry.clubLabel].filter(Boolean).join(', ');
@@ -175,7 +175,7 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
         ? `${heading.title} · ${compactChips(entry.guaranteeValue!)} Guaranteed`
         : heading.title,
     subtitle: heading.subtitle,
-    styleNote: (entry.kind === 'cash' ? cashTemplateNote(entry.game?.template) : null) || undefined,
+    styleNote: (entry.kind === 'cash' ? cashStyleNote(entry) : null) || undefined,
     gameType: entry.gameLabel,
     stakes: entry.stakesLabel || undefined,
     players: entry.capacity > 0 ? `${entry.players}/${entry.capacity}` : String(entry.players),

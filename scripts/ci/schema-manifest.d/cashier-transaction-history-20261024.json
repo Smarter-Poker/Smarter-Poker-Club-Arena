@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude/cashier-transaction-history. Migration 20261024203917_cashier_transaction_history_scope, installed on production 2026-10-24 and recorded as 20261024203917 cashier_transaction_history_scope; read back as owner, agent and player through the definer (pg_get_functiondef md5 3919f3ef7a21ed33e2f0c7a80113c7d2).",
+  "functions": ["fn_cashier_transaction_history"]
+}

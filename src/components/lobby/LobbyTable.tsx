@@ -18,6 +18,7 @@ import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { compactChips } from '../../utils/format';
 import {
   cashTitleLines,
+  cashStyleNote,
   formatClock,
   lateRegEndMs,
   levelSpeedLabel,
@@ -33,7 +34,7 @@ import {
   styleCountsLine,
 } from './lobbyEntries';
 import LightningGamesIcon from './LightningGamesIcon';
-import { cashTemplateNote, cashTemplateKey } from '../../config/cashGames';
+import { cashTemplateKey } from '../../config/cashGames';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
@@ -651,7 +652,7 @@ const COL_NAME: ColumnDef = {
       const { headline, subtitle } = cashTitleLines(e);
       /* Action and Madness say what they change, next to the style word
          (Dan 2026-10-15). Classic and untemplated tables print nothing. */
-      const styleNote = cashTemplateNote(e.game?.template);
+      const styleNote = cashStyleNote(e);
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
@@ -2324,9 +2325,7 @@ export default function LobbyTable({
                       {entry.kind === 'cash' ? (
                         <>
                           {cashTitleLines(entry).subtitle}
-                          {cashTemplateNote(entry.game?.template) && (
-                            <> | {cashTemplateNote(entry.game?.template)}</>
-                          )}
+                          {cashStyleNote(entry) && <> | {cashStyleNote(entry)}</>}
                         </>
                       ) : (
                         entry.variantLabel

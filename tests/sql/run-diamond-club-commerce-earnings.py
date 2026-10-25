@@ -130,10 +130,18 @@ def person(db, tag, diamonds=0, role='user'):
     return uid
 
 
+# clubs.club_id defaults to a RANDOM five-digit number (10000-99999) under a
+# unique constraint, so a club created here without one could draw a number the
+# fixture already holds: run 40132700365 failed on "Key (club_id)=(71407)
+# already exists" with nothing wrong in the code under test. Every club here
+# gets its own number from above that range, so it can never collide.
+_club_numbers = iter(range(900001, 999999))
+
+
 def club(db, tag, owner, union_id=None):
     cid = u('club:' + tag)
     un = 'NULL' if union_id is None else f"'{union_id}'"
-    q(db, f"""INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES ('{cid}','Earnings {tag}','{owner}',{un},0,0,false);
+    q(db, f"""INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES ('{cid}',{next(_club_numbers)},'Earnings {tag}','{owner}',{un},0,0,false);
       INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{cid}','{owner}','owner','active',0);""")
     if union_id:
         q(db, f"INSERT INTO public.union_clubs(union_id,club_id) VALUES ('{union_id}','{cid}')")

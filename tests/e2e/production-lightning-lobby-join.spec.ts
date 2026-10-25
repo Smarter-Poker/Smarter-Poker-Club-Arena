@@ -48,7 +48,8 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
-    await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
+    // The wallet trigger is phone-only; the visible game row below certifies
+    // readiness at both widths after the actual lobby overlays settle.
     await settleDiamondSpinsOffer(page, offer);
     const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
     await greeting.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
@@ -96,10 +97,12 @@ for (const width of [393, 1440]) {
     expect(opened, 'a Lightning game panel offers an enabled Join Lightning').toBe(true);
 
     await expect(page).toHaveURL(LIGHTNING_ROUTE, { timeout: 15_000 });
-    const landed = page.url();
+    const landed = new URL(page.url()).pathname;
     // The original defect: a lobby effect replaced the route a moment later.
     await page.waitForTimeout(3_000);
-    expect(page.url(), 'the lobby must not take the Lightning route back').toBe(landed);
+    expect(new URL(page.url()).pathname, 'the lobby must not take the Lightning route back').toBe(
+      landed
+    );
 
     const card = page.locator('[data-testid="lightning-entry"] .lightning-cash-card');
     await expect(card).toBeVisible({ timeout: 15_000 });

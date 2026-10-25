@@ -9804,6 +9804,7 @@ function LiveTablePage({
    *  debit issued meanwhile is not undone by the answer. */
   const retryAccountBalance = useCallback(() => {
     if (!userId || !tableId) return;
+    if (lightningRoomRef.current) setLightningBalanceVersion((v) => v + 1);
     const revision = readBalanceRevision();
     void readBustBalance(userId, tableId).then((b) => {
       if (b !== null) setBalanceIfCurrent(revision, b);
@@ -26969,6 +26970,7 @@ function LiveTablePage({
                 // including zero. The buy-in is only a pre-row placeholder.
                 stack:
                   lightningWaitingSeat?.stack ?? heroRowStack ?? pendingSeatStackRef.current ?? 0,
+                stackPending: lightningWaitingSeat?.stack === null,
                 /* A Lightning player between hands is in the pool, not sitting
                    out, unless they asked to be (Dan 2026-10-24). */
                 status: lightningWaitingSeat ? lightningWaitingSeat.status : 'sitting_out',
@@ -29030,6 +29032,9 @@ function LiveTablePage({
         maxPlayers={tableState.maxPlayers}
         players={tableState.players}
         heroStack={heroDisplayStack}
+        heroStackPending={
+          !!lightningRoom && !lightningHeroInRoster && lightningWaitingSeat?.stack === null
+        }
         rakePercent={displayRakeConfig.rakePercent}
         rakeCap={displayRakeConfig.rakeCap}
         runItTwice={tableState.runItTwice}

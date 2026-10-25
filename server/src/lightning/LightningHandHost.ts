@@ -135,6 +135,7 @@ import { settleLightningJackpot, type LightningJackpotDeps } from './LightningJa
 import {
   decideLightningHorse,
   LIGHTNING_HORSE_MAX_BANK_BURN_MS,
+  lightningHorseFastFoldReactionMs,
   lightningHorseIsAlreadyFolding,
   lightningHorseThinkTimeMs,
   shapeLightningHorseAction,
@@ -331,6 +332,11 @@ export interface LightningHandHostDeps {
   timer?: PreciseActionTimer;
   /** Pacing waits (a turn's settle, a runout street, the showdown read). */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * The horses' timing draws (a think time's back-off, an already-folding
+   * fold's look-and-press time). Injected for tests; Math.random otherwise.
+   */
+  random?: () => number;
   /** A live socket in the player's room (the registry's presence). */
   isConnected?(playerId: string, roomId: string): boolean;
   /**
@@ -486,8 +492,18 @@ export class LightningHandHost {
    * ALREADY FOLDING"): per horse, the street of its first priced look and,
    * while that look is still with the lane, its abort. One look per street.
    * See lightningHorseIsAlreadyFolding for the rule.
+   *
+   * A look stays OPEN (abort set) while it is with the lane AND while an
+   * already-folding answer waits out the horse's look-and-press time
+   * (lightningHorseFastFoldReactionMs): the turn arriving first claims it, the
+   * street or hand moving on cancels it. `startedAt` + `reactionMs` is when a
+   * person who looked at that moment would have pressed the button; drawn
+   * once per look, so a refreshed or taken-over decision never re-rolls it.
    */
-  private readonly horseLooks = new Map<string, { stage: string; abort: AbortController | null }>();
+  private readonly horseLooks = new Map<
+    string,
+    { stage: string; abort: AbortController | null; startedAt: number; reactionMs: number }
+  >();
   /** The horse whose CURRENT turn is its street's first priced look, if any. */
   private turnLookFirst: string | null = null;
   /** Players whose time bank this hand has already recorded (at a fold). */
@@ -503,6 +519,7 @@ export class LightningHandHost {
   private readonly logger: LightningWorkerLogger;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly random: () => number;
   private actionLock = false;
   private finished: Promise<void>;
   private resolveFinished!: () => void;
@@ -522,6 +539,7 @@ export class LightningHandHost {
     this.telemetry = deps.telemetry ?? lightningTelemetry;
     this.logger = deps.logger ?? defaultLogger;
     this.now = deps.now ?? Date.now;
+    this.random = deps.random ?? Math.random;
     this.sleep =
       deps.sleep ??
       ((ms) =>
@@ -1440,13 +1458,23 @@ export class LightningHandHost {
     const stage = hc.getState().stage;
     const prior = this.horseLooks.get(userId);
     if (prior && prior.stage === stage && prior.abort === null) return false;
+    // An open early look (with the lane, or a fold waiting out its press) is
+    // superseded: the turn's own decision is that look, and it keeps the
+    // moment the horse started looking and its press time.
     prior?.abort?.abort();
     const toCall = hc.getAuthoritativeActionState(userId)?.toCall ?? 0;
     if (!(toCall > 0.005)) {
       if (prior) this.horseLooks.delete(userId);
       return false;
     }
-    this.horseLooks.set(userId, { stage, abort: null });
+    const carried = prior && prior.stage === stage ? prior : null;
+    this.horseLooks.set(userId, {
+      stage,
+      abort: null,
+      startedAt: carried?.startedAt ?? this.now(),
+      reactionMs:
+        carried?.reactionMs ?? lightningHorseFastFoldReactionMs({ userId, random: this.random }),
+    });
     return true;
   }
 
@@ -1481,11 +1509,13 @@ export class LightningHandHost {
     const me = hc.getState().players.find((p) => p.user_id === userId);
     if (!me) return;
     const abort = new AbortController();
-    this.horseLooks.set(userId, { stage, abort });
+    this.horseLooks.get(userId)?.abort?.abort();
+    const decisionAt = this.now();
+    const reactionMs = lightningHorseFastFoldReactionMs({ userId, random: this.random });
+    this.horseLooks.set(userId, { stage, abort, startedAt: decisionAt, reactionMs });
     const generation = ++this.horseGeneration;
     const lane = this.deps.horseLane ?? getLiveHorseDecisionWorker;
     const allInOrFold = rules.all_in_or_fold === true;
-    const decisionAt = this.now();
     const stillLooking = () =>
       !abort.signal.aborted &&
       !this.isTerminal() &&
@@ -1526,22 +1556,54 @@ export class LightningHandHost {
           retireHorseExecutionWitness(witness, 'response_fence');
           return;
         }
-        // The look is answered: whatever it said, it is this street's one look.
-        this.horseLooks.set(userId, { stage, abort: null });
-        const auth = this.hc.getAuthoritativeActionState(userId, { asIfToAct: true });
-        const folding = lightningHorseIsAlreadyFolding({
-          decision,
-          legalActions: auth?.legalActions ?? [],
-          toCall: auth?.toCall ?? 0,
-        });
-        if (!folding) {
-          // Not already folding: it waits for its turn and decides afresh.
+        const spent = () =>
+          this.horseLooks.set(userId, { stage, abort: null, startedAt: decisionAt, reactionMs });
+        const foldingNow = () => {
+          const auth = this.hc?.getAuthoritativeActionState(userId, { asIfToAct: true });
+          return lightningHorseIsAlreadyFolding({
+            decision,
+            legalActions: auth?.legalActions ?? [],
+            toCall: auth?.toCall ?? 0,
+          });
+        };
+        if (!foldingNow()) {
+          // The look is answered and it is this street's one look. Not
+          // already folding: it waits for its turn and decides afresh.
+          spent();
           retireHorseExecutionWitness(witness, 'turn_abandoned');
           return;
         }
-        const run = () => this.executeHorseFastFold(userId, decision);
-        const landed = decision.fast ? lane().runWithDispatchBarrier(run) : run();
-        if (!landed) retireHorseExecutionWitness(witness, 'action_rejected');
+        // Already folding: the fold lands when a person who looked at the
+        // deal would have pressed the button, not the instant the lane
+        // answered (10.5, timing is part of the treatment). Until then the
+        // look stays open: the turn arriving first claims it, and the street
+        // or hand moving on cancels it.
+        let pressTimer: ReturnType<typeof setTimeout> | null = null;
+        const cancel = () => {
+          if (pressTimer) clearTimeout(pressTimer);
+          pressTimer = null;
+          retireHorseExecutionWitness(witness, 'turn_abandoned');
+        };
+        abort.signal.addEventListener('abort', cancel, { once: true });
+        const press = () => {
+          pressTimer = null;
+          abort.signal.removeEventListener('abort', cancel);
+          if (!stillLooking() || !this.hc) {
+            retireHorseExecutionWitness(witness, 'response_fence');
+            return;
+          }
+          spent();
+          // Legality at the moment it lands: owing chips, no free check.
+          if (!foldingNow()) {
+            retireHorseExecutionWitness(witness, 'turn_abandoned');
+            return;
+          }
+          const run = () => this.executeHorseFastFold(userId, decision);
+          const landed = decision.fast ? lane().runWithDispatchBarrier(run) : run();
+          if (!landed) retireHorseExecutionWitness(witness, 'action_rejected');
+        };
+        pressTimer = setTimeout(press, Math.max(0, decisionAt + reactionMs - this.now()));
+        (pressTimer as { unref?: () => void }).unref?.();
       })
       .catch(() => undefined /* aborted: the look was superseded */);
   }
@@ -1785,6 +1847,41 @@ export class LightningHandHost {
       this.hc === hc &&
       this.turnUser === userId &&
       playerActionContext(hc) === context;
+    // The ordinary turn: the physical engine's think time, then the action door.
+    const ordinary = (decision: LightningHorseDecision, abandon: () => void): void => {
+      const actionTimeMs = (Number(rules.action_time_seconds) || 15) * 1000;
+      const bankSeconds = this.timeBank.getRemainingSeconds(this.timerKey, userId);
+      const bankUses = this.timeBank.getUsesRemaining(this.timerKey, userId);
+      const bankUsable =
+        rules.time_bank_enabled !== false &&
+        bankUses !== 0 &&
+        bankSeconds * 1000 > LIGHTNING_HORSE_MAX_BANK_BURN_MS + 2000;
+      const think = lightningHorseThinkTimeMs({
+        requested: decision.thinkTime,
+        actionTimeMs,
+        workerFallback: decision.workerFallback,
+        bankUsable,
+        random: this.random,
+      });
+      const delay = Math.max(0, think - (this.now() - decisionAt));
+      if (this.horseTimer) clearTimeout(this.horseTimer);
+      this.horseTimer = setTimeout(() => {
+        this.horseTimer = null;
+        if (!current() || !this.hc) {
+          abandon();
+          return;
+        }
+        // The action is now authoritative: the executor owns the receipts.
+        abort.signal.removeEventListener('abort', abandon);
+        const execute = () => this.executeHorseDecision(userId, decision, allInOrFold, lane);
+        // As at a physical table, the plan commit enters the lane's effect
+        // lane, ahead of older unposted work and of any decision the next
+        // turn enqueues.
+        if (decision.fast) lane().runWithDispatchBarrier(execute);
+        else execute();
+      }, delay);
+      (this.horseTimer as { unref?: () => void }).unref?.();
+    };
     void decideLightningHorse(
       {
         hc,
@@ -1820,59 +1917,50 @@ export class LightningHandHost {
         // The turn owns the receipts until cancellation or until the executor
         // takes them below (ServerTableEngineTurns.markPendingUtilityNotExecuted).
         const abandon = () => retireHorseExecutionWitness(witness, 'turn_abandoned');
+        abort.signal.addEventListener('abort', abandon, { once: true });
         // ALREADY FOLDING, ON THE TURN (Dan 2026-10-24): the street's first
         // priced look reached the horse on its own turn and its policy folds.
-        // It folds right away through the Lightning Fold door, not after a
-        // think time; a refused door leaves the ordinary turn path below.
-        if (firstLook && this.hc) {
-          const auth = this.hc.getAuthoritativeActionState(userId);
-          if (
-            lightningHorseIsAlreadyFolding({
-              decision,
-              legalActions: auth?.legalActions ?? [],
-              toCall: auth?.toCall ?? 0,
-            })
-          ) {
-            const run = () => this.executeHorseFastFold(userId, decision);
-            if (decision.fast ? lane().runWithDispatchBarrier(run) : run()) return;
-            if (!current()) {
-              abandon();
-              return;
-            }
-          }
+        // It folds right away through the Lightning Fold door - at a person's
+        // look-and-press time from when it started looking (the look's own
+        // draw, carried over from an early look the turn superseded), not
+        // after a think time. Legality is re-read when it lands; a refused
+        // door, or a fold no longer open, leaves the ordinary turn path.
+        const foldingOnTurn = () => {
+          const auth = this.hc?.getAuthoritativeActionState(userId);
+          return lightningHorseIsAlreadyFolding({
+            decision,
+            legalActions: auth?.legalActions ?? [],
+            toCall: auth?.toCall ?? 0,
+          });
+        };
+        const look = this.horseLooks.get(userId);
+        if (firstLook && look && foldingOnTurn()) {
+          if (this.horseTimer) clearTimeout(this.horseTimer);
+          this.horseTimer = setTimeout(
+            () => {
+              this.horseTimer = null;
+              if (!current() || !this.hc) {
+                abandon();
+                return;
+              }
+              if (foldingOnTurn()) {
+                abort.signal.removeEventListener('abort', abandon);
+                const run = () => this.executeHorseFastFold(userId, decision);
+                if (decision.fast ? lane().runWithDispatchBarrier(run) : run()) return;
+                if (!current()) {
+                  abandon();
+                  return;
+                }
+                abort.signal.addEventListener('abort', abandon, { once: true });
+              }
+              ordinary(decision, abandon);
+            },
+            Math.max(0, look.startedAt + look.reactionMs - this.now())
+          );
+          (this.horseTimer as { unref?: () => void }).unref?.();
+          return;
         }
-        abort.signal.addEventListener('abort', abandon, { once: true });
-        const actionTimeMs = (Number(rules.action_time_seconds) || 15) * 1000;
-        const bankSeconds = this.timeBank.getRemainingSeconds(this.timerKey, userId);
-        const bankUses = this.timeBank.getUsesRemaining(this.timerKey, userId);
-        const bankUsable =
-          rules.time_bank_enabled !== false &&
-          bankUses !== 0 &&
-          bankSeconds * 1000 > LIGHTNING_HORSE_MAX_BANK_BURN_MS + 2000;
-        const think = lightningHorseThinkTimeMs({
-          requested: decision.thinkTime,
-          actionTimeMs,
-          workerFallback: decision.workerFallback,
-          bankUsable,
-        });
-        const delay = Math.max(0, think - (this.now() - decisionAt));
-        if (this.horseTimer) clearTimeout(this.horseTimer);
-        this.horseTimer = setTimeout(() => {
-          this.horseTimer = null;
-          if (!current() || !this.hc) {
-            abandon();
-            return;
-          }
-          // The action is now authoritative: the executor owns the receipts.
-          abort.signal.removeEventListener('abort', abandon);
-          const execute = () => this.executeHorseDecision(userId, decision, allInOrFold, lane);
-          // As at a physical table, the plan commit enters the lane's effect
-          // lane, ahead of older unposted work and of any decision the next
-          // turn enqueues.
-          if (decision.fast) lane().runWithDispatchBarrier(execute);
-          else execute();
-        }, delay);
-        (this.horseTimer as { unref?: () => void }).unref?.();
+        ordinary(decision, abandon);
       })
       .catch(() => undefined /* aborted: the turn moved on */);
   }

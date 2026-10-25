@@ -38,6 +38,8 @@ import type {
   CompletedHandObservation,
 } from '../engine/horseDecision/protocol.js';
 import { HorseMind } from '../engine/HorseMind.js';
+import { DeadlineScheduler } from '../engine/DeadlineScheduler.js';
+import { PreciseActionTimer } from '../engine/PreciseActionTimer.js';
 import { bindLightningHorseObservationIdentity } from '../engine/HorseObservationIdentity.js';
 import { resetWinnerReads, winnerReadout } from '../engine/HorseWinnerRead.js';
 import { buildHost, formedHand, flush, uid, HOST_TABLE } from '../testing/lightningHostTestKit.js';
@@ -172,6 +174,14 @@ it.each([
     const requests: string[] = [];
     const { lane, runtimes } = connectedLane(publisher, observed, requests);
     await lane.ready();
+    // Host and PreciseActionTimer capture their clock at construction. Keep
+    // them and the scheduler on one isolated clock before constructing either.
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    const clock = () => Date.now();
+    const scheduler = new DeadlineScheduler({ now: clock });
+    const timer = new PreciseActionTimer(undefined, scheduler, clock);
     const formed = formedHand(count, 81000),
       original = uid(4242);
     let generation = original;
@@ -179,7 +189,7 @@ it.each([
       horses: new Set(formed.players),
       rules: noFacts ? {} : { club_id: uid(91000) },
       lease: () => ({ instance: 'test-instance', generation }),
-      deps: { horseLane: () => lane, random: () => 0.5 },
+      deps: { horseLane: () => lane, random: () => 0.5, now: clock, timer },
     });
     const settle = host.backend.settle.bind(host.backend);
     let accepted:
@@ -250,7 +260,10 @@ it.each([
       return { ok: false, reason: 'unknown_after_original_commit', transport: true };
     };
     try {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const clockBefore = (host.host as any).now();
+      await vi.advanceTimersByTimeAsync(25);
+      expect((host.host as any).now()).toBe(clockBefore + 25);
+      expect((timer as any).now()).toBe(clockBefore + 25);
       await host.host.start();
       for (let i = 0; i < 4000 && host.host.lifecycle !== 'complete'; i++) {
         await flush(8);
@@ -270,7 +283,17 @@ it.each([
         expect(observed[0]!.fence).toContain(`:${original}:observe`);
         const key = journalHash(horseCompletedHandKey(observed[0]!)!);
         const review = readHorseJournalHand(dir, key);
-        expect(review).toMatchObject({ status: 'reconciled', gaps: [] });
+        expect(
+          review,
+          JSON.stringify(
+            observed[0]!.actions!.map(({ action, origin, stage, amount }) => ({
+              action,
+              origin,
+              stage,
+              amount,
+            }))
+          )
+        ).toMatchObject({ status: 'reconciled', gaps: [] });
         expect(review.matchedActions).toBeGreaterThan(0);
         expect(review.matchedActions).toBe(review.acceptedHorseActions);
       }
@@ -299,6 +322,7 @@ it.each([
       }
       expect(JSON.stringify(host.hub.frames)).not.toContain('accepted_lease_generation');
     } finally {
+      scheduler.stop();
       await lane.stop();
       await publisher.stop();
       store.close();

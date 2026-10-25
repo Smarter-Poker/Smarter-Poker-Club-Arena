@@ -9,6 +9,7 @@ import { RIVER_CORRECTION_KERNEL } from './kernelDefinition.js';
 function fixture() {
   const plan = {
     populationBasis: 'accepted-commit-and-immutable-played-v1',
+    domain: { variant: 'nlh', format: 'cash', mode: 'cash' },
     sourceRelease: '1'.repeat(40),
     producerDigest: 'a'.repeat(64),
     qualificationId: 'future-reviewed-policy',
@@ -63,6 +64,18 @@ function fixture() {
   return { request, replies, api, plan };
 }
 describe('authenticated protected-provider predeclaration', () => {
+  it('detaches and freezes the declared domain across asynchronous consumers', async () => {
+    const f = fixture(),
+      result = readCorrectivePredeclaration(f.request, f.api);
+    if (result.status !== 'authenticated_predeclaration')
+      throw Error('expected synthetic provider fixture');
+    f.plan.domain.variant = 'plo5';
+    await Promise.resolve();
+    expect(result.predeclaration.plan.domain.variant).toBe('nlh');
+    expect(Object.isFrozen(result.predeclaration.plan.domain)).toBe(true);
+    expect(() => Object.assign(result.predeclaration.plan.domain, { variant: 'plo5' })).toThrow();
+    expect(result.predeclaration.plan.domain.variant).toBe('nlh');
+  });
   it('binds actual mergedAt and exact immutable plan bytes, separately from engine component source', () => {
     const f = fixture(),
       result = readCorrectivePredeclaration(f.request, f.api);
@@ -145,6 +158,21 @@ describe('authenticated protected-provider predeclaration', () => {
         reason: 'predeclaration_request_invalid',
       });
     expect(untouched).not.toHaveBeenCalled();
+  });
+  it('refuses a future tournament or unlabelled domain rather than selecting one after results', () => {
+    for (const domain of [null, { variant: 'nlh', format: 'mtt', mode: 'tournament' }]) {
+      const f = fixture(),
+        bytes = Buffer.from(JSON.stringify({ ...f.plan, domain }));
+      f.request.contentSha256 = createHash('sha256').update(bytes).digest('hex');
+      Object.assign(f.replies[3] as object, {
+        content: bytes.toString('base64'),
+        size: bytes.length,
+      });
+      expect(readCorrectivePredeclaration(f.request, f.api)).toMatchObject({
+        status: 'unavailable',
+        reason: 'predeclaration_domain_invalid',
+      });
+    }
   });
   it('refuses a malformed future plan even when its provider hash agrees', () => {
     const f = fixture(),

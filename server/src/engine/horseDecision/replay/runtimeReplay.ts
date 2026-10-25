@@ -36,6 +36,7 @@ import {
 } from '../replayState.js';
 import type {
   FastHorseDecisionResult,
+  DeepHorseDecisionResult,
   HorseDecisionWorkerError,
   HorseDecisionWorkerReadiness,
   HorseDecisionWorkerResponse,
@@ -51,8 +52,17 @@ import {
   qualifiedReplayAuthorityHolders,
 } from './qualifiedAuthority.js';
 
+export type HorseRuntimeReplayResult = Omit<
+  FastHorseDecisionResult,
+  'type' | 'planBinding' | 'planIssueDisposition'
+> & {
+  type: 'FAST_RESULT' | 'DEEP_RESULT';
+  planBinding: FastHorseDecisionResult['planBinding'] | null;
+  planIssueDisposition?: FastHorseDecisionResult['planIssueDisposition'];
+  planContext?: DeepHorseDecisionResult['planContext'];
+};
 export interface HorseRuntimeReplayOutcome {
-  result: FastHorseDecisionResult | null;
+  result: HorseRuntimeReplayResult | null;
   error: HorseDecisionWorkerError | null;
   wallMs: number;
   features: string[];
@@ -96,9 +106,24 @@ export async function replayThroughWorkerRuntime(
   const features: string[] = [];
   let admission: HorseDecisionReplayAdmission | null = null;
   let corrective: HorseCorrectiveReplayState | null = null;
+  let deepRngAfter: number | null = null;
+  let replayingDeep = false;
   const deps: HorseDecisionWorkerDependencies = {
     ...qualifiedReplayAdmissions,
-    journalEnabled: () => false,
+    // Local capture only, never an external writer. DEEP has no RNG/effects
+    // fields on IPC; use the production journal capture before RNG restoration.
+    journalEnabled: () => !!input.deepRequest,
+    journalDecision: (snapshot, body) => {
+      if (
+        'type' in snapshot &&
+        snapshot.type === 'DECIDE_DEEP' &&
+        body &&
+        typeof body === 'object' &&
+        'rngAfter' in body &&
+        typeof body.rngAfter === 'number'
+      )
+        deepRngAfter = body.rngAfter;
+    },
     async startServices() {
       prepareTournamentFutureHandFacts();
       return readiness();
@@ -115,7 +140,11 @@ export async function replayThroughWorkerRuntime(
     },
     decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
     captureDecisionEffects: (fn) =>
-      HorseMind.runInSandbox(readView, () => HorseMind.captureDecisionEffects(fn)),
+      // executeDeep itself installs its retained sandbox; FAST needs the
+      // historical sandbox supplied by this replay adapter.
+      replayingDeep
+        ? HorseMind.captureDecisionEffects(fn)
+        : HorseMind.runInSandbox(readView, () => HorseMind.captureDecisionEffects(fn)),
     applyDecisionEffects: () => {
       throw new Error('a replay never applies plan effects');
     },
@@ -148,7 +177,7 @@ export async function replayThroughWorkerRuntime(
   const before = equityWorkCounters();
   const canonicalRng = saveFastRandom();
   const parkedSafety = liveHorsePhase8Safety.disabledReason;
-  equityGovernor.__setScaleForTest(input.governorScale);
+  equityGovernor.__setScaleForTest(input.originalFast?.governorScale ?? input.governorScale);
   const startedAt = performance.now();
   try {
     if (bindings.phase8SafetyDisabledReason !== undefined)
@@ -156,6 +185,12 @@ export async function replayThroughWorkerRuntime(
     await runtime.start();
     runtime.receive(request);
     await runtime.drain();
+    if (input.deepRequest) {
+      equityGovernor.__setScaleForTest(input.governorScale);
+      replayingDeep = true;
+      runtime.receive(input.deepRequest);
+      await runtime.drain();
+    }
   } finally {
     liveHorsePhase8Safety.disabledReason = parkedSafety;
     equityGovernor.__setScaleForTest(null);
@@ -165,11 +200,28 @@ export async function replayThroughWorkerRuntime(
   const after = equityWorkCounters();
   const fires = drainFires();
   restoreFires(parkedFires);
-  const result =
+  const fastResult =
     messages.find(
       (m): m is FastHorseDecisionResult =>
         m.type === 'FAST_RESULT' && m.requestId === request.requestId
     ) ?? null;
+  const deepResult = input.deepRequest
+    ? messages.find(
+        (m): m is DeepHorseDecisionResult =>
+          m.type === 'DEEP_RESULT' && m.requestId === input.deepRequest!.requestId
+      )
+    : null;
+  const result: HorseRuntimeReplayResult | null = input.deepRequest
+    ? deepResult && deepRngAfter !== null
+      ? {
+          ...deepResult,
+          rngBefore: input.deepRequest.rngBefore,
+          rngAfter: deepRngAfter,
+          effects: [],
+          planBinding: null,
+        }
+      : null
+    : fastResult;
   const error = messages.find((m): m is HorseDecisionWorkerError => m.type === 'ERROR') ?? null;
   return {
     result,

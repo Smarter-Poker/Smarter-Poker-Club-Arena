@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { correctiveReviewerChildEnvironment } from './reviewerEnvironment.js';
 import type { CorrectiveAction } from './contract.js';
 import type { HorseDecision } from '../../types.js';
 import { validateHorseJournalRecord, horseJournalJson } from '../horseDecisionJournal/record.js';
@@ -14,7 +15,7 @@ import {
   type RiverAcceptedOracleRequest,
   type RiverAcceptedOracleResult,
 } from './riverAcceptedOracle.js';
-import { correctiveReferenceBinding } from './review.js';
+import { resolveKernelOriginalInput } from './kernelOriginalInput.js';
 import { evidenceDigest } from './authority.js';
 import {
   isAuthenticatedCorrectivePredeclaration,
@@ -41,6 +42,7 @@ function executingReviewSource(): string | null {
         timeout: 5000,
         maxBuffer: 128 * 1024,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: correctiveReviewerChildEnvironment('git'),
       }).trim();
     const source = git(['rev-parse', 'HEAD']);
     if (!/^[a-f0-9]{40}$/.test(source)) return null;
@@ -167,11 +169,15 @@ export function createCorrectiveKernelEvidenceReviewer(
           !/^[a-f0-9]{64}$/.test(request.handKey)
         )
           throw Error();
-        const inputBytes = horseJournalJson(request.input);
+        const inputBytes = JSON.stringify(request.input);
+        if (typeof inputBytes !== 'string' || Buffer.byteLength(inputBytes) > 1024 * 1024)
+          throw Error();
         totalBytes += Buffer.byteLength(inputBytes);
         const records = request.records.map((record: unknown) => {
           validateHorseJournalRecord(record);
-          const bytes = horseJournalJson(record);
+          // The validated record body already owns the per-record ceiling;
+          // its transport wrapper must not consume that same allowance twice.
+          const bytes = JSON.stringify(record);
           totalBytes += Buffer.byteLength(bytes);
           if (totalBytes > 256 * 1024 * 1024) throw Error();
           return JSON.parse(bytes);
@@ -211,18 +217,20 @@ export function createCorrectiveKernelEvidenceReviewer(
             (record) =>
               record.handKey !== request.handKey ||
               record.sourceRelease !== lockedPlan.sourceRelease
-          ) ||
-          evidenceDigest(correctiveReferenceBinding(decision, execution, accepted)) !==
-            evidenceDigest(binding)
+          )
+        )
+          return finish('review_original_binding_refused');
+        const resolved = resolveKernelOriginalInput(request.records, decision, execution, accepted);
+        if (
+          resolved.status !== 'resolved' ||
+          evidenceDigest(resolved.binding) !== evidenceDigest(binding) ||
+          horseJournalJson(resolved.original.snapshot) !==
+            horseJournalJson(request.input.original.snapshot) ||
+          horseJournalJson(resolved.original.readFrame) !==
+            horseJournalJson(request.input.original.readFrame)
         )
           return finish('review_original_binding_refused');
         const capture = JSON.parse(decision.body);
-        if (
-          horseJournalJson(capture.snapshot) !==
-            horseJournalJson(request.input.original.snapshot) ||
-          horseJournalJson(capture.readFrame) !== horseJournalJson(request.input.original.readFrame)
-        )
-          return finish('review_original_binding_refused');
         const planReceipts = request.records.filter(
           (record) => record.kind === 'plan_receipt' && record.turnKey === decision.turnKey
         );
@@ -231,6 +239,7 @@ export function createCorrectiveKernelEvidenceReviewer(
           runningSource,
           execution,
           planReceipt: planReceipts[0] ?? null,
+          originalFastRecords: request.records,
         });
         if (
           replayed.outcome !== 'replayed_exact' ||
@@ -296,6 +305,8 @@ export function createCorrectiveKernelEvidenceReviewer(
           evidenceDigest({
             handKey: request.handKey,
             decisionDigest: decision.sha256,
+            originalBinding: resolved.binding,
+            originalFastDecisionDigest: resolved.originalFastRecord.sha256,
             executionDigest: execution.sha256,
             acceptedHandDigest: accepted.sha256,
             oracleDigest: oracle.oracleDigest,

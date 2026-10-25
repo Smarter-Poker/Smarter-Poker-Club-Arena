@@ -1,3 +1,5 @@
+import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol.js';
+import { resolveKernelOriginalInput } from './kernelOriginalInput.js';
 import { createHash } from 'node:crypto';
 import { readCorrectivePredeclaration } from './kernelPredeclaration.js';
 import { describe, expect, it, vi } from 'vitest';
@@ -44,6 +46,7 @@ function request(n: number): RiverAcceptedOracleRequest {
   input.stack = 200;
   bind(input);
   input.original.snapshot.requestId += n;
+  input.original.snapshot.decisionKey = buildHorseDecisionKey(input.original.snapshot);
   const handKey = evidenceDigest(['synthetic-hand', n]);
   const make = (
     kind: 'decision' | 'execution' | 'accepted_hand',
@@ -65,6 +68,7 @@ function request(n: number): RiverAcceptedOracleRequest {
   const decision = make('decision', n * 3 + 1, {
     snapshot: input.original.snapshot,
     readFrame: input.original.readFrame,
+    rngBefore: 17,
     decision: { action: 'fold', thinkTime: 0 },
   });
   const execution = make('execution', n * 3 + 2, {}),
@@ -74,6 +78,51 @@ function request(n: number): RiverAcceptedOracleRequest {
   return { handKey, input, records: [decision, execution, accepted] };
 }
 const requests = () => [request(0), request(1)];
+function deepRequest(n: number): RiverAcceptedOracleRequest {
+  const row = request(n),
+    fastBody = JSON.parse(row.records[0].body),
+    source = row.records[0];
+  const make = (
+    kind: 'decision' | 'execution' | 'accepted_hand',
+    offset: number,
+    body: unknown,
+    turnKey: string
+  ) =>
+    makeHorseJournalRecord(
+      { ...source, kind, sequence: source.sequence * 10 + offset, turnKey },
+      body
+    );
+  const fast = make('decision', 0, fastBody, source.turnKey);
+  const deepSnapshot = {
+    ...row.input.original.snapshot,
+    type: 'DECIDE_DEEP',
+    requestId: row.input.original.snapshot.requestId + 1,
+    rngBefore: 17,
+    deepEquity: 2,
+  };
+  const deepTurn = evidenceDigest(['deep-turn', row.handKey]);
+  const deep = make(
+    'decision',
+    2,
+    {
+      ...fastBody,
+      snapshot: deepSnapshot,
+      originalFastBinding: {
+        inputDigest: evidenceDigest(row.input.original.snapshot),
+        readFrameDigest: evidenceDigest(row.input.original.readFrame),
+      },
+    },
+    deepTurn
+  );
+  const execution = make('execution', 3, {}, deepTurn),
+    accepted = make('accepted_hand', 4, JSON.parse(row.records[2].body), row.handKey);
+  row.records = [fast, deep, execution, accepted];
+  const resolved = resolveKernelOriginalInput(row.records, deep, execution, accepted);
+  if (resolved.status !== 'resolved') throw Error('synthetic dual binding:' + resolved.reason);
+  row.input.binding = resolved.binding;
+  return row;
+}
+
 function dependencies() {
   const readOracle = vi.fn(
     async (_request: RiverAcceptedOracleRequest): Promise<RiverAcceptedOracleResult> => ({
@@ -108,8 +157,58 @@ function dependencies() {
   return { runningSource: SOURCE, readOracle, replay };
 }
 describe('finite unsigned aggregate corrective evidence review', () => {
+  it('replays the actually accepted DEEP while keeping its uniquely retained FAST original information', async () => {
+    const rows = [deepRequest(0), deepRequest(1)],
+      deps = dependencies();
+    expect(await createCorrectiveKernelEvidenceReviewer({}, deps)(plan(), rows)).toMatchObject({
+      status: 'reviewed_unsigned',
+      checkedCases: 2,
+    });
+    expect(deps.replay).toHaveBeenCalledWith(
+      expect.objectContaining({ sha256: rows[0].input.binding.decisionDigest }),
+      expect.objectContaining({ originalFastRecords: expect.arrayContaining([...rows[0].records]) })
+    );
+    expect(deps.readOracle.mock.calls[0][0].input.original.snapshot.type).toBe('DECIDE_FAST');
+    expect(deps.readOracle.mock.calls[0][0].input.binding.decisionDigest).toBe(
+      rows[0].records[1].sha256
+    );
+  });
+  it.each(['missing-fast', 'ambiguous-fast', 'missing-deep-pin'])(
+    'refuses %s before replay/source acquisition instead of borrowing another original',
+    async (fault) => {
+      const row = deepRequest(0),
+        rows = [row, deepRequest(1)],
+        deps = dependencies();
+      if (fault === 'missing-fast') row.records = row.records.slice(1);
+      if (fault === 'ambiguous-fast') {
+        const other = makeHorseJournalRecord(
+          { ...row.records[0], sequence: row.records[0].sequence + 1 },
+          JSON.parse(row.records[0].body)
+        );
+        row.records = [row.records[0], other, ...row.records.slice(1)];
+      }
+      if (fault === 'missing-deep-pin') {
+        const body = JSON.parse(row.records[1].body);
+        delete body.originalFastBinding;
+        const deep = makeHorseJournalRecord({ ...row.records[1] }, body);
+        row.records = [row.records[0], deep, ...row.records.slice(2)];
+        row.input.binding = { ...row.input.binding, decisionDigest: deep.sha256 };
+      }
+      expect(await createCorrectiveKernelEvidenceReviewer({}, deps)(plan(), rows)).toMatchObject({
+        status: 'unavailable',
+        reason: 'review_original_binding_refused',
+      });
+      expect(deps.replay).not.toHaveBeenCalled();
+      expect(deps.readOracle).not.toHaveBeenCalled();
+    }
+  );
+
   it('accepts only a genuine protected-plan capability and retires only that issuance gate', async () => {
-    const p = { ...plan(), populationBasis: 'accepted-commit-and-immutable-played-v1' };
+    const p = {
+      ...plan(),
+      populationBasis: 'accepted-commit-and-immutable-played-v1',
+      domain: { variant: 'nlh', format: 'cash', mode: 'cash' },
+    };
     const bytes = Buffer.from(JSON.stringify(p)),
       commitSha = '2'.repeat(40),
       path = 'docs/evidence/phase14/plans/future-v1.json';
@@ -161,6 +260,45 @@ describe('finite unsigned aggregate corrective evidence review', () => {
     expect(
       await reviewer({ ...p, minimumSamples: 3 }, requests(), custody.predeclaration)
     ).toMatchObject({ status: 'unavailable', reason: 'review_predeclaration_refused' });
+  });
+  it('preserves a valid near-limit record body without applying its body ceiling again to the wrapper', async () => {
+    const rows = requests(),
+      original = rows[0].records[2];
+    const accepted = makeHorseJournalRecord(
+      { ...original },
+      { privatePadding: 'x'.repeat(524000) }
+    );
+    rows[0].records = [rows[0].records[0], rows[0].records[1], accepted];
+    rows[0].input.binding = correctiveReferenceBinding(
+      rows[0].records[0],
+      rows[0].records[1],
+      accepted
+    );
+    expect(Buffer.byteLength(JSON.stringify(accepted))).toBeGreaterThan(524288);
+    expect(
+      await createCorrectiveKernelEvidenceReviewer({}, dependencies())(plan(), rows)
+    ).toMatchObject({ status: 'reviewed_unsigned', checkedCases: 2 });
+  });
+  it('bounds the logical input independently from the valid original journal body', async () => {
+    const rows = requests(),
+      row = rows[0];
+    row.input.original.readFrame = {
+      ...(row.input.original.readFrame as object),
+      privatePadding: 'x'.repeat(521500),
+    };
+    const before = JSON.parse(row.records[0].body);
+    const decision = makeHorseJournalRecord(
+      { ...row.records[0] },
+      { ...before, readFrame: row.input.original.readFrame }
+    );
+    row.records = [decision, row.records[1], row.records[2]];
+    row.input.binding = correctiveReferenceBinding(decision, row.records[1], row.records[2]);
+    row.input.rangeReadFrameDigest = row.input.binding.readFrameDigest;
+    expect(decision.bytes).toBeLessThanOrEqual(524288);
+    expect(Buffer.byteLength(JSON.stringify(row.input))).toBeGreaterThan(524288);
+    expect(
+      await createCorrectiveKernelEvidenceReviewer({}, dependencies())(plan(), rows)
+    ).toMatchObject({ status: 'reviewed_unsigned', checkedCases: 2 });
   });
   it('refuses a commit-clock row outside the predeclared intersection', async () => {
     const deps = dependencies();

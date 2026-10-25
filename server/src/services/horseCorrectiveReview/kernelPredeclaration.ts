@@ -7,7 +7,12 @@ import {
   type RiverModelHoldoutPlan,
 } from './riverModelHoldout.js';
 import { evidenceDigest } from './authority.js';
-import { CORRECTIVE_DOMAIN_KEYS } from './domain.js';
+import {
+  CORRECTIVE_DOMAIN_KEYS,
+  correctiveDomainIsValid,
+  type CorrectiveReferenceDomain,
+} from './domain.js';
+import { correctiveReviewerChildEnvironment } from './reviewerEnvironment.js';
 import { horseJournalJson } from '../horseDecisionJournal/record.js';
 const REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena';
 export const CORRECTIVE_PREDECLARATION_VERSION = 'horse-corrective-provider-predeclaration-v1';
@@ -15,6 +20,7 @@ const verified = new WeakSet<object>();
 export const CORRECTIVE_KERNEL_POPULATION_BASIS = 'accepted-commit-and-immutable-played-v1';
 export interface CorrectiveKernelPredeclaredPlan extends RiverModelHoldoutPlan {
   populationBasis: typeof CORRECTIVE_KERNEL_POPULATION_BASIS;
+  domain: CorrectiveReferenceDomain;
 }
 export interface CorrectivePredeclarationRequest {
   commitSha: string;
@@ -56,6 +62,7 @@ const keys = [
   'modelVersion',
   'policyVersion',
   'populationBasis',
+  'domain',
 ]
   .sort()
   .join(',');
@@ -70,6 +77,7 @@ function githubJson(path: string): unknown {
     timeout: 10000,
     maxBuffer: 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: correctiveReviewerChildEnvironment('github'),
   });
   return JSON.parse(bytes);
 }
@@ -153,6 +161,12 @@ export function readCorrectivePredeclaration(
     if (!object(value) || Object.keys(value).sort().join(',') !== keys)
       return no('predeclaration_plan_invalid');
     const plan = value as unknown as CorrectiveKernelPredeclaredPlan;
+    if (
+      !correctiveDomainIsValid(plan.domain) ||
+      plan.domain.mode !== 'cash' ||
+      plan.domain.format !== 'cash'
+    )
+      return no('predeclaration_domain_invalid');
     if (plan.populationBasis !== CORRECTIVE_KERNEL_POPULATION_BASIS)
       return no('predeclaration_population_basis_invalid');
     const validation = evaluateRiverDecisionModelHoldout(plan, []);
@@ -180,6 +194,7 @@ export function readCorrectivePredeclaration(
     )
       return no('predeclaration_committed_after_holdout_start');
     const locked = JSON.parse(horseJournalJson(plan)) as CorrectiveKernelPredeclaredPlan;
+    Object.freeze(locked.domain);
     Object.freeze(locked.selectionHandKeys);
     Object.freeze(locked);
     const fields: Omit<CorrectivePredeclaration, 'custodyDigest'> = {

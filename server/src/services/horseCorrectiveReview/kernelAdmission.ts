@@ -3,6 +3,10 @@
  * separately loaded catalog can be substituted after the evidence hash check. */
 import { posix } from 'node:path';
 import {
+  readPhase14GenerationLedger,
+  phase14LedgerSelectionAllowed,
+} from './kernelGenerationLedger.js';
+import {
   canonical,
   sha256,
   isoMs,
@@ -136,6 +140,8 @@ export function admitCorrectiveKernelAttachment(
     nowMs,
   });
   if (checked.status !== 'validated') return refuse('policy_digest_mismatch');
+  if (!phase14LedgerSelectionAllowed(readPhase14GenerationLedger(reader), domain, s))
+    return refuse('evidence_mismatch');
   const identity = {
     schema: 'horse-qualified-authority-v1' as const,
     phase: 'phase14' as const,

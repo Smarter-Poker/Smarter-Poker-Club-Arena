@@ -394,6 +394,13 @@ jobs:
       - name: Money-trigger CI caller preserves independent authority
         run: node --test tests/money-trigger-ci-caller.test.mjs
 
+      - name: Phase14 publication preserves generation floors and withdrawal tombstones
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node --test tests/operations/phase14-generation-publication.test.mjs
+          node scripts/ci/check-phase14-generation-ledger.mjs
+
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
       # jobs: this install runs --ignore-scripts, and a scripts-less tree must

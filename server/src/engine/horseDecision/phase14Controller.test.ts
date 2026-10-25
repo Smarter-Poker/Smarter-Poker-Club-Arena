@@ -21,6 +21,11 @@ import {
 } from '../HorsePhase14Authority.js';
 import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../../services/horseCorrectiveReview/kernelCatalog.js';
 import { recheckHorsePhase14BeforeAcceptance } from '../HorsePhase14Acceptance.js';
+import { fastRandom } from '../HorseEval.js';
+import { randomUUID } from 'node:crypto';
+import { journalHash, makeHorseJournalRecord } from '../../services/horseDecisionJournal/record.js';
+import { exactReplayHorseDecisionRecord } from './replay/exactReplay.js';
+import { qualifiedReplayAdmissions } from './replay/qualifiedAuthority.js';
 afterEach(() => vi.restoreAllMocks());
 describe('Phase14 through an actual controller hand', () => {
   it.each([false, true])(
@@ -103,10 +108,14 @@ describe('Phase14 through an actual controller hand', () => {
         fixedBetSize: menu.fixedBetSize,
         wagersCapped: menu.wagersCapped,
       };
+      // Fixed synthetic fence selected once for a natural (<5%) sampler draw.
+      // The test itself neither searches seeds nor overrides the actual RNG.
+      source.fence = 'rollback-natural-1';
       source.decisionKey = buildHorseDecisionKey(source);
       const baseline = await run(harness(false), structuredClone(source));
       expect(baseline.decision.action).toBe('fold');
       const h = harness();
+      h.deps.correctiveDraw = fastRandom;
       const gate = new HorsePhase8AuthorityGate(
         () => h.attachment.admission,
         undefined,
@@ -196,6 +205,76 @@ describe('Phase14 through an actual controller hand', () => {
         }
         expect(hc.getState().players.reduce((n, p) => n + p.stack, 0)).toBe(275);
         expect(fast.effects).toEqual([]);
+        if (withdrawPending) {
+          // Replay the immutable worker decision; the later main withdrawal is
+          // an execution fact, not permission to rewrite the original answer.
+          const runningSource = '5'.repeat(40),
+            producerId = randomUUID();
+          const handKey = journalHash('phase14-withdrawn-controller:' + source.decisionKey);
+          const turnKey = journalHash(
+            JSON.stringify([
+              source.generation,
+              source.fence,
+              source.requestId,
+              source.decisionKey,
+              source.decisionTimeMs,
+            ])
+          );
+          expect(h.records).toHaveLength(1);
+          const original = makeHorseJournalRecord(
+            {
+              producerId,
+              sequence: 1,
+              atMs: now,
+              sourceRelease: runningSource,
+              kind: 'decision',
+              handKey,
+              turnKey,
+            },
+            h.records[0]
+          );
+          const execution = makeHorseJournalRecord(
+            {
+              producerId,
+              sequence: 2,
+              atMs: now + 1,
+              sourceRelease: runningSource,
+              kind: 'execution',
+              handKey,
+              turnKey,
+            },
+            selected.executionWitness
+          );
+          vi.spyOn(qualifiedReplayAdmissions, 'admitPhase14Attachment').mockImplementation(
+            (domain) =>
+              domain === 'nlh-cash'
+                ? h.attachment
+                : {
+                    admission: { status: 'refused', reason: 'unselected', transient: false },
+                    catalog: null,
+                  }
+          );
+          const replayed = await exactReplayHorseDecisionRecord(original, {
+            runningSource,
+            execution,
+            planReceipt: null,
+          });
+          expect(replayed, JSON.stringify(replayed)).toMatchObject({
+            outcome: 'replayed_exact',
+            replayVerified: true,
+            original: { action: 'call', effects: 0 },
+            replayed: { action: 'call', effects: 0 },
+            acceptance: {
+              status: 'joined',
+              executionStatus: 'intended',
+              selectedEqualsDecision: false,
+              executed: { action: 'fold', amount: null },
+              acceptedActions: 1,
+              durableEffectReceipt: 'no_effects',
+            },
+          });
+          expect(replayed.replayed?.rngAfter).toBe(replayed.original?.rngAfter);
+        }
       } finally {
         await client.stop();
       }

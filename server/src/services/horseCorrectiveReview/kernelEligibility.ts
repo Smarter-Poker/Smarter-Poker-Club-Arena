@@ -39,6 +39,33 @@ export function correctiveRiverSnapshotRefusal(
   if (!correctiveDomainIsValid(domain) || domain.format !== 'cash' || domain.mode !== 'cash')
     return 'unsupported_utility_domain';
   if (
+    !['chips', 'diamonds'].includes(gs.asset ?? '') ||
+    typeof gs.chipUnit !== 'number' ||
+    !Number.isFinite(gs.chipUnit) ||
+    gs.chipUnit <= 0 ||
+    !Array.isArray(gs.dealtSeatIds) ||
+    gs.dealtSeatIds.length < 2 ||
+    new Set(gs.dealtSeatIds).size !== gs.dealtSeatIds.length ||
+    gs.dealtSeatIds.some((seat) => !Number.isSafeInteger(seat)) ||
+    gs.players.some((player) =>
+      [player.deadInvested ?? 0, player.individualAnteInvested ?? 0].some(
+        (value) => !Number.isFinite(value) || value < 0
+      )
+    )
+  )
+    return 'original_model_metadata_unavailable';
+  if (gs.asset !== 'chips' || gs.chipUnit !== 0.01) return 'original_model_money_unit_unsupported';
+  // The independent layer/terminal oracle represents exactly two dealt seats
+  // and has no shared dead-money or individual-ante ownership representation.
+  // A qualified catalog must never silently extend into those geometries.
+  if (
+    gs.dealtSeatIds.length !== 2 ||
+    gs.players.some(
+      (player) => (player.deadInvested ?? 0) > 0 || (player.individualAnteInvested ?? 0) > 0
+    )
+  )
+    return 'original_model_pot_domain_unsupported';
+  if (
     gs.stage !== 'river' ||
     gs.boardCount !== 1 ||
     gs.communityCards2?.length ||

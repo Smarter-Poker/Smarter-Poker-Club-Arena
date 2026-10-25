@@ -10,7 +10,7 @@ import { horseJournalJson } from '../horseDecisionJournal/record.js';
 import { ACCEPTED_SOURCE_SELECT } from '../horseAcceptedRoster/exporter.js';
 import { SUPABASE_ROOT_2021_CA } from '../supabase/enginePgSession.js';
 import { rebuildCorrectiveSourceCustody } from './kernelReviewInput.js';
-import { correctiveReferenceBinding } from './review.js';
+import { resolveKernelOriginalInput } from './kernelOriginalInput.js';
 import { evidenceDigest } from './authority.js';
 import type { RiverReferenceInput } from './riverReference.js';
 import { produceRiverCallFoldReference } from './riverReference.js';
@@ -270,18 +270,14 @@ export function createRiverAcceptedOracleReader(
       execution = request.records.find(
         (r) => r.kind === 'execution' && r.sha256 === binding.executionDigest
       );
+      if (!accepted || !decision || !execution) return no('oracle_binding_refused');
+      const resolved = resolveKernelOriginalInput(request.records, decision, execution, accepted);
       if (
-        !accepted ||
-        !decision ||
-        !execution ||
-        evidenceDigest(correctiveReferenceBinding(decision, execution, accepted)) !==
-          evidenceDigest(binding)
-      )
-        return no('oracle_binding_refused');
-      const capture = JSON.parse(decision.body);
-      if (
-        horseJournalJson(capture.snapshot) !== horseJournalJson(input.original.snapshot) ||
-        horseJournalJson(capture.readFrame) !== horseJournalJson(input.original.readFrame)
+        resolved.status !== 'resolved' ||
+        evidenceDigest(resolved.binding) !== evidenceDigest(binding) ||
+        horseJournalJson(resolved.original.snapshot) !==
+          horseJournalJson(input.original.snapshot) ||
+        horseJournalJson(resolved.original.readFrame) !== horseJournalJson(input.original.readFrame)
       )
         return no('oracle_binding_refused');
       if (produceRiverCallFoldReference(input).status !== 'produced')
@@ -411,7 +407,8 @@ export function createRiverAcceptedOracleReader(
         oracle,
         custodyDigest: custody.custodyDigest,
         oracleDigest: evidenceDigest({
-          version: 'horse-river-accepted-oracle-v1',
+          version: 'horse-river-accepted-oracle-v2',
+          binding,
           custodyDigest: custody.custodyDigest,
           playedAt,
           committedAt,

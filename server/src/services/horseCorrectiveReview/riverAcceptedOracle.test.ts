@@ -17,10 +17,12 @@ import type { AcceptedRoster } from '../horseAcceptedRoster/contract.js';
 import {
   createHorseExecutionWitness,
   settleHorseExecutionWitness,
+  retireHorseExecutionWitness,
 } from '../../engine/HorseExecutionWitness.js';
 import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol.js';
 import { correctiveReferenceBinding, correctiveUtilityContextDigest } from './review.js';
 import { evidenceDigest } from './authority.js';
+import { resolveKernelOriginalInput } from './kernelOriginalInput.js';
 const db = vi.hoisted(() => ({
   rows: [] as Record<string, unknown>[],
   calls: [] as Array<{ sql: string; values?: unknown[] }>,
@@ -324,6 +326,92 @@ async function canonicalStats() {
   return stats;
 }
 describe('bounded accepted-source river oracle', () => {
+  it('authenticates the actual accepted DEEP execution against its retained FAST original', async () => {
+    const f = prepare(),
+      old = f.records[0],
+      capture = JSON.parse(old.body),
+      snapshot = f.ref.original.snapshot;
+    const make = (
+      kind: HorseJournalRecord['kind'],
+      sequence: number,
+      body: unknown,
+      turnKey: string
+    ) => makeHorseJournalRecord({ ...old, kind, sequence, turnKey }, body);
+    const fast = make(
+      'decision',
+      1,
+      { ...capture, decision: { action: 'fold', thinkTime: 0 } },
+      old.turnKey
+    );
+    const fastWitness = createHorseExecutionWitness(
+      snapshot,
+      { action: 'fold', thinkTime: 0 },
+      { requestId: snapshot.requestId, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    retireHorseExecutionWitness(fastWitness, 'second_look_replaced');
+    const retired = make('execution', 2, fastWitness, old.turnKey);
+    const deepSnapshot = {
+      ...snapshot,
+      requestId: snapshot.requestId + 1,
+      type: 'DECIDE_DEEP' as const,
+      rngBefore: capture.rngBefore,
+      deepEquity: 2,
+    };
+    const deepTurn = journalHash(
+      JSON.stringify([
+        snapshot.generation,
+        snapshot.fence,
+        deepSnapshot.requestId,
+        snapshot.decisionKey,
+        snapshot.decisionTimeMs,
+      ])
+    );
+    const deep = make(
+      'decision',
+      3,
+      {
+        ...capture,
+        snapshot: deepSnapshot,
+        originalFastBinding: {
+          inputDigest: evidenceDigest(snapshot),
+          readFrameDigest: evidenceDigest(capture.readFrame),
+        },
+      },
+      deepTurn
+    );
+    const deepWitness = createHorseExecutionWitness(
+      deepSnapshot,
+      { action: 'call', amount: 50, thinkTime: 10 },
+      { requestId: deepSnapshot.requestId, lane: 'deep', computeMs: 1, governorScale: 1 }
+    );
+    const acceptedBody = JSON.parse(f.records[2].body);
+    settleHorseExecutionWitness(deepWitness, {
+      applied: true,
+      acceptedActions: [{ record: acceptedBody.actions.at(-1), intended: true }],
+    });
+    const execution = make('execution', 4, deepWitness, deepTurn),
+      accepted = make('accepted_hand', 5, acceptedBody, f.handKey);
+    f.records = [fast, retired, deep, execution, accepted];
+    f.acceptedHandRecordDigest = accepted.sha256;
+    const resolved = resolveKernelOriginalInput(f.records, deep, execution, accepted);
+    if (resolved.status !== 'resolved') throw Error('synthetic DEEP original:' + resolved.reason);
+    f.ref.binding = resolved.binding;
+    expect(await run(f)).toMatchObject({
+      status: 'accepted_source_oracle',
+      oracle: { callBb: 48 },
+    });
+    const missingFast = {
+      ...f,
+      records: f.records.filter((record) => record.sha256 !== fast.sha256),
+    };
+    db.calls = [];
+    expect(await run(missingFast)).toMatchObject({
+      status: 'unavailable',
+      reason: 'oracle_binding_refused',
+    });
+    expect(db.calls).toEqual([]);
+  });
+
   it('uses canonical immutable paid mucked facts without another query or mutable fact table', async () => {
     const stats = await canonicalStats(),
       f = prepare('As Ah', 'Ks Kh', stats);

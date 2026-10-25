@@ -7,6 +7,30 @@ import { HandController } from '../../engine/HandController.js';
 import { calculateContestablePot } from '../../engine/PokerEngine.js';
 import type { HandConfig } from '../../types.js';
 describe('original-only finite river decision model', () => {
+  it.each(['diamonds', 'dead-money', 'individual-ante'] as const)(
+    'does not extend qualified cent-chip economics to %s',
+    (family) => {
+      const original = riverReferenceFixture().original,
+        gs = original.snapshot.gameState;
+      if (family === 'diamonds') {
+        gs.asset = 'diamonds';
+        gs.chipUnit = 1;
+      } else if (family === 'dead-money') {
+        gs.players[0]!.deadInvested = 1;
+        original.snapshot.player.deadInvested = 1;
+      } else {
+        gs.players[0]!.individualAnteInvested = 1;
+        original.snapshot.player.individualAnteInvested = 1;
+      }
+      expect(buildOriginalRiverDecision(original)).toMatchObject({
+        status: 'unavailable',
+        reason:
+          family === 'diamonds'
+            ? 'original_model_money_unit_unsupported'
+            : 'original_model_pot_domain_unsupported',
+      });
+    }
+  );
   it('reaches a real controller river menu and preserves its accepted call', () => {
     const original = riverReferenceFixture().original;
     const players = original.snapshot.gameState.players.map((p) => ({

@@ -1,4 +1,5 @@
 import { HorseMind } from '../HorseMind.js';
+import { calculateContestablePot } from '../PokerEngine.js';
 import { buildOriginalRiverDecision } from '../../services/horseCorrectiveReview/riverDecisionModel.js';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
@@ -26,9 +27,45 @@ import { now } from '../../services/horseCorrectiveReview/kernelApproval.test-su
 import { correctiveKernelReceiptIsValid } from '../../services/horseCorrectiveReview/kernelReceipt.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../HorseEval.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
+import { evidenceDigest } from '../../services/horseCorrectiveReview/authority.js';
 import { request, harness, run } from './phase14Worker.test-support.js';
 afterEach(() => vi.restoreAllMocks());
 describe('real worker Phase14 capability and original-state execution', () => {
+  it.each([true, false])(
+    'retires captured nonempty reference plans for the actual corrective fold/call family selected=%s',
+    async (selected) => {
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      const h = harness(selected),
+        capture = h.deps.captureDecisionEffects;
+      let capturedPlans = 0;
+      h.deps.captureDecisionEffects = (fn) => {
+        const result = capture(fn);
+        capturedPlans++;
+        return {
+          ...result,
+          effects: [
+            ...result.effects,
+            {
+              type: 'plan',
+              handKey: 'nonempty-reference-plan-probe',
+              userId: 'hero',
+              barrelIntent: true,
+            },
+          ],
+        };
+      };
+      const applied = vi.spyOn(h.deps, 'applyDecisionEffects'),
+        feature = vi.spyOn(h.deps, 'noteFeature');
+      const result = await run(h);
+      expect(capturedPlans).toBe(1);
+      expect(result.decision.action).toBe(selected ? 'call' : 'fold');
+      expect(result.decision.correctivePolicy?.applied).toBe(selected ? true : undefined);
+      expect(result.effects).toEqual([]);
+      expect(result.planIssueDisposition).toBe('no_effects');
+      expect(feature).toHaveBeenCalledWith('phase15_reference_plans_retired');
+      expect(applied).not.toHaveBeenCalled();
+    }
+  );
   it('keeps an unselected real-brain baseline and RNG identical and never samples', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(now);
     const a = harness(false),
@@ -190,11 +227,31 @@ describe('real worker Phase14 capability and original-state execution', () => {
       inputDigest: fast.decision.correctivePolicy!.inputDigest,
       readFrameDigest: fast.decision.correctivePolicy!.readFrameDigest,
     });
+    expect(h.records[1]).toMatchObject({
+      effects: [],
+      planBinding: null,
+      originalFastBinding: {
+        inputDigest: evidenceDigest(source),
+        readFrameDigest: fast.decision.correctivePolicy!.readFrameDigest,
+      },
+      replayState: {
+        version: 'horse-decision-replay-state-v3',
+        corrective: { mode: 'candidate', domain: 'nlh-cash' },
+      },
+    });
     expect(horseDecisionReceiptIsValid(deep.decision)).toBe(true);
     expect(observation).toHaveBeenCalledTimes(1);
     expect(h.deps.correctiveDraw).toHaveBeenCalledTimes(2);
   });
-  it.each(['preflop', 'flop', 'turn', 'opponent-not-all-in'] as const)(
+  it.each([
+    'preflop',
+    'flop',
+    'turn',
+    'opponent-not-all-in',
+    'diamonds',
+    'dead-money',
+    'individual-ante',
+  ] as const)(
     'keeps ordinary observation and RNG outside the corrective family: %s',
     async (family) => {
       vi.spyOn(Date, 'now').mockReturnValue(now);
@@ -202,11 +259,29 @@ describe('real worker Phase14 capability and original-state execution', () => {
       if (family === 'opponent-not-all-in') {
         source.gameState.players[1].is_all_in = false;
         source.gameState.players[1].stack = 1;
+      } else if (family === 'diamonds') {
+        source.gameState.asset = 'diamonds';
+        source.gameState.chipUnit = 1;
+      } else if (family === 'dead-money') {
+        source.gameState.players[0]!.deadInvested = 1;
+        source.player.deadInvested = 1;
+      } else if (family === 'individual-ante') {
+        source.gameState.players[0]!.individualAnteInvested = 1;
+        source.player.individualAnteInvested = 1;
+        source.gameState.pot += 1;
+        source.gameState.pots![0]!.amount += 1;
       } else {
         source.gameState.stage = family;
         source.gameState.communityCards = source.gameState.communityCards.slice(
           0,
           family === 'preflop' ? 0 : family === 'flop' ? 3 : 4
+        );
+      }
+      if (family === 'dead-money' || family === 'individual-ante') {
+        source.gameState.contestablePot = calculateContestablePot(
+          source.gameState.players,
+          source.player.user_id,
+          Math.min(source.gameState.toCall!, source.player.stack)
         );
       }
       source.decisionKey = buildHorseDecisionKey(source);

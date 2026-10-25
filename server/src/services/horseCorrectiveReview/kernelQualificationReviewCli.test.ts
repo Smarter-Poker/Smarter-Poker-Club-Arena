@@ -28,6 +28,7 @@ function setup() {
     output = join(dir, 'output.json');
   const plan = {
     populationBasis: 'accepted-commit-and-immutable-played-v1',
+    domain: { variant: 'nlh', format: 'cash', mode: 'cash' },
     sourceRelease: '1'.repeat(40),
     producerDigest: 'a'.repeat(64),
     qualificationId: 'future-reviewed-policy',

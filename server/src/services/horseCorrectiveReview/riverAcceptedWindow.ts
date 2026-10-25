@@ -90,6 +90,11 @@ function instant(v: unknown): v is string {
 }
 const order = (c: AcceptedWindowCursor) =>
   `${c.committedAt.replace(/\.(\d{3})Z$/, (_, ms: string) => '.' + ms + '000Z')}:${c.handId}`;
+// PostgreSQL cursors and fences carry six fractional digits. Date.parse alone
+// truncates the last three and can admit a fence before its actual boundary.
+const micros = (value: string): bigint =>
+  BigInt(Date.parse(value)) * 1000n + BigInt(value.match(/\.\d{3}(\d{3})?Z$/)![1] ?? '0');
+const MAX_WINDOW_MICROS = 7n * 86400000000n;
 /** Factory captures configured DATABASE_URL only. No network operation on import
  * or factory creation; each explicit invocation reads at most one bounded page. */
 export function createRiverAcceptedWindowReader(
@@ -122,15 +127,15 @@ export function createRiverAcceptedWindowReader(
       Object.keys(request).sort().join(',') !== 'after,endsAt,startsAt' ||
       !instant(request.startsAt) ||
       !instant(request.endsAt) ||
-      Date.parse(request.startsAt) >= Date.parse(request.endsAt) ||
-      Date.parse(request.endsAt) - Date.parse(request.startsAt) > 7 * 86400000 ||
+      micros(request.startsAt) >= micros(request.endsAt) ||
+      micros(request.endsAt) - micros(request.startsAt) > MAX_WINDOW_MICROS ||
       (request.after !== null &&
         (!request.after ||
           Object.keys(request.after).sort().join(',') !== 'committedAt,handId' ||
           !instant(request.after.committedAt) ||
           !UUID.test(request.after.handId) ||
-          Date.parse(request.after.committedAt) < Date.parse(request.startsAt) ||
-          Date.parse(request.after.committedAt) >= Date.parse(request.endsAt)))
+          micros(request.after.committedAt) < micros(request.startsAt) ||
+          micros(request.after.committedAt) >= micros(request.endsAt)))
     )
       return no('window_request_refused');
     if (!connectionString) return no('window_configuration_unavailable');
@@ -158,8 +163,8 @@ export function createRiverAcceptedWindowReader(
         fence.visibility !== true ||
         fence.clear !== true ||
         !instant(fence.fence_at) ||
-        Date.parse(fence.fence_at) < Date.parse(captured.endsAt) ||
-        Date.parse(fence.fence_at) - Date.parse(captured.startsAt) > 7 * 86400000
+        micros(fence.fence_at) < micros(captured.endsAt) ||
+        micros(fence.fence_at) - micros(captured.startsAt) > MAX_WINDOW_MICROS
       )
         return no('window_finality_unavailable');
       await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -177,7 +182,7 @@ export function createRiverAcceptedWindowReader(
         typeof meta.snapshot_id !== 'string' ||
         !/^[0-9]+:[0-9]+:[0-9,]*$/.test(meta.snapshot_id) ||
         meta.snapshot_id.length > 8192 ||
-        Date.parse(meta.read_at) < Date.parse(captured.endsAt)
+        micros(meta.read_at) < micros(captured.endsAt)
       )
         return no('window_reply_refused');
       const reply = await client.query(QUERY, [
@@ -202,8 +207,8 @@ export function createRiverAcceptedWindowReader(
           typeof row.hand_number !== 'string' ||
           !/^[1-9][0-9]{0,18}$/.test(row.hand_number) ||
           !instant(row.committed_at) ||
-          Date.parse(row.committed_at) < Date.parse(captured.startsAt) ||
-          Date.parse(row.committed_at) >= Date.parse(captured.endsAt) ||
+          micros(row.committed_at) < micros(captured.startsAt) ||
+          micros(row.committed_at) >= micros(captured.endsAt) ||
           !HASH.test(row.core_digest) ||
           (row.payload_digest !== null && !HASH.test(row.payload_digest)) ||
           (row.roster_digest !== null && !HASH.test(row.roster_digest)) ||

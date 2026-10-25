@@ -2232,12 +2232,7 @@ export class HorseDecisionWorkerRuntime {
         ),
       ]);
     };
-    // The family predicate reads only the shared snapshot fields; normalize the
-    // protocol discriminant without capturing reads or changing the request.
-    const inRiverFamily =
-      correctiveRiverSnapshotRefusal({ ...request, type: 'DECIDE_FAST' }) === null;
     const stillUsable = () =>
-      inRiverFamily &&
       !!holder &&
       !!receipt &&
       horsePhase14CorrectiveMode({
@@ -2247,6 +2242,9 @@ export class HorseDecisionWorkerRuntime {
         verdict: holder.verdict(receipt, Date.now()),
         catalog,
       }).mode === 'candidate' &&
+      // Unselected decisions do not allocate or inspect a corrective snapshot.
+      // The shared fields are identical for FAST and DEEP; normalize only type.
+      correctiveRiverSnapshotRefusal({ ...request, type: 'DECIDE_FAST' }) === null &&
       baselineUsable();
     return {
       receipt,
@@ -2643,6 +2641,18 @@ export class HorseDecisionWorkerRuntime {
       snapshot: retained.snapshot,
       readFrame: retained.frame,
     }));
+    const replayState = horseDecisionReplayState(
+      {
+        phase8Postflop: phase8.mode,
+        phase10Plo4: phase10.mode,
+        phase11Omaha: phase11.mode,
+        phase12Remaining: phase12.mode,
+        phase13Joint: phase13.mode,
+      },
+      liveHorsePhase8Safety.disabledReason,
+      currentHorseDecisionRuntime(),
+      horseCorrectiveReplayState(request.gameState, request.opts?.phase14, phase14.evaluator)
+    );
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -2713,6 +2723,15 @@ export class HorseDecisionWorkerRuntime {
           readFrame: retained.frame,
           planContext,
           decision,
+          // A second look borrows the uniquely retained FAST observation and
+          // stream. It never issues the sandbox's captured reference plans.
+          effects: [],
+          planBinding: null,
+          originalFastBinding: {
+            inputDigest: evidenceDigest(retained.snapshot),
+            readFrameDigest: evidenceDigest(retained.frame),
+          },
+          replayState,
           rngBefore: request.rngBefore,
           rngAfter,
           computeMs,

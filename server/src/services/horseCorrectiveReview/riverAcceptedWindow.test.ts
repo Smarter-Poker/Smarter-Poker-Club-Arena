@@ -7,6 +7,7 @@ const db = vi.hoisted(() => ({
   fence: true,
   visibility: true,
   error: false,
+  fenceAt: '2026-10-25T20:00:00.000000Z',
 }));
 vi.mock('pg', () => ({
   default: {
@@ -22,7 +23,7 @@ vi.mock('pg', () => ({
               {
                 visibility: db.visibility,
                 clear: db.fence,
-                fence_at: '2026-10-25T20:00:00.000000Z',
+                fence_at: db.fenceAt,
               },
             ],
           };
@@ -61,8 +62,28 @@ beforeEach(() => {
   db.fence = true;
   db.visibility = true;
   db.error = false;
+  db.fenceAt = '2026-10-25T20:00:00.000000Z';
 });
 describe('finite indexed accepted window keys', () => {
+  it('refuses a finality fence even one microsecond before the exclusive end', async () => {
+    const result = await createRiverAcceptedWindowReader(env)({
+      ...request,
+      endsAt: '2026-10-25T20:00:00.000001Z',
+    });
+    expect(result).toMatchObject({ status: 'unavailable', reason: 'window_finality_unavailable' });
+    expect(db.calls.some((c) => c.sql.startsWith('BEGIN'))).toBe(false);
+  });
+  it('preserves a positive sub-millisecond interval and its exact resume cursor', async () => {
+    const r = await createRiverAcceptedWindowReader(env)({
+      startsAt: '2026-10-25T18:30:00.123100Z',
+      endsAt: '2026-10-25T18:30:00.123900Z',
+      after: { committedAt: '2026-10-25T18:30:00.123200Z', handId: id(1) },
+    });
+    expect(r).toMatchObject({
+      status: 'accepted_window_page',
+      keys: [{ committedAt: '2026-10-25T18:30:00.123456Z' }],
+    });
+  });
   it('reads all accepted coordinates without pot/card/variant filtering and pins roster payload', async () => {
     const result = await createRiverAcceptedWindowReader(env)(request);
     expect(result).toMatchObject({

@@ -30,6 +30,14 @@ import {
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import { HorseMind } from '../../engine/HorseMind.js';
 import {
+  horsePlanContextFromDecision,
+  horsePlanBatchBindingFromRequest,
+} from '../../engine/HorsePlanHandIdentity.js';
+import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
+import { horseDecisionReplayState } from '../../engine/horseDecision/replayState.js';
+import { evidenceDigest } from '../horseCorrectiveReview/authority.js';
+import { horseLifecycleRequestDigest } from './lifecycle.js';
+import {
   HorseQualifiedAuthorityHolder,
   HorsePhase8AuthorityGate,
 } from '../../engine/HorseQualifiedAuthority.js';
@@ -1999,6 +2007,101 @@ describe('private retained-hand journal consumer', () => {
       expect(report.status).toBe(changed ? 'incomplete' : 'reconciled');
     }
   );
+  it('reconciles a current v3 accepted DEEP empty capture with its retired FAST and original frame binding', () => {
+    const f = fixture(),
+      source = f.d.snapshot,
+      context = horsePlanContextFromDecision(source);
+    const frame = encodeHorseDecisionReads(
+      HorseMind.createSandbox(),
+      source.gameState.players,
+      horsePlanHandKey(source.gameState.actionHistory, context),
+      context
+    );
+    const replayState = horseDecisionReplayState(
+      {
+        phase8Postflop: 'off',
+        phase10Plo4: 'off',
+        phase11Omaha: 'off',
+        phase12Remaining: 'off',
+        phase13Joint: 'off',
+      },
+      null
+    );
+    const fastCapture = {
+      ...f.d,
+      lifecycleVersion: 1,
+      readFrame: frame,
+      planContext: context,
+      planBinding: horsePlanBatchBindingFromRequest(source),
+      replayState,
+    };
+    const fastWitness = createHorseExecutionWitness(source, f.d.decision, {
+      requestId: 1,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    retireHorseExecutionWitness(fastWitness, 'second_look_replaced');
+    const snapshot = {
+      ...source,
+      type: 'DECIDE_DEEP' as const,
+      requestId: 2,
+      rngBefore: f.d.rngBefore,
+      deepEquity: 2,
+    };
+    const deepCapture = {
+      ...fastCapture,
+      snapshot,
+      planBinding: null,
+      effects: [],
+      originalFastBinding: {
+        inputDigest: evidenceDigest(source),
+        readFrameDigest: evidenceDigest(frame),
+      },
+    };
+    const deepWitness = createHorseExecutionWitness(snapshot, f.d.decision, {
+      requestId: 2,
+      lane: 'deep',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    settleHorseExecutionWitness(deepWitness, {
+      applied: true,
+      acceptedActions: f.w.acceptedActions,
+    });
+    const requested = (request: typeof source | typeof snapshot) => ({
+      version: 1,
+      phase: 'requested',
+      origin: 'worker_compute',
+      request,
+      requestDigest: horseLifecycleRequestDigest(request),
+    });
+    const terminal = (request: typeof source | typeof snapshot) => ({
+      version: 1,
+      phase: 'terminal',
+      outcome: 'success',
+      requestDigest: horseLifecycleRequestDigest(request),
+    });
+    const report = reconcileHorseJournalHand(
+      [
+        f.make('request_lifecycle', 1, requested(source)),
+        f.make('decision', 2, fastCapture),
+        f.make('request_lifecycle', 3, terminal(source)),
+        f.make('execution', 4, fastWitness),
+        f.make('request_lifecycle', 5, requested(snapshot), turn(snapshot)),
+        f.make('decision', 6, deepCapture, turn(snapshot)),
+        f.make('request_lifecycle', 7, terminal(snapshot), turn(snapshot)),
+        f.make('execution', 8, deepWitness, turn(snapshot)),
+        f.make('accepted_hand', 9, f.a),
+      ],
+      handKey
+    );
+    expect(report, JSON.stringify(report)).toMatchObject({
+      status: 'reconciled',
+      matchedActions: 1,
+      retiredDecisions: 1,
+    });
+  });
   it('will not merge evidence from different worker producers or trust an unknown action origin', () => {
     const f = fixture(),
       rows = f.rows();

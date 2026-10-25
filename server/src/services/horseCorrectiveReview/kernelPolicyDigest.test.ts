@@ -19,6 +19,8 @@ describe('corrective policy binds actual baseline and final-action composition',
       'src/services/horseCorrectiveReview/riverDecisionModel.ts',
       'src/services/horseCorrectiveReview/riverReference.ts',
       'src/services/horseCorrectiveReview/kernelApproval.ts',
+      'src/engine/horseDecision/replay/reconstruct.ts',
+      'src/services/horseDecisionJournal/effects.ts',
     ])
       expect(CORRECTIVE_KERNEL_POLICY_SOURCE_FILES).toContain(p);
     expect(new Set(CORRECTIVE_KERNEL_POLICY_SOURCE_FILES).size).toBe(

@@ -25793,7 +25793,10 @@ function LiveTablePage({
                 seatViewportWidth <= 480 &&
                   scalerSize.h > scalerSize.w &&
                   tablePerspectiveTaper !== 0,
-                tableState.maxPlayers
+                tableState.maxPlayers,
+                /* Portrait viewports to 768px reserve the same dense-ring
+                   PLO5/PLO6 lane as a phone (useProtectedCardLayout). */
+                typeof window !== 'undefined' && window.innerHeight > window.innerWidth
               )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w

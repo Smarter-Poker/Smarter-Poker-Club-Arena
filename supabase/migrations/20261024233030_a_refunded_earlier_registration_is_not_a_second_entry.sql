@@ -22,6 +22,8 @@
 --
 -- In version order this file runs AFTER 20261024232734, so a rebuild applies
 -- #7974 first and this file then confirms that is what the database holds.
+--
+-- @live-proof: md5(pg_get_functiondef('smarter_private.f06_movement_never_dealt_prior(uuid,uuid,uuid)'::regprocedure)) = '631844035961b4995aab130e8e53e6b6'
 
 BEGIN;
 

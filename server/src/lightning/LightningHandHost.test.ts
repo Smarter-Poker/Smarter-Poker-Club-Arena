@@ -593,13 +593,22 @@ describe('the clock, the time bank and a horse', () => {
    */
   function pinHorseTempo(
     t: ReturnType<typeof buildHost>,
-    thinkTime: (decisionIndex: number) => number
+    thinkTime: (decisionIndex: number) => number,
+    /** Decisions that must not be a fold: a facing fold leaves at once through
+     *  the Lightning Fold door (ALREADY FOLDING, ON THE TURN) and never reaches
+     *  its think time, so a tank pinned to a random fold never runs. */
+    neverFold: (decisionIndex: number) => boolean = () => false
   ): void {
     const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      const i = n++;
+      const action =
+        neverFold(i) && String(r.decision?.action).toLowerCase() === 'fold'
+          ? 'call'
+          : r.decision?.action;
+      return { ...r, decision: { ...r.decision, action, thinkTime: thinkTime(i) } };
     });
   }
 
@@ -653,7 +662,11 @@ describe('the clock, the time bank and a horse', () => {
     const t = buildHost(formed, [100, 100], { horses });
     // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
     // every later one is a beat.
-    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    pinHorseTempo(
+      t,
+      (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000),
+      (i) => i === 0
+    );
     await t.host.start();
     await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');

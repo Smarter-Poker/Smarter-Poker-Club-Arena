@@ -161,9 +161,9 @@ describe('the cashier transaction history', () => {
       /isAgentRole\(myRole\)\s*\?\s*\[\s*\['mine', 'My Transactions'\],\s*\['downline', 'My Downline'\],?\s*\]/
     );
     expect(page).toMatch(/isClubStaffRole\(myRole\) && historyScope === 'club'\s*\?\s*'club'/);
-    expect(page).toContain("supabase.rpc('fn_cashier_history_page', {");
+    expect(page).toContain("supabase.rpc('fn_cashier_history_feed', {");
     expect(page).toContain('p_scope: historyBook,');
-    expect(page).toContain('const direction = ledgerDirection(r, user.id);');
+    expect(page).toContain('const direction = ledgerDirection(r, viewer);');
   });
 
   it('pins the installed door in the post-deploy cashier contract', () => {
@@ -194,5 +194,29 @@ describe('the cashier transaction history', () => {
         'public.fn_arena_name(pt.alias, pt.username, pt.display_name, pt.first_name, pt.last_name, pt.full_name)'
       )
     ).toHaveLength(3);
+  });
+
+  it('searches, pages, narrows and totals on the server (Dan 2026-10-24, second round)', () => {
+    const page = read('src/pages/CashierTradePage.tsx');
+    // Search runs over the whole history, debounced, never over the rows on screen.
+    expect(page).toContain('p_search: historySearch || null,');
+    expect(page).toContain(
+      "setTimeout(() => setHistorySearch(typed.length >= 2 ? typed : ''), 350)"
+    );
+    // Older pages come from the last row on screen, never an offset.
+    expect(page).not.toContain('p_offset');
+    expect(page).toContain('p_before_at: last.createdAt,');
+    // An agent picks only a player inside his downline; the server refuses anyone else.
+    expect(page).toContain('.filter((row) => row.depth >= 1 && row.userId !== user?.id)');
+    expect(page).toContain("historyBook === 'downline' && downlinePeople.length > 0");
+    expect(page).toContain('p_person: historyPerson,');
+    // The club book shows the whole club's totals; a total still being
+    // counted says so and is asked again.
+    expect(page).toContain("supabase.rpc('fn_cashier_history_summary', {");
+    expect(page).toContain('Adding Up Earlier Days...');
+    // A cash-out nobody has decided shows how long it has waited, and its
+    // receipt carries its invoice number.
+    expect(page).toContain('waitingFor(r.requestCreatedAt ?? r.createdAt)');
+    expect(page).toContain('{receipt.invoiceNumber}');
   });
 });

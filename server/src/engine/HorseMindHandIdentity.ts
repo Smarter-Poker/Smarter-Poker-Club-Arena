@@ -1,6 +1,7 @@
 import {
   horseCompletedHandKey,
-  horseJournalLeaseIdentityIsValid,
+  horseDecisionHandCoordinates,
+  type HorseHandJournalCoordinate,
 } from './HorseDecisionHandBinding.js';
 import type { CompletedHandObservation } from './horseDecision/protocol.js';
 
@@ -12,7 +13,6 @@ export interface HorseMindHandIdentity {
   readonly handNumber: number;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const canonicalUint = /^(0|[1-9][0-9]*)$/;
 
 export function horseMindHandIdentity(
   tableId: unknown,
@@ -55,24 +55,10 @@ export function horseMindHandFromDecision(request: {
   fence: string;
   generation: number;
   player: { seat: number };
+  handJournalCoordinate?: HorseHandJournalCoordinate | null;
 }): HorseMindHandIdentity | null {
-  const parts = typeof request.fence === 'string' ? request.fence.split(':') : [];
-  if (
-    parts.length !== 5 ||
-    !canonicalUint.test(parts[1]!) ||
-    !canonicalUint.test(parts[2]!) ||
-    !canonicalUint.test(parts[4]!) ||
-    !Number.isSafeInteger(request.generation) ||
-    request.generation < 0 ||
-    !Number.isSafeInteger(request.player?.seat) ||
-    request.player.seat < 1 ||
-    request.player.seat > 10 ||
-    Number(parts[2]) !== request.player.seat ||
-    Number(parts[4]) !== request.generation ||
-    !horseJournalLeaseIdentityIsValid(parts[3])
-  )
-    return null;
-  return horseMindHandIdentity(parts[0], Number(parts[1]));
+  const coordinate = horseDecisionHandCoordinates(request);
+  return coordinate ? horseMindHandIdentity(coordinate.tableId, coordinate.handNumber) : null;
 }
 
 /** The accepted producer already checks this four-part fence against handKey

@@ -1167,6 +1167,77 @@ it('Phase 2: withdrawing operator role refreshes an open cashier and prevents a 
   expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(false);
 });
 
+it.each(['self-send', 'bank-claim'] as const)(
+  'does not submit a %s after authority changes during its durable reservation',
+  async (action) => {
+    if (action === 'self-send')
+      state.roster = [{ ...player(0, 75, 'Original Owner'), user_id: USER_ID, role: 'owner' }];
+    const original = vi.mocked(supabase.rpc).getMockImplementation()!;
+    let release: (() => void) | undefined;
+    let held: Promise<unknown> | undefined;
+    vi.mocked(supabase.rpc).mockImplementation(((name: string, args?: unknown) => {
+      const result = original(name, args as never);
+      if (name !== 'fn_cashier_browser_recovery_reserve') return result;
+      held = Promise.resolve(result).then(
+        (answer) =>
+          new Promise((resolve) => {
+            release = () => resolve(answer);
+          })
+      );
+      return held;
+    }) as never);
+    mountCashier();
+    await synchronized();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: action === 'self-send' ? 'Include Original Owner' : 'Include Player 1',
+        exact: true,
+      })
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: action === 'self-send' ? 'Send Out' : 'Claim Back',
+        exact: true,
+      })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: action === 'self-send' ? 'Send Out' : 'Claim Back',
+      exact: true,
+    });
+    fireEvent.change(
+      within(dialog).getByRole('textbox', {
+        name: action === 'self-send' ? 'Amount' : 'Claim Back Amount',
+        exact: true,
+      }),
+      { target: { value: '10' } }
+    );
+    if (action === 'self-send')
+      fireEvent.change(within(dialog).getByRole('combobox', { name: 'Send From' }), {
+        target: { value: 'club_bank' },
+      });
+    const confirm = within(dialog).getByRole('button', {
+      name: action === 'self-send' ? 'Confirm' : 'Claim Back',
+      exact: true,
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    await act(async () => {
+      state.myRole = 'player';
+      bus.emit('MEMBER_ROLE_CHANGED', { clubId: CLUB_A, userId: USER_ID, newRole: 'player' });
+      release!();
+      await held;
+    });
+    expect(
+      state.rpcCalls.some(
+        (call) =>
+          call.name === (action === 'self-send' ? 'fn_club_bank_send' : 'fn_club_bank_claim_back')
+      )
+    ).toBe(false);
+    expect(durableRows.size).toBe(1);
+  }
+);
+
 it('Phase 2: a balance-only realtime update leaves the open transfer authorized', async () => {
   mountCashier();
   await synchronized();

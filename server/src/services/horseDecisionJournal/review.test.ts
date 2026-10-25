@@ -2137,7 +2137,7 @@ describe('readHorseJournalHandRecords shard fan-out', () => {
           record(key, index * 128 + n + 1)
         );
         for (let offset = 0; offset < rows.length; offset += 16)
-          store.appendBatch(rows.slice(offset, offset + 16));
+          store.appendBatch(rows.slice(offset, offset + 16)); // window-ok: archive record batch, not a source-code window
       } finally {
         store.close();
       }

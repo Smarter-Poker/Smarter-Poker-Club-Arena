@@ -39,6 +39,18 @@ describe('explicit private river qualification ingress', () => {
       activationAllowed: false,
     });
   });
+  it('routes the locked-model numerical batch through the independent scorer without qualification', () => {
+    const s = setup({ version: 1, inputs: [riverReferenceFixture()] });
+    expect(runHorseRiverReference(['verify-batch', s.input, s.output]).code).toBe(0);
+    expect(JSON.parse(readFileSync(s.output, 'utf8'))).toMatchObject({
+      status: 'numerically_consistent',
+      checkedCases: 1,
+      checkedCombinations: 32,
+      qualified: false,
+      sourceReadVerified: false,
+      activationAllowed: false,
+    });
+  });
   it('routes numerical verification through the independent reference', () => {
     const input = riverReferenceFixture(),
       r = produceRiverCallFoldReference(input);

@@ -90,8 +90,13 @@ function board(value: unknown): Card[] | null {
   };
   const result: Card[] = [];
   for (const c of value) {
-    if (typeof c !== 'string' || !/^[2-9TJQKA][cdhs]$/.test(c)) return null;
-    result.push({ rank: c[0] as Card['rank'], suit: suits[c[1]] });
+    if (typeof c !== 'string') return null;
+    const parsed = /^([2-9TJQKA])(clubs|diamonds|hearts|spades|[cdhs])$/.exec(c);
+    if (!parsed) return null;
+    result.push({
+      rank: parsed[1] as Card['rank'],
+      suit: parsed[2].length === 1 ? suits[parsed[2]] : (parsed[2] as Card['suit']),
+    });
   }
   return result;
 }

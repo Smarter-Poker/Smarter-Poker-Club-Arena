@@ -1,3 +1,4 @@
+import { accumulateBoard } from '../../engine/presentation/handEventFrames.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRiverAcceptedOracleReader } from './riverAcceptedOracle.js';
 import { correctiveFixture, HAND, HAND_KEY, TABLE } from './fixture.test-support.js';
@@ -253,6 +254,14 @@ beforeEach(() => {
   db.failure = false;
 });
 describe('bounded accepted-source river oracle', () => {
+  it('accepts actual persisted board strings produced by the shared history owner', async () => {
+    const f = prepare();
+    db.rows[0].oracle_board_text = JSON.stringify(accumulateBoard([], 'flop', f.ref.board));
+    expect(await run(f)).toMatchObject({
+      status: 'accepted_source_oracle',
+      oracle: { foldBb: 0, callBb: 48 },
+    });
+  });
   it('reads exact accepted coordinates privately and independently computes a winning call', async () => {
     const f = prepare(),
       r = await run(f);

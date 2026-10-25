@@ -1,3 +1,4 @@
+import { reviewCorrectiveKernelNumerics } from '../services/horseCorrectiveReview/kernelIndependentReview.js';
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -28,19 +29,22 @@ import {
 export function runHorseRiverReference(args: readonly string[]): { code: number; output: string } {
   if (
     args.length !== 3 ||
-    !['produce', 'holdout', 'verify', 'model', 'model-holdout'].includes(args[0]!) ||
+    !['produce', 'holdout', 'verify', 'model', 'model-holdout', 'verify-batch'].includes(
+      args[0]!
+    ) ||
     !isAbsolute(args[1]!) ||
     !isAbsolute(args[2]!)
   )
     return {
       code: 64,
       output:
-        'Usage: horseRiverReference <produce|holdout|verify|model|model-holdout> <absolute-private-input-json> <new-absolute-private-output-json>\n',
+        'Usage: horseRiverReference <produce|holdout|verify|model|model-holdout|verify-batch> <absolute-private-input-json> <new-absolute-private-output-json>\n',
     };
   try {
     const value = readPrivateCorrectiveJson(args[1]!, 16 * 1024 * 1024) as {
       version: unknown;
       input: RiverReferenceInput;
+      inputs: RiverReferenceInput[];
       plan: RiverHoldoutPlan & RiverModelHoldoutPlan;
       rows: RiverModelHoldoutCase[];
       reference: AlternativeActionReference;
@@ -48,15 +52,17 @@ export function runHorseRiverReference(args: readonly string[]): { code: number;
     };
     if (!value || value.version !== 1) throw Error('unsupported_input_version');
     const result =
-      args[0] === 'model'
-        ? buildOriginalRiverDecision(value.original)
-        : args[0] === 'model-holdout'
-          ? evaluateRiverDecisionModelHoldout(value.plan, value.rows)
-          : args[0] === 'produce'
-            ? produceRiverCallFoldReference(value.input)
-            : args[0] === 'verify'
-              ? reviewRiverEnumeration(value.input, value.reference)
-              : evaluateRiverHoldout(value.plan, value.rows);
+      args[0] === 'verify-batch'
+        ? reviewCorrectiveKernelNumerics(value.inputs)
+        : args[0] === 'model'
+          ? buildOriginalRiverDecision(value.original)
+          : args[0] === 'model-holdout'
+            ? evaluateRiverDecisionModelHoldout(value.plan, value.rows)
+            : args[0] === 'produce'
+              ? produceRiverCallFoldReference(value.input)
+              : args[0] === 'verify'
+                ? reviewRiverEnumeration(value.input, value.reference)
+                : evaluateRiverHoldout(value.plan, value.rows);
     writePrivateCorrectiveResult(
       args[2]!,
       JSON.stringify(result) + '\n',

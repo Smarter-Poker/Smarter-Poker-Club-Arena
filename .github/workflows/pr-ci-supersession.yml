@@ -1,0 +1,63 @@
+name: Superseded Pull Request CI
+
+on:
+  workflow_run:
+    workflows: ['CI — Build & Type Safety']
+    types: [in_progress, completed]
+
+permissions: {}
+
+jobs:
+  preview:
+    if: >-
+      github.repository == 'Smarter-Poker/Smarter-Poker-Club-Arena'
+      && github.event.workflow_run.workflow_id == 247739539
+      && github.event.workflow_run.event == 'pull_request'
+      && (github.event.workflow_run.status == 'in_progress'
+          || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Checkout exact default-branch control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read-only preview of obsolete PR CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node scripts/ci/superseded-pr-ci.mjs --source-run-id "$SOURCE_RUN_ID"
+
+  apply:
+    needs: preview
+    # Unset by default. Activation is a separate explicit owner decision; the
+    # read-only preview never receives an actions-write token.
+    if: vars.CI_PR_SUPERSESSION_APPLY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Checkout exact default-branch control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Re-read identities and request only obsolete PR CI cancellation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node scripts/ci/superseded-pr-ci.mjs --source-run-id "$SOURCE_RUN_ID" --apply

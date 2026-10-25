@@ -24,3 +24,19 @@ hands each, horses' bb/100:
 Floors sit well under these (maniac +50, station +500, nit +10, regular +20),
 so ordinary tuning moves the numbers freely; a change that makes the horses
 lose to any archetype fails the build. About 140 seconds on one core.
+
+## October 25 continuation: deterministic inputs and retained archetypes
+
+The prior latest PR had removed both maniac gates after differing outcomes.
+That removal is reversed: all eight matchups must pass, including positive
+horse results against each maniac. The harness now fixes the mood clock,
+physical hand number and equity governor, saves/restores the brain RNG, and
+uses the existing offline evidence mode to isolate host-speed budget variance.
+The real host, controller, decisions and learning remain in the experiment.
+Host and timer cleanup runs even on failure.
+
+The fixed experiment measured NLH maniac316.7/station3377.0/nit58.1/reg151.2
+and PLO5 maniac357.2/station1740.0/nit63.7/reg164.8 bb/100, 250 hands per cell.
+These finite synthetic opponents do not establish future production profits.
+A separate connected worker regression crosses the 300-effective-hand winner
+threshold and verifies duplicate observation refusal on owner and mirror lanes.

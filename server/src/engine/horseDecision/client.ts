@@ -1,7 +1,4 @@
-import {
-  createDecisionOpponentProfilePacketReader,
-  type DecisionOpponentProfilePacket,
-} from '../../services/HorseOpponentMemory.js';
+import type { DecisionOpponentProfilePacket } from '../../services/HorseOpponentMemory.js';
 import {
   horsePlanBatchBindingIsValid,
   horsePlanBatchBindingMatchesRequest,
@@ -98,6 +95,7 @@ export interface HorseDecisionJobOptions {
 
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
+  /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
   opponentProfiles?: (
     snapshot: LiveHorseDecisionSnapshot,
     signal?: AbortSignal
@@ -514,14 +512,6 @@ export class LiveHorseDecisionWorkerClient {
   private static readonly DEFAULT_MAX_IN_FLIGHT = 32;
   private static readonly STATUS_INTERVAL_MS = 1_000;
   private readonly worker: WorkerLike;
-  private readonly opponentProfiles?: (
-    snapshot: LiveHorseDecisionSnapshot,
-    signal?: AbortSignal
-  ) => Promise<
-    | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
-    | DecisionOpponentProfilePacket
-    | undefined
-  >;
   private readonly onFatal?: (error: Error) => void;
   private readonly jobTimeoutMs: number;
   private readonly observationDeadlineMs: number;
@@ -593,9 +583,6 @@ export class LiveHorseDecisionWorkerClient {
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
-    this.opponentProfiles =
-      options.opponentProfiles ??
-      (options.workerFactory ? undefined : createDecisionOpponentProfilePacketReader());
     // A lane start (re)admits the main scheduler's copy of the committed
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
@@ -733,48 +720,28 @@ export class LiveHorseDecisionWorkerClient {
     signal?: AbortSignal,
     options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
-    const captured = this.opponentProfiles ? structuredClone(snapshot) : snapshot;
     const startedAt = Date.now();
+    const captured = structuredClone(snapshot);
     const callerBudget =
       typeof options?.deadlineMs === 'number' &&
       Number.isFinite(options.deadlineMs) &&
       options.deadlineMs > 0
         ? options.deadlineMs
         : this.jobTimeoutMs;
-    const memorySignal =
-      callerBudget && Number.isFinite(callerBudget) && callerBudget > 0
-        ? signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(Math.ceil(callerBudget))])
-          : AbortSignal.timeout(Math.ceil(callerBudget))
-        : signal;
-    const enqueue = (
-      receipt?:
-        | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
-        | DecisionOpponentProfilePacket
-    ) => {
-      const profiles = Array.isArray(receipt) ? receipt : receipt?.profiles;
-      const donorProfiles = Array.isArray(receipt) ? undefined : receipt?.donorProfiles;
-      const request: FastHorseDecisionRequest = {
-        ...captured,
-        ...(profiles !== undefined ? { durableOpponentProfiles: profiles } : {}),
-        ...(donorProfiles !== undefined ? { durableOpponentDonorProfiles: donorProfiles } : {}),
-        type: 'DECIDE_FAST',
-        requestId: this.nextRequestId++,
-      };
-      return this.enqueue<FastHorseDecisionResult>(
-        request,
-        'FAST_RESULT',
-        signal,
-        false,
-        Math.max(1, callerBudget - (Date.now() - startedAt))
-      );
+    // The individual worker owns its public reads. A pooled service result
+    // cannot establish which horse observed it or its original public cutoff.
+    const request: FastHorseDecisionRequest = {
+      ...captured,
+      type: 'DECIDE_FAST',
+      requestId: this.nextRequestId++,
     };
-    return this.opponentProfiles
-      ? this.opponentProfiles(captured, memorySignal).then((profiles) => {
-          memorySignal?.throwIfAborted();
-          return enqueue(profiles);
-        })
-      : enqueue();
+    return this.enqueue<FastHorseDecisionResult>(
+      request,
+      'FAST_RESULT',
+      signal,
+      false,
+      Math.max(1, callerBudget - (Date.now() - startedAt))
+    );
   }
 
   decideDeep(

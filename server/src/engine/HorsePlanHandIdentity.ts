@@ -1,4 +1,11 @@
 import {
+  horseObserverReadContextFromRequest,
+  horseObserverReadContextIsValid,
+  horseObserverReadContextKey,
+  type HorseObserverReadContext,
+} from './HorseObserverReadContext.js';
+import type { LiveHorseDecisionSnapshot } from './horseDecision/protocol.js';
+import {
   horseHandJournalCoordinateIsValid,
   horseHandJournalCoordinateKey,
   type HorseHandJournalCoordinate,
@@ -107,6 +114,7 @@ export interface HorsePlanBatchBinding {
   readonly street: string;
   readonly planContext: HorsePlanContext;
   readonly handJournalCoordinate?: HorseHandJournalCoordinate;
+  readonly observerReadContext?: HorseObserverReadContext;
 }
 
 export function horsePlanBatchBindingIsValid(value: unknown): value is HorsePlanBatchBinding {
@@ -122,10 +130,15 @@ export function horsePlanBatchBindingIsValid(value: unknown): value is HorsePlan
       'seat',
       'street',
       'planContext',
+      ...(Object.hasOwn(value, 'observerReadContext') ? ['observerReadContext'] : []),
       ...(Object.hasOwn(value, 'handJournalCoordinate') ? ['handJournalCoordinate'] : []),
     ]) ||
     (Object.hasOwn(value, 'handJournalCoordinate') &&
       !horseHandJournalCoordinateIsValid(value.handJournalCoordinate)) ||
+    (Object.hasOwn(value, 'observerReadContext') &&
+      (!horseObserverReadContextIsValid(value.observerReadContext) ||
+        value.observerReadContext.observerId.toLowerCase() !==
+          String(value.actorId).toLowerCase())) ||
     value.version !== 'horse-plan-batch-v1' ||
     !uint(value.fastRequestId) ||
     value.fastRequestId === 0 ||
@@ -156,7 +169,11 @@ export function horsePlanBatchBindingIsValid(value: unknown): value is HorsePlan
 }
 
 export function horsePlanBatchBindingFromRequest(request: BatchRequest): HorsePlanBatchBinding {
+  const observerReadContext = horseObserverReadContextFromRequest(
+    request as unknown as LiveHorseDecisionSnapshot
+  );
   const binding: HorsePlanBatchBinding = Object.freeze({
+    ...(observerReadContext ? { observerReadContext } : {}),
     ...(request.handJournalCoordinate !== undefined
       ? { handJournalCoordinate: Object.freeze({ ...request.handJournalCoordinate! }) }
       : {}),
@@ -187,6 +204,7 @@ export function horsePlanBatchBindingKey(value: unknown): string | null {
     value.seat,
     value.street,
     horsePlanContextKey(value.planContext),
+    ...(value.observerReadContext ? [horseObserverReadContextKey(value.observerReadContext)] : []),
     ...(value.handJournalCoordinate
       ? [horseHandJournalCoordinateKey(value.handJournalCoordinate)]
       : []),

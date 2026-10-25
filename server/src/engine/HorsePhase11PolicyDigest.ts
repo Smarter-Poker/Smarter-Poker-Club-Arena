@@ -28,7 +28,7 @@ import {
 import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v6';
+export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v7';
 
 /**
  * The code that determines Phase 11 candidate behaviour, as server-relative
@@ -71,8 +71,6 @@ export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/engine/multiway/DealtSeatCensus.ts',
   'src/engine/EquityLoadGovernor.ts',
   'src/engine/HorseTournamentUtilityEvidence.ts',
-  'src/engine/HorseObservationWindow.ts',
-  'src/engine/HorseMind.ts',
   'src/engine/HorseFiveCardScore.ts',
   'src/config/rakeSpec.ts',
   'src/config/tableSeating.ts',
@@ -110,10 +108,6 @@ export const HORSE_PHASE11_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string
       'the physical deck shuffle of a live hand (PokerEngine.Deck); no policy or sampler call reads it, the sampler uses the HorseEval fast random stream',
     'src/engine/HorseTournamentContinuation.ts':
       'imported by HorseEval for the Phase 8 tournament continuation capture (captureContinuation), which no Phase 11 policy or sampler call requests',
-    'src/engine/HorseDecisionEffects.ts':
-      'HorseMind decision-effect bookkeeping; it holds no value a Phase 11 decision reads',
-    'src/engine/HorsePlanHandIdentity.ts':
-      'HorseMind plan hand-identity binding; it holds no value a Phase 11 decision reads',
   });
 
 /** Reads a server-relative source path. Throws on failure. */

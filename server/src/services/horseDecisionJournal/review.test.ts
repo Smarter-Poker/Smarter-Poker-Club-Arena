@@ -1,3 +1,4 @@
+import { HorseObserverReads } from '../../engine/horseDecision/observerReads.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -77,7 +78,8 @@ function fixture(
   phase10 = false,
   phase11 = false,
   phase12 = false,
-  phase13 = false
+  phase13 = false,
+  independent = false
 ) {
   const raw = jointPolicyFixture(variant, 1, phase7 ? 'tournament' : 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
@@ -98,6 +100,10 @@ function fixture(
         player.stack + player.totalInvested,
       ])
     );
+  }
+  if (independent) {
+    state.format = phase7 ? 'mtt' : 'cash';
+    state.dealtSeatIds = state.players.map((p: { seat: number }) => p.seat);
   }
   const snapshot: FastHorseDecisionRequest = {
     type: 'DECIDE_FAST',
@@ -234,7 +240,10 @@ function fixture(
     }
     if (!decision.jointPolicy?.inputs) throw Error('Phase 13 fixture did not bind its inputs');
   }
+  const observerBank = independent ? new HorseObserverReads() : null;
+  observerBank?.run(snapshot, () => undefined);
   const d = {
+    observerReads: observerBank?.receipt(snapshot),
     snapshot,
     readFrame: encodeHorseDecisionReads(
       HorseMind.createSandbox(),
@@ -335,6 +344,33 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  it('certifies individual read provenance only for exact bound accepted actions', () => {
+    const f = fixture('nlh', [], false, false, false, false, false, true);
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadsVerified: true,
+      independentReadActions: 1,
+      activationAllowed: false,
+      completePopulation: false,
+    });
+    const receipt = structuredClone(f.d.observerReads)!;
+    f.d.observerReads = { ...receipt, context: { ...receipt.context!, observerId: table } };
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadsVerified: false,
+      independentReadActions: 0,
+      activationAllowed: false,
+    });
+  });
+  it('does not relabel a legacy reconciled hand as independent', () => {
+    const f = fixture();
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadsVerified: false,
+      independentReadActions: 0,
+    });
+  });
+
   it('reconciles actual Phase 7 utility evidence and its original read frame to acceptance', () => {
     const f = fixture('nlh', [], true);
     expect(

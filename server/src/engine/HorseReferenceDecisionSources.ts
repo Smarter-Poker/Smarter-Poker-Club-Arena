@@ -61,6 +61,24 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the original allocated hand coordinate controls which independent public observations a decision may learn',
     'src/engine/HorseDecisionHandBinding.ts':
       'validates original host coordinates and accepted action provenance used by hand-scoped learning',
+    'src/engine/HorseObservationWindow.ts':
+      'the original public observation time windows that qualify individual read history and cutoff coverage',
+    'src/engine/HorseMind.ts':
+      'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
+    'src/engine/HorseObserverReadContext.ts':
+      'the exact individual, variant, explicit format and dealt-size partition for public observation history',
+    'src/engine/horseDecision/observerReads.ts':
+      'the individual observation admission, cutoff, completion and read-state ownership used by FAST decisions',
+    'src/engine/horseDecision/client.ts':
+      'boundary: the original snapshot capture and transport must never import pooled opponent histories; actual individual read owners are separately hashed',
+    'src/engine/horseDecision/workerRuntime.ts':
+      'boundary: exact worker wiring selects the individual view, freezes DEEP reads and applies plans to the original observer; strategy and read owners are separately hashed',
+    'src/engine/HorsePlanHandIdentity.ts':
+      'the original observer and hand identity retained through accepted and recovered decision plans',
+    'src/engine/HorsePlanEffectReceipt.ts':
+      'the accepted-plan reconstruction that refuses unknown observer contexts before restoring individual intent',
+    'src/engine/HorseDecisionEffects.ts':
+      'the validation and identity of individual accepted intent writes consumed by future decisions',
     'src/engine/HorseWinnerRead.ts':
       'the proven-winner read that tempers the opponent exploit against a player who beats the game',
     'src/engine/HorseOpponentExploit.ts':
@@ -79,6 +97,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_FILES: readonly string[] = Object.f
 export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freeze([
   'src/engine/HorseTournamentPostflop.ts',
   'src/engine/HorseTournamentUtility.ts',
+  'src/engine/horseDecision/workerRuntime.ts',
+  'src/engine/horseDecision/client.ts',
 ]);
 
 /**
@@ -95,10 +115,6 @@ export const HORSE_REFERENCE_DECISION_EXCLUDED: Readonly<Record<string, string>>
   'src/engine/HorsePhase6Attribution.ts':
     'the Phase 6 preflop attribution receipt, built after the decision from it',
   'src/engine/HorseReviewSignals.ts': 'review signals are observed and explicitly ignored',
-  'src/engine/HorseDecisionEffects.ts':
-    'HorseMind decision-effect bookkeeping; no value a decision reads',
-  'src/engine/HorseMind.ts':
-    'the opponent reads: hashed by Phases 10, 11 and 12; Phase 13 names it (its proposal calls nothing in it) and hashes HorseOpponentExploit',
   'src/engine/multiway/JointLivePolicy.ts':
     'the Phase 13 owner: bound by the Phase 13 digest; runs after the variant owners and acts only when Phase 13 is selected',
   'src/engine/multiway/JointSampleAcquisition.ts':

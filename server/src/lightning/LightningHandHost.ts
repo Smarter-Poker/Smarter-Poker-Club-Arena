@@ -80,7 +80,7 @@ import {
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { describeError, reportError } from '../services/errorReporter.js';
 import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
-import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
+import { HAND_COMPLETION, handCompletionHoldMs } from '../config/handCompletionSpec.js';
 import {
   bettingStructureFor,
   fixedLimitBetSize,
@@ -95,6 +95,7 @@ import {
   blindsPostedFrame,
   communityCardsDealtFrame,
   handStartedFrame,
+  isAllInShowdown,
   normalizeShowdownResults,
   normalizeWinners,
   playerActionFrame,
@@ -456,6 +457,7 @@ export class LightningHandHost {
   private actions: Array<Record<string, unknown>> = [];
   private boards: [string[], string[], string[]] = [[], [], []];
   private showdown: ShowdownRecord[] = [];
+  private allInShowdown = false;
   private winners: WinnerRecord[] = [];
   private winnersByBoard: Array<{
     board: number;
@@ -1286,6 +1288,7 @@ export class LightningHandHost {
         break;
       case 'SHOWDOWN':
         this.showdown = normalizeShowdownResults(event.results);
+        this.allInShowdown = isAllInShowdown(this.showdown, this.hc?.getState().players);
         this.emitAll(
           showdownFrame({
             tableId: '',
@@ -2342,6 +2345,31 @@ export class LightningHandHost {
           capturedWinners: this.winners,
           timestamp: this.now(),
         })
+      );
+    }
+    if (this.allInShowdown) {
+      // Settlement releases the pool reservations atomically. Hold BEFORE it,
+      // or a new match can replace the winner while their cards still belong
+      // on the felt. The pre-award showdown read above has already elapsed.
+      const awardGroups = new Set(
+        (
+          this.perPotAwards as Array<{
+            board?: number;
+            potIndex: number;
+            low: boolean;
+            amount: number;
+          }>
+        )
+          .filter((a) => a.amount > 0)
+          .map((a) => `${a.board ?? 1}:${a.potIndex}:${a.low ? 'lo' : 'hi'}`)
+      ).size;
+      await this.sleep(
+        handCompletionHoldMs({
+          wentToShowdown: true,
+          showdownHands: this.showdown.length,
+          potAwardGroups: Math.max(1, awardGroups),
+          allInShowdown: true,
+        }) - HAND_COMPLETION.SHOWDOWN_READ_BASE_MS
       );
     }
     await this.settle(state, rake, bbj);

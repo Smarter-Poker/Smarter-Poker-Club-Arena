@@ -170,4 +170,16 @@ describe('the winning hand is displayed and announced', () => {
     expect(page).toMatch(/setShowdownHandNames\(showdownHandNamesFrom\(sdResultsForCount\)\)/);
     expect(page).toMatch(/shownHandName=\{[\s\S]{0,200}showdownHandNames\[player\.id\]/);
   });
+  it('captures the all-in fact and holds Lightning before settlement releases its pool reservations', () => {
+    const host = read('server/src/lightning/LightningHandHost.ts');
+    expect(host).toContain(
+      'this.allInShowdown = isAllInShowdown(this.showdown, this.hc?.getState().players)'
+    );
+    const hold = host.indexOf('if (this.allInShowdown)');
+    const settle = host.indexOf('await this.settle(state, rake, bbj)', hold);
+    expect(hold).toBeGreaterThan(0);
+    expect(settle).toBeGreaterThan(hold);
+    expect(host.slice(hold, settle)).toContain('handCompletionHoldMs({');
+    expect(host.slice(hold, settle)).toContain('allInShowdown: true');
+  });
 });

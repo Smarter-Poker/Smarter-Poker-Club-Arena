@@ -32,3 +32,24 @@ All 42 config tests pass, including disk allocation/refusal cases.
 Scope: preserve all 62 retired horses and all qualification gates. Independent
 public-history reads and activation remain separate acceptance items; no shared
 private cards or live team feeds, no unqualified activation.
+
+## Change 3: connect batch qualification consumers
+
+The Phase 6D population and chain-export tools each bypassed the canonical
+reader with `journal.readHand` on their current shard. Two wiring regressions
+fail on those paths. Route their hand reads through the complete canonical
+reader and require its version-2 contract before collecting qualification
+evidence. Older images must report unavailable, never silently use the old
+first-fragment reader. Preserve existing scan/deadline/custody bounds. Inspection
+also found that population admission counted repeated copies of one decision:
+require retained event identities/digests, count identical copies once and refuse
+conflicting copies. Two admission regressions fail before this correction.
+Keep the current catalog's decision selection and capture-continuity attribution;
+other archives supply hand context, not a false local continuity claim. Native
+SQLite fixtures exercise that boundary. Export binds each record's validated
+digest to the population before writing output. Older population artifacts
+without decision digests are explicitly unbound; collect new evidence instead
+of synthesizing those fields. This does not certify an entire retained
+window. Verified: source reread, 271 focused/native tests and 1,132 root law/source-window
+checks pass; server TypeScript and both script syntax checks pass. Protected
+checks, installation and actual live proof remain pending.

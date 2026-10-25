@@ -178,6 +178,7 @@ export function createPopulation(loaded) {
     targetPerCell: d.population.targetPerCell,
     cells,
     chains: [],
+    decisionDigests: new Map(),
     rejected: Object.create(null),
     perRelease: Object.create(null),
   };
@@ -200,6 +201,21 @@ export function admitChain(population, chain) {
     count(population.rejected, 'undeclared_cell');
     return { admitted: false, reason: 'undeclared_cell', key };
   }
+  if (
+    typeof chain.decisionId !== 'string' ||
+    typeof chain.decisionRecordDigest !== 'string' ||
+    !SHA64.test(chain.decisionId) ||
+    !SHA64.test(chain.decisionRecordDigest)
+  ) {
+    count(population.rejected, 'decision_identity');
+    return { admitted: false, reason: 'decision_identity', key };
+  }
+  const previous = population.decisionDigests.get(chain.decisionId);
+  if (previous !== undefined) {
+    if (previous !== chain.decisionRecordDigest) throw Error('conflicting decision identity');
+    count(population.rejected, 'duplicate_decision');
+    return { admitted: false, reason: 'duplicate_decision', key };
+  }
   const release = population.perRelease[chain.sourceRelease] ?? {
     decisions: 0,
     admitted: 0,
@@ -217,7 +233,24 @@ export function admitChain(population, chain) {
   const id = population.chains.length + 1;
   cell.chains.push(id);
   population.chains.push({ id, cellKey: key, ...chain });
+  population.decisionDigests.set(chain.decisionId, chain.decisionRecordDigest);
   return { admitted: true, key, id };
+}
+
+/** A shard selects only its own archived decisions; other shards supply hand
+ * context, never an invented local capture-continuity claim. */
+export function archiveDecisionRecords(records, localEventIds) {
+  if (
+    !Array.isArray(localEventIds) ||
+    localEventIds.length > 256 ||
+    localEventIds.some((id) => typeof id !== 'string' || !SHA64.test(id)) ||
+    new Set(localEventIds).size !== localEventIds.length
+  )
+    throw Error('invalid archive decision selection');
+  const local = new Set(localEventIds);
+  const retained = new Set(records.map((r) => r.eventId));
+  if (localEventIds.some((id) => !retained.has(id))) throw Error('archive selection incomplete');
+  return records.filter((r) => r.kind === 'decision' && local.has(r.eventId));
 }
 
 export function cellStatus(cell) {
@@ -545,6 +578,8 @@ async function observe(declarationB64) {
       import('/app/dist/engine/HorseDecisionHandBinding.js'),
       import('/app/dist/engine/HorsePhase6Attribution.js'),
     ]);
+  if (review.HORSE_JOURNAL_HAND_READER_VERSION !== 2)
+    throw Error('complete_hand_reader_unavailable');
   const deps = {
     lifecycleRequestDigest: lifecycle.horseLifecycleRequestDigest,
     samplingStateIsValid: validation.horseSamplingStateIsValid,
@@ -560,7 +595,8 @@ async function observe(declarationB64) {
   const population = createPopulation({ declaration, digest: declarationDigest });
   // EVERY ARCHIVE SHARD IS READ (2026-09-29). Since #5541 each decision-shard
   // writer owns its own catalog: shard 0 stays in 'archive', later shards are
-  // 'archive-shard-N', and a hand's records live in exactly one of them. This
+  // 'archive-shard-N'. Catalogs select their own decision identities; complete
+  // hand context may span archives and comes from the canonical reader. This
   // observer used to open 'archive' only, so half of the fleet's hands were
   // never selected and the capture continuity of half of its producers was
   // never measured. The shards are listed by the same function the journal's
@@ -768,7 +804,7 @@ async function observe(declarationB64) {
             stratum.hands++;
             let records;
             try {
-              records = shard.journal.readHand(row.hand_key);
+              records = review.readHorseJournalHandRecords(directory, row.hand_key);
             } catch (error) {
               if (error instanceof Error && error.message === 'Horse archive custody pending')
                 output.counts.handsPendingCustody++;
@@ -776,7 +812,13 @@ async function observe(declarationB64) {
               continue;
             }
             const verdict = review.reconcileHorseJournalHand(records, row.hand_key);
-            const decisions = records.filter((r) => r.kind === 'decision');
+            const localEventIds = shard.catalog
+              .prepare(
+                'SELECT event_id FROM archive_events WHERE hand_key=? ORDER BY producer_id,sequence LIMIT 257'
+              )
+              .all(row.hand_key)
+              .map((event) => event.event_id);
+            const decisions = archiveDecisionRecords(records, localEventIds);
             output.counts.decisionRecords += decisions.length;
             for (const decisionRecord of decisions) {
               let chain;
@@ -823,6 +865,7 @@ async function observe(declarationB64) {
                 at: new Date(decisionRecord.atMs).toISOString(),
                 review: { status: verdict.status, gaps: verdict.gaps },
                 decisionId: decisionRecord.eventId,
+                decisionRecordDigest: decisionRecord.sha256,
                 capture: captureMark(continuity, decisionRecord, shedAtMs),
                 ...chainSummary(chain, {}),
               });

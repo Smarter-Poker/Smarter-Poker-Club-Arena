@@ -152,7 +152,11 @@ describe('Phase 6D declaration enforcement', () => {
       links: {},
     };
     for (let i = 0; i < loaded.declaration.population.targetPerCell + 2; i++)
-      admitChain(population, chain);
+      admitChain(population, {
+        ...chain,
+        decisionId: createHash('sha256').update(`event-${i}`).digest('hex'),
+        decisionRecordDigest: createHash('sha256').update(`record-${i}`).digest('hex'),
+      });
     const stored = population.cells.get(cellKey(cell))!;
     expect(stored.observed).toBe(loaded.declaration.population.targetPerCell);
     expect(stored.overflow).toBe(2);
@@ -166,6 +170,48 @@ describe('Phase 6D declaration enforcement', () => {
       admitted: 3,
       complete: 0,
     });
+  });
+
+  it('cannot fill a qualification cell with copies of one decision', () => {
+    const population = createPopulation(loaded);
+    const chain = {
+      cell: { format: 'mtt', branch: 'unopened', size: 9, anteMode: 'per_player', path: 'normal' },
+      sourceRelease: loaded.declaration.servingRelease.sha,
+      complete: true,
+      decisionId: 'a'.repeat(64),
+      decisionRecordDigest: 'b'.repeat(64),
+    };
+    expect(admitChain(population, chain).admitted).toBe(true);
+    expect(admitChain(population, { ...chain, shard: 'another' })).toMatchObject({
+      admitted: false,
+      reason: 'duplicate_decision',
+    });
+    expect(population.cells.get(cellKey(chain.cell)).observed).toBe(1);
+    expect(population.chains).toHaveLength(1);
+    expect(() =>
+      admitChain(population, { ...chain, decisionRecordDigest: 'c'.repeat(64) })
+    ).toThrow('conflicting decision identity');
+  });
+
+  it('does not count a chain without a valid retained decision identity', () => {
+    const population = createPopulation(loaded);
+    for (const decisionId of ['not-an-event', null, undefined, ['a'.repeat(64)], 1])
+      expect(
+        admitChain(population, {
+          cell: {
+            format: 'mtt',
+            branch: 'unopened',
+            size: 9,
+            anteMode: 'per_player',
+            path: 'normal',
+          },
+          sourceRelease: loaded.declaration.servingRelease.sha,
+          complete: true,
+          decisionId,
+          decisionRecordDigest: 'b'.repeat(64),
+        })
+      ).toMatchObject({ admitted: false, reason: 'decision_identity' });
+    expect(population.chains).toHaveLength(0);
   });
 
   it('classifies by the declared rules and rejects what the declaration does not cover', () => {

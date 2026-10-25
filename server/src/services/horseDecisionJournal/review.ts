@@ -753,20 +753,20 @@ export function reconcileHorseJournalHand(
   }
 }
 
-/** One hand's records live in exactly one decision-shard's catalog (the lane
- * shards by table id, and every fence for a table begins with it - see
- * lane.ts), so a reader with no other way to know which shard captured a
- * given hand tries each existing archive directory in turn and keeps the
- * first that actually holds the hand. Unsharded deployments (the overwhelming
- * common case) have exactly one candidate, 'archive', and this is then
- * byte-for-byte what a single `new HorseDecisionJournalStore` + `readHand`
- * always did: one attempt, its own error or its own (possibly empty) result. */
+/** Required by batch tools before trusting a complete retained-hand read. */
+export const HORSE_JOURNAL_HAND_READER_VERSION = 2;
+
+/** Read every retained archive: a first fragment is not complete evidence.
+ * Identical copies count once; conflicting identities or an unreadable archive
+ * refuse the read rather than silently qualifying a partial hand. */
 export function readHorseJournalHandRecords(
   directory: string,
   handKey: string
 ): readonly HorseJournalRecord[] {
   const names = horseJournalArchiveDirectoryNames(directory);
   const candidates = names.length ? names : ['archive'];
+  const joined = new Map<string, HorseJournalRecord>();
+  let joinedBytes = 0;
   let lastError: unknown;
   for (const name of candidates) {
     let store: HorseDecisionJournalStore | undefined;
@@ -776,7 +776,16 @@ export function readHorseJournalHandRecords(
         readonlyHorseJournalStoreOptions(directory, name)
       );
       const records = store.readHand(handKey);
-      if (records.length) return records;
+      for (const record of records) {
+        const previous = joined.get(record.eventId);
+        if (previous && previous.sha256 !== record.sha256)
+          throw Error('Conflicting Horse journal event across archives');
+        if (previous) continue;
+        joinedBytes += Buffer.byteLength(horseJournalJson(record));
+        if (joined.size >= 256 || joinedBytes > 8 * 1024 * 1024)
+          throw Error('Horse journal read exceeds bounds');
+        joined.set(record.eventId, record);
+      }
     } catch (error) {
       lastError = error;
       continue;
@@ -789,7 +798,9 @@ export function readHorseJournalHandRecords(
     }
   }
   if (lastError !== undefined) throw lastError;
-  return [];
+  return [...joined.values()].sort(
+    (a, b) => a.producerId.localeCompare(b.producerId) || a.sequence - b.sequence
+  );
 }
 
 /** Explicit offline reader. No implicit creation, migration, export, deletion,

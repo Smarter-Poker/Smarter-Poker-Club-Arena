@@ -48,7 +48,7 @@ export interface CashierModalProps {
    * the boolean makes that revert a build error instead.
    */
   /** `opId` is the modal's per-attempt idempotency id (see opIdRef). */
-  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
+  onAddChips: (amount: number, opId?: string, onTerminalRefusal?: () => void) => Promise<boolean>;
   currentStack: number;
   currentStackPending?: boolean;
   /** null = unknown (a failed read). Nothing can be added until it is known. */
@@ -223,7 +223,10 @@ export function CashierModal({
 
     try {
       if (!opIdRef.current) opIdRef.current = uuid();
-      const ok = await onAddChips(amount, opIdRef.current);
+      const originalId = opIdRef.current;
+      const ok = await onAddChips(amount, originalId, () => {
+        if (opIdRef.current === originalId) opIdRef.current = null;
+      });
       if (!ok) {
         /* Cashier audit 2026-08-27 (P0-1): this banner used to assert "your
            wallet was not charged" / "your stack is unchanged" for EVERY

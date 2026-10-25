@@ -978,6 +978,10 @@ export async function logHandHistory(params: {
       actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
+      // HorseWinnerRead: every dealt player's net, from the committed hand.
+      ...(params.contributions
+        ? { results: handNetResults(params.contributions, params.winners) }
+        : {}),
       // V45: the hand's scope - card family and how many were dealt in.
       scope: readScopeOf(
         params.gameVariant,
@@ -1501,4 +1505,21 @@ export function buildHandHistoryTiers(hand: StoredHandHistoryRow) {
       integrity_hash: `${hand.table_id}:${hand.hand_number}`,
     },
   };
+}
+
+/** Every contributor's net for the winner read: chips taken out less chips put in. */
+export function handNetResults(
+  contributions: ReadonlyMap<string, number>,
+  winners: ReadonlyArray<{ userId?: string; amount?: number }> | null | undefined
+): Array<{ user_id: string; net: number }> {
+  const won = new Map<string, number>();
+  for (const w of winners ?? []) {
+    if (!w?.userId) continue;
+    won.set(w.userId, (won.get(w.userId) ?? 0) + (Number(w.amount) || 0));
+  }
+  const ids = new Set([...contributions.keys(), ...won.keys()]);
+  return [...ids].map((id) => ({
+    user_id: id,
+    net: Math.round(((won.get(id) ?? 0) - (contributions.get(id) ?? 0)) * 100) / 100,
+  }));
 }

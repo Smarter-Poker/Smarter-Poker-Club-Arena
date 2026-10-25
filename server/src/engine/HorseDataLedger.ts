@@ -2897,6 +2897,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V50'
   ),
   receipt(
+    'horse_winner_read_*',
+    'HorseDecisionWorkerRuntime.executeObservation (HorseWinnerRead)',
+    'a completed hand whose per-player nets reached the proven-winner read (hand) or were refused as unusable (refused); no player identifiers or cards leave the worker',
+    'V53'
+  ),
+  receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
     'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',

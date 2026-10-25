@@ -6,9 +6,11 @@ import {
   type DurableOpponentProfile,
   blendOpponentMemory,
   opponentMemoryDonors,
+  opponentProfileVersion,
   type MemoryMode,
   type MemorySize,
 } from './HorseOpponentMemory.js';
+import { respectWinner } from './HorseWinnerRead.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -785,11 +787,7 @@ export class HorseMind {
   static importDurableOpponentProfiles(rows: readonly DurableOpponentProfile[]): number {
     if (this.sandboxDepth > 0 || this.decisionEffectSink)
       throw new Error('durable profile import outside live boundary');
-    if (
-      !Array.isArray(rows) ||
-      rows.length > 10 ||
-      rows.some((p) => !validOpponentProfile(p) || !p.initialized)
-    )
+    if (!Array.isArray(rows) || rows.length > 10 || rows.some((p) => !validOpponentProfile(p)))
       throw new Error('invalid durable opponent profile');
     // A later validated request can activate a worker whose startup probe
     // preceded installation or the PostgREST cache reload.
@@ -798,11 +796,11 @@ export class HorseMind {
     for (const p of rows) {
       const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
       const known = this.durableOpponentVersions.get(key);
-      if (this.exploitCounters.has(key) && known !== undefined && known >= p.observed_hands)
-        continue;
+      const version = opponentProfileVersion(p);
+      if (this.exploitCounters.has(key) && known !== undefined && known >= version) continue;
       this.exploitCounters.delete(key);
       this.exploitCounters.set(key, { ...p.counters });
-      this.durableOpponentVersions.set(key, p.observed_hands);
+      this.durableOpponentVersions.set(key, version);
       applied++;
     }
     while (this.exploitCounters.size > EXPLOIT_ROW_CAP) {
@@ -1804,6 +1802,12 @@ export class HorseMind {
   // ───────────────────────────────────────────────────────────────────────
 
   static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
+    // A PROVEN WINNER IS RESPECTED (2026-10-24, HorseWinnerRead): fewer
+    // bluffs and no thin value against a credible winner; reads unchanged.
+    return respectWinner(this.readExploit(userId, recencyBlend), userId);
+  }
+
+  private static readExploit(userId: string, recencyBlend: boolean): ExploitProfile {
     const legacy = this.legacyExploit(userId, recencyBlend);
     // 2026-10-16 OPPONENT EXPLOIT: a credible read replaces the lifetime
     // profile on the statistics it covers. The bluff read is POSTFLOP-ONLY

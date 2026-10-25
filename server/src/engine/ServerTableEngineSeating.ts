@@ -1,3 +1,4 @@
+import { requestLightningTopUp, type LightningTopUpReceipt } from '../lightning/LightningTopUp.js';
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { loadSeatedPlayers } from '../services/supabase.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
@@ -82,13 +83,49 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * without one (the horse rotator) keep the per-invocation key.
      */
     opId?: string
-  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    queued?: boolean;
+    applied?: number;
+    charged?: boolean;
+    requested?: number;
+    request_id?: string;
+    code?: string;
+  }> {
     if (isMaintenanceFrozen()) {
       return { success: false, error: 'Scheduled maintenance is in progress' };
     }
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) return { success: false, error: 'Player not seated' };
     if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
+
+    // The anchor's physical controller is idle while a Lightning host owns
+    // its chips. The database records an uncharged original intent and owns
+    // its final hand boundary; no ordinary pending-addon ledger is involved.
+    if (
+      this.clusterLightningEnabled === true &&
+      !this.isTournamentTable() &&
+      this.tableInfo?.arena?.asset !== 'diamonds'
+    ) {
+      try {
+        const receipt = await requestLightningTopUp(
+          this.tableId,
+          userId,
+          opId || randomUUID(),
+          amount
+        );
+        if ('status' in receipt) await this.reflectLightningTopUp(receipt);
+        return receipt;
+      } catch (error) {
+        reportError(error, 'LightningTopUp.request_unknown');
+        return {
+          success: false,
+          error: 'Unable To Verify This Top Up. Check Your Stack Before Trying Again.',
+          code: 'TRANSPORT',
+        };
+      }
+    }
 
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
@@ -182,6 +219,54 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       }
     }
     return this.addChipsDecided(userId, amount, opId);
+  }
+
+  private lightningTopUpRefresh = new Map<string, symbol>();
+
+  /** Historical receipts trigger a current custody read, never a stack write from history. */
+  public async reflectLightningTopUp(receipt: LightningTopUpReceipt): Promise<void> {
+    if (
+      receipt.table_id !== this.tableId ||
+      !this.lifecycleCanMutate() ||
+      receipt.status !== 'applied'
+    )
+      return;
+    const player = this.seatedPlayers.find(
+      (p) => p.user_id === receipt.user_id && p.occupancy_id === receipt.occupancy_id
+    );
+    if (!player) return;
+    const key = `${receipt.user_id}/${receipt.occupancy_id}`;
+    const present = new Set(this.seatedPlayers.map((p) => `${p.user_id}/${p.occupancy_id}`));
+    for (const prior of this.lightningTopUpRefresh.keys())
+      if (!present.has(prior)) this.lightningTopUpRefresh.delete(prior);
+    const generation = Symbol();
+    this.lightningTopUpRefresh.set(key, generation);
+    const stackAtIssue = player.stack;
+    const { data, error } = await supabase
+      .from('table_seats')
+      .select('stack,occupancy_id')
+      .eq('table_id', this.tableId)
+      .eq('user_id', receipt.user_id)
+      .eq('occupancy_id', receipt.occupancy_id)
+      .is('left_at', null)
+      .maybeSingle();
+    if (error) {
+      reportError(error, 'LightningTopUp.current_stack_read');
+      return;
+    }
+    if (
+      !this.lifecycleCanMutate() ||
+      this.lightningTopUpRefresh.get(key) !== generation ||
+      !this.seatedPlayers.includes(player) ||
+      player.occupancy_id !== receipt.occupancy_id ||
+      player.stack !== stackAtIssue ||
+      data?.occupancy_id !== receipt.occupancy_id
+    )
+      return;
+    const stack = Number(data.stack);
+    if (!Number.isFinite(stack) || stack < 0) return;
+    player.stack = stack;
+    this.broadcastCurrentState();
   }
 
   /** The chip add-on once the seat-versus-queue decision can no longer race hand preparation. */

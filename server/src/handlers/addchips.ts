@@ -92,7 +92,9 @@ export async function handleAddchips(
     }
 
     const result = await engine.addChips(userId, amount, opId);
-    return sendJSON(res, result.success ? 200 : 400, result);
+    // An uncertain funding receipt is not a client refusal. Existing clients
+    // classify 5xx as unknown and retain the original operation for retry.
+    return sendJSON(res, result.success ? 200 : result.code === 'TRANSPORT' ? 503 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.addchips_error');
     return sendJSON(res, 500, { success: false, error: 'Failed to add chips' });

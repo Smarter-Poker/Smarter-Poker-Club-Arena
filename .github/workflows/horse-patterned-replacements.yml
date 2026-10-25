@@ -24,6 +24,9 @@ on:
         required: true
 permissions:
   contents: read
+concurrency:
+  group: original-patterned-horses-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   qualification:
     runs-on: ubuntu-latest

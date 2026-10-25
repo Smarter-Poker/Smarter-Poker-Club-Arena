@@ -1,4 +1,4 @@
--- Exact installed reporting function preimages read 2026-10-25. No credentials.
+-- Exact installed function definitions, read2026-10-25 before the transition.
 CREATE OR REPLACE FUNCTION public.fn_sp_daily_metrics_compute(p_day date)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -339,8 +339,8 @@ BEGIN
     'growth', g, 'money', m, 'diamonds', d, 'sales', sv, 'play', pl, 'agents', ag,
     'health', h, 'engagement', en, 'security', sec, 'capacity', cap, 'freshness', fr,
     'computed_at', clock_timestamp());
-END $function$
-;
+END $function$;
+
 CREATE OR REPLACE FUNCTION public.fn_sp_digest_attention(p_day date, p_metrics jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -549,5 +549,124 @@ BEGIN
   END IF;
 
   RETURN a;
-END $function$
-;
+END $function$;
+
+CREATE OR REPLACE FUNCTION public.fn_sp_daily_digest(p_day date DEFAULT NULL::date, p_dispatch boolean DEFAULT true)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_day date := COALESCE(p_day, (now() AT TIME ZONE 'America/Chicago')::date - 1);
+  v_row public.sp_daily_metrics%ROWTYPE;
+  v_prev jsonb; v_series jsonb; v_mtd jsonb; v_week jsonb; v_att jsonb; v_live jsonb; v_status jsonb;
+  v_days_in_month int; v_days_so_far int;
+BEGIN
+  SELECT * INTO v_row FROM public.sp_daily_metrics WHERE day = v_day;
+  IF NOT FOUND THEN
+    PERFORM public.fn_sp_daily_metrics_snapshot(v_day);
+    SELECT * INTO v_row FROM public.sp_daily_metrics WHERE day = v_day;
+  END IF;
+  SELECT metrics INTO v_prev FROM public.sp_daily_metrics WHERE day = v_day - 1;
+
+  -- 7 day series of the headline numbers, oldest first
+  SELECT jsonb_object_agg(k, vals) INTO v_series FROM (
+    SELECT k, jsonb_agg(jsonb_build_object('day', day, 'v', val) ORDER BY day) vals FROM (
+      SELECT dm.day, x.k, (dm.metrics #>> x.path)::numeric val
+        FROM public.sp_daily_metrics dm
+        CROSS JOIN (VALUES
+          ('signups', '{growth,signups}'::text[]), ('active_humans', '{growth,active_humans}'::text[]),
+          ('cash_rake', '{money,cash_rake}'::text[]), ('tournament_rake', '{money,tournament_rake}'::text[]),
+          ('revenue_usd', '{sales,revenue_usd}'::text[]), ('diamonds_given', '{diamonds,given_out}'::text[]),
+          ('diamonds_taken', '{diamonds,taken_in}'::text[]), ('hands', '{play,hands}'::text[]),
+          ('critical_alerts', '{health,alerts_new,critical}'::text[]), ('client_errors', '{health,client_errors}'::text[])) x(k, path)
+       WHERE dm.day BETWEEN v_day - 6 AND v_day) z GROUP BY k) y;
+
+  v_days_in_month := extract(day FROM (date_trunc('month', v_day) + interval '1 month - 1 day'))::int;
+  v_days_so_far := extract(day FROM v_day)::int;
+  SELECT jsonb_build_object(
+    'days', count(*),
+    'revenue_usd', COALESCE(sum((metrics#>>'{sales,revenue_usd}')::numeric),0),
+    'cash_rake', COALESCE(sum((metrics#>>'{money,cash_rake}')::numeric),0),
+    'tournament_rake', COALESCE(sum((metrics#>>'{money,tournament_rake}')::numeric),0),
+    'signups', COALESCE(sum((metrics#>>'{growth,signups}')::numeric),0),
+    'horse_net_bb', COALESCE(sum((metrics#>>'{play,horse_net_bb}')::numeric),0))
+    INTO v_mtd FROM public.sp_daily_metrics WHERE day >= date_trunc('month', v_day)::date AND day <= v_day;
+  v_mtd := v_mtd || jsonb_build_object(
+    'projected_revenue_usd', round((v_mtd->>'revenue_usd')::numeric / GREATEST(v_days_so_far,1) * v_days_in_month, 2),
+    'projected_rake', round(((v_mtd->>'cash_rake')::numeric + (v_mtd->>'tournament_rake')::numeric) / GREATEST(v_days_so_far,1) * v_days_in_month, 2),
+    'days_in_month', v_days_in_month, 'day_of_month', v_days_so_far);
+
+  -- Monday: the full previous Monday-Sunday week
+  IF extract(isodow FROM v_day) = 7 THEN
+    SELECT jsonb_build_object('from', min(day), 'to', max(day), 'days', count(*),
+      'revenue_usd', COALESCE(sum((metrics#>>'{sales,revenue_usd}')::numeric),0),
+      'cash_rake', COALESCE(sum((metrics#>>'{money,cash_rake}')::numeric),0),
+      'tournament_rake', COALESCE(sum((metrics#>>'{money,tournament_rake}')::numeric),0),
+      'rakeback_paid', COALESCE(sum((metrics#>>'{money,rakeback_paid}')::numeric),0),
+      'signups', COALESCE(sum((metrics#>>'{growth,signups}')::numeric),0),
+      'hands', COALESCE(sum((metrics#>>'{play,hands}')::numeric),0),
+      'diamonds_given', COALESCE(sum((metrics#>>'{diamonds,given_out}')::numeric),0),
+      'diamonds_taken', COALESCE(sum((metrics#>>'{diamonds,taken_in}')::numeric),0),
+      'minted', COALESCE(sum((metrics#>>'{money,minted}')::numeric),0),
+      'burned', COALESCE(sum((metrics#>>'{money,burned}')::numeric),0))
+      INTO v_week FROM public.sp_daily_metrics WHERE day BETWEEN v_day - 6 AND v_day;
+  END IF;
+
+  -- Live rules re-read now (cashouts, stuck tournaments, funding, invoices);
+  -- anything new is dispatched, then everything is read back with its status.
+  v_live := public.fn_sp_digest_attention(v_day, v_row.metrics);
+  IF p_dispatch THEN
+    v_live := public.fn_sp_dispatch_attention(v_day, v_live);
+    -- Keep what the email reported on the day's record, so the online view and
+    -- any re-send show the same list. One entry per rule and key.
+    UPDATE public.sp_daily_metrics m
+       SET attention = COALESCE(m.attention,'[]'::jsonb) || COALESCE((
+             SELECT jsonb_agg(l.x) FROM jsonb_array_elements(v_live) AS l(x)
+              WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(m.attention,'[]'::jsonb)) AS o(y)
+                                 WHERE o.y->>'rule' = l.x->>'rule'
+                                   AND COALESCE(o.y->>'key','') = COALESCE(l.x->>'key',''))), '[]'::jsonb)
+     WHERE m.day = v_day;
+    v_live := '[]'::jsonb;
+    SELECT * INTO v_row FROM public.sp_daily_metrics WHERE day = v_day;
+  ELSE
+    -- read-only callers (the online view) only see items already dispatched
+    v_live := '[]'::jsonb;
+  END IF;
+  SELECT COALESCE(jsonb_agg(DISTINCT x), '[]'::jsonb) INTO v_att FROM (
+    SELECT it || jsonb_build_object(
+        'status', CASE WHEN NOT (it ? 'alert_event_id') THEN 'tracked'
+                       WHEN o.investigation_status IN ('verified_fixed','historical') THEN 'fixed'
+                       WHEN o.investigation_status = 'investigating' THEN 'in_progress'
+                       ELSE 'not_picked_up' END,
+        'resolution', o.investigation->>'resolution') x
+      FROM jsonb_array_elements(COALESCE(v_row.attention,'[]'::jsonb) || v_live) AS j(it)
+      LEFT JOIN public.operational_alert_events o ON o.id = (it->>'alert_event_id')::bigint) z;
+  -- one entry per alert event
+  SELECT COALESCE(jsonb_agg(x ORDER BY (x->>'severity') = 'critical' DESC, x->>'rule'), '[]'::jsonb) INTO v_att FROM (
+    SELECT DISTINCT ON (COALESCE(j.x->>'alert_event_id', j.x->>'title')) j.x FROM jsonb_array_elements(v_att) AS j(x)
+     ORDER BY COALESCE(x->>'alert_event_id', x->>'title')) q;
+
+  SELECT jsonb_build_object('fixed', count(*) FILTER (WHERE x->>'status' = 'fixed'),
+                            'tracked', count(*) FILTER (WHERE x->>'status' = 'tracked'),
+                            'in_progress', count(*) FILTER (WHERE x->>'status' = 'in_progress'),
+                            'not_picked_up', count(*) FILTER (WHERE x->>'status' = 'not_picked_up'))
+    INTO v_status FROM jsonb_array_elements(v_att) AS j(x);
+
+  RETURN jsonb_build_object(
+    'day', v_day,
+    'day_label', to_char(v_day, 'FMDay, Mon FMDD'),
+    'metrics', v_row.metrics,
+    'prev', v_prev,
+    'series', COALESCE(v_series, '{}'::jsonb),
+    'mtd', v_mtd,
+    'week', v_week,
+    'attention', v_att,
+    'attention_status', v_status,
+    'previous_run', (SELECT jsonb_build_object('day', day, 'status', status, 'sent_at', sent_at) FROM public.sp_daily_digest_runs WHERE day = v_day - 1),
+    'snapshot_computed_at', v_row.computed_at,
+    'snapshot_compute_ms', v_row.compute_ms,
+    'horse_roster', public.fn_ca_horse_roster_digest(v_day),
+    'generated_at', clock_timestamp());
+END $function$;

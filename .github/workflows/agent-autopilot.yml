@@ -6,12 +6,21 @@
 # The GitHub App token is minted for one run and the job fails closed when that
 # authority is unavailable. There is no timer, reconciler, branch refresher,
 # empty-commit writer, stuck-run canceller, or admin merge path.
+#
+# THE MERGER DISPATCHES ITS OWN MIGRATIONS (2026-10-25). The App arms
+# protected squash auto-merge and GitHub completes the merge as the App, so no
+# person is present to dispatch apply-merged-migration.yml (dispatch-only by
+# design). PR #7971 merged at 01:48 UTC with a migration and nothing installed
+# it until a hand dispatch at 02:30 UTC. On the `closed` event of a PR the App
+# itself merged, the dispatch-merged-migrations job sends one dispatch per
+# added migration file, in filename order. See
+# .github/scripts/dispatch-merged-migrations.sh.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Agent Autopilot
 
 on:
   pull_request_target:
-    types: [opened, reopened, ready_for_review, synchronize]
+    types: [opened, reopened, ready_for_review, synchronize, closed]
   # RE-ARM (2026-10-23). GitHub can withdraw auto-merge right after this job
   # arms it: PR #7780 was armed at 06:39:18 and withdrawn at 06:39:35, and
   # nothing armed it again, so a fully green urgent engine fix sat unmerged for
@@ -27,9 +36,12 @@ permissions:
   contents: read
   pull-requests: write
 
+# The `closed` (merged) event gets its own group and is never cancelled: it
+# must not cancel the queue run that just merged the PR, and its bounded
+# break-window wait must not be cut short.
 concurrency:
-  group: agent-autopilot-${{ github.event.pull_request.number || github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  group: agent-autopilot-${{ github.event.pull_request.number || github.event.workflow_run.head_branch }}${{ github.event.action == 'closed' && '-merged' || '' }}
+  cancel-in-progress: ${{ github.event.action != 'closed' }}
 
 jobs:
   queue-pr:
@@ -39,6 +51,7 @@ jobs:
     # can never mint merge authority, even when every check passes.
     if: >-
       (github.event_name == 'pull_request_target'
+      && github.event.action != 'closed'
       && github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository)
       || (github.event_name == 'workflow_run'
@@ -92,3 +105,45 @@ jobs:
               exit 0 ;;
           esac
           bash .github/scripts/queue-pr.sh "$REPO" "$PR"
+
+  dispatch-merged-migrations:
+    name: Dispatch the migrations this merge added
+    # The merger acting on its own merge: only the native `closed` event of a
+    # merged same-repository PR into the default branch. The script further
+    # requires that the autopilot App is the account that merged it.
+    if: >-
+      github.event_name == 'pull_request_target'
+      && github.event.action == 'closed'
+      && github.event.pull_request.merged == true
+      && github.event.pull_request.base.ref == github.event.repository.default_branch
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Bounded: the one break-window wait is at most 22 minutes.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout reviewed default-branch automation
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Mint the GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+
+      - name: Dispatch each added migration to the applier
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          MERGED_BY: ${{ github.event.pull_request.merged_by.login }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .github/scripts/dispatch-merged-migrations.sh ]; then
+            echo "No merged-migration dispatcher in this repository; nothing to do."
+            exit 0
+          fi
+          bash .github/scripts/dispatch-merged-migrations.sh

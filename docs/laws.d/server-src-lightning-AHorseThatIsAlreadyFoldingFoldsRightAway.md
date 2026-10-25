@@ -1,0 +1,3 @@
+# server/src/lightning/AHorseThatIsAlreadyFoldingFoldsRightAway.law.test.ts
+
+Dan 2026-10-24, "YES, HORSES SHOULD FOLD RIGHT AWAY IF THEY WERE ALREADY FOLDING.": at a street's first priced look (the moment the Lightning fast fold is open to it with chips owed, or its own turn if that comes first) a horse whose own policy answers fold folds at once, with no think time, through the same handlePlayerAction fast_fold door a person uses, recorded horse_policy with fold_type fast; a free check is never fast folded; a horse whose first answer was not a fold decides afresh at its turn on its ordinary clock and that fold is an ordinary one; a liveness fallback never fast folds; the operator fast-fold switch stops horses as it stops people.

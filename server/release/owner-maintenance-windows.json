@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-horse-v53-phase-two-asap",
+      "ownerOrder": "Dan, 2026-10-24 17:53 Chicago, on the V53 horse pressure work: \"PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. HORSES ARE LOSING AT A RIDICULOUS RATE AGAINST WOOWOO ... THESE CHANGES NEED TO TAKE EFFECT ASAP!\"; 21:48 \"PROCEED TO THE NEXT PHASE\"; 22:11 \"FINISH EVERYTHING UP NOW, MAKE SURE ITS FULLY ACTIVATED WITH EVERY SINGLE HORSE\"; 22:23 \"KEEP GOING UNTIL THIS IS 100\". Off-cycle release at the next hourly :55 break (later :55 breaks as fallback) of main from 1b64e000f (everything merged since the serving bbd6db8e) plus the V53 follow-ups #7986 (stop flatting the aggressive human's 3-bet) and #7963 (continued barrel pressure) when merged.",
+      "contains": "1b64e000f7b52f456ca9c7e88afb9d4b721fba3a",
+      "notBefore": "2026-10-25T03:24:14Z",
+      "notAfter": "2026-10-25T09:14:14Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-horse-publish-asap-1855",
       "ownerOrder": "Dan, 2026-10-24 17:52 Chicago: \"NO, PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. PUSH EVERYTHING WHEN YOUR DONE.\" Off-cycle release at the next hourly :55 break (18:55 Chicago, later breaks as fallback) for everything merged on main since b1f5e761: the horse work and the merged cash, table, tournament and Lightning fixes.",
       "contains": "6aba0e019a22243f65566608827a7252070a1b5e",

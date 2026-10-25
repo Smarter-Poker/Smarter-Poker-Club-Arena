@@ -52,6 +52,8 @@ export interface PressureTally {
   riverFirst: { check: number; bet: number };
   /** the human's answer to a horse river bet */
   humanVsRiverBet: { fold: number; call: number };
+  /** a horse opened and the human 3-bet it: fold / call / 4-bet */
+  vsThreeBet: { fold: number; call: number; raise: number };
   /** V53 telemetry fires (the live worker decides with telemetry on too) */
   fires: Record<string, number>;
 }
@@ -63,6 +65,7 @@ const fresh = (): PressureTally => ({
   vsFlopBet: { fold: 0, call: 0, raise: 0 },
   riverFirst: { check: 0, bet: 0 },
   humanVsRiverBet: { fold: 0, call: 0 },
+  vsThreeBet: { fold: 0, call: 0, raise: 0 },
   fires: {},
 });
 
@@ -246,6 +249,16 @@ export function playPressureArm(
               if (d.action === 'fold') out.vsOpen.fold++;
               else if (aggressive) out.vsOpen.raise++;
               else out.vsOpen.call++;
+            }
+            if (
+              street === 'preflop' &&
+              preRaises.length === 2 &&
+              preRaises[0].userId === spot.hero.user_id &&
+              preRaises[1].userId === AGGRO_HUMAN
+            ) {
+              if (d.action === 'fold') out.vsThreeBet.fold++;
+              else if (aggressive) out.vsThreeBet.raise++;
+              else out.vsThreeBet.call++;
             }
             const streetActs = hist.filter((a) => a.stage === street);
             const heroChecked = streetActs.some(

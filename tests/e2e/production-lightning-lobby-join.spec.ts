@@ -48,7 +48,13 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
-    await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
+    // A visible game row is the lobby's readiness at every width (the wallets
+    // button the phone check waits on is hidden at 1440px, run 40153826373).
+    await expect(
+      page
+        .locator('[data-testid="lobby-game-row"]:visible, .club-home__games .lt-row:visible')
+        .first()
+    ).toBeVisible({ timeout: 45_000 });
     await settleDiamondSpinsOffer(page, offer);
     const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
     await greeting.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);

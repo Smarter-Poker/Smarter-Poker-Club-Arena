@@ -186,6 +186,32 @@ describe('a horse answers its rebuy offer like a click', () => {
     expect(purchases()).toEqual([]);
   });
 
+  it('persists an earlier decline before waiting on a later purchase in the same batch', async () => {
+    const no = declining[0]!;
+    const yes = willing[0]!;
+    const manager = setup({ offers: [no, yes] });
+    let release!: () => void;
+    fixture.rpc.mockImplementation(async (name: string) => {
+      if (name === 'fn_ca_tournament_rebuy_window') return { data: { open: true }, error: null };
+      if (name === 'fn_decline_tournament_rebuy') return { data: { ok: true }, error: null };
+      if (name === 'process_tournament_rebuy') {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { data: { success: true }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    const answering = manager.answerOpenHorseRebuyOffers();
+    await vi.waitFor(() => expect(purchases()).toEqual([yes]));
+    try {
+      expect(declines()).toEqual([{ p_tournament_id: event, p_user_id: no }]);
+    } finally {
+      release();
+      await answering;
+    }
+  });
+
   it('does not turn a lost decline response into a purchase or a new retry loop', async () => {
     const manager = setup({ offers: [declining[0]!] });
     fixture.rpc.mockImplementation(async (name: string) => {
@@ -203,6 +229,25 @@ describe('a horse answers its rebuy offer like a click', () => {
       'Tournament.horse_rebuy_decline_threw'
     );
   });
+
+  it.each(['freeze', 'stop'] as const)(
+    'does not start a later purchase when %s wins during a decline',
+    async (mode) => {
+      const manager = setup({ offers: [declining[0]!, willing[0]!] });
+      fixture.rpc.mockImplementation(async (name: string) => {
+        if (name === 'fn_ca_tournament_rebuy_window') return { data: { open: true }, error: null };
+        if (name === 'fn_decline_tournament_rebuy') {
+          if (mode === 'freeze') fixture.frozen = true;
+          else manager.running = false;
+          return { data: { ok: true }, error: null };
+        }
+        throw new Error(`unexpected rpc ${name}`);
+      });
+      await manager.answerOpenHorseRebuyOffers();
+      expect(declines()).toHaveLength(1);
+      expect(purchases()).toEqual([]);
+    }
+  );
 
   it('asks again while a willing horse is unanswered, and not for a human', async () => {
     expect(await setup({ purchase: 'transport' }).answerOpenHorseRebuyOffers()).toBe(true);

@@ -2291,6 +2291,28 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return stillOpen;
   }
 
+  /** Persist a final no through the ordinary locked decline door before
+   *  another player's purchase can hold the batch. A lost/refused response
+   *  leaves the original expiry in charge; this never purchases or retries. */
+  private async declineHorseRebuyOffer(userId: string, mayMutate: () => boolean): Promise<void> {
+    if (!mayMutate() || isMaintenanceFrozen()) return;
+    try {
+      const { data, error } = await supabase.rpc('fn_decline_tournament_rebuy', {
+        p_tournament_id: this.tournamentId,
+        p_user_id: userId,
+      });
+      if (error || (data as { ok?: boolean } | null)?.ok !== true) {
+        reportWarning('horse rebuy decline was not persisted', 'Tournament.horse_rebuy_decline', {
+          tournamentId: this.tournamentId,
+          userId,
+          reason: error?.message ?? 'database refused the decision',
+        });
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.horse_rebuy_decline_threw');
+    }
+  }
+
   private async tryTournamentRebuys(
     bustedUserIds: string[],
     bustHandNumbers: ReadonlyMap<string, number>,
@@ -2385,8 +2407,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       for (const horse of horseRows) horses.add(String(horse.id));
 
       const declined = new Map<string, number>();
-      /** Horses whose answer is "no": told to the database like a click. */
-      const declinedHorses: string[] = [];
       let freeBuyReloads: Map<string, number> | null = null;
       if (t.free_buy === true) {
         const horseIds = horseRows.map((horse) => String(horse.id));
@@ -2419,8 +2439,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           continue;
         }
         if (!horseChoosesTournamentRebuy(this.tournamentId, h.id, bustHandNumber)) {
+          await this.declineHorseRebuyOffer(h.id, mayMutate);
           answered.add(h.id);
-          declinedHorses.push(h.id);
           continue;
         }
         if (freeBuyReloads) {
@@ -2430,8 +2450,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             continue;
           }
           if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
+            await this.declineHorseRebuyOffer(h.id, mayMutate);
             answered.add(h.id);
-            declinedHorses.push(h.id);
             continue;
           }
         }
@@ -2480,40 +2500,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
         answered.add(h.id);
         if ((data as { success?: boolean } | null)?.success === true) rebought.add(h.id);
-      }
-
-      // A HORSE DECLINES ITS REBUY LIKE A CLICK (2026-10-24). A human's "No"
-      // goes through POST /reject_rebuy to fn_decline_tournament_rebuy, which
-      // closes the offer at once and wakes this manager. A declining horse's
-      // answer used to live only in this process, so its offer stayed open for
-      // the full 30 seconds and its bust waited for the sweep after that. A PKO
-      // knocker who busted next could not rebuy while that bust was unclaimed
-      // (pko_predecessor_not_ready). The same RPC, the same effect; a refusal
-      // only leaves the offer to expire at its own deadline, as before.
-      if (declinedHorses.length > 0 && mayMutate()) {
-        await Promise.all(
-          declinedHorses.map(async (userId) => {
-            try {
-              const { data, error } = await supabase.rpc('fn_decline_tournament_rebuy', {
-                p_tournament_id: this.tournamentId,
-                p_user_id: userId,
-              });
-              if (error || (data as { ok?: boolean } | null)?.ok !== true) {
-                reportWarning(
-                  'horse rebuy decline was not persisted',
-                  'Tournament.horse_rebuy_decline',
-                  {
-                    tournamentId: this.tournamentId,
-                    userId,
-                    reason: error?.message ?? 'database refused the decision',
-                  }
-                );
-              }
-            } catch (err) {
-              reportError(err, 'Tournament.horse_rebuy_decline_threw');
-            }
-          })
-        );
       }
 
       if (rebought.size > 0) {

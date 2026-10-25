@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235317,
-      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
+      "bytes": 235596,
+      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -291,6 +291,20 @@
     "currentWorkflowPin": {
       "bytes": 235317,
       "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
+    }
+  },
+  "horseDailyCountsProtectedMainIntegration20261025": {
+    "reason": "Retain protected-main messenger native proof and the accepted-hand daily-count native proof together on their existing accounting shards1 and4. Refresh only current workflow identity. Preserve every historical pin, qualification state and financial assertion. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    }
+  },
+  "horseMultiboardPopulationFollowup20261025": {
+    "reason": "Use existing native audit fixture to qualify exact multi-board decision populations for direct descendants. Current workflow identity only; preserve all historical pins, financial assertions and qualification states. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235596,
+      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
     }
   }
 }

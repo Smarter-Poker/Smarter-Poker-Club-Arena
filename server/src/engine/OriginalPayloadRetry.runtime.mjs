@@ -52,12 +52,11 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
     'dealtStacksFromAtomicCommit',
     'tournamentStackProofIsExact',
     'isLedgerInvariantRefusal',
-  ].map(
-    (n) =>
-      ha.statements
-        .find((x) => ts.isFunctionDeclaration(x) && x.name?.text === n)
-        .getText(ha)
-        .replace(/^export /, '')
+  ].map((n) =>
+    ha.statements
+      .find((x) => ts.isFunctionDeclaration(x) && x.name?.text === n)
+      .getText(ha)
+      .replace(/^export /, '')
   );
   const retry = ha.statements
     .find(
@@ -120,7 +119,12 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
           retainedRequests.push(structuredClone(payload.p_request));
           const supplied = retainSequence?.[retainedRequests.length - 1];
           if (supplied instanceof Error) throw supplied;
-          return supplied ?? { data: { retained: true, submission_id: uuid, request_hash: 'b'.repeat(64) }, error: null };
+          return (
+            supplied ?? {
+              data: { retained: true, submission_id: uuid, request_hash: 'b'.repeat(64) },
+              error: null,
+            }
+          );
         }
         assert(['fn_ca_commit_hand_submission', 'fn_ca_commit_hand_settlement'].includes(name));
         calls.push(structuredClone(payload));
@@ -287,13 +291,19 @@ test('semantic XX000 refusal preserves full original while retaining unresolved 
 test('lost retention acknowledgement repeats original retention before any financial call', async () => {
   const h = harness([accepted()], { retainSequence: [new Error('retention response lost')] });
   await h.run();
-  assert.deepEqual(h.order, ['fn_ca_retain_hand_submission', 'fn_ca_retain_hand_submission', 'fn_ca_commit_hand_submission']);
+  assert.deepEqual(h.order, [
+    'fn_ca_retain_hand_submission',
+    'fn_ca_retain_hand_submission',
+    'fn_ca_commit_hand_submission',
+  ]);
   assert.deepEqual(h.retainedRequests[0], h.retainedRequests[1]);
   assert.equal(h.calls.length, 1);
   assert.deepEqual(h.sleeps, [200]);
 });
 test('malformed retention acknowledgement cannot dispatch settlement', async () => {
-  const h = harness([accepted()], { retainSequence: [{ data: { retained: true, submission_id: 'wrong' }, error: null }] });
+  const h = harness([accepted()], {
+    retainSequence: [{ data: { retained: true, submission_id: 'wrong' }, error: null }],
+  });
   await assert.rejects(h.run());
   assert.equal(h.calls.length, 0);
   assert.equal(h.finish.length, 0);

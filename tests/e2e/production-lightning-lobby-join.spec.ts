@@ -102,13 +102,15 @@ for (const width of [393, 1440]) {
     expect(opened, 'a Lightning game panel offers an enabled Join Lightning').toBe(true);
 
     await expect(page).toHaveURL(LIGHTNING_ROUTE, { timeout: 15_000 });
-    const landedPath = new URL(page.url()).pathname;
+    const landed = new URL(page.url());
     // The original defect: a lobby effect replaced the route a moment later.
+    // The entry consumes ?join=1 in place; that must not look like leaving
+    // the card (run 40191613101). Keep the exact origin and cluster path.
     await page.waitForTimeout(3_000);
-    // Consuming ?join=1 opens the amount question and removes the flag.
-    // Ownership is the exact cluster path, not that one-shot query string.
-    expect(new URL(page.url()).pathname, 'the lobby must not take the Lightning route back').toBe(
-      landedPath
+    const stayed = new URL(page.url());
+    expect(stayed.origin, 'the Lightning card must stay on its origin').toBe(landed.origin);
+    expect(stayed.pathname, 'the lobby must not take the Lightning route back').toBe(
+      landed.pathname
     );
 
     const card = page.locator('[data-testid="lightning-entry"] .lightning-cash-card');

@@ -18,6 +18,7 @@ function engine() {
     tableId: 'table',
     tableInfo: {
       game_variant: 'plo5',
+      cluster_id: 'game',
       club_id: 'club',
       big_blind: 1,
       min_buy_in: 40,
@@ -63,6 +64,7 @@ describe('the real settlement top-up boundary', () => {
     const p = players();
     await run(e, p);
     expect(calls.batch).toHaveBeenCalledTimes(1);
+    expect(calls.batch).toHaveBeenCalledWith('table', expect.any(Function), 200, 'game');
     expect(calls.fund.mock.calls.map((c) => c.slice(0, 6))).toEqual([
       ['table', 'horse-0', 100, 'club', 91, 'topup'],
       ['table', 'horse-1', 100, 'club', 91, 'topup'],

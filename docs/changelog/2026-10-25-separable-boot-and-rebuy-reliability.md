@@ -1,6 +1,6 @@
 # Boot and rebuy reliability
 
-The explicit rebuy-decline repair in #8021 is integrated with current main. The newer turn-only Lightning timebank fixture is retained; offer timing, purchase outcome uncertainty and maintenance fences are preserved. A declining horse closes its offer through the same authorized transaction as an explicit player decline. No new funding or payout path is added.
+The explicit rebuy-decline repair in #8021 is integrated with current main. The newer turn-only Lightning timebank fixture is retained; offer timing, purchase outcome uncertainty and maintenance fences are preserved. A declining horse closes its offer through the same authorized transaction as an explicit player decline, immediately when its final answer is computed. A reproduced ordering gap in the original repair collected declines until all other purchases finished; a stalled purchase could therefore retain an already-declined offer. Each decline now completes before later batch work, and freeze/stop fences are checked before any later purchase. No new funding or payout path is added.
 
 The strategy-neutral boot change from #8014 starts independent worker lanes beside cleanup after leadership is established, joins prerequisites before discovery and admission, and reports boot phases through health. Worker hydration retains its import-before-replay order. No strategy flags, chat simulation, decision policy or gameplay timing changes are included.
 

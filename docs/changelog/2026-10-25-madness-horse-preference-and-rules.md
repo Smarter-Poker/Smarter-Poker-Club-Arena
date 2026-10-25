@@ -9,3 +9,5 @@ Regression coverage exercises the reader and selector together, sample-size boun
 Local qualification passes 59 tests across seven suites and server TypeScript. Protected CI, merge, the existing engine release route, installed identity and natural new-seat behavior remain separate delivery gates. Routine engine activation is at 04:00 America/Chicago; no emergency admission is requested.
 
 The full hosted engine shard exposed an older exact-select contract ending at `main_index`. Extend that assertion to retain its lifecycle/retirement columns and verify the four added Madness rule inputs. No production retirement behavior or test requirement is removed.
+
+The explicit source-reader pass also updates the stake-band and sitting-verdict pins for the new ordering call. They still require filtering before selection and the same eligible pool; the sitting-verdict pin additionally verifies real table/performance inputs and that the returned ordering supplies selected chairs. All 41 direct fleet-reader suites pass 681 tests, with the strengthened selection pins passing a further focused 58-test run.

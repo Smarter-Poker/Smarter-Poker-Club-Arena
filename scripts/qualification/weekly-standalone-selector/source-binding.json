@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 234654,
-      "sha256": "1d2bade3ab161c09cae558282205bb7f31291e78b262b89a88dd014de2d4353b"
+      "bytes": 235095,
+      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -294,6 +294,24 @@
           "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
         }
       }
+    }
+  },
+  "horseAuditNativeQualification20261025": {
+    "reason": "Adds source-bound native horse-audit population/cohort regression in existing required PostgreSQL shard2. Only current workflow identity changes. Financial sources, assertions, historical execution receipts and qualification statuses remain unchanged; this is not a financial or production certificate.",
+    "previousWorkflowInput": {
+      "bytes": 234392,
+      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+    },
+    "currentWorkflowInput": {
+      "bytes": 234833,
+      "sha256": "e1eb68a8626f8c866a90f7c7864844c3a20d2ba8fb87da2c285ae44cf7550666"
+    }
+  },
+  "_horse_audit_main_integration_20261025": {
+    "reason": "Preserve main digest qualification and horse audit native qualification; refresh only current integrated workflow identity. Historical evidence, financial source inputs and verdicts retained.",
+    "current_workflow": {
+      "bytes": 235095,
+      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
     }
   }
 }

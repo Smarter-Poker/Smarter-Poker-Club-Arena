@@ -1986,6 +1986,11 @@ export interface HorseDecideOpts {
    *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
    *  (default: enabled; league matchup v51_river_flat). */
   v51RiverFlat?: boolean;
+  /** V55: river Omaha sets/trips on a board permitting stronger hands do
+   * not turn a qualified call into a raise. Opt-in until the separate
+   * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
+   * 6000-pair probe; no production default is changed. */
+  v55OmahaRiverTripsFlat?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -8040,6 +8045,14 @@ export class HorseLogic {
       0,
       Number((player as { totalInvested?: number }).totalInvested ?? 0)
     );
+    const riverTripsFlat55 =
+      opts.v55OmahaRiverTripsFlat === true &&
+      vi.isOmaha &&
+      !vi.isHiLo &&
+      !vi.isFixedLimit &&
+      isRiver &&
+      cat === 4 &&
+      made40?.weak === true;
     const committed =
       spr < 1.2 ||
       toCall >= stack ||
@@ -8110,7 +8123,8 @@ export class HorseLogic {
           (boatDominated15 && raisedAfterAggr) ||
           tripBoardDominatedBoat15 ||
           (useV21 && dominated21) ||
-          planCallOnly23;
+          planCallOnly23 ||
+          riverTripsFlat55;
         // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
         // earlier line: it denies equity and can fold out a draw. On the
         // river there is nothing to deny, and the only hands that call a jam
@@ -8125,6 +8139,7 @@ export class HorseLogic {
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard));
         if (toCall >= stack || preferFlat15) {
+          if (tele15 && riverTripsFlat55) noteFire('v55_omaha_river_trips_flat');
           if (tele15 && tripBoardDominatedBoat15)
             noteFire('horse_continuation_trip_board_boat_flat');
           return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -8231,8 +8246,9 @@ export class HorseLogic {
       // V15 BOATS: a full house that a bigger boat beats, raised after it
       // bet, calls. The range that raises a boat on a paired board is the
       // bigger boat; re-raising only ever gets called by it.
-      if (tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)) {
-        if (tele15)
+      if (riverTripsFlat55 || tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)) {
+        if (tele15 && riverTripsFlat55) noteFire('v55_omaha_river_trips_flat');
+        if (tele15 && (tripBoardDominatedBoat15 || (boatDominated15 && raisedAfterAggr)))
           noteFire(
             tripBoardDominatedBoat15 ? 'horse_continuation_trip_board_boat_flat' : 'v15_boat_gate'
           );

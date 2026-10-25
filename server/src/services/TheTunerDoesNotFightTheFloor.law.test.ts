@@ -147,7 +147,9 @@ describe('LAW: the tuner does not fight the floor', () => {
   it('the review keys the frequency row by the floor rather than summing it away', () => {
     const review = read('services/HorseHandReview.ts');
     expect(
-      review.includes('accumulateHorsePlay(input, day, format, Number(input.vpipFloor ?? 0) > 0)')
+      review.includes(
+        'accumulateHorsePlay(input, day, format, Number(input.vpipFloor ?? 0) > 0, dealtHorseIds)'
+      )
     ).toBe(true);
     expect(review.includes("`${horse}|${day}|${format}|${floored ? 'f' : 'n'}`")).toBe(true);
     expect(review.includes('floored: boolean;')).toBe(true);

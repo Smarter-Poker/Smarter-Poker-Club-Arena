@@ -216,7 +216,7 @@ export function getClubArenaNavigation({
         {
           label: 'Cashier',
           path: clubId ? clubPath('/cashier') : '/cashier',
-          description: 'Club Chips And Trade Records',
+          description: 'Club Chips And Transaction History',
         },
         {
           label: 'Marketplace',

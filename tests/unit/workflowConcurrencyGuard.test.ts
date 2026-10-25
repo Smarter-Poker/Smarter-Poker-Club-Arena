@@ -84,6 +84,22 @@ describe('workflow concurrency guards runner capacity without risking production
     expect(missing).toEqual([]);
   });
 
+  it('one migration dispatch never cancels another file', () => {
+    // A shared group keeps ONE pending run and cancels it when a newer one
+    // joins: on 2026-10-24 22:53Z that dropped 20261024213143 unapplied.
+    const wf = load('apply-merged-migration.yml');
+    const c = wf.concurrency as { group: string; 'cancel-in-progress': boolean };
+    expect(c.group).toContain('inputs.migration || github.event.client_payload.migration');
+    expect(c['cancel-in-progress']).toBe(false);
+    const text = readFileSync(resolve(dir, 'apply-merged-migration.yml'), 'utf8');
+    const queue = text.indexOf('THE QUEUE.');
+    const send = text.indexOf('node scripts/ci/apply-recorded-migration.mjs');
+    expect(queue).toBeGreaterThan(0);
+    expect(send).toBeGreaterThan(queue);
+    expect(text).toContain('select(.id < $GITHUB_RUN_ID and .status != \\"completed\\")');
+    expect(text).toMatch(/permissions:\n {2}contents: read\n {2}actions: read\n/);
+  });
+
   it('keeps the live protected-merge helpers triggered (they merge PRs today)', () => {
     expect(triggers(load('agent-autopilot.yml'))).toContain('pull_request_target');
     expect(triggers(load('agent-branch-proposal.yml'))).toContain('push');

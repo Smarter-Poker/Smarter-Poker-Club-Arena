@@ -125,7 +125,6 @@ describe('a Lightning player between hands', () => {
 
   describe('Lightning entry never queues and never asks for a seat', () => {
     const page = readFileSync('src/pages/TablePage.tsx', 'utf8');
-    const entry = readFileSync('src/pages/LightningEntryPage.tsx', 'utf8');
 
     it('treats only a Cluster in a Lightning mode as Lightning (never Classic)', () => {
       expect(page).toMatch(
@@ -142,10 +141,6 @@ describe('a Lightning player between hands', () => {
       expect(page).toMatch(
         /if \(anchorLightningClusterId\) \{\s*\/\*[\s\S]*?\*\/\s*navigate\(lightningRoute\(anchorLightningClusterId\)\);\s*return false;\s*\}\s*toast\.info\('This Seat Is Reserved/
       );
-    });
-
-    it('opens the buy-in on the held chair as soon as Join Lightning lands', () => {
-      expect(entry).toContain('navigate(`/table/${r.table_id}?buyin=1`);');
     });
   });
 

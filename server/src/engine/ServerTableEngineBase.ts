@@ -189,7 +189,11 @@ import type {
 import { reportError } from '../services/errorReporter.js';
 import { isMissingFunctionError } from '../lightning/rpcErrors.js';
 import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
-import { presenceFromFsm, type PresenceTableReport } from '../lightning/LightningPresence.js';
+import {
+  ENGINE_INPUT_DEVICE_PLATFORM,
+  presenceFromFsm,
+  type PresenceTableReport,
+} from '../lightning/LightningPresence.js';
 import { subscribeBombRequests, unsubscribeBombRequests } from '../services/BombRequestBus.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
@@ -5782,6 +5786,8 @@ export abstract class ServerTableEngineBase {
     }
     await this.recoverBustedHorsesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
+    await this.standUpHorsesWhosePoolSessionEnded();
+    if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();
     if (!this.lifecycleCanMutate()) return;
     await this.stopIfClusterTableClosed().catch((err) =>
@@ -5825,6 +5831,39 @@ export abstract class ServerTableEngineBase {
    */
   protected async recoverBustedHorsesWhileHalted(): Promise<void> {
     /* ServerTableEngineDealing owns horse bust recovery; see its override. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A HORSE WHOSE POOL SESSION ENDED STILL HAS AN INPUT DEVICE (2026-10-24)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A pool session can end while its player keeps the anchor seat: the
+   * disconnect reaper (`fn_lightning_reap_expired_disconnects`) closes the
+   * session and never stands the seat up, by design, so a returning person
+   * finds VIEW GAME pointing at their own chair and decides for themselves.
+   * A horse has no browser to come back with. Measured 2026-10-24 on "FLH
+   * 0.25/0.50 Lightning Games": two horses' sessions closed
+   * 'disconnect_expired' at 15:52:50 UTC while both kept funded anchor seats
+   * (38.74 and 51.77); eight hours later neither had been re-entered or cashed
+   * out, the chips sat idle, the chairs were held and each seat counted
+   * against its horse's four-game limit. Nothing in the live path could ever
+   * move them: the seat-follows-pool trigger only re-enters on a seat change,
+   * the rotator's departure pass skips a three-seat anchor, and this parked
+   * pass (the only loop an anchor runs) had nothing to say about them.
+   *
+   * The engine is the horse's input device (10.5, the one legitimate horse
+   * branch), so it makes the decision a person makes at the same seat: it
+   * leaves, through the person's own Leave door (`leaveTable`: the stay clock,
+   * the voluntary cash-out into the club wallet with its receipt, the
+   * seat_left event and the Cluster wake). The fleet then seats a horse the
+   * ordinary way, and that buy-in enters the pool through the same seat
+   * trigger a person's does.
+   *
+   * ServerTableEngineDealing overrides this; the base holds nothing.
+   */
+  protected async standUpHorsesWhosePoolSessionEnded(): Promise<void> {
+    /* ServerTableEngineDealing owns it; see its override. */
   }
 
   /**
@@ -6845,6 +6884,11 @@ export abstract class ServerTableEngineBase {
    * horses exactly as humans (CLAUDE.md 10.5) - and a player this engine has
    * no presence entry for is `unknown`, never assumed present. See
    * src/lightning/LightningPresence.ts for how the feed uses it.
+   *
+   * A horse's input device is this engine (it heartbeats the seat), so the
+   * engine also says what a browser's `?p=` would: the desktop device class
+   * (ENGINE_INPUT_DEVICE_PLATFORM, Dan 2026-10-24 "4 GAMES MAX"). A human's
+   * class comes from their own client's room, never from here.
    */
   lightningPresenceReport(): PresenceTableReport {
     return {
@@ -6856,6 +6900,7 @@ export abstract class ServerTableEngineBase {
           this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state ?? null,
           this.disconnectEngine.isConnected(this.tableId, p.user_id)
         ),
+        ...(p.is_horse ? { platform: ENGINE_INPUT_DEVICE_PLATFORM } : {}),
       })),
     };
   }

@@ -382,10 +382,14 @@ const chipsFor = (
   keys.map((key) => ({ key, label: labels[key] ?? key.toUpperCase() }));
 
 /** The three cash templates as chips, in the vocabulary's order. */
-export const CASH_STYLES: { key: string; label: string }[] = CASH_TEMPLATES.map((t) => ({
-  key: t.id,
-  label: t.label,
-}));
+/* Classic, Lightning Games, and Madness without Lightning (Dan 2026-10-24:
+   "THERE IS ONLY LIGHTNING AND CLASSIC. NO STRAIGHT MADNESS GAME WITHOUT
+   LIGHTNING"). The third is a style a player can pick, not a template a host
+   creates: lobbyEntries.cashStyleKeyOf decides it from the table's rules. */
+export const CASH_STYLES: { key: string; label: string }[] = [
+  ...CASH_TEMPLATES.map((t) => ({ key: t.id, label: t.label })),
+  { key: 'straight_madness', label: 'Madness' },
+];
 
 export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec> = {
   HOLDEM: {

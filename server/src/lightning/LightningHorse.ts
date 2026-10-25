@@ -62,6 +62,14 @@ export interface LightningHorseTurn {
   fence: string;
   turnStartMs: number;
   now: number;
+  /**
+   * The early look (Dan 2026-10-24, "HORSES SHOULD FOLD RIGHT AWAY IF THEY
+   * WERE ALREADY FOLDING"): the horse is not on the turn yet, and asks its
+   * own policy what it does with the table exactly as it stands now, as a
+   * person decides whether to press Lightning Fold. Read-only: the menu is
+   * the one the seat would hold (HandController asIfToAct).
+   */
+  earlyLook?: boolean;
 }
 
 export interface LightningHorseDecision {
@@ -80,7 +88,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
   const hc = turn.hc;
   const state = hc.getState();
   const me = state.players.find((p) => p.seat === turn.seat);
-  const auth = hc.getAuthoritativeActionState(turn.userId);
+  const auth = hc.getAuthoritativeActionState(turn.userId, { asIfToAct: turn.earlyLook === true });
   if (!me || !auth || !auth.canAct)
     throw new Error('horse seat has no authoritative decision state');
   const contestablePot = hc.getContestablePotForCall(turn.userId);
@@ -176,7 +184,9 @@ export async function decideLightningHorse(
   lane: () => LiveHorseDecisionLane = getLiveHorseDecisionWorker,
   onWorkerFailure?: (err: unknown) => void
 ): Promise<LightningHorseDecision> {
-  const toCall = turn.hc.getAuthoritativeActionState(turn.userId)?.toCall ?? 0;
+  const toCall =
+    turn.hc.getAuthoritativeActionState(turn.userId, { asIfToAct: turn.earlyLook === true })
+      ?.toCall ?? 0;
   try {
     const snapshot = buildLightningHorseSnapshot(turn);
     const fast = await lane().decideFast(snapshot, signal, {
@@ -294,4 +304,64 @@ export function shapeLightningHorseAction(
     amount = action === 'call' ? toCall : undefined;
   }
   return { action: action as ActionType, amount };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  "ALREADY FOLDING" (Dan 2026-10-24, verbatim: "YES, HORSES SHOULD FOLD
+ *  RIGHT AWAY IF THEY WERE ALREADY FOLDING.")
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Measured 2026-10-24: a Lightning horse folded only on its own turn (UTG
+ * p50 6.3 s after the deal, the button 15.6 s), so its seat freed last and the
+ * pool waited for it. A person in the same seat presses Lightning Fold the
+ * moment they look at a hand they will not play.
+ *
+ * A horse is ALREADY FOLDING on a street when, at its FIRST look at that
+ * street with a price to pay - the first moment the fast fold is open to it
+ * with chips owed (preflop: the deal; a later street: the first bet it
+ * faces), or its own turn if the action reaches it first - its own policy,
+ * asked through the same live decision lane with its own style and mods,
+ * answers FOLD, and every one of these holds:
+ *
+ *   1. it owes chips (toCall > 0) and its menu has no check. A free check is
+ *      NEVER fast folded: the big blind in an unraised pot, any seat checked
+ *      to on a later street. This is the human Check/Fold rule, and the door
+ *      re-checks it at the moment of the fold;
+ *   2. the answer is the policy's own (`workerFallback` false and no
+ *      `policyFallback`): a worker failure or a brain exception folds a bet
+ *      only to keep the table alive, and is not a decision to fold;
+ *   3. it is the street's FIRST priced look. A horse whose first answer was
+ *      anything else waits for its turn and decides afresh on everything that
+ *      happened in between, on its ordinary clock, exactly as before. So a
+ *      fold to a later raise is never rushed: only the fold it had already
+ *      decided on before any of that action is.
+ *
+ * WHY NOT "FOLDS WHATEVER THE OTHERS DO". The policy is stochastic (a
+ * strength jitter, an hourly mood, solver mixing) and deliberately not
+ * monotone: the maniac call-down (HorseLogic.maniacCallDown) turns a fold
+ * into a call against a seat read as a maniac, and the VPIP floor call-down
+ * calls small raises on a floored table. No proof that one sampled fold stays
+ * a fold under every continuation exists in that code, so none is claimed.
+ * What is proven instead is the human's own contract: the fold is the
+ * player's decision on the information it has at the moment the button is
+ * open, it is final, and it is never a free check. (The VPIP floor
+ * call-down cannot fire here at all: the Lightning snapshot carries no
+ * `vpipFloor`, see buildLightningHorseSnapshot.)
+ */
+export function lightningHorseIsAlreadyFolding(input: {
+  decision: Pick<LightningHorseDecision, 'action' | 'workerFallback'> & {
+    fast?: { decision?: { policyFallback?: unknown } } | null;
+  };
+  /** The seat's menu and price right now (asIfToAct when off the turn). */
+  legalActions: readonly string[];
+  toCall: number;
+}): boolean {
+  const { decision } = input;
+  if (decision.workerFallback) return false;
+  if (decision.fast?.decision?.policyFallback) return false;
+  if (String(decision.action).toLowerCase() !== 'fold') return false;
+  if (!(input.toCall > 0.005)) return false;
+  if (input.legalActions.includes('check')) return false;
+  return input.legalActions.includes('fold');
 }

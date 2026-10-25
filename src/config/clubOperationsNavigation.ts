@@ -235,7 +235,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'cashier',
     label: 'Cashier',
-    description: 'Club Chips, Transfers, And Trade Records',
+    description: 'Club Chips, Transfers, And Transaction History',
     suffix: 'cashier',
     group: 'finance',
     access: 'finance',

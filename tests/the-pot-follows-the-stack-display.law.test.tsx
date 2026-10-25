@@ -295,3 +295,46 @@ describe("the hero's Call button follows the setting", () => {
     expect(callText(container)).not.toContain('BB');
   });
 });
+
+describe('every wager amount the action panel prints follows the setting', () => {
+  // The All In button, a fixed-limit Bet / Raise and the call all print an
+  // amount; in BB mode none may print chips beside a BB call.
+  const base = {
+    canFold: true,
+    canCheck: false,
+    canCall: true,
+    canAllIn: true,
+    canRaise: true,
+    currentBet: 6,
+    callAmount: 6,
+    minRaise: 12,
+    maxRaise: 500,
+    pot: 9,
+    bigBlind: 2,
+    isMyTurn: true,
+    onAction: () => {},
+  };
+  const amounts = (c: HTMLElement) =>
+    [...c.querySelectorAll('.action-btn__amount')].map((e) => e.textContent ?? '');
+
+  it('fixed limit: the Raise amount and the Call read BB together', () => {
+    const { container } = render(
+      <ActionPanel {...base} isFixedLimit showStackInBB displayBigBlind={2} />
+    );
+    const shown = amounts(container);
+    expect(shown.length).toBeGreaterThanOrEqual(2);
+    for (const text of shown) expect(text).toMatch(/ BB$/);
+  });
+
+  it('All In reads BB when it is the only wager left', () => {
+    const { container } = render(
+      <ActionPanel {...base} canRaise={false} maxRaise={6} showStackInBB displayBigBlind={2} />
+    );
+    for (const text of amounts(container)) expect(text).toMatch(/ BB$/);
+  });
+
+  it('chips mode prints no BB anywhere on the buttons', () => {
+    const { container } = render(<ActionPanel {...base} isFixedLimit displayBigBlind={2} />);
+    for (const text of amounts(container)) expect(text).not.toContain('BB');
+  });
+});

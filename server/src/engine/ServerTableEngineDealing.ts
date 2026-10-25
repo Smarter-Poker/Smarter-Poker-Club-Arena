@@ -69,6 +69,7 @@ import {
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
+import { lightningSeatsWhosePoolSessionEnded } from '../services/supabase/lightningAnchor.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
 import { jitteredBackoffMs } from '../services/horseEntryRefusalBackoff.js';
 import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
@@ -4371,6 +4372,106 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left - insufficient treasury funds`
+        );
+      }
+    }
+  }
+
+  /**
+   * How often a parked anchor asks which of its horses' pool sessions ended,
+   * and how long one must stay ended before the horse gets up. The second
+   * observation is what stops a read racing a re-entry that is committing at
+   * the same moment (a seat change re-enters through the seat trigger).
+   */
+  static readonly POOL_ENDED_CHECK_MS = 30_000;
+  static readonly POOL_ENDED_CONFIRM_MS = 30_000;
+  /** When the parked pass last asked (0 = never). */
+  protected poolEndedCheckedAt = 0;
+  /** occupancy id -> when its ended pool session was first observed. */
+  protected poolEndedSince = new Map<string, number>();
+
+  /**
+   * The parked anchor's answer for a horse whose pool session ended while it
+   * kept the anchor seat (see the base hook for the measurement). The engine
+   * is the horse's input device, so the horse makes a person's choice through
+   * a person's door: it leaves (`leaveTable`, the voluntary cash-out with its
+   * stay clock and receipt, then seat_left and the Cluster wake). Asked once
+   * per POOL_ENDED_CHECK_MS, acted on only when the same occupancy reads
+   * ended on two asks at least POOL_ENDED_CONFIRM_MS apart, never during the
+   * freeze, never for a seat sitting out or already leaving, and nothing at
+   * all when the pool cannot be read.
+   */
+  protected override async standUpHorsesWhosePoolSessionEnded(): Promise<void> {
+    if (this.isTournamentTable() || isMaintenanceFrozen()) return;
+    const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
+    if (!clusterId) return;
+    if (!(this.poolEndedSince instanceof Map)) this.poolEndedSince = new Map();
+    const now = Date.now();
+    if (now - (this.poolEndedCheckedAt || 0) < ServerTableEngineDealing.POOL_ENDED_CHECK_MS) return;
+    this.poolEndedCheckedAt = now;
+
+    const horses = this.seatedPlayers.filter(
+      (p) =>
+        p.is_horse &&
+        Number(p.stack) > 0 &&
+        p.is_sitting_out !== true &&
+        p.leave_pending !== true &&
+        !!p.seat_id &&
+        !!p.seat_joined_at &&
+        !!p.occupancy_id
+    );
+    if (horses.length === 0) {
+      this.poolEndedSince.clear();
+      return;
+    }
+    let ended: Map<string, string>;
+    try {
+      ended = await this.withStepBudget(
+        'horse_pool_session_ended',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningSeatsWhosePoolSessionEnded(
+          clusterId,
+          horses.map((h) => ({
+            seatId: h.seat_id!,
+            userId: h.user_id,
+            joinedAt: h.seat_joined_at!,
+          }))
+        )
+      );
+    } catch (err) {
+      // Could not tell: nobody gets up on a guess, and the next ask reads again.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_pool_session_ended_read');
+      return;
+    }
+    if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+
+    const stillEnded = new Set(
+      horses.filter((h) => ended.has(h.seat_id!)).map((h) => h.occupancy_id!)
+    );
+    for (const occupancy of [...this.poolEndedSince.keys()]) {
+      if (!stillEnded.has(occupancy)) this.poolEndedSince.delete(occupancy);
+    }
+    for (const horse of horses) {
+      const occupancy = horse.occupancy_id!;
+      if (!stillEnded.has(occupancy)) continue;
+      const firstSeen = this.poolEndedSince.get(occupancy);
+      if (firstSeen === undefined) {
+        this.poolEndedSince.set(occupancy, now);
+        continue;
+      }
+      if (now - firstSeen < ServerTableEngineDealing.POOL_ENDED_CONFIRM_MS) continue;
+      if (isMaintenanceFrozen()) return;
+      const result = await this.leaveTable(horse.user_id, {
+        occupancyId: occupancy,
+        seatNumber: horse.seat_number,
+      });
+      if (!this.lifecycleCanMutate()) return;
+      if (result.success) {
+        this.poolEndedSince.delete(occupancy);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] ${horse.username} left seat ${horse.seat_number}: ` +
+            `its Lightning pool session ended (${ended.get(horse.seat_id!)}) and the seat had ` +
+            `nothing left to play`
         );
       }
     }

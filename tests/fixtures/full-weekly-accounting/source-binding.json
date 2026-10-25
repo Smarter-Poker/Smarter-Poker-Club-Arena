@@ -189,7 +189,7 @@
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
     "tests/components/cashout-scope.test.tsx": "db239afb7ad44fa60b810c75cdc95dfb1a794d90747d8ff650f02dacfe1b0ecd",
-    "tests/fixtures/cashier-document-authority/regression.sql": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
+    "tests/fixtures/cashier-document-authority/regression.sql": "77f954697140fd4cb0d04076da422a7a99ec70a47a20e938571bf4ceab565517",
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
@@ -2940,6 +2940,13 @@
       "from": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
       "to": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
       "why": "Reviewed Dan 2026-10-23 owner rule: a cash out REQUEST (hold) document reaches the player and their assigned agent only; the club owner is no longer notified (migration 20261023161137). The fixture installs the same one-line audience change (it runs on a component-built catalog), the hold delivery assertion changes from three participants to two, and a check that the owner receives no notification is added. No other assertion, financial input, captured row or qualification status changed. Matching source hashes are not production or financial execution proof."
+    },
+    {
+      "on": "2026-10-24",
+      "file": "tests/fixtures/cashier-document-authority/regression.sql",
+      "from": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
+      "to": "77f954697140fd4cb0d04076da422a7a99ec70a47a20e938571bf4ceab565517",
+      "why": "Reviewed Dan 2026-10-24 owner rule: when an owner, co-owner or admin accepts or cancels a cash out, the agent it was assigned to receives the decision document too (migration 20261024220301). The fixture installs the same one-line audience change after the 2026-10-23 one, and adds two checks: an admin acceptance is delivered to exactly owner, player, accepter and assigned agent, and an admin cancellation reaches the assigned agent. No other assertion, financial input, captured row or qualification status changed. Matching source hashes are not production or financial execution proof."
     }
   ],
   "tournament_rake_club_successor_20260921": {

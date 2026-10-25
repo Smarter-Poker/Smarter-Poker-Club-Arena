@@ -80,6 +80,7 @@ import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
   countStylesOnBoard,
+  cashStyleKeyOf,
   isCensusTable,
   isClusterFront,
   isHiddenClusterMember,
@@ -334,6 +335,7 @@ interface TableData {
   settings?: string;
   /** The must-move game's template (classic / action / madness), from get_club_home. */
   cluster_template?: string | null;
+  cluster_rules_profile?: string | null;
   /** The must-move game this table belongs to (Operation Table Stakes), or null. */
   cluster_id?: string | null;
   cluster_must_move?: boolean | null;
@@ -3179,7 +3181,7 @@ function ClubHomePageContent({
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode, handedness)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode, handedness, rules_profile:ruleset_snapshot->>rules_profile)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -3364,6 +3366,7 @@ function ClubHomePageContent({
               state?: string | null;
               enabled?: boolean | null;
               cluster_mode?: string | null;
+              rules_profile?: string | null;
             } | null;
           } & Record<string, unknown>;
           if (!game || typeof game !== 'object') return rest;
@@ -3377,6 +3380,9 @@ function ClubHomePageContent({
             /* LIGHTNING PHASE 6: the Cluster's mode, so a Lightning game's
                card says LIGHTNING LIVE and its door is the Lightning route. */
             cluster_mode: game.cluster_mode ?? null,
+            /* A Classic game never moves its players (Dan 2026-10-24); the
+               profile keeps the Madness stand-in's MUST MOVE card. */
+            cluster_rules_profile: game.rules_profile ?? null,
           };
         });
         flattenedTables = flattened as unknown as TableData[];
@@ -3610,7 +3616,7 @@ function ClubHomePageContent({
               : Number(table.current_players) || 0,
             game: isClusterFront(table as unknown as LobbyTableRow),
             name: table.name,
-            style: table.cluster_template ?? null,
+            style: cashStyleKeyOf(table as unknown as LobbyTableRow),
             row: table as unknown as Record<string, unknown>,
             settings,
           })

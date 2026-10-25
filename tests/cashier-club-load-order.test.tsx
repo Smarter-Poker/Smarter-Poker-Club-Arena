@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../src/lib/supabase';
 import CashierTradePage from '../src/pages/CashierTradePage';
+import { masterBus } from '../src/core/MasterBus';
 import {
   CASHIER_REQUEST_RECOVERY_PREFIX,
   writeCashierTransferRecovery,
@@ -356,7 +357,7 @@ describe('CashierTradePage club load ordering', () => {
       return builder as never;
     });
     installRpc((name: string) => {
-      if (name === 'fn_club_trade_ledger') {
+      if (name === 'fn_cashier_transaction_history') {
         return Promise.resolve({
           data: [
             {
@@ -389,14 +390,46 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     if (screen.queryByRole('button', { name: /^Advanced/ }))
       fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Transaction History' }));
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
     expect(screen.getAllByText('50')).toHaveLength(2);
-    expect(supabase.rpc).toHaveBeenCalledWith('fn_club_trade_ledger', {
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
       p_club_id: CLUB_ID,
+      p_scope: 'club',
       p_limit: 51,
       p_offset: 0,
     });
+
+    // An owner's own book is one tap away and is read from the server.
+    fireEvent.click(screen.getByRole('button', { name: 'My Transactions' }));
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
+        p_club_id: CLUB_ID,
+        p_scope: 'mine',
+        p_limit: 51,
+        p_offset: 0,
+      })
+    );
+
+    // A balance moving while the history is open (a cash-out accepted, a
+    // send made) re-reads it without a manual refresh.
+    const historyReads = () =>
+      vi
+        .mocked(supabase.rpc)
+        .mock.calls.filter(([name]) => name === 'fn_cashier_transaction_history').length;
+    const before = historyReads();
+    // The suite's MasterBus is a mock: call the handler the open history
+    // registered, as the real bus would on a cash-out accept.
+    const balanceHandlers = vi
+      .mocked(masterBus.subscribe)
+      .mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')
+      .map(([, handler]) => handler as (payload: unknown) => void);
+    expect(balanceHandlers.length).toBeGreaterThan(0);
+    act(() => {
+      for (const handler of balanceHandlers)
+        handler({ source: 'cashout_approved', userId: USER_ID });
+    });
+    await waitFor(() => expect(historyReads()).toBeGreaterThan(before), { timeout: 3000 });
   });
 
   it('does not invalidate the request that loads the first Trade tab', async () => {

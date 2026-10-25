@@ -23,6 +23,7 @@ import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
 import { PHASE8_POLICY } from '../engine/HorseTournamentPostflop.js';
 import { horseDecisionSolverStoresAreValid } from '../engine/horseDecision/protocol.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
+import { HUMAN_FIELD_COMPONENT_SCENARIOS } from './HorseLeagueHumanField.js';
 import {
   pairedConfidence99,
   tournamentRunCanPromote,
@@ -180,6 +181,7 @@ interface PendingJob<T> {
   heartbeatTimer: ReturnType<typeof setTimeout>;
   cancelTimer: ReturnType<typeof setInterval> | null;
   tournamentRequest?: TournamentLeagueRequest;
+  matchupRequest?: LeagueMatchup;
 }
 
 export interface HorseLeagueCompute {
@@ -459,6 +461,30 @@ const LEAGUE_RESULT_KEYS = [
   'benchmarkComponents',
 ] as const;
 
+const HUMAN_RESPONSE_ACTIONS = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all_in']);
+
+function isHumanFieldLeagueEvidence(value: Record<string, unknown>): boolean {
+  if (value.opponentPopulation !== HUMAN_CALIBRATED_POPULATION_ID) return false;
+  const responses = value.humanResponses;
+  if (!isRecord(responses) || Object.keys(responses).length > 64) return false;
+  let decisions = 0;
+  for (const node of Object.values(responses)) {
+    if (!isRecord(node)) return false;
+    for (const [action, n] of Object.entries(node)) {
+      if (!HUMAN_RESPONSE_ACTIONS.has(action) || !isNonnegativeSafeInteger(n)) return false;
+      decisions += n;
+    }
+  }
+  if (Number(value.hands) > 0 && decisions === 0) return false;
+  const components = value.benchmarkComponents;
+  if (!Array.isArray(components) || components.length !== 2) return false;
+  return HUMAN_FIELD_COMPONENT_SCENARIOS.every((scenario, i) => {
+    const c = components[i] as Record<string, unknown> | undefined;
+    // Each arm plays one hero hand per pair: hands/2 per component.
+    return isRecord(c) && c.scenario === scenario && c.hands === Number(value.hands) / 2;
+  });
+}
+
 function isLeagueResult(value: unknown): value is LeagueResult {
   if (!isRecord(value)) return false;
   /* A result straight from runMatchup carries its divergence evidence
@@ -469,8 +495,23 @@ function isLeagueResult(value: unknown): value is LeagueResult {
      variance is zero", and no more pairs can diverge than were played. A
      worker that sent anything else is refused as malformed, the same as any
      other shape this boundary does not know. */
-  const measured = hasExactKeys(value, [...LEAGUE_RESULT_KEYS, 'divergentPairs', 'inert']);
+  /* A human-field result (2026-10-24, LeagueMatchup.opponentPopulation) is a
+     measured result plus the population it played and the field's response
+     counts per node. It must carry exactly the two per-arm components, and
+     the field must actually have decided something whenever hands were dealt:
+     a "human-field" row in which no calibrated seat ever acted would be a
+     mirror wearing the wrong name. */
+  const humanField = hasExactKeys(value, [
+    ...LEAGUE_RESULT_KEYS,
+    'divergentPairs',
+    'inert',
+    'opponentPopulation',
+    'humanResponses',
+  ]);
+  const measured =
+    humanField || hasExactKeys(value, [...LEAGUE_RESULT_KEYS, 'divergentPairs', 'inert']);
   if (!measured && !hasExactKeys(value, LEAGUE_RESULT_KEYS)) return false;
+  if (humanField && !isHumanFieldLeagueEvidence(value)) return false;
   if (
     measured &&
     !(
@@ -973,6 +1014,7 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
           heartbeatTimer,
           cancelTimer,
           ...(command.type === 'RUN_TOURNAMENT' ? { tournamentRequest: command.request } : {}),
+          ...(command.type === 'RUN_MATCHUP' ? { matchupRequest: command.matchup } : {}),
         },
       };
       try {
@@ -1098,6 +1140,16 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
         message.result.opponentPopulation !== request.opponentPopulation
       ) {
         this.fail(new Error('Tournament result does not match the requested paired run'));
+        return;
+      }
+    }
+    if (message.type === 'MATCHUP_RESULT' && pending.job.matchupRequest) {
+      // A human-field card must come back as a human-field result, and a
+      // mirror card as a mirror result. Otherwise a worker built from a
+      // different revision could have the field silently dropped (or added)
+      // and the row would be stored under a name that claims the opposite.
+      if (message.result.opponentPopulation !== pending.job.matchupRequest.opponentPopulation) {
+        this.fail(new Error('League matchup result does not match the requested opponent field'));
         return;
       }
     }

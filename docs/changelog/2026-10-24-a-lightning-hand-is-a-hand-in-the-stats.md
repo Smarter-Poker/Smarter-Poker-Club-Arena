@@ -32,7 +32,7 @@ Lightning horse reads programme, phase 8 of 9.
     keyed by the Lightning hand id, at the host table and its club.
   - Built once, so every settlement retry sends the identical request.
   - It never throws. A hand whose facts cannot be built settles exactly as before.
-- **Database** (`20261025000729_lightning_hands_reach_the_stats_facts_and_the_collusion_scan.sql`):
+- **Database** (held back, applied separately: `20261025000729_lightning_hands_reach_the_stats_facts_and_the_collusion_scan.sql`):
   - Adds `fn_lightning_hand_stats_facts`. It keeps the payload only when it passes
     the projector's own scope, shape and row-type checks for exactly this hand,
     host table and club. Anything else is dropped as today, because the projector

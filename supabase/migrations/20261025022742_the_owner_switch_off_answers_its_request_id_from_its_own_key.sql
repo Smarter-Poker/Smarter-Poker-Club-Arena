@@ -59,7 +59,7 @@ CREATE TABLE public.cash_game_switch_off_requests (
   at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.cash_game_switch_off_requests ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.cash_game_switch_off_requests FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.cash_game_switch_off_requests FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.cash_game_switch_off_requests TO service_role;
 COMMENT ON TABLE public.cash_game_switch_off_requests IS
   'One row per owner switch-off request (fn_cash_game_switch_off), keyed by its request id so a replay is answered by key instead of by reading the cash_cluster_events log. Written only by that SECURITY DEFINER door, in the same transaction as the switch and its audit event.';

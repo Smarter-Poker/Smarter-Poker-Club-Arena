@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ts from 'typescript';
 import { boardForRabbitReveal } from '../../src/components/table/retainedRabbitBoard';
+import { canonicalCards } from '../../src/utils/tableGeometry';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 const start = page.indexOf('  const handleRabbitReveal = useCallback(');
@@ -38,6 +39,7 @@ function harness() {
     setRabbitRevealedHandNumber: vi.fn(),
     setRetainedRabbitBoard: vi.fn(),
     boardForRabbitReveal,
+    canonicalCards,
     retainedRabbitTimerRef: { current: null },
     rabbitRevealClearTimerRef: { current: null },
     RABBIT_REVEAL_MIN_VISIBLE_MS: 3000,

@@ -220,10 +220,10 @@ def scenario(phase, door, partner):
     b.stdin.flush()
     blocked = wait_for(f"SELECT COALESCE((SELECT wait_event_type FROM pg_stat_activity WHERE application_name = 'partner'), 'gone')", 'Lock')
     partner_wait = sql("SELECT wait_event FROM pg_stat_activity WHERE application_name = 'partner'")
-    a.stdin.write('COMMIT;\n')
-    a.stdin.close()
-    a_out, a_err = a.communicate(timeout=30)
-    b.stdin.close()
+    # communicate() writes, flushes and closes stdin itself. Python 3.12
+    # (the CI runner) raises "I/O operation on closed file" if stdin was
+    # already closed by hand; 3.13 tolerates it.
+    a_out, a_err = a.communicate(input='COMMIT;\n', timeout=30)
     b_out, b_err = b.communicate(timeout=30)
     alerts = json.loads(sql("SELECT COALESCE(json_agg(context ORDER BY id), '[]') FROM public.financial_alerts"))
     payer_runs = int(sql('SELECT count(*) FROM public.probe_payer_runs'))

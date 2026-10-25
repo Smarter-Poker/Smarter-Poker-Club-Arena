@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-plo5-immediate-cutover",
+      "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don’t call it done until it’s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8042; preserve drain, freeze, rollback reserve and thaw. This narrow exception ends once that commit is serving.",
+      "contains": "31bec5547b9b342150dce8842b7a227eedc3ddfd",
+      "notBefore": "2026-10-25T17:57:28Z",
+      "notAfter": "2026-10-25T23:47:28Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-horse-v53-phase-two-asap",
       "ownerOrder": "Dan, 2026-10-24 17:53 Chicago, on the V53 horse pressure work: \"PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. HORSES ARE LOSING AT A RIDICULOUS RATE AGAINST WOOWOO ... THESE CHANGES NEED TO TAKE EFFECT ASAP!\"; 21:48 \"PROCEED TO THE NEXT PHASE\"; 22:11 \"FINISH EVERYTHING UP NOW, MAKE SURE ITS FULLY ACTIVATED WITH EVERY SINGLE HORSE\"; 22:23 \"KEEP GOING UNTIL THIS IS 100\". Off-cycle release at the next hourly :55 break (later :55 breaks as fallback) of main from 1b64e000f (everything merged since the serving bbd6db8e) plus the V53 follow-ups #7986 (stop flatting the aggressive human's 3-bet) and #7963 (continued barrel pressure) when merged.",
       "contains": "1b64e000f7b52f456ca9c7e88afb9d4b721fba3a",

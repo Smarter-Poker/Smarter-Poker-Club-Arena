@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  cashoutRowTitle,
   describeChipTransaction,
   ledgerDirection,
   walletRoute,
@@ -88,6 +89,46 @@ describe('the cashier transaction history', () => {
     );
   });
 
+  it('titles each cash-out leg in plain words, never as a transfer to the agent it was sent to', () => {
+    // The request: the player sees where it went; the agent it was sent to
+    // sees a request, not chips; anyone else sees who asked whom.
+    expect(cashoutRowTitle(hold, 'Golddigger', 'DarthBayter', PLAYER)).toBe(
+      'Cash-Out Request To DarthBayter'
+    );
+    expect(cashoutRowTitle(hold, 'Golddigger', 'DarthBayter', ASSIGNED)).toBe(
+      'Golddigger Requested A Cash-Out From You'
+    );
+    expect(cashoutRowTitle(hold, 'Golddigger', 'DarthBayter', ACCEPTER)).toBe(
+      'Golddigger Requested A Cash-Out From DarthBayter'
+    );
+    // The acceptance names who took the chips.
+    expect(cashoutRowTitle(accepted, 'Golddigger', 'KingFish', ACCEPTER)).toBe(
+      "You Accepted Golddigger's Cash-Out"
+    );
+    expect(cashoutRowTitle(accepted, 'Golddigger', 'KingFish', PLAYER)).toBe(
+      'KingFish Accepted Your Cash-Out'
+    );
+    expect(cashoutRowTitle(accepted, 'Golddigger', 'KingFish', ASSIGNED)).toBe(
+      "KingFish Accepted Golddigger's Cash-Out"
+    );
+    expect(cashoutRowTitle(declined, 'DarthBayter', 'Golddigger', PLAYER)).toBe(
+      'DarthBayter Cancelled Your Cash-Out'
+    );
+    expect(cashoutRowTitle({ transaction_type: 'agent_wallet_send' }, 'A', 'B', PLAYER)).toBeNull();
+  });
+
+  it("reads direction by the Full Statement's rule: a self move and a pot move are managed", () => {
+    const self = {
+      transaction_type: 'agent_wallet_self_stake',
+      from_user_id: 'a',
+      to_user_id: 'a',
+    };
+    expect(ledgerDirection(self, 'a')).toBe('managed');
+    const mint = { transaction_type: 'mint', from_user_id: 'a', to_user_id: 'b' };
+    expect(ledgerDirection(mint, 'b')).toBe('managed');
+    expect(ledgerDirection(mint, 'a')).toBe('managed');
+  });
+
   it('reads every other row by its sides, as before', () => {
     const send = { transaction_type: 'agent_wallet_send', from_user_id: 'a', to_user_id: 'b' };
     expect(ledgerDirection(send, 'a')).toBe('out');
@@ -111,11 +152,16 @@ describe('the cashier transaction history', () => {
     expect(page).toContain("return role === 'owner' || role === 'co_owner' || role === 'admin';");
     expect(page).toContain("['club', 'All Club Transactions'],");
     expect(page).toContain("['mine', 'My Transactions'],");
-    expect(page).toContain('{roleResolved && isClubStaffRole(myRole) ? (');
-    expect(page).toContain(
-      "roleResolved && isClubStaffRole(myRole) && historyScope === 'club' ? 'club' : 'mine';"
+    // Staff choose between the club and their own; agents between their own
+    // and their downline (Dan's Club Data rule); a player has one book.
+    expect(page).toMatch(
+      /isClubStaffRole\(myRole\)\s*\?\s*\[\s*\['club', 'All Club Transactions'\],\s*\['mine', 'My Transactions'\],?\s*\]/
     );
-    expect(page).toContain("supabase.rpc('fn_cashier_transaction_history', {");
+    expect(page).toMatch(
+      /isAgentRole\(myRole\)\s*\?\s*\[\s*\['mine', 'My Transactions'\],\s*\['downline', 'My Downline'\],?\s*\]/
+    );
+    expect(page).toMatch(/isClubStaffRole\(myRole\) && historyScope === 'club'\s*\?\s*'club'/);
+    expect(page).toContain("supabase.rpc('fn_cashier_history_page', {");
     expect(page).toContain('p_scope: historyBook,');
     expect(page).toContain('const direction = ledgerDirection(r, user.id);');
   });

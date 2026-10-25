@@ -231,10 +231,24 @@ export function ProfileAccountSync() {
     onPayload: (message) => {
       const payload = (
         message as {
-          payload?: { user_id?: unknown; domains?: unknown; club_id?: unknown; reason?: unknown };
+          payload?: {
+            user_id?: unknown;
+            domains?: unknown;
+            club_id?: unknown;
+            cluster_id?: unknown;
+            reason?: unknown;
+          };
         }
       )?.payload;
       if (!userId || payload?.user_id !== userId || !Array.isArray(payload.domains)) return;
+      /* The database opened a Lightning pool session for this player
+         (20261025025154): relay it to the table that offers View Game. */
+      if (
+        payload.reason === 'lightning_room_opened' &&
+        typeof payload.cluster_id === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(payload.cluster_id)
+      )
+        masterBus.emit('LIGHTNING_ROOM_OPENED', { userId, clusterId: payload.cluster_id });
       if (
         payload.reason === 'member_scope_changed' &&
         typeof payload.club_id === 'string' &&
@@ -252,6 +266,9 @@ export function ProfileAccountSync() {
         // cache before mounted private routes recheck their current server scope.
         announceScope();
         refreshRef.current(DOMAINS);
+        // A rejoin can follow a missed room signal: every mounted Lightning
+        // anchor re-reads its session once.
+        if (userId) masterBus.emit('LIGHTNING_ROOM_OPENED', { userId });
       }
     },
   });

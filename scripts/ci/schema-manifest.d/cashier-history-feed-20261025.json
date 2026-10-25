@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-db/cashier-history-v3. PROMISED, not yet observed: Migration 20261025025659_cashier_history_feed_search_cursor_person_and_club_totals: the Transaction History feed and summary doors, the internal book helper and the closed-day totals cache, installed through Apply Merged Migration after merge.",
+  "functions": ["fn_cashier_history_feed", "fn_cashier_history_summary", "fn_cashier_history_book"],
+  "tables": ["cashier_club_day_totals"]
+}

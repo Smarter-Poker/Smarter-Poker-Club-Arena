@@ -1222,6 +1222,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // hold was flat and the last winner's "+N" float was cut off by
             // the board clear on every side pot and every hi-lo split.
             potAwardGroups: countAwardGroups(this.currentHandPerPotAwards),
+            // Dan 2026-10-24: an all-in showdown keeps the tabled hands and
+            // the announced winner up two seconds longer.
+            allInShowdown: this.currentHandAllInShowdown,
           });
 
           // Phase 1: the completion sequence actually plays out. When this
@@ -2307,6 +2310,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
       this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
       this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
+      this.currentHandAllInShowdown = false; // Dan 2026-10-24: the all-in tail is per hand
       this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log
       this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
       this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand

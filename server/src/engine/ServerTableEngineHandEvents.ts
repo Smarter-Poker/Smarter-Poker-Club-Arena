@@ -22,6 +22,7 @@ import {
   showdownCardsRevealedFrame,
   showdownFrame,
   turnChangeFrame,
+  isAllInShowdown,
 } from './presentation/handEventFrames.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { HandController } from './HandController.js';
@@ -797,6 +798,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // SHOWDOWN SYSTEM 2026-08-25: also capture the engine-decided reveal
         // metadata — seat, reveal order, muck eligibility, hand description.
         this.currentHandShowdownResults = normalizeShowdownResults((event as any).results);
+        // Dan 2026-10-24: an all-in showdown holds two seconds longer. The
+        // players are still the live hand's here; by the post-hand hold the
+        // controller has been released, so the fact is recorded now.
+        this.currentHandAllInShowdown = isAllInShowdown(
+          this.currentHandShowdownResults,
+          this.handController?.getState?.()?.players
+        );
         // SHOWDOWN POLISH 2026-08-25: muck-rate observability. If a future
         // change silently kills mucking, this pair flatlines against each
         // other — no DB sampling needed to notice. Metrics must never affect

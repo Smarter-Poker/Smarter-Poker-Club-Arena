@@ -2923,7 +2923,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v53_*',
     'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
-    'a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold\'em solver spot handed to the exploit layer',
+    "a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold'em solver spot handed to the exploit layer",
     'V53'
   ),
   receipt(

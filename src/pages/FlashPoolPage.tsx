@@ -197,47 +197,16 @@ export default function FlashPoolPage() {
     };
   }, []);
 
+  /* Dan's ruling (2026-10-16/17): fast-fold play is Lightning only. This page
+     is parked, and the join it used to call took the buy-in without ever
+     seating the player (no engine seat, no refund path). The server no longer
+     lets a client call it (20261024232449_flash_pool_join_never_takes_chips),
+     and the page never asks: a Join here can never move a chip. */
   const handleJoinPool = useCallback(
-    async (pool: PoolDisplay) => {
-      if (!user?.id) {
-        toast.error('Please sign in to play');
-        return;
-      }
-      const enteredAmount = buyInAmounts[pool.poolId] || 0;
-      const buyIn = enteredAmount || pool.buyInMin;
-      // Validate buy-in is within the pool's allowed range
-      if (buyIn < pool.buyInMin || buyIn > pool.buyInMax) {
-        toast.error(
-          `Buy-in must be between ${pool.buyInMin.toLocaleString()} and ${pool.buyInMax.toLocaleString()}`
-        );
-        return;
-      }
-      setJoiningPool(pool.poolId);
-      try {
-        // Server-authoritative: join pool via Supabase RPC
-        const { error: joinError } = await supabase.rpc('join_flash_pool', {
-          p_pool_id: pool.poolId,
-          p_user_id: user.id,
-          p_buy_in: buyIn,
-        });
-        if (joinError) {
-          toast.error(joinError.message || 'Unable to join pool - you may already be in this pool');
-          return;
-        }
-        toast.success(`Joining ${pool.stakes} flash pool...`);
-        masterBus.emit('FLASH_POOL_JOINED', {
-          poolId: pool.poolId,
-          userId: user.id,
-          buyIn,
-        });
-      } catch (err) {
-        reportError(err, 'FlashPoolPage.Join_failed');
-        toast.error('Failed to join pool');
-      } finally {
-        setJoiningPool(null);
-      }
+    (_pool: PoolDisplay) => {
+      toast.error('Flash Pools Are Not Open. Fast-Fold Play Is In Lightning Games.');
     },
-    [user, buyInAmounts, toast]
+    [toast]
   );
 
   if (loading) return <PageSkeleton />;

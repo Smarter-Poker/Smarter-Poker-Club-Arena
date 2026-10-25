@@ -47,27 +47,29 @@ const { playLightningMatrix } = await import('../testing/lightningStrengthMatrix
 
 /** Floors in horses' bb/100 against the archetype; measured result in the comment. */
 const FLOORS: Record<string, Record<string, number>> = {
-  nlh: { station: 500, nit: 10, reg: 20 },
-  plo5: { station: 500, nit: 0, reg: 20 },
+  nlh: { maniac: 0, station: 500, nit: 10, reg: 20 },
+  plo5: { maniac: 0, station: 500, nit: 0, reg: 20 },
   // PLO5 v nit measured 8.1 bb/100 after main's V53 aggressive-human pressure (#7957, #7958), down from 54.7: still a win, so the floor is "win".
-  // The maniac is not gated: an all-in archetype over 250 hands swung from
-  // -66.5 (CI) to +612 bb/100 between identical runs, so its sign is noise.
 };
 
 describe('LAW: a brain change has to prove it still wins in Lightning', () => {
   for (const variant of Object.keys(FLOORS))
-    for (const archetype of ['station', 'nit', 'reg'] as const)
+    for (const archetype of ['maniac', 'station', 'nit', 'reg'] as const)
       it(`${variant}: the horses beat the ${archetype}`, async () => {
         vi.useFakeTimers({
           toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
         });
-        deckState = 0x9e3779b9 ^ (variant.length * 7919 + archetype.length * 104729);
-        const r = await playLightningMatrix({ archetype, variant, hands: 250, seed: 20261024 });
-        vi.useRealTimers();
-        console.log(
-          `[lightning-matrix] ${variant} ${archetype}: ${r.horsesBB100.toFixed(1)} bb/100 over ${r.hands}`
-        );
-        expect(r.hands).toBeGreaterThanOrEqual(240);
-        expect(r.horsesBB100).toBeGreaterThan(FLOORS[variant]![archetype]!);
+        try {
+          vi.setSystemTime(Date.UTC(2026, 9, 24));
+          deckState = 0x9e3779b9 ^ (variant.length * 7919 + archetype.length * 104729);
+          const r = await playLightningMatrix({ archetype, variant, hands: 250, seed: 20261024 });
+          console.log(
+            `[lightning-matrix] ${variant} ${archetype}: ${r.horsesBB100.toFixed(1)} bb/100 over ${r.hands}`
+          );
+          expect(r.hands).toBeGreaterThanOrEqual(240);
+          expect(r.horsesBB100).toBeGreaterThan(FLOORS[variant]![archetype]!);
+        } finally {
+          vi.useRealTimers();
+        }
       }, 180_000);
 });

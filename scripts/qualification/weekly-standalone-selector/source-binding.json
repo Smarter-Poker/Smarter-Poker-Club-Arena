@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 234392,
-      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+      "bytes": 234479,
+      "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -292,6 +292,21 @@
         "current": {
           "bytes": 234392,
           "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+        }
+      }
+    }
+  },
+  "actionAudioBrowserInputIdentity20261025": {
+    "reason": "Current input identity for adding action audio and delayed leaderboard browser regressions to existing CSS Beat. Financial source, assertions and historical qualification verdicts unchanged. Hashes are not execution or production proof.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 234392,
+          "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+        },
+        "current": {
+          "bytes": 234479,
+          "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
         }
       }
     }

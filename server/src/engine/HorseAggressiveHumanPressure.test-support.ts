@@ -52,6 +52,10 @@ export interface PressureTally {
   riverFirst: { check: number; bet: number };
   /** the human's answer to a horse river bet */
   humanVsRiverBet: { fold: number; call: number };
+  /** the horse 3-bet the human preflop, heads-up flop, horse to act with no bet: check / bet */
+  threeBettorFlop: { check: number; bet: number };
+  /** the same pot on the turn after the horse bet the flop and was called: check / bet */
+  threeBettorTurn: { check: number; bet: number };
   /** V53 telemetry fires (the live worker decides with telemetry on too) */
   fires: Record<string, number>;
 }
@@ -63,6 +67,8 @@ const fresh = (): PressureTally => ({
   vsFlopBet: { fold: 0, call: 0, raise: 0 },
   riverFirst: { check: 0, bet: 0 },
   humanVsRiverBet: { fold: 0, call: 0 },
+  threeBettorFlop: { check: 0, bet: 0 },
+  threeBettorTurn: { check: 0, bet: 0 },
   fires: {},
 });
 
@@ -264,6 +270,23 @@ export function playPressureArm(
               if (d.action === 'fold') out.vsFlopBet.fold++;
               else if (aggressive) out.vsFlopBet.raise++;
               else out.vsFlopBet.call++;
+            }
+            const lastPreRaiser = [...preRaises].reverse()[0];
+            if (
+              (street === 'flop' || street === 'turn') &&
+              live.length === 2 &&
+              !human.is_folded &&
+              menu.toCall === 0 &&
+              !lastAggr &&
+              preRaises.length >= 2 &&
+              lastPreRaiser?.userId === spot.hero.user_id
+            ) {
+              const flopBetByHero = hist.some(
+                (a) => a.stage === 'flop' && a.userId === spot.hero.user_id && a.action === 'bet'
+              );
+              const t =
+                street === 'flop' ? out.threeBettorFlop : flopBetByHero ? out.threeBettorTurn : null;
+              if (t) aggressive ? t.bet++ : t.check++;
             }
             if (
               street === 'river' &&

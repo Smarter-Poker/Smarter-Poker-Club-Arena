@@ -63,3 +63,14 @@ real edge. The nightly league gains v53_pressure (hold'em) and
 plo4/plo5/plo6_v53_pressure; the live read is the post-launch check.
 
 Pinned by `HorseV53Pressure.test.ts` and `HorseV53PressureBehavior.test.ts`.
+
+## Follow-up: the 3-bettor keeps firing (continued pressure)
+
+In the harness the horse that 3-bet the human and was called bet 60% of heads-up
+flops and 58% of turns after a flop bet: the PLO EV bet engine priced the
+human's folds at a horse's rate because fold-to-bet moves the multiplier only
+once it is credible at 90%. `pressureTargetFoldMul` now gives the engine the
+target's own shrunk fold-to-bet over the horse mean (measured human: 0.526 /
+0.398 = 1.32x), clamped to [1, 1.5], only while hero holds the initiative
+against a pressure target with 8+ fold-to-bet opportunities. Receipt
+`v53_pressure_barrel`.

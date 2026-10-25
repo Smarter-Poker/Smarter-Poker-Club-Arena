@@ -40,6 +40,7 @@ import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
+import { formatPopupText } from '../../utils/popupStyle';
 /**
  * Suit glyphs for the peel index (text symbols, U+2660-2667, with the text
  * variation selector so no platform swaps in an emoji). Same characters
@@ -323,6 +324,15 @@ export interface SeatSlotProps {
    */
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * Dan 2026-10-24 ("PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS BETTER"):
+   * the name of the hand THIS seat tabled at showdown, from the engine's
+   * showdown event. Printed under a beaten hand that is still face up, muted
+   * beside the winner's gold label, so every hand on the felt says what it
+   * is. Never rendered for the winner (the winner label is that seat's
+   * line), for a mucked hand, or while the hero's own live read is showing.
+   */
+  shownHandName?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (spec section 15): indices of THIS winner's
    * own hole cards that participate in the winning five-card hand, from the
@@ -899,6 +909,7 @@ export const SeatSlot = memo(
       netWinAmount,
       bbjCreditAmount,
       winningHandName,
+      shownHandName,
       handStrength,
       hudStats,
       showHUD = false,
@@ -3722,7 +3733,21 @@ export const SeatSlot = memo(
         )}
 
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
-        {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+        {isWinner && winningHandName && (
+          <div className="seat__hand-name seat__hand-name--winner">
+            {formatPopupText(winningHandName)}
+          </div>
+        )}
+        {/* Dan 2026-10-24: a beaten hand that is still face up names itself. */}
+        {!isWinner &&
+          shownHandName &&
+          !isMuckedShowdown &&
+          !isMucking &&
+          !(player.isHero && handStrength && !squeezeDown) && (
+            <div className="seat__hand-name seat__hand-name--shown">
+              {formatPopupText(shownHandName)}
+            </div>
+          )}
 
         {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this
             hand muckable — its cards were never revealed. The label is the
@@ -3926,6 +3951,7 @@ export const SeatSlot = memo(
     if (prev.bountyUnitCents !== next.bountyUnitCents) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
+    if (prev.shownHandName !== next.shownHandName) return false;
     if (prev.handStrength !== next.handStrength) return false;
     if (prev.netWinAmount !== next.netWinAmount) return false;
     if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;

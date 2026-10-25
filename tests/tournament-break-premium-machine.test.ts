@@ -9,6 +9,9 @@ const SCREEN = readFileSync(
 );
 const CSS = readFileSync(resolve(ROOT, 'src/components/table/TournamentBreakScreen.css'), 'utf8');
 
+const PAGE = readFileSync(resolve(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
+const MODALS = readFileSync(resolve(ROOT, 'src/components/table/TableModalsLayer.tsx'), 'utf8');
+
 describe('tournament break console', () => {
   it('keeps the live clock, next level, field, hero, and five leaders connected', () => {
     expect(SCREEN).toContain('breakEndsAtMs - serverNow()');
@@ -43,8 +46,13 @@ describe('tournament break console', () => {
     expect(SCREEN).toContain('aria-modal="false"');
     expect(CSS).toContain('@media (max-height: 500px)');
     expect(CSS).toMatch(
-      /\.break-screen__minimized\s*\{[^}]*bottom:\s*calc\(var\(--bottom-nav-stack-base,/s
+      /\.break-screen__minimized--on-table\s*\{[^}]*position:\s*absolute;[^}]*top:\s*65%/s
     );
     expect(CSS).toContain('calc(var(--bottom-nav-clearance, 44px) + 12px)');
+    expect(CSS).toContain('spade-console-v2/bottom-foot.png');
+    expect(CSS).toContain('width: min(240px, 56%)');
+    expect(SCREEN).toContain('createPortal(button, tableAnchor)');
+    expect(PAGE).toContain('tableAnchorRef={tableScalerRef}');
+    expect(MODALS).toContain('tableAnchorRef={tableAnchorRef}');
   });
 });

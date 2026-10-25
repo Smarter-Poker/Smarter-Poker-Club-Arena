@@ -593,13 +593,18 @@ describe('the clock, the time bank and a horse', () => {
    */
   function pinHorseTempo(
     t: ReturnType<typeof buildHost>,
-    thinkTime: (decisionIndex: number) => number
+    thinkTime: (decisionIndex: number) => number,
+    staysIn: (decisionIndex: number) => boolean = () => false
   ): void {
     const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      const i = n++;
+      // A fold facing a bet takes the Lightning Fold door at once, with no
+      // think time, so a decision that must spend its tempo cannot be a fold.
+      const action = staysIn(i) && r.decision.action === 'fold' ? 'call' : r.decision.action;
+      return { ...r, decision: { ...r.decision, action, thinkTime: thinkTime(i) } };
     });
   }
 
@@ -653,7 +658,14 @@ describe('the clock, the time bank and a horse', () => {
     const t = buildHost(formed, [100, 100], { horses });
     // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
     // every later one is a beat.
-    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    // The tank stays in the hand: a fold would leave by the Lightning Fold
+    // door before any think time, and the random brain folds it about half
+    // the time.
+    pinHorseTempo(
+      t,
+      (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000),
+      (i) => i === 0
+    );
     await t.host.start();
     await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');
@@ -818,5 +830,86 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
     const folded = t.calls.settle[0].results.find((r) => r.playerId === waiting.user_id)!;
     expect(folded.foldType).toBe('fast');
     expect(t.calls.fastFold.find((f) => f.playerId === waiting.user_id)?.foldType).toBe('fast');
+  });
+});
+
+describe('the idle room carries its own player’s balance (Dan 2026-10-24)', () => {
+  /** Every idle frame names only its room's owner, never another player. */
+  function balancesNameOnlyTheirOwner(t: ReturnType<typeof buildHost>) {
+    let seen = 0;
+    for (const f of t.hub.frames) {
+      if (f.kind !== 'publish') continue;
+      const balance = f.payload.lightning?.player_balance;
+      if (!balance) continue;
+      seen++;
+      const owner = t.participants.find((p) => p.poolSessionId === f.room)!;
+      expect(f.payload.stage).toBe('waiting');
+      expect(balance.user_id).toBe(owner.playerId);
+    }
+    return seen;
+  }
+
+  it('a fold tells the folder’s room the chips behind them, and nobody else’s', async () => {
+    const stacks = [180, 210, 240, 270];
+    const t = buildHost(formedHand(4, 8800), stacks);
+    await t.host.start();
+    await flush();
+    const st = t.host.peekState()!;
+    const folder = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+    const behind = folder.stack;
+    const room = t.host.roomOf(folder.user_id)!;
+    expect(
+      t.host.handlePlayerAction(
+        folder.user_id,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${t.host.currentHandId}`
+      ).success
+    ).toBe(true);
+    await flush();
+    const idle = t.hub
+      .inRoom(room)
+      .filter((f) => f.kind === 'publish')
+      .at(-1)!.payload;
+    expect(idle).toMatchObject({ stage: 'waiting', players: [], hand_id: null });
+    expect(idle.lightning.player_balance).toEqual({ user_id: folder.user_id, stack: behind });
+    expect(behind).toBeGreaterThan(0);
+    // No other room was idled, so no other balance was sent anywhere.
+    for (const p of t.participants) {
+      if (p.playerId === folder.user_id) continue;
+      expect(JSON.stringify(t.hub.inRoom(p.poolSessionId))).not.toContain('player_balance');
+    }
+    expect(balancesNameOnlyTheirOwner(t)).toBe(1);
+  });
+
+  it('every folder of a played-out hand is told only their own balance', async () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const rnd = mulberry32(seed);
+      const n = 2 + (seed % 5);
+      const stacks = Array.from({ length: n }, () => 40 + Math.floor(rnd() * 300));
+      const t = buildHost(formedHand(n, 8900 + seed * 10), stacks);
+      await t.host.start();
+      await playOut(t.host, rnd);
+      await flush();
+      balancesNameOnlyTheirOwner(t);
+    }
+  });
+
+  it('an abandon tells each room its owner’s stack before the voided hand', async () => {
+    const stacks = [100, 150, 175];
+    const t = buildHost(formedHand(3, 8950), stacks);
+    (t.backend.insertHoleCards as any).mockImplementation(async () => {
+      throw new Error('insert_hole_cards failed');
+    });
+    await t.host.start();
+    expect(t.host.lifecycle).toBe('abandoned');
+    for (const p of t.participants) {
+      const last = t.hub
+        .inRoom(p.poolSessionId)
+        .filter((f) => f.kind === 'publish')
+        .at(-1)!.payload;
+      expect(last.lightning.player_balance).toEqual({ user_id: p.playerId, stack: p.stackBefore });
+    }
+    expect(balancesNameOnlyTheirOwner(t)).toBe(3);
   });
 });

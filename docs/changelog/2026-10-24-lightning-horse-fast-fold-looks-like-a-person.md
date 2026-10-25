@@ -43,5 +43,6 @@ real human fast-fold volume.
 
 `LightningHandHost.test.ts` "a horse that tanks runs into its bank" failed
 about a third of the time on main. If the brain's first answer was a fold,
-that fold was already-folding, so the horse never tanked. The tanking
-decision in that test is now pinned to a call or a check.
+that fold was already-folding, so the horse never tanked. This branch
+carries the same fix as #8001, byte for byte, so the two cannot conflict:
+the tanking decision in that test is pinned to a call.

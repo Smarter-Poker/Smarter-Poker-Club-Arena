@@ -199,8 +199,8 @@ describe('the play and net denominators use the same dealt horses', () => {
     accumulateHorseNets(
       input({
         actions: [
-          { userId: 'horse-a', seat: 1, stage: 'preflop', action: 'bet', amount: 10, timestamp: 1 },
-          { userId: 'human-1', seat: 3, stage: 'preflop', action: 'call', amount: 4, timestamp: 2 },
+          { userId: 'horse-a', seat: 1, stage: 'preflop', action: 'bet', amount: 10 },
+          { userId: 'human-1', seat: 3, stage: 'preflop', action: 'call', amount: 4 },
         ],
         ...over,
       })
@@ -214,8 +214,8 @@ describe('the play and net denominators use the same dealt horses', () => {
         ['human-1', { seat: 3, cards: [] }],
       ]),
       actions: [
-        { userId: 'horse-a', seat: 1, stage: 'preflop', action: 'bet', amount: 10, timestamp: 1 },
-        { userId: 'horse-b', seat: 2, stage: 'preflop', action: 'fold', amount: 0, timestamp: 2 },
+        { userId: 'horse-a', seat: 1, stage: 'preflop', action: 'bet', amount: 10 },
+        { userId: 'horse-b', seat: 2, stage: 'preflop', action: 'fold', amount: 0 },
       ],
     });
     expect(result.nets.map((r) => r.horse_user_id)).toEqual(['horse-a']);

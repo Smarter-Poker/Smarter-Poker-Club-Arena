@@ -112,6 +112,36 @@ export const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs()
  * one call's own 8 s budget.
  */
 export const CASH_RETRY_DRAIN_BUDGET_MS = 30_000;
+/**
+ * A RETRY DRAIN THAT SETTLED NOTHING RESTS BEFORE IT IS ASKED AGAIN (2026-10-25).
+ *
+ * The drain above keeps calling while a call comes back full and "settled
+ * something" - and a call that refuses every source again counted as settling
+ * something, because a refusal is a receipt. Measured on production
+ * 2026-10-24 23:21 - 2026-10-25 03:05 UTC: 61,354 sources were due with
+ * accounting_terms_not_observed (55000, attempts 1-15), a refusal no retry can
+ * clear until its evidence is repaired, and every inner run spent its whole
+ * 30 s budget re-refusing them (5,600 retry receipts in that window, none
+ * accrued) before it read a single fresh rake record.
+ *
+ * So the drain now continues only while a call ACCRUES at least one source,
+ * and a drain that accrued nothing rests: no retry call at all for
+ * retryRestMs(n) after the n-th such drain in a row - 1 minute, doubling, at
+ * most the 30-minute interval. The first drain that accrues anything ends the
+ * rest. Nothing about a refused source changes: its work row, its
+ * next_attempt_at and its order in the queue belong to the database, which
+ * still decides every retry; the engine only stops asking while asking has
+ * been proved fruitless. A source refused by a lock (40P01/55P03/40001) is
+ * retried by the database on its own short schedule whenever the engine next
+ * asks, at most one rest later.
+ */
+export const CASH_RETRY_REST_BASE_MS = 60_000;
+export const CASH_RETRY_REST_MAX_MS = 30 * 60 * 1000;
+export function retryRestMs(consecutiveFruitlessDrains: number): number {
+  if (!Number.isFinite(consecutiveFruitlessDrains) || consecutiveFruitlessDrains < 1) return 0;
+  const doublings = Math.min(Math.floor(consecutiveFruitlessDrains) - 1, 30);
+  return Math.min(CASH_RETRY_REST_MAX_MS, CASH_RETRY_REST_BASE_MS * 2 ** doublings);
+}
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -164,7 +194,16 @@ export const FETCH_LIMIT = 1000;
  * cap is hit we LOG it — a silently truncated drain reads exactly like a
  * finished one.
  */
-export const MAX_DRAIN_BATCHES = 3;
+/*
+ * 2026-10-25: 3 -> 10. Three pages then a 60 s catch-up was sized when a page
+ * took ~25 s; on 2026-10-24 a page of 1,000 took 300-400 s, so a cycle was
+ * ~17 minutes of work then a minute idle, and every cycle also re-ran its
+ * retry drain and horizon before the first page. Ten pages keeps one cycle
+ * near an hour of work at the measured pace (bounded: a cycle still ends at
+ * the cap, at a halt, at an empty range, and now when the maintenance freeze
+ * begins), and the read-only sentinels still run as soon as backlog clears.
+ */
+export const MAX_DRAIN_BATCHES = 10;
 
 /**
  * THE SETTLER CLEARS EACH HOST CLUB'S CASH IN ITS OWN LANE (2026-10-02).
@@ -223,6 +262,52 @@ export const CASH_DEFERRAL_RESUBMITS = 3;
 export const CASH_DEFERRAL_PAUSE_MS = 250;
 
 /**
+ * TWO WORKERS INSIDE ONE HOST CLUB'S LANE (2026-10-25).
+ *
+ * Since the Midway union took every cash game, production has ONE host club
+ * (fade0000), so the per-host lanes above are one serial lane: measured
+ * 2026-10-24 21:00-23:00 UTC it accrued ~7,000 first attempts an hour against
+ * 13-15k cash hands arriving. A host club's chunks are now dealt, in page
+ * order, round-robin to CASH_WORKERS_PER_LANE workers that run side by side.
+ *
+ * Why two workers cannot collide:
+ *   - each chunk is a disjoint set of rake records, and a record is one hand
+ *     (uq_rake_records_hand_id), so two workers never submit the same hand;
+ *     if they ever did, fn_process_cash_accounting_source serializes on
+ *     'accounting_cash_hand:<hand>' and the second returns the first's
+ *     receipt (duplicate), writing nothing twice;
+ *   - fn_credit_agent_commissions_batch takes every club commission key, then
+ *     every player key, in one total order before its first item, waiting at
+ *     most 1 s for a busy one while holding only lower keys, so two workers
+ *     cannot deadlock each other; an item whose keys the other worker still
+ *     holds is DEFERRED (writes nothing) and resubmitted exactly as one
+ *     deferred behind a tournament finish (CASH_DEFERRAL_RESUBMITS);
+ *   - a tournament finish waits behind at most one call as before: each call
+ *     still fits COMMISSION_KEY_HOLD_MS, and the advisory-lock queue is FIFO;
+ *   - the cursor is still saved only after every worker of every lane has
+ *     stopped and every refusal has been read back.
+ * Accounting is untouched: the same items, the same function, the same
+ * receipts; only the order in which two disjoint chunks reach the database.
+ */
+export const CASH_WORKERS_PER_LANE = 2;
+
+/** Deal a lane's chunks of `chunkSize`, in order, round-robin to `workers` workers. */
+export function laneWorkers<T>(
+  lane: T[],
+  chunkSize: number,
+  workers: number = CASH_WORKERS_PER_LANE
+): T[][][] {
+  const size = Math.max(1, Math.floor(chunkSize) || 1);
+  const chunks: T[][] = [];
+  for (let offset = 0; offset < lane.length; offset += size)
+    chunks.push(lane.slice(offset, offset + size));
+  const width = Math.max(1, Math.min(Math.floor(workers) || 1, chunks.length));
+  const out: T[][][] = Array.from({ length: width }, () => []);
+  chunks.forEach((chunk, n) => out[n % width].push(chunk));
+  return out.filter((worker) => worker.length > 0);
+}
+
+/**
  * Split a page's cash rows into at most `maxLanes` lanes by host club. Rows of
  * one club stay together and in page order; clubs are dealt to lanes in the
  * order they first appear, so the split is deterministic for a given page.
@@ -272,25 +357,54 @@ interface RakeCursor {
 type CycleResult = 'idle' | 'more' | 'halted';
 
 /** An immutable refusal without its durable retry work is not permission to
- * advance the source cursor. A later successful retry may supersede the receipt. */
-async function confirmCashSourceRefusals(receipts: CashSourceReceipt[]): Promise<void> {
-  for (const receipt of receipts) {
-    if (receipt.status !== 'blocked') continue;
-    const { data: stored, error: receiptError } = await supabase
+ * advance the source cursor. A later successful retry may supersede the receipt.
+ *
+ * ONE READ OF EACH TABLE PER CALL, NOT TWO ROUND TRIPS PER REFUSAL (2026-10-25).
+ * Every refused receipt used to be read back with two sequential single-row
+ * requests. Measured on production 2026-10-24 21:00-23:00 UTC: 10,355 such
+ * reads at ~305 ms each, 3,168 s of the lane's ~5,250 busy seconds (60%), while
+ * the batch RPCs themselves took 2,030 s - a third of each page went to
+ * refusals (accounting_terms_not_observed), and every one of them cost the lane
+ * ~0.6 s of round trips. The same two rows of every refusal are now read with
+ * one `in` query per table, both at once, and each refusal is checked by the
+ * same verifyCashSourceRefusal against exactly the rows it would have read
+ * before: a row that is missing, foreign or different still refuses the page. */
+export async function confirmCashSourceRefusals(receipts: CashSourceReceipt[]): Promise<void> {
+  const refused = receipts.filter((receipt) => receipt.status === 'blocked');
+  if (refused.length === 0) return;
+  const [stored, work] = await Promise.all([
+    supabase
       .from('accounting_cash_source_receipts')
       .select('id,rake_record_id,status,attempt,source_fingerprint,reason,result')
-      .eq('id', receipt.receipt_id)
-      .maybeSingle();
-    if (receiptError)
-      throw new Error('Cash source refusal receipt read failed', { cause: receiptError });
-    const { data: work, error: workError } = await supabase
+      .in(
+        'id',
+        refused.map((receipt) => receipt.receipt_id)
+      ),
+    supabase
       .from('accounting_cash_source_work')
       .select('rake_record_id,receipt_id,status,attempts')
-      .eq('rake_record_id', receipt.rake_record_id)
-      .maybeSingle();
-    if (workError) throw new Error('Cash source retry work read failed', { cause: workError });
-    verifyCashSourceRefusal(receipt, stored, work);
-  }
+      .in(
+        'rake_record_id',
+        refused.map((receipt) => receipt.rake_record_id)
+      ),
+  ]);
+  if (stored.error)
+    throw new Error('Cash source refusal receipt read failed', { cause: stored.error });
+  if (work.error) throw new Error('Cash source retry work read failed', { cause: work.error });
+  if (!Array.isArray(stored.data) || !Array.isArray(work.data))
+    throw new Error('Cash source refusal readback missing');
+  const receiptsById = new Map<unknown, unknown>(
+    (stored.data as Array<{ id?: unknown }>).map((row) => [row?.id, row])
+  );
+  const workByRecord = new Map<unknown, unknown>(
+    (work.data as Array<{ rake_record_id?: unknown }>).map((row) => [row?.rake_record_id, row])
+  );
+  for (const receipt of refused)
+    verifyCashSourceRefusal(
+      receipt,
+      receiptsById.get(receipt.receipt_id),
+      workByRecord.get(receipt.rake_record_id)
+    );
 }
 
 /** A transport success does not prove that the period was written. */
@@ -771,6 +885,9 @@ export class RakebackSettlerService {
    * acknowledges a page, or finds nothing to do, sets it back to zero.
    */
   private consecutiveStalls = 0;
+  /** Retry drains in a row that accrued nothing, and when the rest they earned ends. */
+  private fruitlessRetryDrains = 0;
+  private retryRestUntilMs = 0;
 
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
@@ -1177,6 +1294,13 @@ export class RakebackSettlerService {
             break;
           }
           if (result !== 'more') break;
+          // The freeze refuses money writes: stop at a page boundary and let the
+          // catch-up be held for the thaw (launchSettlement) rather than run a
+          // page into the break and halt it.
+          if (isMaintenanceFrozen() || !this.acceptingSettlements) {
+            backlogRemains = true;
+            break;
+          }
           if (batch >= MAX_DRAIN_BATCHES) {
             backlogRemains = true;
             console.warn(
@@ -1834,8 +1958,11 @@ export class RakebackSettlerService {
     lastCallFull: boolean;
   }> {
     const receipts: CashSourceReceipt[] = [];
+    // A drain that accrued nothing is resting (see CASH_RETRY_REST_BASE_MS).
+    if (Date.now() < this.retryRestUntilMs) return { receipts, lastCallFull: false };
     const deadline = Date.now() + CASH_RETRY_DRAIN_BUDGET_MS;
     let deferredTotal = 0;
+    let accruedTotal = 0;
     let lastCallFull = false;
     for (let call = 0; ; call++) {
       let retried: { receipts: CashSourceReceipt[]; deferred: string[] };
@@ -1856,9 +1983,27 @@ export class RakebackSettlerService {
       }
       receipts.push(...retried.receipts);
       deferredTotal += retried.deferred.length;
+      const accrued = retried.receipts.filter((r) => r.status === 'accrued').length;
+      accruedTotal += accrued;
       lastCallFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
-      if (!lastCallFull || retried.receipts.length === 0) break;
+      // Only an accrual is progress: a call that refused every source again
+      // proves the next call would too (A RETRY DRAIN THAT SETTLED NOTHING RESTS).
+      if (!lastCallFull || accrued === 0) break;
       if (Date.now() >= deadline || isMaintenanceFrozen() || !this.acceptingSettlements) break;
+    }
+    if (receipts.length > 0 && accruedTotal === 0) {
+      this.fruitlessRetryDrains++;
+      const rest = retryRestMs(this.fruitlessRetryDrains);
+      this.retryRestUntilMs = Date.now() + rest;
+      console.log(
+        `[RakebackSettler] ${receipts.length} retried cash source(s) refused again and none accrued; ` +
+          `the retry queue rests ${rest / 1000}s (fruitless drain ${this.fruitlessRetryDrains} in a row)`
+      );
+      // A fruitless queue is not backlog this cursor can clear.
+      lastCallFull = false;
+    } else if (accruedTotal > 0 || receipts.length === 0) {
+      this.fruitlessRetryDrains = 0;
+      this.retryRestUntilMs = 0;
     }
     // A deferred retry keeps its blocked work row exactly as it was (no attempt is
     // spent) and is among the first due sources again; it is not this cursor's.
@@ -2010,9 +2155,15 @@ export class RakebackSettlerService {
       // ONE LANE PER HOST CLUB, RUN SIDE BY SIDE (2026-10-02). Each lane keeps
       // the same small batches in the same order; only lanes of different host
       // clubs overlap. See cashSourceLanes() for why that cannot add a wait.
-      const runLane = async (lane: RakeRecordRow[]): Promise<void> => {
-        for (let offset = 0; offset < lane.length; offset += CREDIT_BATCH_SIZE) {
-          const chunk = lane.slice(offset, offset + CREDIT_BATCH_SIZE);
+      // A REFUSAL IS READ BACK BESIDE THE NEXT CALL, NOT BEFORE IT (2026-10-25).
+      // Every refusal must be read back before the page is acknowledged, not
+      // before the next chunk is submitted: the readback is read-only and the
+      // cursor waits for all of them below. So it no longer sits on the lane's
+      // critical path (60% of its time on 2026-10-24, see
+      // confirmCashSourceRefusals).
+      const confirmations: Promise<void>[] = [];
+      const runWorker = async (chunks: RakeRecordRow[][]): Promise<void> => {
+        for (const chunk of chunks) {
           const ids = chunk.map((row) => {
             if (!row.id) throw new Error('Cash source has no durable record identity');
             return row.id;
@@ -2032,7 +2183,10 @@ export class RakebackSettlerService {
             });
             if (error) throw new Error('Cash source batch failed', { cause: error });
             const { receipts, deferred } = readCashSourceBatchOutcome(data, pending);
-            await confirmCashSourceRefusals(receipts);
+            const confirmation = confirmCashSourceRefusals(receipts);
+            // Observed now so an early rejection is never unhandled; awaited below.
+            confirmation.catch(() => undefined);
+            confirmations.push(confirmation);
             sources.push(...receipts);
             if (deferred.length === 0) break;
             fruitlessResubmissions =
@@ -2053,10 +2207,19 @@ export class RakebackSettlerService {
         }
       };
       // allSettled, then rethrow: the page is not acknowledged until every
-      // lane has stopped, so no lane is still writing when the cycle halts.
-      const outcomes = await Promise.allSettled(cashSourceLanes(cashRows).map(runLane));
+      // worker of every lane has stopped, so none is still writing when the
+      // cycle halts, and until every refusal it wrote has been read back.
+      const workers = cashSourceLanes(cashRows).flatMap((lane) =>
+        laneWorkers(lane, CREDIT_BATCH_SIZE)
+      );
+      const outcomes = await Promise.allSettled(workers.map(runWorker));
       const failed = outcomes.find((o): o is PromiseRejectedResult => o.status === 'rejected');
       if (failed) throw failed.reason;
+      const confirmed = await Promise.allSettled(confirmations);
+      const unconfirmed = confirmed.find(
+        (o): o is PromiseRejectedResult => o.status === 'rejected'
+      );
+      if (unconfirmed) throw unconfirmed.reason;
     } catch (error) {
       reportError(error, 'RakebackSettler.attribution_failures_hold_cursor');
       return 'halted';

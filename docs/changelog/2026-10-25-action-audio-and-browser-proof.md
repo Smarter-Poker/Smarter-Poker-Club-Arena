@@ -11,3 +11,7 @@ Reserved certification cleanup now recognizes the exact zero-custody admin scope
 Local evidence: 129 focused tests and 8 Chromium/WebKit browser cases pass; native PostgreSQL17 cleanup qualification passes. Publication and migration installation require their normal protected provider routes and live readback.
 
 Real-time law: triggered by PLAYER_ACTION discrete WS event, no snapshot diff.
+
+## Browser gate timing correction
+
+A later integrated CI run passed the new audio/layout cases but failed two pre-existing WebKit lobby checks. The retained trace shows the eight route/viewport card scenarios exhausted one shared 60-second test budget at the final close, leaving only three milliseconds for its overflow check. Each independent route/viewport now has its own ordinary test case and preserves every card, scrolling, close, focus, Escape and return-link assertion. The native scroll-hitbox test uses its existing five-second action budget rather than an extra 1.5-second override that expired after a successful scroll; geometry, hit testing, native clicks and click-count assertions are unchanged. No production geometry or test assertion was altered. All 22 affected Chromium/WebKit cases passed locally without retries; hosted revalidation remains required.

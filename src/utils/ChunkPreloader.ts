@@ -18,7 +18,7 @@
  * chunks in the background without blocking the main thread.
  */
 
-import { IS_NATIVE_BUILD } from '../lib/appBase';
+import { APP_BASE_URL, IS_NATIVE_BUILD } from '../lib/appBase';
 
 // Track whether preloading has already been triggered this session
 let preloaded = false;
@@ -80,6 +80,14 @@ function shouldPreload(): boolean {
  * Safe to call multiple times — only runs once per session.
  */
 export function preloadCriticalChunks(): void {
+  // The public status page needs no member screens or card deck. Idle
+  // preloads made its transfer depend on callback timing and exceed 3MB.
+  // Do not consume the once-per-session warm: real navigation may need it.
+  if (
+    typeof window !== 'undefined' &&
+    window.location.pathname.replace(/\/$/, '') === `${APP_BASE_URL}health`
+  )
+    return;
   if (preloaded) return;
   preloaded = true;
 

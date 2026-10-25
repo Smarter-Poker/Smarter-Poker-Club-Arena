@@ -10,6 +10,7 @@
 
 import { capture } from '../lib/analytics';
 import { supabase } from '../lib/supabase';
+import { awaitQueuedCashouts, hasQueuedCashout } from './queuedCashoutWatcher';
 import { cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 
@@ -413,6 +414,8 @@ export async function joinCashGame(gameId: string): Promise<CashGameJoinResult> 
   const started = Date.now();
   captureAdmission('cash_game_admission_started', { game_id: gameId });
   try {
+    // A leave finishing its last hand returns its seat and chips first.
+    if (hasQueuedCashout()) await awaitQueuedCashouts();
     const { data, error } = await supabase.rpc('fn_cash_game_join', { p_game_id: gameId });
     if (error) throw error;
     if (data?.ok !== true) {

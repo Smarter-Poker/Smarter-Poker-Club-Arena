@@ -2610,6 +2610,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const ritOrdered = allInPlayers
       .filter((p) => p.cards && p.cards.length > 0)
       .sort((a, b) => ritClockwise(a.seat) - ritClockwise(b.seat));
+    // Dan 2026-10-24: a run-it-multiple hand is an all-in showdown by
+    // construction (every remaining player is all-in), so it gets the same
+    // two-second tail as a single-board all-in.
+    this.currentHandAllInShowdown = ritOrdered.length >= 2;
     this.currentHandShowdownResults = ritOrdered.map((p, i) => {
       const hand = boardEvaluator(p.cards, firstBoard);
       return {

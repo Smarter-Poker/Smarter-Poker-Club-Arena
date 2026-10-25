@@ -25,3 +25,33 @@ source with only that block substituted). The migration then proves, on live
 floored tables, that the reader and the eviction flag exactly the same seats.
 
 Law: `tests/the-vpip-readers-share-the-evictions-window.law.test.ts`.
+
+## Delivery recovery, 2026-10-25
+
+Owner requested completion of this handoff, including lobby sorting, VPIP
+reader/enforcer agreement, horse tuning evidence and CI checks. Current writer:
+Codex in `/Volumes/SmarterWork/agent-work/mixed-vpip-finish-20261025/tree`,
+continuing existing PR #7966 and its branch. No competing registered worktree
+owns that branch. Lobby fixes #7875, #7907, #7914 and #7922 are merged;
+both client endpoints serve `21062fe3ac66d9e19faa5f8378e38a3bfe3c8cde`,
+which contains #7922. #8000 is merged; its measured decision retains the
+current horse target. No new engine behavior is required by this migration.
+
+Read canonical owner policy, operating law, hardening standard, reference
+index, storage guide, repository AGENTS/CLAUDE/AGENT-PLAYBOOK/PUBLISHING and
+deploy-paths. Policy reader: 2026-10-25T14:36:18.215Z, version 2.9,
+manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+Owner SHA256 `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`;
+operating `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`;
+hardening `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`;
+index `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`.
+SSD verified on its own disk with 106 GiB free. Private dependencies on SSD.
+
+Recovered head `f991d486fa97ac493fab03e99e4bfb980a2ba038` had passing hosted
+checks but conflicted with main in the time-bank regression. Retained main's
+already improved `pinHorseTempo` non-fold decision option, avoiding duplicate
+mock wrapping. Live function hashes still match all three migration guards;
+version `20261024232218` is absent from migration history. Required remaining
+proof: final local/hosted checks, protected merge, exact guarded installation,
+function/grant/history readback and live reader/enforcer comparison. Preserve
+unrelated production rows and active work; no financial/seat writes for tests.

@@ -150,17 +150,39 @@ export function boardCardWidthPx(
   const gap = viewportW <= 480 ? 2 : viewportW <= 1024 ? 4 : 6;
   return Math.max(0, Math.round((((felt * rowPct) / 100 - 4 * gap) / 5) * 10) / 10);
 }
+/**
+ * The widest PORTRAIT viewport that places tabled hands, wagers and the dealer
+ * button by the phone's painted-layout regime (`useProtectedCardLayout`) and
+ * reserves the dense-ring tabled-card lane (`tabledCardWidthPx`).
+ *
+ * 2026-10-24: this was 480 for both, and a portrait viewport between 481 and
+ * 768 (large phones, foldables, an iPad mini or a 768px tablet held upright)
+ * fell back to the desktop path, where a board-sized PLO5/PLO6 row that could
+ * not stand at its owner was parked on the first free patch of felt - under
+ * the hero, or in front of another player. The bound matches the hook's
+ * existing `<= 768` mobile top-pod rule. Seat pods, avatars and the felt's
+ * perspective keep their own 480px phone breakpoints; only placement and the
+ * tabled-card lane follow this one.
+ */
+export const PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX = 768;
+
 /** Dense mobile rings and the narrowest phones reserve a fixed side lane beside the board. At 7.8%
  * of the canvas, a six-card half-step row clears that lane's four-pixel
  * gutter at every phone width. Every player shares it, with a 20px legibility
- * floor; roomy rings use the board size. No hand-dependent resizing. */
+ * floor; roomy rings use the board size. No hand-dependent resizing.
+ * `portraitViewport` (the viewport, not the felt's taper) extends the dense
+ * lane to portrait viewports up to PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX. */
 export function tabledCardWidthPx(
   scalerW: number,
   viewportW: number,
   portrait: boolean,
-  seats: number
+  seats: number,
+  portraitViewport = false
 ): number {
-  return viewportW <= 340 || (viewportW <= 480 && seats >= 8)
+  const denseLane =
+    seats >= 8 &&
+    (viewportW <= 480 || (portraitViewport && viewportW <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX));
+  return viewportW <= 340 || denseLane
     ? Math.min(boardCardWidthPx(scalerW, viewportW, portrait), Math.max(20, scalerW * 0.078))
     : boardCardWidthPx(scalerW, viewportW, portrait);
 }

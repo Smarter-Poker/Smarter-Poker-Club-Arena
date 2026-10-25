@@ -25,7 +25,11 @@ export async function autoRebuyHorse(
   userId: string,
   rebuyAmount: number,
   clubId: string,
-  handNumber: number
+  handNumber: number,
+  /* A between-hands TOP-UP of a live stack (HorseTopUpStyle, PLO5) is its own
+     purchase with its own key: a horse that busts and rebuys in a hand must
+     never present the rebuy's key for a top-up of a different size. */
+  purpose: 'rebuy' | 'topup' = 'rebuy'
 ): Promise<HorseRebuyResult> {
   if (isMaintenanceFrozen()) return { status: 'unknown' };
   if (
@@ -41,7 +45,15 @@ export async function autoRebuyHorse(
     );
     return { status: 'unknown' };
   }
-  const opId = uuidv5('horse-rebuy:' + tableId + ':' + userId + ':' + handNumber, uuidv5.URL);
+  const opId = uuidv5(
+    (purpose === 'topup' ? 'horse-topup:' : 'horse-rebuy:') +
+      tableId +
+      ':' +
+      userId +
+      ':' +
+      handNumber,
+    uuidv5.URL
+  );
   const payload = { p_table_id: tableId, p_user_id: userId, p_amount: rebuyAmount, p_op_id: opId };
   let lastError = 'missing or mismatched funding receipt';
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -144,6 +156,54 @@ export async function readSeatWalletClub(tableId: string, userId: string): Promi
     return typeof club === 'string' && club.length > 0 ? club : null;
   } catch (err) {
     reportError(err, 'DB.read_seat_wallet_club_threw');
+    return null;
+  }
+}
+
+/**
+ * What a horse's Auto Top Up needs to know about its live cash seat
+ * (HorseTopUpStyle, 2026-10-24): whether the seat's own Auto Top Up flag is on,
+ * the club whose wallet funded the seat, and how much this cash session has
+ * already put on this table (`cash_player_session.baseline`: buy-in plus every
+ * add-on). Null when the seat or its open session cannot be read; the caller
+ * then tops up nothing this hand (a top-up is optional, so it fails closed).
+ */
+export async function readHorseTopUpSeat(
+  tableId: string,
+  userId: string
+): Promise<{ autoTopUp: boolean; clubId: string | null; invested: number } | null> {
+  if (!tableId || !userId) return null;
+  try {
+    const [seatRes, sessionRes] = await Promise.all([
+      supabase
+        .from('table_seats')
+        .select('auto_rebuy, club_id')
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('cash_player_session')
+        .select('baseline')
+        .eq('table_id', tableId)
+        .eq('player_id', userId)
+        .is('closed_at', null)
+        .order('opened_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (seatRes.error || sessionRes.error || !seatRes.data || !sessionRes.data) return null;
+    const invested = Number((sessionRes.data as { baseline: unknown }).baseline);
+    if (!Number.isFinite(invested) || invested < 0) return null;
+    const seat = seatRes.data as { auto_rebuy: unknown; club_id: unknown };
+    return {
+      autoTopUp: seat.auto_rebuy === true,
+      clubId: typeof seat.club_id === 'string' ? seat.club_id : null,
+      invested,
+    };
+  } catch (err) {
+    reportError(err, 'DB.read_horse_top_up_seat_failed');
     return null;
   }
 }

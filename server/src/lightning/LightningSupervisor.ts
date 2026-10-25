@@ -340,6 +340,26 @@ export class LightningSupervisor {
     }
   }
 
+  /**
+   * A hand of `fromClusterId` freed a player (a fold, or the hand's end, after
+   * the database released them). Every OTHER Cluster's worker that held
+   * somebody for the multi-table limit on its last pass and has seen this
+   * player runs its next pass within the admission window: the player may be
+   * legal there now. Without it that pool learned of the release only at its
+   * next pass interval. A hint: it never throws and never forms anything itself.
+   */
+  peerReleased(fromClusterId: string, playerId: string): void {
+    if (!this.running) return;
+    for (const [clusterId, worker] of this.workers) {
+      if (clusterId === fromClusterId) continue;
+      try {
+        worker.peerReleased(playerId);
+      } catch {
+        /* a release hint must never take the supervisor down */
+      }
+    }
+  }
+
   /** Leader only: GameServer calls this beside the ClusterController's start. */
   start(): void {
     if (this.running) return;
@@ -606,11 +626,17 @@ export class LightningSupervisor {
               hosting.startHand(
                 hand,
                 worker.currentConfig,
-                (playerId) => worker.wake(playerId),
+                (playerId) => {
+                  worker.wake(playerId);
+                  if (playerId) this.peerReleased(clusterId, playerId);
+                },
                 (id) => onFrozen(id),
                 // LIGHTNING PHASE 13: the fold flags are read live, at the action door.
                 () => worker.currentConfig,
-                (playerId) => worker.noteIdle(playerId)
+                (playerId) => {
+                  worker.noteIdle(playerId);
+                  this.peerReleased(clusterId, playerId);
+                }
               );
             },
             hasInstance: (id) => hosting.hasInstance(id),

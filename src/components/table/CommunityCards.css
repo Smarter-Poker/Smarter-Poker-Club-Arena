@@ -715,6 +715,21 @@
   }
 }
 
+/* Dan 2026-10-24: WHO won, above the hand's name - the band now says
+   "Danimal Wins" before it says "Full House". Same scale family as the
+   descriptive line below it, a touch larger and brighter because it is the
+   headline of the announcement rather than its footnote. */
+.community-cards__winner-line {
+  font-size: 0.48em;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--sp-text-bright);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(240, 170, 50, 0.35);
+  margin-bottom: 1px;
+}
+
 /* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the descriptive secondary
    line — "Kings Full Of Nines" — rendered smaller, directly under the
    primary classification. Inherits position from its parent label. */

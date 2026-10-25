@@ -154,15 +154,14 @@ describe('Lightning hotkeys (spec HOTKEYS): safe modifiers, the strip’s own ha
   const press = (key: string, init: KeyboardEventInit = {}) =>
     window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }));
 
-  it('Shift+F is LIGHTNING FOLD and Shift+V is FOLD & WATCH; neither is also a plain fold or call', () => {
+  it('Shift+F is the Lightning fold; the retired Shift+V does nothing and is never a plain fold or call', () => {
     const onLightningFold = vi.fn();
-    const onLightningFoldWatch = vi.fn();
-    const { opts, unmount } = mount({ onLightningFold, onLightningFoldWatch });
+    const { opts, unmount } = mount({ onLightningFold });
     press('F', { shiftKey: true });
     press('V', { shiftKey: true });
     expect(onLightningFold).toHaveBeenCalledTimes(1);
-    expect(onLightningFoldWatch).toHaveBeenCalledTimes(1);
     expect(opts.onFold).not.toHaveBeenCalled();
+    expect(opts.onCallCheck).not.toHaveBeenCalled();
     // The single-letter row is unchanged.
     press('f');
     expect(opts.onFold).toHaveBeenCalledTimes(1);

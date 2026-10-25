@@ -12,5 +12,13 @@ describe('the fee redemption runs with the maintained Data Console qualification
     expect(native).toContain('fee-redemption-source-functions.sql');
     expect(native).toContain('fee-redemption-assert.sql');
     expect(native).toContain('regression unexpectedly passed before the migration');
+    // The standing rake share (20261025030629) replaces the October 24 cron,
+    // proven against the recorded out-of-band state in the same database.
+    expect(native).toContain('20261024223153_woowoo_half_earned_rake_credited_to_kingfish.sql');
+    expect(native).toContain('*_a_standing_rake_share_replaces_the_woowoo_cron.sql');
+    expect(native).toContain('rake-share-out-of-band.sql');
+    expect(native).toContain('rake-share-lag.sql');
+    expect(native).toContain('rake-share-assert.sql');
+    expect(native).toContain('rake share regression unexpectedly passed before the migration');
   });
 });

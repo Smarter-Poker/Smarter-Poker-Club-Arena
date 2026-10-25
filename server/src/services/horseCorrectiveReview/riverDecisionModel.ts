@@ -2,7 +2,8 @@ import type { RiverDecisionInput } from './riverReference.js';
 import { priceRiverCallFoldDecision, type RiverDecisionPrices } from './riverReference.js';
 import { createHash } from 'node:crypto';
 import type { Card } from '../../types.js';
-import { correctiveDecisionDomain, correctiveDomainIsValid } from './domain.js';
+import { correctiveDecisionDomain } from './domain.js';
+import { correctiveRiverSnapshotRefusal } from './kernelEligibility.js';
 import { variantInfo } from '../../engine/HorseEval.js';
 import { evidenceDigest } from './authority.js';
 import { correctiveUtilityContextDigest } from './review.js';
@@ -34,20 +35,9 @@ export function buildOriginalRiverDecision(
     const snapshot = original.snapshot,
       gs = snapshot.gameState,
       hero = snapshot.player;
-    const domain = correctiveDecisionDomain(gs);
-    if (!correctiveDomainIsValid(domain) || domain.format !== 'cash' || domain.mode !== 'cash')
-      return no('unsupported_utility_domain');
-    if (
-      gs.stage !== 'river' ||
-      gs.boardCount !== 1 ||
-      gs.communityCards2?.length ||
-      gs.communityCards3?.length ||
-      gs.players.length !== 2 ||
-      gs.players.some((p) => p.is_folded || (p.user_id !== hero.user_id && p.cards.length > 0))
-    )
-      return no('original_model_domain_unavailable');
-    const opponent = gs.players.find((p) => p.user_id !== hero.user_id);
-    if (!opponent?.is_all_in || opponent.stack !== 0) return no('original_opponent_not_all_in');
+    const familyRefusal = correctiveRiverSnapshotRefusal(snapshot);
+    if (familyRefusal) return no(familyRefusal);
+    const domain = correctiveDecisionDomain(gs)!;
     const vi = variantInfo(domain.variant),
       count = domain.variant === 'pineapple' ? 2 : vi.holeCount;
     const ranks = vi.isShortDeck ? '6789TJQKA' : '23456789TJQKA';

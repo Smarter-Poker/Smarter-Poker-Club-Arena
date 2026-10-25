@@ -33,6 +33,8 @@ const setup = (version = 1) => {
 const success: RiverAcceptedOracleResult = {
   version: 1,
   status: 'accepted_source_oracle',
+  playedAt: '2026-09-14T14:00:00.000Z',
+  committedAt: '2026-09-14T14:00:00.000Z',
   oracle: { foldBb: 0, callBb: 48 },
   custodyDigest: 'c'.repeat(64),
   oracleDigest: 'd'.repeat(64),

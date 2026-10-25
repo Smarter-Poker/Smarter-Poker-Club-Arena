@@ -1,3 +1,4 @@
+import { writeHandFacts } from '../supabase/handFacts.js';
 import { accumulateBoard } from '../../engine/presentation/handEventFrames.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRiverAcceptedOracleReader } from './riverAcceptedOracle.js';
@@ -38,7 +39,14 @@ vi.mock('pg', () => ({
     },
   },
 }));
-function sourceFixture(holding = 'As Ah', opponentHolding = 'Ks Kh') {
+vi.mock('../supabase/client.js', () => ({
+  supabase: {
+    from: () => {
+      throw Error('no database allowed');
+    },
+  },
+}));
+function sourceFixture(holding = 'As Ah', opponentHolding = 'Ks Kh', stats?: unknown) {
   const f = correctiveFixture(),
     players = f.snapshot.gameState.players;
   const ref = riverReferenceFixture();
@@ -55,7 +63,10 @@ function sourceFixture(holding = 'As Ah', opponentHolding = 'Ks Kh') {
     user_id: i === 0 ? hero.user_id : opponent!.user_id,
   }));
   snapshot.gameState.actionHistory = structuredClone(f.snapshot.gameState.actionHistory!).map(
-    (a) => ({ ...a, stage: a.action === 'all_in' ? ('river' as const) : a.stage })
+    (a) => ({
+      ...a,
+      stage: a.action === 'all_in' ? ('river' as const) : a.stage,
+    })
   );
   snapshot.fence = f.snapshot.fence;
   snapshot.generation = f.snapshot.generation;
@@ -63,11 +74,31 @@ function sourceFixture(holding = 'As Ah', opponentHolding = 'Ks Kh') {
   snapshot.decisionTimeMs = f.snapshot.decisionTimeMs;
   snapshot.decisionKey = buildHorseDecisionKey(snapshot);
   ref.original = { snapshot, readFrame: f.capture.readFrame };
+  const sourceStats =
+    stats === 'omit'
+      ? undefined
+      : (stats ?? {
+          version: 2,
+          facts: snapshot.gameState.players.map((p, i) => ({
+            hand_id: HAND,
+            table_id: TABLE,
+            user_id: p.user_id,
+            seat: p.seat,
+            game_variant: 'nlh',
+            big_blind: 2,
+            tournament_id: null,
+            played_at: '2026-09-14T14:00:00.000Z',
+            invested: 75,
+            hole_cards: i === 0 ? ref.hero : cards(opponentHolding),
+          })),
+          transfers: [],
+        });
   const payloadText = JSON.stringify(
     {
       accepted_hand_facts: {
         contributions: { [hero.user_id]: 75, [opponent!.user_id]: 75 },
         returned_uncalled: {},
+        ...(sourceStats === undefined ? {} : { stats_facts: sourceStats }),
       },
     },
     null,
@@ -118,7 +149,12 @@ function sourceFixture(holding = 'As Ah', opponentHolding = 'Ks Kh') {
         action: 'call' as const,
         amount: 50,
         stage: 'river' as const,
-        publicNode: { version: 1, status: 'captured', actorSeat: hero.seat, street: 'river' },
+        publicNode: {
+          version: 1,
+          status: 'captured',
+          actorSeat: hero.seat,
+          street: 'river',
+        },
       },
     ],
   };
@@ -232,8 +268,8 @@ const env = {
   DATABASE_URL:
     'postgresql://offline-user:offline-password@synthetic.local:5432/postgres?sslmode=require',
 };
-function prepare(holding = 'As Ah', opponentHolding = 'Ks Kh') {
-  const f = sourceFixture(holding, opponentHolding);
+function prepare(holding = 'As Ah', opponentHolding = 'Ks Kh', stats?: unknown) {
+  const f = sourceFixture(holding, opponentHolding, stats);
   db.rows = [
     {
       ...f.rows[0],
@@ -242,18 +278,175 @@ function prepare(holding = 'As Ah', opponentHolding = 'Ks Kh') {
         [f.ref.original.snapshot.gameState.players[1].user_id]: cards(opponentHolding),
       }),
       oracle_board_text: JSON.stringify(['Ac', 'Ad', '7h', '8d', '9c']),
+      oracle_ended_at_text: '2026-09-14T14:00:00.000Z',
     },
   ];
   return f;
 }
 const run = (f: ReturnType<typeof sourceFixture>) =>
-  createRiverAcceptedOracleReader(env)({ records: f.records, handKey: f.handKey, input: f.ref });
+  createRiverAcceptedOracleReader(env)({
+    records: f.records,
+    handKey: f.handKey,
+    input: f.ref,
+  });
 beforeEach(() => {
   db.rows = [];
   db.calls = [];
   db.failure = false;
 });
+async function canonicalStats() {
+  const f = sourceFixture(),
+    players = f.ref.original.snapshot.gameState.players;
+  const stats = await writeHandFacts({
+    handId: HAND,
+    tableId: TABLE,
+    clubId: '50000000-0000-4000-8000-000000000001',
+    handNumber: 12,
+    gameVariant: 'nlh',
+    bigBlind: 2,
+    playedAt: '2026-09-14T14:00:00.000Z',
+    rakeAmount: 4,
+    buttonSeat: players[0].seat,
+    boardLength: 5,
+    holeCardsAll: new Map(
+      players.map((p, i) => [
+        p.user_id,
+        { seat: p.seat, cards: i === 0 ? f.ref.hero : cards('Ks Kh') },
+      ])
+    ),
+    contributions: new Map(players.map((p) => [p.user_id, 75])),
+    winners: [{ userId: players[0].user_id, amount: 146 }],
+    actions: f.ref.original.snapshot.gameState.actionHistory!,
+    roster: players.map((p, i) => ({ userId: p.user_id, isHorse: i === 0 })),
+    collectOnly: true,
+  });
+  if (!stats) throw Error('canonical synthetic writer refused');
+  return stats;
+}
 describe('bounded accepted-source river oracle', () => {
+  it('uses canonical immutable paid mucked facts without another query or mutable fact table', async () => {
+    const stats = await canonicalStats(),
+      f = prepare('As Ah', 'Ks Kh', stats);
+    db.rows[0].oracle_hole_cards_text = '{}';
+    expect(await run(f)).toMatchObject({
+      status: 'accepted_source_oracle',
+      oracle: { callBb: 48 },
+      completePopulation: false,
+      playedAt: '2026-09-14T14:00:00.000Z',
+    });
+    expect(db.calls.filter((c) => c.sql.trimStart().startsWith('SELECT'))).toHaveLength(1);
+    expect(db.calls.find((c) => c.sql.trimStart().startsWith('SELECT'))!.sql).not.toContain(
+      'ca_hand_facts'
+    );
+  });
+  it.each([
+    'hand',
+    'table',
+    'actor',
+    'seat',
+    'variant',
+    'blind',
+    'tournament',
+    'played',
+    'unpaid',
+    'duplicate',
+    'version',
+    'hero',
+    'revealed',
+  ] as const)('refuses authenticated canonical stats with %s mismatch', async (fault) => {
+    const stats = structuredClone(await canonicalStats());
+    const facts = stats.facts as Array<Record<string, unknown>>,
+      fact = facts[1];
+    if (fault === 'hand') fact.hand_id = TABLE;
+    if (fault === 'table') fact.table_id = HAND;
+    if (fault === 'actor') fact.user_id = TABLE;
+    if (fault === 'seat') fact.seat = 99;
+    if (fault === 'variant') fact.game_variant = 'plo5';
+    if (fault === 'blind') fact.big_blind = 3;
+    if (fault === 'tournament') fact.tournament_id = HAND;
+    if (fault === 'played') fact.played_at = '2026-09-15T14:00:00.000Z';
+    if (fault === 'unpaid') fact.invested = 0;
+    if (fault === 'duplicate') facts.push(structuredClone(fact));
+    if (fault === 'version') (stats as { version: number }).version = 99;
+    if (fault === 'hero') facts[0].hole_cards = cards('Qs Qh');
+    const f = prepare('As Ah', 'Ks Kh', stats);
+    if (fault === 'revealed')
+      db.rows[0].oracle_hole_cards_text = JSON.stringify({
+        [f.ref.original.snapshot.gameState.players[1].user_id]: cards('Qs Qh'),
+      });
+    // Payload digest and accepted roster were constructed around these exact
+    // bytes; recomputing hashes cannot override original actor/source scope.
+    expect(await run(f)).toMatchObject({
+      status: 'unavailable',
+      qualified: false,
+    });
+    expect(db.calls.at(-1)?.sql).toBe('ROLLBACK');
+  });
+
+  it('keeps missing or retired immutable holdings unavailable', async () => {
+    const stats = await canonicalStats();
+    for (const fact of stats.facts as Array<Record<string, unknown>>) fact.hole_cards = null;
+    const f = prepare('As Ah', 'Ks Kh', stats);
+    db.rows[0].oracle_hole_cards_text = '{}';
+    expect(await run(f)).toMatchObject({
+      status: 'unavailable',
+      reason: 'oracle_holdings_unavailable',
+    });
+  });
+  it('refuses legacy missing immutable stats even with revealed cards and a history timestamp', async () => {
+    const f = prepare('As Ah', 'Ks Kh', 'omit');
+    expect(await run(f)).toMatchObject({ status: 'unavailable', reason: 'oracle_binding_refused' });
+  });
+  it('binds canonical playedAt in the oracle digest', async () => {
+    const stats = await canonicalStats();
+    const f = prepare('As Ah', 'Ks Kh', stats),
+      a = await run(f);
+    for (const fact of stats.facts as Array<Record<string, unknown>>)
+      fact.played_at = '2026-09-15T14:00:00.000Z';
+    const g = prepare('As Ah', 'Ks Kh', stats);
+    db.rows[0].oracle_ended_at_text = '2026-09-15T14:00:00.000Z';
+    const b = await run(g);
+    expect(a.status).toBe('accepted_source_oracle');
+    expect(b).toMatchObject({
+      status: 'accepted_source_oracle',
+      playedAt: '2026-09-15T14:00:00.000Z',
+    });
+    if (a.status === 'accepted_source_oracle' && b.status === 'accepted_source_oracle')
+      expect(a.oracleDigest).not.toBe(b.oracleDigest);
+  });
+  it('binds authenticated committedAt and refuses absent commit clock', async () => {
+    const f = prepare(),
+      a = await run(f);
+    expect(a).toMatchObject({
+      status: 'accepted_source_oracle',
+      committedAt: '2026-09-14T14:00:00.000Z',
+    });
+    db.rows[0].committed_at = '2026-09-14T14:00:01.000Z';
+    const b = await run(f);
+    expect(b).toMatchObject({
+      status: 'accepted_source_oracle',
+      committedAt: '2026-09-14T14:00:01.000Z',
+    });
+    if (a.status === 'accepted_source_oracle' && b.status === 'accepted_source_oracle')
+      expect(a.oracleDigest).not.toBe(b.oracleDigest);
+    db.rows[0].committed_at = 'invalid';
+    expect(await run(f)).toMatchObject({ status: 'unavailable' });
+  });
+  it('canonicalizes authenticated terminal time and refuses missing or invalid time', async () => {
+    const f = prepare();
+    db.rows[0].oracle_ended_at_text = '2026-09-14 09:00:00-05';
+    expect(await run(f)).toMatchObject({
+      status: 'accepted_source_oracle',
+      playedAt: '2026-09-14T14:00:00.000Z',
+    });
+    for (const invalid of [null, 'invalid', '']) {
+      db.rows[0].oracle_ended_at_text = invalid;
+      expect(await run(f)).toMatchObject({
+        status: 'unavailable',
+        reason: 'oracle_binding_refused',
+      });
+    }
+  });
   it('accepts actual persisted board strings produced by the shared history owner', async () => {
     const f = prepare();
     db.rows[0].oracle_board_text = JSON.stringify(accumulateBoard([], 'flop', f.ref.board));
@@ -267,7 +460,10 @@ describe('bounded accepted-source river oracle', () => {
       r = await run(f);
     expect(
       r,
-      JSON.stringify({ result: r, calls: db.calls.map((c) => c.sql.slice(0, 18)) })
+      JSON.stringify({
+        result: r,
+        calls: db.calls.map((c) => c.sql.slice(0, 18)),
+      })
     ).toMatchObject({
       status: 'accepted_source_oracle',
       oracle: { foldBb: 0, callBb: 48 },
@@ -287,7 +483,7 @@ describe('bounded accepted-source river oracle', () => {
       expect(json).not.toContain(text);
   });
   it.each([
-    'missing-holes',
+    'unknown-actor',
     'board',
     'source',
     'variant',
@@ -301,7 +497,7 @@ describe('bounded accepted-source river oracle', () => {
   ] as const)('refuses %s without deriving a qualified oracle', async (fault) => {
     const f = prepare(),
       row = db.rows[0];
-    if (fault === 'missing-holes') row.oracle_hole_cards_text = '{}';
+    if (fault === 'unknown-actor') row.oracle_hole_cards_text = '{"unknown_actor":[]}';
     if (fault === 'board') row.oracle_board_text = '["2c","3d","7h","8d","9c"]';
     if (fault === 'source') row.atomic_hand_id = '90000000-0000-4000-8000-000000000009';
     if (fault === 'variant') row.game_variant = 'plo5';
@@ -357,11 +553,17 @@ describe('bounded accepted-source river oracle', () => {
         handKey: f.handKey,
         input: f.ref,
       })
-    ).toMatchObject({ status: 'unavailable', reason: 'oracle_configuration_unavailable' });
+    ).toMatchObject({
+      status: 'unavailable',
+      reason: 'oracle_configuration_unavailable',
+    });
     expect(db.calls).toEqual([]);
     db.failure = true;
     const r = await run(f);
-    expect(r).toMatchObject({ status: 'unavailable', reason: 'oracle_source_unavailable' });
+    expect(r).toMatchObject({
+      status: 'unavailable',
+      reason: 'oracle_source_unavailable',
+    });
     expect(JSON.stringify(r)).not.toContain('private');
   });
 });

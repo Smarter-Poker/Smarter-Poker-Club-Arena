@@ -72,3 +72,44 @@ Native regressions cover the actual worker, client transport, FAST/DEEP, withdra
 For a finite independent numerical batch, use `horseRiverReference verify-batch INPUT OUTPUT` with version 1 `{inputs: RiverReferenceInput[]}`. The reviewer rebuilds the fixed original model for every case, checks every generated reference against the independent scorer, rejects duplicate accepted-hand/decision identities and streams a bounded ordered commitment. It does not authenticate acquisition or issue approval.
 
 Run `node --import tsx src/scripts/horseRiverAcceptedOracle.ts INPUT OUTPUT` from `server/` only in the authorized offline environment with its configured canonical `DATABASE_URL`. Version 1 input is `{records, handKey, input}` plus `version: 1`; both paths must be absolute and private, and output must be new. The operation reads at most 16 MiB and atomically writes at most 512 KiB. Exit 0 is a read-only accepted-source oracle result, 2 is a written unavailable result, 3 is a private operation failure and 64 is invalid invocation. Stdout contains status and explicit false qualification/population/activation fields only. There is no environment-file loading, credential output, source query on import, network strategy work or automatic promotion.
+
+Run `node --import tsx src/scripts/horseCorrectiveKernelReview.ts INPUT OUTPUT`
+from `server/` in the authorized offline source/runtime environment. Version 1
+input is `{version: 1, predeclaration: {commitSha, path, contentSha256}, requests:
+RiverAcceptedOracleRequest[]}`. The safe plan path is under
+`docs/evidence/phase14/plans/`. The operator authenticates exact plan bytes and
+provider PR merge time through configured authenticated GitHub reads, proving
+that the plan commit is on protected main and merged before holdout start.
+Git authored time and caller `declaredAt` alone grant no custody. A separate
+documentation plan commit may name the installed engine component source.
+
+The protected plan explicitly names
+`populationBasis: 'accepted-commit-and-immutable-played-v1'`: membership is the
+intersection of its accepted-commit interval and immutable played-at interval,
+using the same canonical millisecond bounds. It does not claim the population
+of every hand played inside those bounds. The complete accepted-commit census,
+its exclusions/gaps, and a late-transaction finality fence remain separate
+requirements; a supplied request list is not that census.
+
+The operator independently resolves its module-root Git HEAD, requires clean
+tracked bytes and refuses untracked source files. That source must equal the
+plan and every record's source. Each baseline must replay on its original
+JavaScript runtime. Both paths must be explicit, absolute and private, and
+output must be new. The CLI reads at most 256 MiB, accepts 2–10,000 requests of
+at most 256 validated records each, and atomically writes at most 512 KiB. It
+calls the configured read-only oracle directly, binds both authenticated clock
+values, reconstructs the fixed model, independently checks numerics and measures
+the full original policy. It accepts no caller oracle, replay result or
+qualification flag.
+
+Exit 0 means `reviewed_unsigned`; exit 2 preserves a written unavailable result,
+3 is a private operation failure, and 64 is invalid invocation. Stdout contains
+status and false qualification/population/activation fields only. Every result
+retains `qualified: false`, `completePopulation: false` and
+`activationAllowed: false`. A genuine protected plan removes only the
+`authenticated_predeclaration` gate. Complete source-window census, qualified
+rollback and the independently held signer remain required before issuance.
+There is no signing key, environment-file loading, import-time query,
+scheduler, publisher or promotion side effect.
+
+The separate accepted-key page command is `npx tsx src/scripts/horseAcceptedWindow.ts /absolute/private/window.json /absolute/private/new-page.json` from `server/`. Its owner-only input is `{version:1,request:{startsAt,endsAt,after}}`. The page requires the installed `horse_accepted_window_time` index and a clear, visible transaction-finality fence. It keeps coordinates, gaps and the exact next cursor only in the private output. Exit 0 means a page was written; exit 2 writes an explicit unavailable result. Page exhaustion grants no full-window, eligible-decision, qualification or activation claim.

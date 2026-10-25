@@ -1,3 +1,4 @@
+import { correctiveDecisionDomain, correctiveDomainIsValid } from './domain.js';
 import type { HorseDecision } from '../../types.js';
 import type { RiverDecisionInput } from './riverReference.js';
 /** Shared by live execution and full-policy measurement, before sampling. */
@@ -23,5 +24,30 @@ export function correctiveBaselineRefusal(
     hero = original.snapshot.player;
   if (!Number.isFinite(gs.toCall) || gs.toCall! <= 0 || gs.toCall! >= hero.stack)
     return 'call_requires_all_in_alias';
+  return null;
+}
+
+/** Necessary original-state family checks, before worker observation capture.
+ * The calculator reuses these exact checks; passing does not grant authority
+ * or establish a profitable/legal correction. No reads, I/O or RNG. */
+export function correctiveRiverSnapshotRefusal(
+  snapshot: RiverDecisionInput['original']['snapshot']
+): string | null {
+  const gs = snapshot.gameState,
+    hero = snapshot.player,
+    domain = correctiveDecisionDomain(gs);
+  if (!correctiveDomainIsValid(domain) || domain.format !== 'cash' || domain.mode !== 'cash')
+    return 'unsupported_utility_domain';
+  if (
+    gs.stage !== 'river' ||
+    gs.boardCount !== 1 ||
+    gs.communityCards2?.length ||
+    gs.communityCards3?.length ||
+    gs.players.length !== 2 ||
+    gs.players.some((p) => p.is_folded || (p.user_id !== hero.user_id && p.cards.length > 0))
+  )
+    return 'original_model_domain_unavailable';
+  const opponent = gs.players.find((p) => p.user_id !== hero.user_id);
+  if (!opponent?.is_all_in || opponent.stack !== 0) return 'original_opponent_not_all_in';
   return null;
 }

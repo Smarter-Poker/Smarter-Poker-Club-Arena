@@ -1,3 +1,4 @@
+import { correctiveRiverSnapshotRefusal } from '../../services/horseCorrectiveReview/kernelEligibility.js';
 import { correctiveBaselineCompositionIsUsable } from '../../services/horseCorrectiveReview/kernelComposition.js';
 import { PHASE10_PROTECTED_RELEASE_SELECTION } from '../HorsePhase10Authority.js';
 import { PHASE11_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase11Authority.js';
@@ -2231,8 +2232,12 @@ export class HorseDecisionWorkerRuntime {
         ),
       ]);
     };
+    // The family predicate reads only the shared snapshot fields; normalize the
+    // protocol discriminant without capturing reads or changing the request.
+    const inRiverFamily =
+      correctiveRiverSnapshotRefusal({ ...request, type: 'DECIDE_FAST' }) === null;
     const stillUsable = () =>
-      baselineUsable() &&
+      inRiverFamily &&
       !!holder &&
       !!receipt &&
       horsePhase14CorrectiveMode({
@@ -2241,7 +2246,8 @@ export class HorseDecisionWorkerRuntime {
         packDomain: domain,
         verdict: holder.verdict(receipt, Date.now()),
         catalog,
-      }).mode === 'candidate';
+      }).mode === 'candidate' &&
+      baselineUsable();
     return {
       receipt,
       evaluator: stillUsable()

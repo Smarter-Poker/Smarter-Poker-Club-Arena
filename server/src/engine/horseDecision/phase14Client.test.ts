@@ -1,3 +1,10 @@
+import { HorsePhase8AuthorityGate } from '../HorseQualifiedAuthority.js';
+import {
+  liveHorsePhase14Authorities,
+  horsePhase14ContinuationVersion,
+} from '../HorsePhase14Authority.js';
+import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../../services/horseCorrectiveReview/kernelCatalog.js';
+import { recheckHorsePhase14BeforeAcceptance } from '../HorsePhase14Acceptance.js';
 import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { harness, request } from './phase14Worker.test-support.js';
@@ -66,6 +73,57 @@ describe('actual Phase14 worker through the client IPC boundary', () => {
       const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
       try {
         await expect(client.decideFast(request())).rejects.toThrow(/corrective/);
+      } finally {
+        await client.stop();
+      }
+    }
+  );
+  it.each(['FAST_RESULT', 'DEEP_RESULT'] as const)(
+    'retires a correction withdrawn while %s is pending at the actual IPC boundary',
+    async (lane) => {
+      vi.spyOn(Date, 'now').mockReturnValue(now);
+      let gate: HorsePhase8AuthorityGate;
+      let queuedCandidate = 0;
+      const worker = new RealRuntimeTransport((message) => {
+        if (message.type !== lane) return;
+        expect(message.decision.correctivePolicy?.applied).toBe(true);
+        expect(message.decision.action).toBe('call');
+        queuedCandidate++;
+        gate.withdraw('pending-ipc-rollback');
+      });
+      gate = new HorsePhase8AuthorityGate(
+        () => worker.h.attachment.admission,
+        undefined,
+        horsePhase14ContinuationVersion('nlh-cash', CORRECTIVE_KERNEL_CATALOG_VERSION)
+      );
+      gate.refresh();
+      const live = liveHorsePhase14Authorities['nlh-cash'];
+      vi.spyOn(live, 'observeWorker').mockImplementation((receipt) => gate.observeWorker(receipt));
+      vi.spyOn(live, 'stamp').mockImplementation((receipt) => gate.stamp(receipt));
+      vi.spyOn(live, 'check').mockImplementation((...args) => gate.check(...args));
+      vi.spyOn(live, 'mainAuthority').mockImplementation(() => gate.mainAuthority());
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      try {
+        const input = request(),
+          fast = await client.decideFast(input);
+        const result =
+          lane === 'FAST_RESULT'
+            ? fast
+            : await client.decideDeep({ ...input, rngBefore: fast.rngBefore, deepEquity: 2 });
+        expect(queuedCandidate).toBe(1);
+        const selected = recheckHorsePhase14BeforeAcceptance(result.decision);
+        expect(selected).toMatchObject({
+          action: 'fold',
+          amount: 0,
+          correctivePolicy: { applied: false, reason: 'withdrawn_before_acceptance' },
+        });
+        expect(selected.executionWitness).toMatchObject({
+          selected: { action: 'fold', amount: 0 },
+          expectedExecutionAmount: 0,
+          phase14Authority: { selection: 'withdrawn_before_acceptance' },
+        });
+        expect(worker.h.deps.correctiveDraw).toHaveBeenCalledTimes(lane === 'FAST_RESULT' ? 1 : 2);
+        expect(fast.effects).toEqual([]);
       } finally {
         await client.stop();
       }

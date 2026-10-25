@@ -1,6 +1,6 @@
 /** Explicit offline accepted-hand oracle reader. Hidden accepted holdings are
  * used only by the independent terminal oracle, never by the decision model.
- * Missing/mucked holdings stay unavailable; callers may not drop those hands
+ * Missing accepted holdings stay unavailable; callers may not drop those hands
  * and call the remaining selection a complete independent holdout. */
 import pg from 'pg';
 import tls from 'node:tls';
@@ -21,7 +21,7 @@ import {
 
 const QUERY = ACCEPTED_SOURCE_SELECT.replace(
   'SELECT h.id::text AS hand_id,',
-  'SELECT h.hole_cards::text AS oracle_hole_cards_text, h.board::text AS oracle_board_text, h.id::text AS hand_id,'
+  'SELECT h.hole_cards::text AS oracle_hole_cards_text, h.board::text AS oracle_board_text, h.ended_at::text AS oracle_ended_at_text, h.id::text AS hand_id,'
 );
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const object = (v: unknown): v is Record<string, unknown> =>
@@ -41,6 +41,8 @@ export type RiverAcceptedOracleResult = OracleFlags &
   (
     | {
         readonly status: 'accepted_source_oracle';
+        readonly playedAt: string;
+        readonly committedAt: string;
         readonly oracle: Readonly<{ foldBb: 0; callBb: number }>;
         readonly custodyDigest: string;
         readonly oracleDigest: string;
@@ -76,7 +78,10 @@ function cards(value: unknown): Card[] | null {
       !['clubs', 'diamonds', 'hearts', 'spades'].includes(String(raw.suit))
     )
       return null;
-    parsed.push({ rank: raw.rank as Card['rank'], suit: raw.suit as Card['suit'] });
+    parsed.push({
+      rank: raw.rank as Card['rank'],
+      suit: raw.suit as Card['suit'],
+    });
   }
   return parsed;
 }
@@ -97,6 +102,55 @@ function board(value: unknown): Card[] | null {
       rank: parsed[1] as Card['rank'],
       suit: parsed[2].length === 1 ? suits[parsed[2]] : (parsed[2] as Card['suit']),
     });
+  }
+  return result;
+}
+/** Reads only the already authenticated immutable atomic payload. Absence refuses authenticated terminal time; malformed or conflicting facts refuse. */
+function acceptedHoldings(
+  raw: Record<string, unknown>,
+  input: RiverReferenceInput,
+  endedAt: unknown
+): Record<string, Card[]> | null {
+  const payload: unknown = JSON.parse(String(raw.payload_text));
+  if (!object(payload) || !object(payload.accepted_hand_facts)) return null;
+  const stats = payload.accepted_hand_facts.stats_facts;
+  if (stats === undefined) return null;
+  if (
+    !object(stats) ||
+    ![1, 2].includes(Number(stats.version)) ||
+    typeof stats.version !== 'number' ||
+    !Array.isArray(stats.facts) ||
+    stats.facts.length < 1 ||
+    stats.facts.length > 10
+  )
+    return null;
+  const ended = typeof endedAt === 'string' ? Date.parse(endedAt) : NaN;
+  if (!Number.isFinite(ended)) return null;
+  const seen = new Set<string>(),
+    result: Record<string, Card[]> = {};
+  for (const fact of stats.facts) {
+    if (!object(fact) || typeof fact.user_id !== 'string' || seen.has(fact.user_id)) return null;
+    seen.add(fact.user_id);
+    const actor = input.original.snapshot.gameState.players.find((p) => p.user_id === fact.user_id);
+    if (
+      !actor ||
+      fact.hand_id !== raw.hand_id ||
+      fact.table_id !== raw.table_id ||
+      fact.seat !== actor.seat ||
+      fact.game_variant !== input.domain.variant ||
+      fact.big_blind !== input.bigBlind ||
+      fact.tournament_id !== null ||
+      typeof fact.played_at !== 'string' ||
+      Date.parse(fact.played_at) !== ended ||
+      typeof fact.invested !== 'number' ||
+      !Number.isFinite(fact.invested) ||
+      fact.invested < 0
+    )
+      return null;
+    if (fact.hole_cards === null) continue;
+    const holding = cards(fact.hole_cards);
+    if (fact.invested <= 0 || !holding || holding.length !== input.hero.length) return null;
+    result[fact.user_id] = holding;
   }
   return result;
 }
@@ -255,7 +309,10 @@ export function createRiverAcceptedOracleReader(
       return no('oracle_binding_refused');
     const client = new pg.Client({
       connectionString,
-      ssl: { ca: [...tls.rootCertificates, SUPABASE_ROOT_2021_CA], rejectUnauthorized: true },
+      ssl: {
+        ca: [...tls.rootCertificates, SUPABASE_ROOT_2021_CA],
+        rejectUnauthorized: true,
+      },
       connectionTimeoutMillis: 5000,
       statement_timeout: 2000,
       lock_timeout: 250,
@@ -272,7 +329,7 @@ export function createRiverAcceptedOracleReader(
       if (reply.rows.length !== 1 || Buffer.byteLength(horseJournalJson(reply.rows)) > 1024 * 1024)
         return no('oracle_source_unavailable');
       const captured = reply.rows[0],
-        { oracle_hole_cards_text, oracle_board_text, ...raw } = captured;
+        { oracle_hole_cards_text, oracle_board_text, oracle_ended_at_text, ...raw } = captured;
       const custody = rebuildCorrectiveSourceCustody(
         request.records,
         request.handKey,
@@ -308,8 +365,30 @@ export function createRiverAcceptedOracleReader(
         return no('oracle_binding_refused');
       const hero = snapshot.player,
         opponent = gs.players.find((p) => p.user_id !== hero.user_id)!;
-      const opponentCards = cards(holes[opponent.user_id]),
-        heroCards = cards(holes[hero.user_id]);
+      const endedMs =
+        typeof oracle_ended_at_text === 'string' ? Date.parse(oracle_ended_at_text) : NaN;
+      if (!Number.isFinite(endedMs)) return no('oracle_binding_refused');
+      const committedMs = typeof raw.committed_at === 'string' ? Date.parse(raw.committed_at) : NaN;
+      if (!Number.isFinite(committedMs)) return no('oracle_binding_refused');
+      const committedAt = new Date(committedMs).toISOString();
+      const playedAt = new Date(endedMs).toISOString();
+      const privateHoles = acceptedHoldings(raw, input, oracle_ended_at_text);
+      if (!privateHoles) return no('oracle_binding_refused');
+      for (const actor of gs.players) {
+        const revealed = holes[actor.user_id],
+          retained = privateHoles[actor.user_id];
+        if (revealed !== undefined) {
+          const parsed = cards(revealed);
+          if (
+            !parsed ||
+            parsed.length !== input.hero.length ||
+            (retained && horseJournalJson(parsed) !== horseJournalJson(retained))
+          )
+            return no('oracle_binding_refused');
+        }
+      }
+      const opponentCards = privateHoles[opponent.user_id] ?? cards(holes[opponent.user_id]),
+        heroCards = privateHoles[hero.user_id] ?? cards(holes[hero.user_id]);
       if (!opponentCards || opponentCards.length !== input.hero.length)
         return no('oracle_holdings_unavailable');
       if (heroCards && horseJournalJson(heroCards) !== horseJournalJson(input.hero))
@@ -327,11 +406,15 @@ export function createRiverAcceptedOracleReader(
       return Object.freeze({
         ...flags,
         status: 'accepted_source_oracle',
+        playedAt,
+        committedAt,
         oracle,
         custodyDigest: custody.custodyDigest,
         oracleDigest: evidenceDigest({
           version: 'horse-river-accepted-oracle-v1',
           custodyDigest: custody.custodyDigest,
+          playedAt,
+          committedAt,
           inputDigest: binding.inputDigest,
           readFrameDigest: binding.readFrameDigest,
           oracleHoleCardsText: oracle_hole_cards_text,

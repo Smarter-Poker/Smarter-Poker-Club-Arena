@@ -57,6 +57,27 @@ export type SeatPresence = 'connected' | 'disconnected' | 'unknown';
  */
 export type LightningDevicePlatform = 'desktop' | 'tablet' | 'mobile';
 
+/**
+ * THE DEVICE CLASS OF AN INPUT DEVICE THE ENGINE SUPPLIES (Dan 2026-10-24:
+ * "SEATING SHOULD BE DONE ACCORDINGLY TO HOW IT WAS ALWAYS DONE. 4 GAMES
+ * MAX.").
+ *
+ * A horse has no browser, so the engine is its input device (CLAUDE.md 10.5:
+ * it heartbeats the seat, HorseLogic chooses the actions). A browser tells the
+ * matcher its device class with `?p=`; the engine never did, so every horse
+ * fell to the SQL default, the NARROWEST limit (mobile, 2 live Lightning
+ * hands), and was held MULTI_TABLE_LIMIT in its third and fourth pools while
+ * the fleet seats it in up to four games (fn_enforce_four_table_limit,
+ * MAX_TABLES_PER_HORSE). Measured 2026-10-24: 22 horses in 3-4 pools, 31% of
+ * all recorded Lightning waiting.
+ *
+ * The engine plays a horse the way a desktop client plays four tables, so it
+ * reports exactly the desktop class: the same limit (4) a desktop player has,
+ * never wider. A real client the horse account's owner opens reports its own
+ * class too, and the narrower report still wins (PLATFORM_RANK below).
+ */
+export const ENGINE_INPUT_DEVICE_PLATFORM: LightningDevicePlatform = 'desktop';
+
 /** Narrowest first: where two reports disagree, the narrower limit wins. */
 const PLATFORM_RANK: Record<LightningDevicePlatform, number> = {
   mobile: 0,

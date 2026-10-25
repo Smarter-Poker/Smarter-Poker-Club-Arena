@@ -1,0 +1,3 @@
+# server/src/lightning/aLightningHandIsOnTheHorseScoreboard.law.test.ts
+
+Lightning never filed its hands through `recordHorseHandReviews` (7,535 hands in one hour, 0 horse reviews), so nothing measured whether horses win in Lightning. The law pins that every settled Lightning hand files exactly one review input keyed by the committed hand id, with every participant on the roster, settlement's exact contributions, the rake and the jackpot drop, under its own per-stake bucket `lightning_<bb>bb` that never lands in the cash tuner's `cash`/`hu_cash` buckets; that an unsettled hand files nothing; and that a Lightning host table is never touched as a horse's seat.

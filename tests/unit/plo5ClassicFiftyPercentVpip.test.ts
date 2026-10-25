@@ -4,11 +4,10 @@
  * "just make the plo5 classic to 50% vpip and stop. thats it. then relaunch
  * the game." - every PLO5 Classic game.
  *
- * The floor is the template's (fn_cash_template_defaults); the floor trigger
- * copies it into every snapshot on every write, and fn_cash_apply_ruleset
- * projects it onto the tables. This reads the migration, as
- * vpipFloorIsTheTemplates.test.ts does, because a unit test cannot reach
- * production; the live result is asserted inside the migration itself.
+ * The change itself was installed by 20261024213131 (PLO5 and PLO6 Classic,
+ * 50% and a BB ante, a later owner instruction). 20261024212524 was superseded
+ * before install and now only proves the outcome. These pin that it stays a
+ * proof: if it ever replaced the template again it would undo the BB ante.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -19,33 +18,24 @@ const FILE = readdirSync(migrations).find((f) =>
   f.endsWith('_plo5_classic_plays_at_a_fifty_percent_vpip_floor.sql')
 )!;
 const SQL = readFileSync(path.join(migrations, FILE), 'utf8');
+const BODY = SQL.split('\n')
+  .filter((l) => !l.trimStart().startsWith('--'))
+  .join('\n');
 
 describe('Classic PLO5 at 50% VPIP', () => {
-  it('changes the template, for Classic PLO5 only', () => {
-    expect(SQL).toMatch(
-      /'vpip_floor',CASE WHEN t='classic' AND v='plo5' THEN 50 WHEN t='classic' THEN 0 ELSE 40 END,'vpip_window',10/
-    );
-    // Every other floor is asserted unchanged before anything is written.
-    expect(SQL).toMatch(/fn_cash_template_defaults\('classic','plo'\)->>'vpip_floor'\) <> '0'/);
-    expect(SQL).toMatch(/fn_cash_template_defaults\('madness','plo5'\)->>'vpip_floor'\) <> '40'/);
+  it('only verifies: it writes nothing and replaces no function', () => {
+    expect(BODY).not.toMatch(/CREATE OR REPLACE|UPDATE |INSERT |DELETE |fn_cash_apply_ruleset/i);
   });
 
-  it('guards the definitions it replaces and relies on', () => {
-    expect(SQL).toMatch(/dff0793b509ab2a0ad3ce7214b4e8fef/);
-    expect(SQL).toMatch(/3e958bf044bb7caeabc40e4ef82873b4/);
+  it('proves the template, every snapshot and every live table', () => {
+    expect(BODY).toMatch(/fn_cash_template_defaults\('classic','plo5'\)->>'vpip_floor'\) <> '50'/);
+    expect(BODY).toMatch(/have a floor other than 50/);
+    expect(BODY).toMatch(/t\.maintain_percent_min = 50 AND t\.maintain_hands = 10/);
   });
 
-  it('relaunches live games through the platform projection, never a hand-written table update', () => {
-    expect(SQL).toMatch(/SET ruleset_snapshot = g\.ruleset_snapshot/);
-    expect(SQL).toMatch(/public\.fn_cash_apply_ruleset\(v_game\.id\)/);
-    expect(SQL).not.toMatch(/UPDATE public\.tables/);
-    expect(SQL).toMatch(/did not take the 50%% floor/);
-  });
-
-  it('is one guarded transaction and not a repair job', () => {
+  it('is one guarded transaction', () => {
     expect(SQL).toMatch(/^BEGIN;/m);
     expect(SQL).toMatch(/^COMMIT;/m);
     expect(SQL).toMatch(/SET LOCAL lock_timeout = '1s'/);
-    expect(SQL).not.toMatch(/cron\.schedule|pg_cron/i);
   });
 });

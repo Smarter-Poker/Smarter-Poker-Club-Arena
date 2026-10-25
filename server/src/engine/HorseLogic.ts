@@ -214,6 +214,7 @@ import {
   omahaBoatDominated,
   type OmahaNutStatus,
   omahaMadeClass,
+  omahaAggressorTier,
   type OmahaMadeInfo,
   type OppPostflopRead,
   nlhNutStatus,
@@ -1991,8 +1992,10 @@ export interface HorseDecideOpts {
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
    * 6000-pair probe; no production default is changed. */
   v55OmahaRiverTripsFlat?: boolean;
-  /** V56: direct public pressure-range stratum sampling. Opt-in until the
-   * clock- and governor-controlled per-variant qualification resolves. */
+  /** V56: direct public pressure sampling for vulnerable river sets/trips
+   * facing tier-three pressure on one Omaha-high cash board. Default on
+   * after fixed-clock/full-precision400bb cash qualification; explicit false
+   * retains the off arm. Tournament behavior remains unchanged. */
   v56OmahaPressureRange?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
@@ -5445,15 +5448,6 @@ export class HorseLogic {
       }
     }
 
-    if (
-      opts.v56OmahaPressureRange === true &&
-      ['plo4', 'plo5', 'plo6'].includes(gs.gameVariant) &&
-      oppReads
-    ) {
-      oppReads = oppReads.map((read) => (read ? { ...read, strictPressureRange: true } : null));
-      if (tele15 && oppReads.some((read) => read && ((read.streets ?? 0) > 0 || read.raised)))
-        noteFire('v56_omaha_pressure_range');
-    }
     // Real equity vs the opponents' READ RANGES (V3) — draws priced by runout.
     // V7: ADAPTIVE early exit — when the estimate is already far from every
     // decision threshold, stop sampling and bank the time.
@@ -5486,6 +5480,28 @@ export class HorseLogic {
     }
     if (Array.isArray(gs.communityCards3) && gs.communityCards3.length >= 3) {
       extraBoards.push(gs.communityCards3);
+    }
+    // The broad sampler correction changed unrelated flop/turn decisions and
+    // did not qualify. Apply the exact public value stratum only to the
+    // recorded leak domain; passive opponents keep their original ranges.
+    if (
+      opts.v56OmahaPressureRange !== false &&
+      !isTournamentMode(gs) &&
+      ['plo4', 'plo5', 'plo6'].includes(gs.gameVariant) &&
+      isRiver &&
+      extraBoards.length === 0 &&
+      !vi.isHiLo &&
+      !vi.isFixedLimit &&
+      oppReads
+    ) {
+      const made = omahaMadeClass(player.cards, gs.communityCards);
+      if (made.category === 4 && made.weak) {
+        oppReads = oppReads.map((read) =>
+          read && omahaAggressorTier(read) === 3 ? { ...read, strictPressureRange: true } : read
+        );
+        if (tele15 && oppReads.some((read) => read?.strictPressureRange))
+          noteFire('v56_omaha_pressure_range');
+      }
     }
     let equity: number;
     /**

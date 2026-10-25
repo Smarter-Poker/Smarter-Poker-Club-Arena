@@ -52,6 +52,8 @@ export interface LightningObservedHand {
   dealtCount: number;
   actions: ReadonlyArray<Record<string, unknown>>;
   showdown: ReadonlyArray<{ userId: string; mucked?: boolean; handName?: string }>;
+  /** Settlement's per-player results (HorseWinnerRead). */
+  results?: ReadonlyArray<{ playerId: string; contributed: number; won: number }>;
 }
 
 export interface LightningObservationDeps {
@@ -95,6 +97,14 @@ export function buildLightningObservation(
         }))
       : null,
     scope: readScopeOf(hand.variant, hand.dealtCount),
+    ...(hand.results
+      ? {
+          results: hand.results.map((r) => ({
+            user_id: r.playerId,
+            net: Math.round((r.won - r.contributed) * 100) / 100,
+          })),
+        }
+      : {}),
   };
 }
 

@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/lightning-reads-finish-20261025",
+  "_comment": "Installed once through Supabase MCP, recorded as 20261025141744 lightning_hands_reach_the_stats_facts_and_the_collusion_scan. Read back 2026-10-25T14:46:25.105055Z: settlement md5 e6cc04d7031ed3fa1454df89c45533a1; validator md5 42d1470a2aa3ccfe943716b00a7fa82a. Original source reservation 20261025000729 retained under the established same-slug history mapping. Never replay.",
+  "functions": ["fn_lightning_hand_stats_facts"]
+}

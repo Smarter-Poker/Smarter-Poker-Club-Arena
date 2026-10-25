@@ -22,15 +22,21 @@ describe('equity worker capacity is a routing prerequisite', () => {
   });
 
   it('waits for READY before discovery can admit tables', () => {
+    // 2026-10-24: started beside the horse lane and the stale-data cleanup,
+    // joined before break adoption, discovery and the dealer gate.
     const start = blankNonCode(sliceMethod(gameServer, 'private async performStart('));
-    const workerStart = start.indexOf('await startEquityWorkerPool()');
-    const cleanup = start.indexOf('await this.cleanupStaleData(');
+    const workerStart = start.indexOf('const equityLane = startEquityWorkerPool()');
+    const cleanup = start.indexOf('this.cleanupStaleData(');
+    const join = start.indexOf('const [horseOutcome, equityOutcome] = await lanesSettled;');
+    const discovery = start.indexOf('this.discoverCashTables()');
     const dealerReady = start.indexOf('this.publishDealerPrerequisitesReady(generation)');
 
     expect(workerStart).toBeGreaterThan(-1);
     expect(cleanup).toBeGreaterThan(workerStart);
-    expect(dealerReady).toBeGreaterThan(cleanup);
-    expect(start.slice(workerStart, cleanup)).toContain(
+    expect(join).toBeGreaterThan(cleanup);
+    expect(discovery).toBeGreaterThan(join);
+    expect(dealerReady).toBeGreaterThan(join);
+    expect(start.slice(join, discovery)).toContain(
       'error instanceof EquityWorkerPoolAbortedError &&'
     );
   });

@@ -247,10 +247,16 @@ export function composeDocument({ shell, page, css, fonts = null }) {
     // player or a deep route; otherwise src/main.tsx removes it the moment the
     // React tree has an h1 (the landing page or the lobby), so the swap is
     // between two identical layouts. If the bundle never boots, the words stay.
+    // The shared index is also the origin's fallback for /health and every
+    // private deep link. An inline removal AFTER active landing markup is too
+    // late: a stylesheet can hold that script while the browser fetches the
+    // landing's console artwork. Keep it inert until this route opts in.
+    // Crawlers without JavaScript still receive the exact rendered content.
     const landing =
       `<style data-prerender="landing">body:has(#prerender-landing) #root{display:none}</style>` +
-      `<div id="prerender-landing" data-prerender="landing">${body}</div>` +
-      `<script>try{var l=location.pathname.replace(/\\/+$/,"");var s=window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)});if(s||(l!==${JSON.stringify(WEB_BASE)}&&l!=="")){var p=document.getElementById("prerender-landing");if(p)p.remove()}}catch(e){}</script>` +
+      `<template id="prerender-landing-template">${body}</template>` +
+      `<script>try{var t=document.getElementById("prerender-landing-template");var l=location.pathname.replace(/\\/+$/,"");var s=null;try{s=window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)})}catch(e){}if(!s&&(l===${JSON.stringify(WEB_BASE)}||l==="")){var p=document.createElement("div");p.id="prerender-landing";p.setAttribute("data-prerender","landing");p.appendChild(t.content);t.parentNode.insertBefore(p,t)}t.remove()}catch(e){}</script>` +
+      `<noscript><div id="prerender-landing" data-prerender="landing">${body}</div></noscript>` +
       `<div id="root"></div>`;
     doc = doc.replace(rootPattern, landing);
   } else if (seo.brandedShare) {

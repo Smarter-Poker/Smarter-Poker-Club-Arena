@@ -349,7 +349,7 @@ export interface TableModalsLayerProps {
    * response debits the player twice. Declaring it makes that edit fail to
    * compile instead of failing in a wallet.
    */
-  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
+  onAddChips: (amount: number, opId?: string, onTerminalRefusal?: () => void) => Promise<boolean>;
 
   // Bust Rebuy
   bustRebuyOpen: boolean;

@@ -1,3 +1,4 @@
+import { requestLightningHorseTopUps } from './LightningHorseTopUp.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  AUTO-REBUY, ASKED FOR BETWEEN HANDS (Lightning Phase 10, 2026-10-08)
@@ -88,6 +89,7 @@ export interface LightningSettledBoundary {
   config: LightningAutoRebuyConfig;
   /** The players this boundary releases, with the stack settlement left them. */
   players: Array<{ playerId: string; stackAfter: number }>;
+  horsePlayers?: Array<{ playerId: string }>;
 }
 
 /** The host's view of this executor: one report per settled hand. */
@@ -132,6 +134,12 @@ export class LightningAutoRebuyExecutor implements LightningAutoRebuyReport {
    * settlement path must not depend on a rebuy answering.
    */
   async onHandSettled(boundary: LightningSettledBoundary): Promise<void> {
+    // Independent seat-flag intent; a horse has no browser to submit it.
+    try {
+      await requestLightningHorseTopUps(boundary);
+    } catch (error) {
+      this.logger.error('Lightning horse top-up request failed', error);
+    }
     if (!boundary.config.enabled) return;
     if (!isUuid(boundary.clusterId) || !boundary.handId) return;
     if (this.unavailableUntilMs > this.now()) return;

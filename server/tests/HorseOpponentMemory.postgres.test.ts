@@ -80,6 +80,10 @@ let port: number;
 let started = false;
 let repairTransaction: string;
 let boundedTransaction: string;
+let contextTransaction: string;
+const addedVariants = ['flh', 'flo8', 'short_deck'] as const;
+const contextActor = 'c1000000-0000-4000-8000-000000000001';
+const contextBefore = new Map<string, string>();
 const hand = (
   id: string,
   action = 'raise',
@@ -152,6 +156,18 @@ beforeAll(async () => {
     create table hand_history(id uuid primary key,created_at timestamptz not null default clock_timestamp(),
       game_variant text, tournament_id uuid,players jsonb,actions jsonb);
     create index on hand_history using gin(players jsonb_path_ops);`);
+  // These supported card families were excluded by the old durable allowlist.
+  // Seed legacy observations before installing any accepted-hand trigger.
+  for (const [index, variant] of addedVariants.entries())
+    await client.query(
+      'insert into hand_history(id,game_variant,players,actions) values($1,$2,$3,$4)',
+      [
+        `c2000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        variant,
+        JSON.stringify([{ userId: contextActor }, { userId: other }, { userId: uid }]),
+        JSON.stringify([{ userId: contextActor, action: 'raise', stage: 'preflop' }]),
+      ]
+    );
   // Historical hands predate the persistence migration and remain read-only.
   for (let n = 0; n < 40; n++)
     await insert(hand(`20000000-0000-4000-8000-${String(n).padStart(12, '0')}`));
@@ -267,6 +283,30 @@ beforeAll(async () => {
   if (!bounded) throw new Error('bounded original-request opponent migration missing');
   boundedTransaction = readFileSync(join(path, bounded), 'utf8');
   await client.query(boundedTransaction);
+  for (const variant of addedVariants)
+    await expect(
+      client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+        [contextActor],
+        variant,
+        'cash',
+        'short',
+      ])
+    ).rejects.toMatchObject({ code: '22023' });
+  for (const name of [
+    'fn_horse_exploit_accept_hand()',
+    'fn_horse_exploit_mark_hand()',
+    'fn_horse_exploit_profiles_read(text[],text,text,text)',
+  ])
+    contextBefore.set(
+      name,
+      (await client.query('select pg_get_functiondef($1::regprocedure) body', [name])).rows[0].body
+    );
+  const contexts = readdirSync(path).find((f) =>
+    f.endsWith('_horse_opponent_memory_remaining_variants.sql')
+  );
+  if (!contexts) throw new Error('remaining opponent contexts migration missing');
+  contextTransaction = readFileSync(join(path, contexts), 'utf8');
+  await client.query(contextTransaction);
 }, 30000);
 
 afterAll(async () => {
@@ -740,6 +780,9 @@ describe('durable opponent memory with real PostgreSQL', () => {
         alter index horse_qualified_index rename to idx_hand_history_horse_legacy_context`);
       // Later tests must retain the bounded reader, never the installed old reader.
       await client.query(boundedTransaction);
+      // The index guard test restores its own preceding reader, including the
+      // additive variant allowlist, rather than reverting the later migration.
+      await client.query(before);
     }
     expect(
       (
@@ -778,5 +821,155 @@ describe('durable opponent memory with real PostgreSQL', () => {
     HorseMind.setDecisionScope('omaha:short', 'plo4');
     expect(HorseMind.opponentRead(uid)).toBeNull();
     HorseMind.setDecisionScope(null);
+  });
+});
+
+describe('remaining saved opponent contexts with real PostgreSQL', () => {
+  it('changes only each exact allowlist and leaves the bounded reader contract intact', async () => {
+    const oldList = "('nlh','plo4','plo5','plo6','plo8')";
+    const nextList = "('nlh','plo4','plo5','plo6','plo8','flh','flo8','short_deck')";
+    for (const [name, before] of contextBefore) {
+      const after = (await client.query('select pg_get_functiondef($1::regprocedure) body', [name]))
+        .rows[0].body;
+      expect(after, name).toBe(before.replace(oldList, nextList));
+    }
+    const check = (
+      await client.query(
+        "select convalidated,pg_get_constraintdef(oid) body from pg_constraint where conrelid='horse_exploit_profiles'::regclass and conname='horse_exploit_profiles_variant_check'"
+      )
+    ).rows[0];
+    expect(check.convalidated).toBe(true);
+    for (const variant of addedVariants) expect(check.body).toContain(`'${variant}'::text`);
+  });
+
+  it('restores bounded legacy reads for each new variant and keeps betting, mode and size isolated', async () => {
+    for (const variant of addedVariants) {
+      const request = async (v = variant as string, mode = 'cash', size = 'short') =>
+        (
+          await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+            [contextActor],
+            v,
+            mode,
+            size,
+          ])
+        ).rows[0];
+      const row = await request();
+      expect(row).toMatchObject({
+        variant,
+        mode: 'cash',
+        size: 'short',
+        initialized: true,
+        legacy_hands: 1,
+      });
+      expect(row.counters.hands).toBe(1);
+      expect(row.counters.pfr).toBe(1);
+      expect((await request(variant, 'tournament')).counters.hands).toBe(0);
+      expect((await request(variant, 'cash', 'hu')).counters.hands).toBe(0);
+      expect((await request(variant, 'cash', 'full')).counters.hands).toBe(0);
+    }
+    for (const variant of ['nlh', 'plo8']) {
+      const row = (
+        await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+          [contextActor],
+          variant,
+          'cash',
+          'short',
+        ])
+      ).rows[0];
+      expect(row.counters.hands).toBe(0);
+    }
+  });
+
+  it('learns accepted new-variant hands exactly once and rolls back refused transactions', async () => {
+    for (const [index, variant] of addedVariants.entries()) {
+      const read = async () =>
+        (
+          await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+            [contextActor],
+            variant,
+            'cash',
+            'short',
+          ])
+        ).rows[0];
+      const before = await read();
+      const id = `c3000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+      const row = {
+        ...hand(id, 'call', variant),
+        players: [{ userId: contextActor }, { userId: other }, { userId: uid }],
+        actions: [{ userId: contextActor, action: 'call', stage: 'preflop' }],
+      };
+      await insert(row);
+      await insert(row);
+      const after = await read();
+      expect(Number(after.observed_hands) - Number(before.observed_hands)).toBe(1);
+      expect(
+        (await client.query('select horse_exploit_recorded from hand_history where id=$1', [id]))
+          .rows[0].horse_exploit_recorded
+      ).toBe(true);
+      await client.query('begin');
+      try {
+        await insert({ ...row, id: `c4000000-0000-4000-8000-${String(index).padStart(12, '0')}` });
+      } finally {
+        await client.query('rollback');
+      }
+      expect(await read()).toEqual(after);
+      const connection = new Client({
+        host: '127.0.0.1',
+        port,
+        database: 'postgres',
+        user: process.env.USER ?? 'postgres',
+      });
+      await connection.connect();
+      try {
+        expect(
+          (
+            await connection.query(
+              'select counters,observed_hands from horse_exploit_profiles where user_id=$1 and variant=$2 and mode=$3 and size=$4',
+              [contextActor, variant, 'cash', 'short']
+            )
+          ).rows[0]
+        ).toEqual({ counters: after.counters, observed_hands: after.observed_hands });
+      } finally {
+        await connection.end();
+      }
+    }
+  });
+
+  it('retains private read permissions and refuses unsupported variants and replay', async () => {
+    await expect(
+      client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+        [contextActor],
+        'other_variant',
+        'cash',
+        'short',
+      ])
+    ).rejects.toMatchObject({ code: '22023' });
+    await expect(
+      client.query(
+        "insert into horse_exploit_profiles(user_id,variant,mode,size) values($1,'other_variant','cash','short')",
+        [contextActor]
+      )
+    ).rejects.toMatchObject({ code: '23514' });
+    const grants = (
+      await client.query(
+        "select has_function_privilege('service_role','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') service,has_function_privilege('anon','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') anon,has_function_privilege('authenticated','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') browser"
+      )
+    ).rows[0];
+    expect(grants).toEqual({ service: true, anon: false, browser: false });
+    const liveProof = contextTransaction.match(/^-- @live-proof: (.+)$/m)?.[1];
+    expect(liveProof).toBeTruthy();
+    expect((await client.query(`select (${liveProof}) as installed`)).rows[0]).toEqual({
+      installed: true,
+    });
+    await expect(client.query(contextTransaction)).rejects.toThrow(
+      /variant constraint preimage differs/
+    );
+    await client.query('rollback');
+    const variants = (
+      await client.query('select distinct variant from horse_exploit_profiles where user_id=$1', [
+        contextActor,
+      ])
+    ).rows.map((r) => r.variant);
+    expect(variants).toEqual(expect.arrayContaining([...addedVariants]));
   });
 });

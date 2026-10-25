@@ -131,6 +131,7 @@
   gap: 0 4cqw;
 }
 .leaderboard-page .lb-control-actions {
+  min-height: 44px;
   font-size: 0.9em;
 }
 .leaderboard-page .club-page-body :is(.tab-btn, .lb-filter-chip, .scope-toggle button) {
@@ -523,5 +524,14 @@
 @media (max-width: 620px) {
   .leaderboard-page {
     padding: 12px 16px 100px;
+  }
+}
+
+/* The read-only export and owner tools arrive after the membership/board reads.
+   Reserve their mobile row before they arrive so the period and ranking
+   controls do not jump under a finger. This is space for existing controls. */
+@media (max-width: 620px) {
+  .leaderboard-page .lb-control-actions {
+    flex-basis: 100%;
   }
 }

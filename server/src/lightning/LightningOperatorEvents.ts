@@ -1,9 +1,11 @@
+import { parseLightningTopUpReceipt, type LightningTopUpReceipt } from './LightningTopUp.js';
 /** Database transaction events reach operators through the engine channel.
  * Raw ledger payloads never leave the service; club membership and each read
  * door retain their existing authorization. No polling supplies updates. */
 import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase.js';
 import { channelHub } from '../hub/ChannelHub.js';
+import { tableStateHub } from '../transport/TableStateHub.js';
 import { alwaysOnRegistry } from '../observability/engineInstruments.js';
 import { reportError } from '../services/errorReporter.js';
 
@@ -19,7 +21,13 @@ export class LightningOperatorEvents {
   constructor(
     private db: SupabaseClient = supabase,
     private send = (clubId: string, event: Record<string, unknown>) =>
-      channelHub.broadcastToClub(clubId, { type: 'CLUB_EVENT', clubId, event })
+      channelHub.broadcastToClub(clubId, { type: 'CLUB_EVENT', clubId, event }),
+    private topUp = (receipt: LightningTopUpReceipt) => {
+      tableStateHub.emitEvent(receipt.pool_session_id, {
+        type: 'lightning_top_up_completed',
+        ...receipt,
+      });
+    }
   ) {}
   start(): void {
     if (this.channel) return;
@@ -54,6 +62,16 @@ export class LightningOperatorEvents {
     if (channel) await this.db.removeChannel(channel);
   }
   async publish(row: Record<string, unknown>, generation = this.generation): Promise<void> {
+    if (row.kind === 'lightning_top_up_completed') {
+      try {
+        const receipt = parseLightningTopUpReceipt(row.payload);
+        if (receipt.status === 'pending') throw new Error('Nonterminal Lightning Top Up Event');
+        if (generation === this.generation) this.topUp(receipt);
+      } catch (error) {
+        reportError(error, 'LightningOperatorEvents.top_up');
+      }
+      return;
+    }
     const clusterId = row.game_id;
     if (typeof clusterId !== 'string' || typeof row.kind !== 'string') return;
     try {

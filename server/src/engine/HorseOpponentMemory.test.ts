@@ -31,9 +31,19 @@ describe('variant and session durable opponent reads', () => {
     expect(validOpponentProfile(p)).toBe(true);
     expect(validOpponentProfile({ ...p, counters: { ...p.counters, pfr: Infinity } })).toBe(false);
     expect(validOpponentProfile({ ...p, observed_hands: NaN })).toBe(false);
+    expect(MEMORY_VARIANTS).toEqual([
+      'nlh',
+      'plo4',
+      'plo5',
+      'plo6',
+      'plo8',
+      'flh',
+      'flo8',
+      'short_deck',
+    ]);
     expect(
       new Set(MEMORY_VARIANTS.map((v) => opponentMemoryKey(uid, v, 'cash', 'short'))).size
-    ).toBe(5);
+    ).toBe(8);
   });
   it('retains the read through a portable frame, isolates PLO variants and cash/tournament contexts', () => {
     HorseMind.importDurableOpponentProfiles([

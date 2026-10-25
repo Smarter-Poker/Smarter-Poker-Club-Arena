@@ -23,12 +23,9 @@ function frameFixture(current = true) {
     context = current ? horsePlanContextFromDecision(request) : undefined;
   const key = horsePlanHandKey(request.gameState.actionHistory, context)!;
   HorseMind.notePlan(key, request.player.user_id, true);
-  const frame = encodeHorseDecisionReads(
-    HorseMind.snapshotDecisionReads(request.gameState.players, key),
-    request.gameState.players,
-    key,
-    context
-  );
+  const historical = HorseMind.snapshotDecisionReads(request.gameState.players, key);
+  delete historical.winnerReads; // Preserve the original v1/v2 evidence shape.
+  const frame = encodeHorseDecisionReads(historical, request.gameState.players, key, context);
   const effects = [
     { type: 'plan', handKey: key, userId: request.player.user_id, barrelIntent: true },
   ];

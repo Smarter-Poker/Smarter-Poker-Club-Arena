@@ -1838,9 +1838,7 @@ describe('HorseDecisionWorkerRuntime', () => {
         const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
         if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
         const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
-        expect(entry.frame.version).toBe(
-          windows ? 'horse-decision-reads-v3' : 'horse-decision-reads-v2'
-        );
+        expect(entry.frame.version).toBe('horse-decision-reads-v5');
         if (windows)
           expect(JSON.parse(entry.frame.json).statsWindows[0][1]).toMatchObject({
             fromMs: 100,
@@ -2737,12 +2735,12 @@ describe('HorseDecisionWorkerRuntime', () => {
     if (first?.type !== 'FAST_RESULT') throw Error('missing fast result');
     expect(records[0].payload).toMatchObject({
       snapshot: { requestId: 1 },
-      readFrame: { version: 'horse-decision-reads-v2' },
+      readFrame: { version: 'horse-decision-reads-v5' },
       rngBefore: first.rngBefore,
       rngAfter: first.rngAfter,
       runtimePins: 'incomplete',
     });
-    expect(JSON.stringify(first)).not.toContain('horse-decision-reads-v2');
+    expect(JSON.stringify(first)).not.toContain('horse-decision-reads-');
     h.runtime.receive({
       ...fast,
       type: 'DECIDE_DEEP',

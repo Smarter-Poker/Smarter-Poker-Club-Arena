@@ -9,6 +9,7 @@ import {
   winnerReadout,
 } from './HorseWinnerRead.js';
 import { HorseMind } from './HorseMind.js';
+import { encodeHorseDecisionReads, decodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { handNetResults } from '../services/supabase/handHistory.js';
 import { mulberry32 } from './HandFuzzer.js';
 
@@ -33,6 +34,61 @@ afterEach(() => {
 });
 
 describe('a proven winner is respected', () => {
+  it('an isolated mind never inherits the live winner read', () => {
+    play(P, 400, 1, 0, 101);
+    expect(isProvenWinner(P)).toBe(true);
+    HorseMind.runInSandbox(HorseMind.createSandbox(), () => {
+      expect(isProvenWinner(P)).toBe(false);
+    });
+    expect(isProvenWinner(P)).toBe(true);
+  });
+
+  it('observations inside an isolated mind never alter live winner history', () => {
+    const sandbox = HorseMind.createSandbox();
+    HorseMind.runInSandbox(sandbox, () => {
+      play(Q, 400, 1, 0, 102);
+      expect(isProvenWinner(Q)).toBe(true);
+    });
+    expect(winnerReadout(Q)).toBeNull();
+    HorseMind.runInSandbox(sandbox, () => expect(isProvenWinner(Q)).toBe(true));
+  });
+
+  it('a frozen decision restores its winner evidence after live history changes', () => {
+    play(P, 400, 1, 0, 103);
+    const players = [{ user_id: P }, { user_id: Q }];
+    const view = HorseMind.snapshotDecisionReads(players as never, null);
+    const frame = encodeHorseDecisionReads(view, players, null);
+    resetWinnerReads();
+    const restored = decodeHorseDecisionReads(frame, players, null);
+    HorseMind.runInSandbox(restored, () => expect(isProvenWinner(P)).toBe(true));
+    expect(winnerReadout(P)).toBeNull();
+  });
+
+  it('restores live reads when an isolated decision throws', () => {
+    play(P, 400, 1, 0, 104);
+    const sandbox = HorseMind.createSandbox();
+    expect(() =>
+      HorseMind.runInSandbox(sandbox, () => {
+        observeHandResults('isolated', [{ user_id: Q, net: -2 }], 2);
+        throw Error('decision failed');
+      })
+    ).toThrow('decision failed');
+    expect(isProvenWinner(P)).toBe(true);
+    expect(winnerReadout(Q)).toBeNull();
+    HorseMind.runInSandbox(sandbox, () => expect(winnerReadout(Q)?.meanBB).toBe(-1));
+  });
+
+  it('clearing an isolated mind clears its winner state without clearing live history', () => {
+    play(P, 400, 1, 0, 105);
+    const sandbox = HorseMind.createSandbox();
+    HorseMind.runInSandbox(sandbox, () => {
+      play(Q, 400, 1, 0, 106);
+      HorseMind.reset();
+      expect(winnerReadout(Q)).toBeNull();
+    });
+    expect(isProvenWinner(P)).toBe(true);
+  });
+
   it('a break-even player on a heater is never read as a winner', () => {
     for (let seed = 1; seed <= 20; seed++) {
       resetWinnerReads();

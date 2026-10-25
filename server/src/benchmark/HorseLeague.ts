@@ -1330,6 +1330,13 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
     a: {},
     b: { v52RangeAdvantage: false },
   },
+  // V53 (2026-10-24): pressure on a credibly aggressive human. Read-gated,
+  // so a horse-only league arm engages it only where a horse's own play reads
+  // outside the envelope; arm A is production (on).
+  { name: 'v53_pressure', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  { name: 'plo4_v53_pressure', variant: 'plo4', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  { name: 'plo5_v53_pressure', variant: 'plo5', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  { name: 'plo6_v53_pressure', variant: 'plo6', pairs: 6000, a: {}, b: { v53Pressure: false } },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
@@ -1385,6 +1392,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v46ShortDeck: false,
       v51RiverFlat: false,
       v52RangeAdvantage: false,
+      v53Pressure: false,
       mind: false,
       streetIQ: false,
       handReading: false,

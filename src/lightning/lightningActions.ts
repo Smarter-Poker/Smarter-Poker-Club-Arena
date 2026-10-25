@@ -7,9 +7,43 @@
  * the 429 retries and the idempotency key with it.
  */
 import { submitAction, type ActionResult } from '../services/GameServerAPI';
-import { lightningActionPayload } from './lightningHand';
+import {
+  lightningActionPayload,
+  lightningHandId,
+  type LightningSnapshotFields,
+} from './lightningHand';
 
 export type LightningFoldKind = 'fast_fold' | 'fold_watch';
+
+/** Off-turn preflop Fold uses the visible Fold/Check-Fold pre-action rule. */
+export function lightningFoldOnTurn(
+  snapshot: Record<string, unknown> | null,
+  userId: string,
+  kind: LightningFoldKind
+): { handId: string; toCall: number } | { error: string } | null {
+  if (kind !== 'fast_fold') return null;
+  const unavailable = { error: 'This Hand Is Not Available. Wait For The Table To Update.' };
+  if (!snapshot || typeof snapshot.stage !== 'string') return unavailable;
+  if (snapshot.stage !== 'preflop' || snapshot.current_player === userId) return null;
+  // A null actor during a turn handoff is not proof of our own turn.
+  if (!Array.isArray(snapshot.players)) return unavailable;
+  const hero = snapshot.players.find((p) => p?.user_id === userId);
+  const handId = lightningHandId(snapshot as LightningSnapshotFields);
+  const price = snapshot.current_bet;
+  if (
+    !handId ||
+    !hero ||
+    hero.is_folded ||
+    hero.is_all_in ||
+    typeof price !== 'number' ||
+    !Number.isFinite(price) ||
+    typeof hero.bet !== 'number' ||
+    !Number.isFinite(hero.bet)
+  )
+    return unavailable;
+  const toCall = Math.max(0, price - hero.bet);
+  return { handId, toCall };
+}
 
 export type ActionSender = (
   tableId: string,

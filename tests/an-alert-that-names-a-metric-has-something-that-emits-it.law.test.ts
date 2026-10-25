@@ -72,6 +72,8 @@ const loadedRuleFiles = (): string[] => {
 };
 
 describe('an alert that names a metric has something that emits it', () => {
+  // Full maintained-corpus I/O measured up to20.1s on the shared SSD.
+  // Keep every assertion and a finite30s scan budget; this is not a runtime deadline.
   it('every metric referenced by a loaded rule has a producer', () => {
     const files = loadedRuleFiles();
     expect(files.length).toBeGreaterThan(0);
@@ -91,8 +93,10 @@ describe('an alert that names a metric has something that emits it', () => {
     expect(orphans, `rules reference metrics nothing emits:\n  ${orphans.join('\n  ')}`).toEqual(
       []
     );
-  });
+  }, 30_000);
 
+  // Full maintained-corpus I/O measured up to20.1s on the shared SSD.
+  // Keep every assertion and a finite30s scan budget; this is not a runtime deadline.
   it('the thirteen names from the 2026-09-04 gap all have producers now', () => {
     const files = loadedRuleFiles();
     const haystack = producerHaystack(root);
@@ -122,7 +126,7 @@ describe('an alert that names a metric has something that emits it', () => {
         true
       );
     }
-  });
+  }, 30_000);
 
   it('the three blindness alerts also fire when the metric is absent, not only late', () => {
     // A staleness threshold cannot see a collector that never ran: `> 600`

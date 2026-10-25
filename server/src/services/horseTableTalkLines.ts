@@ -50,7 +50,24 @@ export type TalkEvent =
   | 'pot_won'
   | 'all_in'
   | 'tilt'
-  | 'heater';
+  | 'heater'
+  | ReplyEvent;
+
+/**
+ * A horse answering a player who typed in the table chat (Dan 2026-10-24:
+ * players typed "Nice Hand", "Unlucky", "YOU GUYS PLAY HERE EVERY NIGHT?!",
+ * "Hey Ingrid" and every one was met with silence). The intent comes from
+ * horseChatIntent.classifyChat; HorseTableTalk.replyToPlayer says it.
+ * There is deliberately no event for "are you real / a bot": a horse never
+ * answers that question, in either direction.
+ */
+export type ReplyEvent =
+  | 'reply_thanks'
+  | 'reply_ribbed'
+  | 'reply_sympathy'
+  | 'reply_humble'
+  | 'reply_hello'
+  | 'reply_regular';
 export type TalkVoice = 'quiet' | 'needler' | 'friendly';
 
 export const TALK_EVENTS: readonly TalkEvent[] = [
@@ -63,7 +80,26 @@ export const TALK_EVENTS: readonly TalkEvent[] = [
   'all_in',
   'tilt',
   'heater',
+  'reply_thanks',
+  'reply_ribbed',
+  'reply_sympathy',
+  'reply_humble',
+  'reply_hello',
+  'reply_regular',
 ];
+
+export const REPLY_EVENTS: readonly ReplyEvent[] = [
+  'reply_thanks',
+  'reply_ribbed',
+  'reply_sympathy',
+  'reply_humble',
+  'reply_hello',
+  'reply_regular',
+];
+
+export function isReplyEvent(event: TalkEvent): event is ReplyEvent {
+  return (REPLY_EVENTS as readonly string[]).includes(event);
+}
 export const TALK_VOICES: readonly TalkVoice[] = ['quiet', 'needler', 'friendly'];
 
 /** The only placeholders a line may carry. Anything else fails the law test. */
@@ -75,28 +111,260 @@ export interface TalkPool {
 
 export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
   // Event A: the horse won a pot of 40 big blinds or more.
+  //
+  // Dan 2026-10-24, on two horses typing "N bb on the river, somebody wanted to
+  // see my cards" 23 minutes apart at one table: "HORSES CAN NEVER EVER EVER BE
+  // REPEATING THE SAME LINES ... THIS IS SCREAMING I AM A BOT". These four
+  // events had ONE line per voice, so every horse of a voice said the same
+  // sentence. Each cell is now a deep pool, and HorseTableTalk.chooseLine
+  // never picks a phrase the table has heard (PHRASE_TABLE_WINDOW_MS).
   big_pot_won: {
-    quiet: { lines: ['thats a {potBB} bb pot, ill take it'] },
-    needler: { lines: ['{potBB} bb on the {street}, somebody wanted to see my cards'] },
-    friendly: { lines: ['nice pot, {potBB} bb, gg'] },
+    quiet: {
+      lines: [
+        'thats a {potBB} bb pot, ill take it',
+        'big one, ty',
+        'needed that pot',
+        'decent pot',
+        'ok that helps',
+        'nice pot to drag',
+        'finally a real pot',
+        'that one mattered',
+        '{potBB} bb, nice',
+        'back in business',
+        'good pot for me',
+        'stack looks better now',
+        'that pot was overdue',
+        'big {street}',
+        'i was due one of those',
+        'ok, back in it',
+        'ill stack these quietly',
+        'that should hold me for a bit',
+        'nobody wanted that one',
+        'ill take it down',
+        'folded to me, fine',
+      ],
+    },
+    needler: {
+      lines: [
+        '{potBB} bb on the {street}, somebody wanted to see my cards',
+        'thanks for the donation',
+        'ty for paying me off',
+        'you really wanted to see it huh',
+        'expensive {street} for somebody',
+        '{potBB} bb, appreciate the gift',
+        'that was a lot to pay to look',
+        'next time trust the bet',
+        'pricey {street} for you',
+        'love a big pot',
+        'keep sending them my way',
+        'my kind of pot',
+        'told you i had it',
+        'i always have it',
+        'pay the man',
+        'curiosity is expensive',
+        'should have let that one go',
+        'thanks, i was getting short',
+        'thanks for folding',
+        'smart fold',
+        'nobody wanted to pay to see it',
+        'scared money, thanks',
+      ],
+    },
+    friendly: {
+      lines: [
+        'nice pot, {potBB} bb, gg',
+        'whew, big one',
+        'that was a fun hand',
+        'big pot, gg all',
+        'sorry, cards fell my way',
+        'got lucky on that one',
+        'what a hand, gg',
+        'that was a sweat',
+        'good hand all around',
+        'cant believe that held',
+        'ill take the big ones when they come',
+        'nice battle, gg',
+        'fun pot, thanks guys',
+        'that one felt good',
+        'tough spot for you there, gg',
+        'heart was pounding on that {street}',
+        'well that was exciting',
+        'good game, that was a big one',
+        'good fold, honestly',
+        'glad that got through',
+        'phew, nobody called',
+      ],
+    },
   },
   // Event B: the horse lost at showdown holding two pair or better.
   showdown_loss: {
-    quiet: { lines: ['{hand} no good, fair enough'] },
-    needler: { lines: ['{hand} and still second best, this table is brutal'] },
-    friendly: { lines: ['ran {hand} into a bigger one on the {street}, well played seat {seat}'] },
+    quiet: {
+      lines: [
+        '{hand} no good, fair enough',
+        '{hand} wasnt enough',
+        'thought {hand} was good',
+        'beat again',
+        'ok, {hand} loses',
+        '{hand}, still second',
+        'fair, you had it',
+        'second best again',
+        'had {hand}, not enough',
+        'figured {hand} was good there',
+        'cant fold {hand} there',
+        'nothing i could do',
+        'oh well, {hand}',
+        'unlucky spot',
+        'bad timing for {hand}',
+        'ok, that one stings',
+      ],
+    },
+    needler: {
+      lines: [
+        '{hand} and still second best, this table is brutal',
+        '{hand} loses, sure',
+        'of course {hand} isnt good',
+        'who beats {hand} on that {street}',
+        'cooler, whatever',
+        'nice {street} for you',
+        'you had to have it',
+        'how is {hand} not good',
+        '{hand} and i lose, perfect',
+        'this table never lets {hand} win',
+        'again with the {street}',
+        'had {hand} and paid for it',
+        'cant win with {hand} here',
+        'thats just mean',
+        'sick, {hand} no good',
+        'brutal {street}, just brutal',
+      ],
+    },
+    friendly: {
+      lines: [
+        'ran {hand} into a bigger one on the {street}, well played seat {seat}',
+        'had {hand}, you got me',
+        'nice hand seat {seat}, {hand} wasnt enough',
+        'well played, {hand} was no good',
+        'thought {hand} was good, nh',
+        'gg seat {seat}, you had it',
+        'tough cooler, nh',
+        '{hand} gets beat, nice hand',
+        'you had me the whole way huh',
+        'good hand seat {seat}',
+        'great {street} for you, gg',
+        'cant fold {hand} there, nh',
+        'my {hand} was second best, wp',
+        'got outdrawn, it happens',
+        'that one stings, gg',
+        'you earned that one seat {seat}',
+      ],
+    },
   },
   // Event C: a winner showed a full house or better; the horse did not win.
   big_hand_shown: {
-    quiet: { lines: ['{hand} shown, ok then'] },
-    needler: { lines: ['{hand} on this board, of course'] },
-    friendly: { lines: ['{hand}, nice hand seat {seat}'] },
+    quiet: {
+      lines: [
+        '{hand} shown, ok then',
+        '{hand}, wow',
+        'thats a monster',
+        'ok, {hand}',
+        'well that explains it',
+        'cant beat {hand}',
+        'saw that coming',
+        '{hand} on the {street}, nice',
+        'big hand',
+        'yep, {hand}',
+        'figured something like that',
+        'no arguing with {hand}',
+        'nice hand there',
+        'glad i was out',
+      ],
+    },
+    needler: {
+      lines: [
+        '{hand} on this board, of course',
+        '{hand}, naturally',
+        'where do people find {hand}',
+        'sure, {hand} on the {street}',
+        'every time, {hand}',
+        '{hand} again at this table',
+        'nobody ever has the small hand here',
+        'of course seat {seat} had {hand}',
+        'this deck is wild',
+        'how convenient, {hand}',
+        '{hand} on the {street}, unreal',
+        'pretty sure the deck likes seat {seat}',
+        'love seeing {hand} when im out',
+        'somebody always has it here',
+      ],
+    },
+    friendly: {
+      lines: [
+        '{hand}, nice hand seat {seat}',
+        'wow, {hand}, gg',
+        'huge hand seat {seat}',
+        'thats a beauty, {hand}',
+        'great hand, nh',
+        '{hand} on the {street}, nicely done',
+        'congrats on the {hand}',
+        'nice one seat {seat}, {hand}',
+        'what a hand',
+        'good thing i was out of that one',
+        'love to see a {hand}',
+        'pretty hand, gg',
+        'that is a monster, nice',
+        'sweet {street} for you seat {seat}',
+      ],
+    },
   },
   // Event D: a player sat down; the horse has been seated ten hands or more.
   arrival: {
-    quiet: { lines: ['gl'] },
-    needler: { lines: ['fresh chips at seat {seat}, welcome'] },
-    friendly: { lines: ['welcome to the table seat {seat}, good luck'] },
+    quiet: {
+      lines: [
+        'gl',
+        'hi',
+        'hey',
+        'welcome',
+        'hello',
+        'gl seat {seat}',
+        'evening',
+        'hey there',
+        'yo',
+        'welcome in',
+        'hi all',
+      ],
+    },
+    needler: {
+      lines: [
+        'fresh chips at seat {seat}, welcome',
+        'another one, welcome',
+        'welcome, hope you brought chips',
+        'new blood, nice',
+        'seat {seat}, you sure about this table',
+        'welcome to the shark tank',
+        'hope you like action',
+        'bout time somebody sat there',
+        'welcome, dont take it personal',
+        'fresh stack, love it',
+        'ah, company',
+        'buckle up seat {seat}',
+      ],
+    },
+    friendly: {
+      lines: [
+        'welcome to the table seat {seat}, good luck',
+        'hey welcome',
+        'hi seat {seat}, gl',
+        'welcome, good table tonight',
+        'hello and gl',
+        'welcome aboard',
+        'glad to have you, gl',
+        'hey there, good luck',
+        'welcome in seat {seat}',
+        'gl and have fun',
+        'nice to see a new face, gl',
+        'welcome, enjoy',
+      ],
+    },
   },
   // Event E: the horse lost a pot at showdown, any hand.
   pot_lost: {
@@ -192,6 +460,12 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'phew',
         'needed it',
         'one',
+        'ok good',
+        'small one',
+        'ill take that',
+        'that works',
+        'little one, ty',
+        'fine by me',
       ],
     },
     needler: {
@@ -211,6 +485,8 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'stack those for me',
         'read you like a book',
         'love when that happens',
+        'fold, good choice',
+        'nobody wants to play with me',
       ],
     },
     friendly: {
@@ -229,12 +505,25 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'needed that one bad',
         'ill take it',
         'good hand though',
+        'good fold',
       ],
     },
   },
   // Event G: the horse is moving all in. Said as it shoves, and only sometimes.
   all_in: {
-    quiet: { lines: ['gl', 'good luck', 'here we go', 'ok lets see', 'all in', 'gl both'] },
+    quiet: {
+      lines: [
+        'gl',
+        'here we go',
+        'ok lets see',
+        'all in',
+        'gl both',
+        'lets see it',
+        'all of it',
+        'you or me',
+        'ok then',
+      ],
+    },
     needler: {
       lines: [
         'lets go',
@@ -247,6 +536,10 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'your move',
         'dont be scared',
         'lets gamble',
+        'your call',
+        'i dare you',
+        'show me',
+        'time to decide',
       ],
     },
     friendly: {
@@ -261,6 +554,10 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'gl sir',
         'fingers crossed',
         'no regrets',
+        'wish me luck',
+        'here we go, gl',
+        'lets have fun',
+        'hope it holds',
       ],
     },
   },
@@ -274,6 +571,10 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'this is getting old',
         'ok im tilted',
         'not again',
+        'brutal',
+        'need a break',
+        'why me',
+        'this is ridiculous',
       ],
     },
     needler: {
@@ -284,6 +585,10 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'third time now',
         'cant make this up',
         'ok this is getting silly',
+        'rigged deck tonight',
+        'somebody stop this',
+        'i give up',
+        'sure, again',
       ],
     },
     friendly: {
@@ -294,12 +599,27 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'deck is cold over here',
         'ill turn it around',
         'gg again, wow',
+        'nice hands everyone, ugh',
+        'my luck has to change',
+        'tough night for me',
+        'gg, you guys are good',
       ],
     },
   },
   // Event I: the horse won again, three pots or more in a row at this table.
   heater: {
-    quiet: { lines: ['running good', 'ill take it again', 'cards coming', 'nice run', 'again'] },
+    quiet: {
+      lines: [
+        'running good',
+        'ill take it again',
+        'cards coming',
+        'nice run',
+        'again',
+        'cant complain',
+        'rolling now',
+        'good stretch',
+      ],
+    },
     needler: {
       lines: [
         'cant stop wont stop',
@@ -307,6 +627,10 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'on a heater',
         'keep em coming',
         'too hot right now',
+        'dont stop now',
+        'who wants some',
+        'im not leaving',
+        'pay up again',
       ],
     },
     friendly: {
@@ -316,7 +640,292 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'cant miss right now',
         'thanks again all',
         'ill cool off eventually',
+        'sorry, i cant miss',
+        'what a run',
+        'enjoying this one',
+        'thanks for the chips again',
       ],
     },
   },
+  // Reply: a player complimented this horse (nice hand, well played, nice bet).
+  reply_thanks: {
+    quiet: {
+      lines: [
+        'ty',
+        'thanks',
+        'appreciate it',
+        'cheers',
+        'ty sir',
+        'thanks man',
+        'much appreciated',
+        'ty, felt good',
+        'ha ty',
+      ],
+    },
+    needler: {
+      lines: [
+        'i know',
+        'told you',
+        'all skill',
+        'thanks, i try',
+        'more where that came from',
+        'ill be here all night',
+        'took you long enough to notice',
+        'stick around, theres more',
+        'ty, now pay attention',
+      ],
+    },
+    friendly: {
+      lines: [
+        'thanks, appreciate that',
+        'ty, you too',
+        'thank you kindly',
+        'ty, fun hand',
+        'appreciate it, gl',
+        'ty, got a bit lucky',
+        'thanks, nice playing with you',
+        'ha thanks, needed that one',
+        'ty ty, gl to you',
+      ],
+    },
+  },
+  // Reply: a player called this horse lucky, a donk, or similar.
+  reply_ribbed: {
+    quiet: {
+      lines: [
+        'lol',
+        'maybe',
+        'ill take it',
+        'fair',
+        'sometimes',
+        'eh',
+        'it works',
+        'yep',
+        'probably',
+      ],
+    },
+    needler: {
+      lines: [
+        'better lucky than good',
+        'all part of the plan',
+        'keep telling yourself that',
+        'lucky every time huh',
+        'skill, obviously',
+        'chips spend the same',
+        'say that again next hand',
+        'you keep calling, i keep getting lucky',
+        'lucky? sure',
+      ],
+    },
+    friendly: {
+      lines: [
+        'ha, i know, sorry',
+        'yeah got lucky there',
+        'lol fair enough',
+        'cant argue with that',
+        'yeah that was a bit lucky',
+        'ill take lucky',
+        'sorry, deck likes me tonight',
+        'it evens out, gl',
+        'guilty, lol',
+      ],
+    },
+  },
+  // Reply: a player told this horse it was unlucky.
+  reply_sympathy: {
+    quiet: {
+      lines: [
+        'yeah',
+        'it happens',
+        'part of it',
+        'next one',
+        'oh well',
+        'whatever',
+        'yep, brutal',
+        'such is poker',
+        'meh',
+      ],
+    },
+    needler: {
+      lines: [
+        'tell me about it',
+        'every time',
+        'story of my night',
+        'that deck hates me',
+        'figures',
+        'i should have known',
+        'standard',
+        'whats new',
+        'sure, unlucky',
+      ],
+    },
+    friendly: {
+      lines: [
+        'ty, it happens',
+        'appreciate that',
+        'thanks, next one',
+        'all good, gl',
+        'yeah tough one',
+        'thanks, it evens out',
+        'thats poker',
+        'ty, ill get it back',
+        'all part of the game',
+      ],
+    },
+  },
+  // Reply: a player apologised, admitted a misclick, or said they got lucky against this horse.
+  reply_humble: {
+    quiet: {
+      lines: ['all good', 'np', 'happens', 'no worries', 'its fine', 'ok', 'gg', 'nbd', 'eh, fine'],
+    },
+    needler: {
+      lines: [
+        'sure you did',
+        'uh huh',
+        'convenient',
+        'mhm',
+        'if you say so',
+        'i believe you',
+        'sure sure',
+        'we all saw it',
+        'right, of course',
+      ],
+    },
+    friendly: {
+      lines: [
+        'all good, happens to everyone',
+        'no worries, nh',
+        'lol it happens',
+        'dont sweat it',
+        'weve all done it',
+        'no apology needed, gg',
+        'its part of the game',
+        'ha no stress',
+        'all good my friend',
+      ],
+    },
+  },
+  // Reply: a player said hi or good luck.
+  reply_hello: {
+    quiet: {
+      lines: ['hey', 'hi', 'yo', 'gl', 'evening', 'sup', 'hey hey', 'hi there', 'hiya'],
+    },
+    needler: {
+      lines: [
+        'hope you brought a lot of chips',
+        'welcome to the party',
+        'gl, youll need it',
+        'hey, sit tight',
+        'welcome, try to keep up',
+        'oh good, company',
+        'hey, ready to lose some',
+        'took you long enough',
+        'another one, nice',
+      ],
+    },
+    friendly: {
+      lines: [
+        'hey welcome',
+        'hi, gl',
+        'hey there, good luck',
+        'gl to you too',
+        'hey hey, have fun',
+        'hi, nice to have you',
+        'evening, gl',
+        'welcome, its a fun table',
+        'hello hello',
+      ],
+    },
+  },
+  // Reply: a player asked whether the table plays here often.
+  reply_regular: {
+    quiet: {
+      lines: [
+        'most nights',
+        'pretty much',
+        'a lot',
+        'when i can',
+        'too often lol',
+        'usually',
+        'more than i should',
+        'often enough',
+        'yeah, mostly',
+      ],
+    },
+    needler: {
+      lines: [
+        'every night, and i win every night',
+        'someone has to take the chips',
+        'yep, best game around',
+        'pretty much live here',
+        'cant stay away',
+        'this is my office',
+        'where else would i be',
+        'always, get used to it',
+        'only when theres action',
+      ],
+    },
+    friendly: {
+      lines: [
+        'most nights yeah, fun game',
+        'pretty much lol, its a good room',
+        'yeah its a good spot',
+        'when i can, gl',
+        'a lot lately, lol',
+        'yep, good action here',
+        'yeah, nice crowd most nights',
+        'try to, its fun',
+        'pretty regular, welcome',
+      ],
+    },
+  },
+};
+
+/**
+ * Lines that are only true after a showdown (somebody called and saw cards),
+ * or only true when everybody folded. A pot can be won either way, so
+ * big_pot_won and pot_won carry `showdown` in their facts and
+ * HorseTableTalk.chooseLine passes over a line whose need the hand did not
+ * meet. Dan 2026-10-24: "somebody wanted to see my cards" typed after a hand
+ * nobody called is a line nobody human would type.
+ *
+ * Keyed by the exact template. theHorseSaysNothingItWasNotTold.law.test.ts
+ * holds every key to a line that exists in the pool.
+ */
+export type LineNeed = 'showdown' | 'no_showdown';
+
+export const LINE_NEEDS: Readonly<Record<string, LineNeed>> = {
+  // big_pot_won
+  '{potBB} bb on the {street}, somebody wanted to see my cards': 'showdown',
+  'ty for paying me off': 'showdown',
+  'you really wanted to see it huh': 'showdown',
+  'that was a lot to pay to look': 'showdown',
+  'next time trust the bet': 'showdown',
+  'curiosity is expensive': 'showdown',
+  'should have let that one go': 'showdown',
+  'told you i had it': 'showdown',
+  'i always have it': 'showdown',
+  'cant believe that held': 'showdown',
+  'that was a sweat': 'showdown',
+  'tough spot for you there, gg': 'showdown',
+  'heart was pounding on that {street}': 'showdown',
+  'nobody wanted that one': 'no_showdown',
+  'ill take it down': 'no_showdown',
+  'folded to me, fine': 'no_showdown',
+  'thanks for folding': 'no_showdown',
+  'smart fold': 'no_showdown',
+  'nobody wanted to pay to see it': 'no_showdown',
+  'scared money, thanks': 'no_showdown',
+  'good fold, honestly': 'no_showdown',
+  'glad that got through': 'no_showdown',
+  'phew, nobody called': 'no_showdown',
+  // pot_won
+  'keep calling': 'showdown',
+  'knew you had nothing': 'showdown',
+  'that was close': 'showdown',
+  'whew, got there': 'showdown',
+  'good hand though': 'showdown',
+  'fold, good choice': 'no_showdown',
+  'nobody wants to play with me': 'no_showdown',
+  'good fold': 'no_showdown',
 };

@@ -54,7 +54,7 @@
  *   12 hands between a horse's lines at one table
  *   4 hands between any two lines at one table
  *   a phrase a horse used within 24 h, or anyone used at this table within
- *   2 h, is not said again
+ *   24 h, is never chosen (chooseLine skips it) and never claimed
  *
  * HAND NUMBERS ARE GLOBAL (ServerTableEngineBase.handCount, 2026-08-18): they
  * come from one sequence across every table, so a difference of hand numbers
@@ -80,7 +80,7 @@ import { resolveHorseStyle } from '../engine/HorseLogic.js';
 import { HAND_RANKINGS } from '../engine/PokerEngine.js';
 import { readTableTalkGate } from './HorseTableTalkGate.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
-import { humanBeat, humanBeatMs } from './horsePacing.js';
+import { humanBeat, typingBeatMs } from './horsePacing.js';
 import {
   personalChance,
   personalPool,
@@ -88,7 +88,16 @@ import {
   styleLine,
   type Mood,
 } from './horseVoiceStyle.js';
-import { LINES, TALK_PLACEHOLDERS, type TalkEvent, type TalkVoice } from './horseTableTalkLines.js';
+import {
+  isReplyEvent,
+  LINE_NEEDS,
+  LINES,
+  TALK_PLACEHOLDERS,
+  type ReplyEvent,
+  type TalkEvent,
+  type TalkVoice,
+} from './horseTableTalkLines.js';
+import { addressedHorse, classifyChat } from './horseChatIntent.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 
 export type { TalkEvent, TalkVoice } from './horseTableTalkLines.js';
@@ -114,10 +123,27 @@ export const HORSE_LINES_PER_HOUR = 6;
 export const HORSE_MIN_HANDS_BETWEEN_LINES = 5;
 /** A table hears at most one line per this many hands. */
 export const TABLE_MIN_HANDS_BETWEEN_LINES = 2;
+/**
+ * Dan 2026-10-24: "HORSES CAN NEVER EVER EVER BE REPEATING THE SAME LINES ...
+ * INSIDE OF CHAT". Two horses typed the same big-pot line 23 minutes apart at
+ * one table, past the old 20 minute table window, because that cell held one
+ * line. A table's chat is a scroll a player reads for the whole session, so
+ * the window is a day, and the chooser (not just the claim) honours it: a
+ * horse picks a phrase nobody at this table has said, or says nothing.
+ */
 /** A horse does not repeat a phrase inside this window. */
-export const PHRASE_HORSE_WINDOW_MS = 90 * 60_000;
+export const PHRASE_HORSE_WINDOW_MS = 24 * 60 * 60_000;
 /** A table does not hear the same phrase twice inside this window. */
-export const PHRASE_TABLE_WINDOW_MS = 20 * 60_000;
+export const PHRASE_TABLE_WINDOW_MS = 24 * 60 * 60_000;
+/**
+ * The most ledger rows read for one table's day. TABLE_MIN_HANDS_BETWEEN_LINES
+ * caps a table near 50 lines an hour on the fastest deal, so a day fits; a
+ * read that fills the cap could be missing older phrases and is treated as
+ * "could not tell" (silence), never as "nothing was said".
+ */
+export const TABLE_HISTORY_LIMIT = 2_000;
+/** The most ledger rows read for one horse's day (HORSE_LINES_PER_HOUR x 24 fits). */
+export const HORSE_HISTORY_LIMIT = 400;
 
 /**
  * How often a qualifying horse actually speaks, in percent. A person does not
@@ -126,19 +152,39 @@ export const PHRASE_TABLE_WINDOW_MS = 20 * 60_000;
  * replay answers the same way.
  */
 export const SPEAK_CHANCE_PCT: Readonly<Record<TalkEvent, number>> = {
-  // The four original events each have one line per voice, so they are kept
-  // rarer: a horse that would not take one of them falls through to the
-  // ordinary-hand events below, whose pools are wide.
-  big_pot_won: 20,
-  showdown_loss: 25,
-  big_hand_shown: 20,
+  // The four original events were held rarer (20/25/20) while each had ONE
+  // line per voice, so a horse fell through to the wide ordinary-hand pools.
+  // 2026-10-24: every pool is deep and chooseLine never repeats a phrase a
+  // viewer has heard, so they speak about as often as a person remarks on a
+  // big moment. HORSE_LINES_PER_HOUR and the hands-between rules still cap it.
+  big_pot_won: 26,
+  showdown_loss: 28,
+  big_hand_shown: 25,
   arrival: 30,
   pot_lost: 28,
   pot_won: 14,
   tilt: 45,
   heater: 35,
   all_in: 22,
+  // A reply to a player who typed in the chat (replyToPlayer). These are the
+  // chances the horse the remark was aimed at answers it; a horse addressed by
+  // name answers at REPLY_ADDRESSED_PCT instead. Each still passes the horse's
+  // own silence habit (personalChance), so a quiet horse stays quiet.
+  reply_thanks: 45,
+  reply_ribbed: 45,
+  reply_sympathy: 40,
+  reply_humble: 35,
+  reply_hello: 35,
+  reply_regular: 55,
 };
+
+/** A horse a player names ("Hey Ingrid") answers this often, in percent. */
+export const REPLY_ADDRESSED_PCT = 75;
+/** A table hears at most this many horse replies per REPLY_WINDOW_MS. */
+export const REPLIES_PER_TABLE_WINDOW = 3;
+export const REPLY_WINDOW_MS = 10 * 60_000;
+/** A remark older than this when the engine hears it is not answered (a replay). */
+export const REPLY_MAX_AGE_MS = 60_000;
 /** The longest line that may be written. The client's input cap is 200. */
 export const TALK_LINE_MAX_CHARS = 120;
 
@@ -317,6 +363,12 @@ export interface TalkFacts {
   street?: Street;
   hand?: string;
   seat?: number;
+  /**
+   * Whether the hand reached a showdown (two or more players' hands were
+   * compared). Never a placeholder: it only decides which lines fit
+   * (horseTableTalkLines.LINE_NEEDS). Unset means the event does not say.
+   */
+  showdown?: boolean;
 }
 
 export interface TalkCandidate {
@@ -372,12 +424,18 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
   // may carry an evaluated hand on the winner record; that was never seen.
   const shown = input.showdownResults.filter((r) => r.mucked !== true);
   const shownBy = (userId: string) => shown.find((r) => r.userId === userId);
+  // Somebody called it down: two or more hands reached the showdown.
+  const showdown = input.showdownResults.length >= 2;
 
   // A. big pot won
   if (potBB !== undefined && potBB >= BIG_POT_BB) {
     for (const h of horses) {
       if (!winnerIds.has(h.userId)) continue;
-      out.push({ event: 'big_pot_won', speakerId: h.userId, facts: { potBB, street } });
+      out.push({
+        event: 'big_pot_won',
+        speakerId: h.userId,
+        facts: { potBB, street, showdown },
+      });
     }
   }
 
@@ -432,7 +490,7 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
   // F. any pot a horse won: "ty", "gg"
   for (const h of horses) {
     if (!winnerIds.has(h.userId)) continue;
-    out.push({ event: 'pot_won', speakerId: h.userId, facts: { potBB, street } });
+    out.push({ event: 'pot_won', speakerId: h.userId, facts: { potBB, street, showdown } });
   }
   return out;
 }
@@ -561,6 +619,17 @@ export function fillLine(template: string, facts: TalkFacts): string | null {
   return missing ? null : out;
 }
 
+/**
+ * Whether a line is true of this hand: a line that needs a showdown is only
+ * said after one, a line that needs everyone to have folded only when they
+ * did, and neither when the event does not say (LINE_NEEDS).
+ */
+export function fitsTheHand(template: string, facts: TalkFacts): boolean {
+  const need = LINE_NEEDS[template];
+  if (need === undefined) return true;
+  return need === 'showdown' ? facts.showdown === true : facts.showdown === false;
+}
+
 export interface ChosenLine {
   template: string;
   line: string;
@@ -568,25 +637,38 @@ export interface ChosenLine {
 
 /**
  * The line for this (event, voice, horse, hand): the hash picks the start,
- * and the first template from there that the facts can fill is the line. No
- * randomness; the same inputs give the same line.
+ * and the first template from there that the facts can fill, and that is not
+ * in `heard`, is the line. No randomness; the same inputs give the same line.
+ *
+ * `heard` holds the phrase identities (normalizePhrase) this table and this
+ * horse have already said inside their windows. Dan 2026-10-24: "HORSES CAN
+ * NEVER EVER EVER BE REPEATING THE SAME LINES". A heard phrase is skipped, not
+ * claimed and refused, so the horse moves on to a fresh line instead of
+ * falling silent; when the horse's own share is spent it may use the rest of
+ * its voice's pool; when the whole voice is spent it says nothing.
  */
 export function chooseLine(
   event: TalkEvent,
   voice: TalkVoice,
   horseId: string,
   handNumber: number,
-  facts: TalkFacts
+  facts: TalkFacts,
+  heard: ReadonlySet<string> = new Set()
 ): ChosenLine | null {
-  // Dan 2026-10-22: every horse says different things. A horse draws only
+  // Dan 2026-10-22: every horse says different things. A horse draws first
   // from its own share of the pool (horseVoiceStyle.personalPool).
-  const pool = personalPool(horseId, LINES[event][voice].lines);
-  if (pool.length === 0) return null;
-  const start = lineIndexFor(horseId, handNumber, event, pool.length);
-  for (let k = 0; k < pool.length; k++) {
-    const template = pool[(start + k) % pool.length];
-    const line = fillLine(template, facts);
-    if (line !== null) return { template, line };
+  const all = LINES[event][voice].lines;
+  const fresh = (t: string): boolean => !heard.has(normalizePhrase(t)) && fitsTheHand(t, facts);
+  const mine = personalPool(horseId, all).filter(fresh);
+  const rest = all.filter((t) => fresh(t) && !mine.includes(t));
+  for (const pool of [mine, rest]) {
+    if (pool.length === 0) continue;
+    const start = lineIndexFor(horseId, handNumber, event, pool.length);
+    for (let k = 0; k < pool.length; k++) {
+      const template = pool[(start + k) % pool.length];
+      const line = fillLine(template, facts);
+      if (line !== null) return { template, line };
+    }
   }
   return null;
 }
@@ -710,10 +792,15 @@ export function moodOf(event: TalkEvent): Mood {
     case 'pot_won':
     case 'big_pot_won':
     case 'heater':
+    case 'reply_thanks':
+    case 'reply_ribbed':
       return 'won';
     case 'all_in':
       return 'luck';
     case 'arrival':
+    case 'reply_hello':
+    case 'reply_regular':
+    case 'reply_humble':
       return 'greet';
     default:
       return 'lost';
@@ -729,17 +816,34 @@ export function _setVoiceStylingForTests(on: boolean): void {
 
 /**
  * The identity of a phrase for the reuse rules: the TEMPLATE, lowercased,
- * punctuation and placeholder braces dropped, whitespace collapsed, digit runs
- * folded to `n`. "nice pot, {potBB} bb, gg" and "nice pot, 52 bb, gg" are the
- * same phrase; a horse that said it this morning does not say it tonight.
+ * apostrophes and punctuation and placeholder braces dropped, whitespace
+ * collapsed, digit runs folded to `n`, and the chat shorthand the voice styler
+ * swaps both ways (horseVoiceStyle TO_SHORT / TO_LONG) spelled out. "nice pot,
+ * {potBB} bb, gg" and "nice pot, 52 bb, gg" are the same phrase, and so are
+ * "nh" and "nice hand": a player reads them as the same line. Idempotent, so a
+ * ledger row written under an older identity is folded the same way on read.
  */
+const SHORTHAND_FOLD: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bnh\b/g, 'nice hand'],
+  [/\bgl\b/g, 'good luck'],
+  [/\bwp\b/g, 'well played'],
+  [/\bty\b/g, 'thank you'],
+  [/\bthx\b/g, 'thanks'],
+  [/\bu\b/g, 'you'],
+  [/\bur\b/g, 'your'],
+  [/\bcnt\b/g, 'cant'],
+];
+
 export function normalizePhrase(line: string): string {
-  return line
+  let out = line
     .toLowerCase()
+    .replace(/['\u2019]/g, '')
     .replace(/\d+/g, 'n')
     .replace(/[^a-z\s]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  for (const [re, to] of SHORTHAND_FOLD) out = out.replace(re, to);
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -763,6 +867,9 @@ export interface TableMemory {
   lastLineByHorse: Map<string, number>;
   /** horseId -> showdown streak here: +n won n in a row, -n lost n in a row. */
   streak: Map<string, number>;
+  /** The last settled hand's winners, and the players who showed down and lost. */
+  lastWinners?: readonly string[];
+  lastLosers?: readonly string[];
 }
 
 const tables = new Map<string, TableMemory>();
@@ -836,9 +943,13 @@ function recentClaims(horseId: string, now: number): number[] {
   return kept;
 }
 
-function rememberClaim(mem: TableMemory, horseId: string, now: number): void {
-  mem.lastLineHandsSeen = mem.handsSeen;
-  mem.lastLineByHorse.set(horseId, mem.handsSeen);
+function rememberClaim(mem: TableMemory, horseId: string, now: number, reply = false): void {
+  // A reply answers a person; it is not a remark on a hand, so it leaves the
+  // hands-between cadence alone and only counts toward the hourly cap.
+  if (!reply) {
+    mem.lastLineHandsSeen = mem.handsSeen;
+    mem.lastLineByHorse.set(horseId, mem.handsSeen);
+  }
   claimsByHorse.set(horseId, [...recentClaims(horseId, now), now]);
 }
 
@@ -849,6 +960,9 @@ function rememberClaim(mem: TableMemory, horseId: string, now: number): void {
  */
 function noteStreaks(mem: TableMemory, input: TableTalkInput): void {
   const winners = new Set(input.winners.map((w) => w.userId));
+  // Who a remark after this hand is aimed at: "nh" to a winner, "unlucky" to a loser.
+  mem.lastWinners = [...winners];
+  mem.lastLosers = input.showdownResults.map((r) => r.userId).filter((id) => !winners.has(id));
   const horses = new Set(input.seated.filter((s) => s.isHorse).map((s) => s.userId));
   for (const id of [...mem.streak.keys()]) if (!horses.has(id)) mem.streak.delete(id);
   if (input.showdownResults.length === 0) return;
@@ -920,7 +1034,8 @@ export type ClaimRefusal =
   | 'horse_too_soon'
   | 'table_too_soon'
   | 'phrase_horse_24h'
-  | 'phrase_table_2h'
+  | 'phrase_table_24h'
+  | 'reply_too_soon'
   | 'silenced'
   | 'hand_taken'
   | 'unreadable'
@@ -936,9 +1051,11 @@ export interface ClaimRequest {
   voice: TalkVoice;
   phraseNorm: string;
   now: number;
+  /** A reply to a player (handNumber is then a replyKey, negative). */
+  reply?: boolean;
 }
 
-interface LedgerRow {
+export interface LedgerRow {
   table_id?: string;
   horse_id?: string;
   hand_number: number | string;
@@ -949,111 +1066,289 @@ interface LedgerRow {
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 const ms = (iso: string): number => Date.parse(iso);
 
-/**
- * The owner's limits, as reads before the insert, then the insert. A unique
- * conflict on (table_id, hand_number) is silence; nothing here retries. An
- * unreadable ledger is a "no", named.
- */
-export async function claimLine(req: ClaimRequest, mem?: TableMemory): Promise<ClaimVerdict> {
-  const { tableId, handNumber, horseId, now } = req;
-
-  // Fast path: this process's own recent claims, no read.
+/** Refusals this process can give from memory alone, before any read. */
+function fastRefusal(horseId: string, now: number, mem?: TableMemory): ClaimRefusal | null {
   if (mem) {
     if (
       mem.lastLineHandsSeen !== null &&
       mem.handsSeen - mem.lastLineHandsSeen < TABLE_MIN_HANDS_BETWEEN_LINES
     ) {
-      return { ok: false, reason: 'table_too_soon' };
+      return 'table_too_soon';
     }
     const horseLast = mem.lastLineByHorse.get(horseId);
     if (horseLast !== undefined && mem.handsSeen - horseLast < HORSE_MIN_HANDS_BETWEEN_LINES) {
-      return { ok: false, reason: 'horse_too_soon' };
+      return 'horse_too_soon';
     }
   }
-  if (recentClaims(horseId, now).length >= HORSE_LINES_PER_HOUR) {
-    return { ok: false, reason: 'hourly_cap' };
-  }
+  if (recentClaims(horseId, now).length >= HORSE_LINES_PER_HOUR) return 'hourly_cap';
+  return null;
+}
 
-  // The ledger: this horse's last day, and this table's newest lines.
-  const [byHorse, byTable] = await Promise.all([
+/** What the ledger says this horse and this table have said inside their windows. */
+export interface TalkHistory {
+  horseRows: LedgerRow[];
+  tableRows: LedgerRow[];
+  /**
+   * Lines said at the OTHER tables this table's people can see (seated or
+   * watching). Dan 2026-10-24: a player with two tables open reads both chats,
+   * so a line one table heard is spent for the other too.
+   */
+  viewerRows?: LedgerRow[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WHO CAN SEE THIS TABLE'S CHAT, AND WHAT ELSE THEY CAN SEE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** The users with this table open in this process (TableStateHub sockets). */
+let viewerProbe: (tableId: string) => readonly string[] = (tableId) =>
+  tableStateHub.userIdsAt(tableId);
+/** The tables in this process that any of these users has open. */
+let watchedTablesProbe: (userIds: ReadonlySet<string>) => readonly string[] = (userIds) =>
+  tableStateHub.tablesWatchedBy(userIds);
+
+/** Test hook: replace both hub probes, or restore them with null. */
+export function _setViewerProbesForTests(
+  viewers: ((tableId: string) => readonly string[]) | null,
+  watched: ((userIds: ReadonlySet<string>) => readonly string[]) | null = null
+): void {
+  viewerProbe = viewers ?? ((tableId) => tableStateHub.userIdsAt(tableId));
+  watchedTablesProbe = watched ?? ((userIds) => tableStateHub.tablesWatchedBy(userIds));
+}
+
+/** The most active seats read for one table's people (a person sits at a handful). */
+export const VIEWER_SEATS_LIMIT = 400;
+/** The most other tables a table's people can be watching before we cannot tell. */
+export const VIEWER_TABLES_MAX = 64;
+
+/** The people who can read this table's chat: seated humans and anyone with it open here. */
+export function viewersOf(tableId: string, seated: readonly TalkSeat[]): Set<string> {
+  const viewers = new Set<string>();
+  try {
+    for (const id of viewerProbe(tableId)) viewers.add(id);
+  } catch {
+    /* the hub is memory; a throw here only narrows what we know */
+  }
+  // Identification, not exclusion (CLAUDE.md 10.5): a horse has no browser,
+  // so it is never one of the people reading the chat. Everyone else seated is.
+  for (const s of seated) {
+    if (s.isHorse) viewers.delete(s.userId);
+    else viewers.add(s.userId);
+  }
+  return viewers;
+}
+
+/**
+ * Every OTHER table this table's people can see: the tables they have open in
+ * this process, and every table they are seated at anywhere (table_seats, so
+ * a table served by another engine process counts). Null is "could not tell".
+ */
+export async function otherTablesTheyCanSee(
+  tableId: string,
+  seated: readonly TalkSeat[]
+): Promise<string[] | null> {
+  const viewers = viewersOf(tableId, seated);
+  if (viewers.size === 0) return [];
+  const tables = new Set<string>();
+  try {
+    for (const t of watchedTablesProbe(viewers)) tables.add(t);
+  } catch {
+    /* as above */
+  }
+  const seats = await supabase
+    .from('table_seats')
+    .select('table_id')
+    .in('user_id', [...viewers])
+    .is('left_at', null)
+    .limit(VIEWER_SEATS_LIMIT);
+  if (seats.error) {
+    reportError(new Error(seats.error.message), 'HorseTableTalk.viewer_seats_read', { tableId });
+    return null;
+  }
+  const rows = (seats.data ?? []) as Array<{ table_id: string | null }>;
+  if (rows.length >= VIEWER_SEATS_LIMIT) return null;
+  for (const r of rows) if (typeof r.table_id === 'string') tables.add(r.table_id);
+  tables.delete(tableId);
+  if (tables.size > VIEWER_TABLES_MAX) return null;
+  return [...tables];
+}
+
+/**
+ * The ledger: this horse's day, and this table's day, newest first. A failed
+ * read, or a read that came back full (rows past the cap could hold a phrase
+ * this table heard), is null: "could not tell", which is silence, never "no
+ * phrase was said" (CLAUDE.md 10.86).
+ */
+export async function readTalkHistory(
+  tableId: string,
+  horseId: string,
+  now: number,
+  seated: readonly TalkSeat[] = []
+): Promise<TalkHistory | null> {
+  const others = await otherTablesTheyCanSee(tableId, seated);
+  if (others === null) return null;
+  const [byHorse, byTable, byViewers] = await Promise.all([
     supabase
       .from('horse_table_talk_ledger')
       .select('table_id, hand_number, phrase_norm, said_at')
       .eq('horse_id', horseId)
       .gte('said_at', new Date(now - PHRASE_HORSE_WINDOW_MS).toISOString())
       .order('said_at', { ascending: false })
-      .limit(64),
+      .limit(HORSE_HISTORY_LIMIT),
     supabase
       .from('horse_table_talk_ledger')
       .select('horse_id, hand_number, phrase_norm, said_at')
       .eq('table_id', tableId)
+      .gte('said_at', new Date(now - PHRASE_TABLE_WINDOW_MS).toISOString())
       .order('said_at', { ascending: false })
-      .limit(32),
+      .limit(TABLE_HISTORY_LIMIT),
+    others.length === 0
+      ? Promise.resolve({ data: [] as LedgerRow[], error: null })
+      : supabase
+          .from('horse_table_talk_ledger')
+          .select('table_id, phrase_norm, said_at')
+          .in('table_id', others)
+          .gte('said_at', new Date(now - PHRASE_TABLE_WINDOW_MS).toISOString())
+          .order('said_at', { ascending: false })
+          .limit(TABLE_HISTORY_LIMIT),
   ]);
-  if (byHorse.error || byTable.error) {
+  if (byHorse.error || byTable.error || byViewers.error) {
     reportError(
-      new Error((byHorse.error ?? byTable.error)?.message ?? 'ledger read failed'),
+      new Error(
+        (byHorse.error ?? byTable.error ?? byViewers.error)?.message ?? 'ledger read failed'
+      ),
       'HorseTableTalk.ledger_read',
       { tableId, horseId }
     );
-    return { ok: false, reason: 'unreadable' };
+    return null;
   }
   const horseRows = (byHorse.data ?? []) as LedgerRow[];
   const tableRows = (byTable.data ?? []) as LedgerRow[];
+  const viewerRows = (byViewers.data ?? []) as LedgerRow[];
+  if (
+    horseRows.length >= HORSE_HISTORY_LIMIT ||
+    tableRows.length >= TABLE_HISTORY_LIMIT ||
+    viewerRows.length >= TABLE_HISTORY_LIMIT
+  ) {
+    reportError(new Error('table talk history read hit its cap'), 'HorseTableTalk.ledger_full', {
+      tableId,
+      horseId,
+    });
+    return null;
+  }
+  return { horseRows, tableRows, viewerRows };
+}
+
+/**
+ * Every phrase this table heard and this horse said inside their windows, as
+ * phrase identities (re-folded, so rows written under an older identity count).
+ */
+export function heardPhrases(history: TalkHistory, now: number): Set<string> {
+  const heard = new Set<string>();
+  for (const r of history.horseRows) {
+    if (now - ms(r.said_at) < PHRASE_HORSE_WINDOW_MS) heard.add(normalizePhrase(r.phrase_norm));
+  }
+  for (const r of [...history.tableRows, ...(history.viewerRows ?? [])]) {
+    if (now - ms(r.said_at) < PHRASE_TABLE_WINDOW_MS) heard.add(normalizePhrase(r.phrase_norm));
+  }
+  return heard;
+}
+
+/**
+ * The owner's limits, as reads before the insert, then the insert. A unique
+ * conflict on (table_id, hand_number) is silence; nothing here retries. An
+ * unreadable ledger is a "no", named. `history` is the read say() already
+ * made to choose the line; without it the claim reads for itself.
+ */
+export async function claimLine(
+  req: ClaimRequest,
+  mem?: TableMemory,
+  history?: TalkHistory
+): Promise<ClaimVerdict> {
+  const { tableId, handNumber, horseId, now } = req;
+  const reply = req.reply === true;
+
+  // Fast path: this process's own recent claims, no read. A reply skips the
+  // hand cadence (it answers a person, not a hand) but not the hourly cap.
+  const fast = fastRefusal(horseId, now, reply ? undefined : mem);
+  if (fast) return { ok: false, reason: fast };
+
+  const read = history ?? (await readTalkHistory(tableId, horseId, now));
+  if (!read) return { ok: false, reason: 'unreadable' };
+  const { horseRows } = read;
+  // Reply rows carry a reply key, not a hand number (replyKey): the hand
+  // cadence reads hand lines only.
+  const tableRows = read.tableRows.filter((r) => num(r.hand_number) > 0);
+  const tableReplies = read.tableRows.filter(
+    (r) => num(r.hand_number) < 0 && now - ms(r.said_at) < REPLY_WINDOW_MS
+  );
+  const phrase = normalizePhrase(req.phraseNorm);
 
   if (horseRows.filter((r) => now - ms(r.said_at) < HOUR_MS).length >= HORSE_LINES_PER_HOUR) {
     return { ok: false, reason: 'hourly_cap' };
   }
-  if (horseRows.some((r) => r.phrase_norm === req.phraseNorm)) {
+  if (
+    horseRows.some(
+      (r) =>
+        normalizePhrase(r.phrase_norm) === phrase && now - ms(r.said_at) < PHRASE_HORSE_WINDOW_MS
+    )
+  ) {
     return { ok: false, reason: 'phrase_horse_24h' };
   }
   if (
-    tableRows.some(
-      (r) => r.phrase_norm === req.phraseNorm && now - ms(r.said_at) < PHRASE_TABLE_WINDOW_MS
+    [...read.tableRows, ...(read.viewerRows ?? [])].some(
+      (r) =>
+        normalizePhrase(r.phrase_norm) === phrase && now - ms(r.said_at) < PHRASE_TABLE_WINDOW_MS
     )
   ) {
-    return { ok: false, reason: 'phrase_table_2h' };
+    return { ok: false, reason: 'phrase_table_24h' };
   }
 
-  // Hands between lines, counted at THIS table (hand numbers are global).
-  const tableLast = tableRows.length > 0 ? num(tableRows[0].hand_number) : undefined;
-  const horseHere = [
-    ...tableRows.filter((r) => r.horse_id === horseId),
-    ...horseRows.filter((r) => r.table_id === tableId),
-  ]
-    .map((r) => num(r.hand_number))
-    .filter((n) => Number.isFinite(n));
-  const horseLast = horseHere.length > 0 ? Math.max(...horseHere) : undefined;
-  if (tableLast !== undefined && tableLast >= handNumber) {
-    return { ok: false, reason: 'table_too_soon' };
-  }
-  if (tableLast !== undefined || horseLast !== undefined) {
-    const since = Math.min(tableLast ?? Infinity, horseLast ?? Infinity);
-    const dealt = await supabase
-      .from('hand_history')
-      .select('hand_number')
-      .eq('table_id', tableId)
-      .gt('hand_number', since)
-      .lt('hand_number', handNumber)
-      .order('hand_number', { ascending: false })
-      .limit(16);
-    if (dealt.error) {
-      reportError(new Error(dealt.error.message), 'HorseTableTalk.hands_read', { tableId });
-      return { ok: false, reason: 'unreadable' };
+  if (reply) {
+    if (tableReplies.length >= REPLIES_PER_TABLE_WINDOW) {
+      return { ok: false, reason: 'reply_too_soon' };
     }
-    const between = ((dealt.data ?? []) as Array<{ hand_number: number | string }>).map((r) =>
-      num(r.hand_number)
-    );
-    // This hand itself counts as one dealt since any earlier line.
-    if (tableLast !== undefined) {
-      const sinceTable = 1 + between.filter((n) => n > tableLast).length;
-      if (sinceTable < TABLE_MIN_HANDS_BETWEEN_LINES)
-        return { ok: false, reason: 'table_too_soon' };
+  } else {
+    // Hands between lines, counted at THIS table (hand numbers are global).
+    const tableLast = tableRows.length > 0 ? num(tableRows[0].hand_number) : undefined;
+    const horseHere = [
+      ...tableRows.filter((r) => r.horse_id === horseId),
+      ...horseRows.filter((r) => r.table_id === tableId),
+    ]
+      .map((r) => num(r.hand_number))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    const horseLast = horseHere.length > 0 ? Math.max(...horseHere) : undefined;
+    if (tableLast !== undefined && tableLast >= handNumber) {
+      return { ok: false, reason: 'table_too_soon' };
     }
-    if (horseLast !== undefined) {
-      const sinceHorse = 1 + between.filter((n) => n > horseLast).length;
-      if (sinceHorse < HORSE_MIN_HANDS_BETWEEN_LINES)
-        return { ok: false, reason: 'horse_too_soon' };
+    if (tableLast !== undefined || horseLast !== undefined) {
+      const since = Math.min(tableLast ?? Infinity, horseLast ?? Infinity);
+      const dealt = await supabase
+        .from('hand_history')
+        .select('hand_number')
+        .eq('table_id', tableId)
+        .gt('hand_number', since)
+        .lt('hand_number', handNumber)
+        .order('hand_number', { ascending: false })
+        .limit(16);
+      if (dealt.error) {
+        reportError(new Error(dealt.error.message), 'HorseTableTalk.hands_read', { tableId });
+        return { ok: false, reason: 'unreadable' };
+      }
+      const between = ((dealt.data ?? []) as Array<{ hand_number: number | string }>).map((r) =>
+        num(r.hand_number)
+      );
+      // This hand itself counts as one dealt since any earlier line.
+      if (tableLast !== undefined) {
+        const sinceTable = 1 + between.filter((n) => n > tableLast).length;
+        if (sinceTable < TABLE_MIN_HANDS_BETWEEN_LINES)
+          return { ok: false, reason: 'table_too_soon' };
+      }
+      if (horseLast !== undefined) {
+        const sinceHorse = 1 + between.filter((n) => n > horseLast).length;
+        if (sinceHorse < HORSE_MIN_HANDS_BETWEEN_LINES)
+          return { ok: false, reason: 'horse_too_soon' };
+      }
     }
   }
 
@@ -1086,7 +1381,8 @@ export async function claimLine(req: ClaimRequest, mem?: TableMemory): Promise<C
     reportError(new Error(error.message), 'HorseTableTalk.ledger_insert', { tableId, horseId });
     return { ok: false, reason: 'unwritable' };
   }
-  if (mem) rememberClaim(mem, horseId, now);
+  if (mem) rememberClaim(mem, horseId, now, reply);
+  else if (reply) claimsByHorse.set(horseId, [...recentClaims(horseId, now), now]);
   return { ok: true };
 }
 
@@ -1125,6 +1421,7 @@ export type TalkOutcome =
   | 'spoken'
   | 'lost_words'
   | 'no_line'
+  | 'no_fresh_line'
   | 'unsafe_line'
   | ClaimRefusal
   | TableRefusal
@@ -1141,7 +1438,11 @@ interface SayRequest {
   event: TalkEvent;
   facts: TalkFacts;
   usernames: readonly (string | null | undefined)[];
+  /** Everyone seated, so the people reading this chat can be found (viewersOf). */
+  seated: readonly TalkSeat[];
   now: number;
+  /** A reply: the length of the line being answered (read before typing). */
+  readChars?: number;
 }
 
 async function say(req: SayRequest): Promise<TalkOutcome> {
@@ -1151,8 +1452,22 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
     return 'no_event';
   }
   const voice = voiceFor(req.speaker.horseProfile, req.speaker.userId);
-  const chosen = chooseLine(req.event, voice, req.speaker.userId, req.handNumber, req.facts);
-  if (!chosen) return 'no_line';
+  const horseId = req.speaker.userId;
+  // Cheap refusals first, so a horse that may not speak costs no read.
+  const reply = isReplyEvent(req.event);
+  const fast = fastRefusal(horseId, req.now, reply ? undefined : req.mem);
+  if (fast) return fast;
+  // What this table and this horse have already said: the chooser skips it.
+  const history = await readTalkHistory(req.table.tableId, horseId, req.now, req.seated);
+  if (!history) return 'unreadable';
+  const heard = heardPhrases(history, req.now);
+  const chosen = chooseLine(req.event, voice, horseId, req.handNumber, req.facts, heard);
+  if (!chosen) {
+    // Every line of the voice is spent at this table today: silence, never a repeat.
+    return chooseLine(req.event, voice, horseId, req.handNumber, req.facts)
+      ? 'no_fresh_line'
+      : 'no_line';
+  }
   const verdict = sanitizeLine(chosen.line, req.usernames);
   if (!verdict.ok) {
     if (!reportedTemplates.has(chosen.template)) {
@@ -1174,8 +1489,10 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
       voice,
       phraseNorm: normalizePhrase(chosen.template),
       now: req.now,
+      reply,
     },
-    req.mem
+    req.mem,
+    history
   );
   if (!claim.ok) return claim.reason;
   // The horse types it its own way: case, punctuation, shorthand, emoji.
@@ -1192,10 +1509,18 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
     const door = sanitizeStyledLine(styled, req.usernames);
     if (door.ok) typed = door.line;
   }
-  // A person reads the result, then types: the line lands a beat after the
-  // hand, never on the same frame as the pot is pushed. A shove line is short.
-  const beatKind = req.event === 'all_in' ? 'quick' : 'typed';
-  await humanBeat(humanBeatMs(`${req.speaker.userId}|${req.handNumber}|${req.event}`, beatKind));
+  // A person takes in the result (and, for a reply, reads what was said),
+  // then types every character of THIS line at their own speed. Dan
+  // 2026-10-24: "THEY CAN'T FIRE OFF FULL SENTENCES RIGHT AFTER A HAND IS OVER".
+  await humanBeat(
+    typingBeatMs({
+      key: `${req.speaker.userId}|${req.handNumber}|${req.event}`,
+      horseId: req.speaker.userId,
+      text: typed,
+      kind: req.event === 'all_in' ? 'quick' : 'typed',
+      readChars: req.readChars,
+    })
+  );
   const wrote = await writeChatRow(req.table.tableId, req.speaker.userId, typed);
   return wrote ? 'spoken' : 'lost_words';
 }
@@ -1242,6 +1567,7 @@ export const speakAtTheFelt = bindToProcessRoot(
         event: pick.event,
         facts: pick.facts,
         usernames: input.seated.map((s) => s.username),
+        seated: input.seated,
         now,
       });
     } catch (err) {
@@ -1291,6 +1617,7 @@ export const greetArrival = bindToProcessRoot(
         event: 'arrival',
         facts: { seat: input.arrivedSeat },
         usernames: input.seated.map((s) => s.username),
+        seated: input.seated,
         now,
       });
     } catch (err) {
@@ -1332,10 +1659,156 @@ export const speakAsTheyShove = bindToProcessRoot(
         event: 'all_in',
         facts: {},
         usernames: input.seated.map((s) => s.username),
+        seated: input.seated,
         now,
       });
     } catch (err) {
       reportError(err, 'HorseTableTalk.speakAsTheyShove', { tableId: input.table.tableId });
+      return 'unwritable';
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANSWERING A PLAYER (2026-10-24)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** One human chat line, as the engine heard it (HorseChatListener). */
+export interface PlayerChatLine {
+  id: string;
+  userId: string;
+  message: string;
+  createdAt: string | null;
+}
+
+export interface ReplyInput {
+  table: TalkTable;
+  /** The last hand this table dealt; replies do not depend on it. */
+  handNumber: number;
+  seated: readonly TalkSeat[];
+  chat: PlayerChatLine;
+}
+
+/**
+ * The ledger key a reply claims instead of a hand number: negative, so it can
+ * never meet a real (positive, global) hand number, and derived from the
+ * player's chat row id, so the UNIQUE (table_id, hand_number) claim makes
+ * "one horse answers one remark" true across engine processes. 48 bits of the
+ * row's uuid; a non-uuid id falls back to a 32-bit hash.
+ */
+export function replyKey(chatId: string): number {
+  const hex = chatId.replace(/-/g, '');
+  if (/^[0-9a-f]{12}/i.test(hex)) return -(1 + parseInt(hex.slice(0, 12), 16));
+  return -(1 + personaHash(`reply|${chatId}`));
+}
+
+/**
+ * Which seated horse a remark is aimed at, or null when it is aimed at none:
+ * a horse named in the line first; then by what was said, "nh" and "lucky" to
+ * a horse that won the last hand, "unlucky" to one that lost it at showdown,
+ * "got lucky / sorry / misclick" to a horse that lost to the speaker (or any
+ * horse), and "hi" or "you play here every night?" to any horse. Ties and
+ * "any horse" are broken by a hash of the chat row, never a roll.
+ */
+export function pickReplier(
+  intent: ReplyEvent,
+  chat: PlayerChatLine,
+  seated: readonly TalkSeat[],
+  mem: Pick<TableMemory, 'lastWinners' | 'lastLosers'>
+): { speaker: TalkSeat; addressed: boolean } | null {
+  const horses = seated.filter((s) => s.isHorse && s.userId !== chat.userId);
+  if (horses.length === 0) return null;
+  const named = addressedHorse(chat.message, horses);
+  if (named) {
+    const speaker = horses.find((h) => h.userId === named);
+    if (speaker) return { speaker, addressed: true };
+  }
+  const by = (ids: readonly string[] | undefined) =>
+    horses
+      .filter((h) => (ids ?? []).includes(h.userId))
+      .sort((a, b) => a.userId.localeCompare(b.userId));
+  const pick = (pool: TalkSeat[]) =>
+    pool.length === 0 ? null : pool[personaHash(`${chat.id}|reply-to`) % pool.length];
+  const sorted = [...horses].sort((a, b) => a.userId.localeCompare(b.userId));
+  let speaker: TalkSeat | null = null;
+  switch (intent) {
+    case 'reply_thanks':
+    case 'reply_ribbed':
+      speaker = pick(by(mem.lastWinners));
+      break;
+    case 'reply_sympathy':
+      speaker = pick(by(mem.lastLosers));
+      break;
+    case 'reply_humble':
+      speaker = pick(by(mem.lastLosers)) ?? pick(sorted);
+      break;
+    case 'reply_hello':
+    case 'reply_regular':
+      speaker = pick(sorted);
+      break;
+  }
+  return speaker ? { speaker, addressed: false } : null;
+}
+
+/** Whether the chosen horse answers this remark: a hash, never a roll. */
+export function answersThisTime(
+  intent: ReplyEvent,
+  speakerId: string,
+  chatId: string,
+  addressed: boolean
+): boolean {
+  const base = addressed ? REPLY_ADDRESSED_PCT : (SPEAK_CHANCE_PCT[intent] ?? 0);
+  const pct = speakChanceOverride ?? personalChance(speakerId, base);
+  return personaHash(`${chatId}|${speakerId}|reply`) % 100 < pct;
+}
+
+/**
+ * A player typed in the chat; a seated horse may answer. Same gate, same
+ * claim, same one door, same never-repeat and the same typing pause as every
+ * other line. Fire-and-forget: the listener calls it with `void`.
+ */
+export const replyToPlayer = bindToProcessRoot(
+  async (input: ReplyInput | null): Promise<TalkOutcome> => {
+    if (!input) return 'no_event';
+    const now = Date.now();
+    try {
+      const { table, chat, seated } = input;
+      const refusal = tableRefusal(table);
+      if (refusal) return refusal;
+      // Only a person's line is answered, and only a person who can see this
+      // table: seated here, or with it open in this process. A horse's own line
+      // (the engine wrote it) is never a remark to answer.
+      const authorSeat = seated.find((s) => s.userId === chat.userId);
+      if (authorSeat?.isHorse) return 'no_speaker';
+      if (!viewersOf(table.tableId, seated).has(chat.userId)) return 'no_speaker';
+      if (chat.createdAt) {
+        const at = Date.parse(chat.createdAt);
+        if (Number.isFinite(at) && now - at > REPLY_MAX_AGE_MS) return 'no_event';
+      }
+      const intent = classifyChat(chat.message);
+      if (!intent) return 'no_event';
+      const mem = tableMemory(table.tableId, now);
+      const target = pickReplier(intent, chat, seated, mem);
+      if (!target) return 'no_speaker';
+      if (!answersThisTime(intent, target.speaker.userId, chat.id, target.addressed)) {
+        return 'no_event';
+      }
+      const gate = await readTableTalkGate(now);
+      if (!gate.allowed) return 'gate_closed';
+      return await say({
+        table,
+        handNumber: replyKey(chat.id),
+        mem,
+        speaker: target.speaker,
+        event: intent,
+        facts: {},
+        usernames: seated.map((s) => s.username),
+        seated,
+        now,
+        readChars: chat.message.length,
+      });
+    } catch (err) {
+      reportError(err, 'HorseTableTalk.replyToPlayer', { tableId: input.table?.tableId });
       return 'unwritable';
     }
   }

@@ -195,6 +195,7 @@ import {
   type PresenceTableReport,
 } from '../lightning/LightningPresence.js';
 import { subscribeBombRequests, unsubscribeBombRequests } from '../services/BombRequestBus.js';
+import { registerChatReplies, unregisterChatReplies } from '../services/HorseChatListener.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
 import {
@@ -1926,8 +1927,7 @@ export abstract class ServerTableEngineBase {
    * hand finishes. Null on every chip hand and every tournament hand.
    */
   protected currentHandDiamondRakeSchedule:
-    | import('../domain/diamondCashRakeSchedule.js').DiamondCashRakeSchedule
-    | null = null;
+    import('../domain/diamondCashRakeSchedule.js').DiamondCashRakeSchedule | null = null;
   /**
    * userId → uncalled amount returned to the player this hand. Persisted for
    * audit alongside contributions (gross = eligible + returned). Zero-entry
@@ -2090,8 +2090,7 @@ export abstract class ServerTableEngineBase {
   // mirror failed); consumers must stay fire-and-forget, gate their own work
   // on the stacks they are handed, and independently verify durable authority.
   protected handCompleteCallback:
-    | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
-    | null = null;
+    ((tableId: string, players: { user_id: string; stack: number }[]) => void) | null = null;
   /**
    * Exact hand-for-hand barrier signal. The tournament coordinator used to
    * rediscover this state by polling every table twice a second. Emitting at
@@ -2302,8 +2301,7 @@ export abstract class ServerTableEngineBase {
     );
   }
   private f06PermitFactory:
-    | ((handNumber: string) => F06HandPermit | Promise<F06HandPermit>)
-    | null = null;
+    ((handNumber: string) => F06HandPermit | Promise<F06HandPermit>) | null = null;
   protected f06CurrentPermit: F06HandPermit | null = null;
   /** Must be installed by admitted lifecycle custody before the dealer starts. */
   installF06HandAdmission(
@@ -3850,6 +3848,9 @@ export abstract class ServerTableEngineBase {
       // bomb-enabled tables pay for a subscription; the throttled refresh
       // opens it later if the owner enables bomb pots mid-session.
       if (this.tableInfo?.bomb_pot_enabled === true) this.subscribeManualBomb();
+      // 2026-10-24: hear players' chat lines at this table so a seated horse
+      // can answer one (HorseChatListener). Cash tables only.
+      this.listenForPlayerChat();
 
       // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
@@ -4373,6 +4374,8 @@ export abstract class ServerTableEngineBase {
     // channel belongs to one instance and closing ours cannot disturb the
     // successor's, which is the trap the guard below exists for.
     this.unsubscribeManualBomb();
+    // Owner-safe: only removes the registration if it is still this instance's.
+    unregisterChatReplies(this.tableId, this);
     if (
       !this.claimedProcessOwnership ||
       ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)
@@ -9754,6 +9757,21 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * 2026-10-24: let a seated horse answer a player's chat line at this table
+   * (server/src/services/HorseChatListener.ts). Cash tables only; the
+   * provider reads live state at the moment a line arrives. Removed in stop().
+   */
+  protected listenForPlayerChat(): void {
+    if (!this.tableInfo || this.isTournamentTable()) return;
+    registerChatReplies(this.tableId, this, () => ({
+      tableInfo: this.tableInfo,
+      seatedPlayers: this.seatedPlayers,
+      handCount: this.handCount,
+      isTournament: this.isTournamentTable(),
+    }));
+  }
+
+  /**
    * Snapshot fields for the felt's bomb-pot indicators, shared by every
    * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
    * contract (hands until the bomb, 1 = next hand, null = no countdown);
@@ -9967,6 +9985,9 @@ export abstract class ServerTableEngineBase {
         // rather than having to wait for an engine restart to be able to fire
         // a manual bomb at all.
         if (this.tableInfo.bomb_pot_enabled === true) this.subscribeManualBomb();
+        // Re-register on the throttled refresh: idempotent, and it re-opens the
+        // shared chat channel if a terminal status released it.
+        this.listenForPlayerChat();
 
         /* ── THE TEMPLATED RULES, RE-READ (2026-09-09, lane E) ──────────────
            Everything below is a rule the PLAYER was sold under the game's

@@ -31,7 +31,7 @@ const h = vi.hoisted(() => {
       return { data: [], error: null };
     };
     const b: Record<string, unknown> = {};
-    for (const name of ['select', 'eq', 'gt', 'gte', 'lt', 'order', 'limit']) b[name] = () => b;
+    for (const name of ['select', 'eq', 'in', 'is', 'gt', 'gte', 'lt', 'order', 'limit']) b[name] = () => b;
     b.insert = () => {
       if (table === 'table_chat') state.chatInserts++;
       return b;

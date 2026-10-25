@@ -522,6 +522,36 @@ export class TableStateHub {
     return this.rooms.get(tableId)?.subscribers.size ?? 0;
   }
 
+  /**
+   * The users behind this table's open sockets in this process: the people
+   * who can read its chat right now. Read-only; used by horse table talk so a
+   * line one person can see is never repeated to them (HorseTableTalk.ts).
+   */
+  userIdsAt(tableId: string): string[] {
+    const room = this.rooms.get(tableId);
+    if (!room) return [];
+    const ids = new Set<string>();
+    for (const sub of room.subscribers) {
+      if (sub.readyState === 1 && sub.userId) ids.add(sub.userId);
+    }
+    return [...ids];
+  }
+
+  /** Every table in this process that any of these users has open. Read-only. */
+  tablesWatchedBy(userIds: ReadonlySet<string>): string[] {
+    if (userIds.size === 0) return [];
+    const out: string[] = [];
+    for (const [tableId, room] of this.rooms) {
+      for (const sub of room.subscribers) {
+        if (sub.readyState === 1 && sub.userId && userIds.has(sub.userId)) {
+          out.push(tableId);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   totalSubscribers(): number {
     let n = 0;
     for (const room of this.rooms.values()) n += room.subscribers.size;

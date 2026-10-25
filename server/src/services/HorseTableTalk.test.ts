@@ -40,7 +40,7 @@ const h = vi.hoisted(() => {
       return fn ? fn(call) : { data: [], error: null };
     };
     const b: Record<string, unknown> = {};
-    for (const name of ['select', 'eq', 'gt', 'gte', 'lt', 'lte', 'order', 'limit']) {
+    for (const name of ['select', 'eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte', 'order', 'limit']) {
       b[name] = (...args: unknown[]) => (call.filters.push([name, ...args]), b);
     }
     b.insert = (payload: Record<string, unknown>) => {
@@ -53,7 +53,26 @@ const h = vi.hoisted(() => {
       Promise.resolve().then(execute).then(res, rej);
     return b;
   }
-  return { state, supabase: { from: (t: string) => builder(t) } };
+  // The shared chat channel (HorseChatListener) opens through the same client.
+  const channels: Array<{ on: unknown[] }> = [];
+  const channel = () => {
+    const rec = { on: [] as unknown[] };
+    channels.push(rec);
+    const ch = {
+      on: (...args: unknown[]) => ((rec.on = args), ch),
+      subscribe: () => ch,
+    };
+    return ch;
+  };
+  return {
+    state,
+    channels,
+    supabase: {
+      from: (t: string) => builder(t),
+      channel,
+      removeChannel: () => Promise.resolve(),
+    },
+  };
 });
 
 vi.mock('./supabase/client.js', () => ({ supabase: h.supabase }));
@@ -84,6 +103,13 @@ import {
   lineIndexFor,
   fitsTheHand,
   heardPhrases,
+  replyKey,
+  replyToPlayer,
+  _setViewerProbesForTests,
+  REPLIES_PER_TABLE_WINDOW,
+  REPLY_MAX_AGE_MS,
+  VIEWER_SEATS_LIMIT,
+  type ReplyInput,
   normalizePhrase,
   pickCandidate,
   sanitizeLine,
@@ -97,8 +123,17 @@ import {
   type TalkTable,
 } from './HorseTableTalk.js';
 import { _resetTableTalkGateForTests } from './HorseTableTalkGate.js';
+import { _resetChatListenerForTests, registerChatReplies } from './HorseChatListener.js';
 import { LINE_NEEDS, LINES, TALK_EVENTS, TALK_VOICES } from './horseTableTalkLines.js';
-import { _setHumanPacingForTests, humanBeatMs } from './horsePacing.js';
+import {
+  _recordedBeatsForTests,
+  _setHumanPacingForTests,
+  humanBeatMs,
+  TYPING_CPS,
+  TYPING_MAX_MS,
+  typingBeatMs,
+  typingSpeedCps,
+} from './horsePacing.js';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
@@ -214,6 +249,7 @@ afterEach(() => {
   _setHumanPacingForTests(true);
   _setVoiceStylingForTests(true);
   _setAudienceForTests(null);
+  _setViewerProbesForTests(null);
   vi.useRealTimers();
 });
 
@@ -497,7 +533,8 @@ describe('speakAtTheFelt', () => {
       message: expected.line,
       message_type: 'player',
     });
-    // the reads before the claim: the horse's day, the table's newest lines, the mute
+    // the reads before the claim: the horse's day, the table's day, where the
+    // table's people are seated (their other tables' lines), the mute
     expect(tablesTouched()).toEqual(
       [
         'content_settings',
@@ -505,6 +542,7 @@ describe('speakAtTheFelt', () => {
         'horse_table_talk_ledger',
         'table_chat',
         'table_chat_mutes',
+        'table_seats',
       ].sort()
     );
     const mute = callsTo('table_chat_mutes')[0];
@@ -941,11 +979,14 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
     expect(silent).toBeGreaterThan(spoke);
   });
 
-  it('a line lands a human beat after the hand, spread across a range', () => {
-    const typed = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'typed'));
-    expect(Math.min(...typed)).toBeGreaterThanOrEqual(1_400);
-    expect(Math.max(...typed)).toBeLessThan(5_200);
-    expect(new Set(typed).size).toBeGreaterThan(150);
+  it('a line lands a human beat after the hand: never instant, spread across a range', () => {
+    const beats = Array.from({ length: 200 }, (_, i) =>
+      typingBeatMs({ key: `k${i}`, horseId: `horse-${i}`, text: 'gg', kind: 'typed' })
+    );
+    expect(Math.min(...beats)).toBeGreaterThanOrEqual(1_500);
+    expect(Math.max(...beats)).toBeLessThan(6_000);
+    expect(new Set(beats).size).toBeGreaterThan(150);
+    // the tap and shove beats for throws are unchanged
     const quick = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'quick'));
     expect(Math.max(...quick)).toBeLessThan(900);
   });
@@ -1127,5 +1168,432 @@ describe('a line is true of the hand it follows (Dan 2026-10-24)', () => {
     for (const c of folded.filter((c) => c.event === 'big_pot_won' || c.event === 'pot_won')) {
       expect(c.facts.showdown).toBe(false);
     }
+  });
+});
+
+// ─── answering a player (2026-10-24) ─────────────────────────────────────────
+
+const CHAT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const OTHER = '22222222-2222-4222-8222-222222222222';
+const OTHER2 = '33333333-3333-4333-8333-333333333333';
+const RAIL = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+function remark(
+  message: string,
+  over: Partial<ReplyInput['chat']> = {},
+  seated = roster()
+): ReplyInput {
+  return {
+    table: table(),
+    handNumber: 500,
+    seated,
+    chat: { id: CHAT_ID, userId: HUMAN, message, createdAt: new Date(NOW).toISOString(), ...over },
+  };
+}
+
+const allLinesOf = (event: (typeof TALK_EVENTS)[number]) =>
+  TALK_VOICES.flatMap((v) => LINES[event][v].lines);
+
+describe('replyToPlayer: a horse answers a person, sometimes', () => {
+  it('"nice hand" to the horse that just won is answered by that horse, keyed to the remark', async () => {
+    await speakAtTheFelt(bigPotHand(499));
+    h.state.calls = [];
+    expect(await replyToPlayer(remark('Nice Hand'))).toBe('spoken');
+    const claim = inserts('horse_table_talk_ledger')[0].payload!;
+    expect(claim).toMatchObject({
+      table_id: TABLE,
+      horse_id: HORSE_A,
+      event: 'reply_thanks',
+      hand_number: replyKey(CHAT_ID),
+    });
+    const chat = inserts('table_chat')[0].payload!;
+    expect(chat.user_id).toBe(HORSE_A);
+    expect(allLinesOf('reply_thanks').map((t) => fillLine(t, {}))).toContain(chat.message);
+    expect(Object.keys(chat).sort()).toEqual(['message', 'message_type', 'table_id', 'user_id']);
+  });
+
+  it('"unlucky" goes to the horse that lost the last showdown, not the winner', async () => {
+    await speakAtTheFelt(
+      bigPotHand(499, {
+        showdownResults: [
+          { userId: HORSE_A, handRanking: 3, handName: 'Two Pair' },
+          { userId: HORSE_B, handRanking: 2, handName: 'Pair' },
+        ],
+      })
+    );
+    h.state.calls = [];
+    expect(await replyToPlayer(remark('Unlucky'))).toBe('spoken');
+    expect(inserts('horse_table_talk_ledger')[0].payload).toMatchObject({
+      horse_id: HORSE_B,
+      event: 'reply_sympathy',
+    });
+  });
+
+  it('a remark aimed at nobody a horse can be is not answered', async () => {
+    // the human won the last hand: "nh" is to the human, not to a horse
+    await speakAtTheFelt(quietHand(499));
+    h.state.calls = [];
+    expect(await replyToPlayer(remark('nice hand'))).toBe('no_speaker');
+    expect(h.state.calls.filter((c) => c.op === 'insert')).toHaveLength(0);
+  });
+
+  it('a horse named in the line answers, whoever won', async () => {
+    const seated = [
+      seat(HORSE_A, 1, true),
+      seat(HORSE_B, 2, true, { username: 'Ingrid' }),
+      seat(HUMAN, 3, false),
+    ];
+    expect(await replyToPlayer(remark('Hey Ingrid', {}, seated))).toBe('spoken');
+    expect(inserts('table_chat')[0].payload!.user_id).toBe(HORSE_B);
+    expect(inserts('horse_table_talk_ledger')[0].payload!.event).toBe('reply_hello');
+  });
+
+  it('"are you a bot" and its kin are never answered, and nothing is read or written', async () => {
+    for (const line of ['Trey, you real?', 'are you a bot', 'this is rigged', 'hey ai']) {
+      h.state.calls = [];
+      expect(await replyToPlayer(remark(line))).toBe('no_event');
+      expect(h.state.calls).toEqual([]);
+    }
+  });
+
+  it('a horse never answers a horse (its own engine-written line comes back on the channel)', async () => {
+    expect(await replyToPlayer(remark('nice hand', { userId: HORSE_A }))).toBe('no_speaker');
+    expect(h.state.calls.filter((c) => c.op === 'insert')).toHaveLength(0);
+  });
+
+  it('only someone who can see the table is answered: seated, or watching it here', async () => {
+    expect(await replyToPlayer(remark('hi all', { userId: RAIL }))).toBe('no_speaker');
+    _setViewerProbesForTests((t) => (t === TABLE ? [RAIL] : []));
+    expect(await replyToPlayer(remark('hi all', { userId: RAIL }))).toBe('spoken');
+  });
+
+  it('a remark the engine hears late (a replayed row) is not answered', async () => {
+    const old = new Date(NOW - REPLY_MAX_AGE_MS - 1_000).toISOString();
+    expect(await replyToPlayer(remark('hi all', { createdAt: old }))).toBe('no_event');
+  });
+
+  it('a tournament table answers nobody', async () => {
+    expect(await replyToPlayer({ ...remark('hi all'), table: table({ isTournament: true }) })).toBe(
+      'tournament'
+    );
+  });
+
+  it('a table hears at most a few replies in a window', async () => {
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
+        ? {
+            data: Array.from({ length: REPLIES_PER_TABLE_WINDOW }, (_, i) =>
+              ledgerRow({
+                hand_number: -(100 + i),
+                horse_id: HORSE_B,
+                phrase_norm: `earlier reply ${i}`,
+                said_at: new Date(NOW - (i + 1) * 60_000).toISOString(),
+              })
+            ),
+            error: null,
+          }
+        : { data: [], error: null };
+    expect(await replyToPlayer(remark('hi all'))).toBe('reply_too_soon');
+    expect(inserts('table_chat')).toHaveLength(0);
+  });
+
+  it('a reply answers a person, so the hand cadence does not hold it back', async () => {
+    // a horse line on this very hand, a moment ago
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
+        ? {
+            data: [
+              ledgerRow({
+                hand_number: 500,
+                horse_id: HORSE_B,
+                said_at: new Date(NOW - 5_000).toISOString(),
+              }),
+            ],
+            error: null,
+          }
+        : { data: [], error: null };
+    expect(await replyToPlayer(remark('hi all'))).toBe('spoken');
+  });
+
+  it('the hand cadence reads hand lines only: a newer reply row cannot hide a recent hand line', async () => {
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
+        ? {
+            data: [
+              ledgerRow({
+                hand_number: -12345,
+                horse_id: HORSE_B,
+                said_at: new Date(NOW - 1_000).toISOString(),
+              }),
+              ledgerRow({
+                hand_number: 2000,
+                horse_id: HORSE_B,
+                said_at: new Date(NOW - 60_000).toISOString(),
+              }),
+            ],
+            error: null,
+          }
+        : { data: [], error: null };
+    // this table dealt hands 1990..2000 and nothing since the hand line at
+    // 2000; the answer honours the query's lower bound, as the database would
+    h.state.answers.hand_history = (call) => {
+      const gt = call.filters.find((f) => f[0] === 'gt' && f[1] === 'hand_number');
+      const from = gt ? Number(gt[2]) : -Infinity;
+      return {
+        data: Array.from({ length: 11 }, (_, i) => ({ hand_number: 2000 - i })).filter(
+          (r) => r.hand_number > from
+        ),
+        error: null,
+      };
+    };
+    expect(await speakAtTheFelt(bigPotHand(2001))).toBe('table_too_soon');
+  });
+
+  it('replyKey is negative, stable, and distinct per remark', () => {
+    expect(replyKey(CHAT_ID)).toBeLessThan(0);
+    expect(replyKey(CHAT_ID)).toBe(replyKey(CHAT_ID));
+    expect(replyKey(CHAT_ID)).not.toBe(replyKey(OTHER));
+    expect(replyKey('not-a-uuid')).toBeLessThan(0);
+    expect(Number.isSafeInteger(replyKey('ffffffff-ffff-4fff-8fff-ffffffffffff'))).toBe(true);
+  });
+});
+
+describe('a line one person can see is spent at every table they can see (2026-10-24)', () => {
+  const seatedAt = (tables: string[]) => () => ({
+    data: tables.map((table_id) => ({ table_id })),
+    error: null,
+  });
+
+  it('a seated player also at another table: a phrase said there is not said here', async () => {
+    const usual = chooseLine('big_pot_won', 'friendly', HORSE_A, 40, {
+      potBB: 60,
+      street: 'river',
+      showdown: true,
+    })!;
+    h.state.answers.table_seats = seatedAt([TABLE, OTHER]);
+    h.state.answers.horse_table_talk_ledger = (call) =>
+      call.op === 'select' && call.filters.some((f) => f[0] === 'in' && f[1] === 'table_id')
+        ? {
+            data: [
+              ledgerRow({
+                table_id: OTHER,
+                phrase_norm: normalizePhrase(usual.template),
+                said_at: new Date(NOW - 60_000).toISOString(),
+              }),
+            ],
+            error: null,
+          }
+        : { data: [], error: null };
+    expect(await speakAtTheFelt(bigPotHand(40))).toBe('spoken');
+    expect(inserts('horse_table_talk_ledger')[0].payload!.phrase_norm).not.toBe(
+      normalizePhrase(usual.template)
+    );
+    const seatRead = callsTo('table_seats')[0];
+    expect(seatRead.filters).toContainEqual(['in', 'user_id', [HUMAN]]);
+    expect(seatRead.filters).toContainEqual(['is', 'left_at', null]);
+    const viewerRead = callsTo('horse_table_talk_ledger').find((c) =>
+      c.filters.some((f) => f[0] === 'in' && f[1] === 'table_id')
+    )!;
+    expect(viewerRead.filters).toContainEqual(['in', 'table_id', [OTHER]]);
+  });
+
+  it('a table a player is only watching here counts too', async () => {
+    _setViewerProbesForTests(
+      (t) => (t === TABLE ? [RAIL] : []),
+      (ids) => (ids.has(RAIL) ? [TABLE, OTHER2] : [])
+    );
+    await speakAtTheFelt(bigPotHand(41));
+    const viewerRead = callsTo('horse_table_talk_ledger').find((c) =>
+      c.filters.some((f) => f[0] === 'in' && f[1] === 'table_id')
+    )!;
+    expect(viewerRead.filters).toContainEqual(['in', 'table_id', [OTHER2]]);
+    expect(callsTo('table_seats')[0].filters).toContainEqual(['in', 'user_id', [RAIL, HUMAN]]);
+  });
+
+  it('nobody who could read it: no seat read and no viewer read', async () => {
+    const horsesOnly = [seat(HORSE_A, 1, true), seat(HORSE_B, 2, true)];
+    expect(await speakAtTheFelt(bigPotHand(42, { seated: horsesOnly }))).toBe('spoken');
+    expect(callsTo('table_seats')).toHaveLength(0);
+  });
+
+  it('a seat read that fills its cap could be missing a table: silence, never a guess', async () => {
+    h.state.answers.table_seats = () => ({
+      data: Array.from({ length: VIEWER_SEATS_LIMIT }, () => ({ table_id: OTHER })),
+      error: null,
+    });
+    expect(await speakAtTheFelt(bigPotHand(43))).toBe('unreadable');
+    expect(h.state.calls.filter((c) => c.op === 'insert')).toHaveLength(0);
+  });
+});
+
+describe('end to end: a player types, the realtime row arrives, a horse answers', () => {
+  afterEach(() => _resetChatListenerForTests());
+
+  it('the channel callback reaches the real reply path and writes the claim and the chat row', async () => {
+    _resetChatListenerForTests();
+    const players = [
+      {
+        user_id: HORSE_A,
+        username: 'plate1',
+        seat_number: 1,
+        is_horse: true,
+        horse_profile: { style: 'balanced' },
+      },
+      { user_id: HUMAN, username: 'danny', seat_number: 3, is_horse: false },
+    ];
+    registerChatReplies(TABLE, {}, () => ({
+      tableInfo: {
+        id: TABLE,
+        big_blind: 2,
+        max_players: 9,
+        ban_chat: false,
+        game_variant: 'nlh',
+      } as never,
+      seatedPlayers: players as never,
+      handCount: 600,
+      isTournament: false,
+    }));
+    const opened = h.channels[h.channels.length - 1];
+    expect(opened.on[1]).toMatchObject({ table: 'table_chat', event: 'INSERT' });
+    const callback = opened.on[2] as (p: unknown) => void;
+    callback({
+      new: {
+        id: CHAT_ID,
+        table_id: TABLE,
+        user_id: HUMAN,
+        message: 'YOU GUYS PLAY HERE EVERY NIGHT?! LOL',
+        message_type: 'player',
+        created_at: new Date(NOW).toISOString(),
+      },
+    });
+    await vi.waitFor(() => expect(inserts('table_chat')).toHaveLength(1));
+    expect(inserts('horse_table_talk_ledger')[0].payload).toMatchObject({
+      table_id: TABLE,
+      horse_id: HORSE_A,
+      event: 'reply_regular',
+      hand_number: replyKey(CHAT_ID),
+    });
+    const chat = inserts('table_chat')[0].payload!;
+    expect(chat.user_id).toBe(HORSE_A);
+    expect(allLinesOf('reply_regular')).toContain(chat.message);
+  });
+});
+
+describe('talk rates, retuned for deep pools (2026-10-24)', () => {
+  it('the rare hand events speak more than they did on one line, and every rate stays a sometimes', () => {
+    expect(SPEAK_CHANCE_PCT.big_pot_won).toBeGreaterThan(20);
+    expect(SPEAK_CHANCE_PCT.showdown_loss).toBeGreaterThan(25);
+    expect(SPEAK_CHANCE_PCT.big_hand_shown).toBeGreaterThan(20);
+    for (const event of TALK_EVENTS) {
+      expect(SPEAK_CHANCE_PCT[event], event).toBeGreaterThan(0);
+      expect(SPEAK_CHANCE_PCT[event], event).toBeLessThanOrEqual(60);
+    }
+    // the hourly ceiling is unchanged: deeper pools do not make a horse chattier per hour
+    expect(HORSE_LINES_PER_HOUR).toBe(6);
+  });
+});
+
+describe('a sentence takes as long to arrive as a person needs to type it (Dan 2026-10-24)', () => {
+  // "THEY CAN'T FIRE OFF FULL SENTENCES RIGHT AFTER A HAND IS OVER"
+  const FLEET = Array.from({ length: 300 }, (_, i) => `horse-${i}`);
+  const SCREENSHOT = `46 bb on the river, somebody wanted to see my cards ${String.fromCodePoint(0x1f60f, 0x1f44d)}`;
+
+  it('the line from the screenshot never lands in under 10 seconds, even for the fastest typist', () => {
+    for (const horseId of FLEET) {
+      const ms = typingBeatMs({ key: `${horseId}|1`, horseId, text: SCREENSHOT, kind: 'typed' });
+      expect(ms, horseId).toBeGreaterThanOrEqual(10_000);
+      expect(ms).toBeLessThanOrEqual(TYPING_MAX_MS.typed);
+    }
+  });
+
+  it('every typed line takes at least its characters at the fastest speed, plus noticing', () => {
+    const fastest = TYPING_CPS[1] * 1.2;
+    for (const { line } of everyPoolLine()) {
+      const text = fillLine(line, { potBB: 52, street: 'river', hand: 'full house', seat: 7 })!;
+      for (const horseId of FLEET.slice(0, 20)) {
+        const ms = typingBeatMs({ key: `${horseId}|${text}`, horseId, text, kind: 'typed' });
+        expect(ms).toBeGreaterThanOrEqual(1_500 + Math.floor((text.length / fastest) * 1_000));
+      }
+    }
+  });
+
+  it('a longer line always takes longer for the same horse and moment', () => {
+    for (const horseId of FLEET.slice(0, 50)) {
+      const at = (text: string) => typingBeatMs({ key: 'same', horseId, text, kind: 'typed' });
+      expect(at('nice hand')).toBeLessThan(at('nice hand, you got me there'));
+      expect(at('nice hand, you got me there')).toBeLessThan(
+        at('ran two pair into a bigger one on the river, well played seat 4')
+      );
+    }
+  });
+
+  it('emoji cost a trip to the picker', () => {
+    const plain = typingBeatMs({ key: 'k', horseId: 'h', text: 'gg', kind: 'typed' });
+    const withEmoji = typingBeatMs({
+      key: 'k',
+      horseId: 'h',
+      text: `gg ${String.fromCodePoint(0x1f602)}`,
+      kind: 'typed',
+    });
+    expect(withEmoji - plain).toBeGreaterThanOrEqual(800);
+  });
+
+  it('a reply waits to read what was said first', () => {
+    const base = { key: 'k', horseId: 'h', text: 'ty', kind: 'typed' as const };
+    expect(typingBeatMs({ ...base, readChars: 40 }) - typingBeatMs(base)).toBe(2_000);
+    expect(typingBeatMs({ ...base, readChars: 10_000 }) - typingBeatMs(base)).toBe(4_000);
+  });
+
+  it('every horse has its own typing speed, the same on every line', () => {
+    const speeds = FLEET.map(typingSpeedCps);
+    expect(new Set(speeds.map((v) => v.toFixed(3))).size).toBeGreaterThan(270);
+    for (const v of speeds) {
+      expect(v).toBeGreaterThanOrEqual(TYPING_CPS[0]);
+      expect(v).toBeLessThan(TYPING_CPS[1]);
+    }
+    expect(typingSpeedCps('horse-7')).toBe(typingSpeedCps('horse-7'));
+  });
+
+  it('a line said as a horse shoves is quicker, never instant', () => {
+    const quick = typingBeatMs({ key: 'k', horseId: 'h', text: 'good luck', kind: 'quick' });
+    const typed = typingBeatMs({ key: 'k', horseId: 'h', text: 'good luck', kind: 'typed' });
+    expect(quick).toBeLessThan(typed);
+    expect(quick).toBeGreaterThanOrEqual(300 + 1_000 * (9 / (TYPING_CPS[1] * 1.2 * 1.25)));
+  });
+
+  it('the write path waits on the exact line it writes, styling included', async () => {
+    _setVoiceStylingForTests(true);
+    _setHumanPacingForTests(false);
+    expect(await speakAtTheFelt(bigPotHand(4040))).toBe('spoken');
+    const written = String(inserts('table_chat')[0].payload!.message);
+    const beats = _recordedBeatsForTests();
+    expect(beats).toHaveLength(1);
+    expect(beats[0]).toBe(
+      typingBeatMs({
+        key: `${HORSE_A}|4040|big_pot_won`,
+        horseId: HORSE_A,
+        text: written,
+        kind: 'typed',
+      })
+    );
+  });
+
+  it('a reply waits on its own line plus reading the remark', async () => {
+    _setHumanPacingForTests(false);
+    await speakAtTheFelt(bigPotHand(499));
+    h.state.calls = [];
+    _setHumanPacingForTests(false);
+    const message = 'NICE BALUE BET CAPTAIN';
+    expect(await replyToPlayer(remark(message))).toBe('spoken');
+    const written = String(inserts('table_chat')[0].payload!.message);
+    expect(_recordedBeatsForTests()[0]).toBe(
+      typingBeatMs({
+        key: `${HORSE_A}|${replyKey(CHAT_ID)}|reply_thanks`,
+        horseId: HORSE_A,
+        text: written,
+        kind: 'typed',
+        readChars: message.length,
+      })
+    );
   });
 });

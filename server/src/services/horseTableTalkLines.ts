@@ -50,7 +50,24 @@ export type TalkEvent =
   | 'pot_won'
   | 'all_in'
   | 'tilt'
-  | 'heater';
+  | 'heater'
+  | ReplyEvent;
+
+/**
+ * A horse answering a player who typed in the table chat (Dan 2026-10-24:
+ * players typed "Nice Hand", "Unlucky", "YOU GUYS PLAY HERE EVERY NIGHT?!",
+ * "Hey Ingrid" and every one was met with silence). The intent comes from
+ * horseChatIntent.classifyChat; HorseTableTalk.replyToPlayer says it.
+ * There is deliberately no event for "are you real / a bot": a horse never
+ * answers that question, in either direction.
+ */
+export type ReplyEvent =
+  | 'reply_thanks'
+  | 'reply_ribbed'
+  | 'reply_sympathy'
+  | 'reply_humble'
+  | 'reply_hello'
+  | 'reply_regular';
 export type TalkVoice = 'quiet' | 'needler' | 'friendly';
 
 export const TALK_EVENTS: readonly TalkEvent[] = [
@@ -63,7 +80,26 @@ export const TALK_EVENTS: readonly TalkEvent[] = [
   'all_in',
   'tilt',
   'heater',
+  'reply_thanks',
+  'reply_ribbed',
+  'reply_sympathy',
+  'reply_humble',
+  'reply_hello',
+  'reply_regular',
 ];
+
+export const REPLY_EVENTS: readonly ReplyEvent[] = [
+  'reply_thanks',
+  'reply_ribbed',
+  'reply_sympathy',
+  'reply_humble',
+  'reply_hello',
+  'reply_regular',
+];
+
+export function isReplyEvent(event: TalkEvent): event is ReplyEvent {
+  return (REPLY_EVENTS as readonly string[]).includes(event);
+}
 export const TALK_VOICES: readonly TalkVoice[] = ['quiet', 'needler', 'friendly'];
 
 /** The only placeholders a line may carry. Anything else fails the law test. */
@@ -608,6 +644,238 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'what a run',
         'enjoying this one',
         'thanks for the chips again',
+      ],
+    },
+  },
+  // Reply: a player complimented this horse (nice hand, well played, nice bet).
+  reply_thanks: {
+    quiet: {
+      lines: [
+        'ty',
+        'thanks',
+        'appreciate it',
+        'cheers',
+        'ty sir',
+        'thanks man',
+        'much appreciated',
+        'ty, felt good',
+        'ha ty',
+      ],
+    },
+    needler: {
+      lines: [
+        'i know',
+        'told you',
+        'all skill',
+        'thanks, i try',
+        'more where that came from',
+        'ill be here all night',
+        'took you long enough to notice',
+        'stick around, theres more',
+        'ty, now pay attention',
+      ],
+    },
+    friendly: {
+      lines: [
+        'thanks, appreciate that',
+        'ty, you too',
+        'thank you kindly',
+        'ty, fun hand',
+        'appreciate it, gl',
+        'ty, got a bit lucky',
+        'thanks, nice playing with you',
+        'ha thanks, needed that one',
+        'ty ty, gl to you',
+      ],
+    },
+  },
+  // Reply: a player called this horse lucky, a donk, or similar.
+  reply_ribbed: {
+    quiet: {
+      lines: [
+        'lol',
+        'maybe',
+        'ill take it',
+        'fair',
+        'sometimes',
+        'eh',
+        'it works',
+        'yep',
+        'probably',
+      ],
+    },
+    needler: {
+      lines: [
+        'better lucky than good',
+        'all part of the plan',
+        'keep telling yourself that',
+        'lucky every time huh',
+        'skill, obviously',
+        'chips spend the same',
+        'say that again next hand',
+        'you keep calling, i keep getting lucky',
+        'lucky? sure',
+      ],
+    },
+    friendly: {
+      lines: [
+        'ha, i know, sorry',
+        'yeah got lucky there',
+        'lol fair enough',
+        'cant argue with that',
+        'yeah that was a bit lucky',
+        'ill take lucky',
+        'sorry, deck likes me tonight',
+        'it evens out, gl',
+        'guilty, lol',
+      ],
+    },
+  },
+  // Reply: a player told this horse it was unlucky.
+  reply_sympathy: {
+    quiet: {
+      lines: [
+        'yeah',
+        'it happens',
+        'part of it',
+        'next one',
+        'oh well',
+        'whatever',
+        'yep, brutal',
+        'such is poker',
+        'meh',
+      ],
+    },
+    needler: {
+      lines: [
+        'tell me about it',
+        'every time',
+        'story of my night',
+        'that deck hates me',
+        'figures',
+        'i should have known',
+        'standard',
+        'whats new',
+        'sure, unlucky',
+      ],
+    },
+    friendly: {
+      lines: [
+        'ty, it happens',
+        'appreciate that',
+        'thanks, next one',
+        'all good, gl',
+        'yeah tough one',
+        'thanks, it evens out',
+        'thats poker',
+        'ty, ill get it back',
+        'all part of the game',
+      ],
+    },
+  },
+  // Reply: a player apologised, admitted a misclick, or said they got lucky against this horse.
+  reply_humble: {
+    quiet: {
+      lines: ['all good', 'np', 'happens', 'no worries', 'its fine', 'ok', 'gg', 'nbd', 'eh, fine'],
+    },
+    needler: {
+      lines: [
+        'sure you did',
+        'uh huh',
+        'convenient',
+        'mhm',
+        'if you say so',
+        'i believe you',
+        'sure sure',
+        'we all saw it',
+        'right, of course',
+      ],
+    },
+    friendly: {
+      lines: [
+        'all good, happens to everyone',
+        'no worries, nh',
+        'lol it happens',
+        'dont sweat it',
+        'weve all done it',
+        'no apology needed, gg',
+        'its part of the game',
+        'ha no stress',
+        'all good my friend',
+      ],
+    },
+  },
+  // Reply: a player said hi or good luck.
+  reply_hello: {
+    quiet: {
+      lines: ['hey', 'hi', 'yo', 'gl', 'evening', 'sup', 'hey hey', 'hi there', 'hiya'],
+    },
+    needler: {
+      lines: [
+        'hope you brought a lot of chips',
+        'welcome to the party',
+        'gl, youll need it',
+        'hey, sit tight',
+        'welcome, try to keep up',
+        'oh good, company',
+        'hey, ready to lose some',
+        'took you long enough',
+        'another one, nice',
+      ],
+    },
+    friendly: {
+      lines: [
+        'hey welcome',
+        'hi, gl',
+        'hey there, good luck',
+        'gl to you too',
+        'hey hey, have fun',
+        'hi, nice to have you',
+        'evening, gl',
+        'welcome, its a fun table',
+        'hello hello',
+      ],
+    },
+  },
+  // Reply: a player asked whether the table plays here often.
+  reply_regular: {
+    quiet: {
+      lines: [
+        'most nights',
+        'pretty much',
+        'a lot',
+        'when i can',
+        'too often lol',
+        'usually',
+        'more than i should',
+        'often enough',
+        'yeah, mostly',
+      ],
+    },
+    needler: {
+      lines: [
+        'every night, and i win every night',
+        'someone has to take the chips',
+        'yep, best game around',
+        'pretty much live here',
+        'cant stay away',
+        'this is my office',
+        'where else would i be',
+        'always, get used to it',
+        'only when theres action',
+      ],
+    },
+    friendly: {
+      lines: [
+        'most nights yeah, fun game',
+        'pretty much lol, its a good room',
+        'yeah its a good spot',
+        'when i can, gl',
+        'a lot lately, lol',
+        'yep, good action here',
+        'yeah, nice crowd most nights',
+        'try to, its fun',
+        'pretty regular, welcome',
       ],
     },
   },

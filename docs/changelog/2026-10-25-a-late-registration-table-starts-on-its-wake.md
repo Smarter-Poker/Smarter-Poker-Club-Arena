@@ -64,7 +64,11 @@ purchase RPC was called about eight times across the whole platform between
 The offer now runs at the head of every admission while the window is open,
 on the same 20-second cadence (stage 4 keeps its call; the cadence prevents a
 double offer), and `tryTournamentAddOns` reads only players holding chips so
-a bust not yet recorded is never offered.
+a bust not yet recorded is never offered. Only offers move early: once the persisted
+deadline has passed, or a Free Buy closing drain is pending, the window is
+closed (and the prize pool finalized) by stage 4 as before, after the bust
+stage, so a bust recorded in the same pass keeps its rebuy
+(`addOnOfferWindowOpen`).
 
 Missed add-ons are not reissued: each window is closed and its blind levels
 have been played; reopening one would change the event after the fact.

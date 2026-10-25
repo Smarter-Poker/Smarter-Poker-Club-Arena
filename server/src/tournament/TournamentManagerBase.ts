@@ -3016,6 +3016,19 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * The add-on window is open for OFFERS: triggered, not finalized, no Free
+   * Buy closing drain pending, and its persisted deadline still ahead. Closing
+   * the window is a separate, later step (2026-10-25).
+   */
+  protected addOnOfferWindowOpen(nowMs: number): boolean {
+    if (!this.addOnPeriodTriggered || this.prizePoolFinalized || this.addOnDrainPending) {
+      return false;
+    }
+    const endMs = Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? ''));
+    return Number.isFinite(endMs) && nowMs < endMs;
+  }
+
   /** Keep one add-on retry due while its persisted offer window is open. */
   protected scheduleAddOnRetry(): void {
     if (!this.running || !this.addOnPeriodTriggered || this.prizePoolFinalized) return;

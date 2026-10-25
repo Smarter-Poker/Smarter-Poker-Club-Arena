@@ -672,9 +672,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        * RPC is idempotent per player, refuses a player with no live seat, and
        * tryTournamentAddOns offers only players holding chips. The same 20 s
        * cadence applies, so the stage-4 call below never doubles an offer.
+       *
+       * Only OFFERS move here. Closing the window (the persisted deadline has
+       * passed, or a Free Buy closing drain is pending) finalizes the prize
+       * pool, and that must still follow the bust stage so a bust recorded in
+       * this pass keeps its rebuy. Those branches stay in stage 4.
        */
-      if (this.addOnPeriodTriggered && !this.prizePoolFinalized && !isMaintenanceFrozen()) {
-        const addOnNowMs = Date.now();
+      const addOnNowMs = Date.now();
+      if (this.addOnOfferWindowOpen(addOnNowMs) && !isMaintenanceFrozen()) {
         if (addOnNowMs - this.lastAddOnOfferAt >= TournamentManagerBase.ADD_ON_RETRY_MS) {
           this.lastAddOnOfferAt = addOnNowMs;
           this.noteEliminationSweepStep('tryTournamentAddOns');

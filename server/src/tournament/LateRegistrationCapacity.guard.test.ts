@@ -394,8 +394,17 @@ describe('late-registration capacity authority', () => {
     const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
     const head = ELIMINATIONS.slice(0, recoveryStage);
     expect(head).toMatch(
-      /if \(this\.addOnPeriodTriggered && !this\.prizePoolFinalized && !isMaintenanceFrozen\(\)\) \{[\s\S]{0,400}await this\.tryTournamentAddOns\(\);[\s\S]{0,120}this\.scheduleAddOnRetry\(\);/
+      /if \(this\.addOnOfferWindowOpen\(addOnNowMs\) && !isMaintenanceFrozen\(\)\) \{[\s\S]{0,400}await this\.tryTournamentAddOns\(\);[\s\S]{0,120}this\.scheduleAddOnRetry\(\);/
     );
+    // Only offers move ahead of the bust stage: a closed or closing window
+    // (deadline passed, Free Buy drain pending) finalizes the pool in stage 4.
+    const open = BASE.slice(
+      BASE.indexOf('protected addOnOfferWindowOpen(nowMs: number): boolean'),
+      BASE.indexOf('protected scheduleAddOnRetry(): void')
+    );
+    expect(open).toContain('this.addOnDrainPending');
+    expect(open).toContain('this.prizePoolFinalized');
+    expect(open).toMatch(/addon_period_ends_at[\s\S]{0,120}nowMs < endMs/);
     const offer = BASE.slice(
       BASE.indexOf('protected async tryTournamentAddOns'),
       BASE.indexOf('protected async triggerAddOnPeriod')

@@ -74,7 +74,7 @@ import { useRecentRecipients } from '../hooks/useRecentRecipients';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import AgentCashoutPanel from '../components/agent/AgentCashoutPanel';
 import { useClubPendingCashouts } from '../hooks/useClubPendingCashouts';
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -504,9 +504,22 @@ interface HistoryFeedRow {
  * The totals strip. One wallet (the viewer, or the player picked inside a
  * downline), a downline as one group, or the whole club.
  */
-type HistorySummary =
+type HistorySummary = { filterKey: string } & (
   | { mode: 'wallet' | 'group'; incoming: number; outgoing: number; net: number }
-  | { mode: 'club'; entries: number; volume: number; cashoutsPaid: number; complete: boolean };
+  | { mode: 'club'; entries: number; volume: number; cashoutsPaid: number; complete: boolean }
+);
+
+/** A missing financial figure is unavailable, never a verified zero. */
+function historyTotalNumber(value: unknown): number {
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'string' && value.trim() === '')
+  )
+    throw new Error('Invalid history total');
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error('Invalid history total');
+  return number;
+}
 
 // Retire dialogs and read/write refs immediately when the account or route changes.
 // Pending durable requests keep their original account, club and request identity.
@@ -1500,6 +1513,22 @@ function CashierTradeWorkspace() {
   const historyFilterKey = `${clubUuid}|${historyBook}|${historyKind}|${historyRange}|${historyPerson ?? ''}|${historySearch}`;
   const recordsKeyRef = useRef<string | null>(null);
 
+  // Retire the prior book before paint, including its in-flight older page.
+  // The new filter must never label the old book's rows or receipt as its own.
+  useLayoutEffect(() => {
+    ++recordSeqRef.current;
+    recordsKeyRef.current = null;
+    setRecords([]);
+    setRecordsHasMore(false);
+    setRecordsLoading(true);
+    setRecordsLoadingMore(false);
+    setRecordsError(null);
+    setReceipt(null);
+    return () => {
+      ++recordSeqRef.current;
+    };
+  }, [historyFilterKey]);
+
   const loadRecords = useCallback(async () => {
     if (!user?.id || !clubUuid || !roleResolved) return false;
     const seq = ++recordSeqRef.current;
@@ -1606,9 +1635,10 @@ function CashierTradeWorkspace() {
       setRecordsHasMore(rows.length > HISTORY_PAGE);
     } catch (e) {
       reportError(e, 'CashierTradePage.recordsOlder');
-      if (isMounted.current) toast?.error?.('Older Transactions Could Not Be Loaded');
+      if (isMounted.current && seq === recordSeqRef.current)
+        toast?.error?.('Older Transactions Could Not Be Loaded');
     } finally {
-      if (isMounted.current) setRecordsLoadingMore(false);
+      if (isMounted.current && seq === recordSeqRef.current) setRecordsLoadingMore(false);
     }
   }, [
     user?.id,
@@ -1648,9 +1678,17 @@ function CashierTradeWorkspace() {
      totals count each closed day once; while days are still being counted
      the answer says so and is asked again. */
   const totalsSeqRef = useRef(0);
+  const historySummaryKey = JSON.stringify([
+    clubUuid,
+    historyBook,
+    historyKind,
+    historyRange,
+    historyPerson,
+  ]);
   useEffect(() => {
     if (tab !== 'record' || !user?.id || !clubUuid || !roleResolved) return;
     const seq = ++totalsSeqRef.current;
+    let active = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     setHistoryTotalsState('loading');
     const ask = async (attempt: number) => {
@@ -1663,25 +1701,34 @@ function CashierTradeWorkspace() {
           p_to: null,
           p_person: historyPerson,
         });
-        if (!isMounted.current || seq !== totalsSeqRef.current) return;
+        if (!active || !isMounted.current || seq !== totalsSeqRef.current) return;
         if (error) throw error;
         const t = (data ?? null) as Record<string, unknown> | null;
+        if (!t || !['club', 'wallet', 'group'].includes(String(t.mode)))
+          throw new Error('Invalid history summary');
         if (t?.mode === 'club') {
-          const entries = Number(t.entries);
-          const volume = Number(t.volume);
-          const cashoutsPaid = Number(t.cashouts_paid);
-          if (![entries, volume, cashoutsPaid].every(Number.isFinite)) throw new Error('summary');
+          const entries = historyTotalNumber(t.entries);
+          const volume = historyTotalNumber(t.volume);
+          const cashoutsPaid = historyTotalNumber(t.cashouts_paid);
+          if (typeof t.complete !== 'boolean') throw new Error('Invalid history summary');
           const complete = t.complete === true;
-          setHistoryTotals({ mode: 'club', entries, volume, cashoutsPaid, complete });
+          setHistoryTotals({
+            filterKey: historySummaryKey,
+            mode: 'club',
+            entries,
+            volume,
+            cashoutsPaid,
+            complete,
+          });
           setHistoryTotalsState('ready');
           if (!complete && attempt < 40) timer = setTimeout(() => void ask(attempt + 1), 1200);
           return;
         }
-        const incoming = Number(t?.incoming);
-        const outgoing = Number(t?.outgoing);
-        const net = Number(t?.net);
-        if (![incoming, outgoing, net].every(Number.isFinite)) throw new Error('summary');
+        const incoming = historyTotalNumber(t.incoming);
+        const outgoing = historyTotalNumber(t.outgoing);
+        const net = historyTotalNumber(t.net);
         setHistoryTotals({
+          filterKey: historySummaryKey,
           mode: t?.mode === 'group' ? 'group' : 'wallet',
           incoming,
           outgoing,
@@ -1689,7 +1736,7 @@ function CashierTradeWorkspace() {
         });
         setHistoryTotalsState('ready');
       } catch (e) {
-        if (!isMounted.current || seq !== totalsSeqRef.current) return;
+        if (!active || !isMounted.current || seq !== totalsSeqRef.current) return;
         reportError(e, 'CashierTradePage.historyTotals');
         setHistoryTotals(null);
         setHistoryTotalsState('unavailable');
@@ -1697,6 +1744,7 @@ function CashierTradeWorkspace() {
     };
     void ask(0);
     return () => {
+      active = false;
       if (timer) clearTimeout(timer);
     };
   }, [
@@ -1708,6 +1756,7 @@ function CashierTradeWorkspace() {
     historyKind,
     historyRange,
     historyPerson,
+    historySummaryKey,
     recordsReload,
   ]);
 
@@ -4787,7 +4836,10 @@ function CashierTradeWorkspace() {
               wallet, a downline as one group, or the whole club. Never the rows
               on screen, never a 0 that could not be read. */}
               {(() => {
-                const ready = historyTotalsState === 'ready' && historyTotals;
+                const ready =
+                  historyTotalsState === 'ready' &&
+                  historyTotals?.filterKey === historySummaryKey &&
+                  historyTotals;
                 if (historyBook === 'club') {
                   const club = ready && historyTotals.mode === 'club' ? historyTotals : null;
                   return (

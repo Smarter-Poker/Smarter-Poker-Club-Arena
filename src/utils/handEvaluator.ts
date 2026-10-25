@@ -434,5 +434,7 @@ export function bestLow(hole: DeckCard[], board: DeckCard[]): LowHand | null {
 
 /** Stable key for a card, so a "did this card play" lookup is cheap. */
 export function cardKey(card: DeckCard): string {
-  return `${String(card.rank).toUpperCase()}${card.suit}`;
+  /* Spelling-proof (2026-10-25): 'Tc', '10c' and 'Tclubs' are one card. */
+  const rank = String(card.rank).toUpperCase();
+  return `${rank === '10' ? 'T' : rank}${suitOf(card)}`;
 }

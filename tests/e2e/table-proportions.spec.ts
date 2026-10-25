@@ -1858,5 +1858,5 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
   });
 
 // Shared notice containment is part of the existing felt browser gate.
-import { registerAddOnNoticeContainmentCases } from './css/addOnNoticeContainmentCases';
+import { registerAddOnNoticeContainmentCases } from './support/addOnNoticeContainmentCases';
 registerAddOnNoticeContainmentCases();

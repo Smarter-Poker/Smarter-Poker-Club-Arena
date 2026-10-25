@@ -88,7 +88,7 @@ describe('an earlier refunded entry is not a second entry', () => {
       expect(CODE).toContain(`IS DISTINCT FROM ${k}`);
   });
 
-  it('is the only later file that redefines the never-dealt proof', () => {
+  it('is redefined only by the one successor that starts from its post-image', () => {
     const later = readdirSync(MIGRATIONS).filter(
       (f) =>
         f.endsWith('.sql') &&
@@ -97,6 +97,11 @@ describe('an earlier refunded entry is not a second entry', () => {
           'FUNCTION smarter_private.f06_movement_never_dealt_prior('
         )
     );
-    expect(later).toEqual([]);
+    expect(later).toEqual([
+      '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+    ]);
+    const next = readFileSync(join(MIGRATIONS, later[0]), 'utf8');
+    expect(next).toContain("IF md5(v_pre) <> '631844035961b4995aab130e8e53e6b6'");
+    expect(next).toContain("<> 'e0677c7a9a3e1bbed2cd00026caee54a'");
   });
 });

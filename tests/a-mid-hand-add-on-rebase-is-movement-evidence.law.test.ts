@@ -229,6 +229,7 @@ describe('a mid-hand add-on rebase is movement evidence', () => {
     // this post-image.
     expect(later).toEqual([
       '20261024211825_a_rebuy_seated_from_another_table_is_movement_evidence.sql',
+      '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
     ]);
     expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`

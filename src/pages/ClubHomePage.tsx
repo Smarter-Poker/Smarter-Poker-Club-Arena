@@ -2132,7 +2132,7 @@ function ClubHomePageContent({
       return;
     }
     const cached = loadFilters(resolvedClubId, currentUser?.id ?? null);
-    setAdvFilters(cached);
+    if (!browseJourney.current.selected) setAdvFilters(cached);
 
     /* THEN THE PLAYER'S ROW (2026-10-16). Until now only the open filter
        sheet ever read it, so a phone opened the lobby with the laptop's
@@ -2146,7 +2146,8 @@ function ClubHomePageContent({
     }
     let cancelled = false;
     void fetchRemoteFilters(resolvedClubId).then((remote) => {
-      if (cancelled || !remote || advFiltersTouched.current) return;
+      if (cancelled || !remote || advFiltersTouched.current || browseJourney.current.selected)
+        return;
       setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
       saveFilters(resolvedClubId, remote, currentUser?.id ?? null);
     });
@@ -2191,7 +2192,7 @@ function ClubHomePageContent({
       setFavoritesOnly(p.favoritesOnly);
     };
 
-    if (!viewPrefsTouched.current) applyView(saved);
+    if (!viewPrefsTouched.current && !browseJourney.current.selected) applyView(saved);
 
     /* The initial view is applied (or the player already chose their own):
        either way the landing request is spent. Reported once per mount. */
@@ -2231,7 +2232,7 @@ function ClubHomePageContent({
     void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
-      if (viewPrefsTouched.current) return;
+      if (viewPrefsTouched.current || browseJourney.current.selected) return;
       setViewPrefs(remote);
       applyView(remote);
       // Bring this browser's cache forward so the next cold open is already
@@ -4182,6 +4183,9 @@ function ClubHomePageContent({
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
       haptic.selection();
+      // Opening a card is browsing intent too. Late saved tabs or filters
+      // must not remove that chosen game and close its card. Keep this
+      // separate from the preference-write flags: a row tap saves nothing.
       browseJourney.current.selected = true;
       capture('lobby_game_details_opened', {
         kind: entry.kind,
@@ -4625,6 +4629,7 @@ function ClubHomePageContent({
     pendingGameRef.current = null;
     const entry = lobbyEntries.find((e) => e.id === id);
     if (entry) {
+      browseJourney.current.selected = true;
       setSelectedId(id);
       setPanelOpen(true);
     }

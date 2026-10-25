@@ -610,7 +610,10 @@ import {
 import {
   buildAwardGroups,
   boardLabelFromAwards,
+  isAllInShowdown,
   pendingStackHold,
+  showdownHandNamesFrom,
+  showdownWinnerLine,
 } from '../lib/showdownPresentation';
 
 /** Rank ordering for the preflop label. Ace high; T/J/Q/K above the numbers. */
@@ -3214,9 +3217,13 @@ function LiveTablePage({
    * so client and engine agree on when the hand is actually over.
    * Set in the SHOWDOWN handler, reset at HAND_STARTED.
    */
-  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number }>({
+  /* allIn (Dan 2026-10-24): two or more hands reached showdown and one is an
+     all-in player's. Adds ALL_IN_SHOWDOWN_EXTRA_MS to the hold, exactly as
+     the engine does, and holds the beaten hands' muck back by the same. */
+  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number; allIn: boolean }>({
     wentToShowdown: false,
     hands: 2,
+    allIn: false,
   });
   /**
    * Dan 2026-08-21 (bug list item 1): the Fold toggle in the pre-action bar
@@ -7563,6 +7570,10 @@ function LiveTablePage({
   // flags — never inferred client-side. Cleared at HAND_STARTED and at the
   // hand-complete table reset.
   const [muckedLabelSeats, setMuckedLabelSeats] = useState<boolean[]>(() => Array(9).fill(false));
+  /* Dan 2026-10-24: every tabled hand's name at showdown, by player id. Set
+     from the engine's showdown event, cleared at the next deal and at the
+     hand-complete reset alongside the MUCKED labels. */
+  const [showdownHandNames, setShowdownHandNames] = useState<Record<string, string>>({});
   // SHOWDOWN SYSTEM 2026-08-25 (spec section 3): seat -> reveal order index
   // from the showdown event (0 = final-street last aggressor, then
   // clockwise). Drives a small per-seat stagger on the card flip so the
@@ -17577,7 +17588,9 @@ function LiveTablePage({
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         // Items 11 + 16: a fresh hand has not reached showdown yet.
-        handShowdownRef.current = { wentToShowdown: false, hands: 2 };
+        handShowdownRef.current = { wentToShowdown: false, hands: 2, allIn: false };
+        // Dan 2026-10-24: the tabled hands' names belong to the hand that tabled them.
+        setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
            Both of these shrink a card row, so carrying either into the next
            hand would deal a seat a hand that is visibly one card short. */
@@ -17671,6 +17684,7 @@ function LiveTablePage({
         // SHOWDOWN SYSTEM 2026-08-25 (spec section 39): clear the previous
         // hand's MUCKED labels and reveal stagger before the new deal.
         setMuckedLabelSeats(Array(9).fill(false));
+        setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         showdownRevealOrderRef.current = {};
         if (ritResultTimerRef.current) {
           clearTimeout(ritResultTimerRef.current);
@@ -18546,7 +18560,12 @@ function LiveTablePage({
                cannot judge three boards against a hand that has left the
                felt. The muck waits for the reveal to finish, like the reset
                hold two blocks down already does. */
-            const muckBase = 2400 * getAnimationSpeed();
+            /* Dan 2026-10-24: on an all-in showdown the beaten hands stay face
+               up for the same two extra seconds the hold gives the winner. */
+            const muckBase =
+              (2400 +
+                (handShowdownRef.current.allIn ? HAND_COMPLETION.ALL_IN_SHOWDOWN_EXTRA_MS : 0)) *
+              getAnimationSpeed();
             const revealEnd = ritRevealEndsAtRef.current;
             const muckDelay =
               revealEnd > Date.now() ? Math.max(muckBase, revealEnd - Date.now() + 200) : muckBase;
@@ -18602,6 +18621,8 @@ function LiveTablePage({
           // board, pot and winner were wiped roughly a second into the Bad Beat
           // Jackpot celebration that the spec says is never rushed.
           bbjHit: !!bbjHitDataRef.current,
+          // Dan 2026-10-24: the all-in showdown's two extra seconds, as the engine holds them.
+          allInShowdown: handShowdownRef.current.allIn,
         });
         // The player's animation-speed preference scales this, but only within
         // bounds. The SERVER holds `holdBaseMs` flat, so scaling below 1x used to
@@ -18731,6 +18752,7 @@ function LiveTablePage({
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
           // artifact may leak into the next hand.
           setMuckedLabelSeats(Array(9).fill(false));
+          setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
           // SHOWDOWN AUDIT 2026-08-25 (spec 21 backstop): a client that
           // joined or reconnected AFTER pot_win never schedules the release
           // timer, so without this the winner's stack would sit reduced until
@@ -18802,11 +18824,29 @@ function LiveTablePage({
            and the winner 350-800ms before the engine did - a truncated
            announcement, which 10.6 forbids. The event carries the count; it
            is destructured a few lines below for the reveal order. */
-        const sdResultsForCount = ((evt.data as any).results as Array<{ mucked?: boolean }>) || [];
+        const sdResultsForCount =
+          ((evt.data as any).results as Array<{
+            user_id?: string;
+            hand_name?: string;
+            mucked?: boolean;
+          }>) || [];
         handShowdownRef.current = {
           wentToShowdown: true,
           hands: Math.max(2, sdResultsForCount.length),
+          /* Dan 2026-10-24: "WHEN PLAYERS ARE ALL IN, ON THE RIVER, KEEP THE
+             CARDS SHOWN FOR 2 MORE SECONDS". Read from the live seats now,
+             while they still carry this hand's all-in status. */
+          allIn: isAllInShowdown(
+            sdResultsForCount
+              .map((r) => r.user_id)
+              .filter((id): id is string => typeof id === 'string'),
+            tableStateRef.current.players
+          ),
         };
+        /* Dan 2026-10-24: "PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS
+           BETTER". Every tabled hand is named at its seat, not only the
+           winner's; the engine already sends each name on this event. */
+        setShowdownHandNames(showdownHandNamesFrom(sdResultsForCount));
         // SHOWDOWN SYSTEM 2026-08-25: the showdown event now carries the
         // engine-decided reveal sequence and muck ruling per player —
         // { user_id, seat, reveal_order, mucked }. Record the order for the
@@ -26365,6 +26405,21 @@ function LiveTablePage({
                            per-board names AND a low winner, and suppressing
                            the label hid a real winner's credit line. */
                         lowWinnerLabel={winnerBandActive ? winnerInfo.lowWinnerLabel : ''}
+                        /* Dan 2026-10-24: the band names WHO won a contested
+                           single-board showdown. A fold-around win already
+                           reads "Wins The Pot" on the winner's seat, and a
+                           per-board label carries its own names. */
+                        winningPlayerLabel={
+                          winnerBandActive &&
+                          !winnerInfo.boardHandNames &&
+                          tableState.boardStage === 'showdown'
+                            ? showdownWinnerLine(
+                                winnerInfo.playerIds.map(
+                                  (id) => tableState.players.find((p) => p?.id === id)?.name || ''
+                                )
+                              )
+                            : undefined
+                        }
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}
@@ -27257,6 +27312,18 @@ function LiveTablePage({
                       ? winnerInfo.boardHandNamesByPlayer?.[ritRevealedRuns - 1]?.[player.id] ||
                         winnerInfo.handNames[player.id] ||
                         winnerInfo.handName
+                      : undefined
+                  }
+                  /* Dan 2026-10-24: every tabled hand names itself at its seat.
+                     Single board only: on a run-it-multiple hand or a double
+                     board the engine's name is board 1's, which would label a
+                     seat with a hand it did not make on the board in view. */
+                  shownHandName={
+                    player &&
+                    ritRunsThisHand <= 1 &&
+                    !ritResult &&
+                    tableState.communityCards2.length === 0
+                      ? showdownHandNames[player.id]
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 15): light

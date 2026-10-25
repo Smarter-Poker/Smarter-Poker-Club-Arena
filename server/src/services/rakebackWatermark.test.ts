@@ -287,32 +287,34 @@ function install(s: Scenario) {
         rec.table === 'accounting_cash_source_receipts' ||
         rec.table === 'accounting_cash_source_work'
       ) {
-        const id = rec.ops.find(([n]) => n === 'eq')?.[1][1];
+        // The settler reads every refusal of a call at once (`in`); one row
+        // per id, as PostgREST answers. A scenario override replaces the row
+        // of every id it is asked about (null: no row at all).
+        const ids = (rec.ops.find(([n]) => n === 'in')?.[1][1] ?? []) as string[];
         const receipts = [
           ...(scenario.current.receipts as Map<string, Record<string, unknown>>).values(),
         ];
-        const receipt = receipts.find((r) =>
-          rec.table.endsWith('_receipts') ? r.receipt_id === id : r.rake_record_id === id
-        );
-        const durable = receipt ? { ...receipt, id: receipt.receipt_id, result: receipt } : null;
-        const work = receipt
-          ? {
-              rake_record_id: receipt.rake_record_id,
-              receipt_id: receipt.receipt_id,
-              status: receipt.status,
-              attempts: receipt.attempt,
-            }
-          : null;
-        return {
-          data: rec.table.endsWith('_receipts')
-            ? 'sourceReceipt' in s
-              ? s.sourceReceipt
-              : durable
-            : 'sourceWork' in s
-              ? s.sourceWork
-              : work,
-          error: s.sourceReadError ?? null,
-        };
+        const rows = ids.flatMap((id) => {
+          const receipt = receipts.find((r) =>
+            rec.table.endsWith('_receipts') ? r.receipt_id === id : r.rake_record_id === id
+          );
+          if (rec.table.endsWith('_receipts')) {
+            if ('sourceReceipt' in s) return s.sourceReceipt == null ? [] : [s.sourceReceipt];
+            return receipt ? [{ ...receipt, id: receipt.receipt_id, result: receipt }] : [];
+          }
+          if ('sourceWork' in s) return s.sourceWork == null ? [] : [s.sourceWork];
+          return receipt
+            ? [
+                {
+                  rake_record_id: receipt.rake_record_id,
+                  receipt_id: receipt.receipt_id,
+                  status: receipt.status,
+                  attempts: receipt.attempt,
+                },
+              ]
+            : [];
+        });
+        return { data: s.sourceReadError ? null : rows, error: s.sourceReadError ?? null };
       }
       if (rec.table === 'accounting_period_recompute_requests') {
         if (s.periodQueueRead) return { data: s.periodQueueRead(), error: null };
@@ -841,13 +843,14 @@ describe('cash source receipts protect the durable cursor', () => {
     await Promise.all([running, stop]);
     expect(stopped).toBe(true);
     expect(settlerUpserts()).toHaveLength(1);
+    // The admitted page finishes and is acknowledged; since 2026-10-25 the
+    // drain does not open another page once stop() has fenced admission (it
+    // used to start one more retry and horizon read before noticing).
     expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_retry_cash_accounting_sources',
       'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_rakeback_recompute_periods',
-      'fn_retry_cash_accounting_sources',
-      'fn_rakeback_settler_read_horizon',
     ]);
     const drainedCalls = mockRpc.mock.calls.length;
     await settler.runSettlement();

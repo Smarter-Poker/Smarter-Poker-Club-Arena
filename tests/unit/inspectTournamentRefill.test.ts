@@ -108,10 +108,12 @@ it('finds worker refusals in the existing bounded stream and caps retained witne
   expect(capped.events).toHaveLength(128);
   expect(capped.eventsTruncated).toBe(true);
   const fixture = `
-import json,runpy,sys
+import json,os,runpy,sys,tempfile
 m=runpy.run_path(sys.argv[1]); raw=json.loads(sys.stdin.read())
-producer='import sys; sys.stdout.write('+repr(raw)+')'
-print(json.dumps(m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)))
+with tempfile.NamedTemporaryFile('w',suffix='.log',delete=False) as f: f.write(raw); path=f.name
+producer='import sys; sys.stdout.write(open('+repr(path)+').read())'
+try: print(json.dumps(m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)))
+finally: os.unlink(path)
 `;
   const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
     input: JSON.stringify(

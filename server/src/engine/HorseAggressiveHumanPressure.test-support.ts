@@ -336,6 +336,13 @@ export function playPressureArm(
           chosen.action !== 'raise'
         )
           done = c.performAction(spot.hero.seat, chosen.action as never);
+        // Count the policy's accepted action, never a replacement chosen by
+        // the harness. Otherwise an illegal four-bet can be tallied as a
+        // raise while a fallback call actually plays the rest of the hand.
+        if (!done && spot.hero.user_id !== AGGRO_HUMAN)
+          throw new Error(
+            `pressure harness: horse decision rejected on hand ${hand + 1}: ${chosen.action} ${chosen.amount ?? ''}`
+          );
         if (!done)
           done = c.performAction(
             spot.hero.seat,

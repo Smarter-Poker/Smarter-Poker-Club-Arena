@@ -82,3 +82,12 @@ maintenance is 04:00 America/Chicago, not hourly :55. No watcher, release
 timer, off-cycle reset, migration or financial write has been initiated.
 Source, new exact-head CI, merge, installation and final live proof remain
 separate acceptance states.
+
+Combined-source qualification: server compiler passed after merge 4fd06f1489.
+The added invalid-raise regression first failed because the harness silently
+substituted a call; the maintained harness now throws on any rejected horse
+decision before fallback. Its existing real-controller arms still complete
+and conserve chips. Focused final run passed all 162 tests in nine files
+(58.48 seconds), including V53, data ledger, maniac pressure, exploit
+neutrality, premium continuation, Lightning clocks, shared-worker wiring and
+the real full-brain worker. Exact-head normal hooks and hosted CI still remain.

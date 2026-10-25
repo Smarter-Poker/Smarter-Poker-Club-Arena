@@ -82,4 +82,16 @@ describe('the route transfer budget is the initial load', () => {
     expect(gate).toContain('firstIdleCallbackAt = performance.now()');
     expect(gate).not.toMatch(/resources\.reduce\(/);
   });
+
+  it('a change to the gate is exercised by the Production Build that runs it', async () => {
+    const { classifyChangedPaths } = await import('../scripts/ci/classify-ci-changes.mjs');
+    for (const file of [
+      'scripts/ci/route-performance.mjs',
+      'scripts/ci/initial-load-bytes.mjs',
+      'scripts/ci/paint-readiness.mjs',
+      'scripts/ci/e2e-port.mjs',
+    ]) {
+      expect(classifyChangedPaths([file]).src, file).toBe(true);
+    }
+  });
 });

@@ -2304,3 +2304,17 @@
   flex: 0 1 45%;
   min-width: 0;
 }
+
+/* Transaction History (Dan 2026-10-24): the lit word that replaced the
+   "Available · Selected" count in the Players heading, and the way back to
+   Players from the history in the Simple view. Same lit-word control as every
+   other button on the glass, at the heading meta's size. */
+.historyLink {
+  flex: 0 0 auto;
+  min-height: 44px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.page.simple .sectionHeading > .historyLink {
+  font-size: 13px;
+}

@@ -593,13 +593,27 @@ describe('the clock, the time bank and a horse', () => {
    */
   function pinHorseTempo(
     t: ReturnType<typeof buildHost>,
-    thinkTime: (decisionIndex: number) => number
+    thinkTime: (decisionIndex: number) => number,
+    /**
+     * Decisions that must be THOUGHT about, never folded. A horse that is
+     * already folding folds at once through the Lightning Fold door (Dan
+     * 2026-10-24, #7958), so a tank pinned on a decision the policy's cards
+     * happened to fold never ran its clock: the tank test failed on main about
+     * one run in three. Such a decision calls or checks instead.
+     */
+    considered: (decisionIndex: number) => boolean = () => false
   ): void {
     const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      const i = n++;
+      const decision = { ...r.decision, thinkTime: thinkTime(i) };
+      if (considered(i) && decision.action === 'fold') {
+        decision.action = (args[0] as any)?.gameState?.toCall > 0 ? 'call' : 'check';
+        decision.amount = undefined;
+      }
+      return { ...r, decision };
     });
   }
 
@@ -653,7 +667,11 @@ describe('the clock, the time bank and a horse', () => {
     const t = buildHost(formed, [100, 100], { horses });
     // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
     // every later one is a beat.
-    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    pinHorseTempo(
+      t,
+      (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000),
+      (i) => i === 0
+    );
     await t.host.start();
     await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');

@@ -1867,6 +1867,10 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install maintained Chromium verifier
         run: npx playwright install --with-deps chromium
+      - name: Wait for the exact engine to finish thaw before channel certification
+        env:
+          EXPECTED_ENGINE_SHA: ${{ github.event.client_payload.engine_sha }}
+        run: node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"
       - name: Provision isolated lifecycle staff account
         id: account
         env:

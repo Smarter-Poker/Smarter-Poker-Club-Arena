@@ -170,6 +170,21 @@ describe('post-publication verification belongs to its delivered component', () 
     expect(retained.with['if-no-files-found']).toBe('error');
   });
 
+  it('waits for exact-engine thaw before provisioning a channel lifecycle account', () => {
+    const steps = workflow.jobs['club-channel-lifecycle-e2e'].steps;
+    const waitAt = steps.findIndex((step: any) => step.run?.includes('await-engine-gameplay.mjs'));
+    const accountAt = steps.findIndex((step: any) => step.id === 'account');
+    expect(waitAt).toBeGreaterThan(-1);
+    expect(waitAt).toBeLessThan(accountAt);
+    expect(steps[waitAt].env.EXPECTED_ENGINE_SHA).toBe(
+      '${{ github.event.client_payload.engine_sha }}'
+    );
+    expect(steps[waitAt].run).toBe(
+      'node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"'
+    );
+    expect(steps[waitAt]['continue-on-error']).not.toBe(true);
+  });
+
   it('gives the client its own result without an engine or live-table prerequisite', () => {
     expect(client.needs).toBe('publication-gate');
     expect(client.if).toBe("needs.publication-gate.outputs.should_run == 'true'");

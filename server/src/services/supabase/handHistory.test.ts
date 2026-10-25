@@ -26,7 +26,8 @@ vi.mock('./client.js', () => ({
       throw new Error(`unexpected legacy table write: ${table}`);
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
-      if (fn === 'fn_horse_daily_rollup_contract') return { data: 1, error: null };
+      if (fn === 'ca_project_hand_stats_facts' && args.p_hand_id === null)
+        return { data: { horse_daily_rollups_contract: 1 }, error: null };
       if (fn === 'fn_ca_retain_hand_submission') {
         retentionCalls.push(args.p_request as Record<string, unknown>);
         const scripted = retentionReplies.shift();

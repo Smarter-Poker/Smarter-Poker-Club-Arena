@@ -36,6 +36,14 @@ BEGIN
     RAISE EXCEPTION 'ca_project_hand_stats_facts is engine/service only' USING ERRCODE='42501';
   END IF;
 
+  -- A NULL hand is a service-only capability read, never a projection.
+  -- Its marker is installed atomically with this owner body. The old owner
+  -- returns stats_facts_unavailable without a marker, retaining old writers.
+  IF p_hand_id IS NULL THEN
+    RETURN jsonb_build_object('ok',false,'reason','stats_facts_unavailable',
+      'hand_id',NULL,'horse_daily_rollups_contract',1);
+  END IF;
+
   SELECT c.post_commit_payload #> '{accepted_hand_facts,stats_facts}',
          c.table_id
     INTO v_stats, v_table
@@ -239,15 +247,7 @@ END
 $function$
 ;
 
--- Installed in the same transaction as the owner change. Older projectors
--- have no contract, so rolling engines retain the legacy writer explicitly.
 REVOKE ALL ON FUNCTION public.ca_project_hand_stats_facts(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ca_project_hand_stats_facts(uuid) TO service_role;
-
-CREATE FUNCTION public.fn_horse_daily_rollup_contract()
-RETURNS integer LANGUAGE sql STABLE SET search_path TO 'pg_catalog'
-AS $contract$ SELECT 1 $contract$;
-REVOKE ALL ON FUNCTION public.fn_horse_daily_rollup_contract() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_horse_daily_rollup_contract() TO service_role;
 
 COMMIT;

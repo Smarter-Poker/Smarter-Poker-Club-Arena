@@ -7,6 +7,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -90,9 +91,14 @@ def main():
             run((FIXTURE/'schema.sql').read_text())
             run((FIXTURE/'add.sql').read_text())
             run((FIXTURE/'projector-before.sql').read_text()+';')
+            lightning_source = (ROOT/'supabase/migrations/20261025000729_lightning_hands_reach_the_stats_facts_and_the_collusion_scan.sql').read_text()
+            validator = re.search(r'CREATE FUNCTION public\.fn_lightning_hand_stats_facts\(.*?AS \$function\$.*?\$function\$;',lightning_source,re.S)
+            if not validator: raise RuntimeError('maintained Lightning validator is missing')
+            run(validator.group(0))
             run('REVOKE ALL ON FUNCTION ca_project_hand_stats_facts(uuid) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION ca_project_hand_stats_facts(uuid) TO service_role;')
             run("INSERT INTO tables VALUES ('"+uid('table')+"','"+uid('club')+"');")
             check('exact production preimage',run("SELECT md5(pg_get_functiondef('ca_project_hand_stats_facts(uuid)'::regprocedure));")=='a1cb10fc7d70197179861c09c6caa91c')
+            check('old projector does not advertise the new count contract','horse_daily_rollups_contract' not in json.loads(run('SELECT ca_project_hand_stats_facts(NULL);')))
             accept('before',payload('before')); project('before')
             check('baseline leaves both daily counts outside accepted projection',counts()==[0,0,1])
             run('TRUNCATE ca_hand_facts,ca_hand_transfers,ca_hand_fact_projection_receipts,hand_atomic_commits;')
@@ -125,8 +131,8 @@ def main():
                 check(label+' leaves no count/receipt',counts()==[3,3,4])
             check('participant roles cannot execute projector',run("SELECT has_function_privilege('anon','ca_project_hand_stats_facts(uuid)','execute') OR has_function_privilege('authenticated','ca_project_hand_stats_facts(uuid)','execute');")=='f')
             check('service role retains projector',run("SELECT has_function_privilege('service_role','ca_project_hand_stats_facts(uuid)','execute');")=='t')
-            check('capability is installed with the projector',run('SELECT fn_horse_daily_rollup_contract();')=='1')
-            check('capability is service only',run("SELECT has_function_privilege('service_role','fn_horse_daily_rollup_contract()','execute') AND NOT has_function_privilege('anon','fn_horse_daily_rollup_contract()','execute') AND NOT has_function_privilege('authenticated','fn_horse_daily_rollup_contract()','execute');")=='t')
+            check('capability is installed with the projector',json.loads(run('SELECT ca_project_hand_stats_facts(NULL);'))['horse_daily_rollups_contract']==1)
+            check('capability cannot alter counts or receipts',counts()==[3,3,4])
             changed=payload('once'); changed['horse_rollups']['nets'][0]['net_bb']=9
             run('UPDATE hand_atomic_commits SET post_commit_payload='+literal(dict(accepted_hand_facts=dict(stats_facts=changed)))+" WHERE hand_id='"+uid('once')+"';")
             check('changed original source is refused','source_hash_conflict' in project('once',False))
@@ -137,6 +143,8 @@ def main():
             check('UTC day survives a different database session timezone',counts()==[4,4,5])
             lightning=payload('lightning')
             for arm in ['nets','play']:lightning['horse_rollups'][arm][0]['format']='lightning_2bb'
+            kept=json.loads(run("SELECT fn_lightning_hand_stats_facts("+literal({'_accepted_post_commit_facts':{'stats_facts':lightning}})+",'"+uid('lightning')+"','"+uid('table')+"','"+uid('club')+"');"))
+            check('actual Lightning validator retains the complete private paired-count payload',kept=={'stats_facts':lightning})
             run("INSERT INTO lightning_hand VALUES ('"+uid('lightning')+"','"+uid('table')+"');")
             accept('lightning',lightning);project('lightning');project('lightning')
             check('durable Lightning identity preserves its separate paired bucket',counts()==[5,5,6])

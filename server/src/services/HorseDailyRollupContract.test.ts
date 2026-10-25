@@ -10,19 +10,20 @@ beforeEach(() => {
 });
 
 it('admits the installed contract and coalesces concurrent first hands', async () => {
-  rpc.mockResolvedValue({ data: 1, error: null });
+  rpc.mockResolvedValue({ data: { horse_daily_rollups_contract: 1 }, error: null });
   const { horseDailyRollupContract } = await import('./HorseDailyRollupContract.js');
   expect(await Promise.all(Array.from({ length: 8 }, () => horseDailyRollupContract()))).toEqual(
     Array(8).fill(true)
   );
   expect(rpc).toHaveBeenCalledTimes(1);
-  expect(rpc).toHaveBeenCalledWith('fn_horse_daily_rollup_contract');
+  expect(rpc).toHaveBeenCalledWith('ca_project_hand_stats_facts', { p_hand_id: null });
 });
 
 it.each([
   { data: null, error: { message: 'function is absent' } },
-  { data: 2, error: null },
-  { data: '1', error: null },
+  { data: { horse_daily_rollups_contract: 2 }, error: null },
+  { data: { horse_daily_rollups_contract: '1' }, error: null },
+  { data: { ok: false, reason: 'stats_facts_unavailable', hand_id: null }, error: null },
 ])('retains the legacy writer for an unavailable or incompatible database', async (reply) => {
   rpc.mockResolvedValue(reply);
   const { horseDailyRollupContract } = await import('./HorseDailyRollupContract.js');

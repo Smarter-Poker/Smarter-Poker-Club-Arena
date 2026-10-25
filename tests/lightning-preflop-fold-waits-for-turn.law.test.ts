@@ -8,6 +8,7 @@ import {
   type PreActionSyncRefs,
 } from '../src/lib/preActionSync';
 import { lightningFoldOnTurn } from '../src/lightning/lightningActions';
+import { sliceStatement } from './helpers/sourceWindow';
 
 const HAND = '11111111-1111-4111-8111-111111111111';
 const NEXT_HAND = '22222222-2222-4222-8222-222222222222';
@@ -139,7 +140,9 @@ describe('Lightning preflop Fold waits for its own turn', () => {
       handler.indexOf('lightningFoldOnTurn(engineSnapshotRef.current, userId, kind)')
     ).toBeLessThan(handler.indexOf('await sendLightningFold('));
     expect(handler).toMatch(/if \(queued\) \{[\s\S]*?setPreAction\('fold'\);\s*return;/);
-    expect(page.slice(end, end + 400)).toContain("() => void handleLightningFold('fast_fold')");
+    expect(sliceStatement(page, 'lightningHotkeysRef.current =')).toContain(
+      "() => void handleLightningFold('fast_fold')"
+    );
     expect(page).toContain('if (next !== null) preActionFoldOnTurnHandRef.current = null;');
   });
 });

@@ -164,6 +164,8 @@ export function validatedHorsePolicySamplingKey(
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
+  /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
+  durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   type: 'DECIDE_FAST';
   requestId: number;
@@ -179,7 +181,8 @@ export interface DeepHorseDecisionRequest extends LiveHorseDecisionSnapshot {
 }
 
 export interface CompletedHandObservation extends HorseDecisionFence {
-  /** Complete initialized public-action profiles from the accepted hand path.
+  /** Validated public-action profiles from the accepted hand path, back-filled or not
+   * (HorseOpponentMemory.opponentProfileVersion).
    * Empty means unavailable; presence suppresses non-durable family pooling. */
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   /** UUID returned by the accepted hand transaction; absent on legacy replay. */
@@ -202,6 +205,9 @@ export interface CompletedHandObservation extends HorseDecisionFence {
     | undefined;
   bigBlind: number;
   showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null;
+  /** Every dealt player's net (chips out less chips in), for the winner read
+   *  (HorseWinnerRead). Absent on legacy callers and replay. */
+  results?: Array<{ user_id: string; net: number }>;
   scope?: ReadScope | null;
   /**
    * P14.2: the private accepted actor roster the settlement transaction built

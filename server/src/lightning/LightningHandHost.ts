@@ -146,6 +146,9 @@ import {
   type LightningObservationDeps,
 } from './LightningHorseObservation.js';
 import { recordLightningHorseResults } from './LightningHorseResults.js';
+import { buildLightningStatsFacts, type LightningFactsBuilder } from './LightningHandFacts.js';
+import { writeHandFacts } from '../services/supabase/handFacts.js';
+import { lightningVpipFloor } from './LightningHorseResults.js';
 import type { HorseReviewInput } from '../services/HorseHandReview.js';
 import {
   horseOpponentMemorySchema,
@@ -387,6 +390,7 @@ export interface LightningHandHostDeps {
     handId: string;
     bigBlind: number;
     players: Array<{ playerId: string; stackAfter: number }>;
+    horsePlayers?: Array<{ playerId: string }>;
   }): Promise<void> | void;
   now?: () => number;
   /** The live horse decision lane (injected for tests; the process lane otherwise). */
@@ -399,6 +403,8 @@ export interface LightningHandHostDeps {
   horseObservation?: Partial<Pick<LightningObservationDeps, 'schema' | 'readProfiles' | 'report'>>;
   /** Files the settled hand on the horse scoreboard (LightningHorseResults). Injected for tests. */
   recordHorseResults?: (input: HorseReviewInput) => Promise<void>;
+  /** Builds the hand's private stats facts (LightningHandFacts). Injected for tests. */
+  statsFacts?: LightningFactsBuilder;
   /** The jackpot payout doors (injected for tests; the physical ones otherwise). */
   jackpot?: Pick<LightningJackpotDeps, 'payMain' | 'payMini'>;
   /** How long the post-commit drain may keep trying while the lease is held. */
@@ -989,6 +995,7 @@ export class LightningHandHost {
     for (const [playerId, room] of this.rooms()) {
       this.deps.hub.publish(room, {
         ...base,
+        lightning_original_top_up: true,
         table_id: room,
         hand_id: this.handId,
         lightning: this.lightningBlock(playerId, state),
@@ -1069,6 +1076,7 @@ export class LightningHandHost {
         : null;
     return {
       table_id: room,
+      lightning_original_top_up: true,
       hand_id: null,
       lightning: {
         hand_id: null,
@@ -1467,6 +1475,7 @@ export class LightningHandHost {
     const contextAtTurn = playerActionContext(hc);
     const player = hc.getState().players.find((p) => p.seat === seat);
     if (!player) return;
+    // The turn reached a horse before its early fold: the brain decides now.
     this.clearTurn();
     // The physical turn settle: a just-dealt hand or street gets its beat first.
     const now = this.now();
@@ -2652,6 +2661,31 @@ export class LightningHandHost {
     };
   }
 
+  /** LightningHandFacts: the accepted-hand stats payload, keyed by this hand's id. */
+  private statsFactsFor(state: GameState, rake: number, handRow: Record<string, unknown>) {
+    const participants = [...this.participants.values()];
+    return buildLightningStatsFacts(
+      {
+        handId: this.handId,
+        hostTableId: this.hostTableId,
+        rules: (this.rules ?? {}) as Record<string, unknown>,
+        handNumber: this.handNumber,
+        playedAtIso: String(handRow.ended_at ?? new Date(this.now()).toISOString()),
+        buttonSeat: participants.find((p) => p.position === 'btn')?.seat ?? null,
+        rake,
+        board: this.boards[0] ?? [],
+        holeCards: this.holeCards,
+        players: state.players,
+        stacksBefore: new Map(participants.map((p) => [p.playerId, p.stackBefore])),
+        winners: this.winners,
+        actions: this.actions,
+        participants,
+      },
+      this.deps.statsFacts ?? writeHandFacts,
+      (err, where) => reportError(err, where)
+    );
+  }
+
   /** LightningHorseResults: the settled hand's exact horse nets, play and reviews. */
   private recordForHorseScoreboard(
     state: GameState,
@@ -2684,7 +2718,12 @@ export class LightningHandHost {
   }
 
   /** LightningHorseObservation: teach the live horse lane this committed hand. */
-  private observeForHorses(state: GameState, leaseGeneration: string, handHistoryId: string) {
+  private observeForHorses(
+    state: GameState,
+    leaseGeneration: string,
+    handHistoryId: string,
+    results?: LightningSettleResult[]
+  ) {
     const rules = this.rules!;
     const lane = this.deps.horseLane ?? getLiveHorseDecisionWorker;
     const custom = this.deps.horseObservation ?? {};
@@ -2699,6 +2738,7 @@ export class LightningHandHost {
         dealtCount: state.players.length,
         actions: this.actions,
         showdown: this.showdown,
+        ...(results ? { results } : {}),
       },
       {
         lane,
@@ -2717,6 +2757,11 @@ export class LightningHandHost {
     }
     const requestId = lightningRequestId(this.handId, 'settle');
     const handRow = this.handRow(state, rake, bbj);
+    // A LIGHTNING HAND IS A HAND IN THE STATS (2026-10-24): the physical
+    // hand's private per-hand facts, built once so every retry sends the same
+    // request. Without them the hand settles exactly as before.
+    const statsFacts = await this.statsFactsFor(state, rake, handRow);
+    if (statsFacts) handRow._accepted_post_commit_facts = { stats_facts: statsFacts };
     for (let attempt = 1; attempt <= SETTLE_ATTEMPTS; attempt++) {
       const lease = this.deps.leaseFor(this.hostTableId);
       if (!lease) {
@@ -2741,7 +2786,7 @@ export class LightningHandHost {
         // and before anyone is released, so the next hand any of these players
         // is matched into is read with this one already in it. Not awaited:
         // it can never hold or endanger the settled hand.
-        this.observeForHorses(state, lease.generation, out.value.handHistoryId);
+        this.observeForHorses(state, lease.generation, out.value.handHistoryId, results);
         // A LIGHTNING HAND IS ON THE HORSE SCOREBOARD (2026-10-24): the
         // physical path's recordHorseHandReviews, filed under lightning_<bb>bb.
         this.recordForHorseScoreboard(state, results, rake, bbj, out.value.handHistoryId);
@@ -2880,12 +2925,16 @@ export class LightningHandHost {
     const players = results
       .filter((r) => r.foldType !== 'fast' && r.foldType !== 'normal')
       .map((r) => ({ playerId: r.playerId, stackAfter: r.stackAfter }));
-    if (players.length === 0) return;
+    const horsePlayers = [...this.participants.values()]
+      .filter((p) => p.isHorse)
+      .map((p) => ({ playerId: p.playerId }));
+    if (players.length === 0 && horsePlayers.length === 0) return;
     try {
       await this.deps.onHandSettled({
         handId: this.handId,
         bigBlind: Number(this.rules.big_blind) || 0,
         players,
+        horsePlayers,
       });
     } catch (err) {
       this.logger.error(`[LightningHost:${this.instanceId}] settled boundary report failed`, err);

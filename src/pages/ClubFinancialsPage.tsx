@@ -82,7 +82,7 @@ import { formatDateShort as formatDate, compactChips } from '../utils/format';
 import { downloadCsv, toCsv } from '../utils/downloadCsv';
 import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
-import { titleCase } from '../utils/titleCase';
+import { titleCase, enumToTitleCase } from '../utils/titleCase';
 import { parseClubFinancialsPayload, type FinancialsPayload } from '../utils/clubFinancialsPayload';
 
 type Period = 'week' | 'month' | 'all';
@@ -718,9 +718,9 @@ export default function ClubFinancialsPage() {
           <ol className="cf-list">
             {data.by_table.map((t) => (
               <li key={t.table_id} className="cf-row">
-                <span className="cf-row__name sc-ink--silver">{titleCase(t.name)}</span>
+                <span className="cf-row__name sc-ink--silver">{enumToTitleCase(t.name)}</span>
                 <span className="cf-row__meta sc-ink--muted">
-                  {titleCase([t.variant, t.stakes].filter(Boolean).join(' '))} -{' '}
+                  {enumToTitleCase([t.variant, t.stakes].filter(Boolean).join(' '))} -{' '}
                   {count(t.raked_hands)} Raked Hands
                 </span>
                 <span className="cf-row__amount sc-ink--green">{chips(t.rake)}</span>
@@ -788,7 +788,7 @@ export default function ClubFinancialsPage() {
                 <span className="cf-row__name sc-ink--silver">
                   {formatPopupText(
                     tx.kind === 'cash_rake'
-                      ? `${chips(tx.rake_amount)} Raked From A ${chips(tx.pot_size)} Pot At ${tx.table_name}`
+                      ? `${chips(tx.rake_amount)} Raked From A ${chips(tx.pot_size)} Pot At ${enumToTitleCase(tx.table_name)}`
                       : `${chips(tx.rake_amount)} Tournament Fee`
                   )}
                 </span>

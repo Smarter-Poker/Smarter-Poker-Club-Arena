@@ -3569,7 +3569,15 @@ export class GameServer {
     // settled boundary; the database validates and moves every chip.
     autoRebuy: new LightningAutoRebuyExecutor(),
   });
-  private lightningOperatorEvents = new LightningOperatorEvents();
+  private lightningOperatorEvents = new LightningOperatorEvents(undefined, undefined, (receipt) => {
+    void this.getTableEngine(receipt.table_id)
+      ?.reflectLightningTopUp(receipt)
+      .catch((error) => reportError(error, 'LightningTopUp.reflect'));
+    tableStateHub.emitEvent(receipt.pool_session_id, {
+      type: 'lightning_top_up_completed',
+      ...receipt,
+    });
+  });
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),
     hosting: this.lightningHosting,

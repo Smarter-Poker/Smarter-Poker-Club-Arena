@@ -1,4 +1,7 @@
-import { createDecisionOpponentProfileReader } from '../../services/HorseOpponentMemory.js';
+import {
+  createDecisionOpponentProfilePacketReader,
+  type DecisionOpponentProfilePacket,
+} from '../../services/HorseOpponentMemory.js';
 import {
   horsePlanBatchBindingIsValid,
   horsePlanBatchBindingMatchesRequest,
@@ -95,7 +98,14 @@ export interface HorseDecisionJobOptions {
 
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
-  opponentProfiles?: ReturnType<typeof createDecisionOpponentProfileReader>;
+  opponentProfiles?: (
+    snapshot: LiveHorseDecisionSnapshot,
+    signal?: AbortSignal
+  ) => Promise<
+    | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
+    | DecisionOpponentProfilePacket
+    | undefined
+  >;
   /** This client's position among its decision-lane peers (LiveHorseDecisionWorkerPool
    * passes it); reaches the spawned worker so its journal writer opens its own
    * archive instead of sharing one with every other shard. Absent is shard 0,
@@ -504,7 +514,14 @@ export class LiveHorseDecisionWorkerClient {
   private static readonly DEFAULT_MAX_IN_FLIGHT = 32;
   private static readonly STATUS_INTERVAL_MS = 1_000;
   private readonly worker: WorkerLike;
-  private readonly opponentProfiles?: ReturnType<typeof createDecisionOpponentProfileReader>;
+  private readonly opponentProfiles?: (
+    snapshot: LiveHorseDecisionSnapshot,
+    signal?: AbortSignal
+  ) => Promise<
+    | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
+    | DecisionOpponentProfilePacket
+    | undefined
+  >;
   private readonly onFatal?: (error: Error) => void;
   private readonly jobTimeoutMs: number;
   private readonly observationDeadlineMs: number;
@@ -578,7 +595,7 @@ export class LiveHorseDecisionWorkerClient {
     this.onFatal = options.onFatal;
     this.opponentProfiles =
       options.opponentProfiles ??
-      (options.workerFactory ? undefined : createDecisionOpponentProfileReader());
+      (options.workerFactory ? undefined : createDecisionOpponentProfilePacketReader());
     // A lane start (re)admits the main scheduler's copy of the committed
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
@@ -730,10 +747,17 @@ export class LiveHorseDecisionWorkerClient {
           ? AbortSignal.any([signal, AbortSignal.timeout(Math.ceil(callerBudget))])
           : AbortSignal.timeout(Math.ceil(callerBudget))
         : signal;
-    const enqueue = (profiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[]) => {
+    const enqueue = (
+      receipt?:
+        | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
+        | DecisionOpponentProfilePacket
+    ) => {
+      const profiles = Array.isArray(receipt) ? receipt : receipt?.profiles;
+      const donorProfiles = Array.isArray(receipt) ? undefined : receipt?.donorProfiles;
       const request: FastHorseDecisionRequest = {
         ...captured,
         ...(profiles !== undefined ? { durableOpponentProfiles: profiles } : {}),
+        ...(donorProfiles !== undefined ? { durableOpponentDonorProfiles: donorProfiles } : {}),
         type: 'DECIDE_FAST',
         requestId: this.nextRequestId++,
       };

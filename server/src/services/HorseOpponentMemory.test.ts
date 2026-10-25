@@ -174,22 +174,19 @@ describe('process-wide memory admission', () => {
 });
 
 describe('bounded partial memory restoration', () => {
-  it('preserves known profiles while leaving cold actors explicitly uninitialized', async () => {
+  it('a profile awaiting its legacy back-fill is still evidence (2026-10-24)', async () => {
+    // Replaces 'leaving cold actors explicitly uninitialized': on 2026-10-24
+    // 5,965 profiles (730 with 240+ own hands, 24 human players) waited on a
+    // one-at-a-time back-fill while every read dropped them, so horses met
+    // those players with no read. Their counters are exact since the memory
+    // began; the back-fill only adds older, lower-weighted hands.
     const cold = '90000000-0000-4000-8000-000000000002';
+    const awaiting = { ...row(), user_id: cold, initialized: false, observed_hands: 300 };
     mocks.rpc.mockImplementation(() => ({
-      abortSignal: async () => ({
-        data: [row()],
-        error: null,
-      }),
+      abortSignal: async () => ({ data: [row(), awaiting], error: null }),
     }));
-    expect(await readHorseOpponentProfiles([uid, cold], 'plo5', 'cash', 'short')).toEqual([row()]);
-    mocks.rpc.mockImplementation(() => ({
-      abortSignal: async () => ({
-        data: [row(), { ...row(), user_id: cold, initialized: false }],
-        error: null,
-      }),
-    }));
-    expect(await readHorseOpponentProfiles([uid, cold], 'plo5', 'cash', 'short')).toEqual([row()]);
+    const out = await readHorseOpponentProfiles([uid, cold], 'plo5', 'cash', 'short');
+    expect(out).toEqual([row(), awaiting]);
   });
   it('does not launch a read for an already canceled caller', async () => {
     const controller = new AbortController();
@@ -210,7 +207,7 @@ describe('bounded partial memory restoration', () => {
 });
 
 describe('last validated memory snapshots', () => {
-  it('never regresses observed hands or crosses game context or caches uninitialized rows', () => {
+  it('never regresses observed hands or crosses game context; a back-fill supersedes', () => {
     const cache = createOpponentMemoryProfileCache();
     cache.remember([{ ...row(), observed_hands: 20 }]);
     cache.remember([{ ...row(), observed_hands: 10 }]);
@@ -218,7 +215,14 @@ describe('last validated memory snapshots', () => {
     expect(cache.read([uid], 'plo4', 'cash', 'short')).toEqual([]);
     const other = { ...row(), user_id: '90000000-0000-4000-8000-000000000098', initialized: false };
     cache.remember([other]);
-    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([]);
+    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([other]);
+    // The same hands, now back-filled, replace the awaiting version...
+    const filled = { ...other, initialized: true, counters: { ...other.counters, hands: 5 } };
+    cache.remember([filled]);
+    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([filled]);
+    // ...and an older awaiting snapshot never regresses it.
+    cache.remember([other]);
+    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([filled]);
   });
 });
 

@@ -10,16 +10,20 @@ const uuid = (x: unknown): x is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(x);
 
 /** A settled receipt is a reason to ask, never permission to bypass a live hand. */
-export async function readLightningTopUp(cluster: string, pool: string, user: string) {
+export async function readLightningTopUp(
+  cluster: string,
+  pool: string,
+  user: string,
+  allowPending = false
+) {
   const own = await supabase.rpc('fn_lightning_my_session', { p_cluster_id: cluster });
   if (own.error) throw own.error;
   const raw = Array.isArray(own.data) ? own.data[0] : own.data;
-  if (!raw || raw.in_hand !== false) return null;
+  if (!raw || typeof raw.in_hand !== 'boolean' || (raw.in_hand && !allowPending)) return null;
   const session = parseLightningMySession(raw);
   if (
     session.poolSessionId !== pool ||
     session.state !== 'active' ||
-    session.inHand ||
     !session.anchorTableId ||
     !session.occupancyId ||
     session.seatNumber === null ||
@@ -76,6 +80,7 @@ export function useLightningAutoTopUp({
   room,
   userId,
   enabled,
+  originalIntentReady = false,
   balance,
   event,
   add,
@@ -85,6 +90,7 @@ export function useLightningAutoTopUp({
   room: LightningPoolEntry | null;
   userId: string | null | undefined;
   enabled: boolean;
+  originalIntentReady?: boolean;
   balance: number | null;
   event: Record<string, unknown> | null;
   add: (
@@ -103,6 +109,7 @@ export function useLightningAutoTopUp({
   const state = useRef({
     key,
     enabled,
+    originalIntentReady,
     generation: 0,
     ignored: event,
     seen: new Set<string>(),
@@ -112,13 +119,18 @@ export function useLightningAutoTopUp({
     state.current = {
       key,
       enabled,
+      originalIntentReady,
       generation: state.current.generation + 1,
       ignored: event,
       seen: new Set(),
       busy: false,
     };
-  } else if (state.current.enabled !== enabled) {
+  } else if (
+    state.current.enabled !== enabled ||
+    state.current.originalIntentReady !== originalIntentReady
+  ) {
     state.current.enabled = enabled;
+    state.current.originalIntentReady = originalIntentReady;
     state.current.generation++;
     state.current.ignored = event;
   }
@@ -162,7 +174,7 @@ export function useLightningAutoTopUp({
       owner.enabled &&
       owner.generation === generation;
     void (async () => {
-      const target = await read(room.clusterId, room.poolSessionId, userId);
+      const target = await read(room.clusterId, room.poolSessionId, userId, originalIntentReady);
       if (!current() || !target) return;
       const available = latest.current.balance;
       if (available === null || !Number.isFinite(available) || available <= 0) return;
@@ -177,5 +189,14 @@ export function useLightningAutoTopUp({
       .finally(() => {
         owner.busy = false;
       });
-  }, [event, key, room?.poolSessionId, room?.clusterId, userId, enabled, read]);
+  }, [
+    event,
+    key,
+    room?.poolSessionId,
+    room?.clusterId,
+    userId,
+    enabled,
+    originalIntentReady,
+    read,
+  ]);
 }

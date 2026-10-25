@@ -88,7 +88,9 @@ export async function verifyLobbyScrollClearance(page, width, onProof) {
     window.attach();
     window.scrollTo(0, 0);
   });
-  await target.click({ timeout: 1500 });
+  // Use the existing 5s action budget. WebKit native touch dispatch exceeded
+  // the old 1.5s override after a successful scroll/hitbox check on CI.
+  await target.click();
   for (const alignment of ['start', 'end', 'center']) {
     await target.evaluate((el, block) => el.scrollIntoView({ block }), alignment);
     const proof = await target.evaluate((el) => {
@@ -109,12 +111,12 @@ export async function verifyLobbyScrollClearance(page, width, onProof) {
     assert.ok(proof.top >= 0, JSON.stringify(proof));
     assert.ok(proof.bottom <= proof.navTop, JSON.stringify(proof));
     assert.equal(proof.hit, true, JSON.stringify(proof));
-    await target.click({ timeout: 1500 });
+    await target.click();
   }
   assert.deepEqual(await page.evaluate(() => window.clicked), [20, 20, 20, 20]);
   const last = page.getByRole('button', { name: /^Details / }).last();
   await last.evaluate((el) => el.scrollIntoView({ block: 'end' }));
-  await last.click({ timeout: 1500 });
+  await last.click();
   assert.equal(
     await last.evaluate(
       (el) =>

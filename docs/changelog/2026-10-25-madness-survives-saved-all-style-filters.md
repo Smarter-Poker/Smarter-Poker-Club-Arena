@@ -8,6 +8,8 @@ Regression coverage exercises the old names, actual row filtering, narrow select
 
 This is a client compatibility repair with no new engine dependency. Required checks, protected merge, the existing static publisher, both public build-info endpoints and affected live behavior remain necessary delivery evidence.
 
-# Release-blocking Health route transfer
+## Release-blocking Health route transfer
 
 The protected build exposed a separate connected release blocker: the public Health route transferred 3.174MB against the unchanged 3MB budget. Its boot started speculative member-page imports, making measured transfer timing-dependent. Skip that idle preload on the Health URL, without consuming the session warm flag, so later member navigation still warms normally. A regression failed before the fix and passed afterward. Route performance qualification remains required; the budget is unchanged.
+
+Protected main independently corrected the performance gate to separate initial-load bytes from later idle work. Preserve that correction and its initial-load, late and total reporting. The Health change additionally removes unnecessary member-screen downloads from the public status page. Before integrating the gate correction, the unchanged all-resource check passed at every viewport and measured desktop Health at 1195kB.

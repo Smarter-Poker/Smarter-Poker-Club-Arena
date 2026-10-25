@@ -168,6 +168,63 @@ describe('Omaha pressure sampling retains its declared value mass', () => {
           gs,
           'balanced',
           {},
+          {
+            mind: true,
+            telemetry: false,
+          }
+        ).action
+      ).toBe('fold');
+      // Identical seeded decisions outside the incident domain protect the
+      // unchanged turn, multi-board, split-pot, strong-hand and lower-pressure behavior.
+      const controls: HorseGameStateV2[] = [
+        { ...gs, stage: 'turn', communityCards: board.slice(0, 4) },
+        { ...gs, communityCards2: cards('Ac Kd Qs Jh 8c') },
+        { ...gs, gameVariant: 'plo8' },
+        { ...gs, gameMode: 'tournament', format: 'mtt' },
+        {
+          ...gs,
+          players: players.map((p) =>
+            p.seat === hero.seat
+              ? { ...p, cards: cards(fixture.review === 2373791 ? '5s 6h Kc Qh' : '6h 8c Ac Kd') }
+              : p
+          ),
+        },
+        { ...gs, actionHistory: gs.actionHistory?.filter((a) => a.stage === 'river') },
+      ];
+      for (const control of controls) {
+        for (let seed = 1; seed <= 12; seed++) {
+          const decide = (enabled: boolean) => {
+            HorseMind.reset();
+            seedFastRandom(seed * 977);
+            return HorseLogic.decide(
+              control.players.find((p) => p.seat === hero.seat)!,
+              control,
+              'balanced',
+              {},
+              {
+                mind: true,
+                telemetry: false,
+                decisionTimeMs: Date.UTC(2026, 9, 24),
+                v56OmahaPressureRange: enabled,
+              }
+            );
+          };
+          const off = decide(false);
+          const on = decide(true);
+          expect({ action: on.action, amount: on.amount }).toEqual({
+            action: off.action,
+            amount: off.amount,
+          });
+        }
+      }
+      HorseMind.reset();
+      seedFastRandom(977);
+      expect(
+        HorseLogic.decide(
+          hero,
+          gs,
+          'balanced',
+          {},
           { mind: true, telemetry: false, v56OmahaPressureRange: false }
         ).action
       ).not.toBe('fold');

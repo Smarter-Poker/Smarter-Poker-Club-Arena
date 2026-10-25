@@ -32,6 +32,9 @@ let recordedBy: (
   migration: { version: string; name: string }
 ) => boolean;
 let siblingMigrationFiles: (repos?: string[], token?: string) => Promise<string[]>;
+type Applied = { version: string; name: string };
+let recordedUnderAnotherVersion: (migration: Applied, files: string[]) => string[];
+let differentVersionHint: (migration: Applied, file: string) => string;
 
 beforeAll(async () => {
   const href = pathToFileURL(
@@ -41,6 +44,8 @@ beforeAll(async () => {
   indexFrom = mod.indexFrom;
   recordedBy = mod.recordedBy;
   siblingMigrationFiles = mod.siblingMigrationFiles;
+  recordedUnderAnotherVersion = mod.recordedUnderAnotherVersion;
+  differentVersionHint = mod.differentVersionHint;
 });
 
 describe('the shared migration ledger is never graded from one repository', () => {
@@ -116,5 +121,86 @@ describe('a file records a migration however the stamp is written', () => {
     const idx = indexFrom(['README.md', '.template.sql']);
     expect(idx.names.has('readme')).toBe(false);
     expect(recordedBy(idx, { version: '1', name: 'readme' })).toBe(false);
+  });
+});
+
+describe('a migration recorded under another version is named, not exported again', () => {
+  // The Supabase MCP apply_migration stamps the apply time as the version:
+  // 20261024195842_cashier_transaction_history_scope.sql was recorded as
+  // 20261024203917 cashier_transaction_history_scope.
+  const cashier = { version: '20261024203917', name: 'cashier_transaction_history_scope' };
+
+  it('finds the file whose name part equals the applied name under a different version', () => {
+    expect(
+      recordedUnderAnotherVersion(cashier, [
+        '20261024195842_cashier_transaction_history_scope.sql',
+        '20261024195843_cashier_transaction_history_scope_v2.sql',
+        '20261024195844_unrelated.sql',
+      ])
+    ).toEqual(['20261024195842_cashier_transaction_history_scope.sql']);
+  });
+
+  it('finds the file for a long name the history stored truncated', () => {
+    const truncated = {
+      version: '20261023182203',
+      name: 'the_horse_roster_sizes_itself_to_the_floor_and_keeps_its_hor',
+    };
+    expect(
+      recordedUnderAnotherVersion(truncated, [
+        '20261023180000_the_horse_roster_sizes_itself_to_the_floor_and_keeps_its_horses.sql',
+      ])
+    ).toEqual([
+      '20261023180000_the_horse_roster_sizes_itself_to_the_floor_and_keeps_its_horses.sql',
+    ]);
+  });
+
+  it('does not treat a short name as a truncation of a longer one', () => {
+    expect(
+      recordedUnderAnotherVersion({ version: '20261024203917', name: 'cashier' }, [
+        '20261024195842_cashier_transaction_history_scope.sql',
+      ])
+    ).toEqual([]);
+  });
+
+  it('never returns a file that already carries the applied version, or a name it does not match', () => {
+    expect(
+      recordedUnderAnotherVersion(cashier, [
+        '20261024203917_cashier_transaction_history_scope.sql',
+        '20261024195842_something_else.sql',
+        'README.md',
+      ])
+    ).toEqual([]);
+    expect(
+      recordedUnderAnotherVersion({ version: '20261024203917', name: '' }, ['20261024195842_x.sql'])
+    ).toEqual([]);
+  });
+
+  it('accepts a path and an applied name carrying its own stamp', () => {
+    expect(
+      recordedUnderAnotherVersion(
+        { version: '20261024203917', name: '20261024195842_cashier_transaction_history_scope' },
+        ['supabase/migrations/20261024195842_cashier_transaction_history_scope.sql']
+      )
+    ).toEqual(['20261024195842_cashier_transaction_history_scope.sql']);
+  });
+
+  it('states the cause and both fixes in one line', () => {
+    expect(
+      differentVersionHint(cashier, '20261024195842_cashier_transaction_history_scope.sql')
+    ).toBe(
+      'RECORDED UNDER A DIFFERENT VERSION: applied 20261024203917 cashier_transaction_history_scope; ' +
+        'file 20261024195842_cashier_transaction_history_scope.sql - rename the file to ' +
+        '20261024203917_cashier_transaction_history_scope.sql (the database is the truth) ' +
+        'or install through Apply Merged Migration'
+    );
+  });
+
+  it('the report keeps counting it as a gap: --fail still decides on overdue, unchanged', () => {
+    const src = readFileSync(
+      resolve(__dirname, '..', 'scripts/ci/check-applied-migrations-are-recorded.mjs'),
+      'utf8'
+    );
+    expect(src).toContain('if (overdue.length > 0 && FAIL_ON_GAP) process.exit(1);');
+    expect(src).toContain('const missing = applied.filter((m) => !recordedBy(index, m, aliases));');
   });
 });

@@ -300,6 +300,7 @@ export type BusEventType =
   | 'CLUB_SETTINGS_UPDATED'
   | 'TICKER_SETTINGS_CHANGED'
   | 'GAME_MANAGEMENT_ACCESS_CHANGED'
+  | 'LIGHTNING_ROOM_OPENED'
   // Phase 4 deep-sweep: Backported overlay + theme events
   // (MYSTERY_BOUNTY_REVEALED removed 2026-08-26: zero subscribers ever; the
   // celebration listens to the server's t-break channel directly.)
@@ -1147,6 +1148,15 @@ export interface BusPayloadMap {
     clubId?: string;
     userId?: string;
   };
+  /**
+   * The database opened a Lightning pool session for this player (a seated
+   * player's game converted, or they entered the pool). Sent by the transaction
+   * that opened it on the owner-only `profile-account:<user>` topic and relayed
+   * by ProfileAccountSync. No clusterId means the carrier rejoined and a signal
+   * may have been missed. Either way it only says "read again": the pool
+   * session itself is read from fn_lightning_my_session.
+   */
+  LIGHTNING_ROOM_OPENED: { userId: string; clusterId?: string };
   // Phase 4 deep-sweep: overlay + theme payloads
   UI_THEME_CHANGED: {
     key: string;

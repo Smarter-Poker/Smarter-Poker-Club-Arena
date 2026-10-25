@@ -97,6 +97,30 @@ export const HAND_COMPLETION = {
   SHOWDOWN_READ_BASE_MS: 1400,
   /** Each additional shown hand needs its own beat to read. */
   SHOWDOWN_READ_PER_EXTRA_HAND_MS: 350,
+  /**
+   * ── AN ALL-IN SHOWDOWN STAYS ON THE FELT TWO SECONDS LONGER (Dan 2026-10-24) ──
+   *
+   * Dan, verbatim: "WHEN PLAYERS ARE ALL IN, ON THE RIVER, KEEP THE CARDS
+   * SHOWN FOR 2 MORE SECONDS, AND PROPERLY DISPLAY AND ANNOUCE THE WINNING
+   * HANDS BETTER..."
+   *
+   * An all-in is the hand everybody at the table is watching, and it is the
+   * one the 2026-09-07 halving hurt most: the river lands, the winner is named
+   * and the board was gone about two seconds later. This beat is added to the
+   * hold AFTER the winner is announced, so it is two more seconds of every
+   * tabled hand face up, the winning five lit and the winner's name on the
+   * band. It is not part of SHOWDOWN_READ_MAX_MS: a capped multiway read
+   * still gets its full two seconds on top.
+   *
+   * "All-in showdown" means two or more hands reached showdown and at least
+   * one of them belongs to an all-in player - the run-out after an all-in on
+   * an earlier street, and an all-in called on the river itself. The engine
+   * (ServerTableEngineHandEvents, SHOWDOWN) and the client (TablePage,
+   * SHOWDOWN) each decide it from the same fact, and both pass it here, so
+   * the two holds stay equal. Horses are players (CLAUDE.md 10.5): the beat
+   * reads no horse marker and is the same for every table.
+   */
+  ALL_IN_SHOWDOWN_EXTRA_MS: 2000,
   /** A big multiway showdown must still not stall the table forever. */
   SHOWDOWN_READ_MAX_MS: 2200,
   /**
@@ -408,6 +432,14 @@ export interface HandCompletionOpts {
    * 2 x stagger LONGER than a single-winner hand. Default 1.
    */
   potAwardGroups?: number;
+  /**
+   * Two or more hands reached showdown and at least one belongs to an
+   * all-in player. Adds ALL_IN_SHOWDOWN_EXTRA_MS after the winner is
+   * announced (Dan 2026-10-24). Ignored when the hand did not go to
+   * showdown, and for a Bad Beat Jackpot, whose celebration already holds
+   * the table longer.
+   */
+  allInShowdown?: boolean;
 }
 
 /**
@@ -441,6 +473,10 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
 
   if (!opts.wentToShowdown) return push;
 
+  // Dan 2026-10-24: an all-in showdown keeps the tabled hands, the lit
+  // winning five and the winner's name up for two more seconds.
+  const allInTail = opts.allInShowdown ? H.ALL_IN_SHOWDOWN_EXTRA_MS : 0;
+
   const extra = Math.max(0, (opts.showdownHands ?? 2) - 2);
   const read = Math.min(
     H.SHOWDOWN_READ_MAX_MS,
@@ -470,10 +506,10 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
     // RUN IT 3X recording (2026-08-26): the winner phase replays run by run
     // (ribbon → ship → settle, one RIT_RESULT_RUN_MS window each), which IS
     // the showdown read for a multi-board hand — `read` is not added on top.
-    return t.doneAt + push;
+    return t.doneAt + push + allInTail;
   }
 
-  return read + push;
+  return read + push + allInTail;
 }
 
 /**

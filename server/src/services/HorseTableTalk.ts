@@ -54,7 +54,7 @@
  *   12 hands between a horse's lines at one table
  *   4 hands between any two lines at one table
  *   a phrase a horse used within 24 h, or anyone used at this table within
- *   2 h, is not said again
+ *   24 h, is never chosen (chooseLine skips it) and never claimed
  *
  * HAND NUMBERS ARE GLOBAL (ServerTableEngineBase.handCount, 2026-08-18): they
  * come from one sequence across every table, so a difference of hand numbers
@@ -114,10 +114,27 @@ export const HORSE_LINES_PER_HOUR = 6;
 export const HORSE_MIN_HANDS_BETWEEN_LINES = 5;
 /** A table hears at most one line per this many hands. */
 export const TABLE_MIN_HANDS_BETWEEN_LINES = 2;
+/**
+ * Dan 2026-10-24: "HORSES CAN NEVER EVER EVER BE REPEATING THE SAME LINES ...
+ * INSIDE OF CHAT". Two horses typed the same big-pot line 23 minutes apart at
+ * one table, past the old 20 minute table window, because that cell held one
+ * line. A table's chat is a scroll a player reads for the whole session, so
+ * the window is a day, and the chooser (not just the claim) honours it: a
+ * horse picks a phrase nobody at this table has said, or says nothing.
+ */
 /** A horse does not repeat a phrase inside this window. */
-export const PHRASE_HORSE_WINDOW_MS = 90 * 60_000;
+export const PHRASE_HORSE_WINDOW_MS = 24 * 60 * 60_000;
 /** A table does not hear the same phrase twice inside this window. */
-export const PHRASE_TABLE_WINDOW_MS = 20 * 60_000;
+export const PHRASE_TABLE_WINDOW_MS = 24 * 60 * 60_000;
+/**
+ * The most ledger rows read for one table's day. TABLE_MIN_HANDS_BETWEEN_LINES
+ * caps a table near 50 lines an hour on the fastest deal, so a day fits; a
+ * read that fills the cap could be missing older phrases and is treated as
+ * "could not tell" (silence), never as "nothing was said".
+ */
+export const TABLE_HISTORY_LIMIT = 2_000;
+/** The most ledger rows read for one horse's day (HORSE_LINES_PER_HOUR x 24 fits). */
+export const HORSE_HISTORY_LIMIT = 400;
 
 /**
  * How often a qualifying horse actually speaks, in percent. A person does not
@@ -568,25 +585,38 @@ export interface ChosenLine {
 
 /**
  * The line for this (event, voice, horse, hand): the hash picks the start,
- * and the first template from there that the facts can fill is the line. No
- * randomness; the same inputs give the same line.
+ * and the first template from there that the facts can fill, and that is not
+ * in `heard`, is the line. No randomness; the same inputs give the same line.
+ *
+ * `heard` holds the phrase identities (normalizePhrase) this table and this
+ * horse have already said inside their windows. Dan 2026-10-24: "HORSES CAN
+ * NEVER EVER EVER BE REPEATING THE SAME LINES". A heard phrase is skipped, not
+ * claimed and refused, so the horse moves on to a fresh line instead of
+ * falling silent; when the horse's own share is spent it may use the rest of
+ * its voice's pool; when the whole voice is spent it says nothing.
  */
 export function chooseLine(
   event: TalkEvent,
   voice: TalkVoice,
   horseId: string,
   handNumber: number,
-  facts: TalkFacts
+  facts: TalkFacts,
+  heard: ReadonlySet<string> = new Set()
 ): ChosenLine | null {
-  // Dan 2026-10-22: every horse says different things. A horse draws only
+  // Dan 2026-10-22: every horse says different things. A horse draws first
   // from its own share of the pool (horseVoiceStyle.personalPool).
-  const pool = personalPool(horseId, LINES[event][voice].lines);
-  if (pool.length === 0) return null;
-  const start = lineIndexFor(horseId, handNumber, event, pool.length);
-  for (let k = 0; k < pool.length; k++) {
-    const template = pool[(start + k) % pool.length];
-    const line = fillLine(template, facts);
-    if (line !== null) return { template, line };
+  const all = LINES[event][voice].lines;
+  const fresh = (t: string): boolean => !heard.has(normalizePhrase(t));
+  const mine = personalPool(horseId, all).filter(fresh);
+  const rest = all.filter((t) => fresh(t) && !mine.includes(t));
+  for (const pool of [mine, rest]) {
+    if (pool.length === 0) continue;
+    const start = lineIndexFor(horseId, handNumber, event, pool.length);
+    for (let k = 0; k < pool.length; k++) {
+      const template = pool[(start + k) % pool.length];
+      const line = fillLine(template, facts);
+      if (line !== null) return { template, line };
+    }
   }
   return null;
 }
@@ -630,13 +660,7 @@ const EMOJI = new RegExp(
 );
 
 export type SanitizeRefusal =
-  | 'empty'
-  | 'too_long'
-  | 'dash'
-  | 'emoji'
-  | 'at_sign'
-  | 'placeholder'
-  | 'names_a_player';
+  'empty' | 'too_long' | 'dash' | 'emoji' | 'at_sign' | 'placeholder' | 'names_a_player';
 
 export type SanitizeVerdict = { ok: true; line: string } | { ok: false; reason: SanitizeRefusal };
 
@@ -729,17 +753,34 @@ export function _setVoiceStylingForTests(on: boolean): void {
 
 /**
  * The identity of a phrase for the reuse rules: the TEMPLATE, lowercased,
- * punctuation and placeholder braces dropped, whitespace collapsed, digit runs
- * folded to `n`. "nice pot, {potBB} bb, gg" and "nice pot, 52 bb, gg" are the
- * same phrase; a horse that said it this morning does not say it tonight.
+ * apostrophes and punctuation and placeholder braces dropped, whitespace
+ * collapsed, digit runs folded to `n`, and the chat shorthand the voice styler
+ * swaps both ways (horseVoiceStyle TO_SHORT / TO_LONG) spelled out. "nice pot,
+ * {potBB} bb, gg" and "nice pot, 52 bb, gg" are the same phrase, and so are
+ * "nh" and "nice hand": a player reads them as the same line. Idempotent, so a
+ * ledger row written under an older identity is folded the same way on read.
  */
+const SHORTHAND_FOLD: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bnh\b/g, 'nice hand'],
+  [/\bgl\b/g, 'good luck'],
+  [/\bwp\b/g, 'well played'],
+  [/\bty\b/g, 'thank you'],
+  [/\bthx\b/g, 'thanks'],
+  [/\bu\b/g, 'you'],
+  [/\bur\b/g, 'your'],
+  [/\bcnt\b/g, 'cant'],
+];
+
 export function normalizePhrase(line: string): string {
-  return line
+  let out = line
     .toLowerCase()
+    .replace(/['\u2019]/g, '')
     .replace(/\d+/g, 'n')
     .replace(/[^a-z\s]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  for (const [re, to] of SHORTHAND_FOLD) out = out.replace(re, to);
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -920,7 +961,7 @@ export type ClaimRefusal =
   | 'horse_too_soon'
   | 'table_too_soon'
   | 'phrase_horse_24h'
-  | 'phrase_table_2h'
+  | 'phrase_table_24h'
   | 'silenced'
   | 'hand_taken'
   | 'unreadable'
@@ -938,7 +979,7 @@ export interface ClaimRequest {
   now: number;
 }
 
-interface LedgerRow {
+export interface LedgerRow {
   table_id?: string;
   horse_id?: string;
   hand_number: number | string;
@@ -949,32 +990,41 @@ interface LedgerRow {
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 const ms = (iso: string): number => Date.parse(iso);
 
-/**
- * The owner's limits, as reads before the insert, then the insert. A unique
- * conflict on (table_id, hand_number) is silence; nothing here retries. An
- * unreadable ledger is a "no", named.
- */
-export async function claimLine(req: ClaimRequest, mem?: TableMemory): Promise<ClaimVerdict> {
-  const { tableId, handNumber, horseId, now } = req;
-
-  // Fast path: this process's own recent claims, no read.
+/** Refusals this process can give from memory alone, before any read. */
+function fastRefusal(horseId: string, now: number, mem?: TableMemory): ClaimRefusal | null {
   if (mem) {
     if (
       mem.lastLineHandsSeen !== null &&
       mem.handsSeen - mem.lastLineHandsSeen < TABLE_MIN_HANDS_BETWEEN_LINES
     ) {
-      return { ok: false, reason: 'table_too_soon' };
+      return 'table_too_soon';
     }
     const horseLast = mem.lastLineByHorse.get(horseId);
     if (horseLast !== undefined && mem.handsSeen - horseLast < HORSE_MIN_HANDS_BETWEEN_LINES) {
-      return { ok: false, reason: 'horse_too_soon' };
+      return 'horse_too_soon';
     }
   }
-  if (recentClaims(horseId, now).length >= HORSE_LINES_PER_HOUR) {
-    return { ok: false, reason: 'hourly_cap' };
-  }
+  if (recentClaims(horseId, now).length >= HORSE_LINES_PER_HOUR) return 'hourly_cap';
+  return null;
+}
 
-  // The ledger: this horse's last day, and this table's newest lines.
+/** What the ledger says this horse and this table have said inside their windows. */
+export interface TalkHistory {
+  horseRows: LedgerRow[];
+  tableRows: LedgerRow[];
+}
+
+/**
+ * The ledger: this horse's day, and this table's day, newest first. A failed
+ * read, or a read that came back full (rows past the cap could hold a phrase
+ * this table heard), is null: "could not tell", which is silence, never "no
+ * phrase was said" (CLAUDE.md 10.86).
+ */
+export async function readTalkHistory(
+  tableId: string,
+  horseId: string,
+  now: number
+): Promise<TalkHistory | null> {
   const [byHorse, byTable] = await Promise.all([
     supabase
       .from('horse_table_talk_ledger')
@@ -982,13 +1032,14 @@ export async function claimLine(req: ClaimRequest, mem?: TableMemory): Promise<C
       .eq('horse_id', horseId)
       .gte('said_at', new Date(now - PHRASE_HORSE_WINDOW_MS).toISOString())
       .order('said_at', { ascending: false })
-      .limit(64),
+      .limit(HORSE_HISTORY_LIMIT),
     supabase
       .from('horse_table_talk_ledger')
       .select('horse_id, hand_number, phrase_norm, said_at')
       .eq('table_id', tableId)
+      .gte('said_at', new Date(now - PHRASE_TABLE_WINDOW_MS).toISOString())
       .order('said_at', { ascending: false })
-      .limit(32),
+      .limit(TABLE_HISTORY_LIMIT),
   ]);
   if (byHorse.error || byTable.error) {
     reportError(
@@ -996,23 +1047,75 @@ export async function claimLine(req: ClaimRequest, mem?: TableMemory): Promise<C
       'HorseTableTalk.ledger_read',
       { tableId, horseId }
     );
-    return { ok: false, reason: 'unreadable' };
+    return null;
   }
   const horseRows = (byHorse.data ?? []) as LedgerRow[];
   const tableRows = (byTable.data ?? []) as LedgerRow[];
+  if (horseRows.length >= HORSE_HISTORY_LIMIT || tableRows.length >= TABLE_HISTORY_LIMIT) {
+    reportError(new Error('table talk history read hit its cap'), 'HorseTableTalk.ledger_full', {
+      tableId,
+      horseId,
+    });
+    return null;
+  }
+  return { horseRows, tableRows };
+}
+
+/**
+ * Every phrase this table heard and this horse said inside their windows, as
+ * phrase identities (re-folded, so rows written under an older identity count).
+ */
+export function heardPhrases(history: TalkHistory, now: number): Set<string> {
+  const heard = new Set<string>();
+  for (const r of history.horseRows) {
+    if (now - ms(r.said_at) < PHRASE_HORSE_WINDOW_MS) heard.add(normalizePhrase(r.phrase_norm));
+  }
+  for (const r of history.tableRows) {
+    if (now - ms(r.said_at) < PHRASE_TABLE_WINDOW_MS) heard.add(normalizePhrase(r.phrase_norm));
+  }
+  return heard;
+}
+
+/**
+ * The owner's limits, as reads before the insert, then the insert. A unique
+ * conflict on (table_id, hand_number) is silence; nothing here retries. An
+ * unreadable ledger is a "no", named. `history` is the read say() already
+ * made to choose the line; without it the claim reads for itself.
+ */
+export async function claimLine(
+  req: ClaimRequest,
+  mem?: TableMemory,
+  history?: TalkHistory
+): Promise<ClaimVerdict> {
+  const { tableId, handNumber, horseId, now } = req;
+
+  // Fast path: this process's own recent claims, no read.
+  const fast = fastRefusal(horseId, now, mem);
+  if (fast) return { ok: false, reason: fast };
+
+  const read = history ?? (await readTalkHistory(tableId, horseId, now));
+  if (!read) return { ok: false, reason: 'unreadable' };
+  const { horseRows, tableRows } = read;
+  const phrase = normalizePhrase(req.phraseNorm);
 
   if (horseRows.filter((r) => now - ms(r.said_at) < HOUR_MS).length >= HORSE_LINES_PER_HOUR) {
     return { ok: false, reason: 'hourly_cap' };
   }
-  if (horseRows.some((r) => r.phrase_norm === req.phraseNorm)) {
+  if (
+    horseRows.some(
+      (r) =>
+        normalizePhrase(r.phrase_norm) === phrase && now - ms(r.said_at) < PHRASE_HORSE_WINDOW_MS
+    )
+  ) {
     return { ok: false, reason: 'phrase_horse_24h' };
   }
   if (
     tableRows.some(
-      (r) => r.phrase_norm === req.phraseNorm && now - ms(r.said_at) < PHRASE_TABLE_WINDOW_MS
+      (r) =>
+        normalizePhrase(r.phrase_norm) === phrase && now - ms(r.said_at) < PHRASE_TABLE_WINDOW_MS
     )
   ) {
-    return { ok: false, reason: 'phrase_table_2h' };
+    return { ok: false, reason: 'phrase_table_24h' };
   }
 
   // Hands between lines, counted at THIS table (hand numbers are global).
@@ -1125,6 +1228,7 @@ export type TalkOutcome =
   | 'spoken'
   | 'lost_words'
   | 'no_line'
+  | 'no_fresh_line'
   | 'unsafe_line'
   | ClaimRefusal
   | TableRefusal
@@ -1151,8 +1255,21 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
     return 'no_event';
   }
   const voice = voiceFor(req.speaker.horseProfile, req.speaker.userId);
-  const chosen = chooseLine(req.event, voice, req.speaker.userId, req.handNumber, req.facts);
-  if (!chosen) return 'no_line';
+  const horseId = req.speaker.userId;
+  // Cheap refusals first, so a horse that may not speak costs no read.
+  const fast = fastRefusal(horseId, req.now, req.mem);
+  if (fast) return fast;
+  // What this table and this horse have already said: the chooser skips it.
+  const history = await readTalkHistory(req.table.tableId, horseId, req.now);
+  if (!history) return 'unreadable';
+  const heard = heardPhrases(history, req.now);
+  const chosen = chooseLine(req.event, voice, horseId, req.handNumber, req.facts, heard);
+  if (!chosen) {
+    // Every line of the voice is spent at this table today: silence, never a repeat.
+    return chooseLine(req.event, voice, horseId, req.handNumber, req.facts)
+      ? 'no_fresh_line'
+      : 'no_line';
+  }
   const verdict = sanitizeLine(chosen.line, req.usernames);
   if (!verdict.ok) {
     if (!reportedTemplates.has(chosen.template)) {
@@ -1175,7 +1292,8 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
       phraseNorm: normalizePhrase(chosen.template),
       now: req.now,
     },
-    req.mem
+    req.mem,
+    history
   );
   if (!claim.ok) return claim.reason;
   // The horse types it its own way: case, punctuation, shorthand, emoji.

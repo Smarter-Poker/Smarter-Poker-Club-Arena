@@ -28,7 +28,7 @@ Shoves, last 24-48 hours:
 `ServerTableEngineTurns`, so it holds whichever owner (reference, Phase 7
 utility, joint node) proposed the shove:
 
-- first in: shove only at <= 15bb effective; deeper opens 2.2x (+1bb per limper);
+- first in: shove only at <= 20bb effective (20, not 15: the 2026-10 maniac law keeps a 20bb stack shoving rather than raise-folding into a jammer behind); deeper opens 2.2x (+1bb per limper);
 - over one raise: shove only at <= 25bb; deeper 3-bets to 3x (3.5x from the blinds, +1x per caller);
 - over a 3-bet: shove only at <= 40bb; deeper 4-bets to 2.25x;
 - a standard raise that already commits 40% of the effective stack stays a shove;

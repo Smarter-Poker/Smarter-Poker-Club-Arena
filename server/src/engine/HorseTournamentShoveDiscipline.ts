@@ -19,7 +19,7 @@
  * depth where shoving is the real strategy. Deeper than that, the same
  * aggression is a sized raise.
  *
- *  first in (open)          shove only at <= 15bb effective
+ *  first in (open)          shove only at <= 20bb effective
  *  facing one raise (3-bet) shove only at <= 25bb effective
  *  facing a 3-bet (4-bet)   shove only at <= 40bb effective
  *  facing a 4-bet or more   unchanged (a 5-bet is all-in by nature)
@@ -42,7 +42,7 @@ import type { HorseDecision, SeatPlayer } from '../types.js';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 
 /** Deepest effective stack (in big blinds) that may shove first in. */
-export const TOURNAMENT_OPEN_SHOVE_MAX_BB = 15;
+export const TOURNAMENT_OPEN_SHOVE_MAX_BB = 20;
 /** Deepest effective stack that may shove over a single raise. */
 export const TOURNAMENT_THREE_BET_SHOVE_MAX_BB = 25;
 /** Deepest effective stack that may shove over a 3-bet. */

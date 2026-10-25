@@ -4,7 +4,7 @@
  * "BIGGER STACKS SHOULD NOT BE OPEN RIPPING 35+ BIGS UTG OR PERIOD!"
  *
  * A tournament horse shoves preflop only at a depth where shoving is the
- * real strategy: <=15bb first in, <=25bb over one raise, <=40bb over a
+ * real strategy: <=20bb first in, <=25bb over one raise, <=40bb over a
  * 3-bet. Deeper, the same aggression is a sized raise. A stack that covers
  * everyone never shoves more than the biggest live opponent can call.
  * See HorseTournamentShoveDiscipline.ts for the production measurements.
@@ -114,7 +114,7 @@ const open = (seat: number, to: number): Partial<ActionRecord> => ({
   isFullRaise: true,
 });
 
-describe('first in: no tournament open-shove deeper than 15bb', () => {
+describe('first in: no tournament open-shove deeper than 20bb', () => {
   it('a 35bb UTG stack opens for a size, never all-in', () => {
     const { hero, gs } = table({ heroStack: 35 * BB, oppStack: 35 * BB });
     const d = tournamentShoveDiscipline(SHOVE, hero, gs);
@@ -123,7 +123,7 @@ describe('first in: no tournament open-shove deeper than 15bb', () => {
   });
 
   it('holds at every depth from just over the line to 100bb, from every seat', () => {
-    for (const depth of [16, 20, 25, 35, 50, 100]) {
+    for (const depth of [21, 25, 35, 50, 100]) {
       for (const heroSeat of [3, 4, 5, 6, 1]) {
         const { hero, gs } = table({ heroStack: depth * BB, oppStack: depth * BB, heroSeat });
         const d = tournamentShoveDiscipline(SHOVE, hero, gs);
@@ -145,7 +145,7 @@ describe('first in: no tournament open-shove deeper than 15bb', () => {
   });
 
   it(`a genuine short stack (<= ${TOURNAMENT_OPEN_SHOVE_MAX_BB}bb) still shoves`, () => {
-    for (const depth of [5, 10, 15]) {
+    for (const depth of [5, 10, 15, 20]) {
       const { hero, gs } = table({ heroStack: depth * BB, oppStack: 60 * BB });
       expect(tournamentShoveDiscipline(SHOVE, hero, gs)).toBe(SHOVE);
     }

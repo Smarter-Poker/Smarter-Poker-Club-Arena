@@ -782,7 +782,9 @@ export function horsePhase6AttributionMismatch(
     const graph = decision.policyGraph,
       first = graph?.transitions?.[0];
     if (
-      (graph?.version !== 'horse-policy-order-v1' && graph?.version !== 'horse-policy-order-v2') ||
+      (graph?.version !== 'horse-policy-order-v1' &&
+        graph?.version !== 'horse-policy-order-v2' &&
+        graph?.version !== 'horse-policy-order-v3') ||
       !Array.isArray(graph.transitions) ||
       !exact(first, ['node', 'before', 'after', 'changed', 'elapsedMs']) ||
       first.node !== 'reference' ||

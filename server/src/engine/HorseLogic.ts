@@ -1,3 +1,7 @@
+import {
+  runCorrectiveKernelEvaluator,
+  type CorrectiveKernelEvaluator,
+} from '../services/horseCorrectiveReview/liveKernel.js';
 import { hasPhysicalImpliedDraw } from './HorseOmahaImpliedDraw.js';
 import { horsePlanHandKey } from './HorseDecisionEffects.js';
 import {
@@ -2030,6 +2034,10 @@ export interface HorseDecideOpts {
   phase12EvidenceMode?: boolean;
   phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
   phase13EvidenceMode?: boolean;
+  /** Internal worker capability; any caller-supplied property is refused at IPC. */
+  phase14Corrective?: CorrectiveKernelEvaluator;
+  /** Callers may only disable the worker-owned correction. */
+  phase14?: 'off';
   /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
    *  read in this decision runs at that multiple of its budgeted sample. The
    *  engine uses it to replay a close decision inside the think time it was
@@ -2935,6 +2943,40 @@ function enforceAuthoritativeDecision(
 }
 
 export class HorseLogic {
+  /** Original post-observation boundary, shared with the admitted worker path.
+   * The caller owns scope cleanup when it captures before decide(). */
+  static prepareOriginalReads(
+    player: SeatPlayer,
+    gameState: HorseGameStateV2,
+    opts: HorseDecideOpts = {}
+  ): void {
+    // V45 SCOPED READS: every read in this decision sees the bucket for
+    // this card family and table size (HorseMind.readStats). Cleared on
+    // every exit, including a throw.
+    HorseMind.setDecisionScope(
+      readScopeOf(
+        gameState.gameVariant,
+        Array.isArray(gameState.players)
+          ? gameState.dealtSeatIds === undefined
+            ? gameState.players.length
+            : horsePolicyDealtPlayers(gameState.players, player.seat, gameState.dealtSeatIds).length
+          : 0
+      ),
+      typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
+      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
+    );
+    // V3: ingest the action stream into the opponent-intelligence layer.
+    // Wrapped so observation can never take down a decision.
+    // V12: benchmark/league decisions pass mind:false — they must never
+    // write synthetic hands into the live opponent memory.
+    if (opts.mind !== false && opts.observeMind !== false) {
+      try {
+        HorseMind.observe(gameState.actionHistory, gameState.players, opts.mindObservationHand);
+      } catch {
+        /* observation is best-effort */
+      }
+    }
+  }
   static decide(
     player: SeatPlayer,
     gameState: HorseGameStateV2,
@@ -2953,33 +2995,7 @@ export class HorseLogic {
         if (telemetryOn(opts)) noteFire('phase15_policy_unregistered');
         throw new Error('Horse policy variant is not registered with its canonical name');
       }
-      // V45 SCOPED READS: every read in this decision sees the bucket for
-      // this card family and table size (HorseMind.readStats). Cleared on
-      // every exit, including a throw.
-      HorseMind.setDecisionScope(
-        readScopeOf(
-          gameState.gameVariant,
-          Array.isArray(gameState.players)
-            ? gameState.dealtSeatIds === undefined
-              ? gameState.players.length
-              : horsePolicyDealtPlayers(gameState.players, player.seat, gameState.dealtSeatIds)
-                  .length
-            : 0
-        ),
-        typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
-        gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
-      );
-      // V3: ingest the action stream into the opponent-intelligence layer.
-      // Wrapped so observation can never take down a decision.
-      // V12: benchmark/league decisions pass mind:false — they must never
-      // write synthetic hands into the live opponent memory.
-      if (opts.mind !== false && opts.observeMind !== false) {
-        try {
-          HorseMind.observe(gameState.actionHistory, gameState.players, opts.mindObservationHand);
-        } catch {
-          /* observation is best-effort */
-        }
-      }
+      this.prepareOriginalReads(player, gameState, opts);
       // V44 SECOND LOOK: a deep replay runs the same path at a larger
       // sample. Bracketed so a throw cannot leave the depth raised for the
       // next horse to act.
@@ -3896,6 +3912,24 @@ export class HorseLogic {
             noteFire(`phase13_selection_refused_${receipt.selectionRefusal}`);
           noteFire(`phase13_selection_${receipt.selection}`);
         }
+      }
+      return { decision };
+    }).decision;
+    decision = graph.run('corrective_policy', decision, () => {
+      const baseline = decision;
+      const correction = runCorrectiveKernelEvaluator(opts.phase14Corrective, baseline);
+      if (correction.receipt) {
+        const legal = this.legalize(correction.decision, player, gs, vi);
+        if (
+          correction.receipt.applied &&
+          (legal.action !== correction.decision.action ||
+            (legal.amount ?? null) !== (correction.decision.amount ?? null))
+        ) {
+          correction.receipt.applied = false;
+          correction.receipt.reason = 'illegal_candidate';
+          correction.receipt.selected = { ...correction.receipt.baseline };
+          decision = { ...baseline, correctivePolicy: correction.receipt };
+        } else decision = { ...correction.decision, correctivePolicy: correction.receipt };
       }
       return { decision };
     }).decision;

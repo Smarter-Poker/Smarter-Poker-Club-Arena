@@ -90,6 +90,9 @@ export interface HorseQualifiedAuthority {
   readonly admittedBoardCounts?: readonly number[];
   /** Phase 14: the inactive corrective catalog and holdout the qualification binds. */
   readonly catalogDigest?: string;
+  /** Functional Phase 14 code and baseline composition, signed together. */
+  readonly correctivePolicyDigest?: string;
+  readonly baselineSelectionsDigest?: string;
   readonly holdoutDigest?: string;
   readonly authorityKey: string;
 }

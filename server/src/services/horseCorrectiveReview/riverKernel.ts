@@ -6,14 +6,10 @@ import {
 } from './riverReference.js';
 import { evidenceDigest } from './authority.js';
 import { correctiveActionIsLegal } from './review.js';
-import { buildOriginalRiverDecision, RIVER_DECISION_MODEL } from './riverDecisionModel.js';
+import { buildOriginalRiverDecision } from './riverDecisionModel.js';
 
-export const RIVER_CORRECTION_KERNEL = Object.freeze({
-  version: 'river-call-fold-correction-v1',
-  modelVersion: RIVER_DECISION_MODEL.version,
-  conditionalProbability: 0.05 as const,
-  minimumModelGainBb: 0.01,
-});
+import { RIVER_CORRECTION_KERNEL } from './kernelDefinition.js';
+export { RIVER_CORRECTION_KERNEL } from './kernelDefinition.js';
 
 export type RiverCorrectionProposal =
   | {

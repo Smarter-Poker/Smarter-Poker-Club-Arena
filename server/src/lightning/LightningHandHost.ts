@@ -1,3 +1,7 @@
+import {
+  recheckHorsePhase14BeforeAcceptance,
+  observeHorsePhase14Execution,
+} from '../engine/HorsePhase14Acceptance.js';
 import { cashRakeScope } from '../config/cashRakePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -2065,6 +2069,11 @@ export class LightningHandHost {
     lane: () => LiveHorseDecisionLane
   ): void {
     const hc = this.hc!;
+    if (decision.fast) {
+      const checked = recheckHorsePhase14BeforeAcceptance(decision.fast.decision);
+      decision.fast.decision = checked;
+      decision = { ...decision, action: checked.action, amount: checked.amount };
+    }
     const shaped = shapeLightningHorseAction(hc, userId, decision, allInOrFold);
     const fast = decision.fast;
     const acceptedActions: HorseAcceptedAction[] = [];
@@ -2132,6 +2141,7 @@ export class LightningHandHost {
     // After the commit decision, so an accepted batch is already committing
     // and only a non-exact one is retired by the finalizer.
     settleHorseExecutionWitness(fast?.decision.executionWitness, { applied, acceptedActions });
+    if (fast) observeHorsePhase14Execution(fast.decision);
   }
 
   // ─── ACTIONS ────────────────────────────────────────────────────────────

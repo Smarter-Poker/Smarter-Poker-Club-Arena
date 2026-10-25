@@ -1,3 +1,28 @@
+import { correctiveBaselineCompositionIsUsable } from '../../services/horseCorrectiveReview/kernelComposition.js';
+import { PHASE10_PROTECTED_RELEASE_SELECTION } from '../HorsePhase10Authority.js';
+import { PHASE11_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase11Authority.js';
+import { PHASE12_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase12Authority.js';
+import { PHASE13_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase13Authority.js';
+import { evidenceDigest } from '../../services/horseCorrectiveReview/authority.js';
+import {
+  admitHorsePhase14ReleaseAttachment,
+  HORSE_PHASE14_DOMAINS,
+  horsePhase14ContinuationVersion,
+  horsePhase14CorrectiveMode,
+} from '../HorsePhase14Authority.js';
+import {
+  CORRECTIVE_KERNEL_CATALOG_VERSION,
+  type CorrectiveKernelCatalog,
+} from '../../services/horseCorrectiveReview/kernelCatalog.js';
+import type { CorrectiveKernelAttachmentAdmission } from '../../services/horseCorrectiveReview/kernelAdmission.js';
+import {
+  createCorrectiveKernelEvaluator,
+  type CorrectiveKernelEvaluator,
+} from '../../services/horseCorrectiveReview/liveKernel.js';
+import {
+  correctiveDecisionDomain,
+  correctiveDomainKey,
+} from '../../services/horseCorrectiveReview/domain.js';
 import { validOpponentDonorProfiles, type MemorySize } from '../HorseOpponentMemory.js';
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { observeHandResults } from '../HorseWinnerRead.js';
@@ -78,7 +103,7 @@ import {
 } from '../HorseDecisionEffects.js';
 import { prepareTournamentFutureHandFacts } from '../HorseTournamentFutureHand.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
-import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
+import { restoreFastRandom, saveFastRandom, fastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
@@ -186,11 +211,15 @@ import type {
   HorseDecisionStatusRequest,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
-import { horseDecisionReplayState } from './replayState.js';
+import {
+  horseDecisionReplayState,
+  horseCorrectiveReplayState,
+  currentHorseDecisionRuntime,
+} from './replayState.js';
 
 /** Trusted in-process construction seam; never part of the live wire protocol. */
 export type HorseDecisionWorkerAuthorityHolderFactory = (
-  owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+  owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14',
   variant: string | null,
   runningVersion: string,
   freshEpoch: string
@@ -211,6 +240,7 @@ export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
   stopServices(): Promise<void>;
   decide: typeof HorseLogic.decide;
+  prepareOriginalReads?: typeof HorseLogic.prepareOriginalReads;
   decideDiscard: typeof HorseLogic.decideDiscard;
   captureDecisionEffects<T>(fn: () => T): CapturedHorseMindDecision<T>;
   applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void;
@@ -274,6 +304,8 @@ export interface HorseDecisionWorkerDependencies {
    * stays shadow for every variant.
    */
   admitPhase13Authority?(variant: JointVariant): HorseAuthorityAdmission;
+  admitPhase14Attachment?(domain: string): CorrectiveKernelAttachmentAdmission;
+  correctiveDraw?(): number;
 }
 
 let ownedServicesStarted = false;
@@ -457,7 +489,10 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   admitPhase11Authority: (variant) => admitHorsePhase11ReleaseAuthority(variant),
   admitPhase12Authority: (variant) => admitHorsePhase12ReleaseAuthority(variant),
   admitPhase13Authority: (variant) => admitHorsePhase13ReleaseAuthority(variant),
+  admitPhase14Attachment: (domain) => admitHorsePhase14ReleaseAttachment(domain),
+  correctiveDraw: fastRandom,
   decide: HorseLogic.decide.bind(HorseLogic),
+  prepareOriginalReads: HorseLogic.prepareOriginalReads.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
   applyDecisionEffects: (effects) => HorseMind.applyDecisionEffects(effects),
@@ -559,7 +594,7 @@ export class HorseDecisionWorkerRuntime {
    */
   private readonly secondLookReads = new Map<
     string,
-    { at: number; frame: HorseDecisionReadFrame | null }
+    { at: number; frame: HorseDecisionReadFrame | null; snapshot: FastHorseDecisionRequest }
   >();
   private static readonly MAX_SECOND_LOOK_READS = 128;
   private static readonly SECOND_LOOK_READ_TTL_MS = 60_000;
@@ -673,6 +708,9 @@ export class HorseDecisionWorkerRuntime {
   private phase12AuthorityAdmitted = false;
   private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>>;
   private phase13AuthorityAdmitted = false;
+  private readonly phase14Authority: Readonly<Record<string, HorseQualifiedAuthorityHolder>>;
+  private readonly phase14Catalogs = new Map<string, Readonly<CorrectiveKernelCatalog>>();
+  private phase14AuthorityAdmitted = false;
   /** Completed hands of other shards' tables, learned once each (mindMirror.ts). */
   private readonly mindMirror = new HorseMindMirror();
   constructor(
@@ -733,6 +771,20 @@ export class HorseDecisionWorkerRuntime {
         ])
       ) as Record<JointVariant, HorseQualifiedAuthorityHolder>
     );
+    const phase14Epoch = randomUUID();
+    this.phase14Authority = Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE14_DOMAINS.map((domain) => [
+          domain,
+          authorityHolder(
+            'phase14',
+            domain,
+            horsePhase14ContinuationVersion(domain, CORRECTIVE_KERNEL_CATALOG_VERSION),
+            phase14Epoch
+          ),
+        ])
+      )
+    );
   }
 
   start(): Promise<HorseDecisionWorkerReadiness> {
@@ -743,6 +795,7 @@ export class HorseDecisionWorkerRuntime {
     this.admitPhase11Authority();
     this.admitPhase12Authority();
     this.admitPhase13Authority();
+    this.admitPhase14Authority();
     // The admitted state of every authority is counted only once the owned
     // services have started: telemetry is armed by startServices, and a count
     // taken before that is silently dropped (no phaseN_authority_worker_*
@@ -1018,6 +1071,9 @@ export class HorseDecisionWorkerRuntime {
         'phase12EvidenceMode' in request.opts ||
         request.opts.phase13Joint === 'candidate' ||
         'phase13EvidenceMode' in request.opts ||
+        'phase14Corrective' in request.opts ||
+        'phase14EvidenceMode' in request.opts ||
+        (request.opts.phase14 !== undefined && request.opts.phase14 !== 'off') ||
         'phase11EvidenceMode' in request.opts ||
         'phase10EvidenceMode' in request.opts)
     ) {
@@ -1770,6 +1826,10 @@ export class HorseDecisionWorkerRuntime {
       this.deps.noteFeature(
         `phase13_authority_worker_${variant}_${this.phase13Authority[variant].currentState()}`
       );
+    for (const domain of HORSE_PHASE14_DOMAINS)
+      this.deps.noteFeature(
+        `phase14_authority_worker_${domain}_${this.phase14Authority[domain].currentState()}`
+      );
   }
 
   private admitPhase8Authority(): void {
@@ -2068,6 +2128,161 @@ export class HorseDecisionWorkerRuntime {
     );
   }
 
+  private admitPhase14Authority(): void {
+    if (this.phase14AuthorityAdmitted) return;
+    this.phase14AuthorityAdmitted = true;
+    for (const domain of HORSE_PHASE14_DOMAINS) {
+      let attachment: CorrectiveKernelAttachmentAdmission;
+      try {
+        attachment = this.deps.admitPhase14Attachment?.(domain) ?? {
+          admission: { status: 'refused', reason: 'unselected', transient: false },
+          catalog: null,
+        };
+      } catch {
+        attachment = {
+          admission: { status: 'refused', reason: 'unreadable_evidence', transient: true },
+          catalog: null,
+        };
+      }
+      this.phase14Authority[domain].apply(attachment.admission);
+      if (attachment.admission.status === 'admitted' && attachment.catalog)
+        this.phase14Catalogs.set(domain, attachment.catalog);
+    }
+  }
+  private captureOriginalReadFrame(request: FastHorseDecisionRequest): HorseDecisionReadFrame {
+    const planContext = horsePlanBatchBindingFromRequest(request).planContext;
+    const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext),
+      gs = request.gameState;
+    return encodeHorseDecisionReads(
+      (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+        gs.players,
+        handKey,
+        {
+          variant: gs.gameVariant ?? 'nlh',
+          mode: gs.gameMode === 'tournament' || gs.tournament ? 'tournament' : 'cash',
+          size:
+            (gs.dealtSeatIds?.length ?? gs.players.length) <= 2
+              ? 'hu'
+              : (gs.dealtSeatIds?.length ?? gs.players.length) <= 5
+                ? 'short'
+                : 'full',
+        }
+      ),
+      gs.players,
+      handKey,
+      planContext
+    );
+  }
+  private phase14Admission(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest,
+    original: () => { snapshot: FastHorseDecisionRequest; readFrame: unknown }
+  ): {
+    evaluator: CorrectiveKernelEvaluator | null;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase14Authority();
+    const d = correctiveDecisionDomain(request.gameState),
+      domain = d ? correctiveDomainKey(d) : null;
+    const holder = domain ? this.phase14Authority[domain] : null,
+      catalog = domain ? (this.phase14Catalogs.get(domain) ?? null) : null;
+    const receipt = holder?.receipt() ?? null;
+    const baselineUsable = () => {
+      const variant = request.gameState.gameVariant;
+      const requirement = (
+        selected: boolean,
+        callerMode: unknown,
+        baselineHolder: HorseQualifiedAuthorityHolder | null
+      ) => ({
+        selected,
+        callerMode,
+        verdict: baselineHolder
+          ? baselineHolder.verdict(baselineHolder.receipt(), Date.now())
+          : ('unselected' as const),
+      });
+      return correctiveBaselineCompositionIsUsable([
+        requirement(
+          variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION !== null,
+          request.opts?.phase10Plo4,
+          this.phase10Authority
+        ),
+        requirement(
+          !!variant &&
+            PHASE11_PROTECTED_RELEASE_SELECTIONS[
+              variant as keyof typeof PHASE11_PROTECTED_RELEASE_SELECTIONS
+            ] != null,
+          request.opts?.phase11Omaha,
+          isOmahaPolicyVariant(variant) ? this.phase11Authority[variant] : null
+        ),
+        requirement(
+          !!variant &&
+            PHASE12_PROTECTED_RELEASE_SELECTIONS[
+              variant as keyof typeof PHASE12_PROTECTED_RELEASE_SELECTIONS
+            ] != null,
+          request.opts?.phase12Remaining,
+          isRemainingPolicyVariant(variant) ? this.phase12Authority[variant] : null
+        ),
+        requirement(
+          !!variant &&
+            PHASE13_PROTECTED_RELEASE_SELECTIONS[
+              variant as keyof typeof PHASE13_PROTECTED_RELEASE_SELECTIONS
+            ] != null,
+          request.opts?.phase13Joint,
+          isJointVariant(variant) ? this.phase13Authority[variant] : null
+        ),
+      ]);
+    };
+    const stillUsable = () =>
+      baselineUsable() &&
+      !!holder &&
+      !!receipt &&
+      horsePhase14CorrectiveMode({
+        callerMode: request.opts?.phase14,
+        domain,
+        packDomain: domain,
+        verdict: holder.verdict(receipt, Date.now()),
+        catalog,
+      }).mode === 'candidate';
+    return {
+      receipt,
+      evaluator: stillUsable()
+        ? createCorrectiveKernelEvaluator({
+            catalog,
+            original,
+            stillUsable,
+            draw: this.deps.correctiveDraw ?? fastRandom,
+          })
+        : null,
+    };
+  }
+  private bindPhase14Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.correctivePolicy && receipt) {
+      decision.correctivePolicy.authority = receipt;
+      const variant = decision.correctivePolicy.domain.slice(0, -5),
+        baselineAuthorities: NonNullable<
+          NonNullable<HorseDecision['correctivePolicy']>['baselineAuthorities']
+        > = {};
+      if (variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION)
+        baselineAuthorities.phase10 = this.phase10Authority.receipt();
+      if (isOmahaPolicyVariant(variant) && PHASE11_PROTECTED_RELEASE_SELECTIONS[variant])
+        baselineAuthorities.phase11 = this.phase11Authority[variant].receipt();
+      if (isRemainingPolicyVariant(variant) && PHASE12_PROTECTED_RELEASE_SELECTIONS[variant])
+        baselineAuthorities.phase12 = this.phase12Authority[variant].receipt();
+      if (isJointVariant(variant) && PHASE13_PROTECTED_RELEASE_SELECTIONS[variant])
+        baselineAuthorities.phase13 = this.phase13Authority[variant].receipt();
+      decision.correctivePolicy.baselineAuthorities = baselineAuthorities;
+    }
+  }
+  private phase14AuthorityReceipts(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest
+  ): Readonly<Record<string, HorseAuthorityReceipt>> {
+    const d = correctiveDecisionDomain(request.gameState),
+      domain = d ? correctiveDomainKey(d) : null;
+    return Object.freeze(domain ? { [domain]: this.phase14Authority[domain].receipt() } : {});
+  }
+
   /** Bind the admission receipt to the returned Phase 8 ledger. */
   private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
     if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
@@ -2128,6 +2343,15 @@ export class HorseDecisionWorkerRuntime {
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
+    let correctiveOriginalFrame: HorseDecisionReadFrame | null = null;
+    const phase14 = this.phase14Admission(request, () => ({
+      snapshot: request,
+      readFrame:
+        correctiveOriginalFrame ??
+        (() => {
+          throw Error('original corrective frame unavailable');
+        })(),
+    }));
     // P15-A step 4: the worker-owned state this decision reads besides its
     // request and read frame, journaled beside it for exact replay. Capture
     // only; the decision below reads the same values it always has.
@@ -2139,8 +2363,30 @@ export class HorseDecisionWorkerRuntime {
         phase12Remaining: phase12.mode,
         phase13Joint: phase13.mode,
       },
-      liveHorsePhase8Safety.disabledReason
+      liveHorsePhase8Safety.disabledReason,
+      currentHorseDecisionRuntime(),
+      horseCorrectiveReplayState(request.gameState, request.opts?.phase14, phase14.evaluator)
     );
+    let phase14ObservationPrepared = false;
+    if (phase14.evaluator) {
+      try {
+        (this.deps.prepareOriginalReads ?? HorseLogic.prepareOriginalReads.bind(HorseLogic))(
+          request.player,
+          request.gameState,
+          {
+            ...request.opts,
+            observeMind: true,
+            mindObservationHand: horseMindHandFromDecision(request),
+          }
+        );
+        phase14ObservationPrepared = true;
+        correctiveOriginalFrame = this.captureOriginalReadFrame(request);
+      } catch {
+        this.deps.noteFeature('phase14_original_reads_unavailable');
+      } finally {
+        HorseMind.setDecisionScope(null);
+      }
+    }
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -2157,9 +2403,10 @@ export class HorseDecisionWorkerRuntime {
             phase11Omaha: phase11.mode,
             phase12Remaining: phase12.mode,
             phase13Joint: phase13.mode,
+            phase14Corrective: phase14.evaluator ?? undefined,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
-            observeMind: true,
+            observeMind: !phase14ObservationPrepared,
             mindObservationHand: horseMindHandFromDecision(request),
             mindPlanContext: planContext,
           })
@@ -2176,6 +2423,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase11Authority(captured.value, phase11.receipt);
     this.bindPhase12Authority(captured.value, phase12.receipt);
     this.bindPhase13Authority(captured.value, phase13.receipt);
+    this.bindPhase14Authority(captured.value, phase14.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -2193,31 +2441,34 @@ export class HorseDecisionWorkerRuntime {
     if (captured.effects.length > 0 && effects.length === 0) {
       this.deps.noteFeature('phase15_reference_plans_retired');
     }
-    let readFrame: HorseDecisionReadFrame | null = null;
+    let readFrame: HorseDecisionReadFrame | null = correctiveOriginalFrame;
     try {
-      const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext);
-      readFrame = encodeHorseDecisionReads(
-        (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+      if (!readFrame) {
+        const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext);
+        readFrame = encodeHorseDecisionReads(
+          (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+            request.gameState.players,
+            handKey,
+            {
+              variant: request.gameState.gameVariant ?? 'nlh',
+              mode:
+                request.gameState.gameMode === 'tournament' || request.gameState.tournament
+                  ? 'tournament'
+                  : 'cash',
+              size:
+                (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 2
+                  ? 'hu'
+                  : (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <=
+                      5
+                    ? 'short'
+                    : 'full',
+            }
+          ),
           request.gameState.players,
           handKey,
-          {
-            variant: request.gameState.gameVariant ?? 'nlh',
-            mode:
-              request.gameState.gameMode === 'tournament' || request.gameState.tournament
-                ? 'tournament'
-                : 'cash',
-            size:
-              (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 2
-                ? 'hu'
-                : (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 5
-                  ? 'short'
-                  : 'full',
-          }
-        ),
-        request.gameState.players,
-        handKey,
-        planContext
-      );
+          planContext
+        );
+      }
     } catch {
       // Missing replay evidence must not discard an already computed fast
       // decision. A later second look will explicitly retain that decision.
@@ -2250,7 +2501,11 @@ export class HorseDecisionWorkerRuntime {
     while (this.secondLookReads.size >= HorseDecisionWorkerRuntime.MAX_SECOND_LOOK_READS) {
       this.secondLookReads.delete(this.secondLookReads.keys().next().value!);
     }
-    this.secondLookReads.set(readKey, { at, frame: ambiguous ? null : readFrame });
+    this.secondLookReads.set(readKey, {
+      at,
+      frame: ambiguous ? null : readFrame,
+      snapshot: request,
+    });
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
     try {
@@ -2301,6 +2556,13 @@ export class HorseDecisionWorkerRuntime {
         phase11Authority: this.phase11AuthorityReceipts(),
         phase12Authority: this.phase12AuthorityReceipts(),
         phase13Authority: this.phase13AuthorityReceipts(),
+        phase14Authority: this.phase14AuthorityReceipts(request),
+        phase14OriginalBinding: correctiveOriginalFrame
+          ? {
+              inputDigest: evidenceDigest(request),
+              readFrameDigest: evidenceDigest(correctiveOriginalFrame),
+            }
+          : undefined,
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -2371,6 +2633,10 @@ export class HorseDecisionWorkerRuntime {
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
+    const phase14 = this.phase14Admission(request, () => ({
+      snapshot: retained.snapshot,
+      readFrame: retained.frame,
+    }));
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -2394,6 +2660,7 @@ export class HorseDecisionWorkerRuntime {
                 phase11Omaha: phase11.mode,
                 phase12Remaining: phase12.mode,
                 phase13Joint: phase13.mode,
+                phase14Corrective: phase14.evaluator ?? undefined,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -2414,6 +2681,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase11Authority(decision, phase11.receipt);
     this.bindPhase12Authority(decision, phase12.receipt);
     this.bindPhase13Authority(decision, phase13.receipt);
+    this.bindPhase14Authority(decision, phase14.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -2464,6 +2732,7 @@ export class HorseDecisionWorkerRuntime {
       phase11Authority: this.phase11AuthorityReceipts(),
       phase12Authority: this.phase12AuthorityReceipts(),
       phase13Authority: this.phase13AuthorityReceipts(),
+      phase14Authority: this.phase14AuthorityReceipts(request),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }

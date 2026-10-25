@@ -465,6 +465,13 @@ export async function exactReplayHorseDecisionRecord(
     if (outcome.result && outcome.admission?.[option] !== state.admission[option])
       return finish(`non_replayable:admission:${option}`);
 
+  if (
+    state.corrective
+      ? horseJournalJson(outcome.corrective) !== horseJournalJson(state.corrective)
+      : outcome.corrective?.mode === 'candidate'
+  )
+    return finish('non_replayable:admission:phase14');
+
   // 5. Compare decision and effects, in order.
   const original = stableReceipt(input.original);
   verdict.wallClockBudgetBound = mentionsBudget(original);

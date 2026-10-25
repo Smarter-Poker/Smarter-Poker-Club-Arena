@@ -290,6 +290,7 @@ describe('P15-A exact historical replay', () => {
           phase12Remaining: decideOpts[0].phase12Remaining,
           phase13Joint: decideOpts[0].phase13Joint,
         },
+        corrective: { mode: 'shadow', domain: 'nlh-cash', catalogDigest: null },
         phase8SafetyDisabledReason: 'eligible_but_silent',
         runtime: { node: process.version, v8: process.versions.v8, arch: process.arch },
       });
@@ -429,6 +430,7 @@ describe('P15-A exact historical replay', () => {
       const state = body.replayState as Record<string, unknown>;
       state.version = HORSE_DECISION_REPLAY_STATE_V1;
       delete state.runtime;
+      delete state.corrective;
     });
     expect(await outcome(v1)).toBe('non_replayable:runtime_identity');
     // A record that does not name its source cannot be matched to one.

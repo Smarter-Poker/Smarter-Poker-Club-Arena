@@ -1,3 +1,4 @@
+import { HORSE_PHASE14_DOMAINS } from '../HorsePhase14Authority.js';
 import { HandController } from '../HandController.js';
 import { priceDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { withPhase6Provenance } from '../../testing/horseRegression/merged/fixture.js';
@@ -1483,9 +1484,9 @@ describe('HorseDecisionWorkerRuntime', () => {
     // The 18 authority admission counters are taken once the services start,
     // before READY and before this decision's own counters.
     const admissions = h.features.filter((feature) => feature.includes('_authority_worker_'));
-    expect(admissions).toHaveLength(18);
-    expect(h.features.slice(0, 18)).toEqual(admissions);
-    expect(h.features.slice(18)).toEqual([
+    expect(admissions).toHaveLength(18 + HORSE_PHASE14_DOMAINS.length);
+    expect(h.features.slice(0, 18 + HORSE_PHASE14_DOMAINS.length)).toEqual(admissions);
+    expect(h.features.slice(18 + HORSE_PHASE14_DOMAINS.length)).toEqual([
       'phase5_canonical_state',
       'phase15_plan_issue_no_effects',
     ]);
@@ -1769,6 +1770,9 @@ describe('HorseDecisionWorkerRuntime', () => {
     { phase13Joint: 'candidate' },
     { phase13EvidenceMode: true },
     { phase13EvidenceMode: false },
+    { phase14Corrective: {} },
+    { phase14: 'candidate' },
+    { phase14EvidenceMode: true },
   ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({
@@ -5303,6 +5307,7 @@ describe('worker authority admission counters (audit of October 7, 2026)', () =>
     ...OMAHA.map((variant) => `phase11_authority_worker_${variant}_unselected`),
     ...REMAINING.map((variant) => `phase12_authority_worker_${variant}_unselected`),
     ...JOINT.map((variant) => `phase13_authority_worker_${variant}_unselected`),
+    ...HORSE_PHASE14_DOMAINS.map((domain) => `phase14_authority_worker_${domain}_unselected`),
   ];
 
   it('counts every holder state through noteFeature once the owned services have started', async () => {

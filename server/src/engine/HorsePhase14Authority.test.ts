@@ -121,16 +121,21 @@ describe('P14.4 null proof: no corrective candidate can be admitted today', () =
     }
   });
 
-  it('no live engine path imports the Phase 14 authority (there is no corrective applier)', () => {
+  it('routes functional admission only through its worker, main and replay owners', () => {
     const root = fileURLToPath(new URL('../', import.meta.url));
     const importers = (readdirSync(root, { recursive: true, encoding: 'utf8' }) as string[])
       .filter((f) => f.endsWith('.ts') && !f.includes('.test') && !f.includes('test-support'))
       .filter((f) =>
         /\bfrom\s+['"][^'"]*HorsePhase14Authority(\.js)?['"]|import\(\s*['"][^'"]*HorsePhase14Authority/.test(
-          readFileSync(`${root}${f}`, 'utf8')
+          readFileSync(`${root}${f}`, 'utf8').replace(/\bimport\s+type\b[\s\S]*?;/g, '')
         )
       );
-    expect(importers).toEqual([]);
+    expect(importers.sort()).toEqual([
+      'engine/HorsePhase14Acceptance.ts',
+      'engine/horseDecision/client.ts',
+      'engine/horseDecision/replay/qualifiedAuthority.ts',
+      'engine/horseDecision/workerRuntime.ts',
+    ]);
   });
 });
 
@@ -465,7 +470,7 @@ describe('P14.4 a caller cannot supply candidate control', () => {
       mode: 'shadow',
       authorityUsable: true,
       activationAllowed: false,
-      reason: 'corrective_applier_unavailable',
+      reason: 'functional_catalog_unavailable',
     });
   });
 

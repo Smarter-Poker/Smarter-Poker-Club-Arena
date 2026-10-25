@@ -7,12 +7,9 @@ import { variantInfo } from '../../engine/HorseEval.js';
 import { evidenceDigest } from './authority.js';
 import { correctiveUtilityContextDigest } from './review.js';
 import { horseJournalJson } from '../horseDecisionJournal/record.js';
-export const RIVER_DECISION_MODEL = Object.freeze({
-  version: 'river-public-finite-prior-v1',
-  samples: 32,
-  maximumAttemptsPerCombination: 8,
-  calibration: 'unqualified' as const,
-});
+import { RIVER_DECISION_MODEL } from './kernelDefinition.js';
+export { RIVER_DECISION_MODEL } from './kernelDefinition.js';
+
 export type RiverDecisionModelResult =
   | {
       status: 'built';

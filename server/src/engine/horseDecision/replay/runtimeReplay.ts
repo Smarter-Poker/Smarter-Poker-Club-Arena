@@ -28,7 +28,12 @@ import { horsePlanBatchBindingFromRequest } from '../../HorsePlanHandIdentity.js
 import { prepareTournamentFutureHandFacts } from '../../HorseTournamentFutureHand.js';
 import { solverPolicyArtifactStatus } from '../../../gto/SolverPolicyArtifactLoader.js';
 import { liveHorsePhase8Safety } from '../../HorsePhase8Safety.js';
-import { horseDecisionReplayAdmission, type HorseDecisionReplayAdmission } from '../replayState.js';
+import {
+  horseDecisionReplayAdmission,
+  horseCorrectiveReplayState,
+  type HorseCorrectiveReplayState,
+  type HorseDecisionReplayAdmission,
+} from '../replayState.js';
 import type {
   FastHorseDecisionResult,
   HorseDecisionWorkerError,
@@ -54,6 +59,7 @@ export interface HorseRuntimeReplayOutcome {
   work: { equityCalls: number; equitySamples: number; telemetryFires: number };
   /** The optional-owner modes this replay's runtime passed to decide (null: not reached). */
   admission: HorseDecisionReplayAdmission | null;
+  corrective: HorseCorrectiveReplayState | null;
 }
 
 /** P15-A exact replay: worker-owned state restored from the record, not read live. */
@@ -89,6 +95,7 @@ export async function replayThroughWorkerRuntime(
   const messages: HorseDecisionWorkerResponse[] = [];
   const features: string[] = [];
   let admission: HorseDecisionReplayAdmission | null = null;
+  let corrective: HorseCorrectiveReplayState | null = null;
   const deps: HorseDecisionWorkerDependencies = {
     ...qualifiedReplayAdmissions,
     journalEnabled: () => false,
@@ -97,8 +104,13 @@ export async function replayThroughWorkerRuntime(
       return readiness();
     },
     async stopServices() {},
+    prepareOriginalReads: (player, gameState, opts) =>
+      HorseMind.runInSandbox(readView, () =>
+        HorseLogic.prepareOriginalReads(player, gameState, { ...opts, observeMind: false })
+      ),
     decide: (player, gameState, style, mods, opts) => {
       admission = horseDecisionReplayAdmission(opts);
+      corrective = horseCorrectiveReplayState(gameState, opts?.phase14, opts?.phase14Corrective);
       return HorseLogic.decide(player, gameState, style, mods, { ...opts, observeMind: false });
     },
     decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
@@ -165,6 +177,7 @@ export async function replayThroughWorkerRuntime(
     wallMs,
     features,
     admission,
+    corrective,
     work: {
       equityCalls: after.calls - before.calls,
       equitySamples: after.samples - before.samples,

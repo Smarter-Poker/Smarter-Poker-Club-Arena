@@ -1,5 +1,6 @@
 /** Offline replay admission uses the same protected selections and exact
  * qualification files as production. A record cannot turn a pack on. */
+import { admitHorsePhase14ReleaseAttachment } from '../../HorsePhase14Authority.js';
 import type { HorseDecision } from '../../../types.js';
 import {
   admitHorsePhase8ReleaseAuthority,
@@ -36,6 +37,7 @@ export const qualifiedReplayAdmissions = {
   admitPhase12Authority: (variant: RemainingPolicyVariant) =>
     admitHorsePhase12ReleaseAuthority(variant),
   admitPhase13Authority: (variant: JointVariant) => admitHorsePhase13ReleaseAuthority(variant),
+  admitPhase14Attachment: (domain: string) => admitHorsePhase14ReleaseAttachment(domain),
 } satisfies Pick<
   HorseDecisionWorkerDependencies,
   | 'admitPhase8Authority'
@@ -43,6 +45,7 @@ export const qualifiedReplayAdmissions = {
   | 'admitPhase11Authority'
   | 'admitPhase12Authority'
   | 'admitPhase13Authority'
+  | 'admitPhase14Attachment'
 >;
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -63,9 +66,10 @@ export function qualifiedReplayAuthorityHolders(
     ['phase11', variant, original.omahaVariantPolicy],
     ['phase12', variant, original.remainingVariantPolicy],
     ['phase13', variant, original.jointPolicy],
+    ['phase14', original.correctivePolicy?.domain ?? '', original.correctivePolicy],
   ] as const;
   for (const [owner, pack, policy] of policies) {
-    if (!object(policy) || policy.applied !== true) continue;
+    if (!object(policy) || (owner !== 'phase14' && policy.applied !== true)) continue;
     const receipt = policy.authority;
     if (!horseAuthorityReceiptIsWellFormed(receipt))
       throw new HorseReplayAuthorityRefusal(`${owner}:missing_receipt`);
@@ -87,7 +91,9 @@ export function qualifiedReplayAuthorityHolders(
               ? admissions.admitPhase11Authority(pack as OmahaPolicyVariant)
               : owner === 'phase12'
                 ? admissions.admitPhase12Authority(pack as RemainingPolicyVariant)
-                : admissions.admitPhase13Authority(pack as JointVariant);
+                : owner === 'phase13'
+                  ? admissions.admitPhase13Authority(pack as JointVariant)
+                  : admissions.admitPhase14Attachment(pack ?? '').admission;
       return HorseQualifiedAuthorityHolder.fromReplayReceipt(receipt, admission, runningVersion);
     } catch (error) {
       throw new HorseReplayAuthorityRefusal(

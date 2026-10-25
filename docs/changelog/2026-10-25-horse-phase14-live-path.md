@@ -108,3 +108,11 @@ calls retain the full controller price while paying only the remaining stack,
 and the opponent's uncalled excess is refunded. An actual second board is
 refused even if boardCount incorrectly claims one. This is connected local
 controller proof, not production worker/acceptance/effect or fleet proof.
+
+## Functional consumer and remaining promotion requirements
+
+The functional catalog, independent aggregate signature verifier and exact-code/baseline binding now feed the existing S4 admission identity. The original-state corrective consumer is wired inside graph v3 before wager rules/timing, through worker FAST/DEEP, client original-hash validation and stamp/forget, physical/Lightning acceptance, execution witnesses, private reader and versioned replay. Legacy graph v1/v2 and replay-state v2 remain readable. Protected release data is separate from the code its qualification hashes. Every Phase 14 selection remains null.
+
+Real-worker testing found that read-frame capture inside intent capture was prohibited; the existing observation/scoping step is now reused at its original boundary and performed once. Full-policy review also found protected-fold and all-in-alias gaps: shared eligibility now retains catastrophe folds, prior applied candidates and stack-sized calls. The model holdout requires full baseline decisions and counts retained exclusions rather than claiming raw proposal gains. Current baseline-owner withdrawal disables the corrective composition.
+
+Connected local proof includes a deterministic synthetic deal played by the real HandController, real worker and main S4 gate: the original baseline folds, the admitted bounded correction calls, the controller records the exact incremental amount and all 275 starting chips remain conserved. Private client transport rejects altered original input/read commitments. These are local regressions, not production qualification or a 1,000-horse certificate. Independent source/oracle review and signing, positive locked real holdout, final integrated source matrices, protected selection/merge, containing engine installation and natural accepted per-horse proof remain open.

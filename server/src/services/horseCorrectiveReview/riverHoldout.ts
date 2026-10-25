@@ -10,6 +10,8 @@ export interface RiverHoldoutCase {
   playedAt: string;
   input: RiverReferenceInput;
   baseline: CorrectiveAction;
+  /** Internal full-policy measurement exclusion, included in the commitment. */
+  retainedByPolicy?: string;
   /** Independent realized terminal utilities, never policy inputs. */
   oracle: { foldBb: number; callBb: number };
 }
@@ -127,7 +129,9 @@ export function evaluateRiverHoldout(
         return no('holdout_oracle_invalid');
       const reference = produceRiverCallFoldReference(row.input);
       if (reference.status !== 'produced') return no(`holdout_reference:${reference.reason}`);
-      const proposal = proposeRiverCallFoldCorrection(row.input, row.baseline, reference.reference);
+      const proposal = row.retainedByPolicy
+        ? { status: 'retained' as const, reason: row.retainedByPolicy }
+        : proposeRiverCallFoldCorrection(row.input, row.baseline, reference.reference);
       if (proposal.status === 'unavailable') return no(`holdout_policy:${proposal.reason}`);
       let delta = 0;
       if (proposal.status === 'proposed') {

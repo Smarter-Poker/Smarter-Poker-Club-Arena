@@ -63,6 +63,7 @@ describe('explicit private river qualification ingress', () => {
           playedAt: '2026-10-25T01:00:00.000Z',
           input,
           baseline: { action: 'fold', amount: 0 },
+          baselineDecision: { action: 'fold', thinkTime: 0 },
           oracle: { foldBb: 0, callBb: 48 },
         };
       });
@@ -90,7 +91,7 @@ describe('explicit private river qualification ingress', () => {
       expect(JSON.parse(readFileSync(s.output, 'utf8'))).toMatchObject({
         status: 'measured',
         samples: 2,
-        changed: 2,
+        changed: mode === 'model-holdout' ? 0 : 2,
         qualified: false,
         activationAllowed: false,
       });

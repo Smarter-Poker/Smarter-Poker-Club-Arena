@@ -20,6 +20,7 @@ import { buildOriginalRiverDecision } from '../services/horseCorrectiveReview/ri
 import {
   evaluateRiverDecisionModelHoldout,
   type RiverModelHoldoutPlan,
+  type RiverModelHoldoutCase,
 } from '../services/horseCorrectiveReview/riverModelHoldout.js';
 
 /** Explicit bounded offline operation. No default live paths, key access,
@@ -41,7 +42,7 @@ export function runHorseRiverReference(args: readonly string[]): { code: number;
       version: unknown;
       input: RiverReferenceInput;
       plan: RiverHoldoutPlan & RiverModelHoldoutPlan;
-      rows: RiverHoldoutCase[];
+      rows: RiverModelHoldoutCase[];
       reference: AlternativeActionReference;
       original: RiverDecisionInput['original'];
     };

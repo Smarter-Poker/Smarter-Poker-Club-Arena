@@ -5078,12 +5078,28 @@
   }
 }
 
-/* Phones place the puck and chips independently in the same owner's lane.
-   Roomier layouts keep their original side-by-side wager assembly. */
+/* Portrait viewports from 481 to 768px share the phone's top-pod lane
+   (useProtectedCardLayout pulls the pod under the jackpot plate up to 768px),
+   so the same rule holds there: the jackpot plate is above a top player's
+   head, and the action tag hangs below the plate instead. Measured
+   2026-10-24 at 540x900 and 600x960, 9-max: an above-the-head CALL tag
+   printed over the Mini BBJ plate. Pod sizes and the bounty are untouched. */
+@media (min-width: 481px) and (max-width: 768px) and (orientation: portrait) {
+  .seat-wrapper--top .seat__action,
+  .seat-wrapper--cap .seat__action {
+    top: calc(100% + 2px);
+    bottom: auto;
+  }
+}
+
+/* Portrait viewports up to 768px (PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX, the
+   bound useProtectedCardLayout places markers at) place the puck and chips
+   independently in the same owner's lane. Wider and landscape layouts keep
+   their original side-by-side wager assembly. */
 .seat__wager-group {
   display: contents;
 }
-@media (min-width: 481px), (orientation: landscape) {
+@media (min-width: 769px), (orientation: landscape) {
   .seat__wager-group:has(.seat__allin-puck) {
     position: absolute;
     left: 50%;

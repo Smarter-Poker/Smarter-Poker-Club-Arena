@@ -155,8 +155,10 @@ describe("a new player's first Lightning hand is the big blind", () => {
     }
   );
 
-  it('reads the slot that has never been the big blind, never the stored newcomer flag', () => {
-    // The flag disagrees with last_bb_at both ways; the plan follows last_bb_at.
+  it('reads the slot that has never been the big blind; the stored flag can only exempt a conversion seat', () => {
+    // 20261024213844: the database's `newcomer` is false for a seat the
+    // epoch's conversion made (n01). It can never make a newcomer of a slot
+    // that has been the big blind (r00 carries a stray true and is not one).
     const pool = [
       player('n00', null),
       player('n01', null, { newcomer: false }),
@@ -164,9 +166,10 @@ describe("a new player's first Lightning hand is the big blind", () => {
     ];
     const p = plan(pool);
     expect(p.groups[0].bb).toBe('n00');
-    expect(seated(p).has('n01')).toBe(false);
+    expect(seated(p).has('n01')).toBe(true);
     expect(seated(p).has('r00')).toBe(true);
-    expect(isLightningNewcomer(player('x', null, { newcomer: false }))).toBe(true);
+    expect(isLightningNewcomer(player('x', null, { newcomer: false }))).toBe(false);
+    expect(isLightningNewcomer(player('x', null, { newcomer: true }))).toBe(true);
     expect(isLightningNewcomer(player('x', 5, { newcomer: true }))).toBe(false);
   });
 

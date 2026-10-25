@@ -1201,6 +1201,19 @@
         "check-migrations-applied: lightning_horse_fill absent from the stale schema snapshot"
       ],
       "liveVerdict": "Read 2026-10-24 20:20 UTC: public.lightning_horse_fill exists with row level security on, no policies, no SELECT for anon or authenticated, SELECT only for service_role (100 rows). fn_ca_horse_roster_seat_guard and fn_ca_horse_roster_refresh are security definer with no EXECUTE for anon or authenticated (their current bodies come from later migrations on main). supabase_migrations.schema_migrations holds this version with md5(statements) e2b73d862c87640bac8fc3ff7c400beb, equal to this file."
+    },
+    {
+      "version": "20261024223153",
+      "name": "woowoo_half_earned_rake_credited_to_kingfish",
+      "file": "supabase/migrations/20261024223153_woowoo_half_earned_rake_credited_to_kingfish.sql",
+      "md5": "06c2de274fd75213f0decf83b2b62f20",
+      "appliedToProductionAt": "2026-10-24T22:31:53Z",
+      "recoveredOn": "2026-10-25",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "check-no-new-band-aids: periodic work woowoo-half-rake-to-kingfish without a periodic-work reason"
+      ],
+      "liveVerdict": "Read 2026-10-25 03:15 UTC: the finding is TRUE of production - pg_cron job 505 woowoo-half-rake-to-kingfish (*/5) runs smarter_private.fn_woowoo_half_rake_to_kingfish_sync() (md5(prosrc) 07856466d30eb04ce34698e82110c1f7), a compensating write that upserts woowoo-half-split-<day> / kingfish-from-woowoo-split-<day> rows into smarter_private.player_fee_redemptions (reporting only; no chips move). It is retired by 20261025030629_a_standing_rake_share_replaces_the_woowoo_cron, which unschedules the job, drops the function, deletes only those split rows and applies smarter_private.player_rake_share_rules at read time in the three fee readers; the job remains live until that migration is installed. supabase_migrations.schema_migrations holds this version with md5(statements) 06c2de274fd75213f0decf83b2b62f20, equal to this file (3353 bytes)."
     }
   ]
 }

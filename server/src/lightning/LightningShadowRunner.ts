@@ -624,7 +624,9 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
         bbUnresolved: false,
         debtSinceMs: m.enteredAtMs,
         handsSinceBb: m.handsSinceBb,
-        newcomer: !m.seenInHand,
+        // The engine cannot see which seats the epoch's conversion made, so
+        // its estimate of the pool keeps the plain key (never the big blind).
+        newcomer: m.lastBbAtMs === null,
         positions: { ...m.positions },
       });
     };

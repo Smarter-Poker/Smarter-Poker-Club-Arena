@@ -1,3 +1,11 @@
+-- SUPERSEDED BY 20261024193818
+-- Never installed: the 04:00 America/Chicago window refused it on lock timeout
+-- on 2026-10-24. Its three functions were installed byte-identically by
+-- 20261024193818_agent_downline_watch_functions_before_window_policy.sql. Its
+-- only other statement, the PERMISSIVE agent_downline_table_observation policy
+-- on public.tables, is ineffective under production's RESTRICTIVE
+-- poker_arena_table_access policy; the table page reads its metadata through
+-- 20261024200812_agent_downline_watch_reads_table_metadata.sql instead.
 -- @install-window: daily-maintenance
 -- Agents can observe their active recursive downlines on every live table.
 -- Observation does not grant seating, money operations or private cards.

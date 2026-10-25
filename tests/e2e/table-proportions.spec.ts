@@ -1856,3 +1856,7 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
       await page.unroute('http://spectator.fixture/');
     }
   });
+
+// Shared notice containment is part of the existing felt browser gate.
+import { registerAddOnNoticeContainmentCases } from './css/addOnNoticeContainmentCases';
+registerAddOnNoticeContainmentCases();

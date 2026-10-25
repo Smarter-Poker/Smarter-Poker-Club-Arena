@@ -108,7 +108,9 @@ function installRpc(implementation: (...args: any[]) => any) {
   }) as never);
 }
 
-function installHistoryTables() {
+function installHistoryTables(
+  memberRead?: () => Promise<{ data: { role: string; chip_balance: number }; error: null }>
+) {
   vi.mocked(supabase.from).mockImplementation((table: string) => {
     let columns = '';
     const builder: Record<string, unknown> = {};
@@ -121,13 +123,15 @@ function installHistoryTables() {
       return builder;
     });
     builder.maybeSingle = vi.fn(() =>
-      Promise.resolve(
-        table === 'club_members'
-          ? { data: { role: 'owner', chip_balance: 250 }, error: null }
-          : table === 'agents'
-            ? { data: { agent_wallet_balance: 500 }, error: null }
-            : { data: null, error: null }
-      )
+      table === 'club_members' && memberRead
+        ? memberRead()
+        : Promise.resolve(
+            table === 'club_members'
+              ? { data: { role: 'owner', chip_balance: 250 }, error: null }
+              : table === 'agents'
+                ? { data: { agent_wallet_balance: 500 }, error: null }
+                : { data: null, error: null }
+          )
     );
     builder.then = (resolve: (value: unknown) => unknown) => {
       const value =
@@ -202,6 +206,70 @@ describe('CashierTradePage club load ordering', () => {
     rejectRecovery = false;
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
+
+  it.each(['membership', 'roster'] as const)(
+    'does not restore revoked authority from a pending %s read',
+    async (pendingRead) => {
+      const member = deferred<{
+        data: { role: string; chip_balance: number };
+        error: null;
+      }>();
+      const roster = deferred<{ data: unknown[]; error: null }>();
+      let revoked = false;
+      installHistoryTables(() =>
+        revoked
+          ? Promise.resolve({ data: { role: 'player', chip_balance: 250 }, error: null })
+          : pendingRead === 'membership'
+            ? member.promise
+            : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })
+      );
+      installRpc((name: string) =>
+        name === 'fn_club_cashier_members_page_v3'
+          ? roster.promise
+          : Promise.resolve({ data: [], error: null })
+      );
+      render(
+        <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+          <Routes>
+            <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      await screen.findByText('Loading Members...');
+      if (pendingRead === 'roster')
+        await waitFor(() =>
+          expect(supabase.rpc).toHaveBeenCalledWith(
+            'fn_club_cashier_members_page_v3',
+            expect.anything()
+          )
+        );
+      await act(async () => {
+        revoked = true;
+        const handlers = vi
+          .mocked(masterBus.subscribe)
+          .mock.calls.filter(([event]) => event === 'MEMBER_ROLE_CHANGED')
+          .map(([, handler]) => handler as (payload: unknown) => void);
+        expect(handlers.length).toBeGreaterThan(0);
+        for (const handler of handlers)
+          handler({ clubId: CLUB_ID, userId: USER_ID, newRole: 'player' });
+        member.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null });
+        roster.resolve({ data: [], error: null });
+        await Promise.all([member.promise, roster.promise]);
+      });
+      expect(screen.queryByText('Balances Synchronized')).not.toBeInTheDocument();
+      if (pendingRead === 'membership')
+        expect(supabase.rpc).not.toHaveBeenCalledWith(
+          'fn_club_cashier_members_page_v3',
+          expect.anything()
+        );
+      expect(
+        screen.getByText('Cashier Access Changed. Refresh To Verify Your Current Access.')
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+      await screen.findByText('Balances Synchronized');
+      expect(screen.getByLabelText('Current Cashier Balances')).toHaveTextContent('Player');
+    }
+  );
 
   it('lists every club wallet plus canonical owned unions, never a non-owned union treasury', async () => {
     const OWNED_UNION_ID = '44444444-4444-4444-8444-444444444444';
@@ -651,6 +719,46 @@ describe('CashierTradePage club load ordering', () => {
     await within(panel).findByText('No Transactions Recorded Yet.');
     await act(async () => older.reject(new Error('Old book unavailable')));
     expect(toastMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps an older page when a balance event refreshes the same history book', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: ReturnType<typeof historyEntry>[]; error: null }>();
+    let headReads = 0;
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        headReads++;
+        return Promise.resolve({
+          data: Array.from({ length: 51 }, (_, index) => historyEntry(100 - index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    const before = headReads;
+    const balanceHandlers = vi
+      .mocked(masterBus.subscribe)
+      .mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')
+      .map(([, handler]) => handler as (payload: unknown) => void);
+    act(() => {
+      for (const handler of balanceHandlers)
+        handler({ source: 'cashout_approved', userId: USER_ID });
+    });
+    await waitFor(() => expect(headReads).toBeGreaterThan(before), { timeout: 3000 });
+    await act(async () => {
+      older.resolve({
+        data: Array.from({ length: 51 }, (_, index) => historyEntry(50 - index)),
+        error: null,
+      });
+      await older.promise;
+    });
+    expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(100);
+    expect(within(panel).getByRole('button', { name: 'Load 50 Older Entries' })).toBeEnabled();
   });
 
   it('does not invalidate the request that loads the first Trade tab', async () => {

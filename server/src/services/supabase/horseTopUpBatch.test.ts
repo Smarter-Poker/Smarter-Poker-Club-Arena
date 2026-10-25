@@ -24,6 +24,7 @@ describe('a whole table shares bounded reads and exact seat choices', () => {
     seats = Array.from({ length: 10 }, (_, i) => ({
       id: `seat-${i}`,
       user_id: `horse-${i}`,
+      table_id: 'table',
       club_id: i % 2 ? 'club-a' : 'club-b',
       auto_rebuy: i < 3,
       is_sitting_out: false,
@@ -39,10 +40,23 @@ describe('a whole table shares bounded reads and exact seat choices', () => {
         return new Response(JSON.stringify({ message: 'unavailable' }), { status: 503 });
       let data: any[] = [];
       if (url.pathname.endsWith('table_seats')) {
-        if (method === 'GET') data = seats;
-        else {
+        if (method === 'GET') {
+          const table = url.searchParams.get('table_id')?.slice(3);
+          const cluster = url.searchParams.get('table.cluster_id')?.slice(3);
+          const cursor = url.searchParams.get('id')?.slice(3);
+          data = seats.filter(
+            (s) =>
+              (!table || s.table_id === table) &&
+              (!cluster || s.table?.cluster_id === cluster) &&
+              (!cursor || s.id > cursor)
+          );
+          data.sort((a, b) => a.id.localeCompare(b.id));
+          if (url.searchParams.has('limit'))
+            data = data.slice(0, Number(url.searchParams.get('limit')));
+        } else {
           const ids = String(url.searchParams.get('id')).slice(4, -1).split(',');
-          data = seats.filter((s) => ids.includes(s.id));
+          const table = url.searchParams.get('table_id')?.slice(3);
+          data = seats.filter((s) => ids.includes(s.id) && (!table || s.table_id === table));
           if (incompleteWrite) data = [];
           for (const s of data) s.auto_rebuy = body.auto_rebuy;
           data = data.map((s) => ({ id: s.id }));
@@ -107,6 +121,92 @@ describe('a whole table shares bounded reads and exact seat choices', () => {
     });
     const batch = await wallets.readHorseTopUpBatch('table', () => true, 200);
     expect(batch?.get('horse-0')).toMatchObject({ wallet: undefined, invested: undefined });
+  });
+  function wholeGame(size = 18) {
+    seats = Array.from({ length: size }, (_, i) => ({
+      ...seats[0],
+      id: `seat-${10000 + i}`,
+      user_id: `horse-${i}`,
+      table_id: `table-${Math.floor(i / 6)}`,
+      auto_rebuy: i % 6 < 2,
+      table: {
+        cluster_id: 'game',
+        game_variant: 'PLO 5',
+        tournament_id: null,
+        is_deleted: false,
+        arena: { asset: 'chips' },
+        cluster: { lightning_enabled: false },
+      },
+    }));
+  }
+  it('balances eighteen horses across the game to five, rather than rounding each table to two', async () => {
+    wholeGame();
+    for (const table of ['table-0', 'table-1', 'table-2']) {
+      const batch = await wallets.readHorseTopUpBatch(table, () => true, 200, 'game');
+      expect(batch?.size).toBe(6);
+      expect(
+        [...batch!.keys()].every((id) =>
+          seats.some((s) => s.user_id === id && s.table_id === table)
+        )
+      ).toBe(true);
+    }
+    expect(seats.filter((s) => s.auto_rebuy)).toHaveLength(5);
+    expect(requests.filter((r) => r.method === 'PATCH')).toHaveLength(1);
+    expect(requests[0].url.searchParams.get('table.cluster_id')).toBe('eq.game');
+    expect(
+      requests.filter((r) => r.method === 'PATCH').every((r) => r.url.searchParams.has('table_id'))
+    ).toBe(true);
+  });
+  it('does not count another variant, Diamond, deleted, or tournament seat in the cash game quota', async () => {
+    wholeGame();
+    const foreign = [
+      { game_variant: 'plo6' },
+      { arena: { asset: 'diamonds' } },
+      { is_deleted: true },
+      { tournament_id: 'tournament' },
+    ].map((change, i) => ({
+      ...seats[0],
+      id: `foreign-${i}`,
+      user_id: `foreign-${i}`,
+      table_id: 'foreign',
+      auto_rebuy: true,
+      table: { ...seats[0].table, ...change },
+    }));
+    seats.push(...foreign);
+    for (const table of ['table-0', 'table-1', 'table-2'])
+      await wallets.readHorseTopUpBatch(table, () => true, 200, 'game');
+    expect(seats.filter((s) => !s.id.startsWith('foreign') && s.auto_rebuy)).toHaveLength(5);
+    expect(foreign.every((s) => s.auto_rebuy)).toBe(true);
+  });
+  it('refuses an unread cohort instead of planning a quota from partial membership', async () => {
+    wholeGame();
+    seats[0].table.arena = null;
+    expect(await wallets.readHorseTopUpBatch('table-0', () => true, 200, 'game')).toBeNull();
+    expect(requests.filter((r) => r.method === 'PATCH')).toHaveLength(0);
+  });
+  it('refuses a game that has changed to Lightning before any preference write or funding read', async () => {
+    wholeGame();
+    seats.forEach((s) => (s.table.cluster.lightning_enabled = true));
+    expect(await wallets.readHorseTopUpBatch('table-0', () => true, 200, 'game')).toBeNull();
+    expect(requests).toHaveLength(1);
+  });
+  it('paginates the whole cohort while funding reads and results stay local to this table', async () => {
+    wholeGame(501);
+    seats.forEach((s, i) => (s.auto_rebuy = i < 150));
+    const batch = await wallets.readHorseTopUpBatch('table-0', () => true, 200, 'game');
+    expect(batch?.size).toBe(6);
+    const reads = requests.filter(
+      (r) => r.method === 'GET' && r.url.pathname.endsWith('table_seats')
+    );
+    expect(reads).toHaveLength(2);
+    expect(reads[0].url.searchParams.get('limit')).toBe('500');
+    expect(reads[1].url.searchParams.get('id')).toBe('gt.seat-10499');
+    expect(
+      requests
+        .find((r) => r.url.pathname.endsWith('cash_player_session'))
+        ?.url.searchParams.get('table_id')
+    ).toBe('eq.table-0');
+    expect(requests.filter((r) => r.method === 'PATCH')).toHaveLength(0);
   });
   it('does not read wallets or sessions when every Auto Top Up stack is already full', async () => {
     seats.forEach((s) => (s.stack = 200));

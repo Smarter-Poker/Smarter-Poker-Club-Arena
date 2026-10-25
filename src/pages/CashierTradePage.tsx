@@ -580,6 +580,7 @@ function CashierTradeWorkspace() {
   const reqSeqRef = useRef(0);
   const ticketSeqRef = useRef(0);
   const recordSeqRef = useRef(0);
+  const recordFilterEpochRef = useRef(0);
   const invoiceSeqRef = useRef(0);
   /** Claim Back list guard (launch audit 2026-10-09, P-03): bumped with the rest. */
   const reversibleSeqRef = useRef(0);
@@ -1116,6 +1117,7 @@ function CashierTradeWorkspace() {
             .eq('user_id', user.id)
             .maybeSingle(),
         ]);
+        if (!isMounted.current || stale()) return false;
         // Swallowing this error rendered an owner as a `player` with a 0.00
         // balance and silently flipped the downline into agent scope. A failure
         // has to look like a failure.
@@ -1284,7 +1286,11 @@ function CashierTradeWorkspace() {
         const changed = payload as { clubId?: string; userId?: string } | null;
         if (changed?.clubId && changed.clubId !== clubUuid) return;
         if (changed?.userId !== user?.id) return;
+        ++loadVersion.current;
         transferAuthorityEpoch.current++;
+        setLoading(false);
+        setRosterLoadingMore(false);
+        setLoadError('Cashier Access Changed. Refresh To Verify Your Current Access.');
         setRoleResolved(false);
         setDownline([]);
         setSelected(new Set());
@@ -1311,7 +1317,11 @@ function CashierTradeWorkspace() {
       (payload.new.status || 'active') === prior.status
     )
       return;
+    ++loadVersion.current;
     transferAuthorityEpoch.current++;
+    setLoading(false);
+    setRosterLoadingMore(false);
+    setLoadError('Cashier Access Changed. Refresh To Verify Your Current Access.');
     setRoleResolved(false);
     // Revoked access retires protected rows and any open intent immediately.
     // This is authority invalidation, never a background directory reload.
@@ -1517,6 +1527,7 @@ function CashierTradeWorkspace() {
   // The new filter must never label the old book's rows or receipt as its own.
   useLayoutEffect(() => {
     ++recordSeqRef.current;
+    ++recordFilterEpochRef.current;
     recordsKeyRef.current = null;
     setRecords([]);
     setRecordsHasMore(false);
@@ -1526,6 +1537,7 @@ function CashierTradeWorkspace() {
     setReceipt(null);
     return () => {
       ++recordSeqRef.current;
+      ++recordFilterEpochRef.current;
     };
   }, [historyFilterKey]);
 
@@ -1608,7 +1620,9 @@ function CashierTradeWorkspace() {
     if (!user?.id || !clubUuid || !roleResolved || recordsLoadingMore) return;
     const last = records[records.length - 1];
     if (!last) return;
-    const seq = recordSeqRef.current;
+    // A head refresh keeps the same immutable older book. Only changing the
+    // filters or leaving this view retires its pending older-page request.
+    const filterEpoch = recordFilterEpochRef.current;
     const viewer = user.id;
     setRecordsLoadingMore(true);
     try {
@@ -1624,7 +1638,7 @@ function CashierTradeWorkspace() {
         p_before_id: last.id,
         p_limit: HISTORY_PAGE + 1,
       });
-      if (!isMounted.current || seq !== recordSeqRef.current) return;
+      if (!isMounted.current || filterEpoch !== recordFilterEpochRef.current) return;
       if (error) throw error;
       const rows = (data || []) as HistoryFeedRow[];
       const page = rows.slice(0, HISTORY_PAGE).map((raw) => toTradeRecord(raw, viewer));
@@ -1635,10 +1649,11 @@ function CashierTradeWorkspace() {
       setRecordsHasMore(rows.length > HISTORY_PAGE);
     } catch (e) {
       reportError(e, 'CashierTradePage.recordsOlder');
-      if (isMounted.current && seq === recordSeqRef.current)
+      if (isMounted.current && filterEpoch === recordFilterEpochRef.current)
         toast?.error?.('Older Transactions Could Not Be Loaded');
     } finally {
-      if (isMounted.current && seq === recordSeqRef.current) setRecordsLoadingMore(false);
+      if (isMounted.current && filterEpoch === recordFilterEpochRef.current)
+        setRecordsLoadingMore(false);
     }
   }, [
     user?.id,
@@ -3360,6 +3375,11 @@ function CashierTradeWorkspace() {
       return;
     }
     const owningView = transferView.current;
+    const owningAuthority = transferAuthorityEpoch.current;
+    const current = () =>
+      isMounted.current &&
+      transferView.current === owningView &&
+      transferAuthorityEpoch.current === owningAuthority;
     busyRef.current = true;
     setBusy(true);
     try {
@@ -3376,6 +3396,7 @@ function CashierTradeWorkspace() {
         }
       );
       if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!current()) return;
       const { data, error } = await supabase.rpc('fn_club_bank_send', {
         p_club_id: clubUuid,
         p_to_user_id: user.id,
@@ -3394,7 +3415,7 @@ function CashierTradeWorkspace() {
       if (res && res.success === false) await clearCashierWalletOperation(operation);
       if (!res?.success) throw new Error(res?.error || 'The Club Bank Refused That Send');
       await clearCashierWalletOperation(operation);
-      if (!isMounted.current || transferView.current !== owningView) return;
+      if (!current()) return;
       toast?.success?.(
         res.replayed
           ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your ${SEND_DESTINATION_LABELS[transferDestination(picked[0])].replace(' Wallet', '')} Wallet`
@@ -3410,7 +3431,7 @@ function CashierTradeWorkspace() {
       void loadBankBalance();
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_self', userId: user.id });
     } catch (e) {
-      if (!isMounted.current) return;
+      if (!current()) return;
       reportError(e, 'CashierTradePage.sendToSelf');
       toast?.error?.((e as Error).message || 'Send Failed');
     } finally {
@@ -3432,6 +3453,11 @@ function CashierTradeWorkspace() {
       return;
     }
     const owningView = transferView.current;
+    const owningAuthority = transferAuthorityEpoch.current;
+    const current = () =>
+      isMounted.current &&
+      transferView.current === owningView &&
+      transferAuthorityEpoch.current === owningAuthority;
     busyRef.current = true;
     setMgmtClaiming(true);
     try {
@@ -3448,6 +3474,7 @@ function CashierTradeWorkspace() {
         }
       );
       if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
+      if (!current()) return;
       const { data, error } = await supabase.rpc('fn_club_bank_claim_back', {
         p_club_id: clubUuid,
         p_from_user_id: target.userId,
@@ -3466,7 +3493,7 @@ function CashierTradeWorkspace() {
       if (res && res.success === false) await clearCashierWalletOperation(operation);
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
       await clearCashierWalletOperation(operation);
-      if (!isMounted.current || transferView.current !== owningView) return;
+      if (!current()) return;
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In The Club Bank`
@@ -3482,7 +3509,7 @@ function CashierTradeWorkspace() {
       setClaimOpen(false);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_bank_claim', userId: user.id });
     } catch (e) {
-      if (!isMounted.current) return;
+      if (!current()) return;
       reportError(e, 'CashierTradePage.claimToBank');
       toast?.error?.((e as Error).message || 'Claim Back Failed');
     } finally {

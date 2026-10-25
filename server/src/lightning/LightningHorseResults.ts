@@ -42,6 +42,7 @@ export interface LightningSettledHand {
   rake: number;
   bbj: number;
   buttonSeat: number | null;
+  rollupsInAcceptedFacts?: boolean;
 }
 
 /** The table's VPIP floor in percent, read exactly as the physical engine reads it. */
@@ -78,6 +79,7 @@ export function buildLightningReviewInput(hand: LightningSettledHand): HorseRevi
     vpipFloor: lightningVpipFloor(hand.rules),
     format: lightningReviewFormat(bigBlind),
     seatTouch: false,
+    rollupsInAcceptedFacts: hand.rollupsInAcceptedFacts,
   };
 }
 

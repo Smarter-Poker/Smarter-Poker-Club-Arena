@@ -10,7 +10,7 @@
  */
 
 import { v5 as uuidv5 } from 'uuid';
-import { balancedHorseAutoTopUps } from '../HorseTopUpStyle.js';
+import { balancedHorseAutoTopUps, isPlo5Variant } from '../HorseTopUpStyle.js';
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
@@ -207,41 +207,94 @@ export interface HorseTopUpContext {
 }
 
 /**
- * One hand boundary, one roster and two shared funding reads instead of three
- * reads per horse. The immutable seat id fences flag changes from a departed
- * occupancy. Only this table's horses are selected; no human preference moves.
- * A failed read/write or lost lifecycle returns unknown and purchases nothing.
- * This is called by settlement itself, never by a new timer or repair loop.
+ * Plan across the whole Classic PLO5 cash game, then apply only this table's
+ * choices at its own hand boundary. Per-table rounding can turn 30% into 40%
+ * across a game of short tables. Funding and immutable seat writes stay local;
+ * no human preference moves. Bounded keyset pages never silently truncate the
+ * cohort. Failed/partial reads and lost lifecycle purchase nothing.
  */
 export async function readHorseTopUpBatch(
   tableId: string,
   canMutate: () => boolean,
-  maxBuyIn: number
+  maxBuyIn: number,
+  clusterId?: string | null
 ): Promise<Map<string, HorseTopUpContext> | null> {
   if (!tableId || !canMutate() || isMaintenanceFrozen()) return null;
   try {
-    const roster = await supabase
-      .from('table_seats')
-      .select(
-        'id,user_id,club_id,stack,auto_rebuy,is_sitting_out,leave_pending,profile:profiles!fk_table_seats_user_id_profiles!inner(is_horse)'
-      )
-      .eq('table_id', tableId)
-      .is('left_at', null)
-      .eq('profile.is_horse', true);
-    if (roster.error || !roster.data || !canMutate() || isMaintenanceFrozen()) return null;
-    const seats = roster.data as unknown as Array<{
+    type Seat = {
       id: string;
+      table_id: string;
       user_id: string;
       club_id: string | null;
       stack: number;
       auto_rebuy: boolean | null;
       is_sitting_out: boolean;
       leave_pending: boolean;
-    }>;
+      table?: {
+        cluster_id: string | null;
+        game_variant: unknown;
+        tournament_id: string | null;
+        is_deleted: boolean | null;
+        arena: { asset: string } | null;
+        cluster: { lightning_enabled: boolean } | null;
+      } | null;
+    };
+    const allSeats: Seat[] = [];
+    let cursor: string | undefined;
+    let complete = false;
+    for (let page = 0; page < 20; page++) {
+      let query = supabase
+        .from('table_seats')
+        .select(
+          'id,table_id,user_id,club_id,stack,auto_rebuy,is_sitting_out,leave_pending,profile:profiles!fk_table_seats_user_id_profiles!inner(is_horse)' +
+            (clusterId
+              ? ',table:tables!table_seats_table_id_fkey!inner(cluster_id,game_variant,tournament_id,is_deleted,arena:clubs!fk_tables_club_id!inner(asset),cluster:cash_games!cluster_id(lightning_enabled))'
+              : '')
+        )
+        .is('left_at', null)
+        .eq('profile.is_horse', true)
+        .order('id', { ascending: true })
+        .limit(500);
+      query = clusterId ? query.eq('table.cluster_id', clusterId) : query.eq('table_id', tableId);
+      if (cursor) query = query.gt('id', cursor);
+      const roster = await query;
+      if (roster.error || !roster.data || !canMutate() || isMaintenanceFrozen()) return null;
+      const rows = roster.data as unknown as Seat[];
+      if (rows.length && cursor && rows[rows.length - 1].id <= cursor) return null;
+      allSeats.push(...rows);
+      if (rows.length < 500) {
+        complete = true;
+        break;
+      }
+      cursor = rows[rows.length - 1].id;
+    }
+    if (!complete) return null;
+    if (
+      clusterId &&
+      allSeats.some(
+        (seat) =>
+          !seat.table ||
+          seat.table.cluster_id !== clusterId ||
+          !seat.table.arena ||
+          typeof seat.table.arena.asset !== 'string' ||
+          seat.table.cluster?.lightning_enabled !== false
+      )
+    )
+      return null;
+    const cohort = clusterId
+      ? allSeats.filter(
+          (seat) =>
+            isPlo5Variant(seat.table!.game_variant) &&
+            seat.table!.tournament_id === null &&
+            seat.table!.is_deleted !== true &&
+            seat.table!.arena!.asset !== 'diamonds'
+        )
+      : allSeats;
+    const seats = cohort.filter((seat) => seat.table_id === tableId);
     const out = new Map<string, HorseTopUpContext>();
     if (!seats.length) return out;
     const chosen = balancedHorseAutoTopUps(
-      seats.map((s) => ({ userId: s.user_id, autoTopUp: s.auto_rebuy === true }))
+      cohort.map((seat) => ({ userId: seat.user_id, autoTopUp: seat.auto_rebuy === true }))
     );
     for (const enabled of [false, true]) {
       const ids = seats

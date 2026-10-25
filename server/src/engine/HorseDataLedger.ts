@@ -678,6 +678,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V55'
   ),
   flag(
+    'v56OmahaPressureRange',
+    'direct pressure value sampling; opt-in until clock- and governor-controlled qualification resolves',
+    'V56'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -2958,6 +2963,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic committed and ordinary raise branches',
     'opt-in river Omaha weak set/trips flatted after clearing the unchanged call bar',
     'V55'
+  ),
+  receipt(
+    'v56_omaha_pressure_range',
+    'HorseLogic to HorseEval pressure-conditioned Omaha reservoir',
+    'a PLO public aggressor range used the direct value stratum instead of accepting bounded rejection misses',
+    'V56'
   ),
   receipt(
     'v51_river_flat',

@@ -1,0 +1,428 @@
+[
+  {
+    "review": 2373791,
+    "heroSeat": 3,
+    "heroCards": [
+      {
+        "rank": "Q",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "A",
+        "suit": "hearts"
+      },
+      {
+        "rank": "A",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "T",
+        "suit": "spades"
+      }
+    ],
+    "node": {
+      "pot": 75.28,
+      "ante": 0,
+      "mode": "cash",
+      "asset": "chips",
+      "seats": [
+        [1, 15.92, 0, 0.85, 0, 0, 1],
+        [2, 28.58, 37.64, 55.91, 0, 0, 0],
+        [3, 43.33, 0, 18.27, 0, 0, 0],
+        [4, 13.96, 0, 0.25, 0, 0, 1]
+      ],
+      "boards": ["4c3s7dJcAs"],
+      "status": "captured",
+      "street": "river",
+      "toCall": 37.64,
+      "bombPot": false,
+      "variant": "plo4",
+      "version": 1,
+      "anteType": "per_player",
+      "bigBlind": 0.25,
+      "chipUnit": 0.01,
+      "actorSeat": 3,
+      "structure": "pot_limit",
+      "boardCount": 1,
+      "currentBet": 37.64,
+      "dealerSeat": 2,
+      "deductions": {
+        "bbj": {
+          "feeBB": 0.6,
+          "enabled": true,
+          "minPotBB": 10,
+          "minPlayersDealt": 3
+        },
+        "rake": {
+          "cap": 0.62,
+          "percent": 10,
+          "noFlopNoDrop": true,
+          "playerCountCaps": [
+            [2, 0.31],
+            [3, 0.62],
+            [4, 0.62]
+          ]
+        },
+        "rules": "controller-rake-bbj-v1",
+        "status": "captured",
+        "version": 1
+      },
+      "maxRaiseTo": null,
+      "minRaiseTo": null,
+      "smallBlind": 0.1,
+      "allInOrFold": false,
+      "fixedBetSize": null,
+      "legalActions": ["fold", "call", "all_in"],
+      "wagersCapped": false,
+      "tournamentStage": {
+        "status": "not_applicable",
+        "version": 1
+      }
+    },
+    "history": [
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "sb",
+        "amount": 0.1,
+        "userId": "seat3",
+        "timestamp": 1792801792183
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "bb",
+        "amount": 0.25,
+        "userId": "seat4",
+        "timestamp": 1792801792183
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 0.85,
+        "userId": "seat1",
+        "timestamp": 1792801800940,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 0.85,
+        "userId": "seat2",
+        "timestamp": 1792801802262
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 3.65,
+        "userId": "seat3",
+        "timestamp": 1792801807083,
+        "isFullRaise": true
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0,
+        "userId": "seat4",
+        "timestamp": 1792801811461
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0,
+        "userId": "seat1",
+        "timestamp": 1792801814409
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 2.8,
+        "userId": "seat2",
+        "timestamp": 1792801815727
+      },
+      {
+        "seat": 3,
+        "stage": "flop",
+        "action": "bet",
+        "amount": 7.4,
+        "userId": "seat3",
+        "timestamp": 1792801818627,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "flop",
+        "action": "call",
+        "amount": 7.4,
+        "userId": "seat2",
+        "timestamp": 1792801821026
+      },
+      {
+        "seat": 3,
+        "stage": "turn",
+        "action": "check",
+        "amount": 0,
+        "userId": "seat3",
+        "timestamp": 1792801824454
+      },
+      {
+        "seat": 2,
+        "stage": "turn",
+        "action": "bet",
+        "amount": 7.22,
+        "userId": "seat2",
+        "timestamp": 1792801827193,
+        "isFullRaise": true
+      },
+      {
+        "seat": 3,
+        "stage": "turn",
+        "action": "call",
+        "amount": 7.22,
+        "userId": "seat3",
+        "timestamp": 1792801831917
+      },
+      {
+        "seat": 3,
+        "stage": "river",
+        "action": "check",
+        "amount": 0,
+        "userId": "seat3",
+        "timestamp": 1792801833708
+      },
+      {
+        "seat": 2,
+        "stage": "river",
+        "action": "bet",
+        "amount": 37.64,
+        "userId": "seat2",
+        "timestamp": 1792801836728,
+        "isFullRaise": true
+      }
+    ]
+  },
+  {
+    "review": 2375169,
+    "heroSeat": 6,
+    "heroCards": [
+      {
+        "rank": "2",
+        "suit": "clubs"
+      },
+      {
+        "rank": "3",
+        "suit": "hearts"
+      },
+      {
+        "rank": "4",
+        "suit": "hearts"
+      },
+      {
+        "rank": "4",
+        "suit": "spades"
+      }
+    ],
+    "node": {
+      "pot": 75.26,
+      "ante": 0,
+      "mode": "cash",
+      "asset": "chips",
+      "seats": [
+        [1, 120.32, 0, 0.25, 0, 0, 1],
+        [2, 0, 32.39, 53.7, 0, 0, 2],
+        [3, 63.87, 0, 0, 0, 0, 1],
+        [4, 65.69, 0, 0, 0, 0, 1],
+        [5, 63.01, 0, 0, 0, 0, 1],
+        [6, 127.8, 0, 21.31, 0, 0, 0]
+      ],
+      "boards": ["5s9c2h2d7s"],
+      "status": "captured",
+      "street": "river",
+      "toCall": 32.39,
+      "bombPot": false,
+      "variant": "plo4",
+      "version": 1,
+      "anteType": "per_player",
+      "bigBlind": 0.5,
+      "chipUnit": 0.01,
+      "actorSeat": 6,
+      "structure": "pot_limit",
+      "boardCount": 1,
+      "currentBet": 32.39,
+      "dealerSeat": 6,
+      "deductions": {
+        "bbj": {
+          "feeBB": 0.6,
+          "enabled": true,
+          "minPotBB": 10,
+          "minPlayersDealt": 3
+        },
+        "rake": {
+          "cap": 1.25,
+          "percent": 10,
+          "noFlopNoDrop": true,
+          "playerCountCaps": [
+            [2, 0.63],
+            [3, 1.25],
+            [4, 1.25]
+          ]
+        },
+        "rules": "controller-rake-bbj-v1",
+        "status": "captured",
+        "version": 1
+      },
+      "maxRaiseTo": 127.8,
+      "minRaiseTo": 64.78,
+      "smallBlind": 0.25,
+      "allInOrFold": false,
+      "fixedBetSize": null,
+      "legalActions": ["fold", "call", "raise", "all_in"],
+      "wagersCapped": false,
+      "tournamentStage": {
+        "status": "not_applicable",
+        "version": 1
+      }
+    },
+    "history": [
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "sb",
+        "amount": 0.25,
+        "userId": "seat1",
+        "timestamp": 1792803856029
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "bb",
+        "amount": 0.5,
+        "userId": "seat2",
+        "timestamp": 1792803856029
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0,
+        "userId": "seat3",
+        "timestamp": 1792803858202
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0,
+        "userId": "seat4",
+        "timestamp": 1792803860857
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0,
+        "userId": "seat5",
+        "timestamp": 1792803863173
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 1.75,
+        "userId": "seat6",
+        "timestamp": 1792803865764,
+        "isFullRaise": true
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0,
+        "userId": "seat1",
+        "timestamp": 1792803868233
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 1.25,
+        "userId": "seat2",
+        "timestamp": 1792803870043
+      },
+      {
+        "seat": 2,
+        "stage": "flop",
+        "action": "check",
+        "amount": 0,
+        "userId": "seat2",
+        "timestamp": 1792803875159
+      },
+      {
+        "seat": 6,
+        "stage": "flop",
+        "action": "bet",
+        "amount": 1.72,
+        "userId": "seat6",
+        "timestamp": 1792803879490,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "flop",
+        "action": "call",
+        "amount": 1.72,
+        "userId": "seat2",
+        "timestamp": 1792803881485
+      },
+      {
+        "seat": 2,
+        "stage": "turn",
+        "action": "check",
+        "amount": 0,
+        "userId": "seat2",
+        "timestamp": 1792803882460
+      },
+      {
+        "seat": 6,
+        "stage": "turn",
+        "action": "bet",
+        "amount": 3.55,
+        "userId": "seat6",
+        "timestamp": 1792803886910,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "turn",
+        "action": "raise",
+        "amount": 17.84,
+        "userId": "seat2",
+        "timestamp": 1792803888717,
+        "isFullRaise": true
+      },
+      {
+        "seat": 6,
+        "stage": "turn",
+        "action": "call",
+        "amount": 14.29,
+        "userId": "seat6",
+        "timestamp": 1792803890660
+      },
+      {
+        "seat": 2,
+        "stage": "river",
+        "action": "all_in",
+        "amount": 32.39,
+        "userId": "seat2",
+        "timestamp": 1792803891659,
+        "isFullRaise": true
+      }
+    ]
+  }
+]

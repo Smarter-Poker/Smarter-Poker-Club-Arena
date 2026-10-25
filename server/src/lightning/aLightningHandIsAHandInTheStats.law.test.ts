@@ -30,6 +30,9 @@ vi.mock('../services/supabase/client.js', () => ({
   maintenanceSupabase: {},
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn(), describeError: String }));
+vi.mock('../services/HorseDailyRollupContract.js', () => ({
+  horseDailyRollupContract: vi.fn(async () => true),
+}));
 const { mulberry32 } = await import('../engine/HandFuzzer.js');
 const kit = await import('../testing/lightningHostTestKit.js');
 
@@ -57,6 +60,42 @@ const factsOf = (row: Record<string, unknown>): Facts | undefined =>
   (row._accepted_post_commit_facts as { stats_facts?: Facts } | undefined)?.stats_facts;
 
 describe('LAW: a Lightning hand is a hand in the stats and in the collusion scan', () => {
+  it('hands paired daily counts to the accepted projector only when its hand identity was retained', async () => {
+    const formed = kit.formedHand(4, 12_050);
+    const t = kit.buildHost(formed, [100, 100, 100, 100], {
+      horses: new Set([formed.players[0]!, formed.players[2]!]),
+      rules: { club_id: CLUB },
+    });
+    const settle = vi.mocked(t.backend.settle);
+    const original = settle.getMockImplementation()!;
+    settle.mockImplementation(async (args) => {
+      const result = await original(args);
+      return result.ok
+        ? { ...result, value: { ...result.value, handHistoryId: args.handId } }
+        : result;
+    });
+    await t.host.start();
+    await kit.playOut(t.host, mulberry32(12_050));
+    await kit.flush(40);
+    const sent = t.calls.settle[0]!;
+    const stats = factsOf(sent.handRow) as Facts & { horse_rollups: { nets: any[]; play: any[] } };
+    const horses = [formed.players[0], formed.players[2]].sort();
+    expect(stats.horse_rollups.nets.map((r) => r.horse_user_id)).toEqual(horses);
+    expect(stats.horse_rollups.play.map((r) => r.horse_user_id)).toEqual(horses);
+    expect(
+      stats.horse_rollups.nets.every(
+        (r) => r.hands === 1 && r.format === `lightning_${sent.handRow.big_blind}bb`
+      )
+    ).toBe(true);
+    expect(stats.horse_rollups.play.every((r) => r.hands === 1)).toBe(true);
+    expect(t.scoreboard[0]?.rollupsInAcceptedFacts).toBe(true);
+    expect(t.scoreboard[0]?.playedAt).toBe(sent.handRow.ended_at);
+  });
+
+  it('keeps legacy counting when an older settlement drops private stats', async () => {
+    const { t } = await settled(12_075);
+    expect(t.scoreboard[0]?.rollupsInAcceptedFacts).toBe(false);
+  });
   it('sends one fact row per participant, keyed by the Lightning hand at the host table and club', async () => {
     for (const base of [12_100, 12_200, 12_300]) {
       const { t, formed } = await settled(base);

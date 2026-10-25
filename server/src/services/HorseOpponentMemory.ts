@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { noteFire } from '../engine/BrainTelemetry.js';
 import {
   memoryVariant,
   validOpponentProfile,
@@ -94,6 +95,34 @@ export function createOpponentMemoryProfileCache() {
 }
 const validatedOpponentProfiles = createOpponentMemoryProfileCache();
 
+/**
+ * READ COST IS A NUMBER (2026-10-24). Every Lightning hand now adds one
+ * post-commit profile read beside the per-hand decision read, and on
+ * 2026-10-24 the expensive cold read had to be contained for database CPU.
+ * Each read files its outcome and a latency bucket into the horse telemetry
+ * (horse_brain_telemetry, flushed by BrainTelemetryFlush), so the load this
+ * read puts on the database is read from rows, not assumed:
+ *   horse_opponent_memory_read_{ok|busy|timeout|failed|incomplete}
+ *   horse_opponent_memory_read_ms_{le50|le100|le250|le500|le1000|gt1000}
+ *   horse_opponent_memory_read_cache_fallback  (answered from known profiles)
+ */
+export function opponentMemoryLatencyBucket(ms: number): string {
+  if (!(ms >= 0)) return 'horse_opponent_memory_read_ms_unknown';
+  for (const edge of [50, 100, 250, 500, 1000])
+    if (ms <= edge) return `horse_opponent_memory_read_ms_le${edge}`;
+  return 'horse_opponent_memory_read_ms_gt1000';
+}
+export function opponentMemoryFailureFeature(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const name = (error as { name?: unknown } | null)?.name;
+  if (name === 'TimeoutError' || name === 'AbortError' || /abort|timeout/i.test(message))
+    return 'horse_opponent_memory_read_timeout';
+  if (message.includes('57014')) return 'horse_opponent_memory_read_timeout';
+  if (message.includes('busy')) return 'horse_opponent_memory_read_busy';
+  if (message.includes('incomplete')) return 'horse_opponent_memory_read_incomplete';
+  return 'horse_opponent_memory_read_failed';
+}
+
 /** One bounded read in the original hand/decision path. The database owns
  * persistence and duplicate protection; there is no flush timer or repair job. */
 export async function readHorseOpponentProfiles(
@@ -108,6 +137,7 @@ export async function readHorseOpponentProfiles(
   const ids = [...new Set(userIds)].sort();
   if (ids.length < 1 || ids.length > 10) throw new Error('invalid opponent memory roster');
   signal?.throwIfAborted();
+  const startedAt = Date.now();
   return admitOpponentMemoryRead(async () => {
     const { data, error } = await supabase
       .rpc('fn_horse_exploit_profiles_read', {
@@ -137,10 +167,14 @@ export async function readHorseOpponentProfiles(
     // Cold actors remain explicitly uninitialized until their own complete
     // legacy horizon commits. Preserve every already initialized actor.
     validatedOpponentProfiles.remember(data as DurableOpponentProfile[]);
+    noteFire('horse_opponent_memory_read_ok');
+    noteFire(opponentMemoryLatencyBucket(Date.now() - startedAt));
     return validatedOpponentProfiles.read(ids, v, mode, size);
   }).catch((error) => {
+    noteFire(opponentMemoryFailureFeature(error));
     const known = validatedOpponentProfiles.read(ids, v, mode, size);
     if (!known.length) throw error;
+    noteFire('horse_opponent_memory_read_cache_fallback');
     reportError(error, 'HorseOpponentMemory.decisionRead');
     return known;
   });

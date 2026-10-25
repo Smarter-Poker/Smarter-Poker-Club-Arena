@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-db/cashier-history-filters. Migration 20261024213601_cashier_history_filters_and_totals: the Transaction History's filtered page and own-wallet totals doors, installed through Apply Merged Migration (it carries a CONCURRENTLY preamble the Supabase MCP cannot send).",
+  "functions": ["fn_cashier_history_page", "fn_cashier_history_totals"]
+}

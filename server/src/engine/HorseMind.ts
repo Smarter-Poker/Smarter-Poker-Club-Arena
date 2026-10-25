@@ -4,6 +4,8 @@ import {
   opponentMemoryKey,
   validOpponentProfile,
   type DurableOpponentProfile,
+  blendOpponentMemory,
+  opponentMemoryDonors,
   type MemoryMode,
   type MemorySize,
 } from './HorseOpponentMemory.js';
@@ -821,8 +823,15 @@ export class HorseMind {
     if (!scope) return null;
     const variant = memoryVariant(this.decisionVariant);
     const size = scope.split(':')[1] as MemorySize;
+    // A NEW TABLE IS NOT A NEW PLAYER (2026-10-24): a thin or missing exact
+    // context borrows the nearest one this worker knows (blendOpponentMemory).
     const durable = variant
-      ? this.exploitCounters.get(opponentMemoryKey(userId, variant, this.decisionMode, size))
+      ? blendOpponentMemory(
+          this.exploitCounters.get(opponentMemoryKey(userId, variant, this.decisionMode, size)),
+          opponentMemoryDonors(this.decisionMode, size).map(([mode, donorSize]) =>
+            this.exploitCounters.get(opponentMemoryKey(userId, variant, mode, donorSize))
+          )
+        )
       : undefined;
     return opponentExploitRead(
       durable ??
@@ -1322,6 +1331,14 @@ export class HorseMind {
             const row = this.exploitCounters.get(key);
             if (row) view.exploit.set(key, { ...row });
             else if (this.durableOpponentMemory) view.exploit.set(key, freshExploitCounters());
+            // The second look reads exactly what the first did, so the donor
+            // contexts opponentRead may borrow travel with the exact one.
+            if (!memoryContext) continue;
+            for (const [donorMode, donorSize] of opponentMemoryDonors(mode, size)) {
+              const donorKey = opponentMemoryKey(id, variant, donorMode, donorSize);
+              const donor = this.exploitCounters.get(donorKey);
+              if (donor) view.exploit.set(donorKey, { ...donor });
+            }
           }
       for (const other of ids) {
         const key = `${id}|${other}`;

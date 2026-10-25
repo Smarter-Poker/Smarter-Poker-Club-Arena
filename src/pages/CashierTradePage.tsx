@@ -23,7 +23,7 @@ import {
  *             plus unions the viewer owns (never admin-only treasuries), with balances (Dan: "I also own
  *             the midway union... show wallets for all the clubs, unions a
  *             user is a part of").
- *   Tabs      Trade | Trade Record | Leaderboard Record | Chip Request
+ *   Tabs      Trade | Transaction History | Leaderboard Record | Chip Request
  *   Strip     Your Chip Balance · Agency Players Balance · Available Chips (+)
  *   List      the viewer's DOWNLINE (whole club for owners/admins, assigned
  *             players for agents) with live balances, search, group-by-role,
@@ -116,6 +116,7 @@ import {
 } from '../components/wallet/walletRows';
 import {
   describeChipTransaction,
+  ledgerDirection,
   presentChipTransaction,
   thirdPartySender,
   walletRoute,
@@ -423,6 +424,11 @@ function txLabel(value: string | null | undefined): string {
   return value ? chipKindWord(value) : '';
 }
 
+/** The three roles that may read every transaction in the club. */
+function isClubStaffRole(role: string | null | undefined): boolean {
+  return role === 'owner' || role === 'co_owner' || role === 'admin';
+}
+
 // Retire dialogs and read/write refs immediately when the account or route changes.
 // Pending durable requests keep their original account, club and request identity.
 export default function CashierTradePage() {
@@ -500,6 +506,11 @@ function CashierTradeWorkspace() {
   const [recordsLimit, setRecordsLimit] = useState(50);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsReload, setRecordsReload] = useState(0);
+  /* TRANSACTION HISTORY (Dan 2026-10-24): owners, co-owners and admins choose
+     between every transaction in the club and their own; every other role
+     reads only its own. The server enforces the same rule
+     (fn_cashier_transaction_history), so this is a choice, never a grant. */
+  const [historyScope, setHistoryScope] = useState<'club' | 'mine'>('club');
   const [receipt, setReceipt] = useState<TradeRecordRow | null>(null);
   const [isOnline, setIsOnline] = useState(readCashierOnlineState);
   /* THE BREAK IS NOT A FAILURE (2026-10-16). Dan pressed Confirm three times
@@ -1332,18 +1343,23 @@ function CashierTradeWorkspace() {
     void loadClub();
   }, [clubUuid, loadClub]);
 
+  /** The book the Transaction History reads: the whole club for staff who chose it. */
+  const historyBook: 'club' | 'mine' =
+    roleResolved && isClubStaffRole(myRole) && historyScope === 'club' ? 'club' : 'mine';
+
   const loadRecords = useCallback(async () => {
-    if (!user?.id || !clubUuid) return false;
+    if (!user?.id || !clubUuid || !roleResolved) return false;
     const seq = ++recordSeqRef.current;
     setRecordsLoading(true);
     setRecordsError(null);
     try {
-      // One server-owned role matrix for every viewer. The previous direct
-      // table query forced from/to = auth.uid() in the browser, overriding the
-      // database contract and hiding the club book from owners/admins and the
-      // recursive downline book from agents.
-      const { data, error } = await supabase.rpc('fn_club_trade_ledger', {
+      // One server-owned door for every viewer. The browser never filters
+      // chip_transactions itself; it asks for a book, and the server answers
+      // with the club's rows only to an owner, co-owner or admin who asked
+      // for them, and with the viewer's own rows to everyone else.
+      const { data, error } = await supabase.rpc('fn_cashier_transaction_history', {
         p_club_id: clubUuid,
+        p_scope: historyBook,
         // Fetch one sentinel row so the UI only offers "Load Older Entries"
         // when another page really exists. Initial wire cost stays at 51 rows.
         p_limit: recordsLimit + 1,
@@ -1374,9 +1390,12 @@ function CashierTradeWorkspace() {
           // route, sentence, receipt, search and copied text are a human
           // send's. Never dropped: its amount counts in every total.
           const r = presentChipTransaction(raw);
-          const out = r.from_user_id === user.id;
-          const incoming = r.to_user_id === user.id;
-          const managed = !out && !incoming;
+          // Read by the wallet that moved, not by the row's two sides: a
+          // cash-out lands in the agent wallet of WHOEVER ACCEPTED it, and the
+          // request itself never paid the agent it was sent to.
+          const direction = ledgerDirection(r, user.id);
+          const out = direction === 'out';
+          const managed = direction === 'managed';
           const nameOf = new Map<string, string>();
           if (r.from_user_id && r.from_name) nameOf.set(r.from_user_id, r.from_name);
           if (r.to_user_id && r.to_name) nameOf.set(r.to_user_id, r.to_name);
@@ -1386,7 +1405,7 @@ function CashierTradeWorkspace() {
             createdAt: r.created_at,
             type: (r.transaction_type as string) || 'transfer',
             amount: Number(r.amount) || 0,
-            direction: managed ? ('managed' as const) : out ? ('out' as const) : ('in' as const),
+            direction,
             // A third party reads a Club Bank send by the pot that paid,
             // never its operator: a send nobody pressed reads the same.
             // An entry with no recipient (a tournament buy-in) is not a
@@ -1413,17 +1432,37 @@ function CashierTradeWorkspace() {
       reportError(e, 'CashierTradePage.records');
       if (isMounted.current && seq === recordSeqRef.current) {
         setRecords([]);
-        setRecordsError('Could not load your trade record.');
+        setRecordsError('Could not load your transaction history.');
       }
       return false;
     } finally {
       if (isMounted.current && seq === recordSeqRef.current) setRecordsLoading(false);
     }
-  }, [user?.id, clubUuid, recordsLimit]);
+  }, [user?.id, clubUuid, recordsLimit, roleResolved, historyBook]);
 
   useEffect(() => {
     if (tab === 'record') void loadRecords();
   }, [tab, loadRecords, recordsReload]);
+
+  /* A cash-out accepted (or a send made) while the Transaction History is open
+     lands in it without a manual refresh: the accept writes the row the
+     history reads, and the bus says a balance moved. A burst collapses into
+     one read, exactly as useClubPendingCashouts does. */
+  useEffect(() => {
+    if (tab !== 'record') return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const soon = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setRecordsReload((value) => value + 1), 500);
+    };
+    const offBalance = masterBus.subscribe('BALANCE_UPDATED', soon);
+    const offMutation = masterBus.subscribe('DATA_MUTATED', soon);
+    return () => {
+      if (timer) clearTimeout(timer);
+      offBalance?.();
+      offMutation?.();
+    };
+  }, [tab]);
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
   /** Open chip requests in this club. Drives the tab badge. */
@@ -1894,7 +1933,7 @@ function CashierTradeWorkspace() {
   const visibleTabs = useMemo<[TabKey, string][]>(() => {
     const all: [TabKey, string][] = [
       ['trade', 'Trade'],
-      ['record', 'Trade Record'],
+      ['record', 'Transaction History'],
       ['leaderboard', 'Settlement Record'],
       ['request', 'Chip Requests'],
       ['tickets', 'Tickets'],
@@ -3811,10 +3850,16 @@ function CashierTradeWorkspace() {
                     {advanced ? 'Select Recipients' : 'Players'}
                   </h2>
                 </div>
-                <span className={styles.sectionMeta}>
-                  {recipients.length.toLocaleString()} Available · {selected.size.toLocaleString()}{' '}
-                  Selected
-                </span>
+                {/* Dan 2026-10-24: "INSTEAD OF IT SAYING 575 AVAILABLE - 0
+                SELECTED. THAT SHOULD BE THE 'TRANSACTION HISTORY'". The
+                selection count still lives in the dock below. */}
+                <button
+                  type="button"
+                  className={styles.historyLink}
+                  onClick={() => setTab('record')}
+                >
+                  Transaction History
+                </button>
               </div>
               {/* Balance strip */}
               <div className={styles.strip}>
@@ -4262,13 +4307,57 @@ function CashierTradeWorkspace() {
             >
               <div className={styles.sectionHeading}>
                 <div>
-                  <span className={styles.sectionEyebrow}>Auditable History</span>
+                  <span className={styles.sectionEyebrow}>
+                    {historyBook === 'club' ? 'All Club Transactions' : 'My Transactions'}
+                  </span>
                   <h2 className={styles.sectionTitle} id="ledger-title">
-                    Trade Ledger
+                    Transaction History
                   </h2>
                 </div>
-                <span className={styles.sectionMeta}>Newest Entries First</span>
+                {/* The Simple view has no tab strip, so the way in (the
+                heading of Players) is also the way back. A player has no
+                Players desk to return to. */}
+                {!advanced && myRole !== 'player' ? (
+                  <button
+                    type="button"
+                    className={styles.historyLink}
+                    onClick={() => setTab('trade')}
+                  >
+                    Players
+                  </button>
+                ) : (
+                  <span className={styles.sectionMeta}>Newest Entries First</span>
+                )}
               </div>
+
+              {roleResolved && isClubStaffRole(myRole) ? (
+                <div
+                  className={styles.ledgerFilters}
+                  role="group"
+                  aria-label="Choose Which Transactions To Show"
+                >
+                  {(
+                    [
+                      ['club', 'All Club Transactions'],
+                      ['mine', 'My Transactions'],
+                    ] as const
+                  ).map(([scope, label]) => (
+                    <button
+                      key={scope}
+                      type="button"
+                      className={`${styles.ledgerFilter} ${historyScope === scope ? styles.ledgerFilterActive : ''}`}
+                      aria-pressed={historyScope === scope}
+                      onClick={() => {
+                        if (scope === historyScope) return;
+                        setRecordsLimit(50);
+                        setHistoryScope(scope);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               <div className={styles.ledgerSummary} aria-label="Loaded Ledger Totals">
                 <div className={styles.summaryCell}>
@@ -4305,7 +4394,7 @@ function CashierTradeWorkspace() {
                   value={recordQuery}
                   onChange={(event) => setRecordQuery(event.target.value)}
                   placeholder="Search Person Or Entry Type"
-                  aria-label="Search Trade Record"
+                  aria-label="Search Transaction History"
                 />
                 <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
                   {(['all', 'in', 'out', 'managed'] as const).map((direction) => (
@@ -4329,7 +4418,7 @@ function CashierTradeWorkspace() {
               </div>
 
               <div className={styles.list}>
-                {recordsLoading && <div className={styles.empty}>Loading Trades...</div>}
+                {recordsLoading && <div className={styles.empty}>Loading Transactions...</div>}
                 {!recordsLoading && recordsError && (
                   <div className={styles.empty} role="alert">
                     {recordsError}{' '}
@@ -4345,7 +4434,7 @@ function CashierTradeWorkspace() {
                 {!recordsLoading && !recordsError && filteredRecords.length === 0 && (
                   <div className={styles.empty}>
                     {records.length === 0
-                      ? 'No Trades Recorded Yet.'
+                      ? 'No Transactions Recorded Yet.'
                       : 'No Ledger Entries Match Those Filters.'}
                   </div>
                 )}

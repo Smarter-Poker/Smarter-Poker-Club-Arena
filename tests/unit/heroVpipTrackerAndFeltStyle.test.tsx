@@ -401,7 +401,7 @@ describe('the regular ante reaches the felt', () => {
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(/bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game/);
     expect(page).toMatch(
-      /\.from\('cash_games'\)\s*\.select\('template_name'\)\s*\.eq\('id', table\.cluster_id\)/
+      /\.from\('cash_games'\)\s*\.select\('template_name, rules_profile:ruleset_snapshot->>rules_profile'\)\s*\.eq\('id', table\.cluster_id\)/
     );
     expect(page).toMatch(
       /CASH_TEMPLATES\.find\(\(t\) => t\.id === cashTemplateKey\(template\)\)\?\.label/

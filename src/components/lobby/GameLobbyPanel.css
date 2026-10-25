@@ -15,9 +15,9 @@
 .glp-backdrop {
   position: fixed;
   inset: 0;
-  /* Same layer as TournamentLobbyModal: above persistent navigation (1000)
-     and the table stage (1100), below the toast layer. */
-  z-index: 2100;
+  /* Modal review sits above persistent navigation and the live ticker (9400),
+     so the ticker cannot intercept Close. Keep the toast layer above it. */
+  z-index: 9600;
   background: rgb(2 4 7 / 70%);
   backdrop-filter: blur(2px);
   display: flex;

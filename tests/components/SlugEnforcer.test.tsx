@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import SlugEnforcer from '@/components/common/SlugEnforcer';
@@ -166,4 +166,76 @@ describe('SlugEnforcer', () => {
       replace: true,
     });
   });
+  const boardLocation = (search = '?create=table', hash = '#setup') => ({
+    pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
+    search,
+    hash,
+    key: 'table-management',
+    state: null,
+  });
+
+  const delayedClubLookup = () => {
+    let finish!: (result: { data: { slug: string; is_union: boolean }; error: null }) => void;
+    const result = new Promise<{ data: { slug: string; is_union: boolean }; error: null }>(
+      (resolve) => {
+        finish = resolve;
+      }
+    );
+    vi.mocked(supabase.from).mockImplementation(((table: string) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () =>
+            table === 'clubs' ? result : Promise.resolve({ data: null, error: null }),
+        }),
+      }),
+    })) as typeof supabase.from);
+    return async () =>
+      act(async () => {
+        finish({ data: { slug: 'standalone-club', is_union: false }, error: null });
+        await result;
+      });
+  };
+
+  it('does not restore the old creator query after the operator changes surface', async () => {
+    vi.mocked(useLocation).mockReturnValue(boardLocation());
+    const finish = delayedClubLookup();
+    const { rerender } = render(<SlugEnforcer />);
+    vi.mocked(useLocation).mockReturnValue(boardLocation('?create=table&game=nlh', '#blinds'));
+    rerender(<SlugEnforcer />);
+    await finish();
+    expect(navigateMock.mock.calls).toEqual([
+      ['/clubs/standalone-club/table-management?create=table&game=nlh#blinds', { replace: true }],
+    ]);
+  });
+
+  it('does not redirect after leaving Table Management for another route', async () => {
+    vi.mocked(useLocation).mockReturnValue(boardLocation());
+    const finish = delayedClubLookup();
+    const { rerender } = render(<SlugEnforcer />);
+    vi.mocked(useLocation).mockReturnValue({ ...boardLocation(), pathname: '/settings' });
+    rerender(<SlugEnforcer />);
+    await finish();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('does not redirect after unmount while club resolution is pending', async () => {
+    vi.mocked(useLocation).mockReturnValue(boardLocation());
+    const finish = delayedClubLookup();
+    const { unmount } = render(<SlugEnforcer />);
+    unmount();
+    await finish();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['beforeunload', 'pagehide'])(
+    'does not abort an outgoing document navigation after %s',
+    async (event) => {
+      vi.mocked(useLocation).mockReturnValue(boardLocation());
+      const finish = delayedClubLookup();
+      render(<SlugEnforcer />);
+      window.dispatchEvent(new Event(event));
+      await finish();
+      expect(navigateMock).not.toHaveBeenCalled();
+    }
+  );
 });

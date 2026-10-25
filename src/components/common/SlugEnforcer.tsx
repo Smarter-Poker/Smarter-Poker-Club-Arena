@@ -23,11 +23,21 @@ export default function SlugEnforcer() {
     if (!match) return;
     const type = match[1];
     const uuid = match[2];
+    // Resolution belongs to this exact route/document. A slow response from
+    // the previous surface must not restore its query or interrupt a new
+    // document navigation before React gets a chance to unmount this tree.
+    let current = true;
+    const retire = () => {
+      current = false;
+    };
+    window.addEventListener('beforeunload', retire);
+    window.addEventListener('pagehide', retire);
 
     Promise.all([
       supabase.from('clubs').select('slug, union_id, is_union').eq('id', uuid).maybeSingle(),
       supabase.from('unions').select('id, slug').eq('id', uuid).maybeSingle(),
     ]).then(([clubRes, unionRes]) => {
+      if (!current) return;
       let newPath = location.pathname;
       let redirected = false;
       const onUnionRoute = type === 'unions';
@@ -68,6 +78,11 @@ export default function SlugEnforcer() {
         navigate(newPath + location.search + location.hash, { replace: true });
       }
     });
+    return () => {
+      retire();
+      window.removeEventListener('beforeunload', retire);
+      window.removeEventListener('pagehide', retire);
+    };
   }, [location.pathname, location.search, location.hash, navigate]);
 
   return null;

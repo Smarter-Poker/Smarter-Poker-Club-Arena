@@ -57,7 +57,10 @@ describe('a Lightning horse turn is identified exactly as a physical table turn'
   it('every decision anchors to its hand, reads the hand in-flight and owns a plan namespace', async () => {
     const lease = uid(4242);
     const t = await playHorseHand(() => ({ instance: 'test-instance', generation: lease }));
-    const calls = t.horseLane.calls;
+    // Turns only: an early look (#7958) carries its own ':early' fence, which
+    // AHorseThatIsAlreadyFoldingFoldsRightAway reads; that path is the
+    // Lightning early-fold owner's and is not this law's subject.
+    const calls = t.horseLane.calls.filter((s: any) => !String(s.fence).endsWith(':early'));
     expect(calls.length).toBeGreaterThan(1);
     for (const snap of calls) {
       const parts = snap.fence.split(':');

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { MemoryRouter } from 'react-router-dom';
 import GameLobbyPanel from '../../../src/components/lobby/GameLobbyPanel';
 import { cashEntry, tournamentEntry } from '../../../src/components/lobby/lobbyEntries';
 import { ToastProvider } from '../../../src/components/common/Toast';
+import TickerRail from '../../../src/components/tournament/TickerRail';
+import { startingSoonItem } from '../../../src/components/tournament/tickerMessages';
 const kind = document.documentElement.dataset.kind || 'cash';
 const entry =
   kind === 'cash'
@@ -38,10 +41,49 @@ const entry =
         kind as any
       );
 const noop = () => undefined;
+const now = Date.now();
+const tickerItems = [
+  startingSoonItem({
+    id: 'fixture-starting',
+    name: 'Evening Classic',
+    startsAt: now + 180_000,
+    clubId: 'fixture',
+    buyIn: 10,
+    buyInFee: 1,
+    registered: 18,
+    isRegistered: false,
+  }),
+];
 function Fixture() {
   const [open, setOpen] = useState(true);
+  const [tickerOpens, setTickerOpens] = useState(0);
   return (
     <>
+      {createPortal(
+        <TickerRail
+          items={tickerItems}
+          now={now}
+          top={document.querySelector('header.header')!.getBoundingClientRect().bottom}
+          appearance={{
+            backgroundColor: '#000000',
+            textColor: '#ffffff',
+            accentColor: '#00d4ff',
+            fontFamily: 'Inter',
+            speedSeconds: 22,
+          }}
+          onOpen={() => setTickerOpens((count) => count + 1)}
+          onDismiss={noop}
+          containerRef={(node) => {
+            if (node)
+              document.documentElement.style.setProperty(
+                '--mtt-ticker-h',
+                `${node.offsetHeight}px`
+              );
+          }}
+        />,
+        document.body
+      )}
+      <output aria-label="Ticker Open Count">{tickerOpens}</output>
       <button type="button" onClick={() => setOpen(true)}>
         Open Game Lobby
       </button>

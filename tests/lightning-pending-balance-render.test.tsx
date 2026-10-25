@@ -13,7 +13,14 @@ const hero = {
   isHero: true,
 } as const;
 const chair = (player: SeatPlayer) => (
-  <SeatSlot seatNumber={1} player={player} position={null} isActive={false} lastAction={null} />
+  <SeatSlot
+    seatNumber={1}
+    bigBlind={2}
+    player={player}
+    position={null}
+    isActive={false}
+    lastAction={null}
+  />
 );
 
 describe('a Lightning balance with no authoritative figure yet', () => {
@@ -38,6 +45,13 @@ describe('a Lightning balance with no authoritative figure yet', () => {
     rerender(chair({ ...hero, stack: 187.5, stackPending: false }));
     expect(container.querySelector('.seat__stack')?.textContent).toBe('188');
     expect(container.querySelector('.seat__stack-delta')).toBeNull();
+  });
+
+  it('keeps the short-stack warning for known stacks and never invents one for pending data', () => {
+    const { container, rerender } = render(chair({ ...hero, stackPending: true }));
+    expect(container.querySelector('.seat__stack--critical')).toBeNull();
+    rerender(chair({ ...hero, stack: 10, stackPending: false }));
+    expect(container.querySelector('.seat__stack--critical')).not.toBeNull();
   });
 
   it('keeps the owed animation when a known stack actually grows', () => {

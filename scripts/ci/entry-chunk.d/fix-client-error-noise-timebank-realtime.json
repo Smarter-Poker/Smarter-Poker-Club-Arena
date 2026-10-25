@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/client-error-noise-timebank-realtime (#8004) - useMasterBusChannel and useMasterBusBroadcastChannel are mounted at the app root and classify every Realtime channel error as it happens; realtimeTransportLoss.ts is the 90-line pure classifier they call synchronously in that error path (no dependencies), so a socket drop is recognised before any lazy chunk could load. Measured cost: +2kB gzip on the entry chunk.",
+  "modules": ["src/lib/realtimeTransportLoss.ts"]
+}

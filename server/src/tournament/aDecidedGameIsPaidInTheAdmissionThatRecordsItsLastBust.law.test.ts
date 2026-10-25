@@ -66,7 +66,11 @@ function manager(extra: Record<string, unknown> = {}) {
     recoverPendingBountyObligations: vi.fn().mockResolvedValue(true),
     checkFinalTableDeal: vi.fn().mockResolvedValue(true),
     checkSatelliteQualifierCompletion: vi.fn().mockResolvedValue('legacy'),
-    tryTournamentRebuys: vi.fn().mockResolvedValue({ rebought: new Set(), answered: new Set() }),
+    tryTournamentRebuys: vi.fn().mockResolvedValue({
+      rebought: new Set(),
+      answered: new Set(),
+      deferredUntil: new Map(),
+    }),
     requestEliminationSweep: vi.fn(),
     requestUrgentEliminationSweepAfter: vi.fn(),
     declareFieldDecided: vi.fn(),

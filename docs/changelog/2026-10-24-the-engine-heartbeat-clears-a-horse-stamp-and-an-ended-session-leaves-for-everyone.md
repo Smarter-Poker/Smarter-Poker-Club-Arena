@@ -79,3 +79,8 @@ shows the approved cash card with JOIN LIGHTNING. An open session with a NULL
 anchor pointer is parsed to nulls and still opens its room. Pinned by
 `tests/lightning/a-cashed-out-lightning-player-is-offered-join-lightning-again.test.ts`.
 No client source changed.
+
+Continuation qualification preserves main's tanking-clock helper and newer
+idle-balance tests. The heartbeat log says a reconnect was reported, because
+the original presence reporter queues the database transition asynchronously;
+queue admission alone cannot certify that its disconnect stamp was cleared.

@@ -154,6 +154,17 @@ class TournamentBreakAwaitsSeatsError extends Error {}
 /** The two doors out of an unbegun park whose table keeps its players. */
 type NoStartExit = 'continue' | 'withdraw';
 
+/**
+ * The named movement-proof refusal inside an admission error, or null. Only
+ * the door's own 55000 `F06_MOVEMENT_*` refusals qualify; an owner change, a
+ * transport error or an unnamed failure is never a reason to withdraw.
+ */
+export function movementProofRefusal(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const match = /^f06_movement_admission_unproven \[55000\]: (F06_MOVEMENT_[A-Z_]+)$/.exec(message);
+  return match ? match[1] : null;
+}
+
 export class TournamentManager extends TournamentManagerEliminations {
   private mixedRecovery: {
     transfer: MixedF06Transfer;
@@ -699,7 +710,22 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       return verifyF06MovementAdmission(data, expected);
     };
-    const admission = await readAdmission();
+    let admission: Awaited<ReturnType<typeof readAdmission>>;
+    try {
+      admission = await readAdmission();
+    } catch (error) {
+      // A PARKED TABLE NEVER FREEZES ON AN UNPROVEN MOVE (2026-10-25). The
+      // refusal is named on the break and still thrown, so it is reported
+      // exactly as before; but the table no longer waits on it. See
+      // withdrawUnprovenMovementPark.
+      const refusal = movementProofRefusal(error);
+      if (refusal && current() && this.eliminationMutationAllowed()) {
+        this.noteBreakPreparationRefusal(state.break_id, `movement_unproven:${refusal}`);
+        if (await this.withdrawUnprovenMovementPark(state)) return;
+      }
+      throw error;
+    }
+    this.unprovenMovementParkSince.delete(state.break_id);
     engine.installF06MovementAdmission(
       this.tournamentMoveBoundaryOwner,
       admission,
@@ -2413,6 +2439,14 @@ export class TournamentManager extends TournamentManagerEliminations {
         return;
       }
       if (!begun.ok || !this.eliminationMutationAllowed()) return;
+      // A begin the movement proof refused rolled back and left the park
+      // unbegun; it is not a reason to stop the table either (2026-10-25).
+      if (
+        begun.state === 'park_requested' &&
+        begun.members.length === 0 &&
+        (await this.withdrawUnprovenMovementPark(begun))
+      )
+        return;
       current = begun;
     }
     if (current.state === 'begun') {
@@ -2540,6 +2574,88 @@ export class TournamentManager extends TournamentManagerEliminations {
     // database counts differently from this board; decide after it settles.
     for (const other of this.durableTournamentBreaks.values())
       if (other.break_id !== state.break_id && other.state !== 'park_requested') return false;
+    if (!(await this.withdrawUnbegunPark(state, 'unplaceable'))) return false;
+    this.unplaceableParkSince.delete(state.break_id);
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${state.break_id.slice(0, 8)} withdrawn: its roster has no free seats (${refusal}); table ${state.source_table_id.slice(0, 8)} deals again`
+    );
+    return true;
+  }
+
+  /**
+   * A PARKED TABLE NEVER FREEZES ON AN UNPROVEN MOVE (2026-10-25).
+   *
+   * Production 2026-10-24, event 12135e5b (Union PKO Afternoon), Table 13
+   * (3e3d1587): a rebuy bust on Table 16 was re-seated onto Table 13 while its
+   * hand was in flight, balancing parked Table 13 1.4 s later (break 5135b05b),
+   * and every movement admission then refused
+   * `F06_MOVEMENT_WHOLE_ROSTER_REQUIRED`: the sealed hand had not dealt that
+   * chair and the proof had no rule for its arrival. The only withdrawal this
+   * manager knew was the capacity one, so the table dealt nothing for 3h46m
+   * until a fifth migration taught the proof one more arrival shape.
+   *
+   * The proof is right to refuse what it cannot prove, and it stays strict.
+   * What was wrong is that the table waited on it. A park that has not begun
+   * and whose movement admission has been refused for
+   * UNPROVEN_MOVEMENT_PARK_GRACE_MS (long enough for an unrecorded bust, the
+   * commonest transient refusal, to be recorded) is withdrawn through
+   * fn_f06_withdraw_unproven_movement_park. The database re-asks the proof,
+   * withdraws only while it still refuses with a named F06_MOVEMENT_*
+   * refusal, proves the park never began, writes that refusal into the
+   * receipt, and moves nothing. The dealer is then stopped and readmitted
+   * exactly as after the capacity withdrawal, and the balancer parks the
+   * table again on a later pass, when its roster can be proven. The refusal
+   * itself is still thrown and reported on every admission it refuses.
+   */
+  static UNPROVEN_MOVEMENT_PARK_GRACE_MS = 60_000;
+
+  private readonly unprovenMovementParkSince = new Map<string, number>();
+
+  protected async withdrawUnprovenMovementPark(
+    state: TournamentTableBreakState
+  ): Promise<boolean> {
+    const refusal = this.lastBreakPreparationRefusal(state.break_id);
+    if (
+      !state.ok ||
+      state.state !== 'park_requested' ||
+      state.terminal_handoff_required ||
+      state.members.length ||
+      !state.custody_id ||
+      !(
+        refusal?.startsWith('movement_unproven:F06_MOVEMENT_') ||
+        refusal?.startsWith('begin_refused:F06_MOVEMENT_')
+      )
+    ) {
+      this.unprovenMovementParkSince.delete(state.break_id);
+      return false;
+    }
+    const now = Date.now();
+    const since = this.unprovenMovementParkSince.get(state.break_id);
+    if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    if (since === undefined || now - since < TournamentManager.UNPROVEN_MOVEMENT_PARK_GRACE_MS)
+      return false;
+    if (!(await this.withdrawUnbegunPark(state, 'unproven_movement'))) return false;
+    this.unprovenMovementParkSince.delete(state.break_id);
+    reportError(
+      new Error(`F06 park withdrawn on an unproven move: ${refusal}`),
+      'Tournament.parked_movement_unproven_withdrawn',
+      { tournamentId: this.tournamentId, tableId: state.source_table_id, breakId: state.break_id }
+    );
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${state.break_id.slice(0, 8)} withdrawn: its movement proof refused (${refusal}); table ${state.source_table_id.slice(0, 8)} deals again`
+    );
+    return true;
+  }
+
+  /**
+   * Withdraw a park that never began through one of the two database doors,
+   * then stop and readmit its dealer. The database decides first, while the
+   * dealer is still parked on this break; a refusal writes nothing.
+   */
+  private async withdrawUnbegunPark(
+    state: TournamentTableBreakState,
+    door: 'unplaceable' | 'unproven_movement'
+  ): Promise<boolean> {
     const tableId = state.source_table_id;
     const engine = this.tableEngines.get(tableId);
     if (!engine || !this.gameServer.ownsTournamentTableEngine(tableId, engine)) return false;
@@ -2587,7 +2703,11 @@ export class TournamentManager extends TournamentManagerEliminations {
           // The database decides first, while the dealer is still parked on
           // this break: a refusal writes nothing and leaves the park exactly
           // as it was. Only a withdrawn park's dealer is stopped.
-          if (!(await rpc.withdrawUnplaceablePark(park))) return false;
+          const taken =
+            door === 'unplaceable'
+              ? await rpc.withdrawUnplaceablePark(park)
+              : await rpc.withdrawUnprovenMovementPark(park);
+          if (!taken) return false;
           assertCurrent();
           try {
             await engine.stop();
@@ -2606,11 +2726,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     if (!withdrawn) return false;
     if (!current()) throw new Error('F06 withdrawn park owner changed');
-    this.unplaceableParkSince.delete(state.break_id);
     this.breakPreparationRefusals.delete(state.break_id);
-    console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${state.break_id.slice(0, 8)} withdrawn: its roster has no free seats (${refusal}); table ${tableId.slice(0, 8)} deals again`
-    );
     this.forgetContinuedNoStartPark(state, engine);
     await this.readmitContinuedNoStartTable(tableId, engine);
     return true;

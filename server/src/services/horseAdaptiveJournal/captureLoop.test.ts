@@ -64,6 +64,9 @@ describe('isolated acquisition scheduling', () => {
       expect(Math.max(...delays)).toBeLessThanOrEqual(60000);
     }
   );
+  // HORSE CAPTURE DRAINS IN ORDER (2026-10-25): with the journal idle,
+  // progress runs the next capture back to back (a 0 ms yield, never the old
+  // 1 s fairness pause). The first pause is the journal's own idle turn.
   it.each(['refined', 'continued', 'captured'] as const)(
     'treats %s as progress without error backoff or journal completion',
     async (status) => {
@@ -82,7 +85,7 @@ describe('isolated acquisition scheduling', () => {
           if (delays.length === 4) stop.abort();
         },
       });
-      expect(delays).toEqual([1000, 1000, 1000, 1000]);
+      expect(delays).toEqual([1000, 0, 0, 0]);
       expect(cycles[1]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: status });
     }
   );
@@ -133,8 +136,10 @@ describe('isolated acquisition scheduling', () => {
     ]);
     expect(cycles[1]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: 'admitted' });
     expect(cycles[4]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: 'gap' });
-    // The gap keeps its capture retry deadline without sleeping the journal.
-    expect(delays).toEqual([1000, 1000, 1000, 1000, 1000]);
+    // The admitted batch is recorded by the very next journal turn with no
+    // pause (journal idle, so capture runs back to back); the gap keeps its
+    // capture retry deadline without sleeping the journal.
+    expect(delays).toEqual([1000, 0, 0, 0, 1000]);
   });
   it.each(['deferred', 'unknown', 'throw'] as const)(
     'capture %s keeps its exponential deadline while backlogged retention continues',

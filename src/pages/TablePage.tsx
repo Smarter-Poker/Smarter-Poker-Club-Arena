@@ -319,7 +319,12 @@ import {
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
-import { lightningSessionStackFor, lightningWaitingHero } from '../lightning/lightningWaitingHero';
+import {
+  lightningIdleBalanceFor,
+  type LightningIdleBalanceSnapshot,
+  lightningSessionStackFor,
+  lightningWaitingHero,
+} from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
@@ -376,7 +381,12 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { isClassicLobbyState, isLightningMode, lightningRoute } from '../lightning/lightningLobby';
+import {
+  isClassicLobbyState,
+  isLightningMode,
+  lightningJoinRoute,
+  lightningRoute,
+} from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -517,6 +527,7 @@ import { useTableArt } from '../hooks/useTableArt';
 import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
+  isTimeBankTurnGone,
   submitAction,
   respondToRIT,
   respondToInsurance,
@@ -599,7 +610,10 @@ import {
 import {
   buildAwardGroups,
   boardLabelFromAwards,
+  isAllInShowdown,
   pendingStackHold,
+  showdownHandNamesFrom,
+  showdownWinnerLine,
 } from '../lib/showdownPresentation';
 
 /** Rank ordering for the preflop label. Ace high; T/J/Q/K above the numbers. */
@@ -3203,9 +3217,13 @@ function LiveTablePage({
    * so client and engine agree on when the hand is actually over.
    * Set in the SHOWDOWN handler, reset at HAND_STARTED.
    */
-  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number }>({
+  /* allIn (Dan 2026-10-24): two or more hands reached showdown and one is an
+     all-in player's. Adds ALL_IN_SHOWDOWN_EXTRA_MS to the hold, exactly as
+     the engine does, and holds the beaten hands' muck back by the same. */
+  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number; allIn: boolean }>({
     wentToShowdown: false,
     hands: 2,
+    allIn: false,
   });
   /**
    * Dan 2026-08-21 (bug list item 1): the Fold toggle in the pre-action bar
@@ -4504,8 +4522,10 @@ function LiveTablePage({
   });
   /* LIGHTNING: THE HERO BETWEEN HANDS (Dan 2026-10-24). "IT SHOUDN'T SAY
      SITTING OUT... IT SHOULD NEVER SAY 0.00". A fold answers with an idle room
-     (no players), so the hero's chair is drawn from these two facts instead
-     of the cash seat-row placeholder. See lightning/lightningWaitingHero.ts. */
+     (no players), so the hero's chair is drawn from these facts instead of
+     the cash seat-row placeholder: the engine's own `player_balance` on that
+     idle room, then the last roster, then the pool session read. See
+     lightning/lightningWaitingHero.ts. */
   const lightningHeroInRoster = lightningRoom
     ? (tableState.players.find((p) => !!p && !!userId && p.id === userId) ?? null)
     : null;
@@ -4515,6 +4535,8 @@ function LiveTablePage({
     lightningLastSeenStackRef.current = lightningHeroInRoster.stack;
   }
   const [lightningSessionStack, setLightningSessionStack] = useState<number | null>(null);
+  /* The idle snapshot whose engine balance chips added since have made stale. */
+  const lightningEngineStackSupersededRef = useRef<unknown>(null);
   /* Chips added between hands (a manual add-on or the auto top-up) make the
      last roster stack stale: it is dropped and the pool balance read again. */
   const [lightningBalanceVersion, setLightningBalanceVersion] = useState(0);
@@ -4540,6 +4562,7 @@ function LiveTablePage({
         if (askedAtVersion > lightningBalanceVersionAppliedRef.current) {
           lightningBalanceVersionAppliedRef.current = askedAtVersion;
           lightningLastSeenStackRef.current = null;
+          lightningEngineStackSupersededRef.current = engineSnapshotRef.current;
         }
         setLightningSessionStack(lightningSessionStackFor(tableId, session));
         setLightningSessionHoldsRoom(
@@ -4556,9 +4579,22 @@ function LiveTablePage({
       cancelled = true;
     };
   }, [lightningHeroWaiting, lightningRoomClusterId, tableId, lightningBalanceVersion]);
+  /* The engine's own figure for this room's player, on the idle snapshot it
+     sends after a fold or an abandon. Absent on an engine that predates it. */
+  const lightningEngineIdleStack =
+    lightningRoom &&
+    !lightningHeroInRoster &&
+    engineSnapshot !== lightningEngineStackSupersededRef.current
+      ? lightningIdleBalanceFor(
+          tableId,
+          userId,
+          engineSnapshot as unknown as LightningIdleBalanceSnapshot | null
+        )
+      : null;
   const lightningWaitingSeat = lightningRoom
     ? lightningWaitingHero({
         sittingOut: lightningSitOut.sittingOut,
+        engineStack: lightningEngineIdleStack,
         lastSeenStack: lightningLastSeenStackRef.current,
         sessionStack: lightningSessionStack,
       })
@@ -7534,6 +7570,10 @@ function LiveTablePage({
   // flags — never inferred client-side. Cleared at HAND_STARTED and at the
   // hand-complete table reset.
   const [muckedLabelSeats, setMuckedLabelSeats] = useState<boolean[]>(() => Array(9).fill(false));
+  /* Dan 2026-10-24: every tabled hand's name at showdown, by player id. Set
+     from the engine's showdown event, cleared at the next deal and at the
+     hand-complete reset alongside the MUCKED labels. */
+  const [showdownHandNames, setShowdownHandNames] = useState<Record<string, string>>({});
   // SHOWDOWN SYSTEM 2026-08-25 (spec section 3): seat -> reveal order index
   // from the showdown event (0 = final-street last aggressor, then
   // clockwise). Drives a small per-seat stagger on the card flip so the
@@ -16640,7 +16680,15 @@ function LiveTablePage({
     [userId]
   );
 
-  const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
+  /* A Lightning pool session has no `tables` row, so the private
+     table-appearance topic is refused by RLS for it and nothing is ever sent
+     to it (2026-10-24). The authoritative read still runs. */
+  const seatedProfileSync = useSeatedProfileSync(
+    tableId,
+    seatedUserIds,
+    handleSeatedProfileChange,
+    { appearanceSignal: !lightningRoom }
+  );
 
   /* WAITLIST HORSE YIELD - REMOVED (2026-10-05). Every seated client polled
      the waitlist every 15s and asked HydraService to stand a horse up for a
@@ -17413,8 +17461,17 @@ function LiveTablePage({
         const isHeroEcho = actionSeat > 0 && actionSeat === resolveHeroSeat();
         if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho) {
           if (action === 'all_in' || action === 'allin') soundService.playAllIn();
-          else if (action === 'bet' || action === 'raise' || action === 'call')
-            soundService.playChips();
+          /* Dan 2026-10-24: "A RAISE SHOULD HAVE A DIFFERENT SOUND EFFECT
+             THEN A CALL." A bet and a raise used to share the call's chip
+             clink here, so every opponent raise sounded like a call. They
+             take the raise cue — the same split the hand replay already
+             makes (replayMotion VERB_CUE: bet/raise -> 'raise') — scaled by
+             the raise-to amount like the hero's own. */ else if (
+            action === 'bet' ||
+            action === 'raise'
+          )
+            soundService.playRaise(actionAmount, safeBB(tableStateRef.current.blinds, 1));
+          else if (action === 'call') soundService.playChips();
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
           /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was
@@ -17531,7 +17588,9 @@ function LiveTablePage({
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         // Items 11 + 16: a fresh hand has not reached showdown yet.
-        handShowdownRef.current = { wentToShowdown: false, hands: 2 };
+        handShowdownRef.current = { wentToShowdown: false, hands: 2, allIn: false };
+        // Dan 2026-10-24: the tabled hands' names belong to the hand that tabled them.
+        setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
            Both of these shrink a card row, so carrying either into the next
            hand would deal a seat a hand that is visibly one card short. */
@@ -17625,6 +17684,7 @@ function LiveTablePage({
         // SHOWDOWN SYSTEM 2026-08-25 (spec section 39): clear the previous
         // hand's MUCKED labels and reveal stagger before the new deal.
         setMuckedLabelSeats(Array(9).fill(false));
+        setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         showdownRevealOrderRef.current = {};
         if (ritResultTimerRef.current) {
           clearTimeout(ritResultTimerRef.current);
@@ -18500,7 +18560,12 @@ function LiveTablePage({
                cannot judge three boards against a hand that has left the
                felt. The muck waits for the reveal to finish, like the reset
                hold two blocks down already does. */
-            const muckBase = 2400 * getAnimationSpeed();
+            /* Dan 2026-10-24: on an all-in showdown the beaten hands stay face
+               up for the same two extra seconds the hold gives the winner. */
+            const muckBase =
+              (2400 +
+                (handShowdownRef.current.allIn ? HAND_COMPLETION.ALL_IN_SHOWDOWN_EXTRA_MS : 0)) *
+              getAnimationSpeed();
             const revealEnd = ritRevealEndsAtRef.current;
             const muckDelay =
               revealEnd > Date.now() ? Math.max(muckBase, revealEnd - Date.now() + 200) : muckBase;
@@ -18556,6 +18621,8 @@ function LiveTablePage({
           // board, pot and winner were wiped roughly a second into the Bad Beat
           // Jackpot celebration that the spec says is never rushed.
           bbjHit: !!bbjHitDataRef.current,
+          // Dan 2026-10-24: the all-in showdown's two extra seconds, as the engine holds them.
+          allInShowdown: handShowdownRef.current.allIn,
         });
         // The player's animation-speed preference scales this, but only within
         // bounds. The SERVER holds `holdBaseMs` flat, so scaling below 1x used to
@@ -18685,6 +18752,7 @@ function LiveTablePage({
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
           // artifact may leak into the next hand.
           setMuckedLabelSeats(Array(9).fill(false));
+          setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
           // SHOWDOWN AUDIT 2026-08-25 (spec 21 backstop): a client that
           // joined or reconnected AFTER pot_win never schedules the release
           // timer, so without this the winner's stack would sit reduced until
@@ -18756,11 +18824,29 @@ function LiveTablePage({
            and the winner 350-800ms before the engine did - a truncated
            announcement, which 10.6 forbids. The event carries the count; it
            is destructured a few lines below for the reveal order. */
-        const sdResultsForCount = ((evt.data as any).results as Array<{ mucked?: boolean }>) || [];
+        const sdResultsForCount =
+          ((evt.data as any).results as Array<{
+            user_id?: string;
+            hand_name?: string;
+            mucked?: boolean;
+          }>) || [];
         handShowdownRef.current = {
           wentToShowdown: true,
           hands: Math.max(2, sdResultsForCount.length),
+          /* Dan 2026-10-24: "WHEN PLAYERS ARE ALL IN, ON THE RIVER, KEEP THE
+             CARDS SHOWN FOR 2 MORE SECONDS". Read from the live seats now,
+             while they still carry this hand's all-in status. */
+          allIn: isAllInShowdown(
+            sdResultsForCount
+              .map((r) => r.user_id)
+              .filter((id): id is string => typeof id === 'string'),
+            tableStateRef.current.players
+          ),
         };
+        /* Dan 2026-10-24: "PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS
+           BETTER". Every tabled hand is named at its seat, not only the
+           winner's; the engine already sends each name on this event. */
+        setShowdownHandNames(showdownHandNamesFrom(sdResultsForCount));
         // SHOWDOWN SYSTEM 2026-08-25: the showdown event now carries the
         // engine-decided reveal sequence and muck ruling per player —
         // { user_id, seat, reveal_order, mucked }. Record the order for the
@@ -21177,6 +21263,14 @@ function LiveTablePage({
       return;
     }
     deferredSeatTapRef.current = null;
+    /* A LIGHTNING SEAT IS NEVER PICKED (Dan 2026-10-24: "YOU DON'T SELECT YOUR
+       SEAT ... YOU AUTO ASSIGN THEM TO A SEAT AND TABLE"). A chair tapped on a
+       physical table of a Lightning game opens the game's own Join Lightning
+       door, which asks only the amount. */
+    if (anchorLightningClusterId && heroSeatRef.current <= 0 && tableState.heroSeat <= 0) {
+      openLightningAnchorEntry();
+      return;
+    }
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
@@ -21397,7 +21491,7 @@ function LiveTablePage({
      player itself; nobody picks a chair on this felt. */
   const openLightningAnchorEntry = () => {
     if (!anchorLightningClusterId) return;
-    navigate(`${lightningRoute(anchorLightningClusterId)}?join=1`);
+    navigate(lightningJoinRoute(anchorLightningClusterId));
   };
 
   /**
@@ -23188,6 +23282,11 @@ function LiveTablePage({
     const result = await GameServerAPI.activateTimeBank(tableId, userId, request.decision);
     if (!request.isCurrent()) return;
     if (!result?.success) {
+      /* The press crossed the turn (2026-10-24): the engine had already
+         moved the action, ended the hand or closed the Lightning decision.
+         Nothing was spent and there is nothing to do, so it is not an error
+         to show. Every other refusal still says why. */
+      if (isTimeBankTurnGone(result?.error)) return;
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }
@@ -24484,7 +24583,6 @@ function LiveTablePage({
     },
     lightningCaps
   );
-  const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
   const lightningFoldBusyRef = useRef(false);
   const lightningFoldHandId =
     lightningRoom && lightningHandLive
@@ -24497,7 +24595,6 @@ function LiveTablePage({
       lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
-      setLightningFoldBusy(true);
       try {
         const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
@@ -24514,7 +24611,6 @@ function LiveTablePage({
         }
       } finally {
         lightningFoldBusyRef.current = false;
-        setLightningFoldBusy(false);
       }
     },
     [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
@@ -25555,28 +25651,31 @@ function LiveTablePage({
                 CORNER, IT SHOULD BE ON THE LEFT SIDE." The box still mounts in
                 this slot, but its dock is pinned to the left edge at the same
                 height (.hud-seat-change-dock, TableHUD.css). */}
-            {!tableState.isTournament && tableState.clusterId && (
-              <div className="hud-seat-change-dock">
-                <CashClusterHUD
-                  gameId={tableState.clusterId}
-                  refreshKey={clusterRefreshKey}
-                  onOpenLobby={() => setShowMustMoveLobby(true)}
-                  onSeatChange={() => setShowMustMoveLobby(true)}
-                  onGoToTable={(dest) => {
-                    if (dest === tableId) {
-                      autoBuyInFiredRef.current = false;
-                      setAcceptedChair((count) => count + 1);
-                      return;
-                    }
-                    if (embeddedTableId) {
-                      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
-                      return;
-                    }
-                    navigate(`/table/${dest}?buyin=1`);
-                  }}
-                />
-              </div>
-            )}
+            {!tableState.isTournament &&
+              tableState.clusterId &&
+              !anchorLightningClusterId &&
+              !lightningRoom && (
+                <div className="hud-seat-change-dock">
+                  <CashClusterHUD
+                    gameId={tableState.clusterId}
+                    refreshKey={clusterRefreshKey}
+                    onOpenLobby={() => setShowMustMoveLobby(true)}
+                    onSeatChange={() => setShowMustMoveLobby(true)}
+                    onGoToTable={(dest) => {
+                      if (dest === tableId) {
+                        autoBuyInFiredRef.current = false;
+                        setAcceptedChair((count) => count + 1);
+                        return;
+                      }
+                      if (embeddedTableId) {
+                        onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+                        return;
+                      }
+                      navigate(`/table/${dest}?buyin=1`);
+                    }}
+                  />
+                </div>
+              )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
                 REMOVED (Dan 2026-08-30): the level bar itself opens the
                 tournament lobby, so a second button here was a duplicate. */}
@@ -25780,7 +25879,10 @@ function LiveTablePage({
                 seatViewportWidth <= 480 &&
                   scalerSize.h > scalerSize.w &&
                   tablePerspectiveTaper !== 0,
-                tableState.maxPlayers
+                tableState.maxPlayers,
+                /* Portrait viewports to 768px reserve the same dense-ring
+                   PLO5/PLO6 lane as a phone (useProtectedCardLayout). */
+                typeof window !== 'undefined' && window.innerHeight > window.innerWidth
               )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
@@ -26303,6 +26405,21 @@ function LiveTablePage({
                            per-board names AND a low winner, and suppressing
                            the label hid a real winner's credit line. */
                         lowWinnerLabel={winnerBandActive ? winnerInfo.lowWinnerLabel : ''}
+                        /* Dan 2026-10-24: the band names WHO won a contested
+                           single-board showdown. A fold-around win already
+                           reads "Wins The Pot" on the winner's seat, and a
+                           per-board label carries its own names. */
+                        winningPlayerLabel={
+                          winnerBandActive &&
+                          !winnerInfo.boardHandNames &&
+                          tableState.boardStage === 'showdown'
+                            ? showdownWinnerLine(
+                                winnerInfo.playerIds.map(
+                                  (id) => tableState.players.find((p) => p?.id === id)?.name || ''
+                                )
+                              )
+                            : undefined
+                        }
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}
@@ -27195,6 +27312,18 @@ function LiveTablePage({
                       ? winnerInfo.boardHandNamesByPlayer?.[ritRevealedRuns - 1]?.[player.id] ||
                         winnerInfo.handNames[player.id] ||
                         winnerInfo.handName
+                      : undefined
+                  }
+                  /* Dan 2026-10-24: every tabled hand names itself at its seat.
+                     Single board only: on a run-it-multiple hand or a double
+                     board the engine's name is board 1's, which would label a
+                     seat with a hand it did not make on the board in view. */
+                  shownHandName={
+                    player &&
+                    ritRunsThisHand <= 1 &&
+                    !ritResult &&
+                    tableState.communityCards2.length === 0
+                      ? showdownHandNames[player.id]
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 15): light
@@ -29241,8 +29370,9 @@ function LiveTablePage({
                 setShowBuyInModal(false);
                 if (anchorLightningClusterId) {
                   /* Lightning never queues (Dan 2026-10-24): the join door
-                     holds a fresh chair, on a new table if it has to. */
-                  navigate(lightningRoute(anchorLightningClusterId));
+                     holds a fresh chair, on a new table if it has to, with the
+                     amount question already open. */
+                  openLightningAnchorEntry();
                   return false;
                 }
                 toast.info('This Seat Is Reserved. Join The List To Get Your Next Available Seat.');

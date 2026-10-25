@@ -13,6 +13,12 @@ import { useEffect, useRef, useState } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { subscribeRealtime } from '../lib/subscribeRealtime';
+import {
+  isRealtimeTopicRefusal,
+  isRealtimeTransportLoss,
+  noteRealtimeTransportLoss,
+  noteRealtimeTransportRecovered,
+} from '../lib/realtimeTransportLoss';
 import { reportError } from '../utils/errorReporter';
 
 interface UseMasterBusBroadcastChannelOptions {
@@ -138,6 +144,7 @@ export function useMasterBusBroadcastChannel({
     let subscriptionGeneration = 0;
     let admission: AbortController | null = null;
     let acquiredChannel: RealtimeChannel | null = null;
+    let refusalReported = false;
     /* Admission reserves a closed registered channel so the existing health
        owner can recover it. Auth/online events also retain the private join's
        event-driven retry, disarmed by SUBSCRIBED. No new timer is involved. */
@@ -174,7 +181,11 @@ export function useMasterBusBroadcastChannel({
         channel,
         (status: string, err?: Error) => {
           if (!alive || generation !== subscriptionGeneration) return;
-          if (status === 'SUBSCRIBED') disarmAuthRetry?.();
+          if (status === 'SUBSCRIBED') {
+            disarmAuthRetry?.();
+            noteRealtimeTransportRecovered();
+            refusalReported = false;
+          }
           if (status === 'CHANNEL_ERROR') armAuthRetry();
           try {
             if (status !== 'SUBSCRIBED' || !engineRecord) statusCallbackRef.current?.(status);
@@ -184,10 +195,21 @@ export function useMasterBusBroadcastChannel({
           if (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT' && status !== 'CLOSED') {
             return;
           }
-          reportError(
-            err ?? new Error(`Realtime ${status} on ${channelName}`),
-            `useMasterBusBroadcastChannel.${status}.${event}`
-          );
+          /* The shared socket dropped, so every channel failed at once with no
+             reason: one report per outage, not one per channel. A refused
+             private topic repeats on every recovery attempt until the token
+             changes: one report per mount, until it joins. Everything else is
+             this channel's own failure and is reported as before. The
+             consumer's callback below runs in every case. */
+          if (isRealtimeTransportLoss(status, err)) {
+            noteRealtimeTransportLoss(channelName, `useMasterBusBroadcastChannel.${event}`, err);
+          } else if (!(isRealtimeTopicRefusal(err) && refusalReported)) {
+            refusalReported = isRealtimeTopicRefusal(err);
+            reportError(
+              err ?? new Error(`Realtime ${status} on ${channelName}`),
+              `useMasterBusBroadcastChannel.${status}.${event}`
+            );
+          }
           try {
             errorCallbackRef.current?.(status, err);
           } catch (callbackError) {

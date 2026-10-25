@@ -1,0 +1,3 @@
+# tests/a-parked-table-never-freezes-on-an-unproven-move.law.test.ts
+
+A tournament table parked for an F06 break whose movement proof refuses its roster is withdrawn through `fn_f06_withdraw_unproven_movement_park` (migration 20261025052423) instead of waiting for ever: the door keeps every guard of the capacity withdrawal it was derived from, withdraws only while `f06_movement_prior` refuses with a named `F06_MOVEMENT_*` refusal, records that refusal in its receipt and moves nothing; and the tournament seat chooser ranks a table with a hand in flight after every table between hands (2026-10-24, 12135e5b Table 13 dealt nothing for 3h46m).

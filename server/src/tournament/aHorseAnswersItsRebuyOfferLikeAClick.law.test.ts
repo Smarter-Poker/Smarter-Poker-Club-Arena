@@ -39,13 +39,15 @@ const declining = ids.filter((id) => !willing.includes(id));
 
 type Purchase = 'ok' | 'transport';
 
-function setup(opts: { horses?: string[]; offers?: string[]; purchase?: Purchase } = {}) {
+function setup(
+  opts: { horses?: string[]; offers?: string[]; purchase?: Purchase; freeBuyUsed?: number } = {}
+) {
   const horses = opts.horses ?? ids;
   const offers = opts.offers ?? ids;
   const purchase = opts.purchase ?? 'ok';
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
     tournamentId: event,
-    tournamentCache: { is_rebuy: true, is_reentry: true, free_buy: false },
+    tournamentCache: { is_rebuy: true, is_reentry: true, free_buy: opts.freeBuyUsed !== undefined },
     currentLevel: 3,
     running: true,
     // The sweep's own budget is long spent: the horse must not depend on it.
@@ -55,6 +57,16 @@ function setup(opts: { horses?: string[]; offers?: string[]; purchase?: Purchase
     requestUrgentEliminationSweepAfter: vi.fn(),
   });
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_players') {
+      const q: Record<string, unknown> = {};
+      q.select = vi.fn(() => q);
+      q.eq = vi.fn(() => q);
+      q.in = vi.fn(async (_column: string, users: string[]) => ({
+        data: users.map((user_id) => ({ user_id, rebuys: opts.freeBuyUsed })),
+        error: null,
+      }));
+      return q;
+    }
     if (table === 'tournament_knockout_candidates') {
       const q: Record<string, unknown> = {};
       for (const m of ['select', 'eq', 'gt', 'order']) q[m] = vi.fn(() => q);
@@ -165,6 +177,31 @@ describe('a horse answers its rebuy offer like a click', () => {
     });
     expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
     expect(purchases().sort()).toEqual([...willing].sort());
+  });
+
+  it('closes a spent free-buy offer without submitting a new purchase', async () => {
+    const userId = willing[0]!;
+    await setup({ offers: [userId], freeBuyUsed: 100 }).answerOpenHorseRebuyOffers();
+    expect(declines()).toEqual([{ p_tournament_id: event, p_user_id: userId }]);
+    expect(purchases()).toEqual([]);
+  });
+
+  it('does not turn a lost decline response into a purchase or a new retry loop', async () => {
+    const manager = setup({ offers: [declining[0]!] });
+    fixture.rpc.mockImplementation(async (name: string) => {
+      if (name === 'fn_ca_tournament_rebuy_window') return { data: { open: true }, error: null };
+      if (name === 'fn_decline_tournament_rebuy') throw new Error('response lost');
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+    expect(declines()).toHaveLength(1);
+    expect(purchases()).toEqual([]);
+    expect(manager.requestUrgentEliminationSweepAfter).not.toHaveBeenCalled();
+    const { reportError } = await import('../services/errorReporter.js');
+    expect(reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.horse_rebuy_decline_threw'
+    );
   });
 
   it('asks again while a willing horse is unanswered, and not for a human', async () => {

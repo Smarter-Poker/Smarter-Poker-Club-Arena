@@ -146,6 +146,43 @@ describe('real worker-owned startup preparation', () => {
     expect(expected.charts.digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('joins outstanding boot reads before draining after a parallel load fails', async () => {
+    vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
+    vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});
+    const prepare = vi.spyOn(future, 'prepareTournamentFutureHandFacts');
+    let releaseMind!: () => void;
+    vi.mocked(hydrateHorseMindFromDb).mockImplementationOnce(
+      () =>
+        new Promise<null>((resolve) => {
+          releaseMind = () => resolve(null);
+        })
+    );
+    const failure = new Error('chart load failed');
+    vi.mocked(loadGtoCharts).mockRejectedValueOnce(failure);
+    let finished = false;
+    const startup = worker.startServices().then(
+      () => {
+        throw new Error('failed boot reported ready');
+      },
+      (error) => {
+        finished = true;
+        return error;
+      }
+    );
+    await vi.waitFor(() => expect(loadGtoCharts).toHaveBeenCalled());
+    try {
+      expect(finished).toBe(false);
+      expect(stopHorseMindPersistence).not.toHaveBeenCalled();
+      expect(prepare).not.toHaveBeenCalled();
+    } finally {
+      releaseMind();
+      expect(await startup).toBe(failure);
+    }
+    expect(hydrateHorseMind).toHaveBeenCalledTimes(1);
+    expect(stopHorseMindPersistence).toHaveBeenCalledTimes(1);
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
   it('rejects readiness and drains owned services if preparation fails', async () => {
     vi.spyOn(equityGovernor, 'startSampling').mockImplementation(() => {});
     vi.spyOn(equityGovernor, 'stopSampling').mockImplementation(() => {});

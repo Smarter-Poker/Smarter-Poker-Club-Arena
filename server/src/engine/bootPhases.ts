@@ -60,6 +60,15 @@ export class BootPhaseTimeline {
     return Math.max(0, Math.round(this.now() - this.processStartedAtMs));
   }
 
+  private writeLog(line: string): void {
+    try {
+      this.log(line);
+    } catch {
+      // Timing diagnostics cannot change boot readiness or mask its error.
+      // The recorded phase remains available through the health snapshot.
+    }
+  }
+
   /**
    * Begin a phase. The returned function ends it (once; later calls are
    * ignored) and prints one line. Recording never throws into the boot.
@@ -78,7 +87,7 @@ export class BootPhaseTimeline {
       record.endMs = this.sinceStart();
       record.durationMs = record.endMs - record.startMs;
       record.outcome = outcome;
-      this.log(
+      this.writeLog(
         `[BootPhase] ${name} ${outcome} in ${record.durationMs}ms ` +
           `(started ${record.startMs}ms, ended ${record.endMs}ms after process start)`
       );
@@ -111,7 +120,7 @@ export class BootPhaseTimeline {
       .filter((p) => p.durationMs !== null)
       .map((p) => `${p.name}=${p.durationMs}`)
       .join(' ');
-    this.log(
+    this.writeLog(
       `[BootPhase] dealer prerequisites ready ${this.dealerReadyMs}ms after process start; ` +
         `phase durations ms: ${summary}`
     );

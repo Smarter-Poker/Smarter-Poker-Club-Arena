@@ -367,7 +367,7 @@ export async function startOwnedServices(shard?: {
        only the exploit counters, through mergeSandboxExploit), so they start
        at the same instant instead of after it. READY is still withheld until
        every one of them has finished, exactly as before. */
-    await Promise.all([
+    const bootLoads = await Promise.allSettled([
       step('horse_mind_db', () => hydrateHorseMindFromDb()).then((lastFlush) =>
         step('horse_mind_replay', () => hydrateHorseMind(lastFlush))
       ),
@@ -378,6 +378,12 @@ export async function startOwnedServices(shard?: {
       step('gto_postflop', () => loadGtoPostflop()),
       step('gto_postflop_v31', () => loadGtoPostflopV31()),
     ]);
+    // A failed load must not drain writers while another load can still
+    // hydrate or replay into them. Join every started operation before the
+    // catch below owns teardown; never publish READY for a partial boot.
+    for (const result of bootLoads) {
+      if (result.status === 'rejected') throw result.reason;
+    }
 
     // The fixed rollout population belongs to this worker. Prepare its card
     // facts before READY so the first eligible decisions pay no scoring cost.

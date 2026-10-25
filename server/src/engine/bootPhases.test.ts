@@ -13,6 +13,25 @@ function timeline() {
 }
 
 describe('boot phase timeline', () => {
+  it('cannot turn a successful operation into a boot failure when its logger throws', async () => {
+    const t = new BootPhaseTimeline(
+      () => 10_000,
+      9_000,
+      () => {
+        throw new Error('log unavailable');
+      }
+    );
+    await expect(t.measure('load', async () => 'ready')).resolves.toBe('ready');
+    expect(() => t.markDealerReady()).not.toThrow();
+    expect(t.snapshot().dealerReadyMs).toBe(1_000);
+    const failure = new Error('original failure');
+    await expect(
+      t.measure('failed', async () => {
+        throw failure;
+      })
+    ).rejects.toBe(failure);
+  });
+
   it('measures every phase from process start, including overlapping ones', () => {
     const { t, lines, advance } = timeline();
     t.mark('http_listening');

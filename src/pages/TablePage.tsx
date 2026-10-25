@@ -4540,6 +4540,8 @@ function LiveTablePage({
   /* Chips added between hands (a manual add-on or the auto top-up) make the
      last roster stack stale: it is dropped and the pool balance read again. */
   const [lightningBalanceVersion, setLightningBalanceVersion] = useState(0);
+  // Retry requests a read; only an actual chip addition supersedes an idle balance.
+  const [lightningBalanceReadVersion, setLightningBalanceReadVersion] = useState(0);
   const lightningBalanceVersionAppliedRef = useRef(0);
   /* The database confirms this room is the caller's own open pool session. */
   const [lightningSessionHoldsRoom, setLightningSessionHoldsRoom] = useState(false);
@@ -4578,7 +4580,13 @@ function LiveTablePage({
     return () => {
       cancelled = true;
     };
-  }, [lightningHeroWaiting, lightningRoomClusterId, tableId, lightningBalanceVersion]);
+  }, [
+    lightningHeroWaiting,
+    lightningRoomClusterId,
+    tableId,
+    lightningBalanceVersion,
+    lightningBalanceReadVersion,
+  ]);
   /* The engine's own figure for this room's player, on the idle snapshot it
      sends after a fold or an abandon. Absent on an engine that predates it. */
   const lightningEngineIdleStack =
@@ -9804,6 +9812,7 @@ function LiveTablePage({
    *  debit issued meanwhile is not undone by the answer. */
   const retryAccountBalance = useCallback(() => {
     if (!userId || !tableId) return;
+    if (lightningRoomRef.current) setLightningBalanceReadVersion((v) => v + 1);
     const revision = readBalanceRevision();
     void readBustBalance(userId, tableId).then((b) => {
       if (b !== null) setBalanceIfCurrent(revision, b);
@@ -26969,6 +26978,7 @@ function LiveTablePage({
                 // including zero. The buy-in is only a pre-row placeholder.
                 stack:
                   lightningWaitingSeat?.stack ?? heroRowStack ?? pendingSeatStackRef.current ?? 0,
+                stackPending: lightningWaitingSeat?.stack === null,
                 /* A Lightning player between hands is in the pool, not sitting
                    out, unless they asked to be (Dan 2026-10-24). */
                 status: lightningWaitingSeat ? lightningWaitingSeat.status : 'sitting_out',
@@ -29030,6 +29040,9 @@ function LiveTablePage({
         maxPlayers={tableState.maxPlayers}
         players={tableState.players}
         heroStack={heroDisplayStack}
+        heroStackPending={
+          !!lightningRoom && !lightningHeroInRoster && lightningWaitingSeat?.stack === null
+        }
         rakePercent={displayRakeConfig.rakePercent}
         rakeCap={displayRakeConfig.rakeCap}
         runItTwice={tableState.runItTwice}
@@ -29806,6 +29819,7 @@ function LiveTablePage({
           }
         }}
         // Tournament Break
+        tableAnchorRef={tableScalerRef}
         tournamentBreak={tournamentBreak as any}
         // Announcement
         announcement={announcement}

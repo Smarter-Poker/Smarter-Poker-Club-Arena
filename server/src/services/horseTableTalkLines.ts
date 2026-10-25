@@ -103,6 +103,9 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'ok, back in it',
         'ill stack these quietly',
         'that should hold me for a bit',
+        'nobody wanted that one',
+        'ill take it down',
+        'folded to me, fine',
       ],
     },
     needler: {
@@ -125,6 +128,10 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'curiosity is expensive',
         'should have let that one go',
         'thanks, i was getting short',
+        'thanks for folding',
+        'smart fold',
+        'nobody wanted to pay to see it',
+        'scared money, thanks',
       ],
     },
     friendly: {
@@ -147,6 +154,9 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'heart was pounding on that {street}',
         'well that was exciting',
         'good game, that was a big one',
+        'good fold, honestly',
+        'glad that got through',
+        'phew, nobody called',
       ],
     },
   },
@@ -439,6 +449,8 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'stack those for me',
         'read you like a book',
         'love when that happens',
+        'fold, good choice',
+        'nobody wants to play with me',
       ],
     },
     friendly: {
@@ -457,6 +469,7 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'needed that one bad',
         'ill take it',
         'good hand though',
+        'good fold',
       ],
     },
   },
@@ -598,4 +611,53 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
       ],
     },
   },
+};
+
+/**
+ * Lines that are only true after a showdown (somebody called and saw cards),
+ * or only true when everybody folded. A pot can be won either way, so
+ * big_pot_won and pot_won carry `showdown` in their facts and
+ * HorseTableTalk.chooseLine passes over a line whose need the hand did not
+ * meet. Dan 2026-10-24: "somebody wanted to see my cards" typed after a hand
+ * nobody called is a line nobody human would type.
+ *
+ * Keyed by the exact template. theHorseSaysNothingItWasNotTold.law.test.ts
+ * holds every key to a line that exists in the pool.
+ */
+export type LineNeed = 'showdown' | 'no_showdown';
+
+export const LINE_NEEDS: Readonly<Record<string, LineNeed>> = {
+  // big_pot_won
+  '{potBB} bb on the {street}, somebody wanted to see my cards': 'showdown',
+  'ty for paying me off': 'showdown',
+  'you really wanted to see it huh': 'showdown',
+  'that was a lot to pay to look': 'showdown',
+  'next time trust the bet': 'showdown',
+  'curiosity is expensive': 'showdown',
+  'should have let that one go': 'showdown',
+  'told you i had it': 'showdown',
+  'i always have it': 'showdown',
+  'cant believe that held': 'showdown',
+  'that was a sweat': 'showdown',
+  'tough spot for you there, gg': 'showdown',
+  'heart was pounding on that {street}': 'showdown',
+  'nobody wanted that one': 'no_showdown',
+  'ill take it down': 'no_showdown',
+  'folded to me, fine': 'no_showdown',
+  'thanks for folding': 'no_showdown',
+  'smart fold': 'no_showdown',
+  'nobody wanted to pay to see it': 'no_showdown',
+  'scared money, thanks': 'no_showdown',
+  'good fold, honestly': 'no_showdown',
+  'glad that got through': 'no_showdown',
+  'phew, nobody called': 'no_showdown',
+  // pot_won
+  'keep calling': 'showdown',
+  'knew you had nothing': 'showdown',
+  'that was close': 'showdown',
+  'whew, got there': 'showdown',
+  'good hand though': 'showdown',
+  'fold, good choice': 'no_showdown',
+  'nobody wants to play with me': 'no_showdown',
+  'good fold': 'no_showdown',
 };

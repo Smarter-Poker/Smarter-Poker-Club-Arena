@@ -88,7 +88,13 @@ import {
   styleLine,
   type Mood,
 } from './horseVoiceStyle.js';
-import { LINES, TALK_PLACEHOLDERS, type TalkEvent, type TalkVoice } from './horseTableTalkLines.js';
+import {
+  LINE_NEEDS,
+  LINES,
+  TALK_PLACEHOLDERS,
+  type TalkEvent,
+  type TalkVoice,
+} from './horseTableTalkLines.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 
 export type { TalkEvent, TalkVoice } from './horseTableTalkLines.js';
@@ -143,9 +149,10 @@ export const HORSE_HISTORY_LIMIT = 400;
  * replay answers the same way.
  */
 export const SPEAK_CHANCE_PCT: Readonly<Record<TalkEvent, number>> = {
-  // The four original events each have one line per voice, so they are kept
-  // rarer: a horse that would not take one of them falls through to the
-  // ordinary-hand events below, whose pools are wide.
+  // The four original events are kept rarer than the ordinary-hand events:
+  // a horse that would not take one of them falls through to those below.
+  // (Until 2026-10-24 they also held one line per voice; every pool is now
+  // deep, and chooseLine never repeats a phrase a table has heard.)
   big_pot_won: 20,
   showdown_loss: 25,
   big_hand_shown: 20,
@@ -334,6 +341,12 @@ export interface TalkFacts {
   street?: Street;
   hand?: string;
   seat?: number;
+  /**
+   * Whether the hand reached a showdown (two or more players' hands were
+   * compared). Never a placeholder: it only decides which lines fit
+   * (horseTableTalkLines.LINE_NEEDS). Unset means the event does not say.
+   */
+  showdown?: boolean;
 }
 
 export interface TalkCandidate {
@@ -389,12 +402,18 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
   // may carry an evaluated hand on the winner record; that was never seen.
   const shown = input.showdownResults.filter((r) => r.mucked !== true);
   const shownBy = (userId: string) => shown.find((r) => r.userId === userId);
+  // Somebody called it down: two or more hands reached the showdown.
+  const showdown = input.showdownResults.length >= 2;
 
   // A. big pot won
   if (potBB !== undefined && potBB >= BIG_POT_BB) {
     for (const h of horses) {
       if (!winnerIds.has(h.userId)) continue;
-      out.push({ event: 'big_pot_won', speakerId: h.userId, facts: { potBB, street } });
+      out.push({
+        event: 'big_pot_won',
+        speakerId: h.userId,
+        facts: { potBB, street, showdown },
+      });
     }
   }
 
@@ -449,7 +468,7 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
   // F. any pot a horse won: "ty", "gg"
   for (const h of horses) {
     if (!winnerIds.has(h.userId)) continue;
-    out.push({ event: 'pot_won', speakerId: h.userId, facts: { potBB, street } });
+    out.push({ event: 'pot_won', speakerId: h.userId, facts: { potBB, street, showdown } });
   }
   return out;
 }
@@ -578,6 +597,17 @@ export function fillLine(template: string, facts: TalkFacts): string | null {
   return missing ? null : out;
 }
 
+/**
+ * Whether a line is true of this hand: a line that needs a showdown is only
+ * said after one, a line that needs everyone to have folded only when they
+ * did, and neither when the event does not say (LINE_NEEDS).
+ */
+export function fitsTheHand(template: string, facts: TalkFacts): boolean {
+  const need = LINE_NEEDS[template];
+  if (need === undefined) return true;
+  return need === 'showdown' ? facts.showdown === true : facts.showdown === false;
+}
+
 export interface ChosenLine {
   template: string;
   line: string;
@@ -606,7 +636,7 @@ export function chooseLine(
   // Dan 2026-10-22: every horse says different things. A horse draws first
   // from its own share of the pool (horseVoiceStyle.personalPool).
   const all = LINES[event][voice].lines;
-  const fresh = (t: string): boolean => !heard.has(normalizePhrase(t));
+  const fresh = (t: string): boolean => !heard.has(normalizePhrase(t)) && fitsTheHand(t, facts);
   const mine = personalPool(horseId, all).filter(fresh);
   const rest = all.filter((t) => fresh(t) && !mine.includes(t));
   for (const pool of [mine, rest]) {

@@ -82,6 +82,7 @@ import {
   fillLine,
   greetArrival,
   lineIndexFor,
+  fitsTheHand,
   heardPhrases,
   normalizePhrase,
   pickCandidate,
@@ -96,7 +97,7 @@ import {
   type TalkTable,
 } from './HorseTableTalk.js';
 import { _resetTableTalkGateForTests } from './HorseTableTalkGate.js';
-import { LINES, TALK_EVENTS, TALK_VOICES } from './horseTableTalkLines.js';
+import { LINE_NEEDS, LINES, TALK_EVENTS, TALK_VOICES } from './horseTableTalkLines.js';
 import { _setHumanPacingForTests, humanBeatMs } from './horsePacing.js';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
@@ -224,7 +225,7 @@ describe('events are read off the captured hand', () => {
     expect(c.map((x) => x.event)).toContain('big_pot_won');
     const win = c.find((x) => x.event === 'big_pot_won')!;
     expect(win.speakerId).toBe(HORSE_A);
-    expect(win.facts).toEqual({ potBB: 60, street: 'river' });
+    expect(win.facts).toEqual({ potBB: 60, street: 'river', showdown: true });
     expect(BIG_POT_BB).toBe(40);
     // 39 bb is not a big pot
     expect(detectEvents(bigPotHand(5, { potSize: 39 * 2 })).map((x) => x.event)).not.toContain(
@@ -474,6 +475,7 @@ describe('speakAtTheFelt', () => {
     const expected = chooseLine('big_pot_won', 'friendly', HORSE_A, 30, {
       potBB: 60,
       street: 'river',
+      showdown: true,
     })!;
     expect(await speakAtTheFelt(bigPotHand(30))).toBe('spoken');
     const order = h.state.calls.filter((c) => c.op === 'insert').map((c) => c.table);
@@ -635,6 +637,7 @@ describe('speakAtTheFelt', () => {
     const usual = chooseLine('big_pot_won', 'friendly', HORSE_A, 40, {
       potBB: 60,
       street: 'river',
+      showdown: true,
     })!;
     h.state.answers.horse_table_talk_ledger = (call) =>
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'horse_id')
@@ -660,6 +663,7 @@ describe('speakAtTheFelt', () => {
     const usual = chooseLine('big_pot_won', 'friendly', HORSE_A, 1041, {
       potBB: 60,
       street: 'river',
+      showdown: true,
     })!;
     h.state.answers.horse_table_talk_ledger = (call) =>
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
@@ -758,6 +762,7 @@ describe('speakAtTheFelt', () => {
     const line = chooseLine('big_pot_won', 'friendly', HORSE_A, 60, {
       potBB: 60,
       street: 'river',
+      showdown: true,
     })!.line;
     const word = line.split(/[^a-z]+/i).find((w) => w.length >= 2)!;
     const named = bigPotHand(60, {
@@ -1010,22 +1015,28 @@ describe('LAW: a table never hears the same line twice (Dan 2026-10-24)', () => 
   });
 
   it('horses taking turns at one table never repeat a phrase until the voice is spent, then fall silent', () => {
-    for (const event of TALK_EVENTS) {
-      for (const voice of TALK_VOICES) {
-        const heard = new Set<string>();
-        const distinct = new Set(LINES[event][voice].lines.map(normalizePhrase)).size;
-        let said = 0;
-        for (let turn = 0; turn < distinct + 5; turn++) {
-          const horse = FLEET[turn % FLEET.length];
-          const c = chooseLine(event, voice, horse, 7000 + turn * 13, FULL, heard);
-          if (!c) break;
-          const id = normalizePhrase(c.template);
-          expect(heard.has(id), `${event}/${voice} repeated "${c.template}"`).toBe(false);
-          heard.add(id);
-          said++;
+    for (const facts of [
+      { ...FULL, showdown: true },
+      { ...FULL, showdown: false },
+    ]) {
+      for (const event of TALK_EVENTS) {
+        for (const voice of TALK_VOICES) {
+          const heard = new Set<string>();
+          const fitting = LINES[event][voice].lines.filter((t) => fitsTheHand(t, facts));
+          const distinct = new Set(fitting.map(normalizePhrase)).size;
+          let said = 0;
+          for (let turn = 0; turn < distinct + 5; turn++) {
+            const horse = FLEET[turn % FLEET.length];
+            const c = chooseLine(event, voice, horse, 7000 + turn * 13, facts, heard);
+            if (!c) break;
+            const id = normalizePhrase(c.template);
+            expect(heard.has(id), `${event}/${voice} repeated "${c.template}"`).toBe(false);
+            heard.add(id);
+            said++;
+          }
+          expect(said).toBe(distinct);
+          expect(chooseLine(event, voice, HORSE_A, 99_999, facts, heard)).toBeNull();
         }
-        expect(said).toBe(distinct);
-        expect(chooseLine(event, voice, HORSE_A, 99_999, FULL, heard)).toBeNull();
       }
     }
   });
@@ -1042,5 +1053,79 @@ describe('LAW: a table never hears the same line twice (Dan 2026-10-24)', () => 
     const heard = heardPhrases({ horseRows: [], tableRows: [recent, stale] as never }, NOW);
     expect(heard.has(normalizePhrase('nice hand'))).toBe(true);
     expect(heard.has('stale line')).toBe(false);
+  });
+});
+
+describe('a line is true of the hand it follows (Dan 2026-10-24)', () => {
+  // "somebody wanted to see my cards" after a hand nobody called is a script, not a person.
+  const WON: Array<'big_pot_won' | 'pot_won'> = ['big_pot_won', 'pot_won'];
+
+  it('every tagged line exists in a pool, and only in an event that knows whether it was shown down', () => {
+    const where = new Map<string, string[]>();
+    for (const { event, line } of everyPoolLine()) {
+      where.set(line, [...(where.get(line) ?? []), event]);
+    }
+    for (const t of Object.keys(LINE_NEEDS)) {
+      expect(where.has(t), `LINE_NEEDS names "${t}", which is in no pool`).toBe(true);
+      for (const e of where.get(t)!) expect(WON, `"${t}" is tagged but lives in ${e}`).toContain(e);
+    }
+  });
+
+  it('either way a pot is won, every voice still has plenty to say', () => {
+    for (const event of WON) {
+      for (const voice of TALK_VOICES) {
+        const lines = LINES[event][voice].lines;
+        const calledDown = lines.filter((t) => fitsTheHand(t, { showdown: true }));
+        const foldedOut = lines.filter((t) => fitsTheHand(t, { showdown: false }));
+        expect(calledDown.length, `${event}/${voice} after a showdown`).toBeGreaterThanOrEqual(6);
+        expect(foldedOut.length, `${event}/${voice} after a fold`).toBeGreaterThanOrEqual(6);
+      }
+    }
+  });
+
+  it('the chooser never says a showdown line after a fold, nor a fold line after a showdown', () => {
+    const FLEET = [HORSE_A, HORSE_B, '33333333-3333-4333-8333-333333333333'];
+    for (const event of WON) {
+      for (const voice of TALK_VOICES) {
+        for (let hand = 1; hand <= 300; hand++) {
+          const horse = FLEET[hand % FLEET.length];
+          const folded = chooseLine(event, voice, horse, hand, {
+            potBB: 60,
+            street: 'flop',
+            showdown: false,
+          })!;
+          expect(LINE_NEEDS[folded.template], `${event}/${voice} "${folded.template}"`).not.toBe(
+            'showdown'
+          );
+          const called = chooseLine(event, voice, horse, hand, {
+            potBB: 60,
+            street: 'river',
+            showdown: true,
+          })!;
+          expect(LINE_NEEDS[called.template], `${event}/${voice} "${called.template}"`).not.toBe(
+            'no_showdown'
+          );
+        }
+      }
+    }
+  });
+
+  it('an event that does not say whether it was shown down uses neither kind of tagged line', () => {
+    for (const t of Object.keys(LINE_NEEDS)) expect(fitsTheHand(t, {})).toBe(false);
+    expect(fitsTheHand('gg', {})).toBe(true);
+  });
+
+  it('detectEvents marks a called-down pot as a showdown and a fold-out as not', () => {
+    const called = detectEvents(bigPotHand(70)).filter((c) => c.speakerId === HORSE_A);
+    for (const c of called.filter((c) => c.event === 'big_pot_won' || c.event === 'pot_won')) {
+      expect(c.facts.showdown).toBe(true);
+    }
+    const folded = detectEvents(
+      bigPotHand(71, { showdownResults: [], communityCards: ['Ah', 'Kd', '2c'] })
+    ).filter((c) => c.speakerId === HORSE_A);
+    expect(folded.map((c) => c.event)).toContain('big_pot_won');
+    for (const c of folded.filter((c) => c.event === 'big_pot_won' || c.event === 'pot_won')) {
+      expect(c.facts.showdown).toBe(false);
+    }
   });
 });

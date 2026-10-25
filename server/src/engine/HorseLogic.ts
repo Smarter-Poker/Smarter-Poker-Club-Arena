@@ -4582,10 +4582,51 @@ export class HorseLogic {
           // MANIAC PRESSURE: a call that is not all-in still has streets to
           // play, out of the maniac's way only when hero is all-in or the
           // maniac is; the equity is realised a little short of the sample.
-          const realization38 =
+          // ═══ V53 FACING THE AGGRESSIVE HUMAN'S 3-BET (2026-10-24) ═══
+          // Measured on production (WooWoo, PLO5, 4 days): when a horse opened
+          // and he 3-bet, the horse's call lost 14.9 bb a hand over 88 hands
+          // and its 4-bet won 17.4 bb a hand over 26. The flat of a pot-sized
+          // 3-bet realizes far less than its raw equity, worst out of position
+          // against the player who then has the initiative. Hero opened, a
+          // pressure target re-raised it, the re-raiser is not all in: the
+          // flat needs 10 points of realization out of position (5 in
+          // position) and a hand clear of that bar by 6 points 4-bets.
+          let v53ThreeBet = false;
+          let v53Realization = 0;
+          if (
+            (opts.v53Pressure ?? true) !== false &&
+            opts.mind !== false &&
+            raises === 2 &&
+            !raiserAllIn38 &&
+            effCall38 < player.stack &&
+            (gs.actionHistory ?? []).some(
+              (a) =>
+                a.stage === 'preflop' &&
+                a.userId === player.user_id &&
+                (a.action === 'raise' || a.action === 'all_in')
+            )
+          ) {
+            try {
+              if (aggressiveBettorPressure(HorseMind.opponentRead(raiser38.user_id)) !== null) {
+                const order53 = (seat: number): number => {
+                  const d = seat - (gs.dealerSeat ?? 0);
+                  return d <= 0 ? d + 1024 : d;
+                };
+                const heroIp53 = order53(player.seat) > order53(raiser38.seat);
+                v53ThreeBet = true;
+                v53Realization = heroIp53 ? 0.05 : 0.1;
+              }
+            } catch {
+              v53ThreeBet = false;
+              v53Realization = 0;
+            }
+          }
+          const realization38 = Math.max(
             maniacPrice38 && !variantPrice38 && !raiserAllIn38 && effCall38 < player.stack
               ? 0.03
-              : 0;
+              : 0,
+            v53Realization
+          );
           const required38 = Math.min(
             0.99,
             effCall38 / ((pot38 + effCall38) * (1 - rake38)) +
@@ -4595,6 +4636,22 @@ export class HorseLogic {
           );
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
+          if (
+            v53ThreeBet &&
+            gap38 >= 0.06 &&
+            gs.legalActions?.includes('raise') &&
+            gs.minRaiseTo != null &&
+            gs.maxRaiseTo != null &&
+            gs.maxRaiseTo >= gs.minRaiseTo
+          ) {
+            const target53 = vi.isPotLimit
+              ? gs.maxRaiseTo
+              : Math.min(gs.maxRaiseTo, Math.max(gs.minRaiseTo, gs.currentBet * 2.3));
+            if (telemetryOn(opts)) noteFire('v53_pressure_four_bet');
+            notePhase6Route('variant_fallback', 'variant_price');
+            return { action: 'raise', amount: Math.round(target53 * 100) / 100, thinkTime: 0 };
+          }
+          if (v53ThreeBet && telemetryOn(opts)) noteFire('v53_pressure_three_bet_priced');
           const callIt = Math.abs(gap38) <= 0.015 ? fastRandom() < 0.5 + gap38 / 0.03 : gap38 > 0;
           if (callIt) {
             // Clearly ahead of the price with chips behind and others still

@@ -366,7 +366,15 @@ describe('the fleet: one predicate, asked for the count and for the chair', () =
       /for \(const \[tableId, n\] of allocateBuyers\(clusterPools, capacityByHorse\)\)/
     );
     // and the weighting that selects the chairs reads the same `pool`
-    expect(CODE).toMatch(/const weighted = pool\s*\.map\(/);
+    expect(CODE).toMatch(/const weighted = orderMadnessCandidates\(\s*pool\.map\(/);
+    const selection = CODE.slice(
+      CODE.indexOf('const weighted = orderMadnessCandidates('),
+      CODE.indexOf('if (diag) diag.selected = selectedHorses.length;')
+    );
+    expect(selection).toMatch(/,\s*table,\s*getPloPerformance\(\)\s*\)/);
+    expect(selection).toContain(
+      'const selectedHorses = weighted.slice(0, emptySeats.length).map((x) => x.h);'
+    );
   });
 
   it('the SEAT STAGE asks the same predicate, emits its telemetry once, and counts every refusal', () => {

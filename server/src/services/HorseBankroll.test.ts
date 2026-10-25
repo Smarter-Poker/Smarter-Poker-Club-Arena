@@ -199,6 +199,18 @@ describe('TOP-UP DISCIPLINE - the reload was the leak', () => {
   );
   const base = { refBuyIn: 200, minBuyIn: 80, maxBuyIn: 400, policy: std };
 
+  it('retains whole cents without rounding up real fractional-cent limits', () => {
+    expect(
+      topUpAllowance({ bankroll: 20000, investedThisTable: 100, desired: 8.03, ...base })
+    ).toBe(8.03);
+    expect(
+      topUpAllowance({ bankroll: 20000, investedThisTable: 100, desired: 8.039, ...base })
+    ).toBe(8.03);
+    expect(
+      topUpAllowance({ bankroll: 20000, investedThisTable: 100, desired: 8.0299999, ...base })
+    ).toBe(8.02);
+  });
+
   it('a healthy roll reloads normally', () => {
     const got = topUpAllowance({ bankroll: 20_000, investedThisTable: 200, desired: 120, ...base });
     expect(got).toBe(120);

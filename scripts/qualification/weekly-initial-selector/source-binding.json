@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235514,
-      "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
+      "bytes": 235736,
+      "sha256": "c859f64182dc13820d4b1ded05802d371690d7bdff3207c832ebdb20d9706957"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -281,5 +281,26 @@
       }
     },
     "integration": "Preserves the protected Messenger native qualification step added concurrently; only current input identities updated, historical evidence retained."
+  },
+  "horseDailyCountsNative20261025": {
+    "reason": "Add isolated PG17 accepted-hand paired horse counts qualification to existing accounting shard4. Refresh only current workflow identity; preserve historical pins, financial inputs, assertions and qualification verdicts. Not production execution evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235317,
+      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
+    }
+  },
+  "horseDailyCountsProtectedMainIntegration20261025": {
+    "reason": "Retain protected-main messenger native proof and the accepted-hand daily-count native proof together on their existing accounting shards1 and4. Refresh only current workflow identity. Preserve every historical pin, qualification state and financial assertion. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    }
+  },
+  "lightningAndDailyCountCurrentCIIntegration20261025": {
+    "reason": "Preserve protected daily-count and Messenger native proof and the standalone TypeScript summary together. Only current workflow input identity changes; all historical qualification evidence and financial assertions are retained. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235736,
+      "sha256": "c859f64182dc13820d4b1ded05802d371690d7bdff3207c832ebdb20d9706957"
+    }
   }
 }

@@ -26,6 +26,8 @@ vi.mock('./client.js', () => ({
       throw new Error(`unexpected legacy table write: ${table}`);
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'ca_project_hand_stats_facts' && args.p_hand_id === null)
+        return { data: { horse_daily_rollups_contract: 1 }, error: null };
       if (fn === 'fn_ca_retain_hand_submission') {
         retentionCalls.push(args.p_request as Record<string, unknown>);
         const scripted = retentionReplies.shift();
@@ -117,6 +119,7 @@ import { persistedKnockoutEvidence } from '../../tournament/bountyAttributionGat
 import type { HorsePublicActionNode } from '../../engine/HorsePublicActionNode.js';
 import { captureHandSeatGenerations } from '../../engine/handSeatGeneration.js';
 import { horseCompletedHandKey } from '../../engine/HorseDecisionHandBinding.js';
+import { drainHorseNets, drainHorsePlay } from '../HorseHandReview.js';
 
 const GLOBAL_HAND = 1_400_001;
 const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -558,6 +561,66 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
 });
 
 describe('logHandHistory - accepted-hand transaction', () => {
+  it('captures matched daily counts privately before acceptance and does not recount them afterward', async () => {
+    drainHorseNets(10_000);
+    drainHorsePlay(10_000);
+    const base = obligationsParams(GLOBAL_HAND + 777);
+    const input = {
+      ...base,
+      clubId: 'cccccccc-0000-4000-8000-000000000001',
+      contributions: new Map([
+        ['u1', 20],
+        ['u2', 20],
+      ]),
+      holeCardsAll: new Map([
+        [
+          'u1',
+          {
+            seat: 1,
+            cards: [
+              { rank: 'A', suit: 'spades' },
+              { rank: 'K', suit: 'hearts' },
+            ],
+          },
+        ],
+        [
+          'u2',
+          {
+            seat: 2,
+            cards: [
+              { rank: 'Q', suit: 'spades' },
+              { rank: 'J', suit: 'hearts' },
+            ],
+          },
+        ],
+      ]),
+      roster: [
+        { userId: 'u1', isHorse: true },
+        { userId: 'u2', isHorse: true },
+      ],
+    };
+    acceptAtomicHand();
+    atomicRpcResults[0].data = {
+      ...(atomicRpcResults[0].data as object),
+      post_commit_obligations: true,
+    };
+    await logHandHistory(input);
+    const row = retentionCalls[0].p_hand_row as any;
+    const stats = row._accepted_post_commit_facts.stats_facts;
+    expect(stats.horse_rollups.nets.map((r: any) => [r.horse_user_id, r.hands])).toEqual([
+      ['u1', 1],
+      ['u2', 1],
+    ]);
+    expect(stats.horse_rollups.play.map((r: any) => [r.horse_user_id, r.hands])).toEqual([
+      ['u1', 1],
+      ['u2', 1],
+    ]);
+    expect(stats.horse_rollups.nets[0].format).toBe('hu_cash');
+    expect(row).not.toHaveProperty('horse_rollups');
+    expect(drainHorseNets()).toEqual([]);
+    expect(drainHorsePlay()).toEqual([]);
+    expect(mockWakeHandProjection).toHaveBeenCalled();
+  });
   it('uses the one authoritative RPC and wakes projection only after its receipt is proved', async () => {
     atomicRpcResults = [
       {

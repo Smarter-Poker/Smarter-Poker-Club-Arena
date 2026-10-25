@@ -31,7 +31,7 @@ import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import { bindToProcessRoot } from './supabase/dataActorContext.js';
 import { allocateWeightedShareCents } from './rakeAllocation.js';
-import { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlayStats.js';
+import { accumulatePlayStats, freshPlay, type HandRow, type PlayStats } from './HorsePlayStats.js';
 import {
   variantInfo,
   omahaNutStatus,
@@ -116,6 +116,8 @@ export interface HorseReviewInput {
   /** Touch the fleet seat for this table (default true). A Lightning host
    *  table is not where the horse is seated, so Lightning passes false. */
   seatTouch?: boolean;
+  /** Both daily counts are owned by the immutable accepted-hand projection. */
+  rollupsInAcceptedFacts?: boolean;
 }
 
 /** The Lightning results bucket for one stake, e.g. `lightning_2bb` or `lightning_0.5bb`. */
@@ -1234,6 +1236,11 @@ function accumulateHorsePlay(
       button_seat: typeof input.buttonSeat === 'number' ? input.buttonSeat : null,
     };
     const delta = accumulatePlayStats([row], tracked, new Map());
+    // A forced-only hand can end without an ActionRecord. Its dealt seats
+    // still owe one denominator entry, exactly as the net accumulator does.
+    for (const horse of tracked) {
+      if (!delta.has(horse)) delta.set(horse, { ...freshPlay(), hands: 1 });
+    }
     for (const [horse, d] of delta) {
       if (d.hands === 0) continue;
       const key = `${horse}|${day}|${format}|${floored ? 'f' : 'n'}`;
@@ -1422,7 +1429,8 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
   try {
     // V16: the real-nets aggregate sees EVERY hand, not just the 20bb flags,
     // and has its own kill switch (HORSE_NET_ROLLUP_ENABLED).
-    accumulateHorseNets(input);
+    if (!input.rollupsInAcceptedFacts) accumulateHorseNets(input);
+    else touchHorseSeats(input);
     if (!enabled() || !input.handId) return;
     const rows = buildReviewRows(input);
     if (rows.length === 0) return;

@@ -2,21 +2,21 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-separable-reliability-01a17363",
+      "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs, plus the connected decline-order and cutover-deadline follow-up. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry. The anchor is protected final correctness merge 98547198 (#8051). The earlier first-batch anchor 662b8e1a is now served inside c3ed86482 and grants no additional activation. This remaining order applies to the unserved per-decision decline ordering fix. Verify containing protected source and serving ancestry before claiming completion. Carries forward the already protected #8046 named entry-big-blind constraint dependency through the same installer and its installed-history checks; never replay an installed migration or create a second installer.",
+      "contains": "98547198d5daccf29015fbea9b5d6260fa43327a",
+      "notBefore": "2026-10-25T18:18:56Z",
+      "notAfter": "2026-10-26T00:18:56Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
+    },
+    {
       "id": "2026-10-25-plo5-immediate-cutover",
       "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don’t call it done until it’s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8048 (whole-game 70/30 correction) and PR #8042 (cent rounding and notices); preserve drain, freeze, rollback reserve and thaw. The prior #8042 anchor is already serving in c3ed8648 but does not contain the requested whole-game quota correction. This same bounded order now names the protected #8048 merge, retains its original expiry, and ends once that corrected commit is serving.",
       "contains": "bf3dc2a6c3e877dd5760b75f7ad992c33975bc4f",
       "notBefore": "2026-10-25T17:57:28Z",
       "notAfter": "2026-10-25T23:47:28Z",
       "migrations": []
-    },
-    {
-      "id": "2026-10-25-separable-reliability-01a17363",
-      "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs, plus the connected decline-order and cutover-deadline follow-up. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry. The anchor is protected first-batch merge 662b8e1a (#8021), which is not serving when this follow-up is declared. Verify the containing protected follow-up and serving ancestry before claiming completion. Carries forward the already protected #8046 named entry-big-blind constraint dependency through the same installer and its installed-history checks; never replay an installed migration or create a second installer.",
-      "contains": "662b8e1a171080793faf0e97e48cb0bfb9666ad7",
-      "notBefore": "2026-10-25T18:18:56Z",
-      "notAfter": "2026-10-26T00:18:56Z",
-      "announceAtChicagoMinutes": [53, 54],
-      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
     },
     {
       "id": "2026-10-25-lightning-reset-now",

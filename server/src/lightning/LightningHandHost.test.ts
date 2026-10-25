@@ -593,13 +593,17 @@ describe('the clock, the time bank and a horse', () => {
    */
   function pinHorseTempo(
     t: ReturnType<typeof buildHost>,
-    thinkTime: (decisionIndex: number) => number
+    thinkTime: (decisionIndex: number) => number,
+    opts: { neverFold?: boolean } = {}
   ): void {
     const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      // An already-folding horse folds at its first priced look (#7958), before
+      // any clock or bank runs; a test of the clock pins a non-folding answer.
+      const action = opts.neverFold && r.decision.action === 'fold' ? 'call' : r.decision.action;
+      return { ...r, decision: { ...r.decision, action, thinkTime: thinkTime(n++) } };
     });
   }
 
@@ -653,7 +657,9 @@ describe('the clock, the time bank and a horse', () => {
     const t = buildHost(formed, [100, 100], { horses });
     // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
     // every later one is a beat.
-    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000), {
+      neverFold: true,
+    });
     await t.host.start();
     await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');

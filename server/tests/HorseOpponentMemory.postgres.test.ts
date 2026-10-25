@@ -956,6 +956,11 @@ describe('remaining saved opponent contexts with real PostgreSQL', () => {
       )
     ).rows[0];
     expect(grants).toEqual({ service: true, anon: false, browser: false });
+    const liveProof = contextTransaction.match(/^-- @live-proof: (.+)$/m)?.[1];
+    expect(liveProof).toBeTruthy();
+    expect((await client.query(`select (${liveProof}) as installed`)).rows[0]).toEqual({
+      installed: true,
+    });
     await expect(client.query(contextTransaction)).rejects.toThrow(
       /variant constraint preimage differs/
     );

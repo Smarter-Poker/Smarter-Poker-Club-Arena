@@ -1,5 +1,6 @@
 -- Version reserved by scripts/reserve-migration-version.sh.
 -- @install-window: daily-maintenance
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_horse_exploit_accept_hand()'::regprocedure))='9b948340bb49f657bf369178211140e9') AND (SELECT md5(pg_get_functiondef('public.fn_horse_exploit_mark_hand()'::regprocedure))='c62b42e94bf74e7dafc01ef5735c5050') AND (SELECT md5(pg_get_functiondef('public.fn_horse_exploit_profiles_read(text[],text,text,text)'::regprocedure))='d40ca7e4d52c9c606506e8033966990c') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.horse_exploit_profiles'::regclass AND conname='horse_exploit_profiles_variant_check' AND convalidated AND pg_get_constraintdef(oid)='CHECK ((variant = ANY (ARRAY[''nlh''::text, ''plo4''::text, ''plo5''::text, ''plo6''::text, ''plo8''::text, ''flh''::text, ''flo8''::text, ''short_deck''::text])))')
 -- Exact distinct saved reads for Fixed Limit Hold'em, FLO8 and Short Deck.
 -- horse_exploit_profiles is updated by every accepted hand. Replacing its
 -- CHECK needs ACCESS EXCLUSIVE, so only the existing daily installer may run

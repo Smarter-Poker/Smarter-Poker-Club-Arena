@@ -37,6 +37,8 @@ export default function SlugEnforcer() {
       supabase.from('clubs').select('slug, union_id, is_union').eq('id', uuid).maybeSingle(),
       supabase.from('unions').select('id, slug').eq('id', uuid).maybeSingle(),
     ]).then(([clubRes, unionRes]) => {
+      // A late lookup belongs to the route that requested it. It must not
+      // replace a newer path, query, fragment or an unmounted router.
       if (!current) return;
       let newPath = location.pathname;
       let redirected = false;

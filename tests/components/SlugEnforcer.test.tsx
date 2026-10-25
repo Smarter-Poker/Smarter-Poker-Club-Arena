@@ -42,6 +42,63 @@ describe('SlugEnforcer', () => {
     });
   };
 
+  it.each(['path', 'search', 'hash', 'unmount'] as const)(
+    'retires an old slug lookup after the %s changes',
+    async (change) => {
+      let finishOld!: (result: unknown) => void;
+      let finishNew!: (result: unknown) => void;
+      const oldClub = new Promise((resolve) => {
+        finishOld = resolve;
+      });
+      const newClub = new Promise((resolve) => {
+        finishNew = resolve;
+      });
+      let clubReads = 0;
+      (supabase.from as any).mockImplementation((table: string) => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () =>
+              table === 'clubs'
+                ? ++clubReads === 1
+                  ? oldClub
+                  : newClub
+                : Promise.resolve({ data: null, error: null }),
+          }),
+        }),
+      }));
+      const initial = {
+        pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
+        search: '?section=ticker',
+        hash: '#old',
+      };
+      (useLocation as any).mockReturnValue(initial);
+      const view = render(<SlugEnforcer />);
+      if (change === 'unmount') view.unmount();
+      else {
+        (useLocation as any).mockReturnValue({
+          ...initial,
+          ...(change === 'path' ? { pathname: '/leaderboard' } : {}),
+          ...(change === 'search' ? { search: '?create=table&game=nlh' } : {}),
+          ...(change === 'hash' ? { hash: '#current' } : {}),
+        });
+        view.rerender(<SlugEnforcer />);
+      }
+      await act(async () => {
+        finishOld({ data: { slug: 'test-club', is_union: false }, error: null });
+      });
+      expect(navigateMock).not.toHaveBeenCalled();
+      if (change === 'search' || change === 'hash') {
+        await act(async () => {
+          finishNew({ data: { slug: 'test-club', is_union: false }, error: null });
+        });
+        expect(navigateMock).toHaveBeenCalledExactlyOnceWith(
+          `/clubs/test-club/table-management${change === 'search' ? '?create=table&game=nlh' : initial.search}${change === 'hash' ? '#current' : initial.hash}`,
+          { replace: true }
+        );
+      }
+    }
+  );
+
   it('rewrites non-union club UUID to slug without dropping the nested Data path', async () => {
     (useLocation as any).mockReturnValue({
       pathname: '/clubs/12345678-1234-1234-1234-123456789012/data',

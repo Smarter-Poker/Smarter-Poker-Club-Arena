@@ -21,7 +21,7 @@
  *     Top Up does not also press Add Chips.
  *
  * WHICH HORSE IS WHICH is a hash of its user id, so a horse keeps one habit
- * at admission. The hand boundary then holds each seated table roster to
+ * at admission. The hand boundary then holds the whole seated cash-game roster to
  * the nearest whole-horse 30/70 split, changing the fewest existing choices. The seat's own
  * `auto_rebuy` flag, written at the buy-in door, is the single source of truth
  * the engine and the rotator both read. Every other game is untouched.
@@ -153,7 +153,7 @@ export function cappedAutoTopUp(args: {
 }
 
 /**
- * Nearest whole-horse 30% of a live Classic PLO5 table roster. Keep current
+ * Nearest whole-horse 30% of a live Classic PLO5 cash-game roster. Keep current
  * choices wherever possible; a departure never reshuffles every remaining
  * horse. Hash order only breaks ties when the quota actually needs a change.
  * Applied by the existing hand boundary, never by a timer or repair service.

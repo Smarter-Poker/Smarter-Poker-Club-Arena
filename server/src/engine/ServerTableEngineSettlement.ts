@@ -1642,7 +1642,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     const batch = await readHorseTopUpBatch(
       this.tableId,
       () => this.lifecycleCanMutate() && !isMaintenanceFrozen(),
-      maxBuyIn
+      maxBuyIn,
+      this.tableInfo?.cluster_id
     );
     if (!batch || !this.lifecycleCanMutate()) return;
     for (const horse of players) {

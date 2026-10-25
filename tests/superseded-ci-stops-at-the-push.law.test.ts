@@ -192,8 +192,17 @@ describe('every other pull request workflow cancels its superseded run per PR', 
       expect(c && typeof c === 'object', file).toBe(true);
       const conc = c as { group: string; 'cancel-in-progress': boolean | string };
       const cancel = conc['cancel-in-progress'];
+      // agent-autopilot.yml (#8012): its `closed` run is what dispatches a
+      // merged migration, so it sits in its own `-merged` group and is never
+      // cancelled; every other event of the PR is.
+      const autopilotMerged =
+        file === 'agent-autopilot.yml' &&
+        typeof cancel === 'string' &&
+        squash(cancel) === "${{ github.event.action != 'closed' }}" &&
+        /-merged/.test(conc.group);
       expect(
         cancel === true ||
+          autopilotMerged ||
           (typeof cancel === 'string' &&
             squash(cancel) === "${{ github.event_name == 'pull_request' }}"),
         file

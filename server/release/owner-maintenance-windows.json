@@ -3,8 +3,8 @@
   "windows": [
     {
       "id": "2026-10-25-separable-reliability-01a17363",
-      "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry.",
-      "contains": "feda26a581e2bfbf4159befe4852b264b9870413",
+      "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry. The anchor is the protected-main base, which is not serving when declared; this entry lands only with the reliability source PR itself so its target includes those fixes despite squash merge. Recheck serving ancestry before activation.",
+      "contains": "aff6b8983051be861863af5558f76f2e7bf7fae4",
       "notBefore": "2026-10-25T18:18:56Z",
       "notAfter": "2026-10-26T00:18:56Z",
       "announceAtChicagoMinutes": [53, 54],

@@ -593,13 +593,22 @@ describe('the clock, the time bank and a horse', () => {
    */
   function pinHorseTempo(
     t: ReturnType<typeof buildHost>,
-    thinkTime: (decisionIndex: number) => number
+    thinkTime: (decisionIndex: number) => number,
+    action?: (decisionIndex: number, brainAction: string, snap: any) => string
   ): void {
     const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      const i = n++;
+      const chosen = action ? action(i, String(r.decision.action), args[0]) : r.decision.action;
+      const amount =
+        chosen === r.decision.action
+          ? r.decision.amount
+          : chosen === 'call'
+            ? args[0].gameState.toCall
+            : undefined;
+      return { ...r, decision: { ...r.decision, action: chosen, amount, thinkTime: thinkTime(i) } };
     });
   }
 
@@ -653,7 +662,20 @@ describe('the clock, the time bank and a horse', () => {
     const t = buildHost(formed, [100, 100], { horses });
     // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
     // every later one is a beat.
-    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    // The tanking decision is a call or a check, never a fold: a fold at the
+    // street's first priced look is already folding and is pressed at a
+    // person's speed (AHorseThatIsAlreadyFoldingFoldsRightAway), so a brain
+    // that happened to fold made this test fail at random.
+    pinHorseTempo(
+      t,
+      (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000),
+      (i, brainAction, snap) =>
+        i === 0 && brainAction === 'fold'
+          ? snap.gameState.toCall > 0
+            ? 'call'
+            : 'check'
+          : brainAction
+    );
     await t.host.start();
     await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');

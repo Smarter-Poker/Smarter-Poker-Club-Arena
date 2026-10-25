@@ -25,3 +25,10 @@ kept, because its handoff is how the player gets back into the room.
 
 Pinned by `tests/a-lightning-anchor-never-doubles-its-room-tab.law.test.ts`.
 Client only.
+
+## Also in this change
+
+The session stats panel (`RealTimeResultPanel`) read its game details from a
+`tables` row by the room id. A Lightning room is a pool session with no such
+row, so variant, blinds, seats and buy-in range stayed blank. It now reads them
+from the Cluster the room already knows (`getLightningPoolSession(id).meta`).

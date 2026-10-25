@@ -58,4 +58,11 @@ describe('a Lightning anchor never doubles its room tab', () => {
       /const anchorsShown = anchorsShownByOpenRooms\(\s*tblRows \?\? \[\],\s*survivors\.map\(\(t\) => t\.id\),\s*\(tabId\) => getLightningPoolSession\(tabId\)\?\.clusterId\s*\);\s*const candidates = ids\.filter\(\(id\) => !known\.has\(id\) && !anchorsShown\.has\(id\)\);/
     );
   });
+
+  it("the session stats panel reads a Lightning room's game from its Cluster, not a missing tables row", () => {
+    const panel = readFileSync('src/components/table/RealTimeResultPanel.tsx', 'utf8');
+    expect(panel).toMatch(
+      /const lightningMeta = getLightningPoolSession\(tableId\)\?\.meta;\s*if \(lightningMeta\) \{\s*setMeta\(/
+    );
+  });
 });

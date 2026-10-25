@@ -648,7 +648,7 @@ describe('conversion of an already seated player', () => {
     expect(PAGE).toMatch(/lightningRoom\s*\? 'Lightning Games '/);
     expect(PAGE).toContain('t.id === cashTemplateKey(template)');
   });
-  it('Lightning preselected Fold uses the immediate fast-fold door before arming a normal pre-action', () => {
+  it('Lightning preselected Fold uses the shared handler, which queues preflop before releasing', () => {
     expect(PAGE).toMatch(
       /onPreActionChange=\{\(next\) => \{[\s\S]*?if \(lightningRoom && next === 'fold' && !heroOwesNothing\) \{\s*void handleLightningFold\('fast_fold'\);\s*return;/
     );
@@ -658,6 +658,8 @@ describe('conversion of an already seated player', () => {
       /const heroOwesNothing =\s+\(tableState\.currentBet \|\| 0\) <=\s+\(tableState\.lastBetAmounts\?\.\[tableState\.heroSeat - 1\] \|\| 0\);/
     );
     expect(PAGE).toContain('if (lightningFoldBusyRef.current) return;');
+    expect(PAGE).toContain('lightningFoldOnTurn(engineSnapshotRef.current, userId, kind)');
+    expect(PAGE).toContain('preActionFoldOnTurnHandRef.current = queued.handId;');
   });
 });
 

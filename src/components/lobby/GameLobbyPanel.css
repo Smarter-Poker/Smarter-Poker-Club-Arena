@@ -15,8 +15,8 @@
 .glp-backdrop {
   position: fixed;
   inset: 0;
-  /* Modal review sits above persistent navigation and the live ticker (9400),
-     so the ticker cannot intercept Close. Keep the toast layer above it. */
+  /* The fixed announcement rail is 9400. Keep this body-portaled dialog
+     above that chrome so it cannot intercept Close, below toasts (10000). */
   z-index: 9600;
   background: rgb(2 4 7 / 70%);
   backdrop-filter: blur(2px);

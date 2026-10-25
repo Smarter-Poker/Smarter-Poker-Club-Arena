@@ -51,7 +51,6 @@ export function registerGameLobbyCardCases() {
             'src/styles/metallic-popups.css',
             'src/components/layouts/AppLayout.module.css',
             'src/components/navigation/GlobalHeader.module.css',
-            'src/components/tournament/TournamentStartingTicker.css',
             ...Object.keys(bundled.metafile!.inputs).filter((file) => file.endsWith('.css')),
           ]),
         ];
@@ -66,7 +65,7 @@ export function registerGameLobbyCardCases() {
               contentType: 'text/html',
               // The real shell isolates route content beneath persistent chrome.
               // A dialog can be visible yet have its Close control covered by it.
-              body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body style="overflow:auto"><header class="header" style="height:44px;padding:0"><button style="width:100%;height:44px">Messages</button></header><main class="casinoStage" style="padding-top:82px"><div id="root"></div></main><div class="mtt-ticker"><button class="mtt-ticker__track" aria-label="Starting Soon Fixture" onclick="window.tickerClicks=(window.tickerClicks||0)+1">Starting Soon</button></div><nav aria-label="Fixture Footer" style="position:fixed;bottom:0;width:100%;height:60px;z-index:1000">Footer</nav></body></html>`,
+              body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body style="overflow:auto"><div id="ticker-root"></div><header class="header"><button style="width:100%;height:44px">Messages</button></header><main class="casinoStage"><div id="root"></div></main><nav aria-label="Fixture Footer" style="position:fixed;bottom:0;width:100%;height:60px;z-index:1000">Footer</nav></body></html>`,
             });
           const file = resolve(
             'public',
@@ -78,12 +77,6 @@ export function registerGameLobbyCardCases() {
         });
         await page.setViewportSize(viewport);
         await page.goto(`http://game-card.fixture/?kind=${kind}`);
-        // The live ticker starts below measured top chrome, not at viewport zero.
-        await page.evaluate(() => {
-          const header = document.querySelector('header')!;
-          (document.querySelector('.mtt-ticker') as HTMLElement).style.top =
-            `${header.getBoundingClientRect().bottom}px`;
-        });
         await page.addScriptTag({
           content: bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
         });
@@ -122,12 +115,13 @@ export function registerGameLobbyCardCases() {
           )
           .toBe(true);
         await close.click();
-        expect(
-          await page.evaluate(
-            () => (window as Window & { tickerClicks?: number }).tickerClicks ?? 0
-          )
-        ).toBe(0);
+        await expect(page.locator('body')).not.toHaveAttribute('data-ticker-opened', 'true');
         await expect(page.getByRole('dialog')).toHaveCount(0);
+        // The real fixed ticker remains a working registration entry once the
+        // modal closes; only the dialog should own their overlapping pixels.
+        await expect(page.locator('.mtt-ticker')).toBeVisible();
+        await page.locator('.mtt-ticker__track').click();
+        await expect(page.locator('body')).toHaveAttribute('data-ticker-opened', 'true');
         await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('auto');
         const reopen = page.getByRole('button', { name: 'Open Game Lobby', exact: true });
         // Safari touch clicks need not focus buttons. Restore keyboard focus

@@ -421,7 +421,11 @@ import {
   lightningCapabilities,
   readLightningPlatformSignals,
 } from '../lightning/lightningCapabilities';
-import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
+import {
+  sendLightningFold,
+  lightningFoldOnTurn,
+  type LightningFoldKind,
+} from '../lightning/lightningActions';
 import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs } from '../lightning/lightningPrefs';
@@ -3235,6 +3239,7 @@ function LiveTablePage({
    * offering at the moment the player armed it, and map accordingly.
    */
   const preActionCanCheckRef = useRef(false);
+  const preActionFoldOnTurnHandRef = useRef<string | null>(null);
   /**
    * Dan 2026-08-28 (CRITICAL): the price on the Call button at the moment the
    * player armed it. Sent to the engine as auto_call's maxCallAmount so a
@@ -3685,6 +3690,7 @@ function LiveTablePage({
         hadPreActionRef,
         lastArmedPreActionRef,
         preActionCanCheckRef,
+        preActionFoldOnTurnHandRef,
         preActionCallAmountRef,
         preActionHeldByEngineRef,
         preActionSendSeqRef,
@@ -24654,6 +24660,25 @@ function LiveTablePage({
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
       if (lightningFoldBusyRef.current) return;
+      const queued = lightningFoldOnTurn(engineSnapshotRef.current, userId, kind);
+      if (queued) {
+        if ('error' in queued) {
+          toast.warning(queued.error);
+          return;
+        }
+        // Snapshot intent before React's effect or the betting street moves.
+        // The existing host queues auto_check_fold and executes it on turn;
+        // The free keyboard shortcut follows the visible Check/Fold rule.
+        preActionFoldOnTurnHandRef.current = queued.handId;
+        preActionCanCheckRef.current = queued.toCall === 0;
+        preActionCallAmountRef.current = queued.toCall;
+        preActionPriorHeroActionAtRef.current = latestHeroActionTimestamp(
+          engineSnapshotRef.current?.action_history,
+          tableStateRef.current.heroSeat
+        );
+        setPreAction('fold');
+        return;
+      }
       lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
@@ -24677,7 +24702,7 @@ function LiveTablePage({
     },
     [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
-  // There is one fold behavior in Lightning: release the hand immediately.
+  // Keyboard and button share the preflop queue and postflop release rules.
   lightningHotkeysRef.current = lightningCaps.hotkeys
     ? {
         fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,
@@ -28710,8 +28735,8 @@ function LiveTablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={(next) => {
-                    // Lightning Fold is an immediate request to release this
-                    // hand and join the next table, including out of turn.
+                    // The shared handler queues a priced preflop Fold until
+                    // its turn; postflop Lightning Fold releases immediately.
                     // CHECK/FOLD NEVER FOLDS A FREE CHECK (2026-10-24): while
                     // the hero owes nothing the button is Check/Fold, and it
                     // arms the ordinary auto check/fold; if that ends in a
@@ -28723,6 +28748,9 @@ function LiveTablePage({
                       void handleLightningFold('fast_fold');
                       return;
                     }
+                    // An undelivered clear may restore the held choice. Keep
+                    // its hand-bound mode until another explicit choice replaces it.
+                    if (next !== null) preActionFoldOnTurnHandRef.current = null;
                     preActionPriorHeroActionAtRef.current = next
                       ? latestHeroActionTimestamp(
                           engineSnapshotRef.current?.action_history,

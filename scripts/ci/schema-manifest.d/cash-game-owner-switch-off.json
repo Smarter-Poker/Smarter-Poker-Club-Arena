@@ -1,4 +1,5 @@
 {
-  "_owner": "claude/cash-game-owner-switch-off (2026-10-17): owner switch for a running cash game, OPORD 18.4",
+  "_owner": "claude/cash-game-owner-switch-off (2026-10-17): owner switch for a running cash game, OPORD 18.4; 2026-10-25: the request ledger cash_game_switch_off_requests (20261025022742)",
+  "tables": ["cash_game_switch_off_requests"],
   "functions": ["fn_cash_game_switch_off"]
 }

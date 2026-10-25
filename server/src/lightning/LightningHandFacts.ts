@@ -30,6 +30,8 @@ import {
   type HandAction,
   type HandFactsInput,
 } from '../services/supabase/handFacts.js';
+import { buildHorseDailyRollupFacts } from '../services/HorseDailyRollupFacts.js';
+import { lightningReviewFormat, type HorseReviewInput } from '../services/HorseHandReview.js';
 
 export interface LightningFactsHand {
   /** The Lightning hand id: the hand_history id the settlement gives the row. */
@@ -41,6 +43,9 @@ export interface LightningFactsHand {
   playedAtIso: string;
   buttonSeat: number | null;
   rake: number;
+  bbj?: number;
+  /** Installed paired-count projector capability, checked by the host. */
+  dailyRollups?: boolean;
   board: readonly unknown[];
   /** Every participant dealt in: their seat and hole cards. */
   holeCards: ReadonlyMap<string, { seat: number; cards: unknown }>;
@@ -99,6 +104,26 @@ export async function buildLightningStatsFacts(
     if (!input) return null;
     const payload = await build(input);
     if (!payload || !Array.isArray(payload.facts) || payload.facts.length === 0) return null;
+    if (hand.dailyRollups) {
+      payload.horse_rollups = buildHorseDailyRollupFacts({
+        handId: input.handId,
+        tableId: input.tableId,
+        clubId: input.clubId,
+        gameVariant: input.gameVariant,
+        bigBlind: input.bigBlind,
+        playedAt: input.playedAt,
+        holeCardsAll: input.holeCardsAll,
+        contributions: input.contributions,
+        winners: input.winners,
+        actions: input.actions as HorseReviewInput['actions'],
+        roster: input.roster,
+        rakeAmount: input.rakeAmount,
+        bbjAmount: hand.bbj ?? 0,
+        buttonSeat: input.buttonSeat,
+        format: lightningReviewFormat(input.bigBlind),
+        vpipFloor: hand.rules.nit_game === true ? Number(hand.rules.maintain_percent_min ?? 0) : 0,
+      });
+    }
     return payload;
   } catch (err) {
     try {

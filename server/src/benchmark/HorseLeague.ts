@@ -1159,6 +1159,14 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
   // V55 is opt-in. Freeze the deep cash domain before examining results:
   // the audit's leaking river re-shoves occurred above 100bb.
+  ...(['plo4', 'plo5', 'plo6'] as const).map((variant) => ({
+    name: `${variant}_v56_pressure_range`,
+    variant,
+    stackBB: 400,
+    pairs: 6000,
+    a: { v56OmahaPressureRange: true },
+    b: { v56OmahaPressureRange: false },
+  })),
   {
     name: 'plo4_v55_river_trips_flat',
     variant: 'plo4',

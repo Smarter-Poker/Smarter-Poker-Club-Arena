@@ -580,6 +580,7 @@ function CashierTradeWorkspace() {
   const reqSeqRef = useRef(0);
   const ticketSeqRef = useRef(0);
   const recordSeqRef = useRef(0);
+  const recordFilterEpochRef = useRef(0);
   const invoiceSeqRef = useRef(0);
   /** Claim Back list guard (launch audit 2026-10-09, P-03): bumped with the rest. */
   const reversibleSeqRef = useRef(0);
@@ -1526,6 +1527,7 @@ function CashierTradeWorkspace() {
   // The new filter must never label the old book's rows or receipt as its own.
   useLayoutEffect(() => {
     ++recordSeqRef.current;
+    ++recordFilterEpochRef.current;
     recordsKeyRef.current = null;
     setRecords([]);
     setRecordsHasMore(false);
@@ -1535,6 +1537,7 @@ function CashierTradeWorkspace() {
     setReceipt(null);
     return () => {
       ++recordSeqRef.current;
+      ++recordFilterEpochRef.current;
     };
   }, [historyFilterKey]);
 
@@ -1617,7 +1620,9 @@ function CashierTradeWorkspace() {
     if (!user?.id || !clubUuid || !roleResolved || recordsLoadingMore) return;
     const last = records[records.length - 1];
     if (!last) return;
-    const seq = recordSeqRef.current;
+    // A head refresh keeps the same immutable older book. Only changing the
+    // filters or leaving this view retires its pending older-page request.
+    const filterEpoch = recordFilterEpochRef.current;
     const viewer = user.id;
     setRecordsLoadingMore(true);
     try {
@@ -1633,7 +1638,7 @@ function CashierTradeWorkspace() {
         p_before_id: last.id,
         p_limit: HISTORY_PAGE + 1,
       });
-      if (!isMounted.current || seq !== recordSeqRef.current) return;
+      if (!isMounted.current || filterEpoch !== recordFilterEpochRef.current) return;
       if (error) throw error;
       const rows = (data || []) as HistoryFeedRow[];
       const page = rows.slice(0, HISTORY_PAGE).map((raw) => toTradeRecord(raw, viewer));
@@ -1644,10 +1649,11 @@ function CashierTradeWorkspace() {
       setRecordsHasMore(rows.length > HISTORY_PAGE);
     } catch (e) {
       reportError(e, 'CashierTradePage.recordsOlder');
-      if (isMounted.current && seq === recordSeqRef.current)
+      if (isMounted.current && filterEpoch === recordFilterEpochRef.current)
         toast?.error?.('Older Transactions Could Not Be Loaded');
     } finally {
-      if (isMounted.current && seq === recordSeqRef.current) setRecordsLoadingMore(false);
+      if (isMounted.current && filterEpoch === recordFilterEpochRef.current)
+        setRecordsLoadingMore(false);
     }
   }, [
     user?.id,

@@ -669,7 +669,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        * "NOT ZERO EVER".
        *
        * Serving it here is safe by construction (see the stage-4 comment): the
-       * RPC is idempotent per player, refuses a seatless player, and
+       * RPC is idempotent per player, refuses a player with no live seat, and
        * tryTournamentAddOns offers only players holding chips. The same 20 s
        * cadence applies, so the stage-4 call below never doubles an offer.
        */

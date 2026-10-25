@@ -721,6 +721,46 @@ describe('CashierTradePage club load ordering', () => {
     expect(toastMocks.error).not.toHaveBeenCalled();
   });
 
+  it('keeps an older page when a balance event refreshes the same history book', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: ReturnType<typeof historyEntry>[]; error: null }>();
+    let headReads = 0;
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        headReads++;
+        return Promise.resolve({
+          data: Array.from({ length: 51 }, (_, index) => historyEntry(100 - index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    const before = headReads;
+    const balanceHandlers = vi
+      .mocked(masterBus.subscribe)
+      .mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')
+      .map(([, handler]) => handler as (payload: unknown) => void);
+    act(() => {
+      for (const handler of balanceHandlers)
+        handler({ source: 'cashout_approved', userId: USER_ID });
+    });
+    await waitFor(() => expect(headReads).toBeGreaterThan(before), { timeout: 3000 });
+    await act(async () => {
+      older.resolve({
+        data: Array.from({ length: 51 }, (_, index) => historyEntry(50 - index)),
+        error: null,
+      });
+      await older.promise;
+    });
+    expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(100);
+    expect(within(panel).getByRole('button', { name: 'Load 50 Older Entries' })).toBeEnabled();
+  });
+
   it('does not invalidate the request that loads the first Trade tab', async () => {
     const membershipGate = deferred<{
       data: { role: string; chip_balance: number };

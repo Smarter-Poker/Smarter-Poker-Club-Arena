@@ -179,6 +179,7 @@ describe('original observation windows in private read frames', () => {
 
   it('retains detached source envelopes and explicit unknown legacy rows in v3', () => {
     const view = populated();
+    delete view.winnerReads; // Original v3 capture predates winner beliefs.
     const source = { version: 1 as const, coverage: 'complete' as const, fromMs: 100, toMs: 200 };
     view.stats.get('villain')!.sourceWindow = source;
     delete view.scoped.get('omaha:hu|villain')!.sourceWindow;
@@ -220,56 +221,60 @@ describe('original observation windows in private read frames', () => {
     expect(() => decodeHorseDecisionReads(bad, players, 'hand')).toThrow('invalid');
   });
 
-  it('admits allocated v3 journal reads without permitting legacy downgrade or another plan context', () => {
-    const request = {
-      type: 'DECIDE_FAST',
-      requestId: 1,
-      generation: 1,
-      fence: 'unallocated-fixture',
-      decisionKey: `phase5-v1:${'a'.repeat(64)}`,
-      player: { seat: 1, user_id: 'hero' },
-      gameState: { stage: 'flop' },
-    } as const;
-    const planContext = horsePlanContextFromDecision(request);
-    const view = populated();
-    view.plans.clear();
-    view.raisePlans.clear();
-    view.outlooks.clear();
-    view.stats.get('villain')!.sourceWindow = window;
-    const readFrame = encodeHorseDecisionReads(view, players, null, planContext);
-    const capture = {
-      planContext,
-      planBinding: horsePlanBatchBindingFromRequest(request),
-      readFrame,
-    };
-    const unallocatedFrame = encodeHorseDecisionReads(view, players, null);
-    expect(horseRetainedPlanContext({ readFrame: unallocatedFrame }, request as never)).toEqual({
-      kind: 'legacy',
-    });
-    expect(
-      decodeHorseDecisionReads(unallocatedFrame, players, null).stats.get('villain')!.sourceWindow
-    ).toEqual(window);
-    expect(
-      horseRetainedPlanContext({ ...capture, readFrame: unallocatedFrame }, request as never)
-    ).toEqual({ kind: 'invalid' });
-    expect(horseRetainedPlanContext(capture, request as never)).toEqual({
-      kind: 'current',
-      context: planContext,
-    });
-    expect(horseRetainedPlanContext({ readFrame: capture.readFrame }, request as never)).toEqual({
-      kind: 'invalid',
-    });
-    expect(
-      horseRetainedPlanContext(
-        {
-          ...capture,
-          planContext: {
-            version: 1,
-            hand: { version: 1, tableId: '00000000-0000-4000-8000-000000000000', handNumber: 1 },
+  it.each([3, 5])(
+    'admits allocated v%s journal reads without permitting legacy downgrade or another plan context',
+    (version) => {
+      const request = {
+        type: 'DECIDE_FAST',
+        requestId: 1,
+        generation: 1,
+        fence: 'unallocated-fixture',
+        decisionKey: `phase5-v1:${'a'.repeat(64)}`,
+        player: { seat: 1, user_id: 'hero' },
+        gameState: { stage: 'flop' },
+      } as const;
+      const planContext = horsePlanContextFromDecision(request);
+      const view = populated();
+      if (version === 3) delete view.winnerReads; // Retain the original v3 contract too.
+      view.plans.clear();
+      view.raisePlans.clear();
+      view.outlooks.clear();
+      view.stats.get('villain')!.sourceWindow = window;
+      const readFrame = encodeHorseDecisionReads(view, players, null, planContext);
+      const capture = {
+        planContext,
+        planBinding: horsePlanBatchBindingFromRequest(request),
+        readFrame,
+      };
+      const unallocatedFrame = encodeHorseDecisionReads(view, players, null);
+      expect(horseRetainedPlanContext({ readFrame: unallocatedFrame }, request as never)).toEqual({
+        kind: 'legacy',
+      });
+      expect(
+        decodeHorseDecisionReads(unallocatedFrame, players, null).stats.get('villain')!.sourceWindow
+      ).toEqual(window);
+      expect(
+        horseRetainedPlanContext({ ...capture, readFrame: unallocatedFrame }, request as never)
+      ).toEqual({ kind: 'invalid' });
+      expect(horseRetainedPlanContext(capture, request as never)).toEqual({
+        kind: 'current',
+        context: planContext,
+      });
+      expect(horseRetainedPlanContext({ readFrame: capture.readFrame }, request as never)).toEqual({
+        kind: 'invalid',
+      });
+      expect(
+        horseRetainedPlanContext(
+          {
+            ...capture,
+            planContext: {
+              version: 1,
+              hand: { version: 1, tableId: '00000000-0000-4000-8000-000000000000', handNumber: 1 },
+            },
           },
-        },
-        request as never
-      )
-    ).toEqual({ kind: 'invalid' });
-  });
+          request as never
+        )
+      ).toEqual({ kind: 'invalid' });
+    }
+  );
 });

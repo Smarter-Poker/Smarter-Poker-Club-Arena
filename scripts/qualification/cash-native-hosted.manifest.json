@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235095,
-      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      "bytes": 235243,
+      "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114533,
-      "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
+      "bytes": 114869,
+      "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
     }
   },
   "nativePgCron": {
@@ -3715,6 +3715,29 @@
     "current_workflow": {
       "bytes": 235095,
       "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+    }
+  },
+  "_typecheck_summary_sparse_checkout_20261025": {
+    "reason": "The required TypeScript summary fetches only its standalone Node gate after a full-repository fetch exhausted its two-minute budget. Exact source, native prerequisites, result assertions and timeout remain unchanged. Current input identity only; historical financial evidence and verdicts are retained.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235095,
+        "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 114533,
+        "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235243,
+        "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 114869,
+        "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      }
     }
   }
 }

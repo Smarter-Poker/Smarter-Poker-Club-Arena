@@ -10,7 +10,7 @@ import {
   type MemoryMode,
   type MemorySize,
 } from './HorseOpponentMemory.js';
-import { respectWinner } from './HorseWinnerRead.js';
+import { isProvenWinner, respectWinner } from './HorseWinnerRead.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -294,6 +294,8 @@ export interface HorseMindSandbox {
   /** 2026-10-16 opponent exploit: decayed per-(scope, player) counters,
    *  keyed `${scope}|${userId}`. Memory only, never flushed to the DB. */
   exploit: Map<string, ExploitCounters>;
+  /** Original per-actor belief. Absent on legacy views; never borrow live beliefs. */
+  winnerReads?: Map<string, boolean>;
 }
 
 /** V23: what hero decided AT BET TIME it would do about a raise. */
@@ -1221,6 +1223,13 @@ export class HorseMind {
    * non-nestable: HorseLogic and every writer it calls are synchronous.
    */
   private static decisionEffectSink: HorseMindDecisionEffect[] | null = null;
+  private static winnerReadView: ReadonlyMap<string, boolean> | undefined;
+
+  private static provenWinner(userId: string): boolean {
+    return this.sandboxDepth > 0
+      ? this.winnerReadView?.get(userId) === true
+      : isProvenWinner(userId);
+  }
 
   static captureDecisionEffects<T>(fn: () => T): CapturedHorseMindDecision<T> {
     if (this.decisionEffectSink) {
@@ -1302,6 +1311,7 @@ export class HorseMind {
     )
       throw new Error('HorseMind.snapshotDecisionReads: invalid boundary');
     const view = this.createSandbox();
+    view.winnerReads = new Map(ids.map((id) => [id, this.provenWinner(id)]));
     for (const id of ids) {
       const stats = this.stats.get(id);
       if (stats) view.stats.set(id, { ...stats });
@@ -1374,6 +1384,7 @@ export class HorseMind {
     const liveVariant = this.decisionVariant;
     const liveMode = this.decisionMode;
     const liveDurable = this.durableOpponentMemory;
+    const liveWinnerReads = this.winnerReadView;
     this.durableOpponentMemory = false;
     const live = {
       stats: this.stats,
@@ -1390,6 +1401,7 @@ export class HorseMind {
       exploit: this.exploitCounters,
     };
     this.stats = sandbox.stats;
+    this.winnerReadView = sandbox.winnerReads;
     // A sandbox built before the exploit layer (or by a caller that only
     // knows the older fields) reads as "no exploit memory", never as live.
     this.exploitCounters = sandbox.exploit ?? new Map();
@@ -1426,6 +1438,7 @@ export class HorseMind {
       this.decisionVariant = liveVariant;
       this.decisionMode = liveMode;
       this.durableOpponentMemory = liveDurable;
+      this.winnerReadView = liveWinnerReads;
     }
   }
 
@@ -1804,7 +1817,7 @@ export class HorseMind {
   static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
     // A PROVEN WINNER IS RESPECTED (2026-10-24, HorseWinnerRead): fewer
     // bluffs and no thin value against a credible winner; reads unchanged.
-    return respectWinner(this.readExploit(userId, recencyBlend), userId);
+    return respectWinner(this.readExploit(userId, recencyBlend), userId, this.provenWinner(userId));
   }
 
   private static readExploit(userId: string, recencyBlend: boolean): ExploitProfile {

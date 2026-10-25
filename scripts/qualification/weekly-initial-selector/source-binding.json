@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235095,
-      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      "bytes": 235243,
+      "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -264,6 +264,21 @@
     "current_workflow": {
       "bytes": 235095,
       "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+    }
+  },
+  "_typecheck_summary_sparse_checkout_20261025": {
+    "reason": "The required TypeScript summary fetches only its standalone Node gate after a full-repository fetch exhausted its two-minute budget. Exact source, native prerequisites, result assertions and timeout remain unchanged. Current input identity only; historical financial evidence and verdicts are retained.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235095,
+        "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235243,
+        "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
+      }
     }
   }
 }

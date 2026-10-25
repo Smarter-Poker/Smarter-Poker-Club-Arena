@@ -120,8 +120,12 @@ export function isProvenWinner(userId: string): boolean {
 }
 
 /** The counter-strategy: fewer bluffs, no thin value; every other lever untouched. */
-export function respectWinner(profile: ExploitProfile, userId: string): ExploitProfile {
-  if (!isProvenWinner(userId)) return profile;
+export function respectWinner(
+  profile: ExploitProfile,
+  userId: string,
+  provenOverride?: boolean
+): ExploitProfile {
+  if (!(provenOverride ?? isProvenWinner(userId))) return profile;
   return {
     bluffMod: profile.bluffMod * WINNER_BLUFF_MOD,
     callDownMod: profile.callDownMod,

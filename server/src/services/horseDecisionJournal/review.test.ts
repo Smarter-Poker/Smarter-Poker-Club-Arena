@@ -2028,7 +2028,7 @@ describe('private retained-hand journal consumer', () => {
 });
 
 describe('readHorseJournalHandRecords shard fan-out', () => {
-  // A hand's records live in exactly one decision-shard's catalog. These
+  // Retained records may span more than one archive. These
   // records are deliberately minimal (a bare 'decision' record) - the
   // fan-out under test only cares which shard directory holds a given
   // handKey, not whether a full hand reconciles.
@@ -2050,6 +2050,100 @@ describe('readHorseJournalHandRecords shard fan-out', () => {
     new HorseDecisionJournalStore(dir, {
       archive: runtimeHorseJournalArchiveOptions(dir, {}, { index }),
     });
+
+  it('joins a retained hand across archives instead of accepting the first fragment', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:fragmented-hand');
+    for (const [index, sequence] of [
+      [0, 2],
+      [1, 1],
+    ] as const) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([record(key, sequence)]);
+      } finally {
+        store.close();
+      }
+    }
+    expect(readHorseJournalHandRecords(dir, key)).toEqual([record(key, 1), record(key, 2)]);
+  });
+
+  it('counts an identical retained event only once across archives', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:duplicate-event');
+    for (const index of [0, 1]) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([record(key, 1)]);
+      } finally {
+        store.close();
+      }
+    }
+    expect(readHorseJournalHandRecords(dir, key)).toEqual([record(key, 1)]);
+  });
+
+  it('refuses conflicting bytes for the same event in different archives', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:conflicting-event');
+    const a = record(key, 1);
+    const b = makeHorseJournalRecord(
+      {
+        producerId: a.producerId,
+        sequence: a.sequence,
+        atMs: a.atMs,
+        sourceRelease: a.sourceRelease,
+        kind: a.kind,
+        handKey: a.handKey,
+        turnKey: a.turnKey,
+      },
+      { conflicting: true }
+    );
+    for (const [index, row] of [
+      [0, a],
+      [1, b],
+    ] as const) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([row]);
+      } finally {
+        store.close();
+      }
+    }
+    expect(() => readHorseJournalHandRecords(dir, key)).toThrow();
+  });
+
+  it('refuses a partial answer if another listed archive cannot be read', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:unreadable-fragment');
+    for (const index of [0, 1]) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([record(key, index + 1)]);
+      } finally {
+        store.close();
+      }
+    }
+    rmSync(join(dir, 'archive-shard-1', 'horse-journal-archive.sqlite'));
+    expect(() => readHorseJournalHandRecords(dir, key)).toThrow();
+  });
+
+  it('preserves the hand record limit across archives', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:combined-bound');
+    for (const index of [0, 1]) {
+      const store = openArchive(dir, index);
+      try {
+        const rows = Array.from({ length: index === 0 ? 128 : 129 }, (_, n) =>
+          record(key, index * 128 + n + 1)
+        );
+        for (let offset = 0; offset < rows.length; offset += 16)
+          store.appendBatch(rows.slice(offset, offset + 16));
+      } finally {
+        store.close();
+      }
+    }
+    expect(() => readHorseJournalHandRecords(dir, key)).toThrow('exceeds bounds');
+  });
 
   it('finds a hand whose records live in a later shard, not shard 0', () => {
     const dir = directory();

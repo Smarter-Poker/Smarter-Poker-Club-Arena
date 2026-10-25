@@ -974,6 +974,55 @@ describe('post-deploy production account', () => {
     ).rejects.toThrow('union owner is malformed');
   });
 
+  it.each([
+    [{ code: '57014', message: 'canceling statement due to statement timeout' }, true],
+    [{ code: 'P0001', message: 'guard refused' }, false],
+  ])('retries a timed-out membership promotion, never a refusal: %j', async (failure, retried) => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-promotion-retry-'));
+    const env = { ...environment(directory), E2E_CLUB_ID: DEFAULT_E2E_LIGHTNING_CLUB_ID };
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-promotion@example.invalid',
+        password: 'unused',
+      })
+    );
+    const pending = {
+      club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
+      user_id: USER_ID,
+      role: 'player',
+      status: 'pending',
+      chip_balance: 0,
+    };
+    const admin = { ...pending, role: 'admin', status: 'active' };
+    let reads = 0;
+    let patches = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/token')) return Response.json({ access_token: 'token' });
+      if (url.includes('/rpc/fn_join_club')) return Response.json({ ok: true });
+      if (init?.method === 'PATCH') {
+        patches += 1;
+        return patches === 1 ? Response.json(failure, { status: 500 }) : Response.json([admin]);
+      }
+      reads += 1;
+      return Response.json(reads === 1 ? [] : [pending]);
+    });
+    const run = prepareProductionE2EStaffMembership({
+      environment: env,
+      fetchImpl: fetchMock,
+      wait: async () => {},
+    });
+    if (retried) {
+      await expect(run).resolves.toEqual(admin);
+      expect(patches).toBe(2);
+    } else {
+      await expect(run).rejects.toThrow('guard refused');
+      expect(patches).toBe(1);
+    }
+  });
+
   it('refuses to overwrite an existing reserved membership', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-existing-staff-'));
     const env = environment(directory);

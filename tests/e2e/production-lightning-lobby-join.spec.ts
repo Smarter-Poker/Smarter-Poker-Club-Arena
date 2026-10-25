@@ -48,8 +48,13 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
-    // The wallet trigger is phone-only; the visible game row below certifies
-    // readiness at both widths after the actual lobby overlays settle.
+    // A visible game row is the lobby's readiness at every width (the wallets
+    // button the phone check waits on is hidden at 1440px, run 40153826373).
+    await expect(
+      page
+        .locator('[data-testid="lobby-game-row"]:visible, .club-home__games .lt-row:visible')
+        .first()
+    ).toBeVisible({ timeout: 45_000 });
     await settleDiamondSpinsOffer(page, offer);
     const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
     await greeting.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
@@ -97,11 +102,15 @@ for (const width of [393, 1440]) {
     expect(opened, 'a Lightning game panel offers an enabled Join Lightning').toBe(true);
 
     await expect(page).toHaveURL(LIGHTNING_ROUTE, { timeout: 15_000 });
-    const landed = new URL(page.url()).pathname;
+    const landed = new URL(page.url());
     // The original defect: a lobby effect replaced the route a moment later.
+    // The entry consumes ?join=1 in place; that must not look like leaving
+    // the card (run 40191613101). Keep the exact origin and cluster path.
     await page.waitForTimeout(3_000);
-    expect(new URL(page.url()).pathname, 'the lobby must not take the Lightning route back').toBe(
-      landed
+    const stayed = new URL(page.url());
+    expect(stayed.origin, 'the Lightning card must stay on its origin').toBe(landed.origin);
+    expect(stayed.pathname, 'the lobby must not take the Lightning route back').toBe(
+      landed.pathname
     );
 
     const card = page.locator('[data-testid="lightning-entry"] .lightning-cash-card');

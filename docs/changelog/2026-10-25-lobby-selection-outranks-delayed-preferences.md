@@ -1,0 +1,7 @@
+# Keep An Opened Game Card Through Delayed Preference Hydration
+
+Production browser run 40230236535 opened the game lobby panel, then lost it before its card assertion. The captured page had switched to the saved PLO tab. ClubHomePage let late saved-view and filter reads replace an already browsed list; its existing selected-entry guard then correctly closed the card when that replacement hid the chosen game.
+
+A selected row now consumes preference hydration for that account's visit to that club, using the existing scoped browsing intent. Cached and remote view/filter hydration cannot undo the selection. This intent remains separate from the preference-write flags, so opening a row never saves a tab or filter. Explicit tab/filter controls still work, and a different account or club starts a fresh browsing scope. Restoring a selected game from its URL claims the same intent.
+
+Two deterministic mounted regressions hold the saved-view and saved-filter responses until after a real lobby row is selected. Both failed before the fix and pass afterward; they also assert no preference write from that row tap and verify that an explicit PLO tab change still closes the selected NLH card. The existing route and preference-wiring suites pass: 16 tests across three files. No production assertion, deadline, skip, or engine behavior changed. Protected checks, publication, and final production certification are separate delivery gates.

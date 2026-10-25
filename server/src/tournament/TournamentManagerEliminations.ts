@@ -928,6 +928,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // The rebuy transaction owns its exact playable chair and stack.
               // This process consumes only the success receipt; it never scans
               // for a seatless roster or performs a later compensating write.
+              // These busts have been resolved, so their old wait cannot
+              // trigger a successor. Any untouched batch keeps a fresh clock.
+              this.bustAwaitingSinceMs = bustBatchHasMore ? Date.now() : 0;
               return; // everyone bought back in; nobody is eliminated this pass
             }
           }
@@ -1011,7 +1014,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 Math.min(...nextDeadline) - nowMs + REBUY_DEADLINE_MARGIN_MS
               );
             }
-            if (busted.length === 0) return;
+            if (busted.length === 0) {
+              // A locked decision read proved either an open rebuy window or
+              // a concurrent rebuy. Neither is an elimination stalled since
+              // the original bust. Keep the clock only for still-pending work;
+              // unreadable/refused decisions above retain the original age.
+              const openDecisions = [...decisions].filter(([, open]) => open);
+              if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
+                this.bustAwaitingSinceMs = bustBatchHasMore || openDecisions.length > 0 ? nowMs : 0;
+              }
+              return;
+            }
           }
 
           /**

@@ -54,7 +54,9 @@ describe('qualified Phase14 replay authority and versioned state', () => {
       })),
     };
     source.fence = `${table}:12:1:9:${source.generation}`;
-    source.handJournalContext = captureHorseHandJournalContext(source.gameState.actionHistory);
+    const priorActions = source.gameState.actionHistory;
+    if (!priorActions) throw Error('actual worker fixture requires its original action history');
+    source.handJournalContext = captureHorseHandJournalContext(priorActions);
     source.decisionKey = buildHorseDecisionKey(source);
     const producerId = randomUUID(),
       sourceRelease = '5'.repeat(40),
@@ -134,7 +136,7 @@ describe('qualified Phase14 replay authority and versioned state', () => {
       acceptedActions: [{ record: acceptedAction, intended: true }],
     });
     append('execution', witness, turn(deepRequest));
-    const ordinal = source.gameState.actionHistory.length;
+    const ordinal = priorActions.length;
     append(
       'accepted_hand',
       {
@@ -146,7 +148,7 @@ describe('qualified Phase14 replay authority and versioned state', () => {
         committedHandId: hand,
         bigBlind: source.gameState.bigBlind,
         actions: [
-          ...source.gameState.actionHistory,
+          ...priorActions,
           {
             ...acceptedAction,
             origin: 'horse_policy',

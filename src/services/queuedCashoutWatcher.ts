@@ -47,6 +47,65 @@ type Watch = {
 
 const watches = new Map<string, Watch>();
 
+/* A FULL PAGE LOAD DOES NOT LOSE THE LEAVE (2026-10-25). Leaving a table for
+   a World Hub page, a refresh, or the app being reopened restarts this module.
+   The watches are kept in the browser so the returning app resumes following
+   a leave whose hand is still finishing, instead of reading the seat once as
+   still open and never again. Storage can be absent or throw; following the
+   leave in memory still works without it. */
+const STORAGE_KEY = 'ca.queuedCashouts.v1';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type Saved = { tableId: string; userId: string; occupancyId: string; startedAt: number };
+
+/** Accounts whose saved leaves this page load has taken over. */
+const ownedUsers = new Set<string>();
+
+function persist(): void {
+  try {
+    const now = Date.now();
+    // Another account's leaves in this browser are kept untouched.
+    const others = readSaved().filter(
+      (v) => !ownedUsers.has(v.userId) && now - v.startedAt < GIVE_UP_MS
+    );
+    const saved: Saved[] = [
+      ...others,
+      ...[...watches.values()].map(({ tableId, userId, occupancyId, startedAt }) => ({
+        tableId,
+        userId,
+        occupancyId,
+        startedAt,
+      })),
+    ];
+    if (saved.length === 0) globalThis.localStorage?.removeItem(STORAGE_KEY);
+    else globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(saved));
+  } catch {
+    /* Following in memory is unaffected. */
+  }
+}
+
+function readSaved(): Saved[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (v): v is Saved =>
+        !!v &&
+        typeof v === 'object' &&
+        typeof v.tableId === 'string' &&
+        typeof v.userId === 'string' &&
+        UUID.test(v.userId) &&
+        typeof v.occupancyId === 'string' &&
+        UUID.test(v.occupancyId) &&
+        typeof v.startedAt === 'number' &&
+        Number.isFinite(v.startedAt)
+    );
+  } catch {
+    return [];
+  }
+}
+
 export type SeatExitReader = (
   occupancyId: string,
   userId: string
@@ -79,12 +138,19 @@ export function __resetQueuedCashoutsForTests(): void {
     w.resolve(false);
   }
   watches.clear();
+  ownedUsers.clear();
+  try {
+    globalThis.localStorage?.removeItem(STORAGE_KEY);
+  } catch {
+    /* none */
+  }
 }
 
 function finish(watch: Watch, landed: boolean): void {
   if (watch.timer) clearTimeout(watch.timer);
   watch.timer = null;
   watches.delete(watch.occupancyId);
+  persist();
   watch.resolve(landed);
   if (!landed) return;
   masterBus.emit('BALANCE_UPDATED', {
@@ -125,24 +191,46 @@ async function check(watch: Watch): Promise<void> {
   schedule(watch);
 }
 
-/** Follow a queued (end-of-hand) leave until its cash-out lands. Idempotent per occupancy. */
-export function watchQueuedCashout(tableId: string, userId: string, occupancyId: string): void {
-  if (!tableId || !userId || !occupancyId || watches.has(occupancyId)) return;
+function start(tableId: string, userId: string, occupancyId: string, startedAt: number): void {
   let resolve!: (landed: boolean) => void;
   const done = new Promise<boolean>((r) => {
     resolve = r;
   });
-  const watch: Watch = {
-    tableId,
-    userId,
-    occupancyId,
-    startedAt: Date.now(),
-    done,
-    resolve,
-    timer: null,
-  };
+  const watch: Watch = { tableId, userId, occupancyId, startedAt, done, resolve, timer: null };
+  ownedUsers.add(userId);
   watches.set(occupancyId, watch);
+  persist();
   schedule(watch);
+}
+
+/** Follow a queued (end-of-hand) leave until its cash-out lands. Idempotent per occupancy. */
+export function watchQueuedCashout(tableId: string, userId: string, occupancyId: string): void {
+  if (!tableId || !userId || !occupancyId || watches.has(occupancyId)) return;
+  start(tableId, userId, occupancyId, Date.now());
+}
+
+/**
+ * Resume this account's leaves saved by an earlier page load. Each keeps its
+ * original start, so the 12-minute bound still counts from the leave itself.
+ * The first check runs at once: the hand has usually finished by now.
+ */
+export function resumeQueuedCashouts(userId: string): void {
+  if (!userId) return;
+  const now = Date.now();
+  const saved0 = readSaved();
+  ownedUsers.add(userId);
+  for (const saved of saved0) {
+    if (saved.userId !== userId || watches.has(saved.occupancyId)) continue;
+    if (saved.startedAt > now || now - saved.startedAt >= GIVE_UP_MS) continue;
+    start(saved.tableId, saved.userId, saved.occupancyId, saved.startedAt);
+    const w = watches.get(saved.occupancyId);
+    if (w?.timer) {
+      clearTimeout(w.timer);
+      void check(w);
+    }
+  }
+  // Drop anything expired or malformed so the saved list cannot grow.
+  persist();
 }
 
 /** True while any queued leave of this player has not yet reached the wallet. */

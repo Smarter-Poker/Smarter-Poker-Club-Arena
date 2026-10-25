@@ -80,6 +80,14 @@ export function useGlobalBalanceSync() {
     // Initial fetch on mount to guarantee parity
     fetchTrueBalance();
 
+    // A leave still finishing its hand when the page last unloaded is
+    // followed again, so its chips and seat refresh the moment it lands.
+    void import('../services/queuedCashoutWatcher')
+      .then((m) => {
+        if (ownsAccount()) m.resumeQueuedCashouts(user.id);
+      })
+      .catch((err) => reportError(err, 'useGlobalBalanceSync.resume_queued_cashouts'));
+
     // Sub to reconnect events — re-fetch balance when coming back online
     const unsubscribeReconnect = masterBus.subscribeDebounced(
       'CONNECTION_RESTORED',

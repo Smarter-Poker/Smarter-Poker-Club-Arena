@@ -12,6 +12,7 @@ import {
   __setSeatExitReaderForTests,
   awaitQueuedCashouts,
   hasQueuedCashout,
+  resumeQueuedCashouts,
   watchQueuedCashout,
 } from '../../src/services/queuedCashoutWatcher';
 
@@ -104,5 +105,38 @@ describe('a leave queued behind its hand is followed to the wallet', () => {
     await vi.advanceTimersByTimeAsync(12 * 60_000 + 5_000);
     expect(hasQueuedCashout(U)).toBe(false);
     expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('a page load resumes a leave whose hand was still finishing, and announces it', async () => {
+    watchQueuedCashout(T, U, O);
+    const saved = localStorage.getItem('ca.queuedCashouts.v1');
+    expect(saved).toContain(O);
+    // A new page load: memory is gone, the saved leave is not.
+    __resetQueuedCashoutsForTests();
+    localStorage.setItem('ca.queuedCashouts.v1', saved!);
+    left = true;
+    resumeQueuedCashouts(U);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(emit).toHaveBeenCalledWith('SEAT_CASHED_OUT', { tableId: T, occupancyId: O });
+    expect(localStorage.getItem('ca.queuedCashouts.v1')).toBeNull();
+  });
+
+  it("does not resume another account's leave, or one older than the bound", async () => {
+    const OTHER = '55555555-5555-4555-8555-555555555555';
+    const O3 = '66666666-6666-4666-8666-666666666666';
+    localStorage.setItem(
+      'ca.queuedCashouts.v1',
+      JSON.stringify([
+        { tableId: T, userId: OTHER, occupancyId: O, startedAt: Date.now() },
+        { tableId: T, userId: U, occupancyId: O3, startedAt: Date.now() - 13 * 60_000 },
+        { junk: true },
+      ])
+    );
+    left = true;
+    resumeQueuedCashouts(U);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(emit).not.toHaveBeenCalled();
+    const kept = JSON.parse(localStorage.getItem('ca.queuedCashouts.v1') || '[]');
+    expect(kept).toEqual([expect.objectContaining({ userId: OTHER, occupancyId: O })]);
   });
 });

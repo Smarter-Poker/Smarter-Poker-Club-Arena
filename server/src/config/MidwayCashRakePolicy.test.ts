@@ -99,7 +99,8 @@ describe('Midway cash policy, owner instruction 2026-10-21', () => {
         rake_cap_bb: 20,
       },
       1,
-      2
+      2,
+      []
     );
     expect(config.rakeConfig.cap).toBe(0.5);
     expect(config.rakeConfig.cashPolicy).toEqual({ version: 1, scope: 'midway' });

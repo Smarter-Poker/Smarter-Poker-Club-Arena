@@ -1157,6 +1157,27 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
    * 0 of 6,000 pairs diverged at seeds 4242 and 20260921. INERT; still off.
    */
   // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  // V55 is opt-in. Freeze the deep cash domain before examining results:
+  // the audit's leaking river re-shoves occurred above 100bb.
+  {
+    name: 'plo4_v55_river_trips_flat',
+    variant: 'plo4',
+    stackBB: 400,
+    pairs: 6000,
+    a: { v55OmahaRiverTripsFlat: true },
+    b: {},
+  },
+  {
+    name: 'plo5_v55_river_trips_flat',
+    variant: 'plo5',
+    stackBB: 400,
+    pairs: 6000,
+    a: { v55OmahaRiverTripsFlat: true },
+    b: {},
+  },
+  // PLO6 is not on the standing card: the declared 6000-pair probe at
+  // seed20261024 had zero divergent pairs. It remains scenario-tested and
+  // opt-in, with no measured edge or promotion claim.
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
   { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
   // Measurable because playHand's sandbox settlement now feeds
@@ -1391,6 +1412,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v46Charts: false,
       v46ShortDeck: false,
       v51RiverFlat: false,
+      v55OmahaRiverTripsFlat: false,
       v52RangeAdvantage: false,
       v53Pressure: false,
       mind: false,

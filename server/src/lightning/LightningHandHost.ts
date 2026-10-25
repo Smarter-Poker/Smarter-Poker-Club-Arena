@@ -429,6 +429,11 @@ const POST_COMMIT_HANDOVER_MS = 5_000;
 
 /** LIGHTNING PHASE 13: the action door's refusal codes for a fold the operator switched off. */
 export const LIGHTNING_FOLD_DISABLED_CODE = 'LIGHTNING_FOLD_DISABLED';
+/**
+ * The barrier's blind_role for a newcomer who posts a live entry big blind
+ * (20261025050528): "NEW PLAYERS SHOULD ALWAYS BE BB FIRST" (Dan 2026-10-24).
+ */
+export const LIGHTNING_ENTRY_BIG_BLIND_ROLE = 'entry_bb';
 export const LIGHTNING_FOLD_WATCH_DISABLED_CODE = 'FOLD_WATCH_DISABLED';
 
 /** A request id that is the same for the same (hand, purpose) on every retry. */
@@ -460,6 +465,8 @@ export class LightningHandHost {
   private watching = new Map<string, string>();
   private foldTypes = new Map<string, LightningFoldType>();
   private holeCards = new Map<string, { seat: number; cards: Card[] }>();
+  /** The seats posting a live entry big blind this hand (blind_role 'entry_bb'). */
+  private entryBigBlindSeats: number[] = [];
   private actions: Array<Record<string, unknown>> = [];
   private boards: [string[], string[], string[]] = [[], [], []];
   private showdown: ShowdownRecord[] = [];
@@ -649,8 +656,22 @@ export class LightningHandHost {
           is_sitting_out: false,
           is_horse: p.isHorse,
         }));
+      // ENTRY BIG BLIND (20261025050528): every participant the barrier
+      // recorded as 'entry_bb' posts one live big blind from their seat
+      // (HandController bbOnlyPosts: counted toward their call, with the
+      // option). An entry poster holding seat 1 posts that instead of the
+      // small blind, which is then dead.
+      this.entryBigBlindSeats = participants
+        .filter((p) => p.blindRole === LIGHTNING_ENTRY_BIG_BLIND_ROLE)
+        .map((p) => p.seat)
+        .sort((a, b) => a - b);
       this.hc = new HandController(
-        this.buildHandConfig(this.rules, sb.seat, bb.seat),
+        this.buildHandConfig(
+          this.rules,
+          sb.blindRole === 'sb' ? sb.seat : null,
+          bb.seat,
+          this.entryBigBlindSeats
+        ),
         seats,
         btn.seat
       );
@@ -707,7 +728,22 @@ export class LightningHandHost {
       return 'formation_button_disagrees';
     const sb = participants.find((p) => p.playerId === this.formed.sb);
     const bb = participants.find((p) => p.playerId === this.formed.bb);
-    if (!sb || !bb || sb.blindRole !== 'sb' || bb.blindRole !== 'bb')
+    if (!sb || !bb || bb.blindRole !== 'bb') return 'formation_blinds_disagree';
+    // The small blind posts the small blind, or - an entry poster in seat 1,
+    // when nobody else could hold it - an entry big blind with the small
+    // blind dead. Everyone else posts nothing or an entry big blind. Any role
+    // this host does not deal is refused, never dealt as a free hand.
+    if (sb.blindRole !== 'sb' && sb.blindRole !== LIGHTNING_ENTRY_BIG_BLIND_ROLE)
+      return 'formation_blinds_disagree';
+    if (
+      participants.some(
+        (p) =>
+          p !== sb &&
+          p !== bb &&
+          p.blindRole !== 'none' &&
+          p.blindRole !== LIGHTNING_ENTRY_BIG_BLIND_ROLE
+      )
+    )
       return 'formation_blinds_disagree';
     if (participants.some((p) => !(p.stackBefore > 0))) return 'formation_stack_invalid';
     return null;
@@ -722,7 +758,12 @@ export class LightningHandHost {
     return null;
   }
 
-  private buildHandConfig(rules: LightningHostRules, sbSeat: number, bbSeat: number): HandConfig {
+  private buildHandConfig(
+    rules: LightningHostRules,
+    sbSeat: number | null,
+    bbSeat: number,
+    entryBigBlindSeats: readonly number[]
+  ): HandConfig {
     const sb = Number(rules.small_blind);
     const bb = Number(rules.big_blind);
     const variant = String(rules.game_variant || 'nlh');
@@ -763,8 +804,12 @@ export class LightningHandHost {
       straddles: undefined,
       ritEnabled: false,
       insuranceEnabled: false,
-      // THE BARRIER'S BLINDS, never re-derived from the button.
+      // THE BARRIER'S BLINDS, never re-derived from the button. A null small
+      // blind is dead (seat 1 holds an entry poster).
       blindSeats: { smallBlind: sbSeat, bigBlind: bbSeat },
+      // THE BARRIER'S ENTRY BIG BLINDS: one live big blind each.
+      bbOnlyPosts:
+        entryBigBlindSeats.length > 0 ? entryBigBlindSeats.map((seat) => ({ seat })) : undefined,
       rakeConfig: {
         cashPolicy: { version: 1, scope: cashRakeScope(rules.union_id, club?.unionId) },
         percent: full.rakePercent,
@@ -1136,6 +1181,25 @@ export class LightningHandHost {
 
   // ─── HAND EVENTS ────────────────────────────────────────────────────────
 
+  /**
+   * The live entry big blinds as blinds_posted postings, read from the hand
+   * at the moment the blinds post (HandController posts them before it
+   * emits BLINDS_POSTED, and nobody has acted yet, so each seat's bet is
+   * exactly what it posted). A short stack posts all in for less.
+   */
+  private entryBigBlindPostings(
+    hc: HandController
+  ): Array<{ seat: number; type: string; amount: number }> {
+    if (this.entryBigBlindSeats.length === 0) return [];
+    const players = hc.getState().players;
+    const out: Array<{ seat: number; type: string; amount: number }> = [];
+    for (const seat of this.entryBigBlindSeats) {
+      const amount = players.find((p) => p.seat === seat)?.bet ?? 0;
+      if (amount > 0) out.push({ seat, type: 'entry_big_blind', amount });
+    }
+    return out;
+  }
+
   private onHandEvent(event: HandEvent): void {
     if (this.isTerminal()) return;
     const hc = this.hc!;
@@ -1163,9 +1227,12 @@ export class LightningHandHost {
         this.publishState();
         break;
       case 'BLINDS_POSTED' as any: {
-        const postings = (
+        const posted = (
           event as unknown as { postings?: Array<{ seat: number; type: string; amount: number }> }
         ).postings;
+        // The entry big blinds sit in front of their seats like the big
+        // blind's, and are swept with the street (Animation Law, 10.6).
+        const postings = [...(posted ?? []), ...this.entryBigBlindPostings(hc)];
         this.emitAll(
           blindsPostedFrame({ tableId: '', handNumber: this.handNumber, postings, timestamp: now })
         );

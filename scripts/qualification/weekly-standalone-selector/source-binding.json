@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 234747,
-      "sha256": "dc5d170065f2760905fee670a83f3a117ca87858bb28c5e9524bc03063f64362"
+      "bytes": 235095,
+      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -296,47 +296,22 @@
       }
     }
   },
-  "actionAudioBrowserInputIdentity20261025": {
-    "reason": "Current input identity for adding action audio and delayed leaderboard browser regressions to existing CSS Beat. Financial source, assertions and historical qualification verdicts unchanged. Hashes are not execution or production proof.",
-    "changes": {
-      ".github/workflows/ci.yml": {
-        "previous": {
-          "bytes": 234392,
-          "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
-        },
-        "current": {
-          "bytes": 234479,
-          "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
-        }
-      }
+  "horseAuditNativeQualification20261025": {
+    "reason": "Adds source-bound native horse-audit population/cohort regression in existing required PostgreSQL shard2. Only current workflow identity changes. Financial sources, assertions, historical execution receipts and qualification statuses remain unchanged; this is not a financial or production certificate.",
+    "previousWorkflowInput": {
+      "bytes": 234392,
+      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+    },
+    "currentWorkflowInput": {
+      "bytes": 234833,
+      "sha256": "e1eb68a8626f8c866a90f7c7864844c3a20d2ba8fb87da2c285ae44cf7550666"
     }
   },
-  "actionAudioFixturePath20261025": {
-    "reason": "Keep isolated native Web Audio regression in its dedicated audio fixture directory, explicitly executed by existing CSS Beat; production-spec inventory remains unchanged. Current workflow identity only, not a financial execution certificate.",
-    "previous": {
-      "bytes": 234479,
-      "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
-    },
-    "current": {
-      "bytes": 234485,
-      "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
-    }
-  },
-  "actionAudioDigestIntegration20261025": {
-    "reason": "Preserve concurrent digest accounting qualification and action audio/layout browser checks in the existing CI workflow. Source identity only; financial assertions and historical qualification states unchanged.",
-    "previous": {
-      "candidate": {
-        "bytes": 234485,
-        "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
-      },
-      "incoming": {
-        "bytes": 234654,
-        "sha256": "1d2bade3ab161c09cae558282205bb7f31291e78b262b89a88dd014de2d4353b"
-      }
-    },
-    "current": {
-      "bytes": 234747,
-      "sha256": "dc5d170065f2760905fee670a83f3a117ca87858bb28c5e9524bc03063f64362"
+  "_horse_audit_main_integration_20261025": {
+    "reason": "Preserve main digest qualification and horse audit native qualification; refresh only current integrated workflow identity. Historical evidence, financial source inputs and verdicts retained.",
+    "current_workflow": {
+      "bytes": 235095,
+      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
     }
   }
 }

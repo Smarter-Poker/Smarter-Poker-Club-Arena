@@ -67,8 +67,11 @@ describe('playRaise is built from pieces the call does not have', () => {
 describe('isolated browser audio regression enforcement', () => {
   it('runs the real audio fixture in the existing Chromium and WebKit gate', () => {
     const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
-    expect(workflow).toContain('tests/e2e/audio/player-action-audio.spec.ts');
-    expect(readFileSync('playwright.config.ts', 'utf8')).toContain('player-action-audio');
+    expect(workflow).toContain('tests/e2e/mobile-lobby-chrome.spec.ts');
+    const entry = readFileSync('tests/e2e/mobile-lobby-chrome.spec.ts', 'utf8');
+    expect(entry).toContain('registerPlayerActionAudioCases();');
+    expect(entry).toContain('registerLeaderboardLoadingLayoutCases();');
+    expect(readFileSync('playwright.config.ts', 'utf8')).toContain('mobile-lobby-chrome');
     expect(readFileSync('tests/e2e/fixtures/playerActionAudio.ts', 'utf8')).toContain(
       'OfflineAudioContext'
     );

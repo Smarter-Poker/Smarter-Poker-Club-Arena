@@ -4,36 +4,38 @@
  * Dan 2026-10-24: "70% OF HORSES SHOULD BE ADDING ON IN THE PLO5 GAME. 30%
  * SHOULD BE ON 'AUTO TOP UP'."
  *
- * Until this module a horse never refilled a live stack at all - it only
- * reloaded after busting (HorseRebuyPolicy). A human at the same table has two
- * ways to refill: switch on Auto Top Up (the seat's `auto_rebuy` flag; the
- * table tops the stack back to the maximum between every hand), or press Add
- * Chips when the stack has run down. Horses are players (CLAUDE.md 10.5), so a
- * PLO5 horse now does one or the other:
+ * A human at a cash table has two ways to refill a live stack: switch on Auto
+ * Top Up (the seat's `auto_rebuy` flag; the table tops the stack back to the
+ * maximum between hands), or press Add Chips when the stack has run down. Horses
+ * are players (CLAUDE.md 10.5), and each PLO5 horse now does exactly one:
  *
  *   - 30% are AUTO TOP UP horses. They sit with `auto_rebuy` on, and between
- *     hands any stack under the table maximum is filled back to it - the same
- *     rule the human Auto Top Up effect applies (TablePage, "Auto Top Up (Cash
- *     Games Only)").
+ *     hands the engine tops the stack back toward the table maximum - the human
+ *     Auto Top Up rule (TablePage, "Auto Top Up (Cash Games Only)") - inside the
+ *     horse's bankroll policy (`cappedAutoTopUp`).
  *   - 70% are ADD-ON horses. They sit with `auto_rebuy` off and add on the way
- *     a person does: once the stack has fallen under the horse's own comfort
- *     line (40-65% of the table maximum, fixed per horse), it adds back up to
- *     the maximum between hands.
+ *     every horse already did before this rule: HorseSessionRotator's V8/V9
+ *     top-up (short stack after a while at the table, a chance per cycle, a
+ *     round-figure target, `topUpAllowance`, through the human Add Chips door).
+ *     The rotator skips a seat whose Auto Top Up flag is on, as a human on Auto
+ *     Top Up does not also press Add Chips.
  *
  * WHICH HORSE IS WHICH is a hash of its user id, so a horse keeps one habit
- * for life instead of flipping between hands or tables, and across the fleet
- * the split lands on 30/70. Every other game is untouched (null style).
+ * for life, and across the fleet the split lands on 30/70. The seat's own
+ * `auto_rebuy` flag, written at the buy-in door, is the single source of truth
+ * the engine and the rotator both read. Every other game is untouched.
  *
  * MONEY: this module decides only WHETHER and HOW MUCH. The chips move through
  * `fn_horse_fund_from_treasury` exactly like a horse rebuy - the horse's own
  * club wallet first, through the human add-on door - and the amount never takes
  * the stack past the table maximum.
  *
- * A TOP-UP IS PAID FROM THE HORSE'S OWN WALLET ONLY (`capTopUpToWallet`). A
- * human cannot add chips they do not have, and an unknown balance never tops a
- * human up (TablePage). A horse is held to the same rule: otherwise a losing
+ * PAID FROM THE HORSE'S OWN WALLET, INSIDE ITS BANKROLL POLICY. A human cannot
+ * add chips they do not have, and an unknown balance never tops a human up. A
+ * horse is additionally held to `topUpAllowance` (the stop-loss and per-table
+ * exposure cap every horse reload meets, Dan 2026-08-31): otherwise a losing
  * horse topped back to the maximum every hand would never bust, never reach its
- * rebuy stop-loss, and draw on the club treasury indefinitely.
+ * stop-loss, and bleed its roll one top-up at a time.
  *
  * NOT LIGHTNING. A Lightning Cluster refills through its own pooled auto-rebuy
  * (`fn_lightning_auto_rebuy`, keyed to the pool session's anchor seat), and no
@@ -42,15 +44,12 @@
  */
 
 import { createHash } from 'node:crypto';
+import { bankrollPolicyFor, referenceBuyIn, topUpAllowance } from './HorseBankroll.js';
 
 export type HorseTopUpStyle = 'auto_top_up' | 'add_on';
 
 /** Share of PLO5 horses on Auto Top Up. The rest add on. */
 export const PLO5_AUTO_TOP_UP_SHARE = 0.3;
-
-/** The add-on comfort line, as a share of the table maximum. */
-export const ADD_ON_LINE_MIN = 0.4;
-export const ADD_ON_LINE_MAX = 0.65;
 
 /** True for the PLO5 game ('plo5', 'PLO5', 'plo-5', 'PLO 5' all qualify). */
 export function isPlo5Variant(variant: unknown): boolean {
@@ -66,7 +65,7 @@ function unitHash(userId: string, purpose: string): number {
 
 /**
  * The horse's refill habit at this game, or null when the game has no rule
- * (every variant except PLO5 keeps today's bust-only reload).
+ * (every variant except PLO5 keeps its existing behaviour).
  */
 export function horseCashTopUpStyle(userId: string, variant: unknown): HorseTopUpStyle | null {
   if (!userId || !isPlo5Variant(variant)) return null;
@@ -78,45 +77,65 @@ export function horseSitsWithAutoTopUp(userId: string, variant: unknown): boolea
   return horseCashTopUpStyle(userId, variant) === 'auto_top_up';
 }
 
-/** The add-on horse's comfort line, as a share of the table maximum. */
-export function horseAddOnLine(userId: string): number {
-  return (
-    ADD_ON_LINE_MIN + unitHash(userId, 'horse-addon-line') * (ADD_ON_LINE_MAX - ADD_ON_LINE_MIN)
-  );
-}
-
-export interface HorseTopUpInput {
+/**
+ * The shortfall an Auto Top Up horse wants filled between hands, to the cent,
+ * or 0. Only Auto Top Up horses at a PLO5 table get one. A busted stack (0) is
+ * not a top-up - that is a rebuy and HorseRebuyPolicy owns it.
+ */
+export function horseAutoTopUpWanted(input: {
   userId: string;
   variant: unknown;
   stack: number;
   maxBuyIn: number;
-}
-
-/**
- * How many chips this horse adds between hands, to the cent, or 0.
- *
- * A busted stack (0) is not a top-up - that is a rebuy and HorseRebuyPolicy
- * owns it. Nothing is ever sized past the table maximum.
- */
-export function horseTopUpAmount(input: HorseTopUpInput): number {
-  const style = horseCashTopUpStyle(input.userId, input.variant);
-  if (!style) return 0;
+}): number {
+  if (horseCashTopUpStyle(input.userId, input.variant) !== 'auto_top_up') return 0;
   const stack = Number(input.stack);
   const max = Number(input.maxBuyIn);
   if (!Number.isFinite(stack) || !Number.isFinite(max) || stack <= 0 || max <= 0) return 0;
   if (stack >= max) return 0;
-  if (style === 'add_on' && stack >= max * horseAddOnLine(input.userId)) return 0;
   const amount = Math.floor((max - stack) * 100) / 100;
   return amount > 0 ? amount : 0;
 }
 
 /**
- * The top-up the horse's own club wallet can pay, to the cent, or 0. An
- * unknown balance (undefined) is 0: a top-up is optional, so unlike a rebuy it
- * fails CLOSED.
+ * What an Auto Top Up horse actually adds: the shortfall, held to the same
+ * bankroll rule as every horse reload (`topUpAllowance`: stop-loss, per-table
+ * exposure, can-still-sit-after-paying, no sliver reloads) and then to its own
+ * wallet. An unknown wallet or an unknown session total tops up nothing: a
+ * top-up is optional, so unlike a rebuy it fails CLOSED.
  */
-export function capTopUpToWallet(amount: number, wallet: number | undefined): number {
-  if (!(amount > 0) || wallet === undefined || !Number.isFinite(wallet) || wallet <= 0) return 0;
-  const capped = Math.floor(Math.min(amount, wallet) * 100) / 100;
+export function cappedAutoTopUp(args: {
+  userId: string;
+  wanted: number;
+  wallet: number | undefined;
+  investedThisTable: number | undefined;
+  bigBlind: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+}): number {
+  const { wanted, wallet, investedThisTable } = args;
+  if (!(wanted > 0)) return 0;
+  if (wallet === undefined || !Number.isFinite(wallet) || wallet <= 0) return 0;
+  if (
+    investedThisTable === undefined ||
+    !Number.isFinite(investedThisTable) ||
+    investedThisTable < 0
+  ) {
+    return 0;
+  }
+  const bb = Number(args.bigBlind) > 0 ? Number(args.bigBlind) : 0;
+  const max = Number(args.maxBuyIn) > 0 ? Number(args.maxBuyIn) : 0;
+  if (!(bb > 0) || !(max > 0)) return 0;
+  const min = Number(args.minBuyIn) > 0 ? Number(args.minBuyIn) : bb * 40;
+  const allowed = topUpAllowance({
+    bankroll: wallet,
+    investedThisTable,
+    desired: wanted,
+    refBuyIn: referenceBuyIn(bb, min, max),
+    minBuyIn: min,
+    maxBuyIn: max,
+    policy: bankrollPolicyFor(args.userId),
+  });
+  const capped = Math.floor(Math.min(allowed, wallet) * 100) / 100;
   return capped > 0 ? capped : 0;
 }

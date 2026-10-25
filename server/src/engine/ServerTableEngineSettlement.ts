@@ -43,7 +43,7 @@ import {
   reconcileTableSeatCount,
   autoRebuyHorse,
   readClubChipBalances,
-  readSeatWalletClub,
+  readHorseTopUpSeat,
   processLeavePending,
   logBBJCollection,
   logInsuranceSettlement,
@@ -67,11 +67,11 @@ import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import {
-  capTopUpToWallet,
-  horseCashTopUpStyle,
-  horseTopUpAmount,
+  cappedAutoTopUp,
+  horseAutoTopUpWanted,
   isPlo5Variant,
 } from '../services/HorseTopUpStyle.js';
+import { bankrollEvent } from '../services/HorseBankrollTelemetry.js';
 import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
 import { gestureAfterHand } from '../services/HorseTableGestures.js';
 import {
@@ -3844,14 +3844,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     });
     if (!this.lifecycleCanMutate()) return;
 
-    // 5.1 PLO5 HORSE TOP-UPS (Dan 2026-10-24): "70% OF HORSES SHOULD BE ADDING
-    // ON IN THE PLO5 GAME. 30% SHOULD BE ON 'AUTO TOP UP'." Between hands, an
-    // Auto Top Up horse refills any stack under the table maximum, exactly as
-    // the human Auto Top Up does; an add-on horse adds back to the maximum
-    // once its stack is under its own comfort line. Which horse is which, and
-    // how much, is HorseTopUpStyle. Same funding door as the rebuy above, own
-    // idempotency key, and the same add_on_applied bubble a human's add-on
-    // shows. Every other game is untouched.
+    // 5.1 PLO5 HORSE AUTO TOP UP (Dan 2026-10-24): "70% OF HORSES SHOULD BE
+    // ADDING ON IN THE PLO5 GAME. 30% SHOULD BE ON 'AUTO TOP UP'." This step is
+    // the Auto Top Up horses' half: a horse whose seat has the Auto Top Up flag
+    // on is topped back toward the table maximum between hands, as a human's
+    // Auto Top Up is, inside its bankroll policy and paid from its own wallet
+    // (HorseTopUpStyle.cappedAutoTopUp). The add-on horses (flag off) add on
+    // through HorseSessionRotator, the path every horse already used. Same
+    // funding door as the rebuy above, own idempotency key, and the same
+    // add_on_applied bubble a human's add-on shows. Every other game, and every
+    // Lightning table, is untouched.
     await runStep('horse_top_ups', false, async () => {
       if (isDiamondCash || this.isTournamentTable() || isMaintenanceFrozen()) return;
       const variant = this.tableInfo?.game_variant;
@@ -3866,23 +3868,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       for (const horse of players) {
         if (!horse.is_horse || horsesReloadedThisHand.has(horse.user_id)) continue;
         if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
-        const wanted = horseTopUpAmount({
+        const wanted = horseAutoTopUpWanted({
           userId: horse.user_id,
           variant,
           stack: Number(horse.stack),
           maxBuyIn,
         });
         if (!(wanted > 0)) continue;
-        // Paid from the horse's own wallet only, as a human's top-up is.
-        const walletClub =
-          (await readSeatWalletClub(this.tableId, horse.user_id)) || this.tableInfo?.club_id || '';
+        // The seat's own flag decides, the funding club is the seat's, and the
+        // session total feeds the bankroll policy. Unreadable: no top-up.
+        const seat = await readHorseTopUpSeat(this.tableId, horse.user_id);
         if (!this.lifecycleCanMutate()) return;
-        const wallet = walletClub
-          ? (await readClubChipBalances(walletClub, [horse.user_id])).get(horse.user_id)
-          : undefined;
+        if (!seat || !seat.autoTopUp || !seat.clubId) continue;
+        const wallet = (await readClubChipBalances(seat.clubId, [horse.user_id])).get(
+          horse.user_id
+        );
         if (!this.lifecycleCanMutate()) return;
-        const amount = capTopUpToWallet(wanted, wallet);
-        if (!(amount > 0)) continue;
+        const amount = cappedAutoTopUp({
+          userId: horse.user_id,
+          wanted,
+          wallet,
+          investedThisTable: seat.invested,
+          bigBlind: Number(this.tableInfo?.big_blind) || 0,
+          minBuyIn: Number(this.tableInfo?.min_buy_in) || 0,
+          maxBuyIn,
+        });
+        if (!(amount > 0)) {
+          // Counted only when it was a real reload, not a sliver of a blind.
+          if (wanted >= (Number(this.tableInfo?.big_blind) || Infinity)) {
+            bankrollEvent('topup_refused');
+          }
+          continue;
+        }
         const funding = await autoRebuyHorse(
           this.tableId,
           horse.user_id,
@@ -3904,8 +3921,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           kind: 'addon',
           timestamp: Date.now(),
         });
+        bankrollEvent('topup_funded');
         console.log(
-          `[ServerTableEngine:${this.tableId}] Horse ${horseCashTopUpStyle(horse.user_id, variant)}: ${horse.username} +${amount} -> ${funding.stack}`
+          `[ServerTableEngine:${this.tableId}] Horse Auto Top Up: ${horse.username} +${amount} -> ${funding.stack}`
         );
       }
     });

@@ -9,8 +9,8 @@
  *   2. `playRaise()` itself was the call clink three times over — the same
  *      down-swept oscillator click — so even the hero's raise read as a call.
  *
- * Asserted at the source: what makes the two cues different is what each one
- * is built from, and a behavioural test would need a real AudioContext.
+ * These source contracts complement playerActionAudio.test.ts and the native
+ * Web Audio browser fixture, which execute the actual synthesizer.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -29,17 +29,9 @@ describe('the opponent action echo', () => {
     'if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho)'
   );
 
-  it('plays the raise cue for a bet or a raise, scaled by the amount', () => {
-    expect(echo).toMatch(
-      /action === 'bet' \|\|\s*action === 'raise'\s*\)\s*soundService\.playRaise\(actionAmount,/
-    );
-  });
-
-  it('keeps the chip clink for a call only', () => {
-    expect(echo).toMatch(/action === 'call'\) soundService\.playChips\(\)/);
-    expect(echo, 'a raise must never fall through to the call clink').not.toMatch(
-      /action === 'raise' \|\| action === 'call'/
-    );
+  it('dispatches the accepted action with amount and BB through the tested cue selector', () => {
+    expect(echo).toContain('playPlayerActionSound(action, actionAmount,');
+    expect(PAGE).toContain("import { playPlayerActionSound } from '../lib/playerActionSound'");
   });
 });
 
@@ -69,5 +61,19 @@ describe('playRaise is built from pieces the call does not have', () => {
 
   it('plays under the raise priority, not the call/bet one', () => {
     expect(raise).toMatch(/shouldPlay\('raise', 'action'\)/);
+  });
+});
+
+describe('isolated browser audio regression enforcement', () => {
+  it('runs the real audio fixture in the existing Chromium and WebKit gate', () => {
+    const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+    expect(workflow).toContain('tests/e2e/mobile-lobby-chrome.spec.ts');
+    const entry = readFileSync('tests/e2e/mobile-lobby-chrome.spec.ts', 'utf8');
+    expect(entry).toContain('registerPlayerActionAudioCases();');
+    expect(entry).toContain('registerLeaderboardLoadingLayoutCases();');
+    expect(readFileSync('playwright.config.ts', 'utf8')).toContain('mobile-lobby-chrome');
+    expect(readFileSync('tests/e2e/fixtures/playerActionAudio.ts', 'utf8')).toContain(
+      'OfflineAudioContext'
+    );
   });
 });

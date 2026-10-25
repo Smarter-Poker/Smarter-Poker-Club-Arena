@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-horse-batch2-publish-asap",
+      "ownerOrder": "Dan, 2026-10-24 17:52 Chicago: \"NO, PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. PUSH EVERYTHING WHEN YOUR DONE.\" Off-cycle release at the next hourly :55 break after horse batch 2 (#8014) merges. Anchored on that PR's base, which is on main and not yet serving; this entry lands only with #8014 itself, so the release that takes it is a main that holds the batch.",
+      "contains": "8ffa9d0e0fcca783a2716da33f0132586ccd0469",
+      "notBefore": "2026-10-25T04:50:00Z",
+      "notAfter": "2026-10-25T08:58:00Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-horse-publish-asap-1855",
       "ownerOrder": "Dan, 2026-10-24 17:52 Chicago: \"NO, PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. PUSH EVERYTHING WHEN YOUR DONE.\" Off-cycle release at the next hourly :55 break (18:55 Chicago, later breaks as fallback) for everything merged on main since b1f5e761: the horse work and the merged cash, table, tournament and Lightning fixes.",
       "contains": "6aba0e019a22243f65566608827a7252070a1b5e",

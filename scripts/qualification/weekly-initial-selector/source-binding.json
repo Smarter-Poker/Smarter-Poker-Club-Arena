@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 234479,
-      "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
+      "bytes": 234485,
+      "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -261,6 +261,17 @@
           "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
         }
       }
+    }
+  },
+  "actionAudioFixturePath20261025": {
+    "reason": "Keep isolated native Web Audio regression in its dedicated audio fixture directory, explicitly executed by existing CSS Beat; production-spec inventory remains unchanged. Current workflow identity only, not a financial execution certificate.",
+    "previous": {
+      "bytes": 234479,
+      "sha256": "9ea0383b427d351c04c07a05611e232fe56ebfbe6cee8edcde94f981ff9c1a3e"
+    },
+    "current": {
+      "bytes": 234485,
+      "sha256": "a84134a8060519db16ca97c3e4a30dd905c86cb637daf8dc21a96eb43681a1fa"
     }
   }
 }

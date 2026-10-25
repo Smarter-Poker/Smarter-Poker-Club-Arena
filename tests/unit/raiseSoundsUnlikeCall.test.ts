@@ -9,8 +9,8 @@
  *   2. `playRaise()` itself was the call clink three times over — the same
  *      down-swept oscillator click — so even the hero's raise read as a call.
  *
- * Asserted at the source: what makes the two cues different is what each one
- * is built from, and a behavioural test would need a real AudioContext.
+ * These source contracts complement playerActionAudio.test.ts and the native
+ * Web Audio browser fixture, which execute the actual synthesizer.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -61,5 +61,16 @@ describe('playRaise is built from pieces the call does not have', () => {
 
   it('plays under the raise priority, not the call/bet one', () => {
     expect(raise).toMatch(/shouldPlay\('raise', 'action'\)/);
+  });
+});
+
+describe('isolated browser audio regression enforcement', () => {
+  it('runs the real audio fixture in the existing Chromium and WebKit gate', () => {
+    const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+    expect(workflow).toContain('tests/e2e/audio/player-action-audio.spec.ts');
+    expect(readFileSync('playwright.config.ts', 'utf8')).toContain('player-action-audio');
+    expect(readFileSync('tests/e2e/fixtures/playerActionAudio.ts', 'utf8')).toContain(
+      'OfflineAudioContext'
+    );
   });
 });

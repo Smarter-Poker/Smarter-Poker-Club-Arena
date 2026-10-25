@@ -141,22 +141,25 @@ export async function playLightningMatrix(opts: {
       }
     );
     const lane = t.horseLane.raw;
-    lane.decideFast.mockImplementation(async (snap: any) => ({
-      type: 'FAST_RESULT',
-      requestId: 1,
-      planBinding: null,
-      planIssueDisposition: 'no_effects',
-      generation: snap.generation,
-      fence: snap.fence,
-      decision: HorseLogic.decide(snap.player, snap.gameState, snap.style, snap.mods ?? {}, {
-        telemetry: false,
-      } as never),
-      rngBefore: 0,
-      rngAfter: 0,
-      computeMs: 1,
-      governorScale: 1,
-      effects: [],
-    }));
+    lane.decideFast.mockImplementation(
+      async (snap: any) =>
+        ({
+          type: 'FAST_RESULT',
+          requestId: 1,
+          planBinding: null,
+          planIssueDisposition: 'no_effects',
+          generation: snap.generation,
+          fence: snap.fence,
+          decision: HorseLogic.decide(snap.player, snap.gameState, snap.style, snap.mods ?? {}, {
+            telemetry: false,
+          } as never),
+          rngBefore: 0,
+          rngAfter: 0,
+          computeMs: 1,
+          governorScale: 1,
+          effects: [],
+        }) as never
+    );
     lane.observeCompletedHand.mockImplementation(async (o: CompletedHandObservation) => {
       observeLikeTheWorker(o);
       return { type: 'ACK' } as never;

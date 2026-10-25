@@ -53,6 +53,14 @@ export type TournamentRiverReferenceResult =
 
 const whole = (x: unknown): x is number =>
   typeof x === 'number' && Number.isSafeInteger(x) && x >= 0;
+/** Canonical capture cannot name more places than its original final field.
+ * Check every index explicitly: sparse holes are unknown, never zero awards. */
+function winnerOnly(values: unknown, first: number, field: number): boolean {
+  if (!Array.isArray(values) || values.length < 1 || values.length > field || values[0] !== first)
+    return false;
+  for (let i = 1; i < values.length; i++) if (values[i] !== 0) return false;
+  return true;
+}
 const key = (c: Card) => `${c.rank}:${c.suit}`;
 const validCard = (c: Card) =>
   c &&
@@ -104,9 +112,10 @@ export function priceClosedHeadsUpTournamentRiver(
       t.tournamentType !== 'SPIN' ||
       t.playersLeft !== 2 ||
       t.playersAtTable !== 2 ||
+      !whole(t.entrants) ||
+      t.entrants < t.playersLeft ||
       t.spotsPaid !== 1 ||
-      t.payoutPct?.length !== 1 ||
-      t.payoutPct[0] !== 100 ||
+      !winnerOnly(t.payoutPct, 100, t.entrants) ||
       t.registrationOpen !== false ||
       t.lateRegistrationOpen !== false ||
       t.reentryOpen !== false ||
@@ -148,8 +157,7 @@ export function priceClosedHeadsUpTournamentRiver(
       !whole(ladder.poolCents) ||
       ladder.poolCents <= 0 ||
       ladder.poolCents !== t.prizePoolCents ||
-      ladder.prizesCents?.length !== 1 ||
-      ladder.prizesCents[0] !== ladder.poolCents ||
+      !winnerOnly(ladder.prizesCents, ladder.poolCents, t.entrants) ||
       ladder.source !== 'tournaments+clubs/canonical-payout-v1' ||
       ladder.bubbleProtection !== false ||
       ladder.bubbleReserveCents !== 0 ||

@@ -18,7 +18,13 @@ owning Phase 14 delivery must integrate and independently qualify its catalog,
 holdout, signing, controller and effect chain before selection. Existing cash
 eligibility and authority are unchanged.
 
-Validation: 24 focused tests cover actual payout-capture output through the
+Winner-take-all representations may retain explicit zero awards after first
+place. The reference accepts those tails without renormalizing or treating
+them as paid places. Dense arrays are bounded by the original entrant count;
+unknown, positive or malformed tails remain unavailable. The connected
+zero-tail regression failed on the prior reference and passes after repair.
+
+Validation: 34 focused tests cover actual payout-capture output through the
 reference, conserving fold/win/loss/tie stacks, weighted ranges, original input
 digests, malformed capture and unsupported-family refusals. No production
 strategy has been activated by this change.

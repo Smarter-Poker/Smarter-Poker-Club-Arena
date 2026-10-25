@@ -16,7 +16,7 @@ const cards = (text: string): Card[] =>
         suit: ({ s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' } as const)[x[1] as 's'],
       }) as Card
   );
-function fixture(): TournamentRiverReferenceInput {
+function fixture(payoutPct: number[] = [100]): TournamentRiverReferenceInput {
   const hero = {
     user_id: 'hero',
     username: 'Hero',
@@ -61,8 +61,9 @@ function fixture(): TournamentRiverReferenceInput {
     tournamentType: 'SPIN',
     playersLeft: 2,
     playersAtTable: 2,
+    entrants: 3,
     spotsPaid: 1,
-    payoutPct: [100],
+    payoutPct,
     registrationOpen: false,
     lateRegistrationOpen: false,
     reentryOpen: false,
@@ -95,7 +96,7 @@ function fixture(): TournamentRiverReferenceInput {
         is_pko: false,
         is_mystery_bounty: false,
       },
-      [{ place: 1, percentage: 100 }],
+      payoutPct.map((percentage, index) => ({ place: index + 1, percentage })),
       3,
       false
     ),
@@ -168,6 +169,85 @@ function fixture(): TournamentRiverReferenceInput {
 }
 
 describe('closed HU WTA Spin river tournament reference', () => {
+  it('prices the canonical capture helper zero-tail ladder as the same WTA objective', () => {
+    const i = fixture([100, 0, 0]);
+    expect(i.original.snapshot.gameState.tournament!.finalizedPrizeLadder!.prizesCents).toEqual([
+      10001, 0, 0,
+    ]);
+    const result = priceClosedHeadsUpTournamentRiver(i);
+    expect(result).toMatchObject({
+      status: 'priced',
+      objective: 'wta_hu_icm_chip_share_v1',
+      utilityUnit: 'prize_share',
+      fold: { expectedPrizeShare: 4 / 7 },
+      call: { expectedPrizeShare: 1 },
+    });
+    // The maintained context producer may filter zero percentages while the
+    // finalized capture retains all original places. Neither is renormalized.
+    i.original.snapshot.gameState.tournament!.payoutPct = [100];
+    expect(priceClosedHeadsUpTournamentRiver(i).status).toBe('priced');
+  });
+  it.each([
+    [
+      'positive fractional percentage',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.payoutPct = [100, 0.001, 0]),
+    ],
+    [
+      'NaN percentage',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.payoutPct = [100, NaN, 0]),
+    ],
+    [
+      'sparse percentage',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.payoutPct = [100, , 0] as number[]),
+    ],
+    [
+      'nonarray percentage',
+      (i: TournamentRiverReferenceInput) =>
+        ((i.original.snapshot.gameState.tournament as any).payoutPct = { 0: 100, 1: 0, length: 2 }),
+    ],
+    [
+      'oversized places',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.payoutPct = [100, 0, 0, 0]),
+    ],
+    [
+      'unknown original field',
+      (i: TournamentRiverReferenceInput) =>
+        delete i.original.snapshot.gameState.tournament!.entrants,
+    ],
+    [
+      'positive fractional prize',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.finalizedPrizeLadder!.prizesCents = [
+          10001, 0.001, 0,
+        ]),
+    ],
+    [
+      'NaN prize',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.finalizedPrizeLadder!.prizesCents = [
+          10001,
+          NaN,
+          0,
+        ]),
+    ],
+    [
+      'sparse prize',
+      (i: TournamentRiverReferenceInput) =>
+        (i.original.snapshot.gameState.tournament!.finalizedPrizeLadder!.prizesCents = [
+          10001,
+          ,
+          0,
+        ] as number[]),
+    ],
+  ])('rejects malformed WTA zero tails: %s', (_name, mutate) => {
+    const i = fixture([100, 0, 0]);
+    mutate(i);
+    expect(priceClosedHeadsUpTournamentRiver(i).status).toBe('unavailable');
+  });
   it('prices the real capture helper ladder and binds those observed terms in provenance', () => {
     const input = fixture();
     const t = input.original.snapshot.gameState.tournament!;

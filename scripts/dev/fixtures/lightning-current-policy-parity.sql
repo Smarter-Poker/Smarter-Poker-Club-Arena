@@ -80,7 +80,7 @@ DO $$ BEGIN
   SET CONSTRAINTS ALL IMMEDIATE;
 END $$;
 DO $$
-DECLARE v_g uuid := pp.g('CONVERSION'); p jsonb; v_new uuid[]; v_n integer; d jsonb;
+DECLARE v_g uuid := pp.g('CONVERSION'); p jsonb; v_new uuid[]; v_n integer; v_doc jsonb;
 BEGIN
   PERFORM public.fx9_pool(v_g);
   -- TIME TRAVEL (fixture boundary): the five-player deadline has elapsed for
@@ -106,10 +106,10 @@ BEGIN
   -- comparator replays the shadow_snapshot fn_lightning_match returns beside
   -- its plan, and fn_lightning_match_plan (what pp.capture stores) carries
   -- none. Same cluster, same `now`, same legality.
-  SELECT doc INTO d FROM pp.out WHERE n = v_n;
-  p := public.fn_lightning_match(v_g, to_timestamp((d ->> 'now_us')::numeric / 1000000), NULL, NULL, NULL);
-  IF p ->> 'legal_count' IS DISTINCT FROM d #>> '{plan,legal_count}' THEN
-    RAISE EXCEPTION 'FIXTURE 13: fn_lightning_match legality % differs from the captured plan %', p ->> 'legal_count', d #>> '{plan,legal_count}';
+  SELECT doc INTO v_doc FROM pp.out WHERE n = v_n;
+  p := public.fn_lightning_match(v_g, to_timestamp((v_doc ->> 'now_us')::numeric / 1000000), NULL, NULL, NULL);
+  IF p ->> 'legal_count' IS DISTINCT FROM v_doc #>> '{plan,legal_count}' THEN
+    RAISE EXCEPTION 'FIXTURE 13: fn_lightning_match legality % differs from the captured plan %', p ->> 'legal_count', v_doc #>> '{plan,legal_count}';
   END IF;
   IF jsonb_typeof(p -> 'shadow_snapshot') IS DISTINCT FROM 'object' THEN
     RAISE EXCEPTION 'FIXTURE 13: fn_lightning_match returned no shadow_snapshot';

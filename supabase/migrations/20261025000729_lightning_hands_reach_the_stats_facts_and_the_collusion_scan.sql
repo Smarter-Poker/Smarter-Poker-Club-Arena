@@ -155,7 +155,7 @@ END
 $function$;
 
 REVOKE ALL ON FUNCTION public.fn_lightning_hand_stats_facts(jsonb,uuid,uuid,uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_lightning_hand_stats_facts(jsonb,uuid,uuid,uuid) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_lightning_hand_stats_facts(jsonb,uuid,uuid,uuid) FROM anon, authenticated; -- public-ok: PUBLIC was revoked immediately above; remove explicit browser grants too.
 GRANT EXECUTE ON FUNCTION public.fn_lightning_hand_stats_facts(jsonb,uuid,uuid,uuid) TO service_role;
 
 DO $patch$

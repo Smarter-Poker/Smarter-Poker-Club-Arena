@@ -8451,6 +8451,23 @@ function LiveTablePage({
      such writer (prize escrow is a later phase and the custody door refuses a
      tournament table), so it is not offered a control that cannot work. */
   const canTopUpSeat = seatCanAddFunds(tableState.arenaAsset, tableState.isTournament);
+  const lightningAddChipsScope = `${userId}/${tableId ?? ''}/${lightningRoom?.poolSessionId ?? ''}/${lightningRoom?.clusterId ?? ''}`;
+  const lightningAddChipsOwnerRef = useRef({
+    key: lightningAddChipsScope,
+    generation: 0,
+    mounted: false,
+  });
+  if (lightningAddChipsOwnerRef.current.key !== lightningAddChipsScope) {
+    lightningAddChipsOwnerRef.current.key = lightningAddChipsScope;
+    lightningAddChipsOwnerRef.current.generation++;
+  }
+  useEffect(() => {
+    lightningAddChipsOwnerRef.current.mounted = true;
+    return () => {
+      lightningAddChipsOwnerRef.current.mounted = false;
+      lightningAddChipsOwnerRef.current.generation++;
+    };
+  }, []);
   const handleAddChips = async (
     amount: number,
     opId?: string,
@@ -8491,8 +8508,15 @@ function LiveTablePage({
          room id answered "Player not seated"). Read fresh, never cached. */
       let addOnTableId: string = tableId;
       const addOnRoom = lightningRoomRef.current;
+      const scopeKey = `${userId}/${tableId ?? ''}/${addOnRoom?.poolSessionId ?? ''}/${addOnRoom?.clusterId ?? ''}`;
+      const scopeGeneration = lightningAddChipsOwnerRef.current.generation;
+      const ownLightningScope = () =>
+        lightningAddChipsOwnerRef.current.mounted &&
+        lightningAddChipsOwnerRef.current.key === scopeKey &&
+        lightningAddChipsOwnerRef.current.generation === scopeGeneration;
+      let anchor: LightningAnchorSeat | null = null;
       if (addOnRoom) {
-        let anchor: LightningAnchorSeat | null = null;
+        if (!ownLightningScope()) return false;
         try {
           anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId, addOnRoom.poolSessionId);
         } catch (anchorErr) {
@@ -8500,6 +8524,7 @@ function LiveTablePage({
             clusterId: addOnRoom.clusterId,
           });
         }
+        if (!ownLightningScope()) return false;
         if (!anchor) {
           toast.error(`Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
           return false;
@@ -8508,6 +8533,30 @@ function LiveTablePage({
       }
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
+      if (addOnRoom) {
+        if (!ownLightningScope()) return false;
+        // This is one bounded custody read for the original request, never a
+        // retry. A reseat must not apply an old response to a new cashier.
+        let currentAnchor: LightningAnchorSeat | null;
+        try {
+          currentAnchor = await fetchLightningAnchorSeat(
+            addOnRoom.clusterId,
+            addOnRoom.poolSessionId
+          );
+        } catch (error) {
+          reportError(error, 'TablePage.lightning_addon_receipt_anchor_read_failed');
+          return false;
+        }
+        if (
+          !ownLightningScope() ||
+          !anchor ||
+          !currentAnchor ||
+          currentAnchor.anchorTableId !== anchor.anchorTableId ||
+          currentAnchor.seatNumber !== anchor.seatNumber ||
+          currentAnchor.occupancyId !== anchor.occupancyId
+        )
+          return false;
+      }
       // Opting out prevents the next debit; an already committed response still
       // updates this same player/pool's ordinary balance and session records.
       if (opts?.isScopeCurrent && !opts.isScopeCurrent()) return false;
@@ -8557,7 +8606,17 @@ function LiveTablePage({
       }
       // A Lightning queue is a durable UNCHARGED request. Only the own
       // terminal receipt updates funding/accounting, including after reconnect.
-      if (lightningRoomRef.current && res.charged !== undefined) {
+      if (addOnRoom && res.charged !== undefined) {
+        if (
+          res.pool_session_id !== addOnRoom.poolSessionId ||
+          res.occupancy_id !== anchor?.occupancyId
+        ) {
+          // A completed original purchase from an earlier seat is not a new
+          // purchase here. Only a known terminal key may be released.
+          if (res.charged && res.request_id === opId && res.requested === amount)
+            opts?.onTerminalRefusal?.();
+          return false;
+        }
         lastAddChipsResultRef.current = { applied: res.applied ?? 0, queued: res.queued === true };
         setLightningBalanceVersion((v) => v + 1);
         if (res.queued)
@@ -16162,7 +16221,13 @@ function LiveTablePage({
     }
     if (!payload.userId || payload.userId === userId) {
       if (payload.balance !== undefined) {
+        // The newer authoritative wallet event invalidates older awaited
+        // reads, including a Lightning funding receipt issued before it.
+        balanceRevisionRef.current += 1;
         setAccountBalance(payload.balance);
+        // If that event invalidated the only terminal receipt read, replace
+        // it once so a paused/waiting hero still learns its funding and stack.
+        if (lightningRoomRef.current) setLightningBalanceVersion((v) => v + 1);
       } else {
         /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
            collapses failures wrote a 0 into the on-screen balance whenever a
@@ -24746,6 +24811,13 @@ function LiveTablePage({
       if (funding.applied_count > count.count) {
         totalRebuysRef.current += funding.applied_count - count.count;
         count.count = funding.applied_count;
+        // This committed purchase also supersedes ordinary balance reads
+        // issued before it; new Lightning requests have no optimistic debit.
+        balanceRevisionRef.current += 1;
+        // A queued purchase did not change the idle hero's stack. Its first
+        // canonical completion (including reconnect) invalidates that cached
+        // stack once; the count guard makes the follow-up read idempotent.
+        setLightningBalanceVersion((v) => v + 1);
       }
       if (tableId) sessionStatsService.restoreFunding(tableId, funding.baseline);
     },

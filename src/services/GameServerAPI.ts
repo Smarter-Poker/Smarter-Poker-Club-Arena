@@ -497,6 +497,8 @@ export interface ActionResult {
   charged?: boolean;
   requested?: number;
   request_id?: string;
+  occupancy_id?: string;
+  pool_session_id?: string;
 }
 
 export interface PlayerActions {
@@ -1142,6 +1144,11 @@ export async function addChips(
         typeof errorData?.error === 'string' &&
         errorData.error
       ) {
+        // A Lightning RPC can commit before its acknowledgement is lost. The
+        // Older HTTP adapters use 400 for success:false; preserve the engine's
+        // explicit unknown outcome before considering terminal refusal.
+        if (errorData.code === 'TRANSPORT')
+          return { success: false, error: errorData.error, code: 'TRANSPORT' };
         return {
           success: false,
           error: errorData.error,
@@ -1170,6 +1177,8 @@ export async function addChips(
       charged: typeof data.charged === 'boolean' ? data.charged : undefined,
       requested: typeof data.requested === 'number' ? data.requested : undefined,
       request_id: typeof data.request_id === 'string' ? data.request_id : undefined,
+      occupancy_id: typeof data.occupancy_id === 'string' ? data.occupancy_id : undefined,
+      pool_session_id: typeof data.pool_session_id === 'string' ? data.pool_session_id : undefined,
     };
   } catch (err: any) {
     console.error(`[GameServerAPI] addChips error:`, err);

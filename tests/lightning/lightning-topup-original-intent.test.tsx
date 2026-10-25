@@ -29,6 +29,8 @@ describe('manual and automatic Lightning original top-up requests', () => {
           requested: 30,
           applied: 0,
           request_id: 'request01',
+          occupancy_id: 'occupancy',
+          pool_session_id: 'pool',
         }),
       }));
       const realApi = compile(
@@ -42,13 +44,20 @@ describe('manual and automatic Lightning original top-up requests', () => {
         total = { current: 100 },
         rebuys = { current: 2 };
       const values = {
+        lightningAddChipsOwnerRef: {
+          current: { key: 'user/pool/pool/cluster', generation: 0, mounted: true },
+        },
         tableStateRef: { current: { arenaAsset: 'chips' } },
         userId: 'user',
         tableId: 'pool',
         reportError: vi.fn(),
         toast: { info: vi.fn(), error: vi.fn() },
         lightningRoomRef: { current: { clusterId: 'cluster', poolSessionId: 'pool' } },
-        fetchLightningAnchorSeat: vi.fn(async () => ({ anchorTableId: 'anchor' })),
+        fetchLightningAnchorSeat: vi.fn(async () => ({
+          anchorTableId: 'anchor',
+          occupancyId: 'occupancy',
+          seatNumber: 1,
+        })),
         GameServerAPI: { addChips: realApi },
         lastAddChipsResultRef: { current: null },
         setLightningBalanceVersion: version,
@@ -203,6 +212,7 @@ describe('the manual cashier retains only an unresolved original request', () =>
       const values = {
         amount: 30,
         isProcessing: false,
+        currentStackPending: false,
         busyRef: { current: false },
         setBusy: vi.fn(),
         setSubmitError: vi.fn(),
@@ -333,4 +343,452 @@ describe('receipt RPC rollout compatibility', () => {
     );
     expect(apply).not.toHaveBeenCalled();
   });
+});
+
+describe('a Lightning unknown outcome survives the HTTP adapter', () => {
+  it('keeps 400 TRANSPORT unknown through the actual API and caller, without releasing the original key', async () => {
+    const http = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        success: false,
+        error: 'Unable To Verify This Top Up. Check Your Stack Before Trying Again.',
+        code: 'TRANSPORT',
+      }),
+    }));
+    const realApi = compile(
+      sliceMethod(api, 'export async function addChips(').replace('export ', ''),
+      ['engineFetch', 'getAuthHeaders', 'GAME_SERVER_URL'],
+      [http, async () => ({}), 'https://engine.invalid'],
+      'addChips'
+    );
+    expect(await realApi('anchor', 30, 'original01')).toMatchObject({
+      success: false,
+      code: 'TRANSPORT',
+    });
+    const release = vi.fn(),
+      balance = vi.fn();
+    const values = {
+      lightningAddChipsOwnerRef: {
+        current: { key: 'user/pool/pool/cluster', generation: 0, mounted: true },
+      },
+      tableStateRef: { current: { arenaAsset: 'chips' } },
+      userId: 'user',
+      tableId: 'pool',
+      reportError: vi.fn(),
+      toast: { info: vi.fn(), error: vi.fn() },
+      lightningRoomRef: { current: { clusterId: 'cluster', poolSessionId: 'pool' } },
+      fetchLightningAnchorSeat: async () => ({ anchorTableId: 'anchor' }),
+      GameServerAPI: { addChips: realApi },
+      applyBalanceDelta: balance,
+    };
+    const handle = compile(
+      sliceMethod(source, 'const handleAddChips = async ('),
+      Object.keys(values),
+      Object.values(values),
+      'handleAddChips'
+    );
+    expect(await handle(30, 'original01', { source: 'manual', onTerminalRefusal: release })).toBe(
+      false
+    );
+    expect(release).not.toHaveBeenCalled();
+    expect(balance).not.toHaveBeenCalled();
+    expect(values.toast.error).toHaveBeenCalledWith(
+      'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+    );
+    expect(http.mock.calls.map((call) => JSON.parse(call[1].body).opId)).toEqual([
+      'original01',
+      'original01',
+    ]);
+  });
+});
+
+describe('a completed queue refreshes the waiting hero exactly once', () => {
+  it('uses the actual TablePage canonical callback for pending, completion, replay and reconnect', () => {
+    const ast = ts.createSourceFile(
+      'TablePage.tsx',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    let arrow = '';
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(ast) === 'useLightningTopUpReceipts'
+      ) {
+        const arg = node.arguments[0];
+        if (ts.isObjectLiteralExpression(arg)) {
+          const prop = arg.properties.find(
+            (p) => ts.isPropertyAssignment(p) && p.name.getText(ast) === 'apply'
+          );
+          if (prop && ts.isPropertyAssignment(prop)) arrow = prop.initializer.getText(ast);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(Boolean(arrow)).toBe(true);
+    const count = { current: { pool: null as string | null, count: 0 } },
+      version = { current: 0 },
+      revision = { current: 4 };
+    const values = {
+      balanceRevisionRef: revision,
+      readBalanceRevision: () => revision.current,
+      setBalanceIfCurrent: vi.fn(),
+      totalBuyInRef: { current: 20 },
+      lightningTopUpCountRef: count,
+      totalRebuysRef: { current: 0 },
+      tableId: 'pool',
+      sessionStatsService: { restoreFunding: vi.fn() },
+      setLightningBalanceVersion: vi.fn((next: (v: number) => number) => {
+        version.current = next(version.current);
+      }),
+    };
+    const apply = compile(
+      `const apply = ${arrow}`,
+      Object.keys(values),
+      Object.values(values),
+      'apply'
+    );
+    const funding = { pool_session_id: 'pool', balance: 100, baseline: 20, applied_count: 0 };
+    apply(funding, 4); // accepted queue: the waiting stack has not changed
+    expect(version.current).toBe(0);
+    apply({ ...funding, balance: 70, baseline: 50, applied_count: 1 }, 4);
+    expect(version.current).toBe(1); // waiting-session reader is invalidated after actual funding
+    apply({ ...funding, balance: 70, baseline: 50, applied_count: 1 }, 5);
+    expect(version.current).toBe(1); // replay and follow-up read cannot loop
+    expect(values.totalRebuysRef.current).toBe(1);
+    count.current = { pool: null, count: 0 }; // new mount / reconnect with canonical completed count
+    apply({ ...funding, balance: 70, baseline: 50, applied_count: 1 }, 5);
+    expect(version.current).toBe(2);
+    apply({ ...funding, applied_count: 2 }, 3); // a newer balance mutation won
+    expect(version.current).toBe(2);
+  });
+});
+
+describe('canonical Lightning receipts cannot replace a newer wallet event', () => {
+  it('executes the real wallet-event and canonical-funding callbacks across a delayed receipt', async () => {
+    const ast = ts.createSourceFile(
+      'TablePage.tsx',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    let walletArrow = '',
+      fundingArrow = '';
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        if (
+          node.expression.getText(ast) === 'useMasterBusSubscription' &&
+          ts.isStringLiteral(node.arguments[0]) &&
+          node.arguments[0].text === 'BALANCE_UPDATED'
+        )
+          walletArrow = node.arguments[1].getText(ast);
+        if (
+          node.expression.getText(ast) === 'useLightningTopUpReceipts' &&
+          ts.isObjectLiteralExpression(node.arguments[0])
+        ) {
+          const prop = node.arguments[0].properties.find(
+            (p) => ts.isPropertyAssignment(p) && p.name.getText(ast) === 'apply'
+          );
+          if (prop && ts.isPropertyAssignment(prop)) fundingArrow = prop.initializer.getText(ast);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(Boolean(walletArrow && fundingArrow)).toBe(true);
+    const revision = { current: 4 },
+      wallet = { current: 100 };
+    const values = {
+      tableState: { arenaAsset: 'chips' },
+      userId: 'user',
+      balanceRevisionRef: revision,
+      lightningRoomRef: { current: { poolSessionId: 'pool' } },
+      setAccountBalance: (value: number) => {
+        wallet.current = value;
+      },
+      readBalanceRevision: () => revision.current,
+      setBalanceIfCurrent: vi.fn(),
+      totalBuyInRef: { current: 20 },
+      lightningTopUpCountRef: { current: { pool: 'pool', count: 0 } },
+      totalRebuysRef: { current: 0 },
+      tableId: 'pool',
+      sessionStatsService: { restoreFunding: vi.fn() },
+      setLightningBalanceVersion: vi.fn(),
+    };
+    const funding = compile(
+      `const apply = ${fundingArrow}`,
+      Object.keys(values),
+      Object.values(values),
+      'apply'
+    );
+    const event = compile(
+      `const receive = ${walletArrow}`,
+      Object.keys(values),
+      Object.values(values),
+      'receive'
+    );
+    let finish!: (v: unknown) => void;
+    f.rpc.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const props = {
+      pool: 'pool',
+      user: 'user',
+      ready: true,
+      event: null,
+      version: 0,
+      revision: values.readBalanceRevision,
+      apply: funding,
+    };
+    const hook = renderHook((p) => useLightningTopUpReceipts(p), { initialProps: props });
+    event({ userId: 'user', balance: 70 });
+    expect(revision.current).toBe(5);
+    await act(async () =>
+      finish({
+        data: {
+          pool_session_id: 'pool',
+          user_id: 'user',
+          baseline: 50,
+          balance: 100,
+          applied_count: 1,
+          receipts: [],
+        },
+        error: null,
+      })
+    );
+    expect(wallet.current).toBe(70);
+    expect(values.setBalanceIfCurrent).not.toHaveBeenCalled();
+    expect(values.totalBuyInRef.current).toBe(20);
+    expect(values.setLightningBalanceVersion).toHaveBeenCalledOnce();
+    f.rpc.mockResolvedValue({
+      data: {
+        pool_session_id: 'pool',
+        user_id: 'user',
+        baseline: 50,
+        balance: 70,
+        applied_count: 1,
+        receipts: [],
+      },
+      error: null,
+    });
+    hook.rerender({ ...props, version: 1 });
+    await waitFor(() => expect(values.totalBuyInRef.current).toBe(50));
+    expect(values.lightningTopUpCountRef.current.count).toBe(1);
+    expect(values.setBalanceIfCurrent).toHaveBeenCalledWith(5, 70);
+    expect(values.setLightningBalanceVersion).toHaveBeenCalledTimes(2); // wallet event, then one actual stack completion
+    expect(wallet.current).toBe(70);
+    expect(revision.current).toBe(6); // stale ordinary pre-purchase reads are invalid now too
+  });
+  it('keeps a 503 unknown response unknown for the current API and old client contract', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const http = vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          success: false,
+          error: 'Top Up Outcome Unknown',
+          code: 'TRANSPORT',
+        }),
+      }));
+      const add = compile(
+        sliceMethod(api, 'export async function addChips(').replace('export ', ''),
+        ['engineFetch', 'getAuthHeaders', 'GAME_SERVER_URL'],
+        [http, async () => ({}), 'https://engine.invalid'],
+        'addChips'
+      );
+      expect(await add('anchor', 30, 'original01')).toMatchObject({
+        success: false,
+        code: 'TRANSPORT',
+      });
+      expect(JSON.parse(http.mock.calls[0][1].body).opId).toBe('original01');
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+});
+
+describe('a delayed manual Lightning response belongs to its original custody', () => {
+  it.each(
+    ['queued', 'applied'].flatMap((status) =>
+      ['auth', 'pool', 'occupancy', 'unmount'].map((change) => ({ status, change }))
+    )
+  )(
+    'ignores $status after $change without ordinary accounting or closing a new cashier',
+    async ({ status, change }) => {
+      let finish!: (v: unknown) => void;
+      const owner = { current: { key: 'user/pool/pool/cluster', generation: 0, mounted: true } };
+      const room = {
+        current: { clusterId: 'cluster', poolSessionId: 'pool' } as {
+          clusterId: string;
+          poolSessionId: string;
+        } | null,
+      };
+      const anchor = { anchorTableId: 'anchor', seatNumber: 1, occupancyId: 'old' };
+      const add = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+      );
+      const read = vi
+        .fn()
+        .mockResolvedValueOnce(anchor)
+        .mockResolvedValue({ ...anchor, occupancyId: change === 'occupancy' ? 'new' : 'old' });
+      const values = {
+        lightningAddChipsOwnerRef: owner,
+        lightningRoomRef: room,
+        tableStateRef: { current: { arenaAsset: 'chips' } },
+        userId: 'user',
+        tableId: 'pool',
+        reportError: vi.fn(),
+        toast: { info: vi.fn(), error: vi.fn() },
+        fetchLightningAnchorSeat: read,
+        GameServerAPI: { addChips: add },
+        applyBalanceDelta: vi.fn(),
+        setLightningBalanceVersion: vi.fn(),
+        totalBuyInRef: { current: 20 },
+        totalRebuysRef: { current: 0 },
+        lastAddChipsResultRef: { current: null },
+      };
+      const handle = compile(
+        sliceMethod(source, 'const handleAddChips = async ('),
+        Object.keys(values),
+        Object.values(values),
+        'handleAddChips'
+      );
+      const release = vi.fn();
+      const pending = handle(30, 'original01', { source: 'manual', onTerminalRefusal: release });
+      await waitFor(() => expect(add).toHaveBeenCalledOnce());
+      if (change === 'auth' || change === 'pool') {
+        owner.current.key = 'changed-scope';
+        owner.current.generation++;
+        room.current = null;
+      } else if (change === 'unmount') {
+        const ast = ts.createSourceFile(
+          'TablePage.tsx',
+          source,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TSX
+        );
+        let effect = '';
+        const visit = (node: ts.Node) => {
+          if (
+            ts.isCallExpression(node) &&
+            node.expression.getText(ast) === 'useEffect' &&
+            node.arguments[0]
+              ?.getText(ast)
+              .includes('lightningAddChipsOwnerRef.current.mounted = false')
+          )
+            effect = node.arguments[0].getText(ast);
+          ts.forEachChild(node, visit);
+        };
+        visit(ast);
+        const mount = compile(
+          `const mount = ${effect}`,
+          ['lightningAddChipsOwnerRef'],
+          [owner],
+          'mount'
+        );
+        mount()(); // actual effect mount and cleanup
+      }
+      finish({
+        success: true,
+        queued: status === 'queued',
+        charged: status === 'applied',
+        applied: status === 'applied' ? 30 : 0,
+        requested: 30,
+        request_id: 'original01',
+      });
+      expect(await pending).toBe(false); // caller keeps the new cashier open
+      expect(release).not.toHaveBeenCalled();
+      expect(values.applyBalanceDelta).not.toHaveBeenCalled();
+      expect(values.setLightningBalanceVersion).not.toHaveBeenCalled();
+      expect(values.toast.info).not.toHaveBeenCalled();
+      expect(values.toast.error).not.toHaveBeenCalled();
+      expect(values.totalBuyInRef.current).toBe(20);
+      expect(values.totalRebuysRef.current).toBe(0);
+      expect(add.mock.calls[0]).toEqual(['anchor', 30, 'original01']);
+    }
+  );
+});
+
+describe('the original receipt carries its own pool and occupancy through the API', () => {
+  it.each(['same', 'pool', 'occupancy'])(
+    'replaying an applied original purchase with %s custody cannot fabricate a new purchase',
+    async (change) => {
+      const http = vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          success: true,
+          queued: false,
+          charged: true,
+          applied: 30,
+          requested: 30,
+          request_id: 'original01',
+          pool_session_id: change === 'pool' ? 'old-pool' : 'pool',
+          occupancy_id: change === 'occupancy' ? 'old-occupancy' : 'current-occupancy',
+        }),
+      }));
+      const add = compile(
+        sliceMethod(api, 'export async function addChips(').replace('export ', ''),
+        ['engineFetch', 'getAuthHeaders', 'GAME_SERVER_URL'],
+        [http, async () => ({}), 'https://engine.invalid'],
+        'addChips'
+      );
+      const release = vi.fn(),
+        values = {
+          lightningAddChipsOwnerRef: {
+            current: { key: 'user/pool/pool/cluster', generation: 0, mounted: true },
+          },
+          lightningRoomRef: { current: { clusterId: 'cluster', poolSessionId: 'pool' } },
+          tableStateRef: { current: { arenaAsset: 'chips' } },
+          userId: 'user',
+          tableId: 'pool',
+          reportError: vi.fn(),
+          toast: { info: vi.fn(), error: vi.fn() },
+          fetchLightningAnchorSeat: async () => ({
+            anchorTableId: 'anchor',
+            seatNumber: 1,
+            occupancyId: 'current-occupancy',
+          }),
+          GameServerAPI: { addChips: add },
+          applyBalanceDelta: vi.fn(),
+          setLightningBalanceVersion: vi.fn(),
+          totalBuyInRef: { current: 20 },
+          totalRebuysRef: { current: 0 },
+          lastAddChipsResultRef: { current: null },
+        };
+      const handle = compile(
+        sliceMethod(source, 'const handleAddChips = async ('),
+        Object.keys(values),
+        Object.values(values),
+        'handleAddChips'
+      );
+      const opts = { source: 'manual', onTerminalRefusal: release };
+      expect(await handle(30, 'original01', opts)).toBe(change === 'same');
+      if (change === 'same') {
+        expect(await handle(30, 'original01', opts)).toBe(true);
+        expect(http.mock.calls.map((call) => JSON.parse(call[1].body).opId)).toEqual([
+          'original01',
+          'original01',
+        ]);
+        expect(release).not.toHaveBeenCalled();
+      } else {
+        expect(release).toHaveBeenCalledOnce(); // old key is definitively complete, never uncertain
+        expect(values.setLightningBalanceVersion).not.toHaveBeenCalled();
+      }
+      expect(values.applyBalanceDelta).not.toHaveBeenCalled();
+      expect(values.totalBuyInRef.current).toBe(20);
+      expect(values.totalRebuysRef.current).toBe(0);
+    }
+  );
 });

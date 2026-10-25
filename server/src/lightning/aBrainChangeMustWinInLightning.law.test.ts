@@ -73,3 +73,30 @@ describe('LAW: a brain change has to prove it still wins in Lightning', () => {
         }
       }, 180_000);
 });
+
+it('the fixed Lightning experiment ignores ambient host randomness', async () => {
+  const results = [];
+  // A fresh module graph gives both experiments the same cold equity caches.
+  // Otherwise the first run's memoized MC results also shift the draw stream.
+  for (const ambient of [0, 0.999999]) {
+    vi.resetModules();
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    const random = vi.spyOn(Math, 'random').mockReturnValue(ambient);
+    try {
+      vi.setSystemTime(Date.UTC(2026, 9, 24));
+      deckState = 0x9e3779b9 ^ ('nlh'.length * 7919 + 'maniac'.length * 104729);
+      const { playLightningMatrix: freshMatrix } =
+        await import('../testing/lightningStrengthMatrix.js');
+      results.push(
+        await freshMatrix({ archetype: 'maniac', variant: 'nlh', hands: 40, seed: 20261024 })
+      );
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  }
+  expect(results[0]?.hands).toBe(40);
+  expect(results[1]).toEqual(results[0]);
+}, 180_000);

@@ -125,6 +125,17 @@ export async function playLightningMatrix(opts: {
       state ^= state << 5;
       return ((state >>> 0) % 1_000_000) / 1_000_000;
     };
+    // Host tempo changes the order of priced early looks and turn decisions.
+    // It has its own RNG seam; leaving it on Math.random shifted the brain's
+    // seeded draw stream between runtimes even with the same deck and clock.
+    // Keep tempo independent of both the brain and the opponent action dice.
+    let hostState = opts.seed >>> 0 || 1;
+    const hostRandom = () => {
+      hostState ^= hostState << 13;
+      hostState ^= hostState >>> 17;
+      hostState ^= hostState << 5;
+      return (hostState >>> 0) / 0x100000000;
+    };
     const villain = kit.uid(777_777);
     let net = 0;
     let played = 0;
@@ -142,6 +153,7 @@ export async function playLightningMatrix(opts: {
         {
           horses: new Set(formed.players.filter((p) => p !== villain)),
           rules: { game_variant: opts.variant, big_blind: 1, small_blind: 0.5 },
+          deps: { random: hostRandom },
         }
       );
       // The general host fixture randomizes physical hand numbers. This fixed

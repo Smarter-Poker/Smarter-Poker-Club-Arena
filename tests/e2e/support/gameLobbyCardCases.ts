@@ -65,7 +65,7 @@ export function registerGameLobbyCardCases() {
               contentType: 'text/html',
               // The real shell isolates route content beneath persistent chrome.
               // A dialog can be visible yet have its Close control covered by it.
-              body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body style="overflow:auto"><header class="header"><button style="width:100%;height:44px">Messages</button></header><main class="casinoStage"><div id="root"></div></main><nav aria-label="Fixture Footer" style="position:fixed;bottom:0;width:100%;height:60px;z-index:1000">Footer</nav></body></html>`,
+              body: `<html data-kind="${url.searchParams.get('kind')}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body style="overflow:auto"><div id="ticker-root"></div><header class="header"><button style="width:100%;height:44px">Messages</button></header><main class="casinoStage"><div id="root"></div></main><nav aria-label="Fixture Footer" style="position:fixed;bottom:0;width:100%;height:60px;z-index:1000">Footer</nav></body></html>`,
             });
           const file = resolve(
             'public',
@@ -103,6 +103,11 @@ export function registerGameLobbyCardCases() {
         await expect(page.locator('.glp__close')).toBeVisible();
         await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
+        // The real fixed ticker remains a working registration entry once the
+        // modal closes; only the dialog should own their overlapping pixels.
+        await expect(page.locator('.mtt-ticker')).toBeVisible();
+        await page.locator('.mtt-ticker__track').click();
+        await expect(page.locator('body')).toHaveAttribute('data-ticker-opened', 'true');
         await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('auto');
         const reopen = page.getByRole('button', { name: 'Open Game Lobby', exact: true });
         // Safari touch clicks need not focus buttons. Restore keyboard focus

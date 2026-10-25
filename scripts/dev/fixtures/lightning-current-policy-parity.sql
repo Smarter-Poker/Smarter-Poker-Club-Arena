@@ -80,7 +80,7 @@ DO $$ BEGIN
   SET CONSTRAINTS ALL IMMEDIATE;
 END $$;
 DO $$
-DECLARE v_g uuid := pp.g('CONVERSION'); p jsonb; v_new uuid[]; v_n integer;
+DECLARE v_g uuid := pp.g('CONVERSION'); p jsonb; v_new uuid[]; v_n integer; d jsonb;
 BEGIN
   PERFORM public.fx9_pool(v_g);
   -- TIME TRAVEL (fixture boundary): the five-player deadline has elapsed for
@@ -100,8 +100,21 @@ BEGIN
   IF (SELECT count(*) FROM public.lightning_pool_slot WHERE cluster_id = v_g AND closed_at IS NULL AND last_bb_at IS NOT NULL) <> 0 THEN
     RAISE EXCEPTION 'FIXTURE 13: a slot has been the big blind already';
   END IF;
-  p := pp.capture('a fresh conversion: 24 conversion seats and 2 later buy-ins (6-max, 26)', v_g);
+  PERFORM pp.capture('a fresh conversion: 24 conversion seats and 2 later buy-ins (6-max, 26)', v_g);
   SELECT max(n) INTO v_n FROM pp.out;
+  -- THE ACTUAL RPC, as section 12 records it for every earlier fixture: the
+  -- comparator replays the shadow_snapshot fn_lightning_match returns beside
+  -- its plan, and fn_lightning_match_plan (what pp.capture stores) carries
+  -- none. Same cluster, same `now`, same legality.
+  SELECT doc INTO d FROM pp.out WHERE n = v_n;
+  p := public.fn_lightning_match(v_g, to_timestamp((d ->> 'now_us')::numeric / 1000000), NULL, NULL, NULL);
+  IF p ->> 'legal_count' IS DISTINCT FROM d #>> '{plan,legal_count}' THEN
+    RAISE EXCEPTION 'FIXTURE 13: fn_lightning_match legality % differs from the captured plan %', p ->> 'legal_count', d #>> '{plan,legal_count}';
+  END IF;
+  IF jsonb_typeof(p -> 'shadow_snapshot') IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'FIXTURE 13: fn_lightning_match returned no shadow_snapshot';
+  END IF;
+  UPDATE pp.out SET doc = jsonb_set(doc, '{plan}', p) WHERE n = v_n;
   PERFORM pp.refresh_newcomer(v_n);
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(p -> 'diagnosis') d WHERE d ->> 'state' = 'WAITING_FOR_BB') THEN
     RAISE EXCEPTION 'FAIL 13: a player was held for the big blind: %', p -> 'diagnosis';

@@ -12,7 +12,12 @@ type Variant = 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'nlh';
 const suits: Record<string, Card['suit']> = { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' };
 const cards = (s: string): Card[] =>
   s.split(' ').map((c) => ({ rank: c[0] as Card['rank'], suit: suits[c[1]] }));
-function price(variant: Variant, hole = '8s Th Ad 4h', board = 'Ac 3s Js Jh') {
+function price(
+  variant: Variant,
+  hole = '8s Th Ad 4h',
+  board = 'Ac 3s Js Jh',
+  extra: Record<string, boolean> = {}
+) {
   const actions = fixture.actions as unknown as ActionRecord[];
   const n = actions[18].publicNode as Extract<HorsePublicActionNode, { status: 'captured' }>;
   const ids = new Map(fixture.players.map((p) => [p.seat, p.userId]));
@@ -92,7 +97,7 @@ function price(variant: Variant, hole = '8s Th Ad 4h', board = 'Ac 3s Js Jh') {
     return 0.35;
   });
   const spy = vi.spyOn(Ev, 'evaluateSpot');
-  const decision = HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false });
+  const decision = HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false, ...extra });
   return {
     decision,
     input: spy.mock.calls.at(-1)?.[0],
@@ -137,4 +142,16 @@ describe('physical Omaha draw credit reaches the actual pricing consumer', () =>
   it('preserves the NLH reference decision', () => {
     expect(price('nlh', 'Ad Th').decision.action).toBe('fold');
   });
+});
+
+describe('V53 switch: v53PhysicalDraws', () => {
+  for (const v of ['plo4', 'plo5', 'plo6'] as const)
+    it(`${v}: off restores the pre-#7876 implied credit without a physical draw`, () => {
+      expect(price(v).input!.equity).toBeCloseTo(0.34, 10);
+      // pre-#7876: any live-draw board granted the 0.04 credit
+      expect(price(v, undefined, undefined, { v53PhysicalDraws: false }).input!.equity).toBeCloseTo(
+        0.38,
+        10
+      );
+    });
 });

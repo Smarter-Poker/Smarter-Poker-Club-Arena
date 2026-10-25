@@ -205,3 +205,51 @@ describe('turn runout reads reach the actual Omaha continuation decision', () =>
       expect(ev.mock.calls.at(-1)![0].initiative).toBe(false);
     });
 });
+
+describe('V53 switch: v53RangeRunout', () => {
+  it('off: the Omaha turn read is the terminal-equity one alone (no previous board)', () => {
+    const hero = {
+      seat: 2,
+      user_id: 'hero',
+      username: 'Hero',
+      totalInvested: 7,
+      stack: 1000,
+      bet: 0,
+      is_folded: false,
+      cards: cards('3s4cThJd9h'),
+    } as SeatPlayer;
+    const gs = {
+      players: [
+        { seat: 1, user_id: 'opponent', stack: 1000, bet: 0, is_folded: false, cards: [] },
+        hero,
+      ],
+      communityCards: cards('Kc8d2h2c'),
+      pot: 100,
+      currentBet: 0,
+      minRaise: 2,
+      lastRaise: 2,
+      stage: 'turn',
+      gameVariant: 'plo5',
+      bigBlind: 2,
+      smallBlind: 1,
+      dealerSeat: 2,
+      actionHistory: [
+        { stage: 'preflop', seat: 2, userId: 'hero', action: 'raise', amount: 7 },
+        { stage: 'preflop', seat: 1, userId: 'opponent', action: 'call', amount: 7 },
+        { stage: 'flop', seat: 1, userId: 'opponent', action: 'check', amount: 0 },
+        { stage: 'flop', seat: 2, userId: 'hero', action: 'check', amount: 0 },
+        { stage: 'turn', seat: 1, userId: 'opponent', action: 'check', amount: 0 },
+      ],
+    } as unknown as HorseGameStateV2;
+    const range = vi.spyOn(Continuation, 'rangeAdvantageFor');
+    seedFastRandom(10);
+    HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false });
+    expect(range.mock.calls.at(-1)![4]).toEqual({ previousBoard: cards('Kc8d2h') });
+    range.mockClear();
+    seedFastRandom(10);
+    HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false, v53RangeRunout: false });
+    expect(range).toHaveBeenCalled();
+    expect(range.mock.calls.at(-1)![4]).toBeUndefined();
+    range.mockRestore();
+  });
+});

@@ -1337,8 +1337,130 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'plo4_v53_pressure', variant: 'plo4', pairs: 6000, a: {}, b: { v53Pressure: false } },
   { name: 'plo5_v53_pressure', variant: 'plo5', pairs: 6000, a: {}, b: { v53Pressure: false } },
   { name: 'plo6_v53_pressure', variant: 'plo6', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  // V54 (2026-10-24): the targeted river bluff. Dan: "the bluff shove or
+  // big bet bluff needed to be implemented ONLY WHEN IT MAKES SENSE." Default
+  // OFF, so arm A turns it on (the v16Hu pattern); it is promoted to every
+  // horse when it beats the current brain here.
+  { name: 'v54_river_bluff', pairs: 6000, a: { v54RiverBluff: true }, b: {} },
+  {
+    name: 'plo4_v54_river_bluff',
+    variant: 'plo4',
+    pairs: 6000,
+    a: { v54RiverBluff: true },
+    b: {},
+  },
+  {
+    name: 'plo5_v54_river_bluff',
+    variant: 'plo5',
+    pairs: 6000,
+    a: { v54RiverBluff: true },
+    b: {},
+  },
+  {
+    name: 'plo6_v54_river_bluff',
+    variant: 'plo6',
+    pairs: 6000,
+    a: { v54RiverBluff: true },
+    b: {},
+  },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
+  // PLO5 COVERAGE (2026-10-24): v40Omaha, v46Charts, v24PloDefense and the
+  // v15 discipline flag were measured only on plo4/plo6 while the fleet
+  // deals PLO5 too. Measured before adding, 300 pairs at seed 4242: 56, 48,
+  // 72 and 37 divergent pairs respectively.
+  { name: 'plo5_v40_omaha', variant: 'plo5', pairs: 6000, a: {}, b: { v40Omaha: false } },
+  { name: 'plo5_v46_classes', variant: 'plo5', pairs: 6000, a: {}, b: { v46Charts: false } },
+  { name: 'plo5_v24_price', variant: 'plo5', pairs: 6000, a: {}, b: { v24PloDefense: false } },
+  { name: 'plo5_v15_discipline', variant: 'plo5', pairs: 6000, a: {}, b: { v15: false } },
+  /*
+   * ── V53 (2026-10-24): the continuation and PLO-discipline layers of
+   * #7838, #7866 and #7876, each behind its own default-on switch. Arm A is
+   * production; arm B is that layer off. A card exists only where the layer
+   * was MEASURED to change a decision in self-play (divergent pairs at seed
+   * 4242 on the current brain, before the card was added):
+   *
+   *   v53PremiumRaise        plo4 3/1000  plo5 25/500  plo6 59/500
+   *   v53TerminalCommitment  plo6 2/500   (plo4 0/1000, plo5 0/2000)
+   *   v53_omaha_river group  plo4 1/1000  plo5 4/2000  plo6 1/2000
+   *   v53OmahaBlockers       plo4 7/1000  plo5 1/500   plo6 3/2000
+   *   v53PhysicalDraws       plo4 10/300  plo5 6/500   plo6 6/500
+   *   v53RangeRunout         plo4 2/300   plo5 2/500   plo6 5/500
+   *
+   * NOT carded, deliberately, the way v18_exploit_size and v31_gto_suit_aware
+   * are not: in Hold'em neither v53PremiumRaise nor v53TerminalCommitment
+   * changed one decision in 2,000 6-max pairs at 100bb, 1,000 at 40bb or
+   * 1,000 heads-up (the bars already 3-bet AA/KK and these deals never leave
+   * a sub-call remainder), and v53TerminalCommitment changed none in 1,000
+   * PLO4 or 2,000 PLO5 pairs, so those cards would read 0.00 +/- 0.00.
+   * v53BarrelBudget and v53ManiacRecovery need an opponent-exploit read
+   * outside the horse envelope; a mirror league never produces one
+   * (HorseMind.opponentRead returned null on all 32,048 reads of a 300-pair
+   * NLH run), so both are pinned by spot tests instead
+   * (HorsePremiumContinuation, HorseOmahaWeakFlushStackRecovery,
+   * HorseV53Switches, HorseManiacColdFlushGuard).
+   *
+   * The three Omaha river layers (trip-board boat flat, cold flush pressure,
+   * called-through flush check) are grouped under one card per variant:
+   * each fires only on a specific river line, and together they changed 1
+   * of 1,000 PLO4, 4 of 2,000 PLO5 and 1 of 2,000 PLO6 pairs (6,000 pairs
+   * expects roughly 3-12 divergent pairs a night).
+   * The card is still worth its slot because the rows it pools are the
+   * exact stack-off spots Dan flagged (dominated flushes and under-full
+   * boats), where one pair moves dozens of big blinds. ──
+   */
+  ...(['plo4', 'plo5', 'plo6'] as const).map(
+    (variant): LeagueMatchup => ({
+      name: `${variant}_v53_premium_raise`,
+      variant,
+      pairs: 6000,
+      a: {},
+      b: { v53PremiumRaise: false },
+    })
+  ),
+  {
+    name: 'plo6_v53_terminal_commitment',
+    variant: 'plo6',
+    pairs: 6000,
+    a: {},
+    b: { v53TerminalCommitment: false },
+  },
+  ...(['plo4', 'plo5', 'plo6'] as const).map(
+    (variant): LeagueMatchup => ({
+      name: `${variant}_v53_omaha_river`,
+      variant,
+      pairs: 6000,
+      a: {},
+      b: { v53TripBoardBoat: false, v53ColdFlushPressure: false, v53CalledThroughFlush: false },
+    })
+  ),
+  ...(['plo4', 'plo5', 'plo6'] as const).map(
+    (variant): LeagueMatchup => ({
+      name: `${variant}_v53_omaha_blockers`,
+      variant,
+      pairs: 6000,
+      a: {},
+      b: { v53OmahaBlockers: false },
+    })
+  ),
+  ...(['plo4', 'plo5', 'plo6'] as const).map(
+    (variant): LeagueMatchup => ({
+      name: `${variant}_v53_physical_draws`,
+      variant,
+      pairs: 6000,
+      a: {},
+      b: { v53PhysicalDraws: false },
+    })
+  ),
+  ...(['plo4', 'plo5', 'plo6'] as const).map(
+    (variant): LeagueMatchup => ({
+      name: `${variant}_v53_range_runout`,
+      variant,
+      pairs: 6000,
+      a: {},
+      b: { v53RangeRunout: false },
+    })
+  ),
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -1393,6 +1515,17 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v51RiverFlat: false,
       v52RangeAdvantage: false,
       v53Pressure: false,
+      v53PremiumRaise: false,
+      v53TerminalCommitment: false,
+      v53BarrelBudget: false,
+      v53TripBoardBoat: false,
+      v53ColdFlushPressure: false,
+      v53CalledThroughFlush: false,
+      v53ManiacRecovery: false,
+      v53PhysicalDraws: false,
+      v53OmahaBlockers: false,
+      v53RangeRunout: false,
+      v54RiverBluff: false,
       mind: false,
       streetIQ: false,
       handReading: false,

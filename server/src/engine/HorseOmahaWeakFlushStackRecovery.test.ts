@@ -2,6 +2,7 @@ import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Card, HandConfig, SeatPlayer, HorseDecision } from '../types.js';
 import { HorseMind } from './HorseMind.js';
+import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
 import { seedFastRandom, variantInfo, omahaNutStatus } from './HorseEval.js';
 import {
   freshExploitCounters,
@@ -256,5 +257,34 @@ describe('whole-stack weak-flush reference folds survive maniac recovery', () =>
   });
   it('preserves the PLO8 split-pot recovery path', () => {
     expect(decide(spot('plo8')).final.action).toBe('all_in');
+  });
+});
+
+describe('V53 switch: v53ManiacRecovery', () => {
+  it('off: the pre-#7876 recovery reopens the whole-stack weak-flush fold', () => {
+    for (const v of ['plo4', 'plo5', 'plo6'] as const) {
+      const s = spot(v);
+      HorseMind.reset();
+      memory(v);
+      HorseMind.setDecisionScope('omaha:hu', v, 'cash');
+      enableBrainTelemetry();
+      drainFires();
+      const fold = { action: 'fold' as const, thinkTime: 0 };
+      HorseLogic.__testables.maniacCallDown(fold, s.hero, s.gs, variantInfo(v), {
+        telemetry: true,
+      });
+      expect(
+        drainFires().map((r) => r.feature),
+        v
+      ).toContain('horse_continuation_omaha_flush_stack_fold_retained');
+      HorseLogic.__testables.maniacCallDown(fold, s.hero, s.gs, variantInfo(v), {
+        telemetry: true,
+        v53ManiacRecovery: false,
+      });
+      const off = drainFires().map((r) => r.feature);
+      expect(off, v).not.toContain('horse_continuation_omaha_flush_stack_fold_retained');
+      expect(off, v).toContain('maniac_call_down_checked');
+      HorseMind.setDecisionScope(null);
+    }
   });
 });

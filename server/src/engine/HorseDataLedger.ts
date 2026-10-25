@@ -683,6 +683,67 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V53'
   ),
   flag(
+    'v53PremiumRaise',
+    'exact AA/KK and Omaha suited-AA / double-suited-KK anchors value 3-bet a single open (#7838; league v53_premium_raise, plo4/plo6 mirrors)',
+    'V53'
+  ),
+  flag(
+    'v53TerminalCommitment',
+    'whole-stack lines priced as terminal: preflop remainder jams, flop remainder priced, full realization all-in, mix window capped by chips behind (#7838; league v53_terminal_commitment, plo4/plo5/plo6 mirrors)',
+    'V53'
+  ),
+  flag(
+    'v53BarrelBudget',
+    'heads-up one-pair / weak Omaha two-pair calls price the bettor observed next barrel (#7838, #7866; league v53_barrel_budget, plo4/plo5/plo6 mirrors)',
+    'V53'
+  ),
+  flag(
+    'v53TripBoardBoat',
+    'an Omaha river trip-board full house a bigger boat beats flats instead of raising (#7866; league plo4/plo5/plo6_v53_omaha_river)',
+    'V53'
+  ),
+  flag(
+    'v53ColdFlushPressure',
+    'a cold bet plus price-raising jam is raised-line evidence against a dominated Omaha river flush (#7866; league plo4/plo5/plo6_v53_omaha_river)',
+    'V53'
+  ),
+  flag(
+    'v53CalledThroughFlush',
+    'a third-nut-or-worse Omaha river flush checks after two live opponents each called two barrels (#7866; league plo4/plo5/plo6_v53_omaha_river)',
+    'V53'
+  ),
+  flag(
+    'v53ManiacRecovery',
+    'maniac call-down guards (weak-flush stack fold, cold-flush and multi-board folds kept) and granted-sample boundary refinement (#7866, #7876; fixture-pinned, no mirror-league card)',
+    'V53'
+  ),
+  flag(
+    'v53PhysicalDraws',
+    'Omaha implied-odds credit requires an actual physical draw (#7876; league plo4/plo5/plo6_v53_physical_draws)',
+    'V53'
+  ),
+  flag(
+    'v53OmahaBlockers',
+    'Omaha bluff blockers on flush boards are the physical two-hole nut-flush blocker (#7866; league plo4/plo5/plo6_v53_omaha_blockers)',
+    'V53'
+  ),
+  flag(
+    'v53RangeRunout',
+    'Omaha turn/river made-range runout comparison withdraws range initiative when the last card favors the opponent (#7866; league plo4/plo5/plo6_v53_range_runout)',
+    'V53'
+  ),
+  flag(
+    'v53PloTourneyIcm',
+    'PLO4/5/6 tournament preflop bars priced by the exact ICM cost of the pot-limit risk; DEFAULT OFF until its tournament flag cards (plo4/plo5/plo6_v53_icm_mtt/sng) beat today',
+    'V53',
+    'HorsePreflop.decidePreflopV7'
+  ),
+  flag(
+    'v54RiverBluff',
+    'targeted heads-up river big bet / shove bluff with air, blockers, a value story, a capped non-station opponent; DEFAULT OFF until league v54_river_bluff and plo4/plo5/plo6_v54_river_bluff resolve positive',
+    'V54'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -1094,7 +1155,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_commitment_reviews',
     'nightly',
     'fn_horse_commitment_audit_step',
-    'strictly over10BB cumulative commitment including refunds, or unknown eligibility; private diagnostics with unmatched replay/reference and no policy authority',
+    'strictly over10BB cumulative commitment including refunds, or unknown eligibility; each eligible row graded against the stored push/fold solver charts (reference_agreed / reference_deviation) or unverified with every ungraded decision named (20261024225914); private diagnostics with no policy authority',
     'Phase14'
   ),
   table(
@@ -2906,6 +2967,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   // No floor: the spot (committed, river, one pair, clearing the call bar)
   // is rare by construction; silence on a quiet day is not a dead layer.
+  // No floor: default off, and in scope only for PLO tournaments.
+  receipt(
+    'v53_plo_icm',
+    'HorseOmahaTournamentPressure via HorseLogic preflop glue (V53)',
+    'an Omaha tournament preflop decision was priced by the V53 ICM pressure read; flag on only',
+    'V53'
+  ),
   receipt(
     'v51_river_flat',
     'HorseLogic committed branch (V51)',
@@ -2919,6 +2987,22 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
     'a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold\'em solver spot handed to the exploit layer',
     'V53'
+  ),
+  // No floor: v54RiverBluff is default OFF (2026-10-24), so silence is
+  // expected until the league promotes it. Once promoted, v54_river_bluff
+  // counts the bluffs fired and the skip family says why every other
+  // heads-up river spot with air did not bluff.
+  receipt(
+    'v54_river_bluff',
+    'HorseLogic not-facing-a-bet river (V54)',
+    'a heads-up river big bet or shove bluff fired with air, blockers and a value story; opt-in (v54RiverBluff)',
+    'V54'
+  ),
+  receipt(
+    'v54_river_bluff_skip_*',
+    'HorseLogic not-facing-a-bet river (V54)',
+    'why a V54 river bluff did not fire: multiway, multiboard, all_in, showdown_value, station, no_story, uncapped, no_blocker, short_stack, icm, illegal, frequency; opt-in (v54RiverBluff)',
+    'V54'
   ),
   receipt(
     'v46_class_read',

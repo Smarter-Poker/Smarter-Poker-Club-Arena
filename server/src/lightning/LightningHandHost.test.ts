@@ -599,7 +599,24 @@ describe('the clock, the time bank and a horse', () => {
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
-      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+      // Count the horse's TURNS only. Since #7958 a horse not yet to act may
+      // take one early look at a bet it faces (the fast fold); that look is
+      // not its turn, never runs a clock, and in a two-handed hand it can be
+      // the first decision of all, which made "the first decision tanks"
+      // tank a look instead of a turn about half the time.
+      const snap = args[0] as { player?: { seat?: number } } | undefined;
+      const onTurn = (t.host as any).hc?.getState?.().currentPlayerSeat === snap?.player?.seat;
+      if (!onTurn) return { ...r, decision: { ...r.decision, thinkTime: 4_000 } };
+      const think = thinkTime(n++);
+      // A fold commits at once (#7896): a tank only has a clock to run into
+      // when the horse is going to put chips in or check, so a tanking turn
+      // the brain wanted to fold is played as the check or call instead.
+      if (think === HorseLogic.THINK_TIMEBANK_SENTINEL && r.decision?.action === 'fold') {
+        const legal: string[] = (snap as any)?.gameState?.legalActions ?? [];
+        const action = legal.includes('check') ? 'check' : 'call';
+        return { ...r, decision: { ...r.decision, action, amount: undefined, thinkTime: think } };
+      }
+      return { ...r, decision: { ...r.decision, thinkTime: think } };
     });
   }
 

@@ -526,25 +526,26 @@ function sameEligiblePlayers(a: string[], b: string[]): boolean {
   return true;
 }
 
+// Individual antes are matched contributions for pot eligibility, although
+// they are dead for the live betting price and uncalled-bet calculation.
+// Shared BBA and dead small blinds remain pooled table money. In particular,
+// a short individual ante cannot win the unmatched part of a full ante.
+// Snap levels to cents so floating-point drift cannot create phantom pots.
+// Module-level (2026-10-24): calculatePots runs inside every horse rollout,
+// so it no longer creates this function on each call; the body is unchanged.
+function potInvestment(p: SeatPlayer): number {
+  return Math.max(
+    0,
+    Math.round(
+      ((p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0) + (p.individualAnteInvested ?? 0)) *
+        100
+    ) / 100
+  );
+}
+
 export function calculatePots(players: SeatPlayer[]): Pot[] {
   const activePlayers = players.filter((p) => !p.is_folded);
   if (activePlayers.length === 0) return [];
-
-  // Individual antes are matched contributions for pot eligibility, although
-  // they are dead for the live betting price and uncalled-bet calculation.
-  // Shared BBA and dead small blinds remain pooled table money. In particular,
-  // a short individual ante cannot win the unmatched part of a full ante.
-  // Snap levels to cents so floating-point drift cannot create phantom pots.
-  const getInvestment = (p: SeatPlayer) =>
-    Math.max(
-      0,
-      Math.round(
-        ((p.totalInvested ?? p.bet ?? 0) -
-          (p.deadInvested ?? 0) +
-          (p.individualAnteInvested ?? 0)) *
-          100
-      ) / 100
-    );
   const deadTotal =
     Math.round(
       players.reduce((s, p) => s + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0) * 100
@@ -552,7 +553,7 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   // Investment is immutable throughout this partition. Round it once per
   // seat, rather than again for every eligibility level and contributor.
   const allContributors = players
-    .map((player) => ({ player, investment: getInvestment(player) }))
+    .map((player) => ({ player, investment: potInvestment(player) }))
     .filter((entry) => entry.investment > 0);
 
   // No live money at all (e.g. everyone folded to dead antes): the dead money
@@ -679,6 +680,9 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   return merged;
 }
 
+/** cents() of calculateContestablePot, module-level so no call creates it. */
+const contestableCents = (value: number): number => Math.round(value * 100) / 100;
+
 /**
  * Chips already in the middle that `userId` can win after taking its largest
  * legal call. A player's own not-yet-committed call is removed from the
@@ -697,7 +701,7 @@ export function calculateContestablePot(
   const player = players.find((candidate) => candidate.user_id === userId);
   if (!player) return 0;
 
-  const cents = (value: number): number => Math.round(value * 100) / 100;
+  const cents = contestableCents;
   const effectiveCall = cents(
     Math.min(Math.max(0, Number(toCall) || 0), Math.max(0, player.stack))
   );

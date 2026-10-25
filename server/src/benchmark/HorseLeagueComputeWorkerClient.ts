@@ -26,6 +26,7 @@ import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
 import { HUMAN_FIELD_COMPONENT_SCENARIOS } from './HorseLeagueHumanField.js';
 import {
   pairedConfidence99,
+  tournamentFlagCard,
   tournamentRunCanPromote,
   tournamentLeagueEntrants,
   MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS,
@@ -722,9 +723,36 @@ export function horseLeagueComputeResponseIsValid(
           'completionDiagnostics',
           'completionDiagnosticsDropped',
           ...('opponentPopulation' in r ? ['opponentPopulation', 'humanResponses'] : []),
+          ...('flagCard' in r
+            ? [
+                'flagCard',
+                'gameVariant',
+                'firstPair',
+                'cardDecisions',
+                'cardChanged',
+                'divergentPairs',
+              ]
+            : []),
         ])
       )
         return false;
+      // V53 flag cards: a known card, its own variant, sane counts.
+      if ('flagCard' in r) {
+        const card = tournamentFlagCard(String(r.flagCard));
+        if (
+          !card ||
+          r.gameVariant !== card.variant ||
+          r.objective !== card.objective ||
+          !isNonnegativeSafeInteger(r.firstPair) ||
+          !isNonnegativeSafeInteger(r.cardDecisions) ||
+          !isNonnegativeSafeInteger(r.cardChanged) ||
+          !isNonnegativeSafeInteger(r.divergentPairs) ||
+          (r.cardChanged as number) > (r.cardDecisions as number) ||
+          (r.divergentPairs as number) > (r.pairs as number) ||
+          (r.firstPair as number) + (r.requestedPairs as number) > 1024
+        )
+          return false;
+      }
       // Condition (b) monitoring: a human-calibrated field reports its
       // population and its response counts per node, counts only.
       if (
@@ -1137,7 +1165,9 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
         message.result.requestedPairs !== request.pairs ||
         message.result.candidateMode !== (request.candidateMode ?? 'candidate') ||
         message.result.evidenceMode !== (request.evidenceMode ?? 'fixture') ||
-        message.result.opponentPopulation !== request.opponentPopulation
+        message.result.opponentPopulation !== request.opponentPopulation ||
+        message.result.flagCard !== request.flagCard ||
+        (request.flagCard !== undefined && message.result.firstPair !== (request.firstPair ?? 0))
       ) {
         this.fail(new Error('Tournament result does not match the requested paired run'));
         return;

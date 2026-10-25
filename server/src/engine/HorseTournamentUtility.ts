@@ -40,6 +40,7 @@ import {
   type FutureHandConfig,
   type FutureHandDraw,
   type FutureHandResult,
+  type FutureHandTraceCache,
 } from './HorseTournamentFutureHand.js';
 import {
   simulateTournamentContinuation,
@@ -933,6 +934,45 @@ function settlementPlan(input: TournamentUtilityInput): SettlementPlan {
   };
 }
 
+// Module-level so that a settlement, run for every candidate and sample,
+// creates no per-call named closure. Bodies are the former closures' bodies.
+function commitBranchChips(
+  field: FieldState,
+  vector: number[],
+  player: SeatPlayer,
+  requested: number
+): void {
+  const amount = Math.min(Math.max(0, requested), Math.max(0, player.stack));
+  player.stack -= amount;
+  player.bet = Math.max(0, player.bet) + amount;
+  player.totalInvested = Math.max(0, player.totalInvested) + amount;
+  if (player.stack <= EPS) player.is_all_in = true;
+  const index = field.localIndex.get(player.user_id);
+  if (index !== undefined) vector[index] = Math.max(0, player.stack);
+}
+
+/** Adds an award to a modeled seat; false when the id has no local index. */
+function awardBranchChips(
+  field: FieldState,
+  vector: number[],
+  userId: string,
+  amount: number
+): boolean {
+  const index = field.localIndex.get(userId);
+  if (index === undefined) return false;
+  vector[index] += amount;
+  return true;
+}
+
+function branchSeatsById(seats: SeatPlayer[]): Map<string, SeatPlayer> {
+  return new Map(seats.map((player) => [player.user_id, player]));
+}
+
+function branchStartOf(byId: Map<string, SeatPlayer>, userId: string): number {
+  const player = byId.get(userId)!;
+  return player.stack + player.totalInvested;
+}
+
 function settleSample(args: {
   input: TournamentUtilityInput;
   field: FieldState;
@@ -946,22 +986,12 @@ function settleSample(args: {
   if (plan.heroSeat < 0) return null;
   const vector = field.stacks.slice();
   const seats = input.players.map((player) => ({ ...player, cards: [...player.cards] }));
+  // Built on first use (the same lookup the per-call closure built lazily).
   let seatsById: Map<string, SeatPlayer> | undefined;
-  const seatById = () => (seatsById ??= new Map(seats.map((player) => [player.user_id, player])));
   const hero = seats[plan.heroSeat];
 
-  const commit = (player: SeatPlayer, requested: number): void => {
-    const amount = Math.min(Math.max(0, requested), Math.max(0, player.stack));
-    player.stack -= amount;
-    player.bet = Math.max(0, player.bet) + amount;
-    player.totalInvested = Math.max(0, player.totalInvested) + amount;
-    if (player.stack <= EPS) player.is_all_in = true;
-    const index = field.localIndex.get(player.user_id);
-    if (index !== undefined) vector[index] = Math.max(0, player.stack);
-  };
-
   if (candidate.kind === 'fold') hero.is_folded = true;
-  else commit(hero, candidate.investment);
+  else commitBranchChips(field, vector, hero, candidate.investment);
 
   const wager = candidate.kind === 'bet' || candidate.kind === 'raise' || candidate.kind === 'jam';
   const evidenceById = plan.evidenceById;
@@ -1011,7 +1041,7 @@ function settleSample(args: {
       candidate.kind === 'jam'
         ? input.hero.bet + candidate.investment
         : (candidate.amount ?? input.currentBet);
-    commit(opponent, Math.max(0, target - Math.max(0, opponent.bet)));
+    commitBranchChips(field, vector, opponent, Math.max(0, target - Math.max(0, opponent.bet)));
   }
   const allFold = wager && discretionaryCallers === 0 && forcedCallers === 0;
   if (input.continuation && !hero.is_folded && !hero.is_all_in && !allFold) {
@@ -1030,7 +1060,7 @@ function settleSample(args: {
           sampleIndex: args.sampleIndex,
           streets,
         },
-        commit
+        (player, requested) => commitBranchChips(field, vector, player, requested)
       )
     )
       return null;
@@ -1067,25 +1097,21 @@ function settleSample(args: {
 
   const winnersByPot = branchPots.map(() => new Set<string>());
   let heroAward = 0;
-  const award = (userId: string, amount: number): void => {
-    const index = field.localIndex.get(userId);
-    if (index === undefined) return;
-    vector[index] += amount;
-    if (userId === input.hero.user_id) heroAward += amount;
-  };
+  const heroId = input.hero.user_id;
 
   if (exactSettlement) {
-    for (const [userId, amount] of Object.entries(exactSettlement.refunds)) award(userId, amount);
+    for (const [userId, amount] of Object.entries(exactSettlement.refunds))
+      if (awardBranchChips(field, vector, userId, amount) && userId === heroId) heroAward += amount;
     for (const item of exactSettlement.awards) {
-      award(item.playerId, item.amount);
+      if (awardBranchChips(field, vector, item.playerId, item.amount) && item.playerId === heroId)
+        heroAward += item.amount;
       winnersByPot[item.potIndex].add(item.playerId);
     }
   } else
     for (let layerIndex = 0; layerIndex < branchPots.length; layerIndex++) {
       const layer = branchPots[layerIndex];
-      const liveEligible = layer.eligiblePlayers.filter(
-        (userId) => !seatById().get(userId)?.is_folded
-      );
+      const byId = (seatsById ??= branchSeatsById(seats));
+      const liveEligible = layer.eligiblePlayers.filter((userId) => !byId.get(userId)?.is_folded);
       if (liveEligible.length === 0) return null;
       const boardAmount = layer.amount / sample.boards.length;
       for (const board of sample.boards) {
@@ -1093,18 +1119,26 @@ function settleSample(args: {
         if (!winners) {
           if (liveEligible.length !== 1) return null;
           winnersByPot[layerIndex].add(liveEligible[0]);
-          award(liveEligible[0], boardAmount);
+          if (
+            awardBranchChips(field, vector, liveEligible[0], boardAmount) &&
+            liveEligible[0] === heroId
+          )
+            heroAward += boardAmount;
           continue;
         }
         const highAmount = winners.low.length > 0 ? boardAmount / 2 : boardAmount;
         for (const userId of winners.high) {
           winnersByPot[layerIndex].add(userId);
-          award(userId, highAmount / winners.high.length);
+          const amount = highAmount / winners.high.length;
+          if (awardBranchChips(field, vector, userId, amount) && userId === heroId)
+            heroAward += amount;
         }
         if (winners.low.length > 0) {
           for (const userId of winners.low) {
             winnersByPot[layerIndex].add(userId);
-            award(userId, boardAmount / 2 / winners.low.length);
+            const amount = boardAmount / 2 / winners.low.length;
+            if (awardBranchChips(field, vector, userId, amount) && userId === heroId)
+              heroAward += amount;
           }
         }
       }
@@ -1120,13 +1154,14 @@ function settleSample(args: {
   let realizedPayoutPct = 0;
   let heroFinishedPaid = false;
   if (heroBusted) {
-    const startOf = (userId: string): number => {
-      const player = seatById().get(userId)!;
-      return player.stack + player.totalInvested;
-    };
-    const heroStart = startOf(input.hero.user_id);
-    const shorter = bustedIds.filter((userId) => startOf(userId) < heroStart - EPS).length;
-    const tied = bustedIds.filter((userId) => Math.abs(startOf(userId) - heroStart) <= EPS).length;
+    const byId = (seatsById ??= branchSeatsById(seats));
+    const heroStart = branchStartOf(byId, input.hero.user_id);
+    const shorter = bustedIds.filter(
+      (userId) => branchStartOf(byId, userId) < heroStart - EPS
+    ).length;
+    const tied = bustedIds.filter(
+      (userId) => Math.abs(branchStartOf(byId, userId) - heroStart) <= EPS
+    ).length;
     let locked = 0;
     for (let offset = 0; offset < tied; offset++) {
       const finishPlace = input.context.playersLeft - (shorter + offset);
@@ -1225,6 +1260,16 @@ function settleSample(args: {
   };
 }
 
+const optionCostPct = (costCents: number, totalPool: number): number =>
+  (costCents / totalPool) * 100;
+const optionPayoutAtPool = (result: Estimate, prizePoolCents: number, totalPool: number): number =>
+  result.equity * (prizePoolCents / totalPool);
+const optionPayoutErrorAtPool = (
+  result: Estimate,
+  prizePoolCents: number,
+  totalPool: number
+): number => result.equityError * (prizePoolCents / totalPool);
+
 function optionValue(
   input: TournamentUtilityInput,
   field: FieldState,
@@ -1239,11 +1284,6 @@ function optionValue(
     ? !heroFinishedPaid && (input.context.rebuyOpen || input.context.reentryOpen)
     : input.context.addOnPeriodOpen;
   if (totalPool <= 0) return paidOptionRelevant ? null : { value: 0, error: 0 };
-  const costPct = (costCents: number): number => (costCents / totalPool) * 100;
-  const payoutAtPool = (result: Estimate, prizePoolCents: number): number =>
-    result.equity * (prizePoolCents / totalPool);
-  const payoutErrorAtPool = (result: Estimate, prizePoolCents: number): number =>
-    result.equityError * (prizePoolCents / totalPool);
 
   if (heroBusted) {
     // The canonical purchase authority only admits an exact unpaid zero-stack
@@ -1305,8 +1345,9 @@ function optionValue(
     return {
       // The engine auto-attempts the configured recovery. A negative value is
       // a real cost of busting, not an elective option that may be clamped off.
-      value: payoutAtPool(after, newPrizePool) - costPct(costCents),
-      error: payoutErrorAtPool(after, newPrizePool),
+      value:
+        optionPayoutAtPool(after, newPrizePool, totalPool) - optionCostPct(costCents, totalPool),
+      error: optionPayoutErrorAtPool(after, newPrizePool, totalPool),
     };
   }
 
@@ -1330,8 +1371,11 @@ function optionValue(
   const newPrizePool = input.context.prizePoolCents + addOnCost;
   return {
     // Horse add-ons are engine-driven too, so preserve a negative net value.
-    value: payoutAtPool(after, newPrizePool) - before.payout - costPct(addOnCost),
-    error: payoutErrorAtPool(after, newPrizePool) + before.error,
+    value:
+      optionPayoutAtPool(after, newPrizePool, totalPool) -
+      before.payout -
+      optionCostPct(addOnCost, totalPool),
+    error: optionPayoutErrorAtPool(after, newPrizePool, totalPool) + before.error,
   };
 }
 
@@ -1433,6 +1477,7 @@ function evaluateCandidate(args: {
   estimate: (vector: number[]) => Estimate;
   payoutWeight: number;
   futureDraws: Map<string, FutureHandDraw>;
+  futureTraces: FutureHandTraceCache;
   futureResults: FutureRolloutCache;
   vectorKey: (vector: number[], rounded: boolean) => string;
   plan: SettlementPlan;
@@ -1544,6 +1589,7 @@ function evaluateCandidate(args: {
             sampleIndex: index,
             withinBudget: args.input.continuation!.withinBudget,
             drawCache: args.futureDraws,
+            traceCache: args.futureTraces,
           });
         if (!rollout) {
           const expired = args.input.continuation?.withinBudget?.() === false;
@@ -1881,6 +1927,7 @@ function evaluateWithWorkspace(
     return { result: null, unavailableReason: 'sample_calibration' };
   }
   const futureDraws = new Map<string, FutureHandDraw>();
+  const futureTraces: FutureHandTraceCache = new Map();
   const futureResults: FutureRolloutCache = new Map();
   const plan = settlementPlan(input);
   const candidateEvaluations = actionCandidates.map((candidate) => {
@@ -1893,6 +1940,7 @@ function evaluateWithWorkspace(
       estimate,
       payoutWeight,
       futureDraws,
+      futureTraces,
       futureResults,
       vectorKey,
       plan,

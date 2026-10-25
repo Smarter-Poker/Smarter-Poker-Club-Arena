@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seven sequential, disposable PG17 daily-audit/reader/selection/roster-identity controls. No remote connection."""
+"""Eight sequential, disposable PG17 daily-audit/reader/selection/roster-identity/reference-grade controls. No remote connection."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -31,6 +31,9 @@ INPUTS = {
     'roster_identity': ('supabase/migrations/20261008041707_horse_commitment_audit_accepted_roster_identity.sql', '23c6c6f2a5941c200af5194d0ed290aead05ff0d98d59d9eb34b6d9e1a95c623'),
     'roster_basis_setup': ('scripts/ci/probes/horse-commitment-audit/roster-basis-setup.sql', '5058a99b24027e891605a53efb78becd26fd3e240b074233dbddc6b2cd1a09d6'),
     'roster_basis40': ('scripts/ci/probes/horse-commitment-audit/roster-basis.sql', '51d166ce92895e810df4b6eaa2c4f7011e3a335aa19a7e83e2503836fa111eb1'),
+    'reference_grade_setup': ('scripts/ci/probes/horse-commitment-audit/reference-grade-setup.sql', 'a189d27dc45c423cf68db38bf925426059d194e566345b4015d3ce9c207019aa'),
+    'reference_grade': ('supabase/migrations/20261024225914_horse_commitment_review_grades_against_the_solver_charts.sql', '6b5e70e282cc68da98f4dee8e1560fe2c9dd02676b874c6476ec824c7fe4b77d'),
+    'reference_grade24': ('scripts/ci/probes/horse-commitment-audit/reference-grade.sql', '823262c513459cc42b749b7c546757943992d9516f52f9c16cb8160f1f7f91ab'),
 }
 JOBS = (
     ('R1_duplicate_negative', 'r1', 'roster24', None),
@@ -40,6 +43,7 @@ JOBS = (
     ('selection_receipts58', 'selection', 'selection58', b'synthetic_selection_controls_only_if_executed|58'),
     ('roster_identity_retained58', 'roster_identity', 'selection58', b'synthetic_selection_controls_only_if_executed|58'),
     ('roster_basis40', 'roster_basis', 'roster_basis40', b'synthetic_roster_basis_controls_only_if_executed|40'),
+    ('reference_grade24', 'reference_grade', 'reference_grade24', b'synthetic_reference_grade_controls_only_if_executed|24'),
 )
 
 
@@ -250,7 +254,7 @@ def main():
                     if checked(name + '-repeat-refused-snapshot', psql, reader_snapshot_sql) != reader_before:
                         raise RuntimeError('reader_repeat_refusal_changed_state')
                     job['migrationRepeatRefusedUnchanged'] = True
-                elif body in ('selection', 'roster_identity', 'roster_basis'):
+                elif body in ('selection', 'roster_identity', 'roster_basis', 'reference_grade'):
                     # P14.3 forward migration on the real r2 step and reader,
                     # never on a copied body. The selection setup only extends
                     # the fixture source tables to the columns the readers name.
@@ -280,6 +284,61 @@ def main():
                         checked(name + '-roster-basis-setup', psql, payloads['roster_basis_setup'])
                         checked(name + '-roster-identity', psql, payloads['roster_identity'])
                         selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
+                    elif body == 'reference_grade':
+                        # The job-7 chain, then the chart source the grade reads,
+                        # then the grading migration over the real accepted-roster step.
+                        checked(name + '-roster-basis-setup', psql, payloads['roster_basis_setup'])
+                        checked(name + '-roster-identity', psql, payloads['roster_identity'])
+                        checked(name + '-reference-grade-setup', psql, payloads['reference_grade_setup'])
+                        original = checked(name + '-original-snapshot', psql, selection_snapshot_sql)
+                        step_definition = checked(name + '-original-step-definition', psql,
+                            b"SELECT pg_get_functiondef('public.fn_horse_commitment_audit_step()'::regprocedure);")
+                        for drift, sql, expected, restore in (
+                            ('header', b'ALTER FUNCTION public.fn_horse_commitment_audit_step() COST 123;',
+                             b'ERROR:  P0001: horse_commitment_reference_grade_preimage_changed', step_definition),
+                            ('body', b"""DO $drift$
+                              DECLARE source text; definition text;
+                              BEGIN
+                                SELECT prosrc,pg_get_functiondef(oid) INTO source,definition
+                                  FROM pg_proc WHERE oid='public.fn_horse_commitment_audit_step()'::regprocedure;
+                                EXECUTE replace(definition,source,source || E'\\n-- synthetic unreviewed body\\n');
+                              END; $drift$;""", b'ERROR:  P0001: horse_commitment_reference_grade_preimage_changed', step_definition),
+                            ('constraint', b"""ALTER TABLE public.horse_commitment_reviews DROP CONSTRAINT horse_commitment_reviews_gto_verdict_check,
+                              ADD CONSTRAINT horse_commitment_reviews_gto_verdict_check CHECK (gto_verdict IN ('unverified','correct'));""",
+                             b'ERROR:  P0001: horse_commitment_reference_grade_verdict_constraint_changed',
+                             b"""ALTER TABLE public.horse_commitment_reviews DROP CONSTRAINT horse_commitment_reviews_gto_verdict_check,
+                              ADD CONSTRAINT horse_commitment_reviews_gto_verdict_check CHECK (gto_verdict='unverified');"""),
+                        ):
+                            checked(name + '-drift-' + drift, psql, sql)
+                            changed = checked(name + '-drift-snapshot-' + drift, psql, selection_snapshot_sql)
+                            if changed == original:
+                                raise RuntimeError('reference_grade_drift_not_created_' + drift)
+                            code, _, err = command(name + '-refuse-' + drift, psql, payloads['reference_grade'])
+                            if code != 3 or expected not in err:
+                                raise RuntimeError('reference_grade_drift_not_refused_' + drift)
+                            if checked(name + '-refused-snapshot-' + drift, psql, selection_snapshot_sql) != changed:
+                                raise RuntimeError('reference_grade_refusal_changed_state_' + drift)
+                            checked(name + '-restore-original-' + drift, psql, restore)
+                            if checked(name + '-restored-snapshot-' + drift, psql, selection_snapshot_sql) != original:
+                                raise RuntimeError('reference_grade_original_restore_mismatch_' + drift)
+                        job['migrationRefusals'] = ['header_cost_123', 'unreviewed_body', 'verdict_constraint']
+                        checked(name + '-reference-grade', psql, payloads['reference_grade'])
+                        selection_before = checked(name + '-installed-snapshot', psql, selection_snapshot_sql)
+                        if selection_before == original:
+                            raise RuntimeError('reference_grade_migration_changed_nothing')
+                        code, _, err = command(name + '-reference-grade-repeat', psql, payloads['reference_grade'])
+                        if code != 3 or b'ERROR:  P0001: horse_commitment_reference_grade_already_installed' not in err:
+                            raise RuntimeError('reference_grade_existing_target_not_refused')
+                        if checked(name + '-repeat-refused-snapshot', psql, selection_snapshot_sql) != selection_before:
+                            raise RuntimeError('reference_grade_repeat_refusal_changed_state')
+                        job['migrationRepeatRefusedUnchanged'] = True
+                        # The 40 accepted-roster checks still hold on the graded step.
+                        code, out, err = command(name + '-retained-roster-basis40', psql, payloads['roster_basis40'], timeout=30)
+                        if code != 0 or b'synthetic_roster_basis_controls_only_if_executed|40' not in out or b'ERROR:' in err:
+                            raise RuntimeError('reference_grade_retained_control_failed_roster_basis40')
+                        if checked(name + '-retained-snapshot', psql, selection_snapshot_sql) != selection_before:
+                            raise RuntimeError('reference_grade_retained_rollback_changed_state')
+                        job['retainedControlsOnNewStep'] = [40]
                     elif body == 'roster_identity':
                         roster_original = checked(name + '-original-snapshot', psql, selection_snapshot_sql)
                         # No roster has been captured yet: the audit cannot adopt one.
@@ -405,7 +464,7 @@ def main():
                     fixture_sql += b"\nSELECT 'synthetic_reader_controls_only_if_executed',27;\n"
                 code, out, err = command(name + '-fixture', psql, fixture_sql, timeout=30)
                 job['fixtureReturncode'] = code
-                if fixture in ('selection58', 'roster_basis40'):
+                if fixture in ('selection58', 'roster_basis40', 'reference_grade24'):
                     job['fixtureRollbackUnchanged'] = checked(
                         name + '-post-fixture-snapshot', psql, selection_snapshot_sql) == selection_before
                     if not job['fixtureRollbackUnchanged']:
@@ -434,6 +493,8 @@ def main():
                         job['selectionChecks'] = 58
                     elif fixture == 'roster_basis40':
                         job['rosterBasisChecks'] = 40
+                    elif fixture == 'reference_grade24':
+                        job['referenceGradeChecks'] = 24
                     else:
                         job['caseRows'] = 85 if fixture == 'format85' else 24
             except BaseException as error:

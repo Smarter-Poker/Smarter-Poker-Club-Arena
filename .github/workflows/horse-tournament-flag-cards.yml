@@ -1,0 +1,265 @@
+name: Horse Tournament Flag Cards
+run-name: Horse tournament flag card ${{ inputs.card }} (${{ inputs.field }}) ${{ inputs.source_sha }}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ONE TOURNAMENT FLAG CARD'S LOCKED MEASUREMENT (V53, 2026-10-24)
+#
+# A flag card (server/src/benchmark/HorseTournamentLeague.ts,
+# TOURNAMENT_FLAG_CARDS) plays paired whole tournaments through the real
+# HandController: the hero seat with the card's flag on (arm A) against the
+# same seat with today's brain (arm B), same cards, same field. The V53 cards
+# measure Omaha tournament pressure (v53PloTourneyIcm) in PLO4, PLO5 and PLO6,
+# on an 18-entrant MTT and a six-max Sit & Go.
+#
+# The locked measurement is the card's three held-out seeds
+# (TOURNAMENT_FLAG_CARD_SEEDS) x 1,024 pairs each, run as 16 shards of 64
+# pairs per seed (48 jobs, one shard per job and one job per runner, at most
+# eight at a time). The plan reads the matrix from the code at the evaluated
+# commit, so the workflow cannot drift from it. The assemble job applies
+# summarizeTournamentFlagCard to every shard and writes the verdict to the run
+# summary and an artifact: `wins` is true only when the pooled paired
+# difference in realized prize share has a 99% interval above zero. A winning
+# card goes live by a reviewed change to the flag's default (Dan's rule: a
+# strategy change goes live once it beats the current brain on its locked
+# held-out measurement); this workflow never changes a default.
+#
+# The tournament league has no nightly lane: the nightly HorseLeague deals
+# cash hands only, and a new schedule needs its own owner instruction
+# (CLAUDE.md 10.85), so this is dispatched by hand, like every strength
+# league. It shares their hosted-capacity queue. Manual dispatch only, from
+# main, for one exact commit on main. Uses no secret and reads no database.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-hex commit on main to evaluate
+        required: true
+        type: string
+      card:
+        description: The one flag card to measure
+        required: true
+        type: choice
+        options:
+          - plo4_v53_icm_mtt
+          - plo4_v53_icm_sng
+          - plo5_v53_icm_mtt
+          - plo5_v53_icm_sng
+          - plo6_v53_icm_mtt
+          - plo6_v53_icm_sng
+      field:
+        description: Opponent field (human = the human-calibrated population)
+        required: true
+        type: choice
+        default: human
+        options:
+          - human
+          - horse
+
+permissions:
+  contents: read
+
+# Shared across phases, variants and source SHAs: one full league at a time.
+concurrency:
+  group: horse-strength-hosted-capacity
+  queue: max
+  cancel-in-progress: false
+
+env:
+  # Offline: imported engine modules construct a client at load time.
+  SUPABASE_URL: https://supabase.invalid
+  SUPABASE_SERVICE_ROLE_KEY: flag-card-offline-placeholder
+  EQUITY_GOVERNOR: 'off'
+  HORSE_LEAGUE_HYDRATE_SOLVER_STORES: '0'
+
+jobs:
+  plan:
+    name: Plan the locked matrix
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Refuse anything but an exact commit
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha must be 40 hex"; exit 1; }
+
+      - name: Checkout main with history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse a commit that is not on main
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          git cat-file -e "$SOURCE_SHA^{commit}" || { echo "unknown commit $SOURCE_SHA"; exit 1; }
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main || { echo "$SOURCE_SHA is not on main"; exit 1; }
+          git checkout --detach "$SOURCE_SHA"
+          test -f server/src/scripts/horseTournamentCardEvaluate.ts || { echo "no flag card lane at $SOURCE_SHA"; exit 1; }
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Read the matrix from the code
+        id: matrix
+        working-directory: server
+        env:
+          CARD: ${{ inputs.card }}
+        run: |
+          cat > "$RUNNER_TEMP/plan.mts" <<'TS'
+          const l = await import(process.cwd() + '/src/benchmark/HorseTournamentLeague.ts');
+          const include = l.tournamentFlagCardShards(process.env.CARD);
+          const expected = l.TOURNAMENT_FLAG_CARD_SEEDS.length * (l.TOURNAMENT_FLAG_CARD_PAIRS / l.TOURNAMENT_FLAG_CARD_SHARD_PAIRS);
+          if (include.length !== expected) throw new Error('matrix size');
+          console.log(JSON.stringify({ card: process.env.CARD, shards: include.length }));
+          process.stdout.write('MATRIX=' + JSON.stringify({ include }) + '\n');
+          process.exit(0);
+          TS
+          npx tsx "$RUNNER_TEMP/plan.mts" | tee "$RUNNER_TEMP/plan.txt"
+          echo "matrix=$(grep '^MATRIX=' "$RUNNER_TEMP/plan.txt" | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+
+  league:
+    name: League ${{ matrix.key }}
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout the evaluated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run the shard
+        env:
+          KEY: ${{ matrix.key }}
+          CARD: ${{ matrix.card }}
+          SEED: ${{ matrix.seed }}
+          FIRST_PAIR: ${{ matrix.firstPair }}
+          PAIRS: ${{ matrix.pairs }}
+          FIELD: ${{ inputs.field }}
+        run: |
+          OUT="$RUNNER_TEMP/v53"
+          mkdir -p "$OUT"
+          set +e
+          npx tsx src/scripts/horseTournamentCardEvaluate.ts \
+            --output="$OUT/$KEY" --card="$CARD" --seed="$SEED" \
+            --first-pair="$FIRST_PAIR" --pairs="$PAIRS" --field="$FIELD" \
+            > "$OUT/$KEY.log" 2>&1 &
+          child=$!
+          trap 'kill -TERM $child 2>/dev/null' TERM INT
+          wait $child
+          code=$?
+          set -e
+          echo "$code" > "$OUT/exit-$KEY.txt"
+          tail -n 5 "$OUT/$KEY.log"
+          # A complete, clean result is the evidence, whatever it says.
+          test "$code" -eq 0
+
+      - name: Upload the shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v53-${{ matrix.key }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/v53/
+          retention-days: 30
+          if-no-files-found: error
+
+  # Applies the locked decision to every shard of this run. It writes the
+  # verdict to the run summary and an artifact; it never changes a default,
+  # pushes, or opens a pull request.
+  assemble:
+    name: Assemble the verdict
+    needs: [plan, league]
+    if: always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the evaluated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Download every shard of this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: v53-*
+          path: ${{ runner.temp }}/runs
+          merge-multiple: false
+
+      - name: Apply the locked decision
+        working-directory: server
+        env:
+          CARD: ${{ inputs.card }}
+          FIELD: ${{ inputs.field }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/runs" "$RUNNER_TEMP/verdict"
+          set +e
+          npx tsx src/scripts/horseTournamentCardSummarize.ts \
+            --card="$CARD" --input="$RUNNER_TEMP/runs" \
+            --output="$RUNNER_TEMP/verdict/$CARD-$FIELD.json" > "$RUNNER_TEMP/verdict.txt" 2>&1
+          code=$?
+          set -e
+          {
+            echo "## $CARD ($FIELD field)"
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/verdict.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/verdict.txt"
+          exit "$code"
+
+      - name: Upload the verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v53-verdict-${{ inputs.card }}-${{ inputs.field }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verdict/
+          retention-days: 90
+          if-no-files-found: warn

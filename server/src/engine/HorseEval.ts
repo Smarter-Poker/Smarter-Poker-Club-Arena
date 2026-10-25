@@ -3273,3 +3273,107 @@ function publicPhysicalNutHigh(board: Card[]): number {
     omahaPhysicalNutCache.delete(omahaPhysicalNutCache.keys().next().value!);
   return best;
 }
+
+/**
+ * V54 RIVER BLUFF (2026-10-24): what hero's PUBLIC river range is made of
+ * against the opponent's public range on this exact board. Each sampled
+ * hero combo is scored against `OPP_PER_HERO` sampled opponent combos; a combo
+ * winning at least `valueBar` of them is value, one winning at most `airBar`
+ * is air. The ratio of value to air is what caps how often a river bluff may
+ * fire at a given size (HorseLogic V54). Hero's actual holding and every
+ * private card are deliberately absent.
+ *
+ * River only (no runout), high-only games only (Hold'em and PLO4/5/6). A
+ * private deterministic stream keyed by the inputs is saved and restored
+ * around the sampling, so the estimate is reproducible and consumes no
+ * decision RNG. Returns null when the bands cannot be sampled. A bounded
+ * approximation, not a solver range.
+ */
+export interface RiverRangeComposition {
+  valueShare: number;
+  airShare: number;
+  samples: number;
+}
+const riverCompositionCache = new Map<string, RiverRangeComposition>();
+export function estimateRiverRangeComposition(
+  board: Card[],
+  heroBand: [number, number],
+  oppBand: [number, number],
+  vi: VariantInfo,
+  valueBar = 0.65,
+  airBar = 0.2
+): RiverRangeComposition | null {
+  if (
+    board.length !== 5 ||
+    new Set(board.map(cardKey)).size !== 5 ||
+    board.some((c) => !FULL_DECK.some((d) => cardKey(c) === cardKey(d))) ||
+    (!vi.isOmaha && vi.holeCount !== 2) ||
+    vi.isHiLo ||
+    vi.isFixedLimit ||
+    vi.isShortDeck
+  )
+    return null;
+  if (
+    [heroBand, oppBand].some(
+      (b) => !b.every(Number.isFinite) || b[0] < 0 || b[1] > 1 || b[0] >= b[1]
+    )
+  )
+    return null;
+  const key = JSON.stringify([
+    vi.holeCount,
+    board.map(cardKey).sort(),
+    heroBand,
+    oppBand,
+    valueBar,
+    airBar,
+  ]);
+  const cached = riverCompositionCache.get(key);
+  if (cached) return { ...cached };
+  const HERO_SAMPLES = 96;
+  const OPP_PER_HERO = 8;
+  const known = new Set(board.map(cardKey));
+  const available = FULL_DECK.filter((c) => !known.has(cardKey(c)));
+  const h = vi.holeCount;
+  const n = available.length;
+  const score = (hole: Card[]) =>
+    vi.isOmaha ? scoreOmahaHi(hole, board) : scoreHoldem([...hole, ...board], 7, false);
+  const place = (deck: Card[], start: number, band: [number, number]) =>
+    vi.isOmaha
+      ? placeOmahaBandCombo(deck, start, n, band, h, false)
+      : placeBandCombo(deck, start, n, band, false);
+  let seed = 2166136261;
+  for (let i = 0; i < key.length; i++) seed = Math.imul(seed ^ key.charCodeAt(i), 16777619);
+  const saved = saveFastRandom();
+  let total = 0;
+  let value = 0;
+  let air = 0;
+  seedFastRandom(seed ^ 0x54);
+  try {
+    for (let sample = 0; sample < HERO_SAMPLES; sample++) {
+      const deck = available.slice();
+      if (!place(deck, 0, heroBand)) continue;
+      const heroScore = score(deck.slice(0, h));
+      let faced = 0;
+      let won = 0;
+      for (let j = 0; j < OPP_PER_HERO; j++) {
+        if (!place(deck, h, oppBand)) continue;
+        const os = score(deck.slice(h, 2 * h));
+        faced++;
+        won += heroScore > os ? 1 : heroScore === os ? 0.5 : 0;
+      }
+      if (faced < OPP_PER_HERO / 2) continue;
+      const share = won / faced;
+      total++;
+      if (share >= valueBar) value++;
+      else if (share <= airBar) air++;
+    }
+  } finally {
+    restoreFastRandom(saved);
+  }
+  if (total < HERO_SAMPLES / 2) return null;
+  const read = { valueShare: value / total, airShare: air / total, samples: total };
+  riverCompositionCache.set(key, read);
+  while (riverCompositionCache.size > 512)
+    riverCompositionCache.delete(riverCompositionCache.keys().next().value!);
+  return { ...read };
+}

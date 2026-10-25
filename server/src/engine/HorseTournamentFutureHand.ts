@@ -199,6 +199,103 @@ export function commitFutureChips(
   return paid;
 }
 
+/**
+ * A finished one-hand rollout in which no stack bounded any amount: every
+ * post, open, call, wager, refund and award was the amount the rule asked
+ * for, nobody went all in and nobody busted. Such a hand's chip flows do not
+ * depend on the stacks it started from, so the same hand dealt to the same
+ * seats from any stacks at least as deep (strictly above `need`, per seat)
+ * moves exactly the same chips. Replaying `ops` in order repeats the original
+ * floating-point operations one for one, so the result is the same bits.
+ * Decision-local: one cache per (players, localIndex, heroId) caller.
+ */
+export interface FutureHandTrace {
+  /** Per surviving seat (seat order): every stack must be strictly above it. */
+  need: number[];
+  /** Flat (seat position, signed amount) pairs in the order they were applied. */
+  ops: number[];
+  /** Flat (seat position, amount) awards in settlement order. */
+  awards: number[];
+  /** Forced chips each seat paid, in seat order. */
+  forced: number[];
+}
+export type FutureHandTraceCache = Map<string, FutureHandTrace>;
+
+type FutureHandArgs = Parameters<typeof simulateTournamentFutureHands>[0];
+
+/** The surviving seats (stack above zero) in the stable seat order the hand
+ * loop builds, or null when it would not deal (fewer than two, or no hero). */
+function survivingSeats(args: FutureHandArgs, vector: number[]): SeatPlayer[] | null {
+  const seats: SeatPlayer[] = [];
+  let ordered = true;
+  let hero = false;
+  for (const p of args.players) {
+    if (!(vector[args.localIndex.get(p.user_id)!] > 0)) continue;
+    if (seats.length > 0 && seats[seats.length - 1].seat > p.seat) ordered = false;
+    if (p.user_id === args.heroId) hero = true;
+    seats.push(p);
+  }
+  if (!ordered) seats.sort((a, b) => a.seat - b.seat);
+  return seats.length < 2 || !hero ? null : seats;
+}
+
+/** Everything a one-hand rollout reads except stacks: the synthetic deal
+ * (sample index and seats), the button, the level and each seat's identity
+ * and away flag. Stacks enter only through the trace's `need` check. */
+function futureHandTraceKey(args: FutureHandArgs, vector: number[]): string | null {
+  const seats = survivingSeats(args, vector);
+  if (seats === null) return null;
+  const { level } = args;
+  let key = `${args.sampleIndex}|${args.dealerSeat}|${args.heroId}|${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}`;
+  for (const p of seats) key += `|${p.seat}:${p.is_sitting_out ? 1 : 0}:${p.user_id}`;
+  return key;
+}
+
+/** The recorded hand, repeated operation for operation on these stacks, or
+ * null (run the hand) when any seat is not strictly deeper than the trace
+ * needs. Identical arithmetic in identical order: the same result bits. */
+function replayFutureHandTrace(
+  args: FutureHandArgs,
+  vector: number[],
+  trace: FutureHandTrace,
+  initialTotal: number
+): FutureHandResult | null {
+  const seats = survivingSeats(args, vector)!;
+  const slots: number[] = new Array(seats.length);
+  const stacks: number[] = new Array(seats.length);
+  for (let i = 0; i < seats.length; i++) {
+    slots[i] = args.localIndex.get(seats[i].user_id)!;
+    stacks[i] = vector[slots[i]];
+    if (!(stacks[i] > trace.need[i])) return null;
+  }
+  const ops = trace.ops;
+  for (let k = 0; k < ops.length; k += 2) {
+    const amount = ops[k + 1];
+    // commitFutureChips subtracts what was paid; the refund adds the excess.
+    if (amount < 0) stacks[ops[k]] -= -amount;
+    else stacks[ops[k]] += amount;
+  }
+  const forcedPaid: Record<string, number> = {};
+  for (let i = 0; i < seats.length; i++) forcedPaid[seats[i].user_id] = trace.forced[i];
+  for (let i = 0; i < seats.length; i++) vector[slots[i]] = stacks[i];
+  const awards = trace.awards;
+  for (let k = 0; k < awards.length; k += 2) vector[slots[awards[k]]] += awards[k + 1];
+  // The trace had no bust; a deeper start cannot bust either, but never
+  // return an elimination-free result unless that is what the vector says.
+  for (let i = 0; i < seats.length; i++) if (!(vector[slots[i]] > 0)) return null;
+  let finalTotal = 0;
+  for (let index = 0; index < vector.length; index++)
+    if (index in vector) finalTotal += vector[index];
+  if (Math.abs(finalTotal - initialTotal) > 0.005) return null;
+  return {
+    vector,
+    eliminations: [],
+    hands: 1,
+    forcedPaid,
+    conservationError: Math.abs(finalTotal - initialTotal),
+  };
+}
+
 export function simulateTournamentFutureHands(args: {
   players: SeatPlayer[];
   vector: number[];
@@ -209,6 +306,8 @@ export function simulateTournamentFutureHands(args: {
   sampleIndex: number;
   withinBudget?: () => boolean;
   drawCache?: Map<string, FutureHandDraw>;
+  /** Decision-local replay of unbounded hands (FutureHandTrace). Never with withinBudget. */
+  traceCache?: FutureHandTraceCache;
 }): FutureHandResult | null {
   const { level } = args;
   if (
@@ -229,10 +328,49 @@ export function simulateTournamentFutureHands(args: {
   let dealerSeat = args.dealerSeat;
   let hands = 0;
   const random = syntheticRandom(args.sampleIndex);
+  // A trace is only recorded or replayed for the declared one-hand model and
+  // never under an optional deadline, whose reads are part of that contract.
+  const traces =
+    FUTURE_HAND_POLICY.maxHands === 1 && args.withinBudget === undefined
+      ? args.traceCache
+      : undefined;
+  // The hand being recorded: its seats, operation log, each seat's chips
+  // out (`net`), the deepest stack read so far (`need`) and whether any stack
+  // bounded an amount (`bounded`), which makes the hand unrecordable.
+  let recordSeats: SeatPlayer[] | null = null;
+  let recordOps: number[] | null = null;
+  let recordNet: number[] = [];
+  let recordNeed: number[] = [];
+  let bounded = false;
+  const reads = (p: SeatPlayer, amount: number): void => {
+    if (recordSeats === null) return;
+    const pos = recordSeats.indexOf(p);
+    if (recordNet[pos] + amount > recordNeed[pos]) recordNeed[pos] = recordNet[pos] + amount;
+  };
+  const record = (p: SeatPlayer, amount: number): void => {
+    if (recordOps === null) return;
+    if (p.is_all_in) bounded = true;
+    if (amount === 0) return;
+    const pos = recordSeats!.indexOf(p);
+    recordOps.push(pos, amount);
+    recordNet[pos] -= amount;
+    if (recordNet[pos] > recordNeed[pos]) recordNeed[pos] = recordNet[pos];
+  };
   // The continuation's voluntary wagers are live chips (no ante type).
   const commitLive = (p: SeatPlayer, n: number): void => {
-    commitFutureChips(p, n, null);
+    const paid = commitFutureChips(p, n, null);
+    if (paid !== Math.max(0, Math.round(n))) bounded = true;
+    record(p, -paid);
   };
+  let traceKey: string | null = null;
+  if (traces) {
+    traceKey = futureHandTraceKey(args, vector);
+    const trace = traceKey === null ? undefined : traces.get(traceKey);
+    if (trace) {
+      const replayed = replayFutureHandTrace(args, vector, trace, initialTotal);
+      if (replayed) return replayed;
+    }
+  }
   for (let hand = 0; hand < FUTURE_HAND_POLICY.maxHands; hand++) {
     if (args.withinBudget?.() === false) return null;
     // Surviving seats in seat order. The stable sort is skipped only when the
@@ -263,6 +401,12 @@ export function simulateTournamentFutureHands(args: {
     }
     if (!seatOrdered) players.sort((a, b) => a.seat - b.seat);
     if (players.length < 2 || !players.some((p) => p.user_id === args.heroId)) break;
+    if (traceKey !== null) {
+      recordSeats = players;
+      recordOps = [];
+      recordNet = new Array(players.length).fill(0);
+      recordNeed = new Array(players.length).fill(0);
+    }
     let fieldCount = 0;
     for (let index = 0; index < vector.length; index++) if (vector[index] > 0) fieldCount++;
     const seats = players.length;
@@ -311,8 +455,12 @@ export function simulateTournamentFutureHands(args: {
       facts[i] = draw.seats.get(players[i].user_id)!;
       players[i].cards = facts[i].cards;
     }
-    const commit = (p: SeatPlayer, requested: number, ante = false) =>
-      commitFutureChips(p, requested, ante ? level.anteType : null);
+    const commit = (p: SeatPlayer, requested: number, ante = false): number => {
+      const paid = commitFutureChips(p, requested, ante ? level.anteType : null);
+      if (paid !== Math.max(0, Math.round(requested))) bounded = true;
+      record(p, -paid);
+      return paid;
+    };
     for (let i = 0; i < seats; i++) {
       const p = players[i];
       const individual = level.anteType === 'per_player' ? level.ante : 0;
@@ -343,6 +491,7 @@ export function simulateTournamentFutureHands(args: {
         top.bet -= excess;
         top.totalInvested -= excess;
         top.is_all_in = top.stack <= 0;
+        record(top, excess);
       }
     };
     // Preflop action order starts after the big blind (positions bb + 1, ...,
@@ -357,6 +506,11 @@ export function simulateTournamentFutureHands(args: {
         break;
       }
     }
+    // The open reads the opener's stack against three big blinds.
+    if (opener) {
+      if (opener.bet + opener.stack <= 3 * level.bigBlind) bounded = true;
+      reads(opener, 3 * level.bigBlind - opener.bet);
+    }
     const price = opener
       ? Math.max(level.bigBlind, Math.min(opener.bet + opener.stack, 3 * level.bigBlind))
       : level.bigBlind;
@@ -366,6 +520,8 @@ export function simulateTournamentFutureHands(args: {
       const p = players[i];
       if (p === opener || p.is_all_in) continue;
       const due = Math.min(p.stack, Math.max(0, price - p.bet));
+      if (due < Math.max(0, price - p.bet)) bounded = true;
+      reads(p, Math.max(0, price - p.bet));
       if (due > 0 && preflop(i) < (opener ? 0.55 : 0.38)) p.is_folded = true;
       else commit(p, due);
     }
@@ -407,7 +563,13 @@ export function simulateTournamentFutureHands(args: {
               },
             ],
           },
-          commitLive
+          commitLive,
+          recordSeats === null
+            ? undefined
+            : (player, owed) => {
+                if (owed >= player.stack) bounded = true;
+                reads(player, owed);
+              }
         )
       )
         return null;
@@ -423,6 +585,22 @@ export function simulateTournamentFutureHands(args: {
     const busted: number[] = [];
     for (let i = 0; i < seats; i++)
       if (vector[args.localIndex.get(players[i].user_id)!] <= 0) busted.push(i);
+    if (traces && traceKey !== null && recordOps !== null && !bounded && busted.length === 0) {
+      const awards: number[] = [];
+      for (const win of winners)
+        awards.push(
+          players.findIndex((p) => p.user_id === win.userId),
+          win.amount
+        );
+      const forced: number[] = new Array(seats);
+      for (let i = 0; i < seats; i++) forced[i] = forcedPaid[players[i].user_id];
+      traces.set(traceKey, {
+        need: recordNeed,
+        ops: recordOps,
+        awards,
+        forced,
+      });
+    }
     for (const b of busted) {
       const p = players[b];
       let shorter = 0;

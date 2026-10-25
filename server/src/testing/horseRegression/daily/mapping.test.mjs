@@ -86,6 +86,21 @@ it('a reply naming any other hand is refused and stops further source calls',asy
 it('ineligible queue rows are named and never queried',async()=>{const f=setup();try{f.queue.eligibility='unknown';const gap={...fakeRow(2),gaps:['review_format_changed']};
  const r=await run(f,{source:async()=>page([f.queue,gap])});expect(r.report.hands.map(h=>h.reason)).toEqual(['monetary_eligibility_unknown','daily_source_gap']);expect(f.rows).not.toHaveBeenCalled();
 }finally{f.cleanup();}});
+it('graded reference reasons are decision evidence, not source gaps',async()=>{
+ const {dailyRowScreen,isCommitmentDecisionReason}=await import('../../../services/horseDailyCorrectiveReview/batch.ts');
+ const base=fakeRow(3);
+ for(const reasons of [['decision_replay_not_matched','reference_not_matched'],
+  ['reference_agreed:open_jam:Tournament|fold_to_hero|BTN|12:A5s:push:0.964'],
+  ['reference_deviation:open_jam:Tournament|fold_to_hero|CO|12:72o:push:0.000'],
+  ['reference_domain_depth:open_jam','reference_domain_spot:facing_raise'],['reference_domain_variant:plo4'],
+  ['decision_public_node_unavailable'],['reference_chart_unavailable:Cash|fold_to_hero|BTN|12'],['reference_grade_unreadable:22P02']])
+  expect(dailyRowScreen({...base,reasons})).toBeNull();
+ for(const reasons of [['commitment_eligibility_unknown'],['review_format_changed'],['accepted_roster_mismatch'],
+  ['reference_agreed','late_arrival_after_pass:1'],['Reference_agreed'],['reference_agreed:bad space']])
+  expect(dailyRowScreen({...base,reasons})).toBe('daily_source_gap');
+ expect(dailyRowScreen({...base,reasons:['reference_agreed'],gaps:['review_source_changed']})).toBe('daily_source_gap');
+ expect(isCommitmentDecisionReason('decision_')).toBe(false);
+});
 it('ninth hand exceeds the source budget, stays explicit and becomes the resume position',async()=>{const f=setup();try{
  const rows=Array.from({length:10},(_,i)=>fakeRow(i+1));const rowsReader=vi.fn(async()=>new Map());
  const source=vi.fn(async req=>req.after?page(rows.slice(8),req.after,false):page(rows.slice(0,8),null,true));

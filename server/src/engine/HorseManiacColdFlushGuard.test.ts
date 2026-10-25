@@ -8,7 +8,7 @@ import fixture from './fixtures/horse-plo5-small-flush-45855223.json';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
 import { HorseMind } from './HorseMind.js';
-import { seedFastRandom } from './HorseEval.js';
+import { seedFastRandom, variantInfo } from './HorseEval.js';
 import { calculateContestablePot, calculatePots } from './PokerEngine.js';
 import { horseVariantRulesFor } from './VariantRules.js';
 import type { HorsePublicActionNode } from './HorsePublicActionNode.js';
@@ -270,4 +270,73 @@ describe('reported PLO5 small-flush hand 45855223', () => {
           expect(['bet', 'all_in']).toContain(decide(19, variant, style, seed, true).action);
     });
   }
+});
+
+/*
+ * V53 MEASUREMENT SWITCHES (2026-10-24): the #7866 cold-flush, called-through
+ * and maniac-recovery layers each have a default-on switch. On the same
+ * retained incident, off removes exactly that layer.
+ */
+describe('V53 switches remove exactly their own layer on incident 45855223', () => {
+  function firesWith(spot: ReturnType<typeof incident>, extra: Record<string, boolean>) {
+    HorseMind.reset();
+    seedFastRandom(100);
+    enableBrainTelemetry();
+    drainFires();
+    HorseLogic.decide(spot.hero, spot.state, 'balanced', {}, { telemetry: true, ...extra });
+    return drainFires().map((row) => row.feature);
+  }
+  it('v53ColdFlushPressure off: the cold jam is no longer raised-line evidence', () => {
+    const key = 'horse_continuation_omaha_cold_flush_pressure';
+    expect(firesWith(incident(21), {})).toContain(key);
+    expect(firesWith(incident(21), { v53ColdFlushPressure: false })).not.toContain(key);
+    for (const variant of ['plo4', 'plo5', 'plo6'] as const) {
+      HorseMind.reset();
+      seedFastRandom(100);
+      const spot = incident(21, variant);
+      const d = HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          v53ColdFlushPressure: false,
+        }
+      );
+      expect(d.continuationGuard).not.toBe('omaha_cold_flush_pressure');
+    }
+  });
+  it('v53CalledThroughFlush off: the third-nut flush is no longer forced to check', () => {
+    const key = 'horse_continuation_omaha_called_through_flush_check';
+    expect(firesWith(incident(19), {})).toContain(key);
+    expect(firesWith(incident(19), { v53CalledThroughFlush: false })).not.toContain(key);
+  });
+  it('v53ManiacRecovery off: a guarded fold is reopened by the pre-#7866 recovery', () => {
+    for (const variant of ['plo4', 'plo5', 'plo6'] as const) {
+      HorseMind.setDecisionScope('omaha:short', variant, 'cash');
+      const spot = incident(21, variant);
+      const guarded = {
+        action: 'fold' as const,
+        thinkTime: 0,
+        continuationGuard: 'omaha_cold_flush_pressure' as const,
+      };
+      enableBrainTelemetry();
+      drainFires();
+      HorseLogic.__testables.maniacCallDown(guarded, spot.hero, spot.state, variantInfo(variant), {
+        telemetry: true,
+      });
+      expect(drainFires().map((r) => r.feature)).toContain(
+        'horse_continuation_protected_fold_retained'
+      );
+      HorseLogic.__testables.maniacCallDown(guarded, spot.hero, spot.state, variantInfo(variant), {
+        telemetry: true,
+        v53ManiacRecovery: false,
+      });
+      expect(drainFires().map((r) => r.feature)).not.toContain(
+        'horse_continuation_protected_fold_retained'
+      );
+      HorseMind.setDecisionScope(null);
+    }
+  });
 });

@@ -1,10 +1,10 @@
 /** Paired whole tournaments through the real controller, inside the league process. */
 import { HandController } from '../engine/HandController.js';
-import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../engine/HorseEval.js';
 import { calculateContestablePot, RANKS, SUITS } from '../engine/PokerEngine.js';
-import { horseVariantRulesFor } from '../engine/VariantRules.js';
+import { holeCardCount, horseVariantRulesFor } from '../engine/VariantRules.js';
 import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
 import { attributeKnockout, type KnockoutClaimant } from '../tournament/knockoutAttribution.js';
 import {
@@ -35,6 +35,48 @@ const MAX_HANDS = 96;
 const MAX_ACTIONS = 256;
 export function tournamentLeagueEntrants(objective: TournamentLeagueObjective): number {
   return objective === 'spin' ? 3 : objective === 'sng' ? 6 : 18;
+}
+
+/**
+ * FLAG CARDS (V53, 2026-10-24): paired whole tournaments that measure ONE
+ * strategy flag rather than the Phase 8 postflop candidate. Arm A seats the
+ * hero with `a`, arm B with `b`; every other entrant plays today's
+ * production brain (or the human-calibrated field) in both arms, the same
+ * cards are dealt, and the paired difference in realized prize share is the
+ * measurement. The options live HERE, by name, so a dispatcher can only ask
+ * for a card the code defines - never inject options of its own.
+ *
+ * The V53 cards measure Omaha tournament pressure (v53PloTourneyIcm,
+ * HorseOmahaTournamentPressure.ts) on the formats it changes: an 18-entrant
+ * MTT paying three places (the bubble and the pay jumps) and a six-max Sit &
+ * Go paying two. Arm A is the candidate (flag on), arm B today's brain.
+ */
+export const TOURNAMENT_FLAG_CARD_VARIANTS = ['plo4', 'plo5', 'plo6'] as const;
+export type TournamentFlagCardVariant = (typeof TOURNAMENT_FLAG_CARD_VARIANTS)[number];
+export interface TournamentFlagCard {
+  name: string;
+  variant: TournamentFlagCardVariant;
+  objective: Extract<TournamentLeagueObjective, 'mtt' | 'sng'>;
+  a: HorseDecideOpts;
+  b: HorseDecideOpts;
+}
+export const TOURNAMENT_FLAG_CARDS: readonly TournamentFlagCard[] = Object.freeze(
+  TOURNAMENT_FLAG_CARD_VARIANTS.flatMap((variant) =>
+    (['mtt', 'sng'] as const).map((objective) =>
+      Object.freeze({
+        name: `${variant}_v53_icm_${objective}`,
+        variant,
+        objective,
+        a: Object.freeze({ v53PloTourneyIcm: true }),
+        b: Object.freeze({}),
+      })
+    )
+  )
+);
+/** The locked held-out seeds of the V53 cards, fixed before any run. */
+export const TOURNAMENT_FLAG_CARD_SEEDS = [53_101_101, 53_102_203, 53_103_307] as const;
+export function tournamentFlagCard(name: string | undefined): TournamentFlagCard | undefined {
+  return name === undefined ? undefined : TOURNAMENT_FLAG_CARDS.find((c) => c.name === name);
 }
 
 /** A dead heat can split the last satellite award. Counting every nonzero
@@ -102,6 +144,10 @@ export interface TournamentLeagueRequest {
    * (`is_horse: false`). Absent: the Phase 8 field, unchanged.
    */
   opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
+  /** A TOURNAMENT_FLAG_CARDS name: arm A/B are the card's options, not Phase 8 modes. */
+  flagCard?: string;
+  /** Flag cards only: index of this shard's first pair in the seed's pair sequence. */
+  firstPair?: number;
 }
 export const MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS = 256;
 export interface TournamentCompletionDiagnostic {
@@ -159,6 +205,15 @@ export interface TournamentLeagueResult extends TournamentCompletionCounts {
   opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
   /** Human-calibrated entrants only: response counts per decision node, both arms. */
   humanResponses?: Record<string, Record<string, number>>;
+  /** Flag cards only (absent for Phase 8 runs). */
+  flagCard?: string;
+  gameVariant?: TournamentFlagCardVariant;
+  firstPair?: number;
+  /** Hero decisions in arm A, and how many of them option set B would have decided differently. */
+  cardDecisions?: number;
+  cardChanged?: number;
+  /** Pairs whose two arms realized a different return. */
+  divergentPairs?: number;
   candidateMode: Phase8Mode;
   evidenceMode: 'fixture' | 'promotion';
   objective: TournamentLeagueObjective;
@@ -248,6 +303,16 @@ interface Receipt extends TournamentCompletionCounts {
   regret: number;
   latency: number[];
   humanResponses: Record<string, Record<string, number>>;
+  cardDecisions: number;
+  cardChanged: number;
+}
+
+/** One arm of a flag card: hero options and the variant dealt. */
+interface FlagArm {
+  variant: TournamentFlagCardVariant;
+  hero: HorseDecideOpts;
+  /** The other arm's options, asked counterfactually on hero's decisions. */
+  counterfactual: HorseDecideOpts | null;
 }
 
 /** A human-calibrated entrant's decision from the authoritative menu and public state. */
@@ -255,10 +320,11 @@ function humanCalibratedEntrantDecision(
   seatPlayer: SeatPlayer,
   state: ReturnType<HandController['getState']>,
   menu: NonNullable<ReturnType<HandController['getAuthoritativeActionState']>>,
-  receipt: Receipt
+  receipt: Receipt,
+  variant: string = 'nlh'
 ): HorseDecision {
   const spot: HumanCalibratedSpot = {
-    variant: 'nlh',
+    variant,
     stage: state.stage,
     cards: seatPlayer.cards,
     board: state.communityCards,
@@ -291,8 +357,11 @@ async function playTournament(
   heroSeat: number,
   mode: Phase8Mode,
   shouldContinue: () => boolean,
-  opponentPopulation: typeof HUMAN_CALIBRATED_POPULATION_ID | null = null
+  opponentPopulation: typeof HUMAN_CALIBRATED_POPULATION_ID | null = null,
+  flag: FlagArm | null = null
 ): Promise<Receipt> {
+  const variant: TournamentFlagCardVariant | 'nlh' = flag?.variant ?? 'nlh';
+  const holeCount = holeCardCount(variant);
   const count = tournamentLeagueEntrants(objective);
   const startStack = 2000;
   const players = Array.from({ length: count }, (_, i) =>
@@ -333,6 +402,8 @@ async function playTournament(
     regret: 0,
     latency: [],
     humanResponses: {},
+    cardDecisions: 0,
+    cardChanged: 0,
   };
   let alive = players;
   const buttons = new Map<number, number>();
@@ -358,7 +429,7 @@ async function playTournament(
     const config = {
       tableId: 'phase8-tournament-league',
       handNumber: hand + 1,
-      gameVariant: 'nlh' as const,
+      gameVariant: variant,
       isTournament: true,
       smallBlind: bigBlind / 2,
       bigBlind,
@@ -370,13 +441,21 @@ async function playTournament(
     // production shuffle, prototype, flag or live object is changed. Every
     // original seat retains identical holes and board even after paths diverge.
     const full = cardsFor((seed ^ Math.imul(hand + 1, 2654435761)) >>> 0);
-    const fixedBoard = full.slice(count * 2, count * 2 + 5);
+    // Hold'em: every entrant owns two fixed cards of the shuffled deck (the
+    // Phase 8 design, unchanged). Omaha cannot: 18 entrants x 6 cards is more
+    // than a deck, so each TABLE SLOT owns its cards and the board follows
+    // the six slots. Two arms whose tables hold the same players in the same
+    // order are dealt identical hands, which is every hand until the arms'
+    // eliminations diverge.
+    const omahaDeal = holeCount > 2;
+    const boardStart = omahaDeal ? 6 * holeCount : count * 2;
+    const fixedBoard = full.slice(boardStart, boardStart + 5);
     const deck = tablePlayers
-      .flatMap((p) => {
-        const i = originalIds.indexOf(p.user_id);
-        return full.slice(i * 2, i * 2 + 2);
+      .flatMap((p, slot) => {
+        const i = omahaDeal ? slot : originalIds.indexOf(p.user_id);
+        return full.slice(i * holeCount, i * holeCount + holeCount);
       })
-      .concat(fixedBoard, full.slice(count * 2 + 5));
+      .concat(fixedBoard, full.slice(boardStart + 5));
     const instance = controller.getState().deck as unknown as {
       deal: (n?: number) => Card[];
       dealOne: () => Card;
@@ -499,7 +578,7 @@ async function playTournament(
         currentPlayerSeat: hero.seat,
         gameMode: 'tournament',
         format: objective === 'spin' ? 'spin' : objective === 'sng' ? 'sng' : 'mtt',
-        gameVariant: 'nlh',
+        gameVariant: variant,
         bigBlind,
         ante,
         boardCount: 1,
@@ -510,7 +589,7 @@ async function playTournament(
         bettingStructure: menu.structure,
         pots: controller.computeLivePots(),
         contestablePot: calculateContestablePot(state.players, hero.user_id, menu.toCall),
-        variantRules: horseVariantRulesFor('nlh'),
+        variantRules: horseVariantRulesFor(variant),
         rakeConfig: config.rakeConfig,
         tournament,
         actionHistory: state.actionHistory.map((a, i) => ({
@@ -521,23 +600,45 @@ async function playTournament(
       seedFastRandom(
         (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
       );
+      const decideWith = (extra: HorseDecideOpts): HorseDecision =>
+        HorseMind.runInSandbox(sandbox, () =>
+          HorseLogic.decide(
+            hero,
+            gs,
+            'balanced',
+            {},
+            {
+              ...extra,
+              // Flag cards hold Phase 8 off in both arms: the card measures
+              // its own flag, and Phase 8 shadow never changes an action.
+              phase8Postflop: flag ? 'off' : hero.user_id === heroId ? mode : 'off',
+              mind: false,
+              telemetry: false,
+              decisionTimeMs: 0,
+            }
+          )
+        );
       const decision: HorseDecision =
         opponentPopulation !== null && hero.user_id !== heroId
-          ? humanCalibratedEntrantDecision(hero, state, menu, receipt)
-          : HorseMind.runInSandbox(sandbox, () =>
-              HorseLogic.decide(
-                hero,
-                gs,
-                'balanced',
-                {},
-                {
-                  phase8Postflop: hero.user_id === heroId ? mode : 'off',
-                  mind: false,
-                  telemetry: false,
-                  decisionTimeMs: 0,
-                }
-              )
-            );
+          ? humanCalibratedEntrantDecision(hero, state, menu, receipt, variant)
+          : decideWith(hero.user_id === heroId && flag ? flag.hero : {});
+      if (flag?.counterfactual && hero.user_id === heroId) {
+        // What the other arm's options would have done in this exact state,
+        // from the same random stream. The live stream is restored after, so
+        // the counterfactual cannot move a single later decision.
+        const live = saveFastRandom();
+        seedFastRandom(
+          (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
+        );
+        const other = decideWith(flag.counterfactual);
+        restoreFastRandom(live);
+        receipt.cardDecisions++;
+        if (
+          other.action !== decision.action ||
+          (other.amount ?? null) !== (decision.amount ?? null)
+        )
+          receipt.cardChanged++;
+      }
       receipt.decisions++;
       const layer = decision.tournamentPostflop;
       if (layer) {
@@ -673,6 +774,17 @@ export async function runTournamentLeague(
     request.seed <= 0
   )
     throw new Error('Invalid tournament league request');
+  const card = tournamentFlagCard(request.flagCard);
+  if (request.flagCard !== undefined && (!card || card.objective !== request.objective))
+    throw new Error('Unknown tournament flag card for this objective');
+  const firstPair = request.firstPair ?? 0;
+  if (
+    (request.firstPair !== undefined && !card) ||
+    !Number.isSafeInteger(firstPair) ||
+    firstPair < 0 ||
+    firstPair + request.pairs > TOURNAMENT_PROMOTION_PAIRS
+  )
+    throw new Error('Invalid tournament flag card shard');
   const started = performance.now();
   const saved = saveFastRandom();
   const result: TournamentLeagueResult = {
@@ -680,6 +792,16 @@ export async function runTournamentLeague(
     version: PHASE8_POLICY.version,
     ...(request.opponentPopulation
       ? { opponentPopulation: request.opponentPopulation, humanResponses: {} }
+      : {}),
+    ...(card
+      ? {
+          flagCard: card.name,
+          gameVariant: card.variant,
+          firstPair,
+          cardDecisions: 0,
+          cardChanged: 0,
+          divergentPairs: 0,
+        }
       : {}),
     candidateMode: request.candidateMode ?? 'candidate',
     evidenceMode: request.evidenceMode ?? 'fixture',
@@ -723,15 +845,17 @@ export async function runTournamentLeague(
   try {
     for (let pair = 0; pair < request.pairs; pair++) {
       if (!shouldContinue()) break;
-      const seed = (request.seed ^ Math.imul(pair + 1, 2654435761)) >>> 0 || 1;
-      const hero = pair % tournamentLeagueEntrants(request.objective);
+      const index = firstPair + pair;
+      const seed = (request.seed ^ Math.imul(index + 1, 2654435761)) >>> 0 || 1;
+      const hero = index % tournamentLeagueEntrants(request.objective);
       const a = await playTournament(
         seed,
         request.objective,
         hero,
         request.candidateMode ?? 'candidate',
         shouldContinue,
-        request.opponentPopulation ?? null
+        request.opponentPopulation ?? null,
+        card ? { variant: card.variant, hero: card.a, counterfactual: card.b } : null
       );
       const b = await playTournament(
         seed,
@@ -739,7 +863,8 @@ export async function runTournamentLeague(
         hero,
         'off',
         shouldContinue,
-        request.opponentPopulation ?? null
+        request.opponentPopulation ?? null,
+        card ? { variant: card.variant, hero: card.b, counterfactual: null } : null
       );
       for (const arm of [a, b])
         for (const [node, counts] of Object.entries(arm.humanResponses))
@@ -753,6 +878,11 @@ export async function runTournamentLeague(
       if (!a.complete || !b.complete) break;
       result.pairs++;
       differences.push(a.returned - b.returned);
+      if (card) {
+        result.cardDecisions! += a.cardDecisions;
+        result.cardChanged! += a.cardChanged;
+        if (a.returned !== b.returned || a.finish !== b.finish) result.divergentPairs!++;
+      }
       result.candidateReturn += a.returned;
       result.baselineReturn += b.returned;
       result.chipDifference += a.chips - b.chips;
@@ -834,6 +964,9 @@ export function tournamentRunCanPromote(r: TournamentLeagueResult): boolean {
   return (
     r.evidenceMode === 'promotion' &&
     r.candidateMode === 'candidate' &&
+    // A flag card is its own measurement (summarizeTournamentFlagCard),
+    // never Phase 8 promotion evidence.
+    r.flagCard === undefined &&
     r.complete &&
     r.pairs === r.requestedPairs &&
     r.pairs >= TOURNAMENT_PROMOTION_PAIRS &&
@@ -917,5 +1050,89 @@ export function tournamentBaselineRunVerified(run: TournamentLeagueResult): bool
     run.conservationErrors === 0 &&
     run.truncatedHands === 0 &&
     run.latencyMs.p99 <= PHASE8_POLICY.budgetMs
+  );
+}
+
+/**
+ * The locked decision for one V53 flag card. Every predeclared held-out seed
+ * must have its pairs 0..TOURNAMENT_FLAG_CARD_PAIRS-1 played exactly once
+ * (one run or several disjoint shards), every run complete, with no illegal
+ * action, chip error or truncated hand, and the flag must have
+ * changed hero decisions (cardChanged > 0; an inert card is a harness fault,
+ * not a zero). The card WINS when the pooled paired difference in realized
+ * prize share (candidate minus today's brain) has a 99% interval entirely
+ * above zero. Anything else keeps today's brain.
+ */
+export const TOURNAMENT_FLAG_CARD_PAIRS = TOURNAMENT_PROMOTION_PAIRS;
+export function summarizeTournamentFlagCard(cardName: string, runs: TournamentLeagueResult[]) {
+  const reasons: string[] = [];
+  const card = tournamentFlagCard(cardName);
+  if (!card) reasons.push('unknown_card');
+  const group = runs.filter((r) => r.flagCard === cardName);
+  if (group.some((r) => !TOURNAMENT_FLAG_CARD_SEEDS.includes(r.seed as never)))
+    reasons.push('undeclared_seed');
+  // Shards of one seed must cover its pairs 0..PAIRS-1 exactly once.
+  for (const seed of TOURNAMENT_FLAG_CARD_SEEDS) {
+    const covered = new Array<number>(TOURNAMENT_FLAG_CARD_PAIRS).fill(0);
+    for (const r of group.filter((x) => x.seed === seed)) {
+      const from = r.firstPair ?? 0;
+      for (let i = from; i < from + r.pairs && i < covered.length; i++) covered[i]++;
+    }
+    if (!covered.every((c) => c === 1)) reasons.push(`${seed}:pairs_not_covered_exactly_once`);
+  }
+  for (const r of group) {
+    if (!r.complete) reasons.push(`${r.seed}:${r.firstPair ?? 0}:incomplete`);
+    if (r.objective !== card?.objective || r.gameVariant !== card?.variant)
+      reasons.push(`${r.seed}:wrong_card_shape`);
+    if (r.illegalActions || r.conservationErrors || r.truncatedHands)
+      reasons.push(`${r.seed}:integrity`);
+  }
+  const n = group.reduce((s, r) => s + r.pairs, 0);
+  const mean = n ? group.reduce((s, r) => s + r.meanDifference * r.pairs, 0) / n : 0;
+  const ss = group.reduce(
+    (s, r) =>
+      s +
+      r.standardError ** 2 * r.pairs * Math.max(0, r.pairs - 1) +
+      r.pairs * (r.meanDifference - mean) ** 2,
+    0
+  );
+  const se = n > 1 ? Math.sqrt(ss / (n - 1) / n) : 0;
+  const changed = group.reduce((s, r) => s + (r.cardChanged ?? 0), 0);
+  if (changed === 0) reasons.push('inert');
+  const confidence99: [number, number] = [mean - 2.59 * se, mean + 2.59 * se];
+  const measured = reasons.length === 0;
+  return {
+    card: cardName,
+    pairs: n,
+    meanDifference: mean,
+    standardError: se,
+    confidence99,
+    cardDecisions: group.reduce((s, r) => s + (r.cardDecisions ?? 0), 0),
+    cardChanged: changed,
+    measured,
+    wins: measured && confidence99[0] > 0,
+    reasons,
+  };
+}
+
+/** Pairs per hosted shard of a flag card: 16 shards cover one held-out seed. */
+export const TOURNAMENT_FLAG_CARD_SHARD_PAIRS = 64;
+/** Every shard a flag card's locked measurement needs, in a stable order. */
+export function tournamentFlagCardShards(
+  cardName: string
+): Array<{ key: string; card: string; seed: number; firstPair: number; pairs: number }> {
+  const card = tournamentFlagCard(cardName);
+  if (!card) throw new Error('Unknown tournament flag card');
+  return TOURNAMENT_FLAG_CARD_SEEDS.flatMap((seed) =>
+    Array.from(
+      { length: TOURNAMENT_FLAG_CARD_PAIRS / TOURNAMENT_FLAG_CARD_SHARD_PAIRS },
+      (_, shard) => ({
+        key: `${card.name}-${seed}-${shard * TOURNAMENT_FLAG_CARD_SHARD_PAIRS}`,
+        card: card.name,
+        seed,
+        firstPair: shard * TOURNAMENT_FLAG_CARD_SHARD_PAIRS,
+        pairs: TOURNAMENT_FLAG_CARD_SHARD_PAIRS,
+      })
+    )
   );
 }

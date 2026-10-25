@@ -623,6 +623,65 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           return;
         }
         if (sweepStopped()) return;
+        /*
+         * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
+         * (2026-10-25).
+         *
+         * Every capacity table is committed together with this
+         * `late_registration` wake, but its dealer was only started by the
+         * expansion stage (6). Each new bust rewinds the cursor to stage 0, so
+         * on a busy field the sweep spent its budget on stages 0-5 and stage 6
+         * was reached only when busting stopped: at the :55 break. Production
+         * 2026-10-25: 13:00-23:00 UTC, 99 of 132 capacity tables waited over a
+         * minute (median 12.0, max 53.8) with players seated and no dealer
+         * (through 2026-10-24 the median was ~4 seconds), e.g. Sunday
+         * Funday Happy Hour table 14 opened 22:39:28 with nine late entrants
+         * and was admitted at 22:55:08, the moment the break began.
+         *
+         * Admitting a committed table is idempotent (admit-before-ack against
+         * the same database authority), creates no seats of its own, and the
+         * engine preparation arms every break / hand-for-hand hold before the
+         * dealer starts. So it runs here, on the wake itself, ahead of the
+         * stages a bust can rewind. Stage 6 still runs as before.
+         */
+        if (
+          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
+          !isMaintenanceFrozen()
+        ) {
+          this.noteEliminationSweepStep('checkDynamicTableExpansion');
+          await this.checkDynamicTableExpansion();
+          if (sweepStopped()) return;
+        }
+      }
+
+      /*
+       * AN OPEN ADD-ON WINDOW IS SERVED BEFORE THE STAGES A BUST REWINDS
+       * (2026-10-25).
+       *
+       * The add-on window is a deadline: when it closes, a horse that was never
+       * offered has lost its add-on for good. The offer lived only in stage 4,
+       * and every bust rewinds the cursor to stage 0. On 2026-10-25 83% of
+       * sweep admissions (14,182 of 17,047) overran the 5-second work budget,
+       * so on a busy field stage 4 was effectively never reached inside the
+       * window: Sunday Funday Happy Hour (Midway Union) 0 of 135 horses added
+       * on, Bounty Builder 0 of 192, PLO Classic 0 of 132, PLO PKO 4 of 201,
+       * while quiet satellites reached 89-92%. Dan: 70% of horses add on,
+       * "NOT ZERO EVER".
+       *
+       * Serving it here is safe by construction (see the stage-4 comment): the
+       * RPC is idempotent per player, refuses a seatless player, and
+       * tryTournamentAddOns offers only players holding chips. The same 20 s
+       * cadence applies, so the stage-4 call below never doubles an offer.
+       */
+      if (this.addOnPeriodTriggered && !this.prizePoolFinalized && !isMaintenanceFrozen()) {
+        const addOnNowMs = Date.now();
+        if (addOnNowMs - this.lastAddOnOfferAt >= TournamentManagerBase.ADD_ON_RETRY_MS) {
+          this.lastAddOnOfferAt = addOnNowMs;
+          this.noteEliminationSweepStep('tryTournamentAddOns');
+          await this.tryTournamentAddOns();
+          if (sweepStopped()) return;
+        }
+        this.scheduleAddOnRetry();
       }
 
       recoveryStage: {

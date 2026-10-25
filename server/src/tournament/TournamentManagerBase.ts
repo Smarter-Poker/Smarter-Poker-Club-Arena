@@ -11306,7 +11306,11 @@ export abstract class TournamentManagerBase {
         .from('tournament_players')
         .select('user_id, add_on')
         .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing');
+        .eq('status', 'playing')
+        // A zero stack is a bust the bust stage has not recorded yet; the
+        // offer is served ahead of that stage (2026-10-25), so it never
+        // reaches a player who no longer holds chips.
+        .gt('chips', 0);
       if (!this.eliminationMutationAllowed()) return;
       if (rowsErr || !rows || rows.length === 0) {
         if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);

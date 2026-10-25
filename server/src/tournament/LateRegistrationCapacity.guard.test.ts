@@ -369,4 +369,39 @@ describe('late-registration capacity authority', () => {
       );
     }
   });
+  it('starts a late-registration table on the wake that opened it, ahead of the stages a bust rewinds', () => {
+    // Production 2026-10-25: busts rewound the sweep to stage 0 so often that
+    // the expansion stage (6) ran only at the :55 break, and capacity tables
+    // sat seated with no dealer for a median of 12 minutes (max 53.8).
+    const wakeBranchStart = ELIMINATIONS.indexOf(
+      "!(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))"
+    );
+    const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
+    expect(wakeBranchStart).toBeGreaterThan(-1);
+    expect(recoveryStage).toBeGreaterThan(wakeBranchStart);
+    const wakeBranch = ELIMINATIONS.slice(wakeBranchStart, recoveryStage);
+    expect(wakeBranch).toMatch(
+      /\.some\(\(reason\) => reason === 'late_registration'\) &&\s*!isMaintenanceFrozen\(\)\s*\) \{\s*this\.noteEliminationSweepStep\('checkDynamicTableExpansion'\);\s*await this\.checkDynamicTableExpansion\(\);/
+    );
+    // The ordinary expansion stage still runs as before.
+    expect(ELIMINATIONS.slice(recoveryStage)).toContain(
+      "if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;"
+    );
+  });
+  it('serves an open add-on window ahead of the stages a bust rewinds, to players holding chips', () => {
+    // Production 2026-10-25: busy fields reached the add-on stage (4) too
+    // rarely inside the window; Happy Hour (Midway Union) 0 of 135 horses.
+    const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
+    const head = ELIMINATIONS.slice(0, recoveryStage);
+    expect(head).toMatch(
+      /if \(this\.addOnPeriodTriggered && !this\.prizePoolFinalized && !isMaintenanceFrozen\(\)\) \{[\s\S]{0,400}await this\.tryTournamentAddOns\(\);[\s\S]{0,120}this\.scheduleAddOnRetry\(\);/
+    );
+    const offer = BASE.slice(
+      BASE.indexOf('protected async tryTournamentAddOns'),
+      BASE.indexOf('protected async triggerAddOnPeriod')
+    );
+    expect(offer).toMatch(
+      /\.select\('user_id, add_on'\)[\s\S]{0,200}\.eq\('status', 'playing'\)[\s\S]{0,300}\.gt\('chips', 0\)/
+    );
+  });
 });

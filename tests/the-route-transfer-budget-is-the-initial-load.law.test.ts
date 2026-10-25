@@ -68,8 +68,10 @@ describe('the route transfer budget is the initial load', () => {
     const t = initialLoadTransfer(nav(800), [
       { transferSize: 2_000 } as never,
       res(Number.NaN, 3_000),
+      res(Number.POSITIVE_INFINITY, 4_000),
+      { startTime: '900', transferSize: 5_000 } as never,
     ]);
-    expect(t.initialBytes).toBe(4_000 + 5_000);
+    expect(t.initialBytes).toBe(4_000 + 14_000);
   });
 
   it('the gate enforces the budget on the initial-load figure, with the timing it needs', () => {

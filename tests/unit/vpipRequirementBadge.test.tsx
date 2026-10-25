@@ -34,7 +34,7 @@ afterEach(() => cleanup());
 describe('section 30 — the value matrix, both game rules', () => {
   beforeEach(() => reportError.mockClear());
 
-  for (const min of [30, 50] as const) {
+  for (const min of [30, 40, 50] as const) {
     for (const cur of [0, 7, 29, 30, 49, 50, 54, 99, 100]) {
       it(`TABLE MIN ${min}% + CURRENT ${cur}%`, () => {
         render(<VpipRequirementBadge minimumVpip={min} currentVpip={cur} />);
@@ -71,11 +71,12 @@ describe('section 14 + 22 — what the readout prints', () => {
 describe('section 1 — only two game rules are sanctioned', () => {
   beforeEach(() => reportError.mockClear());
 
-  it('30 and 50 are the whole list', () => {
-    expect([...ALLOWED_VPIP_REQUIREMENTS]).toEqual([30, 50]);
+  it('30, 40 (Lightning) and 50 are the whole list', () => {
+    expect([...ALLOWED_VPIP_REQUIREMENTS]).toEqual([30, 40, 50]);
+    expect(isAllowedVpipRequirement(40)).toBe(true);
     expect(isAllowedVpipRequirement(30)).toBe(true);
     expect(isAllowedVpipRequirement(50)).toBe(true);
-    for (const bad of [20, 25, 35, 40, 45, 55, 60]) {
+    for (const bad of [20, 25, 35, 45, 55, 60]) {
       expect(isAllowedVpipRequirement(bad)).toBe(false);
     }
   });
@@ -95,10 +96,10 @@ describe('section 1 — only two game rules are sanctioned', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       expect(() =>
-        render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />)
+        render(<VpipRequirementBadge minimumVpip={45} currentVpip={54} />)
       ).not.toThrow();
-      expect(screen.getByText('TABLE MIN 40%')).toBeTruthy();
-      expect(spy.mock.calls.flat().join(' ')).toMatch(/Invalid VPIP requirement: 40/);
+      expect(screen.getByText('TABLE MIN 45%')).toBeTruthy();
+      expect(spy.mock.calls.flat().join(' ')).toMatch(/Invalid VPIP requirement: 45/);
     } finally {
       spy.mockRestore();
     }
@@ -120,8 +121,8 @@ describe('section 1 — only two game rules are sanctioned', () => {
        rule nobody set. */
     vi.stubEnv('DEV', false);
     try {
-      render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />);
-      expect(screen.getByText('TABLE MIN 40%')).toBeTruthy();
+      render(<VpipRequirementBadge minimumVpip={45} currentVpip={54} />);
+      expect(screen.getByText('TABLE MIN 45%')).toBeTruthy();
       expect(screen.getByText('54%')).toBeTruthy();
       expect(reportError).toHaveBeenCalledTimes(1);
       expect(String(reportError.mock.calls[0][0])).toMatch(/not a sanctioned game rule/i);
@@ -135,9 +136,9 @@ describe('section 1 — only two game rules are sanctioned', () => {
     // budget exists to survive (CLAUDE.md section 2). Do not re-report.
     vi.stubEnv('DEV', false);
     try {
-      const { rerender } = render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />);
-      rerender(<VpipRequirementBadge minimumVpip={40} currentVpip={55} />);
-      rerender(<VpipRequirementBadge minimumVpip={40} currentVpip={56} />);
+      const { rerender } = render(<VpipRequirementBadge minimumVpip={45} currentVpip={54} />);
+      rerender(<VpipRequirementBadge minimumVpip={45} currentVpip={55} />);
+      rerender(<VpipRequirementBadge minimumVpip={45} currentVpip={56} />);
       expect(reportError).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllEnvs();

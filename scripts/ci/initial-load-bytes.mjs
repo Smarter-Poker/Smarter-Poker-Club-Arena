@@ -56,7 +56,7 @@ export function initialLoadTransfer(navigation, resources, firstIdleCallbackAt =
   let lateCount = 0;
   for (const entry of list) {
     const bytes = (entry && entry.transferSize) || 0;
-    if (boundary === null || !(entry.startTime >= boundary)) {
+    if (boundary === null || !Number.isFinite(entry?.startTime) || entry.startTime < boundary) {
       initialResourceBytes += bytes;
     } else {
       lateBytes += bytes;

@@ -53,3 +53,20 @@ pull request. The gate script and the helpers it imports
 (`route-performance`, `initial-load-bytes`, `paint-readiness`, `e2e-port`) now
 admit the build, the same way `scripts/stamp-build-provenance.mjs` already did.
 
+## Resumption and integration
+
+Integrated protected main 21062fe3ac without removing either source-binding
+history. The active cash-native classifier fingerprint is updated too; its
+original financial SQL, scheduler and assertions are unchanged. The binding
+reader checks 998 pins and the six native cash input tests pass. This is input
+identity proof, not a new financial certificate.
+
+Invalid timing values (including infinity or a string) now remain in the
+initial-byte budget. Only a finite browser timestamp can exclude a resource.
+
+The required server shard had failed the Lightning time-bank fixture: an
+off-turn early look consumed its first-decision tank or folded the peer
+before the timed turn completed. The fixture now counts turn decisions only
+and holds an early look with a passive legal answer when exercising a tank.
+The real host timer, bank, action door and settlement still run; the separate
+fast-fold regression runs alongside it. No production horse policy changes.

@@ -420,7 +420,7 @@ export class HorseSessionRotator {
           // table's own limits, which price the reload, the swing and the
           // session P&L - `bb * 100` is not the buy-in at a 0.50 game whose
           // minimum is 200.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, auto_rebuy, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -1121,6 +1121,10 @@ export class HorseSessionRotator {
         if (!horseIds.has(seat.user_id)) continue;
         if (HorseSessionRotator.isLeaving(seat) || seat.is_sitting_out === true) continue;
         if (this.breaks.has(HorseSessionRotator.breakKey(tableId, seat.user_id))) continue;
+        // A seat on Auto Top Up (the PLO5 30%, HorseTopUpStyle) is refilled by
+        // the engine between hands; like a person on Auto Top Up, it does not
+        // also press Add Chips. Every other seat adds on here as before.
+        if ((seat as { auto_rebuy?: boolean }).auto_rebuy === true) continue;
         const minutes = (Date.now() - new Date(seat.joined_at).getTime()) / 60000;
         const stackNow = Number(seat.stack) || 0;
         if (

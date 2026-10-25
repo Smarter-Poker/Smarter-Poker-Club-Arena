@@ -18,6 +18,7 @@ one statement snapshot and must agree:
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ CHAIN = [
     MIG / '20261022034135_horse_observation_snapshot_finds_hands_through_the_player_in.sql',
 ]
 NEW = MIG / '20261022054023_horse_observation_snapshot_refuses_an_overflowing_window_fro.sql'
+DRAINS = MIG / '20261025042223_horse_capture_drains_in_order.sql'
 PREDECESSOR_MD5 = 'd1df5793f8117878ba28553c08ea922c'
 parser = argparse.ArgumentParser()
 parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
@@ -197,6 +199,33 @@ try:
         assert banned not in pre, (banned, pre)
     assert d.index('LIMIT 513) overflow') < d.index('WITH found AS MATERIALIZED'), 'precheck must run before the read'
     results.append('overflow refused before any roster or payload read')
+
+    # 20261025042223 (horse capture drains in order) moves the same precheck
+    # into fn_horse_capture_hand_budget_through, which also returns where the
+    # 512th hand falls. Its own native proof is
+    # scripts/ci/test-horse-capture-drains-in-order.py; here the successor is
+    # held to the same refusal and the same index-only read. Only its two
+    # snapshot functions are installed: its guard needs the capture functions
+    # this fixture does not build.
+    drains = DRAINS.read_text()
+    for name in ('fn_horse_capture_hand_budget_through', 'fn_horse_committed_observation_snapshot'):
+        m = re.search(r'CREATE OR REPLACE FUNCTION public\.' + name + r'\(.*?\$function\$;', drains, re.S)
+        assert m, name
+        q(m.group(0))
+    q('GRANT EXECUTE ON FUNCTION public.fn_horse_capture_hand_budget_through(uuid,bigint,bigint,integer) TO service_role;')
+    _, new = compare('700 overflow after drains-in-order', 21600)
+    assert new['reason'] == 'hand_budget_exceeded' and new['hands'] == [], new
+    assert isinstance(new.get('budgetThroughMs'), int), new
+    compare_after = q(f"SET ROLE service_role; SELECT public.fn_horse_committed_observation_snapshot('{ACTOR}', "
+                      f"{new['fromMs']}, {new['budgetThroughMs']})")
+    assert json.loads(compare_after.splitlines()[-1])['handCount'] == 512, compare_after
+    h = q("SELECT prosrc FROM pg_proc WHERE proname='fn_horse_capture_hand_budget_through'")
+    assert 'h.created_at = i.created_at AND h.id = i.hand_id' in h and 'LIMIT 513' in h, h
+    for banned in ('players', 'actions', 'hand_atomic_commits', 'hole_cards'):
+        assert banned not in re.sub(r'--[^\n]*', '', h), (banned, h)
+    d = q("SELECT pg_get_functiondef('public.fn_horse_committed_observation_snapshot(uuid,bigint,bigint)'::regprocedure)")
+    assert d.index('fn_horse_capture_hand_budget_through') < d.index('WITH found AS MATERIALIZED'), d
+    results.append('the successor refuses the same window from the index and names the 512th hand')
     print(json.dumps({'scenarios': results, 'identical': True}))
 finally:
     if started:

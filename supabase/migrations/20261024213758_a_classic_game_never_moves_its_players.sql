@@ -326,7 +326,7 @@ BEGIN
     RAISE NOTICE 'fn_cash_game_join already fills a Classic game fullest first; nothing to do';
     RETURN;
   END IF;
-  IF md5(v_src) <> '2ab096598d5d2240d546a08dd96094ea' THEN
+  IF md5(v_src) <> '26a7319a92d8d391d22b410cda87db2e' THEN
     RAISE EXCEPTION 'CLASSIC_NEVER_MOVES_JOIN_PREIMAGE_DRIFT: fn_cash_game_join is %, read it before re-running', md5(v_src);
   END IF;
 

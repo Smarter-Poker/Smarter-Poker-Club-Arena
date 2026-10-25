@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 232055,
-      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+      "bytes": 234392,
+      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41375,
-      "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+      "bytes": 41844,
+      "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114286,
-      "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+      "bytes": 114533,
+      "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
     }
   },
   "nativePgCron": {
@@ -3658,5 +3658,45 @@
   "migrationAuditIntegration20261024": {
     "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
     "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+  },
+  "supersededCiStopsAtThePush20261025": {
+    "reason": "Restamped for the CI load change only (docs/changelog/2026-10-25-superseded-ci-stops-at-the-push.md): ci.yml gates its heavy jobs on !cancelled() instead of always() and documents ci-supersede.yml; the two CI routing tests follow that prefix. No suite, step, shard, financial source, fixture, assertion, deadline or qualification status changed. Matching source hashes are not production or financial execution proof; fresh hosted qualification is still required.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+        },
+        "current": {
+          "bytes": 234392,
+          "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 114286,
+          "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+        },
+        "current": {
+          "bytes": 114533,
+          "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
+        }
+      }
+    }
+  },
+  "routePerformanceGateInputs20261025": {
+    "reason": "The route-performance scripts select the required production build. Active classifier identity only; cash SQL, native scheduler, assertions and qualification state unchanged. Required native accounting still runs.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 41375,
+          "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+        },
+        "current": {
+          "bytes": 41844,
+          "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+        }
+      }
+    }
   }
 }

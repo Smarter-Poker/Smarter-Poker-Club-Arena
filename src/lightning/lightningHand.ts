@@ -23,9 +23,9 @@ import type { LightningClusterMeta } from './lightningSession';
 export const LIGHTNING_FAST_FOLD_ACTION = 'fast_fold';
 export const LIGHTNING_FOLD_WATCH_ACTION = 'fold_watch';
 
-/** The words on the controls. Approved player-visible terms only. */
-export const LIGHTNING_FOLD_LABEL = 'LIGHTNING FOLD';
-export const LIGHTNING_FOLD_WATCH_LABEL = 'FOLD & WATCH';
+/* No fold button carries words: every fold in a Lightning room is a
+   Lightning fold, and the room shows no Lightning helper text (Dan
+   2026-10-24). */
 export const LIGHTNING_NEXT_HAND_TEXT = 'Next Hand...';
 
 /** A quiet gap shorter than this says nothing at all. */

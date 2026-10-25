@@ -115,12 +115,14 @@ import {
   holdsPlayerWallet,
 } from '../components/wallet/walletRows';
 import {
+  cashoutRowTitle,
   describeChipTransaction,
   ledgerDirection,
   presentChipTransaction,
   thirdPartySender,
   walletRoute,
 } from '../components/wallet/describeChipTransaction';
+import { downloadCsv, toCsv } from '../utils/downloadCsv';
 import styles from './CashierTradePage.module.css';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import {
@@ -227,6 +229,12 @@ interface TradeRecordRow {
   route: string | null;
   /** The full sentence for the receipt: "KINGFISH Sent 500 From ... To ...". */
   narrative: string | null;
+  /**
+   * The row's line when it is a cash-out leg ("You Accepted Golddigger's
+   * Cash-Out"), so a request never reads as a transfer to the agent it was
+   * sent to. Null for every other kind.
+   */
+  title?: string | null;
 }
 
 interface ChipRequestRow {
@@ -429,6 +437,50 @@ function isClubStaffRole(role: string | null | undefined): boolean {
   return role === 'owner' || role === 'co_owner' || role === 'admin';
 }
 
+/** The agent ranks, who may read their downline's transactions too. */
+function isAgentRole(role: string | null | undefined): boolean {
+  return role === 'super_agent' || role === 'agent' || role === 'sub_agent';
+}
+
+type HistoryBook = 'club' | 'mine' | 'downline';
+type HistoryKind = 'all' | 'cashout' | 'transfer' | 'game';
+type HistoryRange = 'all' | 'today' | '7d' | '30d';
+
+const HISTORY_KINDS: ReadonlyArray<readonly [HistoryKind, string]> = [
+  ['all', 'All'],
+  ['cashout', 'Cash-Outs'],
+  ['transfer', 'Transfers'],
+  ['game', 'Games'],
+];
+const HISTORY_RANGES: ReadonlyArray<readonly [HistoryRange, string]> = [
+  ['all', 'All Time'],
+  ['today', 'Today'],
+  ['7d', '7 Days'],
+  ['30d', '30 Days'],
+];
+
+/** The start of a date range chip, read at the moment of the request. */
+function historyRangeStart(range: HistoryRange, now: Date = new Date()): string | null {
+  if (range === 'all') return null;
+  if (range === 'today') {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    return midnight.toISOString();
+  }
+  const days = range === '7d' ? 7 : 30;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** In, Out and Net of the viewer's own wallet over the whole filtered book. */
+interface HistoryTotals {
+  incoming: number;
+  outgoing: number;
+  net: number;
+}
+
+/** The most rows one Download writes: twenty server pages. */
+const HISTORY_EXPORT_CAP = 5000;
+
 // Retire dialogs and read/write refs immediately when the account or route changes.
 // Pending durable requests keep their original account, club and request identity.
 export default function CashierTradePage() {
@@ -509,8 +561,15 @@ function CashierTradeWorkspace() {
   /* TRANSACTION HISTORY (Dan 2026-10-24): owners, co-owners and admins choose
      between every transaction in the club and their own; every other role
      reads only its own. The server enforces the same rule
-     (fn_cashier_transaction_history), so this is a choice, never a grant. */
-  const [historyScope, setHistoryScope] = useState<'club' | 'mine'>('club');
+     (fn_cashier_history_page), so this is a choice, never a grant. */
+  const [historyScope, setHistoryScope] = useState<HistoryBook>('club');
+  const [historyKind, setHistoryKind] = useState<HistoryKind>('all');
+  const [historyRange, setHistoryRange] = useState<HistoryRange>('all');
+  const [historyTotals, setHistoryTotals] = useState<HistoryTotals | null>(null);
+  const [historyTotalsState, setHistoryTotalsState] = useState<'loading' | 'ready' | 'unavailable'>(
+    'loading'
+  );
+  const [historyExporting, setHistoryExporting] = useState(false);
   const [receipt, setReceipt] = useState<TradeRecordRow | null>(null);
   const [isOnline, setIsOnline] = useState(readCashierOnlineState);
   /* THE BREAK IS NOT A FAILURE (2026-10-16). Dan pressed Confirm three times
@@ -1343,9 +1402,18 @@ function CashierTradeWorkspace() {
     void loadClub();
   }, [clubUuid, loadClub]);
 
-  /** The book the Transaction History reads: the whole club for staff who chose it. */
-  const historyBook: 'club' | 'mine' =
-    roleResolved && isClubStaffRole(myRole) && historyScope === 'club' ? 'club' : 'mine';
+  /**
+   * The book the Transaction History reads: the whole club for staff who chose
+   * it, an agent's downline when he chose it, otherwise the viewer's own. The
+   * server applies the same rule, so this is a choice, never a grant.
+   */
+  const historyBook: HistoryBook = !roleResolved
+    ? 'mine'
+    : isClubStaffRole(myRole) && historyScope === 'club'
+      ? 'club'
+      : isAgentRole(myRole) && historyScope === 'downline'
+        ? 'downline'
+        : 'mine';
 
   const loadRecords = useCallback(async () => {
     if (!user?.id || !clubUuid || !roleResolved) return false;
@@ -1354,12 +1422,15 @@ function CashierTradeWorkspace() {
     setRecordsError(null);
     try {
       // One server-owned door for every viewer. The browser never filters
-      // chip_transactions itself; it asks for a book, and the server answers
-      // with the club's rows only to an owner, co-owner or admin who asked
-      // for them, and with the viewer's own rows to everyone else.
-      const { data, error } = await supabase.rpc('fn_cashier_transaction_history', {
+      // chip_transactions itself; it asks for a book, a type and a date range,
+      // and the server answers with the club's rows only to an owner, co-owner
+      // or admin, a downline's only to its agent, and otherwise the viewer's own.
+      const { data, error } = await supabase.rpc('fn_cashier_history_page', {
         p_club_id: clubUuid,
         p_scope: historyBook,
+        p_kind: historyKind,
+        p_from: historyRangeStart(historyRange),
+        p_to: null,
         // Fetch one sentinel row so the UI only offers "Load Older Entries"
         // when another page really exists. Initial wire cost stays at 51 rows.
         p_limit: recordsLimit + 1,
@@ -1419,6 +1490,7 @@ function CashierTradeWorkspace() {
               : otherName || 'Club',
             twoSided: Boolean(r.to_user_id),
             route: walletRoute(r),
+            title: cashoutRowTitle(r, r.from_name, r.to_name, user.id),
             // The receipt's summary prints the receipt's own exact figure, so
             // the sentence and the headline above it never disagree (C1-14).
             narrative: describeChipTransaction(r, nameOf, user.id, (figure) =>
@@ -1438,11 +1510,133 @@ function CashierTradeWorkspace() {
     } finally {
       if (isMounted.current && seq === recordSeqRef.current) setRecordsLoading(false);
     }
-  }, [user?.id, clubUuid, recordsLimit, roleResolved, historyBook]);
+  }, [user?.id, clubUuid, recordsLimit, roleResolved, historyBook, historyKind, historyRange]);
 
   useEffect(() => {
     if (tab === 'record') void loadRecords();
   }, [tab, loadRecords, recordsReload]);
+
+  /* TRUE TOTALS (Dan 2026-10-24). In, Out and Net of the viewer's own wallet
+     over the WHOLE filtered book, from the server, by the Full Statement's
+     rule - not the sum of the rows that happen to be on screen. Read after the
+     rows, on its own sequence, so a slow total never holds the list back and
+     an older filter's total never lands beside newer rows. A total that could
+     not be read says so; it is never shown as 0. */
+  const totalsSeqRef = useRef(0);
+  useEffect(() => {
+    if (tab !== 'record' || !user?.id || !clubUuid || !roleResolved) return;
+    const seq = ++totalsSeqRef.current;
+    setHistoryTotalsState('loading');
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_cashier_history_totals', {
+          p_club_id: clubUuid,
+          p_kind: historyKind,
+          p_from: historyRangeStart(historyRange),
+          p_to: null,
+        });
+        if (!isMounted.current || seq !== totalsSeqRef.current) return;
+        if (error) throw error;
+        const t = (data ?? null) as {
+          incoming?: unknown;
+          outgoing?: unknown;
+          net?: unknown;
+        } | null;
+        const incoming = Number(t?.incoming);
+        const outgoing = Number(t?.outgoing);
+        const net = Number(t?.net);
+        if (![incoming, outgoing, net].every(Number.isFinite)) {
+          setHistoryTotals(null);
+          setHistoryTotalsState('unavailable');
+          return;
+        }
+        setHistoryTotals({ incoming, outgoing, net });
+        setHistoryTotalsState('ready');
+      } catch (e) {
+        if (!isMounted.current || seq !== totalsSeqRef.current) return;
+        reportError(e, 'CashierTradePage.historyTotals');
+        setHistoryTotals(null);
+        setHistoryTotalsState('unavailable');
+      }
+    })();
+  }, [tab, user?.id, clubUuid, roleResolved, historyKind, historyRange, recordsReload]);
+
+  /** Download the filtered book as a CSV, every page the server will give. */
+  const exportHistory = useCallback(async () => {
+    if (!user?.id || !clubUuid || historyExporting) return;
+    const viewer = user.id;
+    const club = clubUuid;
+    setHistoryExporting(true);
+    try {
+      const pageSize = 250;
+      const from = historyRangeStart(historyRange);
+      const rows: unknown[][] = [];
+      let truncated = false;
+      for (let offset = 0; offset < HISTORY_EXPORT_CAP; offset += pageSize) {
+        const { data, error } = await supabase.rpc('fn_cashier_history_page', {
+          p_club_id: club,
+          p_scope: historyBook,
+          p_kind: historyKind,
+          p_from: from,
+          p_to: null,
+          p_limit: pageSize + 1,
+          p_offset: offset,
+        });
+        if (error) throw error;
+        const page = (data || []) as Array<{
+          id: string;
+          created_at: string;
+          transaction_type: string | null;
+          amount: number | string | null;
+          from_user_id: string | null;
+          to_user_id: string | null;
+          notes: string | null;
+          metadata: Record<string, unknown> | null;
+          from_name: string | null;
+          to_name: string | null;
+        }>;
+        for (const raw of page.slice(0, pageSize)) {
+          const r = presentChipTransaction(raw);
+          const direction = ledgerDirection(r, viewer);
+          rows.push([
+            new Date(r.created_at).toISOString(),
+            txLabel(r.transaction_type),
+            direction === 'in' ? 'In' : direction === 'out' ? 'Out' : 'Managed',
+            r.from_name || (r.from_user_id ? 'A Member' : 'Club'),
+            r.to_name || (r.to_user_id ? 'A Member' : ''),
+            (Math.round((Number(r.amount) || 0) * 100) / 100).toFixed(2),
+            walletRoute(r) ?? '',
+            cashoutRowTitle(r, r.from_name, r.to_name, viewer) ?? r.notes ?? '',
+            r.id,
+          ]);
+        }
+        if (page.length <= pageSize) break;
+        if (offset + pageSize >= HISTORY_EXPORT_CAP) truncated = true;
+      }
+      if (!isMounted.current) return;
+      const csv = toCsv(
+        ['Date', 'Type', 'Direction', 'From', 'To', 'Chips', 'Route', 'Detail', 'Entry'],
+        rows
+      );
+      const stamp = new Date().toISOString().slice(0, 10);
+      const book =
+        historyBook === 'club' ? 'club' : historyBook === 'downline' ? 'downline' : 'mine';
+      const saved = await downloadCsv(
+        `transaction-history-${book}-${historyKind}-${historyRange}-${stamp}.csv`,
+        csv,
+        () => isMounted.current
+      );
+      if (!saved) toast?.error?.('This Device Could Not Save The File');
+      else if (truncated)
+        toast?.success?.(`Downloaded The Newest ${HISTORY_EXPORT_CAP.toLocaleString()} Entries`);
+      else toast?.success?.(`Downloaded ${rows.length.toLocaleString()} Entries`);
+    } catch (e) {
+      reportError(e, 'CashierTradePage.historyExport');
+      if (isMounted.current) toast?.error?.('The Transaction History Could Not Be Downloaded');
+    } finally {
+      if (isMounted.current) setHistoryExporting(false);
+    }
+  }, [user?.id, clubUuid, historyExporting, historyBook, historyKind, historyRange, toast]);
 
   /* A cash-out accepted (or a send made) while the Transaction History is open
      lands in it without a manual refresh: the accept writes the row the
@@ -1917,18 +2111,6 @@ function CashierTradeWorkspace() {
       );
     });
   }, [records, recordDirection, recordQuery]);
-
-  const recordSummary = useMemo(() => {
-    const amountsIn = (direction: TradeRecordRow['direction']) =>
-      records.filter((row) => row.direction === direction).map((row) => row.amount);
-    const incoming = sumChips(amountsIn('in'));
-    const outgoing = sumChips(amountsIn('out'));
-    const managed = sumChips(amountsIn('managed'));
-    // Net in cents too: 0.1 + 0.2 - 0.3 is not 0 in floating point and used to
-    // print as "+0" (P-16).
-    const net = (Math.round(incoming * 100) - Math.round(outgoing * 100)) / 100;
-    return { incoming, outgoing, managed, net };
-  }, [records]);
 
   const visibleTabs = useMemo<[TabKey, string][]>(() => {
     const all: [TabKey, string][] = [
@@ -4330,62 +4512,132 @@ function CashierTradeWorkspace() {
                 )}
               </div>
 
-              {roleResolved && isClubStaffRole(myRole) ? (
-                <div
-                  className={styles.ledgerFilters}
-                  role="group"
-                  aria-label="Choose Which Transactions To Show"
-                >
-                  {(
-                    [
-                      ['club', 'All Club Transactions'],
-                      ['mine', 'My Transactions'],
-                    ] as const
-                  ).map(([scope, label]) => (
-                    <button
-                      key={scope}
-                      type="button"
-                      className={`${styles.ledgerFilter} ${historyScope === scope ? styles.ledgerFilterActive : ''}`}
-                      aria-pressed={historyScope === scope}
-                      onClick={() => {
-                        if (scope === historyScope) return;
-                        setRecordsLimit(50);
-                        setHistoryScope(scope);
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className={styles.ledgerSummary} aria-label="Loaded Ledger Totals">
-                <div className={styles.summaryCell}>
-                  <span className={styles.summaryLabel}>In</span>
-                  <strong className={`${styles.summaryValue} ${styles.amtIn}`}>
-                    +{fmt(recordSummary.incoming)}
-                  </strong>
-                </div>
-                <div className={styles.summaryCell}>
-                  <span className={styles.summaryLabel}>Out</span>
-                  <strong className={`${styles.summaryValue} ${styles.amtOut}`}>
-                    -{fmt(recordSummary.outgoing)}
-                  </strong>
-                </div>
-                <div className={styles.summaryCell}>
-                  <span className={styles.summaryLabel}>Managed</span>
-                  <strong className={styles.summaryValue}>{fmt(recordSummary.managed)}</strong>
-                </div>
-                <div className={styles.summaryCell}>
-                  <span className={styles.summaryLabel}>Net</span>
-                  <strong
-                    className={`${styles.summaryValue} ${recordSummary.net >= 0 ? styles.amtIn : styles.amtOut}`}
+              {(() => {
+                // Which books this viewer may choose between. A player has one.
+                const books: ReadonlyArray<readonly [HistoryBook, string]> = !roleResolved
+                  ? []
+                  : isClubStaffRole(myRole)
+                    ? [
+                        ['club', 'All Club Transactions'],
+                        ['mine', 'My Transactions'],
+                      ]
+                    : isAgentRole(myRole)
+                      ? [
+                          ['mine', 'My Transactions'],
+                          ['downline', 'My Downline'],
+                        ]
+                      : [];
+                return books.length > 0 ? (
+                  <div
+                    className={styles.ledgerFilters}
+                    role="group"
+                    aria-label="Choose Which Transactions To Show"
                   >
-                    {recordSummary.net >= 0 ? '+' : '-'}
-                    {fmt(Math.abs(recordSummary.net))}
+                    {books.map(([scope, label]) => (
+                      <button
+                        key={scope}
+                        type="button"
+                        className={`${styles.ledgerFilter} ${historyBook === scope ? styles.ledgerFilterActive : ''}`}
+                        aria-pressed={historyBook === scope}
+                        onClick={() => {
+                          if (scope === historyBook) return;
+                          setRecordsLimit(50);
+                          setHistoryScope(scope);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              <div className={styles.ledgerFilters} role="group" aria-label="Filter By Type">
+                {HISTORY_KINDS.map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`${styles.ledgerFilter} ${historyKind === kind ? styles.ledgerFilterActive : ''}`}
+                    aria-pressed={historyKind === kind}
+                    onClick={() => {
+                      if (kind === historyKind) return;
+                      setRecordsLimit(50);
+                      setHistoryKind(kind);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.ledgerFilters} role="group" aria-label="Filter By Date">
+                {HISTORY_RANGES.map(([range, label]) => (
+                  <button
+                    key={range}
+                    type="button"
+                    className={`${styles.ledgerFilter} ${historyRange === range ? styles.ledgerFilterActive : ''}`}
+                    aria-pressed={historyRange === range}
+                    onClick={() => {
+                      if (range === historyRange) return;
+                      setRecordsLimit(50);
+                      setHistoryRange(range);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* TRUE TOTALS: the viewer's own wallet over the whole filtered
+              book, from the server. Never the rows on screen, never a 0 that
+              could not be read. */}
+              <div className={styles.ledgerSummary} aria-label="My Wallet Totals For These Filters">
+                <div className={styles.summaryCell}>
+                  <span className={styles.summaryLabel}>My In</span>
+                  <strong className={`${styles.summaryValue} ${styles.amtIn}`}>
+                    {historyTotalsState === 'ready' && historyTotals
+                      ? `+${fmt(historyTotals.incoming)}`
+                      : '--'}
+                  </strong>
+                </div>
+                <div className={styles.summaryCell}>
+                  <span className={styles.summaryLabel}>My Out</span>
+                  <strong className={`${styles.summaryValue} ${styles.amtOut}`}>
+                    {historyTotalsState === 'ready' && historyTotals
+                      ? historyTotals.outgoing > 0
+                        ? `-${fmt(historyTotals.outgoing)}`
+                        : fmt(0)
+                      : '--'}
+                  </strong>
+                </div>
+                <div className={styles.summaryCell}>
+                  <span className={styles.summaryLabel}>My Net</span>
+                  <strong
+                    className={`${styles.summaryValue} ${
+                      historyTotalsState === 'ready' && historyTotals
+                        ? historyTotals.net >= 0
+                          ? styles.amtIn
+                          : styles.amtOut
+                        : ''
+                    }`}
+                  >
+                    {historyTotalsState === 'ready' && historyTotals
+                      ? `${historyTotals.net >= 0 ? '+' : '-'}${fmt(Math.abs(historyTotals.net))}`
+                      : '--'}
                   </strong>
                 </div>
               </div>
+              {historyTotalsState === 'unavailable' ? (
+                <div className={styles.empty} role="status">
+                  Totals Could Not Be Read.{' '}
+                  <button
+                    type="button"
+                    className={styles.retryBtn}
+                    onClick={() => setRecordsReload((value) => value + 1)}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : null}
 
               <div className={styles.ledgerToolbar}>
                 <input
@@ -4434,7 +4686,9 @@ function CashierTradeWorkspace() {
                 {!recordsLoading && !recordsError && filteredRecords.length === 0 && (
                   <div className={styles.empty}>
                     {records.length === 0
-                      ? 'No Transactions Recorded Yet.'
+                      ? historyKind === 'all' && historyRange === 'all'
+                        ? 'No Transactions Recorded Yet.'
+                        : 'No Transactions Match These Filters.'
                       : 'No Ledger Entries Match Those Filters.'}
                   </div>
                 )}
@@ -4448,18 +4702,24 @@ function CashierTradeWorkspace() {
                         dialogTriggerRef.current = event.currentTarget;
                         setReceipt(r);
                       }}
-                      aria-label={`Open Receipt For ${r.direction === 'managed' ? 'Managed Transfer' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
+                      aria-label={`Open Receipt For ${r.title ? r.title : `${r.direction === 'managed' ? 'Managed Transfer' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}`}, ${fmt(r.amount)} Chips`}
                     >
                       <div className={styles.rowInfo}>
                         <span className={styles.rowName}>
-                          {r.direction === 'managed'
-                            ? r.twoSided
-                              ? 'Transfer '
-                              : ''
-                            : r.direction === 'out'
-                              ? 'To '
-                              : 'From '}
-                          {r.counterparty}
+                          {r.title ? (
+                            r.title
+                          ) : (
+                            <>
+                              {r.direction === 'managed'
+                                ? r.twoSided
+                                  ? 'Transfer '
+                                  : ''
+                                : r.direction === 'out'
+                                  ? 'To '
+                                  : 'From '}
+                              {r.counterparty}
+                            </>
+                          )}
                         </span>
                         <span className={styles.rowSub}>
                           {txLabel(r.type)}
@@ -4499,6 +4759,15 @@ function CashierTradeWorkspace() {
                   onClick={() => navigate(`/clubs/${clubParam}/cashier/statements`)}
                 >
                   Full Statement
+                </button>
+                <button
+                  type="button"
+                  className={styles.classicLink}
+                  disabled={historyExporting || !isOnline}
+                  aria-busy={historyExporting}
+                  onClick={() => void exportHistory()}
+                >
+                  {historyExporting ? 'Preparing Download...' : 'Download These Transactions'}
                 </button>
               </div>
             </section>

@@ -73,6 +73,15 @@
  * LightningLatencyLedger (window roll and its one flush in flight), after
  * the pass's own work is decided and without reading anything back.
  *
+ * A PLAYER FREED IN ANOTHER CLUSTER (2026-10-24). A player who sits in
+ * several Lightning pools is held in this one (MULTI_TABLE_LIMIT) while their
+ * hands elsewhere fill the limit. The fold or hand end that frees them is
+ * another Cluster's event, so this worker used to learn of it only at its
+ * next pass interval (up to a second later) or by chance. When the last pass
+ * here reported a MULTI_TABLE_LIMIT hold and the freed player is one this
+ * worker has seen, `peerReleased` asks for a pass within the admission
+ * window, exactly as an arrival does. Nothing about who is matched changes.
+ *
  * TIMERS. One setTimeout at a time, armed only after the previous pass has
  * finished (no overlap, no pile-up behind a slow database), unref'd so it
  * never holds the process open, and cleared by stop(), which also waits for a
@@ -270,6 +279,8 @@ export class LightningClusterWorker {
   private lastPassSaturated = false;
   /** The last pass was skipped because another pass held the Cluster. */
   private lastPassBusy = false;
+  /** The last forming pass held somebody for their multi-table limit (MULTI_TABLE_LIMIT). */
+  private multiTableHeld = false;
   /** Freed players not yet seen in a formed hand: their idle moment (process clock). */
   private readonly idleSince = new Map<string, number>();
   /** Form-mode A/A read in flight (one at a time), when it started, and its state. */
@@ -477,14 +488,32 @@ export class LightningClusterWorker {
    * anyway - so every arrival of a burst is formed by the same few passes.
    */
   admit(): void {
-    if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
-    if (this.isDraining) return;
+    this.passSoon();
+  }
+
+  /**
+   * A player was freed by a hand of ANOTHER Cluster. When this Cluster's last
+   * forming pass held someone for their multi-table limit and the player is
+   * one this worker has seen, the next pass runs within the admission window
+   * (the freed player may now be legal here). Returns whether it asked.
+   */
+  peerReleased(playerId: string): boolean {
+    if (!this.multiTableHeld || typeof playerId !== 'string') return false;
+    if (!this.knownPoolPlayers.includes(playerId)) return false;
+    return this.passSoon();
+  }
+
+  /** The next pass within LIGHTNING_ADMISSION_COALESCE_MS, never later than it would have run. */
+  private passSoon(): boolean {
+    if (!this.running || this.stopped || this.config.workerMode !== 'form') return false;
+    if (this.isDraining) return false;
     if (this.inFlight) {
       this.wakeRequested = true;
-      return;
+      return true;
     }
-    if (this.timerDueAtMs <= Date.now() + LIGHTNING_ADMISSION_COALESCE_MS) return;
+    if (this.timerDueAtMs <= Date.now() + LIGHTNING_ADMISSION_COALESCE_MS) return true;
     this.arm(LIGHTNING_ADMISSION_COALESCE_MS);
+    return true;
   }
 
   /**
@@ -848,6 +877,11 @@ export class LightningClusterWorker {
     if (out.status === 'invalid') return { outcome: 'invalid', reason: out.reason };
     const result = out.value;
     if (result.skipped === true) return { outcome: 'skipped', reason: String(result.reason ?? '') };
+    const reasons = result.reasons;
+    this.multiTableHeld =
+      reasons !== null &&
+      typeof reasons === 'object' &&
+      Number((reasons as Record<string, unknown>).MULTI_TABLE_LIMIT ?? 0) > 0;
     if (result.ok !== true && result.frozen !== true && result.reason) {
       return { outcome: 'invalid', reason: String(result.reason) };
     }

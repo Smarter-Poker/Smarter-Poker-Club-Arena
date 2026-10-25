@@ -155,7 +155,7 @@ describe('a Classic game never moves its players', () => {
   });
 
   it('the join door fills a Classic game fullest table first, whatever its role', () => {
-    expect(SQL).toContain("IF md5(v_src) <> '2ab096598d5d2240d546a08dd96094ea' THEN");
+    expect(SQL).toContain("IF md5(v_src) <> '26a7319a92d8d391d22b410cda87db2e' THEN");
     expect(SQL).toContain(
       "'  v_never_moves := public.fn_cash_game_never_moves_players(g.template_name, g.ruleset_snapshot);'"
     );

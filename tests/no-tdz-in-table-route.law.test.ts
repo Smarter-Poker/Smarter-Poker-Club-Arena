@@ -36,6 +36,8 @@ const BASELINE: Record<string, string[]> = {
   'src/pages/TablePage.tsx': [
     // Read only when Join Lightning is tapped on a Lightning table (2026-10-24).
     'anchorLightningClusterId',
+    // Called from a seat tap or a buy-in refusal at a Lightning table, never during render.
+    'openLightningAnchorEntry',
     'bustRebuyOpenRef',
     // Read inside the snapshot merge's setTableState callback (2026-10-14).
     'cardsPreSortRef',

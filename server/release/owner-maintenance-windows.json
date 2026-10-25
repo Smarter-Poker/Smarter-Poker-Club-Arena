@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-separable-reliability-01a17363",
+      "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry.",
+      "contains": "feda26a581e2bfbf4159befe4852b264b9870413",
+      "notBefore": "2026-10-25T18:18:56Z",
+      "notAfter": "2026-10-26T00:18:56Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-horse-v53-phase-two-asap",
       "ownerOrder": "Dan, 2026-10-24 17:53 Chicago, on the V53 horse pressure work: \"PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. HORSES ARE LOSING AT A RIDICULOUS RATE AGAINST WOOWOO ... THESE CHANGES NEED TO TAKE EFFECT ASAP!\"; 21:48 \"PROCEED TO THE NEXT PHASE\"; 22:11 \"FINISH EVERYTHING UP NOW, MAKE SURE ITS FULLY ACTIVATED WITH EVERY SINGLE HORSE\"; 22:23 \"KEEP GOING UNTIL THIS IS 100\". Off-cycle release at the next hourly :55 break (later :55 breaks as fallback) of main from 1b64e000f (everything merged since the serving bbd6db8e) plus the V53 follow-ups #7986 (stop flatting the aggressive human's 3-bet) and #7963 (continued barrel pressure) when merged.",
       "contains": "1b64e000f7b52f456ca9c7e88afb9d4b721fba3a",

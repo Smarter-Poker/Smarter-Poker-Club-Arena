@@ -1,0 +1,3 @@
+# tests/a-lightning-player-between-hands-shows-their-balance.law.test.ts
+
+Dan 2026-10-24: "IN LIGHTNING GAMES, WHEN YOU MOVE TO A NEW TABLE AFTER FOLDING... IT SHOUDN'T SAY SITTING OUT... AND IT SHOULD 100% ALWAYS SHOW YOUR BALANCE AT ALL TIMES, IT SHOULD NEVER SAY 0.00". Between Lightning hands the room's roster is empty, so the hero's chair is drawn by `lightningWaitingHero`: active unless the player asked to sit out, with the last roster stack for the room (or the pool balance from `fn_lightning_my_session`, which also wins over a last-seen zero and replaces the roster figure after chips are added). The table draws that chair, the footer says nothing between hands, seats are never tappable, and Leave and Add Chips read the same balance.

@@ -3,18 +3,24 @@
 Dan, 2026-10-24: "just make the plo5 classic to 50% vpip and stop. thats it.
 then relaunch the game." Scope confirmed as every PLO5 Classic game.
 
-Migration `20261024212524_plo5_classic_plays_at_a_fifty_percent_vpip_floor.sql`:
+The live change was installed by
+`20261024213131_plo5_plo6_classic_fifty_vpip_bb_ante.sql` (#7942), a later
+owner instruction covering PLO5 and PLO6 Classic, 50% VPIP and a BB ante. It
+set the template floor, re-stamped every PLO5 Classic game and projected the
+floor onto the running tables, so the games carried on with players seated and
+the floor applied from the next hand.
 
-- `fn_cash_template_defaults('classic','plo5')` now returns `vpip_floor` 50
-  (window 10 hands). Every other template and variant is unchanged; the
-  migration asserts that before it writes anything.
-- Every non-closed Classic PLO5 game is re-stamped, so the floor trigger copies
-  50 into its snapshot. Dormant games pick up the floor when re-enabled.
-- Relaunch: each enabled game is projected through `fn_cash_apply_ruleset`,
-  which sets `nit_game`, `maintain_percent_min = 50` and `maintain_hands = 10`
-  on its open tables. The engine re-reads these between hands, so the floor
-  applies from the next hand and nobody is unseated.
+`20261024212524_plo5_classic_plays_at_a_fifty_percent_vpip_floor.sql` (#7938)
+merged first with its own template replacement, which had no ante for PLO5
+Classic. Installing it after #7942 would have undone the ante (its md5 guard
+would have refused it anyway). It was never installed, so it was rewritten as a
+read-only proof of the owner's request before being installed: the template
+promises 50% over 10 hands, every PLO5 Classic snapshot says 50, and every open
+table of an enabled game enforces it.
 
-Not changed: the Classic template blurb in `src/config/cashGames.ts` still
-reads "No Minimum VPIP" for Classic in general. A PLO5 Classic game's own info
-rows read the snapshot and print "50% Over 10 Hands".
+Verified live 2026-10-24 23:04 UTC: 17 non-closed PLO5 Classic games at 50,
+6 enabled, all 15 open tables at `nit_game`, 50%, 10 hands, 60 players seated.
+
+The Classic template blurb in `src/config/cashGames.ts` still reads "No Minimum
+VPIP" for Classic in general; a PLO5 Classic game's own info rows read the
+snapshot and print "50% Over 10 Hands".

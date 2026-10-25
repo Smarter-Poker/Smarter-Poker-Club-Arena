@@ -118,9 +118,9 @@ const defaults = (template: string, variant: string) => {
         : [2, 3, 4, 5, 6, 7, 8],
     min_buyin_bb: classic ? 40 : 100,
     max_buyin_bb: 200,
-    regular_ante: classic ? 'none' : 'bb',
-    // Classic PLO5 plays at a 50% floor (owner 2026-10-24, 20261024212524).
-    vpip_floor: classic ? (variant === 'plo5' ? 50 : 0) : 40,
+    // Classic PLO5 and PLO6 play a BB ante and a 50% floor (20261024213131).
+    regular_ante: classic && variant !== 'plo5' && variant !== 'plo6' ? 'none' : 'bb',
+    vpip_floor: classic ? (variant === 'plo5' || variant === 'plo6' ? 50 : 0) : 40,
     vpip_window: 10,
     bombs: classic
       ? { enabled: false, trigger: null, ante_bb: null, boards: null }

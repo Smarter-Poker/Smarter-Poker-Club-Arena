@@ -1,3 +1,4 @@
+import gzip
 import importlib.util
 import datetime
 import json
@@ -20,6 +21,130 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_archive_fallback_recovers_original_window_without_current_identity(self):
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        start = now-datetime.timedelta(hours=1)
+        window = reader.log_window(start.strftime('%Y-%m-%dT%H:%M:%SZ'), now)
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            end = now-datetime.timedelta(minutes=30)
+            filename = 'engine-'+end.strftime('%Y%m%dT%H%M%SZ')+'-started'+(start-datetime.timedelta(hours=1)).strftime('%Y%m%dT%H%M%S')+'-abcdef123456-c3ed8648.log.gz'
+            line = start.strftime('%Y-%m-%dT%H:%M:%SZ')+' [Tournament.read] F06_ORIGINAL_CHANGED '+EVENT+' PRIVATE_SECRET\n'
+            with gzip.open(directory/filename, 'wb') as out:
+                out.write((line+end.strftime('%Y-%m-%dT%H:%M:%SZ')+' OUTSIDE_SECRET\n').encode())
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                sources, metadata = reader.archived_window(window, b'')
+            self.assertEqual(len(sources), 1)
+            raw, identity = sources[0]
+            self.assertEqual(raw, line.encode())
+            self.assertEqual(identity['imageIdPrefix'], 'c3ed8648')
+            self.assertIn('unproven', identity['fullEngineRevision'])
+            self.assertFalse(metadata['truncated'])
+            self.assertNotIn('OUTSIDE_SECRET', raw.decode())
+            self.assertNotIn('PRIVATE_SECRET', json.dumps(reader.extract(raw, SCOPES)))
+            import base64
+            import io
+            encoded = base64.b64encode(json.dumps({'scopes': SCOPES, 'windowStart': window['since']}).encode()).decode()
+            identity_now = {'version': '9f0000000000', 'instanceId': 'new-process'}
+            output = io.StringIO()
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory), patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'health', return_value=identity_now), patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+                reader.main()
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['inputBytes'], len(line.encode()))
+            self.assertEqual(result['records'][0]['engineIdentity']['imageIdPrefix'], 'c3ed8648')
+            self.assertEqual(result['hostEngineBefore'], identity_now)
+            self.assertEqual(result['hostEngineAfter'], identity_now)
+            self.assertNotIn('PRIVATE_SECRET', output.getvalue())
+
+    def archive_fixture(self, directory, *, ended_minutes=30, started_hours=2, suffix='abcdef123456-c3ed8648', raw=None):
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        start = now-datetime.timedelta(hours=1)
+        window = reader.log_window(start.strftime('%Y-%m-%dT%H:%M:%SZ'), now)
+        name = 'engine-'+(now-datetime.timedelta(minutes=ended_minutes)).strftime('%Y%m%dT%H%M%SZ')+'-started'+(now-datetime.timedelta(hours=started_hours)).strftime('%Y%m%dT%H%M%S')+'-'+suffix+'.log.gz'
+        line = start.strftime('%Y-%m-%dT%H:%M:%SZ')+' [Tournament.read] F06_ORIGINAL_CHANGED '+EVENT+'\n'
+        with gzip.open(directory/name, 'wb') as out:
+            out.write(raw if raw is not None else line.encode())
+        return window, directory/name, line.encode()
+
+    def test_archive_admission_rejects_symlink_malformed_nonoverlap_and_old_processes(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, valid, line = self.archive_fixture(directory)
+            valid.rename(directory/'payload.gz')
+            valid.symlink_to(directory/'payload.gz')
+            self.archive_fixture(directory, ended_minutes=20, started_hours=.25)
+            self.archive_fixture(directory, ended_minutes=1500, started_hours=26)
+            self.archive_fixture(directory, suffix='nothex123456-password')
+            (directory/'engine-20260230T000000Z-started20260229T000000-abcdef123456-c3ed8648.log.gz').write_bytes(b'bad')
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                sources, metadata = reader.archived_window(window, b'')
+            self.assertEqual(sources, [])
+            self.assertEqual(metadata['status'], 'unavailable')
+            self.assertFalse(metadata['fullWindowCoverageProven'])
+            # A symlinked canonical directory is refused too.
+            alias = directory/'alias'
+            alias.symlink_to(directory, target_is_directory=True)
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', alias):
+                self.assertEqual(reader.archived_window(window, b'')[1]['status'], 'unavailable')
+
+    def test_archive_shared_limits_dedup_and_corrupt_sources_are_explicit(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, path, line = self.archive_fixture(directory)
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                sources, metadata = reader.archived_window(window, line)
+                self.assertEqual(sources[0][0], b'')
+                self.assertFalse(metadata['truncated'])
+                sources, metadata = reader.archived_window(window, b'x\n'*20000)
+                self.assertTrue(metadata['truncated'])
+                self.assertEqual(metadata['archives'][0]['status'], 'inputBound')
+                self.assertEqual(sources[0][0], b'')
+                sources, metadata = reader.archived_window(window, b'x'*reader.MAX_BYTES)
+                self.assertTrue(metadata['truncated'])
+                self.assertEqual(sources[0][0], b'')
+                with patch.object(reader, 'MAX_ARCHIVE_EXPANSION', 1):
+                    sources, metadata = reader.archived_window(window, b'')
+                    self.assertTrue(metadata['truncated'])
+                    self.assertEqual(metadata['archives'][0]['status'], 'expansionBound')
+                path.write_bytes(b'not gzip PRIVATE_SECRET')
+                sources, metadata = reader.archived_window(window, b'')
+                self.assertEqual(metadata['status'], 'incomplete')
+                self.assertNotIn('PRIVATE_SECRET', json.dumps(metadata))
+
+    def test_archive_selection_and_time_are_bounded_without_absence_certificate(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            for minutes in [30, 29, 28]:
+                window, _, _ = self.archive_fixture(directory, ended_minutes=minutes)
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                sources, metadata = reader.archived_window(window, b'')
+                self.assertEqual(len(metadata['archives']), 2)
+                self.assertTrue(metadata['truncated'])
+                self.assertFalse(metadata['fullWindowCoverageProven'])
+                self.assertIn('unknown', metadata['absenceMeans'])
+                sources, metadata = reader.archived_window(window, b'', seconds=0)
+                self.assertEqual(sources, [])
+                self.assertTrue(metadata['truncated'])
+                old = {'since': '2000-01-01T00:00:00Z', 'until': '2000-01-01T00:15:00Z'}
+                with self.assertRaises(ValueError):
+                    reader.archived_window(old, b'')
+
+    def test_archive_decompression_child_is_killed_at_shared_deadline(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, _, _ = self.archive_fixture(directory)
+            executable = directory/'gzip'
+            executable.write_text('#!'+sys.executable+'\nimport time\ntime.sleep(5)\n')
+            executable.chmod(0o700)
+            import time
+            started = time.monotonic()
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory), patch.dict(os.environ, {'PATH': str(directory)+':'+os.environ.get('PATH', '')}):
+                sources, metadata = reader.archived_window(window, b'', seconds=.05)
+            self.assertLess(time.monotonic()-started, 1)
+            self.assertTrue(metadata['truncated'])
+            self.assertEqual(metadata['archives'][0]['status'], 'timeBound')
+            self.assertEqual(sources[0][0], b'')
+
     def fold_record(self, **changes):
         return {**dict(version=1, requestId=EVENT, totalMs=450, timerLateMs=2,
                        outcome='fulfilled', attempts=[dict(startMs=0, headersMs=400,
@@ -363,6 +488,26 @@ class NativeLogReader(unittest.TestCase):
         result = reader.extract(b'', SCOPES)
         self.assertEqual(result['records'], [])
         self.assertIn('unknown', result['absenceMeans'])
+
+    def test_successor_trigger_keeps_only_scoped_static_phase_and_elapsed_counts(self):
+        context = 'GameServer.stalled_elimination_successor_drain_requested'
+        body = 'Tournament '+EVENT+' bust stage stalled (sweep in flight 0s, oldest bust waiting 129s, stage 1, stuck in tryTournamentRebuys for 3s) - no bust could be recorded PRIVATE_SECRET'
+        raw = ('\n'.join([
+            STAMP+'['+context+'] Error: '+body,
+            STAMP+'['+context+'_extra] Error: '+body,
+            STAMP+'['+context+'] Error: '+body.replace(EVENT, '10000000-0000-4000-8000-000000000001'),
+            STAMP+'['+context+'] Error: '+body.replace('tryTournamentRebuys', 'PRIVATE_PHASE'),
+            STAMP+'[GameServer.stuck_tournament_successor_drain_requested] Error: '+EVENT+' '+TABLE+' PRIVATE_SECRET',
+        ])).encode()
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 3)
+        self.assertEqual(result['records'][0]['successorStall'], {
+            'sweepInFlightSeconds': 0, 'bustWaitingSeconds': 129,
+            'stage': 1, 'step': 'tryTournamentRebuys', 'stepSeconds': 3,
+        })
+        self.assertIsNone(result['records'][1]['successorStall']['step'])
+        self.assertNotIn('successorStall', result['records'][2])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
 
     def test_native_successor_admission_contexts_are_exact_and_redacted(self):
         contexts = [

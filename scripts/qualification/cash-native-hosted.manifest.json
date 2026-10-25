@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235596,
-      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+      "bytes": 235835,
+      "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3736,6 +3736,21 @@
     "currentWorkflowPin": {
       "bytes": 235596,
       "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+    }
+  },
+  "horseOwnPublicHistoryNative20261025": {
+    "reason": "Add isolated PG17 original-observer public-history qualification in existing required Accounting4. Refresh only current workflow input identity; preserve historical pins, financial assertions and qualification verdicts. This is source binding, not financial or production execution evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 235596,
+          "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+        },
+        "current": {
+          "bytes": 235835,
+          "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
+        }
+      }
     }
   }
 }

@@ -520,6 +520,8 @@ export interface GameFilterValue {
   format: string[];
   /** Show ONLY games of these styles (classic / action / madness). Optional: saved values predate it. */
   styles?: string[];
+  /** Style catalog understood when this choice was made; absent on older clients. */
+  stylesVersion?: number;
   rangeMin: number;
   rangeMax: number;
   selectedRanges?: string[];
@@ -537,6 +539,7 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
     games: [],
     format: [],
     styles: [],
+    stylesVersion: 1,
     rangeMin: spec.range.min,
     rangeMax: spec.range.max,
     selectedRanges: [],

@@ -89,10 +89,12 @@ vi.mock('../src/components/common/Toast', () => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 const recoveryRpc = cashierRecoveryRpc();
@@ -104,6 +106,88 @@ function installRpc(implementation: (...args: any[]) => any) {
     const recovery = recoveryRpc.answer(name, args);
     return recovery ? Promise.resolve(recovery) : implementation(name, args);
   }) as never);
+}
+
+function installHistoryTables() {
+  vi.mocked(supabase.from).mockImplementation((table: string) => {
+    let columns = '';
+    const builder: Record<string, unknown> = {};
+    const chain = () => builder;
+    for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
+      builder[method] = vi.fn(chain);
+    }
+    builder.select = vi.fn((value: string) => {
+      columns = value;
+      return builder;
+    });
+    builder.maybeSingle = vi.fn(() =>
+      Promise.resolve(
+        table === 'club_members'
+          ? { data: { role: 'owner', chip_balance: 250 }, error: null }
+          : table === 'agents'
+            ? { data: { agent_wallet_balance: 500 }, error: null }
+            : { data: null, error: null }
+      )
+    );
+    builder.then = (resolve: (value: unknown) => unknown) => {
+      const value =
+        table === 'club_members' && columns.includes('clubs:club_id')
+          ? {
+              data: [
+                {
+                  club_id: CLUB_ID,
+                  role: 'owner',
+                  chip_balance: 250,
+                  clubs: {
+                    name: 'Ledger Club',
+                    club_id: 101,
+                    slug: 'ledger-club',
+                    logo_url: null,
+                    is_union: false,
+                    owner_id: USER_ID,
+                  },
+                },
+              ],
+              error: null,
+            }
+          : { data: [], error: null, count: 0 };
+      return Promise.resolve(value).then(resolve);
+    };
+    return builder as never;
+  });
+}
+
+const historyEntry = (index = 0) => ({
+  id: `66666666-6666-4666-8666-${100000000000 + index}`,
+  created_at: '2026-10-25T09:00:00Z',
+  transaction_type: 'agent_wallet_send',
+  amount: 50,
+  from_user_id: '77777777-7777-4777-8777-777777777777',
+  to_user_id: PLAYER_ID,
+  metadata: { destination: 'player_wallet' },
+  from_name: 'Alice Agent',
+  to_name: 'Bob Player',
+});
+
+const clubHistoryTotals = {
+  mode: 'club',
+  entries: 1,
+  volume: 50,
+  cashouts_paid: 0,
+  complete: true,
+};
+
+async function openHistory() {
+  render(
+    <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+      <Routes>
+        <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await screen.findByText('Balances Synchronized');
+  fireEvent.click(screen.getByRole('button', { name: 'Transaction History', exact: true }));
+  return screen.findByRole('tabpanel', { name: 'Transaction History' });
 }
 
 describe('CashierTradePage club load ordering', () => {
@@ -322,52 +406,7 @@ describe('CashierTradePage club load ordering', () => {
   });
 
   it('loads an owner-visible managed transfer through the role-scoped ledger RPC', async () => {
-    vi.mocked(supabase.from).mockImplementation((table: string) => {
-      let columns = '';
-      const builder: Record<string, unknown> = {};
-      const chain = () => builder;
-      for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
-        builder[method] = vi.fn(chain);
-      }
-      builder.select = vi.fn((value: string) => {
-        columns = value;
-        return builder;
-      });
-      builder.maybeSingle = vi.fn(() =>
-        Promise.resolve(
-          table === 'club_members'
-            ? { data: { role: 'owner', chip_balance: 250 }, error: null }
-            : table === 'agents'
-              ? { data: { agent_wallet_balance: 500 }, error: null }
-              : { data: null, error: null }
-        )
-      );
-      builder.then = (resolve: (value: unknown) => unknown) => {
-        const value =
-          table === 'club_members' && columns.includes('clubs:club_id')
-            ? {
-                data: [
-                  {
-                    club_id: CLUB_ID,
-                    role: 'owner',
-                    chip_balance: 250,
-                    clubs: {
-                      name: 'Ledger Club',
-                      club_id: 101,
-                      slug: 'ledger-club',
-                      logo_url: null,
-                      is_union: false,
-                      owner_id: USER_ID,
-                    },
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null, count: 0 };
-        return Promise.resolve(value).then(resolve);
-      };
-      return builder as never;
-    });
+    installHistoryTables();
     installRpc((name: string, args?: { p_scope?: string }) => {
       if (name === 'fn_cashier_history_summary') {
         return Promise.resolve({
@@ -526,6 +565,92 @@ describe('CashierTradePage club load ordering', () => {
         handler({ source: 'cashout_approved', userId: USER_ID });
     });
     await waitFor(() => expect(historyReads()).toBeGreaterThan(before), { timeout: 3000 });
+  });
+
+  it('retires the old book before the selected history book has answered', async () => {
+    installHistoryTables();
+    const mine = deferred<{ data: unknown[]; error: null }>();
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_feed')
+        return args.p_scope === 'mine'
+          ? mine.promise
+          : Promise.resolve({ data: [historyEntry()], error: null });
+      return Promise.resolve({
+        data: name === 'fn_cashier_history_summary' ? clubHistoryTotals : [],
+        error: null,
+      });
+    });
+    const panel = await openHistory();
+    await within(panel).findByText('Transfer Alice Agent To Bob Player');
+    fireEvent.click(within(panel).getByRole('button', { name: 'My Transactions' }));
+    expect(
+      within(panel).queryByRole('button', { name: /^Open Receipt For/ })
+    ).not.toBeInTheDocument();
+    expect(panel).toHaveAttribute('aria-busy', 'true');
+    await act(async () => mine.resolve({ data: [], error: null }));
+    await within(panel).findByText('No Transactions Recorded Yet.');
+  });
+
+  it.each([
+    ['null', { ...clubHistoryTotals, volume: null }],
+    ['blank', { ...clubHistoryTotals, cashouts_paid: ' ' }],
+    ['boolean', { ...clubHistoryTotals, entries: false }],
+    ['unknown mode', { mode: 'unknown', incoming: 0, outgoing: 0, net: 0 }],
+  ])('does not turn %s history totals into verified zeroes', async (_name, totals) => {
+    installHistoryTables();
+    installRpc((name) =>
+      Promise.resolve({ data: name === 'fn_cashier_history_summary' ? totals : [], error: null })
+    );
+    const panel = await openHistory();
+    await within(panel).findByText('Totals Could Not Be Read.', { exact: false });
+    expect(within(panel).getByLabelText('Club Totals For These Filters')).toHaveTextContent('--');
+  });
+
+  it('stops a late incomplete total from scheduling reads after history closes', async () => {
+    installHistoryTables();
+    const summary = deferred<{ data: unknown; error: null }>();
+    installRpc((name) =>
+      name === 'fn_cashier_history_summary'
+        ? summary.promise
+        : Promise.resolve({ data: [], error: null })
+    );
+    const panel = await openHistory();
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      fireEvent.click(within(panel).getByRole('button', { name: 'Players', exact: true }));
+      await act(async () =>
+        summary.resolve({ data: { ...clubHistoryTotals, complete: false }, error: null })
+      );
+      expect(timer.mock.calls.filter(([, delay]) => delay === 1200)).toHaveLength(0);
+    } finally {
+      timer.mockRestore();
+    }
+  });
+
+  it('does not report an older-page error after the history book changes', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: null; error: Error }>();
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        return Promise.resolve({
+          data:
+            args.p_scope === 'mine'
+              ? []
+              : Array.from({ length: 51 }, (_, index) => historyEntry(index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'My Transactions' }));
+    await within(panel).findByText('No Transactions Recorded Yet.');
+    await act(async () => older.reject(new Error('Old book unavailable')));
+    expect(toastMocks.error).not.toHaveBeenCalled();
   });
 
   it('does not invalidate the request that loads the first Trade tab', async () => {

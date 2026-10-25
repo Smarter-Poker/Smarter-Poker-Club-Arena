@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235911,
-      "sha256": "63ce14b8a81e7a7b12a1f888a2ee6e9d12f81d35f6d07732c8a3521861a62959"
+      "bytes": 235919,
+      "sha256": "3d666d2b816734eacc1f758947f26b5b66c3acea3c7f00d5474918399b32fd3e"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -289,6 +289,20 @@
     "currentWorkflowPin": {
       "bytes": 235911,
       "sha256": "63ce14b8a81e7a7b12a1f888a2ee6e9d12f81d35f6d07732c8a3521861a62959"
+    }
+  },
+  "horseMultiboardPopulationFollowup20261025": {
+    "reason": "Use existing native audit fixture to qualify exact multi-board decision populations for direct descendants. Current workflow identity only; preserve all historical pins, financial assertions and qualification states. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235596,
+      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+    }
+  },
+  "horsePhase14ProtectedMainIntegration20261025": {
+    "reason": "Preserve protected-main original Lightning coordinates, all-archive readers and narrow V56 policy alongside independent Phase14 generation qualification. Refresh only current workflow identity; preserve every historical qualification receipt, financial input/assertion and verdict. Not native or production certification.",
+    "currentWorkflowPin": {
+      "bytes": 235919,
+      "sha256": "3d666d2b816734eacc1f758947f26b5b66c3acea3c7f00d5474918399b32fd3e"
     }
   }
 }

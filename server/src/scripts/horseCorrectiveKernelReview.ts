@@ -120,6 +120,10 @@ export async function runHorseCorrectiveKernelReview(
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // A finite operator command does not own the engine's lobby publisher.
+  // Keep cleanup inside direct execution so importing helpers leaves it live.
+  const { channelHub } = await import('../hub/ChannelHub.js');
+  channelHub.close();
   const result = await runHorseCorrectiveKernelReview(process.argv.slice(2));
   process.stdout.write(result.output);
   process.exitCode = result.code;

@@ -51,6 +51,9 @@ export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {
   /** Private accepted-history prefix captured beside the live turn. Diagnostic
    * binding only; excluded from strategy sampling, included in input validation. */
   handJournalContext?: import('../HorseDecisionHandBinding.js').HorseHandJournalContext | null;
+  handJournalCoordinate?:
+    | import('../HorseDecisionHandBinding.js').HorseHandJournalCoordinate
+    | null;
   /** Epoch captured while this turn snapshot was authoritative, before FIFO wait. */
   decisionTimeMs: number;
   /** Full input digest, including diagnostic evidence, validated by the worker. */
@@ -72,6 +75,7 @@ type HorseDecisionKeyInput = Pick<
   | 'mods'
   | 'opts'
   | 'handJournalContext'
+  | 'handJournalCoordinate'
 >;
 
 /** JSON-compatible canonicalizer with sorted object keys and finite numbers. */
@@ -108,6 +112,9 @@ function canonicalDecisionValue(value: unknown, path = '$'): unknown {
  */
 export function buildHorseDecisionKey(input: HorseDecisionKeyInput): string {
   const material = canonicalDecisionValue({
+    ...(input.handJournalCoordinate !== undefined
+      ? { handJournalCoordinate: input.handJournalCoordinate }
+      : {}),
     schemaVersion: 1,
     fence: input.fence,
     decisionHour: Math.floor(input.decisionTimeMs / 3_600_000),
@@ -158,9 +165,17 @@ export function validatedHorsePolicySamplingKey(
   return mods === input.mods &&
     opts === input.opts &&
     gameState === input.gameState &&
-    input.handJournalContext === undefined
+    input.handJournalContext === undefined &&
+    input.handJournalCoordinate === undefined
     ? input.decisionKey
-    : buildHorseDecisionKey({ ...input, gameState, mods, opts, handJournalContext: undefined });
+    : buildHorseDecisionKey({
+        ...input,
+        gameState,
+        mods,
+        opts,
+        handJournalContext: undefined,
+        handJournalCoordinate: undefined,
+      });
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {

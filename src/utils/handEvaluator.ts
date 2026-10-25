@@ -49,6 +49,7 @@ const RANK_VALUE: Record<string, number> = {
   '7': 7,
   '8': 8,
   '9': 9,
+  '10': 10,
   T: 10,
   J: 11,
   Q: 12,
@@ -99,6 +100,50 @@ function value(card: DeckCard): number {
   return RANK_VALUE[String(card.rank).toUpperCase()] ?? 0;
 }
 
+/**
+ * ONE SUIT, ONE SPELLING (Dan 2026-10-25, from a player's screenshot).
+ *
+ * A PLO5 hero held Kc Jc on a 9c 8c Tc board - a king-high flush - and the
+ * label under the seat said "Straight". The evaluator was right about the
+ * cards it was given and wrong about what a suit is: the hero's hole cards
+ * reach the table through table_hole_cards and ENGINE_SUIT_MAP, which spell
+ * clubs 'c', while the board goes through normalizeCards, which spells it
+ * 'clubs'. `suits.every(s => s === suits[0])` compared the spellings, so ANY
+ * flush that used a hole card - every Omaha flush, and every Hold'em flush
+ * that was not five on the board - was invisible, and the next best hand
+ * (here the Q-J-T-9-8 straight) was named instead. Ranks were never affected
+ * because value() already folded case; '10' is folded in above for the same
+ * reason.
+ *
+ * The rule: the evaluator reads the suit, not the spelling. Every path into
+ * it passes through here, so no caller can reintroduce the split.
+ */
+const SUIT_CANON: Record<string, string> = {
+  h: 'h',
+  hearts: 'h',
+  heart: 'h',
+  '\u2665': 'h',
+  d: 'd',
+  diamonds: 'd',
+  diamond: 'd',
+  '\u2666': 'd',
+  c: 'c',
+  clubs: 'c',
+  club: 'c',
+  '\u2663': 'c',
+  s: 's',
+  spades: 's',
+  spade: 's',
+  '\u2660': 's',
+};
+
+export function suitOf(card: DeckCard): string {
+  const raw = String(card.suit ?? '')
+    .trim()
+    .toLowerCase();
+  return SUIT_CANON[raw] ?? raw;
+}
+
 /** Compare two scores. Positive when a beats b. */
 export function compareScore(a: HandScore, b: HandScore): number {
   if (a.category !== b.category) return a.category - b.category;
@@ -120,7 +165,7 @@ export function compareScore(a: HandScore, b: HandScore): number {
  */
 export function scoreFive(cards: DeckCard[], shortDeck = false): HandScore {
   const vals = cards.map(value).sort((a, b) => b - a);
-  const suits = cards.map((c) => c.suit);
+  const suits = cards.map(suitOf);
   const isFlush = suits.every((s) => s === suits[0]);
 
   const counts = new Map<number, number>();

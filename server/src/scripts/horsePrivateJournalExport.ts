@@ -42,6 +42,10 @@ export async function runHorsePrivateJournalExport(
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // A finite operator command does not own the engine's lobby publisher.
+  // Keep cleanup inside direct execution so importing helpers leaves it live.
+  const { channelHub } = await import('../hub/ChannelHub.js');
+  channelHub.close();
   const result = await runHorsePrivateJournalExport(process.argv.slice(2), process.stdin);
   process.stdout.write(result.output);
   process.exitCode = result.code;

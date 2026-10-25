@@ -23,8 +23,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as config from './config.js';
 import { HorseDecisionJournalStore } from './store.js';
 import { journalHash, makeHorseJournalRecord } from './record.js';
+import { HORSE_JOURNAL_HAND_READER_VERSION, readHorseJournalHandRecords } from './review.js';
 // @ts-expect-error The selector is a plain ES module script with no emitted declaration.
 import * as population from '../../../scripts/phase6d-population.mjs';
+// @ts-expect-error The exporter is a plain ES module script with no emitted declaration.
+import { selectExportedDecisions } from '../../../scripts/phase6d-chain-export.mjs';
 
 const { DatabaseSync } = createRequire(import.meta.url)(
   'node:sqlite'
@@ -38,6 +41,19 @@ const code = (name: string) =>
     .replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 
 describe('no review tool builds an archive path by hand', () => {
+  for (const tool of ['phase6d-population.mjs', 'phase6d-chain-export.mjs']) {
+    it(`${tool} qualifies whole retained hands through the complete canonical reader`, () => {
+      const source = code(tool);
+      expect(source).toContain(
+        `review.HORSE_JOURNAL_HAND_READER_VERSION !== ${HORSE_JOURNAL_HAND_READER_VERSION}`
+      );
+      expect(source).toMatch(
+        /records\s*=\s*review\.readHorseJournalHandRecords\(directory,\s*row\.hand_key\)/
+      );
+      expect(source).not.toMatch(/\b(?:journal|shard\.journal)\.readHand\(/);
+    });
+  }
+
   for (const tool of TOOLS) {
     it(`${tool} names the archive only through the shard helpers`, () => {
       const source = code(tool);
@@ -79,6 +95,23 @@ describe('no review tool builds an archive path by hand', () => {
 });
 
 describe('a shard that exists is a shard that is read', () => {
+  it('binds exports to unique admitted decision digests', () => {
+    const chain = { decisionId: 'a'.repeat(64), decisionRecordDigest: 'b'.repeat(64) };
+    const row = { eventId: chain.decisionId, sha256: chain.decisionRecordDigest };
+    expect(selectExportedDecisions([chain], [row])).toEqual({ records: [row], missing: 0 });
+    expect(selectExportedDecisions([chain], [])).toEqual({ records: [], missing: 1 });
+    expect(() => selectExportedDecisions([chain, chain], [row])).toThrow('identity unavailable');
+    expect(() => selectExportedDecisions([{ decisionId: chain.decisionId }], [row])).toThrow(
+      'identity unavailable'
+    );
+    expect(() => selectExportedDecisions([chain], [{ ...row, sha256: 'c'.repeat(64) }])).toThrow(
+      'digest mismatch'
+    );
+    expect(() => selectExportedDecisions([chain], [{ ...row, eventId: 'd'.repeat(64) }])).toThrow(
+      'digest mismatch'
+    );
+  });
+
   const dirs: string[] = [];
   const stores: HorseDecisionJournalStore[] = [];
   afterEach(() => {
@@ -155,5 +188,33 @@ describe('a shard that exists is a shard that is read', () => {
     const dir = mkdtempSync(join(tmpdir(), 'horse-shards-none-'));
     dirs.push(dir);
     expect(() => population.archiveShardNames(config, dir)).toThrow('archive_custody_unavailable');
+  });
+
+  it('joins hand context while selecting only the current catalog decisions', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'horse-shards-fragment-'));
+    dirs.push(dir);
+    const hand = journalHash('shared-hand');
+    writeShard(dir, 0, hand);
+    writeShard(dir, 1, hand);
+    const records = readHorseJournalHandRecords(dir, hand);
+    expect(records).toHaveLength(2);
+    const db = new DatabaseSync(population.shardCatalogPath(dir, 'archive'), { readOnly: true });
+    try {
+      const ids = db
+        .prepare('SELECT event_id FROM archive_events WHERE hand_key=?')
+        .all(hand)
+        .map((row) => row.event_id);
+      const selected = population.archiveDecisionRecords(records, ids);
+      expect(selected).toHaveLength(1);
+      expect(selected[0].producerId).toBe('10000000-0000-4000-8000-000000000001');
+      expect(() => population.archiveDecisionRecords(records, ['f'.repeat(64)])).toThrow(
+        'archive selection incomplete'
+      );
+      expect(() => population.archiveDecisionRecords(records, [...ids, ...ids])).toThrow(
+        'invalid archive decision selection'
+      );
+    } finally {
+      db.close();
+    }
   });
 });

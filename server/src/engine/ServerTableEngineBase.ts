@@ -5786,6 +5786,8 @@ export abstract class ServerTableEngineBase {
     }
     await this.recoverBustedHorsesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
+    await this.standUpHorsesWhosePoolSessionEnded();
+    if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();
     if (!this.lifecycleCanMutate()) return;
     await this.stopIfClusterTableClosed().catch((err) =>
@@ -5829,6 +5831,39 @@ export abstract class ServerTableEngineBase {
    */
   protected async recoverBustedHorsesWhileHalted(): Promise<void> {
     /* ServerTableEngineDealing owns horse bust recovery; see its override. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A HORSE WHOSE POOL SESSION ENDED STILL HAS AN INPUT DEVICE (2026-10-24)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A pool session can end while its player keeps the anchor seat: the
+   * disconnect reaper (`fn_lightning_reap_expired_disconnects`) closes the
+   * session and never stands the seat up, by design, so a returning person
+   * finds VIEW GAME pointing at their own chair and decides for themselves.
+   * A horse has no browser to come back with. Measured 2026-10-24 on "FLH
+   * 0.25/0.50 Lightning Games": two horses' sessions closed
+   * 'disconnect_expired' at 15:52:50 UTC while both kept funded anchor seats
+   * (38.74 and 51.77); eight hours later neither had been re-entered or cashed
+   * out, the chips sat idle, the chairs were held and each seat counted
+   * against its horse's four-game limit. Nothing in the live path could ever
+   * move them: the seat-follows-pool trigger only re-enters on a seat change,
+   * the rotator's departure pass skips a three-seat anchor, and this parked
+   * pass (the only loop an anchor runs) had nothing to say about them.
+   *
+   * The engine is the horse's input device (10.5, the one legitimate horse
+   * branch), so it makes the decision a person makes at the same seat: it
+   * leaves, through the person's own Leave door (`leaveTable`: the stay clock,
+   * the voluntary cash-out into the club wallet with its receipt, the
+   * seat_left event and the Cluster wake). The fleet then seats a horse the
+   * ordinary way, and that buy-in enters the pool through the same seat
+   * trigger a person's does.
+   *
+   * ServerTableEngineDealing overrides this; the base holds nothing.
+   */
+  protected async standUpHorsesWhosePoolSessionEnded(): Promise<void> {
+    /* ServerTableEngineDealing owns it; see its override. */
   }
 
   /**

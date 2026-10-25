@@ -129,6 +129,9 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
   const steps: Step[] = job.steps;
   const SETUP = new Set([
     'Checkout',
+    // Every shard checks once whether its sha is still the PR head
+    // (tests/a-superseded-pr-run-yields-its-runners.law.test.ts).
+    'Yield if this sha is no longer the pull request head',
     'Setup Node 22',
     'Install server test dependencies',
     'Install PostgreSQL 17 tools without a default database service',

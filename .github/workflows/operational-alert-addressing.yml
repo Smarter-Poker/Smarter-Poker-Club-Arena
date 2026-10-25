@@ -41,9 +41,13 @@ on:
 permissions:
   contents: read
 
+# A pull request run only replays the decision rules and reads the branch's own
+# migrations, so a newer push to the same PR replaces it (2026-10-25: 20 of 51
+# PR runs in six hours were for a head already replaced). The live run records
+# an incident in production and keeps its own group, never cancelled.
 concurrency:
   group: operational-alert-addressing-${{ github.event_name == 'workflow_run' && 'live' || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   decision-rules:

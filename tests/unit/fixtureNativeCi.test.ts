@@ -364,9 +364,12 @@ describe('BBJ source changes reach their existing accounting verification', () =
     expect(invoke.run).toContain('python3 scripts/ci/test-bbj-bank-replay.py');
     expect(invoke['continue-on-error']).toBeUndefined();
     const timing = steps.find((step: { id?: string }) => step.id === 'bbj_timing');
+    // actions: write is for the superseded-run yield step only (it alone gets
+    // GH_TOKEN with the timing step); the BBJ invocation still gets no token.
     expect(ci.jobs.accounting_postgres.permissions).toEqual({
       contents: 'read',
-      actions: 'read',
+      'pull-requests': 'read',
+      actions: 'write',
     });
     expect(timing.env.GH_TOKEN).toBe('${{ github.token }}');
     expect(invoke.env.GH_TOKEN).toBeUndefined();

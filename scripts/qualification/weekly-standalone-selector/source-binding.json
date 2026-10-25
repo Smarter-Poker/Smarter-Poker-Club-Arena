@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 232055,
-      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+      "bytes": 234708,
+      "sha256": "173c131ecde397c53ecab480c72871e60bec7e8b4c24b53d98627b9e3bf4d78c"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -279,6 +279,18 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "supersededRunYield20261025": {
+    "reason": "Reviewed CI capacity change: each heavy ci.yml job (client, server and accounting shards, build, browser suites) first asks whether its sha is still the pull request head and, only when a newer run for the newer head is proven, cancels its own obsolete run. The accounting job's token gains actions: write and pull-requests: read for that one step; fixtureNativeCi.test.ts pins the new permissions. Financial fixture SQL, assertions, source inventories, deadlines and qualification states unchanged; current source identity only, no financial certificate restamp.",
+    "file": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 232055,
+      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+    },
+    "current": {
+      "bytes": 234708,
+      "sha256": "173c131ecde397c53ecab480c72871e60bec7e8b4c24b53d98627b9e3bf4d78c"
     }
   }
 }

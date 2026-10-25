@@ -516,6 +516,7 @@ import { useTableArt } from '../hooks/useTableArt';
 import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
+  isTimeBankTurnGone,
   submitAction,
   respondToRIT,
   respondToInsurance,
@@ -16549,7 +16550,15 @@ function LiveTablePage({
     [userId]
   );
 
-  const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
+  /* A Lightning pool session has no `tables` row, so the private
+     table-appearance topic is refused by RLS for it and nothing is ever sent
+     to it (2026-10-24). The authoritative read still runs. */
+  const seatedProfileSync = useSeatedProfileSync(
+    tableId,
+    seatedUserIds,
+    handleSeatedProfileChange,
+    { appearanceSignal: !lightningRoom }
+  );
 
   /* WAITLIST HORSE YIELD - REMOVED (2026-10-05). Every seated client polled
      the waitlist every 15s and asked HydraService to stand a horse up for a
@@ -23094,6 +23103,11 @@ function LiveTablePage({
     const result = await GameServerAPI.activateTimeBank(tableId, userId, request.decision);
     if (!request.isCurrent()) return;
     if (!result?.success) {
+      /* The press crossed the turn (2026-10-24): the engine had already
+         moved the action, ended the hand or closed the Lightning decision.
+         Nothing was spent and there is nothing to do, so it is not an error
+         to show. Every other refusal still says why. */
+      if (isTimeBankTurnGone(result?.error)) return;
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }

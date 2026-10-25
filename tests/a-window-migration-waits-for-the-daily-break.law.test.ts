@@ -33,8 +33,10 @@ import {
   ownerWindowPredicate,
 } from '../scripts/ci/owner-window-migration.mjs';
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import {
   WINDOW_ANNOTATION,
@@ -316,5 +318,59 @@ describe('a later explicit owner exception preserves freeze and transaction safe
     expect(sql).toContain('public.fn_platform_frozen()');
     expect(sql).toContain('make_interval(secs => 8)');
     expect(sql).toContain("don''t wait");
+  });
+});
+
+describe('a superseded window migration is never queued', () => {
+  // Without DATABASE_URL the installer stops right after building its queue:
+  // exit 0 "NOTHING QUEUED" when every declared file is superseded, exit 3
+  // "DATABASE_URL is not set" when something is still queued.
+  const runInstaller = (cwd: string) => {
+    const env = { ...process.env };
+    delete env.DATABASE_URL;
+    delete env.GITHUB_STEP_SUMMARY;
+    return spawnSync(
+      process.execPath,
+      [resolve(root, 'scripts/ci/install-window-migrations.mjs')],
+      { cwd, env, encoding: 'utf8' }
+    );
+  };
+  const tree = (files: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'window-superseded-'));
+    mkdirSync(join(dir, 'supabase', 'migrations'), { recursive: true });
+    for (const [name, sql] of Object.entries(files))
+      writeFileSync(join(dir, 'supabase', 'migrations', name), sql);
+    return dir;
+  };
+  const SUCCESSOR = '20991231000010_window_fixture_successor.sql';
+
+  it('skips a declared file whose SUPERSEDED BY names a file in this tree', () => {
+    const run = runInstaller(
+      tree({
+        [FILE]: `-- SUPERSEDED BY 20991231000010\n${fixture}`,
+        [SUCCESSOR]: 'BEGIN;\nSELECT 1;\nCOMMIT;\n',
+      })
+    );
+    expect(run.stdout).toContain(`skipped \`${FILE}\`: SUPERSEDED BY 20991231000010`);
+    expect(run.stdout).toContain('NOTHING QUEUED');
+    expect(run.status).toBe(0);
+  });
+
+  it('still queues a file whose SUPERSEDED BY names no file in this tree', () => {
+    const run = runInstaller(tree({ [FILE]: `-- SUPERSEDED BY 20991231000010\n${fixture}` }));
+    expect(run.stdout).not.toContain('skipped');
+    expect(run.stdout).toContain('DATABASE_URL is not set');
+    expect(run.status).toBe(3);
+  });
+
+  it('does not queue 20261024020328, superseded by 20261024193818', () => {
+    const name = '20261024020328_agents_can_watch_every_live_downline_table.sql';
+    const sql = read(`supabase/migrations/${name}`);
+    expect(sql.split('\n')[0]).toBe('-- SUPERSEDED BY 20261024193818');
+    expect(
+      readdirSync(resolve(root, 'supabase/migrations')).some((f) => f.startsWith('20261024193818_'))
+    ).toBe(true);
+    const run = runInstaller(root);
+    expect(run.stdout).toContain(`skipped \`${name}\`: SUPERSEDED BY 20261024193818`);
   });
 });

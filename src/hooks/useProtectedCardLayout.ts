@@ -10,6 +10,7 @@ import {
   projectPortraitTable,
   unprojectPortraitTable,
   chipRadiusWidthPct,
+  PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX,
 } from '../components/table/tableGeometry';
 
 /** Layout belongs to the table that paints it; no global selectors or game-state writes. */
@@ -370,7 +371,15 @@ export function useProtectedCardLayout(
         const box = element.getBoundingClientRect();
         return box.width > 0 && box.height > 0 ? box : null;
       };
-      const phoneMarkers = window.innerWidth <= 480 && window.innerHeight > window.innerWidth;
+      // 2026-10-24: every portrait viewport up to 768px, not only phones up to
+      // 480. Above 480 the desktop order placed the shown hands AFTER the
+      // wagers and the button, and a board-sized PLO5/PLO6 row that could not
+      // stand at its owner fell through to the unowned fallback: parked under
+      // the hero or in front of another player. Here the hands are placed
+      // first, at their own players, and the markers are placed round them.
+      const phoneMarkers =
+        window.innerWidth <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
+        window.innerHeight > window.innerWidth;
       if (phoneMarkers) {
         // Dan 2026-10-22: a tabled hand is the SAME SIZE AS THE BOARD's cards,
         // overlapped but never covered. The board is drawn through the felt's
@@ -379,7 +388,11 @@ export function useProtectedCardLayout(
         // into every shown hand's dimensions during the runout.
         placeRows(false);
         const canvas = scaler.getBoundingClientRect();
-        const portraitTaper = page.getAttribute('data-hero') === 'false' ? 0 : undefined;
+        // The painted chassis is tapered on a portrait phone only (TablePage.css,
+        // 480px); a wider portrait felt is drawn flat, and the marker grid must
+        // follow the felt actually painted.
+        const portraitTaper =
+          page.getAttribute('data-hero') === 'false' || window.innerWidth > 480 ? 0 : undefined;
         const size = { w: canvas.width, h: canvas.height, portraitTaper };
         const inset = (chipRadiusWidthPct(size) * canvas.width) / 100 + 3;
         const radius = (FELT_WINDOW.width * canvas.width) / 200 - inset;
@@ -508,9 +521,12 @@ export function useProtectedCardLayout(
             // Short-phone PLO cap lanes can be narrower than a sampled oval band.
             // Include exact obstacle-edge intersections so a clear 23px slot
             // between two plates is not missed by the radial sampling grid.
+            // Above 480px the side pods stand beside the board and the felt's
+            // printing, so every wager there needs the same exact slots.
             if (
-              window.innerWidth <= 375 &&
-              page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)')
+              window.innerWidth > 480 ||
+              (window.innerWidth <= 375 &&
+                page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)'))
             ) {
               const xs = new Set([desired.x - box.width / 2]);
               const ys = new Set([desired.y - box.height / 2]);
@@ -520,13 +536,17 @@ export function useProtectedCardLayout(
                 ys.add(obstacle.top - box.height - 3);
                 ys.add(obstacle.top + obstacle.height + 3);
               }
+              // A wider portrait page has bare screen beyond the table; a wager
+              // stays on the table's own canvas there, never out in the margin.
+              const minLeft = window.innerWidth > 480 ? canvas.left : pageBox.left;
+              const maxRight = window.innerWidth > 480 ? canvas.right : pageBox.right;
               for (const left of xs)
                 for (const top of ys) {
                   const candidate = { left, top, width: box.width, height: box.height, depth: 20 };
                   if (
-                    left >= pageBox.left &&
+                    left >= minLeft &&
                     top >= chromeBottom &&
-                    left + box.width <= pageBox.right &&
+                    left + box.width <= maxRight &&
                     top + box.height <= canvas.bottom
                   )
                     placed.push(candidate);
@@ -597,7 +617,10 @@ export function useProtectedCardLayout(
                   96
                 ),
                 wide: distinct(owned, 160),
-                any: distinct(hasAllInMarker ? nearest.filter(ownedBy) : nearest, 160),
+                any: distinct(
+                  hasAllInMarker || window.innerWidth > 480 ? nearest.filter(ownedBy) : nearest,
+                  160
+                ),
                 printing: distinct(overPrinting, 160),
                 // Last resort on the smallest felts: this player's own spots, the
                 // least covered first, so two players' wagers never share one.

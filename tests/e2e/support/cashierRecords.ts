@@ -6,7 +6,7 @@ export async function openTradeRecord(page: Page, tablist: Locator): Promise<voi
     page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().includes('/rest/v1/rpc/fn_cashier_transaction_history'),
+        response.url().includes('/rest/v1/rpc/fn_cashier_history_page'),
       { timeout: 30_000 }
     ),
     tablist.getByRole('tab', { name: 'Transaction History', exact: true }).click(),

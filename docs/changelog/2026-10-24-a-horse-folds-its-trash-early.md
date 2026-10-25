@@ -39,3 +39,12 @@ on 160 seeded mixed hands each for NLH, PLO5 and Short Deck (every qualifying
 hand the brain was asked about, it folded); real early folds through the door
 with the hand's context, never under 450 ms, never a blind, never after the
 brain was asked for the seat; and the exclusions.
+
+## Retired the same day (superseded by #7958)
+
+Dan ruled the same afternoon: "YES, HORSES SHOULD FOLD RIGHT AWAY IF THEY WERE
+ALREADY FOLDING." #7958 implements that ruling (an already-folding horse folds
+at its first priced look, with no think time, through the person's Lightning
+Fold door). The delayed early fold built here would never fire behind it, so
+its host wiring and law are removed. `LightningHorseEarlyFold.horsePreflopStrength`
+stays: the Lightning strength matrix uses it to read archetype hand strength.

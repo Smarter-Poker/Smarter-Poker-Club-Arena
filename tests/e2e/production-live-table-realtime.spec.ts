@@ -387,6 +387,7 @@ async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCan
 interface OccupiedCashTable {
   candidate: RunningTableCandidate;
   table: EngineTableLiveness;
+  lobbyTab: string;
 }
 
 /**
@@ -418,6 +419,7 @@ async function selectOccupiedRunningCashTables(
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 });
 
+  const initialTab = (await page.getByRole('tab', { selected: true }).innerText()).trim();
   const tabs: Array<string | null> = [null, 'NLH', 'PLO', 'LIMIT'];
   const tables: OccupiedCashTable[] = [];
   const seen = new Set<string>();
@@ -443,7 +445,7 @@ async function selectOccupiedRunningCashTables(
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
         if (table && !seen.has(candidate.id) && tables.length < CASH_PROGRESS_CANDIDATES) {
           seen.add(candidate.id);
-          tables.push({ candidate, table });
+          tables.push({ candidate, table, lobbyTab: tabName ?? initialTab });
         }
       }
       if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
@@ -456,9 +458,9 @@ async function selectOccupiedRunningCashTables(
     const health = await readEngineHealth(request, {
       tableIds: tables.map(({ candidate }) => candidate.id),
     });
-    const fresh = tables.flatMap(({ candidate }) => {
+    const fresh = tables.flatMap(({ candidate, lobbyTab }) => {
       const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-      return table ? [{ candidate, table }] : [];
+      return table ? [{ candidate, table, lobbyTab }] : [];
     });
     if (fresh.length > 0) return { tables: fresh, health };
   }
@@ -2011,6 +2013,20 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     // The engine-progress wait above can outlast the optional invitation's
     // arrival. Own its dismissal before the unchanged View visibility check.
     await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    // Discovery scans every variant; restore the actual progression winner,
+    // which need not be the first contender or the last tab scanned.
+    const winnerTab = page.getByRole('tab', {
+      name: engineBeforeNavigation.selected.lobbyTab,
+      exact: true,
+    });
+    await winnerTab.click();
+    await expect(winnerTab).toHaveAttribute('aria-selected', 'true');
+    await page
+      .locator(
+        `[data-testid="lobby-game-row"][data-id="${candidate.id}"], ` +
+          `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
+      )
+      .waitFor({ state: 'visible' });
     const row = page.locator(`[data-testid="lobby-game-row"][data-id="${candidate.id}"]`);
     if (await row.isVisible()) {
       await row.getByRole('button', { name: /^Details:/ }).click();

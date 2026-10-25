@@ -1227,7 +1227,10 @@ function CashierTradeWorkspace() {
 
             if (isMounted.current && !stale()) {
               if (!initialTabResolvedRef.current) {
-                setTab(role === 'player' ? 'record' : 'trade');
+                // Initial role resolution must preserve a tab already chosen by the viewer.
+                setTab((current) =>
+                  role === 'player' && current === 'trade' ? 'record' : current
+                );
                 initialTabResolvedRef.current = true;
               }
               setMyRole(role);
@@ -1248,7 +1251,8 @@ function CashierTradeWorkspace() {
 
         if (!isMounted.current || stale()) return false;
         if (!initialTabResolvedRef.current) {
-          setTab(role === 'player' ? 'record' : 'trade');
+          // Initial role resolution must preserve a tab already chosen by the viewer.
+          setTab((current) => (role === 'player' && current === 'trade' ? 'record' : current));
           initialTabResolvedRef.current = true;
         }
         setMyRole(role);

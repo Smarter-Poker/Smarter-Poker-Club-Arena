@@ -136,9 +136,24 @@ export const CASHOUT_LEG_TYPES = new Set<string>([
 export type LedgerDirection = 'in' | 'out' | 'managed';
 
 /**
- * Which way a ledger row moved the VIEWER's own chips. A cash-out leg is read
- * by the wallet that moved; every other row by its sides (the sender is out,
- * the recipient is in, anyone else is watching a managed transfer).
+ * Kinds the Full Statement never books into or out of a member's wallet: a
+ * union promo move, a mint and a burn change a pot, not the viewer's chips.
+ */
+export const STATEMENT_MANAGED_TYPES = new Set<string>([
+  'union_promo_to_club',
+  'union_promo_clawback',
+  'mint',
+  'treasury_mint',
+  'treasury_burn',
+]);
+
+/**
+ * Which way a ledger row moved the VIEWER's own chips, by the Full Statement's
+ * rule (fn_cashier_statement_rows), so the history and the statement can never
+ * disagree: a cash-out leg is read by the wallet that moved; a pot move is
+ * managed; otherwise the recipient is in, the sender is out, and a self move
+ * or a row the viewer is not a side of is managed. fn_cashier_history_totals
+ * sums by exactly this rule.
  */
 export function ledgerDirection(
   row: ChipTransactionLike,
@@ -147,14 +162,58 @@ export function ledgerDirection(
   const type = String(row.transaction_type ?? '');
   const from = row.from_user_id ?? null;
   const to = row.to_user_id ?? null;
+  if (!viewer) return 'managed';
   if (CASHOUT_LEG_TYPES.has(type)) {
-    if (!viewer) return 'managed';
     if (type === 'cashout_request_escrow') return from === viewer ? 'out' : 'managed';
     return to === viewer ? 'in' : 'managed';
   }
-  if (viewer && from === viewer) return 'out';
-  if (viewer && to === viewer) return 'in';
+  if (STATEMENT_MANAGED_TYPES.has(type)) return 'managed';
+  if (to === viewer && from !== viewer) return 'in';
+  if (from === viewer && to !== viewer) return 'out';
   return 'managed';
+}
+
+/**
+ * The line a history row prints for a cash-out leg, in plain words, so a
+ * request never reads as a transfer to the agent it was sent to (it moved no
+ * chips to him) and an acceptance names who took the chips. Null for any
+ * other kind: the row keeps its usual "To / From / Transfer" line.
+ */
+export function cashoutRowTitle(
+  row: ChipTransactionLike,
+  fromName: string | null | undefined,
+  toName: string | null | undefined,
+  viewer: string | null | undefined
+): string | null {
+  const type = String(row.transaction_type ?? '');
+  if (!CASHOUT_LEG_TYPES.has(type)) return null;
+  const from = row.from_user_id ?? null;
+  const to = row.to_user_id ?? null;
+  const fromIsMe = !!viewer && from === viewer;
+  const toIsMe = !!viewer && to === viewer;
+  const fromN = fromName && fromName.trim() ? fromName : 'A Member';
+  const toN = toName && toName.trim() ? toName : 'A Member';
+  switch (type) {
+    case 'cashout_request_escrow':
+      // from = the player, to = the agent the request was sent to.
+      if (fromIsMe) return `Cash-Out Request To ${toN}`;
+      if (toIsMe) return `${fromN} Requested A Cash-Out From You`;
+      return `${fromN} Requested A Cash-Out From ${toN}`;
+    case 'cashout_approved':
+      // from = the player, to = whoever accepted it.
+      if (toIsMe) return `You Accepted ${fromN}'s Cash-Out`;
+      if (fromIsMe) return `${toN} Accepted Your Cash-Out`;
+      return `${toN} Accepted ${fromN}'s Cash-Out`;
+    case 'cashout_denied':
+      // from = whoever cancelled it, to = the player.
+      if (toIsMe) return `${fromN} Cancelled Your Cash-Out`;
+      if (fromIsMe) return `You Cancelled ${toN}'s Cash-Out`;
+      return `${fromN} Cancelled ${toN}'s Cash-Out`;
+    case 'cashout_cancelled':
+      return toIsMe ? 'You Withdrew Your Cash-Out' : `${toN} Withdrew A Cash-Out`;
+    default:
+      return toIsMe ? 'Your Cash-Out Expired' : `${toN}'s Cash-Out Expired`;
+  }
 }
 
 function walletName(key: unknown, fallback: WalletName): WalletName {

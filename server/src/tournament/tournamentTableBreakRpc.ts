@@ -449,6 +449,75 @@ export class TournamentTableBreakRpc {
     if (BigInt(decimal(row.hand_number)) < 1n) throw new Error('F06 withdrawal hand missing');
     return true;
   }
+  /**
+   * A PARKED TABLE NEVER FREEZES ON AN UNPROVEN MOVE (2026-10-25).
+   *
+   * The movement-proof twin of withdrawUnplaceablePark: the same identity, the
+   * same receipt table and the same zero credit, through
+   * fn_f06_withdraw_unproven_movement_park. The database admits it only while
+   * smarter_private.f06_movement_prior refuses this park's roster with one of
+   * its own named F06_MOVEMENT_* refusals, and writes that refusal into the
+   * receipt. It answers false (nothing written) when the proof now succeeds,
+   * when the last-table continuation owns the park, or when the positive
+   * witness is not there; the park then simply stands.
+   */
+  async withdrawUnprovenMovementPark(state: TournamentTableBreakState): Promise<boolean> {
+    if (
+      state.tournament_id !== this.tournamentId ||
+      state.state !== 'park_requested' ||
+      state.members.length !== 0 ||
+      !state.custody_id ||
+      state.terminal_handoff_required
+    )
+      throw new Error('F06 withdrawal premanifest identity required');
+    const { data, error } = await supabase.rpc('fn_f06_withdraw_unproven_movement_park', {
+      p_tournament_id: this.tournamentId,
+      p_lease_generation: this.leaseGeneration,
+      p_table_id: uuid(state.source_table_id),
+      p_lifecycle: decimal(state.lifecycle),
+      p_break_id: uuid(state.break_id),
+      p_park_custody_id: uuid(state.custody_id),
+      p_park_revision: decimal(state.revision),
+    });
+    if (error) {
+      if (
+        error.code === '55000' &&
+        [
+          'F06_WITHDRAWAL_MOVEMENT_PROVEN',
+          'F06_WITHDRAWAL_LAST_TABLE',
+          'F06_WITHDRAWAL_POSITIVE_ORIGINAL_REQUIRED',
+        ].includes(error.message)
+      )
+        return false;
+      // A database that does not have the door yet withdraws nothing.
+      if (error.code === 'PGRST202' || error.code === '42883') return false;
+      if (['55000', '22023', '42501', '40001', '55P03'].includes(String(error.code)))
+        throw new TournamentNoStartContinuationRefusedError(error.message);
+      throw new Error(`F06 withdrawal outcome unproven: ${error.message}`);
+    }
+    const row = record(data);
+    if (
+      row.ok !== true ||
+      row.state !== 'withdrawn_unproven_movement' ||
+      row.credit !== 0 ||
+      typeof row.movement_refusal !== 'string' ||
+      !row.movement_refusal.startsWith('F06_MOVEMENT_') ||
+      uuid(row.tournament_id) !== this.tournamentId ||
+      uuid(row.lease_generation) !== this.leaseGeneration ||
+      uuid(row.table_id) !== state.source_table_id ||
+      decimal(row.lifecycle) !== state.lifecycle ||
+      uuid(row.break_id) !== state.break_id ||
+      uuid(row.park_custody_id) !== state.custody_id ||
+      decimal(row.park_revision) !== state.revision ||
+      uuid(row.lease_generation) !== state.custody_generation
+    )
+      throw new Error('F06 unproven movement park withdrawal identity mismatch');
+    uuid(row.receipt_id);
+    uuid(row.permit_id);
+    uuid(row.original_generation);
+    if (BigInt(decimal(row.hand_number)) < 1n) throw new Error('F06 withdrawal hand missing');
+    return true;
+  }
   requestPark(breakId: string, tableId: string, lifecycle: string, boundaryId: string) {
     return this.operation('fn_f06_request_park', breakId, {
       p_table_id: uuid(tableId),

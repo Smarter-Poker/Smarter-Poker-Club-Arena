@@ -39,6 +39,35 @@ def counter(name):
     return text.strip()
 
 
+def verified_oom_fault(exit_code, events_before):
+    """Retain kernel evidence whether the fault kills a build step or PID 1."""
+    if exit_code == 0:
+        raise RuntimeError("fault did not demonstrate a contained cgroup OOM kill")
+    state = inspect(CONTAINER)["State"]
+    try:
+        if state["Running"]:
+            events_after = counter("memory.events")
+            peak = int(counter("memory.peak"))
+            if events_after["oom_kill"] <= events_before["oom_kill"] or peak <= 0:
+                raise RuntimeError("fault did not demonstrate a contained cgroup OOM kill")
+            return {"fault_exit_code": exit_code, "events_before": events_before,
+                    "events_after": events_after, "memory_peak": peak,
+                    "oom_evidence_source": "cgroup_memory_events"}
+    except RuntimeError:
+        # A daemon killed between inspect and exec has the same evidence rule
+        # as one already stopped. A live daemon with unreadable counters fails.
+        state = inspect(CONTAINER)["State"]
+        if state["Running"]:
+            raise
+    if state.get("OOMKilled") is not True or state.get("ExitCode") != 137:
+        raise RuntimeError("stopped builder has no authoritative OOM-kill evidence")
+    # Its cgroup was removed with PID 1. Never invent a counter or peak for it.
+    return {"fault_exit_code": exit_code, "events_before": events_before,
+            "events_after": None, "memory_peak": None,
+            "oom_evidence_source": "docker_container_oom_state",
+            "fault_builder_state": state}
+
+
 def verified_build_resources(output):
     """Retain the original successful invocation's kernel boundary and raw peak."""
     boundaries = [line.split("=", 1)[1] for line in output.splitlines()
@@ -274,13 +303,7 @@ def main():
                           "--load", "--progress", "plain", "-t", failed_tag, str(fault)],
                          timeout=240, check=False)
             (out / "contained-oom.log").write_text(result.stdout)
-            events_after = counter("memory.events")
-            receipt["fault_exit_code"] = result.returncode
-            receipt["events_before"] = events_before
-            receipt["events_after"] = events_after
-            receipt["memory_peak"] = int(counter("memory.peak"))
-            if result.returncode == 0 or events_after["oom_kill"] <= events_before["oom_kill"]:
-                raise RuntimeError("fault did not demonstrate a contained cgroup OOM kill")
+            receipt.update(verified_oom_fault(result.returncode, events_before))
             if run(["docker", "image", "inspect", failed_tag], check=False).returncode == 0:
                 raise RuntimeError("failed build published an image")
             receipt["wrapper_failure"] = wrapper_fault(

@@ -673,6 +673,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V51'
   ),
   flag(
+    'v55OmahaRiverTripsFlat',
+    'river Omaha weak sets/trips retain call pricing without re-shoving; default off pending deep-cash league qualification',
+    'V55'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -2907,6 +2912,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // No floor: the spot (committed, river, one pair, clearing the call bar)
   // is rare by construction; silence on a quiet day is not a dead layer.
   receipt(
+    'v55_omaha_river_trips_flat',
+    'HorseLogic committed and ordinary raise branches',
+    'opt-in river Omaha weak set/trips flatted after clearing the unchanged call bar',
+    'V55'
+  ),
+  receipt(
     'v51_river_flat',
     'HorseLogic committed branch (V51)',
     'a committed river one-pair hand flatted where it used to jam',
@@ -2917,7 +2928,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v53_*',
     'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
-    'a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold\'em solver spot handed to the exploit layer',
+    "a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold'em solver spot handed to the exploit layer",
     'V53'
   ),
   receipt(

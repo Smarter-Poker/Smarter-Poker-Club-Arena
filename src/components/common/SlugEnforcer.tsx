@@ -23,11 +23,15 @@ export default function SlugEnforcer() {
     if (!match) return;
     const type = match[1];
     const uuid = match[2];
+    let current = true;
 
     Promise.all([
       supabase.from('clubs').select('slug, union_id, is_union').eq('id', uuid).maybeSingle(),
       supabase.from('unions').select('id, slug').eq('id', uuid).maybeSingle(),
     ]).then(([clubRes, unionRes]) => {
+      // A late lookup belongs to the route that requested it. It must not
+      // replace a newer path, query, fragment or an unmounted router.
+      if (!current) return;
       let newPath = location.pathname;
       let redirected = false;
       const onUnionRoute = type === 'unions';
@@ -68,6 +72,9 @@ export default function SlugEnforcer() {
         navigate(newPath + location.search + location.hash, { replace: true });
       }
     });
+    return () => {
+      current = false;
+    };
   }, [location.pathname, location.search, location.hash, navigate]);
 
   return null;

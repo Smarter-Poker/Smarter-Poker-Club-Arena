@@ -21,6 +21,9 @@ on:
       - supabase/migrations/20261025200555_a_launch_does_not_hold_the_lease_against_its_own_heartbeat.sql
       - scripts/qualification/fixtures/launch-lease-key-share/**
       - scripts/ci/test-launch-lease-key-share-postgres.py
+      - supabase/migrations/20261025224305_the_spin_draw_does_not_hold_the_lease_against_its_own_heartb.sql
+      - scripts/qualification/fixtures/spin-draw-lease-key-share/**
+      - scripts/ci/test-spin-draw-lease-key-share-postgres.py
       - .github/workflows/a-launch-does-not-hold-the-lease-against-its-own-heartbeat.yml
 
 permissions:
@@ -63,3 +66,8 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: python3 scripts/ci/test-launch-lease-key-share-postgres.py
+      - name: The Spin draw door, the same way (20261025224305)
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-spin-draw-lease-key-share-postgres.py

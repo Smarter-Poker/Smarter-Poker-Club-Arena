@@ -42,8 +42,7 @@ import {
   persistTimeBanks,
   reconcileTableSeatCount,
   autoRebuyHorse,
-  readClubChipBalances,
-  readHorseTopUpSeat,
+  readHorseTopUpBatch,
   processLeavePending,
   logBBJCollection,
   logInsuranceSettlement,
@@ -1617,6 +1616,90 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     setImmediate(() =>
       observeCommittedHandRiverValue({ tableId: this.tableId, handNumber }, input)
     );
+  }
+
+  /** Execute the original PLO5 refill boundary after rebuys and before continuity. */
+  protected async topUpPlo5Horses(
+    players: SeatedPlayer[],
+    handNumber: number,
+    horsesReloadedThisHand: ReadonlySet<string>
+  ): Promise<void> {
+    if (
+      this.tableInfo?.arena?.asset === 'diamonds' ||
+      this.isTournamentTable() ||
+      isMaintenanceFrozen()
+    )
+      return;
+    const variant = this.tableInfo?.game_variant;
+    if (!isPlo5Variant(variant)) return;
+    // Never a Lightning table: its Cluster refills through the pooled
+    // auto-rebuy on the session's anchor seat. A Cluster table whose
+    // Lightning switch has not been read yet is treated as Lightning.
+    if (this.clusterLightningEnabled === true) return;
+    if (this.tableInfo?.cluster_id && this.clusterLightningEnabled !== false) return;
+    const maxBuyIn = this.getMaxBuyIn();
+    if (!(maxBuyIn > 0)) return;
+    const batch = await readHorseTopUpBatch(
+      this.tableId,
+      () => this.lifecycleCanMutate() && !isMaintenanceFrozen(),
+      maxBuyIn
+    );
+    if (!batch || !this.lifecycleCanMutate()) return;
+    for (const horse of players) {
+      if (!horse.is_horse || horsesReloadedThisHand.has(horse.user_id)) continue;
+      if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+      const seat = batch.get(horse.user_id);
+      if (!seat || !seat.autoTopUp || !seat.clubId || seat.sittingOut || seat.leaving) continue;
+      const wanted = horseAutoTopUpWanted({
+        userId: horse.user_id,
+        variant,
+        stack: Number(horse.stack),
+        maxBuyIn,
+        autoTopUp: seat.autoTopUp,
+      });
+      if (!(wanted > 0)) continue;
+      const amount = cappedAutoTopUp({
+        userId: horse.user_id,
+        wanted,
+        wallet: seat.wallet,
+        investedThisTable: seat.invested,
+        bigBlind: Number(this.tableInfo?.big_blind) || 0,
+        minBuyIn: Number(this.tableInfo?.min_buy_in) || 0,
+        maxBuyIn,
+      });
+      if (!(amount > 0)) {
+        // Counted only when it was a real reload, not a sliver of a blind.
+        if (wanted >= (Number(this.tableInfo?.big_blind) || Infinity)) {
+          bankrollEvent('topup_refused');
+        }
+        continue;
+      }
+      const funding = await autoRebuyHorse(
+        this.tableId,
+        horse.user_id,
+        amount,
+        this.tableInfo?.club_id || '',
+        handNumber,
+        'topup'
+      );
+      if (!this.lifecycleCanMutate()) return;
+      if (funding.status !== 'funded') continue; // declined or unknown: no chips moved here
+      horse.stack = funding.stack;
+      this.hub?.emitEvent(this.tableId, {
+        type: 'add_on_applied',
+        table_id: this.tableId,
+        seat: horse.seat_number ?? null,
+        user_id: horse.user_id,
+        amount,
+        stack: funding.stack,
+        kind: 'addon',
+        timestamp: Date.now(),
+      });
+      bankrollEvent('topup_funded');
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Horse Auto Top Up: ${horse.username} +${amount} -> ${funding.stack}`
+      );
+    }
   }
 
   protected async postHandTasks(
@@ -3854,79 +3937,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // funding door as the rebuy above, own idempotency key, and the same
     // add_on_applied bubble a human's add-on shows. Every other game, and every
     // Lightning table, is untouched.
-    await runStep('horse_top_ups', false, async () => {
-      if (isDiamondCash || this.isTournamentTable() || isMaintenanceFrozen()) return;
-      const variant = this.tableInfo?.game_variant;
-      if (!isPlo5Variant(variant)) return;
-      // Never a Lightning table: its Cluster refills through the pooled
-      // auto-rebuy on the session's anchor seat. A Cluster table whose
-      // Lightning switch has not been read yet is treated as Lightning.
-      if (this.clusterLightningEnabled === true) return;
-      if (this.tableInfo?.cluster_id && this.clusterLightningEnabled !== false) return;
-      const maxBuyIn = this.getMaxBuyIn();
-      if (!(maxBuyIn > 0)) return;
-      for (const horse of players) {
-        if (!horse.is_horse || horsesReloadedThisHand.has(horse.user_id)) continue;
-        if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
-        const wanted = horseAutoTopUpWanted({
-          userId: horse.user_id,
-          variant,
-          stack: Number(horse.stack),
-          maxBuyIn,
-        });
-        if (!(wanted > 0)) continue;
-        // The seat's own flag decides, the funding club is the seat's, and the
-        // session total feeds the bankroll policy. Unreadable: no top-up.
-        const seat = await readHorseTopUpSeat(this.tableId, horse.user_id);
-        if (!this.lifecycleCanMutate()) return;
-        if (!seat || !seat.autoTopUp || !seat.clubId) continue;
-        const wallet = (await readClubChipBalances(seat.clubId, [horse.user_id])).get(
-          horse.user_id
-        );
-        if (!this.lifecycleCanMutate()) return;
-        const amount = cappedAutoTopUp({
-          userId: horse.user_id,
-          wanted,
-          wallet,
-          investedThisTable: seat.invested,
-          bigBlind: Number(this.tableInfo?.big_blind) || 0,
-          minBuyIn: Number(this.tableInfo?.min_buy_in) || 0,
-          maxBuyIn,
-        });
-        if (!(amount > 0)) {
-          // Counted only when it was a real reload, not a sliver of a blind.
-          if (wanted >= (Number(this.tableInfo?.big_blind) || Infinity)) {
-            bankrollEvent('topup_refused');
-          }
-          continue;
-        }
-        const funding = await autoRebuyHorse(
-          this.tableId,
-          horse.user_id,
-          amount,
-          this.tableInfo?.club_id || '',
-          snap.handNumber,
-          'topup'
-        );
-        if (!this.lifecycleCanMutate()) return;
-        if (funding.status !== 'funded') continue; // declined or unknown: no chips moved here
-        horse.stack = funding.stack;
-        this.hub?.emitEvent(this.tableId, {
-          type: 'add_on_applied',
-          table_id: this.tableId,
-          seat: horse.seat_number ?? null,
-          user_id: horse.user_id,
-          amount,
-          stack: funding.stack,
-          kind: 'addon',
-          timestamp: Date.now(),
-        });
-        bankrollEvent('topup_funded');
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Horse Auto Top Up: ${horse.username} +${amount} -> ${funding.stack}`
-        );
-      }
-    });
+    await runStep('horse_top_ups', false, () =>
+      this.topUpPlo5Horses(players, snap.handNumber, horsesReloadedThisHand)
+    );
     if (!this.lifecycleCanMutate()) return;
 
     // 5.7 CHIP CONTINUITY (Operation Table Stakes, Slice 0): the hand is

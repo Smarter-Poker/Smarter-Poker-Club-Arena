@@ -9,11 +9,11 @@
  * maximum between hands), or press Add Chips when the stack has run down. Horses
  * are players (CLAUDE.md 10.5), and each PLO5 horse now does exactly one:
  *
- *   - 30% are AUTO TOP UP horses. They sit with `auto_rebuy` on, and between
+ *   - The nearest whole-horse 30% are AUTO TOP UP horses. They sit with `auto_rebuy` on, and between
  *     hands the engine tops the stack back toward the table maximum - the human
  *     Auto Top Up rule (TablePage, "Auto Top Up (Cash Games Only)") - inside the
  *     horse's bankroll policy (`cappedAutoTopUp`).
- *   - 70% are ADD-ON horses. They sit with `auto_rebuy` off and add on the way
+ *   - The remaining horses are ADD-ON horses. They sit with `auto_rebuy` off and add on the way
  *     every horse already did before this rule: HorseSessionRotator's V8/V9
  *     top-up (short stack after a while at the table, a chance per cycle, a
  *     round-figure target, `topUpAllowance`, through the human Add Chips door).
@@ -21,7 +21,8 @@
  *     Top Up does not also press Add Chips.
  *
  * WHICH HORSE IS WHICH is a hash of its user id, so a horse keeps one habit
- * for life, and across the fleet the split lands on 30/70. The seat's own
+ * at admission. The hand boundary then holds each seated table roster to
+ * the nearest whole-horse 30/70 split, changing the fewest existing choices. The seat's own
  * `auto_rebuy` flag, written at the buy-in door, is the single source of truth
  * the engine and the rotator both read. Every other game is untouched.
  *
@@ -87,13 +88,23 @@ export function horseAutoTopUpWanted(input: {
   variant: unknown;
   stack: number;
   maxBuyIn: number;
+  /** The persisted seat choice takes precedence over the initial hash. */
+  autoTopUp?: boolean;
 }): number {
-  if (horseCashTopUpStyle(input.userId, input.variant) !== 'auto_top_up') return 0;
+  if (!isPlo5Variant(input.variant) || !input.userId) return 0;
+  const enabled = input.autoTopUp ?? horseSitsWithAutoTopUp(input.userId, input.variant);
+  if (!enabled) return 0;
   const stack = Number(input.stack);
   const max = Number(input.maxBuyIn);
   if (!Number.isFinite(stack) || !Number.isFinite(max) || stack <= 0 || max <= 0) return 0;
   if (stack >= max) return 0;
-  const amount = Math.floor((max - stack) * 100) / 100;
+  // Price canonical cent amounts BEFORE subtracting: 200 - 191.31 in binary
+  // is 8.689999..., whose floor otherwise leaves the observed 199.99 stack.
+  const maxCents = Math.round(max * 100);
+  const stackCents = Math.round(stack * 100);
+  if (!Number.isSafeInteger(maxCents) || !Number.isSafeInteger(stackCents)) return 0;
+  if (Math.abs(max - maxCents / 100) > 1e-9 || Math.abs(stack - stackCents / 100) > 1e-9) return 0;
+  const amount = (maxCents - stackCents) / 100;
   return amount > 0 ? amount : 0;
 }
 
@@ -136,6 +147,31 @@ export function cappedAutoTopUp(args: {
     maxBuyIn: max,
     policy: bankrollPolicyFor(args.userId),
   });
-  const capped = Math.floor(Math.min(allowed, wallet) * 100) / 100;
+  const cents = Math.min(allowed, wallet) * 100;
+  const capped = Math.floor(cents + Number.EPSILON * Math.max(1, Math.abs(cents))) / 100;
   return capped > 0 ? capped : 0;
+}
+
+/**
+ * Nearest whole-horse 30% of a live Classic PLO5 table roster. Keep current
+ * choices wherever possible; a departure never reshuffles every remaining
+ * horse. Hash order only breaks ties when the quota actually needs a change.
+ * Applied by the existing hand boundary, never by a timer or repair service.
+ */
+export function balancedHorseAutoTopUps(
+  seats: ReadonlyArray<{ userId: string; autoTopUp: boolean }>
+): Set<string> {
+  const unique = new Map<string, boolean>();
+  for (const seat of seats) {
+    if (seat.userId) unique.set(seat.userId, (unique.get(seat.userId) ?? false) || seat.autoTopUp);
+  }
+  const ranked = [...unique].sort(
+    ([a, onA], [b, onB]) =>
+      Number(onB) - Number(onA) ||
+      unitHash(a, 'horse-topup-style') - unitHash(b, 'horse-topup-style') ||
+      a.localeCompare(b)
+  );
+  return new Set(
+    ranked.slice(0, Math.round(ranked.length * PLO5_AUTO_TOP_UP_SHARE)).map(([id]) => id)
+  );
 }

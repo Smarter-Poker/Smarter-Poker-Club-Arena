@@ -87,4 +87,16 @@ describe('horse funding acknowledges a bound receipt, not a transport guess', ()
       )
     ).toBe(true);
   });
+  it('recovers a lost top-up response with the same purchase key, separate from a rebuy', async () => {
+    mocks.rpc
+      .mockRejectedValueOnce(new Error('lost response'))
+      .mockImplementation(async (_rpc, payload) => receipt(payload));
+    const pending = autoRebuyHorse(table, user, 5, club, 91, 'topup');
+    await vi.runAllTimersAsync();
+    expect(await pending).toEqual({ status: 'funded', stack: 7 });
+    expect(mocks.rpc.mock.calls[0]).toEqual(mocks.rpc.mock.calls[1]);
+    const topup = mocks.rpc.mock.calls[0][1].p_op_id;
+    await autoRebuyHorse(table, user, 5, club, 91);
+    expect(mocks.rpc.mock.calls[2][1].p_op_id).not.toBe(topup);
+  });
 });

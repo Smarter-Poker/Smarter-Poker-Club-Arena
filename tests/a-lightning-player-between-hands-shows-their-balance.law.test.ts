@@ -180,7 +180,7 @@ describe('a Lightning player between hands', () => {
         /if \(lightningRoomRef\.current && !res\.queued && applied > 0\) \{\s*setLightningBalanceVersion/
       );
       expect(page).toMatch(
-        /\[lightningHeroWaiting, lightningRoomClusterId, tableId, lightningBalanceVersion\]/
+        /\[\s*lightningHeroWaiting,\s*lightningRoomClusterId,\s*tableId,\s*lightningBalanceVersion,\s*lightningBalanceReadVersion,?\s*\]/
       );
     });
 

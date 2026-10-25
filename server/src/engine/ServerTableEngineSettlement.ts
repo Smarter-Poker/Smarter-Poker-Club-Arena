@@ -1718,8 +1718,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          THE RECORD  hand_history -> rake_distribution -> bbj_contribution ->
                      promo_playthrough -> insurance_ledger -> bbj_mini_payout
                      -> bbj_payout -> tournament_chip_sync
-         THE SEATS   pending_addons -> horse_rebuys -> chip_continuity ->
-                     horse_cashouts -> horse_table_talk -> deferred_sitouts ->
+         THE SEATS   pending_addons -> horse_rebuys -> horse_top_ups ->
+                     chip_continuity -> horse_cashouts -> horse_table_talk -> deferred_sitouts ->
                      leave_pending -> table_unlock
 
        runStep files each step by NAME into its lane (STEP_LANE) and returns
@@ -1755,6 +1755,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       tournament_chip_sync: 'record',
       pending_addons: 'seats',
       horse_rebuys: 'seats',
+      horse_top_ups: 'seats',
       chip_continuity: 'seats',
       horse_cashouts: 'seats',
       horse_table_talk: 'seats',

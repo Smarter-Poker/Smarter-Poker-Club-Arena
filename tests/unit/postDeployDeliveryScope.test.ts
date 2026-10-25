@@ -171,7 +171,11 @@ describe('post-publication verification belongs to its delivered component', () 
   });
 
   it('waits for exact-engine thaw before provisioning a channel lifecycle account', () => {
-    const steps = workflow.jobs['club-channel-lifecycle-e2e'].steps;
+    const lifecycle = workflow.jobs['club-channel-lifecycle-e2e'];
+    // 15m next-announcement lead, 12m wait, 15m case/fixture allowance,
+    // plus 15m for dependency setup and the reserved-account cleanup.
+    expect(lifecycle['timeout-minutes']).toBeGreaterThanOrEqual(15 + 12 + 15 + 15);
+    const steps = lifecycle.steps;
     const waitAt = steps.findIndex((step: any) => step.run?.includes('await-engine-gameplay.mjs'));
     const accountAt = steps.findIndex((step: any) => step.id === 'account');
     expect(waitAt).toBeGreaterThan(-1);

@@ -1,6 +1,6 @@
 # Post-deploy thaw and cash witness selection
 
-The exact-engine channel certificate started during the certified maintenance freeze in run 40226467591 and failed before reaching channel assertions. Its existing job now uses the maintained exact-engine gameplay prerequisite before provisioning staff authority. Timeout, supersession and unreadable state still refuse certification; all cleanup and required-execution checks remain.
+The exact-engine channel certificate started during the certified maintenance freeze in run 40226467591 and failed before reaching channel assertions. Its existing job now uses the maintained exact-engine gameplay prerequisite before provisioning staff authority. Timeout, supersession and unreadable state still refuse certification; all cleanup and required-execution checks remain. The job ceiling is 60 minutes to contain the bounded schedule lead, gameplay prerequisite, case allowance and cleanup; the old 20-minute ceiling could kill those prerequisites.
 
 The cash certificate returned after its first productive lobby tab, which exposed just one table in run 40226149406. A legitimate hand could exceed the existing next-hand budget. Selection now accumulates distinct healthy witnesses across cash tabs up to the existing eight-table cap, then rereads their liveness together before racing. The 45-second silence limit and 90-second causal hand budget are unchanged.
 

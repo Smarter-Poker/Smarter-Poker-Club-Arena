@@ -1,0 +1,5 @@
+# Opening A Game Owns The Lobby View
+
+A delayed saved-view response could change the game-type filter after a player opened a card. The selected row then left the filtered list, so the card closed. Opening a row or resolving its shared game link now claims the existing view before a pending preference response can replace it. Saved preferences still restore when no game was selected; explicit filters and removal of a selected game retain their existing behavior.
+
+The production failure showed a visible panel disappear before its card assertion, with PLO selected in the final snapshot. The report did not retain the clicked row ID, so attributing that individual occurrence to the reproduced race remains an inference. Executing the actual page selection and preference callbacks with a deferred response reproduces the filter change before the repair and preserves the selected view after it. Regression cases cover row selection, shared-link selection and ordinary preference restoration. No joining, queueing or money operation changes.

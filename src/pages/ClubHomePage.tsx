@@ -4181,6 +4181,9 @@ function ClubHomePageContent({
 
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
+      // Opening a game is an explicit choice in this view. A late saved tab
+      // must not filter its row away and close the card the viewer just opened.
+      viewPrefsTouched.current = true;
       haptic.selection();
       browseJourney.current.selected = true;
       capture('lobby_game_details_opened', {
@@ -4625,6 +4628,8 @@ function ClubHomePageContent({
     pendingGameRef.current = null;
     const entry = lobbyEntries.find((e) => e.id === id);
     if (entry) {
+      // A shared game link owns this view just like an explicit row selection.
+      viewPrefsTouched.current = true;
       setSelectedId(id);
       setPanelOpen(true);
     }

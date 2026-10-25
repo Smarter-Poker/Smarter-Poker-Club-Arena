@@ -192,11 +192,13 @@ const PHASE13_TELEMETRY_PREFIXES = [
 ] as const;
 
 export const RETIRED_RECEIPTS: LedgerEntry[] = [
-  retiredReceipt(
-    'horse_winner_read_*',
-    'source',
-    'the floor-wide winner telemetry was replaced by individual original-participant completion receipts under horse_observer_*; the winner policy remains active inside each private observer sandbox',
-    'V53'
+  ...['horse_winner_read_hand', 'horse_winner_read_refused'].map((key) =>
+    retiredReceipt(
+      key,
+      'source',
+      'the floor-wide winner telemetry was replaced by individual original-participant completion receipts under horse_observer_*; the winner policy remains active inside each private observer sandbox',
+      'V53'
+    )
   ),
   ...PHASE12_TELEMETRY_PREFIXES.flatMap((prefix) =>
     RETIRED_PHASE12_REASONS.map((reason) =>

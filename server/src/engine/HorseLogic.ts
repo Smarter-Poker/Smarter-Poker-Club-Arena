@@ -1502,7 +1502,9 @@ function icmRisk(
   // were counted as "legacy" fallbacks in the proof-of-receipt numbers. Same
   // for a context that simply has not arrived yet (empty tournament object
   // during the first fetch): that is "warming", not a degraded model.
-  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) {
+  // An absent/untrusted payout context is unknown, not evidence of one
+  // paid place. Keep the existing warming/fallback path until it arrives.
+  if (gs.format === 'spin' && explicit?.spotsPaid === 1) {
     lastIcmPath = 'spin_cev';
     return 0;
   }

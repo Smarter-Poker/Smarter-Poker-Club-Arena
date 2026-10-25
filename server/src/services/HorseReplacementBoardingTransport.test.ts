@@ -23,6 +23,7 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
   };
 });
 import { createClient } from '@supabase/supabase-js';
+const SUBJECT_URL = process.env.SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co';
 import {
   replacementBoardingAdapter,
   REPLACEMENT_BOARD,
@@ -161,10 +162,10 @@ beforeEach(() => {
 });
 function adapter() {
   return replacementBoardingAdapter(
-    createClient('https://boarding.invalid', 'isolated-service-key', {
+    createClient(SUBJECT_URL, 'isolated-service-key', {
       auth: { persistSession: false, autoRefreshToken: false },
     }),
-    'https://boarding.invalid'
+    SUBJECT_URL
   );
 }
 describe('real Supabase original subject boarding transport', () => {

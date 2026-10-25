@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createReplacementSubjectClient } from './supabase/client.js';
 
 export const REPLACEMENT_BOARD = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 export const REPLACEMENT_OWNER = '47965354-0e56-43ef-931c-ddaab82af765';
 const BATCH = 'patterned-retirement-20261006';
-const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 type Mapping = { retiredHorseId: string; horseId: string };
 export interface BoardingAdapter {
   plan(): Promise<any>;
@@ -289,9 +289,7 @@ export function replacementBoardingAdapter(admin: SupabaseClient, url: string): 
       );
       if (link.user?.id !== r.horseId || !link.properties?.hashed_token)
         throw Error('Original subject link mismatch');
-      const subject = createClient(url, PUBLIC_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      });
+      const subject = createReplacementSubjectClient(url);
       try {
         const login = value(
           await subject.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: 'email' })

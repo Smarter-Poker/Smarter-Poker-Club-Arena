@@ -8,6 +8,7 @@ on:
       - server/src/services/HorseOnboardingLifecycle.test.ts
       - server/src/services/HorseReplacement*.ts
       - server/src/scripts/replaceRetiredHorses.ts
+      - server/src/services/supabase/client.ts
       - supabase/migrations/*_retired_patterned_horses_reserve_their_replacement_identity_.sql
       - supabase/migrations/20261023222825_scheduled_horses_play_every_game_without_roster_restrictions.sql
       - scripts/ci/test-patterned-horse-replacements.py

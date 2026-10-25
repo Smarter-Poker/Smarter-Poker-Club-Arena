@@ -135,8 +135,8 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     const attempt = client.slice(attemptStart, client.indexOf('const RETRYABLE =', attemptStart));
     expect(attemptStart).toBeGreaterThan(-1);
     expect(client).toContain("import { dataActorHeaders } from './dataActorContext.js'");
-    // Viewer-only private ACL reads are the sole unmarked path. Every ordinary
-    // service/manager request still stamps its authority inside each attempt.
+    // Private ACL reads and the fixed original-player join input device are
+    // unmarked. Ordinary service/manager traffic still stamps each attempt.
     expect(attempt).toMatch(
       /}\s*else\s*{\s*authoritativeHeaders = dataActorHeaders\(headers\);\s*}/
     );
@@ -147,6 +147,10 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     expect(attempt).toContain("(init.method || 'GET').toUpperCase() !== 'POST'");
     expect(attempt).toContain("throw new Error('private_record_acl_request_boundary')");
     expect(attempt).toContain('headers: authoritativeHeaders');
+    expect(attempt).toContain('else if (replacementSubject)');
+    expect(attempt).toContain('POST /rest/v1/rpc/fn_join_club_atomic');
+    expect(attempt).toContain("url.searchParams.get('scope') !== 'local'");
+    expect(attempt).toContain("throw new Error('original_subject_request_boundary')");
     expect(actorContext).toContain('new AsyncLocalStorage<TournamentManagerActorContext>()');
     expect(actorContext).toContain('Promise.resolve(result as unknown as PromiseLike<unknown>)');
     expect(actorContext).toContain('bindTournamentDataAuthorityMethods');

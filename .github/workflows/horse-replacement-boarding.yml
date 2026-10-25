@@ -6,6 +6,9 @@ on:
     paths:
       - server/src/services/HorseReplacementBoarding*.ts
       - server/src/scripts/boardRetiredHorseReplacements.ts
+      - server/src/services/supabase/client.ts
+      - server/src/services/supabase/replacementSubjectClient.test.ts
+      - server/src/services/TournamentManagerRequestFence.guard.test.ts
       - scripts/ci/test-replacement-horse-boarding.py
       - scripts/ci/fixtures/replacement-boarding/**
       - scripts/ci/fixtures/patterned-horse-retirement-cohort.json
@@ -36,7 +39,7 @@ jobs:
       - run: server/node_modules/.bin/tsc --noEmit -p server/tsconfig.json
       - name: Qualify original subject transport and finite recovery
         working-directory: server
-        run: node_modules/.bin/vitest run src/services/HorseReplacementBoarding.test.ts src/services/HorseReplacementBoardingTransport.test.ts
+        run: node_modules/.bin/vitest run src/services/HorseReplacementBoarding.test.ts src/services/HorseReplacementBoardingTransport.test.ts src/services/supabase/replacementSubjectClient.test.ts src/services/TournamentManagerRequestFence.guard.test.ts
       - name: Install PostgreSQL 17 from the signed PGDG source only
         run: |
           set -euo pipefail

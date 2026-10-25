@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'node:url';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../services/supabase/client.js';
 import {
   boardReplacementHorses,
   replacementBoardingAdapter,
@@ -14,14 +14,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const url = process.env.SUPABASE_URL,
       key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) throw Error('Configured Supabase service environment required');
-    const admin = createClient(url, key, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    });
     console.log(
       JSON.stringify(
         await boardReplacementHorses(
           boardingMode(process.argv.slice(2)),
-          replacementBoardingAdapter(admin, url)
+          replacementBoardingAdapter(supabase, url)
         )
       )
     );

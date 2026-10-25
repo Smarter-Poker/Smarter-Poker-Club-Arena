@@ -25,7 +25,10 @@
  */
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
-import { captureHorseHandJournalContext } from '../engine/HorseDecisionHandBinding.js';
+import {
+  captureHorseHandJournalContext,
+  type HorseHandJournalCoordinate,
+} from '../engine/HorseDecisionHandBinding.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -58,6 +61,7 @@ export interface LightningHorseTurn {
   actionTimeSeconds: number | null | undefined;
   /** Prior accepted actions of this hand (the hand journal binding). */
   actions: readonly unknown[];
+  handJournalCoordinate?: HorseHandJournalCoordinate | null;
   generation: number;
   fence: string;
   turnStartMs: number;
@@ -161,6 +165,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
   } as unknown as HorseGameStateV2;
   const snapshot: LiveHorseDecisionSnapshot = {
     handJournalContext: captureHorseHandJournalContext(turn.actions),
+    ...(turn.handJournalCoordinate ? { handJournalCoordinate: turn.handJournalCoordinate } : {}),
     generation: turn.generation,
     fence: turn.fence,
     decisionKey: '',

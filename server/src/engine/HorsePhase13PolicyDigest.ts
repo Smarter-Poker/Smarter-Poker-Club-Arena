@@ -37,7 +37,7 @@ import { isJointVariant, type JointVariant } from './multiway/JointInputBinding.
 import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-digest-v2';
+export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-digest-v3';
 
 /**
  * The code that determines a Phase 13 joint proposal, as server-relative
@@ -169,12 +169,8 @@ export const HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string
       'imported by HorseEval for the Phase 8 tournament continuation capture, which no joint call requests',
     'src/engine/HorseDecisionEffects.ts':
       'HorseMind decision-effect bookkeeping; it holds no value a joint proposal reads',
-    'src/engine/HorseMindHandIdentity.ts':
-      'HorseMind hand-identity binding; it holds no value a joint proposal reads',
     'src/engine/HorsePlanHandIdentity.ts':
       'HorseMind plan hand-identity binding; it holds no value a joint proposal reads',
-    'src/engine/HorseDecisionHandBinding.ts':
-      'hand-binding records under the identities above; it holds no value a joint proposal reads',
   });
 
 /** Reads a server-relative source path. Throws on failure. */

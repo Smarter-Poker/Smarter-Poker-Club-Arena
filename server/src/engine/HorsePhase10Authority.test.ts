@@ -179,10 +179,10 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
       const file = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
       expect(file).toMatchObject({ qualified: true, mode: 'contract' });
       // Generations 3, 4 and 5 were measured under the running digest
-      // definition (v3); only its bytes moved. Generations 1 and 2 predate it.
+      // definition v3; the original-coordinate repair now uses v4. Generations 1 and 2 predate it.
       expect(file.policyDigestDefinition).toBe(
         previous === generation3 || previous === generation4 || previous === generation5
-          ? HORSE_PHASE10_POLICY_DIGEST_DEFINITION
+          ? 'horse-phase10-policy-digest-v3'
           : 'horse-phase10-policy-digest-v2'
       );
       expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
@@ -506,7 +506,7 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
   const serverFile = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
   it('the running policy digest is the versioned hash of exactly the PLO4 candidate code', () => {
-    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v3');
+    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v4');
     expect(HORSE_PHASE10_POLICY_SOURCE_FILES).toEqual([
       'src/engine/plo4/Plo4PolicyPack.ts',
       'src/engine/plo4/Plo4LivePolicy.ts',
@@ -524,7 +524,7 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
     ]);
     // Independent recomputation from the files on disk.
     const hash = createHash('sha256').update(
-      `horse-phase10-policy-digest-v3\0${PLO4_POLICY_PACK.version}\0`
+      `horse-phase10-policy-digest-v4\0${PLO4_POLICY_PACK.version}\0`
     );
     for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES)
       hash

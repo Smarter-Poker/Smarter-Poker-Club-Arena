@@ -1,3 +1,4 @@
+import { captureLightningHorseJournalCoordinate } from '../engine/HorseDecisionHandBinding.js';
 import { cashRakeScope } from '../config/cashRakePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -1619,6 +1620,12 @@ export class LightningHandHost {
         actions: this.actions,
         generation,
         fence: [this.hostTableId, this.handNumber, me.seat, generation, 'early'].join(':'),
+        handJournalCoordinate: captureLightningHorseJournalCoordinate({
+          tableId: this.hostTableId,
+          handNumber: this.handNumber,
+          leaseGeneration: this.deps.leaseFor(this.hostTableId)?.generation,
+          earlyLook: true,
+        }),
         turnStartMs: decisionAt,
         now: decisionAt,
         earlyLook: true,
@@ -1975,6 +1982,11 @@ export class LightningHandHost {
         actions: this.actions,
         generation,
         fence: [this.hostTableId, this.handNumber, me.seat, generation].join(':'),
+        handJournalCoordinate: captureLightningHorseJournalCoordinate({
+          tableId: this.hostTableId,
+          handNumber: this.handNumber,
+          leaseGeneration: this.deps.leaseFor(this.hostTableId)?.generation,
+        }),
         turnStartMs: this.turnStartMs,
         now: decisionAt,
       },

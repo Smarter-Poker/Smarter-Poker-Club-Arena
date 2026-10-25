@@ -63,10 +63,18 @@ const STREET_ORDER: readonly string[] = ['flop', 'turn', 'river'];
 const streetIndex = (street: string): number => STREET_ORDER.indexOf(street);
 const validStrength = (v: number): boolean => Number.isFinite(v) && v >= 0 && v <= 1;
 
+/**
+ * `observeOwed` (optional, read-only): told, before the opening wager and
+ * before each responder's fold or call, the uncapped amount that seat is
+ * asked to put in. A caller that reuses a hand's chip flows
+ * for a deeper stack (HorseTournamentFutureHand's trace) uses it to know which
+ * stack read could have changed the price; it never changes the rollout.
+ */
 export function simulateTournamentContinuation(
   players: SeatPlayer[],
   config: TournamentContinuationConfig,
-  commit: (player: SeatPlayer, amount: number) => void
+  commit: (player: SeatPlayer, amount: number) => void,
+  observeOwed?: (player: SeatPlayer, owed: number) => void
 ): boolean {
   if (
     players.length > CONTINUATION_POLICY.maxSeats ||
@@ -142,10 +150,9 @@ export function simulateTournamentContinuation(
     const bettor = live[bettorIndex];
     let pot = 0;
     for (const p of players) pot += p.totalInvested;
-    const wager = Math.min(
-      bettor.stack,
-      Math.max(config.bigBlind, Math.round(pot * CONTINUATION_POLICY.wagerPotFraction))
-    );
+    const asked = Math.max(config.bigBlind, Math.round(pot * CONTINUATION_POLICY.wagerPotFraction));
+    if (observeOwed !== undefined) observeOwed(bettor, asked);
+    const wager = Math.min(bettor.stack, asked);
     commit(bettor, wager);
     const target = bettor.bet;
     // Responders follow the bettor clockwise: live[bettor + 1 ...], live[... bettor - 1].
@@ -153,7 +160,9 @@ export function simulateTournamentContinuation(
       const responder = (bettorIndex + k) % liveCount;
       const player = live[responder];
       if (player.is_all_in || player.is_folded) continue;
-      const call = Math.min(player.stack, Math.max(0, target - player.bet));
+      const owed = Math.max(0, target - player.bet);
+      if (observeOwed !== undefined) observeOwed(player, owed);
+      const call = Math.min(player.stack, owed);
       if (call <= 0) continue;
       const facingPot = calculateContestablePot(players, player.user_id, call);
       // This is the rollout population's stated response rule, not a claim

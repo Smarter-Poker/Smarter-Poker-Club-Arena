@@ -125,6 +125,59 @@ export interface JointPotAward {
   amount: number;
 }
 
+const validHigh = (n: number) => Number.isSafeInteger(n) && n >= 0;
+const validLow = (n: number | null) => n === null || (Number.isSafeInteger(n) && n >= 0);
+const jointSeated = (seats: readonly SeatPlayer[], id: string) =>
+  seats.some((p) => p.user_id === id);
+
+interface JointAwardLedger {
+  seats: SeatPlayer[];
+  dealerSeat: number;
+  chipUnit: number;
+  awards: JointPotAward[];
+  totals: Record<string, number>;
+  boardTotals: Record<string, number>[];
+}
+
+/** Winners in odd-chip order: a single winner needs no ordering; any larger
+ * set keeps the stable sort (button-relative, then seat). */
+function orderJointWinners(ledger: JointAwardLedger, ids: string[]): SeatPlayer[] {
+  const found =
+    ids.length === 1
+      ? ledger.seats.filter((p) => p.user_id === ids[0])
+      : ledger.seats.filter((p) => ids.includes(p.user_id));
+  return found.length < 2
+    ? found
+    : found.sort(
+        (a, b) =>
+          Number(a.seat <= ledger.dealerSeat) - Number(b.seat <= ledger.dealerSeat) ||
+          a.seat - b.seat
+      );
+}
+
+/** Module-level since 2026-10-24 (it runs for every priced branch); the body
+ * is the former per-call closure's, in the same order. */
+function awardJointUnits(
+  ledger: JointAwardLedger,
+  units: number,
+  winners: string[],
+  potIndex: number,
+  boardIndex: number,
+  half: JointPotAward['half']
+): void {
+  if (!winners.length) throw new Error('joint_scores_no_winner');
+  const ordered = orderJointWinners(ledger, winners);
+  for (let index = 0; index < ordered.length; index++) {
+    const p = ordered[index];
+    const amount =
+      (Math.floor(units / winners.length) + Number(index < units % winners.length)) *
+      ledger.chipUnit;
+    if (amount > 0) ledger.awards.push({ potIndex, boardIndex, half, playerId: p.user_id, amount });
+    ledger.totals[p.user_id] += amount;
+    ledger.boardTotals[boardIndex][p.user_id] += amount;
+  }
+}
+
 /** The shared board/pot scorer used by the Phase13 candidate calculation.
  * Independent benchmark references certify this result; none are imported
  * here. Amounts and tie remainders use actual settlement units and the button. */
@@ -139,7 +192,7 @@ export function settleJointScores(input: {
   const { prepared, sample, heroId, opponentIds } = input;
   const { chipUnit, seats, pots } = prepared;
   const boardCount = sample.boards.length;
-  const seated = (id: string) => seats.some((p) => p.user_id === id);
+  const seated = (id: string) => jointSeated(seats, id);
   if (
     ![1, 2, 3].includes(boardCount) ||
     !Number.isInteger(input.dealerSeat) ||
@@ -151,8 +204,6 @@ export function settleJointScores(input: {
     opponentIds.some((id) => !seated(id))
   )
     throw new Error('joint_scores_invalid_identity');
-  const validHigh = (n: number) => Number.isSafeInteger(n) && n >= 0;
-  const validLow = (n: number | null) => n === null || (Number.isSafeInteger(n) && n >= 0);
   for (const board of sample.boards) {
     if (
       board.opponentHigh.length !== opponentIds.length ||
@@ -167,35 +218,13 @@ export function settleJointScores(input: {
   const awards: JointPotAward[] = [];
   const totals: Record<string, number> = Object.fromEntries(seats.map((p) => [p.user_id, 0]));
   const boardTotals = sample.boards.map(() => ({ ...totals }));
-  // A single winner needs no ordering; any larger set keeps the stable sort.
-  const order = (ids: string[]) => {
-    const found =
-      ids.length === 1
-        ? seats.filter((p) => p.user_id === ids[0])
-        : seats.filter((p) => ids.includes(p.user_id));
-    return found.length < 2
-      ? found
-      : found.sort(
-          (a, b) =>
-            Number(a.seat <= input.dealerSeat) - Number(b.seat <= input.dealerSeat) ||
-            a.seat - b.seat
-        );
-  };
-  const award = (
-    units: number,
-    winners: string[],
-    potIndex: number,
-    boardIndex: number,
-    half: JointPotAward['half']
-  ) => {
-    if (!winners.length) throw new Error('joint_scores_no_winner');
-    order(winners).forEach((p, index) => {
-      const amount =
-        (Math.floor(units / winners.length) + Number(index < units % winners.length)) * chipUnit;
-      if (amount > 0) awards.push({ potIndex, boardIndex, half, playerId: p.user_id, amount });
-      totals[p.user_id] += amount;
-      boardTotals[boardIndex][p.user_id] += amount;
-    });
+  const ledger: JointAwardLedger = {
+    seats,
+    dealerSeat: input.dealerSeat,
+    chipUnit,
+    awards,
+    totals,
+    boardTotals,
   };
   for (let potIndex = 0; potIndex < pots.length; potIndex++) {
     const pot = pots[potIndex],
@@ -212,7 +241,8 @@ export function settleJointScores(input: {
       const high = Math.max(...scores.map((s) => s.high));
       const lows = input.splitLow ? scores.filter((s) => s.low !== null) : [];
       const low = lows.length ? Math.min(...lows.map((s) => s.low!)) : null;
-      award(
+      awardJointUnits(
+        ledger,
         low === null ? boardUnits : Math.ceil(boardUnits / 2),
         scores.filter((s) => s.high === high).map((s) => s.id),
         potIndex,
@@ -220,7 +250,8 @@ export function settleJointScores(input: {
         'high'
       );
       if (low !== null)
-        award(
+        awardJointUnits(
+          ledger,
           Math.floor(boardUnits / 2),
           lows.filter((s) => s.low === low).map((s) => s.id),
           potIndex,

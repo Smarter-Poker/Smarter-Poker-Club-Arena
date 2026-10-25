@@ -130,6 +130,24 @@ describe('the tournament break card', () => {
     expect(screen.getByRole('button', { name: 'Open Break Screen' })).toBeVisible();
   });
 
+  it('keeps each minimized clock inside its owning table and reopens the same screen', () => {
+    const table = document.createElement('div');
+    const otherTable = document.createElement('div');
+    document.body.append(table, otherTable);
+    const view = render(<TournamentBreakScreen {...props} tableAnchorRef={{ current: table }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    const clockButton = within(table).getByRole('button', { name: 'Open Break Screen' });
+    expect(clockButton).toHaveClass('break-screen__minimized--on-table');
+    expect(within(otherTable).queryByRole('button')).toBeNull();
+    expect(clockButton).toHaveTextContent('Break: 4:01');
+    fireEvent.click(clockButton);
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(within(table).queryByRole('button')).toBeNull();
+    view.unmount();
+    table.remove();
+    otherTable.remove();
+  });
+
   it('keeps real field figures and hero standings, with exact amounts behind compact values', () => {
     render(
       <TournamentBreakScreen

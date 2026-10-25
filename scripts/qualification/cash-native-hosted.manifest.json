@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41375,
-      "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+      "bytes": 41844,
+      "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3680,6 +3680,21 @@
         "current": {
           "bytes": 114533,
           "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
+        }
+      }
+    }
+  },
+  "routePerformanceGateInputs20261025": {
+    "reason": "The route-performance scripts select the required production build. Active classifier identity only; cash SQL, native scheduler, assertions and qualification state unchanged. Required native accounting still runs.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 41375,
+          "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+        },
+        "current": {
+          "bytes": 41844,
+          "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
         }
       }
     }

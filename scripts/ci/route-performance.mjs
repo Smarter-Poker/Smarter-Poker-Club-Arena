@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
 import { portFor } from './e2e-port.mjs';
 import { waitForFirstContentfulPaint } from './paint-readiness.mjs';
+import { initialLoadTransfer } from './initial-load-bytes.mjs';
 
 const HOST = '127.0.0.1';
 // Per-runner port. A hardcoded 4173 collided as soon as CI moved onto the
@@ -38,7 +39,9 @@ export function prerenderedRoutes(manifestPath = MANIFEST) {
 
 const publicRoutes = prerenderedRoutes();
 if (publicRoutes.length === 0) {
-  console.error('[route-performance] FAILED: dist/prerender-manifest.json has no routes; the public arena was not prerendered.');
+  console.error(
+    '[route-performance] FAILED: dist/prerender-manifest.json has no routes; the public arena was not prerendered.'
+  );
   process.exit(1);
 }
 // /legal is prerendered since 2026-09-22 and so already comes from the manifest.
@@ -82,7 +85,24 @@ try {
       const devtools = await context.newCDPSession(page);
       await devtools.send('Performance.enable');
       await page.addInitScript(() => {
-        window.__routeMetrics = { lcp: 0, cls: 0 };
+        // The default resource-timing buffer holds 250 entries and silently
+        // drops the rest, which would make the byte count depend on how many
+        // entries happened to arrive first.
+        performance.setResourceTimingBufferSize(10_000);
+        window.__routeMetrics = { lcp: 0, cls: 0, firstIdleCallbackAt: null };
+        // Record when the first idle callback runs, without changing what it
+        // does: speculative idle work is the boundary of the initial load
+        // (scripts/ci/initial-load-bytes.mjs).
+        if (typeof window.requestIdleCallback === 'function') {
+          const original = window.requestIdleCallback.bind(window);
+          window.requestIdleCallback = (callback, options) =>
+            original((deadline) => {
+              if (window.__routeMetrics.firstIdleCallbackAt === null) {
+                window.__routeMetrics.firstIdleCallbackAt = performance.now();
+              }
+              return callback(deadline);
+            }, options);
+        }
         new PerformanceObserver((list) => {
           const entries = list.getEntries();
           const last = entries[entries.length - 1];
@@ -100,7 +120,10 @@ try {
       // Root markup can exist before Chromium has painted it. Observe the
       // actual paint; the measured FCP still must meet the unchanged budget.
       const paintObserved = await waitForFirstContentfulPaint(page);
-      if (!paintObserved) console.error(`[route-performance] ${viewport.name} ${route}: paint was not observed within 5000ms`);
+      if (!paintObserved)
+        console.error(
+          `[route-performance] ${viewport.name} ${route}: paint was not observed within 5000ms`
+        );
       await page.waitForTimeout(500);
       const devtoolsMetrics = await devtools.send('Performance.getMetrics');
       const metric = (name) =>
@@ -124,7 +147,14 @@ try {
           lcp: routeMetrics.lcp,
           fcp: firstContentfulPaint?.startTime || 0,
           cls: routeMetrics.cls,
-          transferBytes: resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
+          firstIdleCallbackAt: routeMetrics.firstIdleCallbackAt ?? null,
+          navigationTiming: navigation
+            ? { loadEventStart: navigation.loadEventStart, transferSize: navigation.transferSize }
+            : null,
+          resourceTimings: resources.map((entry) => ({
+            startTime: entry.startTime,
+            transferSize: entry.transferSize,
+          })),
           horizontalOverflow:
             document.documentElement.scrollWidth - document.documentElement.clientWidth,
           rootChildren: document.querySelector('#root')?.childElementCount || 0,
@@ -133,6 +163,15 @@ try {
       });
       metrics.responseStatus = response?.status() || 0;
       metrics.fcp = devtoolsFcp || metrics.fcp;
+      // The budget is the initial-load cost (document + everything requested
+      // before the load event or the first idle callback, whichever is
+      // earlier), not whatever idle prefetch landed before this snapshot.
+      // See scripts/ci/initial-load-bytes.mjs.
+      const transfer = initialLoadTransfer(
+        metrics.navigationTiming,
+        metrics.resourceTimings,
+        metrics.firstIdleCallbackAt
+      );
 
       const violations = [];
       if (metrics.responseStatus >= 400 || metrics.responseStatus === 0)
@@ -146,14 +185,18 @@ try {
       if (metrics.fcp > 2500) violations.push('FCP > 2500ms');
       if (metrics.lcp > 4000) violations.push('LCP > 4000ms');
       if (metrics.cls > 0.15) violations.push('CLS > 0.15');
-      if (metrics.transferBytes > 3_000_000) violations.push('transfer > 3MB');
+      if (transfer.initialBytes > 3_000_000) violations.push('transfer > 3MB');
       if (metrics.horizontalOverflow > 1) violations.push('horizontal overflow');
 
       console.log(
         `[route-performance] ${viewport.name} ${route} ` +
           `dcl=${Math.round(metrics.domContentLoaded)}ms load=${Math.round(metrics.load)}ms ` +
           `fcp=${Math.round(metrics.fcp)}ms lcp=${Math.round(metrics.lcp)}ms cls=${metrics.cls.toFixed(3)} ` +
-          `transfer=${Math.round(metrics.transferBytes / 1024)}kB overflow=${metrics.horizontalOverflow}px`
+          `transfer=${Math.round(transfer.initialBytes / 1024)}kB ` +
+          `(boundary ${transfer.boundaryMs === null ? 'none' : `${Math.round(transfer.boundaryMs)}ms`}; ` +
+          `after it ${Math.round(transfer.lateBytes / 1024)}kB in ${transfer.lateCount}, ` +
+          `total ${Math.round(transfer.totalBytes / 1024)}kB, informational) ` +
+          `overflow=${metrics.horizontalOverflow}px`
       );
       if (violations.length) {
         failed = true;

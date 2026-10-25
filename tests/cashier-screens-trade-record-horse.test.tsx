@@ -74,7 +74,7 @@ function mockClub(rows: Array<Record<string, unknown>>) {
   vi.mocked(supabase.rpc).mockImplementation(
     (name: string) =>
       Promise.resolve(
-        name === 'fn_cashier_history_page' ? { data: rows, error: null } : { data: [], error: null }
+        name === 'fn_cashier_history_feed' ? { data: rows, error: null } : { data: [], error: null }
       ) as never
   );
 }

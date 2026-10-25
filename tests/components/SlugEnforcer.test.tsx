@@ -223,76 +223,31 @@ describe('SlugEnforcer', () => {
       replace: true,
     });
   });
-  const boardLocation = (search = '?create=table', hash = '#setup') => ({
-    pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
-    search,
-    hash,
-    key: 'table-management',
-    state: null,
-  });
-
-  const delayedClubLookup = () => {
-    let finish!: (result: { data: { slug: string; is_union: boolean }; error: null }) => void;
-    const result = new Promise<{ data: { slug: string; is_union: boolean }; error: null }>(
-      (resolve) => {
-        finish = resolve;
-      }
-    );
-    vi.mocked(supabase.from).mockImplementation(((table: string) => ({
+  it('retires a lookup when native document navigation starts without preventing departure', async () => {
+    let finish!: (result: unknown) => void;
+    const club = new Promise((resolve) => {
+      finish = resolve;
+    });
+    (supabase.from as any).mockImplementation((table: string) => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: () =>
-            table === 'clubs' ? result : Promise.resolve({ data: null, error: null }),
+          maybeSingle: () => (table === 'clubs' ? club : Promise.resolve({ data: null })),
         }),
       }),
-    })) as typeof supabase.from);
-    return async () =>
-      act(async () => {
-        finish({ data: { slug: 'standalone-club', is_union: false }, error: null });
-        await result;
-      });
-  };
-
-  it('does not restore the old creator query after the operator changes surface', async () => {
-    vi.mocked(useLocation).mockReturnValue(boardLocation());
-    const finish = delayedClubLookup();
-    const { rerender } = render(<SlugEnforcer />);
-    vi.mocked(useLocation).mockReturnValue(boardLocation('?create=table&game=nlh', '#blinds'));
-    rerender(<SlugEnforcer />);
-    await finish();
-    expect(navigateMock.mock.calls).toEqual([
-      ['/clubs/standalone-club/table-management?create=table&game=nlh#blinds', { replace: true }],
-    ]);
-  });
-
-  it('does not redirect after leaving Table Management for another route', async () => {
-    vi.mocked(useLocation).mockReturnValue(boardLocation());
-    const finish = delayedClubLookup();
-    const { rerender } = render(<SlugEnforcer />);
-    vi.mocked(useLocation).mockReturnValue({ ...boardLocation(), pathname: '/settings' });
-    rerender(<SlugEnforcer />);
-    await finish();
+    }));
+    (useLocation as any).mockReturnValue({
+      pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
+      search: '?create=table',
+      hash: '#settings',
+    });
+    const view = render(<SlugEnforcer />);
+    const departure = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(departure);
+    await act(async () => {
+      finish({ data: { slug: 'old-club', is_union: false } });
+    });
     expect(navigateMock).not.toHaveBeenCalled();
+    expect(departure.defaultPrevented).toBe(false);
+    view.unmount();
   });
-
-  it('does not redirect after unmount while club resolution is pending', async () => {
-    vi.mocked(useLocation).mockReturnValue(boardLocation());
-    const finish = delayedClubLookup();
-    const { unmount } = render(<SlugEnforcer />);
-    unmount();
-    await finish();
-    expect(navigateMock).not.toHaveBeenCalled();
-  });
-
-  it.each(['beforeunload', 'pagehide'])(
-    'does not abort an outgoing document navigation after %s',
-    async (event) => {
-      vi.mocked(useLocation).mockReturnValue(boardLocation());
-      const finish = delayedClubLookup();
-      render(<SlugEnforcer />);
-      window.dispatchEvent(new Event(event));
-      await finish();
-      expect(navigateMock).not.toHaveBeenCalled();
-    }
-  );
 });

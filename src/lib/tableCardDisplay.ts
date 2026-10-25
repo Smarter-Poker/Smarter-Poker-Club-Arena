@@ -128,7 +128,10 @@ export function heroDisplayHoleCards<T extends Card | null | undefined>(
   current: ReadonlyArray<Card | null | undefined> | null | undefined,
   preSort: boolean
 ): T[] {
-  const key = (c: Card | null | undefined) => (c ? `${c.rank}${c.suit}` : '');
+  /* Spelling-proof (2026-10-25): the same card can still arrive as 'Tc' or
+     'Tclubs' from an older cached frame, and a spelling difference must not
+     read as a different hand and re-sort the row. */
+  const key = (c: Card | null | undefined) => (c ? (cardKey(c) ?? '') : '');
   if (current && current.length === incoming.length && incoming.every((c) => c)) {
     const have = current.map(key).sort().join(',');
     const got = incoming.map(key).sort().join(',');

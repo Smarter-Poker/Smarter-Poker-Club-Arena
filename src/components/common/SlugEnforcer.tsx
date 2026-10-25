@@ -23,15 +23,13 @@ export default function SlugEnforcer() {
     if (!match) return;
     const type = match[1];
     const uuid = match[2];
-    // Resolution belongs to this exact route/document. A slow response from
-    // the previous surface must not restore its query or interrupt a new
-    // document navigation before React gets a chance to unmount this tree.
     let current = true;
-    const retire = () => {
+    // The old document remains mounted while its next document is loading.
+    // Its delayed lookup must not redirect that pending navigation.
+    const onDeparture = () => {
       current = false;
     };
-    window.addEventListener('beforeunload', retire);
-    window.addEventListener('pagehide', retire);
+    window.addEventListener('beforeunload', onDeparture);
 
     Promise.all([
       supabase.from('clubs').select('slug, union_id, is_union').eq('id', uuid).maybeSingle(),
@@ -81,9 +79,8 @@ export default function SlugEnforcer() {
       }
     });
     return () => {
-      retire();
-      window.removeEventListener('beforeunload', retire);
-      window.removeEventListener('pagehide', retire);
+      current = false;
+      window.removeEventListener('beforeunload', onDeparture);
     };
   }, [location.pathname, location.search, location.hash, navigate]);
 

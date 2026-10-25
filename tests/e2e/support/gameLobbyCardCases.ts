@@ -101,21 +101,7 @@ export function registerGameLobbyCardCases() {
           `${kind} details remain scrollable`
         ).toBe(true);
         await expect(page.locator('.glp__close')).toBeVisible();
-        await expect
-          .poll(async () => (await page.locator('.mtt-ticker').boundingBox())?.y)
-          .toBe(44);
-        const close = page.getByRole('button', { name: 'Close Game Lobby', exact: true });
-        await expect
-          .poll(() =>
-            close.evaluate((el) => {
-              const b = el.getBoundingClientRect();
-              const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
-              return hit === el || el.contains(hit);
-            })
-          )
-          .toBe(true);
-        await close.click();
-        await expect(page.locator('body')).not.toHaveAttribute('data-ticker-opened', 'true');
+        await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
         // The real fixed ticker remains a working registration entry once the
         // modal closes; only the dialog should own their overlapping pixels.

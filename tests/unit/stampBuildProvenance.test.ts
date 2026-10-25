@@ -164,7 +164,10 @@ function pullRequestBuild() {
   return { dir, base, head, merge, eventPath, event, env };
 }
 
-describe('actual build provenance subprocess', () => {
+// These cases build private Git histories and spawn the real provenance tool.
+// Measured fixture I/O exceeds5s on the shared SSD; keep a finite30s case budget.
+// The subprocess10s limits and every release-admission assertion are unchanged.
+describe('actual build provenance subprocess', { timeout: 30_000 }, () => {
   it('validates the immutable PR merge when unrelated main moves, retaining non-publishable provenance', () => {
     const { dir, env, base, head, merge } = pullRequestBuild();
     const result = stamp(dir, env);

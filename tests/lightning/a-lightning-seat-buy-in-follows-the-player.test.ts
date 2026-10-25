@@ -21,7 +21,13 @@ describe('a buy-in at a Lightning anchor follows the player into their room', ()
 
   it('a spectator at a Lightning anchor is offered Join Lightning, not the waiting list', () => {
     expect(page).toMatch(
-      /!tableState\.isTournament && anchorLightningClusterId \? \(\s*<WaitlistCallToAction\s+lightning\s+onClick=\{\(\) => navigate\(lightningRoute\(anchorLightningClusterId\)\)\}/
+      /!tableState\.isTournament && anchorLightningClusterId \? \(\s*<WaitlistCallToAction\s+lightning\s+onClick=\{openLightningAnchorEntry\}/
     );
+  });
+
+  it('Join Lightning on a Lightning table goes to the one-question door, never a seat on this felt', () => {
+    const body = sliceMethod(page, 'const openLightningAnchorEntry = () =>');
+    expect(body).toMatch(/navigate\(`\$\{lightningRoute\(anchorLightningClusterId\)\}\?join=1`\)/);
+    expect(body).not.toMatch(/handleSeatClick/);
   });
 });

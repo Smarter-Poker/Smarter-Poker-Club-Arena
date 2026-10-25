@@ -144,6 +144,8 @@ import {
   type LightningObservationDeps,
 } from './LightningHorseObservation.js';
 import { recordLightningHorseResults } from './LightningHorseResults.js';
+import { buildLightningStatsFacts, type LightningFactsBuilder } from './LightningHandFacts.js';
+import { writeHandFacts } from '../services/supabase/handFacts.js';
 import { planEarlyFold } from './LightningHorseEarlyFold.js';
 import { lightningVpipFloor } from './LightningHorseResults.js';
 import type { HorseReviewInput } from '../services/HorseHandReview.js';
@@ -396,6 +398,8 @@ export interface LightningHandHostDeps {
   earlyFoldRandom?: () => number;
   /** Files the settled hand on the horse scoreboard (LightningHorseResults). Injected for tests. */
   recordHorseResults?: (input: HorseReviewInput) => Promise<void>;
+  /** Builds the hand's private stats facts (LightningHandFacts). Injected for tests. */
+  statsFacts?: LightningFactsBuilder;
   /** The jackpot payout doors (injected for tests; the physical ones otherwise). */
   jackpot?: Pick<LightningJackpotDeps, 'payMain' | 'payMini'>;
   /** How long the post-commit drain may keep trying while the lease is held. */
@@ -2500,6 +2504,31 @@ export class LightningHandHost {
     };
   }
 
+  /** LightningHandFacts: the accepted-hand stats payload, keyed by this hand's id. */
+  private statsFactsFor(state: GameState, rake: number, handRow: Record<string, unknown>) {
+    const participants = [...this.participants.values()];
+    return buildLightningStatsFacts(
+      {
+        handId: this.handId,
+        hostTableId: this.hostTableId,
+        rules: (this.rules ?? {}) as Record<string, unknown>,
+        handNumber: this.handNumber,
+        playedAtIso: String(handRow.ended_at ?? new Date(this.now()).toISOString()),
+        buttonSeat: participants.find((p) => p.position === 'btn')?.seat ?? null,
+        rake,
+        board: this.boards[0] ?? [],
+        holeCards: this.holeCards,
+        players: state.players,
+        stacksBefore: new Map(participants.map((p) => [p.playerId, p.stackBefore])),
+        winners: this.winners,
+        actions: this.actions,
+        participants,
+      },
+      this.deps.statsFacts ?? writeHandFacts,
+      (err, where) => reportError(err, where)
+    );
+  }
+
   /** LightningHorseResults: the settled hand's exact horse nets, play and reviews. */
   private recordForHorseScoreboard(
     state: GameState,
@@ -2571,6 +2600,11 @@ export class LightningHandHost {
     }
     const requestId = lightningRequestId(this.handId, 'settle');
     const handRow = this.handRow(state, rake, bbj);
+    // A LIGHTNING HAND IS A HAND IN THE STATS (2026-10-24): the physical
+    // hand's private per-hand facts, built once so every retry sends the same
+    // request. Without them the hand settles exactly as before.
+    const statsFacts = await this.statsFactsFor(state, rake, handRow);
+    if (statsFacts) handRow._accepted_post_commit_facts = { stats_facts: statsFacts };
     for (let attempt = 1; attempt <= SETTLE_ATTEMPTS; attempt++) {
       const lease = this.deps.leaseFor(this.hostTableId);
       if (!lease) {

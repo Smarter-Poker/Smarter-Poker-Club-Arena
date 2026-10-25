@@ -114,6 +114,7 @@ import {
 } from '../lightning/lightningCapabilities';
 import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
 import { getLightningPoolSession } from '../lightning/lightningSession';
+import { anchorsShownByOpenRooms } from '../lightning/lightningAnchorTabs';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -1087,7 +1088,7 @@ export default function MultiTablePage() {
                 // Dan 2026-08-21: game_type + max_players come along so a restored
                 // tab wears its game code on the FIRST paint, not a second later.
                 .select(
-                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
+                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id, cluster_id'
                 )
                 .in('id', ids)
             : { data: [], error: null };
@@ -1111,7 +1112,14 @@ export default function MultiTablePage() {
           const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
           const known = new Set(survivors.map((t) => t.id));
           const room = Math.max(0, MAX_TABLES - survivors.length);
-          const candidates = ids.filter((id) => !known.has(id));
+          /* Lightning: an anchor seat whose room tab is open is already shown
+             (see lightning/lightningAnchorTabs.ts). */
+          const anchorsShown = anchorsShownByOpenRooms(
+            tblRows ?? [],
+            survivors.map((t) => t.id),
+            (tabId) => getLightningPoolSession(tabId)?.clusterId
+          );
+          const candidates = ids.filter((id) => !known.has(id) && !anchorsShown.has(id));
           /**
            * Dan 2026-08-20 (audit): this used to `.slice(0, room)` straight off
            * the raw query order — effectively an arbitrary four when a player had

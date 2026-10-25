@@ -41,6 +41,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
+import { getLightningPoolSession } from '../../lightning/lightningSession';
 import { reportError } from '../../utils/errorReporter';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -173,6 +174,26 @@ export default function RealTimeResultPanel({
   // ── Table metadata: fetched once per open ──
   useEffect(() => {
     if (!isOpen || !tableId) return undefined;
+    /* A Lightning room is a pool session with no `tables` row: this read found
+       nothing and the panel's game details stayed blank. Its game comes from
+       the Cluster the room already knows (2026-10-24). */
+    const lightningMeta = getLightningPoolSession(tableId)?.meta;
+    if (lightningMeta) {
+      setMeta({
+        createdAt: null,
+        variant: String(lightningMeta.variant || '').toUpperCase() || 'NLH',
+        smallBlind: Number(lightningMeta.smallBlind) || 0,
+        bigBlind: Number(lightningMeta.bigBlind) || 0,
+        maxPlayers: Number(lightningMeta.maxPlayers) || 0,
+        minBuyIn: Number(lightningMeta.minBuyIn) || 0,
+        maxBuyIn: Number(lightningMeta.maxBuyIn) || 0,
+        gpsRestricted: false,
+        ipRestricted: false,
+        deviceRestricted: false,
+        lengthHours: null,
+      });
+      return undefined;
+    }
     let cancelled = false;
     (async () => {
       try {

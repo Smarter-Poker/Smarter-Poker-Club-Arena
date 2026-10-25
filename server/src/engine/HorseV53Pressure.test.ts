@@ -17,6 +17,7 @@ import {
   freshExploitCounters,
   opponentExploitRead,
   preflopVsOpener,
+  pressureTargetFoldMul,
   riverBluffFrequency,
   riverFoldLowerBound,
   type ExploitCounters,
@@ -263,5 +264,30 @@ describe('V53 preflop: hold\'em too', () => {
       }) as never;
     expect(decidePreflopV7(ctx()).a).not.toBe('raiseTo');
     expect(decidePreflopV7(ctx({ exploitPressure: pressure })).a).toBe('raiseTo');
+  });
+});
+
+describe('V53 continued pressure: the barrel prices the target\'s own folds', () => {
+  it('the measured human folds ~1.3x as often as a horse: the bet engine is told so', () => {
+    const mul = pressureTargetFoldMul(measured(), 'plo5')!;
+    expect(mul).toBeGreaterThan(1.25);
+    expect(mul).toBeLessThan(1.4);
+  });
+
+  it('no read, a non-target, or a below-mean folder: no change', () => {
+    expect(pressureTargetFoldMul(null, 'plo5')).toBeNull();
+    const sticky: ExploitCounters = { ...MEASURED, foldToBetOpp: 30, foldToBet: 6, fFoldToBetOpp: 8, fFoldToBet: 2 };
+    expect(pressureTargetFoldMul(opponentExploitRead(sticky, scope, 'plo5'), 'plo5')).toBeNull();
+    const notAggressive: ExploitCounters = {
+      ...freshExploitCounters(),
+      hands: 60,
+      vpip: 15,
+      pfr: 9,
+      rfiOpp: 40,
+      rfi: 11,
+      foldToBetOpp: 50,
+      foldToBet: 40,
+    };
+    expect(pressureTargetFoldMul(opponentExploitRead(notAggressive, scope, 'plo5'), 'plo5')).toBeNull();
   });
 });

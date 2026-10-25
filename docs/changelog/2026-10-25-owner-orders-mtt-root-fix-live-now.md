@@ -1,0 +1,3 @@
+# Activate the MTT restart fix through its certified owner window
+
+The owner explicitly selected "Activate off-cycle now" after protected PR #8074 passed its applicable required checks and merged as 753aecbc5ce0dc65bf35ddfcb96eaa6939be56da. Record one bounded owner window anchored to that exact protected fix, preserving every existing entry and the existing staging, receiver, hand drain, freeze, proof, rollback and thaw route. The exception expires within six hours and is spent once the containing engine serves. No timing or safety limit changes. Installation and stable-build live verification remain separate evidence.

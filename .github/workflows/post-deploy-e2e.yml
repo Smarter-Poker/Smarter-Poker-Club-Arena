@@ -1851,7 +1851,9 @@ jobs:
     needs: publication-gate
     if: "needs.publication-gate.outputs.should_run == 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Up to 15m schedule lead + 12m thaw prerequisite + 15m case/fixture
+    # allowance + setup and reserved-account cleanup, all bounded below.
+    timeout-minutes: 60
     concurrency:
       group: post-deploy-club-channel-lifecycle-production
       cancel-in-progress: false
@@ -1867,6 +1869,10 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install maintained Chromium verifier
         run: npx playwright install --with-deps chromium
+      - name: Wait for the exact engine to finish thaw before channel certification
+        env:
+          EXPECTED_ENGINE_SHA: ${{ github.event.client_payload.engine_sha }}
+        run: node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"
       - name: Provision isolated lifecycle staff account
         id: account
         env:

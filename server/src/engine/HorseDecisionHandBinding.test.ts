@@ -4,6 +4,8 @@ import {
   settleHorseExecutionWitness,
 } from './HorseExecutionWitness.js';
 import {
+  captureLightningHorseJournalCoordinate,
+  horseDecisionHandCoordinates,
   anchorHorseDecisionHand,
   bindHorseDecisionToCommittedHand,
   captureHorseHandJournalContext,
@@ -133,9 +135,13 @@ describe('canonical accepted-hand decision binding', () => {
     const { snapshot, observation, record } = fixture();
     const lease = '50000000-0000-4000-8000-000000000001';
     snapshot.fence = `${TABLE}:12:1:7:early`;
-    snapshot.handJournalContext = {
-      ...snapshot.handJournalContext!,
-      lightningIdentity: { version: 1, leaseGeneration: lease },
+    snapshot.handJournalCoordinate = {
+      version: 1,
+      producer: 'lightning-v1',
+      tableId: TABLE,
+      handNumber: 12,
+      leaseGeneration: lease,
+      look: 'early',
     };
     snapshot.decisionKey = buildHorseDecisionKey(snapshot);
     const witness = createHorseExecutionWitness(
@@ -171,7 +177,7 @@ describe('canonical accepted-hand decision binding', () => {
     expect(witness.handAnchor).toMatchObject({
       actionOrdinal: 3,
       priorActionsDigest: horsePriorActionsDigest(prefix),
-      lightningEarlyFold: true,
+      earlyLook: true,
     });
     expect(bindHorseDecisionToCommittedHand(witness, observation)).toMatchObject({
       status: 'bound',
@@ -190,7 +196,7 @@ describe('canonical accepted-hand decision binding', () => {
         observation.fence = `${TABLE}:12:50000000-0000-4000-8000-000000000002:observe`;
       if (fault === 'street') actions[3] = { ...actions[3], stage: 'flop' };
       if (fault === 'not_early')
-        (witness as any).handAnchor = { ...witness.handAnchor, lightningEarlyFold: undefined };
+        (witness as any).handAnchor = { ...witness.handAnchor, earlyLook: undefined };
       if (fault === 'non_fold')
         witness.acceptedActions = [
           {
@@ -550,5 +556,121 @@ describe('actual client receipt retention boundaries', () => {
     witness.executionStatus = 'intended';
     tracker.observe(observation);
     expect(witness.committedHand.status).toBe('bound');
+  });
+});
+
+describe('original Lightning coordinates and delayed early acceptance', () => {
+  const lease = '50000000-0000-4000-8000-000000000001';
+  function early() {
+    const f = fixture();
+    f.snapshot.fence = `${TABLE}:12:1:7:early`;
+    f.snapshot.handJournalCoordinate = captureLightningHorseJournalCoordinate({
+      tableId: TABLE,
+      handNumber: 12,
+      leaseGeneration: lease,
+      earlyLook: true,
+    });
+    f.snapshot.decisionKey = buildHorseDecisionKey(f.snapshot);
+    const record = { ...f.record, action: 'fold' as const, amount: 0 };
+    const witness = createHorseExecutionWitness(
+      f.snapshot,
+      { action: 'fold', thinkTime: 100 },
+      { requestId: 8, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: [{ record, intended: true }],
+    });
+    const action = {
+      ...f.observation.actions![3]!,
+      ...record,
+      publicNode: { ...f.observation.actions![3]!.publicNode!, legalActions: ['fold'] },
+      observationIdentity: {
+        ...f.observation.actions![3]!.observationIdentity!,
+        actionOrdinal: 4,
+        observationId: `${HAND}:4`,
+      },
+    };
+    f.observation.fence = `${TABLE}:12:${lease}:observe`;
+    f.observation.actions = [
+      ...structuredClone(prefix),
+      { ...f.record, seat: 2, userId: TABLE, action: 'check', amount: 0 },
+      action,
+    ] as never;
+    return { ...f, witness, record };
+  }
+  it('binds an intended early fold after another player acts, using its actual accepted ordinal', () => {
+    const { witness, observation } = early();
+    expect(bindHorseDecisionToCommittedHand(witness, observation)).toMatchObject({
+      status: 'bound',
+      actionOrdinal: 4,
+      observationId: `${HAND}:4`,
+    });
+  });
+  it('never skips an intervening own action to find a matching later fold', () => {
+    const { witness, observation } = early();
+    observation.actions![3] = { ...observation.actions![3]!, userId: HORSE, seat: 1 };
+    expect(bindHorseDecisionToCommittedHand(witness, observation).status).toBe('unavailable');
+  });
+  it('refuses a different accepted lease and a changed original prefix', () => {
+    const { witness, observation } = early();
+    expect(
+      bindHorseDecisionToCommittedHand(witness, {
+        ...observation,
+        fence: `${TABLE}:12:50000000-0000-4000-8000-000000000002:observe`,
+      }).status
+    ).toBe('unavailable');
+    observation.actions![0] = { ...observation.actions![0]!, amount: 3 };
+    expect(bindHorseDecisionToCommittedHand(witness, observation).status).toBe('unavailable');
+  });
+  it.each(['call', 'check', 'raise'])(
+    'refuses early %s even with a matching accepted record',
+    (action) => {
+      const { witness, observation, record } = early();
+      const changed = {
+        ...witness,
+        selected: { action, amount: 0 },
+        acceptedActions: [{ record: { ...record, action }, intended: true }],
+      };
+      expect(bindHorseDecisionToCommittedHand(changed as never, observation).status).toBe(
+        'unavailable'
+      );
+    }
+  );
+  it('refuses fallback/coerced early folds', () => {
+    const { witness, observation } = early();
+    expect(
+      bindHorseDecisionToCommittedHand({ ...witness, executionStatus: 'coerced' }, observation)
+        .status
+    ).toBe('unavailable');
+  });
+  it.each([
+    { leaseGeneration: '7' },
+    { leaseGeneration: null },
+    { handNumber: 13 },
+    { tableId: HAND },
+    { look: 'turn' },
+    { extra: true },
+    { version: 2 },
+  ])('refuses malformed or contradictory original metadata %j', (change) => {
+    const { snapshot } = early();
+    expect(
+      horseDecisionHandCoordinates({
+        ...snapshot,
+        handJournalCoordinate: { ...snapshot.handJournalCoordinate, ...change },
+      } as never)
+    ).toBeNull();
+  });
+  it('refuses an absent original lease instead of substituting the turn counter', () => {
+    expect(
+      captureLightningHorseJournalCoordinate({
+        tableId: TABLE,
+        handNumber: 12,
+        leaseGeneration: undefined,
+      })
+    ).toBeNull();
+    const { snapshot } = early();
+    delete snapshot.handJournalCoordinate;
+    expect(anchorHorseDecisionHand(snapshot).status).toBe('unavailable');
   });
 });

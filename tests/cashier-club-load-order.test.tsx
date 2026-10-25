@@ -208,6 +208,67 @@ describe('CashierTradePage club load ordering', () => {
   });
 
   it.each(['membership', 'roster'] as const)(
+    'preserves Transaction History opened before the initial %s read finishes',
+    async (pendingRead) => {
+      const member = deferred<{ data: { role: string; chip_balance: number }; error: null }>();
+      const roster = deferred<{ data: unknown[]; error: null }>();
+      installHistoryTables(() =>
+        pendingRead === 'membership'
+          ? member.promise
+          : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })
+      );
+      installRpc((name: string) =>
+        name === 'fn_club_cashier_members_page_v3'
+          ? roster.promise
+          : Promise.resolve({
+              data:
+                name === 'fn_cashier_history_feed'
+                  ? [historyEntry()]
+                  : name === 'fn_cashier_history_summary'
+                    ? clubHistoryTotals
+                    : [],
+              error: null,
+            })
+      );
+      render(
+        <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+          <Routes>
+            <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      if (pendingRead === 'roster')
+        await waitFor(() =>
+          expect(supabase.rpc).toHaveBeenCalledWith(
+            'fn_club_cashier_members_page_v3',
+            expect.anything()
+          )
+        );
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Transaction History', exact: true })
+      );
+      await screen.findByRole('tabpanel', { name: 'Transaction History' });
+      await act(async () => {
+        member.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null });
+        roster.resolve({ data: [], error: null });
+      });
+      await screen.findByText('Balances Synchronized');
+      const panel = screen.getByRole('tabpanel', { name: 'Transaction History' });
+      await waitFor(() =>
+        expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+      );
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_feed',
+        expect.objectContaining({ p_scope: 'club' })
+      );
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_summary',
+        expect.objectContaining({ p_scope: 'club' })
+      );
+    }
+  );
+
+  it.each(['membership', 'roster'] as const)(
     'does not restore revoked authority from a pending %s read',
     async (pendingRead) => {
       const member = deferred<{

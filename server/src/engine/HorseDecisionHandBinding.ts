@@ -32,8 +32,8 @@ export type HorseDecisionHandAnchor =
       seat: number;
       actionOrdinal: number;
       priorActionsDigest: string;
-      /** Only a validated Lightning off-turn fold may accept a later ordinal. */
-      lightningEarlyFold?: true;
+      /** An original out-of-turn look may accept only an intended fold. */
+      earlyLook?: true;
     }>;
 
 export type HorseDecisionHandBinding =
@@ -70,9 +70,133 @@ export interface HorseHandJournalContext {
   readonly version: 1;
   readonly actionCount: number;
   readonly actionsDigest: string;
-  /** Lightning's existing policy fence has no lease slot. Journal-only;
-   * validatedHorsePolicySamplingKey excludes this whole context. */
-  readonly lightningIdentity?: Readonly<{ version: 1; leaseGeneration: string | null }>;
+}
+
+/** Private bookkeeping from the original host, never policy control or proof
+ * of a current lease grant. The accepted producer still owns that authority. */
+export interface HorseHandJournalCoordinate {
+  readonly version: 1;
+  readonly producer: 'lightning-v1';
+  readonly tableId: string;
+  readonly handNumber: number;
+  readonly leaseGeneration: string;
+  readonly look: 'turn' | 'early';
+}
+
+export function horseHandJournalCoordinateIsValid(
+  value: unknown
+): value is HorseHandJournalCoordinate {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const keys = ['version', 'producer', 'tableId', 'handNumber', 'leaseGeneration', 'look'];
+  return (
+    Object.keys(v).length === keys.length &&
+    keys.every((key) => Object.hasOwn(v, key)) &&
+    v.version === 1 &&
+    v.producer === 'lightning-v1' &&
+    typeof v.tableId === 'string' &&
+    UUID.test(v.tableId) &&
+    typeof v.handNumber === 'number' &&
+    Number.isSafeInteger(v.handNumber) &&
+    v.handNumber > 0 &&
+    typeof v.leaseGeneration === 'string' &&
+    UUID.test(v.leaseGeneration) &&
+    horseJournalLeaseIdentityIsValid(v.leaseGeneration) &&
+    (v.look === 'turn' || v.look === 'early')
+  );
+}
+
+export function captureLightningHorseJournalCoordinate(input: {
+  tableId: string;
+  handNumber: number;
+  leaseGeneration: string | null | undefined;
+  earlyLook?: boolean;
+}): HorseHandJournalCoordinate | null {
+  if (input.earlyLook !== undefined && typeof input.earlyLook !== 'boolean') return null;
+  const coordinate = {
+    version: 1,
+    producer: 'lightning-v1',
+    tableId: input.tableId,
+    handNumber: input.handNumber,
+    leaseGeneration: input.leaseGeneration,
+    look: input.earlyLook ? 'early' : 'turn',
+  };
+  return horseHandJournalCoordinateIsValid(coordinate) ? Object.freeze(coordinate) : null;
+}
+
+export function horseHandJournalCoordinateKey(value: unknown): string | null {
+  if (!horseHandJournalCoordinateIsValid(value)) return null;
+  return JSON.stringify([
+    value.version,
+    value.producer,
+    value.tableId.toLowerCase(),
+    value.handNumber,
+    value.leaseGeneration.toLowerCase(),
+    value.look,
+  ]);
+}
+
+/** Accept original Lightning transport and the canonical physical fence.
+ * A later lease, turn counter or UUID cannot reconstruct absent provenance. */
+export function horseDecisionHandCoordinates(snapshot: {
+  fence: string;
+  generation: number;
+  player: { seat: number };
+  handJournalCoordinate?: HorseHandJournalCoordinate | null;
+}): { tableId: string; handNumber: number; leaseGeneration: string; earlyLook: boolean } | null {
+  const parts = typeof snapshot.fence === 'string' ? snapshot.fence.split(':') : [];
+  const [tableId, hand, seat, fourth, fifth] = parts;
+  if (
+    !UUID.test(tableId ?? '') ||
+    !uint(hand ?? '') ||
+    Number(hand) <= 0 ||
+    !uint(seat ?? '') ||
+    Number(seat) < 1 ||
+    Number(seat) > 10 ||
+    Number(seat) !== snapshot.player?.seat ||
+    !Number.isSafeInteger(snapshot.generation) ||
+    snapshot.generation < 0
+  )
+    return null;
+  const coordinate = snapshot.handJournalCoordinate;
+  if (coordinate !== undefined) {
+    if (
+      !horseHandJournalCoordinateIsValid(coordinate) ||
+      coordinate.tableId.toLowerCase() !== tableId!.toLowerCase() ||
+      coordinate.handNumber !== Number(hand)
+    )
+      return null;
+    const original = uint(fourth ?? '') && Number(fourth) === snapshot.generation;
+    const early =
+      coordinate.look === 'early' && parts.length === 5 && fifth === 'early' && original;
+    const turn =
+      coordinate.look === 'turn' &&
+      ((parts.length === 4 && original) ||
+        (parts.length === 5 &&
+          fourth?.toLowerCase() === coordinate.leaseGeneration.toLowerCase() &&
+          uint(fifth ?? '') &&
+          Number(fifth) === snapshot.generation));
+    if (!early && !turn) return null;
+    return {
+      tableId: tableId!.toLowerCase(),
+      handNumber: Number(hand),
+      leaseGeneration: coordinate.leaseGeneration.toLowerCase(),
+      earlyLook: early,
+    };
+  }
+  if (
+    parts.length !== 5 ||
+    !horseJournalLeaseIdentityIsValid(fourth) ||
+    !uint(fifth ?? '') ||
+    Number(fifth) !== snapshot.generation
+  )
+    return null;
+  return {
+    tableId: tableId!.toLowerCase(),
+    handNumber: Number(hand),
+    leaseGeneration: fourth,
+    earlyLook: false,
+  };
 }
 
 /** The engine's accepted-history log also includes posts, antes and returns.
@@ -138,48 +262,17 @@ export function horsePriorActionsDigest(actions: readonly unknown[]): string | n
 export function anchorHorseDecisionHand(
   snapshot: LiveHorseDecisionSnapshot
 ): HorseDecisionHandAnchor {
-  const parts = typeof snapshot.fence === 'string' ? snapshot.fence.split(':') : [];
-  const context = snapshot.handJournalContext;
-  const [tableId, hand, seat] = parts;
-  let generation = parts[3],
-    turn = parts[4];
-  let validNamespace = parts.length === 5;
-  if (context?.lightningIdentity !== undefined) {
-    const identity = context.lightningIdentity;
-    if (
-      !identity ||
-      typeof identity !== 'object' ||
-      Array.isArray(identity) ||
-      Object.keys(identity).sort().join(',') !== 'leaseGeneration,version' ||
-      Object.keys(context).sort().join(',') !==
-        'actionCount,actionsDigest,lightningIdentity,version' ||
-      identity.version !== 1 ||
-      typeof identity.leaseGeneration !== 'string' ||
-      !UUID.test(identity.leaseGeneration)
-    )
-      return unavailable('invalid_turn_identity');
-    validNamespace = parts.length === 4 || (parts.length === 5 && parts[4] === 'early');
-    generation = identity.leaseGeneration;
-    turn = parts[3];
-  }
+  const coordinate = horseDecisionHandCoordinates(snapshot);
   if (
-    !validNamespace ||
-    !UUID.test(tableId!) ||
-    !uint(hand!) ||
-    Number(hand) <= 0 ||
-    !uint(seat!) ||
-    Number(seat) < 1 ||
-    Number(seat) > 10 ||
-    !horseJournalLeaseIdentityIsValid(generation) ||
-    !uint(turn!) ||
-    Number(turn) !== snapshot.generation ||
-    Number(seat) !== snapshot.player?.seat ||
+    !coordinate ||
     typeof snapshot.player?.user_id !== 'string' ||
     !UUID.test(snapshot.player.user_id)
   )
     return unavailable('invalid_turn_identity');
+  const context = snapshot.handJournalContext;
   if (!context) return unavailable('missing_prior_actions');
   if (
+    Object.keys(context).sort().join(',') !== 'actionCount,actionsDigest,version' ||
     context.version !== 1 ||
     !Number.isSafeInteger(context.actionCount) ||
     context.actionCount < 0 ||
@@ -189,16 +282,14 @@ export function anchorHorseDecisionHand(
     return unavailable('invalid_prior_actions');
   return Object.freeze({
     status: 'anchored',
-    tableId: tableId!.toLowerCase(),
-    handNumber: Number(hand),
-    leaseGeneration: generation!,
+    tableId: coordinate.tableId,
+    handNumber: coordinate.handNumber,
+    leaseGeneration: coordinate.leaseGeneration,
     actorId: snapshot.player.user_id.toLowerCase(),
-    seat: Number(seat),
+    seat: snapshot.player.seat,
     actionOrdinal: context.actionCount,
     priorActionsDigest: context.actionsDigest,
-    ...(context.lightningIdentity !== undefined && parts[4] === 'early'
-      ? { lightningEarlyFold: true as const }
-      : {}),
+    ...(coordinate.earlyLook ? { earlyLook: true as const } : {}),
   });
 }
 
@@ -255,43 +346,40 @@ export function bindHorseDecisionToCommittedHand(
   )
     return unavailable('prior_actions_mismatch');
   const accepted = witness.acceptedActions[0]!.record;
-  const digest = horsePriorActionsDigest([accepted]);
   let actionOrdinal = anchor.actionOrdinal;
-  if (anchor.lightningEarlyFold === true) {
-    const parts = witness.identity.fence.split(':');
+  if (anchor.earlyLook) {
     if (
-      parts.length !== 5 ||
-      parts[4] !== 'early' ||
-      Number(parts[3]) !== witness.identity.generation ||
-      parts[0]?.toLowerCase() !== anchor.tableId ||
-      Number(parts[1]) !== anchor.handNumber ||
-      Number(parts[2]) !== anchor.seat ||
-      witness.selected.action !== 'fold' ||
-      witness.executedAction !== 'fold' ||
-      accepted.action !== 'fold' ||
-      accepted.amount !== 0 ||
       witness.executionStatus !== 'intended' ||
-      witness.acceptedActions[0]!.intended !== true
+      witness.selected.action !== 'fold' ||
+      !witness.acceptedActions[0]!.intended ||
+      accepted.action !== 'fold' ||
+      witness.executedAction !== 'fold' ||
+      accepted.amount !== 0
     )
-      return unavailable('accepted_action_mismatch');
-    const matches = hand.actions.flatMap((action, ordinal) =>
-      ordinal >= anchor.actionOrdinal && horsePriorActionsDigest([action]) === digest
-        ? [ordinal]
-        : []
+      return unavailable('execution_unavailable');
+    // Other players can act between an out-of-turn look and its actual fold.
+    // The first subsequent action by this actor must be the exact acceptance;
+    // never skip a contradictory own action to find a later matching one.
+    actionOrdinal = hand.actions.findIndex(
+      (candidate, ordinal) =>
+        ordinal >= anchor.actionOrdinal && candidate.userId?.toLowerCase() === anchor.actorId
+    );
+    if (actionOrdinal < 0) return unavailable('accepted_action_mismatch');
+    const matches = hand.actions.filter(
+      (candidate, ordinal) =>
+        ordinal >= anchor.actionOrdinal &&
+        horsePriorActionsDigest([candidate]) === horsePriorActionsDigest([accepted])
     );
     if (matches.length !== 1) return unavailable('accepted_action_mismatch');
-    actionOrdinal = matches[0]!;
     if (
       hand.actions
         .slice(anchor.actionOrdinal, actionOrdinal)
-        .some(
-          (action) =>
-            action.userId?.toLowerCase() === anchor.actorId || action.stage !== accepted.stage
-        )
+        .some((candidate) => candidate.stage !== accepted.stage)
     )
       return unavailable('prior_actions_mismatch');
   }
   const action = hand.actions[actionOrdinal]!;
+  const digest = horsePriorActionsDigest([accepted]);
   if (
     !digest ||
     digest !== horsePriorActionsDigest([action]) ||

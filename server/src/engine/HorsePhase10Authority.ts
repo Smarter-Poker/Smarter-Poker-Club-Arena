@@ -78,7 +78,7 @@ export const PHASE10_RUNNING_CONTRACT_DIGEST: string = plo4StrengthContractDiges
  * sources (HorseReferenceDecisionSources.ts): the PLO4 pack returns the
  * reference wherever it does not deviate, and those files decide it.
  */
-export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v3';
+export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v4';
 
 /**
  * The code that determines PLO4 candidate behaviour, as server-relative source

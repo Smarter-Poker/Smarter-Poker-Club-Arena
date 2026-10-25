@@ -25,7 +25,10 @@
  */
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
-import { captureHorseHandJournalContext } from '../engine/HorseDecisionHandBinding.js';
+import {
+  captureHorseHandJournalContext,
+  type HorseHandJournalCoordinate,
+} from '../engine/HorseDecisionHandBinding.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -58,9 +61,8 @@ export interface LightningHorseTurn {
   actionTimeSeconds: number | null | undefined;
   /** Prior accepted actions of this hand (the hand journal binding). */
   actions: readonly unknown[];
+  handJournalCoordinate?: HorseHandJournalCoordinate | null;
   generation: number;
-  /** Journal-only current owner at this decision; not part of the policy fence. */
-  journalLeaseGeneration?: string | null;
   fence: string;
   turnStartMs: number;
   now: number;
@@ -161,16 +163,9 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
     straddleActive: false,
     format: 'cash' as const,
   } as unknown as HorseGameStateV2;
-  const prefix = captureHorseHandJournalContext(turn.actions);
-  const handJournalContext =
-    prefix && turn.journalLeaseGeneration !== undefined
-      ? {
-          ...prefix,
-          lightningIdentity: { version: 1 as const, leaseGeneration: turn.journalLeaseGeneration },
-        }
-      : prefix;
   const snapshot: LiveHorseDecisionSnapshot = {
-    handJournalContext,
+    handJournalContext: captureHorseHandJournalContext(turn.actions),
+    ...(turn.handJournalCoordinate ? { handJournalCoordinate: turn.handJournalCoordinate } : {}),
     generation: turn.generation,
     fence: turn.fence,
     decisionKey: '',

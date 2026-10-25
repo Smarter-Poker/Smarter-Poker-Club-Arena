@@ -57,6 +57,10 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/pineappleDiscardChoice.ts': 'the Pineapple discard',
     'src/engine/HorseOpponentMemory.ts':
       'durable variant and context keys and validated snapshots used in opponent decisions',
+    'src/engine/HorseMindHandIdentity.ts':
+      'the original allocated hand coordinate controls which independent public observations a decision may learn',
+    'src/engine/HorseDecisionHandBinding.ts':
+      'validates original host coordinates and accepted action provenance used by hand-scoped learning',
     'src/engine/HorseWinnerRead.ts':
       'the proven-winner read that tempers the opponent exploit against a player who beats the game',
     'src/engine/HorseOpponentExploit.ts':

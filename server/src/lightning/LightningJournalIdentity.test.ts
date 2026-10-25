@@ -346,9 +346,13 @@ it('journal-only Lightning owner context preserves exact policy key, real action
   clean.decisionKey = buildHorseDecisionKey(clean);
   const bound = {
     ...clean,
-    handJournalContext: {
-      ...clean.handJournalContext!,
-      lightningIdentity: { version: 1 as const, leaseGeneration: physical[3]! },
+    handJournalCoordinate: {
+      version: 1 as const,
+      producer: 'lightning-v1' as const,
+      tableId: physical[0]!,
+      handNumber: Number(physical[1]),
+      leaseGeneration: physical[3]!,
+      look: 'turn' as const,
     },
   };
   bound.decisionKey = buildHorseDecisionKey(bound);
@@ -386,20 +390,24 @@ it('journal-only Lightning owner context preserves exact policy key, real action
     status: 'anchored',
     leaseGeneration: physical[3],
   });
-  const early = { ...bound, fence: bound.fence + ':early' };
+  const early = {
+    ...bound,
+    fence: bound.fence + ':early',
+    handJournalCoordinate: { ...bound.handJournalCoordinate, look: 'early' as const },
+  };
   expect(anchorHorseDecisionHand(early).status).toBe('anchored');
   const bad: any[] = [
     undefined,
     null,
-    { version: 2, leaseGeneration: physical[3] },
-    { version: 1, leaseGeneration: null },
-    { version: 1, leaseGeneration: 'forged' },
-    { version: 1, leaseGeneration: physical[3], forged: true },
+    { ...bound.handJournalCoordinate, version: 2 },
+    { ...bound.handJournalCoordinate, leaseGeneration: null },
+    { ...bound.handJournalCoordinate, leaseGeneration: 'forged' },
+    { ...bound.handJournalCoordinate, forged: true },
   ];
   for (const identity of bad) {
     const candidate = {
       ...bound,
-      handJournalContext: { ...bound.handJournalContext, lightningIdentity: identity },
+      handJournalCoordinate: identity,
     };
     expect(anchorHorseDecisionHand(candidate).status).toBe('unavailable');
   }

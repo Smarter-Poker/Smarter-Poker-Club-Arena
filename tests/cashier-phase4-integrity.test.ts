@@ -19,11 +19,12 @@ const sendGuard = readFileSync(
 );
 
 describe('cashier integrity and wallet launcher', () => {
-  it('waits for the resolved role and always selects the first visible tab', () => {
+  it('defaults to an allowed tab without overriding explicit navigation', () => {
     expect(page).toContain("const [tab, setTab] = useState<TabKey>('trade')");
     expect(page).toContain('if (!visibleTabs.some(([key]) => key === tab))');
     expect(page).toContain('setTab(visibleTabs[0][0])');
-    expect(page).toContain("setTab(role === 'player' ? 'record' : 'trade')");
+    expect(page).toContain("role === 'player' && current === 'trade' ? 'record' : current");
+    expect(page).not.toContain("setTab(role === 'player' ? 'record' : 'trade')");
     expect(page).toContain('initialTabResolvedRef.current = false');
     expect(page).toMatch(
       /useEffect\(\(\) => \{[\s\S]+?setTab\('trade'\);[\s\S]{0,120}?setRoleResolved\(false\)/

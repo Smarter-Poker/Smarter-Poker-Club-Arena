@@ -28,7 +28,7 @@ import {
 import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v5';
+export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v6';
 
 /**
  * The code that determines Phase 11 candidate behaviour, as server-relative
@@ -112,12 +112,8 @@ export const HORSE_PHASE11_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string
       'imported by HorseEval for the Phase 8 tournament continuation capture (captureContinuation), which no Phase 11 policy or sampler call requests',
     'src/engine/HorseDecisionEffects.ts':
       'HorseMind decision-effect bookkeeping; it holds no value a Phase 11 decision reads',
-    'src/engine/HorseMindHandIdentity.ts':
-      'HorseMind hand-identity binding; it holds no value a Phase 11 decision reads',
     'src/engine/HorsePlanHandIdentity.ts':
       'HorseMind plan hand-identity binding; it holds no value a Phase 11 decision reads',
-    'src/engine/HorseDecisionHandBinding.ts':
-      'hand-binding records under the identities above; it holds no value a Phase 11 decision reads',
   });
 
 /** Reads a server-relative source path. Throws on failure. */

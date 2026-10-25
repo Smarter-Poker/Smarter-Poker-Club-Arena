@@ -1,4 +1,9 @@
 import {
+  horseHandJournalCoordinateIsValid,
+  horseHandJournalCoordinateKey,
+  type HorseHandJournalCoordinate,
+} from './HorseDecisionHandBinding.js';
+import {
   horseMindHandFromDecision,
   horseMindHandIdentityKey,
   type HorseMindHandIdentity,
@@ -44,6 +49,7 @@ type DecisionCoordinate = {
   fence: string;
   generation: number;
   player: { seat: number };
+  handJournalCoordinate?: HorseHandJournalCoordinate | null;
 };
 type BatchRequest = DecisionCoordinate & {
   requestId: number;
@@ -100,6 +106,7 @@ export interface HorsePlanBatchBinding {
   readonly seat: number;
   readonly street: string;
   readonly planContext: HorsePlanContext;
+  readonly handJournalCoordinate?: HorseHandJournalCoordinate;
 }
 
 export function horsePlanBatchBindingIsValid(value: unknown): value is HorsePlanBatchBinding {
@@ -115,7 +122,10 @@ export function horsePlanBatchBindingIsValid(value: unknown): value is HorsePlan
       'seat',
       'street',
       'planContext',
+      ...(Object.hasOwn(value, 'handJournalCoordinate') ? ['handJournalCoordinate'] : []),
     ]) ||
+    (Object.hasOwn(value, 'handJournalCoordinate') &&
+      !horseHandJournalCoordinateIsValid(value.handJournalCoordinate)) ||
     value.version !== 'horse-plan-batch-v1' ||
     !uint(value.fastRequestId) ||
     value.fastRequestId === 0 ||
@@ -139,11 +149,17 @@ export function horsePlanBatchBindingIsValid(value: unknown): value is HorsePlan
     fence: value.fence,
     generation: value.generation,
     player: { seat: value.seat },
+    ...(value.handJournalCoordinate
+      ? { handJournalCoordinate: value.handJournalCoordinate as HorseHandJournalCoordinate }
+      : {}),
   });
 }
 
 export function horsePlanBatchBindingFromRequest(request: BatchRequest): HorsePlanBatchBinding {
   const binding: HorsePlanBatchBinding = Object.freeze({
+    ...(request.handJournalCoordinate !== undefined
+      ? { handJournalCoordinate: Object.freeze({ ...request.handJournalCoordinate! }) }
+      : {}),
     version: 'horse-plan-batch-v1',
     fastRequestId: request.requestId,
     generation: request.generation,
@@ -171,6 +187,9 @@ export function horsePlanBatchBindingKey(value: unknown): string | null {
     value.seat,
     value.street,
     horsePlanContextKey(value.planContext),
+    ...(value.handJournalCoordinate
+      ? [horseHandJournalCoordinateKey(value.handJournalCoordinate)]
+      : []),
   ]);
 }
 

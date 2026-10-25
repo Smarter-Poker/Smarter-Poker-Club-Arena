@@ -259,29 +259,25 @@ export class HorseOwnPublicHistoryCache {
       { acknowledged: false, settled: false };
     this.entries.set(key, entry);
     activeLoads++;
-    try {
-      void this.load(Object.freeze({ ...context }))
-        .then(
-          (value) => {
-            const packet = makeOwnPublicHistoryPacket(value, this.now());
-            if (packet && horseObserverReadContextKey(packet.context) === key)
-              entry.packet = packet;
-          },
-          () => {}
-        )
-        .then(
-          () => {
-            entry.settled = true;
-            activeLoads--;
-          },
-          () => {
-            entry.settled = true;
-            activeLoads--;
-          }
-        );
-    } catch {
+    const settle = () => {
+      if (entry.settled) return;
       entry.settled = true;
       activeLoads--;
+    };
+    try {
+      void this.load(Object.freeze({ ...context }))
+        .then((value) => {
+          const packet = makeOwnPublicHistoryPacket(value, this.now());
+          if (packet && horseObserverReadContextKey(packet.context) === key) entry.packet = packet;
+        })
+        .catch(() => {
+          // Both transport rejection and response-processing failure leave
+          // this observer explicitly unavailable, never a partial history.
+          entry.packet = undefined;
+        })
+        .finally(settle);
+    } catch {
+      settle();
     }
     return undefined;
   }

@@ -133,6 +133,37 @@ it('keeps failed or unavailable history explicit and does not start a retry time
   expect(cache.forSnapshot(context(), 300)).toBeUndefined();
   expect(load).toHaveBeenCalledTimes(1);
 });
+it.each(['synchronous', 'rejected', 'response_processing'] as const)(
+  'settles a %s failure without an unhandled rejection or exhausted request capacity',
+  async (failure) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const load = vi.fn(() => {
+        if (failure === 'synchronous') throw Error('synchronous provider failure');
+        return failure === 'rejected'
+          ? Promise.reject(Error('provider rejection'))
+          : Promise.resolve(window());
+      });
+      const cache = new HorseOwnPublicHistoryCache(load, () => {
+        if (failure === 'response_processing') throw Error('response processing failed');
+        return 200;
+      });
+      expect(cache.forSnapshot(context(), 200)).toBeUndefined();
+      // Drain this actual request's promise chain, without a timer or retry.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(cache.state(context())).toBe('unavailable');
+      expect(cache.forSnapshot(context(), 300)).toBeUndefined();
+      expect(load).toHaveBeenCalledTimes(1);
+    }
+    const next = new HorseOwnPublicHistoryCache(
+      async () => window(),
+      () => 200
+    );
+    expect(next.forSnapshot(context(), 200)).toBeUndefined();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(next.state(context())).toBe('available');
+    expect(next.forSnapshot(context(), 201)).toMatchObject({ availableAtMs: 200 });
+  }
+);
 it('preserves the original accepted plan while historical observations are installed', () => {
   const bank = new HorseObserverReads(2048, 4096, () => 50);
   const request = decisionRequest();

@@ -47,3 +47,10 @@ private scope, payload acknowledgement and retained plans. Read-only production
 audits found original dealt facts and a public-history candidate for every one
 of the 938 eligible horses; that is availability evidence, not proof this new
 reader is installed or live. Full hooks and hosted checks remain pending.
+
+The hosted whole-source rejection guard caught the loader's missing explicit
+`.catch()` outside the local related-test selection. The loader now marks
+transport and response-processing failures unavailable and releases its finite
+request capacity once through an idempotent finalizer. Regression cases cover
+synchronous throws, rejected promises and processing exceptions without retries,
+partial history or unhandled rejections. The guard itself remains unchanged.

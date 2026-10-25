@@ -1,0 +1,65 @@
+name: A launch does not hold the lease against its own heartbeat
+
+# Migration 20261025200555. "Engine Restart Storm", 2026-10-25 13:27:10 UTC:
+# 41 tournament_lease_lost kills in 140 ms, all tables of the one tournament
+# whose launch had just completed. fn_begin/complete_tournament_launch_atomic
+# held FOR UPDATE on the event's engine_tournament_leases row for the life of
+# the launch, so heartbeat_tournament_leases_v4 (FOR NO KEY UPDATE ... SKIP
+# LOCKED) answered busy for that row until the manager's 20 s proof ran out.
+# scripts/ci/test-launch-lease-key-share-postgres.py applies the migration to
+# a throwaway native PostgreSQL 17 cluster holding the six overloads exactly as
+# installed before it (never production, as the unprivileged runner user) and
+# proves with two sessions: busy before, kept after, takeover still blocked.
+#
+# A dedicated workflow so a change to this proof never has to rewrite ci.yml
+# (whose bytes are pinned by the financial source bindings). No timer
+# (CLAUDE.md 10.85): pull_request only, scoped to what the proof reads.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261025200555_a_launch_does_not_hold_the_lease_against_its_own_heartbeat.sql
+      - scripts/qualification/fixtures/launch-lease-key-share/**
+      - scripts/ci/test-launch-lease-key-share-postgres.py
+      - .github/workflows/a-launch-does-not-hold-the-lease-against-its-own-heartbeat.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a-launch-does-not-hold-the-lease-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launch-lease-key-share:
+    name: A launch in flight still renews its own lease (throwaway PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root): initdb refuses root.
+      - name: Busy before, kept after, takeover still blocked
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-launch-lease-key-share-postgres.py

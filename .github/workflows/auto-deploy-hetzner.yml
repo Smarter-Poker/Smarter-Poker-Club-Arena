@@ -581,28 +581,42 @@ jobs:
             "$HSSH" "EXPECTED_SHA='$SHA' EXPECTED_CONTROL_SHA='$CONTROL_SHA' bash -se" <<'REMOTE'
           set -euo pipefail
           CONTROL=/usr/local/lib/club-arena/engine-control
-          # Release control is installed separately from the game image. Prove
-          # the immutable generation and exact gate bytes, including when the
-          # requested game SHA is already serving and needs no replacement.
+          # A newer intake may advance the active symlink after this release
+          # seals. Prove this request's immutable generation, then prove the
+          # current active generation is the same or a protected descendant.
+          GENERATIONS=/usr/local/lib/club-arena/engine-control-generations
+          ACTIVE_CONTROL="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve(strict=True))' "$CONTROL")"
+          ACTIVE_CONTROL_SHA="$(tr -d '\r\n' < "$ACTIVE_CONTROL/control-sha")"
+          [[ "$EXPECTED_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTIVE_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$ACTIVE_CONTROL" = "$GENERATIONS/$ACTIVE_CONTROL_SHA" ]
+          CONTROL="$GENERATIONS/$EXPECTED_CONTROL_SHA"
+          [ -d "$CONTROL" ] && [ ! -L "$CONTROL" ]
+          [ -d "$ACTIVE_CONTROL" ] && [ ! -L "$ACTIVE_CONTROL" ]
           [ "$(tr -d '\r\n' < "$CONTROL/control-sha")" = "$EXPECTED_CONTROL_SHA" ]
-          git -C /opt/club-arena show "$EXPECTED_CONTROL_SHA:server/scripts/engine-release-transaction.sh" \
-            | cmp -s - "$CONTROL/engine-release-transaction.sh"
-          python3 - "$CONTROL/engine-release-transaction.sh" <<'PYTHON'
+          for CONTROL_PROOF_SHA in "$EXPECTED_CONTROL_SHA" "$ACTIVE_CONTROL_SHA"; do
+            GIT_NO_REPLACE_OBJECTS=1 git -C /opt/club-arena merge-base --is-ancestor "$CONTROL_PROOF_SHA" origin/main
+            GIT_NO_REPLACE_OBJECTS=1 git -C /opt/club-arena show "$CONTROL_PROOF_SHA:server/scripts/engine-release-transaction.sh" \
+              | cmp -s - "$GENERATIONS/$CONTROL_PROOF_SHA/engine-release-transaction.sh"
+          done
+          GIT_NO_REPLACE_OBJECTS=1 git -C /opt/club-arena merge-base --is-ancestor "$EXPECTED_CONTROL_SHA" "$ACTIVE_CONTROL_SHA"
+          python3 - "$CONTROL/engine-release-transaction.sh" "$ACTIVE_CONTROL/engine-release-transaction.sh" <<'PYTHON'
           import json, pathlib, subprocess, sys, urllib.request
-          source = pathlib.Path(sys.argv[1]).read_text()
-          start = source.index('recovery_window_reason() {')
-          end = source.index('\n}\n', start) + 3
-          health = urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=15).read().decode()
-          d = json.loads(health)
-          if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True:
-              raise SystemExit('live routine-admission proof requires a healthy engine')
-          # Execute the installed decision with real live health and the old
-          # urgency flag. This function is read-only and cannot announce a break.
-          code = 'set -euo pipefail\nRECOVERY_URGENT=1\nRECOVERY_QUARANTINED_MANAGERS=100\n' + source[start:end] + '\nhealth=$(cat)\nrecovery_window_reason "$health"\n'
-          result = subprocess.run(['bash', '-c', code], input=health, text=True, capture_output=True, timeout=10)
-          if result.returncode != 0 or result.stdout.strip():
-              raise SystemExit('installed gate granted routine urgency: ' + result.stdout + result.stderr)
-          print('Installed routine-admission gate refuses legacy urgency against live healthy play')
+          for gate_path in dict.fromkeys(sys.argv[1:]):
+              source = pathlib.Path(gate_path).read_text()
+              start = source.index('recovery_window_reason() {')
+              end = source.index('\n}\n', start) + 3
+              health = urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=15).read().decode()
+              d = json.loads(health)
+              if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True:
+                  raise SystemExit('live routine-admission proof requires a healthy engine')
+              # Execute the installed decision with real live health and the old
+              # urgency flag. This function is read-only and cannot announce a break.
+              code = 'set -euo pipefail\nRECOVERY_URGENT=1\nRECOVERY_QUARANTINED_MANAGERS=100\n' + source[start:end] + '\nhealth=$(cat)\nrecovery_window_reason "$health"\n'
+              result = subprocess.run(['bash', '-c', code], input=health, text=True, capture_output=True, timeout=10)
+              if result.returncode != 0 or result.stdout.strip():
+                  raise SystemExit('installed gate granted routine urgency: ' + result.stdout + result.stderr)
+              print('Installed routine-admission gate refuses legacy urgency against live healthy play')
           PYTHON
           echo "__ENGINE_CONTROL_PROOF__ $EXPECTED_CONTROL_SHA"
           DESIRED_SHA="$($CONTROL/engine-release-seal.py get desired-sha)"

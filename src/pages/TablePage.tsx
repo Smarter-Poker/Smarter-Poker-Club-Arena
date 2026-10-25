@@ -376,7 +376,12 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { isClassicLobbyState, isLightningMode, lightningRoute } from '../lightning/lightningLobby';
+import {
+  isClassicLobbyState,
+  isLightningMode,
+  lightningJoinRoute,
+  lightningRoute,
+} from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -21177,6 +21182,14 @@ function LiveTablePage({
       return;
     }
     deferredSeatTapRef.current = null;
+    /* A LIGHTNING SEAT IS NEVER PICKED (Dan 2026-10-24: "YOU DON'T SELECT YOUR
+       SEAT ... YOU AUTO ASSIGN THEM TO A SEAT AND TABLE"). A chair tapped on a
+       physical table of a Lightning game opens the game's own Join Lightning
+       door, which asks only the amount. */
+    if (anchorLightningClusterId && heroSeatRef.current <= 0 && tableState.heroSeat <= 0) {
+      openLightningAnchorEntry();
+      return;
+    }
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
@@ -21397,7 +21410,7 @@ function LiveTablePage({
      player itself; nobody picks a chair on this felt. */
   const openLightningAnchorEntry = () => {
     if (!anchorLightningClusterId) return;
-    navigate(`${lightningRoute(anchorLightningClusterId)}?join=1`);
+    navigate(lightningJoinRoute(anchorLightningClusterId));
   };
 
   /**
@@ -24484,7 +24497,6 @@ function LiveTablePage({
     },
     lightningCaps
   );
-  const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
   const lightningFoldBusyRef = useRef(false);
   const lightningFoldHandId =
     lightningRoom && lightningHandLive
@@ -24497,7 +24509,6 @@ function LiveTablePage({
       lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
-      setLightningFoldBusy(true);
       try {
         const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
@@ -24514,7 +24525,6 @@ function LiveTablePage({
         }
       } finally {
         lightningFoldBusyRef.current = false;
-        setLightningFoldBusy(false);
       }
     },
     [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
@@ -25555,28 +25565,31 @@ function LiveTablePage({
                 CORNER, IT SHOULD BE ON THE LEFT SIDE." The box still mounts in
                 this slot, but its dock is pinned to the left edge at the same
                 height (.hud-seat-change-dock, TableHUD.css). */}
-            {!tableState.isTournament && tableState.clusterId && (
-              <div className="hud-seat-change-dock">
-                <CashClusterHUD
-                  gameId={tableState.clusterId}
-                  refreshKey={clusterRefreshKey}
-                  onOpenLobby={() => setShowMustMoveLobby(true)}
-                  onSeatChange={() => setShowMustMoveLobby(true)}
-                  onGoToTable={(dest) => {
-                    if (dest === tableId) {
-                      autoBuyInFiredRef.current = false;
-                      setAcceptedChair((count) => count + 1);
-                      return;
-                    }
-                    if (embeddedTableId) {
-                      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
-                      return;
-                    }
-                    navigate(`/table/${dest}?buyin=1`);
-                  }}
-                />
-              </div>
-            )}
+            {!tableState.isTournament &&
+              tableState.clusterId &&
+              !anchorLightningClusterId &&
+              !lightningRoom && (
+                <div className="hud-seat-change-dock">
+                  <CashClusterHUD
+                    gameId={tableState.clusterId}
+                    refreshKey={clusterRefreshKey}
+                    onOpenLobby={() => setShowMustMoveLobby(true)}
+                    onSeatChange={() => setShowMustMoveLobby(true)}
+                    onGoToTable={(dest) => {
+                      if (dest === tableId) {
+                        autoBuyInFiredRef.current = false;
+                        setAcceptedChair((count) => count + 1);
+                        return;
+                      }
+                      if (embeddedTableId) {
+                        onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+                        return;
+                      }
+                      navigate(`/table/${dest}?buyin=1`);
+                    }}
+                  />
+                </div>
+              )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
                 REMOVED (Dan 2026-08-30): the level bar itself opens the
                 tournament lobby, so a second button here was a duplicate. */}
@@ -29241,8 +29254,9 @@ function LiveTablePage({
                 setShowBuyInModal(false);
                 if (anchorLightningClusterId) {
                   /* Lightning never queues (Dan 2026-10-24): the join door
-                     holds a fresh chair, on a new table if it has to. */
-                  navigate(lightningRoute(anchorLightningClusterId));
+                     holds a fresh chair, on a new table if it has to, with the
+                     amount question already open. */
+                  openLightningAnchorEntry();
                   return false;
                 }
                 toast.info('This Seat Is Reserved. Join The List To Get Your Next Available Seat.');

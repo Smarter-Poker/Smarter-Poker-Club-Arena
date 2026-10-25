@@ -135,8 +135,10 @@ describe('a refusal cannot corrupt the global bust order', () => {
     // here is what let an orphaned older generation set a player's rank.
     // The exact match count comes back with the rows: PostgREST truncates at
     // its row cap without saying so, and a short read is not an order (F9).
+    // 2026-10-24: the same read also carries the bound generation's bust moment
+    // and deadline, so a willing horse answers a human think time after it.
     expect(ELIM).toMatch(
-      /\.from\('tournament_knockout_candidates'\)\s*\.select\('id, eliminated_user_id, hand_number, stack_before, state', \{\s*count: 'exact',\s*\}\)\s*\.eq\('tournament_id', this\.tournamentId\)\s*\.in\('eliminated_user_id', userIds\)/
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\(\s*'id, eliminated_user_id, hand_number, stack_before, state, created_at, rebuy_prompt_until',\s*\{\s*count: 'exact'\s*\}\s*\)\s*\.eq\('tournament_id', this\.tournamentId\)\s*\.in\('eliminated_user_id', userIds\)/
     );
     const orderRead = ELIM.slice(
       ELIM.indexOf('const bustHandNumbers = new Map<string, number>()'),

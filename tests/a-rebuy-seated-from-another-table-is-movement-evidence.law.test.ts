@@ -173,6 +173,7 @@ describe('a rebuy seated from another table is movement evidence', () => {
     // post-image.
     expect(later).toEqual([
       '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
     ]);
     expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(`<> '${POST_DEF_MD5}'`);
     expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(`<> '${POST_MD5}'`);

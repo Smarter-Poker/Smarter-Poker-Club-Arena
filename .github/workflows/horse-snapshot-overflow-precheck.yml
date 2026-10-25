@@ -6,7 +6,8 @@ name: Horse observation snapshot refuses an overflowing window from the index
 # production's predecessor (md5 d1df5793...), and the predecessor and the new
 # definition must give identical snapshots in one statement for every
 # scenario, the same 513-hand refusal, and no refusal from orphan or
-# out-of-window index rows. No timer (CLAUDE.md 10.85): pull_request only,
+# out-of-window index rows. Also runs the native proof of 20261025042223
+# (scripts/ci/test-horse-capture-drains-in-order.py). No timer (CLAUDE.md 10.85): pull_request only,
 # scoped to the paths it proves.
 on:
   pull_request:
@@ -16,7 +17,12 @@ on:
       - supabase/migrations/20260913195856_require_atomic_horse_observation_sources.sql
       - supabase/migrations/20261022034135_horse_observation_snapshot_finds_hands_through_the_player_in.sql
       - supabase/migrations/20261022054023_horse_observation_snapshot_refuses_an_overflowing_window_fro.sql
+      - supabase/migrations/20261025042223_horse_capture_drains_in_order.sql
+      - supabase/migrations/20260914032826_recover_horse_observation_capture_slices.sql
+      - supabase/migrations/20260914041305_preserve_horse_capture_source_witnesses.sql
+      - supabase/migrations/20261017040330_horse_capture_terminal_gaps_free_their_slots.sql
       - scripts/ci/test-horse-snapshot-overflow-precheck.py
+      - scripts/ci/test-horse-capture-drains-in-order.py
       - .github/workflows/horse-snapshot-overflow-precheck.yml
 
 permissions:
@@ -57,3 +63,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-snapshot-overflow-precheck.py
+      # 20261025042223: the capture queue drains in order. Same throwaway
+      # cluster, never production: the pre-images must reproduce production's
+      # md5s, and claim order, the 512-hand boundary, the timeout refine and
+      # the discovery resume are exercised on real rows.
+      - name: The horse capture queue drains in order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-capture-drains-in-order.py

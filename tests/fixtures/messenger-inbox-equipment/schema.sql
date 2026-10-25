@@ -1,0 +1,12 @@
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('test.actor',true),'')::uuid $$;
+CREATE FUNCTION public.fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$ SELECT false $$;
+CREATE TABLE profiles(id uuid primary key,display_name text,username text,alias text,player_number text,avatar_url text);
+CREATE TABLE cert_accounts(id uuid primary key);
+CREATE FUNCTION public.fn_ca_is_cert_account(p uuid) RETURNS boolean LANGUAGE sql AS $$ SELECT exists(select 1 from cert_accounts where id=p) $$;
+CREATE TABLE social_conversations(id uuid primary key,group_name text,is_group boolean,last_message_at timestamptz);
+CREATE TABLE social_conversation_participants(conversation_id uuid,user_id uuid,last_read_at timestamptz,context_entity_id uuid,context_entity_type text);
+CREATE TABLE social_messages(id uuid primary key,conversation_id uuid,sender_id uuid,is_deleted boolean,created_at timestamptz);
+CREATE TABLE messenger_hidden_messages(user_id uuid,message_id uuid);
+CREATE TABLE accounting_invoice_deliveries(message_id uuid,invoice_id uuid);
+CREATE TABLE settlement_invoices(id uuid,invoice_type text);

@@ -97,7 +97,9 @@ describe('a candidate filesystem is warmed before maintenance can be announced',
     const warm = SOURCE.indexOf('\nprewarm_candidate_image\n', build);
     expect(build).toBeGreaterThan(-1);
     expect(warm).toBeGreaterThan(build);
-    expect(SOURCE.indexOf('bounded_break_command 75 env')).toBeGreaterThan(warm);
+    expect(
+      SOURCE.indexOf('bounded_break_command "$BREAK_CUTOVER_PROOF_SECONDS" env')
+    ).toBeGreaterThan(warm);
   });
 
   it('retains the ephemeral loopback run without production configuration, labels or application invocation', () => {

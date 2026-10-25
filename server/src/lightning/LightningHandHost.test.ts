@@ -654,6 +654,22 @@ describe('the clock, the time bank and a horse', () => {
     // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
     // every later one is a beat.
     pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    // THE TANK MUST BE A DECISION THAT WAITS (2026-10-24). A horse that is
+    // already folding folds at once, with no think time (#7958,
+    // lightningHorseIsAlreadyFolding), so a dealt hand where the brain's first
+    // answer was a fold never reached the bank and this failed about one run
+    // in six. The tanking decision keeps its think time and plays on with a
+    // call instead (a fold with a price to pay always has call beside it); the
+    // fast fold itself is pinned by its own law.
+    const tempo = t.horseLane.raw.decideFast.getMockImplementation()!;
+    let first = true;
+    t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
+      const r: any = await (tempo as any)(...args);
+      if (!first) return r;
+      first = false;
+      if (String(r?.decision?.action).toLowerCase() !== 'fold') return r;
+      return { ...r, decision: { ...r.decision, action: 'call', amount: undefined } };
+    });
     await t.host.start();
     await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');

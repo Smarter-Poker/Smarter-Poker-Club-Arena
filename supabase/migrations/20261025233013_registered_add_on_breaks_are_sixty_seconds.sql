@@ -28,6 +28,7 @@
 -- 3. Schedule configs that carry addonBreakMinutes 5 carry 1, so the board,
 --    the spawn and the event all say the same thing.
 
+-- @live-proof: position('app.addon_break_rule' IN pg_get_functiondef('public.fn_guard_managed_game_lifecycle()'::regprocedure)) > 0
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '45s';

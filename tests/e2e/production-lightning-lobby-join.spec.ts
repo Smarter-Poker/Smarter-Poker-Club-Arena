@@ -13,7 +13,8 @@
  * admission or buy-in RPC is sent.
  */
 import { expect, test } from '@playwright/test';
-import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { CLUB_ENTRY_MESSAGE_NAME, prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
 
 const club = process.env.E2E_LIGHTNING_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const MONEY_RPCS = new Set([
@@ -39,10 +40,21 @@ for (const width of [393, 1440]) {
       const path = new URL(request.url()).pathname;
       if (MONEY_RPCS.has(path)) moneyCalls.push(path);
     });
-    await prepareCashLobbyActions(page);
-
+    // The lobby's own doors open on its first reads: register their real
+    // dismissals, wait for the lobby, settle the Diamond offer, and settle the
+    // club message BEFORE a game panel can open on top of it (run
+    // 40132784246: the message opened under the panel and could not be closed).
+    const offer = diamondEntryRead(page);
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
+    await prepareCashLobbyActions(page);
+    await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
+    await settleDiamondSpinsOffer(page, offer);
+    const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
+    await greeting.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+    if (await greeting.isVisible())
+      await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    await expect(greeting).toHaveCount(0);
 
     // The live lobby is a row list (compact rows with a Details button on a
     // phone, table rows on desktop). A row opens the game panel, and the panel
@@ -53,7 +65,9 @@ for (const width of [393, 1440]) {
     if (await allGames.count()) await allGames.click();
     const rows = page
       .locator(
-        '[data-testid="lobby-game-row"][data-kind="cash"], .club-home__games .lt-row[data-kind="cash"]'
+        // Both layouts are in the document; only the one this width shows counts
+        // (run 40132784246 picked the hidden phone row at 1440px).
+        '[data-testid="lobby-game-row"][data-kind="cash"]:visible, .club-home__games .lt-row[data-kind="cash"]:visible'
       )
       .filter({ hasText: /lightning/i });
     await expect(rows.first(), 'the member lobby lists a Lightning game').toBeVisible({

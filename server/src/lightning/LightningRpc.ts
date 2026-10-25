@@ -62,6 +62,17 @@ export type LightningRpcOutcome<T> =
   /** Transport or database failure. */
   | { status: 'error'; error: unknown };
 
+/**
+ * ENTRY BIG BLIND (20261025050528). The request header by which this engine
+ * tells the database it posts a Lightning entry big blind
+ * (LightningHandHost, HandController bbOnlyPosts). fn_lightning_match_plan and
+ * fn_lightning_form_hand emit blind_role 'entry_bb' only when it is present
+ * AND lightning_hand_player can record the role
+ * (the gate of 20261025050528), so an engine that would deal an
+ * entry poster a free hand is never sent one, in any deployment order.
+ */
+export const LIGHTNING_ENTRY_BIG_BLIND_HEADER = 'x-smarter-lightning-entry-bb';
+
 export const LIGHTNING_PLAYER_STATES = [
   'MATCHED',
   'WAITING_FOR_PLAYERS',
@@ -75,6 +86,8 @@ export type LightningPlayerState = (typeof LIGHTNING_PLAYER_STATES)[number];
 export interface LightningMatchGroup {
   players: string[];
   bb: string;
+  /** The group's live entry big blinds (20261025050528); [] when the SQL names none. */
+  entryBb: string[];
   keys: Record<string, unknown>;
 }
 
@@ -91,6 +104,8 @@ export interface LightningMatchResult {
   poolDiversityScore: number | null;
   legalCount: number;
   generatedAt: string | null;
+  /** The plan's `entry_big_blind`: whether its gate was open (false when the SQL predates it). */
+  entryBigBlind: boolean;
   authoritativeSnapshot?: LightningPoolSnapshot;
   snapshotBinding?: string;
 }
@@ -163,9 +178,19 @@ export function validateLightningMatchResult(raw: unknown): Validation<Lightning
     if (!g.players.includes(g.bb)) return { ok: false, reason: `group_${i}_bb_not_in_group` };
     if (g.keys !== undefined && g.keys !== null && !isPlainObject(g.keys))
       return { ok: false, reason: `group_${i}_keys_not_object` };
+    // ENTRY BIG BLIND (20261025050528): seated players of the group, never its
+    // big blind, each once. Absent on a plan from before it: none.
+    const entryBb = g.entry_bb === undefined || g.entry_bb === null ? [] : g.entry_bb;
+    if (
+      !Array.isArray(entryBb) ||
+      !entryBb.every((p) => isUuid(p) && p !== g.bb && (g.players as string[]).includes(p)) ||
+      new Set(entryBb).size !== entryBb.length
+    )
+      return { ok: false, reason: `group_${i}_entry_bb_invalid` };
     groups.push({
       players: [...g.players],
       bb: g.bb,
+      entryBb: [...(entryBb as string[])],
       keys: isPlainObject(g.keys) ? { ...g.keys } : {},
     });
   }
@@ -235,6 +260,12 @@ export function validateLightningMatchResult(raw: unknown): Validation<Lightning
     return { ok: false, reason: 'shadow_snapshot_invalid' };
   if (evidence && evidence.snapshot.players.filter((p) => p.legal).length !== legal)
     return { ok: false, reason: 'shadow_snapshot_legality_mismatch' };
+  if (raw.entry_big_blind !== undefined && typeof raw.entry_big_blind !== 'boolean')
+    return { ok: false, reason: 'entry_big_blind_invalid' };
+  const entryBigBlind = raw.entry_big_blind === true;
+  // The port replays the database's own snapshot under the database's own
+  // gate, so an A/A comparison never compares an open gate with a closed one.
+  if (evidence) evidence.snapshot.entryBigBlind = entryBigBlind;
   return {
     ok: true,
     value: {
@@ -244,6 +275,7 @@ export function validateLightningMatchResult(raw: unknown): Validation<Lightning
       poolDiversityScore: diversity,
       legalCount: legal,
       generatedAt,
+      entryBigBlind,
       ...(evidence
         ? { authoritativeSnapshot: evidence.snapshot, snapshotBinding: evidence.binding }
         : {}),

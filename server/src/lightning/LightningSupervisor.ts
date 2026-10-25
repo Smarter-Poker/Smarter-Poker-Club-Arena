@@ -73,7 +73,12 @@ import {
   sameLightningConfig,
   type LightningConfig,
 } from './LightningConfig.js';
-import { isUuid, lightningConfig, type LightningRpcClient } from './LightningRpc.js';
+import {
+  LIGHTNING_ENTRY_BIG_BLIND_HEADER,
+  isUuid,
+  lightningConfig,
+  type LightningRpcClient,
+} from './LightningRpc.js';
 import { LightningPresence, type PresenceSource } from './LightningPresence.js';
 import {
   LightningClusterWorker,
@@ -274,8 +279,15 @@ function normalizeDiscovered(
   return out;
 }
 
+// Every Lightning RPC says this engine posts the entry big blind
+// (LIGHTNING_ENTRY_BIG_BLIND_HEADER): the matcher and the barrier read it.
 const defaultRpc: LightningRpcClient = (fn, args) =>
-  supabase.rpc(fn, args) as unknown as PromiseLike<{ data: unknown; error: unknown }>;
+  supabase
+    .rpc(fn, args)
+    .setHeader(LIGHTNING_ENTRY_BIG_BLIND_HEADER, '1') as unknown as PromiseLike<{
+    data: unknown;
+    error: unknown;
+  }>;
 
 const consoleLogger: LightningWorkerLogger = {
   log: (m) => console.log(m),

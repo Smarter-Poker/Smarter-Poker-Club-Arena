@@ -134,6 +134,48 @@ describe('the parity harness', () => {
     expect(fixture).not.toMatch(/UPDATE\s+(?:public\.)?lightning_matcher_shadow_comparison/i);
   });
 
+  it('compares the entry big blind with the gate open, after its migrations, on real formations (20261025050528)', () => {
+    const firstEntry = HCODE.indexOf(
+      '-f "$M/20261024195059_lightning_new_players_are_always_the_big_blind_first.sql"'
+    );
+    const voided = HCODE.indexOf(
+      '-f "$M/20261024231549_lightning_voided_hand_returns_its_blind_stamps.sql"'
+    );
+    const entry = HCODE.indexOf(
+      '-f "$M/20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql"'
+    );
+    const window = HCODE.indexOf(
+      '-f "$M/20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"'
+    );
+    const header = HCODE.indexOf(
+      `-c "SET request.headers = '{\\"x-smarter-lightning-entry-bb\\":\\"1\\"}'"`
+    );
+    const current = HCODE.indexOf('-f "$F/lightning-current-policy-parity.sql"');
+    const fixtureAt = HCODE.indexOf('-f "$F/lightning-entry-big-blind-parity.sql"');
+    // The voided-hand stamps first (the entry migration md5-guards them), then
+    // the plan/barrier, the constraint, the engine's header, then every plan.
+    expect(voided).toBeGreaterThan(firstEntry);
+    expect(entry).toBeGreaterThan(voided);
+    expect(window).toBeGreaterThan(entry);
+    expect(header).toBeGreaterThan(window);
+    expect(current).toBeGreaterThan(header);
+    expect(fixtureAt).toBeGreaterThan(current);
+    expect(HCODE).toContain("grep -c '^  ok  13[ABC] ENTRY BIG BLIND'");
+    const fixture = read('scripts', 'dev', 'fixtures', 'lightning-entry-big-blind-parity.sql');
+    for (const s of ['13A ENTRY BIG BLIND', '13B ENTRY BIG BLIND', '13C ENTRY BIG BLIND'])
+      expect(fixture).toContain(`\\echo '  ok  ${s}`);
+    expect(fixture).toContain(
+      'public.fn_lightning_match_and_form(v_g, clock_timestamp(), NULL, NULL'
+    );
+    expect(fixture).toContain(
+      "public.fn_lightning_instance_abandon(v_inst, 'fixture_void_before_deal'"
+    );
+    expect(fixture).toContain('PERFORM pp.finish(');
+    expect(fixture).toContain("PERFORM set_config('request.headers', '', true);");
+    // The TypeScript check compares every group's entry big blinds too.
+    expect(CHECK).toContain('group ${j + 1} entry_bb ts=');
+  });
+
   it('never reads a horse marker (Law 10.5)', () => {
     for (const src of [CHECK, MODEL]) expect(src).not.toMatch(/is_horse|horse_id|isHorse/);
     const sqlOnly = HCODE.split('\n').filter(

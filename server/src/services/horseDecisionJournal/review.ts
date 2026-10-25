@@ -753,6 +753,9 @@ export function reconcileHorseJournalHand(
   }
 }
 
+/** Required by batch tools before trusting a complete retained-hand read. */
+export const HORSE_JOURNAL_HAND_READER_VERSION = 2;
+
 /** Read every retained archive: a first fragment is not complete evidence.
  * Identical copies count once; conflicting identities or an unreadable archive
  * refuse the read rather than silently qualifying a partial hand. */

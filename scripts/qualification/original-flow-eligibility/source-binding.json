@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235243,
-      "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
+      "bytes": 235514,
+      "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -327,9 +327,10 @@
     },
     "current": {
       ".github/workflows/ci.yml": {
-        "bytes": 235243,
-        "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
+        "bytes": 235514,
+        "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
       }
-    }
+    },
+    "integration": "Preserves the protected Messenger native qualification step added concurrently; only current input identities updated, historical evidence retained."
   }
 }

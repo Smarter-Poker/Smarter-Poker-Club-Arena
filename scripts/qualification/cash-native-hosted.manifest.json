@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235243,
-      "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
+      "bytes": 235514,
+      "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3731,13 +3731,14 @@
     },
     "current": {
       ".github/workflows/ci.yml": {
-        "bytes": 235243,
-        "sha256": "450b5649a4e730da6d7ffdafa3572779400e9219b974e17adb33c9eb5d023976"
+        "bytes": 235514,
+        "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 114869,
         "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
       }
-    }
+    },
+    "integration": "Preserves the protected Messenger native qualification step added concurrently; only current input identities updated, historical evidence retained."
   }
 }

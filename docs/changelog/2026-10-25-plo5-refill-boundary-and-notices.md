@@ -1,10 +1,12 @@
 # PLO5 refill choices and add-on notices
 
-Classic PLO5 tables now use the nearest whole-horse 30% Auto Top Up quota at
-settlement, retaining existing choices whenever the quota already matches.
-Admission still uses the stable hash; a table adjusts only the minimum number
-of horse preferences at its next hand boundary. This is per table, not a promise
-of an exact global percentage during joins, departures or whole-horse rounding.
+Classic PLO5 cash games now use the nearest whole-horse 30% Auto Top Up quota
+across the whole Cluster, retaining existing choices whenever the quota matches.
+Admission still uses the stable hash; each table applies only its own minimum
+seat changes at its next hand boundary. This avoids rounding every short table
+up and skewing a game's mix above 30%. Standalone tables use their own roster.
+Membership changes converge at natural hand boundaries; integer rounding still
+means a fractional horse is impossible.
 Lightning, Diamond cash and tournaments retain their own refill paths.
 
 One table roster read and two shared session/wallet reads replace three reads

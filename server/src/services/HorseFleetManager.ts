@@ -13,6 +13,7 @@
  * NOTE: "Horses" — NEVER call them anything else.
  */
 
+import { horseSitsWithAutoTopUp } from './HorseTopUpStyle.js';
 import { tableHeldByRetainedHand } from '../engine/retainedHandHolds.js';
 import { compareCashPopulation, isHoldemOrPlo } from './CashHorseAllocation.js';
 import { supabase, seedingSupabase } from './supabase.js';
@@ -550,6 +551,44 @@ const SEED_CYCLE_SEATING_BUDGET_MS = Number(
 );
 
 export class HorseFleetManager {
+  /**
+   * Lightning Clusters (cash_games.lightning_enabled), read at most once a
+   * minute, for the PLO5 Auto Top Up seat flag only: a Lightning Cluster
+   * refills through its own pooled auto-rebuy, so a horse never sits there
+   * with the Classic flag on. Null = unread, and an unread set writes no flag.
+   */
+  private lightningClusterRead: { at: number; ids: Set<string> | null } = { at: 0, ids: null };
+
+  private async lightningClusterIds(): Promise<Set<string> | null> {
+    const now = Date.now();
+    if (this.lightningClusterRead.ids && now - this.lightningClusterRead.at < 60_000) {
+      return this.lightningClusterRead.ids;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('cash_games')
+        .select('id')
+        .eq('lightning_enabled', true);
+      if (error) return null;
+      const ids = new Set<string>(((data ?? []) as Array<{ id: string }>).map((r) => String(r.id)));
+      this.lightningClusterRead = { at: now, ids };
+      return ids;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Does this horse sit at this table with Auto Top Up on? (HorseTopUpStyle) */
+  private async sitsWithAutoTopUp(
+    horseId: string,
+    table: { game_variant?: unknown; cluster_id?: string | null }
+  ): Promise<boolean> {
+    if (!horseSitsWithAutoTopUp(horseId, table.game_variant)) return false;
+    if (!table.cluster_id) return true;
+    const lightning = await this.lightningClusterIds();
+    return lightning !== null && !lightning.has(table.cluster_id);
+  }
+
   private isRunning = false;
   private seedInterval: ReturnType<typeof setInterval> | null = null;
   /**
@@ -3761,7 +3800,10 @@ export class HorseFleetManager {
                   cappedThisCycle.add(horse.id);
                 }
               },
-              { diamond: arenaTable }
+              {
+                diamond: arenaTable,
+                autoTopUp: await this.sitsWithAutoTopUp(horse.id, table),
+              }
             );
             if (!success) return false;
             seated++;
@@ -4865,7 +4907,9 @@ export class HorseFleetManager {
           seatNumber,
           buyIn,
           table.name,
-          seatClub ?? null
+          seatClub ?? null,
+          undefined,
+          { autoTopUp: await this.sitsWithAutoTopUp(offer.user_id, table) }
         );
         if (!ok) continue;
 
@@ -4992,7 +5036,10 @@ export class HorseFleetManager {
        row and the seat into one receipt, so a lost response can be replayed
        instead of paid twice. One fresh key per ATTEMPT, exactly as the
        browser's buy-in mints one per click. Chip seats send nothing new. */
-    opts?: { diamond?: boolean }
+    /* THE SEAT'S AUTO TOP UP FLAG (Dan 2026-10-24). 30% of PLO5 horses sit
+       with Auto Top Up on and 70% add on by hand (HorseTopUpStyle); the flag
+       is written by the same buy-in door a human's switch is. */
+    opts?: { diamond?: boolean; autoTopUp?: boolean }
   ): Promise<boolean> {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): a cycle that began before :53 stops at
     // the first seat after it (a cycle has run for 47 minutes before).
@@ -5019,7 +5066,7 @@ export class HorseFleetManager {
         p_table_id: tableId,
         p_seat_number: seatNumber,
         p_amount: buyIn,
-        p_auto_rebuy: false,
+        p_auto_rebuy: opts?.autoTopUp === true,
         p_club_id: clubId,
         ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
       });
@@ -5041,7 +5088,7 @@ export class HorseFleetManager {
             p_table_id: tableId,
             p_seat_number: seatNumber,
             p_amount: opts?.diamond ? Math.ceil(required) : required,
-            p_auto_rebuy: false,
+            p_auto_rebuy: opts?.autoTopUp === true,
             p_club_id: clubId,
             ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
           }));

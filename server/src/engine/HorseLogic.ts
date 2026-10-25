@@ -125,6 +125,7 @@ import {
   aggressiveBettorPressure,
   riverFoldLowerBound,
   riverBluffFrequency,
+  pressureTargetFoldMul,
   type AggressiveOpenerPressure,
   preflopVsReRaiser,
   trapMultiplier,
@@ -5281,6 +5282,18 @@ export class HorseLogic {
     // PROOF OF RECEIPT: declared once, up front — several stamped blocks run
     // before the equity/risk section.
     const tele15 = telemetryOn(opts);
+    // V53 CONTINUED PRESSURE (2026-10-24): while hero holds the initiative, a
+    // bet into a pressure target is priced at that target's own fold rate
+    // (HorseOpponentExploit.pressureTargetFoldMul). Resolved lazily: the
+    // initiative read is assigned further down, before any EV bet consults it.
+    let initiative53: () => boolean = () => false;
+    const v53BarrelFoldMul = (base: number, userId: string): number => {
+      if ((opts.v53Pressure ?? true) === false || !initiative53()) return base;
+      const mul = pressureTargetFoldMul(HorseMind.opponentRead(userId), gs.gameVariant);
+      if (mul === null || mul <= base) return base;
+      if (tele15) noteFire('v53_pressure_barrel');
+      return mul;
+    };
     /** V17: live non-all-in players acting AFTER hero this street (-1 = unknown). */
     let playersBehind17 = -1;
     /**
@@ -5735,6 +5748,7 @@ export class HorseLogic {
 
     // ═══ V4: street IQ — initiative, position, made class, scare, geometry ═══
     let initiative: 'hero' | 'opp' | 'none' = 'none';
+    initiative53 = () => initiative === 'hero';
     let ip = false;
     let cat = 0; // made-hand category right now (0 = unknown)
     let scare = NO_SCARE;
@@ -6870,6 +6884,7 @@ export class HorseLogic {
             if (useMind) {
               try {
                 foldMul = HorseMind.exploit(o.user_id, useCounterAdapt).bluffMod;
+                foldMul = v53BarrelFoldMul(foldMul, o.user_id);
               } catch {
                 /* an unavailable read keeps the neutral fold model */
               }
@@ -7348,6 +7363,7 @@ export class HorseLogic {
           if (useMind) {
             try {
               foldMul = HorseMind.exploit(o.user_id, useCounterAdapt).bluffMod;
+              foldMul = v53BarrelFoldMul(foldMul, o.user_id);
             } catch {
               /* reads are best-effort */
             }

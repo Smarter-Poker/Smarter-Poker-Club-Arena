@@ -54,6 +54,10 @@ export interface PressureTally {
   humanVsRiverBet: { fold: number; call: number };
   /** a horse opened and the human 3-bet it: fold / call / 4-bet */
   vsThreeBet: { fold: number; call: number; raise: number };
+  /** the horse 3-bet the human preflop, heads-up flop, horse to act with no bet: check / bet */
+  threeBettorFlop: { check: number; bet: number };
+  /** the same pot on the turn after the horse bet the flop and was called: check / bet */
+  threeBettorTurn: { check: number; bet: number };
   /** V53 telemetry fires (the live worker decides with telemetry on too) */
   fires: Record<string, number>;
 }
@@ -66,6 +70,8 @@ const fresh = (): PressureTally => ({
   riverFirst: { check: 0, bet: 0 },
   humanVsRiverBet: { fold: 0, call: 0 },
   vsThreeBet: { fold: 0, call: 0, raise: 0 },
+  threeBettorFlop: { check: 0, bet: 0 },
+  threeBettorTurn: { check: 0, bet: 0 },
   fires: {},
 });
 
@@ -91,14 +97,13 @@ function humanAction(
   const sized = (frac: number) => {
     if (!wager || menu.minRaiseTo === null || menu.maxRaiseTo === null) return null;
     const to =
-      wager === 'bet'
-        ? live.pot * frac
-        : live.currentBet + (live.pot + menu.toCall) * frac;
+      wager === 'bet' ? live.pot * frac : live.currentBet + (live.pot + menu.toCall) * frac;
     return {
       action: wager,
       amount:
-        Math.round(Math.min(menu.maxRaiseTo, Math.max(menu.minRaiseTo, Math.min(to, potTo))) * 100) /
-        100,
+        Math.round(
+          Math.min(menu.maxRaiseTo, Math.max(menu.minRaiseTo, Math.min(to, potTo))) * 100
+        ) / 100,
     };
   };
   const passive = () =>
@@ -108,13 +113,13 @@ function humanAction(
     const pct = omahaPreflopPercentile(me.cards, false); // 1 = best
     const raises = hist.filter(
       (a) =>
-        a.stage === 'preflop' &&
-        (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))
+        a.stage === 'preflop' && (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))
     ).length;
     const mine = hist.some(
       (a) => a.stage === 'preflop' && a.userId === me.user_id && a.action === 'raise'
     );
-    if (raises === 0) return pct >= 0.24 ? (sized(1) ?? call()) : menu.toCall > 0 ? passive() : passive();
+    if (raises === 0)
+      return pct >= 0.24 ? (sized(1) ?? call()) : menu.toCall > 0 ? passive() : passive();
     if (raises === 1 && !mine) {
       if (pct >= 0.52) return sized(1) ?? call();
       return pct >= 0.25 ? call() : passive();
@@ -195,7 +200,8 @@ export function playPressureArm(
       const c = new HandController(config, players, 1 + (hand % seats));
       let complete: { rake?: number; bbjFee?: number } | null = null;
       c.onEvent((e) => {
-        if (e.type === 'HAND_COMPLETE') complete = e as unknown as { rake?: number; bbjFee?: number };
+        if (e.type === 'HAND_COMPLETE')
+          complete = e as unknown as { rake?: number; bbjFee?: number };
       });
       c.start();
       const warm = hand >= 15;
@@ -224,12 +230,18 @@ export function playPressureArm(
           }
         } else {
           HorseMind.setDecisionScope(readScopeOf(variant, seats), variant, 'cash');
-          const d = HorseLogic.decide(spot.hero, spot.state, style.get(spot.hero.user_id)!, {}, {
-            telemetry: true,
-            ...arm,
-            decisionTimeMs: 1_792_000_000_000 + hand * 60_000 + step,
-            mindObservationHand: { version: 1 as const, tableId: table, handNumber: hand + 1 },
-          });
+          const d = HorseLogic.decide(
+            spot.hero,
+            spot.state,
+            style.get(spot.hero.user_id)!,
+            {},
+            {
+              telemetry: true,
+              ...arm,
+              decisionTimeMs: 1_792_000_000_000 + hand * 60_000 + step,
+              mindObservationHand: { version: 1 as const, tableId: table, handNumber: hand + 1 },
+            }
+          );
           HorseMind.setDecisionScope(null);
           chosen = d;
           if (warm) {
@@ -277,6 +289,27 @@ export function playPressureArm(
               if (d.action === 'fold') out.vsFlopBet.fold++;
               else if (aggressive) out.vsFlopBet.raise++;
               else out.vsFlopBet.call++;
+            }
+            const lastPreRaiser = [...preRaises].reverse()[0];
+            if (
+              (street === 'flop' || street === 'turn') &&
+              live.length === 2 &&
+              !human.is_folded &&
+              menu.toCall === 0 &&
+              !lastAggr &&
+              preRaises.length >= 2 &&
+              lastPreRaiser?.userId === spot.hero.user_id
+            ) {
+              const flopBetByHero = hist.some(
+                (a) => a.stage === 'flop' && a.userId === spot.hero.user_id && a.action === 'bet'
+              );
+              const t =
+                street === 'flop'
+                  ? out.threeBettorFlop
+                  : flopBetByHero
+                    ? out.threeBettorTurn
+                    : null;
+              if (t) aggressive ? t.bet++ : t.check++;
             }
             if (
               street === 'river' &&

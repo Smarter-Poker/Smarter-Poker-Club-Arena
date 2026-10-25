@@ -26,8 +26,8 @@ describe('V53 pressure is on for every horse by default, in every Omaha game', (
   }
 });
 
-describe('V53: a horse that opened stops flatting the aggressive human\'s 3-bet', () => {
-  it('plo5: fewer flats and more 4-bets of the human\'s 3-bet than with the layer ablated', () => {
+describe("V53: a horse that opened stops flatting the aggressive human's 3-bet", () => {
+  it("plo5: fewer flats and more 4-bets of the human's 3-bet than with the layer ablated", () => {
     const on = playPressureArm('plo5', 220, 41, {});
     const off = playPressureArm('plo5', 220, 41, { v53Pressure: false });
     expect(on.fires.v53_pressure_four_bet ?? 0).toBeGreaterThan(0);

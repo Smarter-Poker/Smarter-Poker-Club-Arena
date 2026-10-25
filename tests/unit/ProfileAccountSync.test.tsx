@@ -121,6 +121,31 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('the private own-account carrier', () => {
+  it('relays a Lightning room signal for this account only, and asks again on rejoin', async () => {
+    await mount();
+    model.emit.mockClear();
+    model.read.mockClear();
+    const cluster = '00000000-0000-4000-8000-000000000200';
+    const room = (user_id: string, cluster_id: unknown) =>
+      act(async () =>
+        model.options.onPayload({
+          payload: { user_id, cluster_id, reason: 'lightning_room_opened', domains: [] },
+        })
+      );
+    await room('player-b', cluster);
+    await room('player-a', 'not-a-uuid');
+    expect(model.emit).not.toHaveBeenCalledWith('LIGHTNING_ROOM_OPENED', expect.anything());
+    await room('player-a', cluster);
+    expect(model.emit).toHaveBeenCalledWith('LIGHTNING_ROOM_OPENED', {
+      userId: 'player-a',
+      clusterId: cluster,
+    });
+    // It is a room signal, not an account change: nothing of the profile is read.
+    expect(model.read).not.toHaveBeenCalled();
+    model.emit.mockClear();
+    await act(async () => model.options.onSubscriptionStatus('SUBSCRIBED'));
+    expect(model.emit).toHaveBeenCalledWith('LIGHTNING_ROOM_OPENED', { userId: 'player-a' });
+  });
   it('invalidates only the recipient club through the existing private account carrier', async () => {
     await mount();
     model.emit.mockClear();

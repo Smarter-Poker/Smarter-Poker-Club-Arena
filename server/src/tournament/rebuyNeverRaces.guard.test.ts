@@ -132,7 +132,7 @@ describe('a busted player holds an open decision window, and the felt rolls on',
   it('consumes the atomic rebuy result without a later manager reseat', () => {
     const block = sliceBetween(
       ELIM,
-      'const { rebought } = await this.tryTournamentRebuys(',
+      'const { rebought, deferredUntil } = await this.tryTournamentRebuys(',
       'THE REBUY DECISION WINDOW'
     );
     expect(block).toContain('The rebuy transaction owns its exact playable chair and stack.');

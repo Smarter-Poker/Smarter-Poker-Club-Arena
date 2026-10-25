@@ -157,7 +157,7 @@ export function Review() {
                   {
                     '--table-w': `${size.w}px`,
                     '--table-h': `${size.h}px`,
-                    '--sp-tabled-card-w': `${tabledCardWidthPx(size.w, width, width <= 480 && size.h > size.w && !spectator, n)}px`,
+                    '--sp-tabled-card-w': `${tabledCardWidthPx(size.w, width, width <= 480 && size.h > size.w && !spectator, n, innerHeight > innerWidth)}px`,
                     '--sp-board-card-w': `${boardCardWidthPx(size.w, width, width <= 480 && size.h > size.w && !spectator)}px`,
                     '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct(spectator ? 0 : undefined)}%`,
                     '--sp-table-taper': portraitTableTransform({

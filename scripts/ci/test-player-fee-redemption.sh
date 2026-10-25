@@ -27,3 +27,21 @@ test "${#MIGRATIONS[@]}" = 1
 test -f "${MIGRATIONS[0]}"
 "${PSQL[@]}" -f "${MIGRATIONS[0]}" -f "$FIXTURE/fee-redemption-assert.sql"
 echo 'PASS: regression fails before and passes after; fixed redemption, repeated reads, date, player, club, asset, gross evidence, grants, duplicate operation and future fees'
+
+# October 24: the WooWoo-to-KingFish half share reached production as a
+# five-minute cron (recorded byte-exact as 20261024223153). Rebuild that state,
+# add a hand the cron has not seen, and prove the standing rule replaces it.
+OUT_OF_BAND=("$ROOT"/supabase/migrations/20261024223153_woowoo_half_earned_rake_credited_to_kingfish.sql)
+SHARE=("$ROOT"/supabase/migrations/*_a_standing_rake_share_replaces_the_woowoo_cron.sql)
+test "${#SHARE[@]}" = 1
+test -f "${OUT_OF_BAND[0]}"
+test -f "${SHARE[0]}"
+"${PSQL[@]}" -f "$FIXTURE/rake-share-out-of-band.sql" -f "${OUT_OF_BAND[0]}" -f "$FIXTURE/rake-share-lag.sql"
+# The cron trails the hands: before the fix KingFish's statistics miss hand D.
+if "${PSQL[@]}" -c "DO \$\$ BEGIN ASSERT (ca_player_rake_stats('47965354-0e56-43ef-931c-ddaab82af765')->>'rake_paid')::numeric=576.77, 'share lags the hands'; END \$\$;" > "$WORK/share-before.log" 2>&1; then
+  echo 'FAIL: rake share regression unexpectedly passed before the migration' >&2
+  exit 1
+fi
+grep -q 'share lags the hands' "$WORK/share-before.log"
+"${PSQL[@]}" -f "${SHARE[0]}" -f "$FIXTURE/rake-share-assert.sql"
+echo 'PASS: the standing rake share replaces the cron; exact, immediate, funded club, ended rule, grants, fixed events kept and no cron writes the redemptions'

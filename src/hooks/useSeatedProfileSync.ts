@@ -46,8 +46,22 @@ function toProfileChange(row: Record<string, unknown>): SeatedProfileChange | nu
 export function useSeatedProfileSync(
   tableId: string | null | undefined,
   seatedUserIds: readonly (string | null | undefined)[],
-  onChange: (change: SeatedProfileChange) => void
+  onChange: (change: SeatedProfileChange) => void,
+  /**
+   * False for a room that has no `tables` row - a Lightning pool session
+   * (2026-10-24). `table-appearance:<id>` is authorised by RLS only for an id
+   * in `tables`, and fn_publish_profile_appearance_change only ever sends to
+   * ids from `table_seats` (FK to `tables`), so for a pool session the join was
+   * refused on every attempt - 141 "Unauthorized ... table-appearance" reports
+   * in a day from 7 pool sessions - and nothing could ever have arrived on it.
+   * The authoritative read, visibility/online reconciliation and same-browser
+   * bus events below are unaffected.
+   */
+  options: { appearanceSignal?: boolean } = {}
 ): SeatedProfileSyncHandle {
+  const appearanceSignal = options.appearanceSignal !== false;
+  const appearanceSignalRef = useRef(appearanceSignal);
+  appearanceSignalRef.current = appearanceSignal;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const pendingMutationsRef = useRef(new Map<string, Set<string>>());
@@ -125,6 +139,9 @@ export function useSeatedProfileSync(
           deliver(change);
         }
         if (channelLive.current) setState('live');
+        // No signal exists for this room: the read is the whole sync, so it
+        // is neither waiting on a channel nor failing one.
+        else if (!appearanceSignalRef.current) setState('local');
       } catch (error) {
         if (alive) {
           setState('error');
@@ -178,7 +195,7 @@ export function useSeatedProfileSync(
   }, [tableId, idKey]);
 
   useMasterBusBroadcastChannel({
-    channelName: tableId && idKey ? `table-appearance:${tableId}` : null,
+    channelName: tableId && idKey && appearanceSignal ? `table-appearance:${tableId}` : null,
     event: 'appearance_changed',
     private: true,
     onPayload: (message) => {

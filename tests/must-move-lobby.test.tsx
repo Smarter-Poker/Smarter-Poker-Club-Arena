@@ -626,8 +626,12 @@ describe('the tab follows the chair', () => {
   });
 
   it('the corner box and the lobby are wired on every cluster table, and only there', () => {
+    /* A Lightning table (an anchor of a Lightning game, or a pool room) has no
+       waiting list and no seat picking: the game's own door assigns the chair
+       (2026-10-24, one-tap Join Lightning), so the must-move box is withheld
+       there and nowhere else. */
     expect(TABLE_PAGE).toMatch(
-      /\{!tableState\.isTournament && tableState\.clusterId && \(\s*<div className="hud-seat-change-dock">\s*<CashClusterHUD/
+      /\{!tableState\.isTournament &&\s*tableState\.clusterId &&\s*!anchorLightningClusterId &&\s*!lightningRoom && \(\s*<div className="hud-seat-change-dock">\s*<CashClusterHUD/
     );
     expect(TABLE_PAGE).toMatch(
       /<MustMoveLobbyModal\s+isOpen=\{showMustMoveLobby\}\s+gameId=\{tableState\.clusterId\}/

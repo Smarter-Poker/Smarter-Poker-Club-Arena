@@ -1,5 +1,8 @@
 {
   "_comment": "Declared by reserved migration 20261025183116, not evidence of production installation. Only the explicit one-shot operator CLI calls this service-only metadata door. It refuses a missing door before any Auth creation; engine startup does not call it.",
-  "functions": ["fn_reserve_patterned_horse_replacements"],
+  "functions": [
+    "fn_reserve_patterned_horse_replacements",
+    "smarter_private.patterned_replacement_identity_is_original"
+  ],
   "tables": ["smarter_private.patterned_horse_replacement_batch"]
 }

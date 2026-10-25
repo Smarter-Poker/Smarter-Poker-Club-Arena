@@ -221,6 +221,8 @@ export interface SeatPlayer {
   /** Equipped avatar aura token (`aura-fire`, ...), from `profiles.equipped_aura`. */
   aura?: string;
   stack: number;
+  /** True while no authoritative balance is available; known zero stays zero. */
+  stackPending?: boolean;
   status: PlayerStatus;
   /**
    * Dan 2026-08-18: a slot may be null. When a player reveals only SOME of
@@ -1301,8 +1303,9 @@ export const SeatSlot = memo(
     const seatedIdRef = React.useRef<string | null>(player?.id ?? null);
     const playerId = player?.id ?? null;
     useEffect(() => {
-      if (!player) {
-        seatedIdRef.current = null; // Player left — reset for next occupant
+      if (!player || player.stackPending) {
+        seatedIdRef.current = null; // Unknown balance or a new occupant starts fresh.
+        setStackDelta(0);
         return;
       }
       const sameOccupant = seatedIdRef.current === player.id;
@@ -1332,7 +1335,7 @@ export const SeatSlot = memo(
       // A contribution or new occupant clears any previous gain. The effect
       // cleanup cancelled its timer, so do not leave stale animation state.
       setStackDelta(0);
-    }, [player?.stack, playerId]);
+    }, [player?.stack, player?.stackPending, playerId]);
 
     /**
      * Which avatar URL (if any) failed to load, so the monogram can take over.
@@ -2347,8 +2350,9 @@ export const SeatSlot = memo(
     const prevStackForGlowRef = React.useRef<number>(player?.stack ?? 0);
     const glowOccupantRef = React.useRef<string | null>(player?.id ?? null);
     useEffect(() => {
-      if (!player) {
+      if (!player || player.stackPending) {
         glowOccupantRef.current = null;
+        setStackGlow(false);
         return;
       }
       const prev = prevStackForGlowRef.current;
@@ -2363,7 +2367,7 @@ export const SeatSlot = memo(
           return () => clearTimeout(timer);
         }
       }
-    }, [player?.stack, playerId]);
+    }, [player?.stack, player?.stackPending, playerId]);
 
     const containerClasses = useMemo(() => {
       const cls = ['seat'];
@@ -2966,7 +2970,7 @@ export const SeatSlot = memo(
         /* isActingNow: a screen reader must not keep announcing a folded seat
            as "acting now" for the round trip it takes the snapshot to move the
            turn along - the same stale-turn window the countdown ring had. */
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stackPending ? 'Unavailable' : player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Ordinary actions stay above the avatar. ALL IN is printed only on
@@ -3441,9 +3445,14 @@ export const SeatSlot = memo(
               what renders is what fits, whole characters, no dots. */}
           <span className="seat__name">{limitSeatName(player.name)}</span>
           <span
-            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
+            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${player.stackPending ? '' : getStackDepthClass(player.stack, bigBlind)}`}
+            aria-busy={!!player.stackPending}
           >
-            {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
+            {player.stackPending
+              ? '...'
+              : showStackInBB
+                ? formatStackAsBB(player.stack, bigBlind)
+                : formatStack(player.stack)}
           </span>
 
           {/* Armed time bank — the seat-level replacement for the toast that
@@ -4057,6 +4066,7 @@ export const SeatSlot = memo(
     if (pp.id !== np.id) return false;
     if (pp.name !== np.name) return false;
     if (pp.stack !== np.stack) return false;
+    if (pp.stackPending !== np.stackPending) return false;
     if (pp.status !== np.status) return false;
     if (pp.isHero !== np.isHero) return false;
     if (pp.showCards !== np.showCards) return false;

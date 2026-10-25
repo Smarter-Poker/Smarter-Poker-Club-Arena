@@ -101,6 +101,7 @@ import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
 import { LightningPresenceReporter } from './lightning/LightningPresenceReporter.js';
+import { setLightningEngineInputDeviceSink } from './lightning/LightningEngineInputDevice.js';
 import { LightningAutoRebuyExecutor } from './lightning/LightningAutoRebuy.js';
 import {
   LIGHTNING_PRESENCE_RECONCILE_DELAY_MS,
@@ -4322,6 +4323,13 @@ export class GameServer {
         (this.lightningPresenceReconcileTimer as { unref?: () => void }).unref?.();
       };
       scheduleLightningPresenceReconcile();
+      // 2026-10-24: an anchor engine is the input device of the horses it
+      // drives (CLAUDE.md 10.5 item 2), so its live heartbeat clears a
+      // disconnect stamp through the same reporter a returning room socket
+      // uses. The registry refuses a seat the account's own client controls.
+      setLightningEngineInputDeviceSink((clusterId, playerId, poolSessionId) =>
+        this.lightningRooms.engineInputDeviceLive(clusterId, playerId, poolSessionId)
+      );
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
@@ -4575,6 +4583,7 @@ export class GameServer {
               clearTimeout(this.lightningPresenceReconcileTimer);
               this.lightningPresenceReconcileTimer = null;
             }
+            setLightningEngineInputDeviceSink(null);
             return this.lightningPresenceReporter.stop();
           },
         ],

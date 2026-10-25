@@ -10,6 +10,8 @@ export interface CashierReceiptFields {
   amount: number;
   direction: 'in' | 'out' | 'managed';
   counterparty: string;
+  /** A cash-out leg's invoice number, printed on the copied receipt. */
+  invoiceNumber?: string | null;
 }
 
 export interface CashierTransferFailure {
@@ -802,6 +804,7 @@ export function cashierReceiptText(row: CashierReceiptFields, clubName: string):
     `Entry: ${receiptLabel(row.type) || 'Transfer'}`,
     `${row.direction === 'managed' ? 'Transfer' : row.direction === 'in' ? 'From' : 'To'}: ${row.counterparty}`,
     `Amount: ${signedAmount} Chips`,
+    ...(row.invoiceNumber ? [`Invoice: ${row.invoiceNumber}`] : []),
     'Status: Recorded In Ledger',
   ].join('\n');
 }

@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { serverNow } from '../../utils/serverClock';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
@@ -51,6 +52,8 @@ export interface BlindLevel {
 
 export interface TournamentBreakScreenProps {
   isVisible: boolean;
+  /** The owning table canvas, so the minimized clock never covers its action bar. */
+  tableAnchorRef?: React.RefObject<HTMLElement | null>;
   breakTimeRemaining: number; // seconds
   /**
    * THE BREAK HAS TWO PHASES AND THE SCREEN MUST SAY WHICH (2026-08-27).
@@ -122,6 +125,7 @@ function formatStack(amount: number): string {
 
 export function TournamentBreakScreen({
   isVisible,
+  tableAnchorRef,
   breakTimeRemaining,
   phase = 'counting_down',
   breakEndsAtMs = null,
@@ -339,19 +343,23 @@ export function TournamentBreakScreen({
 
   // A real button keeps the clock reachable by keyboard as well as touch.
   if (minimized) {
-    return (
+    const tableAnchor = tableAnchorRef?.current;
+    const button = (
       <button
         type="button"
-        className="break-screen__minimized"
+        className={`break-screen__minimized${tableAnchor ? ' break-screen__minimized--on-table' : ''}`}
         onClick={() => setMinimized(false)}
         aria-label="Open Break Screen"
       >
-        <span className="break-screen__mini-badge">
-          {countingDown ? `Break: ${formatTime(displayTime)}` : 'Break: Last Hand'}
+        <span className="break-screen__mini-face">
+          <span className="break-screen__mini-badge">
+            {countingDown ? `Break: ${formatTime(displayTime)}` : 'Break: Last Hand'}
+          </span>
+          <span className="break-screen__mini-state">Paused</span>
         </span>
-        <span className="break-screen__mini-state">Paused</span>
       </button>
     );
+    return tableAnchor ? createPortal(button, tableAnchor) : button;
   }
 
   return (

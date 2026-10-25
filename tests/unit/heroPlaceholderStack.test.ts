@@ -28,6 +28,12 @@ function placeholder(
 }
 
 describe('hero placeholder stack', () => {
+  it('marks an unknown Lightning stack pending while preserving confirmed zero', () => {
+    expect(placeholder(null, 0, { status: 'active', stack: null }).stackPending).toBe(true);
+    const known = placeholder(null, 0, { status: 'active', stack: 0 });
+    expect(known.stackPending).toBe(false);
+    expect(known.stack).toBe(0);
+  });
   it('retires the original buy-in after the authoritative row arrives', () => {
     const rowStart = page.indexOf('        {\n          const rowStack = heroRow?');
     const rowEnd = page.indexOf('        const stillSeated', rowStart);
@@ -68,5 +74,6 @@ describe('hero placeholder stack', () => {
     const hero = placeholder(null, 0, { status: 'active', stack: 187.5 });
     expect(hero.stack).toBe(187.5);
     expect(hero.status).toBe('active');
+    expect(hero.stackPending).toBe(false);
   });
 });

@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/digest-alert-accounting-20261025",
+  "_comment": "Read from production information_schema.columns on2026-10-25: ca_diamond_snapshots.house_register numeric. Existing installed Diamond snapshot migration20261025052509; no migration replay.",
+  "columns": {
+    "ca_diamond_snapshots": ["house_register"]
+  }
+}

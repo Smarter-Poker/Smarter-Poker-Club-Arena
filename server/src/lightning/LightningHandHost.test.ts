@@ -600,11 +600,24 @@ describe('the clock, the time bank and a horse', () => {
     let n = 0;
     t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
       const r: any = await (brain as any)(...args);
+      const snapshot = args[0];
+      const onTurn = snapshot.player.seat === snapshot.gameState.currentPlayerSeat;
+      const passive = snapshot.gameState.toCall > 0 ? 'call' : 'check';
+      // An off-turn priced look has no action clock. It must not consume the
+      // first TURN's tank, or randomly fast-fold the peer while that clock
+      // is running. Fast-fold behavior has its own dedicated host tests.
+      if (!onTurn) {
+        return staysIn(0)
+          ? { ...r, decision: { ...r.decision, action: passive, amount: undefined } }
+          : r;
+      }
       const i = n++;
-      // A fold facing a bet takes the Lightning Fold door at once, with no
-      // think time, so a decision that must spend its tempo cannot be a fold.
-      const action = staysIn(i) && r.decision.action === 'fold' ? 'call' : r.decision.action;
-      return { ...r, decision: { ...r.decision, action, thinkTime: thinkTime(i) } };
+      // Keep the clock under test alive with a legal passive action. A
+      // random raise/all-in could otherwise price the peer into an early fold.
+      const decision = staysIn(i)
+        ? { ...r.decision, action: passive, amount: undefined }
+        : r.decision;
+      return { ...r, decision: { ...decision, thinkTime: thinkTime(i) } };
     });
   }
 

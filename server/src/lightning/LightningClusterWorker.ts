@@ -908,7 +908,18 @@ export class LightningClusterWorker {
       if (this.deps.hasInstance?.(h.instance_id)) continue; // a replay naming a hand already dealt
       this.metrics.noteMatched(players, formedAtMs, this.clusterId);
       for (const p of players) this.idleSince.delete(p);
-      decided.push({ players, bb: h.bb, sb: h.sb, btn: h.btn, handId: h.hand_id });
+      decided.push({
+        players,
+        bb: h.bb,
+        sb: h.sb,
+        btn: h.btn,
+        handId: h.hand_id,
+        entryBb: Array.isArray(h.entry_bb)
+          ? h.entry_bb.filter(
+              (id): id is string => isUuid(id) && players.includes(id) && id !== h.bb
+            )
+          : [],
+      });
       for (const p of players)
         if (!this.knownPoolPlayers.includes(p)) this.knownPoolPlayers.push(p);
       this.deps.startHand!({

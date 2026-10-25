@@ -130,6 +130,14 @@ export interface LightningPoolSnapshot {
    */
   epoch?: number;
   /**
+   * Whether the SQL plan that read this snapshot posted entry big blinds
+   * (its `entry_big_blind`, 20261025050528), when the snapshot is the
+   * database's own: it overrides `params.entryBigBlind`, so an A/A
+   * comparison against a database whose gate is still closed compares like
+   * with like. Absent = the params decide.
+   */
+  entryBigBlind?: boolean;
+  /**
    * The database's legal count for this pass (fn_lightning_player_legality's
    * answer, as the live pass reported it), when the snapshot's own legality
    * is only an estimate: P5's band is read from it, as the SQL reads its band
@@ -151,6 +159,14 @@ export interface LightningMatcherParams {
    * what the rule costs; no live path can reach it.
    */
   firstEntryRule: 'any_seat' | 'big_blind';
+  /**
+   * ENTRY BIG BLIND (20261025050528): a newcomer the pass seats outside its
+   * big blinds (only when holding them would leave the pass no hand) posts a
+   * live entry big blind. True for this engine, which posts it
+   * (LightningHandHost); false reproduces the SQL plan while its gate
+   * (the header and constraint gate of 20261025050528) is closed.
+   */
+  entryBigBlind: boolean;
   positionFairness: boolean;
   recentWindowHands: number;
   recentWindowSeconds: number;
@@ -170,6 +186,7 @@ export const LIGHTNING_MATCHER_PARAM_DEFAULTS: Readonly<LightningMatcherParams> 
   instanceTarget: 6,
   instanceMax: 6,
   firstEntryRule: 'big_blind',
+  entryBigBlind: true,
   positionFairness: true,
   recentWindowHands: 60,
   recentWindowSeconds: 900,
@@ -195,6 +212,12 @@ export interface LightningPlannedGroup {
   bb: string;
   sb: string;
   btn: string;
+  /**
+   * The newcomers in this group who post a live entry big blind (the SQL
+   * group's `entry_bb`), in `players` order. Never the big blind; the small
+   * blind only when nobody else can hold it (its small blind is then dead).
+   */
+  entryBb: string[];
 }
 
 export interface LightningMatchPlan {
@@ -498,6 +521,13 @@ function planWith(
   const need = sizes.slice(0, g).reduce((s, x) => s + x, 0) - g;
   let rest = restAll.slice(0, Math.max(0, need));
 
+  // ENTRY BIG BLIND (20261025050528, the SQL's v_entry): the newcomers the
+  // pass seats outside its big blinds - only possible when the loop above
+  // stopped because holding them would leave no hand - post a live entry big
+  // blind, exactly as the big blind plays.
+  const entryOn = snapshot.entryBigBlind ?? params.entryBigBlind;
+  const entry = new Set(entryOn ? rest.filter(isLightningNewcomer).map((p) => p.playerId) : []);
+
   const seated = new Set([...bbs, ...rest].map((p) => p.playerId));
   const window = g > 0 ? recentWindow(snapshot, params) : [];
   const { encounters, recentSets } = encounterMemory(window, seated);
@@ -506,7 +536,12 @@ function planWith(
   for (const h of window)
     for (const p of h.players) if (seated.has(p) && !lastOf.has(p)) lastOf.set(p, h.players);
 
-  const sbs = [...rest].sort(compareBlindOrder).slice(0, g);
+  // The small blinds come from the players who are not entry posters first
+  // (ORDER BY (pid = ANY (v_entry)), p2).
+  const isEntry = (p: LightningPoolPlayer) => (entry.has(p.playerId) ? 1 : 0);
+  const sbs = [...rest]
+    .sort((a, b) => isEntry(a) - isEntry(b) || compareBlindOrder(a, b))
+    .slice(0, g);
   const sbSet = new Set(sbs.map((p) => p.playerId));
   rest = rest.filter((p) => !sbSet.has(p.playerId));
 
@@ -577,11 +612,13 @@ function planWith(
         pairs++;
         if ((encounters.get(pairKey(members[a], members[b])) ?? 0) > 0) repeatPairs++;
       }
+    const players = sb === bb ? [bb, ...order] : [bb, sb, ...order];
     groups.push({
-      players: sb === bb ? [bb, ...order] : [bb, sb, ...order],
+      players,
       bb,
       sb,
       btn: order.length > 0 ? order[order.length - 1] : sb,
+      entryBb: players.filter((id) => entry.has(id)),
     });
   }
   return {
@@ -678,6 +715,8 @@ export function lightningMatcherParams(raw: unknown, maxGroups?: number): Lightn
     // Always big_blind, whatever the row says (fn_lightning_config lists any
     // other value under `invalid` and uses big_blind).
     firstEntryRule: 'big_blind',
+    // This engine posts the entry big blind (LightningHandHost).
+    entryBigBlind: true,
     positionFairness:
       typeof row.position_fairness === 'boolean' ? row.position_fairness : d.positionFairness,
     recentWindowHands: Math.round(

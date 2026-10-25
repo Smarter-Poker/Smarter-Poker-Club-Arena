@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/vpip-readers-judge-the-same-window. Migration 20261024232218_vpip_readers_judge_the_same_window_as_the_eviction: the one maintain-VPIP window shared by fn_nit_check, fn_nit_status and fn_cash_vpip_status, installed through Apply Merged Migration after merge.",
+  "functions": ["fn_nit_sitting_since"]
+}

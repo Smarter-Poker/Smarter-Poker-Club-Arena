@@ -56,4 +56,33 @@ def verify_horse(run):
    result=subprocess.run([os.environ["PGNODE"],str(here/"test_transaction_concurrency.mjs")],input=json.dumps(params),text=True,capture_output=True)
    if result.returncode:raise RuntimeError(result.stderr)
    print(result.stdout.strip(),flush=True);count+=1
+ # A top-up is a live-stack purchase with the SAME immutable funding door.
+ # Its UUID is the engine's exact v5(URL, horse-topup:table:user:hand) identity.
+ import uuid
+ topup_op=str(uuid.uuid5(uuid.NAMESPACE_URL,f"horse-topup:{T}:{U}:91"))
+ topup_seed=seed+f"UPDATE table_seats SET stack=2,club_id='{C}' WHERE table_id='{T}'; INSERT INTO club_members(id,user_id,club_id,chip_balance) VALUES('{U}','{U}','{C}',40);"
+ run("BEGIN;"+topup_seed+f"""
+ DO $t$ DECLARE first jsonb; again jsonb; snapshot jsonb; BEGIN
+ first:={call(op=topup_op)}; SELECT {state} INTO snapshot;
+ again:={call(op=topup_op)};
+ IF (first->>'new_stack')::numeric<>7 OR again->>'replayed' IS DISTINCT FROM 'true'
+    OR snapshot IS DISTINCT FROM {state}
+    OR (SELECT chip_balance FROM club_members WHERE user_id='{U}')<>35
+    OR (SELECT chip_treasury FROM clubs WHERE id='{C}')<>100 THEN
+   RAISE EXCEPTION 'Lost live-stack top-up acknowledgement charged twice or used treasury';
+ END IF;
+ END $t$; ROLLBACK;""");count+=1
+ if os.environ.get("PGNODE"):
+  params=dict(name="live-stack top-up lost acknowledgement",setup=topup_seed,actor="SELECT 1",
+   first=call(op=topup_op),second=call(op=topup_op),conflict=False,fundingReceipt=True,
+   verify=f"""DO $t$ BEGIN
+    IF (SELECT stack FROM table_seats WHERE table_id='{T}' AND user_id='{U}')<>7
+     OR (SELECT chip_balance FROM club_members WHERE user_id='{U}')<>35
+     OR (SELECT chip_treasury FROM clubs WHERE id='{C}')<>100
+     OR (SELECT count(*) FROM entry_purchase_idempotency_receipts WHERE key_domain='horse_funding' AND idempotency_key='{topup_op}')<>1
+    THEN RAISE EXCEPTION 'Concurrent live-stack top-up moved chips twice'; END IF;
+   END $t$;""",cleanup="TRUNCATE "+",".join(names+["tables","club_members"])+" CASCADE")
+  result=subprocess.run([os.environ["PGNODE"],str(Path(__file__).resolve().parent/"test_transaction_concurrency.mjs")],input=json.dumps(params),text=True,capture_output=True)
+  if result.returncode: raise RuntimeError(result.stderr)
+  print(result.stdout.strip(),flush=True);count+=1
  print(f"TOTAL horse funding receipts: {count} passing cases",flush=True)

@@ -1,25 +1,29 @@
 /**
- * A HORSE WHOSE LIGHTNING POOL SESSION ENDED LEAVES ITS ANCHOR SEAT (2026-10-24).
+ * A PLAYER WHOSE LIGHTNING POOL SESSION ENDED LEAVES THEIR ANCHOR SEAT (2026-10-24).
  *
- * CLAUDE.md 10.5: a horse is a player and the engine is its input device.
+ * CLAUDE.md 10.5: a horse is a player, so this is ONE rule for every player.
  * The disconnect reaper closes a pool session and never stands the anchor
- * seat up, so a returning person can find their chair (VIEW GAME) and decide.
- * A horse never comes back with a browser. Measured on "FLH 0.25/0.50
- * Lightning Games", 2026-10-24: two horses' sessions closed
- * 'disconnect_expired' at 15:52:50 UTC while both kept funded anchor seats
- * (38.74 and 51.77), and eight hours later nothing had re-entered or cashed
- * out either one.
+ * seat up. Measured on "FLH 0.25/0.50 Lightning Games", 2026-10-24: two
+ * horses' sessions closed 'disconnect_expired' at 15:52:50 UTC while both kept
+ * funded anchor seats (38.74 and 51.77), and eight hours later nothing had
+ * re-entered or cashed out either one. PR #7973 stood the horses up; a PERSON
+ * in the same place kept the seat and chips for as long as the Cluster stayed
+ * Lightning, because the rule carried an is_horse condition. Dan (2026-10-24)
+ * approved the same treatment for everyone: the person's own Leave/cash-out
+ * into their club wallet, with its receipt, by the same two-looks rule.
  *
  * Pinned here:
  *   - the parked pass runs the hook after the busted-horse recovery and
  *     before the halt acknowledgement;
- *   - the horse leaves through the person's own Leave door (`leaveTable`,
- *     scoped to its occupancy), never a hand-stamped row or a forced exit;
+ *   - the player leaves through the ordinary Leave door (`leaveTable`,
+ *     scoped to the occupancy), never a hand-stamped row or a forced exit;
+ *   - the rule has no horse condition: a person and a horse are stood up by
+ *     the same code on the same evidence;
  *   - only on a SECOND observation of the same ended occupancy, at least the
  *     confirm window later;
  *   - nothing is done when the pool cannot be read, during the freeze, for a
- *     horse sitting out, already leaving or at zero (the bust recovery owns
- *     that seat), or for a seat whose session is still open;
+ *     player sitting out, already leaving, in a live hand or at zero (the bust
+ *     recovery owns that seat), or for a seat whose session is still open;
  *   - the read answers only sessions THIS occupancy entered from THIS seat,
  *     only for a Cluster that is Lightning now, and never a player who plays
  *     on from another seat.
@@ -65,6 +69,8 @@ afterEach(() => {
   mocks.frozen.mockImplementation(() => false);
 });
 
+const personId = '1a2b3c4d-0000-4000-8000-0000000000c1';
+
 function parkedAnchor(overrides: Record<string, unknown> = {}) {
   const e = new ServerTableEngine(table) as any;
   e.tableInfo = { club_id: 'club', big_blind: 0.5, cluster_id: cluster };
@@ -87,7 +93,7 @@ function parkedAnchor(overrides: Record<string, unknown> = {}) {
   return e;
 }
 
-describe('a horse whose Lightning pool session ended leaves its anchor seat', () => {
+describe('a player whose Lightning pool session ended leaves their anchor seat', () => {
   it('the parked pass runs the hook, and the override uses the Leave door', () => {
     const base = SRC('ServerTableEngineBase.ts');
     const pass = base.slice(
@@ -95,7 +101,7 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
       base.indexOf('protected async completeQueuedLeavesWhileHalted(')
     );
     const busted = pass.indexOf('await this.recoverBustedHorsesWhileHalted();');
-    const ended = pass.indexOf('await this.standUpHorsesWhosePoolSessionEnded();');
+    const ended = pass.indexOf('await this.standUpPlayersWhosePoolSessionEnded();');
     const ack = pass.indexOf('await this.observeDealingHalt();');
     expect(busted).toBeGreaterThan(-1);
     expect(ended).toBeGreaterThan(busted);
@@ -103,10 +109,13 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
 
     const dealing = SRC('ServerTableEngineDealing.ts');
     const override = dealing.slice(
-      dealing.indexOf('protected override async standUpHorsesWhosePoolSessionEnded(')
+      dealing.indexOf('protected override async standUpPlayersWhosePoolSessionEnded(')
     );
     expect(override.length).toBeGreaterThan(0);
-    expect(override).toMatch(/await this\.leaveTable\(horse\.user_id, \{/);
+    const body = override.slice(0, override.indexOf('\n  }\n') + 4);
+    expect(body).toMatch(/await this\.leaveTable\(player\.user_id, \{/);
+    // One rule for every player (10.5): no horse condition anywhere in it.
+    expect(body).not.toMatch(/is_?[Hh]orse/);
     expect(override).toMatch(/lightningSeatsWhosePoolSessionEnded\(/);
     expect(override).toMatch(/isMaintenanceFrozen\(\)/);
     // A person's door: no forced exit, no hand-stamped seat row, no direct cash-out.
@@ -114,21 +123,21 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
     expect(override).not.toMatch(/markSeatAsLeft\(|atomicCashout\(|releaseBustedSeat\(/);
   });
 
-  it('the stranded horse leaves through leaveTable on the second observation', async () => {
+  it('a stranded horse leaves through leaveTable on the second observation', async () => {
     const e = parkedAnchor();
     mocks.ended.mockResolvedValue(new Map([[seatId, 'disconnect_expired']]));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(mocks.ended).toHaveBeenCalledWith(cluster, [
       { seatId, userId: horseId, joinedAt: '2026-10-24T14:36:24.652981+00:00' },
     ]);
     expect(e.leaveTable).not.toHaveBeenCalled(); // first sight only
 
     clock += CHECK - 1;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(mocks.ended).toHaveBeenCalledTimes(1); // asked at most once per window
 
     clock += 1;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(e.leaveTable).toHaveBeenCalledTimes(1);
     expect(e.leaveTable).toHaveBeenCalledWith(horseId, {
       occupancyId: occupancy,
@@ -136,16 +145,52 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
     });
   });
 
+  it('a stranded PERSON leaves by exactly the same rule, on exactly the same evidence', async () => {
+    const e = parkedAnchor({ user_id: personId, is_horse: false, username: 'person' });
+    mocks.ended.mockResolvedValue(new Map([[seatId, 'disconnect_expired']]));
+    await e.standUpPlayersWhosePoolSessionEnded();
+    expect(mocks.ended).toHaveBeenCalledWith(cluster, [
+      { seatId, userId: personId, joinedAt: '2026-10-24T14:36:24.652981+00:00' },
+    ]);
+    expect(e.leaveTable).not.toHaveBeenCalled(); // first sight only
+    clock += CHECK;
+    await e.standUpPlayersWhosePoolSessionEnded();
+    expect(e.leaveTable).toHaveBeenCalledTimes(1);
+    // Their own ordinary Leave: occupancy-scoped, never forced.
+    expect(e.leaveTable).toHaveBeenCalledWith(personId, {
+      occupancyId: occupancy,
+      seatNumber: 3,
+    });
+  });
+
+  it('a player in a live hand is not asked, and one dealt in between the looks stays', async () => {
+    const e = parkedAnchor({ user_id: personId, is_horse: false });
+    e.handController = { getState: () => ({ players: [{ user_id: personId }] }) };
+    mocks.ended.mockResolvedValue(new Map([[seatId, 'disconnect_expired']]));
+    await e.standUpPlayersWhosePoolSessionEnded();
+    expect(mocks.ended).not.toHaveBeenCalled();
+
+    const f = parkedAnchor({ user_id: personId, is_horse: false });
+    await f.standUpPlayersWhosePoolSessionEnded();
+    clock += CHECK;
+    let reads = 0;
+    f.handController = {
+      getState: () => (reads++ > 0 ? { players: [{ user_id: personId }] } : { players: [] }),
+    };
+    await f.standUpPlayersWhosePoolSessionEnded();
+    expect(f.leaveTable).not.toHaveBeenCalled();
+  });
+
   it('a session that re-opened between the two looks is left alone', async () => {
     const e = parkedAnchor();
     mocks.ended.mockResolvedValueOnce(new Map([[seatId, 'disconnect_expired']]));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
     mocks.ended.mockResolvedValueOnce(new Map());
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
     mocks.ended.mockResolvedValueOnce(new Map([[seatId, 'disconnect_expired']]));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     // The clock restarted at the third look: still only one sighting.
     expect(e.leaveTable).not.toHaveBeenCalled();
   });
@@ -153,9 +198,9 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
   it('an unreadable pool stands nobody up', async () => {
     const e = parkedAnchor();
     mocks.ended.mockRejectedValue(new Error('lightning_pool_session read failed'));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(e.leaveTable).not.toHaveBeenCalled();
   });
 
@@ -163,28 +208,30 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
     const e = parkedAnchor();
     mocks.frozen.mockImplementation(() => true);
     mocks.ended.mockResolvedValue(new Map([[seatId, 'disconnect_expired']]));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(mocks.ended).not.toHaveBeenCalled();
     expect(e.leaveTable).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['sitting out (a break the horse took)', { is_sitting_out: true }],
+    ['sitting out (a break the player took)', { is_sitting_out: true }],
     ['already leaving', { leave_pending: true }],
     ['busted (the bust recovery owns it)', { stack: 0 }],
-  ])('a horse %s is not asked', async (_label, overrides) => {
+    ['sitting out, a person', { is_sitting_out: true, is_horse: false, user_id: personId }],
+    ['already leaving, a person', { leave_pending: true, is_horse: false, user_id: personId }],
+  ])('a player %s is not asked', async (_label, overrides) => {
     const e = parkedAnchor(overrides);
     mocks.ended.mockResolvedValue(new Map([[seatId, 'disconnect_expired']]));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(mocks.ended).not.toHaveBeenCalled();
     expect(e.leaveTable).not.toHaveBeenCalled();
   });
 
-  it('a stay clock that refuses keeps the horse seated and it asks again', async () => {
+  it('a stay clock that refuses keeps the player seated and it asks again', async () => {
     const e = parkedAnchor();
     e.leaveTable = vi.fn(async () => ({
       success: false,
@@ -193,11 +240,11 @@ describe('a horse whose Lightning pool session ended leaves its anchor seat', ()
       stay_remaining_ms: 60_000,
     }));
     mocks.ended.mockResolvedValue(new Map([[seatId, 'disconnect_expired']]));
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     clock += CHECK;
-    await e.standUpHorsesWhosePoolSessionEnded();
+    await e.standUpPlayersWhosePoolSessionEnded();
     expect(e.leaveTable).toHaveBeenCalledTimes(2);
   });
 });

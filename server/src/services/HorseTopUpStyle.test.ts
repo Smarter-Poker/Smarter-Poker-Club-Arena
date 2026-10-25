@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   cappedAutoTopUp,
+  balancedHorseAutoTopUps,
   horseAutoTopUpWanted,
   horseCashTopUpStyle,
   horseSitsWithAutoTopUp,
@@ -162,10 +163,20 @@ describe('PLO5 horse top-up style', () => {
     // in the seats lane after the rebuys, with its own funding key.
     const settle = read('../engine/ServerTableEngineSettlement.ts');
     expect(settle).toMatch(/horse_rebuys: 'seats',\s*horse_top_ups: 'seats',/);
-    expect(settle).toMatch(/snap\.handNumber,\s*'topup'\s*\)/);
-    const step = settle.slice(settle.indexOf("runStep('horse_top_ups'"));
+    expect(settle).toContain(
+      'this.topUpPlo5Horses(players, snap.handNumber, horsesReloadedThisHand)'
+    );
+    expect(settle).toMatch(/handNumber,\s*'topup'\s*\)/);
+    const step = settle.slice(
+      settle.indexOf('protected async topUpPlo5Horses('),
+      settle.indexOf('protected async postHandTasks(')
+    );
     expect(step).toContain('if (this.clusterLightningEnabled === true) return;');
-    expect(step).toContain('if (!seat || !seat.autoTopUp || !seat.clubId) continue;');
+    expect(step).toContain('const batch = await readHorseTopUpBatch(');
+    expect(step).toContain('const seat = batch.get(horse.user_id);');
+    expect(step).toContain('autoTopUp: seat.autoTopUp,');
+    expect(step).not.toContain('await readHorseTopUpSeat(');
+    expect(step).not.toContain('await readClubChipBalances(');
     expect(step).toContain('cappedAutoTopUp({');
     expect(read('./supabase/wallets.ts')).toContain("'horse-topup:'");
     // A seat on Auto Top Up does not also add on through the rotator.
@@ -174,5 +185,83 @@ describe('PLO5 horse top-up style', () => {
     expect(rotator).toContain(
       'if ((seat as { auto_rebuy?: boolean }).auto_rebuy === true) continue;'
     );
+  });
+});
+
+describe('the seated roster has the nearest whole-horse 30% share', () => {
+  const roster = Array.from({ length: 10 }, (_, i) => ({ userId: `horse-${i}`, autoTopUp: false }));
+  it('rounds every roster size and deduplicates horse ids', () => {
+    for (let n = 0; n <= 10; n++) {
+      const seats = roster.slice(0, n);
+      expect(balancedHorseAutoTopUps([...seats, ...seats]).size).toBe(Math.round(n * 0.3));
+    }
+  });
+  it('keeps existing habits when the quota is already right', () => {
+    const seats = roster.map((s, i) => ({ ...s, autoTopUp: i < 3 }));
+    expect([...balancedHorseAutoTopUps(seats)].sort()).toEqual(['horse-0', 'horse-1', 'horse-2']);
+    expect([...balancedHorseAutoTopUps([...seats].reverse())].sort()).toEqual([
+      'horse-0',
+      'horse-1',
+      'horse-2',
+    ]);
+  });
+  it('changes only the minimum number after arrivals and departures', () => {
+    const chosen = balancedHorseAutoTopUps(roster);
+    const seats = roster.map((s) => ({ ...s, autoTopUp: chosen.has(s.userId) }));
+    const gone = seats.filter((s) => s.userId !== [...chosen][0]);
+    const after = balancedHorseAutoTopUps(gone);
+    expect(after.size).toBe(3);
+    expect([...after].filter((x) => chosen.has(x))).toHaveLength(2);
+  });
+  it('prices the persisted Auto Top Up choice even when it differs from the hash', () => {
+    const id = roster.find((s) => horseCashTopUpStyle(s.userId, 'plo5') === 'add_on')!.userId;
+    expect(
+      horseAutoTopUpWanted({
+        userId: id,
+        variant: 'plo5',
+        stack: 125,
+        maxBuyIn: 200,
+        autoTopUp: true,
+      })
+    ).toBe(75);
+    expect(
+      horseAutoTopUpWanted({
+        userId: id,
+        variant: 'plo5',
+        stack: 125,
+        maxBuyIn: 200,
+        autoTopUp: false,
+      })
+    ).toBe(0);
+  });
+});
+
+describe('cent-exact PLO5 refills', () => {
+  const id = Array.from({ length: 30 }, (_, i) => `cent-horse-${i}`).find((x) =>
+    horseSitsWithAutoTopUp(x, 'plo5')
+  )!;
+  it('fills the observed 191.31 stack to 200 without losing a cent to binary subtraction', () => {
+    expect(
+      horseAutoTopUpWanted({
+        userId: id,
+        variant: 'plo5',
+        stack: 191.31,
+        maxBuyIn: 200,
+        autoTopUp: true,
+      })
+    ).toBe(8.69);
+  });
+  it('does not floor the same already priced cent twice', () => {
+    expect(
+      cappedAutoTopUp({
+        userId: id,
+        wanted: 8.03,
+        wallet: 100000,
+        investedThisTable: 100,
+        bigBlind: 1,
+        minBuyIn: 40,
+        maxBuyIn: 200,
+      })
+    ).toBe(8.03);
   });
 });

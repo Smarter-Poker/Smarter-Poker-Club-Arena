@@ -40,6 +40,19 @@
 --   - One-time: mark the already-stale new_message notifications read.
 -- =====================================================================
 
+--
+-- =====================================================================
+-- ROLLBACK (copy-paste): restore the previous definitions.
+--   fn_get_user_conversations: name = COALESCE(ou.display_name, ou.username)
+--     and remove the "AND (COALESCE(c.is_group,false) OR ou.id IS NOT NULL)"
+--     line.
+--   fn_mark_messages_read_through: remove the v_next_unread SELECT and the
+--     UPDATE notifications block.
+--   fn_deliver_club_messenger_welcome: remove the fn_ca_is_cert_account line.
+-- Notifications marked read by the one-time repair were for already-read
+-- threads and are not restored.
+-- =====================================================================
+
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
@@ -269,15 +282,3 @@ BEGIN
 END $$;
 
 COMMIT;
-
--- =====================================================================
--- ROLLBACK (copy-paste): restore the previous definitions.
---   fn_get_user_conversations: name = COALESCE(ou.display_name, ou.username)
---     and remove the "AND (COALESCE(c.is_group,false) OR ou.id IS NOT NULL)"
---     line.
---   fn_mark_messages_read_through: remove the v_next_unread SELECT and the
---     UPDATE notifications block.
---   fn_deliver_club_messenger_welcome: remove the fn_ca_is_cert_account line.
--- Notifications marked read by the one-time repair were for already-read
--- threads and are not restored.
--- =====================================================================

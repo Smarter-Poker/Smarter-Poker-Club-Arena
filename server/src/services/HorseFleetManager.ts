@@ -151,8 +151,10 @@ import {
   isPloVariant,
   ploRosterAllows,
   refreshPloRoster,
+  getPloPerformance,
   rosterExemptClub,
 } from './HorsePloRoster.js';
+import { orderMadnessCandidates } from './HorseMadnessSelection.js';
 
 /**
  * Everything `resolveSeatClub` needs to answer "which wallet pays for this
@@ -1149,12 +1151,16 @@ export class HorseFleetManager {
         role?: string | null;
         main_index?: number | null;
         arena?: unknown;
+        bomb_pot_enabled?: boolean | null;
+        big_blind_ante_enabled?: boolean | null;
+        nit_game?: boolean | null;
+        maintain_percent_min?: number | null;
       }>(
         (cursor, want) => {
           let q = supabase
             .from('tables')
             .select(
-              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index'
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index, bomb_pot_enabled, big_blind_ante_enabled, nit_game, maintain_percent_min'
             )
             .is('tournament_id', null)
             .in('status', ['waiting', 'running'])
@@ -3656,13 +3662,18 @@ export class HorseFleetManager {
              which is what keeps the fleet's whole roster in play instead of
              the same four hundred names. MAX_TABLES_PER_HORSE still excludes
              anyone at four; this only orders the rest. */
-          const weighted = pool
-            .map((h) => {
+          // All admission/schedule/bankroll gates above still own eligibility.
+          // Madness prefers supported PLO results among that eligible pool;
+          // ordinary tables and unknown evidence keep the existing draw.
+          const weighted = orderMadnessCandidates(
+            pool.map((h) => {
               const at = horseTables.get(h.id)?.size || 0;
               const towardFour = at > 0 && at < MAX_TABLES_PER_HORSE ? 4 : 1;
               return { h, w: Math.random() * towardFour };
-            })
-            .sort((a, b) => b.w - a.w);
+            }),
+            table,
+            getPloPerformance()
+          );
           const selectedHorses = weighted.slice(0, emptySeats.length).map((x) => x.h);
           if (diag) diag.selected = selectedHorses.length;
 

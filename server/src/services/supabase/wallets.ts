@@ -10,6 +10,7 @@
  */
 
 import { v5 as uuidv5 } from 'uuid';
+import { balancedHorseAutoTopUps } from '../HorseTopUpStyle.js';
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
@@ -160,54 +161,6 @@ export async function readSeatWalletClub(tableId: string, userId: string): Promi
   }
 }
 
-/**
- * What a horse's Auto Top Up needs to know about its live cash seat
- * (HorseTopUpStyle, 2026-10-24): whether the seat's own Auto Top Up flag is on,
- * the club whose wallet funded the seat, and how much this cash session has
- * already put on this table (`cash_player_session.baseline`: buy-in plus every
- * add-on). Null when the seat or its open session cannot be read; the caller
- * then tops up nothing this hand (a top-up is optional, so it fails closed).
- */
-export async function readHorseTopUpSeat(
-  tableId: string,
-  userId: string
-): Promise<{ autoTopUp: boolean; clubId: string | null; invested: number } | null> {
-  if (!tableId || !userId) return null;
-  try {
-    const [seatRes, sessionRes] = await Promise.all([
-      supabase
-        .from('table_seats')
-        .select('auto_rebuy, club_id')
-        .eq('table_id', tableId)
-        .eq('user_id', userId)
-        .is('left_at', null)
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('cash_player_session')
-        .select('baseline')
-        .eq('table_id', tableId)
-        .eq('player_id', userId)
-        .is('closed_at', null)
-        .order('opened_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    if (seatRes.error || sessionRes.error || !seatRes.data || !sessionRes.data) return null;
-    const invested = Number((sessionRes.data as { baseline: unknown }).baseline);
-    if (!Number.isFinite(invested) || invested < 0) return null;
-    const seat = seatRes.data as { auto_rebuy: unknown; club_id: unknown };
-    return {
-      autoTopUp: seat.auto_rebuy === true,
-      clubId: typeof seat.club_id === 'string' ? seat.club_id : null,
-      invested,
-    };
-  } catch (err) {
-    reportError(err, 'DB.read_horse_top_up_seat_failed');
-    return null;
-  }
-}
-
 export async function readClubChipBalances(
   clubId: string,
   userIds: string[]
@@ -243,3 +196,145 @@ export async function readClubChipBalances(
 // stranded and nothing reading it, so this was a loaded gun pointed at chip
 // conservation, waiting for someone to wire it up. Horses are funded from the
 // club treasury (fn_horse_seat_from_treasury / fn_horse_fund_from_treasury).
+
+export interface HorseTopUpContext {
+  autoTopUp: boolean;
+  clubId: string | null;
+  invested: number | undefined;
+  wallet: number | undefined;
+  sittingOut: boolean;
+  leaving: boolean;
+}
+
+/**
+ * One hand boundary, one roster and two shared funding reads instead of three
+ * reads per horse. The immutable seat id fences flag changes from a departed
+ * occupancy. Only this table's horses are selected; no human preference moves.
+ * A failed read/write or lost lifecycle returns unknown and purchases nothing.
+ * This is called by settlement itself, never by a new timer or repair loop.
+ */
+export async function readHorseTopUpBatch(
+  tableId: string,
+  canMutate: () => boolean,
+  maxBuyIn: number
+): Promise<Map<string, HorseTopUpContext> | null> {
+  if (!tableId || !canMutate() || isMaintenanceFrozen()) return null;
+  try {
+    const roster = await supabase
+      .from('table_seats')
+      .select(
+        'id,user_id,club_id,stack,auto_rebuy,is_sitting_out,leave_pending,profile:profiles!fk_table_seats_user_id_profiles!inner(is_horse)'
+      )
+      .eq('table_id', tableId)
+      .is('left_at', null)
+      .eq('profile.is_horse', true);
+    if (roster.error || !roster.data || !canMutate() || isMaintenanceFrozen()) return null;
+    const seats = roster.data as unknown as Array<{
+      id: string;
+      user_id: string;
+      club_id: string | null;
+      stack: number;
+      auto_rebuy: boolean | null;
+      is_sitting_out: boolean;
+      leave_pending: boolean;
+    }>;
+    const out = new Map<string, HorseTopUpContext>();
+    if (!seats.length) return out;
+    const chosen = balancedHorseAutoTopUps(
+      seats.map((s) => ({ userId: s.user_id, autoTopUp: s.auto_rebuy === true }))
+    );
+    for (const enabled of [false, true]) {
+      const ids = seats
+        .filter((s) => chosen.has(s.user_id) === enabled && (s.auto_rebuy === true) !== enabled)
+        .map((s) => s.id);
+      if (!ids.length) continue;
+      if (!canMutate() || isMaintenanceFrozen()) return null;
+      const updated = await supabase
+        .from('table_seats')
+        .update({ auto_rebuy: enabled })
+        .eq('table_id', tableId)
+        .in('id', ids)
+        .is('left_at', null)
+        .select('id');
+      if (updated.error || !updated.data || updated.data.length !== ids.length) return null;
+    }
+    if (!canMutate() || isMaintenanceFrozen()) return null;
+    for (const seat of seats)
+      out.set(seat.user_id, {
+        autoTopUp: chosen.has(seat.user_id),
+        clubId: seat.club_id,
+        invested: undefined,
+        wallet: undefined,
+        sittingOut: seat.is_sitting_out === true,
+        leaving: seat.leave_pending === true,
+      });
+    // A full or busted stack cannot need an optional live-stack top-up. The
+    // quota still applies, but no wallet/session reads are owed on this hand.
+    if (
+      !seats.some(
+        (seat) =>
+          chosen.has(seat.user_id) &&
+          Number.isFinite(Number(seat.stack)) &&
+          Number(seat.stack) > 0 &&
+          Number(seat.stack) < maxBuyIn &&
+          !seat.is_sitting_out &&
+          !seat.leave_pending
+      )
+    )
+      return out;
+    const userIds = seats.map((s) => s.user_id);
+    const clubs = [...new Set(seats.map((s) => s.club_id).filter((id): id is string => !!id))];
+    const [sessions, wallets] = await Promise.all([
+      supabase
+        .from('cash_player_session')
+        .select('player_id,baseline')
+        .eq('table_id', tableId)
+        .in('player_id', userIds)
+        .is('closed_at', null)
+        .order('opened_at', { ascending: false }),
+      clubs.length
+        ? supabase
+            .from('club_members')
+            .select('user_id,club_id,chip_balance')
+            .in('user_id', userIds)
+            .in('club_id', clubs)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (
+      sessions.error ||
+      wallets.error ||
+      !sessions.data ||
+      !wallets.data ||
+      !canMutate() ||
+      isMaintenanceFrozen()
+    )
+      return null;
+    const invested = new Map<string, number>();
+    for (const row of sessions.data) {
+      if (
+        !invested.has(row.player_id) &&
+        row.baseline !== null &&
+        Number.isFinite(Number(row.baseline)) &&
+        Number(row.baseline) >= 0
+      )
+        invested.set(row.player_id, Number(row.baseline));
+    }
+    const balances = new Map<string, number>();
+    for (const row of wallets.data) {
+      if (
+        row.chip_balance !== null &&
+        Number.isFinite(Number(row.chip_balance)) &&
+        Number(row.chip_balance) >= 0
+      )
+        balances.set(`${row.club_id}:${row.user_id}`, Number(row.chip_balance));
+    }
+    for (const [userId, seat] of out) {
+      seat.invested = invested.get(userId);
+      seat.wallet = balances.get(`${seat.clubId}:${userId}`);
+    }
+    return out;
+  } catch (error) {
+    reportError(error, 'DB.read_horse_top_up_batch_failed');
+    return null;
+  }
+}

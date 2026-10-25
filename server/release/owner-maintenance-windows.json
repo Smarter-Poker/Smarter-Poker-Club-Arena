@@ -3,8 +3,8 @@
   "windows": [
     {
       "id": "2026-10-25-plo5-immediate-cutover",
-      "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don\u2019t call it done until it\u2019s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8042; preserve drain, freeze, rollback reserve and thaw. This narrow exception ends once that commit is serving.",
-      "contains": "31bec5547b9b342150dce8842b7a227eedc3ddfd",
+      "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don’t call it done until it’s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8048 (whole-game 70/30 correction) and PR #8042 (cent rounding and notices); preserve drain, freeze, rollback reserve and thaw. The prior #8042 anchor is already serving in c3ed8648 but does not contain the requested whole-game quota correction. This same bounded order now names the protected #8048 merge, retains its original expiry, and ends once that corrected commit is serving.",
+      "contains": "bf3dc2a6c3e877dd5760b75f7ad992c33975bc4f",
       "notBefore": "2026-10-25T17:57:28Z",
       "notAfter": "2026-10-25T23:47:28Z",
       "migrations": []

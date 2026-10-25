@@ -20,12 +20,12 @@
  * then no pool session to wait for).
  *
  * An existing seated player whose game converts receives an explicit View
- * Game notice from the original conversion event; their tab stays put until
- * they choose it.
+ * Game notice the moment the conversion commits (the commit signals the
+ * player privately); their tab stays put until they choose it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
-import { LIGHTNING_LOBBY_REFRESH_MS } from './lightningLobbyFeed';
 import {
   clearLightningEntryIntent,
   fetchLightningClusterMeta,
@@ -40,6 +40,13 @@ import {
 export const LIGHTNING_HANDOFF_POLL_MS = 1500;
 export const LIGHTNING_HANDOFF_BACKOFF = 1.5;
 export const LIGHTNING_HANDOFF_MAX_WAIT_MS = 10_000;
+
+/**
+ * The bus event a seated player's tab waits on for the conversion notice. It is
+ * relayed from the owner-only `profile-account:<user>` Broadcast topic, which
+ * the pool-session transaction writes (20261025025154).
+ */
+export const LIGHTNING_ROOM_OPENED_EVENT = 'LIGHTNING_ROOM_OPENED' as const;
 
 /** What the table says while the hand-off is waiting. */
 export const LIGHTNING_JOINING_TEXT = 'Joining Lightning...';
@@ -104,17 +111,18 @@ export function useLightningAnchorHandoff(input: {
   // without ever having clicked Join Lightning. Read their pool session and
   // offer View Game; never switch the tab for them.
   //
-  // READ ON THE LOBBY FEED'S CADENCE, NOT FROM A ROW CHANGE (2026-10-24). This
-  // used to wait for a realtime UPDATE on `cash_games`, which is not in the
-  // supabase_realtime publication and must not be: 19.5M updates against 266
-  // rows (pg_stat_user_tables, 2026-10-24), the shape every table on the
-  // KNOWN_UNPUBLISHED baseline in scripts/ci/check-realtime-publication.mjs
-  // was taken off it for. The channel joined, said SUBSCRIBED and never
-  // fired, so a player seated at an anchor while the game was pending_on was
-  // only ever offered the room by remounting. The session is now read once on
-  // mount and again every LIGHTNING_LOBBY_REFRESH_MS while the tab is visible
-  // (and the moment it becomes visible), until the room is ready. It is a read
-  // of state the page shows, not a repair: it writes nothing.
+  // THE TRANSACTION THAT OPENS THE ROOM SAYS SO (20261025025154). This first
+  // waited for a realtime UPDATE on `cash_games`, which is not in the
+  // supabase_realtime publication and must not be (19.7M updates on 266 rows),
+  // so it never fired; then it re-read every 30 s, which only guessed when the
+  // room might exist. Now the database transaction that opens a player's pool
+  // session (fn_cash_cluster_commit_lightning, fn_lightning_pool_enter) sends
+  // one private signal on the owner-only `profile-account:<user>` topic, which
+  // ProfileAccountSync already holds and relays as LIGHTNING_ROOM_OPENED. The
+  // hook reads fn_lightning_my_session on mount, when that event names this
+  // Cluster (or, with no Cluster, when the carrier rejoined after a possible
+  // miss), and when a hidden tab with an unread signal becomes visible. No
+  // timer, no channel of its own, and it writes nothing.
   useEffect(() => {
     setReadySession(null);
     const clusterId = input.clusterId;
@@ -139,17 +147,30 @@ export function useLightningAnchorHandoff(input: {
         return false;
       }
     };
+    const userId = input.userId;
     let found = false;
-    const tick = () => {
+    /* A signal that arrived while the tab was hidden is read when it shows. */
+    let unread = false;
+    const readNow = () => {
       if (stopped || found) return;
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        unread = true;
+        return;
+      }
+      unread = false;
       void read().then((ready) => {
         if (ready) found = true;
       });
     };
-    const timer = setInterval(tick, LIGHTNING_LOBBY_REFRESH_MS);
+    const stopSignal = masterBus.subscribe(LIGHTNING_ROOM_OPENED_EVENT, (event) => {
+      const { userId: owner, clusterId: signalled } = event.payload;
+      if (owner !== userId) return;
+      if (signalled !== undefined && signalled !== clusterId) return;
+      readNow();
+    });
     const onVisible = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') tick();
+      if (unread && typeof document !== 'undefined' && document.visibilityState === 'visible')
+        readNow();
     };
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
     void read().then((ready) => {
@@ -157,7 +178,7 @@ export function useLightningAnchorHandoff(input: {
     });
     return () => {
       stopped = true;
-      clearInterval(timer);
+      stopSignal();
       if (typeof document !== 'undefined')
         document.removeEventListener('visibilitychange', onVisible);
     };

@@ -2318,3 +2318,55 @@
 .page.simple .sectionHeading > .historyLink {
   font-size: 13px;
 }
+
+/* Transaction History rows (Dan 2026-10-24). The roster grid above
+   ("Full identities own the row width") is written for member rows - a
+   28px picker, a 76px portrait, then the identity - and it matched every
+   `.row`, receipt rows included. A receipt row has neither picker nor
+   portrait, so its line was pushed to the third column and its amount
+   auto-placed into the 28px picker column, running into the Receipt cue
+   ("+1,000RECEIPT"). A receipt row is its own grid: the line, the amount,
+   the cue; on a phone the line takes the full width and the amount and cue
+   share the line below, a fixed gap apart whatever the amount's width. The
+   Simple view hides a roster row's sub line; a receipt row keeps its kind,
+   route and time, because that is what the history is for. */
+.page .glass .receiptRow,
+.page.simple .glass .receiptRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'info amount cue';
+  column-gap: 12px;
+  row-gap: 6px;
+  align-items: center;
+}
+.page .glass .receiptRow .rowInfo,
+.page.simple .glass .receiptRow .rowInfo {
+  grid-area: info;
+}
+.page .glass .receiptRow .rowBalance,
+.page.simple .glass .receiptRow .rowBalance {
+  grid-area: amount;
+  margin: 0;
+  justify-self: end;
+}
+.page .glass .receiptRow .receiptCue,
+.page.simple .glass .receiptRow .receiptCue {
+  grid-area: cue;
+  justify-self: end;
+}
+.page.simple .glass .receiptRow .rowSub {
+  display: block;
+}
+@media (max-width: 560px) {
+  .page .glass .receiptRow,
+  .page.simple .glass .receiptRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'info info'
+      'amount cue';
+  }
+  .page .glass .receiptRow .rowBalance,
+  .page.simple .glass .receiptRow .rowBalance {
+    justify-self: start;
+  }
+}

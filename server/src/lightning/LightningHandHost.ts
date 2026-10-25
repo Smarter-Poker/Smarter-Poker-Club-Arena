@@ -1000,9 +1000,26 @@ export class LightningHandHost {
    * The idle shape: no hand in this room. Sent to a room this hand stops
    * publishing to - every room on an abandon, and a folder's room at the
    * fold - so the client shows the next-hand state rather than a frozen felt.
+   *
+   * THE ROOM CARRIES ITS PLAYER'S BALANCE (Dan 2026-10-24: "IT SHOULD 100%
+   * ALWAYS SHOW YOUR BALANCE AT ALL TIMES, IT SHOULD NEVER SAY 0.00"). The idle
+   * shape has no players, so it used to leave the client to reconstruct the
+   * hero's chips from an older roster and a database read. `owner` is the
+   * room's own player (rooms are per player: roomOf), and `stack` the chips
+   * behind them as this hand leaves them: at a fold, their seat's stack in the
+   * hand; on an abandon, the stack they brought, since the hand is voided.
+   * Only the room's owner is ever named; no other player's balance is sent.
+   * Additive: an older client ignores `lightning.player_balance`.
    */
-  private idleShape(room: string): Record<string, unknown> {
+  private idleShape(
+    room: string,
+    owner?: { userId: string; stack: number } | null
+  ): Record<string, unknown> {
     const rules = this.rules!;
+    const balance =
+      owner && Number.isFinite(owner.stack) && owner.stack >= 0
+        ? { user_id: owner.userId, stack: cents(owner.stack) }
+        : null;
     return {
       table_id: room,
       hand_id: null,
@@ -1014,6 +1031,7 @@ export class LightningHandHost {
         big_blind: Number(rules.big_blind),
         variant: String(rules.game_variant || 'nlh'),
         fast_fold_available: false,
+        ...(balance ? { player_balance: balance } : {}),
       },
       hand_number: this.handNumber,
       pot: 0,
@@ -1052,7 +1070,12 @@ export class LightningHandHost {
   /** After an abandon: every room still shown the hand is told the felt is empty. */
   private publishIdle(): void {
     if (!this.rules) return;
-    for (const [, room] of this.rooms()) this.deps.hub.publish(room, this.idleShape(room));
+    for (const [playerId, room] of this.rooms()) {
+      // The hand is voided: the owner holds what they brought to it.
+      const before = this.participants.get(playerId)?.stackBefore;
+      const owner = typeof before === 'number' ? { userId: playerId, stack: before } : null;
+      this.deps.hub.publish(room, this.idleShape(room, owner));
+    }
   }
 
   private anteFields(): Record<string, unknown> {
@@ -2277,7 +2300,10 @@ export class LightningHandHost {
       // The room stops hearing this hand: tell it so first (the idle shape),
       // or the client keeps the folded hand's felt until the next one deals.
       const room = this.watching.get(userId);
-      if (room && this.rules) this.deps.hub.publish(room, this.idleShape(room));
+      // The folder's chips behind them: no more can leave their stack this hand.
+      const behind = this.hc?.getState().players.find((p) => p.user_id === userId)?.stack;
+      const owner = typeof behind === 'number' ? { userId, stack: behind } : null;
+      if (room && this.rules) this.deps.hub.publish(room, this.idleShape(room, owner));
       this.watching.delete(userId);
     }
     const ackAt = this.now();

@@ -204,6 +204,23 @@ export function normalizeShowdownResults(results: unknown): ShowdownRecord[] {
 }
 
 /**
+ * Dan 2026-10-24: "WHEN PLAYERS ARE ALL IN, ON THE RIVER, KEEP THE CARDS
+ * SHOWN FOR 2 MORE SECONDS". True when two or more hands reached showdown and
+ * at least one of them belongs to a player who is all-in: a run-out after an
+ * all-in on an earlier street, or an all-in called on the river. The client
+ * asks the same question of its own snapshot (src/lib/showdownPresentation.ts
+ * isAllInShowdown), so both sides hold the felt for the same length.
+ */
+export function isAllInShowdown(
+  results: readonly { userId: string }[],
+  players: readonly { user_id: string; is_all_in?: boolean }[] | undefined
+): boolean {
+  if (results.length < 2 || !players) return false;
+  const shown = new Set(results.map((r) => r.userId));
+  return players.some((p) => shown.has(p.user_id) && p.is_all_in === true);
+}
+
+/**
  * `showdown`: the reveal SEQUENCE and the muck ruling (SHOWDOWN SYSTEM
  * 2026-08-25). A mucked hand's identity stays private.
  */

@@ -1,0 +1,62 @@
+name: CI superseded head stops at the push
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A REPLACED PULL REQUEST HEAD STOPS WHEN THE EVENT ARRIVES (2026-10-25).
+#
+# `CI — Build & Type Safety` keys its concurrency group on the PR number AND the
+# head sha, with cancel-in-progress false, so nothing can ever cancel the run
+# for the head a required check is evaluated against (ci.yml explains the six
+# stranded pull requests and the 54-minute duplicate that taught that).
+#
+# What it cost: the run for a replaced head kept going until the new run's
+# `changes` job got a runner and retired it. With the account saturated
+# (176-203 runs queued, ~20 jobs running) that wait was 25-45 minutes.
+# Measured over 300 PR runs from 2026-10-23 22:07 to 2026-10-25 03:36 UTC, 124
+# were superseded while still alive, and in a 70-run sample 46% of their
+# runner time - 2,272 runner-seconds per run - was spent after a newer push
+# already existed. The client publisher waits in that same queue.
+#
+# This workflow joins the group of the head that was REPLACED and asks GitHub
+# to cancel it. Concurrency groups are shared by every workflow in the
+# repository, and a run's own concurrency is applied when GitHub creates it, so
+# the cancellation needs no runner. Its only job never runs (`if: false`), so
+# the run itself completes at once and holds no slot.
+#
+#   synchronize: the group of `github.event.before`, the head this push replaced.
+#                `before` is never the head after the push, so the current
+#                head's run is never in that group.
+#   closed:      the group of the closing head. A merged PR's required checks
+#                already passed; a closed PR has nothing left to merge.
+#
+# It never checks out code, holds no permissions and no secrets, writes
+# nothing, and cannot dispatch, retry or publish anything. It is not a watcher:
+# it is one event's concurrency declaration. ci.yml's heavy jobs are gated on
+# `!cancelled()` so that the cancelled run really stops; its required
+# aggregates stay on `always()` and still report red for a cancelled run.
+# Pinned by tests/superseded-ci-stops-at-the-push.law.test.ts.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, closed]
+
+permissions: {}
+
+# Must stay byte-compatible with ci.yml's group for a pull_request event:
+#   ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
+# which, for a PR event, is ci-<number>-<head sha>.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}-${{ github.event.action == 'synchronize' && github.event.before || github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  supersede:
+    name: Superseded CI head cancelled by concurrency
+    # Never runs. The cancellation is the run's concurrency declaration above.
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Nothing to run
+        run: 'true'

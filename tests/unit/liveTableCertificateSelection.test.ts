@@ -268,9 +268,10 @@ describe('the actual cash selector scans across lobby tabs', () => {
       goto: async () => {},
       url: () => 'https://example.invalid/clubs/fixture',
       locator: () => ({ first: () => ({ waitFor: async () => {} }) }),
-      getByRole: (_: string, { name }: { name: string }) => ({
+      getByRole: (_: string, { name }: { name?: string; selected?: boolean }) => ({
+        innerText: async () => 'NLH',
         click: async () => {
-          active = name;
+          active = name!;
         },
       }),
       waitForTimeout: async () => {},
@@ -314,6 +315,7 @@ describe('the actual cash selector scans across lobby tabs', () => {
     });
     expect(visited).toEqual(['default', 'NLH', 'PLO', 'LIMIT']);
     expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['nlh', 'plo', 'limit']);
+    expect(result.tables.map((row: any) => row.lobbyTab)).toEqual(['NLH', 'PLO', 'LIMIT']);
     expect(reads.at(-1)).toEqual(['nlh', 'plo', 'limit']);
     expect(result.tables.every((row: any) => row.table.handCount === result.health.sequence)).toBe(
       true
@@ -340,4 +342,78 @@ describe('the actual cash selector scans across lobby tabs', () => {
   it('refuses a lobby without any healthy occupied witness', async () => {
     await expect(select({})).rejects.toThrow('no occupied');
   });
+});
+
+describe('cash navigation restores the progression winner after scanning other tabs', () => {
+  const spec = readFileSync(
+    join(__dirname, '../e2e/production-live-table-realtime.spec.ts'),
+    'utf8'
+  );
+  const navigation = spec.slice(
+    spec.indexOf('// The engine-progress wait above can outlast'),
+    spec.indexOf('    const navigationStartedAt = Date.now();')
+  );
+
+  it.each([
+    ['NLH', false],
+    ['PLO', false],
+    ['PLO', true],
+  ])(
+    'opens the actual %s winner in compact layout=%s, with the View assertion intact',
+    async (lobbyTab, compact) => {
+      let active = 'LIMIT';
+      const actions: string[] = [];
+      const candidate = { id: 'winning-table', name: 'Winning Table' };
+      const visible = () => active === lobbyTab;
+      const view = { visible };
+      const row = {
+        isVisible: async () => visible() && compact,
+        getByRole: () => ({ click: async () => actions.push('details') }),
+      };
+      const card = { getByRole: () => view };
+      const page = {
+        getByRole: (role: string, options?: { name?: string }) =>
+          role === 'tab'
+            ? {
+                click: async () => {
+                  active = options!.name!;
+                  actions.push(`tab:${active}`);
+                },
+              }
+            : { getByRole: () => view },
+        locator: (selector: string) =>
+          selector.includes(',')
+            ? { waitFor: async () => expect(visible()).toBe(true) }
+            : selector.includes('lobby-game-row')
+              ? row
+              : card,
+      };
+      const assert = (target: { visible?: () => boolean }) => ({
+        toHaveAttribute: async (_name: string, value: string) => expect(value).toBe('true'),
+        toBeVisible: async () => {
+          expect(target.visible?.(), 'the actual winner must be visible in its restored tab').toBe(
+            true
+          );
+          if (target === view) actions.push('view-visible');
+        },
+      });
+      await new Function(
+        'page',
+        'expect',
+        'prepareCashLobbyActions',
+        'engineBeforeNavigation',
+        'candidate',
+        'CASH_SPECTATOR_ACTION',
+        `return (async () => { ${transpileModule(navigation, {}).outputText} })();`
+      )(
+        page,
+        assert,
+        async () => {},
+        { selected: { candidate, lobbyTab } },
+        candidate,
+        /View Table/
+      );
+      expect(actions).toEqual([`tab:${lobbyTab}`, ...(compact ? ['details'] : []), 'view-visible']);
+    }
+  );
 });

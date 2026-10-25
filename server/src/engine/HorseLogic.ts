@@ -1991,9 +1991,8 @@ export interface HorseDecideOpts {
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
    * 6000-pair probe; no production default is changed. */
   v55OmahaRiverTripsFlat?: boolean;
-  /** V56: direct public pressure-range stratum sampling. Default on for
-   * PLO4/PLO6 after the fixed 3 x 6000-pair deep-cash qualification; PLO5
-   * remains opt-in (inconclusive). Set false to ablate. */
+  /** V56: direct public pressure-range stratum sampling. Opt-in until the
+   * clock- and governor-controlled per-variant qualification resolves. */
   v56OmahaPressureRange?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
@@ -5447,7 +5446,7 @@ export class HorseLogic {
     }
 
     if (
-      (opts.v56OmahaPressureRange ?? ['plo4', 'plo6'].includes(gs.gameVariant)) &&
+      opts.v56OmahaPressureRange === true &&
       ['plo4', 'plo5', 'plo6'].includes(gs.gameVariant) &&
       oppReads
     ) {

@@ -159,11 +159,6 @@ describe('Omaha pressure sampling retains its declared value mass', () => {
             { mind: true, telemetry: false, v56OmahaPressureRange: true }
           ).action
         ).toBe('fold');
-        HorseMind.reset();
-        seedFastRandom(seed * 977);
-        expect(
-          HorseLogic.decide(hero, gs, 'balanced', {}, { mind: true, telemetry: false }).action
-        ).toBe('fold');
       }
       HorseMind.reset();
       seedFastRandom(977);

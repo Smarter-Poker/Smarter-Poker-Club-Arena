@@ -679,7 +679,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v56OmahaPressureRange',
-    'direct pressure value sampling; default on PLO4/PLO6 after fixed deep-cash qualification, PLO5 opt-in',
+    'direct pressure value sampling; opt-in until clock- and governor-controlled qualification resolves',
     'V56'
   ),
   flag(

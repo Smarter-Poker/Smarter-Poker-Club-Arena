@@ -71,7 +71,8 @@
             "inert": false
           }
         ]
-      }
+      },
+      "promotionQualified": false
     },
     {
       "variant": "plo5",
@@ -142,7 +143,8 @@
             "inert": false
           }
         ]
-      }
+      },
+      "promotionQualified": false
     },
     {
       "variant": "plo6",
@@ -213,7 +215,10 @@
             "inert": false
           }
         ]
-      }
+      },
+      "promotionQualified": false
     }
-  ]
+  ],
+  "status": "Exploratory only; not promotion evidence",
+  "qualificationLimit": "The original drivers left the live equity governor and mood clock unfrozen. Preserve every result, but require the controlled replacement experiment before enabling any default."
 }

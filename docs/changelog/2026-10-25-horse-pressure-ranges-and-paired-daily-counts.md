@@ -12,12 +12,14 @@ Both recorded river decisions fold on all 40 fixed replay seeds with V56;
 the off arm retains the erroneous call or shove. This does not classify the
 earlier turn call as a leak simply because the hand lost.
 
-The frozen 3 x 6,000-pair, 400bb cash qualification is retained in
+The initial 3 x 6,000-pair, 400bb cash exploration is retained in
 `docs/qualification/horse-v56-20261025.json`. PLO4 pooled +6.8360 +/- 3.3910
 standard error and PLO6 +8.0981 +/- 3.8740 clear the predeclared two-standard-
 error gate; PLO5 +5.2849 +/- 3.4361 is inconclusive. All nine runs have zero
 illegal actions and zero truncated streets, nonzero divergence and no
-significantly negative seed. PLO4/PLO6 default on; PLO5 remains opt-in.
+significantly negative seed. The original driver did not freeze the load governor or mood clock, so these
+results do not qualify promotion. All variants remain opt-in until the
+controlled replacement experiment resolves.
 Explicit false preserves the off arm. These are benchmark results, not live
 results or a solver certificate. V55 remains off.
 

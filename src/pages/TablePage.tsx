@@ -334,6 +334,7 @@ import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal
 import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy, seatUnits } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
+import { playPlayerActionSound } from '../lib/playerActionSound';
 import { soundService, haptic } from '../services/SoundService';
 import {
   ChipAnimationManager,
@@ -17460,28 +17461,7 @@ function LiveTablePage({
         // immediate.
         const isHeroEcho = actionSeat > 0 && actionSeat === resolveHeroSeat();
         if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho) {
-          if (action === 'all_in' || action === 'allin') soundService.playAllIn();
-          /* Dan 2026-10-24: "A RAISE SHOULD HAVE A DIFFERENT SOUND EFFECT
-             THEN A CALL." A bet and a raise used to share the call's chip
-             clink here, so every opponent raise sounded like a call. They
-             take the raise cue — the same split the hand replay already
-             makes (replayMotion VERB_CUE: bet/raise -> 'raise') — scaled by
-             the raise-to amount like the hero's own. */ else if (
-            action === 'bet' ||
-            action === 'raise'
-          )
-            soundService.playRaise(actionAmount, safeBB(tableStateRef.current.blinds, 1));
-          else if (action === 'call') soundService.playChips();
-          else if (action === 'check') soundService.playCheck();
-          else if (action === 'fold') soundService.playFold();
-          /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was
-             SILENT for every opponent - human and horse alike. The hero half
-             of the split fires in handlePineappleDiscard the instant they
-             click; this is the other half, and the isHeroEcho guard above is
-             what keeps the hero from hearing their own discard twice. */ else if (
-            action === 'discard'
-          )
-            soundService.playDiscard();
+          playPlayerActionSound(action, actionAmount, safeBB(tableStateRef.current.blinds, 1));
         }
 
         /* PHASE 3 2026-08-31: this seat is now holding one card fewer, and

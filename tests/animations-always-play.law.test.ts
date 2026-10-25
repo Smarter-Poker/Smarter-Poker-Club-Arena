@@ -858,7 +858,9 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
     expect(TABLE_PAGE).toContain('soundService.playDiscard()');
     const echo = sliceEnclosingBlock(TABLE_PAGE, 'const isHeroEcho =', 0, 1);
     expect(echo).toContain('!isHeroEcho');
-    expect(echo).toContain("action === 'discard'");
+    expect(echo).toContain('playPlayerActionSound(action, actionAmount,');
+    const selector = read('src/lib/playerActionSound.ts');
+    expect(selector).toMatch(/case 'discard':\s*soundService\.playDiscard\(\)/);
     // And the hero's own half, at the click.
     const local = sliceMethod(TABLE_PAGE, 'const handlePineappleDiscard = useCallback(');
     expect(local).toContain('soundService.playDiscard()');

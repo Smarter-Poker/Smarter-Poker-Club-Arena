@@ -29,17 +29,9 @@ describe('the opponent action echo', () => {
     'if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho)'
   );
 
-  it('plays the raise cue for a bet or a raise, scaled by the amount', () => {
-    expect(echo).toMatch(
-      /action === 'bet' \|\|\s*action === 'raise'\s*\)\s*soundService\.playRaise\(actionAmount,/
-    );
-  });
-
-  it('keeps the chip clink for a call only', () => {
-    expect(echo).toMatch(/action === 'call'\) soundService\.playChips\(\)/);
-    expect(echo, 'a raise must never fall through to the call clink').not.toMatch(
-      /action === 'raise' \|\| action === 'call'/
-    );
+  it('dispatches the accepted action with amount and BB through the tested cue selector', () => {
+    expect(echo).toContain('playPlayerActionSound(action, actionAmount,');
+    expect(PAGE).toContain("import { playPlayerActionSound } from '../lib/playerActionSound'");
   });
 });
 

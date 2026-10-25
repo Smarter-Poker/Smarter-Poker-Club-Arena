@@ -390,7 +390,7 @@ interface OccupiedCashTable {
 }
 
 /**
- * Every occupied, running cash table the first productive lobby tab exposes
+ * Occupied, running cash tables across the cash-game lobby tabs
  * (at most CASH_PROGRESS_CANDIDATES), each with the liveness it had when it
  * was chosen. A cash hand is not short: measured 2026-09-29 over 20,488 hands
  * in three hours, p50 30s, p90 87s, p99 149s, max 300s. One table chosen alone
@@ -419,6 +419,8 @@ async function selectOccupiedRunningCashTables(
     .waitFor({ state: 'visible', timeout: 30_000 });
 
   const tabs: Array<string | null> = [null, 'NLH', 'PLO', 'LIMIT'];
+  const tables: OccupiedCashTable[] = [];
+  const seen = new Set<string>();
   for (const tabName of tabs) {
     if (tabName) {
       const tab = page.getByRole('tab', { name: tabName, exact: true });
@@ -432,21 +434,33 @@ async function selectOccupiedRunningCashTables(
          paint for React to replace the filtered rows after the tab click. */
       await page.waitForTimeout(100);
     }
-    const candidates = await visibleRunningCashCandidates(page);
+    const candidates = (await visibleRunningCashCandidates(page)).filter((c) => !seen.has(c.id));
     if (candidates.length === 0) continue;
-    const tables: OccupiedCashTable[] = [];
-    let lastHealth: EngineHealth | null = null;
     for (let offset = 0; offset < candidates.length; offset += 32) {
       const batch = candidates.slice(offset, offset + 32);
       const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
-      lastHealth = health;
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-        if (table && tables.length < CASH_PROGRESS_CANDIDATES) tables.push({ candidate, table });
+        if (table && !seen.has(candidate.id) && tables.length < CASH_PROGRESS_CANDIDATES) {
+          seen.add(candidate.id);
+          tables.push({ candidate, table });
+        }
       }
       if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
     }
-    if (tables.length > 0 && lastHealth) return { tables, health: lastHealth };
+    if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
+  }
+  if (tables.length > 0) {
+    // Tab scanning takes time. Start every contender from the same fresh
+    // health observation, removing tables that departed during discovery.
+    const health = await readEngineHealth(request, {
+      tableIds: tables.map(({ candidate }) => candidate.id),
+    });
+    const fresh = tables.flatMap(({ candidate }) => {
+      const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
+      return table ? [{ candidate, table }] : [];
+    });
+    if (fresh.length > 0) return { tables: fresh, health };
   }
 
   throw new Error(

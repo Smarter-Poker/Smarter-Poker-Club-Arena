@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { transpileModule } from 'typescript';
 import {
   eligibleHudClock,
   hudCandidateTableIdBatches,
@@ -247,5 +248,96 @@ describe('the certificate spec applies that selection and a cash budget sized fr
     expect(prove).toContain('continuouslyActive(');
     expect(prove).toContain('current.handCount > contender.table.handCount');
     expect(prove).toContain('remainingObservationMs(deadline)');
+  });
+});
+
+describe('the actual cash selector scans across lobby tabs', () => {
+  const source = readFileSync(
+    join(__dirname, '../e2e/production-live-table-realtime.spec.ts'),
+    'utf8'
+  );
+  const body = source.slice(
+    source.indexOf('async function selectOccupiedRunningCashTables('),
+    source.indexOf('async function proveTableProgressedBeforeNavigation(')
+  );
+  async function select(rows: Record<string, string[]>, removed: string[] = []) {
+    let active = 'default';
+    const visited: string[] = [];
+    const reads: string[][] = [];
+    const page = {
+      goto: async () => {},
+      url: () => 'https://example.invalid/clubs/fixture',
+      locator: () => ({ first: () => ({ waitFor: async () => {} }) }),
+      getByRole: (_: string, { name }: { name: string }) => ({
+        click: async () => {
+          active = name;
+        },
+      }),
+      waitForTimeout: async () => {},
+    };
+    const selector = new Function(
+      'CLUB_LOBBY',
+      'CASH_PROGRESS_CANDIDATES',
+      'expect',
+      'prepareCashLobbyActions',
+      'visibleRunningCashCandidates',
+      'readEngineHealth',
+      'healthyRunningTable',
+      transpileModule(body, {}).outputText + '\nreturn selectOccupiedRunningCashTables;'
+    )(
+      'https://example.invalid/clubs/fixture',
+      8,
+      () => ({ toBeVisible: async () => {}, toHaveAttribute: async () => {} }),
+      async () => {},
+      async () => {
+        visited.push(active);
+        return (rows[active] ?? []).map((id) => ({ id, gameFormat: 'cash' }));
+      },
+      async (_: unknown, { tableIds }: { tableIds: string[] }) => {
+        reads.push(tableIds);
+        return { sequence: reads.length, tableIds };
+      },
+      (health: { sequence: number; tableIds: string[] }, id: string) =>
+        health.tableIds.includes(id) && !(health.tableIds.length > 1 && removed.includes(id))
+          ? { tableId: id, handCount: health.sequence }
+          : null
+    );
+    return { result: await selector(page, {}), visited, reads };
+  }
+
+  it('keeps the first NLH table and discovers PLO and LIMIT witnesses without duplicates', async () => {
+    const { result, visited, reads } = await select({
+      default: ['nlh'],
+      NLH: ['nlh'],
+      PLO: ['plo'],
+      LIMIT: ['limit'],
+    });
+    expect(visited).toEqual(['default', 'NLH', 'PLO', 'LIMIT']);
+    expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['nlh', 'plo', 'limit']);
+    expect(reads.at(-1)).toEqual(['nlh', 'plo', 'limit']);
+    expect(result.tables.every((row: any) => row.table.handCount === result.health.sequence)).toBe(
+      true
+    );
+  });
+
+  it('caps the race at eight and refreshes all baselines together', async () => {
+    const { result, visited, reads } = await select({
+      default: ['one'],
+      NLH: ['one'],
+      PLO: Array.from({ length: 12 }, (_, i) => `plo${i}`),
+    });
+    expect(result.tables).toHaveLength(8);
+    expect(new Set(result.tables.map((row: any) => row.candidate.id)).size).toBe(8);
+    expect(visited).not.toContain('LIMIT');
+    expect(reads.at(-1)).toHaveLength(8);
+  });
+
+  it('removes a witness that is no longer healthy at the shared baseline read', async () => {
+    const { result } = await select({ default: ['departed'], PLO: ['live'] }, ['departed']);
+    expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['live']);
+  });
+
+  it('refuses a lobby without any healthy occupied witness', async () => {
+    await expect(select({})).rejects.toThrow('no occupied');
   });
 });

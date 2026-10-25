@@ -223,4 +223,31 @@ describe('SlugEnforcer', () => {
       replace: true,
     });
   });
+  it('retires a lookup when native document navigation starts without preventing departure', async () => {
+    let finish!: (result: unknown) => void;
+    const club = new Promise((resolve) => {
+      finish = resolve;
+    });
+    (supabase.from as any).mockImplementation((table: string) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => (table === 'clubs' ? club : Promise.resolve({ data: null })),
+        }),
+      }),
+    }));
+    (useLocation as any).mockReturnValue({
+      pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
+      search: '?create=table',
+      hash: '#settings',
+    });
+    const view = render(<SlugEnforcer />);
+    const departure = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(departure);
+    await act(async () => {
+      finish({ data: { slug: 'old-club', is_union: false } });
+    });
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(departure.defaultPrevented).toBe(false);
+    view.unmount();
+  });
 });

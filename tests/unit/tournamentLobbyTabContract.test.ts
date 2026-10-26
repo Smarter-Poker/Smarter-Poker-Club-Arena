@@ -300,7 +300,8 @@ describe('normaliseTabId', () => {
   it('sends the retired ids to the tabs that absorbed them', () => {
     expect(normaliseTabId('chips')).toBe('ranking');
     expect(normaliseTabId('payouts')).toBe('rewards');
-    expect(normaliseTabId('mystery')).toBe('rewards');
+    // Dan 2026-10-25: the mystery ladder has its own Bounties tab again.
+    expect(normaliseTabId('mystery')).toBe('bounties');
   });
 
   it('falls back to Detail rather than to nothing', () => {

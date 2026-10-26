@@ -39,6 +39,7 @@ import { reportError } from '../utils/errorReporter';
 import {
   clearLightningEntryIntent,
   fetchMyLightningSession,
+  hasLightningRoom,
   setLightningEntryIntent,
 } from './lightningSession';
 
@@ -58,6 +59,7 @@ export type LightningBuyInResult =
   | { kind: 'unconfirmed'; tableId: string; message: string };
 
 export interface LightningBuyInDeps {
+  rejoin?: (clusterId: string) => Promise<{ tableId: string; poolSessionId: string } | null>;
   join: (clusterId: string) => Promise<CashGameJoinResult>;
   reserve: typeof cashBuyInJournal.reserve;
   complete: typeof cashBuyInJournal.complete;
@@ -67,14 +69,30 @@ export interface LightningBuyInDeps {
   readPoolSession: (clusterId: string) => Promise<string | null>;
 }
 
+export async function rejoinLightningSeat(
+  clusterId: string
+): Promise<{ tableId: string; poolSessionId: string } | null> {
+  const { data, error } = await supabase.rpc('fn_lightning_rejoin_seated', {
+    p_cluster_id: clusterId,
+  });
+  if (error) throw error;
+  if (data === null) return null;
+  if (!data?.table_id || !data?.pool_session_id) throw new Error('Lightning Rejoin Not Confirmed');
+  return { tableId: data.table_id, poolSessionId: data.pool_session_id };
+}
+
 const defaultDeps: LightningBuyInDeps = {
+  rejoin: rejoinLightningSeat,
   join: joinCashGame,
   reserve: (intent) => cashBuyInJournal.reserve(intent),
   complete: (attempt) => cashBuyInJournal.complete(attempt),
   execute: executeCashBuyIn,
   markIntent: setLightningEntryIntent,
   clearIntent: clearLightningEntryIntent,
-  readPoolSession: async (clusterId) => (await fetchMyLightningSession(clusterId)).poolSessionId,
+  readPoolSession: async (clusterId) => {
+    const session = await fetchMyLightningSession(clusterId);
+    return hasLightningRoom(session) ? session.poolSessionId : null;
+  },
 };
 
 /** The signed-in player, or null. */
@@ -144,6 +162,12 @@ export async function buyIntoLightning(
   args: { clusterId: string; userId: string; amount: number; clubId: string | null },
   deps: LightningBuyInDeps = defaultDeps
 ): Promise<LightningBuyInResult> {
+  try {
+    const existing = await deps.rejoin?.(args.clusterId);
+    if (existing) return { kind: 'seated', ...existing };
+  } catch (error) {
+    return { kind: 'rejected', message: joinGameRefusalText(error) };
+  }
   for (let tries = 0; tries < 2; tries += 1) {
     let held: CashGameJoinResult;
     try {

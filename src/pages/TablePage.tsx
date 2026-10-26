@@ -5287,6 +5287,7 @@ function LiveTablePage({
     setRebuyProcessing,
     tournamentBreak,
     setTournamentBreak,
+    refreshTournamentBreak,
     breakChannelRef,
     announcement,
     setAnnouncement,
@@ -5299,7 +5300,9 @@ function LiveTablePage({
     addOnChannelRef,
     tournamentWinner,
     setTournamentWinner,
-  } = useTableTournament();
+  } = useTableTournament({ tournamentId: tableState.tournamentId, engineStatus: engineWsStatus });
+  const refreshTournamentBreakRef = useRef(refreshTournamentBreak);
+  refreshTournamentBreakRef.current = refreshTournamentBreak;
   /**
    * Orders asynchronous add-on presentations. A bootstrap read can be waiting
    * on the wallet while a thaw broadcast carries a later deadline, or while
@@ -15317,6 +15320,7 @@ function LiveTablePage({
               }
             )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
+              if (!isMounted) return;
               const data = payload.payload;
               if (data?.type === 'table_rebalance') {
                 // The production hook owns read/publication authority. The
@@ -16156,6 +16160,7 @@ function LiveTablePage({
               // bootstrap but before this channel joined has no future UPDATE
               // left to deliver, so re-read terminal truth once subscribed.
               if (status === 'SUBSCRIBED') {
+                if (isMounted) void refreshTournamentBreakRef.current();
                 void verifyDurableCompletion();
               }
               if (status === 'CHANNEL_ERROR') {

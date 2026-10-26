@@ -983,6 +983,13 @@ export async function logHandHistory(params: {
       actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
+      riverCallContext: {
+        variant: params.gameVariant,
+        boardCount: Math.max(
+          params.ritBoards?.length ?? 0,
+          params.communityCards3?.length ? 3 : params.communityCards2?.length ? 2 : 1
+        ),
+      },
       // HorseWinnerRead: every dealt player's net, from the committed hand.
       ...(params.contributions
         ? { results: handNetResults(params.contributions, params.winners) }

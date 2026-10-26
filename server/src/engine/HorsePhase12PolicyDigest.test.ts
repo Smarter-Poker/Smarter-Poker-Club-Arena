@@ -84,7 +84,9 @@ describe('P12.2 Phase 12 policy digest', () => {
     // 29 since 2026-10-23: HorseMind also reads HorseOpponentMemory.
     // 30 since 2026-10-24: HorseMind also reads HorseWinnerRead.
     // 32 since 2026-10-25: HorseMind notes read telemetry (BrainTelemetry).
-    expect(closure).toHaveLength(32);
+    // 33: river-call category and confidence evidence is a hashed owner.
+    expect(closure).toHaveLength(33);
+    expect(HORSE_PHASE12_POLICY_SOURCE_FILES).toContain('src/engine/HorseRiverCallEvidence.ts');
     expect(closure).toContain('src/engine/HorseOpponentMemory.ts');
     expect(HORSE_PHASE12_POLICY_SOURCE_FILES).toContain('src/engine/HorseContinuation.ts');
     const hashed = new Set(HORSE_PHASE12_POLICY_SOURCE_FILES);

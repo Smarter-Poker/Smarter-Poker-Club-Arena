@@ -273,58 +273,65 @@ describe('original observation windows in private read frames', () => {
     expect(() => decodeHorseDecisionReads(bad, players, 'hand')).toThrow('invalid');
   });
 
-  it('admits allocated v3 journal reads without permitting legacy downgrade or another plan context', () => {
-    const request = {
-      type: 'DECIDE_FAST',
-      requestId: 1,
-      generation: 1,
-      fence: 'unallocated-fixture',
-      decisionKey: `phase5-v1:${'a'.repeat(64)}`,
-      player: { seat: 1, user_id: 'hero' },
-      gameState: { stage: 'flop' },
-    } as const;
-    const planContext = horsePlanContextFromDecision(request);
-    const view = populated(false);
-    view.plans.clear();
-    view.raisePlans.clear();
-    view.outlooks.clear();
-    view.stats.get('villain')!.sourceWindow = window;
-    const readFrame = encodeHorseDecisionReads(view, players, null, planContext);
-    const capture = {
-      planContext,
-      planBinding: horsePlanBatchBindingFromRequest(request),
-      readFrame,
-    };
-    const unallocatedFrame = encodeHorseDecisionReads(view, players, null);
-    expect(horseRetainedPlanContext({ readFrame: unallocatedFrame }, request as never)).toEqual({
-      kind: 'legacy',
-    });
-    expect(
-      decodeHorseDecisionReads(unallocatedFrame, players, null).stats.get('villain')!.sourceWindow
-    ).toEqual(window);
-    expect(
-      horseRetainedPlanContext({ ...capture, readFrame: unallocatedFrame }, request as never)
-    ).toEqual({ kind: 'invalid' });
-    expect(horseRetainedPlanContext(capture, request as never)).toEqual({
-      kind: 'current',
-      context: planContext,
-    });
-    expect(horseRetainedPlanContext({ readFrame: capture.readFrame }, request as never)).toEqual({
-      kind: 'invalid',
-    });
-    expect(
-      horseRetainedPlanContext(
-        {
-          ...capture,
-          planContext: {
-            version: 1,
-            hand: { version: 1, tableId: '00000000-0000-4000-8000-000000000000', handNumber: 1 },
+  it.each([false, true])(
+    'admits allocated journal reads (river counters: %s) without legacy downgrade',
+    (riverCounters) => {
+      const request = {
+        type: 'DECIDE_FAST',
+        requestId: 1,
+        generation: 1,
+        fence: 'unallocated-fixture',
+        decisionKey: `phase5-v1:${'a'.repeat(64)}`,
+        player: { seat: 1, user_id: 'hero' },
+        gameState: { stage: 'flop' },
+      } as const;
+      const planContext = horsePlanContextFromDecision(request);
+      const view = populated(false);
+      if (riverCounters) {
+        view.stats.get('villain')!.riverCallSD = 12;
+        view.stats.get('villain')!.riverCallSDWeak = 9;
+      }
+      view.plans.clear();
+      view.raisePlans.clear();
+      view.outlooks.clear();
+      view.stats.get('villain')!.sourceWindow = window;
+      const readFrame = encodeHorseDecisionReads(view, players, null, planContext);
+      const capture = {
+        planContext,
+        planBinding: horsePlanBatchBindingFromRequest(request),
+        readFrame,
+      };
+      const unallocatedFrame = encodeHorseDecisionReads(view, players, null);
+      expect(horseRetainedPlanContext({ readFrame: unallocatedFrame }, request as never)).toEqual({
+        kind: 'legacy',
+      });
+      expect(
+        decodeHorseDecisionReads(unallocatedFrame, players, null).stats.get('villain')!.sourceWindow
+      ).toEqual(window);
+      expect(
+        horseRetainedPlanContext({ ...capture, readFrame: unallocatedFrame }, request as never)
+      ).toEqual({ kind: 'invalid' });
+      expect(horseRetainedPlanContext(capture, request as never)).toEqual({
+        kind: 'current',
+        context: planContext,
+      });
+      expect(horseRetainedPlanContext({ readFrame: capture.readFrame }, request as never)).toEqual({
+        kind: 'invalid',
+      });
+      expect(
+        horseRetainedPlanContext(
+          {
+            ...capture,
+            planContext: {
+              version: 1,
+              hand: { version: 1, tableId: '00000000-0000-4000-8000-000000000000', handNumber: 1 },
+            },
           },
-        },
-        request as never
-      )
-    ).toEqual({ kind: 'invalid' });
-  });
+          request as never
+        )
+      ).toEqual({ kind: 'invalid' });
+    }
+  );
 });
 
 describe('river-call counters in private read frames (2026-10-25)', () => {
@@ -349,7 +356,7 @@ describe('river-call counters in private read frames (2026-10-25)', () => {
   });
 
   it('carries non-zero counters in a v6 frame and restores them for the worker read', () => {
-    HorseMind.importStats([{ user_id: 'villain', hands: 40, riverCallSD: 6, riverCallSDWeak: 4 }]);
+    HorseMind.importStats([{ user_id: 'villain', hands: 40, riverCallSD: 12, riverCallSDWeak: 8 }]);
     HorseMind.importScoped([
       { user_id: 'villain', scope: 'holdem:hu', hands: 30, riverCallSD: 5, riverCallSDWeak: 5 },
     ]);
@@ -360,7 +367,7 @@ describe('river-call counters in private read frames (2026-10-25)', () => {
     expect(restored).toEqual(view);
     HorseMind.reset();
     HorseMind.runInSandbox(restored, () => {
-      expect(HorseMind.riverCallLightTendency('villain')).toBeCloseTo(4 / 6, 5);
+      expect(HorseMind.riverCallLightTendency('villain')).toBeCloseTo(8 / 12, 5);
     });
   });
 
@@ -379,7 +386,7 @@ describe('river-call counters in private read frames (2026-10-25)', () => {
     'refuses a resealed malformed v6 body: %s',
     (fault) => {
       HorseMind.importStats([
-        { user_id: 'villain', hands: 40, riverCallSD: 6, riverCallSDWeak: 4 },
+        { user_id: 'villain', hands: 40, riverCallSD: 12, riverCallSDWeak: 8 },
       ]);
       HorseMind.importStats([{ user_id: 'hero', hands: 40 }]);
       const frame = encodeHorseDecisionReads(

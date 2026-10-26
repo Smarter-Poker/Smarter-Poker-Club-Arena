@@ -1045,6 +1045,12 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  heuristic is a legacy fallback only - ServerTableEngine always passes
    *  gameMode, and isTournamentMode() trusts it first. */
   tournament?: {
+    /** Original observed payout terms; legacy absence remains unknown. */
+    payoutTermsVersion?: 1;
+    prizePoolFinalized?: boolean | null;
+    bubbleProtection?: boolean | null;
+    prizeUnitCents?: number | null;
+    finalizedPrizeLadder?: import('./HorseTournamentPayoutTerms.js').HorseFinalizedPrizeLadder;
     /** Phase 6 context contract. Every live tournament decision carries it. */
     schemaVersion?: 1;
     contextStatus?: TournamentContextStatus;
@@ -1967,8 +1973,8 @@ export interface HorseDecideOpts {
    *  board, and non-nut made hands stop firing pot on the turn and river.
    *  Disable to ablate (default: enabled). */
   v40Omaha?: boolean;
-  /** Dan 2026-10-25: PLO5/PLO6 never call off without a full house on a
-   *  paired turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
+  /** Dan 2026-10-25: PLO4/PLO5/PLO6 never call off without a full house on a
+   *  paired flop, turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
    *  false exists only so an ablation can measure an older layer alone. */
   ploPairedBoardFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
@@ -2005,6 +2011,9 @@ export interface HorseDecideOpts {
    * after fixed-clock/full-precision400bb cash qualification; explicit false
    * retains the off arm. Tournament behavior remains unchanged. */
   v56OmahaPressureRange?: boolean;
+  /** Dan 2026-10-25 NLH tournament aggression (wider opens/3-bets/defence,
+   *  more turn barrels). Default on; false is the historical arm. */
+  v57TournamentAggression?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -2949,8 +2958,8 @@ function enforceAuthoritativeDecision(
 }
 
 /**
- * Dan 2026-10-25: in PLO5/PLO6 a horse without a full house never calls or
- * raises a committing bet on a paired turn or river. See
+ * Dan 2026-10-25: in PLO4/PLO5/PLO6 a horse without a full house never calls or
+ * raises a committing bet on a paired flop, turn or river. See
  * HorsePloPairedBoardFold.ts. Applied after every other layer so no later
  * tweak to an equity cap can reopen the call.
  */
@@ -4977,6 +4986,7 @@ export class HorseLogic {
           : undefined,
       omahaSuitedPremium: suitedPremium,
       holdemPremiumPair,
+      tournamentAggression: (opts.v57TournamentAggression ?? true) !== false,
       effectiveStackBB: (() => {
         let cover = 0;
         for (const p of gs.players) {
@@ -6421,6 +6431,19 @@ export class HorseLogic {
           )
         : undefined;
     if (tele15 && outlook39) noteFire(`v39_outlook_${outlook39}`);
+    // ═══ TOURNAMENT AGGRESSION (Dan 2026-10-25) ═══════════════════════════
+    // Real players called the tournament horses passive and scared. In 48
+    // hours of human-seated NLH tournament hands, a horse that bet the flop
+    // bet the turn again only 23.9% of the time (the humans 47.2%): every
+    // flop bet was a one-and-done the table learned to float. NLH
+    // tournaments plan more multi-street lines, continue them more often and
+    // give up less. Cash keeps the duplicate-deal-tuned numbers below; the
+    // ICM survival premium still scales every bluff through bluffScale.
+    const tourneyAggro =
+      (opts.v57TournamentAggression ?? true) !== false &&
+      isTournamentMode(gs) &&
+      !vi.isOmaha &&
+      gs.allInOrFold !== true;
     const planBarrel = (equityNow: number): void => {
       if (!useBarrels || isRiver) return;
       // Only bluffs/semi-bluffs need a plan — value hands bet themselves.
@@ -6428,7 +6451,7 @@ export class HorseLogic {
       // bluffs into a pool that calls; 0.40 keeps the coherent-story benefit
       // without torching chips on over-frequent second barrels.
       if (equityNow < 0.55) {
-        HorseMind.notePlan(handKey, player.user_id, fastRandom() < 0.35);
+        HorseMind.notePlan(handKey, player.user_id, fastRandom() < (tourneyAggro ? 0.5 : 0.35));
         // V39: and what the next card would mean, decided now.
         try {
           const o = nextCardOutlook(player.cards, board, vi);
@@ -7425,7 +7448,8 @@ export class HorseLogic {
           // TUNED (duplicate-deal ablation): continuation frequencies cut
           // (turn 0.75->0.60, river 0.55->0.42) and total-air no-blocker
           // barrels abandoned — the original volume measurably lost.
-          if (fastRandom() < (isRiver ? 0.35 : 0.52) * Math.min(1.25, bluffScale) * outlookMul39) {
+          const continueBase = tourneyAggro ? (isRiver ? 0.42 : 0.66) : isRiver ? 0.35 : 0.52;
+          if (fastRandom() < continueBase * Math.min(1.25, bluffScale) * outlookMul39) {
             return this.betSize(
               planHandKey,
               pot,
@@ -7437,7 +7461,7 @@ export class HorseLogic {
               useSizing
             );
           }
-        } else if (!barrelPlan && equity < 0.52 && fastRandom() < 0.8) {
+        } else if (!barrelPlan && equity < 0.52 && fastRandom() < (tourneyAggro ? 0.65 : 0.8)) {
           return { action: 'check', thinkTime: 0 }; // one-and-done — give up
         }
       }

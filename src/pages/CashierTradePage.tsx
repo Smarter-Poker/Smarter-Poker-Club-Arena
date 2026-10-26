@@ -581,6 +581,8 @@ function CashierTradeWorkspace() {
   const ticketSeqRef = useRef(0);
   const recordSeqRef = useRef(0);
   const recordFilterEpochRef = useRef(0);
+  /** The last resolved club whose tab state is on screen (see the club reset effect). */
+  const tabClubRef = useRef<string | null>(null);
   const invoiceSeqRef = useRef(0);
   /** Claim Back list guard (launch audit 2026-10-09, P-03): bumped with the rest. */
   const reversibleSeqRef = useRef(0);
@@ -1358,6 +1360,15 @@ function CashierTradeWorkspace() {
           if (isMounted.current && transferView.current === owningView) {
             transferAuthorityEpoch.current++;
             setRoleResolved(false);
+            // An unverified authority keeps every money action locked, so it
+            // must say so and offer Retry (which re-reads it through
+            // loadClub). Before this the cashier locked silently while the
+            // status line still read "Balances Synchronized", and History sat
+            // on "Loading Transactions..." until a full page reload (History
+            // now shows this message instead; see historyAuthorityUnverified).
+            setLoadError(
+              'Cashier Access Could Not Be Verified. Check Your Connection And Try Again.'
+            );
           }
           return;
         }
@@ -1399,7 +1410,15 @@ function CashierTradeWorkspace() {
     ++recordSeqRef.current;
     ++invoiceSeqRef.current;
     ++reversibleSeqRef.current;
-    setTab('trade');
+    // Only a move from one club to ANOTHER returns to Trade. A /clubs/<slug>
+    // link first renders with no club while the slug resolves; a History tap
+    // in that window used to be sent back to Trade when the lookup landed.
+    // The same club reloading keeps the viewer's tab as well.
+    // Remember the last REAL club, so club A -> resolving -> club B still resets.
+    if (clubUuid) {
+      if (tabClubRef.current && tabClubRef.current !== clubUuid) setTab('trade');
+      tabClubRef.current = clubUuid;
+    }
     initialTabResolvedRef.current = false;
     setRoleResolved(false);
     setRecords([]);
@@ -1599,7 +1618,16 @@ function CashierTradeWorkspace() {
     } catch (e) {
       reportError(e, 'CashierTradePage.records');
       if (isMounted.current && seq === recordSeqRef.current) {
+        // An emptied list is no longer the book an older page continues.
+        // Retire any pending older page with it, and forget the filter key so
+        // Retry starts from page one: otherwise the late older page landed on
+        // the empty list and Retry merged it back below a fresh first page,
+        // silently dropping every row between the two.
+        ++recordFilterEpochRef.current;
+        recordsKeyRef.current = null;
         setRecords([]);
+        setRecordsHasMore(false);
+        setRecordsLoadingMore(false);
         setRecordsError('Could not load your transaction history.');
       }
       return false;
@@ -3846,6 +3874,8 @@ function CashierTradeWorkspace() {
     dialogWasOpenRef.current = dialogOpen;
   }, [dialogOpen]);
 
+  /** History reads under verified authority; while it is unverified nothing can load. */
+  const historyAuthorityUnverified = !roleResolved && !!loadError;
   const cashierNeedsAttention = Boolean(
     !isOnline || loadError || clubResolveFailed || agentWallet === null || transferRecovery
   );
@@ -4996,7 +5026,24 @@ function CashierTradeWorkspace() {
               </div>
 
               <div className={styles.list}>
-                {recordsLoading && <div className={styles.empty}>Loading Transactions...</div>}
+                {recordsLoading && !historyAuthorityUnverified && (
+                  <div className={styles.empty}>Loading Transactions...</div>
+                )}
+                {/* History is read under the viewer's verified authority. While
+                    that is unverified, say so with the club Retry, rather than
+                    "No Transactions Recorded Yet." over a feed never asked. */}
+                {!recordsError && historyAuthorityUnverified && (
+                  <div className={styles.empty} role="alert">
+                    {loadError}{' '}
+                    <button
+                      type="button"
+                      className={styles.retryBtn}
+                      onClick={() => void loadClub()}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
                 {!recordsLoading && recordsError && (
                   <div className={styles.empty} role="alert">
                     {recordsError}{' '}
@@ -5009,17 +5056,20 @@ function CashierTradeWorkspace() {
                     </button>
                   </div>
                 )}
-                {!recordsLoading && !recordsError && filteredRecords.length === 0 && (
-                  <div className={styles.empty}>
-                    {records.length === 0
-                      ? historySearch
-                        ? 'Nothing Matches That Name Or Invoice Number.'
-                        : historyKind === 'all' && historyRange === 'all' && !historyPerson
-                          ? 'No Transactions Recorded Yet.'
-                          : 'No Transactions Match These Filters.'
-                      : 'No Ledger Entries Match Those Filters.'}
-                  </div>
-                )}
+                {!recordsLoading &&
+                  !recordsError &&
+                  !historyAuthorityUnverified &&
+                  filteredRecords.length === 0 && (
+                    <div className={styles.empty}>
+                      {records.length === 0
+                        ? historySearch
+                          ? 'Nothing Matches That Name Or Invoice Number.'
+                          : historyKind === 'all' && historyRange === 'all' && !historyPerson
+                            ? 'No Transactions Recorded Yet.'
+                            : 'No Transactions Match These Filters.'
+                        : 'No Ledger Entries Match Those Filters.'}
+                    </div>
+                  )}
                 {!recordsError &&
                   filteredRecords.map((r) => (
                     <button

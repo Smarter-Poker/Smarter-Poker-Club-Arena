@@ -124,11 +124,17 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
     expect(trigger).toMatch(/pauseForBreak\(GameServer\.BREAK_DURATION_MS\)/);
   });
 
-  it('waits for every table across every tournament before counting down', () => {
-    // Renamed from mttEngines 2026-08-27: the snapshot is every format now,
-    // not only the MTTs. See the takesSynchronizedBreaks suite below.
-    expect(trigger).toMatch(/await this\.waitForAllTablesParked\(breakEngines\)/);
-    const waitAt = trigger.indexOf('waitForAllTablesParked');
+  /*
+   * Dan 2026-10-25, verbatim: "THE 5 MINUTE BREAK FOR ALL TOURNAMENTS DOES NOT
+   * START FOR THE TOURNAMENT UNTIL ALL HANDS FOR THAT SPECIFIC TOURNAMENT ARE
+   * COMPLETED ... EVERY TOURNAMENT WILL START AND STOP THERE 5 MINUTE BREAK AT
+   * DIFFERENT TIMES". Each tournament waits for its OWN tables, never for
+   * every table across every tournament.
+   */
+  it("waits for that tournament's own tables before counting it down", () => {
+    expect(trigger).toMatch(/await this\.waitForAllTablesParked\(\[tm\]\)/);
+    expect(trigger).not.toMatch(/waitForAllTablesParked\(breakEngines\)/);
+    const waitAt = trigger.indexOf('waitForAllTablesParked(');
     const countdownAt = trigger.indexOf('beginBreakCountdown');
     const resumeTimerAt = trigger.indexOf('breakResumeTimer');
     expect(waitAt).toBeGreaterThan(-1);
@@ -139,7 +145,7 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
 
   it('the five minutes are measured from AFTER the last hand', () => {
     // The resume timer must be armed after the wait, not at :55.
-    const waitAt = trigger.indexOf('waitForAllTablesParked');
+    const waitAt = trigger.indexOf('waitForAllTablesParked(');
     const timerAt = trigger.indexOf('setTimeout');
     expect(waitAt).toBeLessThan(timerAt);
   });

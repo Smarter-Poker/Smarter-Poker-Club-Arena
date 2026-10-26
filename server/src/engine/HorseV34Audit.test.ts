@@ -120,10 +120,12 @@ describe('V34 preflop ranges read against the real scale', () => {
   });
 
   it('an ante widens the big blind defence a notch further', () => {
+    // Tournament steal floor 0.22 - 0.04 tournament aggression (2026-10-25)
+    // = 0.18 without an ante, 0.15 with one: a 0.16 defends only with the ante.
     const face = (anteInPlay: boolean) =>
       decidePreflopV7(
         ctx({
-          strength: 0.2,
+          strength: 0.16,
           position: 'bb',
           raises: 1,
           raiserPosition: 'late',

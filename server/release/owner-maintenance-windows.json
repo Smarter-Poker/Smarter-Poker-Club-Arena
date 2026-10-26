@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-plo-paired-board-fold-widening-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8104, merge afea03a164ceb5397700d594917888b382091bce (the PLO4 and paired-flop widening). The earlier anchor acb5e84e9 (#8088) is already serving in fdd0a7efd through the bust-door release and granted nothing. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
+      "contains": "afea03a164ceb5397700d594917888b382091bce",
+      "notBefore": "2026-10-26T01:50:00Z",
+      "notAfter": "2026-10-26T07:40:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-bust-door-fix-tonight",
       "ownerOrder": "Dan, 2026-10-25 18:48 Chicago, Claude chat (claude.ai/code/session_01G1J5sfS2nZCBxr6ETNsY98): \"INSTALL THE BUST FIX TONIGHT AS AN EMERGENCY ENGINE RELEASE\", in direct response to the choice between the routine 04:00 Chicago activation and an off-cycle install before the two 20:00 Chicago chests-only Sunday Funday Mystery events. One immediate certified off-cycle engine activation of protected main containing PR #8090, merge 1efd9504e0916918f70e8e98ccdcea296ccec48a: every bounty_blocked answer from the knockout door is a recorded bust, so the elimination batch no longer stops after one bust per sweep. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "1efd9504e0916918f70e8e98ccdcea296ccec48a",

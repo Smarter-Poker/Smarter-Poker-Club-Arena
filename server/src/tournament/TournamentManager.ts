@@ -40,6 +40,7 @@ import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   TournamentManagerEliminations,
   type TournamentBalanceProgress,
@@ -4459,6 +4460,123 @@ export class TournamentManager extends TournamentManagerEliminations {
   // minutes after the first defensive cap deployed.
   protected breakOccurredThisCycle = false;
 
+  /**
+   * Start the dealer for one committed capacity table this process does not
+   * yet run. Returns true when an engine was started here. The one start path
+   * for capacity tables, shared by the expansion stage and the wake-time
+   * admission below.
+   */
+  private startCapacityTableEngine(tableId: string): boolean {
+    if (this.tableEngines.has(tableId)) return false;
+    const engine = this.createManagedTableEngine(tableId);
+    engine.setHub(tableStateHub); // Phase 1.1 PR-2
+    this.wireEliminationWake(engine);
+    this.tableEngines.set(tableId, engine);
+    /* A TABLE OPENED DURING THE :55 BREAK TAKES THE BREAK (Dan 2026-10-21:
+       "ALL TOURNAMENTS TAKE A 5 MIN BREAK EVERY HOUR").
+       This was the one dealer path that never inherited the break hold.
+       Late registration and rebalancing open capacity tables inside the
+       break window, and every such table dealt straight through it: 11
+       tables across 7 of 34 hours on 2026-10-20/22, e.g. Nightly 10K
+       table 2c4ebadf opened at 00:55:27 and dealt six hands before 01:00,
+       holding the platform's last-hand wait to its 300s ceiling. The
+       same preparation every other path uses (replacement, resume,
+       re-admission) arms the synchronized break, an add-on break, a
+       stage-end pause and hand-for-hand before the dealer can start. */
+    this.prepareManagedTableEngineForPlay(engine);
+    this.admitManagedTableEngine(tableId, engine);
+    this.startManagedTableEngine(engine, 'Tournament.dynamic_expansion_table_engine_error', {
+      tableId,
+    });
+    return true;
+  }
+
+  /**
+   * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
+   * (2026-10-25).
+   *
+   * Start every committed capacity table still awaiting its dealer, and
+   * acknowledge exactly those receipts. Nothing else: no table is created, no
+   * seat is moved and no rebalance runs here. Creation and the post-expansion
+   * rebalance stay in the expansion stage, after table balancing, where the
+   * freeze law and the break/expansion churn guard place them. Registration
+   * itself creates the table and seats the entrant in one transaction, so a
+   * committed receipt already holds seated players who only need a dealer.
+   *
+   * Production 2026-10-25: busts rewind the sweep cursor to stage 0 and 83%
+   * of admissions overran the 5 s budget, so the expansion stage (6) ran only
+   * when busting stopped, at the :55 break. 99 of 132 capacity tables
+   * (13:00-23:00 UTC) waited over a minute seated with no dealer (median 12.0
+   * minutes, max 53.8); through 2026-10-24 the median was ~4 s. Sunday Funday
+   * Happy Hour (Midway Union) table 14 opened 22:39:28 with nine late entrants
+   * and was admitted at 22:55:08 as the break began.
+   *
+   * Any failure leaves the receipts pending for the expansion stage, which
+   * admits and acknowledges the same receipts idempotently.
+   */
+  protected async admitCommittedCapacityTables(): Promise<void> {
+    if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+    const { data, error } = await supabase
+      .from('tournament_capacity_table_receipts')
+      .select('table_id, created_at')
+      .eq('tournament_id', this.tournamentId)
+      .is('manager_admitted_at', null)
+      .order('created_at', { ascending: true })
+      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+    if (!this.eliminationMutationAllowed()) return;
+    if (error || !Array.isArray(data)) {
+      if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
+      return;
+    }
+    const pendingTableIds = [
+      ...new Set(
+        data
+          .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
+          .filter((id) => id.length > 0)
+      ),
+    ];
+    if (pendingTableIds.length === 0) return;
+
+    const newTableIds: string[] = [];
+    for (const tableId of pendingTableIds) {
+      if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+      if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
+    }
+
+    // Same order as the expansion stage: queue the continuation, then ack.
+    this.requestUrgentEliminationSweepAfter(0);
+    const { data: ackData, error: ackError } = await supabase.rpc(
+      'fn_ack_tournament_capacity_tables',
+      { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
+    );
+    if (!this.eliminationMutationAllowed()) return;
+    const acknowledgement = (ackData ?? {}) as { ok?: boolean; reason?: string; requested?: number };
+    if (
+      ackError ||
+      acknowledgement.ok !== true ||
+      Number(acknowledgement.requested) !== pendingTableIds.length
+    ) {
+      reportError(
+        new Error(
+          `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+        ),
+        'Tournament.wake_capacity_table_handoff_ack_failed'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    if (newTableIds.length > 0) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
+      );
+      await this.broadcast('table_expansion', {
+        newTableIds,
+        totalTables: this.tableEngines.size,
+        reason: 'late_registration_capacity',
+      });
+    }
+  }
+
   protected async checkDynamicTableExpansion(): Promise<boolean> {
     if (!this.eliminationMutationAllowed()) return false;
     // Skip expansion in the same scheduler pass as a break - gives
@@ -4539,29 +4657,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       // successor after a crash.
       for (const tableId of pendingTableIds) {
         if (!this.eliminationMutationAllowed()) return false;
-        if (!this.tableEngines.has(tableId)) {
-          const engine = this.createManagedTableEngine(tableId);
-          engine.setHub(tableStateHub); // Phase 1.1 PR-2
-          this.wireEliminationWake(engine);
-          this.tableEngines.set(tableId, engine);
-          /* A TABLE OPENED DURING THE :55 BREAK TAKES THE BREAK (Dan 2026-10-21:
-             "ALL TOURNAMENTS TAKE A 5 MIN BREAK EVERY HOUR").
-             This was the one dealer path that never inherited the break hold.
-             Late registration and rebalancing open capacity tables inside the
-             break window, and every such table dealt straight through it: 11
-             tables across 7 of 34 hours on 2026-10-20/22, e.g. Nightly 10K
-             table 2c4ebadf opened at 00:55:27 and dealt six hands before 01:00,
-             holding the platform's last-hand wait to its 300s ceiling. The
-             same preparation every other path uses (replacement, resume,
-             re-admission) arms the synchronized break, an add-on break, a
-             stage-end pause and hand-for-hand before the dealer can start. */
-          this.prepareManagedTableEngineForPlay(engine);
-          this.admitManagedTableEngine(tableId, engine);
-          this.startManagedTableEngine(engine, 'Tournament.dynamic_expansion_table_engine_error', {
-            tableId,
-          });
-          newTableIds.push(tableId);
-        }
+        if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
         admittedCapacity = true;
       }
 

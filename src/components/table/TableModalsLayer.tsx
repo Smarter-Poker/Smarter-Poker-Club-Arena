@@ -478,6 +478,10 @@ export interface TableModalsLayerProps {
   tournamentBreak: {
     active: boolean;
     timeRemaining: number;
+    /** 'last_hand' until THIS tournament's last hand is complete; see TournamentBreakScreen. */
+    phase?: 'last_hand' | 'counting_down';
+    /** The server's real end, epoch ms, once this tournament's five minutes have started. */
+    breakEndsAtMs?: number | null;
     nextLevel?: {
       level: number;
       smallBlind: number;
@@ -1409,6 +1413,15 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           tableAnchorRef={tableAnchorRef}
           isVisible={tournamentBreak.active}
           breakTimeRemaining={tournamentBreak.timeRemaining}
+          /* THE CLOCK DOES NOT RUN UNTIL THIS TOURNAMENT'S LAST HAND IS DONE
+             (Dan 2026-10-25). The phase and the server's end time were set on
+             the page and never handed over, so the screen fell back to its
+             'counting_down' default and counted a local five minutes from :55
+             while the last hand was still being played. Without the phase it
+             now shows "Last Hand" until the server starts this tournament's
+             countdown. */
+          phase={tournamentBreak.phase ?? 'last_hand'}
+          breakEndsAtMs={tournamentBreak.breakEndsAtMs ?? null}
           tournamentName={tableName}
           tournamentId={tournamentId ?? null}
           heroUserId={userId ?? null}

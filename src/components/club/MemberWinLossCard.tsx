@@ -20,8 +20,9 @@ import '../../pages/MemberManagementPage.css';
  * Overall. Each prints the net in the record's own up / down ink, with the
  * cash and tournament halves beneath it. Cash is signed hand results after
  * rake; tournaments are money (prizes and bounties minus buy-ins, rebuys and
- * add-ons), never tournament chips. Today resets at Chicago midnight;
- * weekly and monthly accounting retain their existing UTC ranges.
+ * add-ons), never tournament chips. Every window resets at 12 AM Chicago
+ * time (Dan 2026-10-25): Today at midnight, This Week on Monday and This
+ * Month on the 1st.
  *
  * Rendered only where the record already shows financials, and the RPC applies
  * the same access rule again, so a viewer who may not see wallets gets nothing.
@@ -132,7 +133,7 @@ export default function MemberWinLossCard({
             </p>
           )}
           <p className="mm-winloss__note">
-            Club Chips. Today Resets At 12 AM Chicago Time. Week And Month Use UTC.
+            Club Chips. Today, Week And Month Reset At 12 AM Chicago Time.
           </p>
         </>
       )}

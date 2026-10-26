@@ -48,36 +48,50 @@ export class PooledPublicProfiles {
       !observerParticipantsBind(participants, hand) ||
       participants.status !== 'bound' ||
       !Array.isArray(hand.actions) ||
-      hand.actions.length > 4096 ||
-      !Array.isArray(profiles) ||
-      profiles.length > 10 ||
-      new Set(profiles.map((p) => p?.user_id)).size !== profiles.length
+      hand.actions.length > 4096
     )
       return 0;
     const context = participants.contexts[0]!;
     const mode = context.format === 'cash' ? 'cash' : 'tournament';
     const size = context.dealtCount <= 2 ? 'hu' : context.dealtCount <= 5 ? 'short' : 'full';
-    const actors = new Set(hand.actions?.map((a) => a.userId));
-    if (
-      profiles.some(
-        (p) =>
-          !validOpponentProfile(p) ||
-          p.variant !== context.variant ||
-          p.mode !== mode ||
-          p.size !== size ||
-          !actors.has(p.user_id)
-      )
-    )
-      return 0;
+    const actors = new Set(
+      hand.actions.map((a) => a.userId).filter((id): id is string => typeof id === 'string')
+    );
     this.lastAt = at;
     this.seen.add(key);
     while (this.seen.size > this.capacity) this.seen.delete(this.seen.values().next().value!);
+    const rowKey = (id: string) =>
+      opponentMemoryKey(id, context.variant as DurableOpponentProfile['variant'], mode, size);
+    const valid =
+      Array.isArray(profiles) &&
+      profiles.length <= 10 &&
+      new Set(profiles.map((p) => p?.user_id)).size === profiles.length &&
+      profiles.every(
+        (p) =>
+          validOpponentProfile(p) &&
+          p.variant === context.variant &&
+          p.mode === mode &&
+          p.size === size &&
+          actors.has(p.user_id)
+      );
+    // A newer accepted action is known even when its profile read failed.
+    // Never let stale aggregate counters suppress fresher individual learning.
+    const returned = new Set(valid ? profiles.map((p) => p.user_id) : []);
+    for (const id of actors) if (!returned.has(id)) this.rows.delete(rowKey(id));
+    if (!valid) return 0;
     let learned = 0;
     for (const p of profiles) {
       const k = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
       const previous = this.rows.get(k);
-      if (previous && opponentProfileVersion(previous.profile) >= opponentProfileVersion(p))
-        continue;
+      if (previous) {
+        const previousVersion = opponentProfileVersion(previous.profile),
+          version = opponentProfileVersion(p);
+        if (previousVersion > version) continue; // an out-of-order older hand cannot erase newer notes
+        if (previousVersion === version) {
+          this.rows.delete(k); // this new hand has no confirmed fresh profile
+          continue;
+        }
+      }
       this.rows.delete(k);
       this.rows.set(k, {
         profile: {

@@ -308,3 +308,21 @@ it('bounds profile capacity and refuses malformed action streams without throwin
   pool.clear();
   expect(pool.read(request(actor))).toBeNull();
 });
+
+it.each(['missing', 'empty', 'unchanged', 'invalid'])(
+  'drops stale pooled notes when a newer accepted hand has %s profile evidence',
+  (kind) => {
+    const pool = new PooledPublicProfiles(() => 100);
+    expect(pool.observe(shared())).toBe(1);
+    const next = shared();
+    next.generation = 1000002;
+    next.handKey = `${table}:1000002`;
+    next.fence = `${table}:1000002:${lease}:observe`;
+    next.observerParticipants!.handKey = `${table}:1000002:${lease}`;
+    if (kind === 'missing') delete next.durableOpponentProfiles;
+    if (kind === 'empty') next.durableOpponentProfiles = [];
+    if (kind === 'invalid') next.durableOpponentProfiles![0]!.counters.pfr = 31;
+    expect(pool.observe(next)).toBe(0);
+    expect(pool.read(request(other))).toBeNull();
+  }
+);

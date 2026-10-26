@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import {
   necessaryReferenceRouteGates,
   referenceReturnShape,
@@ -156,9 +157,12 @@ describe('the V53 pressure 4-bet on the variant_price route', () => {
 
   it('the producer still returns exactly this target on this route', () => {
     const source = readFileSync(join(here, 'HorseLogic.ts'), 'utf8');
-    const start = source.indexOf('v53ThreeBet &&\n            gap38 >= 0.06 &&');
-    expect(start).toBeGreaterThan(0);
-    const block = source.slice(start, start + 900);
+    const fourBet = 'v53ThreeBet &&\n            gap38 >= 0.06 &&';
+    const block = sliceBetween(
+      source,
+      fourBet,
+      "if (v53ThreeBet && telemetryOn(opts)) noteFire('v53_pressure_three_bet_priced');"
+    );
     expect(block).toContain("gs.legalActions?.includes('raise')");
     expect(block).toContain('gs.maxRaiseTo >= gs.minRaiseTo');
     expect(block).toContain('const target53 = vi.isPotLimit');
@@ -170,7 +174,7 @@ describe('the V53 pressure 4-bet on the variant_price route', () => {
     expect(block).toContain(
       "return { action: 'raise', amount: Math.round(target53 * 100) / 100, thinkTime: 0 }"
     );
-    const gate = source.slice(source.indexOf('let v53ThreeBet = false;'), start);
+    const gate = sliceBetween(source, 'let v53ThreeBet = false;', fourBet);
     for (const condition of [
       '(opts.v53Pressure ?? true) !== false',
       'opts.mind !== false',

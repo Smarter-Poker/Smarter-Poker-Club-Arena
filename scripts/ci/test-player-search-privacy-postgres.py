@@ -238,6 +238,56 @@ try:
     assert as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000006') IS NULL;") == 't'
     assert query("SELECT has_function_privilege('anon','public.fn_agent_watch_table_metadata(uuid)','EXECUTE');") == 'f'
     print('agent-downline-watch-table-metadata-passed')
+
+    # Dan 2026-10-25: "REMOVE ALL OF THE DELETED AND TEST ACCOUNT COMPLETLY".
+    # The search lists real, live players only - and every live horse.
+    query("""
+      SET ROLE postgres;
+      ALTER TABLE public.profiles ADD COLUMN status text, ADD COLUMN is_horse boolean;
+      CREATE TABLE auth.users (
+        id uuid PRIMARY KEY, email text, deleted_at timestamptz, banned_until timestamptz
+      );
+      CREATE FUNCTION public.is_system_user(email text) RETURNS boolean
+        LANGUAGE sql IMMUTABLE AS $is_system$
+        SELECT email IS NULL
+            OR email LIKE '%@hydra.bot'
+            OR email LIKE '%@probe.smarter.poker'
+            OR email LIKE '%@probe.smarter.local'
+            OR email LIKE '%.invalid'
+            OR email LIKE '%@example.com'
+            OR email LIKE '%@example.org'
+            OR email LIKE '%@example.net'
+            OR email LIKE '%@test.local'
+            OR email LIKE 'horse_%@%'
+            OR email LIKE 'samson-%@%';
+      $is_system$;
+      INSERT INTO auth.users (id, email)
+        SELECT id, 'fixture-' || id || '@gmail.com' FROM public.profiles;
+      INSERT INTO public.profiles (id, username, status, is_horse) VALUES
+        ('70000000-0000-0000-0000-000000000001', 'zebrareal', 'active', false),
+        ('70000000-0000-0000-0000-000000000002', 'zebrahorse', 'active', true),
+        ('70000000-0000-0000-0000-000000000003', 'deleted-zebra1', 'deleted', false),
+        ('70000000-0000-0000-0000-000000000004', 'zebragone', 'active', false),
+        ('70000000-0000-0000-0000-000000000005', 'zebrabanned', 'active', false),
+        ('70000000-0000-0000-0000-000000000006', 'zebracert', 'active', false),
+        ('70000000-0000-0000-0000-000000000007', 'zebraqa', 'active', false),
+        ('70000000-0000-0000-0000-000000000008', 'zebraoldhorse', 'deleted', true);
+      INSERT INTO auth.users (id, email, deleted_at, banned_until) VALUES
+        ('70000000-0000-0000-0000-000000000001', 'zebra@gmail.com', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000002', 'horse_zebra@smarter.poker', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000003', 'gone@gmail.com', now(), NULL),
+        ('70000000-0000-0000-0000-000000000004', 'zebragone@gmail.com', now(), NULL),
+        ('70000000-0000-0000-0000-000000000005', 'zebrabanned@gmail.com', NULL, now() + interval '30 days'),
+        ('70000000-0000-0000-0000-000000000006', 'crest-cert@example.invalid', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000007', 'reels-qa@smarter.poker', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000008', 'horse_old@smarter.poker', NULL, NULL);
+    """)
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261026011835_player_search_lists_only_real_players.sql').read_text())
+    listed = json.loads(as_viewer("SELECT public.fn_search_players('zebra');"))
+    names = sorted(item['username'] for item in listed['items'])
+    assert names == ['zebrahorse', 'zebrareal'], names
+    assert listed['total'] == 2, listed
+    print('player-search-lists-only-real-players-passed')
     print('player-search-privacy-native-acceptance-passed')
 finally:
     if STARTED and (DATA / 'postmaster.pid').exists():

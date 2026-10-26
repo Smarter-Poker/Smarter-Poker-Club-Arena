@@ -187,6 +187,35 @@ describe('Find A Player locator', () => {
     });
   });
 
+  describe('the result area always answers the words in the field (2026-10-25)', () => {
+    it('drops an earlier empty answer as soon as a new name is typed', async () => {
+      vi.mocked(PlayerSearchService.search).mockImplementation(async (options) =>
+        page(options.query === 'nobody' ? [] : [locatedPlayer])
+      );
+      const user = userEvent.setup();
+      renderLocator();
+      const box = screen.getByRole('searchbox');
+      await user.type(box, 'nobody');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+      expect(await screen.findByText('No Matching Players Were Found.')).toBeInTheDocument();
+
+      await user.clear(box);
+      await user.type(box, '333');
+      expect(screen.queryByText('No Matching Players Were Found.')).not.toBeInTheDocument();
+    });
+
+    it('does not reopen the suggestion list over the results the player asked for', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+      await user.type(screen.getByRole('searchbox'), 'shark');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+      await screen.findByRole('button', { name: /Midnight Cash/ });
+      // Long enough for a stranded debounce to have fired if it were still armed.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    });
+  });
+
   describe('clubs and unions', () => {
     it('names the clubs and unions the player belongs to', async () => {
       const user = userEvent.setup();

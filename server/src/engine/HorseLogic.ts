@@ -2414,9 +2414,18 @@ function maniacCallDown(
     // do is a preflop maniac only; its postflop bets keep their meaning.
     if (street !== 'preflop' && betRate < 0.55) return decision;
 
-    const live = gs.players.filter(
+    const allLive = gs.players.filter(
       (p) => p.seat !== player.seat && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
     );
+    // Match the direct preflop price consumer: a seat that has not answered
+    // the raise is not already a caller. Its hypothetical cards must not
+    // dilute equity against players actually committed to the current price.
+    const live =
+      street === 'preflop'
+        ? allLive.filter(
+            (p) => p.is_all_in || (Number.isFinite(p.bet) && p.bet >= gs.currentBet - 0.005)
+          )
+        : allLive;
     const opponentCards = vi.isOmaha ? vi.holeCount : player.cards.length;
     const deck =
       (vi.isShortDeck ? 36 : 52) - player.cards.length - (gs.communityCards?.length ?? 0);
@@ -2508,7 +2517,7 @@ function maniacCallDown(
       const jamRequired =
         (finalPot > 0 ? jamRisk / finalPot : 1) +
         Math.max(0, risk) +
-        Math.max(0, live.length - 1) * 0.03;
+        Math.max(0, allLive.length - 1) * 0.03;
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_no_flat');
       if (!(jamRisk > 0) || !(eq >= jamRequired)) return decision;
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
@@ -2527,12 +2536,11 @@ function maniacCallDown(
     const rawRecoveryMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
     const uncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRecoveryMean * (1 - rawRecoveryMean)) / recoverySamples);
-    if (
-      street !== 'preflop' &&
-      live.length === 1 &&
-      eq < required &&
-      required - eq <= uncertainty
-    ) {
+    // A heads-up preflop all-in also realizes its sampled equity in full.
+    // Its close rejection needs the same bounded confirmation as postflop;
+    // ordinary preflop flats retain their separate realization policy.
+    const canRefineRecovery = live.length === 1 && (street !== 'preflop' || allInCall);
+    if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =
         simulateEquity(
@@ -2564,8 +2572,7 @@ function maniacCallDown(
     const remainingUncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRefinedMean * (1 - rawRefinedMean)) / recoverySamples);
     if (
-      street !== 'preflop' &&
-      live.length === 1 &&
+      canRefineRecovery &&
       recoverySamples < boundarySamples &&
       eq < required &&
       required - eq <= remainingUncertainty

@@ -508,3 +508,124 @@ END $$;
 UPDATE horse_brain_telemetry SET fires=100 WHERE feature='vpip_floor' AND day='2026-10-24';
 DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(fn_audit_layer_drift('2026-10-24')) e WHERE e->>'code'='layer_fire_collapse' AND e->'evidence'->>'feature'='vpip_floor') THEN RAISE EXCEPTION 'real floor execution regression hidden'; END IF; END $$;
 SELECT 'horse_layer_outcome_controls_passed';
+
+CREATE TABLE tournaments(id uuid primary key,name text,guaranteed_prize numeric,buy_in_amount numeric,started_at timestamptz);
+CREATE TABLE tournament_players(tournament_id uuid);
+CREATE TABLE chip_ledger(tournament_id uuid,category text,to_type text,amount numeric);
+CREATE TABLE tournament_guarantee_overlays(tournament_id uuid primary key,amount numeric);
+CREATE OR REPLACE FUNCTION public.fn_audit_overlays(p_day date)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $overlay$
+DECLARE v jsonb := '[]'::jsonb; r record; total numeric := 0; n integer := 0;
+BEGIN
+  FOR r IN
+    WITH eligible AS MATERIALIZED (
+      SELECT t.id,t.name,t.guaranteed_prize gtd,t.buy_in_amount bi,
+             (SELECT count(*) FROM public.tournament_players p WHERE p.tournament_id=t.id) entries
+      FROM public.tournaments t
+      WHERE t.guaranteed_prize>0 AND t.buy_in_amount>0
+        AND t.started_at >= p_day::timestamp AT TIME ZONE 'UTC'
+        AND t.started_at < (p_day+1)::timestamp AT TIME ZONE 'UTC'
+    ), funded AS (
+      SELECT e.*,
+        coalesce((SELECT sum(l.amount) FROM public.chip_ledger l
+          WHERE l.tournament_id=e.id AND l.category='overlay'
+            AND l.to_type='prize_liability'),0) journal,
+        coalesce((SELECT o.amount FROM public.tournament_guarantee_overlays o
+          WHERE o.tournament_id=e.id),0) legacy
+      FROM eligible e
+    ), measured AS (
+      -- Same funding precedence as tournament conservation: two records of
+      -- one funding are never added together. This is gross recorded funding,
+      -- not a claim about net cost after any reviewed return.
+      SELECT f.*,greatest(journal,legacy,0) funding,
+             greatest(gtd-entries*bi,0) entry_only_gap FROM funded f
+    ), counted AS (
+      SELECT m.*,sum(funding) OVER () all_funding,
+             count(*) FILTER (WHERE funding>0) OVER () funded_events,
+             count(*) FILTER (WHERE funding=0 AND entry_only_gap>0) OVER () unconfirmed_events
+      FROM measured m WHERE funding>0 OR entry_only_gap>0
+    )
+    SELECT * FROM counted ORDER BY funding DESC,entry_only_gap DESC,id LIMIT 10
+  LOOP
+    total:=r.all_funding; n:=r.funded_events;
+    v:=v||jsonb_build_object(
+      'severity',CASE WHEN r.funding>=200 THEN 'critical' ELSE 'warn' END,
+      'category','logic',
+      'code',CASE WHEN r.funding>0 THEN 'tournament_overlay' ELSE 'tournament_overlay_estimate' END,
+      'title',CASE WHEN r.funding>0 THEN r.name||' has '||round(r.funding,2)||' in recorded guarantee funding'
+                   ELSE r.name||' has an entry-only gap with unconfirmed funding' END,
+      'evidence',jsonb_build_object('tournament_id',r.id,'guarantee',r.gtd,'buy_in',r.bi,
+        'entries',r.entries,'entry_only_gap',r.entry_only_gap,
+        'funded_overlay',r.funding,'journal_overlay',r.journal,'legacy_overlay',r.legacy,
+        'funding_confirmed',r.funding>0,'basis','gross_recorded_funding',
+        'funded_events',r.funded_events,'unconfirmed_events',r.unconfirmed_events),
+      'recommendation',CASE WHEN r.funding>0 THEN
+        'Recorded guarantee funding is an observed expense, not proof of an overlay-guard defect. Trace the original pre-start eligibility and registration decisions. Entry count now may include late entries; rebuys and subsequent prizes do not erase original funding.'
+        ELSE 'This is an entry-only estimate, not money proved paid. Inspect original funding and entry receipts before claiming an overlay or diagnosing the guard.' END);
+  END LOOP;
+  IF jsonb_array_length(v)>0 THEN
+    v:=v||jsonb_build_object('severity','info','category','logic','code','overlay_total',
+      'title','Recorded gross guarantee funding: '||round(total,2)||' across '||n||' event(s)',
+      'evidence',jsonb_build_object('events',n,'total_overlay',round(total,2),
+        'basis','gross_recorded_funding','detail_limit',10),
+      'recommendation','Total includes every funded event in the UTC start day, including events beyond the ten displayed details. It is gross recorded funding; entry-only estimates are excluded and reviewed returns are not netted.');
+  END IF;
+  RETURN v;
+END
+$overlay$;
+-- Source of truth is the funding receipt, even after late entry/rebuy changes.
+INSERT INTO tournaments VALUES ('00000000-0000-0000-0000-000000000001','Sunday',40000,180,'2026-10-25 18:00Z');
+INSERT INTO tournament_players SELECT '00000000-0000-0000-0000-000000000001' FROM generate_series(1,187);
+INSERT INTO chip_ledger VALUES
+ ('00000000-0000-0000-0000-000000000001','overlay','prize_liability',6700),
+ ('00000000-0000-0000-0000-000000000001','prize','prize_liability',99999),
+ ('00000000-0000-0000-0000-000000000001','overlay','club_treasury',99999);
+INSERT INTO tournament_guarantee_overlays VALUES ('00000000-0000-0000-0000-000000000001',6600);
+SET timezone='America/Los_Angeles';
+DO $$ DECLARE f jsonb; e jsonb; BEGIN
+ f:=fn_audit_overlays('2026-10-25');
+ SELECT x INTO e FROM jsonb_array_elements(f)x WHERE x->>'code'='tournament_overlay';
+ IF (e#>>'{evidence,funded_overlay}')::numeric IS DISTINCT FROM 6700
+ OR (e#>>'{evidence,entry_only_gap}')::numeric IS DISTINCT FROM 6340
+ OR (e#>>'{evidence,journal_overlay}')::numeric IS DISTINCT FROM 6700 THEN
+ RAISE EXCEPTION 'funding replaced by current entry estimate or duplicated: %',f; END IF;
+ IF (f->1#>>'{evidence,total_overlay}')::numeric IS DISTINCT FROM 6700 THEN RAISE EXCEPTION 'funding total incorrect'; END IF;
+END $$;
+-- Legacy funding wins when larger; both representations are still one funding.
+UPDATE tournament_guarantee_overlays SET amount=6800 WHERE tournament_id='00000000-0000-0000-0000-000000000001';
+DO $$ BEGIN IF (fn_audit_overlays('2026-10-25')->0#>>'{evidence,funded_overlay}')::numeric IS DISTINCT FROM 6800 THEN RAISE EXCEPTION 'legacy funding precedence lost'; END IF; END $$;
+-- Funding is retained even when later entries make the entry-only gap zero.
+INSERT INTO tournament_players SELECT '00000000-0000-0000-0000-000000000001' FROM generate_series(1,100);
+DO $$ BEGIN IF (fn_audit_overlays('2026-10-25')->0#>>'{evidence,funded_overlay}')::numeric IS DISTINCT FROM 6800 THEN RAISE EXCEPTION 'later entries erased actual funding'; END IF; END $$;
+-- All funded events contribute to the total, beyond the ten detail rows.
+INSERT INTO tournaments SELECT ('00000000-0000-0000-0000-'||lpad(i::text,12,'0'))::uuid,'Other',100,10,'2026-10-25 23:30Z' FROM generate_series(2,12)i;
+INSERT INTO tournament_guarantee_overlays SELECT id,10 FROM tournaments WHERE name='Other';
+INSERT INTO tournaments VALUES ('00000000-0000-0000-0000-000000000099','Outside',99999,10,'2026-10-26 00:00Z');
+INSERT INTO tournament_guarantee_overlays VALUES ('00000000-0000-0000-0000-000000000099',99999);
+DO $$ DECLARE f jsonb; e jsonb; BEGIN
+ f:=fn_audit_overlays('2026-10-25');
+ SELECT x INTO e FROM jsonb_array_elements(f)x WHERE x->>'code'='overlay_total';
+ IF jsonb_array_length(f)<>11 OR (e#>>'{evidence,total_overlay}')::numeric IS DISTINCT FROM 6910
+ OR (e#>>'{evidence,events}')::integer IS DISTINCT FROM 12 THEN RAISE EXCEPTION 'detail limit truncated total or UTC scope leaked: %',f; END IF;
+END $$;
+-- Missing funding is an estimate, never a proven expense or invented zero loss.
+INSERT INTO tournaments VALUES ('00000000-0000-0000-0000-000000000100','Unconfirmed',1000,10,'2026-10-24 01:00Z');
+DO $$ DECLARE f jsonb; BEGIN
+ f:=fn_audit_overlays('2026-10-24');
+ IF f->0->>'code' IS DISTINCT FROM 'tournament_overlay_estimate'
+ OR (f->0#>>'{evidence,funding_confirmed}')::boolean IS DISTINCT FROM false
+ OR (f->1#>>'{evidence,total_overlay}')::numeric IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'estimate claimed as real cost: %',f; END IF;
+ IF fn_audit_overlays('2026-10-23') <> '[]'::jsonb THEN RAISE EXCEPTION 'empty day invented funding'; END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.fn_audit_overlays(date) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_audit_overlays(date) TO service_role;
+DO $$ BEGIN
+ IF has_function_privilege('anon','public.fn_audit_overlays(date)','execute')
+ OR has_function_privilege('authenticated','public.fn_audit_overlays(date)','execute')
+ OR NOT has_function_privilege('service_role','public.fn_audit_overlays(date)','execute') THEN RAISE EXCEPTION 'overlay audit authorization changed'; END IF;
+END $$;
+SELECT 'horse_overlay_receipt_controls_passed';

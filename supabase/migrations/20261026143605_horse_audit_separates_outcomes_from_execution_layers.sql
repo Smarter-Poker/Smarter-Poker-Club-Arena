@@ -452,4 +452,75 @@ end
 $function$;
 REVOKE ALL ON FUNCTION public.fn_audit_layer_drift(date) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_audit_layer_drift(date) TO service_role;
+DO $overlay_guard$ BEGIN
+ IF md5(pg_get_functiondef('public.fn_audit_overlays(date)'::regprocedure)) IS DISTINCT FROM '71db43470bb256c8a54c899e03874c5e' THEN
+  RAISE EXCEPTION 'horse overlay audit preimage changed';
+ END IF;
+END $overlay_guard$;
+CREATE OR REPLACE FUNCTION public.fn_audit_overlays(p_day date)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $overlay$
+DECLARE v jsonb := '[]'::jsonb; r record; total numeric := 0; n integer := 0;
+BEGIN
+  FOR r IN
+    WITH eligible AS MATERIALIZED (
+      SELECT t.id,t.name,t.guaranteed_prize gtd,t.buy_in_amount bi,
+             (SELECT count(*) FROM public.tournament_players p WHERE p.tournament_id=t.id) entries
+      FROM public.tournaments t
+      WHERE t.guaranteed_prize>0 AND t.buy_in_amount>0
+        AND t.started_at >= p_day::timestamp AT TIME ZONE 'UTC'
+        AND t.started_at < (p_day+1)::timestamp AT TIME ZONE 'UTC'
+    ), funded AS (
+      SELECT e.*,
+        coalesce((SELECT sum(l.amount) FROM public.chip_ledger l
+          WHERE l.tournament_id=e.id AND l.category='overlay'
+            AND l.to_type='prize_liability'),0) journal,
+        coalesce((SELECT o.amount FROM public.tournament_guarantee_overlays o
+          WHERE o.tournament_id=e.id),0) legacy
+      FROM eligible e
+    ), measured AS (
+      -- Same funding precedence as tournament conservation: two records of
+      -- one funding are never added together. This is gross recorded funding,
+      -- not a claim about net cost after any reviewed return.
+      SELECT f.*,greatest(journal,legacy,0) funding,
+             greatest(gtd-entries*bi,0) entry_only_gap FROM funded f
+    ), counted AS (
+      SELECT m.*,sum(funding) OVER () all_funding,
+             count(*) FILTER (WHERE funding>0) OVER () funded_events,
+             count(*) FILTER (WHERE funding=0 AND entry_only_gap>0) OVER () unconfirmed_events
+      FROM measured m WHERE funding>0 OR entry_only_gap>0
+    )
+    SELECT * FROM counted ORDER BY funding DESC,entry_only_gap DESC,id LIMIT 10
+  LOOP
+    total:=r.all_funding; n:=r.funded_events;
+    v:=v||jsonb_build_object(
+      'severity',CASE WHEN r.funding>=200 THEN 'critical' ELSE 'warn' END,
+      'category','logic',
+      'code',CASE WHEN r.funding>0 THEN 'tournament_overlay' ELSE 'tournament_overlay_estimate' END,
+      'title',CASE WHEN r.funding>0 THEN r.name||' has '||round(r.funding,2)||' in recorded guarantee funding'
+                   ELSE r.name||' has an entry-only gap with unconfirmed funding' END,
+      'evidence',jsonb_build_object('tournament_id',r.id,'guarantee',r.gtd,'buy_in',r.bi,
+        'entries',r.entries,'entry_only_gap',r.entry_only_gap,
+        'funded_overlay',r.funding,'journal_overlay',r.journal,'legacy_overlay',r.legacy,
+        'funding_confirmed',r.funding>0,'basis','gross_recorded_funding',
+        'funded_events',r.funded_events,'unconfirmed_events',r.unconfirmed_events),
+      'recommendation',CASE WHEN r.funding>0 THEN
+        'Recorded guarantee funding is an observed expense, not proof of an overlay-guard defect. Trace the original pre-start eligibility and registration decisions. Entry count now may include late entries; rebuys and subsequent prizes do not erase original funding.'
+        ELSE 'This is an entry-only estimate, not money proved paid. Inspect original funding and entry receipts before claiming an overlay or diagnosing the guard.' END);
+  END LOOP;
+  IF jsonb_array_length(v)>0 THEN
+    v:=v||jsonb_build_object('severity','info','category','logic','code','overlay_total',
+      'title','Recorded gross guarantee funding: '||round(total,2)||' across '||n||' event(s)',
+      'evidence',jsonb_build_object('events',n,'total_overlay',round(total,2),
+        'basis','gross_recorded_funding','detail_limit',10),
+      'recommendation','Total includes every funded event in the UTC start day, including events beyond the ten displayed details. It is gross recorded funding; entry-only estimates are excluded and reviewed returns are not netted.');
+  END IF;
+  RETURN v;
+END
+$overlay$;
+REVOKE ALL ON FUNCTION public.fn_audit_overlays(date) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_audit_overlays(date) TO service_role;
 COMMIT;

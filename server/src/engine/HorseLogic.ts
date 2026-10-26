@@ -140,6 +140,7 @@ import {
   PLO_MIN_OPEN_BB,
   type PreflopPosition,
 } from './HorsePreflop.js';
+import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import {
   classifyTournamentPreflopBranch,
   tournamentMZone,
@@ -3963,7 +3964,11 @@ export class HorseLogic {
       return { decision };
     }).decision;
     decision = graph.run('wager_rules', decision, () => ({
-      decision: fullPotNearPotWager(riverNutsRaise(decision, player, gs), player, gs),
+      decision: fullPotNearPotWager(
+        riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+        player,
+        gs
+      ),
     })).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(
@@ -4972,6 +4977,15 @@ export class HorseLogic {
           : undefined,
       omahaSuitedPremium: suitedPremium,
       holdemPremiumPair,
+      effectiveStackBB: (() => {
+        let cover = 0;
+        for (const p of gs.players) {
+          if (p.seat === player.seat || p.is_folded) continue;
+          if (p.is_sitting_out && !p.is_all_in) continue;
+          cover = Math.max(cover, (p.stack ?? 0) + (p.bet ?? 0));
+        }
+        return Math.min(player.stack + player.bet, cover) / bb;
+      })(),
       v13: opts.v13 !== false,
       // V34: the button is not a second cutoff. classifyPosition merges the
       // two into 'late'; the dealer seat tells them apart exactly.

@@ -200,6 +200,9 @@ export interface PreflopCtx {
   omahaSuitedPremium?: 'aces' | 'kings';
   /** Exact Hold’em AA/KK, so score jitter cannot demote a value squeeze. */
   holdemPremiumPair?: boolean;
+  /** Effective stack in big blinds against the deepest live opponent
+   *  (2026-10-25 shove discipline). Undefined on legacy/offline callers. */
+  effectiveStackBB?: number;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -1542,6 +1545,22 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // 250bb is QQ+/AK at best, and QQ is already a coin flip against the
     // range that builds it.
     if (raises >= 3) {
+      // ═══ DEEP 5-BET DISCIPLINE (Dan 2026-10-25) ═══════════════════════
+      // Facing a 4-bet with 60bb+ effective in a tournament, only AA and KK
+      // put the stack in. Measured over 30 hours before this: 70 tournament
+      // 5-bet shoves at 100bb+ effective, QQ/JJ/TT/AK among them, averaging
+      // -18bb each; the range that 4-bets that deep is AA/KK-heavy, and QQ
+      // is a coin flip against it at best.
+      if (
+        isTourney &&
+        !ctx.isOmaha &&
+        (ctx.effectiveStackBB ?? 0) > 60 &&
+        ctx.holdemPremiumPair !== true
+      ) {
+        if (strength >= t(0.9) && toCall <= stack * 0.25) return { a: 'call' };
+        if (toCall === 0) return { a: 'check' };
+        return { a: 'fold' };
+      }
       if (strength >= t(Math.min(0.98, 0.95 + deepT))) return { a: 'jam' };
       if (strength >= t(0.88 + deepT) && toCall <= stack * 0.3) return { a: 'call' };
       if (toCall === 0) return { a: 'check' };

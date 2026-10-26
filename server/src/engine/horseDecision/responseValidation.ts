@@ -636,6 +636,36 @@ export interface HorseDecisionReceiptContext {
   gameState: HorseGameStateV2;
 }
 
+/** V58/V59 may cap a PLO6 river raise/jam at the call. When the original
+ * request is available, bind that de-escalation to its single board, legal
+ * call menu and exact additional-chip price. This does not re-run or relax
+ * the owner's equity rule, and never admits a new wager or another game. */
+function plo6RiverCallIsPriced(
+  selected: HorsePolicyAction,
+  context?: HorseDecisionReceiptContext
+): boolean {
+  if (selected.amount === null || selected.amount <= 0) return false;
+  // Retained context-free receipts cannot establish input provenance; they
+  // still have to carry the priced call and the PLO6 transition below.
+  if (context === undefined) return true;
+  const { player, gameState: gs } = context;
+  const toCall = Number.isFinite(gs.toCall)
+    ? Math.max(0, gs.toCall as number)
+    : Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
+  return (
+    String(gs.gameVariant).toLowerCase() === 'plo6' &&
+    gs.stage === 'river' &&
+    gs.communityCards?.length === 5 &&
+    (gs.boardCount ?? 1) === 1 &&
+    player.cards?.length === 6 &&
+    gs.legalActions?.includes('call') === true &&
+    Number.isFinite(player.stack) &&
+    toCall > 0.005 &&
+    toCall < player.stack - 0.005 &&
+    selected.amount === Math.round(toCall * 100) / 100
+  );
+}
+
 function policyGraphIsValid(
   value: RecordValue,
   expectedVariant?: string,
@@ -693,11 +723,19 @@ function policyGraphIsValid(
       previous !== null &&
       previous.action === 'fold' &&
       (context === undefined || shortAllInSpot(context.player, context.gameState) !== null);
+    const plo6RiverRaiseToCall =
+      transition.node === 'wager_rules' &&
+      variant === 'plo6' &&
+      transition.after.action === 'call' &&
+      previous !== null &&
+      ['raise', 'all_in'].includes(previous.action) &&
+      plo6RiverCallIsPriced(transition.after, context);
     if (
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
       !shortAllInCall &&
+      !plo6RiverRaiseToCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;

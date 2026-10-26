@@ -661,6 +661,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40'
   ),
   flag(
+    'holdemPremiumAggression',
+    'NLH premiums (QQ+, AK) never passive: raise preflop, keep betting postflop; dominated offsuit hands fold to a big 3-bet (Dan 2026-10-25); false only to ablate an older layer',
+    'Hold em premium aggression'
+  ),
+  flag(
     'ploPairedBoardFold',
     'PLO4/PLO5/PLO6 no full house on a paired flop, turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
     'PLO paired-board fold'
@@ -1866,6 +1871,24 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40',
     'decide_omaha',
     0.05
+  ),
+  receipt(
+    'holdem_dominated_3bet_fold',
+    'HorseLogic.decide (HorseHoldemPremiumAggression)',
+    'NLH offsuit dominated hand calling or raising a big 3-bet turned into a fold',
+    'Hold em premium aggression'
+  ),
+  receipt(
+    'holdem_premium_preflop_raise',
+    'HorseLogic.decide (HorseHoldemPremiumAggression)',
+    'NLH QQ+/AK limp, check or flat preflop turned into a standard raise',
+    'Hold em premium aggression'
+  ),
+  receipt(
+    'holdem_premium_postflop_bet',
+    'HorseLogic.decide (HorseHoldemPremiumAggression)',
+    'NLH overpair QQ+ or AK top pair check postflop turned into a value bet',
+    'Hold em premium aggression'
   ),
   receipt(
     'plo_paired_board_fold',

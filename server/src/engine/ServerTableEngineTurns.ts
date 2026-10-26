@@ -35,7 +35,12 @@ import type {
   ActionRecord,
 } from '../types.js';
 
-import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
+import {
+  HorseLogic,
+  holdemPremiumAggression,
+  resolveHorseStyle,
+  type HorseGameStateV2,
+} from './HorseLogic.js';
 import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
@@ -4265,7 +4270,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
             const guarded = fullPotNearPotWager(
               riverNutsRaise(
-                tournamentShoveDiscipline(decision, privateHero, commitState),
+                tournamentShoveDiscipline(
+                  holdemPremiumAggression(decision, privateHero, commitState),
+                  privateHero,
+                  commitState
+                ),
                 privateHero,
                 commitState
               ),

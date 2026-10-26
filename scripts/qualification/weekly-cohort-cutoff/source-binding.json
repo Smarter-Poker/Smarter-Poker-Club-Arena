@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237490,
-      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+      "bytes": 238118,
+      "sha256": "a2e2eb7ad9c83d5670af66bf0caf2a827f70397d69cf7f7eda03d215b3b9d84f"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,

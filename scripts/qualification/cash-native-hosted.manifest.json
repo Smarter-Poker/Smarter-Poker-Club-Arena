@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237490,
-      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+      "bytes": 238118,
+      "sha256": "a2e2eb7ad9c83d5670af66bf0caf2a827f70397d69cf7f7eda03d215b3b9d84f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,

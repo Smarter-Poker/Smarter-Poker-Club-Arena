@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/fixture-cleanup-root-01a178a9",
+  "_comment": "Declaration for protected-main-first migration 20261026174122. Not an observation of installation. The existing applier and independent catalog/history readback are required after protected merge.",
+  "functions": ["smarter_private.certification_retention_admission"]
+}

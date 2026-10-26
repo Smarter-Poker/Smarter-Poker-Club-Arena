@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Card } from '../types.js';
+import type { Card, SeatPlayer } from '../types.js';
+import type { HorseGameStateV2 } from './HorseLogic.js';
+import { hasRiverNuts, riverNutsRaise } from './HorseRiverNuts.js';
 import {
   boardHasPassedPremium,
   isPremiumMadeHand,
@@ -57,4 +59,36 @@ describe('premium value uses the best five cards', () => {
       )
     ).toBeNull();
   });
+});
+
+describe('the canonical final nuts rule does not resurrect board-only value', () => {
+  it.each(['9h 9c 9d 9s Ac', 'Th Jh Qh Kh Ah'])(
+    'does not force a bet when every holding ties %s',
+    (board) => {
+      const hero = {
+        seat: 1,
+        user_id: 'hero',
+        cards: cards('As Kd'),
+        stack: 1000,
+        bet: 0,
+      } as SeatPlayer;
+      const state = {
+        stateSchemaVersion: 1,
+        gameVariant: 'nlh',
+        stage: 'river',
+        communityCards: cards('9h 9c 9d 9s Ac'),
+        players: [hero, { ...hero, seat: 2, user_id: 'villain', cards: [] }],
+        pot: 100,
+        currentBet: 0,
+        toCall: 0,
+        bigBlind: 2,
+        minRaiseTo: 2,
+        maxRaiseTo: 1000,
+        legalActions: ['check', 'bet', 'all_in'],
+      } as HorseGameStateV2;
+      expect(hasRiverNuts(hero, state)).toBe(true);
+      expect(hasRiverNuts(hero, state, true)).toBe(false);
+      expect(riverNutsRaise({ action: 'check', thinkTime: 1 }, hero, state).action).toBe('check');
+    }
+  );
 });

@@ -114,3 +114,47 @@ export function isValidatedCorrectiveKernelCatalog(
 ): value is Readonly<CorrectiveKernelCatalog> {
   return !!value && typeof value === 'object' && validated.has(value);
 }
+
+/**
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `engine/HorseOwnerForcedActivation.ts`): the cash corrective catalog for the
+ * running code, issued by the owner instead of a signed holdout approval. Every
+ * definition check above still applies; only the approval is the owner's.
+ */
+export function ownerForcedCorrectiveKernelCatalog(
+  domain: CorrectiveReferenceDomain,
+  running: {
+    sourceRelease: string;
+    policyDigest: string | null;
+    baselineSelectionsDigest: string;
+    holdoutDigest: string;
+  }
+): Readonly<CorrectiveKernelCatalog> | null {
+  if (
+    !correctiveDomainIsValid(domain) ||
+    domain.format !== 'cash' ||
+    domain.mode !== 'cash' ||
+    !/^[a-f0-9]{40}$/.test(running.sourceRelease) ||
+    !sha256(running.policyDigest) ||
+    !sha256(running.baselineSelectionsDigest) ||
+    !sha256(running.holdoutDigest)
+  )
+    return null;
+  const catalog: CorrectiveKernelCatalog = {
+    version: CORRECTIVE_KERNEL_CATALOG_VERSION,
+    kind: 'original_state_function',
+    domain: { variant: domain.variant, format: domain.format, mode: domain.mode },
+    sourceRelease: running.sourceRelease,
+    kernelVersion: RIVER_CORRECTION_KERNEL.version,
+    modelVersion: RIVER_DECISION_MODEL.version,
+    policyDigest: running.policyDigest as string,
+    baselineSelectionsDigest: running.baselineSelectionsDigest,
+    holdoutDigest: running.holdoutDigest,
+    maximumConditionalProbability: RIVER_CORRECTION_KERNEL.conditionalProbability,
+    minimumModelGainBb: RIVER_CORRECTION_KERNEL.minimumModelGainBb,
+  };
+  Object.freeze(catalog.domain);
+  Object.freeze(catalog);
+  validated.add(catalog);
+  return catalog;
+}

@@ -32,6 +32,10 @@
  * heuristics (`calibratedConfidence: null`); a qualification is a paired
  * after-rake comparison against the deployed reference, not a solver claim.
  */
+import {
+  horseOwnerForcedAuthority,
+  withHorseOwnerForcedActivation,
+} from './HorseOwnerForcedActivation.js';
 import { posix } from 'node:path';
 import {
   canonical,
@@ -886,6 +890,36 @@ export function admitHorsePhase12ReleaseAuthority(
   }
 }
 
+/**
+ * The live Phase 12 admission for one pack.
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `HorseOwnerForcedActivation.ts`): the committed release selection when it
+ * admits or withdraws, otherwise the owner's authority for the running code.
+ * The worker and the main-thread gate both use it.
+ */
+export function admitHorsePhase12LiveAuthority(
+  variant: RemainingPolicyVariant,
+  nowMs = Date.now()
+): HorseAuthorityAdmission {
+  return withHorseOwnerForcedActivation(admitHorsePhase12ReleaseAuthority(variant, nowMs), () =>
+    isRemainingPolicyVariant(variant)
+      ? horseOwnerForcedAuthority({
+          phase: 'phase12',
+          variant,
+          continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
+          policyDigest: horsePhase12PolicyDigest(variant),
+          packId: REMAINING_VARIANT_PACKS[variant].version,
+          domain: remainingVariantStrengthPack(variant).domain,
+          contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
+          keyExtras: {
+            completionDefinition: HORSE_PHASE12_COMPLETION_DEFINITION,
+            completionFloor: HORSE_PHASE12_COMPLETION_FLOOR,
+          },
+        })
+      : null
+  );
+}
+
 /** The admitted Phase 12 authority for `variant`, or null. */
 export function selectedHorsePhase12Authority(
   variant: RemainingPolicyVariant,
@@ -937,7 +971,7 @@ export const liveHorsePhase12Authorities: Readonly<
     HORSE_PHASE12_VARIANTS.map((variant) => [
       variant,
       new HorsePhase8AuthorityGate(
-        () => admitHorsePhase12ReleaseAuthority(variant),
+        () => admitHorsePhase12LiveAuthority(variant),
         undefined,
         REMAINING_VARIANT_PACKS[variant].version
       ),

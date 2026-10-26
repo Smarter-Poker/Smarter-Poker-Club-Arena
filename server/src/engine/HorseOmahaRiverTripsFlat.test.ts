@@ -61,7 +61,14 @@ function spot(variant = 'plo4', street = 'river', dry = false) {
   } as HorseGameStateV2;
   return { hero, gs };
 }
-function decide(seed: number, on: boolean, variant = 'plo4', street = 'river', dry = false) {
+function decide(
+  seed: number,
+  on: boolean,
+  variant = 'plo4',
+  street = 'river',
+  dry = false,
+  extra: Record<string, unknown> = {}
+) {
   const { hero, gs } = spot(variant, street, dry);
   seedFastRandom(seed * 977);
   const d = HorseLogic.decide(
@@ -69,18 +76,31 @@ function decide(seed: number, on: boolean, variant = 'plo4', street = 'river', d
     gs,
     'balanced',
     {},
-    { mind: false, telemetry: false, v55OmahaRiverTripsFlat: on }
+    { mind: false, telemetry: false, v55OmahaRiverTripsFlat: on, ...extra }
   );
   return { action: d.action, amount: d.amount };
 }
 describe('V55 Omaha river trips flat', () => {
-  it.each(['plo4', 'plo5', 'plo6'])(
+  it.each(['plo4', 'plo5'])(
     'retains a priced call without escalating a river set in %s',
     (variant) => {
       for (let seed = 1; seed <= 40; seed++)
         expect(decide(seed, true, variant)).toEqual({ action: 'call', amount: 37.64 });
     }
   );
+  it('retains a priced call without escalating a river set in plo6 when V59 is off', () => {
+    for (let seed = 1; seed <= 40; seed++)
+      expect(decide(seed, true, 'plo6', 'river', false, { v59Plo6RiverUnpaired: false })).toEqual({
+        action: 'call',
+        amount: 37.64,
+      });
+  });
+  it('PLO6 owner ruling (V59, 2026-10-25): this set folds to the pot-sized river bet', () => {
+    // A random six-card hand beats aces here ~32% of the time (any 5 with a
+    // 2 or a 6 is a straight); measured unpaired PLO6 river calls in that
+    // class won 17% (docs/changelog/2026-10-25-plo6-river-unpaired-discipline.md).
+    for (let seed = 1; seed <= 40; seed++) expect(decide(seed, true, 'plo6').action).toBe('fold');
+  });
   it('reproduces the recorded re-shove with the switch off', () => {
     for (let seed = 1; seed <= 40; seed++) expect(decide(seed, false).action).toBe('all_in');
   });

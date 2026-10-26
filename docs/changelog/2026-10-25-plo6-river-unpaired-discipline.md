@@ -44,3 +44,9 @@ Switch `v59Plo6RiverUnpaired`, default on; paired boards keep
 Telemetry `v59_plo6_river_unpaired_fold`,
 `v59_plo6_river_unpaired_raise_to_call`. Pinned in
 `server/src/engine/HorsePlo6RiverNuts.test.ts`.
+
+Test updated by this owner ruling: the PLO6 case of
+`HorseOmahaRiverTripsFlat.test.ts` (V55). Its set of aces on 4c 3s 7d Jc As is
+beaten by a random hand ~32% of the time (any 5 with a 2 or a 6), so it now
+folds to the pot-sized river bet; with `v59Plo6RiverUnpaired: false` it keeps
+V55's flat call, and PLO4 and PLO5 keep V55's ruling unchanged.

@@ -205,11 +205,26 @@ try:
  pending=json.loads(sql("SELECT public.fn_union_pnl_inventory_checkpoint_due();").stdout)
  assert pending['status']=='sealing' and len(pending['sealed'])==1 and pending['progress']['stage']=='pending_boundary',pending
  assert sql("SELECT last_kind,last_source,last_row,last_event FROM public.union_pnl_inventory_seal_builds WHERE boundary='2026-10-12 07:00Z';").stdout==retained
- for i in range(10):
+ # THE BUDGET IS DERIVED FROM THE BOUNDARIES DUE, NEVER A CONSTANT (2026-10-26).
+ # fn_union_pnl_inventory_checkpoint_due walks every closed week from the fixed
+ # 2026-10-12 build to this Monday, so the number of boundaries it must seal
+ # grows by one every week while this fixture stands still. Each boundary takes
+ # a bounded number of chunked calls (measured 2026-10-26 on this fixture: one
+ # pending_boundary answer and three committed_build_page answers). A constant
+ # budget of ten covered two boundaries (seven calls) through 2026-10-25 and
+ # refused three (eleven calls) from Monday 2026-10-26 07:00 UTC, failing every
+ # shard 3/4 on main and every pull request behind it. The loop below asks the
+ # database how many boundaries are due and allows five calls for each.
+ due_boundaries=int(sql("WITH RECURSIVE w(b) AS (SELECT '2026-10-12 07:00Z'::timestamptz UNION ALL SELECT public.fn_union_week_start(b+interval '8 days') FROM w WHERE public.fn_union_week_start(b+interval '8 days')<=clock_timestamp()) SELECT count(*) FROM w;").stdout.strip())
+ assert due_boundaries>=2,due_boundaries
+ budget=5*due_boundaries
+ for i in range(budget):
   due=json.loads(sql("SELECT set_config('app.weekly_accounting_chunked','on',false);SELECT public.fn_union_pnl_inventory_checkpoint_due();").stdout.splitlines()[-1])
   if due['status']=='ready':break
   assert due['status']=='sealing',due
- else:raise AssertionError('Backlog never reached truthful readiness')
+ else:raise AssertionError(f'Backlog never reached truthful readiness: {due_boundaries} boundaries due, {budget} chunked calls allowed')
+ # Readiness is truthful only when every due week carries its checkpoint.
+ assert sql("SELECT count(*) FROM public.union_pnl_inventory_checkpoints WHERE boundary>='2026-10-12 07:00Z';").stdout.strip()==str(due_boundaries),due_boundaries
  assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='35000'
  # Actual population source names must prove nonempty consumer equivalence.
  sql('CREATE DATABASE population;');database='population'

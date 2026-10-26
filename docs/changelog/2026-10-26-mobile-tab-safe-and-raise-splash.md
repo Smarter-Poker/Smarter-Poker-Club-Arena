@@ -11,3 +11,5 @@ Cause: mobile overrides reduced targets to 32/34px; top spacing trusted reported
 Pre-publication verification: TypeScript app compilation passed; 143 focused tests across 12 suites passed; all four copy gates and canonical policy check passed. Chromium/WebKit: 28 browser checks passed, covering 320/375/393/430px, insets 0/24/59, actual pointer clicks and native OfflineAudioContext output. The new layout regression failed against the previous CSS at 393px/inset24: control top 28px, below the required 48px minimum. Restored candidate passes. Raise is bounded to under 240ms, unclipped and has over twice the call's low-frequency energy fraction. Required publisher secret metadata exists.
 
 Policy reread before validation at 2026-10-26T21:28:47Z: same v2.9 and hashes above. Hosted checks, protected merge, publication and live proof pending.
+
+Final candidate refinement: installed portrait clearance uses a 60px minimum so a zero/undersized inset also clears larger iPhone status areas. Pinned bars still pay zero additional inset beneath a measured global header. Browser regression now requires the 60px boundary. No sound change from the successfully tested bundle.

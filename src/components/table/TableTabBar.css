@@ -1059,6 +1059,6 @@
    Reserve that band once, at the topmost strip. Landscape uses the real inset. */
 @media (display-mode: standalone) and (orientation: portrait) {
   :root {
-    --sp-tabbar-safe-top: max(48px, env(safe-area-inset-top, 0px));
+    --sp-tabbar-safe-top: max(60px, env(safe-area-inset-top, 0px));
   }
 }

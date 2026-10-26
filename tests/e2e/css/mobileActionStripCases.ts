@@ -39,7 +39,7 @@ export function registerMobileActionStripCases() {
         for (const name of ['Menu', 'PLO', 'Lobby', 'Add', 'Game Lobby']) {
           const button = page.getByRole('button', { name, exact: true });
           const box = await button.boundingBox();
-          expect(box!.y).toBeGreaterThanOrEqual(Math.max(48, inset));
+          expect(box!.y).toBeGreaterThanOrEqual(Math.max(60, inset));
           expect(box!.height).toBeGreaterThanOrEqual(44);
           expect(box!.width).toBeGreaterThanOrEqual(44);
           await button.click();

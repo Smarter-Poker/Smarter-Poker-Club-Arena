@@ -2210,6 +2210,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-tournament-fee-sources.sh
+      - name: Weekly refusal checks preserve scope through the indexed receipt cover
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-refusal-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
       - name: Weekly accounting documents preserve exact scope and concurrent issuance
         if: matrix.shard == 1
         env:

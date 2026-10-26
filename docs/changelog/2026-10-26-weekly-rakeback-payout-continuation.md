@@ -1,0 +1,11 @@
+# Weekly rakeback payout continuation
+
+The week ending October 26 remains unpaid as of 09:34 Chicago. The inherited scheduling migration is now installed through Apply Merged Migration run 40339471903; all three declared live proofs passed. The temporary job 506 remains active while the books are incomplete. It was created by the previous agent at 08:44 Chicago and must be removed after the close finishes.
+
+A self-aborting Midway preparation probe exhausted 60 seconds in `fn_cash_source_refusals_for_period`, before calculation. The global blocked queue held 137,425 work rows and the receipt heap occupied 5,468 MB. The new migration builds a compact receipt identity/time/scope cover concurrently, then changes only that function's query to filter through the cover before fetching reason details. It preserves the original result, including unknown scope, nonfinite dates, duplicate pointers and inconsistent work/receipt status. No payout calculation or schedule changes.
+
+Lightning's only refused source for this week was a stale October 24 lock timeout. The existing `fn_process_cash_accounting_source` succeeded in a self-aborting probe and then committed receipt `3718e7dd-16fa-42d1-af22-53912839be5f` on attempt 2. Readback confirms accrued status, no error, and 0.02 total rake attribution across three recorded contributors. This cleared earning evidence through its normal idempotent authority; it did not pay weekly rakeback. No balances or ledger rows were hand-written.
+
+Native PostgreSQL qualification compares the original and changed function under custom and generic plans across 6,000 receipt cases, including boundary dates, unknown/foreign/NULL scopes, duplicate pointers and work/receipt status disagreement. It verifies rollback, unchanged function metadata and a scope probe with zero receipt heap fetches. The existing accounting CI job runs this qualification.
+
+Payout completion, per-role totals, payment uniqueness, retirement of job 506, the new cover installation and measured live improvement remain pending. Agents receive commission in `agents.agent_wallet_balance`; player rakeback reaches `club_members.chip_balance`. Split historical payers may create multiple legitimate ledger legs for one player, so duplication must be checked by period payout and payer/idempotency key, not by requiring one ledger row per person.

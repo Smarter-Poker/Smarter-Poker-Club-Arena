@@ -13,19 +13,49 @@ const branch = ts.transpile(page.slice(start, end), { target: ts.ScriptTarget.ES
 function placeholder(
   rowStack: number | null,
   pendingStack = 400,
-  lightningWaitingSeat: { status: string; stack: number | null } | null = null
+  lightningWaitingSeat: { status: string; stack: number | null } | null = null,
+  /* Lightning transition, phase 1: the Lightning waiting chair's face, worked
+     out above the seat loop (lightningStandInIdentity). Null at Classic. */
+  lightningStandIn: { name: string; avatar: string; frame?: string; aura?: string } | null = null
 ) {
   return new Function(
     'heroRowStack',
     'pendingSeatStackRef',
     'lightningWaitingSeat',
+    'lightningStandIn',
     `let displayPlayer = null;
      const pendingSeat = null, seatNumber = 8, tableState = { heroSeat: 8 };
      const userId = 'hero', username = 'Player', heroAvatarUrl = '';
      ${branch}
      return displayPlayer;`
-  )(rowStack, { current: pendingStack }, lightningWaitingSeat);
+  )(rowStack, { current: pendingStack }, lightningWaitingSeat, lightningStandIn);
 }
+
+describe('hero placeholder identity', () => {
+  it('a Classic stand-in is the username with no cosmetics, as before', () => {
+    const chair = placeholder(100);
+    expect(chair.name).toBe('Player');
+    expect(chair.frame).toBeUndefined();
+    expect(chair.aura).toBeUndefined();
+  });
+  it("a Lightning waiting chair wears the hand's alias, frame and aura", () => {
+    const chair = placeholder(
+      null,
+      0,
+      { status: 'active', stack: 250 },
+      { name: 'The Closer', avatar: '/a.webp', frame: 'frame-gold', aura: 'aura-fire' }
+    );
+    expect(chair).toMatchObject({
+      name: 'The Closer',
+      avatar: '/a.webp',
+      frame: 'frame-gold',
+      aura: 'aura-fire',
+      stack: 250,
+      status: 'active',
+      isHero: true,
+    });
+  });
+});
 
 describe('hero placeholder stack', () => {
   it('marks an unknown Lightning stack pending while preserving confirmed zero', () => {

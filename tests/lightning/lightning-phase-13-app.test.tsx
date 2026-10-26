@@ -4,9 +4,10 @@
  *
  *   - joins closed: JOIN LIGHTNING is shown and not offered, on the entry page
  *     ("Lightning Is Not Taking New Players Right Now.") and on the lobby card;
- *   - a draining Cluster: the room says "Lightning Is Ending. Your Game
- *     Returns To MUST MOVE After This Hand." while the engine says it is
- *     ending; a paused one says nothing technical;
+ *   - a draining Cluster: the room says "Lightning Is Ending. Your Seat Is
+ *     Kept." while the engine says it is ending (the words used to promise
+ *     "After This Hand"; measured endings take 21 to 80 seconds, so that
+ *     promise was replaced 2026-10-26); a paused one says nothing technical;
  *   - the drain's ending (exit_reason lightning_drained) has its own words and
  *     VIEW GAME to the seat that remains;
  *   - LIGHTNING FOLD / FOLD & WATCH switched off are never offered;
@@ -304,9 +305,7 @@ describe('a draining Cluster: the room is told, in plain words', () => {
       ).toBe(true);
     });
     expect(screen.getByTestId('lightning-ending').textContent).toBe(LIGHTNING_ENDING_TEXT);
-    expect(LIGHTNING_ENDING_TEXT).toBe(
-      'Lightning Is Ending. Your Game Returns To MUST MOVE After This Hand.'
-    );
+    expect(LIGHTNING_ENDING_TEXT).toBe('Lightning Is Ending. Your Seat Is Kept.');
     act(() => {
       noteLightningUserEvent({
         type: 'lightning_cluster_status',
@@ -355,9 +354,11 @@ describe('a draining Cluster: the room is told, in plain words', () => {
 
   it('TablePage mounts the ending line in the Lightning room, beside Next Hand, with no navigation', () => {
     const page = read('src/pages/TablePage.tsx');
-    expect(page).toMatch(
-      /\{lightningRoom \? <LightningEndingNotice clusterId=\{lightningRoom\.clusterId\} \/> : null\}/
-    );
+    /* Lightning transition, phase 1: both lines are one felt-level layer of a
+       Lightning room, not a footer branch the between-hands bar shadowed. */
+    const layer = sliceEnclosingBlock(page, 'className="lightning-felt-notices"');
+    expect(layer).toContain('<LightningNextHand');
+    expect(layer).toContain('<LightningEndingNotice clusterId={lightningRoom.clusterId} />');
     const notice = blankNonCode(read('src/components/table/LightningEndingNotice.tsx'));
     expect(notice).not.toMatch(/navigate|useNavigate|location\.|window\.open/);
     // Law 10.6: the page's handler-bound return navigations are still exactly two.

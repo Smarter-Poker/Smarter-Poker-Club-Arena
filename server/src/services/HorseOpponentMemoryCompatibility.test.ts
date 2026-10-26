@@ -4,9 +4,12 @@ import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 import { createClient } from '@supabase/supabase-js';
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), fire: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: h }));
+// Partial mock: HorseOpponentMemory also imports isOpponentMemoryBusyRefusal and
+// reportThrottled (#8112). A factory that returns only reportError fails at import.
 vi.mock('./errorReporter.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./errorReporter.js')>()),
   reportError: vi.fn(),
+  reportThrottled: vi.fn(),
 }));
 vi.mock('../engine/BrainTelemetry.js', () => ({ noteFire: h.fire }));
 const uid = '94000000-0000-4000-8000-000000000001';

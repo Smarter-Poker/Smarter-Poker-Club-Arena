@@ -18,9 +18,12 @@ vi.mock('../src/services/supabase.js', () => ({
     }),
   },
 }));
+// Partial mock: HorseOpponentMemory also imports isOpponentMemoryBusyRefusal and
+// reportThrottled (#8112). A factory that returns only reportError fails at import.
 vi.mock('../src/services/errorReporter.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/services/errorReporter.js')>()),
   reportError: () => {},
+  reportThrottled: () => {},
 }));
 import {
   createDecisionOpponentProfileReader,

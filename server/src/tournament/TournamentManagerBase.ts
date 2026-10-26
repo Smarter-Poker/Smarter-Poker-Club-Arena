@@ -1120,6 +1120,17 @@ export abstract class TournamentManagerBase {
    * resumeFromBreak (this one is over).
    */
   protected breakCountdownStarted: boolean = false;
+  /**
+   * When THIS :55 break's countdown ends, once it has started (0 otherwise).
+   *
+   * Dan, 2026-10-25: "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT
+   * HAPPENS TO BE AT THE SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES, THEY
+   * ARE NOT THE SAME BREAK". An add-on that comes due while the field is
+   * already away for the :55 break opens inside it and runs to this instant,
+   * instead of waiting for the break to end and stopping every table again.
+   * Set with breakCountdownStarted, cleared with it.
+   */
+  protected synchronizedBreakEndsAtMs = 0;
   private breakResumePersisting = false;
   /** Retain the exact proposal if its database acknowledgement is lost. */
   private pendingBreakResumeClock: {
@@ -3487,6 +3498,7 @@ export abstract class TournamentManagerBase {
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
     // is allowed to stamp an end time exactly once. See breakCountdownStarted.
     this.breakCountdownStarted = false;
+    this.synchronizedBreakEndsAtMs = 0;
 
     // Save remaining blind timer time
     // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
@@ -3687,6 +3699,7 @@ export abstract class TournamentManagerBase {
      */
     if (this.breakCountdownStarted) return;
     this.breakCountdownStarted = true;
+    this.synchronizedBreakEndsAtMs = deadlineMs;
     const endsAt = new Date(deadlineMs).toISOString();
     try {
       await supabase
@@ -3710,6 +3723,12 @@ export abstract class TournamentManagerBase {
       synchronized: true,
     });
     if (!this.lifecycleIsCurrent(lifecycle)) return;
+    // An add-on that came due during the last hand of this break opens now,
+    // inside the break, and runs to its end (see synchronizedBreakEndsAtMs).
+    if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
+      this.pendingAddOnPeriod = false;
+      await this.triggerAddOnPeriod();
+    }
   }
 
   /**
@@ -4057,6 +4076,7 @@ export abstract class TournamentManagerBase {
     }
     this.onBreak = false;
     this.breakCountdownStarted = false;
+    this.synchronizedBreakEndsAtMs = 0;
     if (!this.running) return;
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
@@ -4400,7 +4420,10 @@ export abstract class TournamentManagerBase {
         if (!this.lifecycleIsCurrent(lifecycle)) return false;
       }
       if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
-        if (this.onBreak) {
+        // During the :55 break's last hand the break's end is not known yet:
+        // beginBreakCountdown opens the add-on the moment it is. Once the
+        // countdown is running the add-on opens now, inside the break.
+        if (this.onBreak && !this.breakCountdownStarted) {
           this.pendingAddOnPeriod = true;
         } else {
           await this.triggerAddOnPeriod();
@@ -7883,6 +7906,7 @@ export abstract class TournamentManagerBase {
           // The end time is already fixed for this break — whether it came off
           // the row or was reconstructed above — so nothing may re-stamp it.
           this.breakCountdownStarted = true;
+          this.synchronizedBreakEndsAtMs = breakEndsAt;
           // The persisted remainder was restored without arming a level
           // timer, so preserve it until resumeFromBreak releases this pause.
           if (!restoredLevelClockSuspended) this.suspendLevelClock();
@@ -10772,6 +10796,27 @@ export abstract class TournamentManagerBase {
     return minutes * 60_000;
   }
 
+  /**
+   * The end of the :55 break this add-on opens inside, or 0 (Dan 2026-10-25:
+   * "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT HAPPENS TO BE AT THE
+   * SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES").
+   *
+   * Only a break whose countdown is running has a known end. The bound is the
+   * break itself plus its last-hand grace, so a stale instant can never stretch
+   * an offer past one real break. The persisted window then runs to the
+   * break's end and its final configured minute is still the add-on break
+   * (addOnBreakStartMs): the :55 break holds every table until then and the
+   * add-on break takes the hold over, so play resumes once, at the break end.
+   */
+  private coincidingSynchronizedBreakEndMs(openingMs: number): number {
+    if (!this.onBreak || !this.breakCountdownStarted) return 0;
+    const endMs = this.synchronizedBreakEndsAtMs;
+    if (!Number.isFinite(endMs) || endMs <= openingMs) return 0;
+    const ceilingMs =
+      TournamentManagerBase.BREAK_DURATION_MS + TournamentManagerBase.LAST_HAND_GRACE_MS;
+    return endMs - openingMs <= ceilingMs ? endMs : 0;
+  }
+
   /** The persisted window's final segment is its one add-on break. */
   private addOnBreakStartMs(endsAt: string | null | undefined): number {
     const endMs = Date.parse(String(endsAt ?? ''));
@@ -11533,6 +11578,12 @@ export abstract class TournamentManagerBase {
         // The offer does not exist until every current hand has settled.
         // onPauseReady re-enters this exact operation when the last one parks.
         if (!this.areAllTablesParked()) return;
+        // Parked for the :55 break's last hand, before its countdown has an
+        // end: the countdown's start opens this add-on inside the break.
+        if (this.onBreak && !this.breakCountdownStarted) {
+          this.pendingAddOnPeriod = true;
+          return;
+        }
       }
       const requestedStart = new Date().toISOString();
       const requestedStartMs = Date.parse(requestedStart);
@@ -11568,7 +11619,10 @@ export abstract class TournamentManagerBase {
       const windowAnchorMs = fromStart ? Math.max(advertisedStartMs, requestedStartMs) : NaN;
       const requestedEndMs = fromStart
         ? windowAnchorMs + lateRegMs + this.addOnBreakDurationMs()
-        : requestedStartMs + this.addOnBreakDurationMs();
+        : Math.max(
+            requestedStartMs + this.addOnBreakDurationMs(),
+            this.coincidingSynchronizedBreakEndMs(requestedStartMs)
+          );
       if (!Number.isFinite(requestedEndMs) || requestedEndMs <= requestedStartMs) {
         throw new Error('the requested add-on window does not end after it starts');
       }

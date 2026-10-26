@@ -1,10 +1,5 @@
 name: Weekly refusal receipt cover
 
-on: the exact production
-# definitions captured 2026-10-22 (pg_get_functiondef md5 equal to the live
-# functions) answer every fixture, the migration is installed, and every answer
-# must be identical, owners and grants unchanged, a second install refused.
-# No timer (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
 on:
   pull_request:
     branches: [main]

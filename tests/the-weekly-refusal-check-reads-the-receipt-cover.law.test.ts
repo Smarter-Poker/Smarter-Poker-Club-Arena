@@ -1,3 +1,4 @@
+import { parse } from 'yaml';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -27,5 +28,10 @@ describe('the weekly refusal check reads the receipt cover', () => {
     expect(native).toContain('assert answers()==baseline');
     expect(native).toContain("n['Heap Fetches']==0");
     expect(native).toContain('forced_rollback');
+  });
+  it('parses a runnable pull request workflow', () => {
+    const workflow = parse(readFileSync('.github/workflows/weekly-refusal-cover.yml', 'utf8'));
+    expect(workflow.on.pull_request.paths).toContain('supabase/migrations/**');
+    expect(workflow.jobs['weekly-refusal-cover'].steps.length).toBeGreaterThan(2);
   });
 });

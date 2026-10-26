@@ -1274,6 +1274,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Required payment-outage correction under PUBLISHING.md exception: original attribution-change reporter spent231.335s rebuilding2000hands and larger batches rolledback at240s. Set-based original statement-trigger body retains affected daily keys, rake and hand sums, original earned-time boundary, NULL handling and warning rollback. Native12000rows10casesUTC/LA parity, rollback and warning atomicity passed; focusedlaws andnormalprepushpassed before application. Originaltriggerremainsenabled; no wallets, financialsource rows, payout route or schedule changed. Installer committed121ms and livehistoryMD5 matches bytes; protectedrecording follows immediately."
+    },
+    {
+      "version": "20261026213150",
+      "name": "daily_reporting_reads_hand_time_only_for_a_cutoff",
+      "file": "supabase/migrations/20261026213150_daily_reporting_reads_hand_time_only_for_a_cutoff.sql",
+      "md5": "e7543f2276396bfa2618c1a38b080381",
+      "appliedToProductionAt": "2026-10-26T21:32:55Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Exact qualified file atomically recorded in schema_migrations.statements by maintained installer",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
+      "refusedBy": [],
+      "liveVerdict": "Necessary ongoing rakeback payment-outage prerequisite under PUBLISHING exception. Original eager LEFT JOIN hand lookup made corrected daily reporting exceed240s. Equivalent CASE with EXISTS reads hand time only when a cutoff exists; all actual active club cutoffs absent. Native12000row/10case original parity, rollback, NULLs/missing records and UTC/LA behavior passed;5focusedlaws andnormalprepushpassed d789ac75ae. Read-only exact682affected-key query completed23.421s instead of240s timeout. No financial sources, wallets, payout route, schedules or disabled guards. Installer159ms committedexacthistory; nextsourcecommitrecordsproductionbyteMD5."
     }
   ]
 }

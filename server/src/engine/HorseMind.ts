@@ -10,7 +10,14 @@ import {
   type MemoryMode,
   type MemorySize,
 } from './HorseOpponentMemory.js';
-import { respectWinner } from './HorseWinnerRead.js';
+import {
+  respectWinner,
+  createWinnerReadState,
+  snapshotWinnerReads,
+  runWithWinnerReadState,
+  resetWinnerReads,
+  type HorseWinnerReadState,
+} from './HorseWinnerRead.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -276,6 +283,8 @@ function evictOldest<K>(store: Map<K, unknown> | Set<K>, cap: number): K[] {
 /** A spare, isolated set of HorseMind's state containers (V12.2). Opaque to
  *  callers — create with HorseMind.createSandbox(), use via runInSandbox(). */
 export interface HorseMindSandbox {
+  /** Absent only on predecessor snapshots; never falls through to live reads. */
+  winnerReads?: HorseWinnerReadState;
   stats: Map<string, OpponentStats>;
   seenActions: Set<string>;
   handFlags: Set<string>;
@@ -1004,6 +1013,7 @@ export class HorseMind {
 
   /** Test hook: wipe all memory. */
   static reset(): void {
+    resetWinnerReads();
     this.stats.clear();
     this.seenActions.clear();
     this.handFlags.clear();
@@ -1302,6 +1312,7 @@ export class HorseMind {
     )
       throw new Error('HorseMind.snapshotDecisionReads: invalid boundary');
     const view = this.createSandbox();
+    view.winnerReads = snapshotWinnerReads(ids);
     for (const id of ids) {
       const stats = this.stats.get(id);
       if (stats) view.stats.set(id, { ...stats });
@@ -1407,7 +1418,7 @@ export class HorseMind {
     this.decisionScope = null;
     this.decisionVariant = null;
     try {
-      return fn();
+      return runWithWinnerReadState((sandbox.winnerReads ??= createWinnerReadState()), fn);
     } finally {
       this.stats = live.stats;
       this.seenActions = live.seenActions;

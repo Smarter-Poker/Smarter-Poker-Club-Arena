@@ -1,6 +1,7 @@
 import { uuid } from '../utils/uuid';
 import { supabase } from '../lib/supabase';
 import { cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
+import { awaitQueuedCashouts, hasQueuedCashout } from './queuedCashoutWatcher';
 
 export interface CashBuyInIntent {
   p_user_id: string;
@@ -321,6 +322,8 @@ export async function executeCashBuyIn(
   try {
     if (recovery && (await checkReceipt(attempt, ownedRpc)))
       return { kind: 'confirmed', fromReceipt: true };
+    // A leave finishing its last hand returns its seat and chips first.
+    if (hasQueuedCashout()) await awaitQueuedCashouts();
     const { data, error } = await boundedRequest(
       'atomic_table_buyin',
       { ...attempt.payload },

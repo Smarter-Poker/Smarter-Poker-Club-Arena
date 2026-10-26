@@ -47,6 +47,7 @@ import haptic from '../../services/HapticService';
 import {
   EMPTY_AFFILIATIONS,
   FUZZY_MIN_CHARS,
+  QUERY_MAX_CHARS,
   PlayerSearchService,
   type PlayerClubAffiliation,
   type PlayerPresenceFilter,
@@ -146,7 +147,7 @@ export default function FindPlayerModal({
 
   const runSearch = useCallback(
     async (query: string, offset = 0, append = false) => {
-      const normalized = query.trim();
+      const normalized = query.trim().slice(0, QUERY_MAX_CHARS).trim();
       if (normalized.length < 2) {
         setError('Enter at least two characters.');
         return;
@@ -237,7 +238,10 @@ export default function FindPlayerModal({
     [presence, scope]
   );
 
-  const handleInputChange = (value: string) => {
+  const handleInputChange = (raw: string) => {
+    // maxLength already stops typing and pasting past the limit; this also covers
+    // autofill and anything else that sets the value without going through it.
+    const value = raw.slice(0, QUERY_MAX_CHARS);
     setSearchQuery(value);
     setError(null);
     if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
@@ -432,6 +436,7 @@ export default function FindPlayerModal({
                 type="search"
                 className={styles.input}
                 placeholder="Name, Alias Or Player Number"
+                maxLength={QUERY_MAX_CHARS}
                 value={searchQuery}
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={(event) => {

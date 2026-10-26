@@ -140,6 +140,7 @@ import {
   PLO_MIN_OPEN_BB,
   type PreflopPosition,
 } from './HorsePreflop.js';
+import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import {
   classifyTournamentPreflopBranch,
   tournamentMZone,
@@ -233,6 +234,7 @@ import {
   nextCardOutlook,
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
+import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
@@ -1971,6 +1973,10 @@ export interface HorseDecideOpts {
    *  board, and non-nut made hands stop firing pot on the turn and river.
    *  Disable to ablate (default: enabled). */
   v40Omaha?: boolean;
+  /** Dan 2026-10-25: PLO5/PLO6 never call off without a full house on a
+   *  paired turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
+   *  false exists only so an ablation can measure an older layer alone. */
+  ploPairedBoardFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
@@ -2948,6 +2954,46 @@ function enforceAuthoritativeDecision(
   return { action: wagerAction, amount, thinkTime: 0 };
 }
 
+/**
+ * Dan 2026-10-25: in PLO5/PLO6 a horse without a full house never calls or
+ * raises a committing bet on a paired turn or river. See
+ * HorsePloPairedBoardFold.ts. Applied after every other layer so no later
+ * tweak to an equity cap can reopen the call.
+ */
+function pairedBoardFold(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  if (opts.ploPairedBoardFold === false) return decision;
+  if (decision.action !== 'call' && decision.action !== 'raise' && decision.action !== 'all_in') {
+    return decision;
+  }
+  const hiLo = gs.variantRules
+    ? gs.variantRules.splitLow8OrBetter
+    : variantInfo(gs.gameVariant).isHiLo;
+  const mustFold = ploPairedBoardMustFold({
+    gameVariant: gs.gameVariant,
+    hiLo,
+    multiBoard: !!(gs.communityCards2?.length || gs.communityCards3?.length),
+    board: gs.communityCards ?? [],
+    hero: player,
+    players: gs.players ?? [],
+    currentBet: gs.currentBet,
+    toCall: gs.toCall,
+    pot: gs.pot,
+  });
+  if (!mustFold) return decision;
+  if (telemetryOn(opts)) noteFire('plo_paired_board_fold');
+  if (Array.isArray(gs.legalActions) && !gs.legalActions.includes('fold')) return decision;
+  // Keep the brain's own think time: a fold that snaps faster than the call
+  // it replaced would be a tell.
+  const folded: HorseDecision = { ...decision, action: 'fold' };
+  delete folded.amount;
+  return folded;
+}
+
 export class HorseLogic {
   static decide(
     player: SeatPlayer,
@@ -3000,12 +3046,22 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return this.decideInternal(player, gameState, style, mods, opts);
+          return pairedBoardFold(
+            this.decideInternal(player, gameState, style, mods, opts),
+            player,
+            gameState,
+            opts
+          );
         } finally {
           setEquityDepth(1);
         }
       }
-      return this.decideInternal(player, gameState, style, mods, opts);
+      return pairedBoardFold(
+        this.decideInternal(player, gameState, style, mods, opts),
+        player,
+        gameState,
+        opts
+      );
     } catch (err) {
       // Absolute safety net: never let a horse hang the table.
       // V13: it used to swallow the error entirely. This is the innermost and
@@ -3914,7 +3970,11 @@ export class HorseLogic {
       return { decision };
     }).decision;
     decision = graph.run('wager_rules', decision, () => ({
-      decision: fullPotNearPotWager(riverNutsRaise(decision, player, gs), player, gs),
+      decision: fullPotNearPotWager(
+        riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+        player,
+        gs
+      ),
     })).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(
@@ -4923,6 +4983,15 @@ export class HorseLogic {
           : undefined,
       omahaSuitedPremium: suitedPremium,
       holdemPremiumPair,
+      effectiveStackBB: (() => {
+        let cover = 0;
+        for (const p of gs.players) {
+          if (p.seat === player.seat || p.is_folded) continue;
+          if (p.is_sitting_out && !p.is_all_in) continue;
+          cover = Math.max(cover, (p.stack ?? 0) + (p.bet ?? 0));
+        }
+        return Math.min(player.stack + player.bet, cover) / bb;
+      })(),
       v13: opts.v13 !== false,
       // V34: the button is not a second cutoff. classifyPosition merges the
       // two into 'late'; the dealer seat tells them apart exactly.

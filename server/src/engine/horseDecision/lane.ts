@@ -1,3 +1,5 @@
+import { readHorseOwnPublicHistory } from '../../services/HorseOwnPublicHistory.js';
+import { HorseObserverParticipantRegistry } from './observerParticipants.js';
 import { availableParallelism } from 'node:os';
 import {
   isHorseSolverStoreIdentity,
@@ -316,6 +318,7 @@ const minOf = (values: Array<number | null>): number | null =>
 const sumOf = (values: number[]): number => values.reduce((a, b) => a + b, 0);
 
 export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
+  private readonly observerParticipants = new HorseObserverParticipantRegistry();
   private readonly clients: readonly LiveHorseDecisionWorkerClient[];
   private readonly readyPromise: Promise<HorseDecisionWorkerReadiness>;
   /** The journal shards the disk can hold, read once at construction. */
@@ -334,7 +337,11 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
       canYield: decisionWorkersCanYield(),
       journalShards: this.journalShardCapacity,
     });
-    const clientOptions: LiveHorseDecisionWorkerClientOptions = { ...options };
+    const clientOptions: LiveHorseDecisionWorkerClientOptions = {
+      ...options,
+      ownPublicHistory:
+        options.ownPublicHistory ?? (options.workerFactory ? undefined : readHorseOwnPublicHistory),
+    };
     delete (clientOptions as LiveHorseDecisionLaneOptions).workers;
     delete (clientOptions as LiveHorseDecisionLaneOptions).journalCapacity;
     this.clients = Object.freeze(
@@ -479,7 +486,15 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     signal?: AbortSignal,
     options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
-    return this.shard(snapshot.fence).decideFast(snapshot, signal, options);
+    const original = structuredClone(snapshot);
+    return this.shard(original.fence)
+      .decideFast(original, signal, options)
+      .then((result) => {
+        // Only the validated original FAST can register this observer. A rejected
+        // or never-delivered decision cannot enroll another horse in a hand.
+        this.observerParticipants.capture(original);
+        return result;
+      });
   }
 
   decideDeep(
@@ -494,13 +509,17 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     observation: CompletedHandObservation,
     signal?: AbortSignal
   ): Promise<HorseDecisionWorkerAck> {
-    // The owner observes (and journals) the hand exactly as before; every
-    // other shard learns the same hand so all of them hold one floor's read
-    // (see "WHAT CHANGES" above and client.mirrorCompletedHand).
-    const owner = horseDecisionShard(observation.fence, this.clients.length);
-    const ack = this.clients[owner]!.observeCompletedHand(observation, signal);
+    // The owner journals the hand. Other shards receive public completion
+    // only for the same original observer's already-existing private view;
+    // the pool supplies admission from validated original FASTs.
+    const original = {
+      ...observation,
+      observerParticipants: this.observerParticipants.take(observation),
+    };
+    const owner = horseDecisionShard(original.fence, this.clients.length);
+    const ack = this.clients[owner]!.observeCompletedHand(original, signal);
     for (let index = 0; index < this.clients.length; index++)
-      if (index !== owner) this.clients[index]!.mirrorCompletedHand(observation);
+      if (index !== owner) this.clients[index]!.mirrorCompletedHand(original);
     return ack;
   }
 

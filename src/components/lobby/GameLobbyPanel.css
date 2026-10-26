@@ -15,9 +15,9 @@
 .glp-backdrop {
   position: fixed;
   inset: 0;
-  /* Same layer as TournamentLobbyModal: above persistent navigation (1000)
-     and the table stage (1100), below the toast layer. */
-  z-index: 2100;
+  /* The fixed announcement rail is 9400. Keep this body-portaled dialog
+     above that chrome so it cannot intercept Close, below toasts (10000). */
+  z-index: 9600;
   background: rgb(2 4 7 / 70%);
   backdrop-filter: blur(2px);
   display: flex;

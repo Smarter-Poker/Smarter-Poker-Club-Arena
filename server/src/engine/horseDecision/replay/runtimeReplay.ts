@@ -102,15 +102,14 @@ export async function replayThroughWorkerRuntime(
       return HorseLogic.decide(player, gameState, style, mods, { ...opts, observeMind: false });
     },
     decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
-    captureDecisionEffects: (fn) =>
-      HorseMind.runInSandbox(readView, () => HorseMind.captureDecisionEffects(fn)),
+    runDecisionReadView: (_request, fn) => HorseMind.runInSandbox(readView, fn),
+    captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
     applyDecisionEffects: () => {
       throw new Error('a replay never applies plan effects');
     },
     // The frame is re-encoded from the view the replay decided in, never from
     // whatever this process's own HorseMind holds.
-    snapshotDecisionReads: (players, handKey) =>
-      HorseMind.runInSandbox(readView, () => HorseMind.snapshotDecisionReads(players, handKey)),
+    snapshotDecisionReads: (players, handKey) => HorseMind.snapshotDecisionReads(players, handKey),
     saveRng: saveFastRandom,
     restoreRng: restoreFastRandom,
     governorScale: () => equityGovernor.current(),

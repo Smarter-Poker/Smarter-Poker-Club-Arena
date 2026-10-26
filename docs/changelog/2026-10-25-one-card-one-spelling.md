@@ -39,3 +39,14 @@ point. Three source-pin tests that read TablePage's wording
 (`heroNeverLosesTheirCards`, `timeBankSeatFeedbackAndCards`,
 `rabbitRevealResponseOwnership`) were updated in the same commit to name the
 converter; what each protects is unchanged.
+
+## Also in this change
+
+- `heroDisplayHoleCards` compares cards by spelling-proof key, so the same
+  hand arriving in another spelling keeps the hero's row order.
+- `tests/unit/seatLabelAgreesWithTheEngine.test.ts` deals 12,600 seeded hands
+  across NLH and PLO4/5/6 on flop, turn and river boards, feeds the engine's
+  evaluator its own word suits and the seat label the table's mixed spellings,
+  and requires the two to name the same hand every time. Against the evaluator
+  as it was before today's flush fix it fails (a club flush named "High Card").
+  Short deck is covered by its own suite.

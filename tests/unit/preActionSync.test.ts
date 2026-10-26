@@ -220,6 +220,7 @@ function makePage(
     hadPreActionRef: { current: false },
     lastArmedPreActionRef: { current: null },
     preActionCanCheckRef: { current: false },
+    preActionFoldOnTurnHandRef: { current: null },
     preActionCallAmountRef: { current: 0 },
     preActionHeldByEngineRef: { current: null },
     preActionSendSeqRef: { current: 0 },

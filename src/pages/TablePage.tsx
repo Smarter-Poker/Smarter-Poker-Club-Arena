@@ -323,7 +323,9 @@ import {
   lightningIdleBalanceFor,
   type LightningIdleBalanceSnapshot,
   lightningSessionStackFor,
+  lightningStandInIdentity,
   lightningWaitingHero,
+  heroIsAtTable,
 } from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningTopUpReceipts } from '../lightning/useLightningTopUpReceipts';
@@ -409,6 +411,7 @@ import {
   lightningFastFoldFlag,
   lightningFoldFlags,
   lightningFoldAvailability,
+  lightningSnapshotClearsBoard,
   lightningHandOnFelt,
   lightningHandId,
   lightningHandKey,
@@ -431,7 +434,10 @@ import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandof
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs } from '../lightning/lightningPrefs';
 import { createLightningMilestoneTracker } from '../lightning/lightningMilestone';
-import { lightningDecisions as pendingLightningDecisions } from '../lightning/lightningDecisionQueue';
+import {
+  clearLightningClusterStatus,
+  lightningDecisions as pendingLightningDecisions,
+} from '../lightning/lightningDecisionQueue';
 import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -2754,7 +2760,22 @@ function LiveTablePage({
         river: 3,
         showdown: 4,
       };
-      const sameHand = mapped.handNumber > 0 && mapped.handNumber === prev.handNumber;
+      /* LIGHTNING TRANSITION, PHASE 1: AN IDLE SNAPSHOT ENDS THE FOLDED HAND
+         FOR THE BOARD. The engine answers a Lightning fold with the idle shape
+         (stage 'waiting', no players, an empty board) and repeats the folded
+         hand's NUMBER on it, so the never-shrink rule below read it as the
+         same hand and kept the folded hand's cards on the felt for the whole
+         wait, until the next deal. In a Lightning room that snapshot means
+         this player has no hand on the felt: the board takes the same clear
+         the end-of-hand reset gives it (empty boards, stage back to preflop),
+         and the next hand's flop deals in onto an empty felt. Classic tables
+         never take this branch. */
+      const lightningIdleBoard = lightningSnapshotClearsBoard({
+        lightningRoom: !!lightningRoomRef.current,
+        snapshot: engineSnapshot as LightningSnapshotFields,
+      });
+      const sameHand =
+        !lightningIdleBoard && mapped.handNumber > 0 && mapped.handNumber === prev.handNumber;
       let nextCards = mapped.communityCards as Card[];
       if (sameHand && nextCards.length < prev.communityCards.length) {
         nextCards = prev.communityCards;
@@ -2770,7 +2791,12 @@ function LiveTablePage({
       if (sameHand && nextCards3.length < prev.communityCards3.length) {
         nextCards3 = prev.communityCards3;
       }
-      let nextStage = mapped.boardStage as BoardStage;
+      if (lightningIdleBoard) {
+        nextCards = [];
+        nextCards2 = [];
+        nextCards3 = [];
+      }
+      let nextStage = (lightningIdleBoard ? 'preflop' : mapped.boardStage) as BoardStage;
       const n = nextCards.length;
       const derivedStage = n >= 5 ? 'river' : n === 4 ? 'turn' : n >= 3 ? 'flop' : null;
       if (derivedStage && (STAGE_RANK[nextStage] ?? 0) < (STAGE_RANK[derivedStage] ?? 0)) {
@@ -3991,6 +4017,18 @@ function LiveTablePage({
   });
   const lightningEndedRef = useRef(lightningSessionEnd.ended);
   lightningEndedRef.current = lightningSessionEnd.ended;
+  /* LIGHTNING TRANSITION, PHASE 1: THIS CLUSTER'S "ENDING" DIES WITH ITS ROOM.
+     The room closed (a 4404 the database confirmed: MUST MOVE reversion, or the
+     session ended), so whatever the engine last said about the Cluster's hold
+     belongs to a room that no longer exists. Without this a lost null frame
+     left "Lightning Is Ending" on the next room of the Cluster. */
+  const lightningRoomClosed = !!lightningReversion.seatTableId || !!lightningSessionEnd.ended;
+  const lightningClosedClusterId = lightningRoom?.clusterId ?? null;
+  useEffect(() => {
+    if (lightningRoomClosed && lightningClosedClusterId) {
+      clearLightningClusterStatus(lightningClosedClusterId);
+    }
+  }, [lightningRoomClosed, lightningClosedClusterId]);
   /* True while a fn_lightning_reconnect_state question is in flight: the
      ending is about to be named properly, so the generic 4404 toast stands
      down rather than speak first and be repeated by the notice. */
@@ -4508,6 +4546,22 @@ function LiveTablePage({
   const lightningLastSeenStackRef = useRef<number | null>(null);
   if (lightningHeroInRoster && Number.isFinite(lightningHeroInRoster.stack)) {
     lightningLastSeenStackRef.current = lightningHeroInRoster.stack;
+  }
+  /* The hero's face as the last hand showed it: the waiting chair between
+     hands wears the same name, frame and aura (lightningStandInIdentity). */
+  const lightningLastHeroRowRef = useRef<{
+    name?: string;
+    avatar?: string;
+    frame?: string;
+    aura?: string;
+  } | null>(null);
+  if (lightningHeroInRoster) {
+    lightningLastHeroRowRef.current = {
+      name: lightningHeroInRoster.name,
+      avatar: lightningHeroInRoster.avatar,
+      frame: lightningHeroInRoster.frame,
+      aura: lightningHeroInRoster.aura,
+    };
   }
   const [lightningSessionStack, setLightningSessionStack] = useState<number | null>(null);
   /* The idle snapshot whose engine balance chips added since have made stale. */
@@ -20901,8 +20955,32 @@ function LiveTablePage({
   );
 
   const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  /* IS THE HERO AT THIS TABLE (Lightning transition, phase 1). One answer for
+     every decision that changes the felt's shape: the seat taper here and
+     `data-hero` on the page root (which the phone spectator layout,
+     DealerButton and useProtectedCardLayout read). A Classic table asks the
+     roster, exactly as before. A Lightning room's roster is empty between
+     hands, so the chair the hero still holds counts there; reading the roster
+     alone resized the phone table on every fold and back on every deal. */
+  const heroAtTable = heroIsAtTable({
+    heroInRoster: tableState.players.some((p) => p?.isHero),
+    lightningRoom: !!lightningRoom,
+    heroSeat: tableState.heroSeat,
+  });
   // Spectators use the desktop reference's unprojected oval on phones.
-  const tablePerspectiveTaper = tableState.players.some((p) => p?.isHero) ? undefined : 0;
+  const tablePerspectiveTaper = heroAtTable ? undefined : 0;
+  /* The face of the hero's waiting chair between Lightning hands, worked out
+     once rather than per seat (lightningStandInIdentity). Null at a Classic
+     table, whose stand-in chair is untouched. */
+  const lightningStandIn = lightningRoom
+    ? lightningStandInIdentity({
+        tableAlias: v8Settings.use_alias ? v8Settings.table_alias : null,
+        profileName: heroProfile ? playerDisplayName(heroProfile) : null,
+        lastRow: lightningLastHeroRowRef.current,
+        username,
+        avatarUrl: heroAvatarUrl,
+      })
+    : null;
   const seatPositions = useMemo(() => {
     const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
     return seatRotationMap.map(({ pos }) =>
@@ -24052,7 +24130,7 @@ function LiveTablePage({
        note on isHeroTurnContext documents. */
     isHeroTurn: isHeroTurnContext,
     isSizingOpen: raiseIntent.open,
-    isSpectator: !tableState.players.some((p) => p?.isHero),
+    isSpectator: !heroAtTable,
     isModalOpen:
       !!tournamentWinner ||
       showMustMoveLobby ||
@@ -24526,11 +24604,15 @@ function LiveTablePage({
     : lightningClusterIdOfSnapshot(engineSnapshot);
   useEffect(() => {
     if (!tableId || !snapshotLightningClusterId) return;
-    registerLightningPoolSession({
-      poolSessionId: tableId,
-      clusterId: snapshotLightningClusterId,
-      meta: null,
-    });
+    registerLightningPoolSession(
+      {
+        poolSessionId: tableId,
+        clusterId: snapshotLightningClusterId,
+        meta: null,
+      },
+      /* Already connected: a Cluster status its resync just delivered stands. */
+      { keepClusterStatus: true }
+    );
     setTableLoadFailure(null);
   }, [tableId, snapshotLightningClusterId]);
 
@@ -25081,7 +25163,7 @@ function LiveTablePage({
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
-      data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      data-hero={heroAtTable ? 'true' : 'false'}
       /* THE TOURNAMENT INFO DOCK (Dan 2026-10-04). Present only on a
          tournament table; TournamentHUD.css reads it to reserve the dock's
          height under the felt and to stand the bottom bars on top of it.
@@ -26026,6 +26108,20 @@ function LiveTablePage({
                       : undefined
                   }
                 />
+                {/* LIGHTNING: THE ROOM'S WORDS ON THE FELT (Lightning transition,
+                    phase 1). "Next Hand..." after a long quiet, and "Lightning
+                    Is Ending" while the Cluster drains, in felt coordinates
+                    just above the wordmark (the band the connection banner
+                    uses), so they read the same between hands and in a hand.
+                    Words only: nothing here navigates (CLAUDE.md 10.6). */}
+                {lightningRoom ? (
+                  <div className="lightning-felt-notices" data-testid="lightning-felt-notices">
+                    <LightningNextHand
+                      handInProgress={lightningHandLive && tableState.isHandInProgress}
+                    />
+                    <LightningEndingNotice clusterId={lightningRoom.clusterId} />
+                  </div>
+                ) : null}
 
                 <div className="table-brand" aria-hidden="true">
                   <img
@@ -27031,10 +27127,16 @@ function LiveTablePage({
               !displayPlayer &&
               (pendingSeat === seatNumber || tableState.heroSeat === seatNumber)
             ) {
+              /* A Lightning player between hands keeps the face the hand
+                 showed: table alias, frame and aura (Lightning transition,
+                 phase 1). A Classic stand-in is unchanged (null). */
+              const standIn = lightningStandIn;
               displayPlayer = {
                 id: userId,
-                name: username || 'You',
-                avatar: heroAvatarUrl || '',
+                name: standIn ? standIn.name : username || 'You',
+                avatar: standIn ? standIn.avatar : heroAvatarUrl || '',
+                ...(standIn?.frame ? { frame: standIn.frame } : {}),
+                ...(standIn?.aura ? { aura: standIn.aura } : {}),
                 // A confirmed seat balance supersedes the original buy-in,
                 // including zero. The buy-in is only a pre-row placeholder.
                 stack:
@@ -27520,6 +27622,10 @@ function LiveTablePage({
                        footer's "Tap An Open Seat To Join" is a dead letter. */
                     (!tableState.isTournament || !!seatFirstBuyIn)
                   }
+                  /* Lightning transition, phase 1: a Lightning room's open
+                     chairs draw nothing (nobody can sit there). Classic
+                     tables never pass it and keep EMPTY. */
+                  hideEmptyChair={!!lightningRoom}
                   /* Dan 2026-08-18: the hero's own reserved seat reads
                      "YOUR SEAT" instead of the generic EMPTY. */
                   isHeroReservedSeat={
@@ -27693,6 +27799,70 @@ function LiveTablePage({
           floats={potWinFloats}
           onAnimationComplete={handleAnimationComplete}
         />
+        {/* LIGHTNING: THE ROOM AFTER IT ENDS, OVER THE TABLE AREA (Lightning
+            transition, phase 1). Mounted here, not in the footer chain, so the
+            notice and its VIEW GAME are on screen whatever the footer shows:
+            the between-hands bar used to shadow them for exactly the player
+            who had just folded. */}
+        {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
+            and this room will deal no more. Never a dead felt: the notice
+            and the player's own way back to their seat. The player moves
+            themselves, by the button (CLAUDE.md 10.6). */}
+        {lightningRoom && lightningReversion.seatTableId ? (
+          <LightningEndedNotice
+            session={
+              tableId
+                ? {
+                    poolSessionId: tableId,
+                    clusterId: lightningRoom.clusterId,
+                    name: lightningRoom.meta?.name ?? null,
+                  }
+                : null
+            }
+            onViewGame={() => {
+              const seatTable = lightningReversion.seatTableId;
+              if (!seatTable) return;
+              if (embeddedTableId) {
+                onTableInfoUpdate?.({ movedToTableId: seatTable });
+                return;
+              }
+              navigate(lightningReturnPath(seatTable), { replace: true });
+            }}
+          />
+        ) : null}
+        {/* LIGHTNING PHASE 9: the session ended while the player was away
+            (the disconnect reaper timed it out, or a queued leave
+            finished) and this room is gone. Never a dead felt and never a
+            spinner that cannot end: the ending's words, the session
+            summary, and VIEW GAME to the seat that remains, or to the
+            Cluster's entry. The player moves themselves (CLAUDE.md 10.6). */}
+        {lightningRoom && !lightningReversion.seatTableId && lightningSessionEnd.ended ? (
+          <LightningEndedNotice
+            eyebrow="Lightning"
+            text={lightningSessionEndText(lightningSessionEnd.ended)}
+            session={
+              tableId
+                ? {
+                    poolSessionId: tableId,
+                    clusterId: lightningRoom.clusterId,
+                    name: lightningRoom.meta?.name ?? null,
+                  }
+                : null
+            }
+            onViewGame={() => {
+              const seatTable = lightningSessionEnd.ended?.seatTableId ?? null;
+              if (seatTable) {
+                if (embeddedTableId) {
+                  onTableInfoUpdate?.({ movedToTableId: seatTable });
+                  return;
+                }
+                navigate(lightningReturnPath(seatTable), { replace: true });
+                return;
+              }
+              navigate(lightningRoute(lightningRoom.clusterId), { replace: true });
+            }}
+          />
+        ) : null}
       </div>
       {/* ═══════════════════════════════════════════════════════════════════════
           SEAT-FIRST BUY-IN CONFIRMATION (Dan 2026-08-23)
@@ -28293,15 +28463,12 @@ function LiveTablePage({
                 2026-08-25; the twin of it was removed from the ActionPanel on
                 2026-08-15 for exactly the same reason. There is one button. */}
 
-            {lightningRoom ? (
-              <LightningNextHand
-                handInProgress={lightningHandLive && tableState.isHandInProgress}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 13: the Cluster is draining back to MUST MOVE.
-                Words only; the room closes on its own once the last hand has
-                settled, and the ended notice below offers VIEW GAME. */}
-            {lightningRoom ? <LightningEndingNotice clusterId={lightningRoom.clusterId} /> : null}
+            {/* The Lightning room's own notices ("Next Hand...", "Lightning Is
+                Ending" and the ended notices with VIEW GAME) are felt-level
+                overlays now, mounted in the table area below the seats, so
+                they show between hands too (Lightning transition, phase 1).
+                They used to live here, in a branch the between-hands bar
+                shadowed, and centred in this fixed bar instead of the felt. */}
             {/* JOIN LIGHTNING completing: the anchor table never deals this
                 player a hand, so it says one neutral line until the tab
                 moves on, rather than showing a dead felt. */}
@@ -28313,65 +28480,6 @@ function LiveTablePage({
                 eyebrow="Lightning Games"
                 text="Your Game Is Now Lightning. Your Seat Is Ready."
                 onViewGame={lightningHandoff.viewReady}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
-                and this room will deal no more. Never a dead felt: the notice
-                and the player's own way back to their seat. The player moves
-                themselves, by the button (CLAUDE.md 10.6). */}
-            {lightningRoom && lightningReversion.seatTableId ? (
-              <LightningEndedNotice
-                session={
-                  tableId
-                    ? {
-                        poolSessionId: tableId,
-                        clusterId: lightningRoom.clusterId,
-                        name: lightningRoom.meta?.name ?? null,
-                      }
-                    : null
-                }
-                onViewGame={() => {
-                  const seatTable = lightningReversion.seatTableId;
-                  if (!seatTable) return;
-                  if (embeddedTableId) {
-                    onTableInfoUpdate?.({ movedToTableId: seatTable });
-                    return;
-                  }
-                  navigate(lightningReturnPath(seatTable), { replace: true });
-                }}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 9: the session ended while the player was away
-                (the disconnect reaper timed it out, or a queued leave
-                finished) and this room is gone. Never a dead felt and never a
-                spinner that cannot end: the ending's words, the session
-                summary, and VIEW GAME to the seat that remains, or to the
-                Cluster's entry. The player moves themselves (CLAUDE.md 10.6). */}
-            {lightningRoom && !lightningReversion.seatTableId && lightningSessionEnd.ended ? (
-              <LightningEndedNotice
-                eyebrow="Lightning"
-                text={lightningSessionEndText(lightningSessionEnd.ended)}
-                session={
-                  tableId
-                    ? {
-                        poolSessionId: tableId,
-                        clusterId: lightningRoom.clusterId,
-                        name: lightningRoom.meta?.name ?? null,
-                      }
-                    : null
-                }
-                onViewGame={() => {
-                  const seatTable = lightningSessionEnd.ended?.seatTableId ?? null;
-                  if (seatTable) {
-                    if (embeddedTableId) {
-                      onTableInfoUpdate?.({ movedToTableId: seatTable });
-                      return;
-                    }
-                    navigate(lightningReturnPath(seatTable), { replace: true });
-                    return;
-                  }
-                  navigate(lightningRoute(lightningRoom.clusterId), { replace: true });
-                }}
               />
             ) : null}
 

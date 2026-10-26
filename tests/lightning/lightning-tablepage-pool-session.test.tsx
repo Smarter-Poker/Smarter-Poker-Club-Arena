@@ -114,7 +114,11 @@ describe('TablePage on a pool-session id', () => {
     expect(PAGE).not.toContain('<LightningFoldBar');
     expect(PAGE).toContain('<ActionPanel');
     expect(PAGE).toContain("void handleLightningFold('fast_fold')");
-    expect(PAGE).toMatch(/\{lightningRoom \? \(\s*<LightningNextHand/);
+    /* Lightning transition, phase 1: "Next Hand..." is a felt-level layer of
+       the room, so it shows between hands as well as in a hand. */
+    expect(PAGE).toMatch(
+      /\{lightningRoom \? \(\s*<div className="lightning-felt-notices" data-testid="lightning-felt-notices">\s*<LightningNextHand/
+    );
   });
 });
 

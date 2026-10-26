@@ -2962,7 +2962,7 @@ function rakeDrag(
  * and table commitment caps. When intent cannot be represented legally, this
  * degrades without committing extra chips: check first, otherwise fold.
  */
-function enforceAuthoritativeDecision(
+export function enforceAuthoritativeDecision(
   decision: HorseDecision,
   player: SeatPlayer,
   gs: HorseGameStateV2
@@ -2987,7 +2987,15 @@ function enforceAuthoritativeDecision(
     return { action: 'fold', thinkTime: 0 };
   };
   const call = (): HorseDecision => {
-    if (!legal.has('call')) return safe();
+    if (!legal.has('call')) {
+      // ALL-IN-OR-FOLD (2026-10-26): the menu is fold/all-in, so calling an
+      // owed bet IS the all-in (the controller settles it as the call). The
+      // V27 big-blind-vs-jam chart and the priced-in guard propose `call`;
+      // degrading that to safe() folded every hand the brain chose to call.
+      if (gs.allInOrFold === true && legal.has('all_in') && toCall > 0.005)
+        return { action: 'all_in', thinkTime: 0 };
+      return safe();
+    }
     if (toCall >= stack - 0.005 && legal.has('all_in')) {
       return { action: 'all_in', thinkTime: 0 };
     }

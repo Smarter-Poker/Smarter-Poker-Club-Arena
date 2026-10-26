@@ -7,6 +7,7 @@ import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
 import { horseCallDeductionFraction } from './HorseCallDeductions.js';
 import { snapshotDiamondCashFees } from '../domain/diamondCashFeeSnapshot.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
+import { barrelContinuationValue } from './HorseContinuation.js';
 import type { SeatPlayer } from '../types.js';
 function seat(n: number, invested: number, stack = 100): SeatPlayer {
   return {
@@ -150,7 +151,123 @@ describe('the final brain receives projected call deductions', () => {
       { mind: false, telemetry: false, v32FacingDefense: false }
     );
     expect(pricing).toHaveBeenCalledWith(hero, gs, 10);
-    expect(ev.mock.calls.at(-1)?.[0].rakeMarg).toBeCloseTo(1 / 40, 10);
+    expect(ev.mock.calls.at(-1)?.[0].callDeductionFraction).toBeCloseTo(1 / 40, 10);
+    expect(ev.mock.calls.at(-1)?.[0].rakeMarg).toBe(0);
+  });
+  it('keeps the terminal-flop bet consumer on marginal rake after the cap', () => {
+    const { hero, gs } = spot();
+    hero.cards = [
+      { rank: '8', suit: 'hearts' },
+      { rank: '8', suit: 'diamonds' },
+    ];
+    hero.stack = 5;
+    hero.bet = 0;
+    hero.totalInvested = 15;
+    Object.assign(gs.players[1], { stack: 5, bet: 0, totalInvested: 15 });
+    Object.assign(gs, {
+      stage: 'flop',
+      currentBet: 0,
+      toCall: 0,
+      minRaise: 2,
+      communityCards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'diamonds' },
+        { rank: '7', suit: 'clubs' },
+      ],
+      actionHistory: [
+        { seat: 1, userId: 'u1', action: 'raise', amount: 15, stage: 'preflop', timestamp: 1 },
+        { seat: 2, userId: 'u2', action: 'call', amount: 15, stage: 'preflop', timestamp: 2 },
+      ],
+    });
+    gs.rakeConfig!.cap = 1;
+    const ev = vi.spyOn(Ev, 'evaluateSpot');
+    Eval.seedFastRandom(2601026);
+    HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false, telemetry: false });
+    const terminal = ev.mock.calls.find(([s]) => s.toCall === 0 && s.sizes?.length === 0)?.[0];
+    expect(terminal).toBeDefined();
+    expect(terminal!.rakeMarg).toBe(0);
+  });
+});
+
+describe('exact call deductions are distinct from marginal bet rake', () => {
+  it('retains a reached fee cap as the continuation pot grows', () => {
+    expect(
+      barrelContinuationValue({
+        equity: 1,
+        pot: 30,
+        toCall: 10,
+        stack: 30,
+        continuation: { betProbability: 1, betFraction: 1, opponentStack: 20, streets: 1 },
+        rakeMarg: 0,
+        callDeductionFraction: 1 / 40,
+      })
+    ).toBe(49);
+  });
+  it('does not clamp a true call deduction above fifty percent', () => {
+    const result = Ev.riverCallVerdict({
+      equity: 1,
+      pot: 10,
+      toCall: 4,
+      stack: 4,
+      rakeMarg: 0,
+      callDeductionFraction: 0.8,
+      rand: () => 0,
+    });
+    expect(result.call).toBe(false);
+    expect(result.evCall).toBeCloseTo(-1.2, 10);
+    const verdict = Ev.evaluateSpot({
+      equity: 1,
+      pot: 10,
+      toCall: 4,
+      stack: 4,
+      effectiveStack: 4,
+      street: 'river',
+      inPosition: true,
+      opponents: 1,
+      realization: 1,
+      rakeMarg: 0,
+      callDeductionFraction: 0.8,
+      minBet: 1,
+      maxBet: 0,
+      sizes: [],
+      rand: () => 0,
+    });
+    expect(verdict.candidates.find((a) => a.kind === 'call')!.ev).toBeCloseTo(-1.2, 10);
+  });
+  it('never mixes into a priced call when the entire award is deducted', () => {
+    const result = Ev.riverCallVerdict({
+      equity: 1,
+      pot: 10,
+      toCall: 4,
+      stack: 4,
+      callDeductionFraction: 1,
+      rand: () => 0,
+    });
+    expect(result.call).toBe(false);
+    expect(result.evCall).toBe(-4);
+  });
+  it('recognizes the actual BBJ collection consuming a tiny matched award', () => {
+    const hero = seat(1, 0, 0.01);
+    const gs = {
+      ...spot().gs,
+      players: [hero, seat(2, 0.01, 0), seat(3, 0.01, 0)],
+      pot: 0.02,
+      dealtSeatIds: [1, 2, 3],
+      rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      bbjConfig: { enabled: true, feeBB: 0.1, minPlayersDealt: 3, minPotBB: 0 },
+    };
+    const fraction = horseCallDeductionFraction(hero, gs, 0.01)!;
+    expect(fraction).toBe(1);
+    expect(
+      Ev.riverCallVerdict({
+        equity: 1,
+        pot: 0.02,
+        toCall: 0.01,
+        stack: 0.01,
+        callDeductionFraction: fraction,
+        rand: () => 0,
+      }).call
+    ).toBe(false);
   });
 });
 

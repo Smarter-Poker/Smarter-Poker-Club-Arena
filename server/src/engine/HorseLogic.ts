@@ -2474,12 +2474,14 @@ function maniacCallDown(
     const pot = Number.isFinite(gs.contestablePot)
       ? Math.max(0, gs.contestablePot as number)
       : Math.max(0, gs.pot);
-    const rake =
-      (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
-        ? ((opts.callDeductionPricing !== false
-            ? horseCallDeductionFraction(player, gs, call)
-            : null) ?? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
-        : 0;
+    const useCallRake = (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs);
+    const exactRake =
+      useCallRake && opts.callDeductionPricing !== false
+        ? horseCallDeductionFraction(player, gs, call)
+        : null;
+    const rake = useCallRake
+      ? (exactRake ?? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
+      : 0;
     const risk = icmRisk(
       gs,
       player.stack / bb,
@@ -2523,12 +2525,11 @@ function maniacCallDown(
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
       return { ...decision, action: 'all_in', amount: undefined };
     }
-    const required = Math.min(
-      0.99,
+    const rawRequired =
       call / ((pot + call) * (1 - rake)) +
-        Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
-        (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0))
-    );
+      Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
+      (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0));
+    const required = exactRake === null ? Math.min(0.99, rawRequired) : rawRequired;
     // A 240-deal estimate close to the price can reject a profitable call
     // through sampling noise (retained PLO4 potter hand 74 after full-pot
     // sizing). Refine that boundary once, with a fixed bounded sample; do
@@ -4987,13 +4988,15 @@ export class HorseLogic {
           );
           if (telemetryOn(opts) && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
-          const rake38 =
-            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
-              ? ((opts.callDeductionPricing !== false
-                  ? horseCallDeductionFraction(player, gs, effCall38)
-                  : null) ??
-                rakeDrag(pot38, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
-              : 0;
+          const useCallRake38 = (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs);
+          const exactRake38 =
+            useCallRake38 && opts.callDeductionPricing !== false
+              ? horseCallDeductionFraction(player, gs, effCall38)
+              : null;
+          const rake38 = useCallRake38
+            ? (exactRake38 ??
+              rakeDrag(pot38, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
+            : 0;
           // Omaha's range read narrows by score percentile, which cannot see
           // domination (four napkins keep 44% against the sampled "3-bet
           // range" in PLO6; against the real one it is nearer 35%). The price
@@ -5047,13 +5050,12 @@ export class HorseLogic {
               : 0,
             v53Realization
           );
-          const required38 = Math.min(
-            0.99,
+          const rawRequired38 =
             effCall38 / ((pot38 + effCall38) * (1 - rake38)) +
-              riskAdd38 * Math.sqrt(share38) +
-              dominationMargin38 +
-              realization38
-          );
+            riskAdd38 * Math.sqrt(share38) +
+            dominationMargin38 +
+            realization38;
+          const required38 = exactRake38 === null ? Math.min(0.99, rawRequired38) : rawRequired38;
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
           if (
@@ -6894,11 +6896,12 @@ export class HorseLogic {
     // raked pot the heuristic call line does.
     const rakeMarg =
       useRake10 && !isTournamentMode(gs)
-        ? ((opts.callDeductionPricing !== false
-            ? horseCallDeductionFraction(player, gs, toCall)
-            : null) ??
-          rakeDrag(pot, gs.bigBlind, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
+        ? rakeDrag(pot, gs.bigBlind, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
         : 0;
+    const callDeductionFraction =
+      useRake10 && !isTournamentMode(gs) && opts.callDeductionPricing !== false
+        ? (horseCallDeductionFraction(player, gs, toCall) ?? undefined)
+        : undefined;
 
     // V31 CERTIFIED DIRECT POLICY. Node role, response semantics, both seats,
     // objective, stack depth, board texture and holding are all part of the
@@ -7344,6 +7347,7 @@ export class HorseLogic {
             rand: fastRandom,
             realization: realization32,
             rakeMarg,
+            callDeductionFraction,
             // Tournament: the survival premium, scaled by the share of the
             // stack this call risks (V24's rule: ICM prices a bust, and a
             // call worth 3% of a stack cannot bust anybody).
@@ -8237,7 +8241,7 @@ export class HorseLogic {
     // size — horses called marginally too wide in small raked cash pots, the
     // opposite of the layer's stated intent. (gs.pot already includes the
     // outstanding bet; `pot` here is that minus any uncallable excess.)
-    const potOdds = toCall / ((pot + toCall) * (1 - rakeMarg));
+    const potOdds = toCall / ((pot + toCall) * (1 - (callDeductionFraction ?? rakeMarg)));
     // ═══ THE BET-RATIO SCALE, STATED ONCE AND FOR ALL (2026-08-27) ═══
     // `gs.pot` INCLUDES the bet hero is facing (HandController adds to
     // state.pot the moment the wager is posted). So `toCall / pot` is
@@ -9302,6 +9306,7 @@ export class HorseLogic {
           toCall,
           stack,
           rakeMarg,
+          callDeductionFraction,
           riskPremium: risk38,
           rand: fastRandom,
         });
@@ -9334,6 +9339,7 @@ export class HorseLogic {
         realization: realization38,
         continuation: continuation38,
         rakeMarg,
+        callDeductionFraction,
         riskPremium: risk38,
         minBet: Math.max(gs.minRaise || 0, 0.01),
         maxBet: 0, // fold/call only here: the raise gates above already rolled

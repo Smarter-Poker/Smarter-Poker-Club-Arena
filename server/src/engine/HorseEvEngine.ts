@@ -107,6 +107,9 @@ export interface EvSpot {
   continuation?: BarrelContinuation;
   /** marginal rake on the pot in cash (0..0.5) */
   rakeMarg?: number;
+  /** Total fraction deducted from the projected call award (0..1).
+   * Separate from the marginal rate used to model additional wagers. */
+  callDeductionFraction?: number;
   /** tournament survival premium to subtract from equity on a stack-off (0..0.15) */
   riskPremium?: number;
   /** minimum legal bet / raise increment */
@@ -204,6 +207,7 @@ export function evaluateSpot(spot: EvSpot): EvVerdict {
       call: c,
       stack,
       rake,
+      callDeductionFraction: spot.callDeductionFraction,
       risk,
       continuation: spot.continuation,
     });
@@ -304,18 +308,25 @@ export function riverCallVerdict(args: {
   toCall: number;
   stack: number;
   rakeMarg?: number;
+  callDeductionFraction?: number;
   riskPremium?: number;
   rand: () => number;
 }): { call: boolean; required: number; evCall: number } {
   const c = Math.max(0, Math.min(args.toCall, args.stack));
-  const rake = clamp(args.rakeMarg ?? 0, 0, 0.5);
+  const exact = Number.isFinite(args.callDeductionFraction);
+  const rake = exact ? clamp(args.callDeductionFraction!, 0, 1) : clamp(args.rakeMarg ?? 0, 0, 0.5);
   const risk = clamp(args.riskPremium ?? 0, 0, 0.15);
-  const required = clamp(
-    c / ((args.pot + c) * (1 - rake)) + risk * Math.sqrt(clamp(c / Math.max(1, args.stack), 0, 1)),
-    0,
-    0.99
-  );
-  const evCall = (args.equity - risk) * (1 - rake) * (args.pot + c) - c;
+  const award = (args.pot + c) * (1 - rake);
+  const evCall = (args.equity - risk) * award - c;
+  if (exact && c === 0) return { call: true, required: 0, evCall };
+  // A call cannot recover its cost when even winning pays less than the
+  // call. Do not turn that price into a 99% threshold or mix into it.
+  if (exact && c > 0 && award < c)
+    return { call: false, required: award > 0 ? c / award : 1, evCall };
+  const rawRequired =
+      c / ((args.pot + c) * (1 - rake)) +
+      risk * Math.sqrt(clamp(c / Math.max(1, args.stack), 0, 1)),
+    required = exact ? Math.max(0, rawRequired) : clamp(rawRequired, 0, 0.99);
   // Indifference band: within 1.5 equity points of the required number the
   // solver mixes; so does this.
   const gap = args.equity - required;

@@ -315,7 +315,29 @@ describe('Drift Incidents fail-closed reads', () => {
       rootCause: null,
     });
     expect(screen.queryByText(/Showing The Last Verified Queue/i)).not.toBeInTheDocument();
-    expect(mocks.toastError).not.toHaveBeenCalledWith('Incident action failed');
+    expect(mocks.toastError).not.toHaveBeenCalledWith(
+      'Incident Action Result Could Not Be Confirmed. Check The Timeline Before Trying Again'
+    );
+  });
+
+  it('reads the timeline after an unknown action outcome without submitting it again', async () => {
+    mocks.dashboard
+      .mockResolvedValueOnce([openIncident])
+      .mockResolvedValue([
+        { ...openIncident, status: 'acknowledged', acknowledged_at: '2026-10-05T12:01:00Z' },
+      ]);
+    mocks.metrics.mockResolvedValue({ open_total: 1 });
+    mocks.act.mockRejectedValue(new Error('network timeout after commit'));
+    render(<DriftIncidentsPage />);
+    expect(await screen.findByText('Ledger Imbalance')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    await waitFor(() => expect(mocks.dashboard).toHaveBeenCalledTimes(2));
+    expect(mocks.act).toHaveBeenCalledTimes(1);
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Incident Action Result Could Not Be Confirmed. Check The Timeline Before Trying Again'
+    );
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(screen.getByText('Ledger Imbalance')).toBeInTheDocument();
   });
 
   it('sanitizes dynamic operator copy and withholds raw supplemental metadata', async () => {

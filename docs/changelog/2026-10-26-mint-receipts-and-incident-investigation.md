@@ -22,3 +22,10 @@ reproduces both defects before applying the exact migration, then covers valid
 and malformed receipts, repeated mint volume, authorization, failed/unknown
 actions, persistence failure rollback, unrelated records and terminal states.
 The existing informational-alert workflow runs it on migration changes.
+
+The connected client no longer blindly retries incident mutations after a lost
+response. Those actions have no request key and append timeline events, so a
+retry can duplicate a committed action. Reads retain their existing retry policy.
+An uncertain result keeps the incident visible, explains the uncertainty, and
+refreshes its authoritative timeline. A retained regression fails against the
+old retrying service and verifies single submission while read retries still work.

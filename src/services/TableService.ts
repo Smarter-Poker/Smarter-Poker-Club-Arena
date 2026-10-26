@@ -312,6 +312,10 @@ class TableService {
     if (!result.success) return result;
     if (!result.deferred) {
       masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
+    } else if (result.occupancyId) {
+      // Queued behind the live hand: follow it to the wallet (Dan 2026-10-25).
+      const { watchQueuedCashout } = await import('./queuedCashoutWatcher');
+      watchQueuedCashout(tableId, userId, result.occupancyId);
     }
     // No table_activity row is written from here (2026-10-19): the browser
     // holds no INSERT on that table, so the write failed on every leave.

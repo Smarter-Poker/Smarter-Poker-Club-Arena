@@ -58,6 +58,8 @@ export type BusEventType =
   // strip asks the table it is labelling to open its Must Move Lobby.
   | 'OPEN_MUST_MOVE_LOBBY'
   | 'TABLE_CAP_BLOCKED'
+  // Dan 2026-10-25: a leave queued behind the hand has been cashed out.
+  | 'SEAT_CASHED_OUT'
   | 'BALANCE_UPDATED'
   // Had a payload in BusPayloadMap but was missing from this union, so five
   // subscribe sites carried `as any` to compile - which switches OFF payload
@@ -440,6 +442,8 @@ export interface BusPayloadMap {
   /** Dan 2026-08-21: a seat could not be opened because the player is at
    *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
   TABLE_CAP_BLOCKED: { tableId: string };
+  /** A leave queued behind a live hand reached the wallet: the seat is closed and credited. */
+  SEAT_CASHED_OUT: { tableId: string; occupancyId: string };
   BALANCE_UPDATED: { source: string; [key: string]: unknown };
   TRANSACTION_LOGGED: { entry: Record<string, unknown>; direction: 'in' | 'out' };
   WALLET_REFRESHED: BalancePayload;

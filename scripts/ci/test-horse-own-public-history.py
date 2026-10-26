@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Disposable PG17 proof of the service-only individual public-history reader.
+No DSN/remote connection accepted. Synthetic histories only, no financial writes.
+"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import uuid
+
+ROOT=Path(__file__).resolve().parents[2]
+MIGRATION=ROOT/'supabase/migrations/20261025214230_horse_own_public_history_read.sql'
+PG=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin'))
+BASE=Path(os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or tempfile.gettempdir())
+if sys.platform=='darwin' and not str(BASE).startswith('/Volumes/SmarterWork/agent-work/'):
+    raise RuntimeError('TMPDIR must use the task-owned external SSD')
+ENV={k:v for k,v in os.environ.items() if not k.startswith('PG')}
+ENV.update(LANG='C',LC_ALL='C')
+def uid(n): return str(uuid.UUID(int=n))
+def lit(v): return "'"+json.dumps(v).replace("'","''")+"'::jsonb"
+
+def main():
+    checks=[]
+    if os.geteuid()==0: raise RuntimeError('initdb requires non-root')
+    with tempfile.TemporaryDirectory(prefix='horse-own-history-',dir=BASE) as raw, tempfile.TemporaryDirectory(prefix='oh-',dir=BASE.parents[1]) as sock:
+        data=Path(raw)/'data'
+        def command(args,sql=None):
+            return subprocess.run(list(map(str,args)),input=sql,text=True,capture_output=True,env=ENV,timeout=60)
+        def run(sql,ok=True):
+            r=command([PG/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',sock,'-p','55498','-U','postgres','-d','postgres'],sql)
+            if (r.returncode==0)!=ok: raise AssertionError(r.stderr or r.stdout)
+            return r.stdout.strip() if ok else r.stderr
+        def check(name,condition):
+            if not condition: raise AssertionError(name)
+            checks.append(name)
+        def read(actor=1,variant='nlh',fmt='cash',count=2,before='2026-10-25T02:00:00Z',role='service_role',claim='service_role',ok=True):
+            sql=f"SET ROLE {role}; SET request.jwt.claim.role='{claim}'; SELECT public.fn_horse_own_public_history_read('{uid(actor)}','{variant}','{fmt}',{count},'{before}');"
+            r=run(sql,ok)
+            return (json.loads(r) if r else None) if ok else r
+        def hand(n,variant='nlh',tournament=None,position='BTN',count=2,end='2026-10-25T01:00:00Z',observer=1,extra_actions=None):
+            h=uid(1000+n);table=uid(100)
+            actions=extra_actions if extra_actions is not None else [dict(seat=1,userId=uid(observer),action='raise',amount=6,stage='preflop',timestamp=1,isFullRaise=True,cards=['secret_private_cards']),dict(seat=2,userId=uid(2),action='fold',amount=0,stage='preflop',timestamp=2)]
+            t='NULL' if tournament is None else "'"+uid(tournament)+"'::uuid"
+            run(f"INSERT INTO hand_history VALUES ('{h}','{table}',{1000000+n},'{variant}',{t},2,'{end}',{lit(actions)},{lit([dict(userId=uid(observer)),dict(userId=uid(2)),dict(userId=uid(3))])},'{json.dumps(['secret_private_cards'])}'::jsonb);")
+            for actor,seat,pos,net in [(observer,1,position,2),(2,2,'BB',-2)]:
+                run(f"INSERT INTO ca_hand_facts VALUES ('{h}','{uid(actor)}','{table}',{t},'{end}','{variant}',{seat},'{pos}',{count},{net},'{json.dumps(['secret_fact_cards'])}'::jsonb);")
+        r=command([PG/'initdb','-D',data,'-U','postgres','-A','trust','--no-locale'])
+        if r.returncode: raise RuntimeError(r.stderr)
+        r=command([PG/'pg_ctl','-D',data,'-l',Path(raw)/'postgres.log','-o',f'-k {sock} -p 55498 -c listen_addresses= -c fsync=off','-w','start'])
+        if r.returncode: raise RuntimeError(r.stderr)
+        try:
+            run("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA auth; CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT current_setting('request.jwt.claim.role',true)$$; CREATE TABLE profiles(id uuid PRIMARY KEY,is_horse boolean,status text,horse_status text); CREATE TABLE ca_horse_fleet_register(horse_id uuid PRIMARY KEY,retired_at timestamptz); CREATE TABLE tournaments(id uuid PRIMARY KEY,format_contract text,table_size integer,max_players integer); CREATE TABLE hand_history(id uuid PRIMARY KEY,table_id uuid,hand_number bigint,game_variant text,tournament_id uuid,big_blind numeric,ended_at timestamptz,actions jsonb,players jsonb,hole_cards jsonb); CREATE TABLE ca_hand_facts(hand_id uuid,user_id uuid,table_id uuid,tournament_id uuid,played_at timestamptz,game_variant text,seat integer,position text,players_dealt integer,net numeric,hole_cards jsonb,PRIMARY KEY(hand_id,user_id)); CREATE INDEX idx_ca_hand_facts_user_time ON ca_hand_facts(user_id,played_at DESC);")
+            for actor in [1,2,3]:
+                run(f"INSERT INTO profiles VALUES ('{uid(actor)}',true,'active','available'); INSERT INTO ca_horse_fleet_register VALUES ('{uid(actor)}',NULL);")
+            run(MIGRATION.read_text())
+            hand(1)
+            p=read()
+            check('one original observer hand restored',len(p['window']['hands'])==1)
+            check('definition checksum is provided',len(p['definitionMd5'])==32)
+            print(json.dumps(dict(definitionMd5=p['definitionMd5'])),flush=True)
+            check('adapter pins the exact native definition',p['definitionMd5'] in (ROOT/'server/src/services/HorseOwnPublicHistory.ts').read_text())
+            check('no cards from actions, history or facts',all(x not in json.dumps(p) for x in ['secret','hole_cards','cards']))
+            check('public wagers and complete public results remain',p['window']['hands'][0]['actions'][0]['amount']==6 and len(p['window']['hands'][0]['results'])==2)
+            check('other RLS roster chair proves no participation',read(actor=3)['window']['hands']==[])
+            hand(2,position='UNKNOWN')
+            check('unknown original position is refused',len(read()['window']['hands'])==1)
+            hand(99)
+            run("UPDATE hand_history SET hand_number=99 WHERE id='"+uid(1099)+"';")
+            check('legacy unbound hand nonce stays unavailable',len(read()['window']['hands'])==1)
+            hand(3,variant='plo5')
+            check('exact variant remains separate',len(read()['window']['hands'])==1 and len(read(variant='plo5')['window']['hands'])==1)
+            check('exact dealt count remains separate',read(count=6)['window']['hands']==[])
+            for n,contract,size,fmt in [(10,'mtt-v2',9,'mtt'),(11,'sng-v1',6,'sng'),(12,'spin-v1',3,'spin'),(13,'sng-v1',2,'hu_sng'),(14,None,9,None)]:
+                marker='NULL' if contract is None else "'"+contract+"'"
+                run(f"INSERT INTO tournaments VALUES ('{uid(n)}',{marker},{size},{size});")
+                hand(n,tournament=n)
+                if fmt: check('persisted '+fmt+' remains separate',len(read(fmt=fmt)['window']['hands'])==1)
+            check('cash never imports tournament results',len(read()['window']['hands'])==1)
+            check('past cutoff excludes later public hands',read(before='2026-10-25T00:59:59Z')['window']['hands']==[])
+            for role in ['anon','authenticated']:
+                check(role+' cannot invoke even with forged service claim','permission denied' in read(role=role,claim='service_role',ok=False))
+            check('service identity claim required','service_role required' in read(claim='authenticated',ok=False))
+            check('bad context rejected','invalid individual history context' in read(count=11,ok=False))
+            for actor in range(100,162):
+                run(f"INSERT INTO profiles VALUES ('{uid(actor)}',true,'deleted','disabled'); INSERT INTO ca_horse_fleet_register VALUES ('{uid(actor)}','2026-10-01');")
+                check('retired '+str(actor)+' stays unavailable',read(actor=actor) is None)
+            check('reader never changes retired state',run("SELECT count(*) FROM profiles p JOIN ca_horse_fleet_register r ON r.horse_id=p.id WHERE p.status='deleted' AND p.horse_status='disabled' AND r.retired_at IS NOT NULL;")=='62')
+            # Generate bounded public metadata only, using the same isolated rows.
+            run(f"INSERT INTO hand_history SELECT ('00000000-0000-0000-0001-'||lpad(n::text,12,'0'))::uuid,'{uid(100)}',1010000+n,'nlh',NULL,2,'2026-10-25T01:10:00Z'::timestamptz+n*interval '1 second','[]'::jsonb,'[]'::jsonb,'[\"secret\"]'::jsonb FROM generate_series(1,600) n; INSERT INTO ca_hand_facts SELECT id,'{uid(1)}',table_id,NULL,ended_at,'nlh',1,'BTN',2,0,'[\"secret\"]'::jsonb FROM hand_history WHERE hand_number>1010000;")
+            limited=read()['window']
+            check('retained history bounded to 64 hands',len(limited['hands'])==64 and limited['capped'] is True)
+            check('window admits most recent hands in chronological order',limited['hands'][0]['handNumber']==1010537 and limited['hands'][-1]['handNumber']==1010600)
+            check('incomplete public results never invent other players',limited['hands'][0]['results'] is None)
+            heavy=[dict(seat=1 if i%2==0 else 2,userId=uid(1 if i%2==0 else 2),action='call',amount=2,stage='preflop',timestamp=i+1,cards=['secret']) for i in range(256)]
+            run(f"INSERT INTO hand_history SELECT ('00000000-0000-0000-0002-'||lpad(n::text,12,'0'))::uuid,'{uid(100)}',2000000+n,'nlh',NULL,2,'2026-10-25T01:40:00Z'::timestamptz+n*interval '1 second',{lit(heavy)},'[]'::jsonb,'[]'::jsonb FROM generate_series(1,64) n; INSERT INTO ca_hand_facts SELECT id,'{uid(1)}',table_id,NULL,ended_at,'nlh',1,'BTN',2,0,'[]'::jsonb FROM hand_history WHERE hand_number>2000000;")
+            byte_limited=read()['window']
+            check('large windows keep complete hands within byte budget',0<len(byte_limited['hands'])<64 and byte_limited['capped'] is True and len(json.dumps(byte_limited).encode())<256*1024)
+            check('public hand actions are never truncated',all(len(h['actions'])==256 for h in byte_limited['hands']))
+            check('large payload still excludes every card',all(x not in json.dumps(byte_limited) for x in ['secret','hole_cards','cards']))
+            print(json.dumps(dict(checks=checks,passed=len(checks),definitionMd5=p['definitionMd5'])))
+        finally:
+            r=command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
+            if r.returncode: raise RuntimeError(r.stderr)
+if __name__=='__main__': main()

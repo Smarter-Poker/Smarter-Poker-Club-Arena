@@ -12,10 +12,11 @@
  * spelling split like the one behind the Kc Jc "Straight" label fails here too.
  */
 import { describe, it, expect } from 'vitest';
-import { bestFive } from '../../src/utils/handEvaluator';
+import { bestFive, bestLow } from '../../src/utils/handEvaluator';
 import {
   evaluateHand,
   evaluateOmahaHand,
+  evaluateOmahaLowHand,
 } from '../../server/src/engine/PokerEngine';
 
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
@@ -80,5 +81,25 @@ describe('the seat label names the same hand the engine pays', () => {
         expect(mismatches).toEqual([]);
       });
     }
+  }
+});
+
+/* The seat label shows the low half in hi-lo games (src/lib/heroHandLabel.ts),
+   so the low it names must be the low the engine pays. */
+describe('the seat label names the same low the engine pays', () => {
+  for (const boardCount of [3, 4, 5]) {
+    it(`plo8, ${boardCount}-card board`, () => {
+      const mismatches: string[] = [];
+      for (let seed = 1; seed <= 1500; seed += 1) {
+        const { hole, board } = deal(seed * 104729 + boardCount, 4, boardCount, RANKS);
+        const engine = evaluateOmahaLowHand(hole as any, board as any);
+        const seat = bestLow(asTable(hole), board as any[]);
+        const e = engine ? engine.name : null;
+        const t = seat ? seat.name : null;
+        if (e !== t && mismatches.length < 5)
+          mismatches.push(`seed ${seed}: engine=${e} seat=${t}`);
+      }
+      expect(mismatches).toEqual([]);
+    });
   }
 });

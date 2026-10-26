@@ -4110,6 +4110,7 @@ function ClubHomePageContent({
     const unsubs = [
       masterBus.subscribeDebounced('TABLE_SEATED', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TABLE_LEFT', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('SEAT_CASHED_OUT', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadMyGameStates, 300),
     ];

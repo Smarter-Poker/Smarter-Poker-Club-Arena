@@ -284,7 +284,6 @@ function stageOf(node: PublicNode): readonly unknown[] {
     t.spotsPaid > t.entrants ||
     t.seatsPerTable < 2 ||
     t.seatsPerTable > 10 ||
-    t.currentLevel < 1 ||
     ![
       t.inMoney,
       t.nearBubble,

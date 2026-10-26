@@ -3015,6 +3015,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let bountyMode: string | null = null;
     let durableBountyKnocker: string | null = null;
     let durableBountyClaimants: Array<{ userId: string; weight: number }> = [];
+    /** The door recorded this bust and, by design, wrote no bounty obligation. */
+    let doorWroteNoBountyObligation = false;
     if (hasBounty) {
       if (!this.eliminationMutationAllowed()) return false;
       const attribution = bountyEvidence!.attribution;
@@ -3142,6 +3144,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         bountyMode = String(claim.mode || '');
         durableBountyKnocker = null;
         durableBountyClaimants = [];
+        /* EVERY BOUNTY_BLOCKED IS A RECORDED BUST, NOT A FAILED ONE
+           (2026-10-25). The collection block below was skipped only for an
+           unattributable knocker. The door has other reasons to place a bust
+           and write no obligation - since 2026-10-22 the commonest is
+           `mystery_bounties_start_in_the_money`, every pre-money bust of a
+           chests-only mystery event - and for those the engine went on to
+           collect anyway, found no settled obligation (there is none to
+           find), and returned false for a bust that had already committed.
+           The assignment pass reads false as a refusal and ends, so each
+           admission recorded ONE bust and waited five seconds: the two
+           Sunday Funday PLO5 Mystery events (0fed81b3, 11b1db64) recorded
+           one bust every 10-35 s while their fields busted faster, fell 24
+           minutes behind, and tripped fn_ca_absent_tournament_players. */
+        doorWroteNoBountyObligation = true;
       } else {
         bountyMode = String(row!.mode || '');
         durableBountyKnocker = String(row!.knocker_user_id || '');
@@ -3241,7 +3257,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        knocker to pay and no obligation to settle, and processBountyCollection
        requires both. The place is already recorded; the head stays in the pool
        for fn_finalize_bounty_pool to resolve as residual. */
-    if (bountyEvidence && bountyEvidence.attributionUnavailable !== true) {
+    if (
+      bountyEvidence &&
+      bountyEvidence.attributionUnavailable !== true &&
+      !doorWroteNoBountyObligation
+    ) {
       try {
         const { attribution } = bountyEvidence;
         if (attribution.basis === 'largest_winner') {

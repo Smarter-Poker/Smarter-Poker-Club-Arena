@@ -31,16 +31,22 @@ Measured from `tournament_capacity_table_receipts`:
 
 ## Fix
 
-`TournamentManagerEliminations` now runs `checkDynamicTableExpansion` in the
+`TournamentManager.admitCommittedCapacityTables` runs in the
 `late_registration` wake branch, right after accepted entrants are seated and
-before the stages a bust can rewind, gated by `isMaintenanceFrozen()`.
-Admission is idempotent (admit-before-ack against the same database
-authority), adds no seats of its own, and `prepareManagedTableEngineForPlay`
-arms the synchronized break, add-on, stage-end and hand-for-hand holds before
-the dealer starts. The expansion stage itself is unchanged.
+before the stages a bust can rewind, gated by `isMaintenanceFrozen()`. It reads
+the committed `tournament_capacity_table_receipts` still awaiting a dealer,
+starts each engine through the one capacity start path
+(`startCapacityTableEngine`, shared with the expansion stage, which runs
+`prepareManagedTableEngineForPlay` so every break and hand-for-hand hold is
+armed before dealing), and acknowledges exactly those receipts.
 
-Pinned by a new case in
-`server/src/tournament/LateRegistrationCapacity.guard.test.ts`.
+It creates no table, moves no seat and runs no rebalance. A first version
+called the whole expansion routine early; CI's freeze law
+(`theFreezeIsTotal.law.test.ts`) refused it, correctly: that routine also runs
+the post-expansion rebalance (player moves), which must stay after table
+balancing. Creation and rebalancing remain in the expansion stage, unchanged.
+
+Pinned in `server/src/tournament/LateRegistrationCapacity.guard.test.ts`.
 
 ## Damage
 

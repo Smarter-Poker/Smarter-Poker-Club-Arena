@@ -638,18 +638,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * Funday Happy Hour table 14 opened 22:39:28 with nine late entrants
          * and was admitted at 22:55:08, the moment the break began.
          *
-         * Admitting a committed table is idempotent (admit-before-ack against
-         * the same database authority), creates no seats of its own, and the
-         * engine preparation arms every break / hand-for-hand hold before the
-         * dealer starts. So it runs here, on the wake itself, ahead of the
-         * stages a bust can rewind. Stage 6 still runs as before.
+         * Only ADMISSION moves here (admitCommittedCapacityTables): it starts
+         * dealers for receipts already committed with seated entrants and
+         * acknowledges them. It creates no table, moves no seat and runs no
+         * rebalance; creation and the post-expansion rebalance stay in stage 6,
+         * after balancing, as the freeze law requires. The engine preparation
+         * arms every break / hand-for-hand hold before the dealer starts.
          */
         if (
           [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
           !isMaintenanceFrozen()
         ) {
-          this.noteEliminationSweepStep('checkDynamicTableExpansion');
-          await this.checkDynamicTableExpansion();
+          this.noteEliminationSweepStep('admitCommittedCapacityTables');
+          await this.admitCommittedCapacityTables();
           if (sweepStopped()) return;
         }
       }
@@ -6495,4 +6496,5 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     winnerId: string
   ): Promise<VerifiedSatelliteSettlementReceipt>;
   protected abstract checkDynamicTableExpansion(): Promise<boolean>;
+  protected abstract admitCommittedCapacityTables(): Promise<void>;
 }

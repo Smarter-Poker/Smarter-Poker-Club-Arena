@@ -181,7 +181,44 @@ const redefines = (sql: string, guard: string): boolean =>
     sql.includes('EXECUTE') &&
     sql.includes(`p.proname = '${guard}'`));
 
+// A single declaration conditional on that SAME name being watched cannot
+// declare an unwatched function. Keep installed migration bytes immutable.
+const declarationTargets = (sql: string): string[] => {
+  const unconditional = sql.replace(
+    /IF\s+'(fn_[a-z0-9_]+)'\s*=\s*ANY\s*\(\s*public\.fn_ca_guard_watchlist\(\)\s*\)\s+THEN\s+PERFORM\s+public\.fn_ca_declare_guard_redefinition\(\s*'\1'\s*,\s*'[^']+'\s*\);\s+END IF;/gi,
+    ''
+  );
+  return [...unconditional.matchAll(/fn_ca_declare_guard_redefinition\s*\(\s*'([^']+)'/g)].map(
+    (match) => match[1]
+  );
+};
+
 describe('a declared guard change is recorded, not raised', () => {
+  it('only a same-name watchlist condition qualifies a conditional declaration', () => {
+    const guarded = `IF 'fn_example' = ANY (public.fn_ca_guard_watchlist()) THEN
+      PERFORM public.fn_ca_declare_guard_redefinition('fn_example', 'migration example');
+    END IF;`;
+    expect(declarationTargets(guarded)).toEqual([]);
+    expect(declarationTargets(guarded.replace("IF 'fn_example'", "IF 'fn_other'"))).toEqual([
+      'fn_example',
+    ]);
+    expect(
+      declarationTargets(guarded.replace('public.fn_ca_guard_watchlist()', "ARRAY['fn_example']"))
+    ).toEqual(['fn_example']);
+    expect(declarationTargets(guarded.replace(' THEN', ' OR true THEN'))).toEqual(['fn_example']);
+    expect(
+      declarationTargets(
+        "PERFORM public.fn_ca_declare_guard_redefinition('fn_example', 'migration example');"
+      )
+    ).toEqual(['fn_example']);
+    expect(
+      declarationTargets(
+        guarded +
+          "\nPERFORM public.fn_ca_declare_guard_redefinition('fn_other', 'migration example');"
+      )
+    ).toEqual(['fn_other']);
+  });
+
   it('never declares a function outside the watchlist installed by that migration', () => {
     const definitions = watchlistDefinitions();
     const offenders: string[] = [];
@@ -193,10 +230,8 @@ describe('a declared guard change is recorded, not raised', () => {
         .filter((definition) => definition.name <= migration.name)
         .at(-1)?.guards;
       if (!installed) continue;
-      for (const match of migration.sql.matchAll(
-        /fn_ca_declare_guard_redefinition\s*\(\s*'([^']+)'/g
-      )) {
-        if (!installed.includes(match[1])) offenders.push(`${migration.name} declares ${match[1]}`);
+      for (const target of declarationTargets(migration.sql)) {
+        if (!installed.includes(target)) offenders.push(`${migration.name} declares ${target}`);
       }
     }
 

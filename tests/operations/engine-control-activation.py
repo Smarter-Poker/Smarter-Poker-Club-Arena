@@ -19,7 +19,10 @@ def section(start, end):
 class Activation(unittest.TestCase):
     def test_canonical_upgrade_idempotence_and_downgrade(self):
         with tempfile.TemporaryDirectory(prefix='engine-control-activation-') as name:
-            root = Path(name)
+            # resolve(): on macOS the temp dir is /var/folders/..., a symlink into
+            # /private, and the installer's `readlink -e` returns the resolved
+            # path, so an unresolved GENERATION_ROOT never prefix-matches it.
+            root = Path(name).resolve()
             repo = root / 'repo'
             scripts = repo / 'server/scripts'
             scripts.mkdir(parents=True)

@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/called-river-hand-shows-in-previous-hand",
+  "_comment": "Migration 20261026004819: a hand that called the river and was mucked is shown in Previous Hand (Dan 2026-10-25). Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": ["fn_ca_called_river_mucked_cards"],
+  "columns": {}
+}

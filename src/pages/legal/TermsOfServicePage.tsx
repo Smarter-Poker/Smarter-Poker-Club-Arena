@@ -2,6 +2,7 @@ import LegalDocumentLayout, {
   type LegalDocumentSection,
 } from '../../components/legal/LegalDocumentLayout';
 import { TERMS_LAST_UPDATED } from '../../components/legal/legalDates';
+import { AI_OPPONENTS_DISCLOSURE } from '../../components/legal/aiOpponentsDisclosure';
 
 const SECTIONS: LegalDocumentSection[] = [
   {
@@ -66,6 +67,11 @@ const SECTIONS: LegalDocumentSection[] = [
         Players. Violation Of Fair Play Rules May Result In Account Suspension Or Termination.
       </p>
     ),
+  },
+  {
+    id: 'ai-opponents',
+    title: 'AI Opponents',
+    content: <p>{AI_OPPONENTS_DISCLOSURE}</p>,
   },
   {
     id: 'content-conduct',

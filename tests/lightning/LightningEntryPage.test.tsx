@@ -56,6 +56,8 @@ vi.mock('../../src/lightning/lightningJoinBuyIn', () => ({
   currentLightningUserId: async () => USER,
   readLightningBuyInContext: (...a: unknown[]) => buyInContext(...a),
   buyIntoLightning: (...a: unknown[]) => buyIntoLightning(...a),
+  rememberLightningBuyIn: vi.fn(),
+  rememberedLightningBuyIn: () => undefined,
 }));
 
 import LightningEntryPage from '../../src/pages/LightningEntryPage';

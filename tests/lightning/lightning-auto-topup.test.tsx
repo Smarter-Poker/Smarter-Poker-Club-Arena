@@ -91,7 +91,7 @@ describe('Lightning opt-in top-up at its committed receipt', () => {
     const h = setup();
     h.rerender({ ...h.props, event: receipt });
     await waitFor(() => expect(h.add).toHaveBeenCalledTimes(1));
-    expect(h.read).toHaveBeenCalledWith(cluster, pool, user);
+    expect(h.read).toHaveBeenCalledWith(cluster, pool, user, false);
     expect(h.add.mock.calls[0][0]).toBe(2.63);
     expect(h.add.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/);
     expect(h.add.mock.calls[0][2]()).toBe(true);
@@ -245,7 +245,6 @@ describe('a settled event still reads the actual legal funding boundary', () => 
     expect(f.rpc).toHaveBeenCalledWith('fn_lightning_my_session', { p_cluster_id: cluster });
   });
   it.each([
-    { in_hand: true },
     { in_hand: undefined },
     { pool_session_id: other },
     { state: 'leave_pending' },
@@ -255,6 +254,15 @@ describe('a settled event still reads the actual legal funding boundary', () => 
     database(p);
     expect(await readLightningTopUp(cluster, pool, user)).toBeNull();
   });
+  it('an older engine cannot queue an overlapping hand', async () => {
+    database({ in_hand: true });
+    expect(await readLightningTopUp(cluster, pool, user)).toBeNull();
+  });
+  it('a live overlapping hand may record an uncharged intent after own occupancy validation', async () => {
+    database({ in_hand: true });
+    expect(await readLightningTopUp(cluster, pool, user, true)).toEqual(target);
+  });
+
   it.each([
     { leave_pending: true },
     { is_sitting_out: true },

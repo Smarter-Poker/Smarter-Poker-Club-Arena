@@ -92,12 +92,16 @@ describe('1. the database never limits or charges a Lifetime VIP', () => {
   function newestBody(): string {
     const dir = join(ROOT, 'supabase', 'migrations');
     const marker = 'CREATE OR REPLACE FUNCTION public.fn_consume_rabbit_hunt_v2(';
-    const files = readdirSync(dir)
+    // Only the newest matching definition is authoritative. Reading every
+    // historical SQL body first exceeded the test's budget on a fresh SSD
+    // checkout; walk newest-first and stop at that same definition instead.
+    const file = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort()
-      .filter((f) => readFileSync(join(dir, f), 'utf8').includes(marker));
-    expect(files.length).toBeGreaterThan(0);
-    const sql = readFileSync(join(dir, files[files.length - 1]), 'utf8');
+      .reverse()
+      .find((f) => readFileSync(join(dir, f), 'utf8').includes(marker));
+    expect(file).toBeDefined();
+    const sql = readFileSync(join(dir, file!), 'utf8');
     const start = sql.lastIndexOf(marker);
     const end = sql.indexOf('$function$;', start);
     return sql.slice(start, end > start ? end : undefined);

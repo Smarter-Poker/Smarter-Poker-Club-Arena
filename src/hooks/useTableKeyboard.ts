@@ -24,8 +24,8 @@
  *
  *  LIGHTNING KEYS (Lightning Phase 12; only in a Lightning room, only when
  *  the platform row offers hotkeys). Safe modifier combinations, never a
- *  single letter (spec HOTKEYS): Shift+F = LIGHTNING FOLD, Shift+V = FOLD &
- *  WATCH. Both run the fold strip's own handler, which the engine validates
+ *  single letter (spec HOTKEYS): Shift+F folds, and every fold in a Lightning
+ *  room is a Lightning fold. It runs the room's own fold handler, which the engine validates
  *  (a fold that is not available is refused there, never guessed here); they
  *  work before the player's turn too, exactly like the strip.
  *    Escape = Close any open panel or modal
@@ -101,12 +101,11 @@ export interface UseTableKeyboardOptions {
    */
   onRabbitHunt?: () => void;
   /**
-   * LIGHTNING PHASE 12: Shift+F (LIGHTNING FOLD) and Shift+V (FOLD & WATCH).
-   * Passed only in a Lightning room whose platform offers hotkeys; absent,
-   * the keys do nothing and Shift+F stays an ordinary F.
+   * LIGHTNING PHASE 12: Shift+F folds (every fold in a Lightning room is a
+   * Lightning fold). Passed only in a Lightning room whose platform offers
+   * hotkeys; absent, the key does nothing and Shift+F stays an ordinary F.
    */
   onLightningFold?: () => void;
-  onLightningFoldWatch?: () => void;
 }
 
 /**
@@ -181,31 +180,27 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
         opts.onClosePanel?.();
         return;
       }
-      if (
-        (opts.onLightningFold || opts.onLightningFoldWatch) &&
-        document.querySelector('[aria-modal="true"]')
-      )
-        return;
+      if (opts.onLightningFold && document.querySelector('[aria-modal="true"]')) return;
 
-      // ── Lightning keys: Shift+F / Shift+V, before the single-letter row ──
+      // ── Lightning key: Shift+F, before the single-letter row ──
       const shortcut = lightningShortcut(e, readLightningPrefs().shortcutModifier);
       if (
         !opts.isSpectator &&
         !opts.isModalOpen &&
         (shortcut === 'fold' || shortcut === 'watch') &&
-        (opts.onLightningFold || opts.onLightningFoldWatch)
+        opts.onLightningFold
       ) {
-        const run = shortcut === 'fold' ? opts.onLightningFold : opts.onLightningFoldWatch;
-        if (run) {
+        /* A retired Fold & Watch chord does nothing; it never becomes a call. */
+        if (shortcut === 'fold') {
           e.preventDefault();
-          run();
+          opts.onLightningFold();
         }
         return;
       }
       // In a Lightning room a rejected modifier chord must not become a
       // different single-letter action, including held keys and disabled shortcuts.
       if (
-        (opts.onLightningFold || opts.onLightningFoldWatch) &&
+        opts.onLightningFold &&
         (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.repeat || e.isComposing)
       )
         return;

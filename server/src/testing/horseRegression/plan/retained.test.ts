@@ -15,6 +15,8 @@ import {
   horseRetainedPlanContext,
 } from '../../../services/horseDecisionJournal/effects.js';
 import { requestAt, otherTableId, wager } from './fixture.js';
+import { evidenceDigest } from '../../../services/horseCorrectiveReview/authority.js';
+import { horseDecisionReplayState } from '../../../engine/horseDecision/replayState.js';
 
 beforeEach(() => HorseMind.reset());
 afterEach(() => HorseMind.reset());
@@ -23,12 +25,9 @@ function frameFixture(current = true) {
     context = current ? horsePlanContextFromDecision(request) : undefined;
   const key = horsePlanHandKey(request.gameState.actionHistory, context)!;
   HorseMind.notePlan(key, request.player.user_id, true);
-  const frame = encodeHorseDecisionReads(
-    HorseMind.snapshotDecisionReads(request.gameState.players, key),
-    request.gameState.players,
-    key,
-    context
-  );
+  const historical = HorseMind.snapshotDecisionReads(request.gameState.players, key);
+  delete historical.winnerReads; // Preserve the original v1/v2 evidence shape.
+  const frame = encodeHorseDecisionReads(historical, request.gameState.players, key, context);
   const effects = [
     { type: 'plan', handKey: key, userId: request.player.user_id, barrelIntent: true },
   ];
@@ -45,6 +44,101 @@ function frameFixture(current = true) {
   return { request, context, key, frame, capture };
 }
 describe('retained plan identity without historical evidence upgrades', () => {
+  it('returns invalid rather than throwing for a nonserializable direct DEEP frame', () => {
+    const f = frameFixture(),
+      request = {
+        ...f.request,
+        type: 'DECIDE_DEEP' as const,
+        requestId: 2,
+        rngBefore: 1,
+        deepEquity: 2,
+      };
+    const readFrame: Record<string, unknown> = { version: 'horse-decision-reads-v2' };
+    readFrame.circular = readFrame;
+    const capture = {
+      ...f.capture,
+      snapshot: request,
+      readFrame,
+      effects: [],
+      planBinding: null,
+      replayState: horseDecisionReplayState(
+        {
+          phase8Postflop: 'off',
+          phase10Plo4: 'off',
+          phase11Omaha: 'off',
+          phase12Remaining: 'off',
+          phase13Joint: 'off',
+        },
+        null
+      ),
+      originalFastBinding: { inputDigest: 'a'.repeat(64), readFrameDigest: 'b'.repeat(64) },
+    };
+    expect(horseRetainedPlanContext(capture, request)).toEqual({ kind: 'invalid' });
+    expect(qualifyHorseRetainedDecisionEffects(capture, request).status).toBe('invalid');
+  });
+  it.each([
+    'valid',
+    'nonempty',
+    'missing_version',
+    'legacy_version',
+    'bad_pin',
+    'extra_pin',
+    'bad_frame_pin',
+    'bad_context',
+  ] as const)('qualifies only the bound v3 DEEP empty capture (%s)', (fault) => {
+    const f = frameFixture();
+    const request = {
+      ...f.request,
+      type: 'DECIDE_DEEP' as const,
+      requestId: 2,
+      rngBefore: 1,
+      deepEquity: 2,
+    };
+    const capture: Record<string, unknown> = {
+      ...f.capture,
+      snapshot: request,
+      effects: [],
+      planBinding: null,
+      replayState: horseDecisionReplayState(
+        {
+          phase8Postflop: 'off',
+          phase10Plo4: 'off',
+          phase11Omaha: 'off',
+          phase12Remaining: 'off',
+          phase13Joint: 'off',
+        },
+        null
+      ),
+      originalFastBinding: {
+        inputDigest: evidenceDigest(f.request),
+        readFrameDigest: evidenceDigest(f.frame),
+      },
+    };
+    if (fault === 'nonempty') capture.effects = f.capture.effects;
+    if (fault === 'missing_version') delete capture.replayState;
+    if (fault === 'legacy_version')
+      capture.replayState = {
+        ...(capture.replayState as object),
+        version: 'horse-decision-replay-state-v2',
+      };
+    if (fault === 'bad_pin')
+      capture.originalFastBinding = {
+        inputDigest: 'not-a-hash',
+        readFrameDigest: evidenceDigest(f.frame),
+      };
+    if (fault === 'extra_pin')
+      capture.originalFastBinding = { ...(capture.originalFastBinding as object), trusted: true };
+    if (fault === 'bad_frame_pin')
+      capture.originalFastBinding = {
+        inputDigest: evidenceDigest(f.request),
+        readFrameDigest: 'a'.repeat(64),
+      };
+    if (fault === 'bad_context') capture.planContext = {};
+    expect(qualifyHorseRetainedDecisionEffects(capture, request)).toMatchObject({
+      status: fault === 'valid' ? 'qualified' : 'invalid',
+      applicationVerified: false,
+    });
+  });
   it.each([false, true])('round-trips actual bounded read maps with current=%s', (current) => {
     const f = frameFixture(current),
       restored = decodeHorseDecisionReads(f.frame, f.request.gameState.players, f.key, f.context);

@@ -1201,6 +1201,55 @@
         "check-migrations-applied: lightning_horse_fill absent from the stale schema snapshot"
       ],
       "liveVerdict": "Read 2026-10-24 20:20 UTC: public.lightning_horse_fill exists with row level security on, no policies, no SELECT for anon or authenticated, SELECT only for service_role (100 rows). fn_ca_horse_roster_seat_guard and fn_ca_horse_roster_refresh are security definer with no EXECUTE for anon or authenticated (their current bodies come from later migrations on main). supabase_migrations.schema_migrations holds this version with md5(statements) e2b73d862c87640bac8fc3ff7c400beb, equal to this file."
+    },
+    {
+      "version": "20261024223153",
+      "name": "woowoo_half_earned_rake_credited_to_kingfish",
+      "file": "supabase/migrations/20261024223153_woowoo_half_earned_rake_credited_to_kingfish.sql",
+      "md5": "06c2de274fd75213f0decf83b2b62f20",
+      "appliedToProductionAt": "2026-10-24T22:31:53Z",
+      "recoveredOn": "2026-10-25",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": [
+        "check-no-new-band-aids: periodic work woowoo-half-rake-to-kingfish without a periodic-work reason"
+      ],
+      "liveVerdict": "Read 2026-10-25 03:15 UTC: the finding is TRUE of production - pg_cron job 505 woowoo-half-rake-to-kingfish (*/5) runs smarter_private.fn_woowoo_half_rake_to_kingfish_sync() (md5(prosrc) 07856466d30eb04ce34698e82110c1f7), a compensating write that upserts woowoo-half-split-<day> / kingfish-from-woowoo-split-<day> rows into smarter_private.player_fee_redemptions (reporting only; no chips move). It is retired by 20261025030629_a_standing_rake_share_replaces_the_woowoo_cron, which unschedules the job, drops the function, deletes only those split rows and applies smarter_private.player_rake_share_rules at read time in the three fee readers; the job remains live until that migration is installed. supabase_migrations.schema_migrations holds this version with md5(statements) 06c2de274fd75213f0decf83b2b62f20, equal to this file (3353 bytes)."
+    },
+    {
+        "version": "20261024233424",
+        "name": "a_refunded_earlier_registration_is_not_a_second_entry",
+        "file": "supabase/migrations/20261024233424_a_refunded_earlier_registration_is_not_a_second_entry.sql",
+        "md5": "7c6506dcc60068f55cff10b9c3878ad1",
+        "appliedToProductionAt": "2026-10-24T23:34:24Z",
+        "recoveredOn": "2026-10-26",
+        "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+        "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7968",
+        "refusedBy": [],
+        "liveVerdict": "Read-only production check 2026-10-26 01:10 UTC: schema_migrations holds this version (2109 bytes) whose fn_ca_migration_text md5 equals this file. It was applied from the still-open PR #7968 (its own file there is 20261024233030); the merged sibling fix is #7974 (20261024232734). Its edit is live: smarter_private.f06_movement_never_dealt_prior still carries the f.observed_at>=registration.registered_at receipt clause, under later merged edits (definition md5 0ff3bcaef0476a3dc46d6d6931515bb7 at read). Anchored edit of one reader; writes no row and moves no chip. Never replay."
+    },
+    {
+        "version": "20261025024527",
+        "name": "lightning_earning_club_is_the_funding_chair_club",
+        "file": "supabase/migrations/20261025024527_lightning_earning_club_is_the_funding_chair_club.sql",
+        "md5": "8bd8db8ba41dfe53b220ff199f448294",
+        "appliedToProductionAt": "2026-10-25T02:45:27Z",
+        "recoveredOn": "2026-10-26",
+        "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+        "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7983",
+        "refusedBy": [],
+        "liveVerdict": "Read-only production check 2026-10-26 01:10 UTC: schema_migrations holds this version (4217 bytes) whose fn_ca_migration_text md5 equals this file. Applied from the still-open PR #7983 (its file there is 20261025022551). public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid) reads definition md5 b1c21e14021e0e2e7bba28048dcec90e, exactly the post-image this SQL asserts. Never replay."
+    },
+    {
+        "version": "20261025052637",
+        "name": "a_refunded_diamond_or_free_entry_is_not_a_second_entry",
+        "file": "supabase/migrations/20261025052637_a_refunded_diamond_or_free_entry_is_not_a_second_entry.sql",
+        "md5": "703125af554f8394d925362a5632df25",
+        "appliedToProductionAt": "2026-10-25T05:26:37Z",
+        "recoveredOn": "2026-10-26",
+        "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline",
+        "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8019",
+        "refusedBy": [],
+        "liveVerdict": "Read-only production check 2026-10-26 01:10 UTC: schema_migrations holds this version (6027 bytes) whose fn_ca_migration_text md5 equals this file. Applied from the still-open PR #8019. Its edit is live: smarter_private.f06_movement_never_dealt_prior carries the 'A REFUNDED DIAMOND OR FREE ENTRY IS NOT A SECOND ENTRY' clause, under later merged edits (definition md5 0ff3bcaef0476a3dc46d6d6931515bb7 at read). Anchored edit of one reader; writes no row and moves no chip. Never replay."
     }
   ]
 }

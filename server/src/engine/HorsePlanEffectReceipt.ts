@@ -1,3 +1,4 @@
+import { horseDecisionHandCoordinates } from './HorseDecisionHandBinding.js';
 import { createHash } from 'node:crypto';
 
 import { horseDecisionEffectsAreValid, horseDecisionEffectsKey } from './HorseDecisionEffects.js';
@@ -386,6 +387,7 @@ export const HORSE_PLAN_RECOVERY_OUTCOMES = [
   'street_superseded',
   'generation_expired',
   'policy_withdrawn',
+  'observer_context_unavailable',
 ] as const;
 export type HorsePlanRecoveryOutcome = (typeof HORSE_PLAN_RECOVERY_OUTCOMES)[number];
 export interface HorsePlanRecovery {
@@ -408,6 +410,7 @@ export function reconstructHorsePlanEffects(
   context: {
     live(tableId: string): HorsePlanLiveHand | null;
     policyUsable(authority: HorsePlanPolicyAuthority): boolean;
+    observerContextRequired?: boolean;
   }
 ): HorsePlanRecovery {
   const outcomes: HorsePlanRecoveryOutcome[] = receipts.map(() => 'invalid');
@@ -428,6 +431,8 @@ export function reconstructHorsePlanEffects(
     const receipt = receipts[group.indexes[0]!] as HorsePlanEffectReceipt;
     const outcome = ((): HorsePlanRecoveryOutcome => {
       if (group.conflict) return 'conflict';
+      if (context.observerContextRequired && !receipt.binding.observerReadContext)
+        return 'observer_context_unavailable';
       if (receipt.disposition !== 'applied') return 'failed_not_replayed';
       if (
         receipt.acceptance.action !== receipt.issuedAction.action ||
@@ -435,7 +440,13 @@ export function reconstructHorsePlanEffects(
       )
         return 'acceptance_mismatch';
       const hand = receipt.binding.planContext.hand!;
-      const fence = receipt.binding.fence.split(':');
+      const coordinate = horseDecisionHandCoordinates({
+        fence: receipt.binding.fence,
+        generation: receipt.binding.generation,
+        player: { seat: receipt.binding.seat },
+        handJournalCoordinate: receipt.binding.handJournalCoordinate,
+      });
+      if (!coordinate) return 'invalid';
       let live: HorsePlanLiveHand | null;
       try {
         live = context.live(hand.tableId);
@@ -445,7 +456,7 @@ export function reconstructHorsePlanEffects(
       if (!live) return 'hand_not_live';
       if (String(live.tableId).toLowerCase() !== hand.tableId) return 'table_mismatch';
       if (live.handNumber !== hand.handNumber) return 'hand_superseded';
-      if (live.lease !== fence[3]) return 'lease_superseded';
+      if (live.lease !== coordinate.leaseGeneration) return 'lease_superseded';
       if (live.street !== receipt.binding.street) return 'street_superseded';
       if (!uint(live.generation) || live.generation < receipt.binding.generation)
         return 'generation_expired';

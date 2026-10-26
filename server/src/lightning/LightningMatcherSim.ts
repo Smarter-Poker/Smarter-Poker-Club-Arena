@@ -64,6 +64,13 @@ export interface LightningSimOptions {
   /** Matcher pass interval. */
   passIntervalMs: number;
   firstEntryRule: 'any_seat' | 'big_blind';
+  /**
+   * The starting population was seated by the conversion that began the
+   * Cluster's epoch (20261024213844): those seats are not newcomers, so the
+   * first-entry rule holds only the players who arrive later. False models
+   * the rule before that migration (every never-the-big-blind slot held).
+   */
+  conversionSeating: boolean;
   positionFairness: boolean;
   /** The candidate's knobs (m2): P5 thin-band weight (null = half the medium) and diversity scale. */
   candidateThinWeight: number | null;
@@ -91,6 +98,7 @@ export const LIGHTNING_SIM_DEFAULTS: Readonly<LightningSimOptions> = Object.free
   passIntervalMs: 1_000,
   // The live rule (20261024195059). 'any_seat' is an offline what-if only.
   firstEntryRule: 'big_blind',
+  conversionSeating: true,
   positionFairness: true,
   candidateThinWeight: null,
   candidateDiversityScale: 1,
@@ -147,6 +155,8 @@ interface SimPlayer {
   handsSinceBb: number | null;
   positions: { btn: number; co: number; hj: number; utg: number };
   seenInHand: boolean;
+  /** Seated by the epoch's conversion (the starting population), not a newcomer. */
+  conversionSeat: boolean;
   hands: number;
   bb: number;
   sb: number;
@@ -195,7 +205,7 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
 
   const players = new Map<string, SimPlayer>();
   let nextId = 0;
-  const spawn = (atMs: number): void => {
+  const spawn = (atMs: number, conversionSeat = false): void => {
     const id = `p${String(nextId++).padStart(7, '0')}`;
     players.set(id, {
       id,
@@ -207,6 +217,7 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
       handsSinceBb: null,
       positions: { btn: 0, co: 0, hj: 0, utg: 0 },
       seenInHand: false,
+      conversionSeat,
       hands: 0,
       bb: 0,
       sb: 0,
@@ -219,7 +230,8 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
     });
   };
   // Entries staggered over the first pass interval: a deterministic queue.
-  for (let i = 0; i < o.players; i++) spawn(Math.floor((i * dt) / Math.max(1, o.players)) - dt);
+  for (let i = 0; i < o.players; i++)
+    spawn(Math.floor((i * dt) / Math.max(1, o.players)) - dt, o.conversionSeating);
 
   const recent: LightningRecentHand[] = [];
   const recentSets: string[] = [];
@@ -309,7 +321,7 @@ export function runLightningMatcherSim(partial: Partial<LightningSimOptions>): L
           bbUnresolved: false,
           debtSinceMs: p.enteredAtMs,
           handsSinceBb: p.handsSinceBb,
-          newcomer: p.lastBbAtMs === null,
+          newcomer: p.lastBbAtMs === null && !p.conversionSeat,
           positions: { ...p.positions },
         });
       }

@@ -706,6 +706,7 @@ export default function ClubDetailPage() {
       masterBus.subscribeDebounced('CLUB_LEFT', handler, 300),
       masterBus.subscribeDebounced('TABLE_SEATED', handler, 300),
       masterBus.subscribeDebounced('TABLE_LEFT', handler, 300),
+      masterBus.subscribeDebounced('SEAT_CASHED_OUT', handler, 300),
       masterBus.subscribeDebounced('CLUB_UPDATED', handler, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', handler, 300),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 300),

@@ -87,11 +87,12 @@ describe('LAW: a settled Lightning hand is on the horse scoreboard', () => {
       expect(['cash', 'hu_cash']).not.toContain(row.format);
     }
     // Zero-sum among an all-horse table except the rake and jackpot drop, to
-    // the cent the weighted share allocator rounds each player's share to.
+    // the cent: each row rounds its net, its rake share and its jackpot share
+    // separately, so each row may carry up to three cents of rounding.
     const net = nets.reduce((a, r) => a + r.net_bb, 0);
     const drop = nets.reduce((a, r) => a + r.rake_bb + r.bbj_bb, 0);
     const oneCentBB = 0.01 / t.scoreboard[0]!.bigBlind;
-    expect(Math.abs(net + drop)).toBeLessThanOrEqual(nets.length * oneCentBB + 1e-9);
+    expect(Math.abs(net + drop)).toBeLessThanOrEqual(nets.length * 3 * oneCentBB + 1e-9);
     expect(review.drainSeatTouches(100_000)).toEqual([]);
   });
 

@@ -27,8 +27,8 @@ import { PRIVACY_LAST_UPDATED, TERMS_LAST_UPDATED } from '../src/components/lega
 
 /** Re-record in the same commit as the words, with the date they shipped. */
 const RECORDED = {
-  terms: { date: 'September 8, 2026', words: '5e16a8b238dea596' },
-  acceptanceModal: { date: 'September 8, 2026', words: '7b0d81c16ee4cc6c' },
+  terms: { date: 'October 25, 2026', words: 'f01d743ce46b0257' },
+  acceptanceModal: { date: 'October 25, 2026', words: '942d5e3781379c32' },
   privacy: { date: 'September 16, 2026', words: '9995740553602c75' },
 };
 

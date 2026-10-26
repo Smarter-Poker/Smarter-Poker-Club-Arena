@@ -1,3 +1,5 @@
+import { captureHorseHandJournalContext } from '../../../engine/HorseDecisionHandBinding.js';
+import { registerPublicObserver, inspectObserverReads } from '../plan/fixture.js';
 import { horsePlanContextFromDecision } from '../../../engine/HorsePlanHandIdentity.js';
 import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -159,6 +161,7 @@ function nextDecision(): FastHorseDecisionRequest {
       },
     },
   };
+  request.handJournalContext = captureHorseHandJournalContext(request.gameState.actionHistory!);
   request.decisionKey = buildHorseDecisionKey(request);
   return request;
 }
@@ -451,13 +454,28 @@ describe('actual default worker completed-hand learner', () => {
     try {
       // The learned final fold must be present in the real reader and its
       // retained frame. No success or causal action change is inferred from ACK.
-      HorseMind.importStats([{ user_id: opponentId, hands: 30, folds: 7, facedAggr: 7 }]);
       const { observation, controller } = fixture();
-      HorseMind.setDecisionScope('holdem:hu');
-      HorseMind.observe(controller.slice(0, 3), [], horseMindHandFromCompletion(observation));
-      HorseMind.setDecisionScope(null);
+      const admitted = await registerPublicObserver(
+        runtime,
+        observation,
+        heroId,
+        nextDecision().gameState.players
+      );
+      // Explicit synthetic prior in this observer only; never a pooled import.
+      inspectObserverReads(runtime, admitted, () => {
+        HorseMind.importStats([{ user_id: opponentId, hands: 30, folds: 7, facedAggr: 7 }]);
+        HorseMind.setDecisionScope('holdem:hu');
+        HorseMind.observe(controller.slice(0, 3), [], horseMindHandFromCompletion(observation));
+        HorseMind.setDecisionScope(null);
+      });
+      responses.length = 0;
+      captures.length = 0;
+      actualDecisions = 0;
+      reading.mockClear();
       runtime.receive(observation);
       const request = nextDecision();
+      request.decisionTimeMs = Date.now() + 10000;
+      request.decisionKey = buildHorseDecisionKey(request);
       runtime.receive(request);
       await runtime.drain();
       expect(responses.filter((r) => r.type === 'ERROR')).toEqual([]);
@@ -491,7 +509,10 @@ describe('actual default worker completed-hand learner', () => {
 
 // New coordinate controls. These deliberately use the real HorseLogic default
 // path while replacing only external-service startup and journal I/O.
-async function runIdentityDecisions(requests: FastHorseDecisionRequest[]) {
+async function runIdentityDecisions(
+  requests: FastHorseDecisionRequest[],
+  inspect?: (runtime: HorseDecisionWorkerRuntime) => void
+) {
   const responses: HorseDecisionWorkerResponse[] = [];
   const ready = defaults.workerReadiness();
   const runtime = new HorseDecisionWorkerRuntime((response) => responses.push(response), {
@@ -508,6 +529,7 @@ async function runIdentityDecisions(requests: FastHorseDecisionRequest[]) {
   try {
     requests.forEach((request) => runtime.receive(request));
     await runtime.drain();
+    inspect?.(runtime);
     return responses;
   } finally {
     runtime.receive({ type: 'SHUTDOWN' });
@@ -585,15 +607,20 @@ describe('the worker owns basic hand-coordinate admission', () => {
         fence: originalFence,
         generation: 100,
       });
-      expect(HorseMind.getStats(heroId)).toMatchObject({ hands: 1, vpip: 1, pfr: 1 });
-      expect(HorseMind.getStats(opponentId)).toMatchObject({ hands: 1, passive: 1 });
+      inspectObserverReads(runtime, nextDecision(), () => {
+        expect(HorseMind.getStats(heroId)).toMatchObject({ hands: 1, vpip: 1, pfr: 1 });
+        expect(HorseMind.getStats(opponentId)).toMatchObject({ hands: 1, passive: 1 });
+      });
+      expect(HorseMind.getStats(heroId)).toBeUndefined();
       // Replay under the original coordinate must hit the same delivered keys.
       const original = nextDecision();
       original.requestId = 101;
       runtime.receive(original);
       await runtime.drain();
       expect(responses.filter((response) => response.type === 'FAST_RESULT')).toHaveLength(2);
-      expect(HorseMind.getStats(heroId)?.hands).toBe(1);
+      expect(inspectObserverReads(runtime, original, () => HorseMind.getStats(heroId)?.hands)).toBe(
+        1
+      );
     } finally {
       port1.close();
       port2.close();
@@ -608,6 +635,7 @@ describe('the worker owns basic hand-coordinate admission', () => {
   it('does not let caller options replace the coordinate even with a recomputed input key', async () => {
     const request = nextDecision();
     request.opts = { mindObservationHand: { version: 1, tableId, handNumber: 1000100 } } as never;
+    request.handJournalContext = captureHorseHandJournalContext(request.gameState.actionHistory!);
     request.decisionKey = buildHorseDecisionKey(request);
     const responses = await runIdentityDecisions([request]);
     expect(responses.find((response) => response.type === 'ERROR')).toMatchObject({
@@ -621,6 +649,7 @@ describe('the worker owns basic hand-coordinate admission', () => {
   it('continues a legal legacy decision without silently using global basic-read keys', async () => {
     const request = nextDecision();
     request.fence = `${tableId}:100:1:${lease}:100`;
+    request.handJournalContext = captureHorseHandJournalContext(request.gameState.actionHistory!);
     request.decisionKey = buildHorseDecisionKey(request);
     const responses = await runIdentityDecisions([request]);
     expect(responses.filter((response) => response.type === 'ERROR')).toEqual([]);
@@ -636,11 +665,16 @@ describe('the worker owns basic hand-coordinate admission', () => {
     second.generation = 101;
     second.fence = `66666666-6666-4666-8666-666666666666:1000101:1:${lease}:101`;
     second.decisionKey = buildHorseDecisionKey(second);
-    const responses = await runIdentityDecisions([first, second]);
+    const responses = await runIdentityDecisions([first, second], (runtime) => {
+      inspectObserverReads(runtime, first, () => {
+        expect(HorseMind.getStats(heroId)).toMatchObject({ hands: 2, vpip: 2, pfr: 2 });
+        expect(HorseMind.getStats(opponentId)).toMatchObject({ hands: 2, vpip: 2, passive: 2 });
+      });
+    });
     expect(responses.filter((response) => response.type === 'ERROR')).toEqual([]);
     expect(responses.filter((response) => response.type === 'FAST_RESULT')).toHaveLength(2);
-    expect(HorseMind.getStats(heroId)).toMatchObject({ hands: 2, vpip: 2, pfr: 2 });
-    expect(HorseMind.getStats(opponentId)).toMatchObject({ hands: 2, vpip: 2, passive: 2 });
+    expect(HorseMind.getStats(heroId)).toBeUndefined();
+    expect(HorseMind.getStats(opponentId)).toBeUndefined();
     expect(HorseMind.currentScope()).toBeNull();
   });
 });

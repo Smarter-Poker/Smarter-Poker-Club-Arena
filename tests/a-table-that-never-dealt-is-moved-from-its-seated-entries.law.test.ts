@@ -259,7 +259,8 @@ describe('a table that never dealt is moved from its seated entries', () => {
       '20261022032302_a_settled_finishing_place_is_not_a_changed_elimination.sql',
       '20261024211825_a_rebuy_seated_from_another_table_is_movement_evidence.sql',
       '20261024232734_a_refunded_earlier_entry_is_not_a_second_entry.sql',
-      '20261025042215_a_refunded_diamond_or_free_entry_is_not_a_second_entry.sql',
+      '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
     ]);
     const diamond = readFileSync(
       join(MIGRATIONS, '20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql'),

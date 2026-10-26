@@ -307,13 +307,14 @@ FROM generate_series(1,500)i;
     equivalent('pressure-whole-report-identical')
     # What the sealed read still owes raw: each cutoff's own UTC day from the
     # cutoff, plus today (every finished day is sealed), once per cutoff.
-    owed = int(run('pressure-raw-rows-owed', f"""
+    owed_sql = f"""
 SELECT sum(x.n) FROM (SELECT DISTINCT taken_at FROM ca_chip_baseline WHERE club_id='{C}' AND taken_at IS NOT NULL) k
 CROSS JOIN LATERAL (SELECT count(*) AS n FROM chip_ledger l
   WHERE l.club_id='{C}' AND (l.to_type='player_wallet' OR l.from_type='player_wallet')
     AND ((l.created_at >= k.taken_at
           AND l.created_at < (((k.taken_at AT TIME ZONE 'UTC')::date + 1)::timestamp AT TIME ZONE 'UTC'))
-      OR l.created_at >= ((now() AT TIME ZONE 'UTC')::date::timestamp AT TIME ZONE 'UTC'))) x;"""))
+      OR l.created_at >= ((now() AT TIME ZONE 'UTC')::date::timestamp AT TIME ZONE 'UTC'))) x;"""
+    owed = int(run('pressure-raw-rows-owed', owed_sql))
     plans = {}
     for label, source in [('before', before), ('after', definition(NEW))]:
         query = source[source.index('WITH bank AS MATERIALIZED'):source.index('  IF v_report IS NULL')].replace(' INTO v_report', '').replace('p_club_id', '$1')
@@ -327,11 +328,16 @@ CROSS JOIN LATERAL (SELECT count(*) AS n FROM chip_ledger l
         return sum(n['Actual Rows'] * n['Actual Loops'] for n in nodes(plan['Plan'])
                    if n.get('Relation Name') == 'chip_ledger')
     before_rows, after_rows = ledger_rows(plans['before']), ledger_rows(plans['after'])
+    # "Today" is read from now() in each session. A run that crosses 00:00 UTC
+    # between the owed count and the measured read sees two different todays
+    # (2026-10-26 00:02 UTC: 417 read against 418 owed). Count again after the
+    # read; the band must hold for the today the read actually used.
+    owed_after = int(run('pressure-raw-rows-owed-after', owed_sql))
     results['pressure'] = {'before_ledger_rows': before_rows, 'after_ledger_rows': after_rows,
-                           'raw_rows_owed': owed}
+                           'raw_rows_owed': owed, 'raw_rows_owed_after': owed_after}
     assert before_rows > 800000, before_rows
     # The bank's two treasury sums add a handful of rows; nothing else is read.
-    assert owed <= after_rows <= owed + 10, (after_rows, owed)
+    assert any(o <= after_rows <= o + 10 for o in {owed, owed_after}), (after_rows, owed, owed_after)
     assert plans['after']['Plan']['Temp Written Blocks'] == 0, 'Sealed read must not spill'
     results['cases'].append({'name': 'pressure-reads-only-the-cutoff-day-and-today', 'passed': True})
 

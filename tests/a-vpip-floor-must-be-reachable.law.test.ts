@@ -99,7 +99,7 @@ describe('a VPIP floor must be reachable', () => {
        under it at the very first check. Aiming a real margin above the floor
        is the difference between a rule the fleet passes and a rule it fails
        a sixth of the time before it has played a twelfth hand. */
-    for (const floor of [30, 50]) {
+    for (const floor of [30, 40, 50]) {
       const p = floor / 100;
       const se = Math.sqrt((p * (1 - p)) / VPIP_JUDGED_OVER_HANDS);
       expect(vpipTargetFor(floor) - p, `floor ${floor}`).toBeGreaterThan(se);

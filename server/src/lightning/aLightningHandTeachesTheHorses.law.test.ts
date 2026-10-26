@@ -105,18 +105,23 @@ describe('LAW: every Lightning hand teaches the horses', () => {
     expect(t.horseLane.observed[0]!.durableOpponentProfiles).toEqual([]);
   });
 
-  it('a game with no durable memory is still observed (fixed-limit, FLO8, short deck)', async () => {
-    const readProfiles = vi.fn(async () => []);
-    const t = await playHand(8300, {
-      rules: { game_variant: 'short_deck' },
-      deps: {
-        horseObservation: { schema: async () => 'installed', readProfiles, report: () => {} },
-      },
-    });
-    expect(t.horseLane.observed.length).toBe(1);
-    expect(readProfiles).not.toHaveBeenCalled();
-    expect(t.horseLane.observed[0]!.scope).toBe(readScopeOf('short_deck', 3));
-  });
+  it.each(['flh', 'flo8', 'short_deck'])(
+    '%s reads its own durable memory and is observed',
+    async (variant) => {
+      const readProfiles = vi.fn(async () => []);
+      const t = await playHand(8300, {
+        rules: { game_variant: variant },
+        deps: {
+          horseObservation: { schema: async () => 'installed', readProfiles, report: () => {} },
+        },
+      });
+      expect(t.horseLane.observed.length).toBe(1);
+      expect(readProfiles).toHaveBeenCalledTimes(1);
+      expect(readProfiles).toHaveBeenCalledWith(expect.any(Array), variant, 'cash', 'short');
+      expect(t.horseLane.observed[0]!.scope).toBe(readScopeOf(variant, 3));
+      expect(t.horseLane.observed[0]!.durableOpponentProfiles).toEqual([]);
+    }
+  );
 
   it('a failing lane never holds or repeats the settled hand', async () => {
     const report = vi.fn();
@@ -163,5 +168,21 @@ describe('LAW: a Lightning action carries the price it was taken at', () => {
     }
     const observed = t.horseLane.observed[0]!.actions!.filter((a) => a.publicNode);
     expect(observed.length).toBe(voluntary.length);
+  });
+});
+
+describe('LAW: a Lightning hand carries its results to the winner read', () => {
+  it('every dealt player net, from settlement, conserving the pot less the drop', async () => {
+    const t = await playHand(8700);
+    const o = t.horseLane.observed[0]!;
+    const settled = t.calls.settle[0]!;
+    expect(o.results!.length).toBe(settled.results.length);
+    for (const r of settled.results)
+      expect(o.results!.find((x) => x.user_id === r.playerId)!.net).toBeCloseTo(
+        r.won - r.contributed,
+        2
+      );
+    const sum = o.results!.reduce((a, r) => a + r.net, 0);
+    expect(sum).toBeCloseTo(-(settled.rake + settled.bbj), 2);
   });
 });

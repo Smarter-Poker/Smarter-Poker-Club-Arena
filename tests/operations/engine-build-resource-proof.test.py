@@ -15,6 +15,45 @@ class OriginalBuildResourceEvidenceTests(unittest.TestCase):
     def output(self, peak, boundary=None):
         return f'{boundary if boundary is not None else self.boundary}\nENGINE_BUILD_MEMORY_PEAK_BYTES={peak}\n'
 
+    def test_fault_retains_live_cgroup_evidence(self):
+        from unittest.mock import patch
+        with patch.object(proof, 'inspect', return_value={'State': {'Running': True}}), patch.object(proof, 'counter', side_effect=[{'oom_kill': 2}, '2048']):
+            receipt = proof.verified_oom_fault(1, {'oom_kill': 1})
+        self.assertEqual(receipt['oom_evidence_source'], 'cgroup_memory_events')
+        self.assertEqual(receipt['events_after'], {'oom_kill': 2})
+
+    def test_fault_accepts_only_proved_container_oom_and_keeps_missing_counters_unknown(self):
+        from unittest.mock import patch
+        state = {'Running': False, 'OOMKilled': True, 'ExitCode': 137}
+        with patch.object(proof, 'inspect', return_value={'State': state}), patch.object(proof, 'counter') as counter:
+            receipt = proof.verified_oom_fault(1, {'oom_kill': 0})
+            counter.assert_not_called()
+        self.assertEqual(receipt['fault_builder_state'], state)
+        self.assertIsNone(receipt['events_after'])
+        self.assertIsNone(receipt['memory_peak'])
+
+    def test_fault_handles_daemon_exit_between_inspect_and_exec(self):
+        from unittest.mock import patch
+        states = [{'State': {'Running': True}}, {'State': {'Running': False, 'OOMKilled': True, 'ExitCode': 137}}]
+        with patch.object(proof, 'inspect', side_effect=states), patch.object(proof, 'counter', side_effect=RuntimeError('cannot exec in a stopped state')):
+            receipt = proof.verified_oom_fault(1, {'oom_kill': 0})
+        self.assertEqual(receipt['oom_evidence_source'], 'docker_container_oom_state')
+
+    def test_fault_refuses_success_unexplained_stop_and_unreadable_live_counters(self):
+        from unittest.mock import patch
+        with self.assertRaisesRegex(RuntimeError, 'OOM kill'):
+            proof.verified_oom_fault(0, {'oom_kill': 0})
+        for state in ({'Running': False}, {'Running': False, 'OOMKilled': False, 'ExitCode': 137}, {'Running': False, 'OOMKilled': True, 'ExitCode': 1}):
+            with patch.object(proof, 'inspect', return_value={'State': state}), self.assertRaisesRegex(RuntimeError, 'authoritative OOM'):
+                proof.verified_oom_fault(1, {'oom_kill': 0})
+        with patch.object(proof, 'inspect', return_value={'State': {'Running': True}}), patch.object(proof, 'counter', side_effect=RuntimeError('unreadable')), self.assertRaisesRegex(RuntimeError, 'unreadable'):
+            proof.verified_oom_fault(1, {'oom_kill': 0})
+
+    def test_live_fault_requires_an_increased_kill_counter(self):
+        from unittest.mock import patch
+        with patch.object(proof, 'inspect', return_value={'State': {'Running': True}}), patch.object(proof, 'counter', side_effect=[{'oom_kill': 1}, '2048']), self.assertRaisesRegex(RuntimeError, 'OOM kill'):
+            proof.verified_oom_fault(1, {'oom_kill': 1})
+
     def test_disposable_builder_retains_limits_and_source_refs(self):
         from unittest.mock import patch
         import tempfile

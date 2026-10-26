@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import SlugEnforcer from '@/components/common/SlugEnforcer';
@@ -41,6 +41,63 @@ describe('SlugEnforcer', () => {
       return { select: vi.fn() };
     });
   };
+
+  it.each(['path', 'search', 'hash', 'unmount'] as const)(
+    'retires an old slug lookup after the %s changes',
+    async (change) => {
+      let finishOld!: (result: unknown) => void;
+      let finishNew!: (result: unknown) => void;
+      const oldClub = new Promise((resolve) => {
+        finishOld = resolve;
+      });
+      const newClub = new Promise((resolve) => {
+        finishNew = resolve;
+      });
+      let clubReads = 0;
+      (supabase.from as any).mockImplementation((table: string) => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () =>
+              table === 'clubs'
+                ? ++clubReads === 1
+                  ? oldClub
+                  : newClub
+                : Promise.resolve({ data: null, error: null }),
+          }),
+        }),
+      }));
+      const initial = {
+        pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
+        search: '?section=ticker',
+        hash: '#old',
+      };
+      (useLocation as any).mockReturnValue(initial);
+      const view = render(<SlugEnforcer />);
+      if (change === 'unmount') view.unmount();
+      else {
+        (useLocation as any).mockReturnValue({
+          ...initial,
+          ...(change === 'path' ? { pathname: '/leaderboard' } : {}),
+          ...(change === 'search' ? { search: '?create=table&game=nlh' } : {}),
+          ...(change === 'hash' ? { hash: '#current' } : {}),
+        });
+        view.rerender(<SlugEnforcer />);
+      }
+      await act(async () => {
+        finishOld({ data: { slug: 'test-club', is_union: false }, error: null });
+      });
+      expect(navigateMock).not.toHaveBeenCalled();
+      if (change === 'search' || change === 'hash') {
+        await act(async () => {
+          finishNew({ data: { slug: 'test-club', is_union: false }, error: null });
+        });
+        expect(navigateMock).toHaveBeenCalledExactlyOnceWith(
+          `/clubs/test-club/table-management${change === 'search' ? '?create=table&game=nlh' : initial.search}${change === 'hash' ? '#current' : initial.hash}`,
+          { replace: true }
+        );
+      }
+    }
+  );
 
   it('rewrites non-union club UUID to slug without dropping the nested Data path', async () => {
     (useLocation as any).mockReturnValue({
@@ -165,5 +222,32 @@ describe('SlugEnforcer', () => {
     expect(navigateMock).toHaveBeenCalledWith('/unions/12345678-1234-1234-1234-123456789012', {
       replace: true,
     });
+  });
+  it('retires a lookup when native document navigation starts without preventing departure', async () => {
+    let finish!: (result: unknown) => void;
+    const club = new Promise((resolve) => {
+      finish = resolve;
+    });
+    (supabase.from as any).mockImplementation((table: string) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => (table === 'clubs' ? club : Promise.resolve({ data: null })),
+        }),
+      }),
+    }));
+    (useLocation as any).mockReturnValue({
+      pathname: '/clubs/12345678-1234-1234-1234-123456789012/table-management',
+      search: '?create=table',
+      hash: '#settings',
+    });
+    const view = render(<SlugEnforcer />);
+    const departure = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(departure);
+    await act(async () => {
+      finish({ data: { slug: 'old-club', is_union: false } });
+    });
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(departure.defaultPrevented).toBe(false);
+    view.unmount();
   });
 });

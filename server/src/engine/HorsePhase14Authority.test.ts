@@ -121,16 +121,55 @@ describe('P14.4 null proof: no corrective candidate can be admitted today', () =
     }
   });
 
-  it('no live engine path imports the Phase 14 authority (there is no corrective applier)', () => {
+  it('routes functional admission only through its worker, main, replay and read-only proof owners', () => {
     const root = fileURLToPath(new URL('../', import.meta.url));
     const importers = (readdirSync(root, { recursive: true, encoding: 'utf8' }) as string[])
       .filter((f) => f.endsWith('.ts') && !f.includes('.test') && !f.includes('test-support'))
       .filter((f) =>
         /\bfrom\s+['"][^'"]*HorsePhase14Authority(\.js)?['"]|import\(\s*['"][^'"]*HorsePhase14Authority/.test(
-          readFileSync(`${root}${f}`, 'utf8')
+          readFileSync(`${root}${f}`, 'utf8').replace(/\bimport\s+type\b[\s\S]*?;/g, '')
         )
       );
-    expect(importers).toEqual([]);
+    expect(importers.sort()).toEqual([
+      'engine/HorsePhase14Acceptance.ts',
+      'engine/horseDecision/client.ts',
+      'engine/horseDecision/replay/qualifiedAuthority.ts',
+      'engine/horseDecision/workerRuntime.ts',
+      'services/horseDecisionJournal/phaseProof.ts',
+    ]);
+    // This fifth owner verifies retained evidence through the existing offline
+    // admission path. Domain names are its only direct live-authority import;
+    // it cannot mint an evaluator, mutate a live gate or submit an action.
+    const observer = readFileSync(`${root}services/horseDecisionJournal/phaseProof.ts`, 'utf8');
+    const authorityImports = [
+      ...observer.matchAll(
+        /import\s*\{([^}]+)\}\s*from\s*['"][^'"]*HorsePhase14Authority\.js['"]/g
+      ),
+    ];
+    expect(authorityImports.map((match) => match[1]!.replace(/\s/g, ''))).toEqual([
+      'HORSE_PHASE14_DOMAINS',
+    ]);
+    expect(observer).toContain('qualifiedReplayAuthorityHolders');
+    expect(observer).toContain('HorseQualifiedAuthorityHolder.fromReplayReceipt(');
+    expect(observer).not.toMatch(
+      /\b(?:liveHorsePhase14Authorities|HorsePhase8AuthorityGate|createCorrectiveKernelEvaluator|LiveHorseDecisionWorkerClient|HorseLogic)\b/
+    );
+    expect(observer).not.toMatch(
+      /\.\s*(?:apply|withdraw|refresh|stamp|observeWorker|forgetWorker|performAction|commitDecisionEffects|applyDecisionEffects|decideFast|decideDeep)\s*\(/
+    );
+    const fleet = readFileSync(`${root}services/horseDecisionJournal/fleet.ts`, 'utf8');
+    expect(fleet.match(/new\s+HorseDecisionJournalStore\s*\(/g)).toHaveLength(1);
+    expect(fleet).toMatch(
+      /new\s+HorseDecisionJournalStore\(directory,\s*readonlyHorseJournalStoreOptions\(directory,\s*name\)\)/
+    );
+    const config = readFileSync(`${root}services/horseDecisionJournal/config.ts`, 'utf8');
+    const optionsStart = config.indexOf('export function readonlyHorseJournalStoreOptions(');
+    expect(optionsStart).toBeGreaterThan(-1);
+    const readonlyOptions = config.slice(optionsStart, config.indexOf('\n}\n', optionsStart) + 2);
+    expect(readonlyOptions.match(/return\s*\{\s*readOnly:\s*true(?:\s*[,}])/g)).toHaveLength(2);
+    expect(readonlyOptions).not.toMatch(/readOnly:\s*false/);
+    expect(fleet).toMatch(/activationAllowed:\s*false/);
+    expect(observer + fleet).not.toMatch(/activationAllowed\s*(?::|=)\s*true/);
   });
 });
 
@@ -465,7 +504,7 @@ describe('P14.4 a caller cannot supply candidate control', () => {
       mode: 'shadow',
       authorityUsable: true,
       activationAllowed: false,
-      reason: 'corrective_applier_unavailable',
+      reason: 'functional_catalog_unavailable',
     });
   });
 

@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 232055,
-      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+      "bytes": 237289,
+      "sha256": "b343017dad36977b91a9d036914c2ac4626a5a3c6bc47c4a117352d39150f1e9"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -282,6 +282,130 @@
     "current": {
       "bytes": 230210,
       "sha256": "b2426a92b653e1afd3e15d57b257db237bc178ffeb764f7077954470313a02a5"
+    }
+  },
+  "supersededCiStopsAtThePush20261025": {
+    "reason": "Restamped for the CI load change only (docs/changelog/2026-10-25-superseded-ci-stops-at-the-push.md): ci.yml gates its heavy jobs on !cancelled() instead of always() and documents ci-supersede.yml; the two CI routing tests follow that prefix. No suite, step, shard, financial source, fixture, assertion, deadline or qualification status changed. Matching source hashes are not production or financial execution proof; fresh hosted qualification is still required.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+        },
+        "current": {
+          "bytes": 234392,
+          "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+        }
+      }
+    }
+  },
+  "horseAuditNativeQualification20261025": {
+    "reason": "Adds source-bound native horse-audit population/cohort regression in existing required PostgreSQL shard2. Only current workflow identity changes. Financial sources, assertions, historical execution receipts and qualification statuses remain unchanged; this is not a financial or production certificate.",
+    "previousWorkflowInput": {
+      "bytes": 234392,
+      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+    },
+    "currentWorkflowInput": {
+      "bytes": 234833,
+      "sha256": "e1eb68a8626f8c866a90f7c7864844c3a20d2ba8fb87da2c285ae44cf7550666"
+    }
+  },
+  "_horse_audit_main_integration_20261025": {
+    "reason": "Preserve main digest qualification and horse audit native qualification; refresh only current integrated workflow identity. Historical evidence, financial source inputs and verdicts retained.",
+    "current_workflow": {
+      "bytes": 235095,
+      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+    }
+  },
+  "horseDailyCountsNative20261025": {
+    "reason": "Add isolated PG17 accepted-hand paired horse counts qualification to existing accounting shard4. Refresh only current workflow identity; preserve historical pins, financial inputs, assertions and qualification verdicts. Not production execution evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235317,
+      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
+    }
+  },
+  "horseDailyCountsProtectedMainIntegration20261025": {
+    "reason": "Retain protected-main messenger native proof and the accepted-hand daily-count native proof together on their existing accounting shards1 and4. Refresh only current workflow identity. Preserve every historical pin, qualification state and financial assertion. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    }
+  },
+  "horsePhase14GenerationGuard20261025": {
+    "reason": "Adds the Phase14 generation publication guard and finite negative scenarios to the existing required TypeScript job. Refresh only current workflow input identity; preserve historical pins, financial source/assertions and qualification verdicts. This is not native financial or production execution evidence.",
+    "previousWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    },
+    "currentWorkflowPin": {
+      "bytes": 235911,
+      "sha256": "63ce14b8a81e7a7b12a1f888a2ee6e9d12f81d35f6d07732c8a3521861a62959"
+    }
+  },
+  "horseMultiboardPopulationFollowup20261025": {
+    "reason": "Use existing native audit fixture to qualify exact multi-board decision populations for direct descendants. Current workflow identity only; preserve all historical pins, financial assertions and qualification states. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235596,
+      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+    }
+  },
+  "horsePhase14ProtectedMainIntegration20261025": {
+    "reason": "Preserve protected-main original Lightning coordinates, all-archive readers and narrow V56 policy alongside independent Phase14 generation qualification. Refresh only current workflow identity; preserve every historical qualification receipt, financial input/assertion and verdict. Not native or production certification.",
+    "currentWorkflowPin": {
+      "bytes": 235919,
+      "sha256": "3d666d2b816734eacc1f758947f26b5b66c3acea3c7f00d5474918399b32fd3e"
+    }
+  },
+  "_typecheck_summary_sparse_checkout_20261025": {
+    "reason": "The required TypeScript summary fetches only its standalone Node gate after a full-repository fetch exhausted its two-minute budget. Exact source, native prerequisites, result assertions and timeout remain unchanged. Current input identity only; historical financial evidence and verdicts are retained.",
+    "previous": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235095,
+        "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+      }
+    },
+    "current": {
+      ".github/workflows/ci.yml": {
+        "bytes": 235514,
+        "sha256": "59fbd5cd11f2bfc059ef196fd5dd55e518e7378c8e8753f6a5f1e8c641059790"
+      }
+    },
+    "integration": "Preserves the protected Messenger native qualification step added concurrently; only current input identities updated, historical evidence retained."
+  },
+  "lightningAndDailyCountCurrentCIIntegration20261025": {
+    "reason": "Preserve protected daily-count and Messenger native proof and the standalone TypeScript summary together. Only current workflow input identity changes; all historical qualification evidence and financial assertions are retained. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235736,
+      "sha256": "c859f64182dc13820d4b1ded05802d371690d7bdff3207c832ebdb20d9706957"
+    }
+  },
+  "lightningAndPressurePopulationCurrentCIIntegration20261025": {
+    "reason": "Preserve protected multiboard audit population qualification and the standalone TypeScript summary together. Only current workflow input identity changes; all historical qualification evidence and financial assertions are retained. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235744,
+      "sha256": "c7e6cf9c03217d7a3ef399e7ffebf98b85facff34f735118f8f3af2b43abaca3"
+    }
+  },
+  "horsePhase14LightningIntegration20261025": {
+    "reason": "Preserve frozen Lightning819 source and functional Phase14 qualification together. Update current workflow identity only; retain all historical pins, financial assertions and qualification states. Companion protected merge and final combined qualification remain required.",
+    "currentWorkflowPin": {
+      "bytes": 236067,
+      "sha256": "0eb2213abff63137192b3248d4b2b842a0c8db714f2738f6ca7472ab0f9f4fb7"
+    }
+  },
+  "horseOwnPublicHistoryNative20261025": {
+    "reason": "Add isolated PG17 original-observer public-history qualification in existing required Accounting4. Refresh only current workflow input identity; preserve historical pins, financial assertions and qualification verdicts. This is source binding, not financial or production execution evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 235596,
+          "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+        },
+        "current": {
+          "bytes": 235835,
+          "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
+        }
+      }
     }
   }
 }

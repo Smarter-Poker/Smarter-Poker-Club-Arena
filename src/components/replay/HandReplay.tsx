@@ -1239,7 +1239,9 @@ export default function HandReplay({
                   <span className="player-hand-ranking__name">{p.username}</span>
                   <span className="player-hand-ranking__hand">
                     {high?.hole
-                      ? (perRun ?? `${high.handName}${low ? ` · ${low.handName}` : ''}`)
+                      ? `${perRun ?? `${high.handName}${low ? ` · ${low.handName}` : ''}`}${
+                          high.calledMuck ? ' · Called' : ''
+                        }`
                       : mucked
                         ? 'Mucked'
                         : foldedIds.has(p.userId)

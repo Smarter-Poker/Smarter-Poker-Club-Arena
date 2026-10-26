@@ -1,3 +1,9 @@
+import { registerPlayerActionAudioCases } from './audio/playerActionAudioCases';
+import { registerLeaderboardLoadingLayoutCases } from './css/leaderboardLoadingLayoutCases';
+
+registerPlayerActionAudioCases();
+registerLeaderboardLoadingLayoutCases();
+
 import { registerCompactLobbyRowsCases } from './support/compactLobbyRowsCases';
 registerCompactLobbyRowsCases();
 import { registerGameLobbyCardCases } from './support/gameLobbyCardCases';

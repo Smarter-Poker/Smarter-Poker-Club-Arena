@@ -10,7 +10,7 @@
  * free diamond receipts, and 42 free chip receipts, in 14 days; 18 of 872
  * live playing entries at the time of the proof.
  *
- * 20261025042215 admits each only on its own refund evidence: the free chip
+ * 20261025052637 (recorded on main; PR #8019 first carried it as 20261025042215) admits each only on its own refund evidence: the free chip
  * entry's unregistration receipt (refunded_chips 0), the diamond entry's own
  * released tournament_entry custody whose refund legs equal it and which paid
  * nothing else. The paid chip rule and every other refusal are unchanged.
@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '..');
 const MIGRATIONS = join(ROOT, 'supabase/migrations');
-const FILE = '20261025042215_a_refunded_diamond_or_free_entry_is_not_a_second_entry.sql';
+const FILE = '20261025052637_a_refunded_diamond_or_free_entry_is_not_a_second_entry.sql';
 const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
 const CODE = SQL.split('\n')
   .filter((l) => !l.trim().startsWith('--'))
@@ -41,9 +41,10 @@ describe('a refunded diamond or free entry is not a second entry', () => {
     expect(SQL).toMatch(/IF v_n <> 1 THEN RAISE EXCEPTION 'F06_REFUNDED_DIAMOND_ENTRY_ANCHOR/);
     expect(SQL).toContain("IF md5(v_src) <> '35dbc3c7dd7b152d8e55892b4af9ae3b' THEN");
     expect(SQL).toContain("<> '2962ab899304584d3ad1ae1d14b3e8dc'");
-    expect(SQL).toContain(
-      "-- @live-proof: (SELECT md5(prosrc)='2962ab899304584d3ad1ae1d14b3e8dc' AND md5(pg_get_functiondef(oid))='35dbc3c7dd7b152d8e55892b4af9ae3b' AND proacl::text='{postgres=X/postgres}'"
-    );
+    // The file is the byte-exact recording of what production ran, so the
+    // post-image proof is the code's own check (owner, ACL and both md5s),
+    // not a header comment.
+    expect(SQL).toContain("v_acl IS DISTINCT FROM '{postgres=X/postgres}' THEN");
   });
 
   it('anchors on the exact passage 20261024232734 installed', () => {
@@ -109,7 +110,7 @@ describe('a refunded diamond or free entry is not a second entry', () => {
       expect(CODE).toContain(`IS DISTINCT FROM ${k}`);
   });
 
-  it('is the only later file that redefines the never-dealt proof', () => {
+  it('is redefined later only by the successor that starts from its post-image', () => {
     const later = readdirSync(MIGRATIONS).filter(
       (f) =>
         f.endsWith('.sql') &&
@@ -118,6 +119,13 @@ describe('a refunded diamond or free entry is not a second entry', () => {
           'FUNCTION smarter_private.f06_movement_never_dealt_prior('
         )
     );
-    expect(later).toEqual([]);
+    // 20261025082356 (busted rebuy / never-dealt add-on) refuses to run unless
+    // the installed proof is exactly this file's post-image (35dbc3c7).
+    expect(later).toEqual([
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+    ]);
+    expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
+      "IF md5(v_pre) <> '35dbc3c7dd7b152d8e55892b4af9ae3b'"
+    );
   });
 });

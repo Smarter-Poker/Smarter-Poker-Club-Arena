@@ -184,7 +184,15 @@ describe('a cash source call fits the engine patience', () => {
     );
     expect(drain).toMatch(/p_limit:\s*CASH_RETRY_LIMIT\s*,/);
     expect(drain).toContain('const deadline = Date.now() + CASH_RETRY_DRAIN_BUDGET_MS;');
-    expect(drain).toContain('if (!lastCallFull || retried.receipts.length === 0) break;');
+    // 2026-10-25: progress is an ACCRUAL, not any receipt. A call that refused
+    // every source again (55000 accounting_terms_not_observed, 61,354 due) proves
+    // the next call would too, so it ends the drain and the queue rests
+    // (retryRestMs); the fixture backlog below accrues on every call, so the
+    // native evidence of the budgeted drain is unchanged.
+    expect(drain).toContain('if (!lastCallFull || accrued === 0) break;');
+    expect(drain).toContain(
+      'if (Date.now() < this.retryRestUntilMs) return { receipts, lastCallFull: false };'
+    );
     expect(drain).toContain(
       'if (Date.now() >= deadline || isMaintenanceFrozen() || !this.acceptingSettlements) break;'
     );

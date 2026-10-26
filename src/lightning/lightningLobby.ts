@@ -40,13 +40,49 @@ export function isLightningTableSize(handedness: unknown): boolean {
 }
 
 /**
- * Lightning is offered only for a six-seat Action or Madness game. Every other
- * game - Classic, unknown, or Action/Madness at any other size - keeps its
- * ordinary entry and lobby actions. The database refuses the rest the same way
- * (cash_games_lightning_six_seat_only, LIGHTNING_TABLE_SIZE_NOT_ALLOWED).
+ * Owner rulings, 2026-10-25: "SHORT DESK AND OMAHA HI LOW SHOULD NOT BE RUNNING
+ * LIGHTNING AT THIS POINT, JUST FEEDER GAMES." / "AND PINNEAPPLE AS WELL,
+ * SHOULD ONLY BE FEEDER GAME, NOT LIGHTNING". These variants run only as
+ * ordinary feeder games. Mirrors fn_lightning_variant_allowed in the database.
  */
-export function isLightningEligible(template: unknown, handedness: unknown): boolean {
-  return isLightningTemplate(template) && isLightningTableSize(handedness);
+export const LIGHTNING_EXCLUDED_VARIANTS: readonly string[] = [
+  'short_deck',
+  'shortdeck',
+  'flo8',
+  'plo8',
+  'omaha8',
+  'o8',
+  'pineapple',
+  'pineapple_holdem',
+];
+
+/** A missing or excluded variant is ineligible; case, spaces and dashes are ignored. */
+export function isLightningVariant(variant: unknown): boolean {
+  if (typeof variant !== 'string' || variant.trim() === '') return false;
+  const key = variant
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  return !LIGHTNING_EXCLUDED_VARIANTS.includes(key);
+}
+
+/**
+ * Lightning is offered only for a six-seat Action or Madness game whose
+ * variant may run Lightning. Every other game - Classic, unknown, Action or
+ * Madness at any other size, or Short Deck, Omaha Hi-Lo and Pineapple - keeps
+ * its ordinary entry and lobby actions. The database refuses the rest the same
+ * way (cash_games_lightning_six_seat_only, LIGHTNING_TABLE_SIZE_NOT_ALLOWED,
+ * cash_games_lightning_variant_allowed, LIGHTNING_VARIANT_NOT_ALLOWED). A
+ * read that does not carry the variant (undefined) keeps the template-and-size
+ * answer; the database still refuses an excluded variant on its own.
+ */
+export function isLightningEligible(
+  template: unknown,
+  handedness: unknown,
+  variant?: unknown
+): boolean {
+  if (!isLightningTemplate(template) || !isLightningTableSize(handedness)) return false;
+  return variant === undefined || isLightningVariant(variant);
 }
 
 export type LightningPoolStatus = 'BUILDING' | 'ACTIVE' | 'HOT' | 'THIN';
@@ -222,6 +258,15 @@ export function lightningLobbyBadge(input: {
 /** The Lightning route for a Cluster. The only door a Lightning card opens. */
 export function lightningRoute(clusterId: string): string {
   return `/lightning/${clusterId}`;
+}
+
+/**
+ * JOIN LIGHTNING, as one tap (Dan 2026-10-24): the game's door with the
+ * amount question already open. A player who already holds a pool session
+ * still goes straight to their room; one already seated is shown their seat.
+ */
+export function lightningJoinRoute(clusterId: string): string {
+  return `${lightningRoute(clusterId)}?join=1`;
 }
 
 interface LightningBoardRow {

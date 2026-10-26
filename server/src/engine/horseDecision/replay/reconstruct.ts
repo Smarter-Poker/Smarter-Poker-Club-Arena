@@ -7,13 +7,19 @@
  * input is not a replay of the decision.
  */
 import type { HorseDecision } from '../../../types.js';
+import { validHorseTournamentPayoutTerms } from '../../HorseTournamentPayoutTerms.js';
 import type { HorseDecisionReadFrame } from '../../HorseDecisionReadFrame.js';
 import type { HorsePlanContext } from '../../HorsePlanHandIdentity.js';
 import {
   validateHorseJournalRecord,
   type HorseJournalRecord,
 } from '../../../services/horseDecisionJournal/record.js';
-import { buildHorseDecisionKey, type FastHorseDecisionRequest } from '../protocol.js';
+import {
+  buildHorseDecisionKey,
+  type FastHorseDecisionRequest,
+  type DeepHorseDecisionRequest,
+} from '../protocol.js';
+import { resolveKernelRetainedFastInput } from '../../../services/horseCorrectiveReview/kernelOriginalInput.js';
 import {
   isHorseSolverStoreIdentity,
   type HorseSolverStoreIdentity,
@@ -50,6 +56,9 @@ export interface HorseReplayInput {
   recordedRelease: string | null;
   atMs: number;
   request: FastHorseDecisionRequest;
+  /** Only new, explicitly bound DEEP records can borrow this unique FAST. */
+  deepRequest?: DeepHorseDecisionRequest;
+  originalFast?: HorseReplayInput;
   readFrame: HorseDecisionReadFrame;
   rngBefore: number;
   rngAfter: number;
@@ -78,7 +87,10 @@ export function parseHorseJournalRecord(raw: unknown): HorseJournalRecord {
   return raw;
 }
 
-export function reconstructHorseReplayInput(raw: unknown): HorseReplayInput {
+export function reconstructHorseReplayInput(
+  raw: unknown,
+  options: { originalFastRecords?: readonly unknown[] } = {}
+): HorseReplayInput {
   const record = parseHorseJournalRecord(raw);
   if (record.kind !== 'decision') refuse('kind');
   let body: unknown;
@@ -92,7 +104,26 @@ export function reconstructHorseReplayInput(raw: unknown): HorseReplayInput {
   if (b.lifecycleVersion !== 1) refuse('lifecycle_version');
   const snapshot = b.snapshot;
   if (!obj(snapshot)) refuse('snapshot');
-  if (snapshot.type !== 'DECIDE_FAST') {
+  let originalFast: HorseReplayInput | undefined;
+  if (snapshot.type === 'DECIDE_DEEP' && obj(b.originalFastBinding)) {
+    if (!Array.isArray(options.originalFastRecords) || options.originalFastRecords.length > 256)
+      refuse('original_fast_binding');
+    const records = options.originalFastRecords.map(parseHorseJournalRecord);
+    if (!records.some((r) => r.eventId === record.eventId && r.sha256 === record.sha256))
+      records.push(record);
+    const resolved = resolveKernelRetainedFastInput(records, record);
+    if (resolved.status !== 'resolved') refuse('original_fast_binding');
+    originalFast = reconstructHorseReplayInput(resolved.originalFastRecord);
+    if (
+      !uint32(snapshot.rngBefore) ||
+      snapshot.rngBefore !== b.rngBefore ||
+      snapshot.rngBefore !== originalFast.rngBefore ||
+      typeof snapshot.deepEquity !== 'number' ||
+      !Number.isFinite(snapshot.deepEquity) ||
+      snapshot.deepEquity <= 1
+    )
+      refuse('deep_rng');
+  } else if (snapshot.type !== 'DECIDE_FAST') {
     // A DEEP second look borrows the FAST decision's stream and read frame; it
     // is not an original decision and this protocol does not replay it.
     throw new HorseReplayRefusal(`replay_unsupported:${String(snapshot.type)}`);
@@ -129,6 +160,7 @@ export function reconstructHorseReplayInput(raw: unknown): HorseReplayInput {
   if (tournamentMode) {
     const t = gs.tournament;
     if (!obj(t) || t.schemaVersion !== 1) refuse('field');
+    if (!validHorseTournamentPayoutTerms(t)) refuse('payout_terms');
     const provenance = t.contextProvenance;
     // Source: the exact cache generation the decision read (a null source is a
     // recorded fact of the read; a missing provenance record is not).
@@ -178,19 +210,21 @@ export function reconstructHorseReplayInput(raw: unknown): HorseReplayInput {
   if (!obj(decision) || typeof decision.action !== 'string') refuse('decision');
   if (!obj(b.planContext)) refuse('plan_context');
   // The digest that bound the worker's validation must bind this exact input.
-  const request = snapshot as unknown as FastHorseDecisionRequest;
+  const request = originalFast?.request ?? (snapshot as unknown as FastHorseDecisionRequest);
+  const deepRequest = originalFast ? (snapshot as unknown as DeepHorseDecisionRequest) : undefined;
   let expectedKey: string;
   try {
-    expectedKey = buildHorseDecisionKey(request);
+    expectedKey = buildHorseDecisionKey(deepRequest ?? request);
   } catch {
     return refuse('decision_key');
   }
-  if (expectedKey !== request.decisionKey) refuse('decision_key');
+  if (expectedKey !== snapshot.decisionKey) refuse('decision_key');
   return {
     decisionId: record.eventId,
     recordedRelease: record.sourceRelease,
     atMs: record.atMs,
     request,
+    ...(deepRequest ? { deepRequest, originalFast } : {}),
     readFrame: frame as unknown as HorseDecisionReadFrame,
     rngBefore: b.rngBefore as number,
     rngAfter: b.rngAfter as number,

@@ -168,7 +168,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  liveRosterRefreshPolicy.minIntervalMs = 30_000;
+  liveRosterRefreshPolicy.minIntervalMs = 180_000;
 });
 
 it('updates an authorized player wallet absolutely without starting another directory read', async () => {

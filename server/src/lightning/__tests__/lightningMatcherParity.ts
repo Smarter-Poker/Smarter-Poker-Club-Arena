@@ -66,9 +66,12 @@ interface Fixture {
   plan: {
     legal_count: number;
     pool_diversity_score: number | string;
+    /** Whether the plan's entry big blind gate was open (20261025050528). */
+    entry_big_blind?: boolean;
     groups: Array<{
       players: string[];
       bb: string;
+      entry_bb?: string[];
       keys: { p2: { sb: string | null }; p3: { btn: string | null } };
     }>;
   };
@@ -115,9 +118,11 @@ export function parityGroups(f: Fixture, version: string, prior = false) {
           epoch: h.epoch,
         }
   );
+  // The plan's own entry big blind gate, as the engine's A/A path reads it.
+  const entryBigBlind = f.plan.entry_big_blind === true;
   const snapshot: LightningPoolSnapshot = prior
-    ? { nowMs: ms(f.now_us), players, recentHands }
-    : { nowMs: ms(f.now_us), players, recentHands, epoch: f.epoch };
+    ? { nowMs: ms(f.now_us), players, recentHands, entryBigBlind }
+    : { nowMs: ms(f.now_us), players, recentHands, epoch: f.epoch, entryBigBlind };
   return model.plan(snapshot, lightningMatcherParams(f.config));
 }
 
@@ -177,6 +182,9 @@ function main(): void {
         if (a.bb !== b.bb) problems.push(`group ${j + 1} bb ts=${a.bb} sql=${b.bb}`);
         if (a.sb !== sqlSb) problems.push(`group ${j + 1} sb ts=${a.sb} sql=${sqlSb}`);
         if (a.btn !== sqlBtn) problems.push(`group ${j + 1} btn ts=${a.btn} sql=${sqlBtn}`);
+        const sqlEntry = (b.entry_bb ?? []).join(',');
+        if (a.entryBb.join(',') !== sqlEntry)
+          problems.push(`group ${j + 1} entry_bb ts=[${a.entryBb}] sql=[${sqlEntry}]`);
       }
       if (problems.length > 0) {
         failed++;

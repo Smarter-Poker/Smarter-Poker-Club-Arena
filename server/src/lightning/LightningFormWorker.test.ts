@@ -398,3 +398,53 @@ describe('the idle-deadline pass (2026-10-22 latency fix)', () => {
     await w.stop();
   });
 });
+
+describe('a player freed in another Cluster (2026-10-24)', () => {
+  it('runs a pass within the admission window when the last pass held someone for the multi-table limit', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const t0 = Date.now();
+    const at: number[] = [];
+    const started: LightningFormedHand[] = [];
+    const row = handRow(2, 950);
+    let n = 0;
+    const { w } = worker(() => {
+      at.push(Date.now() - t0);
+      return {
+        data: formReply(++n === 1 ? [row] : [], { reasons: { MULTI_TABLE_LIMIT: 1 } }),
+        error: null,
+      };
+    }, started);
+    w.start();
+    await vi.advanceTimersByTimeAsync(100);
+    const seen = (row.players as string[])[0];
+    // A player this worker never saw asks for nothing.
+    expect(w.peerReleased(uid(4242))).toBe(false);
+    // A seen player freed elsewhere: the next pass in 250 ms, not at the interval.
+    expect(w.peerReleased(seen)).toBe(true);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(at).toEqual([0, 350]);
+    await w.stop();
+  });
+
+  it('asks for nothing when the last pass held nobody for the multi-table limit', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const t0 = Date.now();
+    const at: number[] = [];
+    const started: LightningFormedHand[] = [];
+    const row = handRow(2, 960);
+    let n = 0;
+    const { w } = worker(() => {
+      at.push(Date.now() - t0);
+      return {
+        data: formReply(++n === 1 ? [row] : [], { reasons: { IN_HAND: 4 } }),
+        error: null,
+      };
+    }, started);
+    w.start();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(w.peerReleased((row.players as string[])[0])).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(at).toEqual([0]);
+    await w.stop();
+  });
+});

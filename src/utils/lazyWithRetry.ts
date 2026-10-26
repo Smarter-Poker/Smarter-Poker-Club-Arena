@@ -87,14 +87,108 @@ export function documentIsNavigatingAway(now = Date.now()): boolean {
   return now - leavingAt < NAVIGATION_GRACE_MS;
 }
 
+/**
+ * A SLOW NAVIGATION IS NOT A CANCELLED ONE (2026-10-25, production
+ * post-deploy, WebKit: "Navigation to /hub/club-arena/ is interrupted by
+ * another navigation to /clubs/kings-club?_cb=..." again, ten seconds after
+ * the lobby was requested). The grace above assumed a navigation that has
+ * not finished in ten seconds never will. Right after a publish the lobby
+ * document took longer than that, the deferred recovery fired while it was
+ * still loading, and its cache-busted reload of the page being left cancelled
+ * the navigation the player had started.
+ *
+ * That reload could not have fetched anything newer: the document was already
+ * running the build production serves, and the origin's asset pool is
+ * append-only, so every chunk it asked for still existed. The departure's
+ * cancellations had been read as staleness without ever checking. So when the
+ * grace ends and the page is still here, recovery first asks production which
+ * build it serves. A document on that build keeps waiting for its navigation,
+ * bounded by CURRENT_BUILD_PATIENCE_MS so a navigation that really was
+ * cancelled still gets its suspended route back. A different build, an
+ * unreadable answer, or a local build recovers exactly as before.
+ */
+export const CURRENT_BUILD_PATIENCE_MS = 60_000;
+export const LIVE_BUILD_READ_TIMEOUT_MS = 3_000;
+
+const BUILD_INFO_URL: string = (() => {
+  try {
+    const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+    const base = env?.BASE_URL;
+    const root = typeof base === 'string' && base !== '' ? base : '/';
+    return `${root.endsWith('/') ? root : `${root}/`}build-info.json`;
+  } catch {
+    return '/build-info.json';
+  }
+})();
+
+/**
+ * Which build production serves, as seen from this document. 'unknown' is its
+ * own answer (CLAUDE.md 10.86): offline, refused, timed out, malformed, or a
+ * read the browser cancelled because this page is leaving. WebKit cancels a
+ * leaving document's new fetches too, so an unreadable answer is exactly what
+ * a departure looks like from inside it, and must never be read as "stale".
+ */
+export type LiveBuild = 'this' | 'other' | 'unknown';
+
+export async function readLiveBuild(): Promise<LiveBuild> {
+  if (typeof fetch !== 'function') return 'unknown';
+  const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<LiveBuild>((resolve) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      resolve('unknown');
+    }, LIVE_BUILD_READ_TIMEOUT_MS);
+  });
+  const read = (async (): Promise<LiveBuild> => {
+    try {
+      const response = await fetch(BUILD_INFO_URL, {
+        cache: 'no-store',
+        signal: controller?.signal,
+      });
+      if (!response.ok) return 'unknown';
+      const info = (await response.json()) as { ca_sha?: unknown } | null;
+      if (typeof info?.ca_sha !== 'string' || info.ca_sha.trim() === '') return 'unknown';
+      // A local build reports 'dev', which never equals a published ca_sha.
+      return info.ca_sha.trim() === BUILD_ID ? 'this' : 'other';
+    } catch {
+      return 'unknown';
+    }
+  })();
+  try {
+    return await Promise.race([read, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** True only when production positively reports this document's own build. */
+export async function liveBuildIsThisDocument(): Promise<boolean> {
+  return (await readLiveBuild()) === 'this';
+}
+
 /** Run `recover` once the current navigation has had its chance to finish. */
 function afterNavigationGrace(recover: () => void): void {
   if (deferredRecovery !== null) return;
-  const wait = Math.max(0, leavingAt + NAVIGATION_GRACE_MS - Date.now());
-  deferredRecovery = setTimeout(() => {
-    deferredRecovery = null;
-    recover();
-  }, wait);
+  const departedAt = leavingAt;
+  const schedule = (wait: number): void => {
+    deferredRecovery = setTimeout(() => {
+      void (async () => {
+        if (
+          Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS &&
+          (await liveBuildIsThisDocument())
+        ) {
+          // Still current, so a reload cannot help and would cancel the
+          // navigation if it is merely slow. Keep the single deferral armed.
+          schedule(NAVIGATION_GRACE_MS);
+          return;
+        }
+        deferredRecovery = null;
+        recover();
+      })();
+    }, wait);
+  };
+  schedule(Math.max(0, leavingAt + NAVIGATION_GRACE_MS - Date.now()));
 }
 
 /**
@@ -319,6 +413,119 @@ export function dropFailedStylesheet(error: unknown): boolean {
   return removed;
 }
 
+/**
+ * A CANCELLED STYLESHEET IS NOT A STALE BUILD (2026-10-25, production
+ * post-deploy run 40242809027: "Navigation to /hub/club-arena/ is interrupted
+ * by another navigation to /clubs/kings-club?_cb=..."). The club lobby warms
+ * other routes' chunks in the background. When the player starts a navigation
+ * the browser aborts every one of those in-flight loads, and the aborted CSS
+ * preloads (PlayerAvatar, ProfilePage, ClubDashboard...) reach this handler as
+ * "Unable to preload CSS". The navigation guard above cannot see that
+ * navigation - a browser-initiated one does not always fire beforeunload
+ * first - so a stylesheet that was never stale reloaded the page being left
+ * and sent the player back to it.
+ *
+ * So the server is asked before the document is replaced. The origin answers
+ * a retired hashed asset with 404 and a current one with 200 text/css:
+ *
+ * - 'present': the build is current and the load was cancelled or blipped.
+ *   The stylesheet is put back exactly as Vite would have inserted it, so the
+ *   route never renders unstyled (the 2026-10-14 iPad bug), and no reload or
+ *   reload budget is spent.
+ * - 'gone': the asset is retired; guarded document recovery runs as before.
+ * - 'unknown': the probe itself could not answer (offline, aborted, 5xx).
+ *   Recovery waits out the navigation grace period and then runs, so a page
+ *   that really is leaving is gone before it fires.
+ */
+export type StylesheetProbe = 'present' | 'gone' | 'unknown';
+
+export async function probeStylesheet(href: string): Promise<StylesheetProbe> {
+  if (typeof fetch !== 'function') return 'unknown';
+  try {
+    const base = typeof document !== 'undefined' ? document.baseURI : undefined;
+    const url = new URL(href, base).toString();
+    const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+    if (res.status === 404 || res.status === 410) return 'gone';
+    if (!res.ok) return 'unknown';
+    const type = res.headers?.get?.('content-type') ?? '';
+    // An HTML fallback answering 200 for a missing asset is not a stylesheet.
+    return type === '' || /css/i.test(type) ? 'present' : 'gone';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function reinstateStylesheet(href: string, onError: () => void): void {
+  if (typeof document === 'undefined') {
+    onError();
+    return;
+  }
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.setAttribute('href', href);
+  link.addEventListener('error', () => {
+    link.remove();
+    onError();
+  });
+  document.head.appendChild(link);
+}
+
+/**
+ * A STYLESHEET NEVER RELOADS A PAGE THAT IS ALREADY LIVE (2026-10-26,
+ * production post-deploy run 40260290873, WebKit as an iPhone: the Kings Club
+ * lobby was left while its stylesheet probe was in flight; WebKit cancelled
+ * the probe as well ("due to access control checks"), the 'unknown' path
+ * waited out the grace while the slow navigation was still loading, and its
+ * reload of the page being left cancelled that navigation). iOS Safari sends
+ * no beforeunload, so documentIsNavigatingAway() never knew.
+ *
+ * A reload only helps a document that is NOT on the build production serves.
+ * So before a stylesheet failure replaces the document, production is asked:
+ *   - 'this':    a reload would fetch the same files. Put the stylesheet back
+ *                (once) instead, so the route is never unstyled, and stop.
+ *   - 'other':   a newer build is live; recover exactly as before.
+ *   - 'unknown': cannot tell, which is what a departure looks like from inside
+ *                it. Ask again after each grace, for up to
+ *                CURRENT_BUILD_PATIENCE_MS; a page that really left is gone
+ *                long before then, and one that is really offline recovers
+ *                at the end of it.
+ * A stylesheet the server answers with 404 is retired and recovers at once.
+ */
+async function recoverStylesheetUnlessLive(
+  error: unknown,
+  href: string | undefined,
+  since: number
+): Promise<void> {
+  const live = await readLiveBuild();
+  if (live === 'this') {
+    // Reinstated at most once: its own failure asks again without an href.
+    if (href)
+      reinstateStylesheet(href, () => void recoverStylesheetUnlessLive(error, undefined, since));
+    return;
+  }
+  if (live === 'other' || Date.now() - since >= CURRENT_BUILD_PATIENCE_MS) {
+    void recoverFromStaleChunk(error);
+    return;
+  }
+  setTimeout(() => void recoverStylesheetUnlessLive(error, href, since), NAVIGATION_GRACE_MS);
+}
+
+export async function recoverFailedStylesheet(href: string, error: unknown): Promise<void> {
+  const since = Date.now();
+  const verdict = await probeStylesheet(href);
+  if (verdict === 'present') {
+    // Served now, but its reinstated load can still fail (a departure cancels
+    // it too): that asks production first rather than reloading blind.
+    reinstateStylesheet(href, () => void recoverStylesheetUnlessLive(error, undefined, since));
+    return;
+  }
+  if (verdict === 'gone') {
+    void recoverFromStaleChunk(error);
+    return;
+  }
+  setTimeout(() => void recoverStylesheetUnlessLive(error, href, since), NAVIGATION_GRACE_MS);
+}
+
 export function installVitePreloadErrorRecovery(): () => void {
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
@@ -330,9 +537,9 @@ export function installVitePreloadErrorRecovery(): () => void {
     // CSS is different: Vite marks dependencies seen before fetching, so a
     // retry in this document can silently skip the failed stylesheet. Preserve
     // guarded recovery for CSS, without cancelling its original rejection.
-    const failedCss = failedStylesheetHref(payload) !== undefined;
+    const href = failedStylesheetHref(payload);
     dropFailedStylesheet(payload);
-    if (failedCss) void recoverFromStaleChunk(payload);
+    if (href !== undefined) void recoverFailedStylesheet(href, payload);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => window.removeEventListener('vite:preloadError', onPreloadError);

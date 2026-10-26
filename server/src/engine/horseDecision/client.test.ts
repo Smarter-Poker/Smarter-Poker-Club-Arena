@@ -3812,3 +3812,31 @@ describe('P13.3 per-variant joint authority at the client boundary', () => {
     }
   );
 });
+
+it('never fetches or posts pooled opponent and donor reads for an individual horse', async () => {
+  const { freshExploitCounters } = await import('../HorseOpponentExploit.js');
+  const donor = {
+    user_id: '91000000-0000-4000-8000-000000000001',
+    variant: 'flh' as const,
+    mode: 'cash' as const,
+    size: 'short' as const,
+    observed_hands: 60,
+    initialized: true,
+    counters: freshExploitCounters(),
+  };
+  const worker = new FakeWorker();
+  const pooledReader = vi.fn(async () => ({ profiles: [], donorProfiles: [donor] }));
+  const client = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => worker,
+    opponentProfiles: pooledReader,
+  });
+  worker.emitMessage(ready);
+  const pending = client.decideFast(snapshot('packet-memory'));
+  for (let i = 0; i < 10 && worker.sent.length === 0; i++) await Promise.resolve();
+  expect(pooledReader).not.toHaveBeenCalled();
+  expect(worker.sent[0]).toMatchObject({ type: 'DECIDE_FAST' });
+  expect(worker.sent[0]).not.toHaveProperty('durableOpponentProfiles');
+  expect(worker.sent[0]).not.toHaveProperty('durableOpponentDonorProfiles');
+  worker.emitMessage(fastResult(1, 'packet-memory'));
+  await expect(pending).resolves.toMatchObject({ fence: 'packet-memory' });
+});

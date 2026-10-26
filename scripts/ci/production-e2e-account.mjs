@@ -374,6 +374,7 @@ export async function prepareProductionE2EStaffMembership({
   requireStandalone = false,
   reusePreparedMembership = false,
   memberRole = 'admin',
+  wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
 } = {}) {
   if (memberRole !== 'admin' && memberRole !== 'player')
     throw new Error('Reserved membership role must be admin or player.');
@@ -474,15 +475,24 @@ export async function prepareProductionE2EStaffMembership({
     throw new Error('Reserved staff public join did not create one zero-balance membership.');
   }
 
-  const created = await serviceRequest(
-    configuration,
-    `/rest/v1/club_members?club_id=eq.${encodeURIComponent(clubId)}&user_id=eq.${encodeURIComponent(account.id)}&select=club_id,user_id,role,status,chip_balance`,
-    {
-      method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ role: memberRole, status: 'active', is_active: true }),
-    },
-    fetchImpl
+  // The promotion is idempotent (same values every time) and a statement
+  // timeout commits nothing, so a busy club is asked again, bounded, instead of
+  // failing the certificate (run 40153826373, 2026-10-25 03:19 UTC: Midway
+  // promotion "canceling statement due to statement timeout"; 71 ms when
+  // re-measured). A refusal is never retried.
+  const created = await retryTransient(
+    () =>
+      serviceRequest(
+        configuration,
+        `/rest/v1/club_members?club_id=eq.${encodeURIComponent(clubId)}&user_id=eq.${encodeURIComponent(account.id)}&select=club_id,user_id,role,status,chip_balance`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({ role: memberRole, status: 'active', is_active: true }),
+        },
+        fetchImpl
+      ),
+    { wait, label: `reserved ${memberRole} membership promotion in ${clubId}` }
   );
   const row = Array.isArray(created) ? created[0] : null;
   if (

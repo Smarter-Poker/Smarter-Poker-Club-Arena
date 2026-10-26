@@ -154,8 +154,9 @@ describe('the shipped wiring - the rule is worthless if the seater does not cons
     expect(src).toContain('!stakeBandAllows(');
     expect(src).toContain("String((table as { club_id?: string | null }).club_id ?? '')");
     const filterAt = src.indexOf('!stakeBandAllows(');
-    const pickAt = src.indexOf('const weighted = pool');
+    const pickAt = src.indexOf('const weighted = orderMadnessCandidates(');
     expect(filterAt).toBeGreaterThan(0);
+    expect(pickAt).toBeGreaterThan(0);
     expect(filterAt).toBeLessThan(pickAt);
   });
 

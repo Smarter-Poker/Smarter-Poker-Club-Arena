@@ -24,6 +24,116 @@ function sanitize(lines: string[]) {
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout);
 }
+function workerErrors(lines: string[]) {
+  const ran = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); print(json.dumps(m["worker_receipt_errors"](json.loads(sys.stdin.read()))))',
+      script,
+    ],
+    { input: JSON.stringify(lines.join('\n')), encoding: 'utf8', timeout: 5000 }
+  );
+  expect(ran.status, ran.stderr).toBe(0);
+  return JSON.parse(ran.stdout);
+}
+
+it('retains only the actual worker refusal table and precise timestamp, never a guessed hand', () => {
+  const table = '12345678-abcd-4321-abcd-123456789abc';
+  const node = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `console.error('[ServerTableEngine.${table}.horse_decision_worker_failed]', new Error('horse decision worker returned invalid policy receipt: reference_shape'));`,
+    ],
+    { encoding: 'utf8', timeout: 5000 }
+  );
+  expect(node.status).toBe(0);
+  const lines = node.stderr
+    .trimEnd()
+    .split('\n')
+    .map((line) => `2026-10-25T22:48:36.216123456Z ${line}`);
+  const data = workerErrors([
+    ...lines,
+    `2026-10-25T22:48:36.216Z   requestId: 123, hand_id: '${table}', cards: ['As','Kd'], token: 'private-secret'`,
+  ]);
+  expect(data).toEqual({
+    matchingRecords: 1,
+    events: [
+      { timestamp: '2026-10-25T22:48:36.216123456Z', code: 'reference_shape', tableId: table },
+    ],
+    eventsTruncated: false,
+    handCoordinateAvailable: false,
+  });
+  expect(JSON.stringify(data)).not.toMatch(/private|secret|cards|requestId|hand_id|Error:|at /);
+  const owner = readFileSync(
+    resolve(__dirname, '../../server/src/engine/ServerTableEngineTurns.ts'),
+    'utf8'
+  );
+  expect(owner).toContain(
+    "reportError(error, 'ServerTableEngine.' + this.tableId + '.horse_decision_worker_failed')"
+  );
+});
+
+it('refuses unrelated contexts, unknown codes, malformed coordinates and private suffixes', () => {
+  const context =
+    '[ServerTableEngine.12345678-abcd-4321-abcd-123456789abc.horse_decision_worker_failed]';
+  const message = 'Error: horse decision worker returned invalid policy receipt: reference_shape';
+  expect(
+    workerErrors([
+      `2026-10-25T22:48:36Z [Unrelated] ${context} ${message}`,
+      `2026-10-25T22:48:36Z ${context} ${message}_unknown`,
+      `2026-10-25T22:48:36Z ${context} ${message} private-secret`,
+      `2026-99-99T22:48:36Z ${context} ${message}`,
+      `${context} ${message}`,
+      `2026-10-25T22:48:36Z ${context.replace('12345678', 'private')} ${message}`,
+      `2026-10-25T22:48:36Z ${context} ${message}${' '.repeat(4096)}`,
+      `2026-10-25T22:48:36Z ${context} Error: unknown`,
+      `2026-10-25T22:48:36Z   ${message}`,
+    ])
+  ).toEqual({
+    matchingRecords: 0,
+    events: [],
+    eventsTruncated: false,
+    handCoordinateAvailable: false,
+  });
+});
+
+it('finds worker refusals in the existing bounded stream and caps retained witnesses', () => {
+  const line =
+    '2026-10-25T22:48:36.216Z [ServerTableEngine.12345678-abcd-4321-abcd-123456789abc.horse_decision_worker_failed] Error: horse decision worker returned invalid policy receipt: reference_shape';
+  const capped = workerErrors(Array(130).fill(line));
+  expect(capped.matchingRecords).toBe(130);
+  expect(capped.events).toHaveLength(128);
+  expect(capped.eventsTruncated).toBe(true);
+  const fixture = `
+import json,os,runpy,sys,tempfile
+m=runpy.run_path(sys.argv[1]); raw=json.loads(sys.stdin.read())
+with tempfile.NamedTemporaryFile('w',suffix='.log',delete=False) as f: f.write(raw); path=f.name
+producer='import sys; sys.stdout.write(open('+repr(path)+').read())'
+try: print(json.dumps(m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)))
+finally: os.unlink(path)
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    input: JSON.stringify(
+      [line, ...Array(12000).fill('2026-10-25T22:49:00Z unrelated private-secret')].join('\n') +
+        '\n'
+    ),
+    encoding: 'utf8',
+    timeout: 7000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const data = JSON.parse(ran.stdout);
+  expect(data.workerReceiptErrors).toMatchObject({
+    matchingRecords: 1,
+    eventsTruncated: false,
+    handCoordinateAvailable: false,
+  });
+  expect(data.workerReceiptErrors.events).toHaveLength(1);
+  expect(data.coverage).toMatchObject({ status: 'complete', fullTwoHourCoverageProven: false });
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|Traceback/);
+});
 it('prints only allowlisted events, counts, timestamps and operational categories', () => {
   const data = sanitize([
     '2026-10-13T21:01:02.123456789Z [TournamentRecurring] registerHorses found no candidates: fleet 400, at-capacity/entered 200, not-a-club-member 190, lane/window-excluded 10 private@example.invalid token=secret',

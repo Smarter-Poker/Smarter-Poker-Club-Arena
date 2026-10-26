@@ -16,7 +16,7 @@ import {
 
 const players = [{ user_id: 'hero' }, { user_id: 'villain' }] as SeatPlayer[];
 beforeEach(() => HorseMind.reset());
-function populated() {
+function populated(winnerEvidence = true) {
   HorseMind.importStats([
     { user_id: 'villain', hands: 90, folds: 80, facedAggr: 90, rHands: 12.625 },
   ]);
@@ -27,9 +27,62 @@ function populated() {
   HorseMind.notePlan('hand', 'hero', false);
   HorseMind.noteRaisePlan('hand', 'hero', 'flop', 'callOnce');
   HorseMind.noteOutlook('hand', 'hero', 'flop', ['Kh', 'Ah'], ['Ks', 'As']);
-  return HorseMind.snapshotDecisionReads(players, 'hand');
+  const view = HorseMind.snapshotDecisionReads(players, 'hand');
+  if (!winnerEvidence) delete view.winnerReads;
+  return view;
 }
 describe('portable private Horse read frames', () => {
+  it('retains signed winner moments only for the captured actors', () => {
+    const view = populated();
+    view.winnerReads!.rows.set('villain', { w: 3, w2: 3, s: -5, q: 12 });
+    const frame = encodeHorseDecisionReads(view, players, 'hand');
+    expect(frame.version).toBe('horse-decision-reads-v5');
+    expect(decodeHorseDecisionReads(frame, players, 'hand').winnerReads).toEqual(view.winnerReads);
+    view.winnerReads!.rows.set('unrelated', { w: 1, w2: 1, s: 1, q: 1 });
+    expect(() => encodeHorseDecisionReads(view, players, 'hand')).toThrow('invalid');
+  });
+
+  it.each([
+    'weight',
+    'squared_weight',
+    'second_moment',
+    'nonfinite',
+    'extra',
+    'duplicate',
+    'missing',
+  ])('refuses resealed malformed winner evidence: %s', (fault) => {
+    const frame = encodeHorseDecisionReads(populated(), players, 'hand');
+    const body = JSON.parse(frame.json);
+    const row = { w: 3, w2: 3, s: -5, q: 12 };
+    body.winnerReads = [['villain', row]];
+    if (fault === 'weight') row.w = -1;
+    if (fault === 'squared_weight') row.w2 = -1;
+    if (fault === 'second_moment') row.q = -1;
+    if (fault === 'nonfinite') row.s = NaN;
+    if (fault === 'extra') Object.assign(row, { cards: [] });
+    if (fault === 'duplicate') body.winnerReads.push(body.winnerReads[0]);
+    if (fault === 'missing') delete body.winnerReads;
+    const json = JSON.stringify(body);
+    expect(() =>
+      decodeHorseDecisionReads(
+        {
+          ...frame,
+          json,
+          bytes: Buffer.byteLength(json),
+          sha256: createHash('sha256').update(json).digest('hex'),
+        },
+        players,
+        'hand'
+      )
+    ).toThrow('invalid');
+  });
+
+  it('refuses winner observation dedupe in a portable read-only frame', () => {
+    const view = populated();
+    view.winnerReads!.seen.add('pending');
+    expect(() => encodeHorseDecisionReads(view, players, 'hand')).toThrow('invalid');
+  });
+
   it('retains every read container, insertion order and fractional evidence without live writes', () => {
     const view = populated(),
       frame = encodeHorseDecisionReads(view, players, 'hand');
@@ -165,7 +218,7 @@ describe('original observation windows in private read frames', () => {
           context
         )
       ).toEqual(frame);
-      const legacy = populated();
+      const legacy = populated(false);
       for (const map of [legacy.stats, legacy.scoped])
         for (const row of map.values()) delete row.sourceWindow;
       const oldFrame = encodeHorseDecisionReads(legacy, players, 'hand');
@@ -178,7 +231,7 @@ describe('original observation windows in private read frames', () => {
   );
 
   it('retains detached source envelopes and explicit unknown legacy rows in v3', () => {
-    const view = populated();
+    const view = populated(false);
     const source = { version: 1 as const, coverage: 'complete' as const, fromMs: 100, toMs: 200 };
     view.stats.get('villain')!.sourceWindow = source;
     delete view.scoped.get('omaha:hu|villain')!.sourceWindow;
@@ -205,7 +258,7 @@ describe('original observation windows in private read frames', () => {
     'extra',
     'wrapper_version',
   ])('rejects resealed malformed v3 %s', (fault) => {
-    const view = populated();
+    const view = populated(false);
     view.stats.get('villain')!.sourceWindow = window;
     const frame = encodeHorseDecisionReads(view, players, 'hand');
     const body = JSON.parse(frame.json);
@@ -231,7 +284,7 @@ describe('original observation windows in private read frames', () => {
       gameState: { stage: 'flop' },
     } as const;
     const planContext = horsePlanContextFromDecision(request);
-    const view = populated();
+    const view = populated(false);
     view.plans.clear();
     view.raisePlans.clear();
     view.outlooks.clear();

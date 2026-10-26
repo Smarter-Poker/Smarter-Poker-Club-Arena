@@ -1,0 +1,5 @@
+# Independent control proof pins its generation
+
+A concurrent intake advanced the active control symlink after release 40231912961 sealed, so the publisher rejected the old control SHA before reaching its independent runtime proof. The verifier now pins the request's immutable control generation and separately proves the observed active generation is the same or a protected-main descendant. Both generations retain exact script-byte checks and the read-only routine-admission decision against real healthy-engine state. The sealed image, local/public instance, fresh database leader and bounded proof budgets remain mandatory.
+
+The regression executes the actual workflow control-selection shell against real disposable Git generations. It fails on the former active-symlink equality and passes with a newer active generation; same generation succeeds, while older/divergent/unprotected control and tampered expected or active bytes refuse proof. No engine replacement or new publisher is introduced by this verification-only repair.

@@ -1837,6 +1837,12 @@ export default function MultiTablePage() {
     }
   );
 
+  // A leave queued behind its hand has now closed the seat: recount the cap.
+  useMasterBusSubscription('SEAT_CASHED_OUT', () => {
+    if (!user?.id || seatReadScopeRef.current.userId !== user.id) return;
+    requestSeatResync();
+  });
+
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
     if (!user?.id || seatReadScopeRef.current.userId !== user.id) return;

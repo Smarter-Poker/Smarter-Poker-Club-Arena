@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TOSAcceptanceModal.css';
 import { TERMS_LAST_UPDATED } from './legalDates';
+import { AI_OPPONENTS_DISCLOSURE } from './aiOpponentsDisclosure';
 import { reportError } from '../../utils/errorReporter';
 
 interface TOSAcceptanceModalProps {
@@ -123,43 +124,46 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
               <li>Create Multiple Accounts To Circumvent Restrictions</li>
             </ul>
 
-            <h3>6. Privacy Policy</h3>
+            <h3>6. AI Opponents</h3>
+            <p>{AI_OPPONENTS_DISCLOSURE}</p>
+
+            <h3>7. Privacy Policy</h3>
             <p>
               Your Privacy Is Important To Us. We Collect And Process Personal Data As Described In
               Our Privacy Policy, Which Is Incorporated Into These Terms By Reference.
             </p>
 
-            <h3>7. Intellectual Property</h3>
+            <h3>8. Intellectual Property</h3>
             <p>
               All Content, Features, And Functionality Of The Service Are Owned By Club Arena And
               Are Protected By Copyright, Trademark, And Other Intellectual Property Laws.
             </p>
 
-            <h3>8. Disclaimer Of Warranties</h3>
+            <h3>9. Disclaimer Of Warranties</h3>
             <p>
               THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
               IMPLIED. WE DO NOT GUARANTEE UNINTERRUPTED OR ERROR-FREE SERVICE.
             </p>
 
-            <h3>9. Limitation Of Liability</h3>
+            <h3>10. Limitation Of Liability</h3>
             <p>
               TO THE MAXIMUM EXTENT PERMITTED BY LAW, SMARTER.POKER SHALL NOT BE LIABLE FOR ANY
               INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES.
             </p>
 
-            <h3>10. Changes To Terms</h3>
+            <h3>11. Changes To Terms</h3>
             <p>
               We Reserve The Right To Modify These Terms At Any Time. Continued Use Of The Service
               After Changes Constitutes Acceptance Of The Modified Terms.
             </p>
 
-            <h3>11. Governing Law</h3>
+            <h3>12. Governing Law</h3>
             <p>
               These Terms Shall Be Governed By And Construed In Accordance With The Laws Of The
               Jurisdiction In Which Club Arena Operates.
             </p>
 
-            <h3>12. Contact</h3>
+            <h3>13. Contact</h3>
             <p>For Questions About These Terms, Please Contact Us At Support@Smarter.Poker</p>
 
             <div className="tosc__scroll-hint sc-ink--blue">

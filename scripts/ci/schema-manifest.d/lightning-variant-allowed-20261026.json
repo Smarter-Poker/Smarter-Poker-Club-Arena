@@ -1,0 +1,7 @@
+{
+  "_owner": "claude/lightning-never-short-deck-hi-lo-pineapple",
+  "_comment": "Migration 20261026015255: Short Deck, Omaha Hi-Lo and Pineapple never run Lightning (Dan 2026-10-25). Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": ["fn_lightning_variant_allowed"],
+  "columns": {}
+}

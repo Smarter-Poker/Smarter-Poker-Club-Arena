@@ -90,7 +90,9 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium
-        run: npx playwright install chromium --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium --with-deps
 
       - name: Cache optimized dist media
         uses: actions/cache@v4

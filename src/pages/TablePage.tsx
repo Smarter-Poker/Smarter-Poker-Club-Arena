@@ -383,6 +383,7 @@ import {
 import PreActionBar from '../components/table/PreActionBar';
 import LightningNextHand from '../components/table/LightningNextHand';
 import LightningEndingNotice from '../components/table/LightningEndingNotice';
+import LightningStartingNotice from '../components/table/LightningStartingNotice';
 import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
@@ -393,7 +394,11 @@ import {
   lightningJoinRoute,
   lightningRoute,
 } from '../lightning/lightningLobby';
-import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
+import {
+  LIGHTNING_LOBBY_REFRESH_MS,
+  lightningTableRefreshMs,
+  useLightningLobbyStates,
+} from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
   fetchLightningAnchorSeat,
@@ -415,6 +420,7 @@ import {
   lightningFoldAvailability,
   isLightningIdleSnapshot,
   lightningSnapshotClearsBoard,
+  lightningStartingOnTable,
   lightningHandOnFelt,
   lightningHandId,
   lightningHandKey,
@@ -24667,8 +24673,15 @@ function LiveTablePage({
   );
   /* Asked once: a Classic table's game answers Classic and is never polled
      again (Dan 2026-10-24, Lightning never touches Classic). */
+  /* While this table's game could switch into Lightning, or is switching, it
+     is re-read every 5 s instead of 30 (lightningTableRefreshMs), so
+     "Lightning Is Starting" is on time. The refresh follows the last answer. */
+  const [anchorLightningRefreshMs, setAnchorLightningRefreshMs] = useState(
+    LIGHTNING_LOBBY_REFRESH_MS
+  );
   const spectatorLightningStates = useLightningLobbyStates(anchorLightningClusterIds, {
     settleClassic: true,
+    refreshMs: anchorLightningRefreshMs,
   });
   /* The database answers with a full state object for EVERY cash game, Classic
      included, so a non-null answer is not "Lightning". Until 2026-10-24 it was
@@ -24680,6 +24693,14 @@ function LiveTablePage({
   const tableGameLightningState = tableState.clusterId
     ? spectatorLightningStates[tableState.clusterId]
     : undefined;
+  const nextAnchorLightningRefreshMs = lightningTableRefreshMs(tableGameLightningState);
+  useEffect(() => {
+    setAnchorLightningRefreshMs(nextAnchorLightningRefreshMs);
+  }, [nextAnchorLightningRefreshMs]);
+  const lightningStartingHere = lightningStartingOnTable({
+    lightningRoom: lightningRoom !== null,
+    clusterMode: tableGameLightningState?.clusterMode,
+  });
   const anchorLightningClusterId =
     tableState.clusterId &&
     !lightningRoom &&
@@ -26489,6 +26510,10 @@ function LiveTablePage({
                       handInProgress={lightningHandLive && tableState.isHandInProgress}
                     />
                     <LightningEndingNotice clusterId={lightningRoom.clusterId} />
+                  </div>
+                ) : lightningStartingHere ? (
+                  <div className="lightning-felt-notices" data-testid="lightning-felt-notices">
+                    <LightningStartingNotice show />
                   </div>
                 ) : null}
 

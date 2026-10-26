@@ -23,6 +23,12 @@
  *
  * This file replays that spot with the full tournament context the engine
  * sends (payout ladder, every stack, the Phase 7 utility live).
+ *
+ * 2026-10-26: the jam the brain chose must be the jam the engine plays. The
+ * same stack in the BIG blind, heads-up against the opener, jammed through
+ * the V38 variant price, and the policy receipt check refused that jam as
+ * reference_shape - so the engine's liveness fallback folded A-T, pocket
+ * eights and K-9 there instead. Every such receipt now matches its snapshot.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HorseLogic } from './HorseLogic.js';
@@ -31,6 +37,7 @@ import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
 import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
 import { calculatePots, calculateContestablePot } from './PokerEngine.js';
 import { horseVariantRulesFor } from './VariantRules.js';
+import { horsePhase6AttributionMismatch, referenceReturnShape } from './HorsePhase6Attribution.js';
 import type { Card, CardRank, CardSuit, SeatPlayer } from '../types.js';
 
 const SUITS: Record<string, CardSuit> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
@@ -350,5 +357,99 @@ describe('a one-card low flush on a four-flush board does not call off a tournam
   it('a cash game keeps its own pricing', () => {
     const { fires } = decide(river('cash'), '9c2d');
     expect(fires.v58_one_card_low_flush_fold ?? 0).toBe(0);
+  });
+});
+
+/** The same table one orbit on: the stack is in the big blind, the small
+ * blind has folded, and the opener's min-raise is heads-up against it. */
+function bigBlindHeadsUp(hole: string, heroStack: number) {
+  const players = [
+    seat(1, 'p1', 98037, 0, 0, true),
+    seat(3, 'p3', 120976, 0, 0, true),
+    seat(4, 'opener', 204942, 21876, 21876, false),
+    seat(5, 'p5', 123608, 0, 0, true),
+    seat(6, 'p6', 256327, 0, 0, true),
+    seat(7, 'sb', 150000, 5000, 5000, true),
+    seat(8, 'hero', heroStack, 10000, 10000, false),
+  ];
+  const history = [
+    { stage: 'preflop', seat: 7, userId: 'sb', action: 'sb', amount: 5000, timestamp: T0 },
+    { stage: 'preflop', seat: 8, userId: 'hero', action: 'bb', amount: 10000, timestamp: T0 },
+    ...PREFLOP.slice(2),
+    { stage: 'preflop', seat: 7, userId: 'sb', action: 'fold', amount: 0, timestamp: T0 + 6 },
+  ];
+  const { gs } = state({ ...SB_FACING_OPEN, history }, hole);
+  const toCall = 21876 - 10000;
+  const byUser = Object.fromEntries(players.map((p) => [p.user_id, p.stack + p.totalInvested]));
+  const stacks = [...Object.values(byUser), ...OTHER_TABLE];
+  Object.assign(gs, {
+    heroSeat: 8,
+    currentPlayerSeat: 8,
+    players,
+    toCall,
+    maxRaiseTo: heroStack + 10000,
+    pots: calculatePots(players),
+    contestablePot: calculateContestablePot(players, 'hero', Math.min(toCall, heroStack)),
+  });
+  Object.assign(gs.tournament as object, {
+    stacks,
+    stackByUser: byUser,
+    avgStackChips: stacks.reduce((a, b) => a + b, 0) / 13,
+  });
+  return { hero: { ...players[6], cards: cards(hole) }, gs };
+}
+
+describe('the jam the brain chooses is the jam the engine plays', () => {
+  it('a short big blind heads-up against the opener jams, and its receipt is accepted', () => {
+    wideOpenerRead();
+    for (const hole of ['AcTh', '8s8h', 'Kc9d'])
+      for (const stack of [30000, 15000]) {
+        const { hero, gs } = bigBlindHeadsUp(hole, stack);
+        for (let i = 0; i < 12; i++) {
+          const d = HorseLogic.decide(hero as never, gs as never, 'balanced', {}, {
+            decisionTimeMs: T0 + 100 + i * 7919,
+          } as never);
+          expect(d.action, `${hole} ${stack}`).toBe('all_in');
+          expect(d.tournamentPreflopAttribution?.route).toBe('variant_price');
+          expect(
+            horsePhase6AttributionMismatch(d, {
+              gameState: gs as never,
+              player: hero as never,
+              opts: {},
+            }),
+            `${hole} ${stack}`
+          ).toBeNull();
+        }
+      }
+  });
+
+  it('the admitted jam is only the short-stack shape, not any all-in', () => {
+    wideOpenerRead();
+    const { hero, gs } = bigBlindHeadsUp('AcTh', 30000);
+    const d = HorseLogic.decide(hero as never, gs as never, 'balanced', {}, {
+      decisionTimeMs: T0 + 100,
+    } as never);
+    const receipt = d.tournamentPreflopAttribution!;
+    const snapshot = (player: object, game: object = gs) => ({
+      gameState: game as never,
+      player: player as never,
+      opts: {},
+    });
+    expect(referenceReturnShape(receipt, snapshot(hero))).toBe(true);
+    // A deep stack (30 big blinds) heads-up is not this shape.
+    expect(referenceReturnShape(receipt, snapshot({ ...hero, stack: 290000 }))).toBe(false);
+    // Nor is a cash game, or a pot-limit Omaha table, at the same depth.
+    expect(referenceReturnShape(receipt, snapshot(hero, { ...gs, gameMode: 'cash' }))).toBe(false);
+    expect(
+      referenceReturnShape(
+        receipt,
+        snapshot(hero, {
+          ...gs,
+          gameVariant: 'plo4',
+          variantRules: horseVariantRulesFor('plo4'),
+          bettingStructure: 'pot_limit',
+        })
+      )
+    ).toBe(false);
   });
 });

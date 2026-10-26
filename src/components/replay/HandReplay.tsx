@@ -1240,7 +1240,7 @@ export default function HandReplay({
                   <span className="player-hand-ranking__hand">
                     {high?.hole
                       ? `${perRun ?? `${high.handName}${low ? ` · ${low.handName}` : ''}`}${
-                          high.calledMuck ? ' · Called' : ''
+                          high.calledMuck || high.calledRiver ? ' · Called' : ''
                         }`
                       : mucked
                         ? 'Mucked'

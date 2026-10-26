@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { isHorseOwnerForcedAuthority } from './HorseOwnerForcedActivation.js';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -92,11 +93,13 @@ describe('P14.4 null proof: no corrective candidate can be admitted today', () =
     expect(reads).toEqual([]);
   });
 
-  it('every live main-scheduler gate is unselected and accepts no receipt, even from a usable worker', () => {
+  it('every live gate runs on the owner order where a kernel exists, and accepts no other receipt (Dan 2026-10-26)', () => {
     for (const domain of HORSE_PHASE14_DOMAINS) {
       const gate = liveHorsePhase14Authorities[domain]!;
       gate.refresh();
-      expect(gate.mainState(), domain).toBe('unselected');
+      const forced = isHorseOwnerForcedAuthority(gate.mainAuthority());
+      expect(gate.mainState(), domain).toBe(forced ? 'usable' : 'unselected');
+      if (domain.endsWith('-cash') || domain.startsWith('nlh-')) expect(forced, domain).toBe(true);
       const worker = new HorseQualifiedAuthorityHolder(
         `p144-null-${domain}`,
         horsePhase14ContinuationVersion(domain)
@@ -104,7 +107,9 @@ describe('P14.4 null proof: no corrective candidate can be admitted today', () =
       worker.apply(qualifiedPhase14TestAdmission(domain));
       expect(worker.currentState()).toBe('usable');
       gate.observeWorker(worker.receipt());
-      expect(gate.check(gate.stamp(worker.receipt()), NOW), domain).toBe('unselected');
+      expect(gate.check(gate.stamp(worker.receipt()), NOW), domain).toBe(
+        forced ? 'mismatched' : 'unselected'
+      );
       gate.forgetWorker(worker.epoch);
     }
   });

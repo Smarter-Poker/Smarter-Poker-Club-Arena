@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -24,6 +24,40 @@ describe('Ubuntu browser dependency mirror', () => {
     );
     expect(selected).toBeGreaterThanOrEqual(0);
     expect(selected).toBeLessThan(install);
+  });
+
+  // EVERY BROWSER SYSTEM-PACKAGE INSTALL, NOT THE TWO THAT HIT IT FIRST
+  // (2026-10-26). The mirror selection reached ci.yml's CSS beats and
+  // accounting jobs on 2026-10-22, and nowhere else. Post-deploy E2E kept the
+  // Azure mirror: on 2026-10-26 its browser install fetched 97 MB at 27 kB/s
+  // for 59 minutes, and the client certificate hit its 80-minute cap before
+  // the sweep. Any step that lets Playwright pull Ubuntu packages selects the
+  // primary mirror first, in that step or an earlier one of the same job.
+  it('selects the primary mirror before every Playwright system-package install in every workflow', () => {
+    const selection = 'sudo python3 scripts/ci/ubuntu-apt-mirror.py';
+    const installsPackages = /npx playwright (?:install-deps\b|install\b[^\n]*--with-deps)/;
+    const missing: string[] = [];
+    let installs = 0;
+    for (const file of readdirSync('.github/workflows').filter((name) => /\.ya?ml$/.test(name))) {
+      const workflow = parse(readFileSync(join('.github/workflows', file), 'utf8'));
+      for (const [jobId, job] of Object.entries(
+        (workflow?.jobs ?? {}) as Record<string, { steps?: { name?: string; run?: string }[] }>
+      )) {
+        let selected = false;
+        for (const step of job.steps ?? []) {
+          const run = typeof step.run === 'string' ? step.run : '';
+          const install = run.search(installsPackages);
+          if (install >= 0) {
+            installs += 1;
+            const before = run.slice(0, install).includes(selection);
+            if (!selected && !before) missing.push(`${file} ${jobId}: ${step.name ?? run.trim()}`);
+          }
+          if (run.includes(selection)) selected = true;
+        }
+      }
+    }
+    expect(installs).toBeGreaterThanOrEqual(11);
+    expect(missing).toEqual([]);
   });
 
   it('changes only active Azure Ubuntu URIs, preserves trust and is idempotent', () => {

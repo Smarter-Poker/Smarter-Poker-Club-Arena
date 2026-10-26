@@ -3590,7 +3590,9 @@ jobs:
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
       - name: Install Performance Browser
         if: success()
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
 
       - name: Route Performance Budget
         if: success()
@@ -3657,7 +3659,9 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
 
       - name: Wait for Production Deploy
         run: |
@@ -4275,7 +4279,9 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium
-        run: npx playwright install chromium --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium --with-deps
 
       - name: Run the Diamond playfields
         id: diamond-playfield

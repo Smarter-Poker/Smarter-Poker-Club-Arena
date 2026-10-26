@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isHorseOwnerForcedAuthority } from './HorseOwnerForcedActivation.js';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -374,7 +375,11 @@ describe('P12.3 maniac pressure (2026-10-22) requires fresh qualification of eve
       const gate = liveHorsePhase12Authorities[variant];
       gate.refresh();
       const isSelected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
-      expect(gate.mainState(), variant).toBe(isSelected ? 'usable' : 'unselected');
+      // Dan 2026-10-26, "FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING":
+      // an unselected pack's gate is usable under the owner's authority, and
+      // still accepts no receipt from any other authority.
+      expect(gate.mainState(), variant).toBe('usable');
+      expect(isHorseOwnerForcedAuthority(gate.mainAuthority()), variant).toBe(!isSelected);
       if (isSelected) continue;
       const worker = new HorseQualifiedAuthorityHolder(
         `p123-null-${variant}`,
@@ -383,7 +388,7 @@ describe('P12.3 maniac pressure (2026-10-22) requires fresh qualification of eve
       worker.apply(qualifiedPhase12TestAdmission(variant));
       expect(worker.currentState()).toBe('usable');
       gate.observeWorker(worker.receipt());
-      expect(gate.check(gate.stamp(worker.receipt())), variant).toBe('unselected');
+      expect(gate.check(gate.stamp(worker.receipt())), variant).toBe('mismatched');
       gate.forgetWorker(worker.epoch);
     }
   });

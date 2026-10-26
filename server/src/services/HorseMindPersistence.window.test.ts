@@ -5,6 +5,8 @@ const transport = vi.hoisted(() => ({
   requests: [] as Array<{ table: string; columns: string }>,
   fail: null as null | { code: string; message: string },
   legacy: false,
+  /** Columns this fake database has not installed yet (PostgREST 42703). */
+  absent: [] as string[],
   rpc: vi.fn(),
   report: vi.fn(),
 }));
@@ -15,11 +17,14 @@ vi.mock('./supabase.js', () => ({
       select: (columns: string) => {
         transport.requests.push({ table, columns });
         const read = async () => {
+          const missing = transport.absent.find((c) => columns.split(',').includes(c));
           const error =
             transport.fail ??
             (transport.legacy && columns.includes('source_window')
               ? { code: '42703', message: `column ${table}.source_window does not exist` }
-              : null);
+              : missing
+                ? { code: '42703', message: `column ${table}.${missing} does not exist` }
+                : null);
           return { error, data: error ? null : structuredClone(transport.rows.get(table) ?? []) };
         };
         const chain = { order: () => chain, limit: read, range: read };
@@ -62,6 +67,7 @@ beforeEach(() => {
   transport.rows.clear();
   transport.requests.length = 0;
   transport.legacy = false;
+  transport.absent = [];
   transport.fail = null;
   transport.report.mockReset();
   transport.rpc.mockReset().mockImplementation(async (name, { rows }) => {
@@ -150,5 +156,70 @@ describe('original observation-window service persistence', () => {
     await hydrateHorseMindFromDb();
     expect(HorseMind.getStats('same-actor')?.sourceWindow).toEqual(unknown);
     expect(HorseMind.getScopedStats('same-actor', 'holdem:hu')?.sourceWindow).toEqual(unknown);
+  });
+});
+
+describe('river-call counters before and after their window migration (2026-10-25)', () => {
+  it('flushes both counters to both RPCs and hydrates them back', async () => {
+    HorseMind.importStats([
+      { user_id: 'same-actor', hands: 2, riverCallSD: 6, riverCallSDWeak: 4 },
+    ]);
+    HorseMind.importScoped([
+      { user_id: 'same-actor', scope: 'holdem:hu', hands: 3, riverCallSD: 5, riverCallSDWeak: 1 },
+    ]);
+    HorseMind.requeueDirty(['same-actor']);
+    HorseMind.requeueDirtyScoped([{ user_id: 'same-actor', scope: 'holdem:hu' }]);
+    await flushHorseMind();
+    await flushHorseMindScoped();
+    expect(transport.rows.get('horse_mind_stats')?.[0]).toMatchObject({
+      river_call_sd: 6,
+      river_call_sd_weak: 4,
+    });
+    expect(transport.rows.get('horse_mind_stats_scoped')?.[0]).toMatchObject({
+      river_call_sd: 5,
+      river_call_sd_weak: 1,
+    });
+    HorseMind.reset();
+    await hydrateHorseMindFromDb();
+    expect(HorseMind.getStats('same-actor')).toMatchObject({ riverCallSD: 6, riverCallSDWeak: 4 });
+    expect(HorseMind.getScopedStats('same-actor', 'holdem:hu')).toMatchObject({
+      riverCallSD: 5,
+      riverCallSDWeak: 1,
+    });
+    for (const r of transport.requests.filter((q) => q.table !== 'horse_mind_pairs'))
+      expect(r.columns).toContain('river_call_sd_weak');
+  });
+
+  it('hydrates a database without the columns by dropping only them, once, and reading 0', async () => {
+    transport.absent = ['river_call_sd', 'river_call_sd_weak'];
+    transport.rows.set('horse_mind_stats', [dbRow({ source_window: complete })]);
+    transport.rows.set('horse_mind_stats_scoped', [dbRow({ scope: 'holdem:hu' })]);
+    expect(await hydrateHorseMindFromDb()).toBe('2026-09-30T23:00:00.000Z');
+    for (const table of ['horse_mind_stats', 'horse_mind_stats_scoped']) {
+      const requests = transport.requests.filter((r) => r.table === table);
+      expect(requests).toHaveLength(2);
+      expect(requests[0].columns).toContain('river_call_sd');
+      expect(requests[1].columns).not.toContain('river_call_sd');
+      expect(requests[1].columns).toContain('source_window');
+    }
+    expect(HorseMind.getStats('same-actor')).toMatchObject({
+      hands: 2,
+      riverCallSD: 0,
+      riverCallSDWeak: 0,
+      sourceWindow: complete,
+    });
+    expect(transport.report).not.toHaveBeenCalled();
+  });
+
+  it('drops both optional groups when neither is installed: at most three reads', async () => {
+    transport.legacy = true;
+    transport.absent = ['river_call_sd'];
+    transport.rows.set('horse_mind_stats', [dbRow()]);
+    transport.rows.set('horse_mind_stats_scoped', [dbRow({ scope: 'holdem:hu' })]);
+    expect(await hydrateHorseMindFromDb()).toBe('2026-09-30T23:00:00.000Z');
+    for (const table of ['horse_mind_stats', 'horse_mind_stats_scoped'])
+      expect(transport.requests.filter((r) => r.table === table)).toHaveLength(3);
+    expect(HorseMind.getStats('same-actor')?.hands).toBe(2);
+    expect(transport.report).not.toHaveBeenCalled();
   });
 });

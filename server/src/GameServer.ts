@@ -1024,6 +1024,15 @@ export class GameServer {
               proof.proofDeadlineMonotonicMs
             )
           ) {
+            // Preserve the first local refusal before fencing changes state.
+            const failures = (this.tournamentLeaseRenewalFailures ??= new WeakMap());
+            if (!failures.has(captured.manager))
+              failures.set(
+                captured.manager,
+                captured.manager.getTournamentLeaseRenewalRefusal?.() ?? {
+                  reason: 'answered_renewal_refused',
+                }
+              );
             lostManagers.set(proof.tournamentId, captured.manager);
           }
         }
@@ -1056,11 +1065,14 @@ export class GameServer {
                 new Error(
                   this.tournamentLeasesRefutedByDatabase?.has(manager)
                     ? `Tournament ${id} no longer proves its current lease generation: the database named another holder, a stale row or none`
-                    : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+                    : this.tournamentLeaseRenewalFailures?.has(manager)
+                      ? `Tournament ${id} heartbeat answered, but this manager or one of its dealers refused the renewal`
+                      : `Tournament ${id} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
                 ),
                 'GameServer.tournament_lease_lost',
                 {
                   tournamentId: id,
+                  renewalFailure: this.tournamentLeaseRenewalFailures?.get(manager) ?? null,
                   verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
                     ? 'refuted'
                     : 'unproven',
@@ -1367,11 +1379,14 @@ export class GameServer {
             new Error(
               this.tournamentLeasesRefutedByDatabase?.has(manager)
                 ? `Tournament ${tournamentId} no longer proves its current lease generation: the database named another holder, a stale row or none`
-                : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
+                : this.tournamentLeaseRenewalFailures?.has(manager)
+                  ? `Tournament ${tournamentId} heartbeat answered, but this manager or one of its dealers refused the renewal`
+                  : `Tournament ${tournamentId} could not prove its lease generation inside its window: no answer arrived, and the database did not say it moved`
             ),
             'GameServer.tournament_lease_lost',
             {
               tournamentId,
+              renewalFailure: this.tournamentLeaseRenewalFailures?.get(manager) ?? null,
               verdict: this.tournamentLeasesRefutedByDatabase?.has(manager)
                 ? 'refuted'
                 : 'unproven',
@@ -1738,6 +1753,10 @@ export class GameServer {
   private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
   /** Managers a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
   private tournamentLeasesRefutedByDatabase?: WeakSet<TournamentManager>;
+  private tournamentLeaseRenewalFailures?: WeakMap<
+    TournamentManager,
+    { reason: string; tableId?: string }
+  >;
   /** Cash engines a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
   private cashLeasesRefutedByDatabase?: WeakSet<ServerTableEngine>;
   /** Discovery-launched resume admissions not yet settled, by launch time. */

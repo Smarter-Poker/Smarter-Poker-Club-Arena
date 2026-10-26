@@ -1411,21 +1411,44 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  private tournamentLeaseRenewalRefusal: {
+    reason:
+      | 'manager_authority_unavailable'
+      | 'invalid_heartbeat_deadline'
+      | 'heartbeat_deadline_elapsed'
+      | 'dealer_not_owned'
+      | 'dealer_refused';
+    tableId?: string;
+  } | null = null;
+
+  /** Diagnostic only: the exact refused answer, never an extension of authority. */
+  getTournamentLeaseRenewalRefusal() {
+    return this.tournamentLeaseRenewalRefusal ? { ...this.tournamentLeaseRenewalRefusal } : null;
+  }
+
   /**
    * Extend authority only for the same, still-live manager generation. A late
    * response cannot resurrect an expired lifecycle.
    */
   renewTournamentLeaseProof(leaseGeneration: string, proofDeadlineMonotonicMs: number): boolean {
+    this.tournamentLeaseRenewalRefusal = null;
     if (
       !this.tournamentLeaseGeneration ||
       this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
       (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership) ||
-      !this.hasCurrentTournamentLeaseAuthority() ||
-      !Number.isFinite(proofDeadlineMonotonicMs) ||
-      tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
+      !this.hasCurrentTournamentLeaseAuthority()
     ) {
+      this.tournamentLeaseRenewalRefusal = { reason: 'manager_authority_unavailable' };
+      return false;
+    }
+    if (!Number.isFinite(proofDeadlineMonotonicMs)) {
+      this.tournamentLeaseRenewalRefusal = { reason: 'invalid_heartbeat_deadline' };
+      return false;
+    }
+    if (tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
+      this.tournamentLeaseRenewalRefusal = { reason: 'heartbeat_deadline_elapsed' };
       return false;
     }
     /* The primary and shutdown lifecycle can briefly join the same in-flight
@@ -1475,12 +1498,14 @@ export abstract class TournamentManagerBase {
           this.isReplacingManagedTableEngine(tableId, engine))
       ) {
         if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
+          this.tournamentLeaseRenewalRefusal = { reason: 'dealer_not_owned', tableId };
           this.fenceForTournamentLeaseLoss();
           return false;
         }
         continue;
       }
       if (!engine.renewEngineLeaseProof(authority)) {
+        this.tournamentLeaseRenewalRefusal = { reason: 'dealer_refused', tableId };
         this.fenceForTournamentLeaseLoss();
         return false;
       }

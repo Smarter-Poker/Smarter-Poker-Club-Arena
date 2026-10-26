@@ -1480,6 +1480,13 @@ jobs:
           QUICK_CLUB_TEST_WORK: ${{ runner.temp }}
         run: python3 -B scripts/ci/test-quick-club-opening.py
 
+      - name: Digest player periods stay within one daily request
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-digest-player-period.py
+
       - name: Digest database sources stay qualified
         if: matrix.shard == 2
         env:

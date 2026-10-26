@@ -409,6 +409,11 @@ jobs:
       # 2026-10-26 (97 MB at 27 kB/s) and timed the whole job out; the
       # primary HTTPS mirror is the shared fix (scripts/ci/ubuntu-apt-mirror.py).
       - name: Install Chromium and WebKit
+        # Comparable success121591382452 took49s. Install121619175020 took
+        # 49m32s, then created an account with too little of the80m job left.
+        # Refuse a stalled setup before any production fixture exists; leave
+        # the suite and its always-cleanup their existing execution budget.
+        timeout-minutes: 10
         run: |
           sudo python3 scripts/ci/ubuntu-apt-mirror.py
           npx playwright install chromium webkit --with-deps

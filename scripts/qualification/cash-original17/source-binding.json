@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237943,
-      "sha256": "899cc3ddf7326681cf5f0dda2e7f061f295f22a7913a7206353e5e39362f7fe2"
+      "bytes": 238211,
+      "sha256": "187083a18030ac26366f893c1f0f4d12ffdbe1b8c431467b0eff435247bbd5a3"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -627,6 +627,22 @@
           "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
         }
       }
+    }
+  },
+  "digestPlayerPeriodNative20261026": {
+    "reason": "Add exact isolated PostgreSQL17 player-period qualification in existing accounting shard2. Reviewed diff adds one step only. Current workflow identity changes; all financial inputs, assertions, historical execution receipts and qualification states are preserved. Not production or financial execution evidence. Integration preserves protected-main Ubuntu browser-mirror repair and all its audit entries.",
+    "execution_performed": false,
+    "previousWorkflowPin": {
+      "bytes": 237490,
+      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+    },
+    "currentWorkflowPin": {
+      "bytes": 237758,
+      "sha256": "c928589fb562ecff23c797141b525640c2985327c0c9fc83a89e3acc973400a5"
+    },
+    "originalBranchWorkflowPin": {
+      "bytes": 237557,
+      "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
     }
   }
 }

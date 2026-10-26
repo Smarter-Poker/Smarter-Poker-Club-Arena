@@ -12,39 +12,38 @@ const decisionWorker = vi.hoisted(() => {
     fence: authority.fence,
     operation: 'COMMIT_DECISION_EFFECTS' as const,
   }));
-  const decideFast = vi.fn(
-    async (
-      snapshot: import('./horseDecision/protocol.js').LiveHorseDecisionSnapshot
-    ): Promise<FastHorseDecisionResult> => ({
-      type: 'FAST_RESULT' as const,
-      planIssueDisposition: 'issued' as const,
-      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
-      requestId: 1,
-      generation: snapshot.generation,
-      fence: snapshot.fence,
-      decision: { action: 'bet' as const, amount: 20, thinkTime: 1 },
-      rngBefore: 11,
-      rngAfter: 22,
-      computeMs: 2,
-      governorScale: 1,
-      effects: [
-        {
-          type: 'raise_plan' as const,
-          handKey: 'table:hand',
-          userId: 'horse-1',
-          street: 'flop',
-          plan: 'foldToRaise' as const,
-        },
-      ],
-    })
-  );
+  const defaultDecideFast = async (
+    snapshot: import('./horseDecision/protocol.js').LiveHorseDecisionSnapshot
+  ): Promise<FastHorseDecisionResult> => ({
+    type: 'FAST_RESULT' as const,
+    planIssueDisposition: 'issued' as const,
+    planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
+    requestId: 1,
+    generation: snapshot.generation,
+    fence: snapshot.fence,
+    decision: { action: 'bet' as const, amount: 20, thinkTime: 1 },
+    rngBefore: 11,
+    rngAfter: 22,
+    computeMs: 2,
+    governorScale: 1,
+    effects: [
+      {
+        type: 'raise_plan' as const,
+        handKey: 'table:hand',
+        userId: 'horse-1',
+        street: 'flop',
+        plan: 'foldToRaise' as const,
+      },
+    ],
+  });
+  const decideFast = vi.fn(defaultDecideFast);
   const worker = {
     decideFast,
     decideDeep: vi.fn(),
     commitDecisionEffects,
     runWithDispatchBarrier: vi.fn(<T>(fn: () => T): T => fn()),
   };
-  return { worker, decideFast, commitDecisionEffects };
+  return { worker, decideFast, defaultDecideFast, commitDecisionEffects };
 });
 
 vi.mock('./horseDecision/index.js', async () => {
@@ -345,7 +344,17 @@ function harness(intendedActionAccepted: boolean) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  decisionWorker.decideFast.mockClear();
+  // RESET, not clear (2026-10-26). mockClear() keeps every queued
+  // mockImplementationOnce, so a test whose scheduled horse action had not yet
+  // consumed its queued decision when it ended handed that decision to the
+  // NEXT test's first decideFast call. On loaded CI runners the passive
+  // wager-sizing cases ran out their timer window first, and the
+  // "reconciles the actual call price" cases then executed the leftover
+  // raise (seat 1 raise 6) instead of their own call, failing Server Engine
+  // shard 1/4 on #8158, #8161 and #8163. Every test now starts with an empty
+  // queue and the default decision.
+  decisionWorker.decideFast.mockReset();
+  decisionWorker.decideFast.mockImplementation(decisionWorker.defaultDecideFast);
   decisionWorker.commitDecisionEffects.mockClear();
   decisionWorker.worker.runWithDispatchBarrier.mockClear();
   decisionWorker.worker.decideDeep.mockReset();

@@ -2,7 +2,7 @@
  * Captures the lookup actually performed; does not certify causal influence. */
 import type { HorseDecision, SeatPlayer } from '../types.js';
 import { isDeepStrictEqual as samePhase6Provenance } from 'node:util';
-import { SHORT_STACK_NO_FLAT_BB, vpipFloorCallDown, type HorseGameStateV2 } from './HorseLogic.js';
+import { vpipFloorCallDown, SHORT_STACK_NO_FLAT_BB, type HorseGameStateV2 } from './HorseLogic.js';
 import {
   horseTournamentProvenanceIsValid,
   horseTournamentProvenanceMatchesSnapshot,
@@ -591,42 +591,41 @@ function v53PressureFourBetShape(amount: number | null, snapshot: Phase6Snapshot
     : Math.min(s.maxRaiseTo, Math.max(s.minRaiseTo, s.currentBet * 2.3));
   return amount === Math.round(target * 100) / 100;
 }
-/** V58 A SHORT TOURNAMENT STACK DOES NOT FLAT (2026-10-26).
- * The variant_price route also jams a two-card no-limit tournament stack of
- * at most SHORT_STACK_NO_FLAT_BB facing a non-all-in raise it prices
- * (v58_short_stack_no_flat). The generic all-in shape below admits a shove
- * only with chips well behind the call and another live responder, so a V58
- * jam heads-up against the raiser, or with the call near the whole stack, was
- * refused as reference_shape and replaced by the fallback fold. The maniac
- * read and the equity are private; this admits exactly the public shape. */
-function v58ShortStackJamShape(amount: number | null, snapshot: Phase6Snapshot): boolean {
+/** V58 A SHORT TOURNAMENT STACK DOES NOT FLAT (HorseLogic, Dan 2026-10-25):
+ * a no-limit hold'em tournament stack of at most SHORT_STACK_NO_FLAT_BB big
+ * blinds, facing a raise that leaves it chips behind, answers with the JAM or
+ * the fold - from the V38 variant price and from the reference's maniac
+ * call-down alike, on every seat including a big blind heads-up against the
+ * opener. That jam is a reference proposal: before this shape was admitted
+ * the big-blind and heads-up jams were refused as reference_shape, and the
+ * engine's liveness fallback folded the hand the brain had chosen to jam.
+ * Public facts only; no strategy or equity is re-run here. */
+function v58ShortStackJamShape(snapshot: Phase6Snapshot): boolean {
   const s = snapshot.gameState,
     p = snapshot.player;
-  if (amount !== null && amount !== undefined) return false;
+  if (snapshot.opts?.mind === false || s.stage !== 'preflop') return false;
   const tournament = s.gameMode
     ? s.gameMode === 'tournament'
     : s.tournament != null || (s.bigBlind ?? 0) >= 10;
   if (!tournament) return false;
-  const { omaha, short, holes, fixed } = sourceVariantFacts(s);
+  const f = sourceVariantFacts(s);
   const potLimit =
     s.variantRules && s.bettingStructure !== undefined
       ? s.bettingStructure === 'pot_limit'
       : isPotLimitVariant((s.gameVariant || 'nlh').toLowerCase());
-  if (omaha || short || fixed || potLimit || holes !== 2) return false;
-  let last = -1;
-  for (const a of s.actionHistory || [])
-    if (
+  if (f.omaha || f.short || f.fixed || potLimit || f.holes !== 2) return false;
+  const bb = s.bigBlind > 0 ? s.bigBlind : 0;
+  if (!(bb > 0) || (p.stack + (p.bet || 0)) / bb > SHORT_STACK_NO_FLAT_BB) return false;
+  const toCall = Math.max(0, s.currentBet - (p.bet || 0));
+  if (!(toCall > 0) || !(p.stack > toCall)) return false;
+  return (s.actionHistory || []).some(
+    (a) =>
       a.stage === 'preflop' &&
+      a.seat !== p.seat &&
       (a.action === 'raise' ||
         a.action === 'bet' ||
         (a.action === 'all_in' && a.isFullRaise !== undefined))
-    )
-      last = a.seat;
-  const raiser = last >= 0 ? s.players.find((x) => x.seat === last) : undefined;
-  if (!raiser || raiser.is_all_in === true) return false;
-  const bb = s.bigBlind > 0 ? s.bigBlind : 2;
-  const call = Math.min(Math.max(0, s.currentBet - p.bet), p.stack);
-  return call < p.stack && (p.stack + (p.bet || 0)) / bb <= SHORT_STACK_NO_FLAT_BB;
+  );
 }
 export function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapshot): boolean {
   if (r.route === 'intent_engine' || r.route === 'legacy_preflop') return true;
@@ -645,6 +644,12 @@ export function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6
     const floorCall = vpipFloorCallDown({ action: 'fold', thinkTime: 0 }, p, s, () => 0);
     if (floorCall.action === 'call' && amount === floorCall.amount) return true;
   }
+  if (action === 'all_in' && amount === null && v58ShortStackJamShape(snapshot)) return true;
+  // The reference's maniac call-down answers a call that is the whole stack
+  // with the unsized all-in (HorseLogic maniacCallDown, allInCall). That
+  // call-off is the call itself, on this route, in cash and deep alike.
+  if (r.route === 'variant_price' && action === 'all_in' && amount === null && toCall >= p.stack)
+    return true;
   if (r.route === 'chart_open_jam')
     return (
       amount === null &&
@@ -656,13 +661,6 @@ export function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6
   if (action === 'call') return amount === call;
   if (r.route === 'variant_price' && action === 'raise')
     return v53PressureFourBetShape(amount, snapshot);
-  if (r.route === 'variant_price' && action === 'all_in' && v58ShortStackJamShape(amount, snapshot))
-    return true;
-  // The maniac call-down runs inside the reference after the route returns
-  // (HorseLogic maniacCallDown) and answers an owed call that costs the
-  // whole stack with the all-in call-off. That is a call, not a shove.
-  if (r.route === 'variant_price' && action === 'all_in' && amount === null && toCall >= p.stack)
-    return true;
   if (r.route === 'chart_bb_defend') return false;
   const last = (s.actionHistory || [])
     .filter(

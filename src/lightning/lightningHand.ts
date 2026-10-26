@@ -171,6 +171,27 @@ export function lightningFoldFlags(
  */
 export const LIGHTNING_ENDING_TEXT = 'Lightning Is Ending. Your Seat Is Kept.';
 
+/**
+ * LIGHTNING TRANSITION (Dan approved 2026-10-26: "show Lightning Is Starting
+ * during the switch"). While a MUST MOVE game converts into Lightning
+ * (pending_on) every one of its tables finishes the hand in play and deals no
+ * other, for 54 s on average and up to about 2.5 minutes. Before this the
+ * felt simply went quiet with nothing to say why. The line is words only.
+ */
+export const LIGHTNING_STARTING_TEXT = 'Lightning Is Starting';
+
+/**
+ * Whether a table shows "Lightning Is Starting": a physical table (never a
+ * Lightning room) whose game is converting into Lightning. Classic games
+ * never convert, so they never show it.
+ */
+export function lightningStartingOnTable(input: {
+  lightningRoom: boolean;
+  clusterMode: string | null | undefined;
+}): boolean {
+  return !input.lightningRoom && input.clusterMode === 'pending_on';
+}
+
 // ─── The two Lightning controls ────────────────────────────────────────────
 
 export interface LightningFoldInput {

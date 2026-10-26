@@ -71,6 +71,7 @@ function snapshot(o: {
     });
   return {
     gameState: {
+      stage: 'preflop',
       gameVariant: o.variant ?? 'nlh',
       gameMode: o.gameMode ?? 'tournament',
       bigBlind: bb,
@@ -134,7 +135,6 @@ describe('the V58 short-stack jam on the variant_price route', () => {
       snapshot({ gameMode: 'cash' }),
       snapshot({ variant: 'plo4' }),
       snapshot({ variant: 'short_deck' }),
-      snapshot({ raiserAllIn: true }),
     ])
       expect(referenceReturnShape(jam, s)).toBe(false);
     const sized = {

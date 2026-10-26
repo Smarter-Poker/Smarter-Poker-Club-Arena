@@ -421,8 +421,7 @@ export function dropFailedStylesheet(error: unknown): boolean {
  *   reload budget is spent.
  * - 'gone': the asset is retired; guarded document recovery runs as before.
  * - 'unknown': the probe itself could not answer (offline, aborted, 5xx).
- *   Recovery waits out the navigation grace period and then runs, so a page
- *   that really is leaving is gone before it fires.
+ *   Never a reload: see UNANSWERED_STYLESHEET_REPROBE_MS below.
  */
 export type StylesheetProbe = 'present' | 'gone' | 'unknown';
 
@@ -457,7 +456,32 @@ function reinstateStylesheet(href: string, onError: () => void): void {
   document.head.appendChild(link);
 }
 
-export async function recoverFailedStylesheet(href: string, error: unknown): Promise<void> {
+/**
+ * AN UNANSWERED PROBE IS NEVER A RELOAD (2026-10-26, production post-deploy
+ * run 40260290873, build 2d8564c1d, which already carried the probe above).
+ * Leaving the Kings Club lobby aborted its CashierPage, CashoutRequestModal
+ * and NotificationsPage stylesheets; the probe a document makes while it is
+ * being left never reaches the network, so every verdict was 'unknown'. The
+ * old answer to 'unknown' was a reload after NAVIGATION_GRACE_MS, and the
+ * player's navigation was still pending exactly ten seconds later, so the
+ * reload replaced it ("interrupted by another navigation to
+ * /clubs/kings-club?_cb=..."). A slow phone connection takes longer than ten
+ * seconds routinely.
+ *
+ * A reload cannot fix what an unanswered probe describes - it needs the same
+ * server - so 'unknown' only ever asks again later. A document that is really
+ * leaving is gone long before the next question. A document that stays and
+ * gets an answer acts on it. If no answer ever comes, the stylesheet is put
+ * back so the browser loads it itself, and only a failure of THAT load, long
+ * after any navigation has settled, reaches document recovery.
+ */
+export const UNANSWERED_STYLESHEET_REPROBE_MS = [10_000, 20_000, 40_000] as const;
+
+export async function recoverFailedStylesheet(
+  href: string,
+  error: unknown,
+  attempt = 0
+): Promise<void> {
   const verdict = await probeStylesheet(href);
   if (verdict === 'present') {
     reinstateStylesheet(href, () => void recoverFromStaleChunk(error));
@@ -467,7 +491,12 @@ export async function recoverFailedStylesheet(href: string, error: unknown): Pro
     void recoverFromStaleChunk(error);
     return;
   }
-  setTimeout(() => void recoverFromStaleChunk(error), NAVIGATION_GRACE_MS);
+  const delay = UNANSWERED_STYLESHEET_REPROBE_MS[attempt];
+  if (delay === undefined) {
+    reinstateStylesheet(href, () => void recoverFromStaleChunk(error));
+    return;
+  }
+  setTimeout(() => void recoverFailedStylesheet(href, error, attempt + 1), delay);
 }
 
 export function installVitePreloadErrorRecovery(): () => void {

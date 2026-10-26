@@ -304,7 +304,9 @@ describe('stale deployment chunk recovery', () => {
       });
 
       it('recovers at the grace when the live build cannot be read', async () => {
-        const { replace, recovery, uninstall } = await departedOnBuild(new TypeError('Load failed'));
+        const { replace, recovery, uninstall } = await departedOnBuild(
+          new TypeError('Load failed')
+        );
         await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
         await flush();
         expect(replace).toHaveBeenCalledTimes(1);
@@ -546,23 +548,69 @@ describe('stale deployment chunk recovery', () => {
       expect(replace).not.toHaveBeenCalled();
     });
 
-    it('waits out the navigation grace when the server cannot be asked', async () => {
+    /* Run 40260290873 (build 2d8564c1d): the probes a leaving document made
+       never reached the network, and the old 'unknown' answer reloaded the
+       page ten seconds later, over the player's still-pending navigation. */
+    it('never reloads while the server cannot be asked, however long that lasts', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      const fetchMock = vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(cancelledCss(SERVED));
+      await settle();
+      const total = recovery.UNANSWERED_STYLESHEET_REPROBE_MS.reduce((a, b) => a + b, 0);
+      for (let t = 0; t <= total + 1_000; t += 1_000) {
+        await vi.advanceTimersByTimeAsync(1_000);
+        await settle();
+        expect(replace).not.toHaveBeenCalled();
+      }
+      // Asked once, then once per re-probe; then handed to the browser itself.
+      expect(fetchMock).toHaveBeenCalledTimes(recovery.UNANSWERED_STYLESHEET_REPROBE_MS.length + 1);
+      expect(document.querySelectorAll(`link[rel="stylesheet"][href="${SERVED}"]`)).toHaveLength(1);
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
+      uninstall();
+    });
+
+    it('acts on the first answer it does get: a served stylesheet is put back', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      const fetchMock = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValue(
+          new Response('.a{}', { status: 200, headers: { 'content-type': 'text/css' } })
+        );
+      vi.stubGlobal('fetch', fetchMock);
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(cancelledCss(SERVED));
+      await settle();
+      await vi.advanceTimersByTimeAsync(recovery.UNANSWERED_STYLESHEET_REPROBE_MS[0]);
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(replace).not.toHaveBeenCalled();
+      expect(document.querySelectorAll(`link[rel="stylesheet"][href="${SERVED}"]`)).toHaveLength(1);
+      uninstall();
+    });
+
+    it('acts on the first answer it does get: a retired stylesheet still recovers', async () => {
       vi.useFakeTimers();
       const { browser, replace, recovery } = await freshDocument();
       vi.stubGlobal(
         'fetch',
-        vi.fn(async () => {
-          throw new TypeError('Failed to fetch');
-        })
+        vi
+          .fn()
+          .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+          .mockResolvedValue(new Response('Not Found', { status: 404 }))
       );
       const uninstall = recovery.installVitePreloadErrorRecovery();
       browser.dispatchEvent(cancelledCss());
       await settle();
-      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS - 1);
       expect(replace).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(2);
+      await vi.advanceTimersByTimeAsync(recovery.UNANSWERED_STYLESHEET_REPROBE_MS[0]);
       await settle();
-      // Still here after the grace, so the failure was real: one recovery.
       expect(replace).toHaveBeenCalledTimes(1);
       uninstall();
     });

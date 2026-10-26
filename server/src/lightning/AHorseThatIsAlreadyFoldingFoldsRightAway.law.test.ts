@@ -256,10 +256,13 @@ describe('a Lightning horse that is already folding folds right away (the host)'
       expect(acts[0].origin).toBe('horse_policy');
       expect(acts[0].stage).toBe('preflop');
     }
-    // The small blind was never on the turn: it was an early look.
+    // The small blind chose early, but its action followed the button's turn.
     expect(lookCalls(t, sb, true)).toBe(1);
-    // The button decided on its own turn (asked again if the small blind's
-    // early fold landed first: the host refreshes a horse's view of the table).
+    expect(t.h.actions.filter((a: any) => a.action === 'fold').map((a: any) => a.userId)).toEqual([
+      btn,
+      sb,
+    ]);
+    // The button's public opponents never change from a private intent.
     expect(lookCalls(t, btn, false)).toBeGreaterThanOrEqual(1);
     expect(lookCalls(t, btn, true)).toBe(0);
     // The big blind could check for free: no look, no fold, it wins the blinds.
@@ -351,10 +354,11 @@ describe('a Lightning horse that is already folding folds right away (the host)'
     await flush();
     expect(t.h.turnUser).toBe(sb);
     expect(actionsBy(t, sb)).toEqual([]);
-    // Never at a fast fold's press time: the ordinary 4 s think, at least
-    // (the big blind's own fold meanwhile refreshes the small blind's view).
-    const took = await stepUntil(() => actionsBy(t, sb).length > 0, 15_000, 50);
-    expect(took).toBeGreaterThanOrEqual(4_000);
+    // Measure the whole think from its actual turn, not the remainder after
+    // the 4.1-second setup advance. Private intents no longer restart it.
+    const turnAt = t.h.turnStartMs;
+    await stepUntil(() => actionsBy(t, sb).length > 0, 15_000, 50);
+    expect(Date.now() - turnAt).toBeGreaterThanOrEqual(4_000);
     const acts = actionsBy(t, sb);
     expect(acts.map((a) => a.action)).toEqual(['fold']);
     expect(acts[0].origin).toBe('horse_policy');

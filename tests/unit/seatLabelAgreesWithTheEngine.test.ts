@@ -46,10 +46,6 @@ function deal(seed: number, holeCount: number, boardCount: number, ranks: string
 const asTable = (cards: { rank: string; suit: string }[]) =>
   cards.map((c) => ({ rank: c.rank, suit: LETTER[c.suit] })) as any[];
 
-/* Short deck is excluded on purpose: the engine applies its rank swap through
-   evaluateHand's shortDeck flag, and the client renames the swapped slots, so
-   the two speak different internal names for one ranking. It has its own
-   suite (handEvaluatorShortDeck.test.ts). */
 const GAMES: { variant: string; hole: number; omaha: boolean; ranks: string[] }[] = [
   { variant: 'nlh', hole: 2, omaha: false, ranks: RANKS },
   { variant: 'plo4', hole: 4, omaha: true, ranks: RANKS },
@@ -98,6 +94,31 @@ describe('the seat label names the same low the engine pays', () => {
         const t = seat ? seat.name : null;
         if (e !== t && mismatches.length < 5)
           mismatches.push(`seed ${seed}: engine=${e} seat=${t}`);
+      }
+      expect(mismatches).toEqual([]);
+    });
+  }
+});
+
+/* SHORT DECK (Dan 2026-10-25, item 4). A 36-card deck reorders the hands - a
+   flush beats a full house and A-6-7-8-9 is the low straight - so the seat
+   label and the engine must agree on Short Deck too, not only on the rank
+   swap the dedicated suite pins. The engine takes the shortDeck flag; the seat
+   reads it from the variant. ~50k Short Deck hands are dealt a day. */
+describe('the seat label names the same Short Deck hand the engine pays', () => {
+  for (const boardCount of [3, 4, 5]) {
+    it(`short_deck, ${boardCount}-card board`, () => {
+      const mismatches: string[] = [];
+      for (let seed = 1; seed <= 2000; seed += 1) {
+        const { hole, board } = deal(seed * 15485863 + boardCount, 2, boardCount, SHORT_RANKS);
+        const engine = evaluateHand(hole as any, board as any, true);
+        const seat = bestFive(asTable(hole), board as any[], 'short_deck');
+        if (engine.name !== seat?.name && mismatches.length < 5) {
+          const show = (cs: typeof hole) => cs.map((c) => c.rank + LETTER[c.suit]).join(' ');
+          mismatches.push(
+            `seed ${seed}: ${show(hole)} | ${show(board)} engine=${engine.name} seat=${seat?.name}`
+          );
+        }
       }
       expect(mismatches).toEqual([]);
     });

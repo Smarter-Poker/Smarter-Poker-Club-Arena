@@ -775,6 +775,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .eq('status', 'playing')
           .lte('chips', 0);
         let bustBatchHasMore = false;
+        let preserveBustWait = false;
         if (sweepStopped()) return;
 
         // PAYOUT-INTEGRITY 2026-08-25: an unreadable bust list is UNKNOWN. The
@@ -837,7 +838,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * stack in the database transaction that creates them. This check is
          * defence in depth against corruption; it is not a delayed-credit gate.
          */
-        if (busted && busted.length > 0) {
+        // Resolving or awaiting a rebuy ends this batch, not the sweep. The
+        // cursor must still advance so the same event reaches table balance.
+        bustedBatch: if (busted && busted.length > 0) {
           /**
            * ONE QUESTION, ONE ROUND TRIP (2026-09-11).
            *
@@ -1054,11 +1057,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // These busts have been resolved, so their old wait cannot
               // trigger a successor. Any untouched batch keeps a fresh clock.
               recordBustProgress();
-              // Everyone bought back in; nobody is eliminated this pass. The
-              // pass goes on to its later stages - balancing above all - and
-              // never returns from the sweep here (see A REBUY WINDOW DOES NOT
-              // STARVE THE BALANCER below).
-              break bustStage;
+              break bustedBatch; // everyone bought back in; continue toward balance
             }
           }
 
@@ -1152,6 +1151,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               const openDecisions = [...decisions].filter(([, open]) => open);
               if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
                 recordBustProgress();
+              } else {
+                // A malformed/expired open-decision receipt proves no
+                // progress. Balancing may continue, but retain its stall age.
+                preserveBustWait = true;
               }
               /* A REBUY WINDOW DOES NOT STARVE THE BALANCER (Dan, 2026-10-26:
                  "TABLES NEED TO ALWAYS BE BALANCED 100% OF THE TIME NO MATTER
@@ -1171,7 +1174,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                  deciding a rebuy still count as playing, so the finish stage
                  cannot end the event on them. Same class of defect as the
                  2026-09-12 backlog return below. */
-              break bustStage;
+              break bustedBatch;
             }
           }
 
@@ -1584,8 +1587,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
-        // Later cursor stages must not carry a wait for already-settled busts.
-        recordBustProgress();
+        // Later stages retire only proven progress, never an unknown deadline.
+        if (!preserveBustWait) recordBustProgress();
         if (completedStage(2)) return;
       }
 

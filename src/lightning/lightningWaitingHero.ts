@@ -108,3 +108,85 @@ export function lightningIdleBalanceFor(
   const stack = typeof balance.stack === 'string' ? Number(balance.stack) : balance.stack;
   return chips(typeof stack === 'number' ? stack : null);
 }
+
+// ─── The hero is at the table between hands (Lightning transition, phase 1) ──
+
+/**
+ * Is the hero at this table, for every decision that changes the felt's
+ * shape: the phone spectator layout (`data-hero`), the seat taper, and what
+ * DealerButton and useProtectedCardLayout read off `data-hero`.
+ *
+ * At a Classic table the answer is the roster and nothing else, exactly as
+ * before. In a Lightning room the roster is empty between hands (the idle
+ * snapshot after a fold carries no players), and reading it alone switched
+ * the phone to the spectator layout on every fold and back on every deal: the
+ * table grew about 26px taller and lost its taper, then shrank again. A
+ * Lightning player between hands still holds their chair (`heroSeat`), so in
+ * a Lightning room that chair counts.
+ */
+export function heroIsAtTable(input: {
+  /** The roster carries a row flagged as the hero. */
+  heroInRoster: boolean;
+  /** This room is a Lightning pool session. */
+  lightningRoom: boolean;
+  /** The chair the table holds for the hero (0 for none). */
+  heroSeat: number;
+}): boolean {
+  return input.heroInRoster || (input.lightningRoom && input.heroSeat > 0);
+}
+
+/** The part of the hero's last roster row the waiting chair carries on. */
+export interface LightningHeroRowIdentity {
+  name?: string | null;
+  avatar?: string | null;
+  frame?: string | null;
+  aura?: string | null;
+}
+
+export interface LightningStandInIdentity {
+  name: string;
+  avatar: string;
+  frame?: string;
+  aura?: string;
+}
+
+function text(v: string | null | undefined): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+/**
+ * Who the hero's waiting chair shows between Lightning hands. In a hand the
+ * chair wears the hero's table alias (or their poker name), their equipped
+ * frame and their aura. The stand-in chair used to fall back to the bare
+ * username with no frame and no aura, so the player's own seat changed face
+ * on every fold. It now wears what the hand last showed: the same name rule
+ * as the seat in a hand (alias, then poker name, then the row's name), and the
+ * frame and aura from the hero's last roster row.
+ */
+export function lightningStandInIdentity(input: {
+  /** The table alias, only when the player turned "use alias" on. */
+  tableAlias: string | null | undefined;
+  /** The player's poker name from their profile, when it has loaded. */
+  profileName: string | null | undefined;
+  /** The hero's row the last time this room's roster carried it. */
+  lastRow: LightningHeroRowIdentity | null | undefined;
+  /** The signed-in username (the Classic stand-in's own fallback). */
+  username: string | null | undefined;
+  /** The hero's current avatar. */
+  avatarUrl: string | null | undefined;
+}): LightningStandInIdentity {
+  const last = input.lastRow ?? null;
+  const name =
+    text(input.tableAlias) ??
+    text(input.profileName) ??
+    text(last?.name) ??
+    text(input.username) ??
+    'You';
+  const avatar = text(input.avatarUrl) ?? text(last?.avatar) ?? '';
+  const out: LightningStandInIdentity = { name, avatar };
+  const frame = text(last?.frame);
+  const aura = text(last?.aura);
+  if (frame) out.frame = frame;
+  if (aura) out.aura = aura;
+  return out;
+}

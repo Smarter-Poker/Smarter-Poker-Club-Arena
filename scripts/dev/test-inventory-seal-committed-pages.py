@@ -205,7 +205,12 @@ try:
  pending=json.loads(sql("SELECT public.fn_union_pnl_inventory_checkpoint_due();").stdout)
  assert pending['status']=='sealing' and len(pending['sealed'])==1 and pending['progress']['stage']=='pending_boundary',pending
  assert sql("SELECT last_kind,last_source,last_row,last_event FROM public.union_pnl_inventory_seal_builds WHERE boundary='2026-10-12 07:00Z';").stdout==retained
- for i in range(10):
+ # Every weekly boundary elapsed since the 2026-10-12 origin is due and costs a
+ # few bounded checkpoint calls (observed 3-4). A fixed 10 broke on 2026-10-26
+ # when the third boundary came due; the budget follows the elapsed weeks.
+ from datetime import datetime,timezone
+ weeks_due=(datetime.now(timezone.utc)-datetime(2026,10,12,7,tzinfo=timezone.utc)).days//7+1
+ for i in range(6*weeks_due+4):
   due=json.loads(sql("SELECT set_config('app.weekly_accounting_chunked','on',false);SELECT public.fn_union_pnl_inventory_checkpoint_due();").stdout.splitlines()[-1])
   if due['status']=='ready':break
   assert due['status']=='sealing',due

@@ -82,6 +82,10 @@ for (const width of [393, 1440]) {
     const panel = page.getByRole('dialog').filter({ has: page.locator('.arena-game-card') });
     const tries = Math.min(await rows.count(), 8);
     let opened = false;
+    // What each tried panel offered, so a refusal names the cause instead of
+    // only "false" (runs 40290005874 and 40292901952 failed with no screenshot
+    // surviving the later Playwright runs in the same job).
+    const saw: string[] = [];
     for (let i = 0; i < tries && !opened; i += 1) {
       const row = rows.nth(i);
       const details = row.getByRole('button', { name: /^Details:/ });
@@ -95,11 +99,31 @@ for (const width of [393, 1440]) {
         await join.click();
         opened = true;
       } else {
+        const title = ((await row.innerText().catch(() => '')) || '')
+          .replace(/\s+/g, ' ')
+          .slice(0, 80);
+        const offered = await panel
+          .first()
+          .getByRole('button')
+          .evaluateAll((buttons) =>
+            buttons
+              .map(
+                (b) =>
+                  `${(b.textContent || '').replace(/\s+/g, ' ').trim()}${(b as HTMLButtonElement).disabled ? ' (disabled)' : ''}`
+              )
+              .filter((label) => label && !/^Close Game Lobby/.test(label))
+              .slice(0, 6)
+          )
+          .catch(() => [] as string[]);
+        saw.push(`${title} -> ${offered.join(' | ') || 'no buttons'}`);
         await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
         await expect(panel).toHaveCount(0);
       }
     }
-    expect(opened, 'a Lightning game panel offers an enabled Join Lightning').toBe(true);
+    expect(
+      opened,
+      `a Lightning game panel offers an enabled Join Lightning; tried ${saw.length} of ${await rows.count()} rows:\n${saw.join('\n')}`
+    ).toBe(true);
 
     await expect(page).toHaveURL(LIGHTNING_ROUTE, { timeout: 15_000 });
     const landed = new URL(page.url());

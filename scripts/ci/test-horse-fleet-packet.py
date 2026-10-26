@@ -99,6 +99,29 @@ class PacketContracts(unittest.TestCase):
  def test_no_inference_of_roster_or_phase_authority(self):
   p,a=self.convert(self.rows());r={'packetDigest':'b'*64,'sourceSha':'a'*40,'qualifiedExecution':True,'execution':{'observation':{'observedHorses':1000,'completeHorseCoverage':True}}}
   summary=module.summarize(a,r);self.assertFalse(summary['canonicalRosterVerified']);self.assertFalse(summary['completeCanonicalHorseCoverage']);self.assertFalse(summary['allPhasesVerified'])
+ def phase_observation(self):
+  row={'capability':{'captured':1},'eligibility':{'eligible':1},'qualification':{'owner-forced':1},'application':{'accepted':1},'reasons':{'owner_forced_not_independently_qualified':1}}
+  return {'acceptedDecisions':1,'phaseProofSchema':{'version':'horse-fleet-phase-proof-v1','counterUnit':'selected_accepted_decisions'},'phaseEvidence':{f'phase{i}':json.loads(json.dumps(row)) for i in range(1,16)},'horses':[{'horseId':'PRIVATE-ID','cards':['PRIVATE-CARD']}]}
+ def test_phase_aggregate_distinguishes_forced_and_independent_without_private_payload(self):
+  o=self.phase_observation();result=module.phase_summary(o)
+  self.assertEqual(result['phases']['phase8']['authorityProvenance'],{'independentlyQualified':0,'ownerForced':1,'unknown':0})
+  self.assertFalse(result['allPhasesVerified']);self.assertNotIn('PRIVATE',json.dumps(result));self.assertNotIn('reasons',result['phases']['phase8'])
+  row=o['phaseEvidence']['phase8'];row['qualification']={'verified':1};row['reasons']={'protected_owner_independently_qualified':1}
+  self.assertEqual(module.phase_summary(o)['phases']['phase8']['authorityProvenance']['independentlyQualified'],1)
+ def test_legacy_verified_authority_is_unknown_not_independent_or_failed(self):
+  o=self.phase_observation();row=o['phaseEvidence']['phase8'];row['qualification']={'verified':1};row['reasons']={'protected_owner_independently_admitted':1}
+  self.assertEqual(module.phase_summary(o)['phases']['phase8']['authorityProvenance'],{'independentlyQualified':0,'ownerForced':0,'unknown':1})
+  self.assertEqual(module.phase_summary({})['status'],'unknown')
+ def test_phase_aggregate_refuses_mismatched_malformed_or_unbounded_counts(self):
+  for mutate in [lambda o:o['phaseEvidence']['phase8']['qualification'].update(verified=1),lambda o:o['phaseEvidence']['phase8']['eligibility'].update(eligible=0),lambda o:o['phaseEvidence']['phase8']['reasons'].update(owner_forced_not_independently_qualified=True),lambda o:o['phaseEvidence']['phase8']['application'].update(private_actor=0),lambda o:o['phaseEvidence'].pop('phase15')]:
+   o=self.phase_observation();mutate(o)
+   with self.assertRaises(ValueError):module.phase_summary(o)
+ def test_canonical_binding_controls_phase_summary(self):
+  p,a=self.convert(self.rows());o=self.phase_observation();o.update(observedHorses=1,completeHorseCoverage=False)
+  r={'packetDigest':a['packetDigest'],'sourceSha':a['sourceSha'],'qualifiedExecution':True,'execution':{'observation':o}}
+  self.assertEqual(module.summarize(a,r)['phaseEvidence']['status'],'reported')
+  r['sourceSha']='b'*40
+  self.assertEqual(module.summarize(a,r)['phaseEvidence']['reason'],'canonical_binding_unverified')
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)

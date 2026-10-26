@@ -1,11 +1,4 @@
-/**
- * The out-of-turn fold a leaving player gets (Dan 2026-10-25, "LEAVE NOW, EVEN
- * IF ITS IN THE MIDDLE OF A HAND"), driven through the REAL HandController on
- * an ordinary cash configuration (not Lightning). ServerTableEngine.leaveTable
- * uses performImmediateFold for a leaver whose turn it is not; this pins that
- * the fold lands at once, is recorded and announced as a real FOLD, leaves the
- * player on the clock exactly where they were, and conserves every chip.
- */
+/** Leaving may queue a fold, but no controller door may execute it off turn. */
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
@@ -47,8 +40,8 @@ function start(n: number) {
   return { hc, events, st, total };
 }
 
-describe('a leaver folds out of turn at once on a cash table', () => {
-  it('folds now, records a FOLD, and leaves the acting player on their own clock', () => {
+describe('a leaver folds only on their turn on a cash table', () => {
+  it('refuses the early action without changing cards, history, chips or the current actor', () => {
     const { hc, events, st, total } = start(6);
     const before = total();
     const actor = st().currentPlayerSeat;
@@ -56,24 +49,30 @@ describe('a leaver folds out of turn at once on a cash table', () => {
       (p: SeatPlayer) => p.seat !== actor && !p.is_folded && !p.is_all_in
     ).seat;
 
-    expect(hc.performImmediateFold(leaver, 'forced')).toBe(true);
-
-    expect(st().players.find((p: SeatPlayer) => p.seat === leaver).is_folded).toBe(true);
+    const stateBefore = structuredClone(st());
+    const eventsBefore = events.length;
+    expect(hc.performImmediateFold(leaver, 'forced')).toBe(false);
+    expect(st()).toEqual(stateBefore);
+    expect(events.length).toBe(eventsBefore);
+    expect(st().players.find((p: SeatPlayer) => p.seat === leaver).is_folded).toBe(false);
     expect(st().currentPlayerSeat).toBe(actor);
     expect(
       events.some(
         (e: any) => e.type === 'PLAYER_ACTION' && e.seat === leaver && e.action === 'fold'
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(total()).toBe(before);
   });
 
-  it('when the fold leaves one player, the hand completes and the chips are conserved', () => {
+  it('the queued leaver can fold once the actor finishes; the hand then conserves every chip', () => {
     const { hc, events, st, total } = start(2);
     const before = total();
     const actor = st().currentPlayerSeat;
     const leaver = actor === 1 ? 2 : 1;
 
+    expect(hc.performImmediateFold(leaver, 'forced')).toBe(false);
+    expect(hc.performAction(actor, 'call')).toBe(true);
+    expect(st().currentPlayerSeat).toBe(leaver);
     expect(hc.performImmediateFold(leaver, 'forced')).toBe(true);
     expect(events.some((e: any) => e.type === 'HAND_COMPLETE')).toBe(true);
     // Settled: every chip is back on a stack, none created or lost.

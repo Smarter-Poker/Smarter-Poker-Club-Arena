@@ -73,6 +73,37 @@ afterEach(() => {
 });
 
 describe('tournament lease proof deadline', () => {
+  it('distinguishes an expired heartbeat answer from a missing answer and clears a successful retry', async () => {
+    vi.useFakeTimers();
+    _setTournamentLeaseMonotonicNowForTests(() => 1_000);
+    const manager = new LeaseDeadlineHarness(20_000);
+    manager.activate();
+    expect(manager.renewTournamentLeaseProof(GENERATION, 999)).toBe(false);
+    expect((manager as any).getTournamentLeaseRenewalRefusal?.()).toEqual({
+      reason: 'heartbeat_deadline_elapsed',
+    });
+    expect(manager.authorityIsCurrent()).toBe(true);
+    expect(manager.renewTournamentLeaseProof(GENERATION, 25_000)).toBe(true);
+    expect((manager as any).getTournamentLeaseRenewalRefusal?.()).toBeNull();
+    await manager.stop();
+  });
+
+  it('names invalid received proof separately from an unavailable manager generation', async () => {
+    vi.useFakeTimers();
+    _setTournamentLeaseMonotonicNowForTests(() => 1_000);
+    const manager = new LeaseDeadlineHarness(20_000);
+    manager.activate();
+    expect(manager.renewTournamentLeaseProof(GENERATION, NaN)).toBe(false);
+    expect((manager as any).getTournamentLeaseRenewalRefusal?.()).toEqual({
+      reason: 'invalid_heartbeat_deadline',
+    });
+    expect(manager.renewTournamentLeaseProof('different-generation', 25_000)).toBe(false);
+    expect((manager as any).getTournamentLeaseRenewalRefusal?.()).toEqual({
+      reason: 'manager_authority_unavailable',
+    });
+    await manager.stop();
+  });
+
   it('refuses a late renewal before an overdue expiry timer has run', async () => {
     vi.useFakeTimers();
     let now = 0;
@@ -823,6 +854,10 @@ describe('connected tournament renewal while one zombie-killed dealer is being r
       expect(f.manager.replacing(ZOMBIE_TABLE, f.zombie)).toBe(true);
       f.advance(15_000);
       expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(false);
+      expect(f.manager.getTournamentLeaseRenewalRefusal()).toEqual({
+        reason: 'dealer_refused',
+        tableId: SIBLING_TABLE,
+      });
       expect(f.manager.isRunning()).toBe(false);
       expect(f.sibling.isRunning()).toBe(false);
     } finally {
@@ -845,6 +880,10 @@ describe('connected tournament renewal while one zombie-killed dealer is being r
       ).gameServer.tableEngines.set(ZOMBIE_TABLE, stranger);
       f.advance(15_000);
       expect(f.manager.renewTournamentLeaseProof(GENERATION, 35_000)).toBe(false);
+      expect(f.manager.getTournamentLeaseRenewalRefusal()).toEqual({
+        reason: 'dealer_not_owned',
+        tableId: ZOMBIE_TABLE,
+      });
       expect(f.sibling.isRunning()).toBe(false);
     } finally {
       gate.resolve();

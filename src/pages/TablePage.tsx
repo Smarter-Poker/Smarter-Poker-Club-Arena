@@ -1,3 +1,6 @@
+import { fetchStoppedLightningAnchor } from '../lightning/lightningLeaveAnchor';
+import { useLightningLeaveStop } from '../lightning/useLightningLeaveStop';
+import { LightningLeaveControl } from '../components/lightning/LightningLeaveControl';
 import { useSeatArrivals } from '../components/table/seatArrival';
 import {
   usePreActionBoundary,
@@ -577,6 +580,7 @@ import GameServerAPI, {
 } from '../services/GameServerAPI';
 import { HEARTBEAT_NOT_DELIVERED, HEARTBEAT_TABLE_NOT_RUNNING } from '../services/heartbeatCodes';
 import {
+  createHeartbeatRecoveryGuard,
   shouldAskTableRow,
   shouldHeartbeatOverHttp,
   tableRowSaysClosed,
@@ -3988,6 +3992,7 @@ function LiveTablePage({
      connects, exactly like the verdict above, so a table that comes back is
      beaten again at once. */
   const heartbeatRowClosedRef = useRef(false);
+  const heartbeatRecoveryGuardRef = useRef(createHeartbeatRecoveryGuard());
   /* Read by the heartbeat below without joining its dependency list, which
      would restart the five-second interval on every render. */
   const probeEngineLinkRef = useRef(probeEngineLink);
@@ -4009,6 +4014,7 @@ function LiveTablePage({
     let rowCheckInFlight = false;
     let heartbeatAlive = true;
     heartbeatRowClosedRef.current = false;
+    heartbeatRecoveryGuardRef.current.invalidate();
     const beat = async () => {
       /* A TABLE THAT IS NO LONGER RUNNING IS NOT HEARTBEATED (2026-10-04).
          Once the page has established that the engine holds no game for this
@@ -4045,6 +4051,7 @@ function LiveTablePage({
          a false "the player can see this" is worse than silence, because it
          tells the canary to relax about precisely the player it exists to
          notice. */
+      const verdictIsCurrent = heartbeatRecoveryGuardRef.current.capture();
       const res = await sendHeartbeat(tableId, {
         turnRendered: heroActionRenderedRef.current,
         // The engine will not stand up a busted seat whose owner is at the
@@ -4052,7 +4059,10 @@ function LiveTablePage({
         rebuyPromptOpen: bustRebuyOpenRef.current,
         autoTimeBank: autoTimeBankPreferenceRef.current,
       });
+      if (!heartbeatAlive || !verdictIsCurrent()) return;
       if (res?.success) {
+        heartbeatRecoveryGuardRef.current.invalidate();
+        heartbeatRowClosedRef.current = false;
         // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
         // reassuring if the player was told something broke - and they no
         // longer are. On its own it just announces a problem after the fact.
@@ -4074,7 +4084,7 @@ function LiveTablePage({
             supabase.from('tables').select('status, is_deleted').eq('id', tableId).maybeSingle()
           )
             .then(({ data, error }) => {
-              if (!heartbeatAlive || error) return;
+              if (!heartbeatAlive || !verdictIsCurrent() || error) return;
               if (tableRowSaysClosed(data as HeartbeatRowCheck | null)) {
                 heartbeatRowClosedRef.current = true;
               }
@@ -4133,6 +4143,7 @@ function LiveTablePage({
     document.addEventListener('visibilitychange', onResume);
     return () => {
       heartbeatAlive = false;
+      heartbeatRecoveryGuardRef.current.invalidate();
       clearInterval(heartbeatInterval);
       window.removeEventListener(NATIVE_RESUME_EVENT, onResume);
       window.removeEventListener('pageshow', onResume);
@@ -4452,6 +4463,7 @@ function LiveTablePage({
       tableClosedToastShownRef.current = false;
       tablePausedToastShownRef.current = false;
       heartbeatRowClosedRef.current = false;
+      heartbeatRecoveryGuardRef.current.invalidate();
       // A socket that reached OPEN is proof the engine accepted this token.
       // Nothing weaker clears it (see the comment above).
       setEngineRefusedAuth(false);
@@ -5275,6 +5287,7 @@ function LiveTablePage({
     setRebuyProcessing,
     tournamentBreak,
     setTournamentBreak,
+    refreshTournamentBreak,
     breakChannelRef,
     announcement,
     setAnnouncement,
@@ -5287,7 +5300,9 @@ function LiveTablePage({
     addOnChannelRef,
     tournamentWinner,
     setTournamentWinner,
-  } = useTableTournament();
+  } = useTableTournament({ tournamentId: tableState.tournamentId, engineStatus: engineWsStatus });
+  const refreshTournamentBreakRef = useRef(refreshTournamentBreak);
+  refreshTournamentBreakRef.current = refreshTournamentBreak;
   /**
    * Orders asynchronous add-on presentations. A bootstrap read can be waiting
    * on the wallet while a thaw broadcast carries a later deadline, or while
@@ -11098,7 +11113,9 @@ function LiveTablePage({
     if (!room || !userId || userId === 'guest') return undefined;
     try {
       const session = await fetchMyLightningSession(room.clusterId);
-      if (!hasLightningRoom(session)) return null;
+      if (!hasLightningRoom(session)) return await fetchStoppedLightningAnchor(session, userId);
+      if (session.poolSessionId !== room.poolSessionId)
+        throw new Error('Lightning Leave Session Changed');
       const anchor = lightningAnchorSeat(session);
       if (anchor) return anchor;
       /* An open session whose anchor the answer did not name: the chips are
@@ -11116,9 +11133,14 @@ function LiveTablePage({
       return 'unreadable';
     }
   };
+  const stopLightningForLeave = useLightningLeaveStop(lightningRoom, userId);
   const handleLeaveTable = async () => {
     setLeaveNotice(null);
     leaveNavigatedRef.current = false;
+    if (!(await stopLightningForLeave())) {
+      toast.warning('Could Not Confirm Your Stop Request. Please Try Again.');
+      return;
+    }
 
     /* LIGHTNING PHASE 6: a pool-session room holds no seat of its own. The
        chips sit on the player's anchor seat, so the leave and the cash out
@@ -11413,6 +11435,10 @@ function LiveTablePage({
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
     leaveNavigatedRef.current = false;
+    if (!(await stopLightningForLeave())) {
+      toast.warning('Could Not Confirm Your Stop Request. Please Try Again.');
+      return;
+    }
     /* Dan 2026-09-04 (the door is never locked): a tab with no seat behind it
        closes without asking the engine anything. That covers the spectator,
        the guest and the not-yet-hydrated session - before this, all three
@@ -15298,6 +15324,7 @@ function LiveTablePage({
               }
             )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
+              if (!isMounted) return;
               const data = payload.payload;
               if (data?.type === 'table_rebalance') {
                 // The production hook owns read/publication authority. The
@@ -16137,6 +16164,7 @@ function LiveTablePage({
               // bootstrap but before this channel joined has no future UPDATE
               // left to deliver, so re-read terminal truth once subscribed.
               if (status === 'SUBSCRIBED') {
+                if (isMounted) void refreshTournamentBreakRef.current();
                 void verifyDurableCompletion();
               }
               if (status === 'CHANNEL_ERROR') {
@@ -25236,7 +25264,7 @@ function LiveTablePage({
 
   /* LIGHTNING TRANSITION PHASE 2: A BUSTED PLAYER IS ASKED, ONCE PER BUST.
      The same rebuy sheet as the cash table, funded through this room's own
-     top-up (confirmBustRebuy's Lightning branch), opened only between hands
+     top-up (confirmBustRebuy's Lightning branch), opened only after the presentation
      on a zero the database confirms. LEAVE runs the room's own leave, which
      opens the Lightning session summary. Nothing here moves the player. */
   const lightningBust = lightningBustCandidate({
@@ -25244,7 +25272,10 @@ function LiveTablePage({
     heroInRoster: !!lightningHeroInRoster,
     rosterStack: lightningHeroInRoster?.stack,
     waitingStack: lightningWaitingSeat?.stack,
-    handLive: lightningHandLive,
+    // A settled Lightning hand can retain its roster and hand id indefinitely.
+    // The existing presentation reset names the finished hand; an in-flight
+    // hand or a result still animating never qualifies. The DB confirms zero.
+    handLive: lightningHandLive && !tableHandIsOver,
     roomClosed: lightningRoomClosed,
     sittingOut: lightningSitOut.sittingOut,
   });
@@ -26418,7 +26449,16 @@ function LiveTablePage({
             />
           </div>
         }
-        centerTop={null /* Game info moved to on-felt strip below community cards */}
+        centerTop={
+          lightningRoom && !lightningRoomClosed && userId && userId !== 'guest' ? (
+            <LightningLeaveControl
+              key={`${lightningRoom.poolSessionId}/${userId}`}
+              clusterId={lightningRoom.clusterId}
+              onLeave={handleLeaveTable}
+              ensureStopped={stopLightningForLeave}
+            />
+          ) : null
+        }
       />
       {/* ═══════════════════════════════════════════════════════════════════════
           TABLE AREA

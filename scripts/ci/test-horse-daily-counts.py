@@ -204,9 +204,26 @@ def main():
             run("UPDATE hand_atomic_commits SET post_commit_payload="+literal(dict(accepted_hand_facts=dict(stats_facts=d)))+" WHERE hand_id='"+uid('witness-turn')+"';")
             check('changed original witness cannot replace accepted hash','source_hash_conflict' in project('witness-turn',False))
             check('installed witness migration cannot replay','all_in_witness_projector_preimage_changed' in run(WITNESS_MIGRATION.read_text(),False))
-            print(json.dumps(dict(passed=True,checks=checks,migration_sha256=hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),witness_migration_sha256=hashlib.sha256(WITNESS_MIGRATION.read_bytes()).hexdigest(),production_mutations=False),indent=2))
         finally:
             command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
+
+    # Daily horse reporting shares this existing required native owner. Run the
+    # source-bound audit fixture after the accepted-hand cluster is stopped;
+    # no new workflow/matrix, shared input-map churn or optional test path.
+    audit = subprocess.run([
+        sys.executable, '-B', str(ROOT/'scripts/ci/run_launch_reset_accounting_fixture.py'),
+        '--fixture', str(ROOT/'scripts/ci/fixtures/horse-layer-outcomes.sql'),
+        '--candidate', str(ROOT/'supabase/migrations/20261026143605_horse_audit_separates_outcomes_from_execution_layers.sql'),
+        '--work-root', str(BASE), '--pg-bin', str(PG),
+    ], cwd=ROOT, env=ENV, capture_output=True, text=True, timeout=120)
+    if audit.returncode:
+        raise AssertionError(audit.stderr or audit.stdout)
+    audit_reporting = json.loads(audit.stdout)
+    if audit_reporting.get('native_fixture') != 'passed':
+        raise AssertionError('Daily audit native fixture supplied no passing receipt')
+    print(json.dumps(dict(passed=True, checks=checks,
+        migration_sha256=hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),
+        audit_reporting=audit_reporting, witness_migration_sha256=hashlib.sha256(WITNESS_MIGRATION.read_bytes()).hexdigest(), production_mutations=False), indent=2))
 
 
 if __name__=='__main__':

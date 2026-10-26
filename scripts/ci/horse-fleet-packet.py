@@ -104,13 +104,51 @@ def packet_from_rows(rows,sha,start,end):
     attestation={'version':1,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_active_roster','snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':digest,'rosterCount':1000,'selectedHands':len(keys),'sourceOwnerCounts':{owner:sum(h['source_owner']==owner for h in hands) for owner in ('classic','lightning')},'completePopulation':False,'allPhasesVerified':False}
     return packet,attestation
 
+PHASE_AXES = {
+    'capability': {'captured','unobserved'},
+    'eligibility': {'eligible','outside-domain','unknown'},
+    'qualification': {'verified','owner-forced','unknown','refused'},
+    'application': {'accepted','not-selected','shadow','refused','not-applicable','unknown'},
+}
+def phase_summary(observation):
+    """Counts only, bound to the caller's canonical packet/serving-source proof.
+    Older 'verified' owner counts did not distinguish forced admission. Preserve
+    those reported counts, but never infer independent authority provenance.
+    """
+    evidence=observation.get('phaseEvidence')
+    if evidence is None:return {'status':'unknown','reason':'phase_evidence_unavailable'}
+    schema=observation.get('phaseProofSchema')
+    if not isinstance(schema,dict) or schema.get('version')!='horse-fleet-phase-proof-v1' or schema.get('counterUnit')!='selected_accepted_decisions':raise ValueError('phase_schema')
+    # Existing reader bounds: 10,000 selected hand keys, at most 256 records/hand.
+    n=observation.get('acceptedDecisions')
+    if type(n) is not int or not 0<=n<=2560000:raise ValueError('phase_counts')
+    keys={f'phase{i}' for i in range(1,16)}
+    if not isinstance(evidence,dict) or set(evidence)!=keys:raise ValueError('phase_keys')
+    phases={}
+    for key in sorted(keys,key=lambda x:int(x[5:])):
+        row=evidence[key]
+        if not isinstance(row,dict) or set(row)!={'capability','eligibility','qualification','application','reasons'}:raise ValueError('phase_axes')
+        axes={}
+        for axis,allowed in PHASE_AXES.items():
+            counts=row[axis]
+            if not isinstance(counts,dict) or not set(counts)<=allowed or any(type(v) is not int or not 0<=v<=n for v in counts.values()) or sum(counts.values())!=n:raise ValueError('phase_counts')
+            axes[axis]=dict(counts)
+        reasons=row['reasons']
+        if not isinstance(reasons,dict) or any(not isinstance(k,str) or type(v) is not int or not 0<=v<=n for k,v in reasons.items()) or sum(reasons.values())!=n:raise ValueError('phase_reasons')
+        independent=reasons.get('protected_owner_independently_qualified',0)
+        forced=reasons.get('owner_forced_not_independently_qualified',0)
+        if independent>axes['qualification'].get('verified',0) or forced!=axes['qualification'].get('owner-forced',0) or independent+forced>axes['eligibility'].get('eligible',0) or independent+forced>axes['capability'].get('captured',0):raise ValueError('phase_provenance_counts')
+        axes['authorityProvenance']={'independentlyQualified':independent,'ownerForced':forced,'unknown':n-independent-forced}
+        phases[key]=axes
+    return {'status':'reported','schema':'horse-fleet-phase-summary-v1','counterUnit':'selected_accepted_decisions','acceptedDecisions':n,'phases':phases,'allPhasesVerified':False}
+
 def summarize(attestation,result):
     observation=(result.get('execution') or {}).get('observation') or {}
     count=observation.get('observedHorses')
     if not isinstance(count,int) or isinstance(count,bool) or not 0<=count<=1000:raise ValueError('counts')
     canonical=(attestation.get('authority')=='canonical_database_snapshot' and attestation.get('rosterCount')==1000 and bool(attestation.get('snapshot')) and re.fullmatch('[0-9a-f]{64}',attestation.get('packetDigest','')) is not None and attestation.get('packetDigest')==result.get('packetDigest') and attestation.get('sourceSha')==result.get('sourceSha') and result.get('qualifiedExecution') is True)
     complete=canonical and observation.get('completeHorseCoverage') is True and count==1000
-    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False}
+    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
 
 def main():
     try:

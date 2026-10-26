@@ -3016,6 +3016,19 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * The add-on window is open for OFFERS: triggered, not finalized, no Free
+   * Buy closing drain pending, and its persisted deadline still ahead. Closing
+   * the window is a separate, later step (2026-10-25).
+   */
+  protected addOnOfferWindowOpen(nowMs: number): boolean {
+    if (!this.addOnPeriodTriggered || this.prizePoolFinalized || this.addOnDrainPending) {
+      return false;
+    }
+    const endMs = Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? ''));
+    return Number.isFinite(endMs) && nowMs < endMs;
+  }
+
   /** Keep one add-on retry due while its persisted offer window is open. */
   protected scheduleAddOnRetry(): void {
     if (!this.running || !this.addOnPeriodTriggered || this.prizePoolFinalized) return;
@@ -11306,7 +11319,11 @@ export abstract class TournamentManagerBase {
         .from('tournament_players')
         .select('user_id, add_on')
         .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing');
+        .eq('status', 'playing')
+        // A zero stack is a bust the bust stage has not recorded yet; the
+        // offer is served ahead of that stage (2026-10-25), so it never
+        // reaches a player who no longer holds chips.
+        .gt('chips', 0);
       if (!this.eliminationMutationAllowed()) return;
       if (rowsErr || !rows || rows.length === 0) {
         if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);

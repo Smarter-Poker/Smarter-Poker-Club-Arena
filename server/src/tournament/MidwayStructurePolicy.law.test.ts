@@ -93,7 +93,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
       if (row.add_on_available) {
         expect(row.addon_levels).toBe(1);
         expect(row.addon_from_start).toBe(row.free_buy === true);
-        expect(row.addon_break_minutes).toBe(5);
+        expect(row.addon_break_minutes).toBe(1);
       }
       expect(withMidwayStructure(row)).toEqual(row);
     }
@@ -186,7 +186,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
       add_on_available: true,
       addon_cost: 20,
       addon_chips: 10000,
-      addon_break_minutes: 5,
+      addon_break_minutes: 1,
     });
     for (const authored of [
       { type: 'freezeout' },

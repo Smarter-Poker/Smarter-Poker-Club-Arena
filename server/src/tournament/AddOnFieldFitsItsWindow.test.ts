@@ -54,6 +54,8 @@ function field(count: number, fail?: string) {
     const c: any = {
       select: () => c,
       eq: () => c,
+      // Every fixture player holds chips, so the zero-stack filter keeps them all.
+      gt: () => c,
       is: () => c,
       in: (_column: string, values: string[]) => {
         if (table === 'profiles') batch = values;

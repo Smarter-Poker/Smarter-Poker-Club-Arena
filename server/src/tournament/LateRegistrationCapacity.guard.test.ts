@@ -167,7 +167,17 @@ describe('late-registration capacity authority', () => {
     expect(expansion).not.toContain("'fn_tournament_late_registration_open'");
     expect(expansion).not.toContain('assignTournamentPlayerSeatAtomically');
     expect(expansion).not.toContain('ensureLateRegSeated');
-    expect(expansion).toContain('this.createManagedTableEngine(tableId)');
+    // The one capacity start path (shared with wake-time admission) owns the
+    // engine creation; expansion reaches it for every pending receipt.
+    expect(expansion).toContain('this.startCapacityTableEngine(tableId)');
+    const startPath = MANAGER.slice(
+      MANAGER.indexOf('private startCapacityTableEngine(tableId: string): boolean'),
+      MANAGER.indexOf('protected async admitCommittedCapacityTables')
+    );
+    expect(startPath).toContain('this.createManagedTableEngine(tableId)');
+    expect(startPath.indexOf('this.prepareManagedTableEngineForPlay(engine)')).toBeLessThan(
+      startPath.indexOf('this.startManagedTableEngine(engine')
+    );
     expect(expansion).toContain('TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE');
     expect(expansion).toContain('this.requestUrgentEliminationSweepAfter(0)');
   });
@@ -191,7 +201,8 @@ describe('late-registration capacity authority', () => {
     const expansion = MANAGER.slice(start, end > start ? end : undefined);
     expect(expansion).toContain('result.pending_table_ids');
     expect(expansion).toContain("'fn_ack_tournament_capacity_tables'");
-    expect(expansion.indexOf('this.admitManagedTableEngine')).toBeLessThan(
+    expect(expansion.indexOf('this.startCapacityTableEngine(tableId)')).toBeGreaterThan(-1);
+    expect(expansion.indexOf('this.startCapacityTableEngine(tableId)')).toBeLessThan(
       expansion.indexOf("'fn_ack_tournament_capacity_tables'")
     );
     expect(expansion).not.toContain('adoptEnginelessTables');
@@ -368,5 +379,71 @@ describe('late-registration capacity authority', () => {
         )
       );
     }
+  });
+  it('starts a late-registration table on the wake that opened it, ahead of the stages a bust rewinds', () => {
+    // Production 2026-10-25: busts rewound the sweep to stage 0 so often that
+    // the expansion stage (6) ran only at the :55 break, and capacity tables
+    // sat seated with no dealer for a median of 12 minutes (max 53.8).
+    const wakeBranchStart = ELIMINATIONS.indexOf(
+      "!(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))"
+    );
+    const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
+    expect(wakeBranchStart).toBeGreaterThan(-1);
+    expect(recoveryStage).toBeGreaterThan(wakeBranchStart);
+    const wakeBranch = ELIMINATIONS.slice(wakeBranchStart, recoveryStage);
+    expect(wakeBranch).toMatch(
+      /\.some\(\(reason\) => reason === 'late_registration'\) &&\s*!isMaintenanceFrozen\(\)\s*\) \{\s*this\.noteEliminationSweepStep\('admitCommittedCapacityTables'\);\s*await this\.admitCommittedCapacityTables\(\);/
+    );
+    // The early step only admits: creation and the post-expansion rebalance
+    // stay in the expansion stage after balancing (theFreezeIsTotal law).
+    expect(wakeBranch).not.toContain('checkDynamicTableExpansion()');
+    const admit = MANAGER.slice(
+      MANAGER.indexOf('protected async admitCommittedCapacityTables(): Promise<void>'),
+      MANAGER.indexOf('protected async checkDynamicTableExpansion(): Promise<boolean>')
+    );
+    expect(admit).toContain("if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;");
+    expect(admit).toContain(".from('tournament_capacity_table_receipts')");
+    expect(admit).toContain(".is('manager_admitted_at', null)");
+    expect(admit).toContain("'fn_ack_tournament_capacity_tables'");
+    for (const forbidden of [
+      'fn_ensure_late_registration_capacity',
+      'executePlayerMoves',
+      'calculateMoves',
+      'loadBalancerTables',
+    ]) {
+      expect(admit).not.toContain(forbidden);
+    }
+    // One start path for capacity tables, shared with the expansion stage.
+    expect(MANAGER.match(/this\.createManagedTableEngine\(tableId\)/g)?.length).toBe(1);
+    // The ordinary expansion stage still runs as before.
+    expect(ELIMINATIONS.slice(recoveryStage)).toContain(
+      "if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;"
+    );
+  });
+
+  it('serves an open add-on window ahead of the stages a bust rewinds, to players holding chips', () => {
+    // Production 2026-10-25: busy fields reached the add-on stage (4) too
+    // rarely inside the window; Happy Hour (Midway Union) 0 of 135 horses.
+    const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
+    const head = ELIMINATIONS.slice(0, recoveryStage);
+    expect(head).toMatch(
+      /if \(this\.addOnOfferWindowOpen\(addOnNowMs\) && !isMaintenanceFrozen\(\)\) \{[\s\S]{0,400}await this\.tryTournamentAddOns\(\);[\s\S]{0,120}this\.scheduleAddOnRetry\(\);/
+    );
+    // Only offers move ahead of the bust stage: a closed or closing window
+    // (deadline passed, Free Buy drain pending) finalizes the pool in stage 4.
+    const open = BASE.slice(
+      BASE.indexOf('protected addOnOfferWindowOpen(nowMs: number): boolean'),
+      BASE.indexOf('protected scheduleAddOnRetry(): void')
+    );
+    expect(open).toContain('this.addOnDrainPending');
+    expect(open).toContain('this.prizePoolFinalized');
+    expect(open).toMatch(/addon_period_ends_at[\s\S]{0,120}nowMs < endMs/);
+    const offer = BASE.slice(
+      BASE.indexOf('protected async tryTournamentAddOns'),
+      BASE.indexOf('protected async triggerAddOnPeriod')
+    );
+    expect(offer).toMatch(
+      /\.select\('user_id, add_on'\)[\s\S]{0,200}\.eq\('status', 'playing'\)[\s\S]{0,300}\.gt\('chips', 0\)/
+    );
   });
 });

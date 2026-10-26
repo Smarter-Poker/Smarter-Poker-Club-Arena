@@ -1310,6 +1310,7 @@ const LobbyRow = memo(function LobbyRow({
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
       className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
+      data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
       data-cash-format={
         entry.kind === 'cash' && entry.game?.template
           ? cashTemplateKey(entry.game.template)
@@ -2291,6 +2292,7 @@ export default function LobbyTable({
                 data-testid="lobby-game-row"
                 data-id={entry.id}
                 data-kind={entry.kind}
+                data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
                 data-cash-format={
                   entry.kind === 'cash' && entry.game?.template
                     ? cashTemplateKey(entry.game.template)

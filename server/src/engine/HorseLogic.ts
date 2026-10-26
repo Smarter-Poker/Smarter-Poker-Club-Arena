@@ -2072,6 +2072,8 @@ export interface HorseDecideOpts {
   drawOutlookQuality?: boolean;
   /** Project actual net award deductions at the call; false is offline ablation. */
   callDeductionPricing?: boolean;
+  /** Apply the existing raised-hand call-only rule before committed-stack shoves. */
+  committedRaiseDiscipline?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -6420,6 +6422,14 @@ export class HorseLogic {
         }
       }
     }
+    // Share the same raise discipline with the earlier committed branch.
+    // Being nearly committed does not make weak trips a value re-raise.
+    const set21 =
+      cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
+    const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
+    const raisedWeakMade21 =
+      useV21 && !vi.isOmaha && raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21)));
+    const committedRaisedWeakMade21 = raisedWeakMade21 && opts.committedRaiseDiscipline !== false;
     // ═══ V20 MULTIWAY PRESSURE READ (2026-08-27) ═══
     // raisedAfterAggr only fires when HERO bet and got raised. The hand Dan
     // watched (T8o, 779 flop, 8 turn) was the other shape: hero CALLED, then
@@ -8736,6 +8746,7 @@ export class HorseLogic {
           tripBoardDominatedBoat15 ||
           (useV21 && dominated21) ||
           planCallOnly23 ||
+          committedRaisedWeakMade21 ||
           riverTripsFlat55;
         // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
         // earlier line: it denies equity and can fold out a draw. On the
@@ -8751,6 +8762,7 @@ export class HorseLogic {
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard));
         if (toCall >= stack || preferFlat15) {
+          if (tele15 && committedRaisedWeakMade21) noteFire('v21_war_gate');
           if (tele15 && riverTripsFlat55) noteFire('v55_omaha_river_trips_flat');
           if (tele15 && tripBoardDominatedBoat15)
             noteFire('horse_continuation_trip_board_boat_flat');
@@ -8875,15 +8887,7 @@ export class HorseLogic {
       // A pocket set on a board with no possible flush or straight stays a
       // raising hand; everything below it — and a set on a board where
       // bigger hands are live — does not.
-      const set21 =
-        cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
-      const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
-      if (
-        planCallOnly23 ||
-        (useV21 &&
-          !vi.isOmaha &&
-          (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21))))))
-      ) {
+      if (planCallOnly23 || raisedWeakMade21 || (useV21 && !vi.isOmaha && dominated21)) {
         if (planCallOnly23 || isRiver || raisedAfterAggr || pressure20 >= 2) {
           if (tele15) noteFire('v21_war_gate');
           return { action: 'call', amount: toCall, thinkTime: 0 };

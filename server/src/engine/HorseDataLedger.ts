@@ -736,6 +736,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Draw outlook quality'
   ),
   flag(
+    'committedRaiseDiscipline',
+    'the existing NLH raised-hand call-only rule also guards the earlier committed-stack branch; false isolates the historical branch for paired offline comparisons',
+    'Committed raise discipline'
+  ),
+  flag(
     'callDeductionPricing',
     'canonical cash calls price actual capped rake and BBJ on matched awards after uncalled returns; false retains the historical marginal-rate approximation for offline comparisons',
     'Net call deductions'

@@ -405,8 +405,13 @@ jobs:
           node scripts/ci/check-phantom-columns.mjs
           node scripts/ci/check-embed-relationships.mjs
 
+      # The Azure Ubuntu mirror stalled this install for 59 minutes on
+      # 2026-10-26 (97 MB at 27 kB/s) and timed the whole job out; the
+      # primary HTTPS mirror is the shared fix (scripts/ci/ubuntu-apt-mirror.py).
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium webkit --with-deps
 
       # Production must be reachable and serving one exact repository commit
       # before any browser assertion can carry a verdict.
@@ -1503,7 +1508,9 @@ jobs:
 
       - name: Install Chromium and WebKit
         if: steps.engine_gate.outputs.current == 'true'
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium webkit --with-deps
 
       - name: Confirm production is serving, and record what we are testing
         if: steps.engine_gate.outputs.current == 'true'
@@ -1926,7 +1933,9 @@ jobs:
       - name: Install locked verifier dependencies
         run: npm ci --ignore-scripts
       - name: Install maintained Chromium verifier
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
       - name: Wait for the exact engine to finish thaw before channel certification
         env:
           EXPECTED_ENGINE_SHA: ${{ github.event.client_payload.engine_sha }}

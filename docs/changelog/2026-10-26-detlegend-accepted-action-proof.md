@@ -1,4 +1,4 @@
-# Detlegend continuation: accepted actions across cash and tournaments
+# Detlegend continuation: private board value and accepted actions
 
 The original six-step plan in the archived "Detlegend's all-in call" chat
 is separate from the fifteen brain phases:
@@ -31,10 +31,31 @@ receipt validation and the real HandController. Applied Phase 8 receipts are
 rechecked at the main authority gate. No authority is injected into these
 tests. Tournament data and hands are synthetic; no production funds move.
 
-This is regression protection, not a new strategy, release authority or
+The acceptance law adds regression protection, not release authority or a
 profitability certificate. Unsupported phase domains and declared work bounds
 remain in force. The separate Phase 14 controller/withdrawal and tournament
 tests remain part of connected verification.
+
+## An unused pocket pair is not private value on a completed board
+
+The NLH-family board-contact sampler exempted every pocket pair from its
+shared-board guard. On A-A-K-K-Q, an unused pair of deuces was classified as
+two-pair value; it likewise counted unused pairs as a straight or full house
+when those hands were entirely on the board. Aggressor and passive-range
+conditioning consume this classification in `simulateEquity`.
+
+`connectsBoard` now compares the complete best-five score against the board's
+score on the river before applying the pocket-pair exception. A shared hand
+returns the existing no-contact floor. Private improvements, including a
+pocket pair improving only the kicker, retain contact. Earlier streets and
+Omaha's exact-two-card model are unchanged. No new equity cap or fold rule is
+introduced, and no improvement in profitability is asserted.
+
+Four independently specified NLH/Short Deck shared-board cases fail before
+the repair and pass afterward. Positive controls retain an improving kicker,
+a full house made using the pair, and an early-street underpair. The connected
+range, Phase 8, river-flat, forced-worker and maniac checks pass (90 assertions
+across six files); broader final-candidate checks remain separately recorded.
 
 ## Review boundaries
 

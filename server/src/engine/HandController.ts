@@ -103,6 +103,14 @@ export class HandController {
   private config: HandConfig;
   private state: GameState;
   private immediateFoldCount = 0;
+  /**
+   * CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call down").
+   * Per seat, whether its LAST river decision was a call - a plain call, or an
+   * all-in for no more than the bet it faced. applyShowdownRevealRules tables
+   * every such hand: the player paid to see the bet, and the bettor gets to
+   * see what called him. A checked-down loser may still muck.
+   */
+  private readonly riverCalled = new Map<number, boolean>();
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
@@ -1275,6 +1283,11 @@ export class HandController {
 
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
+    /* Read BEFORE the switch moves any chips: an all-in is a call when the
+       whole stack is no more than what this seat had to call. */
+    const callsTheBet =
+      action === 'call' || (action === 'all_in' && player.stack <= bettingState.toCall + 0.005);
+    if (this.state.stage === 'river') this.riverCalled.set(seat, callsTheBet);
 
     switch (action) {
       case 'fold':
@@ -3298,6 +3311,12 @@ export class HandController {
       ) {
         mustShow = true;
       }
+      // CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call
+      // down"). A hand whose last river decision was a call - including an
+      // all-in for no more than the bet - is tabled win or lose. It joins the
+      // shown set below like any other tabled hand, so later players are
+      // measured against it exactly as before.
+      if (this.riverCalled.get(r.seat) === true) mustShow = true;
       for (let potIdx = 0; !mustShow && potIdx < pots.length; potIdx++) {
         if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
         eligibleAnywhere = true;

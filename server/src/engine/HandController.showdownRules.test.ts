@@ -130,7 +130,7 @@ const DRY_BOARD: Card[] = [
 
 // ─────────────────────────────────────────────────────────────────────────
 describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
-  it('HU 1: river bet + call - aggressor shows first, beaten caller mucks', () => {
+  it('HU 1: river bet + call - aggressor shows first, the beaten CALLER is shown (Dan 2026-10-25)', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     huToRiver(h);
     h.actSeat(2, 'check');
@@ -146,7 +146,9 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(results[0].revealOrder).toBe(0);
     expect(results[0].mucked).toBe(false);
     expect(results[1].seat).toBe(2);
-    expect(results[1].mucked).toBe(true); // cannot win or tie — may muck
+    // "show the hand at call down": a hand that called the river is tabled
+    // even though it cannot win - the bettor sees what called him.
+    expect(results[1].mucked).toBe(false);
     expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
   });
 
@@ -281,7 +283,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
 
 // ─────────────────────────────────────────────────────────────────────────
 describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () => {
-  it('Multiway 1+2: A checks, B bets, C calls, A calls - B shows first; losers muck', () => {
+  it('Multiway 1+2: A checks, B bets, C calls, A calls - B shows first; both callers are shown', () => {
     // dealer=1 → SB=2 (A), BB=3 (B), BTN=1 (C). Postflop order: 2, 3, 1.
     const h = harness(mkConfig(), mkPlayers([200, 200, 200]), 1);
     h.hc.start();
@@ -307,8 +309,8 @@ describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () =
     const results = h.showdown();
     expect(results.map((r) => r.seat)).toEqual([3, 1, 2]); // B first, then clockwise
     expect(results[0].mucked).toBe(false);
-    expect(results[1].mucked).toBe(true); // C beaten by B — may muck
-    expect(results[2].mucked).toBe(true); // A beaten by B — may muck
+    expect(results[1].mucked).toBe(false); // C called the river - shown
+    expect(results[2].mucked).toBe(false); // A called the river - shown
     expect(h.winners().map((w) => w.userId)).toEqual(['u3']);
   });
 
@@ -345,7 +347,7 @@ describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () =
     // even though A would lose the side pot it is not eligible for.
     expect(bySeat.get(2)!.mucked).toBe(false);
     expect(bySeat.get(3)!.mucked).toBe(false); // B wins the side pot
-    expect(bySeat.get(1)!.mucked).toBe(true); // C wins nothing — may muck
+    expect(bySeat.get(1)!.mucked).toBe(false); // C wins nothing but CALLED the river - shown
 
     const wins = h.winners();
     expect(wins.find((w) => w.userId === 'u2')?.potIndex).toBe(0); // A: main
@@ -380,6 +382,98 @@ describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () =
 
 // ─────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────
+describe('CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call down")', () => {
+  it('checked-through river: the beaten second hand may still muck', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
+    huToRiver(h);
+    h.actSeat(2, 'check');
+    h.setBoard(DRY_BOARD);
+    h.setHole(2, [c('A', 'spades'), c('A', 'diamonds')]); // BB shows first and wins
+    h.setHole(1, [c('7', 'diamonds'), c('2', 'clubs')]); // beaten, never called a bet
+    h.actSeat(1, 'check');
+
+    const bySeat = new Map(h.showdown().map((r) => [r.seat, r]));
+    expect(bySeat.get(2)!.mucked).toBe(false);
+    expect(bySeat.get(1)!.mucked).toBe(true);
+  });
+
+  it('a raise called on the river: the original bettor who called the raise is shown', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
+    huToRiver(h);
+    h.actSeat(2, 'bet', 4); // BB bets
+    h.actSeat(1, 'raise', 12); // dealer raises - now the last aggressor
+    h.setBoard(DRY_BOARD);
+    h.setHole(1, [c('A', 'spades'), c('A', 'diamonds')]);
+    h.setHole(2, [c('7', 'diamonds'), c('2', 'clubs')]);
+    h.actSeat(2, 'call'); // BB calls the raise and loses
+
+    const bySeat = new Map(h.showdown().map((r) => [r.seat, r]));
+    expect(h.showdown()[0].seat).toBe(1); // raiser first
+    expect(bySeat.get(2)!.mucked).toBe(false); // called the river - shown
+    expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
+  });
+
+  it('a call on an EARLIER street does not count: a checked river still mucks', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 200, 200]), 1);
+    h.hc.start();
+    h.actSeat(1, 'call');
+    h.actSeat(2, 'call');
+    h.actSeat(3, 'check');
+    // flop: seat 3 bets, everyone calls
+    h.actSeat(2, 'check');
+    h.actSeat(3, 'bet', 4);
+    h.actSeat(1, 'call');
+    h.actSeat(2, 'call');
+    // turn and river check through
+    for (const street of ['turn', 'river'] as const) {
+      expect(h.st().stage).toBe(street);
+      h.actSeat(2, 'check');
+      h.actSeat(3, 'check');
+      if (street === 'river') {
+        h.setBoard(DRY_BOARD);
+        h.setHole(2, [c('A', 'spades'), c('A', 'diamonds')]); // shows first, wins
+        h.setHole(3, [c('7', 'diamonds'), c('2', 'clubs')]);
+        h.setHole(1, [c('8', 'diamonds'), c('3', 'clubs')]);
+      }
+      h.actSeat(1, 'check');
+    }
+    const bySeat = new Map(h.showdown().map((r) => [r.seat, r]));
+    expect(bySeat.get(2)!.mucked).toBe(false);
+    expect(bySeat.get(3)!.mucked).toBe(true);
+    expect(bySeat.get(1)!.mucked).toBe(true);
+  });
+
+  it('an all-in for no more than the river bet is a call, and is shown', () => {
+    // Three-way so two live stacks remain and the all-in lock does not apply.
+    const h = harness(mkConfig(), mkPlayers([200, 30, 200]), 1);
+    h.hc.start();
+    h.actSeat(1, 'call');
+    h.actSeat(2, 'call');
+    h.actSeat(3, 'check');
+    for (const street of ['flop', 'turn'] as const) {
+      expect(h.st().stage).toBe(street);
+      h.actSeat(2, 'check');
+      h.actSeat(3, 'check');
+      h.actSeat(1, 'check');
+    }
+    // river: seat 2 (28 behind) checks, seat 3 bets 40, seat 1 calls,
+    // seat 2 calls all-in for less.
+    h.actSeat(2, 'check');
+    h.actSeat(3, 'bet', 40);
+    h.actSeat(1, 'call');
+    h.setBoard(DRY_BOARD);
+    h.setHole(3, [c('A', 'spades'), c('A', 'diamonds')]);
+    h.setHole(1, [c('K', 'hearts'), c('J', 'diamonds')]);
+    h.setHole(2, [c('7', 'diamonds'), c('2', 'clubs')]);
+    h.actSeat(2, 'all_in');
+
+    const bySeat = new Map(h.showdown().map((r) => [r.seat, r]));
+    expect(bySeat.get(3)!.mucked).toBe(false);
+    expect(bySeat.get(1)!.mucked).toBe(false); // called
+    expect(bySeat.get(2)!.mucked).toBe(false); // all-in call
+  });
+});
+
 describe('DOUBLE-BOARD HI-LO muck rules (audit fix: board-2 low half)', () => {
   it('a hand winning ONLY board-2 low is auto-tabled and paid; a true loser mucks', () => {
     // plo8 double-board bomb pot, 3-handed, dealer seat 1. Bomb pots ante

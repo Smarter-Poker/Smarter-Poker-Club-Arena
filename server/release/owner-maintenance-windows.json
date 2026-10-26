@@ -2,15 +2,6 @@
   "version": 1,
   "windows": [
     {
-      "id": "2026-10-26-horse-bubble-and-seat-fixes-now",
-      "ownerOrder": "Dan, 2026-10-25/26 in this chat, on the tournament horse aggression programme: 19:43 \"WHEN YOUR DONE WITH ALL 3 PHASES, I WANT THIS UPDATED WHEN ITS DONE, NOT AT 4AM\"; 20:33 \"SINCE WHEN IS IT GTO TO OPEN RIP 20BB FROM UTG?!\" and \"THIS NEEDS TO GET FULLY PUSHED AND PUBLISHED AND ALL HORSES NEED TO ACTIVATE THIS AS SOON AS POSSIBLE FOR TOURNAMENT PLAY\"; 20:37 \"YOU HAVE TO MAKE THEM BETTER NOW, GET IT PUSHED AND PUBLISHED AS SOON AS ITS READY\"; 22:12 \"make sure this is fully pushed and published and activated in every single horse\"; 23:08 \"finish up any and all unfinished work ... fully built, tested, pushed and published\"; 23:18 on bubble hand 48403158 \"THIS CAN NEVER FUCKING HAPPEN AGAIN!!\"; 00:02 on nut-flush hand 48442708 \"CHECK IT EVERY SINGLE STREET INSTEAD OF EVER BETTING FOR VALUE!? WTF\". One off-cycle engine activation at the next hourly :55 Chicago break after the add-on window's break (later :55 breaks as fallback) of protected main containing #8107, merge 7d8615108f28bf78f384caf89f01ed5f961b981d (the seat-aware tournament open-shove line), and the pull request that adds this entry (the bubble short-stack fixes, the made-hand value fix and the tournament turn barrel). It replaces the unmerged entry of closed #8133. Preserve the existing last-hand lead, drain, certified freeze, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving; no other change is authorized by this entry.",
-      "contains": "7d8615108f28bf78f384caf89f01ed5f961b981d",
-      "notBefore": "2026-10-26T06:05:00Z",
-      "notAfter": "2026-10-26T12:00:00Z",
-      "announceAtChicagoMinutes": [53, 54],
-      "migrations": []
-    },
-    {
       "id": "2026-10-25-every-funded-horse-adds-on-tonight",
       "ownerOrder": "Dan, 2026-10-25 23:06 Chicago, in this chat: \"Approved - activate the 100% horse add-on fix at the next :55 break tonight.\" Earlier the same evening: \"EVERY HORSE, IF THEY ARE IN THE TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD 100% BE ADDING ON IN EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE SEAT!\" One off-cycle engine activation at the next hourly :55 Chicago break (later :55 breaks as fallback) of protected main containing PR #8111, merge 867f3ec94f7b6397e377a6b94dbf34003e7d1141 (every seated funded horse takes the add-on; the offer runs in repeated passes ahead of the late-registration branch). The earlier anchor e81a9e7db (#8093) is already serving in 9f4f98f27 and grants nothing. Preserve the existing last-hand lead, drain, certified freeze, rollback reserve, thaw and the seal's one-window-per-hour limit. This exception ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "867f3ec94f7b6397e377a6b94dbf34003e7d1141",

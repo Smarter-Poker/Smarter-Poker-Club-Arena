@@ -1326,6 +1326,70 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
+   * LEAVE MEANS NOW (Dan 2026-10-25): "IF A USER CLICKS LEAVE GAME, IT NEEDS
+   * TO LEAVE GAME RIGHT AWAY ... EVEN IF ITS IN THE MIDDLE OF A HAND." And
+   * "AVATARS SHOULD NOT LEAVE THE TABLE UNTIL AFTER THEIR ACTION IS
+   * COMPLETED."
+   *
+   * Folds a leaving player out of the live hand at once. On their turn that
+   * is the ordinary fold; off their turn it is the controller's early fold
+   * (the same door Lightning uses), which records and broadcasts a real FOLD
+   * immediately and leaves the player whose turn it is on their own clock.
+   *
+   * It used to queue an `auto_fold` pre-action whenever it was not the
+   * leaver's turn, and the caller sat them out straight away. Every watcher
+   * then saw the seat grey out, lose its cards and wear SITTING OUT with no
+   * fold ever shown, and the player stayed live in the hand until action
+   * came round to them. That is the avatar leaving before its action was
+   * done, and the leave not happening "now".
+   *
+   * Returns true while the seat is STILL LIVE in the hand after the attempt:
+   * an all-in seat (it cannot fold; it plays the hand out and settlement
+   * cashes it out), or the rare stage where no fold is possible yet (the
+   * queued auto_fold remains the fallback there).
+   */
+  protected foldLeaverNow(userId: string): boolean {
+    const hc = this.handController;
+    if (!hc) return false;
+    const state = hc.getState();
+    const seatPlayer = state.players.find((p) => p.user_id === userId);
+    if (!seatPlayer || seatPlayer.is_folded) return false;
+    if (seatPlayer.is_all_in) return true;
+    let folded = false;
+    try {
+      folded =
+        seatPlayer.seat === state.currentPlayerSeat
+          ? hc.performAction(seatPlayer.seat, 'fold', undefined, 'forced') === true
+          : hc.performImmediateFold(seatPlayer.seat, 'forced') === true;
+    } catch (err) {
+      console.warn(`[ServerTableEngine:${this.tableId}] Fold on leave threw: ${err}`);
+    }
+    if (folded) {
+      console.log(`[ServerTableEngine:${this.tableId}] Player ${userId} folded on leave`);
+      return false;
+    }
+    this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Player ${userId} could not fold yet - auto_fold queued`
+    );
+    return true;
+  }
+
+  /**
+   * Takes a leaver out of the next deal. While their seat is still live in
+   * the hand (`stillLive`), the sit-out waits for settlement (pendingSitOut,
+   * drained there), so the seat keeps its cards and its status on every
+   * screen until its part in the hand is finished.
+   */
+  protected sitOutLeaver(userId: string, stillLive: boolean): void {
+    if (stillLive && this.handController !== null) {
+      this.pendingSitOut.add(userId);
+      return;
+    }
+    this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+  }
+
+  /**
    * True while a Sit Out this account's own authenticated client requested
    * still stands (applied or deferred to the hand end). The horse rotator
    * asks this before any automatic sit-back-in (2026-10-22).
@@ -1385,33 +1449,31 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const releaseSeatBoundary = await this.acquireSeatBoundary();
     try {
       // ═══════════════════════════════════════════════════════════════════════
-      // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
+      // LEAVE MEANS NOW, AND THE AVATAR FINISHES ITS ACTION FIRST
+      // (Dan 2026-10-25, binding, replaces the 2026-08-26 all-in refusal).
       //
-      // Dan 2026-08-26, binding: "in cash games or tournaments, a player can
-      // never leave the table while they are all in. they must wait for the hand
-      // to be finished."
+      // Dan: "IF A USER CLICKS LEAVE GAME, IT NEEDS TO LEAVE GAME RIGHT AWAY,
+      // NOT THE NEXT HAND OR IN A COUPLE HANDS, LEAVE NOW, EVEN IF ITS IN THE
+      // MIDDLE OF A HAND." And: "AVATARS SHOULD NOT LEAVE THE TABLE UNTIL
+      // AFTER THEIR ACTION IS COMPLETED."
       //
-      // This is FIRST, before the roster lookup and before the cash/tournament
-      // split, because `leaveTable` is the single chokepoint every real departure
-      // goes through: HTTP /leave, the admin kick, and the horse rotator. One
-      // refusal here closes all three for both table types.
+      // The 2026-08-26 rule ("a player can never leave the table while they
+      // are all in. they must wait for the hand to be finished") REFUSED the
+      // leave, so the all-in player was sent to the lobby with the seat still
+      // live and was dealt the next hand, and the hand after that. Both rules
+      // are kept by splitting the player from the seat:
       //
-      // What it used to do instead, on both branches:
+      //   - the PLAYER leaves now: the leave is accepted and recorded as the
+      //     durable departure request, every time, mid-hand included;
+      //   - the SEAT finishes what it owes. A player who can still fold is
+      //     folded at once (out of turn if need be, below). An all-in seat
+      //     cannot fold, so it stays in the hand, is never shown as sitting
+      //     out while the hand is live, and is cashed out by settlement the
+      //     moment that hand is over. It is never dealt another hand.
       //
-      //     if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in)
-      //
-      // -- it read is_all_in only to SKIP THE AUTO-FOLD, and then carried on
-      // leaving. So an all-in player was marked sitting_out in a live pot and the
-      // client navigated them away mid-runout, off the hand they still had every
-      // chip in.
-      //
-      // `is_all_in` is engine memory, not a table_seats column, so the check has
-      // to live here. It is set in HandController the moment a stack reaches zero
-      // and is only cleared when the next hand builds a fresh player array, which
-      // is exactly the window this rule is about.
-      //
-      // A folded player may leave the UI, but their contribution remains in
-      // this hand until settlement. Their cashout must wait for that boundary.
+      // This sits before the roster lookup and the cash/tournament split
+      // because `leaveTable` is the single chokepoint for HTTP /leave, the
+      // admin kick and the horse rotator; horses and people get the same door.
       // ═══════════════════════════════════════════════════════════════════════
       const originalPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
       const scoped = opts.occupancyId !== undefined || opts.seatNumber !== undefined;
@@ -1436,15 +1498,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
       const liveHand = this.handController?.getState();
       const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
-      if (liveSelf?.is_all_in && !liveSelf.is_folded) {
+      const leavingWhileAllIn = Boolean(liveSelf?.is_all_in && !liveSelf.is_folded);
+      if (leavingWhileAllIn) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} - all-in in a live hand`
+          `[ServerTableEngine:${this.tableId}] ${userId} leaving while all-in - the seat finishes the hand, then cashes out`
         );
-        return {
-          success: false,
-          error: 'You Are All In. You Cannot Leave Until The Hand Is Finished.',
-          immediate: false,
-        };
       }
 
       if (opts.admin) {
@@ -1584,36 +1642,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           )
         )
           return stale();
-        if (this.handController !== null) {
-          const state = this.handController.getState();
-          const enginePlayer = state.players.find((p) => p.user_id === userId);
-          if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
-            let folded = false;
-            try {
-              folded =
-                this.handController?.performAction(
-                  enginePlayer.seat,
-                  'fold',
-                  undefined,
-                  'forced'
-                ) === true;
-              if (folded) {
-                console.log(
-                  `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
-                );
-              }
-            } catch (err) {
-              console.warn(
-                `[ServerTableEngine:${this.tableId}] Auto-fold on tournament leave threw: ${err}`
-              );
-            }
-            if (!folded) {
-              this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
-            }
-          }
-        }
-
-        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+        // Fold now (out of turn if need be); the sit-out is applied only once
+        // this seat has nothing left to do in the live hand (see foldLeaverNow).
+        this.sitOutLeaver(userId, this.foldLeaverNow(userId));
         /* The other devices have to be told here too (2026-09-05). The cash
          mid-hand branch below re-broadcasts and this one did not, so a
          tournament player who sat out from one device left every other client -
@@ -1740,45 +1771,17 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         )
           return stale();
         // The hand may finish while the database acknowledges the request.
-        // Never perform an action using the previous controller's player snapshot.
-        const enginePlayer = this.handController
-          ?.getState()
-          .players.find((p) => p.user_id === userId);
-        if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
-          // FIX 2026-08-22: performAction RETURNS FALSE when it isn't the
-          // player's turn — it does not throw (FreezeRegression pins this), so
-          // the old catch-and-assume-"they'll be skipped" comment was wrong:
-          // the leaving player stayed live in the hand and the disconnect
-          // auto-action later CHECKED them down every street. If the immediate
-          // fold doesn't land, queue an auto_fold pre-action so they fold the
-          // moment action reaches them.
-          let folded = false;
-          try {
-            folded =
-              this.handController?.performAction(enginePlayer.seat, 'fold', undefined, 'forced') ===
-              true;
-            if (folded) {
-              console.log(
-                `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`
-              );
-            }
-          } catch (err) {
-            console.warn(`[ServerTableEngine:${this.tableId}] Auto-fold on leave threw: ${err}`);
-          }
-          if (!folded) {
-            this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
-            console.log(
-              `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn - auto_fold queued`
-            );
-          }
-        }
+        // foldLeaverNow reads the CURRENT controller, never the snapshot above.
+        const stillLive = this.foldLeaverNow(userId);
 
         emitSeatLeft();
         // CHIP CONTINUITY: a forced (kick) exit must not be judged by the clock
         // when settlement processes the leave_pending seat.
 
-        // Also mark in disconnect engine so they don't get dealt next hand
-        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+        // Out of the next deal. Applied now only if this seat's part in the
+        // live hand is over; an all-in seat is sat out at settlement instead,
+        // so watchers never see it go grey while its hand is still running.
+        this.sitOutLeaver(userId, stillLive);
 
         /* THE OTHER DEVICES HAVE TO BE TOLD (Dan 2026-09-05). This branch emitted
          `seat_left` and then stopped: no state re-broadcast, so every connected

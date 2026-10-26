@@ -1156,12 +1156,28 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
           )) {
             if (overlaps(box(e), board)) violations.push(`${e.className} Covers Board`);
           }
+          /* Dan 2026-10-25: a bet is always in front of the player who made
+             it. A portrait phone now lays the table out at the desktop's
+             width (useTableEnvironment), so the rings below 481px certify
+             the fallback ring a browser ignoring the viewport tag shows. On
+             the first-generation SE's fallback ring the players, board and
+             pot leave no lane that is both the owner's own and clear of the
+             felt's printing and the pot's chip pile; the bet keeps its
+             owner's lane and may touch those two, as the PLO6 lane below
+             already may. Players, cards, tags, the button and the board stay
+             protected. */
+          const ownersLaneFirst = innerWidth <= 340;
           for (const bet of document.querySelectorAll('.seat__bet-chips'))
             for (const pod of document.querySelectorAll(
               '.seat__info,.seat__avatar-img,.seat__action,.seat__cards--revealed .seat__card,.table-brand,.pot-display,.pot-display__pile,.dealer-button'
             ))
               if (
                 !(compactPlo6 && pod.classList.contains('table-brand')) &&
+                !(
+                  ownersLaneFirst &&
+                  (pod.classList.contains('table-brand') ||
+                    pod.classList.contains('pot-display__pile'))
+                ) &&
                 overlaps(box(bet), box(pod))
               )
                 violations.push(

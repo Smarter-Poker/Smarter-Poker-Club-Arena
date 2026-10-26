@@ -250,12 +250,14 @@ describe('the Trade record cannot print a horse label (round 3, contract 2)', ()
   it('builds every Trade record row from that presentation, and no code names a horse', () => {
     const page = readFileSync(join(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
     const load = page.slice(
-      page.indexOf("supabase.rpc('fn_cashier_transaction_history'"),
-      page.indexOf("reportError(e, 'CashierTradePage.records')")
+      page.indexOf('const toTradeRecord = useCallback('),
+      page.indexOf('/** The filters a page was read under;')
     );
     expect(load.length).toBeGreaterThan(0);
+    // Every page (first, older, refreshed) is built by this one mapper.
+    expect(page).toContain('.map((raw) => toTradeRecord(raw, viewer))');
     const presentation = 'const r = presentChipTransaction(raw);';
-    const mapped = load.indexOf('pageRows.map((raw) => {');
+    const mapped = load.indexOf('(raw: HistoryFeedRow, viewer: string): TradeRecordRow => {');
     const presented = load.indexOf(presentation);
     expect(mapped).toBeGreaterThan(-1);
     expect(presented).toBeGreaterThan(mapped);

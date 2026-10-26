@@ -162,6 +162,28 @@ afterEach(() => {
 });
 
 describe('Club Financials default snapshot reuse', () => {
+  it('does not leak stored snake-case variants into its financial table labels', async () => {
+    const payload = financialPayload();
+    (payload.by_table as unknown[]) = [
+      {
+        table_id: '33333333-3333-4333-8333-333333333333',
+        name: 'SHORT_DECK Lightning',
+        variant: 'SHORT_DECK',
+        stakes: '1/2',
+        status: 'active',
+        raked_hands: 70,
+        rake: 700,
+        players: 6,
+        table_net: 700,
+      },
+    ];
+    m.rpc.mockResolvedValue({ data: payload, error: null });
+    render(<ClubFinancialsPage />);
+    await screen.findByText('Dashboard Embed Ready');
+    expect(document.body.textContent).not.toContain('SHORT_DECK');
+    expect(screen.getByText('SHORT DECK Lightning')).toBeInTheDocument();
+  });
+
   it('loads the week once and supplies that verified snapshot to both embedded readers', async () => {
     render(<ClubFinancialsPage />);
 

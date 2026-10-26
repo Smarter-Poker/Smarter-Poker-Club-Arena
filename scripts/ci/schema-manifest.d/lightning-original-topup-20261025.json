@@ -1,0 +1,16 @@
+{
+  "_owner": "codex/lightning-contexts-topup-20261025",
+  "_comment": "Installed once through Supabase MCP as 20261025154522 lightning_top_up_original_intents_finish_at_the_final_hand_b. Readback 2026-10-25T15:45:28.122819Z confirmed all four exact function postimages, service request permission, browser request denial, anonymous receipt denial and private RLS. Source reservation retained under same-slug mapping. Never replay.",
+  "tables": [
+    "smarter_private.lightning_top_up_intents",
+    "smarter_private.lightning_top_up_sessions"
+  ],
+  "functions": [
+    "smarter_private.lightning_top_up_receipt",
+    "smarter_private.lightning_top_up_finish",
+    "fn_lightning_top_up_request",
+    "fn_lightning_top_up_receipts",
+    "smarter_private.lightning_top_up_pending"
+  ],
+  "columns": {}
+}

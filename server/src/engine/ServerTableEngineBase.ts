@@ -2048,6 +2048,16 @@ export abstract class ServerTableEngineBase {
   }> = [];
 
   /**
+   * Dan 2026-10-24: two or more hands reached showdown and at least one of
+   * them is an all-in player's. Read once, at SHOWDOWN (or when a run-it-
+   * multiple hand records its results), while the hand's players are still
+   * live, and handed to handCompletionHoldMs so the felt keeps the tabled
+   * hands and the winner up for HAND_COMPLETION.ALL_IN_SHOWDOWN_EXTRA_MS
+   * longer. Reset with the showdown results at every deal.
+   */
+  protected currentHandAllInShowdown = false;
+
+  /**
    * SHOWDOWN SYSTEM 2026-08-25: true when the player mucked at showdown and
    * has not voluntarily shown the WHOLE hand — the one question every reveal
    * gate asks. A whole-hand voluntary show (showHandPlayers) overrides the
@@ -5786,7 +5796,9 @@ export abstract class ServerTableEngineBase {
     }
     await this.recoverBustedHorsesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
-    await this.standUpHorsesWhosePoolSessionEnded();
+    await this.reportHorsesTheEngineHeartbeatKeepsHere();
+    if (!this.lifecycleCanMutate()) return;
+    await this.standUpPlayersWhosePoolSessionEnded();
     if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();
     if (!this.lifecycleCanMutate()) return;
@@ -5835,34 +5847,66 @@ export abstract class ServerTableEngineBase {
 
   /**
    * ═════════════════════════════════════════════════════════════════════════
-   *  A HORSE WHOSE POOL SESSION ENDED STILL HAS AN INPUT DEVICE (2026-10-24)
+   *  THE ENGINE'S HEARTBEAT IS A HORSE'S RETURNING SOCKET (2026-10-24)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A pool session is stamped `disconnected_at` on a presence transition, and
+   * the reaper exits it once the stamp is older than the Cluster's
+   * `disconnect_timeout_ms`. Until now only a Lightning ROOM socket ever
+   * reported `reconnected` (LightningRegistry.connect), so a horse - whose
+   * input device is this engine's heartbeat, never a room socket (10.5 item
+   * 2) - could be stamped and never un-stamped. Measured 2026-10-24 on "FLH
+   * 0.25/0.50 Lightning Games": one batch stamped seven horses at 15:49:46 UTC
+   * right after an engine restart, a room socket cleared three within 40 s,
+   * and the reaper exited the other four at 15:52:50 'disconnect_expired'
+   * while this engine was heartbeating every one of them.
+   *
+   * So the engine says what a person's returning socket says, through the
+   * same door: a horse seated here whose heartbeat is live (the presence FSM
+   * reads CONNECTED) and whose open pool session carries a stamp is reported
+   * `reconnected` to the presence reporter, which calls
+   * fn_lightning_presence_report exactly as a room's first socket does. Never
+   * for a seat the horse account's own client controls (that client's room is
+   * the witness), and never for a person: a person is cleared only by their
+   * own socket.
+   *
+   * ServerTableEngineDealing overrides this; the base holds nothing.
+   */
+  protected async reportHorsesTheEngineHeartbeatKeepsHere(): Promise<void> {
+    /* ServerTableEngineDealing owns it; see its override. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A PLAYER WHOSE POOL SESSION ENDED LEAVES THEIR ANCHOR SEAT (2026-10-24)
    * ═════════════════════════════════════════════════════════════════════════
    *
    * A pool session can end while its player keeps the anchor seat: the
    * disconnect reaper (`fn_lightning_reap_expired_disconnects`) closes the
-   * session and never stands the seat up, by design, so a returning person
-   * finds VIEW GAME pointing at their own chair and decides for themselves.
-   * A horse has no browser to come back with. Measured 2026-10-24 on "FLH
+   * session and never stands the seat up. Measured 2026-10-24 on "FLH
    * 0.25/0.50 Lightning Games": two horses' sessions closed
    * 'disconnect_expired' at 15:52:50 UTC while both kept funded anchor seats
    * (38.74 and 51.77); eight hours later neither had been re-entered or cashed
    * out, the chips sat idle, the chairs were held and each seat counted
-   * against its horse's four-game limit. Nothing in the live path could ever
+   * against its player's four-game limit. Nothing in the live path could ever
    * move them: the seat-follows-pool trigger only re-enters on a seat change,
    * the rotator's departure pass skips a three-seat anchor, and this parked
    * pass (the only loop an anchor runs) had nothing to say about them.
    *
-   * The engine is the horse's input device (10.5, the one legitimate horse
-   * branch), so it makes the decision a person makes at the same seat: it
-   * leaves, through the person's own Leave door (`leaveTable`: the stay clock,
-   * the voluntary cash-out into the club wallet with its receipt, the
-   * seat_left event and the Cluster wake). The fleet then seats a horse the
-   * ordinary way, and that buy-in enters the pool through the same seat
-   * trigger a person's does.
+   * A PERSON IN THE SAME PLACE IS IN THE SAME PLACE (10.5, Dan 2026-10-24).
+   * The anchor does not deal while its Cluster is Lightning, so a person whose
+   * session ended and who never comes back kept the seat and the chips for as
+   * long as the Cluster stayed Lightning. The rule is one rule for every
+   * player: once the same occupancy reads ended on two looks at least 30 s
+   * apart, the player leaves through the ordinary Leave door (`leaveTable`:
+   * the stay clock, the voluntary cash-out into the club wallet with its
+   * receipt, the seat_left event and the Cluster wake). A returning person
+   * reads `fn_lightning_my_session`, finds no open session and is offered
+   * Join Lightning again, with their chips in their club wallet.
    *
    * ServerTableEngineDealing overrides this; the base holds nothing.
    */
-  protected async standUpHorsesWhosePoolSessionEnded(): Promise<void> {
+  protected async standUpPlayersWhosePoolSessionEnded(): Promise<void> {
     /* ServerTableEngineDealing owns it; see its override. */
   }
 

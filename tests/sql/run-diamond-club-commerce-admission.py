@@ -177,10 +177,31 @@ def person(db, tag, diamonds=0, horse=False):
 def club(db, tag, owner, requires_approval=True):
     cid = u('club:' + tag)
     psql(db, f"""
-      INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union,requires_approval)
-      VALUES ('{cid}','Admission {tag}','{owner}',NULL,0,0,false,{str(requires_approval).lower()});
+      -- Match the base fixture: never draw a captured random five-digit code.
+      -- The allocation and insert share one transaction and serialize writers.
+      LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
+      INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union,requires_approval)
+      SELECT '{cid}',COALESCE(max(club_id),10000)+1,'Admission {tag}','{owner}',NULL,0,0,false,{str(requires_approval).lower()}
+      FROM public.clubs;
       INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance) VALUES ('{cid}','{owner}','owner','active',0);""")
     return cid
+
+
+def fixture_club_numbers_do_not_use_the_random_default():
+    """An occupied default must not make synthetic club admission flaky."""
+    db = 'admission_identity'
+    psql('postgres', f'CREATE DATABASE {db} TEMPLATE {TEMPLATE}')
+    try:
+        occupied = int(scalar(db, f"SELECT club_id FROM public.clubs WHERE id='{base.C1}'"))
+        psql(db, f'ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT {occupied}')
+        first = club(db, 'identity-first', base.A)
+        second = club(db, 'identity-second', base.A)
+        codes = json.loads(scalar(db, f"SELECT jsonb_agg(club_id ORDER BY club_id) FROM public.clubs WHERE id IN ('{first}','{second}')"))
+        ck(len(codes) == 2 and len(set(codes)) == 2 and min(codes) > occupied,
+           'fixture club numbers are distinct above occupied codes even when the default collides', codes)
+        record('FIXTURE synthetic club numbers never depend on the captured random default', True)
+    finally:
+        psql('postgres', f'DROP DATABASE {db}')
 
 
 def pending(db, cid, tag):
@@ -761,6 +782,7 @@ def main():
 
         fidelity = {s: md5_of(TEMPLATE, s) == m for s, m in LIVE_MD5.items()}
         record('FIXTURE the seven doors, their membership helpers and the admission read are byte-identical to production (md5 of pg_get_functiondef)', all(fidelity.values()), fidelity)
+        fixture_club_numbers_do_not_use_the_random_default()
 
         psql('postgres', f'CREATE DATABASE {RED} TEMPLATE {TEMPLATE}')
         psql('postgres', f'CREATE DATABASE {GREEN} TEMPLATE {TEMPLATE}')

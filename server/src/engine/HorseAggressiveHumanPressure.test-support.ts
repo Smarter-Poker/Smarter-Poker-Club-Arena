@@ -52,6 +52,8 @@ export interface PressureTally {
   riverFirst: { check: number; bet: number };
   /** the human's answer to a horse river bet */
   humanVsRiverBet: { fold: number; call: number };
+  /** a horse opened and the human 3-bet it: fold / call / 4-bet */
+  vsThreeBet: { fold: number; call: number; raise: number };
   /** the horse 3-bet the human preflop, heads-up flop, horse to act with no bet: check / bet */
   threeBettorFlop: { check: number; bet: number };
   /** the same pot on the turn after the horse bet the flop and was called: check / bet */
@@ -67,6 +69,7 @@ const fresh = (): PressureTally => ({
   vsFlopBet: { fold: 0, call: 0, raise: 0 },
   riverFirst: { check: 0, bet: 0 },
   humanVsRiverBet: { fold: 0, call: 0 },
+  vsThreeBet: { fold: 0, call: 0, raise: 0 },
   threeBettorFlop: { check: 0, bet: 0 },
   threeBettorTurn: { check: 0, bet: 0 },
   fires: {},
@@ -94,14 +97,13 @@ function humanAction(
   const sized = (frac: number) => {
     if (!wager || menu.minRaiseTo === null || menu.maxRaiseTo === null) return null;
     const to =
-      wager === 'bet'
-        ? live.pot * frac
-        : live.currentBet + (live.pot + menu.toCall) * frac;
+      wager === 'bet' ? live.pot * frac : live.currentBet + (live.pot + menu.toCall) * frac;
     return {
       action: wager,
       amount:
-        Math.round(Math.min(menu.maxRaiseTo, Math.max(menu.minRaiseTo, Math.min(to, potTo))) * 100) /
-        100,
+        Math.round(
+          Math.min(menu.maxRaiseTo, Math.max(menu.minRaiseTo, Math.min(to, potTo))) * 100
+        ) / 100,
     };
   };
   const passive = () =>
@@ -111,13 +113,13 @@ function humanAction(
     const pct = omahaPreflopPercentile(me.cards, false); // 1 = best
     const raises = hist.filter(
       (a) =>
-        a.stage === 'preflop' &&
-        (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))
+        a.stage === 'preflop' && (a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))
     ).length;
     const mine = hist.some(
       (a) => a.stage === 'preflop' && a.userId === me.user_id && a.action === 'raise'
     );
-    if (raises === 0) return pct >= 0.24 ? (sized(1) ?? call()) : menu.toCall > 0 ? passive() : passive();
+    if (raises === 0)
+      return pct >= 0.24 ? (sized(1) ?? call()) : menu.toCall > 0 ? passive() : passive();
     if (raises === 1 && !mine) {
       if (pct >= 0.52) return sized(1) ?? call();
       return pct >= 0.25 ? call() : passive();
@@ -198,7 +200,8 @@ export function playPressureArm(
       const c = new HandController(config, players, 1 + (hand % seats));
       let complete: { rake?: number; bbjFee?: number } | null = null;
       c.onEvent((e) => {
-        if (e.type === 'HAND_COMPLETE') complete = e as unknown as { rake?: number; bbjFee?: number };
+        if (e.type === 'HAND_COMPLETE')
+          complete = e as unknown as { rake?: number; bbjFee?: number };
       });
       c.start();
       const warm = hand >= 15;
@@ -227,12 +230,18 @@ export function playPressureArm(
           }
         } else {
           HorseMind.setDecisionScope(readScopeOf(variant, seats), variant, 'cash');
-          const d = HorseLogic.decide(spot.hero, spot.state, style.get(spot.hero.user_id)!, {}, {
-            telemetry: true,
-            ...arm,
-            decisionTimeMs: 1_792_000_000_000 + hand * 60_000 + step,
-            mindObservationHand: { version: 1 as const, tableId: table, handNumber: hand + 1 },
-          });
+          const d = HorseLogic.decide(
+            spot.hero,
+            spot.state,
+            style.get(spot.hero.user_id)!,
+            {},
+            {
+              telemetry: true,
+              ...arm,
+              decisionTimeMs: 1_792_000_000_000 + hand * 60_000 + step,
+              mindObservationHand: { version: 1 as const, tableId: table, handNumber: hand + 1 },
+            }
+          );
           HorseMind.setDecisionScope(null);
           chosen = d;
           if (warm) {
@@ -252,6 +261,16 @@ export function playPressureArm(
               if (d.action === 'fold') out.vsOpen.fold++;
               else if (aggressive) out.vsOpen.raise++;
               else out.vsOpen.call++;
+            }
+            if (
+              street === 'preflop' &&
+              preRaises.length === 2 &&
+              preRaises[0].userId === spot.hero.user_id &&
+              preRaises[1].userId === AGGRO_HUMAN
+            ) {
+              if (d.action === 'fold') out.vsThreeBet.fold++;
+              else if (aggressive) out.vsThreeBet.raise++;
+              else out.vsThreeBet.call++;
             }
             const streetActs = hist.filter((a) => a.stage === street);
             const heroChecked = streetActs.some(
@@ -285,7 +304,11 @@ export function playPressureArm(
                 (a) => a.stage === 'flop' && a.userId === spot.hero.user_id && a.action === 'bet'
               );
               const t =
-                street === 'flop' ? out.threeBettorFlop : flopBetByHero ? out.threeBettorTurn : null;
+                street === 'flop'
+                  ? out.threeBettorFlop
+                  : flopBetByHero
+                    ? out.threeBettorTurn
+                    : null;
               if (t) aggressive ? t.bet++ : t.check++;
             }
             if (
@@ -313,6 +336,13 @@ export function playPressureArm(
           chosen.action !== 'raise'
         )
           done = c.performAction(spot.hero.seat, chosen.action as never);
+        // Count the policy's accepted action, never a replacement chosen by
+        // the harness. Otherwise an illegal four-bet can be tallied as a
+        // raise while a fallback call actually plays the rest of the hand.
+        if (!done && spot.hero.user_id !== AGGRO_HUMAN)
+          throw new Error(
+            `pressure harness: horse decision rejected on hand ${hand + 1}: ${chosen.action} ${chosen.amount ?? ''}`
+          );
         if (!done)
           done = c.performAction(
             spot.hero.seat,

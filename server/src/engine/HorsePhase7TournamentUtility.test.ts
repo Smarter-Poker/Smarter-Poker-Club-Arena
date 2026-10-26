@@ -2317,15 +2317,17 @@ describe('Phase 7 live action-clock wiring', () => {
             HorseMind.observe(prefix, [], horseMindHandFromCompletion(observation));
             HorseMind.observe(prefix, [], horseMindHandFromCompletion(observation));
             HorseMind.setDecisionScope(null);
-            runtime.receive(observation);
-            runtime.receive({ ...observation, requestId: observation.requestId + 1 });
+            // Legacy mapper round-trip is a pure component fixture, never
+            // imported into the independent live worker below.
+            defaults.observeCompletedHand(observation);
+            defaults.observeCompletedHand({ ...observation, requestId: observation.requestId + 1 });
           }
           await runtime.drain();
           expect(
             messages.filter(
               (message) => message.type === 'ACK' && message.operation === 'OBSERVE_COMPLETED_HAND'
             )
-          ).toHaveLength(80);
+          ).toHaveLength(0);
           expect(HorseMind.getStats(heroId)?.hands).toBe(40);
           expect(HorseMind.getStats(opponentId)).toMatchObject({
             hands: 40,
@@ -2454,6 +2456,23 @@ describe('Phase 7 live action-clock wiring', () => {
               },
             },
           };
+          // Each public completion is learned only after this observer's
+          // original FAST, using the same NLH/HU/MTT partition as this decision.
+          for (let n = 1; n <= 40; n++) {
+            const participant = structuredClone(request);
+            participant.requestId = 2000 + n;
+            participant.generation = 1000000 + n;
+            participant.fence = `${observationTable}:${1000000 + n}:1:${lease}:${participant.generation}`;
+            participant.decisionTimeMs = Date.now() + 100000 + n;
+            participant.decisionKey = buildHorseDecisionKey(participant);
+            runtime.receive(participant);
+            runtime.receive(completion(n, response));
+            await runtime.drain();
+            expect(messages.filter((m) => m.type === 'ERROR')).toEqual([]);
+          }
+          captures.length = 0;
+          messages.length = 0;
+          request.decisionTimeMs = Date.now() + 200000;
           request.decisionKey = buildHorseDecisionKey(request);
           runtime.receive(structuredClone(request));
           await runtime.drain();
@@ -2468,8 +2487,8 @@ describe('Phase 7 live action-clock wiring', () => {
             userId: opponentId,
             foldMul: response === 'fold' ? 1.45 : 0.55,
             statistics: {
-              source: 'pooled',
-              scope: null,
+              source: 'family_size',
+              scope: 'holdem:hu',
               counters: { hands: 40, facedAggr: 40, folds: response === 'fold' ? 40 : 0 },
               sourceWindow: originalWindow,
             },
@@ -2498,7 +2517,8 @@ describe('Phase 7 live action-clock wiring', () => {
           );
           expect(originalReads.stats.get(opponentId)?.hands).toBe(40);
           expect(originalReads.stats.get(opponentId)?.sourceWindow).toEqual(originalWindow);
-          expect(originalReads.scoped.get(`omaha:full|${opponentId}`)?.hands).toBe(20);
+          expect(originalReads.scoped.get(`omaha:full|${opponentId}`)).toBeUndefined();
+          expect(originalReads.scoped.get(`holdem:hu|${opponentId}`)?.hands).toBe(40);
           multipliers.push(utility.evidence!.opponents[0].foldMul);
           const jam = utility.candidates.find((candidate) => candidate.action === 'all_in');
           expect(jam).toBeDefined();
@@ -2507,6 +2527,7 @@ describe('Phase 7 live action-clock wiring', () => {
 
           // A later real ingestion changes the canonical pooled reads. DEEP
           // must borrow FAST's original view, not recertify that new state.
+          defaults.observeCompletedHand(completion(41, response === 'fold' ? 'call' : 'fold'));
           runtime.receive(completion(41, response === 'fold' ? 'call' : 'fold'));
           await runtime.drain();
           expect(HorseMind.getStats(opponentId)?.hands).toBe(41);

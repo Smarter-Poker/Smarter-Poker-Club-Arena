@@ -40,6 +40,7 @@ import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
+import { formatPopupText } from '../../utils/popupStyle';
 /**
  * Suit glyphs for the peel index (text symbols, U+2660-2667, with the text
  * variation selector so no platform swaps in an emoji). Same characters
@@ -220,6 +221,8 @@ export interface SeatPlayer {
   /** Equipped avatar aura token (`aura-fire`, ...), from `profiles.equipped_aura`. */
   aura?: string;
   stack: number;
+  /** True while no authoritative balance is available; known zero stays zero. */
+  stackPending?: boolean;
   status: PlayerStatus;
   /**
    * Dan 2026-08-18: a slot may be null. When a player reveals only SOME of
@@ -323,6 +326,15 @@ export interface SeatSlotProps {
    */
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * Dan 2026-10-24 ("PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS BETTER"):
+   * the name of the hand THIS seat tabled at showdown, from the engine's
+   * showdown event. Printed under a beaten hand that is still face up, muted
+   * beside the winner's gold label, so every hand on the felt says what it
+   * is. Never rendered for the winner (the winner label is that seat's
+   * line), for a mucked hand, or while the hero's own live read is showing.
+   */
+  shownHandName?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (spec section 15): indices of THIS winner's
    * own hole cards that participate in the winning five-card hand, from the
@@ -899,6 +911,7 @@ export const SeatSlot = memo(
       netWinAmount,
       bbjCreditAmount,
       winningHandName,
+      shownHandName,
       handStrength,
       hudStats,
       showHUD = false,
@@ -1290,8 +1303,9 @@ export const SeatSlot = memo(
     const seatedIdRef = React.useRef<string | null>(player?.id ?? null);
     const playerId = player?.id ?? null;
     useEffect(() => {
-      if (!player) {
-        seatedIdRef.current = null; // Player left — reset for next occupant
+      if (!player || player.stackPending) {
+        seatedIdRef.current = null; // Unknown balance or a new occupant starts fresh.
+        setStackDelta(0);
         return;
       }
       const sameOccupant = seatedIdRef.current === player.id;
@@ -1321,7 +1335,7 @@ export const SeatSlot = memo(
       // A contribution or new occupant clears any previous gain. The effect
       // cleanup cancelled its timer, so do not leave stale animation state.
       setStackDelta(0);
-    }, [player?.stack, playerId]);
+    }, [player?.stack, player?.stackPending, playerId]);
 
     /**
      * Which avatar URL (if any) failed to load, so the monogram can take over.
@@ -2336,8 +2350,9 @@ export const SeatSlot = memo(
     const prevStackForGlowRef = React.useRef<number>(player?.stack ?? 0);
     const glowOccupantRef = React.useRef<string | null>(player?.id ?? null);
     useEffect(() => {
-      if (!player) {
+      if (!player || player.stackPending) {
         glowOccupantRef.current = null;
+        setStackGlow(false);
         return;
       }
       const prev = prevStackForGlowRef.current;
@@ -2352,7 +2367,7 @@ export const SeatSlot = memo(
           return () => clearTimeout(timer);
         }
       }
-    }, [player?.stack, playerId]);
+    }, [player?.stack, player?.stackPending, playerId]);
 
     const containerClasses = useMemo(() => {
       const cls = ['seat'];
@@ -2955,7 +2970,7 @@ export const SeatSlot = memo(
         /* isActingNow: a screen reader must not keep announcing a folded seat
            as "acting now" for the round trip it takes the snapshot to move the
            turn along - the same stale-turn window the countdown ring had. */
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stackPending ? 'Unavailable' : player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Ordinary actions stay above the avatar. ALL IN is printed only on
@@ -3430,9 +3445,14 @@ export const SeatSlot = memo(
               what renders is what fits, whole characters, no dots. */}
           <span className="seat__name">{limitSeatName(player.name)}</span>
           <span
-            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
+            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${player.stackPending ? '' : getStackDepthClass(player.stack, bigBlind)}`}
+            aria-busy={!!player.stackPending}
           >
-            {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
+            {player.stackPending
+              ? '...'
+              : showStackInBB
+                ? formatStackAsBB(player.stack, bigBlind)
+                : formatStack(player.stack)}
           </span>
 
           {/* Armed time bank — the seat-level replacement for the toast that
@@ -3722,7 +3742,21 @@ export const SeatSlot = memo(
         )}
 
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
-        {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+        {isWinner && winningHandName && (
+          <div className="seat__hand-name seat__hand-name--winner">
+            {formatPopupText(winningHandName)}
+          </div>
+        )}
+        {/* Dan 2026-10-24: a beaten hand that is still face up names itself. */}
+        {!isWinner &&
+          shownHandName &&
+          !isMuckedShowdown &&
+          !isMucking &&
+          !(player.isHero && handStrength && !squeezeDown) && (
+            <div className="seat__hand-name seat__hand-name--shown">
+              {formatPopupText(shownHandName)}
+            </div>
+          )}
 
         {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this
             hand muckable — its cards were never revealed. The label is the
@@ -3926,6 +3960,7 @@ export const SeatSlot = memo(
     if (prev.bountyUnitCents !== next.bountyUnitCents) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
+    if (prev.shownHandName !== next.shownHandName) return false;
     if (prev.handStrength !== next.handStrength) return false;
     if (prev.netWinAmount !== next.netWinAmount) return false;
     if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;
@@ -4031,6 +4066,7 @@ export const SeatSlot = memo(
     if (pp.id !== np.id) return false;
     if (pp.name !== np.name) return false;
     if (pp.stack !== np.stack) return false;
+    if (pp.stackPending !== np.stackPending) return false;
     if (pp.status !== np.status) return false;
     if (pp.isHero !== np.isHero) return false;
     if (pp.showCards !== np.showCards) return false;

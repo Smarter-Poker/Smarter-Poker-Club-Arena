@@ -10,8 +10,24 @@
  * horses 3-bet the human's open more often than with the layer ablated, and
  * the layer's own telemetry proves it decided.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { playPressureArm } from './HorseAggressiveHumanPressure.test-support.js';
+import { HorseLogic } from './HorseLogic.js';
+
+describe('pressure behavior evidence uses the accepted horse action', () => {
+  it('refuses an illegal horse raise instead of measuring a substituted call', () => {
+    const decide = vi.spyOn(HorseLogic, 'decide').mockReturnValue({
+      action: 'raise',
+      amount: -1,
+      thinkTime: 0,
+    });
+    try {
+      expect(() => playPressureArm('plo5', 1, 41, {})).toThrow(/horse decision rejected/);
+    } finally {
+      decide.mockRestore();
+    }
+  });
+});
 
 describe('V53 pressure is on for every horse by default, in every Omaha game', () => {
   for (const variant of ['plo4', 'plo5', 'plo6'] as const) {
@@ -24,4 +40,14 @@ describe('V53 pressure is on for every horse by default, in every Omaha game', (
       expect(on.vsOpen.call).toBeLessThan(off.vsOpen.call);
     }, 300_000);
   }
+});
+
+describe("V53: a horse that opened stops flatting the aggressive human's 3-bet", () => {
+  it("plo5: fewer flats and more 4-bets of the human's 3-bet than with the layer ablated", () => {
+    const on = playPressureArm('plo5', 220, 41, {});
+    const off = playPressureArm('plo5', 220, 41, { v53Pressure: false });
+    expect(on.fires.v53_pressure_four_bet ?? 0).toBeGreaterThan(0);
+    expect(on.vsThreeBet.call).toBeLessThan(off.vsThreeBet.call);
+    expect(on.vsThreeBet.raise).toBeGreaterThan(off.vsThreeBet.raise);
+  }, 300_000);
 });

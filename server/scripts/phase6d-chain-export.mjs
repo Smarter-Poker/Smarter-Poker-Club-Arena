@@ -34,6 +34,37 @@ import { basename, dirname, resolve } from 'node:path';
 const sha256 = (v) => createHash('sha256').update(v).digest('hex');
 const HOUR_MS = 3_600_000;
 
+/** Bind exported records to unique retained decisions, before writing output.
+ * Missing records remain explicitly missing; mismatched bytes are refused. */
+export function selectExportedDecisions(chains, records) {
+  if (!Array.isArray(chains) || !Array.isArray(records)) throw Error('invalid decision selection');
+  const wanted = new Map();
+  for (const chain of chains) {
+    if (
+      !chain ||
+      typeof chain.decisionId !== 'string' ||
+      typeof chain.decisionRecordDigest !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(chain.decisionId) ||
+      !/^[0-9a-f]{64}$/.test(chain.decisionRecordDigest) ||
+      wanted.has(chain.decisionId)
+    )
+      throw Error('population decision identity unavailable');
+    wanted.set(chain.decisionId, chain.decisionRecordDigest);
+  }
+  const found = new Map();
+  for (const record of records) {
+    if (!record || !wanted.has(record.eventId) || wanted.get(record.eventId) !== record.sha256)
+      throw Error('exported decision digest mismatch');
+    found.set(record.eventId, record);
+  }
+  return {
+    records: chains.flatMap((chain) =>
+      found.has(chain.decisionId) ? [found.get(chain.decisionId)] : []
+    ),
+    missing: wanted.size - found.size,
+  };
+}
+
 /* THE ARCHIVE IS ONE CATALOG PER DECISION SHARD (2026-09-29). This file is sent
    whole to the observer container, so it cannot import the population tool's
    copy of these helpers; tests/phase6ReviewToolsReadEveryShard pins that the
@@ -82,14 +113,18 @@ async function runExport(payloadB64) {
   const { DatabaseSync } = await import('node:sqlite');
   const { gunzipSync } = await import('node:zlib');
   const { readFileSync: readFile } = await import('node:fs');
-  const [store, config, record] = await Promise.all([
+  const [store, config, record, review] = await Promise.all([
     import('/app/dist/services/horseDecisionJournal/store.js'),
     import('/app/dist/services/horseDecisionJournal/config.js'),
     import('/app/dist/services/horseDecisionJournal/record.js'),
+    import('/app/dist/services/horseDecisionJournal/review.js'),
   ]);
+  if (review.HORSE_JOURNAL_HAND_READER_VERSION !== 2)
+    throw Error('complete_hand_reader_unavailable');
   // Every archive shard, exactly as the population observer walks them
   // (phase6d-population.mjs, archiveShardNames): a decision the population
-  // admitted from any shard must be found here in that shard.
+  // admitted from any shard must be found. Catalogs select candidate keys;
+  // the canonical reader joins their complete retained hand context.
   const shardNames = archiveShardNames(config, directory);
   const found = new Map();
   let handsTotal = 0;
@@ -171,7 +206,7 @@ async function runExport(payloadB64) {
             if (found.size >= wanted.size) break shards;
             let records;
             try {
-              records = journal.readHand(row.hand_key);
+              records = review.readHorseJournalHandRecords(directory, row.hand_key);
             } catch {
               continue;
             }
@@ -264,6 +299,7 @@ function runOnHost({ declarationPath, population, sshTarget, sshKey, out, report
   const declaration = JSON.parse(readFileSync(resolve(declarationPath), 'utf8'));
   const populationText = readFileSync(resolve(population), 'utf8');
   const pop = JSON.parse(populationText);
+  selectExportedDecisions(pop.chains, []);
   const release =
     typeof pop.servingRelease === 'string' ? pop.servingRelease : pop.servingRelease.sha;
   const wantedEventIds = pop.chains.map((c) => c.decisionId);
@@ -295,7 +331,11 @@ function runOnHost({ declarationPath, population, sshTarget, sshKey, out, report
       sshTarget,
       'python3 -c ' + shellQuote(REMOTE_RUNNER),
     ],
-    { input: JSON.stringify(payload), maxBuffer: 128 * 1024 * 1024, timeout: (deadline + 90) * 1000 }
+    {
+      input: JSON.stringify(payload),
+      maxBuffer: 128 * 1024 * 1024,
+      timeout: (deadline + 90) * 1000,
+    }
   );
   if (run.status !== 0) {
     throw Error(
@@ -303,16 +343,12 @@ function runOnHost({ declarationPath, population, sshTarget, sshKey, out, report
     );
   }
   const result = JSON.parse(run.stdout.toString('utf8'));
-  if (result.executionStatus === 'unavailable') throw Error('export_unavailable: ' + result.errorText);
+  if (result.executionStatus === 'unavailable')
+    throw Error('export_unavailable: ' + result.errorText);
   const exportResult = result.export;
-  const byEventId = new Map(exportResult.records.map((r) => [r.eventId, r]));
-  const lines = [];
-  let missing = 0;
-  for (const c of pop.chains) {
-    const r = byEventId.get(c.decisionId);
-    if (r) lines.push(JSON.stringify(r));
-    else missing++;
-  }
+  const selected = selectExportedDecisions(pop.chains, exportResult.records);
+  const lines = selected.records.map((record) => JSON.stringify(record));
+  const missing = selected.missing;
   mkdirSync(dirname(resolve(out)), { recursive: true });
   writeFileSync(resolve(out), lines.join('\n') + (lines.length ? '\n' : ''));
   const report = {

@@ -1,0 +1,309 @@
+name: Horse Phase 14 Independent Qualification
+run-name: Horse Phase 14 qualification ${{ inputs.plan_commit }}
+
+# Explicit finite qualification only. No schedule, publishing, source override,
+# deployment dispatch or release authority. Private source is reacquired through
+# the canonical pinned SSH reader; public artifacts contain no raw journal/cards.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Qualification or purpose-only credential identity check
+        required: true
+        default: qualification
+        type: choice
+        options:
+          - qualification
+          - signer-identity
+      plan_commit:
+        description: Protected plan commit, not an engine-source override
+        required: false
+        type: string
+      plan_path:
+        description: Exact docs/evidence/phase14/plans/*.json path
+        required: false
+        type: string
+      plan_sha256:
+        description: SHA256 of the exact committed plan bytes
+        required: false
+        type: string
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: horse-phase14-independent-qualification
+  queue: max
+  cancel-in-progress: false
+env:
+  SUPABASE_URL: https://supabase.invalid
+  SUPABASE_SERVICE_ROLE_KEY: qualification-context-offline-placeholder
+  EQUITY_GOVERNOR: 'off'
+
+jobs:
+  context:
+    name: Authenticate protected plan and canonical runtime
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'qualification'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      source_sha: ${{ steps.context.outputs.source_sha }}
+      node_version: ${{ steps.context.outputs.node_version }}
+      v8: ${{ steps.context.outputs.v8 }}
+      arch: ${{ steps.context.outputs.arch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Configure only canonical private reader identity
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          READER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          P14_PRIVATE="$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB"
+          mkdir "$P14_PRIVATE"
+          test -n "$SSH_KEY" && test -n "$HOST_KEY" && test -n "$READER_HOST"
+          printf '%s\n' "$SSH_KEY" > "$P14_PRIVATE/identity"
+          printf '%s\n' "$HOST_KEY" > "$P14_PRIVATE/known_hosts"
+          chmod 0600 "$P14_PRIVATE/identity" "$P14_PRIVATE/known_hosts"
+          ssh-keygen -l -f "$P14_PRIVATE/known_hosts" >/dev/null
+          {
+            echo "P14_PRIVATE=$P14_PRIVATE"
+            echo "HORSE_REVIEW_SSH_KEY_PATH=$P14_PRIVATE/identity"
+            echo "HORSE_REVIEW_SSH_KNOWN_HOSTS_PATH=$P14_PRIVATE/known_hosts"
+            echo "HORSE_REVIEW_SSH_HOST=$READER_HOST"
+          } >> "$GITHUB_ENV"
+      - name: Authenticate immutable plan and metadata-only image probe
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_COMMIT: ${{ inputs.plan_commit }}
+          PLAN_PATH: ${{ inputs.plan_path }}
+          PLAN_SHA256: ${{ inputs.plan_sha256 }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          const predeclaration={commitSha:process.env.PLAN_COMMIT,path:process.env.PLAN_PATH,contentSha256:process.env.PLAN_SHA256};
+          writeFileSync(process.env.P14_PRIVATE+'/context-input.json',JSON.stringify({version:1,predeclaration}),{mode:0o600});
+          JS
+          node --import tsx src/scripts/horseCorrectiveKernelIssue.ts context "$P14_PRIVATE/context-input.json" "$P14_PRIVATE/context.json"
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const value=JSON.parse(readFileSync(process.env.P14_PRIVATE+'/context.json','utf8'));
+          if(value.status!=='qualification_context'||!/^[a-f0-9]{40}$/.test(value.sourceRelease)||!/^v22\.\d+\.\d+$/.test(value.runtime.node)||value.runtime.arch!=='x64'||!/^[a-zA-Z0-9_.-]+$/.test(value.runtime.v8))throw Error('canonical runtime unavailable');
+          appendFileSync(process.env.GITHUB_OUTPUT,'source_sha='+value.sourceRelease+'\nnode_version='+value.runtime.node+'\nv8='+value.runtime.v8+'\narch='+value.runtime.arch+'\n');
+          JS
+      - name: Remove only this job's private files
+        if: always()
+        run: |
+          if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi
+
+  producer:
+    name: Acquire complete unsigned source population
+    needs: context
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'qualification'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    outputs:
+      requests_digest: ${{ steps.produce.outputs.requests_digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.context.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.context.outputs.node_version }}
+          architecture: x64
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Configure canonical reader without any issuer key
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          READER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          P14_PRIVATE="$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB"
+          mkdir "$P14_PRIVATE"
+          test -n "$SSH_KEY" && test -n "$HOST_KEY" && test -n "$READER_HOST"
+          printf '%s\n' "$SSH_KEY" > "$P14_PRIVATE/identity"
+          printf '%s\n' "$HOST_KEY" > "$P14_PRIVATE/known_hosts"
+          chmod 0600 "$P14_PRIVATE/identity" "$P14_PRIVATE/known_hosts"
+          ssh-keygen -l -f "$P14_PRIVATE/known_hosts" >/dev/null
+          {
+            echo "P14_PRIVATE=$P14_PRIVATE"
+            echo "HORSE_REVIEW_SSH_KEY_PATH=$P14_PRIVATE/identity"
+            echo "HORSE_REVIEW_SSH_KNOWN_HOSTS_PATH=$P14_PRIVATE/known_hosts"
+            echo "HORSE_REVIEW_SSH_HOST=$READER_HOST"
+          } >> "$GITHUB_ENV"
+      - name: Reacquire canonical complete population
+        id: produce
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PLAN_COMMIT: ${{ inputs.plan_commit }}
+          PLAN_PATH: ${{ inputs.plan_path }}
+          PLAN_SHA256: ${{ inputs.plan_sha256 }}
+          EXPECTED_SOURCE: ${{ needs.context.outputs.source_sha }}
+          EXPECTED_V8: ${{ needs.context.outputs.v8 }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          if(process.versions.v8!==process.env.EXPECTED_V8||process.arch!=='x64')throw Error('original runtime mismatch');
+          const predeclaration={commitSha:process.env.PLAN_COMMIT,path:process.env.PLAN_PATH,contentSha256:process.env.PLAN_SHA256};
+          writeFileSync(process.env.P14_PRIVATE+'/producer-input.json',JSON.stringify({version:1,predeclaration}),{mode:0o600});
+          JS
+          node --import tsx src/scripts/horseCorrectiveKernelIssue.ts produce "$P14_PRIVATE/producer-input.json" "$P14_PRIVATE/producer.json"
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const value=JSON.parse(readFileSync(process.env.P14_PRIVATE+'/producer.json','utf8'));
+          if(value.status!=='produced_unsigned_population'||value.sourceRelease!==process.env.EXPECTED_SOURCE||!/^[a-f0-9]{64}$/.test(value.producerRequestsDigest))throw Error('unsigned source unavailable');
+          appendFileSync(process.env.GITHUB_OUTPUT,'requests_digest='+value.producerRequestsDigest+'\n');
+          JS
+      - name: Retain only the public unsigned receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase14-unsigned-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.P14_PRIVATE }}/producer.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Remove only this job's private files
+        if: always()
+        run: |
+          if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi
+
+  issuer:
+    name: Independently verify and issue qualification
+    needs: [context, producer]
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'qualification'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: HorseCorrectiveQualification
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.context.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.context.outputs.node_version }}
+          architecture: x64
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Configure canonical reader independently
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          READER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          P14_PRIVATE="$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB"
+          mkdir "$P14_PRIVATE"
+          test -n "$SSH_KEY" && test -n "$HOST_KEY" && test -n "$READER_HOST"
+          printf '%s\n' "$SSH_KEY" > "$P14_PRIVATE/identity"
+          printf '%s\n' "$HOST_KEY" > "$P14_PRIVATE/known_hosts"
+          chmod 0600 "$P14_PRIVATE/identity" "$P14_PRIVATE/known_hosts"
+          ssh-keygen -l -f "$P14_PRIVATE/known_hosts" >/dev/null
+          {
+            echo "P14_PRIVATE=$P14_PRIVATE"
+            echo "HORSE_REVIEW_SSH_KEY_PATH=$P14_PRIVATE/identity"
+            echo "HORSE_REVIEW_SSH_KNOWN_HOSTS_PATH=$P14_PRIVATE/known_hosts"
+            echo "HORSE_REVIEW_SSH_HOST=$READER_HOST"
+          } >> "$GITHUB_ENV"
+      - name: Recompute every gate before loading the purpose-only key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HORSE_PHASE14_QUALIFICATION_SIGNING_KEY: ${{ secrets.HORSE_PHASE14_QUALIFICATION_SIGNING_KEY }}
+          PLAN_COMMIT: ${{ inputs.plan_commit }}
+          PLAN_PATH: ${{ inputs.plan_path }}
+          PLAN_SHA256: ${{ inputs.plan_sha256 }}
+          PRODUCER_REQUESTS_DIGEST: ${{ needs.producer.outputs.requests_digest }}
+          EXPECTED_V8: ${{ needs.context.outputs.v8 }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          if(process.versions.v8!==process.env.EXPECTED_V8||process.arch!=='x64')throw Error('original runtime mismatch');
+          const predeclaration={commitSha:process.env.PLAN_COMMIT,path:process.env.PLAN_PATH,contentSha256:process.env.PLAN_SHA256};
+          writeFileSync(process.env.P14_PRIVATE+'/issuer-input.json',JSON.stringify({version:1,predeclaration,scratchRoot:process.env.P14_PRIVATE,producerRequestsDigest:process.env.PRODUCER_REQUESTS_DIGEST}),{mode:0o600});
+          JS
+          node --import tsx src/scripts/horseCorrectiveKernelIssue.ts issue "$P14_PRIVATE/issuer-input.json" "$P14_PRIVATE/qualification.json"
+      - name: Retain only signed qualification or bounded unavailable receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase14-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.P14_PRIVATE }}/qualification.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Remove only this job's private files
+        if: always()
+        run: |
+          if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi
+
+  signer-identity:
+    name: Verify purpose-only canonical signing identity
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'signer-identity'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: HorseCorrectiveQualification
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Prepare explicit private identity input
+        run: |
+          set -euo pipefail
+          umask 077
+          P14_PRIVATE="$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB"
+          mkdir "$P14_PRIVATE"
+          printf '%s\n' '{"version":1}' > "$P14_PRIVATE/identity-input.json"
+          echo "P14_PRIVATE=$P14_PRIVATE" >> "$GITHUB_ENV"
+      - name: Sign and verify the fixed non-approval identity domain
+        working-directory: server
+        env:
+          HORSE_PHASE14_QUALIFICATION_SIGNING_KEY: ${{ secrets.HORSE_PHASE14_QUALIFICATION_SIGNING_KEY }}
+        run: node --import tsx src/scripts/horseCorrectiveKernelIssue.ts identity "$P14_PRIVATE/identity-input.json" "$P14_PRIVATE/identity.json"
+      - name: Retain only public signer identity result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase14-signer-identity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.P14_PRIVATE }}/identity.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Remove only this job's private files
+        if: always()
+        run: |
+          if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi

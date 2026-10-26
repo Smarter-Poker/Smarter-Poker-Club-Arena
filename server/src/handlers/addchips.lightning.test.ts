@@ -45,4 +45,23 @@ describe('add chips from a Lightning room', () => {
     expect((await request()).status).toBe(404);
     expect(addChips).not.toHaveBeenCalled();
   });
+
+  it('preserves the original operation and classifies an unknown funding result as unavailable', async () => {
+    lightningAnchorFor.mockResolvedValue({ anchorTableId: anchorTable });
+    vi.mocked(readBody).mockResolvedValue(
+      JSON.stringify({ tableId: room, amount: 25, opId: 'original-123' })
+    );
+    addChips.mockResolvedValue({ success: false, code: 'TRANSPORT', error: 'Unable To Verify' });
+    expect(await request()).toMatchObject({
+      status: 503,
+      body: { success: false, code: 'TRANSPORT' },
+    });
+    expect(addChips).toHaveBeenCalledWith('owner', 25, 'original-123');
+  });
+
+  it('keeps an authoritative uncharged refusal a client response', async () => {
+    lightningAnchorFor.mockResolvedValue({ anchorTableId: anchorTable });
+    addChips.mockResolvedValue({ success: false, status: 'refused', charged: false, applied: 0 });
+    expect(await request()).toMatchObject({ status: 400, body: { charged: false, applied: 0 } });
+  });
 });

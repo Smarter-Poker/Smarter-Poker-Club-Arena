@@ -1,3 +1,5 @@
+import { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
+export { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
 import { qualifyHorseRetainedDecisionEffects, horseRetainedPlanContext } from './effects.js';
 import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
 import { horsePhase6AttributionMatchesSnapshot } from '../../engine/HorsePhase6Attribution.js';
@@ -92,6 +94,8 @@ export interface HorseJournalHandReview {
   retainedRecords: number;
   acceptedHorseActions: number;
   matchedActions: number;
+  independentReadActions: number;
+  independentReadsVerified: boolean;
   retiredDecisions: number;
   discardDecisions: number;
   acceptedDiscardActions: number;
@@ -118,6 +122,8 @@ const empty = (): HorseJournalHandReview => ({
   retainedRecords: 0,
   acceptedHorseActions: 0,
   matchedActions: 0,
+  independentReadActions: 0,
+  independentReadsVerified: false,
   retiredDecisions: 0,
   discardDecisions: 0,
   acceptedDiscardActions: 0,
@@ -249,6 +255,7 @@ function completedActionsAreValid(actions: unknown): boolean {
 }
 
 type Capture = {
+  observerReads?: unknown;
   snapshot: FastHorseDecisionRequest | DeepHorseDecisionRequest;
   readFrame: Parameters<typeof decodeHorseDecisionReads>[0];
   decision: HorseDecision;
@@ -557,6 +564,7 @@ export function reconcileHorseJournalHand(
     });
     out.acceptedHorseActions = expected.size;
     const matches = new Map<number, number>();
+    const independentMatches = new Map<number, number>();
     for (const turn of turns.values()) {
       if (turn.decisions.length > 1 || turn.executions.length > 1) {
         gap('turn_conflict');
@@ -616,23 +624,27 @@ export function reconcileHorseJournalHand(
         const phase11Withdrawn = w.phase11Authority?.selection === 'withdrawn_before_acceptance';
         const phase12Withdrawn = w.phase12Authority?.selection === 'withdrawn_before_acceptance';
         const phase13Withdrawn = w.phase13Authority?.selection === 'withdrawn_before_acceptance';
-        const expectedSelected = phase8Withdrawn
-          ? expectedWitness.phase8Authority?.reference
-          : phase10Withdrawn
-            ? expectedWitness.phase10Authority?.reference
-            : phase11Withdrawn
-              ? expectedWitness.phase11Authority?.reference
-              : phase12Withdrawn
-                ? expectedWitness.phase12Authority?.reference
-                : phase13Withdrawn
-                  ? expectedWitness.phase13Authority?.reference
-                  : expectedWitness.selected;
+        const phase14Withdrawn = w.phase14Authority?.selection === 'withdrawn_before_acceptance';
+        const expectedSelected = phase14Withdrawn
+          ? expectedWitness.phase14Authority?.reference
+          : phase8Withdrawn
+            ? expectedWitness.phase8Authority?.reference
+            : phase10Withdrawn
+              ? expectedWitness.phase10Authority?.reference
+              : phase11Withdrawn
+                ? expectedWitness.phase11Authority?.reference
+                : phase12Withdrawn
+                  ? expectedWitness.phase12Authority?.reference
+                  : phase13Withdrawn
+                    ? expectedWitness.phase13Authority?.reference
+                    : expectedWitness.selected;
         const expectedAmount =
           (phase8Withdrawn ||
             phase10Withdrawn ||
             phase11Withdrawn ||
             phase12Withdrawn ||
-            phase13Withdrawn) &&
+            phase13Withdrawn ||
+            phase14Withdrawn) &&
           expectedSelected
             ? expectedHorseExecutionAmount(s, {
                 action: expectedSelected.action,
@@ -654,6 +666,9 @@ export function reconcileHorseJournalHand(
           !qualifiedOutcomeIsCoherent(w, w.phase12Authority) ||
           !phase8BindingMatches(w.phase13Authority, expectedWitness.phase13Authority) ||
           !qualifiedOutcomeIsCoherent(w, w.phase13Authority) ||
+          !phase8BindingMatches(w.phase14Authority, expectedWitness.phase14Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase14Authority) ||
+          !same(w.phase14Inputs ?? null, expectedWitness.phase14Inputs ?? null) ||
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
@@ -736,16 +751,27 @@ export function reconcileHorseJournalHand(
           continue;
         }
         matches.set(binding.actionOrdinal, (matches.get(binding.actionOrdinal) ?? 0) + 1);
+        if (horseObserverReadsWereIndependent(d.observerReads, s))
+          independentMatches.set(
+            binding.actionOrdinal,
+            (independentMatches.get(binding.actionOrdinal) ?? 0) + 1
+          );
       } catch {
         gap('input_mismatch');
       }
     }
     for (const ordinal of expected) {
       const count = matches.get(ordinal) ?? 0;
-      if (count === 1) out.matchedActions++;
-      else gap(count > 1 ? 'multiple_decisions_for_action' : 'unmatched_horse_action');
+      if (count === 1) {
+        out.matchedActions++;
+        if (independentMatches.get(ordinal) === 1) out.independentReadActions++;
+      } else gap(count > 1 ? 'multiple_decisions_for_action' : 'unmatched_horse_action');
     }
     out.status = out.gaps.length ? 'incomplete' : 'reconciled';
+    out.independentReadsVerified =
+      out.status === 'reconciled' &&
+      out.acceptedHorseActions > 0 &&
+      out.independentReadActions === out.acceptedHorseActions;
     return out;
   } catch {
     gap('invalid_records');
@@ -753,20 +779,20 @@ export function reconcileHorseJournalHand(
   }
 }
 
-/** One hand's records live in exactly one decision-shard's catalog (the lane
- * shards by table id, and every fence for a table begins with it - see
- * lane.ts), so a reader with no other way to know which shard captured a
- * given hand tries each existing archive directory in turn and keeps the
- * first that actually holds the hand. Unsharded deployments (the overwhelming
- * common case) have exactly one candidate, 'archive', and this is then
- * byte-for-byte what a single `new HorseDecisionJournalStore` + `readHand`
- * always did: one attempt, its own error or its own (possibly empty) result. */
+/** Required by batch tools before trusting a complete retained-hand read. */
+export const HORSE_JOURNAL_HAND_READER_VERSION = 2;
+
+/** Read every retained archive: a first fragment is not complete evidence.
+ * Identical copies count once; conflicting identities or an unreadable archive
+ * refuse the read rather than silently qualifying a partial hand. */
 export function readHorseJournalHandRecords(
   directory: string,
   handKey: string
 ): readonly HorseJournalRecord[] {
   const names = horseJournalArchiveDirectoryNames(directory);
   const candidates = names.length ? names : ['archive'];
+  const joined = new Map<string, HorseJournalRecord>();
+  let joinedBytes = 0;
   let lastError: unknown;
   for (const name of candidates) {
     let store: HorseDecisionJournalStore | undefined;
@@ -776,7 +802,16 @@ export function readHorseJournalHandRecords(
         readonlyHorseJournalStoreOptions(directory, name)
       );
       const records = store.readHand(handKey);
-      if (records.length) return records;
+      for (const record of records) {
+        const previous = joined.get(record.eventId);
+        if (previous && previous.sha256 !== record.sha256)
+          throw Error('Conflicting Horse journal event across archives');
+        if (previous) continue;
+        joinedBytes += Buffer.byteLength(horseJournalJson(record));
+        if (joined.size >= 256 || joinedBytes > 8 * 1024 * 1024)
+          throw Error('Horse journal read exceeds bounds');
+        joined.set(record.eventId, record);
+      }
     } catch (error) {
       lastError = error;
       continue;
@@ -789,7 +824,9 @@ export function readHorseJournalHandRecords(
     }
   }
   if (lastError !== undefined) throw lastError;
-  return [];
+  return [...joined.values()].sort(
+    (a, b) => a.producerId.localeCompare(b.producerId) || a.sequence - b.sequence
+  );
 }
 
 /** Explicit offline reader. No implicit creation, migration, export, deletion,

@@ -60,7 +60,13 @@ describe('the migration is one guarded transaction', () => {
     expect(SQL).toContain('readback mismatch');
     const post = /md5\(patched\) <> '([0-9a-f]{32})'/.exec(SQL);
     expect(post).not.toBeNull();
-    expect(SQL).toContain(`@live-proof: md5(pg_get_functiondef('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)'::regprocedure)) = '${post![1]}'`);
+    // The migration is the byte-exact recording of what production ran
+    // (scripts/ci/recorded-migrations.manifest.json), so its post-image is
+    // pinned here and in the manifest's production readback, not in a header.
+    expect(post![1]).toBe('b1c21e14021e0e2e7bba28048dcec90e');
+    expect(fs.readFileSync('scripts/ci/recorded-migrations.manifest.json', 'utf8')).toContain(
+      `fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid) reads definition md5 ${post![1]}`
+    );
   });
 
   it('replaces no other function and writes no row', () => {

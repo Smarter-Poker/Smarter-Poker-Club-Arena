@@ -48,8 +48,9 @@ export interface CashierModalProps {
    * the boolean makes that revert a build error instead.
    */
   /** `opId` is the modal's per-attempt idempotency id (see opIdRef). */
-  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
+  onAddChips: (amount: number, opId?: string, onTerminalRefusal?: () => void) => Promise<boolean>;
   currentStack: number;
+  currentStackPending?: boolean;
   /** null = unknown (a failed read). Nothing can be added until it is known. */
   accountBalance: number | null;
   /**
@@ -126,6 +127,7 @@ export function CashierModal({
   onClose,
   onAddChips,
   currentStack,
+  currentStackPending = false,
   accountBalance,
   onRetryBalance,
   maxBuyIn,
@@ -171,11 +173,11 @@ export function CashierModal({
   const canAddAmount = useMemo(() => {
     const spaceInStack = maxStack - currentStack;
     // An unknown balance affords nothing - and says "Unavailable", not 0.
-    if (accountBalance === null) return 0;
+    if (accountBalance === null || currentStackPending) return 0;
     // NEVER NEGATIVE (audit C2-17). A stack already above the table maximum -
     // a pot won past it - has no room at all; it printed "Available To Add: -40".
     return Math.max(0, Math.min(spaceInStack, accountBalance, maxBuyIn));
-  }, [currentStack, maxStack, accountBalance, maxBuyIn]);
+  }, [currentStack, currentStackPending, maxStack, accountBalance, maxBuyIn]);
 
   const activeMax = canAddAmount;
 
@@ -213,7 +215,7 @@ export function CashierModal({
   const handleConfirm = useCallback(async () => {
     // busyRef, not the `busy` state: two taps inside one React batch both read
     // the stale state value and both would go through.
-    if (amount <= 0 || isProcessing || busyRef.current) return;
+    if (currentStackPending || amount <= 0 || isProcessing || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setSubmitError(null);
@@ -221,7 +223,10 @@ export function CashierModal({
 
     try {
       if (!opIdRef.current) opIdRef.current = uuid();
-      const ok = await onAddChips(amount, opIdRef.current);
+      const originalId = opIdRef.current;
+      const ok = await onAddChips(amount, originalId, () => {
+        if (opIdRef.current === originalId) opIdRef.current = null;
+      });
       if (!ok) {
         /* Cashier audit 2026-08-27 (P0-1): this banner used to assert "your
            wallet was not charged" / "your stack is unchanged" for EVERY
@@ -255,7 +260,7 @@ export function CashierModal({
       busyRef.current = false;
       setBusy(false);
     }
-  }, [amount, isProcessing, onAddChips, onClose, setAmount]);
+  }, [currentStackPending, amount, isProcessing, onAddChips, onClose, setAmount]);
 
   // Validate amount
   const isValidAmount = useMemo(() => {
@@ -355,7 +360,7 @@ export function CashierModal({
   /** The stack already fills the table maximum, so there is no room to add into (audit C2-17). */
   const atTableMax = balanceKnown && currentStack >= maxStack;
   /** An unread balance affords nothing: the money plate offers the re-read instead. */
-  const offerRetry = !balanceKnown && onRetryBalance !== undefined;
+  const offerRetry = (!balanceKnown || currentStackPending) && onRetryBalance !== undefined;
   /* Everything the sheet has to say is printed INSIDE the painted frame
      (launch audit R-05): the refusal, the cap sentence, an unread balance
      (R-14: it said "Available To Add: 0 Chips" under "Add-On Available"), a
@@ -370,6 +375,8 @@ export function CashierModal({
     <span role="status">
       {capNote} {unit}
     </span>
+  ) : currentStackPending ? (
+    <span role="status">Stack Unavailable</span>
   ) : !balanceKnown ? (
     <span role="status">Balance Unavailable</span>
   ) : atTableMax ? (
@@ -395,7 +402,11 @@ export function CashierModal({
         <PurchaseConsole
           title="Add-On Available"
           titleId="table-cashier-title"
-          subtitle={`At Table: ${formatAmount(currentStack)} ${unit}`}
+          subtitle={
+            currentStackPending
+              ? 'At Table: Unavailable'
+              : `At Table: ${formatAmount(currentStack)} ${unit}`
+          }
           status={
             <>
               <input
@@ -427,7 +438,7 @@ export function CashierModal({
                 min={0}
                 step={wholeUnits ? 1 : 0.01}
                 max={activeMax}
-                disabled={busy || isProcessing}
+                disabled={busy || isProcessing || currentStackPending}
                 aria-label="Amount To Add"
                 aria-invalid={amountText.trim() !== '' && !isValidAmount}
               />
@@ -444,7 +455,11 @@ export function CashierModal({
             <React.Fragment key="stack">
               <span>New Stack</span>
               <strong>
-                <PurchaseText>{`${formatAmount(currentStack + amount)} ${unit}`}</PurchaseText>
+                <PurchaseText>
+                  {currentStackPending
+                    ? 'Unavailable'
+                    : `${formatAmount(currentStack + amount)} ${unit}`}
+                </PurchaseText>
               </strong>
             </React.Fragment>,
             <React.Fragment key="balance">

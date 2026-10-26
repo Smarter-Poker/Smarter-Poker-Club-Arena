@@ -540,8 +540,9 @@ describe('V37 bounties: the head, not the mean; the inventory, not the badge', (
   });
 
   it('the captain opens wider and 3-bet-bluffs more against covered raisers', () => {
-    // button bar 0.27 - ante widen 0.05 = 0.22: a 0.18 folds until the field is covered
-    const open = ctx({ strength: 0.18, isButton: true, riskAdd: 0 });
+    // button bar 0.27 - ante widen 0.05 - tournament aggression 0.03 (2026-10-25)
+    // = 0.19: a 0.15 folds until the field is covered (bubble pressure -0.06)
+    const open = ctx({ strength: 0.15, isButton: true, riskAdd: 0 });
     expect(decidePreflopV7(open).a).toBe('fold');
     expect(decidePreflopV7({ ...open, bubblePressure: 1 }).a).toBe('raiseTo');
   });

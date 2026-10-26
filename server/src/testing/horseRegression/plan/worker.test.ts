@@ -6,6 +6,7 @@ import { seedFastRandom } from '../../../engine/HorseEval.js';
 import { horsePlanContextFromDecision } from '../../../engine/HorsePlanHandIdentity.js';
 import { horsePlanHandKey } from '../../../engine/HorseDecisionEffects.js';
 import { buildHorseDecisionKey } from '../../../engine/horseDecision/protocol.js';
+import { evidenceDigest } from '../../../services/horseCorrectiveReview/authority.js';
 import {
   workerHarness,
   requestAt,
@@ -46,9 +47,9 @@ describe('actual worker issue ownership and volatile plan application', () => {
       expect(HorseMind.getPlan(key, heroId)).toBeUndefined();
       h.runtime.receive(commitOf(result, 2));
       await h.runtime.drain();
-      expect(HorseMind.getPlan(key, heroId)).toBe(true);
-      expect(HorseMind.getRaisePlan(key, heroId, 'flop')).toBe('foldToRaise');
-      expect(HorseMind.outlookOf(key, heroId, 'flop', 'Ah')).toBe('good');
+      expect(h.inspect(() => HorseMind.getPlan(key, heroId))).toBe(true);
+      expect(h.inspect(() => HorseMind.getRaisePlan(key, heroId, 'flop'))).toBe('foldToRaise');
+      expect(h.inspect(() => HorseMind.outlookOf(key, heroId, 'flop', 'Ah'))).toBe('good');
       expect(h.applied()).toBe(1);
       h.runtime.receive(commitOf(result, 3));
       await h.runtime.drain();
@@ -180,7 +181,10 @@ describe('actual worker issue ownership and volatile plan application', () => {
           await h.runtime.drain();
         }
         const binding = structuredClone(fast.planBinding);
-        if (mode === 'wrong_binding') (binding as any).actorId = 'other';
+        if (mode === 'wrong_binding') {
+          (binding as any).actorId = '22222222-2222-4222-8222-222222222222';
+          (binding as any).observerReadContext.observerId = (binding as any).actorId;
+        }
         const retirement = {
           type: 'RETIRE_DECISION_EFFECTS' as const,
           requestId: 3,
@@ -298,7 +302,7 @@ describe('actual worker issue ownership and volatile plan application', () => {
       h.runtime.receive(commitOf(result, 2));
       await h.runtime.drain();
       expect(h.messages.at(-1)?.type).toBe('ERROR');
-      expect(HorseMind.getPlan(key, heroId)).toBe(true); // Partial volatile write is explicitly retained as a limitation.
+      expect(h.inspect(() => HorseMind.getPlan(key, heroId))).toBe(true); // Partial volatile write is explicitly retained as a limitation.
       h.runtime.receive(commitOf(result, 3));
       await h.runtime.drain();
       expect(h.messages.at(-1)?.type).toBe('ERROR');
@@ -410,7 +414,15 @@ describe('actual worker issue ownership and volatile plan application', () => {
       });
       expect(h.applied()).toBe(1);
       expect(h.captures).toHaveLength(2);
-      expect(h.captures[1]).not.toHaveProperty('effects');
+      expect(h.captures[1]!.effects).toEqual([]);
+      expect(h.captures[1]!.planBinding).toBeNull();
+      expect(h.captures[1]!.replayState).toMatchObject({
+        version: 'horse-decision-replay-state-v3',
+      });
+      expect(h.captures[1]!.originalFastBinding).toEqual({
+        inputDigest: evidenceDigest(h.captures[0]!.snapshot),
+        readFrameDigest: evidenceDigest(h.captures[0]!.readFrame),
+      });
       expect((h.captures[1]!.readFrame as any).sha256).toBe(
         (h.captures[0]!.readFrame as any).sha256
       );
@@ -437,7 +449,7 @@ describe('actual worker issue ownership and volatile plan application', () => {
       );
       expect(otherKey).not.toBeNull();
       expect(otherKey).not.toBe(key);
-      expect(HorseMind.getPlan(key, heroId)).toBe(true);
+      expect(h.inspect(() => HorseMind.getPlan(key, heroId))).toBe(true);
       expect(HorseMind.getPlan(otherKey, heroId)).toBeUndefined();
       for (const table of [undefined, otherTableId]) {
         const next = table ? { ...request, fence: requestAt(4, table).fence } : request;
@@ -446,12 +458,16 @@ describe('actual worker issue ownership and volatile plan application', () => {
         expect(nextKey).toBe(table ? otherKey : key);
         reads.mockClear();
         writes.mockClear();
-        HorseLogic.decide(
-          next.player,
-          next.gameState,
-          'balanced',
-          {},
-          { mindPlanContext: context, observeMind: false, telemetry: false }
+        h.inspect(
+          () =>
+            HorseLogic.decide(
+              next.player,
+              next.gameState,
+              'balanced',
+              {},
+              { mindPlanContext: context, observeMind: false, telemetry: false }
+            ),
+          next
         );
         const readIndex = reads.mock.calls.findIndex(
           (row) => row[0] === nextKey && row[1] === heroId
@@ -474,8 +490,8 @@ describe('actual worker issue ownership and volatile plan application', () => {
           expect(writes.mock.calls.every((row) => row[0] === otherKey)).toBe(true);
         }
       }
-      expect(HorseMind.getPlan(key, heroId)).toBe(true);
-      expect(HorseMind.getPlan(otherKey, heroId)).toBe(false);
+      expect(h.inspect(() => HorseMind.getPlan(key, heroId))).toBe(true);
+      expect(h.inspect(() => HorseMind.getPlan(otherKey, heroId))).toBe(false);
     } finally {
       await h.close();
     }
@@ -581,9 +597,13 @@ describe('Phase 15.1 durable accepted-effect receipt and fresh-process recovery'
       const recovery = b.h.runtime.recoverPlanReceipts(receipts, live());
       expect(recovery.outcomes).toEqual(['replaced']);
       expect(b.h.applied()).toBe(1);
-      expect(HorseMind.getPlan(keyOf(result), heroId)).toBe(true);
-      expect(HorseMind.getRaisePlan(keyOf(result), heroId, 'flop')).toBe('foldToRaise');
-      expect(HorseMind.outlookOf(keyOf(result), heroId, 'flop', 'Ah')).toBe('good');
+      expect(b.h.inspect(() => HorseMind.getPlan(keyOf(result), heroId))).toBe(true);
+      expect(b.h.inspect(() => HorseMind.getRaisePlan(keyOf(result), heroId, 'flop'))).toBe(
+        'foldToRaise'
+      );
+      expect(b.h.inspect(() => HorseMind.outlookOf(keyOf(result), heroId, 'flop', 'Ah'))).toBe(
+        'good'
+      );
       // Reconstructing again applies nothing new.
       b.h.runtime.recoverPlanReceipts(receipts, live());
       expect(b.h.applied()).toBe(1);
@@ -803,7 +823,7 @@ describe('Phase 15.1 durable accepted-effect receipt and fresh-process recovery'
       });
       expect(a.receipts).toEqual([]);
       expect(a.features).toContain('phase15_plan_receipt_unavailable');
-      expect(HorseMind.getPlan(keyOf(result), heroId)).toBe(true);
+      expect(a.h.inspect(() => HorseMind.getPlan(keyOf(result), heroId))).toBe(true);
     } finally {
       await a.h.close();
     }

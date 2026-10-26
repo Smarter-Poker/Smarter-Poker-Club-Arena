@@ -81,3 +81,34 @@ describe('operator transaction event bridge', () => {
     expect(f.send).not.toHaveBeenCalled();
   });
 });
+
+describe('private original top-up completion delivery', () => {
+  it('delivers a validated terminal receipt only to its own room callback', async () => {
+    const f = fixture(),
+      topUp = vi.fn();
+    const events = new LightningOperatorEvents(f.db as any, f.send, topUp);
+    const receipt = {
+      success: true,
+      status: 'applied',
+      queued: false,
+      charged: true,
+      applied: 30,
+      requested: 30,
+      request_id: 'original01',
+      table_id: 'anchor',
+      user_id: 'user',
+      pool_session_id: 'own-room',
+      occupancy_id: 'occupancy',
+      stack: 50,
+    };
+    await events.publish({ kind: 'lightning_top_up_completed', payload: receipt });
+    expect(topUp).toHaveBeenCalledWith(receipt);
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.lookup).not.toHaveBeenCalled();
+    await events.publish({
+      kind: 'lightning_top_up_completed',
+      payload: { ...receipt, status: 'pending', queued: true, charged: false, applied: 0 },
+    });
+    expect(topUp).toHaveBeenCalledTimes(1);
+  });
+});

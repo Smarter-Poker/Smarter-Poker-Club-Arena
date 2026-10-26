@@ -1,3 +1,34 @@
+import { horsePhase14RunningCatalogVersion } from '../HorsePhase14Authority.js';
+import { functionalKernelSnapshotRefusal } from '../../services/horseCorrectiveReview/kernelObjective.js';
+import { correctiveBaselineCompositionIsUsable } from '../../services/horseCorrectiveReview/kernelComposition.js';
+import { PHASE10_PROTECTED_RELEASE_SELECTION } from '../HorsePhase10Authority.js';
+import { PHASE11_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase11Authority.js';
+import { PHASE12_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase12Authority.js';
+import { PHASE13_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase13Authority.js';
+import { evidenceDigest } from '../../services/horseCorrectiveReview/authority.js';
+import {
+  admitHorsePhase14ReleaseAttachment,
+  HORSE_PHASE14_DOMAINS,
+  horsePhase14ContinuationVersion,
+  horsePhase14CorrectiveMode,
+} from '../HorsePhase14Authority.js';
+import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../../services/horseCorrectiveReview/kernelCatalog.js';
+import type { CorrectiveFunctionalKernelCatalog as CorrectiveKernelCatalog } from '../../services/horseCorrectiveReview/kernelObjective.js';
+import type { CorrectiveKernelAttachmentAdmission } from '../../services/horseCorrectiveReview/kernelAdmission.js';
+import {
+  createCorrectiveKernelEvaluator,
+  type CorrectiveKernelEvaluator,
+} from '../../services/horseCorrectiveReview/liveKernel.js';
+import {
+  correctiveDecisionDomain,
+  correctiveDomainKey,
+  CORRECTIVE_DOMAINS,
+} from '../../services/horseCorrectiveReview/domain.js';
+import { validHorseTournamentPayoutTerms } from '../HorseTournamentPayoutTerms.js';
+import { validOpponentDonorProfiles, type MemorySize } from '../HorseOpponentMemory.js';
+import { ownPublicHistoryIsValid } from './ownPublicHistory.js';
+import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
+import { HorseObserverReads, type HorseObserverReadReceipt } from './observerReads.js';
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
@@ -56,7 +87,7 @@ import {
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
 import { completedHandActionsForMind } from './completedHandActions.js';
-import { HorseMindMirror, type HorseMindMirrorOutcome } from './mindMirror.js';
+import { type HorseMindMirrorOutcome } from './mindMirror.js';
 import { readReturnedRosterTransport } from '../../services/horseAcceptedRoster/schema.js';
 import {
   horseMindHandFromDecision,
@@ -76,7 +107,7 @@ import {
 } from '../HorseDecisionEffects.js';
 import { prepareTournamentFutureHandFacts } from '../HorseTournamentFutureHand.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
-import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
+import { restoreFastRandom, saveFastRandom, fastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
@@ -94,6 +125,7 @@ import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import type { HorseDecision } from '../../types.js';
 import {
   admitHorsePhase8ReleaseAuthority,
+  PHASE8_PROTECTED_RELEASE_SELECTION,
   HorseQualifiedAuthorityHolder,
   type HorseAuthorityAdmission,
   type HorseAuthorityReceipt,
@@ -184,11 +216,15 @@ import type {
   HorseDecisionStatusRequest,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
-import { horseDecisionReplayState } from './replayState.js';
+import {
+  horseDecisionReplayState,
+  horseCorrectiveReplayState,
+  currentHorseDecisionRuntime,
+} from './replayState.js';
 
 /** Trusted in-process construction seam; never part of the live wire protocol. */
 export type HorseDecisionWorkerAuthorityHolderFactory = (
-  owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+  owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14',
   variant: string | null,
   runningVersion: string,
   freshEpoch: string
@@ -209,12 +245,14 @@ export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
   stopServices(): Promise<void>;
   decide: typeof HorseLogic.decide;
+  prepareOriginalReads?: typeof HorseLogic.prepareOriginalReads;
   decideDiscard: typeof HorseLogic.decideDiscard;
+  runDecisionReadView?<T>(request: FastHorseDecisionRequest, fn: () => T): T;
   captureDecisionEffects<T>(fn: () => T): CapturedHorseMindDecision<T>;
   applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void;
   /**
    * The mind view the FAST read frame is encoded from, after the decision.
-   * Absent: the worker's own HorseMind. A replay passes the sandbox it decided
+   * Absent: the selected individual HorseMind view. A replay passes the view it decided
    * in, so the frame it re-encodes is the original's and not its own process's.
    */
   snapshotDecisionReads?: typeof HorseMind.snapshotDecisionReads;
@@ -238,8 +276,8 @@ export interface HorseDecisionWorkerDependencies {
    * exactly as before 2026-10-16 (one worker, or an injected test runtime).
    */
   ownsCompletedHand?(request: ObserveCompletedHandRequest): boolean;
-  /** Learn a completed hand another shard owns (mindMirror.ts). Absent: the
-   * runtime's own HorseMindMirror over `observeCompletedHand`. */
+  /** Legacy diagnostic injection, retained for caller compatibility. Live
+   * independent observations never invoke a pooled mirror learner. */
   learnMirroredHand?(request: ObserveCompletedHandRequest): HorseMindMirrorOutcome;
   noteDecision(scope: string, ms: number): void;
   noteFeature(feature: string): void;
@@ -272,6 +310,8 @@ export interface HorseDecisionWorkerDependencies {
    * stays shadow for every variant.
    */
   admitPhase13Authority?(variant: JointVariant): HorseAuthorityAdmission;
+  admitPhase14Attachment?(domain: string): CorrectiveKernelAttachmentAdmission;
+  correctiveDraw?(): number;
 }
 
 let ownedServicesStarted = false;
@@ -279,6 +319,38 @@ let ownedServicesStarted = false;
 /** The exact chart and open-node stores this worker decides with (Phase 6C G4). */
 function horseSolverStoreIdentity() {
   return { charts: gtoChartStoreIdentity(), postflop: gtoPostflopStoreIdentity() };
+}
+
+/**
+ * One line per worker boot step, so the container log shows which read held
+ * READY (2026-10-24, engine boot time). Timing only: each operation's result
+ * and rejection pass through unchanged.
+ */
+function bootStepTimer(
+  shardIndex: number
+): (<T>(name: string, operation: () => Promise<T>) => Promise<T>) & { ready(): void } {
+  const startedAt = Date.now();
+  const step = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+    const stepStartedAt = Date.now();
+    let outcome = 'failed';
+    try {
+      const value = await operation();
+      outcome = 'ok';
+      return value;
+    } finally {
+      const now = Date.now();
+      console.log(
+        `[HorseDecisionWorker] shard ${shardIndex} boot step ${name} ${outcome} in ` +
+          `${now - stepStartedAt}ms (${now - startedAt}ms since worker services began)`
+      );
+    }
+  };
+  return Object.assign(step, {
+    ready: () =>
+      console.log(
+        `[HorseDecisionWorker] shard ${shardIndex} services ready ${Date.now() - startedAt}ms after they began`
+      ),
+  });
 }
 
 /**
@@ -312,7 +384,8 @@ export async function startOwnedServices(shard?: {
     // is not the brain the packs qualified with (client.ts,
     // horseDecisionWorkerEnv). Refuse readiness rather than decide with it.
     assertDecisionWorkerRunsFullSample();
-    const opponentSchema = await horseOpponentMemorySchema();
+    const step = bootStepTimer(shard?.index ?? 0);
+    const opponentSchema = await step('opponent_memory_schema', () => horseOpponentMemorySchema());
     noteFire(`horse_opponent_memory_schema_${opponentSchema}`);
     // Persistence starts before hydration, matching the production invariant:
     // a slow read may never prevent newly learned rows from becoming flushable.
@@ -323,20 +396,39 @@ export async function startOwnedServices(shard?: {
     startSolverPolicyArtifactLoader();
 
     if (opponentSchema === 'installed') HorseMind.enableDurableOpponentMemory();
-    const lastFlush = await hydrateHorseMindFromDb();
-    await Promise.all([
-      hydrateHorseMind(lastFlush),
+    /* THE MIND'S OWN CHAIN NO LONGER HOLDS THE OTHER LOADS (2026-10-24).
+       The durable mind read (pairs, scoped, stats) used to be awaited on its
+       own before anything else started, and its pair read alone is twenty
+       serial PostgREST pages (156 ms mean each in pg_stat_statements). Only
+       the replay depends on it - it needs the last flush mark, and it must
+       follow the import so it never double-counts - so that ordering is kept
+       as one chain. The exploit replay, the chart, open-node and V31 stores
+       touch none of the stats/pairs/scoped maps (the exploit replay writes
+       only the exploit counters, through mergeSandboxExploit), so they start
+       at the same instant instead of after it. READY is still withheld until
+       every one of them has finished, exactly as before. */
+    const bootLoads = await Promise.allSettled([
+      step('horse_mind_db', () => hydrateHorseMindFromDb()).then((lastFlush) =>
+        step('horse_mind_replay', () => hydrateHorseMind(lastFlush))
+      ),
       // 2026-10-22: the maniac read survives the daily reset - replay the
       // recent human hands into the decayed exploit counters before READY.
-      hydrateHorseExploitReads(),
-      loadGtoCharts(),
-      loadGtoPostflop(),
-      loadGtoPostflopV31(),
+      step('exploit_reads', () => hydrateHorseExploitReads()),
+      step('gto_charts', () => loadGtoCharts()),
+      step('gto_postflop', () => loadGtoPostflop()),
+      step('gto_postflop_v31', () => loadGtoPostflopV31()),
     ]);
+    // A failed load must not drain writers while another load can still
+    // hydrate or replay into them. Join every started operation before the
+    // catch below owns teardown; never publish READY for a partial boot.
+    for (const result of bootLoads) {
+      if (result.status === 'rejected') throw result.reason;
+    }
 
     // The fixed rollout population belongs to this worker. Prepare its card
     // facts before READY so the first eligible decisions pay no scoring cost.
-    prepareTournamentFutureHandFacts();
+    await step('tournament_future_hand_facts', async () => prepareTournamentFutureHandFacts());
+    step.ready();
 
     // Periodic refresh begins only after the first authoritative load. The
     // loader start functions are idempotent and own unref'd timers.
@@ -403,7 +495,10 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   admitPhase11Authority: (variant) => admitHorsePhase11ReleaseAuthority(variant),
   admitPhase12Authority: (variant) => admitHorsePhase12ReleaseAuthority(variant),
   admitPhase13Authority: (variant) => admitHorsePhase13ReleaseAuthority(variant),
+  admitPhase14Attachment: (domain) => admitHorsePhase14ReleaseAttachment(domain),
+  correctiveDraw: fastRandom,
   decide: HorseLogic.decide.bind(HorseLogic),
+  prepareOriginalReads: HorseLogic.prepareOriginalReads.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
   applyDecisionEffects: (effects) => HorseMind.applyDecisionEffects(effects),
@@ -505,7 +600,12 @@ export class HorseDecisionWorkerRuntime {
    */
   private readonly secondLookReads = new Map<
     string,
-    { at: number; frame: HorseDecisionReadFrame | null }
+    {
+      at: number;
+      frame: HorseDecisionReadFrame | null;
+      snapshot: FastHorseDecisionRequest;
+      observerReads?: HorseObserverReadReceipt | null;
+    }
   >();
   private static readonly MAX_SECOND_LOOK_READS = 128;
   private static readonly SECOND_LOOK_READ_TTL_MS = 60_000;
@@ -619,8 +719,11 @@ export class HorseDecisionWorkerRuntime {
   private phase12AuthorityAdmitted = false;
   private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>>;
   private phase13AuthorityAdmitted = false;
-  /** Completed hands of other shards' tables, learned once each (mindMirror.ts). */
-  private readonly mindMirror = new HorseMindMirror();
+  private readonly phase14Authority: Readonly<Record<string, HorseQualifiedAuthorityHolder>>;
+  private readonly phase14Catalogs = new Map<string, Readonly<CorrectiveKernelCatalog>>();
+  private phase14AuthorityAdmitted = false;
+  /** Each observer's own public history; no floor-wide read inheritance. */
+  private readonly observerReads = new HorseObserverReads();
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -679,6 +782,20 @@ export class HorseDecisionWorkerRuntime {
         ])
       ) as Record<JointVariant, HorseQualifiedAuthorityHolder>
     );
+    const phase14Epoch = randomUUID();
+    this.phase14Authority = Object.freeze(
+      Object.fromEntries(
+        HORSE_PHASE14_DOMAINS.map((domain) => [
+          domain,
+          authorityHolder(
+            'phase14',
+            domain,
+            horsePhase14ContinuationVersion(domain, horsePhase14RunningCatalogVersion(domain)),
+            phase14Epoch
+          ),
+        ])
+      )
+    );
   }
 
   start(): Promise<HorseDecisionWorkerReadiness> {
@@ -689,6 +806,7 @@ export class HorseDecisionWorkerRuntime {
     this.admitPhase11Authority();
     this.admitPhase12Authority();
     this.admitPhase13Authority();
+    this.admitPhase14Authority();
     // The admitted state of every authority is counted only once the owned
     // services have started: telemetry is armed by startServices, and a count
     // taken before that is silently dropped (no phaseN_authority_worker_*
@@ -823,7 +941,10 @@ export class HorseDecisionWorkerRuntime {
       }
 
       let outcome: HorseLifecycleOutcome = 'success';
-      if (request.type === 'DECIDE_FAST') outcome = this.executeFast(request);
+      if (request.type === 'DECIDE_FAST')
+        outcome = (
+          this.deps.runDecisionReadView ?? this.observerReads.run.bind(this.observerReads)
+        )(request, () => this.executeFast(request));
       else if (request.type === 'DECIDE_DEEP') outcome = this.executeDeep(request);
       else if (request.type === 'OBSERVE_REQUEST_RETIREMENT') {
         // Canonical shape and attribution are checked without executing a
@@ -964,6 +1085,9 @@ export class HorseDecisionWorkerRuntime {
         'phase12EvidenceMode' in request.opts ||
         request.opts.phase13Joint === 'candidate' ||
         'phase13EvidenceMode' in request.opts ||
+        'phase14Corrective' in request.opts ||
+        'phase14EvidenceMode' in request.opts ||
+        (request.opts.phase14 !== undefined && request.opts.phase14 !== 'off') ||
         'phase11EvidenceMode' in request.opts ||
         'phase10EvidenceMode' in request.opts)
     ) {
@@ -1406,6 +1530,21 @@ export class HorseDecisionWorkerRuntime {
       }
       this.assertPhase6TournamentSnapshot(request);
     }
+    if (request.type === 'DECIDE_FAST') {
+      if (
+        request.ownPublicHistoryState !== undefined &&
+        !['pending', 'available', 'unavailable'].includes(request.ownPublicHistoryState)
+      )
+        throw Error('Invalid individual history state');
+      if (request.ownPublicHistory !== undefined) {
+        const context = horseObserverReadContextFromRequest(request);
+        if (
+          !context ||
+          !ownPublicHistoryIsValid(request.ownPublicHistory, context, request.decisionTimeMs)
+        )
+          throw Error('Individual public history does not bind original observer and cutoff');
+      }
+    }
     if (request.decisionKey !== buildHorseDecisionKey(request)) {
       throw new Error('decisionKey does not bind the canonical decision snapshot');
     }
@@ -1424,6 +1563,9 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
     }
     const status = tournament.contextStatus;
+    if (!validHorseTournamentPayoutTerms(tournament)) {
+      throw new Error('Phase 6 tournament payout capture is invalid');
+    }
     if (!(TOURNAMENT_CONTEXT_STATUSES as readonly string[]).includes(status ?? '')) {
       throw new Error('Phase 6 tournament context status is invalid');
     }
@@ -1715,6 +1857,10 @@ export class HorseDecisionWorkerRuntime {
     for (const variant of HORSE_PHASE13_VARIANTS)
       this.deps.noteFeature(
         `phase13_authority_worker_${variant}_${this.phase13Authority[variant].currentState()}`
+      );
+    for (const domain of HORSE_PHASE14_DOMAINS)
+      this.deps.noteFeature(
+        `phase14_authority_worker_${domain}_${this.phase14Authority[domain].currentState()}`
       );
   }
 
@@ -2014,6 +2160,175 @@ export class HorseDecisionWorkerRuntime {
     );
   }
 
+  private admitPhase14Authority(): void {
+    if (this.phase14AuthorityAdmitted) return;
+    this.phase14AuthorityAdmitted = true;
+    for (const domain of HORSE_PHASE14_DOMAINS) {
+      let attachment: CorrectiveKernelAttachmentAdmission;
+      try {
+        attachment = this.deps.admitPhase14Attachment?.(domain) ?? {
+          admission: { status: 'refused', reason: 'unselected', transient: false },
+          catalog: null,
+        };
+      } catch {
+        attachment = {
+          admission: { status: 'refused', reason: 'unreadable_evidence', transient: true },
+          catalog: null,
+        };
+      }
+      this.phase14Authority[domain].apply(attachment.admission);
+      if (attachment.admission.status === 'admitted' && attachment.catalog)
+        this.phase14Catalogs.set(domain, attachment.catalog);
+    }
+  }
+  private captureOriginalReadFrame(request: FastHorseDecisionRequest): HorseDecisionReadFrame {
+    const planContext = horsePlanBatchBindingFromRequest(request).planContext;
+    const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext),
+      gs = request.gameState;
+    return encodeHorseDecisionReads(
+      (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+        gs.players,
+        handKey,
+        {
+          variant: gs.gameVariant ?? 'nlh',
+          mode: gs.gameMode === 'tournament' || gs.tournament ? 'tournament' : 'cash',
+          size:
+            (gs.dealtSeatIds?.length ?? gs.players.length) <= 2
+              ? 'hu'
+              : (gs.dealtSeatIds?.length ?? gs.players.length) <= 5
+                ? 'short'
+                : 'full',
+        }
+      ),
+      gs.players,
+      handKey,
+      planContext
+    );
+  }
+  private phase14Admission(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest,
+    original: () => { snapshot: FastHorseDecisionRequest; readFrame: unknown }
+  ): {
+    evaluator: CorrectiveKernelEvaluator | null;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase14Authority();
+    const d = correctiveDecisionDomain(request.gameState),
+      domain = d ? correctiveDomainKey(d) : null;
+    const holder = domain ? this.phase14Authority[domain] : null,
+      catalog = domain ? (this.phase14Catalogs.get(domain) ?? null) : null;
+    const receipt = holder?.receipt() ?? null;
+    const baselineUsable = () => {
+      const variant = request.gameState.gameVariant;
+      const requirement = (
+        selected: boolean,
+        callerMode: unknown,
+        baselineHolder: HorseQualifiedAuthorityHolder | null
+      ) => ({
+        selected,
+        callerMode,
+        verdict: baselineHolder
+          ? baselineHolder.verdict(baselineHolder.receipt(), Date.now())
+          : ('unselected' as const),
+      });
+      return correctiveBaselineCompositionIsUsable([
+        requirement(
+          d?.mode === 'tournament' && PHASE8_PROTECTED_RELEASE_SELECTION !== null,
+          request.opts?.phase8Postflop,
+          this.phase8Authority
+        ),
+        requirement(
+          variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION !== null,
+          request.opts?.phase10Plo4,
+          this.phase10Authority
+        ),
+        requirement(
+          !!variant &&
+            PHASE11_PROTECTED_RELEASE_SELECTIONS[
+              variant as keyof typeof PHASE11_PROTECTED_RELEASE_SELECTIONS
+            ] != null,
+          request.opts?.phase11Omaha,
+          isOmahaPolicyVariant(variant) ? this.phase11Authority[variant] : null
+        ),
+        requirement(
+          !!variant &&
+            PHASE12_PROTECTED_RELEASE_SELECTIONS[
+              variant as keyof typeof PHASE12_PROTECTED_RELEASE_SELECTIONS
+            ] != null,
+          request.opts?.phase12Remaining,
+          isRemainingPolicyVariant(variant) ? this.phase12Authority[variant] : null
+        ),
+        requirement(
+          !!variant &&
+            PHASE13_PROTECTED_RELEASE_SELECTIONS[
+              variant as keyof typeof PHASE13_PROTECTED_RELEASE_SELECTIONS
+            ] != null,
+          request.opts?.phase13Joint,
+          isJointVariant(variant) ? this.phase13Authority[variant] : null
+        ),
+      ]);
+    };
+    const stillUsable = () =>
+      !!holder &&
+      !!receipt &&
+      horsePhase14CorrectiveMode({
+        callerMode: request.opts?.phase14,
+        domain,
+        packDomain: domain,
+        verdict: holder.verdict(receipt, Date.now()),
+        catalog,
+      }).mode === 'candidate' &&
+      // Unselected decisions do not allocate or inspect a corrective snapshot.
+      // The shared fields are identical for FAST and DEEP; normalize only type.
+      functionalKernelSnapshotRefusal({ ...request, type: 'DECIDE_FAST' }, catalog) === null &&
+      baselineUsable();
+    return {
+      receipt,
+      evaluator: stillUsable()
+        ? createCorrectiveKernelEvaluator({
+            catalog,
+            original,
+            stillUsable,
+            draw: this.deps.correctiveDraw ?? fastRandom,
+          })
+        : null,
+    };
+  }
+  private bindPhase14Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.correctivePolicy && receipt) {
+      decision.correctivePolicy.authority = receipt;
+      const correctiveDomain = CORRECTIVE_DOMAINS.find(
+        (d) => correctiveDomainKey(d) === decision.correctivePolicy!.domain
+      );
+      if (!correctiveDomain) throw Error('corrective authority domain unavailable');
+      const variant = correctiveDomain.variant,
+        baselineAuthorities: NonNullable<
+          NonNullable<HorseDecision['correctivePolicy']>['baselineAuthorities']
+        > = {};
+      if (correctiveDomain.mode === 'tournament' && PHASE8_PROTECTED_RELEASE_SELECTION)
+        baselineAuthorities.phase8 = this.phase8Authority.receipt();
+      if (variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION)
+        baselineAuthorities.phase10 = this.phase10Authority.receipt();
+      if (isOmahaPolicyVariant(variant) && PHASE11_PROTECTED_RELEASE_SELECTIONS[variant])
+        baselineAuthorities.phase11 = this.phase11Authority[variant].receipt();
+      if (isRemainingPolicyVariant(variant) && PHASE12_PROTECTED_RELEASE_SELECTIONS[variant])
+        baselineAuthorities.phase12 = this.phase12Authority[variant].receipt();
+      if (isJointVariant(variant) && PHASE13_PROTECTED_RELEASE_SELECTIONS[variant])
+        baselineAuthorities.phase13 = this.phase13Authority[variant].receipt();
+      decision.correctivePolicy.baselineAuthorities = baselineAuthorities;
+    }
+  }
+  private phase14AuthorityReceipts(
+    request: FastHorseDecisionRequest | DeepHorseDecisionRequest
+  ): Readonly<Record<string, HorseAuthorityReceipt>> {
+    const d = correctiveDecisionDomain(request.gameState),
+      domain = d ? correctiveDomainKey(d) : null;
+    return Object.freeze(domain ? { [domain]: this.phase14Authority[domain].receipt() } : {});
+  }
+
   /** Bind the admission receipt to the returned Phase 8 ledger. */
   private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
     if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
@@ -2030,14 +2345,20 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
-    if (request.durableOpponentProfiles !== undefined) {
-      try {
-        if (HorseMind.importDurableOpponentProfiles(request.durableOpponentProfiles) > 0)
-          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
-      } catch {
-        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
-      }
-    }
+    if (
+      request.durableOpponentDonorProfiles !== undefined ||
+      request.durableOpponentProfiles !== undefined
+    )
+      this.deps.noteFeature('horse_observer_unscoped_profiles_refused');
+    const observerReceipt = this.observerReads.receipt(request);
+    if (request.ownPublicHistory)
+      this.deps.noteFeature(
+        observerReceipt?.version === 2
+          ? 'horse_observer_history_loaded'
+          : 'horse_observer_history_refused'
+      );
+    if (observerReceipt)
+      this.deps.noteFeature(`horse_observer_reads_${observerReceipt.disposition}`);
     const planBinding = horsePlanBatchBindingFromRequest(request);
     const planContext = planBinding.planContext;
     const canonicalRng = this.deps.saveRng();
@@ -2052,6 +2373,15 @@ export class HorseDecisionWorkerRuntime {
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
+    let correctiveOriginalFrame: HorseDecisionReadFrame | null = null;
+    const phase14 = this.phase14Admission(request, () => ({
+      snapshot: request,
+      readFrame:
+        correctiveOriginalFrame ??
+        (() => {
+          throw Error('original corrective frame unavailable');
+        })(),
+    }));
     // P15-A step 4: the worker-owned state this decision reads besides its
     // request and read frame, journaled beside it for exact replay. Capture
     // only; the decision below reads the same values it always has.
@@ -2063,8 +2393,30 @@ export class HorseDecisionWorkerRuntime {
         phase12Remaining: phase12.mode,
         phase13Joint: phase13.mode,
       },
-      liveHorsePhase8Safety.disabledReason
+      liveHorsePhase8Safety.disabledReason,
+      currentHorseDecisionRuntime(),
+      horseCorrectiveReplayState(request.gameState, request.opts?.phase14, phase14.evaluator)
     );
+    let phase14ObservationPrepared = false;
+    if (phase14.evaluator) {
+      try {
+        (this.deps.prepareOriginalReads ?? HorseLogic.prepareOriginalReads.bind(HorseLogic))(
+          request.player,
+          request.gameState,
+          {
+            ...request.opts,
+            observeMind: true,
+            mindObservationHand: horseMindHandFromDecision(request),
+          }
+        );
+        phase14ObservationPrepared = true;
+        correctiveOriginalFrame = this.captureOriginalReadFrame(request);
+      } catch {
+        this.deps.noteFeature('phase14_original_reads_unavailable');
+      } finally {
+        HorseMind.setDecisionScope(null);
+      }
+    }
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -2081,9 +2433,10 @@ export class HorseDecisionWorkerRuntime {
             phase11Omaha: phase11.mode,
             phase12Remaining: phase12.mode,
             phase13Joint: phase13.mode,
+            phase14Corrective: phase14.evaluator ?? undefined,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
-            observeMind: true,
+            observeMind: !phase14ObservationPrepared,
             mindObservationHand: horseMindHandFromDecision(request),
             mindPlanContext: planContext,
           })
@@ -2100,6 +2453,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase11Authority(captured.value, phase11.receipt);
     this.bindPhase12Authority(captured.value, phase12.receipt);
     this.bindPhase13Authority(captured.value, phase13.receipt);
+    this.bindPhase14Authority(captured.value, phase14.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -2117,31 +2471,34 @@ export class HorseDecisionWorkerRuntime {
     if (captured.effects.length > 0 && effects.length === 0) {
       this.deps.noteFeature('phase15_reference_plans_retired');
     }
-    let readFrame: HorseDecisionReadFrame | null = null;
+    let readFrame: HorseDecisionReadFrame | null = correctiveOriginalFrame;
     try {
-      const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext);
-      readFrame = encodeHorseDecisionReads(
-        (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+      if (!readFrame) {
+        const handKey = horsePlanHandKey(request.gameState.actionHistory, planContext);
+        readFrame = encodeHorseDecisionReads(
+          (this.deps.snapshotDecisionReads ?? HorseMind.snapshotDecisionReads.bind(HorseMind))(
+            request.gameState.players,
+            handKey,
+            {
+              variant: request.gameState.gameVariant ?? 'nlh',
+              mode:
+                request.gameState.gameMode === 'tournament' || request.gameState.tournament
+                  ? 'tournament'
+                  : 'cash',
+              size:
+                (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 2
+                  ? 'hu'
+                  : (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <=
+                      5
+                    ? 'short'
+                    : 'full',
+            }
+          ),
           request.gameState.players,
           handKey,
-          {
-            variant: request.gameState.gameVariant ?? 'nlh',
-            mode:
-              request.gameState.gameMode === 'tournament' || request.gameState.tournament
-                ? 'tournament'
-                : 'cash',
-            size:
-              (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 2
-                ? 'hu'
-                : (request.gameState.dealtSeatIds?.length ?? request.gameState.players.length) <= 5
-                  ? 'short'
-                  : 'full',
-          }
-        ),
-        request.gameState.players,
-        handKey,
-        planContext
-      );
+          planContext
+        );
+      }
     } catch {
       // Missing replay evidence must not discard an already computed fast
       // decision. A later second look will explicitly retain that decision.
@@ -2174,13 +2531,19 @@ export class HorseDecisionWorkerRuntime {
     while (this.secondLookReads.size >= HorseDecisionWorkerRuntime.MAX_SECOND_LOOK_READS) {
       this.secondLookReads.delete(this.secondLookReads.keys().next().value!);
     }
-    this.secondLookReads.set(readKey, { at, frame: ambiguous ? null : readFrame });
+    this.secondLookReads.set(readKey, {
+      at,
+      frame: ambiguous ? null : readFrame,
+      snapshot: request,
+      observerReads: this.observerReads.receipt(request),
+    });
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
     try {
       if (this.deps.journalEnabled?.() ?? true)
         this.deps.journalDecision?.(request, {
           snapshot: request,
+          observerReads: this.observerReads.receipt(request),
           readFrame,
           planContext,
           planBinding,
@@ -2210,6 +2573,7 @@ export class HorseDecisionWorkerRuntime {
     try {
       this.send({
         type: 'FAST_RESULT',
+        observerHistoryAckDigest: this.observerReads.historyAcknowledgement(request),
         requestId: request.requestId,
         planBinding,
         planIssueDisposition,
@@ -2225,6 +2589,13 @@ export class HorseDecisionWorkerRuntime {
         phase11Authority: this.phase11AuthorityReceipts(),
         phase12Authority: this.phase12AuthorityReceipts(),
         phase13Authority: this.phase13AuthorityReceipts(),
+        phase14Authority: this.phase14AuthorityReceipts(request),
+        phase14OriginalBinding: correctiveOriginalFrame
+          ? {
+              inputDigest: evidenceDigest(request),
+              readFrameDigest: evidenceDigest(correctiveOriginalFrame),
+            }
+          : undefined,
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -2295,6 +2666,22 @@ export class HorseDecisionWorkerRuntime {
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
+    const phase14 = this.phase14Admission(request, () => ({
+      snapshot: retained.snapshot,
+      readFrame: retained.frame,
+    }));
+    const replayState = horseDecisionReplayState(
+      {
+        phase8Postflop: phase8.mode,
+        phase10Plo4: phase10.mode,
+        phase11Omaha: phase11.mode,
+        phase12Remaining: phase12.mode,
+        phase13Joint: phase13.mode,
+      },
+      liveHorsePhase8Safety.disabledReason,
+      currentHorseDecisionRuntime(),
+      horseCorrectiveReplayState(request.gameState, request.opts?.phase14, phase14.evaluator)
+    );
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -2318,6 +2705,7 @@ export class HorseDecisionWorkerRuntime {
                 phase11Omaha: phase11.mode,
                 phase12Remaining: phase12.mode,
                 phase13Joint: phase13.mode,
+                phase14Corrective: phase14.evaluator ?? undefined,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -2338,6 +2726,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase11Authority(decision, phase11.receipt);
     this.bindPhase12Authority(decision, phase12.receipt);
     this.bindPhase13Authority(decision, phase13.receipt);
+    this.bindPhase14Authority(decision, phase14.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -2361,8 +2750,18 @@ export class HorseDecisionWorkerRuntime {
         this.deps.journalDecision?.(request, {
           snapshot: request,
           readFrame: retained.frame,
+          observerReads: retained.observerReads ?? null,
           planContext,
           decision,
+          // A second look borrows the uniquely retained FAST observation and
+          // stream. It never issues the sandbox's captured reference plans.
+          effects: [],
+          planBinding: null,
+          originalFastBinding: {
+            inputDigest: evidenceDigest(retained.snapshot),
+            readFrameDigest: evidenceDigest(retained.frame),
+          },
+          replayState,
           rngBefore: request.rngBefore,
           rngAfter,
           computeMs,
@@ -2388,41 +2787,12 @@ export class HorseDecisionWorkerRuntime {
       phase11Authority: this.phase11AuthorityReceipts(),
       phase12Authority: this.phase12AuthorityReceipts(),
       phase13Authority: this.phase13AuthorityReceipts(),
+      phase14Authority: this.phase14AuthorityReceipts(request),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
-    if (received.durableOpponentProfiles !== undefined) {
-      try {
-        if (HorseMind.importDurableOpponentProfiles(received.durableOpponentProfiles) > 0)
-          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
-      } catch {
-        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
-      }
-    }
-    // ONE FLOOR, ONE READ (2026-10-16): a hand another shard owns is only
-    // learned. Its owner journals it, binds its roster and settles its plans;
-    // here it touches nothing but this worker's opponent memory.
-    if (this.deps.ownsCompletedHand && !this.deps.ownsCompletedHand(received)) {
-      let outcome: HorseMindMirrorOutcome | 'refused';
-      try {
-        outcome = this.deps.learnMirroredHand
-          ? this.deps.learnMirroredHand(received)
-          : this.mindMirror.learn(received, (request) => this.deps.observeCompletedHand(request));
-      } catch {
-        outcome = 'refused';
-      }
-      this.deps.noteFeature(`horse_mind_mirror_${outcome}`);
-      this.send({
-        type: 'ACK',
-        requestId: received.requestId,
-        generation: received.generation,
-        fence: received.fence,
-        operation: 'OBSERVE_COMPLETED_HAND',
-      });
-      return;
-    }
     // P14.2: an accepted roster crosses the worker boundary only when it is the
     // exact private transport for THIS hand. Anything else is dropped (the
     // explicit unknown) and counted; the hand is still observed and journaled.
@@ -2435,12 +2805,27 @@ export class HorseDecisionWorkerRuntime {
         this.deps.noteFeature('phase14_accepted_roster_refused');
       }
     }
+    const learned = this.observerReads.complete(request, (hand) =>
+      this.deps.observeCompletedHand(hand)
+    );
+    this.deps.noteFeature(
+      learned ? 'horse_observer_completion_learned' : 'horse_observer_completion_unavailable'
+    );
+    if (this.deps.ownsCompletedHand && !this.deps.ownsCompletedHand(request)) {
+      this.send({
+        type: 'ACK',
+        requestId: request.requestId,
+        generation: request.generation,
+        fence: request.fence,
+        operation: 'OBSERVE_COMPLETED_HAND',
+      });
+      return;
+    }
     try {
       this.deps.journalAcceptedHand?.(request);
     } catch {
       this.deps.noteFeature('phase15_journal_capture_unavailable');
     }
-    this.deps.observeCompletedHand(request);
     this.send({
       type: 'ACK',
       requestId: request.requestId,
@@ -2476,7 +2861,9 @@ export class HorseDecisionWorkerRuntime {
     if (issued.state !== 'applied') {
       try {
         // Apply the detached issued records, not the later caller's object.
-        this.deps.applyDecisionEffects(issued.effects);
+        this.observerReads.runIssued(issued.request, () =>
+          this.deps.applyDecisionEffects(issued.effects)
+        );
         issued.state = 'applied';
         issued.at = this.deps.now();
       } catch (error) {
@@ -2573,6 +2960,7 @@ export class HorseDecisionWorkerRuntime {
     const recovery = reconstructHorsePlanEffects(receipts, {
       live,
       policyUsable: (authority) => this.planPolicyUsable(authority),
+      observerContextRequired: true,
     });
     for (const outcome of recovery.outcomes)
       this.deps.noteFeature(`phase15_plan_recovery_${outcome}`);
@@ -2590,7 +2978,9 @@ export class HorseDecisionWorkerRuntime {
       return;
     }
     const effects = deepFreeze(structuredClone(receipt.effects)) as HorseMindDecisionEffect[];
-    this.deps.applyDecisionEffects(effects);
+    this.observerReads.runContext(receipt.binding.observerReadContext!, () =>
+      this.deps.applyDecisionEffects(effects)
+    );
     if (this.issuedPlanBatches.size >= HorseDecisionWorkerRuntime.MAX_ISSUED_PLAN_BATCHES) {
       const terminal = [...this.issuedPlanBatches].find(([, entry]) => entry.state !== 'issued');
       if (!terminal) return;
@@ -2785,6 +3175,7 @@ export class HorseDecisionWorkerRuntime {
   private async shutdown(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    this.observerReads.clear();
     this.secondLookReads.clear();
     this.issuedPlanBatches.clear();
     // Await boot first so a partially initialized writer is never abandoned.

@@ -112,7 +112,10 @@ jobs:
   apply:
     name: Apply ${{ inputs.migration || github.event.client_payload.migration }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Queue wait (900 s) + the applier's bounded DDL admission wait (12 min,
+    # apply-recorded-migration.mjs) + the apply itself. Pinned by
+    # tests/unit/aMergedMigrationIsInstallable.test.ts.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -154,8 +157,11 @@ jobs:
           # THE QUEUE. Wait, bounded, until no earlier run of this workflow is
           # queued or running, so files still apply one at a time in dispatch
           # order. Nothing is sent while waiting; a timeout or an unreadable
-          # queue is REFUSED with nothing sent, never UNKNOWN.
-          deadline=$(( $(date +%s) + 600 ))
+          # queue is REFUSED with nothing sent, never UNKNOWN. The budget covers
+          # an earlier run waiting out its own bounded DDL admission (12 min),
+          # so a file queued behind a maintenance window is not refused by the
+          # queue for the wait its predecessor was allowed (2026-10-26).
+          deadline=$(( $(date +%s) + 900 ))
           while :; do
             ahead=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/apply-merged-migration.yml/runs?per_page=100" \
               --jq "[.workflow_runs[] | select(.id < $GITHUB_RUN_ID and .status != \"completed\")] | length" 2>/dev/null)
@@ -166,7 +172,7 @@ jobs:
             fi
             [[ "$ahead" == "0" ]] && break
             if (( $(date +%s) >= deadline )); then
-              echo "[apply] REFUSED: $ahead earlier applier run(s) still active after 600s. Nothing was sent; dispatch again once they finish." | tee /tmp/apply.log
+              echo "[apply] REFUSED: $ahead earlier applier run(s) still active after 900s. Nothing was sent; dispatch again once they finish." | tee /tmp/apply.log
               echo "code=1" >> "$GITHUB_OUTPUT"
               exit 1
             fi

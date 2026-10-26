@@ -583,10 +583,11 @@
 .member-identity {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   grid-column: 1;
   grid-row: 1;
   align-items: center;
-  gap: 7px;
+  gap: 2px 7px;
 }
 .member-alias {
   max-width: 100%;
@@ -633,20 +634,27 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
 }
-.member-club,
-.member-upline {
+.member-club {
   min-width: 0;
   overflow: hidden;
   border-left: 1px solid var(--members-gunmetal);
   padding-left: 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.member-club {
   text-transform: none;
 }
+/* The upline agent sits on its own line directly under the name
+   (Dan, 2026-10-25), in Simple and Advanced mode alike. */
 .member-upline {
-  max-width: 18ch;
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--members-text-dim);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .member-seated,
 .member-online,
@@ -1157,9 +1165,14 @@
 /* The role stays visible in Simple mode: "Group By Role" orders the list by
    it, and a grouping nobody can see is not a grouping (2026-10-14). */
 .members-simple .member-username,
-.members-simple .member-club,
-.members-simple .member-upline {
+.members-simple .member-club {
   display: none;
+}
+.members-simple .member-upline {
+  color: #9aa5b3;
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0;
 }
 .members-simple .member-subline {
   flex-wrap: wrap;

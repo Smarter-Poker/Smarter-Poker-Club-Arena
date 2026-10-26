@@ -54,6 +54,8 @@ function field(count: number, fail?: string) {
     const c: any = {
       select: () => c,
       eq: () => c,
+      // Every fixture player holds chips, so the zero-stack filter keeps them all.
+      gt: () => c,
       is: () => c,
       in: (_column: string, values: string[]) => {
         if (table === 'profiles') batch = values;
@@ -90,7 +92,7 @@ function field(count: number, fail?: string) {
     (id) =>
       createHash('sha256').update(`${id}|${eventId}|addon-participation`).digest().readUInt32BE(0) %
         1000 <
-      900
+      1000
   );
   return { ids, receipts, calls, selected, load };
 }

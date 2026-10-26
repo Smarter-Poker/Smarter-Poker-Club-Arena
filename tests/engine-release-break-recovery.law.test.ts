@@ -90,6 +90,67 @@ describe('engine release recovery stays inside one honest break boundary', () =>
     expect(readinessBody).toContain('--max-heartbeat-age-seconds 15');
   });
 
+  it('lets candidate replacement use the remaining proof time without borrowing rollback time', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'engine-candidate-proof-'));
+    try {
+      const bin = join(sandbox, 'bin');
+      mkdirSync(bin);
+      const helper = transaction.slice(
+        transaction.indexOf('bounded_break_command() {'),
+        transaction.indexOf('\n}', transaction.indexOf('bounded_break_command() {')) + 2
+      );
+      const match = transaction.match(
+        /bounded_break_command [^\n]+ env \\\n {2}ENGINE_UP_LOCK_HELD=1[\s\S]*?candidate replacement exceeded its bounded cutover budget'/
+      );
+      expect(match, 'the actual candidate launch stays in the bounded owner').not.toBeNull();
+      writeFileSync(
+        join(bin, 'timeout'),
+        `#!/usr/bin/env bash
+set -eu
+while [[ "$1" == --* ]]; do shift; done
+allowed="\${1%s}"; shift
+# Logical duration from the observed 63-second stop plus candidate launch.
+[ "$allowed" -ge 80 ] || exit 124
+printf 'ALLOWED=%s\\n' "$allowed"
+exec "$@"
+`
+      );
+      const launcher = join(sandbox, 'engine-up');
+      writeFileSync(launcher, '#!/usr/bin/env bash\nprintf "CANDIDATE_LAUNCHED\\n"\n');
+      chmodSync(launcher, 0o755);
+      chmodSync(join(bin, 'timeout'), 0o755);
+      for (const [proof, overall, status, allowed] of [
+        [100, 300, 0, 98],
+        [70, 300, 1, null],
+        [100, 70, 1, null],
+      ] as const) {
+        const result = spawnSync(
+          'bash',
+          [
+            '-c',
+            `set -eu
+break_proof_seconds() { echo ${proof}; }
+remaining_seconds() { echo ${overall}; }
+die() { echo "$*" >&2; exit 1; }
+${helper}
+BREAK_CUTOVER_PROOF_SECONDS=150
+ENGINE_UP="${launcher}"; TARGET_IMAGE_ID=fixture; CONTAINER=fixture; ENV_FILE=fixture; TOKEN=fixture
+${match![0]}
+`,
+          ],
+          { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` } }
+        );
+        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(status);
+        if (allowed !== null) {
+          expect(result.stdout).toContain(`ALLOWED=${allowed}`);
+          expect(result.stdout).toContain('CANDIDATE_LAUNCHED');
+        } else expect(result.stdout).not.toContain('CANDIDATE_LAUNCHED');
+      }
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
   it('persists one absolute break deadline for transaction exit and ExecStopPost recovery', () => {
     expect(transaction).toContain('BREAK_DEADLINE_FILE="$REQUEST_ROOT/$RUN_ID.break-deadline"');
     expect(transaction).toContain('persist_break_deadline');

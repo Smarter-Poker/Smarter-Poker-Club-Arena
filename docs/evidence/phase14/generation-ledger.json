@@ -1,0 +1,230 @@
+{
+  "schema": "horse-phase14-generation-ledger-v1",
+  "domains": {
+    "flh-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flh-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flh-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flh-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flh-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flo8-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flo8-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flo8-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flo8-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "flo8-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "nlh-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "nlh-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "nlh-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "nlh-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "nlh-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "pineapple-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "pineapple-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "pineapple-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "pineapple-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "pineapple-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo4-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo4-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo4-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo4-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo4-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo5-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo5-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo5-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo5-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo5-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo6-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo6-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo6-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo6-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo6-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo8-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo8-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo8-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo8-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "plo8-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "short_deck-cash": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "short_deck-hu_sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "short_deck-mtt": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "short_deck-sng": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    },
+    "short_deck-spin": {
+      "highestPublishedGeneration": 0,
+      "authorityDigest": null,
+      "retiredGenerations": []
+    }
+  }
+}

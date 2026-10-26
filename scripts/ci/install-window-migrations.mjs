@@ -48,6 +48,7 @@ import {
   START_RESERVE_SECONDS,
 } from './maintenance-window-migrations.mjs';
 import { splitConcurrentPreamble } from './migration-concurrent-preamble.mjs';
+import { supersededBy } from './check-migrations-are-live.mjs';
 
 const DIR = 'supabase/migrations';
 const APPLIER = fileURLToPath(new URL('./apply-recorded-migration.mjs', import.meta.url));
@@ -82,10 +83,20 @@ if (args.includes('--owner-window')) {
     finish(1, `REFUSED - ${e.message}`);
   }
 }
-const declared = readdirSync(DIR)
+// A file marked "-- SUPERSEDED BY <version>" (naming a file in this tree) is
+// never queued: the applier refuses it anyway, and queuing it would only wait
+// for the break, fail red and hold every later file. Same parser as the applier.
+const dirFiles = readdirSync(DIR);
+const declared = dirFiles
   .filter((f) => /^\d{14}_[a-z0-9_]+\.sql$/.test(f))
   .sort()
-  .filter((f) => declaresMaintenanceWindow(readFileSync(join(DIR, f), 'utf8')))
+  .filter((f) => {
+    const sql = readFileSync(join(DIR, f), 'utf8');
+    if (!declaresMaintenanceWindow(sql)) return false;
+    const by = supersededBy(sql, dirFiles);
+    if (by) say(`skipped \`${f}\`: SUPERSEDED BY ${by}, never installed`);
+    return !by;
+  })
   .filter((f) => !ownerWindow || ownerWindow.migrations.includes(f));
 if (declared.length === 0) finish(0, 'NOTHING QUEUED (no migration declares the window)');
 

@@ -19,6 +19,38 @@ on:
       - supabase/migrations/20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_ancho.sql
       - supabase/migrations/20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql
       - supabase/migrations/20261007212735_lightning_phase_8_multi_table_limits_session_statistics_pool.sql
+      - supabase/migrations/20261018230728_lightning_settlement_names_zero_contribution_dealt_players.sql
+      - supabase/migrations/20261025000729_lightning_hands_reach_the_stats_facts_and_the_collusion_scan.sql
+      - supabase/migrations/20260821_ca_hand_facts.sql
+      - supabase/migrations/20261003134650_stats_facts_outbox_and_corrections.sql
+      - supabase/migrations/20261003140344_stats_cash_opportunity_facts.sql
+      - server/src/lightning/LightningHandFacts.ts
+      - server/src/services/supabase/handFacts.ts
+      - supabase/migrations/*_lightning_top_up_original_intents_finish_at_the_final_hand_*.sql
+      - scripts/ci/test-lightning-topup-postgres.py
+      - scripts/ci/fixtures/lightning-topup-*.json
+      - server/src/GameServer.ts
+      - server/src/lightning/LightningHandHost.ts
+      - server/src/lightning/LightningAutoRebuy.ts
+      - src/components/table/CashierModal.tsx
+      - src/components/table/TableModalsLayer.tsx
+      - tests/a-top-up-is-charged-once.law.test.ts
+      - server/src/lightning/LightningHorseTopUp.test.ts
+      - server/src/lightning/LightningOperatorEvents.test.ts
+      - src/hooks/useEngineTableState.ts
+      - tests/lightning/lightning-topup-*.test.tsx
+      - tests/lightning/lightning-auto-topup.test.tsx
+      - server/src/lightning/LightningTopUp.test.ts
+      - server/src/lightning/LightningTopUp.ts
+      - server/src/lightning/LightningHorseTopUp.ts
+      - server/src/lightning/LightningOperatorEvents.ts
+      - server/src/engine/ServerTableEngineSeating.ts
+      - src/lightning/useLightningTopUpReceipts.ts
+      - src/lightning/useLightningAutoTopUp.ts
+      - src/services/GameServerAPI.ts
+      - src/services/SessionStatsService.ts
+      - src/pages/TablePage.tsx
+      - scripts/ci/test-lightning-stats-facts.py
       - scripts/ci/test-lightning-hand-counts-every-player-dealt-in.py
       - .github/workflows/lightning-hand-counts-every-player-dealt-in.yml
 
@@ -61,6 +93,30 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-lightning-hand-counts-every-player-dealt-in.py --output artifacts/lightning-hand-counts-every-player-dealt-in
+      - name: Lightning accepted facts reach the real stats projector
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-stats-facts.py --output artifacts/lightning-stats-facts
+      - name: Lightning original intents fund at their final hand boundary
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-topup-postgres.py --output artifacts/lightning-topup
+      - name: Retain the original top-up regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning-topup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/lightning-topup/RESULTS.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Retain the stats regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning-stats-facts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/lightning-stats-facts/RESULTS.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Retain the regression evidence
         if: always()
         uses: actions/upload-artifact@v4

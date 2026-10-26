@@ -67,6 +67,47 @@ function localStorageHasPrefix(prefix: string): boolean {
   return false;
 }
 
+const downloads = vi.hoisted(() => ({ calls: [] as Array<{ name: string; csv: string }> }));
+vi.mock('../src/utils/downloadCsv', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/utils/downloadCsv')>();
+  return {
+    ...actual,
+    downloadCsv: (name: string, csv: string) => {
+      downloads.calls.push({ name, csv });
+      return true;
+    },
+  };
+});
+
+// A slug lookup the test can hold open, and the realtime subscriptions the
+// page opens. Both pass straight through to the real modules otherwise.
+const slugLookup = vi.hoisted(() => ({
+  gate: null as null | Promise<string>,
+}));
+vi.mock('../src/utils/clubIdResolver', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/utils/clubIdResolver')>();
+  return {
+    ...actual,
+    resolveClubUUID: (param: string, signal?: AbortSignal) =>
+      slugLookup.gate && param === 'ledger-club'
+        ? slugLookup.gate
+        : actual.resolveClubUUID(param, signal),
+  };
+});
+const channelOptions = vi.hoisted(
+  () => [] as Array<{ channelName?: string | null; onSubscriptionStatus?: (s: string) => void }>
+);
+vi.mock('../src/hooks/useMasterBusChannel', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/hooks/useMasterBusChannel')>();
+  return {
+    ...actual,
+    useMasterBusChannel: (options: Parameters<typeof actual.useMasterBusChannel>[0]) => {
+      channelOptions.push(options as (typeof channelOptions)[number]);
+      return actual.useMasterBusChannel(options);
+    },
+  };
+});
+
 vi.mock('../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: USER_ID }, isHydrating: false }),
 }));
@@ -77,10 +118,12 @@ vi.mock('../src/components/common/Toast', () => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 const recoveryRpc = cashierRecoveryRpc();
@@ -94,6 +137,92 @@ function installRpc(implementation: (...args: any[]) => any) {
   }) as never);
 }
 
+function installHistoryTables(
+  memberRead?: () => Promise<{ data: { role: string; chip_balance: number }; error: null }>
+) {
+  vi.mocked(supabase.from).mockImplementation((table: string) => {
+    let columns = '';
+    const builder: Record<string, unknown> = {};
+    const chain = () => builder;
+    for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
+      builder[method] = vi.fn(chain);
+    }
+    builder.select = vi.fn((value: string) => {
+      columns = value;
+      return builder;
+    });
+    builder.maybeSingle = vi.fn(() =>
+      table === 'club_members' && memberRead
+        ? memberRead()
+        : Promise.resolve(
+            table === 'club_members'
+              ? { data: { role: 'owner', chip_balance: 250 }, error: null }
+              : table === 'agents'
+                ? { data: { agent_wallet_balance: 500 }, error: null }
+                : { data: null, error: null }
+          )
+    );
+    builder.then = (resolve: (value: unknown) => unknown) => {
+      const value =
+        table === 'club_members' && columns.includes('clubs:club_id')
+          ? {
+              data: [
+                {
+                  club_id: CLUB_ID,
+                  role: 'owner',
+                  chip_balance: 250,
+                  clubs: {
+                    name: 'Ledger Club',
+                    club_id: 101,
+                    slug: 'ledger-club',
+                    logo_url: null,
+                    is_union: false,
+                    owner_id: USER_ID,
+                  },
+                },
+              ],
+              error: null,
+            }
+          : { data: [], error: null, count: 0 };
+      return Promise.resolve(value).then(resolve);
+    };
+    return builder as never;
+  });
+}
+
+const historyEntry = (index = 0) => ({
+  id: `66666666-6666-4666-8666-${100000000000 + index}`,
+  created_at: '2026-10-25T09:00:00Z',
+  transaction_type: 'agent_wallet_send',
+  amount: 50,
+  from_user_id: '77777777-7777-4777-8777-777777777777',
+  to_user_id: PLAYER_ID,
+  metadata: { destination: 'player_wallet' },
+  from_name: 'Alice Agent',
+  to_name: 'Bob Player',
+});
+
+const clubHistoryTotals = {
+  mode: 'club',
+  entries: 1,
+  volume: 50,
+  cashouts_paid: 0,
+  complete: true,
+};
+
+async function openHistory() {
+  render(
+    <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+      <Routes>
+        <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await screen.findByText('Balances Synchronized');
+  fireEvent.click(screen.getByRole('button', { name: 'Transaction History', exact: true }));
+  return screen.findByRole('tabpanel', { name: 'Transaction History' });
+}
+
 describe('CashierTradePage club load ordering', () => {
   beforeEach(() => {
     expect(
@@ -104,8 +233,135 @@ describe('CashierTradePage club load ordering', () => {
     localStorage.clear();
     recoveryRpc.clear();
     rejectRecovery = false;
+    slugLookup.gate = null;
+    channelOptions.length = 0;
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
+
+  it.each(['membership', 'roster'] as const)(
+    'preserves Transaction History opened before the initial %s read finishes',
+    async (pendingRead) => {
+      const member = deferred<{ data: { role: string; chip_balance: number }; error: null }>();
+      const roster = deferred<{ data: unknown[]; error: null }>();
+      installHistoryTables(() =>
+        pendingRead === 'membership'
+          ? member.promise
+          : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })
+      );
+      installRpc((name: string) =>
+        name === 'fn_club_cashier_members_page_v3'
+          ? roster.promise
+          : Promise.resolve({
+              data:
+                name === 'fn_cashier_history_feed'
+                  ? [historyEntry()]
+                  : name === 'fn_cashier_history_summary'
+                    ? clubHistoryTotals
+                    : [],
+              error: null,
+            })
+      );
+      render(
+        <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+          <Routes>
+            <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      if (pendingRead === 'roster')
+        await waitFor(() =>
+          expect(supabase.rpc).toHaveBeenCalledWith(
+            'fn_club_cashier_members_page_v3',
+            expect.anything()
+          )
+        );
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Transaction History', exact: true })
+      );
+      await screen.findByRole('tabpanel', { name: 'Transaction History' });
+      await act(async () => {
+        member.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null });
+        roster.resolve({ data: [], error: null });
+      });
+      await screen.findByText('Balances Synchronized');
+      const panel = screen.getByRole('tabpanel', { name: 'Transaction History' });
+      await waitFor(() =>
+        expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+      );
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_feed',
+        expect.objectContaining({ p_scope: 'club' })
+      );
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_summary',
+        expect.objectContaining({ p_scope: 'club' })
+      );
+    }
+  );
+
+  it.each(['membership', 'roster'] as const)(
+    'does not restore revoked authority from a pending %s read',
+    async (pendingRead) => {
+      const member = deferred<{
+        data: { role: string; chip_balance: number };
+        error: null;
+      }>();
+      const roster = deferred<{ data: unknown[]; error: null }>();
+      let revoked = false;
+      installHistoryTables(() =>
+        revoked
+          ? Promise.resolve({ data: { role: 'player', chip_balance: 250 }, error: null })
+          : pendingRead === 'membership'
+            ? member.promise
+            : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })
+      );
+      installRpc((name: string) =>
+        name === 'fn_club_cashier_members_page_v3'
+          ? roster.promise
+          : Promise.resolve({ data: [], error: null })
+      );
+      render(
+        <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+          <Routes>
+            <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      await screen.findByText('Loading Members...');
+      if (pendingRead === 'roster')
+        await waitFor(() =>
+          expect(supabase.rpc).toHaveBeenCalledWith(
+            'fn_club_cashier_members_page_v3',
+            expect.anything()
+          )
+        );
+      await act(async () => {
+        revoked = true;
+        const handlers = vi
+          .mocked(masterBus.subscribe)
+          .mock.calls.filter(([event]) => event === 'MEMBER_ROLE_CHANGED')
+          .map(([, handler]) => handler as (payload: unknown) => void);
+        expect(handlers.length).toBeGreaterThan(0);
+        for (const handler of handlers)
+          handler({ clubId: CLUB_ID, userId: USER_ID, newRole: 'player' });
+        member.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null });
+        roster.resolve({ data: [], error: null });
+        await Promise.all([member.promise, roster.promise]);
+      });
+      expect(screen.queryByText('Balances Synchronized')).not.toBeInTheDocument();
+      if (pendingRead === 'membership')
+        expect(supabase.rpc).not.toHaveBeenCalledWith(
+          'fn_club_cashier_members_page_v3',
+          expect.anything()
+        );
+      expect(
+        screen.getByText('Cashier Access Changed. Refresh To Verify Your Current Access.')
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+      await screen.findByText('Balances Synchronized');
+      expect(screen.getByLabelText('Current Cashier Balances')).toHaveTextContent('Player');
+    }
+  );
 
   it('lists every club wallet plus canonical owned unions, never a non-owned union treasury', async () => {
     const OWNED_UNION_ID = '44444444-4444-4444-8444-444444444444';
@@ -310,54 +566,18 @@ describe('CashierTradePage club load ordering', () => {
   });
 
   it('loads an owner-visible managed transfer through the role-scoped ledger RPC', async () => {
-    vi.mocked(supabase.from).mockImplementation((table: string) => {
-      let columns = '';
-      const builder: Record<string, unknown> = {};
-      const chain = () => builder;
-      for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
-        builder[method] = vi.fn(chain);
+    installHistoryTables();
+    installRpc((name: string, args?: { p_scope?: string }) => {
+      if (name === 'fn_cashier_history_summary') {
+        return Promise.resolve({
+          data:
+            args?.p_scope === 'club'
+              ? { mode: 'club', entries: 1, volume: '50.00', cashouts_paid: '0.00', complete: true }
+              : { mode: 'wallet', incoming: '0.00', outgoing: '0.00', net: '0.00', entries: 0 },
+          error: null,
+        }) as never;
       }
-      builder.select = vi.fn((value: string) => {
-        columns = value;
-        return builder;
-      });
-      builder.maybeSingle = vi.fn(() =>
-        Promise.resolve(
-          table === 'club_members'
-            ? { data: { role: 'owner', chip_balance: 250 }, error: null }
-            : table === 'agents'
-              ? { data: { agent_wallet_balance: 500 }, error: null }
-              : { data: null, error: null }
-        )
-      );
-      builder.then = (resolve: (value: unknown) => unknown) => {
-        const value =
-          table === 'club_members' && columns.includes('clubs:club_id')
-            ? {
-                data: [
-                  {
-                    club_id: CLUB_ID,
-                    role: 'owner',
-                    chip_balance: 250,
-                    clubs: {
-                      name: 'Ledger Club',
-                      club_id: 101,
-                      slug: 'ledger-club',
-                      logo_url: null,
-                      is_union: false,
-                      owner_id: USER_ID,
-                    },
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null, count: 0 };
-        return Promise.resolve(value).then(resolve);
-      };
-      return builder as never;
-    });
-    installRpc((name: string) => {
-      if (name === 'fn_cashier_transaction_history') {
+      if (name === 'fn_cashier_history_feed') {
         return Promise.resolve({
           data: [
             {
@@ -388,35 +608,110 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
-    if (screen.queryByRole('button', { name: /^Advanced/ }))
-      fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Transaction History' }));
+    // The simple Players heading is the requested entry into history. It has
+    // a hidden tab strip and must still expose the named history panel.
+    fireEvent.click(screen.getByRole('button', { name: 'Transaction History', exact: true }));
+    expect(await screen.findByRole('tabpanel', { name: 'Transaction History' })).toBeVisible();
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
-    expect(screen.getAllByText('50')).toHaveLength(2);
-    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
+    // The club book's totals are the whole club's, read from the server:
+    // one entry, 50 chips moved (the row prints its own 50 too), none paid out.
+    expect(await screen.findByText('Chips Moved')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('50')).toHaveLength(2));
+    expect(screen.getByText('Cash-Outs Paid')).toBeInTheDocument();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_history_summary', {
       p_club_id: CLUB_ID,
       p_scope: 'club',
+      p_kind: 'all',
+      p_from: null,
+      p_to: null,
+      p_person: null,
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_history_feed', {
+      p_club_id: CLUB_ID,
+      p_scope: 'club',
+      p_kind: 'all',
+      p_from: null,
+      p_to: null,
+      p_person: null,
+      p_search: null,
+      p_before_at: null,
+      p_before_id: null,
       p_limit: 51,
-      p_offset: 0,
     });
 
     // An owner's own book is one tap away and is read from the server.
     fireEvent.click(screen.getByRole('button', { name: 'My Transactions' }));
     await waitFor(() =>
-      expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_transaction_history', {
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_cashier_history_feed', {
         p_club_id: CLUB_ID,
         p_scope: 'mine',
+        p_kind: 'all',
+        p_from: null,
+        p_to: null,
+        p_person: null,
+        p_search: null,
+        p_before_at: null,
+        p_before_id: null,
         p_limit: 51,
-        p_offset: 0,
       })
     );
+    // His own wallet's totals: nothing in or out of it in this book.
+    expect(await screen.findAllByText('+0')).toHaveLength(2);
+
+    // A name typed in the search is asked of the server over the whole history.
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Transaction History' }), {
+      target: { value: 'Alice' },
+    });
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_feed',
+        expect.objectContaining({ p_scope: 'mine', p_search: 'Alice' })
+      )
+    );
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Transaction History' }), {
+      target: { value: '' },
+    });
 
     // A balance moving while the history is open (a cash-out accepted, a
     // send made) re-reads it without a manual refresh.
     const historyReads = () =>
-      vi
-        .mocked(supabase.rpc)
-        .mock.calls.filter(([name]) => name === 'fn_cashier_transaction_history').length;
+      vi.mocked(supabase.rpc).mock.calls.filter(([name]) => name === 'fn_cashier_history_feed')
+        .length;
+    // Type and date chips are asked of the server, not filtered on screen.
+    fireEvent.click(screen.getByRole('button', { name: 'Cash-Outs' }));
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_feed',
+        expect.objectContaining({ p_scope: 'mine', p_kind: 'cashout', p_from: null })
+      )
+    );
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        'fn_cashier_history_summary',
+        expect.objectContaining({ p_kind: 'cashout', p_from: expect.any(String) })
+      )
+    );
+    const lastPage = vi
+      .mocked(supabase.rpc)
+      .mock.calls.filter(([name]) => name === 'fn_cashier_history_feed')
+      .at(-1)?.[1] as { p_from: string };
+    const sevenDays = Date.now() - new Date(lastPage.p_from).getTime();
+    expect(sevenDays).toBeGreaterThan(6.9 * 24 * 3600 * 1000);
+    expect(sevenDays).toBeLessThan(7.1 * 24 * 3600 * 1000);
+
+    // Download writes the filtered book as a CSV with a header row.
+    downloads.calls.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Download These Transactions' }));
+    await waitFor(() => expect(downloads.calls).toHaveLength(1));
+    expect(downloads.calls[0].name).toMatch(
+      /^transaction-history-mine-cashout-7d-\d{4}-\d{2}-\d{2}\.csv$/
+    );
+    expect(downloads.calls[0].csv.split('\n')[0]).toBe(
+      'Date,Type,Direction,From,To,Chips,Route,Detail,Invoice,Cash-Out Status,Entry'
+    );
+    expect(downloads.calls[0].csv).toContain('Alice Agent');
+
     const before = historyReads();
     // The suite's MasterBus is a mock: call the handler the open history
     // registered, as the real bus would on a cash-out accept.
@@ -430,6 +725,276 @@ describe('CashierTradePage club load ordering', () => {
         handler({ source: 'cashout_approved', userId: USER_ID });
     });
     await waitFor(() => expect(historyReads()).toBeGreaterThan(before), { timeout: 3000 });
+  });
+
+  it('retires the old book before the selected history book has answered', async () => {
+    installHistoryTables();
+    const mine = deferred<{ data: unknown[]; error: null }>();
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_feed')
+        return args.p_scope === 'mine'
+          ? mine.promise
+          : Promise.resolve({ data: [historyEntry()], error: null });
+      return Promise.resolve({
+        data: name === 'fn_cashier_history_summary' ? clubHistoryTotals : [],
+        error: null,
+      });
+    });
+    const panel = await openHistory();
+    await within(panel).findByText('Transfer Alice Agent To Bob Player');
+    fireEvent.click(within(panel).getByRole('button', { name: 'My Transactions' }));
+    expect(
+      within(panel).queryByRole('button', { name: /^Open Receipt For/ })
+    ).not.toBeInTheDocument();
+    expect(panel).toHaveAttribute('aria-busy', 'true');
+    await act(async () => mine.resolve({ data: [], error: null }));
+    await within(panel).findByText('No Transactions Recorded Yet.');
+  });
+
+  it.each([
+    ['null', { ...clubHistoryTotals, volume: null }],
+    ['blank', { ...clubHistoryTotals, cashouts_paid: ' ' }],
+    ['boolean', { ...clubHistoryTotals, entries: false }],
+    ['unknown mode', { mode: 'unknown', incoming: 0, outgoing: 0, net: 0 }],
+  ])('does not turn %s history totals into verified zeroes', async (_name, totals) => {
+    installHistoryTables();
+    installRpc((name) =>
+      Promise.resolve({ data: name === 'fn_cashier_history_summary' ? totals : [], error: null })
+    );
+    const panel = await openHistory();
+    await within(panel).findByText('Totals Could Not Be Read.', { exact: false });
+    expect(within(panel).getByLabelText('Club Totals For These Filters')).toHaveTextContent('--');
+  });
+
+  it('stops a late incomplete total from scheduling reads after history closes', async () => {
+    installHistoryTables();
+    const summary = deferred<{ data: unknown; error: null }>();
+    installRpc((name) =>
+      name === 'fn_cashier_history_summary'
+        ? summary.promise
+        : Promise.resolve({ data: [], error: null })
+    );
+    const panel = await openHistory();
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      fireEvent.click(within(panel).getByRole('button', { name: 'Players', exact: true }));
+      await act(async () =>
+        summary.resolve({ data: { ...clubHistoryTotals, complete: false }, error: null })
+      );
+      expect(timer.mock.calls.filter(([, delay]) => delay === 1200)).toHaveLength(0);
+    } finally {
+      timer.mockRestore();
+    }
+  });
+
+  it('does not report an older-page error after the history book changes', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: null; error: Error }>();
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        return Promise.resolve({
+          data:
+            args.p_scope === 'mine'
+              ? []
+              : Array.from({ length: 51 }, (_, index) => historyEntry(index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'My Transactions' }));
+    await within(panel).findByText('No Transactions Recorded Yet.');
+    await act(async () => older.reject(new Error('Old book unavailable')));
+    expect(toastMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps an older page when a balance event refreshes the same history book', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: ReturnType<typeof historyEntry>[]; error: null }>();
+    let headReads = 0;
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        headReads++;
+        return Promise.resolve({
+          data: Array.from({ length: 51 }, (_, index) => historyEntry(100 - index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    const before = headReads;
+    const balanceHandlers = vi
+      .mocked(masterBus.subscribe)
+      .mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')
+      .map(([, handler]) => handler as (payload: unknown) => void);
+    act(() => {
+      for (const handler of balanceHandlers)
+        handler({ source: 'cashout_approved', userId: USER_ID });
+    });
+    await waitFor(() => expect(headReads).toBeGreaterThan(before), { timeout: 3000 });
+    await act(async () => {
+      older.resolve({
+        data: Array.from({ length: 51 }, (_, index) => historyEntry(50 - index)),
+        error: null,
+      });
+      await older.promise;
+    });
+    expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(100);
+    expect(within(panel).getByRole('button', { name: 'Load 50 Older Entries' })).toBeEnabled();
+  });
+
+  it('drops a late older page when a refresh fails, so Retry leaves no gap', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: ReturnType<typeof historyEntry>[]; error: null }>();
+    let headReads = 0;
+    let failHead = false;
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        headReads++;
+        if (failHead) return Promise.resolve({ data: null, error: new Error('head failed') });
+        // The refresh after Retry starts one row newer: a balance event wrote it.
+        const top = headReads > 2 ? 101 : 100;
+        return Promise.resolve({
+          data: Array.from({ length: 51 }, (_, index) => historyEntry(top - index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    const before = headReads;
+    failHead = true;
+    const balanceHandlers = vi
+      .mocked(masterBus.subscribe)
+      .mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')
+      .map(([, handler]) => handler as (payload: unknown) => void);
+    act(() => {
+      for (const handler of balanceHandlers)
+        handler({ source: 'cashout_approved', userId: USER_ID });
+    });
+    await waitFor(() => expect(headReads).toBeGreaterThan(before), { timeout: 3000 });
+    await within(panel).findByText('Could not load your transaction history.', { exact: false });
+    // The older page answers AFTER the failure. It continues a book that is no
+    // longer on screen, so it must not be painted or merged by Retry.
+    await act(async () => {
+      older.resolve({
+        data: Array.from({ length: 51 }, (_, index) => historyEntry(50 - index)),
+        error: null,
+      });
+      await older.promise;
+    });
+    expect(
+      within(panel).queryByRole('button', { name: /^Open Receipt For/ })
+    ).not.toBeInTheDocument();
+    failHead = false;
+    const failedReads = headReads;
+    fireEvent.click(within(panel).getByRole('button', { name: 'Retry', exact: true }));
+    // Count only once Retry's own first page has landed: a row set painted
+    // before it (the late older page) must not satisfy the assertion.
+    await waitFor(() => expect(headReads).toBe(failedReads + 1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(within(panel).queryByText('Loading Transactions...')).toBeNull());
+    // One fresh page of 50, not 50 plus the stale older page merged below it
+    // (which skipped every row between them).
+    expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(50);
+    expect(within(panel).getByRole('button', { name: 'Load 50 Older Entries' })).toBeEnabled();
+  });
+
+  it('keeps Transaction History opened while a club link is still resolving', async () => {
+    const lookup = deferred<string>();
+    slugLookup.gate = lookup.promise;
+    installHistoryTables();
+    installRpc((name: string) =>
+      Promise.resolve({
+        data:
+          name === 'fn_cashier_history_feed'
+            ? [historyEntry()]
+            : name === 'fn_cashier_history_summary'
+              ? clubHistoryTotals
+              : [],
+        error: null,
+      })
+    );
+    render(
+      <MemoryRouter initialEntries={['/clubs/ledger-club/cashier']}>
+        <Routes>
+          <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Transaction History', exact: true })
+    );
+    await screen.findByRole('tabpanel', { name: 'Transaction History' });
+    await act(async () => {
+      lookup.resolve(CLUB_ID);
+      await lookup.promise;
+    });
+    await screen.findByText('Balances Synchronized');
+    const panel = screen.getByRole('tabpanel', { name: 'Transaction History' });
+    await waitFor(() =>
+      expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+    );
+  });
+
+  it('offers Retry when the live authority check cannot be read', async () => {
+    let failAuthority = false;
+    installHistoryTables(
+      () =>
+        (failAuthority
+          ? Promise.resolve({ data: null, error: { message: 'network dropped' } })
+          : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })) as never
+    );
+    installRpc((name: string) =>
+      Promise.resolve({
+        data:
+          name === 'fn_cashier_history_feed'
+            ? [historyEntry()]
+            : name === 'fn_cashier_history_summary'
+              ? clubHistoryTotals
+              : [],
+        error: null,
+      })
+    );
+    const panel = await openHistory();
+    await waitFor(() =>
+      expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+    );
+    const authority = channelOptions
+      .filter((options) => options.channelName?.startsWith('cashier-member-authority:'))
+      .at(-1);
+    expect(authority?.onSubscriptionStatus).toBeTypeOf('function');
+    failAuthority = true;
+    await act(async () => {
+      authority!.onSubscriptionStatus!('SUBSCRIBED');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const message = 'Cashier Access Could Not Be Verified. Check Your Connection And Try Again.';
+    await within(panel).findByText(message, { exact: false });
+    expect(screen.queryByText('Balances Synchronized')).not.toBeInTheDocument();
+    expect(within(panel).queryByText('Loading Transactions...')).not.toBeInTheDocument();
+    failAuthority = false;
+    fireEvent.click(within(panel).getByRole('button', { name: 'Retry', exact: true }));
+    await screen.findByText('Balances Synchronized');
+    await waitFor(() =>
+      expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+    );
   });
 
   it('does not invalidate the request that loads the first Trade tab', async () => {

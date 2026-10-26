@@ -261,14 +261,17 @@ describe('A1.5 - an undealt variant is offered disabled, never saved as NLHE (RO
     ).toBe(false);
   });
 
-  it('disables Pineapple after Lightning is selected while keeping supported variants available', () => {
+  it('disables Pineapple, Short Deck and Omaha Hi-Lo after Lightning is selected while keeping supported variants available', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Lightning Games/ }));
-    expect((screen.getByRole('button', { name: 'Pineapple' }) as HTMLButtonElement).disabled).toBe(
-      true
-    );
-    expect((screen.getByRole('button', { name: 'NLH' }) as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByText(/Pineapple Uses Classic Games/)).toBeTruthy();
+    // Dan 2026-10-25: Short Deck, Omaha Hi-Lo and Pineapple are feeder games only.
+    for (const name of ['Pineapple', 'Short Deck', 'FLO8', 'PLO8'])
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, name).toBe(true);
+    for (const name of ['NLH', 'FLH', 'PLO4', 'PLO5', 'PLO6'])
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, name).toBe(
+        false
+      );
+    expect(screen.getByText(/Omaha Hi-Lo And Pineapple Use Classic Games/)).toBeTruthy();
   });
 
   it('a route opened for a variant the engine does not deal shows it disabled', () => {

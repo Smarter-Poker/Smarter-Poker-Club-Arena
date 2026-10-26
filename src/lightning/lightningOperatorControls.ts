@@ -426,6 +426,7 @@ export const REFUSAL_WORDS: Record<string, string> = {
   IDEMPOTENCY_CONFLICT: 'This Request Was Already Used For A Different Control.',
   LIGHTNING_TEMPLATE_NOT_ALLOWED: 'Choose Lightning Games To Use A Lightning Pool.',
   LIGHTNING_TABLE_SIZE_NOT_ALLOWED: 'Lightning Is Only Available For Six Seat Games.',
+  LIGHTNING_VARIANT_NOT_ALLOWED: 'Short Deck, Omaha Hi-Lo And Pineapple Run As Feeder Games, Not Lightning.',
 };
 
 export function refusalWords(code: string): string {
@@ -539,6 +540,7 @@ export const READINESS_REASON_WORDS: Record<string, string> = {
   WORKER_OFF: 'The Lightning Worker Is Off, So No Hands Would Form',
   LIGHTNING_TEMPLATE_NOT_ALLOWED: 'Choose Lightning Games To Use A Lightning Pool',
   LIGHTNING_TABLE_SIZE_NOT_ALLOWED: 'Lightning Is Only Available For Six Seat Games',
+  LIGHTNING_VARIANT_NOT_ALLOWED: 'Short Deck, Omaha Hi-Lo And Pineapple Run As Feeder Games, Not Lightning',
   NO_AA_CALIBRATION: 'No A/A Calibration Of The Live Matcher Yet',
   NO_LATENCY_EVIDENCE: 'No Latency Window In The Last 24 Hours',
   WORKER_SHADOW_ONLY: 'The Worker Runs In Shadow Only And Forms No Hands',

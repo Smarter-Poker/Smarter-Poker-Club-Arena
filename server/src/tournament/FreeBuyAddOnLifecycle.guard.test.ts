@@ -77,8 +77,11 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(trigger).toMatch(
       /const windowAnchorMs = fromStart \? Math\.max\(advertisedStartMs, requestedStartMs\) : NaN;/
     );
+    // A paid (non-Free-Buy) add-on keeps its configured minute, stretched only
+    // to the end of a :55 break it opens inside (Dan 2026-10-25; pinned by
+    // AnAddOnAtTheBreakIsTheBreak.test.ts). The Free Buy branch is unchanged.
     expect(trigger).toMatch(
-      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*requestedStartMs \+ this\.addOnBreakDurationMs\(\)/
+      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*Math\.max\(\s*requestedStartMs \+ this\.addOnBreakDurationMs\(\),\s*this\.coincidingSynchronizedBreakEndMs\(requestedStartMs\)\s*\)/
     );
     expect(trigger).toContain('addon_period_started_at: requestedStart');
     expect(trigger).toContain('addon_period_ends_at: requestedEnd');

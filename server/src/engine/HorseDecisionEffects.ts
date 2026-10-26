@@ -17,7 +17,9 @@ export function horseReferenceWagerWasRetained(decision: HorseDecision): boolean
     typeof decision.amount === 'number' &&
     Number.isFinite(decision.amount) &&
     decision.amount >= 0 &&
-    (graph?.version === 'horse-policy-order-v1' || graph?.version === 'horse-policy-order-v2') &&
+    (graph?.version === 'horse-policy-order-v1' ||
+      graph?.version === 'horse-policy-order-v2' ||
+      graph?.version === 'horse-policy-order-v3') &&
     origin?.node === 'reference' &&
     origin.after?.action === decision.action &&
     origin.after.amount === decision.amount &&

@@ -112,8 +112,11 @@ describe('the engine asks the door even when the head is unattributable', () => 
   });
 
   it('nothing tries to collect a bounty that has no knocker', () => {
-    expect(SOURCE).toContain(
-      'if (bountyEvidence && bountyEvidence.attributionUnavailable !== true)'
+    // The collection guard is shared with the wider rule that EVERY
+    // bounty_blocked answer skips collection
+    // (tests/a-bust-the-door-placed-is-not-a-failed-bust.law.test.ts).
+    expect(SOURCE).toMatch(
+      /if \(\s*bountyEvidence &&\s*bountyEvidence\.attributionUnavailable !== true &&\s*!doorWroteNoBountyObligation\s*\)/
     );
   });
 });

@@ -42,6 +42,7 @@ import {
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import type { DiamondCashSessionRecap } from '../../services/diamondCashSessionRecap';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { titleCase } from '../../utils/titleCase';
@@ -296,14 +297,26 @@ export function SessionSummaryHost() {
 
     void check();
     const interval = window.setInterval(() => void check(), 3000);
+    // The followed leave has landed: correct the card now, not at the next tick.
+    const offLanded = masterBus.subscribe('SEAT_CASHED_OUT', (event) => {
+      const landed = event?.payload;
+      if (
+        !stopped &&
+        landed &&
+        (landed.occupancyId === pc.occupancyId || landed.tableId === pc.tableId)
+      )
+        void check();
+    });
     const cap = window.setTimeout(() => {
       stopped = true;
       window.clearInterval(interval);
+      offLanded();
     }, 180_000);
     return () => {
       stopped = true;
       window.clearInterval(interval);
       window.clearTimeout(cap);
+      offLanded();
     };
   }, [payload]);
 

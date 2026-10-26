@@ -522,7 +522,7 @@ export function lightningEntryDecision(
      six-seat Action or Madness game. On its way in (pending_on) or out
      (pending_off, draining) the door is JOIN GAME. */
   const lightning =
-    isLightningEligible(meta?.templateName, meta?.handedness) &&
+    isLightningEligible(meta?.templateName, meta?.handedness, meta?.variant) &&
     clusterModeDisplay(mode).joinLightning;
   return { kind: 'entry', joinLabel: lightning ? 'Join Lightning' : 'Join Game', lightning };
 }

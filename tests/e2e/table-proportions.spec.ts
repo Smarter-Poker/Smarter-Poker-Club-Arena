@@ -833,7 +833,13 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 
 // Real occupied components, not placeholder rectangles: this guards the
 // overlap missed by the old containment-only regression.
-for (const width of [320, 375, 393, 430, 480])
+// 600 and 768: portrait viewports above the 480px phone breakpoint (large
+// phones, foldables, an upright iPad mini or 768px tablet) share the phone's
+// tabled-hand and marker placement (PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX). On
+// 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
+// another player. They are certified on the PLO5/PLO6 scenes this regime is
+// for; their seat pods keep the tablet ring (see `largePortrait` below).
+for (const width of [320, 375, 393, 430, 480, 600, 768])
   for (const count of [6, 9])
     test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px with ${count} seats`, async ({
       page,
@@ -986,9 +992,19 @@ for (const width of [320, 375, 393, 430, 480])
         [true, 'mini', 6, 'all-shown'],
       ] as const) {
         // Both rings exercise every occupied state at every phone width.
+        if (width > 480 && villainCards < 5) continue;
         await page.setViewportSize({
           width,
-          height: width === 320 ? 568 : width === 375 ? 667 : 852,
+          height:
+            width === 320
+              ? 568
+              : width === 375
+                ? 667
+                : width === 600
+                  ? 960
+                  : width === 768
+                    ? 1024
+                    : 852,
         });
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
@@ -1120,6 +1136,12 @@ for (const width of [320, 375, 393, 430, 480])
             a.bottom > b.top + 0.5;
           const board = box(document.querySelector('.community-area')!);
           const violations: string[] = [];
+          // Above 480px the seat pods keep their tablet sizes and ring: the
+          // phone-only pod rules (compact 7-9 max top pod, outboard lanes off
+          // the painted felt, dense-ring pods clear of the board) are not
+          // theirs. Every ownership, overlap, readability and fixed-placement
+          // rule for hands, wagers and the button still applies.
+          const largePortrait = innerWidth > 480;
           const compactPlo6 =
             innerWidth <= 340 &&
             document.querySelector('.table-page')?.getAttribute('data-seats') === '9' &&
@@ -1128,7 +1150,9 @@ for (const width of [320, 375, 393, 430, 480])
           // printing fallback may use the watermark lane. Player facts,
           // shown cards, the board and the pot remain protected.
           for (const e of document.querySelectorAll(
-            '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
+            largePortrait
+              ? '.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
+              : '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
           )) {
             if (overlaps(box(e), board)) violations.push(`${e.className} Covers Board`);
           }
@@ -1278,7 +1302,7 @@ for (const width of [320, 375, 393, 430, 480])
             ),
           ].map((e) => box(e).width);
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar-img'))
-            if (ringSeats >= 7 && box(e).height > 40.5)
+            if (ringSeats >= 7 && !largePortrait && box(e).height > 40.5)
               violations.push('Top Avatar Is Not Compact');
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar'))
             if (
@@ -1288,7 +1312,8 @@ for (const width of [320, 375, 393, 430, 480])
             )
               violations.push('Top Avatar Is Not Full Size');
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__info'))
-            if (ringSeats >= 7 && box(e).width > 64.5) violations.push('Top Plate Is Not Compact');
+            if (ringSeats >= 7 && !largePortrait && box(e).width > 64.5)
+              violations.push('Top Plate Is Not Compact');
           const canvas = box(document.querySelector('.table-scaler')!);
           const felt = box(document.querySelector('.table-surface')!);
           // The browser's inverse homography maps a DOM rectangle to a
@@ -1360,7 +1385,8 @@ for (const width of [320, 375, 393, 430, 480])
                   radius - 0.5
               );
             });
-            if (touches) violations.push(`Player On Painted Felt: ${e.className}`);
+            if (touches && !largePortrait)
+              violations.push(`Player On Painted Felt: ${e.className}`);
           }
           const contextualTools = ['.tbc-widget', '.rabbit-hunt__button'].filter((selector) =>
             document.querySelector(selector)
@@ -1830,3 +1856,7 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
       await page.unroute('http://spectator.fixture/');
     }
   });
+
+// Shared notice containment is part of the existing felt browser gate.
+import { registerAddOnNoticeContainmentCases } from './support/addOnNoticeContainmentCases';
+registerAddOnNoticeContainmentCases();

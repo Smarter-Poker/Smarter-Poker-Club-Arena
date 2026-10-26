@@ -1,0 +1,3 @@
+# tests/a-member-with-no-agent-sits-under-the-club-owner.law.test.ts
+
+Dan, 2026-10-25: "ANY 'ORPHANED' PLAYERS, OR PLAYERS WITH NO AGENTS, GET ASSIGNED TO THE CLUB OWNER. 'KINGFISH' FOR KINGS CLUB PLAYERS." The join door inserts every non-owner member under the club owner; the first agent invite still places a member whose owner placement nobody chose (invited_by NULL), and an agent may still add such a member, while a placement an invite made is never moved; a deleted agent's downline with no live upline goes to the owner. The one settlement moved the 170 live chip-club members who had no agent, players and agents only (not staff, the owner, the Diamond Arena or departed history), horses included, without re-sending the welcome text.

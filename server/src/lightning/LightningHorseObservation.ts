@@ -36,6 +36,7 @@
 import { noteFire } from '../engine/BrainTelemetry.js';
 import { readScopeOf } from '../engine/HorseMind.js';
 import { memoryVariant, type DurableOpponentProfile } from '../engine/HorseOpponentMemory.js';
+import { isOpponentMemoryBusyRefusal, reportThrottled } from '../services/errorReporter.js';
 import type {
   CompletedHandObservation,
   LiveHorseDecisionLane,
@@ -52,6 +53,8 @@ export interface LightningObservedHand {
   dealtCount: number;
   actions: ReadonlyArray<Record<string, unknown>>;
   showdown: ReadonlyArray<{ userId: string; mucked?: boolean; handName?: string }>;
+  /** Settlement's per-player results (HorseWinnerRead). */
+  results?: ReadonlyArray<{ playerId: string; contributed: number; won: number }>;
 }
 
 export interface LightningObservationDeps {
@@ -95,6 +98,14 @@ export function buildLightningObservation(
         }))
       : null,
     scope: readScopeOf(hand.variant, hand.dealtCount),
+    ...(hand.results
+      ? {
+          results: hand.results.map((r) => ({
+            user_id: r.playerId,
+            net: Math.round((r.won - r.contributed) * 100) / 100,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -127,7 +138,12 @@ export async function observeLightningHand(
             lightningMemorySize(hand.dealtCount)
           );
       } catch (error) {
-        deps.report(error, 'LightningHorseObservation.durable_opponent_read');
+        if (isOpponentMemoryBusyRefusal(error))
+          reportThrottled(
+            'LightningHorseObservation.durable_opponent_read',
+            'opponent memory unavailable: busy - Lightning completed-hand read refused at admission'
+          );
+        else deps.report(error, 'LightningHorseObservation.durable_opponent_read');
       }
     }
     const pending = deps.lane().observeCompletedHand(buildLightningObservation(hand, durable));

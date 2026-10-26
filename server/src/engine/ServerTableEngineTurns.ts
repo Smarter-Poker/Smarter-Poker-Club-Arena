@@ -8,6 +8,10 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import {
+  recheckHorsePhase14BeforeAcceptance,
+  observeHorsePhase14Execution,
+} from './HorsePhase14Acceptance.js';
 import { buildAllInGestureInput, gestureBeforeAllIn } from '../services/HorseTableGestures.js';
 import { HandController } from './HandController.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
@@ -35,8 +39,14 @@ import type {
   ActionRecord,
 } from '../types.js';
 
-import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
+import {
+  HorseLogic,
+  holdemPremiumAggression,
+  resolveHorseStyle,
+  type HorseGameStateV2,
+} from './HorseLogic.js';
 import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
+import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import {
   buildTournamentMState,
@@ -2742,9 +2752,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // restores normal time-bank behaviour.
     this.timeBankSuppressedThisTurn = false;
 
-    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running
+    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running.
+    // A designed reset, not a recovery: `reset` says nothing (StateMachine.reset).
     if (this.turnFSM.state !== 'waiting') {
-      this.turnFSM.forceState('waiting');
+      this.turnFSM.reset('waiting');
     }
 
     // Step 1: Check for queued pre-action before starting timer (applies to ALL players)
@@ -3178,6 +3189,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         mysteryTopLive: tctx?.mysteryTopLive ?? false,
         meanBountyCents: tctx?.meanBountyCents ?? 0,
         prizePoolCents: tctx?.prizePoolCents ?? 0,
+        ...(tctx?.payoutTermsVersion === 1
+          ? {
+              payoutTermsVersion: 1 as const,
+              prizePoolFinalized: tctx.prizePoolFinalized,
+              bubbleProtection: tctx.bubbleProtection,
+              prizeUnitCents: tctx.prizeUnitCents,
+              finalizedPrizeLadder: tctx.finalizedPrizeLadder
+                ? {
+                    ...tctx.finalizedPrizeLadder,
+                    prizesCents: tctx.finalizedPrizeLadder.prizesCents.slice(),
+                  }
+                : undefined,
+            }
+          : {}),
         bountyPoolCents: tctx?.bountyPoolCents ?? 0,
         buyInCents: tctx?.buyInCents ?? null,
         startingStackChips: tctx?.startingStackChips ?? null,
@@ -4216,6 +4241,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             }
           }
 
+          decision = recheckHorsePhase14BeforeAcceptance(decision);
+
           // Authority can be withdrawn while a worker answer waits for its
           // think time. Re-selecting that owner's baseline above must not
           // restore the very river flat-call the final nuts rule forbids.
@@ -4249,7 +4276,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             };
             const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
             const guarded = fullPotNearPotWager(
-              riverNutsRaise(decision, privateHero, commitState),
+              riverNutsRaise(
+                tournamentShoveDiscipline(
+                  holdemPremiumAggression(decision, privateHero, commitState, {
+                    holdemDominatedFold: false,
+                  }),
+                  privateHero,
+                  commitState
+                ),
+                privateHero,
+                commitState
+              ),
               privateHero,
               commitState
             );
@@ -4545,6 +4582,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               applied,
               acceptedActions,
             });
+            observeHorsePhase14Execution(decision);
             if (applied && acceptedActions.length === 1) {
               const actual = acceptedActions[0].record;
               executedAction = actual.action;

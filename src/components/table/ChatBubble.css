@@ -12,7 +12,7 @@
 
 .chat-bubble {
   position: absolute;
-  left: 50%;
+  left: calc(50% + var(--chat-bubble-shift, 0px));
   /* translateX only: the wrapper already carries a translate(-50%, -50%), and
      nesting a second transform here would compound it. Vertical placement is
      done with top/bottom below so the two never fight. */
@@ -28,7 +28,7 @@
      wider than the seat because a 200-character message inside 110px would be
      a twelve-line tower, but capped so two adjacent seats cannot overlap. */
   min-width: 72px;
-  max-width: 168px;
+  max-width: min(168px, var(--chat-bubble-available, 100vw));
   padding: 5px 9px 6px;
   box-sizing: border-box;
 
@@ -89,7 +89,7 @@
 /* The little pointer at the bottom, aimed at the avatar. */
 .chat-bubble__tail {
   position: absolute;
-  left: 50%;
+  left: clamp(12px, calc(50% - var(--chat-bubble-shift, 0px)), calc(100% - 12px));
   width: 10px;
   height: 10px;
   background: rgba(226, 231, 240, 0.98);
@@ -198,7 +198,10 @@
 }
 
 .chat-bubble--notice .chat-bubble__text {
-  white-space: nowrap;
+  /* Keep every cent readable instead of clipping a long amount on one line. */
+  display: block;
+  max-width: 100%;
+  white-space: normal;
   text-align: center;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -247,7 +250,7 @@
    closer together, so the bubble narrows to keep two neighbours apart. */
 @media (max-width: 480px) {
   .chat-bubble {
-    max-width: 132px;
+    max-width: min(132px, var(--chat-bubble-available, 100vw));
     padding: 4px 7px 5px;
   }
 

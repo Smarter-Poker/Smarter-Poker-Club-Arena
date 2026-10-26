@@ -290,19 +290,42 @@
   text-align: center;
 }
 
+/* A complete header and closing cap from the same approved console family. */
 .break-screen__minimized {
   position: fixed;
   z-index: 700;
-  bottom: calc(var(--bottom-nav-stack-base, 44px) + 12px);
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
-  width: 240px;
-  aspect-ratio: 1000 / 348;
+  transform: translate(-50%, -50%);
+  width: min(240px, 56%);
+  container-type: inline-size;
   padding: 0;
   border: 0;
-  background: url('/assets/club-buttons/console/spade-console-v2/top-flat.png') center / 100% 100%
-    no-repeat;
+  background: transparent;
   cursor: pointer;
+}
+
+/* Portalled into this table's scaler, never the viewport/action controls. */
+.break-screen__minimized--on-table {
+  position: absolute;
+  top: 65%;
+  z-index: 70;
+}
+
+.break-screen__mini-face {
+  position: relative;
+  display: block;
+  aspect-ratio: 1000 / 348;
+  background: url('/assets/club-buttons/console/spade-console-v2/top-flat.png') center / 100% auto
+    no-repeat;
+}
+
+.break-screen__minimized::after {
+  content: '';
+  display: block;
+  aspect-ratio: 1000 / 72;
+  background: url('/assets/club-buttons/console/spade-console-v2/bottom-foot.png') center / 100%
+    auto no-repeat;
 }
 
 .break-screen__mini-badge {
@@ -315,7 +338,7 @@
   align-items: center;
   color: #ffd700;
   font:
-    600 19px/1 'Roboto Condensed',
+    600 8cqw/1 'Roboto Condensed',
     Inter,
     sans-serif;
   white-space: nowrap;
@@ -339,7 +362,7 @@
   height: 15.5%;
   color: #45adff;
   font:
-    600 11px/1 'Roboto Condensed',
+    600 4.6cqw/1 'Roboto Condensed',
     Inter,
     sans-serif;
   text-align: center;

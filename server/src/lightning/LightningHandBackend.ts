@@ -133,9 +133,13 @@ export interface LightningHandBackend {
     /** The chips the folder has put in this hand's pot (p_committed). */
     committed: number
   ): Promise<LightningCallOutcome<null>>;
-  settle(
-    args: LightningSettleArgs
-  ): Promise<LightningCallOutcome<{ handHistoryId: string; receiptHash: string | null }>>;
+  settle(args: LightningSettleArgs): Promise<
+    LightningCallOutcome<{
+      handHistoryId: string;
+      receiptHash: string | null;
+      acceptedLeaseGeneration?: string | null;
+    }>
+  >;
   /**
    * fn_ca_process_hand_post_commit_obligations: `ok !== true` is a failure
    * (predecessor_pending is the common one with several hands per front table).
@@ -431,6 +435,9 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
         ok: true,
         value: {
           handHistoryId: id,
+          acceptedLeaseGeneration: isUuid(out.value.accepted_lease_generation)
+            ? out.value.accepted_lease_generation
+            : null,
           receiptHash: typeof out.value.receipt_hash === 'string' ? out.value.receipt_hash : null,
         },
       };

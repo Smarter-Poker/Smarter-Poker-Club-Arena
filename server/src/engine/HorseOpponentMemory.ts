@@ -1,6 +1,15 @@
 import { EXPLOIT_COUNTER_FIELDS, type ExploitCounters } from './HorseOpponentExploit.js';
 
-export const MEMORY_VARIANTS = ['nlh', 'plo4', 'plo5', 'plo6', 'plo8'] as const;
+export const MEMORY_VARIANTS = [
+  'nlh',
+  'plo4',
+  'plo5',
+  'plo6',
+  'plo8',
+  'flh',
+  'flo8',
+  'short_deck',
+] as const;
 export type MemoryVariant = (typeof MEMORY_VARIANTS)[number];
 export type MemoryMode = 'cash' | 'tournament';
 export type MemorySize = 'hu' | 'short' | 'full';
@@ -27,6 +36,28 @@ export function opponentMemoryKey(
   size: MemorySize
 ): string {
   return `${variant}:${mode}:${size}|${userId}`;
+}
+
+/**
+ * ═══ A PROFILE IS EVIDENCE BEFORE ITS BACK-FILL (2026-10-24) ═══════════════
+ * `initialized` means the one-time legacy back-fill (hands played before the
+ * durable memory existed) has been folded in. That back-fill runs one player
+ * per read request behind one database-wide lock, and on 2026-10-24 5,965 of
+ * 15,199 profiles were still waiting - 730 of them with 240+ hands of their
+ * own, 24 of them human players - while every reader dropped them. So a horse
+ * met those players, on the first hand at every new table, with no read.
+ *
+ * The counters in an uninitialized row are exact for every hand since the
+ * memory began; the back-fill only adds OLDER hands, which the 30-hand (and
+ * 8-hand fast-window) decay weighs least. Leaving them out is a smaller
+ * sample, never a biased one, and the Bayesian credibility gate already
+ * prices sample size. So a row is used as soon as it exists, and a row that
+ * later completes its back-fill supersedes the version without it.
+ */
+export function opponentProfileVersion(
+  p: Pick<DurableOpponentProfile, 'observed_hands' | 'initialized'>
+): number {
+  return p.observed_hands * 2 + (p.initialized ? 1 : 0);
 }
 
 export function validOpponentProfile(value: unknown): value is DurableOpponentProfile {
@@ -113,4 +144,28 @@ export function blendOpponentMemory(
   for (const f of EXPLOIT_COUNTER_FIELDS)
     out[f] = (exact?.[f] ?? 0) + OPPONENT_MEMORY_DONOR_WEIGHT * (best[f] ?? 0);
   return out;
+}
+
+/** Separate bounded donor batch: never another game, mode or heads-up read. */
+export function validOpponentDonorProfiles(
+  rows: unknown,
+  ids: readonly string[],
+  variant: string,
+  mode: MemoryMode,
+  size: MemorySize
+): rows is DurableOpponentProfile[] {
+  const donorSize = opponentMemoryDonors(mode, size)[0]?.[1];
+  return (
+    Array.isArray(rows) &&
+    rows.length <= 10 &&
+    new Set(rows.map((p) => p?.user_id)).size === rows.length &&
+    rows.every(
+      (p) =>
+        validOpponentProfile(p) &&
+        ids.includes(p.user_id) &&
+        p.variant === variant &&
+        p.mode === mode &&
+        p.size === donorSize
+    )
+  );
 }

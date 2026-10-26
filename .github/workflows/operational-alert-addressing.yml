@@ -41,9 +41,12 @@ on:
 permissions:
   contents: read
 
+# A pull request's superseded run is cancelled (its jobs only read the
+# checkout); the live workflow_run reader keeps its own group and is never
+# cancelled mid-run. tests/superseded-ci-stops-at-the-push.law.test.ts.
 concurrency:
   group: operational-alert-addressing-${{ github.event_name == 'workflow_run' && 'live' || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   decision-rules:

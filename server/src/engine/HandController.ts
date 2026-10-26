@@ -1263,8 +1263,8 @@ export class HandController {
     try {
       publicNode = captureHorsePublicActionNode(
         this.config,
-        this.state,
-        this.getAuthoritativeActionState(player.user_id),
+        earlyFold ? { ...this.state, currentPlayerSeat: player.seat } : this.state,
+        this.getAuthoritativeActionState(player.user_id, { asIfToAct: earlyFold }),
         this.getActiveBoardCount(),
         this.readPublicTournamentStage
       );

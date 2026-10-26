@@ -22,7 +22,7 @@
  * can mount with a two-line change.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './ChatBubble.css';
 import type { ChatMessage } from './TableChat';
 
@@ -134,10 +134,43 @@ export function ChatBubble({
   placement = 'above',
   variant = 'message',
 }: ChatBubbleProps) {
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current;
+    const seat = bubble?.parentElement;
+    const pane = bubble?.closest<HTMLElement>('.table-page');
+    if (!bubble || !seat || !pane) return;
+    // Center on the same seat, then move only as far as its actual table pane
+    // requires. A multi-table pane can be much narrower than the viewport.
+    const fit = () => {
+      const bounds = pane.getBoundingClientRect();
+      const anchor = seat.getBoundingClientRect();
+      const scale = seat.offsetWidth > 0 ? anchor.width / seat.offsetWidth : 1;
+      const left = Math.max(0, bounds.left) + 4;
+      const right = Math.min(window.innerWidth, bounds.right) - 4;
+      if (!(scale > 0) || right <= left) return;
+      bubble.style.setProperty('--chat-bubble-available', `${(right - left) / scale}px`);
+      const width = bubble.offsetWidth * scale;
+      const center = anchor.left + anchor.width / 2;
+      const target = Math.max(left + width / 2, Math.min(right - width / 2, center));
+      bubble.style.setProperty('--chat-bubble-shift', `${(target - center) / scale}px`);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(bubble);
+    observer.observe(seat);
+    observer.observe(pane);
+    window.addEventListener('resize', fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [text, playerName, placement, variant]);
   const isSpeaking = variant === 'speaking';
   const isNotice = variant === 'notice';
   return (
     <div
+      ref={bubbleRef}
       className={`chat-bubble chat-bubble--${placement}${isOwn ? ' chat-bubble--own' : ''}${
         isSpeaking ? ' chat-bubble--speaking' : ''
       }${isNotice ? ' chat-bubble--notice' : ''}`}

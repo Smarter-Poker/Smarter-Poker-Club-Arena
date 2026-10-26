@@ -46,7 +46,12 @@ export function isAddOnAppliedEvent(evt: unknown): evt is AddOnAppliedEvent {
   if (!evt || typeof evt !== 'object') return false;
   const e = evt as Record<string, unknown>;
   const type = typeof e.type === 'string' ? e.type.toLowerCase() : '';
-  return type === 'add_on_applied' && typeof e.user_id === 'string' && Number(e.amount) > 0;
+  return (
+    type === 'add_on_applied' &&
+    typeof e.user_id === 'string' &&
+    Number.isFinite(Number(e.amount)) &&
+    Number(e.amount) > 0
+  );
 }
 
 /** The exact words. One phrase for add-on and rebuy alike — Dan asked for
@@ -86,6 +91,9 @@ export function useSeatAddOnBubbles(
   const { lifetimeMs = ADD_ON_BUBBLE_LIFETIME_MS, nameForSeat } = options;
   const [bubbles, setBubbles] = useState<SeatChatBubble[]>([]);
   const lastSeenRef = useRef<unknown>(null);
+  // A reconnect can redeliver the same frame as a NEW object. Keep a bounded
+  // receipt history so it cannot restart a notice that already ran its course.
+  const seenReceiptsRef = useRef(new Set<string>());
   const seatOwnerIdsRef = useRef(seatOwnerIds);
   seatOwnerIdsRef.current = seatOwnerIds;
   // Read through a ref: callers hand in a fresh closure every render, and a
@@ -107,8 +115,19 @@ export function useSeatAddOnBubbles(
     lastSeenRef.current = engineLastEvent;
     if (!isAddOnAppliedEvent(engineLastEvent)) return;
 
+    const receipt =
+      engineLastEvent.timestamp == null
+        ? null
+        : `${engineLastEvent.table_id ?? ''}:${engineLastEvent.user_id}:${engineLastEvent.timestamp}:${Number(engineLastEvent.amount)}`;
+    if (receipt && seenReceiptsRef.current.has(receipt)) return;
     const seatNumber = seatForAddOn(engineLastEvent, seatOwnerIdsRef.current);
     if (seatNumber <= 0) return; // Nobody to hang it over.
+    if (receipt) {
+      seenReceiptsRef.current.add(receipt);
+      if (seenReceiptsRef.current.size > 64) {
+        seenReceiptsRef.current.delete(seenReceiptsRef.current.values().next().value!);
+      }
+    }
 
     const id = `addon-${engineLastEvent.user_id}-${engineLastEvent.timestamp ?? Date.now()}`;
     const fresh: SeatChatBubble = {
@@ -131,7 +150,13 @@ export function useSeatAddOnBubbles(
     timersRef.current.add(timer);
   }, [engineLastEvent, lifetimeMs]);
 
-  // A seat that emptied while the bubble was up has nothing under it.
-  const activeSeats = new Set(seatOwnerIds.map((id, i) => (id ? i + 1 : 0)).filter((n) => n > 0));
-  return bubbles.filter((b) => activeSeats.has(b.seatNumber));
+  useEffect(() => {
+    setBubbles((previous) => {
+      const retained = previous.filter((b) => seatOwnerIds[b.seatNumber - 1] === b.playerId);
+      return retained.length === previous.length ? previous : retained;
+    });
+  }, [seatOwnerIds]);
+
+  // A notice belongs to its player, never to the next occupant of that chair.
+  return bubbles.filter((b) => seatOwnerIds[b.seatNumber - 1] === b.playerId);
 }

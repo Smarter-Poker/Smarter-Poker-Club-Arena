@@ -128,3 +128,27 @@ describe('the first hand at a new-size table is not a cold read', () => {
     });
   });
 });
+
+describe('a profile awaiting its back-fill is read from the first hand', () => {
+  it('an uninitialized profile engages a read; its back-filled version replaces it', () => {
+    const counters = raiser(60);
+    const base = {
+      user_id: uid,
+      variant: 'nlh' as const,
+      mode: 'cash' as const,
+      size: 'full' as const,
+      observed_hands: 300,
+      counters,
+    };
+    HorseMind.importDurableOpponentProfiles([{ ...base, initialized: false }]);
+    HorseMind.setDecisionScope(readScopeOf('nlh', 6), 'nlh', 'cash');
+    expect(HorseMind.opponentRead(uid)?.stats.pfr.engaged).toBe('high');
+    // The back-fill completes at the same hand count: the filled row wins.
+    const filled = folder(60);
+    HorseMind.importDurableOpponentProfiles([{ ...base, initialized: true, counters: filled }]);
+    expect(HorseMind.opponentRead(uid)?.stats.pfr.engaged ?? null).not.toBe('high');
+    // An older awaiting snapshot arriving late never regresses it.
+    HorseMind.importDurableOpponentProfiles([{ ...base, initialized: false }]);
+    expect(HorseMind.opponentRead(uid)?.stats.pfr.engaged ?? null).not.toBe('high');
+  });
+});

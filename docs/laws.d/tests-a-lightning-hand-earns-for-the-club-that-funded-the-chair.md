@@ -6,7 +6,8 @@ whose wallet funded the anchor chair, not to the hosting union. From
 `cash_player_session.club_id`, which `fn_cash_session_open` stamps with the
 table's club (Midway Union), so about 61.7k Lightning rake records were
 refused by the settler with `accounting_terms_not_observed`. Migration
-20261025022551 makes the branch read the original pool session's anchor
+20261025024527 (recorded on main; this PR first carried it as 20261025022551)
+makes the branch read the original pool session's anchor
 chair first, then that chair's immutable buy-in receipt, both under the
 unchanged union validation, and fall back to the session reader only when no
 unambiguous funding chair exists. The law pins the migration's pre-image and

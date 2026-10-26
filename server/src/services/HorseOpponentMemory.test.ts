@@ -4,13 +4,17 @@ import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 import type { LiveHorseDecisionSnapshot } from '../engine/horseDecision/protocol.js';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), report: vi.fn(), from: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }));
-vi.mock('./errorReporter.js', () => ({ reportError: mocks.report }));
+vi.mock('./errorReporter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./errorReporter.js')>()),
+  reportError: mocks.report,
+}));
 import {
   createOpponentMemorySchemaProbe,
   createOpponentMemoryReadAdmission,
   createOpponentMemoryProfileCache,
   createDecisionOpponentProfileReader,
   readHorseOpponentProfiles,
+  readExistingHorseOpponentDonors,
 } from './HorseOpponentMemory.js';
 const uid = '90000000-0000-4000-8000-000000000001';
 const row = (): DurableOpponentProfile => ({
@@ -174,22 +178,19 @@ describe('process-wide memory admission', () => {
 });
 
 describe('bounded partial memory restoration', () => {
-  it('preserves known profiles while leaving cold actors explicitly uninitialized', async () => {
+  it('a profile awaiting its legacy back-fill is still evidence (2026-10-24)', async () => {
+    // Replaces 'leaving cold actors explicitly uninitialized': on 2026-10-24
+    // 5,965 profiles (730 with 240+ own hands, 24 human players) waited on a
+    // one-at-a-time back-fill while every read dropped them, so horses met
+    // those players with no read. Their counters are exact since the memory
+    // began; the back-fill only adds older, lower-weighted hands.
     const cold = '90000000-0000-4000-8000-000000000002';
+    const awaiting = { ...row(), user_id: cold, initialized: false, observed_hands: 300 };
     mocks.rpc.mockImplementation(() => ({
-      abortSignal: async () => ({
-        data: [row()],
-        error: null,
-      }),
+      abortSignal: async () => ({ data: [row(), awaiting], error: null }),
     }));
-    expect(await readHorseOpponentProfiles([uid, cold], 'plo5', 'cash', 'short')).toEqual([row()]);
-    mocks.rpc.mockImplementation(() => ({
-      abortSignal: async () => ({
-        data: [row(), { ...row(), user_id: cold, initialized: false }],
-        error: null,
-      }),
-    }));
-    expect(await readHorseOpponentProfiles([uid, cold], 'plo5', 'cash', 'short')).toEqual([row()]);
+    const out = await readHorseOpponentProfiles([uid, cold], 'plo5', 'cash', 'short');
+    expect(out).toEqual([row(), awaiting]);
   });
   it('does not launch a read for an already canceled caller', async () => {
     const controller = new AbortController();
@@ -210,7 +211,7 @@ describe('bounded partial memory restoration', () => {
 });
 
 describe('last validated memory snapshots', () => {
-  it('never regresses observed hands or crosses game context or caches uninitialized rows', () => {
+  it('never regresses observed hands or crosses game context; a back-fill supersedes', () => {
     const cache = createOpponentMemoryProfileCache();
     cache.remember([{ ...row(), observed_hands: 20 }]);
     cache.remember([{ ...row(), observed_hands: 10 }]);
@@ -218,7 +219,14 @@ describe('last validated memory snapshots', () => {
     expect(cache.read([uid], 'plo4', 'cash', 'short')).toEqual([]);
     const other = { ...row(), user_id: '90000000-0000-4000-8000-000000000098', initialized: false };
     cache.remember([other]);
-    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([]);
+    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([other]);
+    // The same hands, now back-filled, replace the awaiting version...
+    const filled = { ...other, initialized: true, counters: { ...other.counters, hands: 5 } };
+    cache.remember([filled]);
+    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([filled]);
+    // ...and an older awaiting snapshot never regresses it.
+    cache.remember([other]);
+    expect(cache.read([other.user_id], 'plo5', 'cash', 'short')).toEqual([filled]);
   });
 });
 
@@ -300,5 +308,32 @@ describe('the cost of every opponent read is a number (2026-10-24)', () => {
     expect(
       [...fired.keys()].filter((k) => k.startsWith('horse_opponent_memory_read_ms_')).length
     ).toBe(1);
+  });
+});
+
+describe('donor reads have their own admission', () => {
+  it('a failed exact read does not turn the next donor read away as busy', async () => {
+    const id = '90000000-0000-4000-8000-0000000000d1';
+    mocks.rpc.mockImplementation(() => ({
+      abortSignal: async () => ({ data: null, error: { code: 'XX000' } }),
+    }));
+    await expect(readHorseOpponentProfiles([id], 'plo5', 'cash', 'short')).rejects.toThrow(
+      'opponent memory unavailable'
+    );
+    // The exact gate is now closed for its 1.5 second budget.
+    await expect(readHorseOpponentProfiles([id], 'plo5', 'cash', 'short')).rejects.toThrow('busy');
+    const donor = { ...row(), user_id: id, size: 'full' as const };
+    const abortSignal = vi.fn(async () => ({ data: [donor], error: null }));
+    const chain = {
+      select: () => chain,
+      in: () => chain,
+      eq: () => chain,
+      limit: () => ({ abortSignal }),
+    };
+    mocks.from.mockReturnValue(chain);
+    expect(await readExistingHorseOpponentDonors([id], 'plo5', 'cash', 'short')).toMatchObject([
+      { user_id: id, size: 'full' },
+    ]);
+    expect(abortSignal).toHaveBeenCalledTimes(1);
   });
 });

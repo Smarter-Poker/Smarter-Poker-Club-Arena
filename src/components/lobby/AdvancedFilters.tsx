@@ -136,14 +136,27 @@ export function sanitizeStore(parsed: FilterStore | null | undefined): FilterSto
         const n = Number(x);
         return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
       };
+      const styles = [...new Set(list(value.styles).map(cashTemplateKey))].filter((g) =>
+        styleKeys.has(g)
+      );
+      // Before ordinary Madness became its own style, Classic + Lightning
+      // was the entire catalog. Preserve that old all-style choice across the
+      // split. A versioned choice can deliberately exclude Madness.
+      if (
+        !(Number(value.stylesVersion) >= 1) &&
+        styles.length === 2 &&
+        styles.includes('classic') &&
+        styles.includes('madness') &&
+        styleKeys.has('straight_madness')
+      )
+        styles.push('straight_madness');
       clean[type as FilterGameType] = {
         ...empty,
         ...value,
         // Drop keys a previous build wrote that this one no longer defines.
         games: list(value.games).filter((g) => gameKeys.has(g)),
-        styles: [...new Set(list(value.styles).map(cashTemplateKey))].filter((g) =>
-          styleKeys.has(g)
-        ),
+        styles,
+        stylesVersion: 1,
         statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
         mustHave: list(value.mustHave).filter((k) => known.has(k)),
         hide: list(value.hide).filter((k) => known.has(k)),

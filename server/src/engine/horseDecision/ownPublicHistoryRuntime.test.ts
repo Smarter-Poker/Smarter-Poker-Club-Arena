@@ -1,0 +1,215 @@
+import { EventEmitter } from 'node:events';
+import { expect, it } from 'vitest';
+import { LiveHorseDecisionWorkerClient, type WorkerLike } from './client.js';
+import type {
+  HorseDecisionWorkerRequest,
+  HorseDecisionWorkerResponse,
+  CompletedHandObservation,
+} from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
+import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
+import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
+import { horseObserverReadsWereIndependent } from '../HorseObserverReadEvidence.js';
+import { HorseLogic } from '../HorseLogic.js';
+import { HorseMind } from '../HorseMind.js';
+import { winnerReadout } from '../HorseWinnerRead.js';
+import {
+  workerHarness,
+  requestAt,
+  heroId,
+  opponentId,
+  tableId,
+  lease,
+} from '../../testing/horseRegression/plan/fixture.js';
+
+it.each([false, true])(
+  'restores only own public history before real HorseLogic, preserves live tails and deduplicates overlap=%s',
+  async (overlap) => {
+    const reads: Array<{ hands: number; folds: number; wins: number; recentFolds: number }> = [];
+    class LocalWorker extends EventEmitter implements WorkerLike {
+      readonly sent: HorseDecisionWorkerRequest[] = [];
+      readonly h = workerHarness(
+        {
+          decide: (...args) => {
+            const decision = HorseLogic.decide(...args);
+            reads.push({
+              hands: HorseMind.getStats(opponentId)?.hands ?? 0,
+              folds: HorseMind.getStats(opponentId)?.folds ?? 0,
+              wins: winnerReadout(opponentId)?.effectiveHands ?? 0,
+              recentFolds: HorseMind.getStats(opponentId)?.rFolds ?? 0,
+            });
+            return decision;
+          },
+        },
+        (m) => queueMicrotask(() => this.emit('message', structuredClone(m)))
+      );
+      postMessage(m: HorseDecisionWorkerRequest) {
+        this.sent.push(structuredClone(m));
+        this.h.runtime.receive(structuredClone(m));
+      }
+      async terminate() {
+        await this.h.close();
+        return 0;
+      }
+    }
+    const worker = new LocalWorker();
+    let resolve!: (v: unknown) => void;
+    const pending = new Promise<unknown>((r) => {
+      resolve = r;
+    });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      ownPublicHistory: () => pending,
+      jobTimeoutMs: 5000,
+    });
+    const first = requestAt(1, tableId, 1000100);
+    const t = Date.now() - 1000;
+    first.gameState.actionHistory!.forEach((a, i) => {
+      a.timestamp = t + i;
+    });
+    first.handJournalContext = captureHorseHandJournalContext(first.gameState.actionHistory!);
+    first.decisionTimeMs = Date.now() + 100;
+    first.decisionKey = buildHorseDecisionKey(first);
+    const context = horseObserverReadContextFromRequest(first)!;
+    const completed: CompletedHandObservation = {
+      generation: 1000100,
+      fence: `${tableId}:1000100:${lease}:observe`,
+      handKey: `${tableId}:1000100`,
+      committedHandId: '55555555-5555-4555-8555-555555555555',
+      bigBlind: 2,
+      scope: 'holdem:hu',
+      showdown: null,
+      actions: [
+        ...first.gameState.actionHistory!,
+        { seat: 1, userId: heroId, action: 'bet', amount: 2, stage: 'flop', timestamp: t + 2 },
+        { seat: 2, userId: opponentId, action: 'fold', amount: 0, stage: 'flop', timestamp: t + 3 },
+      ],
+      results: [
+        { user_id: heroId, net: 2 },
+        { user_id: opponentId, net: -2 },
+      ],
+    };
+    const historic = {
+      handId: '66666666-6666-4666-8666-666666666666',
+      tableId,
+      handNumber: 1000099,
+      observerId: heroId,
+      observerSeat: 1,
+      position: 'BTN',
+      playersDealt: 2,
+      variant: 'nlh',
+      format: 'cash',
+      playedAtMs: t - 1000,
+      bigBlind: 2,
+      actions: [
+        {
+          seat: 1,
+          userId: heroId,
+          action: 'raise',
+          amount: 6,
+          stage: 'preflop',
+          timestamp: t - 2000,
+          isFullRaise: true,
+        },
+        {
+          seat: 2,
+          userId: opponentId,
+          action: 'fold',
+          amount: 0,
+          stage: 'preflop',
+          timestamp: t - 1999,
+        },
+      ],
+      results: completed.results,
+    };
+    const histories = Array.from({ length: 32 }, (_, i) => ({
+      ...historic,
+      handId: `66666666-6666-4666-8666-${String(i + 1).padStart(12, '0')}`,
+      handNumber: 1000060 + i,
+      playedAtMs: t - 1000 + i * 10,
+      actions: [
+        {
+          seat: 1,
+          userId: heroId,
+          action: 'raise',
+          amount: 6,
+          stage: 'preflop',
+          timestamp: t - 1005 + i * 10,
+          isFullRaise: true,
+        },
+        {
+          seat: 2,
+          userId: opponentId,
+          action: i < 16 ? 'fold' : 'call',
+          amount: i < 16 ? 0 : 6,
+          stage: 'preflop',
+          timestamp: t - 1004 + i * 10,
+        },
+      ],
+    }));
+    try {
+      await worker.h.runtime.start();
+      await client.ready();
+      await client.decideFast(first);
+      expect(reads[0]).toMatchObject({ hands: 1, folds: 0, wins: 0 });
+      await client.observeCompletedHand(completed);
+      resolve({
+        version: 1,
+        source: 'original_dealt_public_v1',
+        context,
+        capped: false,
+        hands: [
+          ...histories,
+          ...(overlap
+            ? [
+                {
+                  ...historic,
+                  handId: completed.committedHandId,
+                  handNumber: 1000100,
+                  playedAtMs: t + 4,
+                  actions: completed.actions,
+                  results: completed.results,
+                },
+              ]
+            : []),
+        ],
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      const next = requestAt(3, tableId, 1000101);
+      next.gameState.actionHistory!.forEach((a, i) => {
+        a.timestamp = t + 100 + i;
+      });
+      next.handJournalContext = captureHorseHandJournalContext(next.gameState.actionHistory!);
+      next.decisionTimeMs = Math.max(first.decisionTimeMs + 1, Date.now() + 100);
+      next.decisionKey = buildHorseDecisionKey(next);
+      const result = await client.decideFast(next);
+      expect(reads[1]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
+      expect(reads[1].wins).toBeGreaterThan(32);
+      expect(reads[1].wins).toBeLessThanOrEqual(33);
+      const capture = worker.h.captures.at(-1)!;
+      expect(capture.observerReads).toMatchObject({
+        version: 2,
+        history: 'own_public_window',
+        historyHands: overlap ? 33 : 32,
+        historyCapped: false,
+      });
+      expect(horseObserverReadsWereIndependent(capture.observerReads, next)).toBe(true);
+      expect(result.observerHistoryAckDigest).toMatch(/^[a-f0-9]{64}$/);
+      next.requestId++;
+      await client.decideFast(next);
+      expect(reads[2]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
+      expect(
+        worker.sent
+          .filter((m) => m.type === 'DECIDE_FAST')
+          .map((m) => (m as any).ownPublicHistory !== undefined)
+      ).toEqual([false, true, false]);
+      expect(HorseMind.getStats(opponentId)).toBeUndefined();
+    } finally {
+      await client.stop();
+      await worker.h.close();
+      HorseMind.reset();
+    }
+  }
+);

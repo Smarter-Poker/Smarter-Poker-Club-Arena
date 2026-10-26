@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 238211,
-      "sha256": "187083a18030ac26366f893c1f0f4d12ffdbe1b8c431467b0eff435247bbd5a3"
+      "bytes": 238435,
+      "sha256": "49b14f7e18f997b1f693380360320bd2db82abca0d048d995d9248e964bd76ac"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3856,6 +3856,18 @@
     "originalBranchWorkflowPin": {
       "bytes": 237557,
       "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
+    }
+  },
+  "cashReturnRuleNative20261026": {
+    "reason": "Add the isolated full-stack cash-return regression to the existing required matrix. Refresh only the current workflow input identity; retain all financial fixtures, assertions, historical pins and qualification states. This source binding is not production or financial certification.",
+    "execution_performed": false,
+    "previousWorkflowPin": {
+      "bytes": 238211,
+      "sha256": "187083a18030ac26366f893c1f0f4d12ffdbe1b8c431467b0eff435247bbd5a3"
+    },
+    "currentWorkflowPin": {
+      "bytes": 238435,
+      "sha256": "49b14f7e18f997b1f693380360320bd2db82abca0d048d995d9248e964bd76ac"
     }
   }
 }

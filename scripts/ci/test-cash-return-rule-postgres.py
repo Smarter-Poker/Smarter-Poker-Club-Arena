@@ -30,6 +30,9 @@ CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 CREATE TABLE public.tables(id uuid PRIMARY KEY,club_id uuid,game_variant text,small_blind numeric,big_blind numeric,tournament_id uuid,min_buy_in numeric,max_buy_in numeric);
 CREATE TABLE public.cash_games(id uuid);
+CREATE TABLE public.clubs(id uuid,union_id uuid);
+CREATE FUNCTION public.fn_caller_session_is_live() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
+CREATE FUNCTION public.fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
 CREATE TABLE public.chip_ledger(idempotency_key text);
 CREATE FUNCTION public.fn_actor_can_manage_club_treasury(uuid) RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;
 CREATE TABLE public.cash_player_session(id uuid DEFAULT gen_random_uuid(),player_id uuid,scope_type text,scope_id uuid,closed_at timestamptz,closed_reason text,baseline numeric,rejoin_window_ms integer,final_stack numeric,final_stack_captured_at timestamptz,financial_capture_status text,close_table_id uuid);
@@ -39,6 +42,7 @@ CREATE TABLE public.table_seats(id uuid,table_id uuid,user_id uuid,left_at times
     query((ROOT/'scripts/ci/fixtures/cash-return/installed-functions.sql').read_text())
     query('''CREATE FUNCTION public.test_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'assert: %',label; END IF; END$$;
 INSERT INTO tables VALUES('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010','plo4',1,2,NULL,80,400),('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000010','plo4',1,2,NULL,80,400),('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000010','plo5',1,2,NULL,80,400),('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000010','plo4',2,4,NULL,160,800);
+ALTER TABLE tables ADD COLUMN max_players integer, ADD COLUMN is_vip_only boolean, ADD COLUMN is_template boolean;
 SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000100',false);
 INSERT INTO cash_rejoin_constraints(player_id,club_id,variant,sb,bb,required_stack,left_at,expires_at) VALUES(auth.uid(),'00000000-0000-0000-0000-000000000010','plo4',1,2,650,now(),now()+interval '2 hours');
 SELECT test_assert((fn_cash_effective_buyin('00000000-0000-0000-0000-000000000002')->>'min')::numeric=400,'baseline reproduces cap bypass');
@@ -52,6 +56,23 @@ SELECT test_assert((fn_cash_leave_check(auth.uid(),'00000000-0000-0000-0000-0000
 SELECT test_assert((fn_cash_effective_buyin('00000000-0000-0000-0000-000000000002')->>'min')::numeric=650,'full stack across tables');
 SELECT test_assert((fn_cash_effective_buyin('00000000-0000-0000-0000-000000000002')->>'max')::numeric=650,'return cap raised');
 SELECT test_assert(fn_ca_cash_entry_need(auth.uid(),'00000000-0000-0000-0000-000000000002')=650,'wallet need not capped');
+DO $$BEGIN
+ BEGIN
+  PERFORM atomic_table_buyin_before_maintenance_announcement_gate(auth.uid(),'00000000-0000-0000-0000-000000000002',1,649);
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM LIKE 'BUYIN_BELOW_FLOOR:%650%' THEN RETURN; END IF; RAISE;
+ END;
+ RAISE EXCEPTION 'chip entry accepted a reduced stack';
+END$$;
+DO $$BEGIN
+ BEGIN
+  PERFORM atomic_table_buyin_before_maintenance_announcement_gate(auth.uid(),'00000000-0000-0000-0000-000000000002',1,651);
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM LIKE 'Buy-in above table maximum%' THEN RETURN; END IF; RAISE;
+ END;
+ RAISE EXCEPTION 'chip entry lost the upper bound';
+END$$;
+
 SELECT test_assert(fn_horse_seat_from_treasury_before_maintenance_gate('00000000-0000-0000-0000-000000000002',auth.uid(),1,649)->>'error'='BUYIN_BELOW_FLOOR','treasury rejects less than full stack');
 SELECT test_assert(fn_horse_seat_from_treasury_before_maintenance_gate('00000000-0000-0000-0000-000000000002',auth.uid(),1,651)->>'error'='BUYIN_ABOVE_MAX','treasury retains upper bound');
 SELECT test_assert(fn_cash_rejoin_floor(auth.uid(),'00000000-0000-0000-0000-000000000003') IS NULL,'different variant');

@@ -291,3 +291,63 @@ describe('every surface says the hand was called, not shown', () => {
     expect(row.calledMuck).toBe(true);
   });
 });
+
+describe('a river caller the engine tabled is still tagged Called', () => {
+  /* Since 2026-10-26 the engine shows a hand that called the river instead of
+     letting it muck, so the record holds it as SHOWN. The "Called" tag must
+     follow the call, not the muck, or it vanishes from every new hand. */
+  async function tabledHand(mutate?: (row: ReturnType<typeof handRow>) => void) {
+    const row = handRow();
+    row.hole_cards = { [BETTOR]: AdJh, [CALLER]: KhQc };
+    row.showdown[1] = { user_id: CALLER, seat: 6, reveal_order: 1, mucked: false } as never;
+    mutate?.(row);
+    mocks.row = row;
+    mocks.rpc.mockReset();
+    return (await handHistoryService.getHand(HAND))!;
+  }
+
+  it('tags the losing river caller, not the winner, and asks nothing of the database', async () => {
+    const hand = await tabledHand();
+    const caller = hand.replay.showdown.find((r) => r.userId === CALLER)!;
+    const bettor = hand.replay.showdown.find((r) => r.userId === BETTOR)!;
+    expect(caller.calledMuck).toBe(false);
+    expect(caller.calledRiver).toBe(true);
+    expect(bettor.calledRiver).toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('an all-in for no more than the bet is a call; a bigger all-in is not', async () => {
+    const asCall = await tabledHand((row) => {
+      row.actions[8] = { ...row.actions[8], action: 'all_in', amount: 1 };
+    });
+    expect(asCall.replay.showdown.find((r) => r.userId === CALLER)!.calledRiver).toBe(true);
+    const asRaise = await tabledHand((row) => {
+      row.actions[8] = { ...row.actions[8], action: 'all_in', amount: 5 };
+    });
+    expect(asRaise.replay.showdown.find((r) => r.userId === CALLER)!.calledRiver).toBe(false);
+  });
+
+  it('a hand that checked the river down is not tagged', async () => {
+    const hand = await tabledHand((row) => {
+      row.actions[7] = { ...row.actions[7], action: 'check', amount: 0 };
+      row.actions[8] = { ...row.actions[8], action: 'check', amount: 0 };
+    });
+    expect(hand.replay.showdown.find((r) => r.userId === CALLER)!.calledRiver).toBe(false);
+  });
+
+  it('every surface that tags a called muck tags a tabled river call too', () => {
+    const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf8');
+    expect(read('src/components/table/HandDetailModal.tsx')).toMatch(
+      /row\.calledMuck \|\| row\.calledRiver\) && <span className="hdm-tag">Called/
+    );
+    expect(read('src/components/handdetail/HandDetailView.tsx')).toMatch(
+      /row\.calledMuck \|\| row\.calledRiver\) && <span className="hdv__sd-tag">CALLED/
+    );
+    expect(read('src/components/replay/HandReplay.tsx')).toMatch(
+      /high\.calledMuck \|\| high\.calledRiver \? ' · Called'/
+    );
+    expect(read('src/components/table/HandHistoryPanel.tsx')).toMatch(
+      /r\.calledRiver \? ' \(called the river\)'/
+    );
+  });
+});

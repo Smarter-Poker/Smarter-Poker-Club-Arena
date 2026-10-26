@@ -443,6 +443,11 @@ export async function playPlo4PolicyHand(
           cards: [],
           ...(variant === 'pineapple' ? { knownDeadCards: undefined } : {}),
         })),
+        ...(profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID
+          ? {
+              humanUserIds: state.players.filter((p) => p.is_horse === false).map((p) => p.user_id),
+            }
+          : {}),
         communityCards: state.communityCards,
         ...(profile.jointPolicy
           ? {

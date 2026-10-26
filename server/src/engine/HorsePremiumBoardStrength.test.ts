@@ -25,6 +25,9 @@ describe('premium value uses the best five cards', () => {
   it('keeps betting a nut straight made with AK on four connected ranks', () => {
     expect(boardHasPassedPremium(cards('As Kd'), cards('Th Jc Qd Ks 2h'))).toBe(false);
   });
+  it('keeps betting a made flush despite four to a straight', () => {
+    expect(boardHasPassedPremium(cards('Ah Kh'), cards('5h 6h 7h 8c 2d'))).toBe(false);
+  });
   it('keeps betting a full house despite four to a straight', () => {
     expect(boardHasPassedPremium(cards('Qs Qd'), cards('Qh Jc Td 9s 9h'))).toBe(false);
   });
@@ -52,6 +55,12 @@ describe('premium value uses the best five cards', () => {
       maxRaiseTo: 1000,
     };
     expect(holdemPremiumAggressionVerdict({ action: 'check' }, input)?.decision.action).toBe('bet');
+    expect(
+      holdemPremiumAggressionVerdict(
+        { action: 'check' },
+        { ...input, board: cards('5h 6h 7h 8c 2d'), hero: { ...input.hero, cards: cards('Ah Kh') } }
+      )?.decision.action
+    ).toBe('bet');
     expect(
       holdemPremiumAggressionVerdict(
         { action: 'check' },

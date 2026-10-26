@@ -204,8 +204,9 @@ export function isPremiumMadeHand(cards: Card[] | undefined, board: Card[]): boo
 /** Four to a flush the hero holds none of, or four to a straight on board. */
 export function boardHasPassedPremium(cards: Card[], board: Card[]): boolean {
   const made = nlhNutStatus(cards, board, false);
-  // Boats, quads and straight flushes are not passed by straight/flush texture.
-  if (made.cat >= 7) return false;
+  // A made flush or better is not passed by four connected board ranks.
+  // The existing four-flush exception below still protects hands without that suit.
+  if (made.cat >= 6) return false;
   const suitCount = new Map<string, number>();
   for (const c of board) suitCount.set(c.suit, (suitCount.get(c.suit) ?? 0) + 1);
   for (const [suit, n] of suitCount) {

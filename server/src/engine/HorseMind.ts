@@ -19,6 +19,11 @@ import {
   type HorseWinnerReadState,
 } from './HorseWinnerRead.js';
 import { noteFire } from './BrainTelemetry.js';
+import {
+  riverCallCategoryIsUsable,
+  riverCallConfidenceAboveBaseline,
+  type RiverCallContext,
+} from './HorseRiverCallEvidence.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -2387,7 +2392,8 @@ export class HorseMind {
     /** V45: the hand's scope (variant family x dealt count), so the deep
      *  reads land in the scoped bucket too. Absent = pooled only. */
     scope?: ReadScope | null,
-    durableExploit = false
+    durableExploit = false,
+    riverCallContext?: RiverCallContext
   ): void {
     // V45: settlement runs outside any decision; the scope travels with the
     // hand and is cleared on the way out.
@@ -2552,9 +2558,13 @@ export class HorseMind {
             riverLevel = Math.max(riverLevel, amt);
         }
         for (const [id, called] of lastRiver) {
+          if (!riverCallCategoryIsUsable(riverCallContext)) break;
           if (!called) continue;
           const sd = shown.get(id);
           if (!sd || sd.mucked !== false) continue;
+          // An absent/unrecognised category is unknown, not a strong call.
+          const category = (sd.hand_name ?? '').toLowerCase();
+          if (!WEAK_HAND_NAMES.has(category) && !STRONG_HAND_NAMES.has(category)) continue;
           const s = touch(id);
           s.riverCallSD++;
           if (WEAK_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase())) s.riverCallSDWeak++;
@@ -2630,15 +2640,32 @@ export class HorseMind {
   }
 
   /** 2026-10-25 RIVER CALL READ: of this player's shown river calls, the
-   *  fraction that were one pair or worse. Null below five shown calls. High =
+   *  fraction that were one pair or worse. Null below twelve shown calls. High =
    *  they call rivers light (bluff them less, value-bet them thinner). Read
    *  identically for every player, human or horse. A row decoded from a frame
    *  that predates the counters reads as no sample. */
-  static riverCallLightTendency(id: string): number | null {
-    const s = this.readStats(id);
+  static riverCallLightTendency(id: string, baseline = 0): number | null {
+    // These categories differ greatly by family. Never fall back to pooled
+    // hold'em/Omaha counters while a decision has an explicit scope.
+    const s = this.decisionScope
+      ? this.scoped.get(`${this.decisionScope}|${id}`)
+      : this.stats.get(id);
     const n = s?.riverCallSD ?? 0;
-    if (!s || !(n >= 5)) return null;
-    return (s.riverCallSDWeak ?? 0) / n;
+    const weak = s?.riverCallSDWeak ?? 0;
+    if (
+      !Number.isFinite(n) ||
+      !Number.isFinite(weak) ||
+      n < 12 ||
+      weak < 0 ||
+      weak > n ||
+      !Number.isFinite(baseline) ||
+      baseline < 0 ||
+      baseline >= 1
+    )
+      return null;
+    // The default is a raw frequency read, including strong-only samples.
+    if (baseline > 0 && !riverCallConfidenceAboveBaseline(n, weak, baseline)) return null;
+    return weak / n;
   }
 
   static tableExploit(

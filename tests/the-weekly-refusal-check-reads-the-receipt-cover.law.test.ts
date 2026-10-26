@@ -12,6 +12,8 @@ describe('the weekly refusal check reads the receipt cover', () => {
       'CREATE INDEX CONCURRENTLY IF NOT EXISTS accounting_cash_receipts_refusal_cover'
     );
     expect(sql).toContain('INCLUDE (earned_at,scope)');
+    expect(sql).toContain('accounting_cash_work_attempt_cover');
+    expect(sql).toContain('(attempts,next_attempt_at,rake_record_id) INCLUDE (receipt_id)');
     expect(sql).toContain("md5(original)<>'ac7d777693e79eca6a13084b51cd1305'");
     expect(sql).toContain('after_meta IS DISTINCT FROM before_meta');
     expect(sql).toContain('i.indisvalid AND i.indisready AND i.indislive');

@@ -20,17 +20,17 @@ try:
  CREATE TABLE control(frozen boolean);INSERT INTO control VALUES(false);
  CREATE FUNCTION fn_platform_frozen()RETURNS boolean LANGUAGE sql STABLE AS $$SELECT frozen FROM control$$;
  CREATE TABLE accounting_cash_source_receipts(id uuid PRIMARY KEY,rake_record_id uuid,earned_at timestamptz,scope jsonb,reason text,status text,padding text);
- CREATE TABLE accounting_cash_source_work(rake_record_id uuid PRIMARY KEY,receipt_id uuid,status text);
+ CREATE TABLE accounting_cash_source_work(rake_record_id uuid PRIMARY KEY,receipt_id uuid,status text,attempts integer DEFAULT 1,next_attempt_at timestamptz DEFAULT '2026-10-20');
  CREATE INDEX work_blocked ON accounting_cash_source_work(rake_record_id) WHERE status='blocked';
  INSERT INTO accounting_cash_source_receipts SELECT md5('receipt-'||g)::uuid,md5('record-'||g)::uuid,
   CASE g%9 WHEN 0 THEN '-infinity'::timestamptz WHEN 1 THEN 'infinity'::timestamptz WHEN 2 THEN NULL WHEN 3 THEN '2026-10-19 07:00Z'::timestamptz WHEN 4 THEN '2026-10-26 07:00Z'::timestamptz ELSE '2026-10-21'::timestamptz END,
   CASE g%6 WHEN 0 THEN jsonb_build_object('kind','unknown') WHEN 1 THEN jsonb_build_object('kind','union','id',md5('union')::uuid) WHEN 2 THEN jsonb_build_object('kind','club','id',md5('club')::uuid) WHEN 3 THEN jsonb_build_object('kind','union','id',md5('other')::uuid) WHEN 4 THEN jsonb_build_object('kind','club') ELSE NULL END,
   CASE WHEN g%3=0 THEN NULL ELSE 'reason-'||g END,CASE WHEN g%3=0 THEN 'accrued' ELSE 'blocked' END,repeat(md5('padding-'||g),64)
  FROM generate_series(1,6000)g;
- INSERT INTO accounting_cash_source_work SELECT rake_record_id,id,CASE WHEN get_byte(uuid_send(id),0)%2=0 THEN 'blocked' ELSE 'accrued' END FROM accounting_cash_source_receipts;
+ INSERT INTO accounting_cash_source_work(rake_record_id,receipt_id,status) SELECT rake_record_id,id,CASE WHEN get_byte(uuid_send(id),0)%2=0 THEN 'blocked' ELSE 'accrued' END FROM accounting_cash_source_receipts;
  -- Duplicate receipt pointers and disagreement between receipt/work status
  -- stay in the original result: the optimization must not invent invariants.
- INSERT INTO accounting_cash_source_work SELECT md5('duplicate-'||id)::uuid,id,'blocked' FROM accounting_cash_source_receipts LIMIT 5;
+ INSERT INTO accounting_cash_source_work(rake_record_id,receipt_id,status) SELECT md5('duplicate-'||id)::uuid,id,'blocked' FROM accounting_cash_source_receipts LIMIT 5;
  ANALYZE;""")
  original=(root/'scripts/ci/fixtures/weekly-refusal-cover/original.sql').read_text();sql(original)
  assert sql("SELECT md5(pg_get_functiondef('"+sig+"'::regprocedure))")=='ac7d777693e79eca6a13084b51cd1305'
@@ -59,8 +59,12 @@ try:
  visit(plan['Plan'])
  cover=[n for n in nodes if n.get('Index Name')=='accounting_cash_receipts_refusal_cover']
  assert cover and all(n['Node Type']=='Index Only Scan' and n['Heap Fetches']==0 for n in cover),plan
+ retry_plan=json.loads(sql("EXPLAIN(ANALYZE,FORMAT JSON,TIMING FALSE) SELECT rake_record_id FROM accounting_cash_source_work WHERE status='blocked' AND next_attempt_at<=clock_timestamp() ORDER BY attempts,next_attempt_at,rake_record_id LIMIT 40"))[0]
+ nodes.clear();visit(retry_plan['Plan'])
+ assert any(n.get('Index Name')=='accounting_cash_work_attempt_cover' for n in nodes),retry_plan
+ assert not any(n['Node Type'] in ['Sort','Incremental Sort'] for n in nodes),retry_plan
  sql(body,'weekly_refusal_preimage_changed')
- print(json.dumps({'qualification':'passed','scope_answers':6,'receipt_cases':6000,'duplicate_pointers_preserved':True,'null_and_infinite_dates':True,'mismatched_status_preserved':True,'rollback_verified':True,'grants_owner_and_function_metadata_preserved':True,'cover_heap_fetches':0,'scope_probe_index_only':True,'native_execution_ms':plan['Execution Time']}))
+ print(json.dumps({'qualification':'passed','scope_answers':6,'receipt_cases':6000,'duplicate_pointers_preserved':True,'null_and_infinite_dates':True,'mismatched_status_preserved':True,'rollback_verified':True,'grants_owner_and_function_metadata_preserved':True,'cover_heap_fetches':0,'scope_probe_index_only':True,'retry_selector_no_sort':True,'native_execution_ms':plan['Execution Time']}))
 finally:
  if started:run([a.pg_bin/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
  shutil.rmtree(base)

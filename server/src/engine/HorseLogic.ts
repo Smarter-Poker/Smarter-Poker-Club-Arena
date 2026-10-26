@@ -2465,7 +2465,11 @@ function maniacCallDown(
     if (
       street === 'preflop' &&
       isTournamentMode(gs) &&
+      vi.holeCount === 2 &&
       !vi.isOmaha &&
+      !vi.isFixedLimit &&
+      !vi.isPotLimit &&
+      !vi.isShortDeck &&
       (player.stack + (player.bet || 0)) / bb <= SHORT_STACK_NO_FLAT_BB &&
       !allInCall
     ) {
@@ -4925,9 +4929,13 @@ export class HorseLogic {
           // priced as the whole stack against the raiser's full call - no fold
           // equity credited - with the survival premium on the whole stack.
           if (
+            maniacPrice38 &&
             isTournamentMode(gs) &&
             vi.holeCount === 2 &&
             !vi.isOmaha &&
+            !vi.isFixedLimit &&
+            !vi.isPotLimit &&
+            !vi.isShortDeck &&
             !raiserAllIn38 &&
             effCall38 < player.stack &&
             (player.stack + (player.bet || 0)) / bb <= SHORT_STACK_NO_FLAT_BB
@@ -7272,6 +7280,7 @@ export class HorseLogic {
         !vi.isOmaha &&
         !vi.isFixedLimit &&
         !vi.isPotLimit &&
+        !vi.isShortDeck &&
         gs.allInOrFold !== true &&
         gs.bombPot !== true &&
         !multiBoard36 &&
@@ -8521,6 +8530,7 @@ export class HorseLogic {
       if (
         isTournamentMode(gs) &&
         !vi.isOmaha &&
+        !vi.isShortDeck &&
         cat === 6 &&
         ns21 != null &&
         ns21.higherFlushRanks >= 3 &&

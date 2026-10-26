@@ -1608,6 +1608,42 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
+    'v58_short_stack_maniac_no_flat',
+    'HorseLogic (maniac pressure)',
+    'a push/fold tournament stack facing a wide raiser was priced for the jam, never the flat (Dan 2026-10-25, bubble hand 48403158)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_short_stack_maniac_jam',
+    'HorseLogic (maniac pressure)',
+    'a push/fold tournament stack facing a wide raiser moved all in because its equity pays for the jam (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_short_stack_no_flat',
+    'HorseLogic (maniac pressure)',
+    'the preflop all-in price answered a push/fold tournament stack with the jam or the fold, never the flat (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_low_spr_stack_off',
+    'HorseLogic (tournament aggression)',
+    'a tournament holdem hand with at most one pot behind and the equity to want it all in moved all in instead of checking (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_one_card_low_flush_fold',
+    'HorseLogic (tournament aggression)',
+    'a one-card low flush on a four-flush board folded instead of calling off a tournament stack (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v57_turn_cell_initiative_skip',
+    'HorseLogic (tournament aggression)',
+    'a tournament flop bettor played the turn from its barrel plan, not the check-heavy turn cell keyed without initiative (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
     'maniac_call_down',
     'HorseLogic (maniac pressure)',
     "a fold facing a maniac's bet became the call its equity pays for (Dan: 'CALL OFF LIGHTER')",

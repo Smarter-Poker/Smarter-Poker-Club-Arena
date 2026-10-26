@@ -1310,6 +1310,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: original source backlog is fully accrued and week refusal count is zero, but the opening P&L boundary could not finish within the close budget; the read-only profile measured119s rebuilding sealed inventory and68s reading pending funding. Sealed base=boundary has no delta: read the exact same published rows/issues directly while preserving every nonempty-delta statement and metadata. Qualified on native PostgreSQL17 captured original14941 active rows/all245 retained issues/admissions, forged caches, retention, certificate concurrency and original seven-receivable composition. Exact qualified SQL installed through maintained applier; source-pin authority read back TRUE. Immediate byte-exact recording is the next source action. This is not a wallet-payment or complete-week certificate."
+    },
+    {
+      "version": "20261026232607",
+      "name": "earned_window_checks_each_hand_cardinality_once",
+      "file": "supabase/migrations/20261026232607_earned_window_checks_each_hand_cardinality_once.sql",
+      "md5": "5a8e91e6351b26bacc36640c513cd572",
+      "appliedToProductionAt": "2026-10-26T23:30:57.718Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Maintained installer atomic exact-byte history; live history, reader and forty-source authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly payout outage: original full-hand source cardinality expanded the same effective admission view per bank receipt and prevented bounded preparation. Count the identical unfiltered source set once per hand. Native PostgreSQL17 passed28 parity cases with10000 sources, original drift, metadata, ACL, rollback and replay refusal. Live read-only full window matched every value, ID and fingerprint for38689 cash and6599 tournament sources in18.469s. Exact qualified bytes installed; original forty-source authority remains TRUE. Immediate recording is the next source action. Wallet payment remains unverified."
     }
   ]
 }

@@ -72,7 +72,12 @@ export function Review() {
         ]
   ) as Card[];
   const width = innerWidth;
-  const markerSize = { ...size, railBets: width <= 480, portraitTaper: spectator ? 0 : undefined };
+  const markerSize = {
+    ...size,
+    railBets: width <= 480,
+    portraitTags: width <= 768 && innerHeight > innerWidth,
+    portraitTaper: spectator ? 0 : undefined,
+  };
   const seats = seatLayoutFor(n).map((p) =>
     fitSeatToViewport(
       p,
@@ -259,7 +264,16 @@ export function Review() {
                         position={i === 1 ? 'SB' : null}
                         isActive={false}
                         lastAction={revealed && i % 3 === 0 ? 'all_in' : 'call'}
-                        lastBetAmount={120}
+                        lastBetAmount={
+                          /* data-bets="0,3,5" bets only those chairs; absent, every chair bets. */
+                          document.documentElement.dataset.bets === undefined ||
+                          document.documentElement.dataset.bets
+                            .split(',')
+                            .map(Number)
+                            .includes(i)
+                            ? 120
+                            : 0
+                        }
                         bigBlind={2}
                       />
                     </div>

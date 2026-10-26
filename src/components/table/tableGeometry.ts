@@ -111,6 +111,10 @@ export interface Size {
   railBets?: boolean;
   /** Zero uses the desktop oval while retaining portrait rail bet placement. */
   portraitTaper?: number;
+  /** A portrait viewport up to PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX, where a
+   *  side chair's action tag rides above its crown and a top-cap chair's below
+   *  its plate (SeatSlot.css), so a bet walks clear of the tag as well. */
+  portraitTags?: boolean;
 }
 
 /** Owner October 20: the far rail is 80% of the near rail. This one
@@ -1486,77 +1490,95 @@ function podExitDistanceSq(ux: number, uy: number, size: Size, pod?: Size): numb
  * what a consumer that draws no seat pod wants, and what every geometry test
  * that is about the rail itself rather than about the furniture passes.
  */
-export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
-  if (size.railBets) {
-    // Use the nearest stadium edge, so side bets retain the seat's height. The
-    // marker radius plus 3px of daylight leaves the whole stack on the felt.
-    const stackHalfPx = Math.max(17, (chipRadiusWidthPct(size) * size.w) / 100);
-    const box = feltBoxPx(size, chipRadiusWidthPct(size) + (MARKER_INSET_PX / size.w) * 100);
-    const nearest = (source: Pos): Pos => {
-      const px = (source.x * size.w) / 100;
-      const py = (source.y * size.h) / 100;
-      const sx = Math.min(Math.max(px, box.left + box.r), box.left + box.w - box.r);
-      const sy = Math.min(Math.max(py, box.top + box.r), box.top + box.h - box.r);
-      const dx = px - sx;
-      const dy = py - sy;
-      const length = Math.hypot(dx, dy);
-      if (length < 1e-6) return { ...source };
-      return projectPortraitTable(
-        {
-          x: ((sx + (dx / length) * box.r) / size.w) * 100,
-          y: ((sy + (dy / length) * box.r) / size.h) * 100,
-        },
-        size.portraitTaper
-      );
-    };
-    // The amount label is wider than the disc. At short phone heights the
-    // cap bends toward the board; walk along that same edge until the whole
-    // stack clears the actual 95% board, instead of moving into the centre.
-    const footprint = Math.max(buttonRadiusWidthPct(size), (20 / size.w) * 100);
-    const clear = (candidate: Pos) =>
-      !overlapsBoard(candidate, size, footprint) &&
-      !isOnFeltText(candidate, size, footprint) &&
-      !overlapsPortraitPot(candidate, size, footprint, (11 / size.w) * 100);
-    if (seat.y < 20) {
-      // Compact upper pods now sit on the rail. Place their wager beside the
-      // pod on that same cap, rather than directly below its action label.
-      const side = seat.x > 50 ? -1 : 1;
-      for (let step = 0; step <= 80; step++) {
-        const candidate = nearest({ x: seat.x + side * (25 + step), y: seat.y + 14 });
-        const dx = (Math.abs(candidate.x - seat.x) * size.w) / 100;
-        if (dx >= (pod?.w ?? 58) / 2 + stackHalfPx + MARKER_INSET_PX && clear(candidate))
-          return candidate;
-      }
-    }
-    if (isHeroSeat(seat) && pod) {
-      // The hero pod straddles the bottom cap. Stay on that cap and use the
-      // nearest free point beside its bust instead of parking a bet on it.
-      for (let step = 0; step <= 100; step++) {
-        const candidate = nearest({ x: seat.x + step * 2, y: seat.y });
-        const dx = (Math.abs(candidate.x - seat.x) * size.w) / 100;
-        if (dx >= pod.w * 0.625 + stackHalfPx + MARKER_INSET_PX && clear(candidate))
-          return candidate;
-      }
-      // A very small cap cannot fit a wide amount label beside the bust.
-      // Continue up the same right rail until it clears the crown instead.
-      for (let step = 0; step <= 80; step++) {
-        const candidate = nearest({ x: seat.x + 100, y: seat.y - step * 2 });
-        const dy = ((seat.y - candidate.y) * size.h) / 100;
-        if (dy >= pod.h * 0.9 + stackHalfPx + MARKER_INSET_PX && clear(candidate)) return candidate;
-      }
-    }
-    const direction = seat.y < 50 ? -1 : 1;
-    // A short bottom cap can be occupied by the masthead. Search both ways
-    // along this same rail, nearest first, rather than falling back onto text
-    // when the outward direction has no available painted edge.
-    for (let step = 0; step <= 80; step++) {
-      for (const sign of [direction, -direction]) {
-        const candidate = nearest({ x: seat.x, y: seat.y + ((sign * step * 5) / size.h) * 100 });
-        if (clear(candidate)) return candidate;
-      }
-    }
-    return nearest(seat);
+/** Half the painted footprint of a resting wager on a phone, in px: the chip
+ * disc plus its amount label, centred on the rest point (SeatSlot.css). */
+const PHONE_BET_HALF_W_PX = 24;
+const PHONE_BET_HALF_H_PX = 12;
+
+/** True when a phone wager centred at `p` would touch the painted board row.
+ * The board is upright and, on a tapered felt, narrower than the flat 95%. */
+function phoneBetOnBoard(p: Pos, size: Size): boolean {
+  const taper = size.portraitTaper ?? PORTRAIT_TABLE_TAPER;
+  const fraction = (taper === 0 ? 95 : portraitBoardWidthOfFeltPct(taper)) / 100;
+  const feltW = (FELT_WINDOW.width * size.w) / 100;
+  const cx = ((FELT_WINDOW.left + FELT_WINDOW.width / 2) * size.w) / 100;
+  const cy = ((FELT_WINDOW.top + 0.425 * FELT_WINDOW.height) * size.h) / 100;
+  const cardW = (fraction * feltW - 4 * 2) / 5;
+  const halfW = (fraction * feltW) / 2 + 2;
+  const halfH = (cardW * 92) / 64 / 2 + 2;
+  const x = (p.x * size.w) / 100;
+  const y = (p.y * size.h) / 100;
+  return (
+    Math.abs(x - cx) < halfW + PHONE_BET_HALF_W_PX && Math.abs(y - cy) < halfH + PHONE_BET_HALF_H_PX
+  );
+}
+
+/**
+ * The desktop walk is computed for the desktop board; a phone's board fills
+ * almost the whole felt width and its pot pill is upright chrome. When the
+ * walked rest point would print a wager over either, it is nudged the
+ * smallest distance that clears both - straight away from the board (toward
+ * its own player's side of it) or straight outward toward its own player -
+ * never across the table, so it is still in front of the player who bet it.
+ */
+function phoneBetClearOfBoardAndPot(rest: Pos, seat: Pos, size: Size): Pos {
+  const halfW = (PHONE_BET_HALF_W_PX / size.w) * 100;
+  const halfH = (PHONE_BET_HALF_H_PX / size.w) * 100;
+  const clear = (p: Pos) =>
+    !phoneBetOnBoard(p, size) && !overlapsPortraitPot(p, size, halfW, halfH);
+  if (clear(rest)) return rest;
+  const boardY = FELT_WINDOW.top + 0.425 * FELT_WINDOW.height;
+  const awayY = seat.y >= boardY ? 1 : -1;
+  const outX = seat.x > 50.5 ? 1 : seat.x < 49.5 ? -1 : 0;
+  const onFelt = (p: Pos) => isInsideFelt(p, size, chipRadiusWidthPct(size));
+  // The pot pill sits on the centre line, so a wager it covers slides outward
+  // under its own player; the board spans the felt, so one it covers steps
+  // off the board's edge on its own player's side.
+  const potFirst = overlapsPortraitPot(rest, size, halfW, halfH);
+  for (let px = 2; px <= 80; px += 2) {
+    const vertical = { x: rest.x, y: rest.y + ((awayY * px) / size.h) * 100 };
+    const outward = { x: rest.x + ((outX * px) / size.w) * 100, y: rest.y };
+    const candidates: Pos[] =
+      outX === 0 ? [vertical] : potFirst ? [outward, vertical] : [vertical, outward];
+    for (const candidate of candidates) if (clear(candidate) && onFelt(candidate)) return candidate;
   }
+  return rest;
+}
+
+/** A portrait action tag's height plus its gap to the plate (SeatSlot.css). */
+export const PHONE_SEAT_TAG_PX = 24;
+
+export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
+  /* Dan 2026-10-25: "MAKE THE MOBILE LAYOUT AND CHIP POSITIONS THE SAME AS
+     DESKTOP AND IPAD" - a bet is ALWAYS in front of the player who made it.
+     A portrait phone used to rest its bets on the nearest stretch of rail
+     instead, and walked a top player's bet sideways along the cap (25% of the
+     table and more) until it read as the neighbour's. It now takes the desktop
+     walk from the seat toward the middle of the felt. The phone felt may be
+     painted with a perspective taper, so the walk is done on the flat table
+     and projected onto the painted one: zero taper (a spectator, or any
+     portrait page wider than 480px) is exactly the desktop answer.
+
+     The perspective-free walk is the desktop's own; see `portraitTags` and
+     `phoneBetClearOfBoardAndPot` for the two things a narrow felt adds. */
+  if (size.railBets) {
+    const rest = projectPortraitTable(
+      chipRestPosition(
+        unprojectPortraitTable(seat, size.portraitTaper),
+        { ...size, railBets: false },
+        pod
+      ),
+      size.portraitTaper
+    );
+    return phoneBetClearOfBoardAndPot(rest, seat, size);
+  }
+  /* A portrait seat's action tag is not beside its plate as it is on a wide
+     desktop: a side chair carries it above the crown and a top-cap chair below
+     its plate (Dan 2026-10-21/22), so the walk clears PHONE_SEAT_TAG_PX more of
+     the seat's own box at both ends and a bet is never printed under its own
+     player's tag. The hero's tag already sits behind its bet. */
+  if (size.portraitTags && pod && !isHeroSeat(seat))
+    pod = { w: pod.w, h: pod.h + 2 * PHONE_SEAT_TAG_PX };
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);

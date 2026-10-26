@@ -720,58 +720,79 @@ describe('the dealer button and the printing on the felt', () => {
   });
 });
 
-describe('portrait mobile bets follow the actual rail instead of walking toward the centre', () => {
-  it('keeps every fitted six/nine-max bet just inside the rail, off the board, and collects from that same rest point', async () => {
+/* Dan 2026-10-25: "MAKE THE MOBILE LAYOUT AND CHIP POSITIONS THE SAME AS
+   DESKTOP AND IPAD" - a bet is ALWAYS in front of the player who made it. The
+   portrait phone used to rest its bets on the nearest rail and walk a top
+   player's bet sideways along the cap; these replace the two tests that
+   pinned that rail placement. */
+describe('portrait phone bets walk in front of their own player, the same as desktop', () => {
+  it('rests every fitted six/nine-max bet on the felt, nearer its own chair than any other, and collects from that rest point', async () => {
     const { seatLayoutFor } = await import('../../src/lib/tableSeatGeometry');
     for (const width of [320, 375, 393, 430, 480])
-      for (const count of [6, 9]) {
-        const size = { w: width * 0.78, h: 560, railBets: true };
-        for (const raw of seatLayoutFor(count)) {
-          const pod = seatPodPx(width, isHeroSeat(raw), size.w);
-          const seat = fitSeatToViewport(raw, size, width, pod);
-          const rest = chipRestPosition(seat, size, pod);
-          const clearance = (feltEdgeClearanceWidthPct(rest, size) * size.w) / 100;
-          expect(clearance).toBeGreaterThanOrEqual(
-            (chipRadiusWidthPct(size) * size.w) / 100 + MARKER_INSET_PX - 0.01
-          );
-          expect(clearance).toBeLessThanOrEqual(20.01);
-          expect(overlapsBoard(rest, size)).toBe(false);
-          const offset = betChipOffsetPx(seat, size, pod);
-          const collect = chipCollectOffsetPx(seat, size, pod);
-          expect(offset.x + collect.x).toBeCloseTo(
-            (((POT_ANCHOR_PCT.x - seat.x) * size.w) / 100) * CHIP_COLLECT_FRACTION,
-            0
-          );
-          expect(offset.y + collect.y).toBeCloseTo(
-            (((POT_ANCHOR_PCT.y - seat.y) * size.h) / 100) * CHIP_COLLECT_FRACTION,
-            0
-          );
+      for (const count of [6, 9])
+        for (const taper of [0, undefined]) {
+          const size = { w: width * 0.78, h: 560, railBets: true, portraitTaper: taper };
+          const seats = seatLayoutFor(count).map((raw) => {
+            const pod = seatPodPx(width, isHeroSeat(raw), size.w);
+            return { seat: fitSeatToViewport(raw, size, width, pod), pod };
+          });
+          for (const { seat, pod } of seats) {
+            const rest = chipRestPosition(seat, size, pod);
+            expect(isInsideFelt(rest, size, chipRadiusWidthPct(size))).toBe(true);
+            const px = (p: { x: number; y: number }) => ({
+              x: (p.x * size.w) / 100,
+              y: (p.y * size.h) / 100,
+            });
+            const r = px(rest);
+            const own = Math.hypot(r.x - px(seat).x, r.y - px(seat).y);
+            // The flat felt is the one a phone shows now (it lays the table
+            // out at desktop width); the tapered ring is the fallback only.
+            for (const other of taper === 0 ? seats : []) {
+              if (other.seat === seat) continue;
+              const o = px(other.seat);
+              expect(
+                own,
+                `${width}/${count}/${taper}: ${seat.x},${seat.y} bet nearer ${other.seat.x},${other.seat.y}`
+              ).toBeLessThan(Math.hypot(r.x - o.x, r.y - o.y));
+            }
+            const offset = betChipOffsetPx(seat, size, pod);
+            const collect = chipCollectOffsetPx(seat, size, pod);
+            expect(offset.x + collect.x).toBeCloseTo(
+              (((POT_ANCHOR_PCT.x - seat.x) * size.w) / 100) * CHIP_COLLECT_FRACTION,
+              0
+            );
+            expect(offset.y + collect.y).toBeCloseTo(
+              (((POT_ANCHOR_PCT.y - seat.y) * size.h) / 100) * CHIP_COLLECT_FRACTION,
+              0
+            );
+          }
         }
-      }
   });
-});
 
-describe('short phone rail bets clear the complete felt masthead', () => {
-  it('checks hero and side wagers with the complete amount footprint', async () => {
+  it('a flat portrait felt is exactly the desktop walk wherever the board and pot leave it clear', async () => {
     const { seatLayoutFor } = await import('../../src/lib/tableSeatGeometry');
-    for (const height of [300, 340, 400, 560]) {
-      const size = { w: 320 * 0.82, h: height, railBets: true };
+    for (const width of [375, 393, 430])
       for (const count of [6, 9]) {
+        const flat = { w: width * 0.78, h: 640, portraitTaper: 0 };
         for (const raw of seatLayoutFor(count)) {
-          const pod = seatPodPx(320, isHeroSeat(raw), size.w);
-          const seat = fitSeatToViewport(raw, size, 320, pod);
-          const rest = chipRestPosition(seat, size, pod);
-          expect(overlapsPortraitPot(rest, size, (20 / size.w) * 100, (11 / size.w) * 100)).toBe(
-            false
-          );
-          expect(
-            isOnFeltText(rest, size, (20 / size.w) * 100),
-            `${count}/${height}/${raw.x},${raw.y}`
-          ).toBe(false);
-          expect(overlapsBoard(rest, size, (20 / size.w) * 100)).toBe(false);
+          const pod = seatPodPx(width, isHeroSeat(raw), flat.w);
+          const seat = fitSeatToViewport(raw, flat, width, pod);
+          const desktop = chipRestPosition(seat, flat, pod);
+          const phone = chipRestPosition(seat, { ...flat, railBets: true }, pod);
+          if (
+            !overlapsBoard(desktop, { ...flat, railBets: true }, (24 / flat.w) * 100) &&
+            !overlapsPortraitPot(
+              desktop,
+              { ...flat, railBets: true },
+              (24 / flat.w) * 100,
+              (12 / flat.w) * 100
+            )
+          ) {
+            expect(phone.x).toBeCloseTo(desktop.x, 6);
+            expect(phone.y).toBeCloseTo(desktop.y, 6);
+          }
         }
       }
-    }
   });
 });
 

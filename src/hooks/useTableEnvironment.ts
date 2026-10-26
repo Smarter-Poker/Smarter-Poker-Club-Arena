@@ -58,6 +58,69 @@ let viewportOriginal: string | null = null;
 let viewportMetaCreated: HTMLMetaElement | null = null;
 
 /**
+ * A PHONE LAYS THE TABLE OUT AT THE DESKTOP'S WIDTH (Dan, 2026-10-25).
+ *
+ * Dan, with phone screenshots beside a 603px-wide desktop window: "MAKE THE
+ * MOBILE LAYOUT AND CHIP POSITIONS THE SAME AS DESKTOP AND IPAD", "SEATING
+ * LOCATIONS NEED TO BE THE SAME AS WELL. AND NOTICE ON DESKTOP THE SIZE OF THE
+ * AVATARS, AND HOW THEY REACH THE TOP OF THE PAGE AND 'CUT OFF' THATS PERFECT,
+ * MAXIMIZE ALL THE SPACE WITHOUT 'CROWDING THE SCREEN'", and "THIS IS HOW IT
+ * SHOULD LOOK ON MOBILE".
+ *
+ * Below 481px the table had its own layout - a narrower felt, compact pods,
+ * seats pulled into outer lanes, bets on the rail - and it had drifted from
+ * desktop and iPad in every one of those. Rather than keep a second layout in
+ * step with the first, a portrait phone now lays the table out at
+ * PHONE_TABLE_LAYOUT_WIDTH_PX, exactly as that desktop window does, and the
+ * browser scales the finished page down to the phone's width. Seat positions,
+ * avatar sizes, the top-cap crop, the felt and the bet chips are therefore the
+ * desktop's own, in the desktop's own proportions.
+ *
+ * Only while a table is the tab in front (`isActive`): a "+" tab showing a
+ * World Hub page, the lobby and every other route keep the device's own width.
+ * Landscape keeps it too, since the desktop window being matched is portrait.
+ * Pinned by tests/a-phone-lays-the-table-out-like-desktop.law.test.ts.
+ */
+export const PHONE_TABLE_LAYOUT_WIDTH_PX = 600;
+/** Portrait devices this narrow (CSS px) take the desktop table layout. */
+export const PHONE_TABLE_MAX_DEVICE_WIDTH_PX = 480;
+let desktopLayoutHolders = 0;
+const POKER_VIEWPORT =
+  'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+
+function devicePortraitPhoneWidth(): number | null {
+  if (typeof window === 'undefined' || typeof screen === 'undefined') return null;
+  const short = Math.min(screen.width || 0, screen.height || 0);
+  if (!(short > 0) || short > PHONE_TABLE_MAX_DEVICE_WIDTH_PX) return null;
+  const type = (screen.orientation as ScreenOrientation | undefined)?.type;
+  const legacy = (window as unknown as { orientation?: number }).orientation;
+  // window.orientation first: iOS keeps screen.width/height portrait in both
+  // orientations, and it is the one reading every phone browser agrees on.
+  const portrait =
+    typeof legacy === 'number'
+      ? Math.abs(legacy) !== 90
+      : type
+        ? type.startsWith('portrait')
+        : (screen.height || 0) >= (screen.width || 0);
+  return portrait ? short : null;
+}
+
+/** The viewport content the table wants right now. */
+export function tableViewportContent(phoneWidth: number | null, desktopLayout: boolean): string {
+  if (!desktopLayout || !phoneWidth) return POKER_VIEWPORT;
+  const scale = Math.round((phoneWidth / PHONE_TABLE_LAYOUT_WIDTH_PX) * 10000) / 10000;
+  return `width=${PHONE_TABLE_LAYOUT_WIDTH_PX}, initial-scale=${scale}, minimum-scale=${scale}, maximum-scale=${scale}, user-scalable=no, viewport-fit=cover`;
+}
+
+function writeTableViewport() {
+  if (viewportHolders === 0 || typeof document === 'undefined') return;
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) return;
+  const next = tableViewportContent(devicePortraitPhoneWidth(), desktopLayoutHolders > 0);
+  if (meta.getAttribute('content') !== next) meta.setAttribute('content', next);
+}
+
+/**
  * THE WAKE LOCK IS ALSO ONE PER DOCUMENT (2026-08-28).
  *
  * The header above states the rule — "if the answer involves a document-level
@@ -203,8 +266,7 @@ export function useTableEnvironment(
 
   // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
   useEffect(() => {
-    const pokerViewport =
-      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+    const pokerViewport = POKER_VIEWPORT;
 
     // FIRST TABLE IN takes the tag and remembers what it said. Later tables do
     // not re-read it, because by then it says what the first table wrote — that
@@ -259,6 +321,24 @@ export function useTableEnvironment(
       }
     };
   }, []);
+
+  // ─── PHONE TABLE LAYOUT — the table in front lays out at desktop width ───
+  // Declared after the lock above so the tag already belongs to the tables
+  // when it is first written; refcounted for the same four-tables reason.
+  useEffect(() => {
+    if (!isActive) return;
+    desktopLayoutHolders += 1;
+    writeTableViewport();
+    const rewrite = () => writeTableViewport();
+    window.addEventListener('orientationchange', rewrite);
+    screen.orientation?.addEventListener?.('change', rewrite);
+    return () => {
+      desktopLayoutHolders -= 1;
+      window.removeEventListener('orientationchange', rewrite);
+      screen.orientation?.removeEventListener?.('change', rewrite);
+      writeTableViewport();
+    };
+  }, [isActive]);
 
   // ─── SCREEN WAKE LOCK — Prevent screen dimming during active poker play ───
   // Refcounted for the document (see the note beside `wakeLockHolders`):

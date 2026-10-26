@@ -22,8 +22,10 @@
 -- fn_sp_digest_player_period(day):
 --   1. builds the day itself (fn_sp_digest_player_totals) and keeps it;
 --   2. keeps any earlier day of the 7-day window or the month that is not
---      kept yet, at most 5 per call so a cold call stays inside its 60 s
---      limit; until every day is kept the card says which days are missing;
+--      kept yet, at most 3 per call so a cold call stays inside its 60 s
+--      limit (one day costs 3-7 s cold even with no players; measured
+--      2026-10-26, 18 days in one statement passed 60 s); until every day is
+--      kept the card says how many days are still missing;
 --   3. returns the day's full totals (what the digest already shows) plus
 --      period.day / period.week / period.month.
 -- A failure in the period part never takes the day's totals with it.
@@ -335,13 +337,13 @@ BEGIN
   BEGIN
     PERFORM public.fn_sp_digest_keep_player_day(p_day, v_daily);
 
-    -- earlier days of the window not kept yet, oldest first, five per call
+    -- earlier days of the window not kept yet, oldest first, three per call
     FOR d IN
       SELECT g::date FROM generate_series(v_from, p_day - 1, interval '1 day') g
        WHERE NOT EXISTS (SELECT 1 FROM public.sp_digest_player_day_runs r WHERE r.day = g::date)
        ORDER BY g
     LOOP
-      EXIT WHEN v_built >= 5;
+      EXIT WHEN v_built >= 3;
       PERFORM public.fn_sp_digest_keep_player_day(d, public.fn_sp_digest_player_totals(d));
       v_built := v_built + 1;
     END LOOP;

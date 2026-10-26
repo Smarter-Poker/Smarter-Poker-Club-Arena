@@ -17,7 +17,10 @@ describe('A sealed inventory boundary reads its original sealed state', () => {
     expect(migration).toContain('sealed_inventory_reader_source_authority_failed');
   });
   it('runs the captured original financial qualification against this exact migration', () => {
-    const ci = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8');
+    const ci = readFileSync(
+      resolve('.github/workflows/unpaid-lightning-funding-contracts.yml'),
+      'utf8'
+    );
     expect(ci).toContain('--inventory-state-read-migration supabase/migrations/' + name);
     const wrapper = readFileSync(
       resolve('scripts/qualification/original-retirement-boundary/run-wrapper-native.py'),

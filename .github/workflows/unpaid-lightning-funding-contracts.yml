@@ -7,6 +7,9 @@ on:
       - supabase/migrations/**
       - scripts/ci/fixtures/unpaid-lightning-funding-contracts.json
       - scripts/ci/fixtures/unpaid-atomic-cash-contract-columns.json
+      - scripts/qualification/original-retirement-boundary/**
+      - scripts/qualification/original-seven-discharge/**
+      - tests/sealed-inventory-reads-the-sealed-state.law.test.ts
       - scripts/ci/test-daily-reporting-attribution-change-postgres.py
       - scripts/ci/fixtures/daily-reporting-original-owners.sql
       - scripts/ci/test-unpaid-lightning-funding-contracts-postgres.py
@@ -56,3 +59,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-daily-reporting-attribution-change-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Sealed inventory retains the complete original financial proof
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql

@@ -2849,7 +2849,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/original-inventory-restoration"
-          python3 scripts/qualification/original-retirement-boundary/run-native.py --output "$RUNNER_TEMP/original-inventory-restoration" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql 2>&1 | tee "$RUNNER_TEMP/original-inventory-restoration/native.log"
+          python3 scripts/qualification/original-retirement-boundary/run-native.py --output "$RUNNER_TEMP/original-inventory-restoration" 2>&1 | tee "$RUNNER_TEMP/original-inventory-restoration/native.log"
 
       - name: Retain original inventory restoration qualification
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.original_inventory_restoration.outcome)

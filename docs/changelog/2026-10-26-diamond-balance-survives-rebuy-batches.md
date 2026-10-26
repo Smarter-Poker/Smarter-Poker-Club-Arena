@@ -7,3 +7,7 @@ The hand-boundary balance path also consumes an already-parked source's successf
 Verification: four rebuy/cursor cases and four boundary retry cases fail before their respective fixes and pass after; a ninth regression proves a board read cannot authorize a move after manager authority is lost. All 275 tournament test files / 3,923 tests pass, including the existing pending-rebuy stall-clock and atomic move tests. Runtime publication and natural live-table balancing are separate remaining proof and are not claimed by this source change.
 
 Live readback before this follow-up at approximately 14:21 UTC still showed Diamond Arena Sunrise Bounty tables ranging from two to seven positive-stack players. The serving engine contained the earlier boundary fix #8161; this follow-up was not yet installed. No production seats or money were changed for testing.
+
+Hosted CI caught the new fence promise chain using a two-argument then rather than a final catch. The final catch now handles both park rejection and an exception in its fulfilled continuation; the existing repository-wide unhandled-rejection guard and a direct continuation-failure regression cover it.
+
+Owner update October 26: publish this work immediately after required checks and protected merge, not at the routine 04:00 window. Activation uses the existing reviewed bounded owner-window route and retains all drain, freeze, rollback and thaw safeguards.

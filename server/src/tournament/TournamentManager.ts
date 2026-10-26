@@ -4247,14 +4247,15 @@ export class TournamentManager extends TournamentManagerEliminations {
     const engine = this.tableEngines.get(tableId);
     if (!engine || !this.gameServer.ownsTournamentTableEngine(tableId, engine)) return;
     this.gapBalanceFencedSources.add(tableId);
-    void engine.parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0).then(
-      (parked) => {
+    void engine
+      .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0)
+      .then((parked) => {
         // The dealer may have parked before this request. There is no new
         // pause-ready edge then, so consume the authoritative result here.
         if (parked && this.tableEngines.get(tableId) === engine && this.running)
           this.claimGapBalanceAtBoundary(tableId);
-      },
-      (error) => {
+      })
+      .catch((error) => {
         this.gapBalanceFencedSources.delete(tableId);
         reportError(error, 'Tournament.rebalance_source_hold_failed', {
           tournamentId: this.tournamentId,
@@ -4262,8 +4263,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         });
         if (this.running)
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      }
-    );
+      });
   }
 
   protected override claimGapBalanceAtBoundary(tableId: string): boolean {

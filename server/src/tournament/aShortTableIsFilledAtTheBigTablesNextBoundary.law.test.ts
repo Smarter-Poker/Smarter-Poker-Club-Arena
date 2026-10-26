@@ -276,4 +276,17 @@ describe("a short table is filled at the big table's next hand boundary", () => 
     expect(m.executePlayerMoves).not.toHaveBeenCalled();
     expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
   });
+  it('handles a rejected continuation after the park request fulfilled', async () => {
+    const big = table(0, 8);
+    const { m, engines } = manager([big, table(1, 3)]);
+    engines.get(big.tableId)!.parkForTournamentMove.mockResolvedValue(true);
+    m.claimGapBalanceAtBoundary = () => {
+      throw new Error('boundary continuation failed');
+    };
+    m.fenceGapBalanceSource(big.tableId);
+    await settle();
+    expect(m.gapBalanceFencedSources.has(big.tableId)).toBe(false);
+    expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+    expect(m.executePlayerMoves).not.toHaveBeenCalled();
+  });
 });

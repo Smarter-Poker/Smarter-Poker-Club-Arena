@@ -24,10 +24,13 @@
  *    hold'em (7-2 offsuit included, about 30% against a random hand), Omaha or
  *    short deck is far enough behind for a fold to be right. Calling risks
  *    under 15% of a 20 big blind stack.
- *  - Postflop: CALL, unless the brain's own Monte Carlo equity for this hand
- *    is under 5% AND under the price the call is laid. That is the "drawing
- *    dead" case and nothing else. When no equity was measured (the main
- *    thread's commit door, a worker fallback), it calls.
+ *  - Postflop: CALL, unless the hand's raw equity HEADS UP against one
+ *    unknown hand, on the cards alone, is under 5% AND under the price the
+ *    call is laid. That is the "drawing dead" case and nothing else. It is
+ *    never the brain's decision equity, which is measured against every live
+ *    opponent and weighted by reads, so a multiway pot or a tight read cannot
+ *    fold this spot. When no equity was measured (the main thread's commit
+ *    door, a worker fallback), it calls.
  *  - Only a FOLD is converted. A raise, call or shove the brain already chose
  *    is left exactly as it is.
  *  - It is a hard rule: no style, profile, mood, tilt, tightness, solver, ICM
@@ -204,20 +207,28 @@ function legalCall(
  * The final chokepoint. Turns a FOLD into the legal call in the spot above;
  * returns the input object unchanged otherwise, so callers can test identity.
  *
- * `equity` is the brain's own Monte Carlo equity for this decision (postflop
- * only). null or undefined means it was not measured, and the horse calls.
+ * `equity` is the hand's raw heads-up equity on the cards alone (postflop
+ * only), or a function that measures it; the function runs only when the
+ * floor would otherwise call postflop. null or undefined means it was not
+ * measured, and the horse calls.
  */
 export function shortAllInCallFloor(
   decision: HorseDecision,
   hero: SeatPlayer,
   gs: HorseGameStateV2,
-  equity?: number | null
+  deadCheckEquity?: number | null | (() => number | null)
 ): HorseDecision {
   if (decision.action !== 'fold') return decision;
   const spot = shortAllInSpot(hero, gs);
   if (!spot) return decision;
   // A real paired-board stack-off keeps its fold (see the header).
   if (pairedBoardStackOff(hero, gs)) return decision;
+  const equity =
+    gs.stage === 'preflop'
+      ? null
+      : typeof deadCheckEquity === 'function'
+        ? deadCheckEquity()
+        : deadCheckEquity;
   if (
     gs.stage !== 'preflop' &&
     typeof equity === 'number' &&

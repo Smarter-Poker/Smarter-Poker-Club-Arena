@@ -2669,13 +2669,44 @@ let phase7EquityEvidence: Phase7EquityEvidence | null = null;
 let phase10EquityEvidence: Plo4EquityEvidence | null = null;
 let phase11DecisionEquityCeiling: number | null = null;
 let phase12DecisionEquityCeiling: number | null = null;
+/** Samples for the short all-in floor's drawing-dead check. */
+const SHORT_ALL_IN_DEAD_CHECK_ITERATIONS = 400;
+
 /**
- * The brain's own postflop Monte Carlo equity for the decision in progress,
- * read by shortAllInCallFloor (Dan 2026-10-26) to tell a hand drawing dead
- * from "almost anything". Cleared before and after every decision, like the
- * evidence above.
+ * The short all-in floor's "drawing dead" witness (Dan 2026-10-26): the
+ * hand's raw equity HEADS UP against one unknown hand, on the cards alone.
+ * Not the brain's decision equity, which is measured against every live
+ * opponent and weighted by range and board reads: a multiway pot or a tight
+ * read can price a hand with real equity against the short stack under 5%,
+ * and that must not fold this spot. Postflop only, and only asked when the
+ * brain has folded in the spot. null when it cannot be measured, and then the
+ * floor calls.
  */
-let shortAllInEquity: number | null = null;
+function shortAllInDeadCheckEquity(
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  vi: VariantInfo
+): number | null {
+  if (gs.stage === 'preflop' || !player.cards?.length) return null;
+  try {
+    const equity = simulateEquity(
+      player.cards,
+      gs.communityCards ?? [],
+      1,
+      vi,
+      SHORT_ALL_IN_DEAD_CHECK_ITERATIONS,
+      undefined,
+      false,
+      vi.isHiLo ? { hi: 0, lo: 0, scoop: 0, quarter: 0 } : undefined,
+      undefined,
+      undefined,
+      player.knownDeadCards ?? []
+    );
+    return Number.isFinite(equity) ? clamp01(equity) : null;
+  } catch {
+    return null;
+  }
+}
 
 function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string> {
   if (gs.dealerSeat === undefined) return new Set<string>();
@@ -3396,7 +3427,6 @@ export class HorseLogic {
       phase10EquityEvidence = null;
       phase11DecisionEquityCeiling = null;
       phase12DecisionEquityCeiling = null;
-      shortAllInEquity = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       if (telemetryOn(opts)) noteFire('phase15_brain_exception');
       return toCall === 0
@@ -3407,7 +3437,6 @@ export class HorseLogic {
       phase10EquityEvidence = null;
       phase11DecisionEquityCeiling = null;
       phase12DecisionEquityCeiling = null;
-      shortAllInEquity = null;
       HorseMind.setDecisionScope(null);
     }
   }
@@ -3423,7 +3452,6 @@ export class HorseLogic {
     phase10EquityEvidence = null;
     phase11DecisionEquityCeiling = null;
     phase12DecisionEquityCeiling = null;
-    shortAllInEquity = null;
     // Authored JSON and older direct callers can supply arbitrary strings.
     // Inherited object keys are not styles; keep every downstream style
     // branch on the same valid fallback as the numerical parameters.
@@ -4327,7 +4355,9 @@ export class HorseLogic {
         gs,
         opts
       );
-      const floored = shortAllInCallFloor(ruled, player, gs, shortAllInEquity);
+      const floored = shortAllInCallFloor(ruled, player, gs, () =>
+        shortAllInDeadCheckEquity(player, gs, vi)
+      );
       if (floored !== ruled && tele) noteFire('short_all_in_call_floor');
       return { decision: floored };
     }).decision;
@@ -6114,9 +6144,6 @@ export class HorseLogic {
         hiLoSplit.quarter = loAcc.quarter / boards.length;
       }
     }
-    // The raw sample, before any structural cap: "drawing dead" is a fact
-    // about the cards, not about a read (shortAllInCallFloor).
-    shortAllInEquity = Number.isFinite(equity) ? clamp01(equity) : null;
 
     if (captureOutcomes7) {
       // Adaptive MC can return at its first 40% checkpoint. Record that

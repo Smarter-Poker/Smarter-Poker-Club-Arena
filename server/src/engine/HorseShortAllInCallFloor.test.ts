@@ -230,6 +230,26 @@ describe('shortAllInSpot / shortAllInCallFloor (Dan 2026-10-26)', () => {
     expect(shortAllInCallFloor(fold, p.hero, p.gs, 0.01).action).toBe('call');
   });
 
+  it('the drawing-dead check is measured only when the floor would otherwise call postflop', () => {
+    let asked = 0;
+    const measure = (value: number) => () => {
+      asked++;
+      return value;
+    };
+    const p = preflop();
+    expect(shortAllInCallFloor(fold, p.hero, p.gs, measure(0.01)).action).toBe('call');
+    expect(asked).toBe(0);
+    const s = ploPaired();
+    s.gs.communityCards = cards('6h 7c Jd 2s');
+    const call: HorseDecision = { action: 'call', amount: 2 * BB, thinkTime: 900 };
+    expect(shortAllInCallFloor(call, s.hero, s.gs, measure(0.01))).toBe(call);
+    expect(asked).toBe(0);
+    expect(shortAllInCallFloor(fold, s.hero, s.gs, measure(0.01)).action).toBe('fold');
+    expect(shortAllInCallFloor(fold, s.hero, s.gs, measure(0.2)).action).toBe('call');
+    expect(shortAllInCallFloor(fold, s.hero, s.gs, () => null).action).toBe('call');
+    expect(asked).toBe(2);
+  });
+
   it('all in or fold: the call is an all in', () => {
     const s = preflop();
     s.gs.legalActions = ['fold', 'all_in'];
@@ -290,6 +310,65 @@ describe('HorseLogic.decide obeys it end to end', () => {
     expect(d.action).toBe('call');
     expect(d.policyGraph?.finalAction).toEqual({ action: 'call', amount: 500 });
     expect(horseDecisionReceiptIsValid(d, 'nlh')).toBe(true);
+    expect(horseDecisionReceiptIsValid(d, 'nlh', { player: s.hero, gameState: s.gs })).toBe(true);
+  });
+
+  it('the worker boundary admits a fold turned into a call only in the short all-in spot', () => {
+    const s = preflop();
+    seedFastRandom(11);
+    const d = HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { mind: false });
+    const flipped = d.policyGraph?.transitions.some(
+      (t) => t.node === 'wager_rules' && t.before?.action === 'fold' && t.after.action === 'call'
+    );
+    expect(flipped).toBe(true);
+    // The same receipt, presented for a cash game, is not a rule the floor
+    // could have applied, so the worker answer is refused.
+    const cash = preflop({ mode: 'cash' });
+    expect(horseDecisionReceiptIsValid(d, 'nlh', { player: cash.hero, gameState: cash.gs })).toBe(
+      false
+    );
+  });
+
+  it('postflop multiway: a live hand calls the short all in whatever the other callers hold', () => {
+    // Flop K-7-2, the horse holds 7-3 (a middle pair): a 2BB micro stack is all
+    // in and two big stacks have already called. Against all three ranges the
+    // brain may price the pair low; heads up against one unknown hand it is
+    // far from dead, so the floor calls.
+    for (const seed of SEEDS) {
+      const hero = seat(4, 6000, 0, { hole: '7d 3c', totalInvested: 200 });
+      const gs = {
+        players: [
+          seat(1, 0, 400, { is_all_in: true, totalInvested: 600 }),
+          seat(2, 9000, 400, { totalInvested: 600 }),
+          seat(3, 8000, 400, { totalInvested: 600 }),
+          hero,
+        ],
+        communityCards: cards('Ks 7h 2c'),
+        pot: 800 + 1200,
+        currentBet: 400,
+        minRaise: BB,
+        lastRaise: 400,
+        stage: 'flop',
+        gameVariant: 'nlh',
+        gameMode: 'tournament',
+        bigBlind: BB,
+        dealerSeat: 4,
+        toCall: 400,
+        legalActions: ['fold', 'call', 'raise', 'all_in'],
+        minRaiseTo: 800,
+        maxRaiseTo: 6000,
+        bettingStructure: 'no_limit',
+        actionHistory: [
+          { stage: 'flop', seat: 1, userId: 'p1', action: 'all_in', amount: 400 },
+          { stage: 'flop', seat: 2, userId: 'p2', action: 'call', amount: 400 },
+          { stage: 'flop', seat: 3, userId: 'p3', action: 'call', amount: 400 },
+        ],
+      } as unknown as HorseGameStateV2;
+      expect(shortAllInSpot(hero, gs)).not.toBeNull();
+      seedFastRandom(seed);
+      const d = HorseLogic.decide(hero, gs, 'tag', { tightness: 5 }, { mind: false });
+      expect(['call', 'raise', 'all_in'], `seed ${seed}`).toContain(d.action);
+    }
   });
 
   it('PLO5 on a paired board: a 2BB shove from a micro stack is called, not folded', () => {

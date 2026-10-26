@@ -4,7 +4,7 @@ describe('qualification child credential isolation', () => {
   const input = {
     PATH: '/configured/bin',
     HOME: '/configured/home',
-    TMPDIR: '/private/scratch',
+    TMPDIR: '/configured/scratch',
     LANG: 'C',
     GH_TOKEN: 'configured-github-auth',
     DATABASE_URL: 'private-db',

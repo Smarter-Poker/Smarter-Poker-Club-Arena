@@ -4717,6 +4717,8 @@ export class TournamentManager extends TournamentManagerEliminations {
     const admissionAllowed = (): boolean =>
       this.eliminationMutationAllowed() || (this.running && !this.eliminationSweepSignal?.aborted);
     if (isMaintenanceFrozen() || !admissionAllowed()) return;
+    // A finished event never starts a dealer, whatever receipt is left over.
+    if (this.tournamentFinished || this.finalTableDealHandled) return;
     const { data, error } = await supabase
       .from('tournament_capacity_table_receipts')
       .select('table_id, created_at')

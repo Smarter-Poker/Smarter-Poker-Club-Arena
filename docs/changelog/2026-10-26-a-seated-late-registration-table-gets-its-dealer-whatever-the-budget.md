@@ -41,13 +41,21 @@ other admission path, is reached only when busting stops, at the :55 break.
   external terminal outcome first and is not budget-fenced) and before the
   accepted-entry seating read, so neither the seating read nor a spent budget
   can end the pass before a seated table gets its dealer.
+- The `late_registration` wake that carries admission is durable: it stays
+  pending until a whole sweep completes, so every pass until then admits, and
+  a lost Realtime frame is re-read by the wake drain on reconnect and at boot.
+- A finished event (`tournamentFinished` / `finalTableDealHandled`) never
+  starts a dealer for a leftover receipt.
 - `admitCommittedCapacityTables` is fenced only by manager stop, the
   scheduler's abort and the platform freeze, never by the work budget. It is
   one indexed read, a local dealer start for players already seated, and one
   acknowledgement. It creates no table, moves no seat and runs no rebalance;
   those stay in stage 6 after balancing, as before.
 
-Pinned by `server/src/tournament/LateRegistrationCapacity.guard.test.ts`
+Pinned by `server/src/tournament/aSeatedCapacityTableIsNeverStarvedByTheSweepBudget.law.test.ts`
+(behaviour: the real admission step with the budget spent starts the dealer and
+acknowledges; a finished event, stopped manager and aborted sweep do not) and
+`server/src/tournament/LateRegistrationCapacity.guard.test.ts`
 (order: admission after the entry-window reconcile and before the seating
 read; fence: no budget check).
 

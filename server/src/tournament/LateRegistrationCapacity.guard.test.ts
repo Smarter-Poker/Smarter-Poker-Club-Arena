@@ -409,8 +409,15 @@ describe('late-registration capacity authority', () => {
     ).toBe(1);
     const wakeBranch = ELIMINATIONS.slice(reconcileStep, recoveryStage);
     expect(wakeBranch).toMatch(
-      /\.some\(\(reason\) => reason === 'late_registration'\) &&\s*!isMaintenanceFrozen\(\)\s*\) \{\s*this\.noteEliminationSweepStep\('admitCommittedCapacityTables'\);\s*await this\.admitCommittedCapacityTables\(\);/
+      /\n {6}if \(lateRegistrationWake && !isMaintenanceFrozen\(\)\) \{\s*this\.noteEliminationSweepStep\('admitCommittedCapacityTables'\);\s*await this\.admitCommittedCapacityTables\(\);/
     );
+    // The gate is the captured wake alone: no budget check sits in front of it.
+    const admissionGate = ELIMINATIONS.slice(
+      ELIMINATIONS.lastIndexOf('\n', ELIMINATIONS.lastIndexOf('if (', admissionStep)),
+      admissionStep
+    );
+    expect(admissionGate).not.toContain('eliminationMutationAllowed');
+    expect(admissionGate).not.toContain('eliminationWorkBudgetExpired');
     // The early step only admits: creation and the post-expansion rebalance
     // stay in the expansion stage after balancing (theFreezeIsTotal law).
     expect(wakeBranch).not.toContain('checkDynamicTableExpansion()');
@@ -423,6 +430,8 @@ describe('late-registration capacity authority', () => {
     expect(admit).toContain('if (isMaintenanceFrozen() || !admissionAllowed()) return;');
     expect(admit).not.toMatch(/if \(!this\.eliminationMutationAllowed\(\)\) return;/);
     expect(admit).not.toContain('|| !this.eliminationMutationAllowed()) return;');
+    // A finished event never starts a dealer for a leftover receipt.
+    expect(admit).toContain('if (this.tournamentFinished || this.finalTableDealHandled) return;');
     expect(admit).toContain(".from('tournament_capacity_table_receipts')");
     expect(admit).toContain(".is('manager_admitted_at', null)");
     expect(admit).toContain("'fn_ack_tournament_capacity_tables'");

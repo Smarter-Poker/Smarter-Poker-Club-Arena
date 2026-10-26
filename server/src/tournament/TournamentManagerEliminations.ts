@@ -669,60 +669,63 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Crucially, a pending receipt returns false until the database proves
       // every early finisher was repriced, so the captured wake cannot be
       // acknowledged after a lost response or process crash.
-      if (
-        this.tournamentEntryRepricePending ||
-        [...durableWakes.values()].some((reason) => reason === 'late_registration')
-      ) {
+      const lateRegistrationWake = [...durableWakes.values()].some(
+        (reason) => reason === 'late_registration'
+      );
+      if (this.tournamentEntryRepricePending || lateRegistrationWake) {
         this.noteEliminationSweepStep('reconcileTournamentEntryWindow');
         if (!(await this.reconcileTournamentEntryWindow('engine.manager_wake'))) return;
         if (sweepStopped()) return;
-        /*
-         * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
-         * (2026-10-25), AND THE SWEEP BUDGET NEVER DECIDES IT (2026-10-26).
-         *
-         * Every capacity table is committed together with this
-         * `late_registration` wake, but its dealer was only started by the
-         * expansion stage (6). Each new bust rewinds the cursor to stage 0, so
-         * on a busy field stage 6 was reached only when busting stopped: at
-         * the :55 break. Production 2026-10-25: 99 of 132 capacity tables
-         * waited over a minute (median 12.0, max 53.8) seated with no dealer.
-         *
-         * The 2026-10-25 fix moved admission here but behind the seating read
-         * and inside the 5 s work budget, and the add-on offer loop above runs
-         * until that budget is spent. On 2026-10-26 13:28-13:55 UTC (engine
-         * 4dfd07ef) every pass of four busy events reached it with the budget
-         * gone: seven tables (Sunrise Bounty table 22 among them) sat seated
-         * with no dealer for up to 27 minutes, then were all admitted at
-         * 13:55:41 when the break stopped the busting. So admission now runs
-         * straight after the entry-window reconcile (which adopts an external
-         * terminal outcome first and is not budget-fenced) and before the
-         * seating read, and admitCommittedCapacityTables is fenced only by
-         * stop, abort and the freeze.
-         *
-         * Only ADMISSION happens here: it starts dealers for receipts already
-         * committed with seated entrants and acknowledges them. It creates no
-         * table, moves no seat and runs no rebalance; creation and the
-         * post-expansion rebalance stay in stage 6, after balancing, as the
-         * freeze law requires. The engine preparation arms every break /
-         * hand-for-hand hold before the dealer starts.
-         */
-        if (
-          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
-          !isMaintenanceFrozen()
-        ) {
-          this.noteEliminationSweepStep('admitCommittedCapacityTables');
-          await this.admitCommittedCapacityTables();
-          if (sweepStopped()) return;
-        }
-        // The same wake carries entries accepted after a launch cohort was
-        // captured. Keep it pending until every one of them holds a chair.
+      }
+
+      /*
+       * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT,
+       * AND THE SWEEP BUDGET NEVER DECIDES IT (2026-10-25, hardened
+       * 2026-10-26).
+       *
+       * Every capacity table is committed together with a `late_registration`
+       * wake, but its dealer was only started by the expansion stage (6). Each
+       * new bust rewinds the cursor to stage 0, so on a busy field stage 6 was
+       * reached only when busting stopped: at the :55 break. Production
+       * 2026-10-25: 99 of 132 capacity tables waited over a minute (median
+       * 12.0, max 53.8) seated with no dealer.
+       *
+       * The 2026-10-25 fix moved admission ahead of the stages, but behind the
+       * seating read, only on a pass that had captured the wake, and inside
+       * the 5 s work budget that the add-on offer loop above spends first. On
+       * 2026-10-26 13:28-13:55 UTC (engine 4dfd07ef) every pass of four busy
+       * events reached it with the budget gone: seven tables (Sunrise Bounty
+       * table 22 among them) sat seated with no dealer for up to 27 minutes,
+       * then were all admitted at 13:55:41 when the break stopped the busting.
+       *
+       * So, two rules, each closing one way a seated table can wait:
+       *   1. It runs after the entry-window reconcile (which adopts an
+       *      external terminal outcome first and is not budget-fenced) and
+       *      before the seating read, which can end the pass.
+       *   2. admitCommittedCapacityTables is fenced only by stop, abort, the
+       *      freeze and a finished event - never by the work budget.
+       * The wake that carries it is durable: it stays pending until a whole
+       * sweep completes, so every pass until then admits, and a lost Realtime
+       * frame is re-read by the wake drain on reconnect and at boot.
+       *
+       * Only ADMISSION happens here: it starts dealers for receipts already
+       * committed with seated entrants and acknowledges them. It creates no
+       * table, moves no seat and runs no rebalance; creation and the
+       * post-expansion rebalance stay in stage 6, after balancing, as the
+       * freeze law requires. The engine preparation arms every break /
+       * hand-for-hand hold before the dealer starts.
+       */
+      if (lateRegistrationWake && !isMaintenanceFrozen()) {
+        this.noteEliminationSweepStep('admitCommittedCapacityTables');
+        await this.admitCommittedCapacityTables();
+        if (sweepStopped()) return;
+      }
+
+      // The same wake carries entries accepted after a launch cohort was
+      // captured. Keep it pending until every one of them holds a chair.
+      if (lateRegistrationWake) {
         this.noteEliminationSweepStep('seatAcceptedEntrantsAwaitingChairs');
-        if (
-          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
-          !(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))
-        ) {
-          return;
-        }
+        if (!(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))) return;
         if (sweepStopped()) return;
       }
 

@@ -18,7 +18,10 @@ vi.mock('../src/services/supabase.js', () => ({
     }),
   },
 }));
-vi.mock('../src/services/errorReporter.js', () => ({ reportError: () => {} }));
+vi.mock('../src/services/errorReporter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/services/errorReporter.js')>()),
+  reportError: () => {},
+}));
 import {
   createDecisionOpponentProfileReader,
   readHorseOpponentProfiles,

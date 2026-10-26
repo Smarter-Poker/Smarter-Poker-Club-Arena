@@ -231,6 +231,49 @@ function attach(manager: any, engine: any, publish = true) {
 }
 
 describe('a pause a tournament manager armed is a pause it gives back', () => {
+  it('a real dealer cannot outwait mystery activation or be released by the break ending', async () => {
+    vi.useFakeTimers();
+    const manager = managerFixture();
+    const engine = dealer();
+    attach(manager, engine);
+    let released = false;
+    let gate: Promise<void> | undefined;
+    try {
+      manager.holdMysteryActivationBoundary();
+      gate = engine.awaitPauseGate().then(() => {
+        released = true;
+      });
+      await flush();
+      expect(engine.requiresExplicitPauseResume()).toBe(true);
+      manager.onBreak = true;
+      await manager.resumeFromBreak();
+      await vi.advanceTimersByTimeAsync(21000);
+      expect(released).toBe(false);
+      expect(engine.requiresExplicitPauseResume()).toBe(true);
+      manager.releaseMysteryActivationBoundary();
+      await gate;
+      expect(released).toBe(true);
+      expect(engine.requiresExplicitPauseResume()).toBe(false);
+    } finally {
+      engine.resumeDealing();
+      await gate;
+      vi.useRealTimers();
+    }
+  });
+
+  it('a replacement inherits mystery custody and releases at its own park edge after activation', async () => {
+    const manager = managerFixture();
+    manager.holdMysteryActivationBoundary();
+    const engine = dealer();
+    attach(manager, engine, false);
+    expect(engine.requiresExplicitPauseResume()).toBe(true);
+    // The seed completes before this replacement joins the managed map.
+    manager.releaseMysteryActivationBoundary();
+    manager.tableEngines.set(TABLE, engine);
+    await engine.awaitPauseGate();
+    expect(engine.requiresExplicitPauseResume()).toBe(false);
+  });
+
   it.each(['sweep', 'dealer', 'retained-hand'])(
     'retains the %s successor drain across real park callbacks and hands off at its last edge',
     async (cause) => {

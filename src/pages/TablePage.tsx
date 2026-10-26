@@ -4456,11 +4456,11 @@ function LiveTablePage({
 
   useEffect(() => {
     if (engineWsStatus === 'connected') {
-      heartbeatRecoveryGuardRef.current.invalidate();
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
       tablePausedToastShownRef.current = false;
       heartbeatRowClosedRef.current = false;
+      heartbeatRecoveryGuardRef.current.invalidate();
       // A socket that reached OPEN is proof the engine accepted this token.
       // Nothing weaker clears it (see the comment above).
       setEngineRefusedAuth(false);

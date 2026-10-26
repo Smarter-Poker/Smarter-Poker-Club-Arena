@@ -1298,6 +1298,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Ongoing manual rakeback payment outage: transition-table cardinality flattened the set reporting read into an expensive history join; actual 10k-hand statement timedout240.144s even though a682-key read-only equivalent took23.421s. LATERAL OFFSET0 retains each original club/player/day bound. Same values, cutoff proof and original warning atomicity; native12krows10paritycases and6laws passed, normalprepushpassed30359c2b45. Installed174ms with exact atomic history under documented outage exception. No wallets, payment routes, financialsource changes, disabled guards or schedules. Immediateprotectedrecording follows."
+    },
+    {
+      "version": "20261026224626",
+      "name": "sealed_inventory_reads_the_sealed_state_directly",
+      "file": "supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql",
+      "md5": "a3fd663c08d1d2553d80fd2d4c809c0f",
+      "appliedToProductionAt": "2026-10-26T23:04:20.353Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Maintained installer atomic exact-byte history; live history, reader and forty-source authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original source backlog is fully accrued and week refusal count is zero, but the opening P&L boundary could not finish within the close budget; the read-only profile measured119s rebuilding sealed inventory and68s reading pending funding. Sealed base=boundary has no delta: read the exact same published rows/issues directly while preserving every nonempty-delta statement and metadata. Qualified on native PostgreSQL17 captured original14941 active rows/all245 retained issues/admissions, forged caches, retention, certificate concurrency and original seven-receivable composition. Exact qualified SQL installed through maintained applier; source-pin authority read back TRUE. Immediate byte-exact recording is the next source action. This is not a wallet-payment or complete-week certificate."
     }
   ]
 }

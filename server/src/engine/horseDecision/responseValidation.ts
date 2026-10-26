@@ -717,7 +717,9 @@ function policyGraphIsValid(
       (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
     // V58/V59 river nut discipline can downsize a PLO6 raise to a call.
     // This is produced inside the same graph, not a transport mutation.
+    // Request-bearing receipts use the bounded river check below.
     const plo6RaiseToCall =
+      context === undefined &&
       variant === 'plo6' &&
       previous !== null &&
       ['raise', 'all_in'].includes(previous.action) &&

@@ -661,7 +661,8 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
       return false;
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
-    // Wager rules only add aggression, with one exception: two owner rules of
+    // Wager rules add aggression or apply the bounded owner reductions below.
+    // Two owner rules of
     // 2026-10-25 turn a call, raise or jam into a fold. The PLO4/5/6
     // paired-board fold (HorsePloPairedBoardFold) and the no-limit hold'em
     // dominated-hand fold to a big 3-bet (HorseHoldemPremiumAggression). A
@@ -674,10 +675,22 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
       previous !== null &&
       ['call', 'raise', 'all_in'].includes(previous.action) &&
       (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
+    // PLO6 river nut discipline (paired V58 and unpaired V59) can cap a
+    // raise or covering shove at the owed call. The graph already records
+    // that final owner after the strategy packs; refusing its call here
+    // made the worker's correct downgrade fall through to a safety fold.
+    const plo6DisciplineCall =
+      variant === 'plo6' &&
+      previous !== null &&
+      ['raise', 'all_in'].includes(previous.action) &&
+      transition.after.action === 'call' &&
+      transition.after.amount !== null &&
+      transition.after.amount > 0;
     if (
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
+      !plo6DisciplineCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;

@@ -456,6 +456,16 @@ export interface SeatSlotProps {
    */
   canSit?: boolean;
   /**
+   * LIGHTNING TRANSITION, PHASE 1: an empty chair in a Lightning room draws
+   * nothing at all. Nobody can sit in a Lightning room (Join Lightning assigns
+   * the chair), and the pool deals a new set of opponents every hand, so an
+   * "EMPTY" coin at every open chair for the whole wait between hands was
+   * furniture describing nothing. Only a Lightning room passes it: Classic
+   * tables keep EMPTY on their empty seats (Dan's rule), and Lightning never
+   * changes a Classic table. Default false.
+   */
+  hideEmptyChair?: boolean;
+  /**
    * Dan 2026-08-18: true for the hero's OWN reserved seat while they wait to
    * be dealt in. Every other open seat reads EMPTY; this one reads YOUR SEAT
    * so the player can see where they'll appear.
@@ -925,6 +935,7 @@ export const SeatSlot = memo(
       showStackInBB = false,
       onSit,
       canSit = true,
+      hideEmptyChair = false,
       isHeroReservedSeat = false,
       onAction,
       onAvatarClick,
@@ -2456,6 +2467,18 @@ export const SeatSlot = memo(
       // a passive "EMPTY" marker. No onClick, no role="button", no tabIndex:
       // the seat is removed from the interaction model entirely rather than
       // accepting the click and rejecting it downstream.
+      if (!canSit && hideEmptyChair && !isHeroReservedSeat) {
+        /* A Lightning room's open chair: the slot keeps its seat number (the
+           ring and the throwable scopes address seats by it) and draws
+           nothing. The hero's own reserved chair is never hidden. */
+        return (
+          <div
+            className={`${containerClasses} seat--empty-locked seat--empty-hidden`}
+            data-seat-num={seatNumber}
+            aria-hidden="true"
+          />
+        );
+      }
       if (!canSit) {
         return (
           <div
@@ -3916,6 +3939,7 @@ export const SeatSlot = memo(
     if (prev.isActive !== next.isActive) return false;
     if (prev.arrival?.key !== next.arrival?.key) return false;
     if (prev.canSit !== next.canSit) return false;
+    if (prev.hideEmptyChair !== next.hideEmptyChair) return false;
     /**
      * AUDIT 2026-08-25 — two props that were passed, read, and then blocked.
      *

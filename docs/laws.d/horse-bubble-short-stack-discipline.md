@@ -1,0 +1,3 @@
+# server/src/engine/HorseBubbleShortStackDiscipline.law.test.ts
+
+Dan, 2026-10-25, on bubble hand 48403158 (13 left, 12 paid): "THIS CAN NEVER FUCKING HAPPEN AGAIN". A tournament hold'em stack of 12 big blinds or less facing a raise jams or folds and never flat-calls, even against a wide-raising opener (both maniac recoveries price the jam, never the flat); with at most one pot behind on the flop or turn a strong made hand (top pair and better, or a pair with a draw) puts the chips in instead of checking; and a flush made with one low card on a four-flush board, with three or more live flush ranks above it, does not call off a tournament stack. Cash games keep their own pricing.

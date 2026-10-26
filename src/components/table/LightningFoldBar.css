@@ -57,17 +57,71 @@
   filter: brightness(1.3);
 }
 
-/* The neutral line for a gap between hands that has run long. */
-.lightning-next-hand {
+/* LIGHTNING TRANSITION, PHASE 1: the room's words live ON THE FELT.
+   "Next Hand..." and "Lightning Is Ending" used to be centred inside the fixed
+   action bar, in a footer branch the between-hands bar shadowed, so neither
+   could show while the player waited between hands. They are a felt-level
+   layer now, inside .table-surface, in the band just above the wordmark that
+   the connection banner uses (`--sp-brand-top`, declared on .table-surface),
+   so they sit in felt coordinates at every size and between hands and in a
+   hand alike. Out of flow and click-through: they never move the felt and
+   never take a tap. */
+.lightning-felt-notices {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
-  letter-spacing: 0.04em;
+  top: calc(var(--sp-brand-top, 56%) - 0.5%);
+  left: 4%;
+  right: 4%;
+  transform: translateY(-100%);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   pointer-events: none;
+}
+
+.lightning-next-hand,
+.lightning-ending {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-align: center;
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 90%),
+    0 0 10px rgb(0 0 0 / 80%);
+  pointer-events: none;
+}
+
+/* "Next Hand..." fades in when the quiet has run long, and fades out when the
+   next deal starts (the component keeps it mounted for the fade). Both legs
+   scale with the player's Animation Speed; reduced motion collapses the motion
+   through src/styles/reducedMotion.css and never the words. */
+.lightning-next-hand {
+  animation: lightningNextHandIn calc(240ms * var(--animation-speed, 1)) ease-out both;
+}
+
+.lightning-next-hand[data-leaving='true'] {
+  animation: lightningNextHandOut calc(240ms * var(--animation-speed, 1)) ease-in both;
+}
+
+@keyframes lightningNextHandIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lightningNextHandOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 /* JOIN LIGHTNING completing: the anchor table is covered by one neutral line
@@ -108,6 +162,9 @@
 
 /* LIGHTNING PHASE 7: the room after Lightning ends. Over the felt like the
    joining state, with the player's way back to their own table. */
+/* Mounted over the table area (.table-container), not in the footer chain,
+   so VIEW GAME is on screen between hands too. `safe center` and the scroll
+   keep a tall session summary reachable on a short phone. */
 .lightning-ended {
   position: absolute;
   inset: 0;
@@ -115,9 +172,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
+  overflow-y: auto;
   gap: 12px;
-  padding: 0 16px;
+  /* Over the table area the fixed action bar covers the container's bottom
+     reserve, so the content keeps clear of it (and of the top chrome). The
+     reserves are declared on .table-container; elsewhere they fall to 0. */
+  padding: var(--sp-table-top, 0px) 16px var(--sp-table-bottom, 0px);
   background: rgba(0, 0, 0, 0.72);
   text-align: center;
 }

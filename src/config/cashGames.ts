@@ -30,7 +30,11 @@ export function cashTemplateVariantAvailable(
   template: string | null,
   variant: string | null
 ): boolean {
-  return !(cashTemplateKey(template ?? '') === 'madness' && variant && !isLightningVariant(variant));
+  return !(
+    cashTemplateKey(template ?? '') === 'madness' &&
+    variant &&
+    !isLightningVariant(variant)
+  );
 }
 
 export const PINEAPPLE_CLASSIC_NOTE =

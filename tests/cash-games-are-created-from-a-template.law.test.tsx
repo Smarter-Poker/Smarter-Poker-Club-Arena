@@ -268,7 +268,9 @@ describe('A1.5 - an undealt variant is offered disabled, never saved as NLHE (RO
     for (const name of ['Pineapple', 'Short Deck', 'FLO8', 'PLO8'])
       expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, name).toBe(true);
     for (const name of ['NLH', 'FLH', 'PLO4', 'PLO5', 'PLO6'])
-      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, name).toBe(false);
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, name).toBe(
+        false
+      );
     expect(screen.getByText(/Omaha Hi-Lo And Pineapple Use Classic Games/)).toBeTruthy();
   });
 

@@ -25,6 +25,7 @@ import {
 import {
   lightningLobbyBadge,
   isLightningEligible,
+  isLightningVariant,
   type LightningLobbyState,
   type LightningPoolStatus,
 } from '../../lightning/lightningLobby';
@@ -260,11 +261,11 @@ export interface LobbyEntry {
     mustMove: boolean;
     template: string | null;
     /**
-     * The game's variant as the table row carries it. Short Deck, Omaha Hi-Lo
-     * and Pineapple never run Lightning (Dan 2026-10-25), so their Action or
-     * Madness card does not wear the Lightning Games mark.
+     * Set only for Short Deck, Omaha Hi-Lo and Pineapple, which never run
+     * Lightning (Dan 2026-10-25): their Action or Madness card does not wear
+     * the Lightning Games mark.
      */
-    variant?: string;
+    noLightning?: true;
     tables: number;
     state: string | null;
     /**
@@ -1485,7 +1486,9 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           id: t.cluster_id,
           mustMove: t.cluster_must_move !== false,
           template: t.cluster_template ?? null,
-          ...(t.game_variant ? { variant: t.game_variant } : {}),
+          ...(t.game_variant && !isLightningVariant(t.game_variant)
+            ? { noLightning: true as const }
+            : {}),
           ...(cashRulesStyleOf(t) ? { style: cashRulesStyleOf(t) } : {}),
           tables: figures.tables,
           state: t.cluster_state ?? null,

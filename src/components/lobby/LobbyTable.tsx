@@ -35,7 +35,6 @@ import {
 } from './lobbyEntries';
 import LightningGamesIcon from './LightningGamesIcon';
 import { cashTemplateKey } from '../../config/cashGames';
-import { isLightningVariant } from '../../lightning/lightningLobby';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
@@ -657,8 +656,7 @@ const COL_NAME: ColumnDef = {
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
-            {cashTemplateKey(e.game?.template ?? '') === 'madness' &&
-            (e.game?.variant === undefined || isLightningVariant(e.game.variant)) ? (
+            {cashTemplateKey(e.game?.template ?? '') === 'madness' && !e.game?.noLightning ? (
               <LightningGamesIcon />
             ) : e.live ? (
               <i className="lt-live" aria-hidden="true" title="Live" />

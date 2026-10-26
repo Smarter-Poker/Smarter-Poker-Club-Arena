@@ -270,9 +270,11 @@ describe('HorseLogic V12 - icmRisk v2', () => {
 
 describe('HorsePreflop V12 - spin format widening', () => {
   it('a spin opens hands an MTT folds at the same stack depth', () => {
+    // Late bar 0.40 - 0.03 tournament aggression (2026-10-25) = 0.37 in the
+    // MTT; the spin widen takes it to 0.32, so a 0.35 opens only in the spin.
     const ctx = (format: 'mtt' | 'spin'): Parameters<typeof decidePreflopV7>[0] =>
       ({
-        strength: 0.4,
+        strength: 0.35,
         position: 'late',
         raiserPosition: null,
         raises: 0,

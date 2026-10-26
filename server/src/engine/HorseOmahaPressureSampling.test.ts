@@ -225,7 +225,14 @@ describe('Omaha pressure sampling retains its declared value mass', () => {
           gs,
           'balanced',
           {},
-          { mind: true, telemetry: false, v56OmahaPressureRange: false }
+          // The 2026-10-25 paired-board fold would fold it too; ablate both so
+          // the control still measures what V56 alone changed.
+          {
+            mind: true,
+            telemetry: false,
+            v56OmahaPressureRange: false,
+            ploPairedBoardFold: false,
+          }
         ).action
       ).not.toBe('fold');
     }

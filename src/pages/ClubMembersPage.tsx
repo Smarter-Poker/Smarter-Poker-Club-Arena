@@ -158,8 +158,11 @@ type OptionalColumn = RosterColumn;
 // Live record signals (horse play, chip and activity updates) arrive continuously
 // in an active club. A background reconciliation re-reads the whole loaded
 // window, so it waits until this long after the most recent roster read began.
-// Explicit refresh, reconnect and query changes still read immediately.
-export const liveRosterRefreshPolicy = { minIntervalMs: 30_000 };
+// Dan, 2026-10-25: "STOP AUTO REFRESHING THE PLAYER MANAGEMENT PAGE. ONCE
+// EVERY 180 SECONDS IS FINE, NOTHING SOONER." Every automatic re-read (live
+// signals, focus, tab return) goes through this floor. Explicit refresh and
+// query changes still read immediately.
+export const liveRosterRefreshPolicy = { minIntervalMs: 180_000 };
 const LIVE_REFRESH_DEBOUNCE_MS = 1200;
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
 type RosterLoadOptions = { forceSummary?: boolean; preserveWindow?: boolean };

@@ -662,7 +662,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'ploPairedBoardFold',
-    'PLO5/PLO6 no full house on a paired turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
+    'PLO4/PLO5/PLO6 no full house on a paired flop, turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
     'PLO paired-board fold'
   ),
   flag(
@@ -694,6 +694,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'v56OmahaPressureRange',
     'river vulnerable set/trips versus tier-three pressure on one Omaha-high cash board; qualified fixed400bb cash card, explicit off arm retained',
     'V56'
+  ),
+  flag(
+    'v57TournamentAggression',
+    'Dan 2026-10-25 NLH tournament aggression: wider opens, 3-bets and big blind defence against the opener width, a shade wider 3-bet defence to 60bb, and more planned turn barrels; explicit off arm retained for the historical neutrality corpus',
+    'V57'
   ),
   flag(
     'v52RangeAdvantage',
@@ -1865,7 +1870,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'plo_paired_board_fold',
     'HorseLogic.decide (HorsePloPairedBoardFold)',
-    'PLO5/PLO6 call, raise or jam without a full house on a paired turn or river turned into a fold',
+    'PLO4/PLO5/PLO6 call, raise or jam without a full house on a paired flop, turn or river turned into a fold',
     'PLO paired-board fold'
   ),
   receipt(

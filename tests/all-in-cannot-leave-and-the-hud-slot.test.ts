@@ -102,46 +102,37 @@ const SLOT_WIDGETS: Array<[string, string, string]> = [
   ['RabbitHunt.css', RABBIT_CSS, '.rabbit-hunt__button'],
 ];
 
-describe('an all-in player cannot leave the table', () => {
-  it('leaveTable refuses before it does anything else', () => {
+/*
+ * SUPERSEDED 2026-10-25 for the player, kept for the seat. Dan: "IF A USER
+ * CLICKS LEAVE GAME, IT NEEDS TO LEAVE GAME RIGHT AWAY, NOT THE NEXT HAND OR IN
+ * A COUPLE HANDS, LEAVE NOW, EVEN IF ITS IN THE MIDDLE OF A HAND." and
+ * "AVATARS SHOULD NOT LEAVE THE TABLE UNTIL AFTER THEIR ACTION IS COMPLETED."
+ * The all-in refusal sent the player to the lobby with the seat still live, to
+ * be dealt the next hand and the one after. Now the leave is accepted and
+ * recorded at once, and the all-in SEAT still plays its hand out (the 08-26
+ * rule's purpose) before settlement cashes it out. Behaviour is driven in
+ * server/src/engine/LeaveMeansNow.behaviour.test.ts.
+ */
+describe('an all-in player leaves now; the seat finishes the hand', () => {
+  it('leaveTable no longer refuses an all-in player', () => {
+    expect(SEATING).not.toMatch(/You Are All In\. You Cannot Leave Until The Hand Is Finished\./);
+    expect(SEATING).not.toMatch(/refusing leave for \$\{userId\} - all-in in a live hand/);
+  });
+
+  it('an all-in seat is never folded and never shown sitting out while its hand is live', () => {
     const body = strip(SEATING);
-    // `public async leaveTable(` since chip continuity (2026-09-04): the
-    // between-hands answer is awaited from the database.
-    const at = body.indexOf('public async leaveTable');
-    expect(at).toBeGreaterThan(-1);
-
-    const guard = body.indexOf('liveSelf?.is_all_in', at);
-    const rosterLookup = body.indexOf('if (!player)', at);
-    const tournamentSplit = body.indexOf('this.isTournamentTable()', at);
-
-    expect(guard, 'no all-in guard in leaveTable').toBeGreaterThan(-1);
-    // Before the missing-roster branch, so a player missing from the hand roster cannot
-    // slip past on the "reserved seat" ack.
-    expect(guard).toBeLessThan(rosterLookup);
-    // And before the cash/tournament split, so it covers both.
-    expect(guard).toBeLessThan(tournamentSplit);
+    const fold = body.slice(body.indexOf('protected foldLeaverNow'));
+    expect(fold).toMatch(/if \(seatPlayer\.is_all_in\) return true;/);
+    expect(body).toMatch(/this\.pendingSitOut\.add\(userId\);/);
   });
 
-  it('says so in words a player can read', () => {
-    expect(SEATING).toMatch(/You Are All In\. You Cannot Leave Until The Hand Is Finished\./);
-  });
-
-  it('allows a folded player to request departure while settlement retains their contribution', () => {
-    expect(SEATING).toMatch(/liveSelf\?\.is_all_in && !liveSelf\.is_folded/);
-  });
-
-  it('the eviction sweep will not stand up an all-in player either', () => {
+  it('the eviction sweep still will not stand up an all-in player', () => {
     const body = strip(BASE);
     expect(body).toMatch(/evictSelf\?\.is_all_in && !evictSelf\.is_folded/);
-    // It skips that player and keeps evicting the rest, rather than aborting
-    // the whole sweep.
-    const at = body.indexOf('evictSelf?.is_all_in');
     expect(sliceEnclosingBlock(body, 'evictSelf?.is_all_in')).toMatch(/continue;/);
   });
 
   it('is_all_in is still only read from the live hand, not a stale seat row', () => {
-    // table_seats has no all_in column; the flag lives in HandController state
-    // and is rebuilt each hand.
     expect(SEATING).toMatch(/this\.handController\?\.getState\(\)/);
     expect(SEATING).toMatch(/liveHand\?\.players\.find/);
   });

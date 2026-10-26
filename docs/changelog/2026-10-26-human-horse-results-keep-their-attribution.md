@@ -43,3 +43,12 @@ it is not evidence for a new PLO5 strategy or sustainable winning performance.
 The wider 24-hour query initially exceeded the one-second read budget.
 The bounded roster-driven index plan and explicit five-second report budget
 replace the full fact-window scan; timeouts still refuse the report.
+
+An optional final player UUID selects the same report through the player/time
+index, allowing bounded historical investigation without a full-fleet scan.
+Invalid IDs are refused before any connection. The native fixture verifies
+that this scope excludes the second human's fact rows. The 24-hour roster
+report completed with 2,828 sole-human facts; the full 14-day roster query
+remains unavailable under the five-second budget. A single-player 14-day
+query completed, so wider history can be inspected per player without
+raising the database deadline or manufacturing a whole-fleet result.

@@ -31,6 +31,7 @@ test('report refuses invalid, injected, reversed and unbounded windows before co
     assert.equal(runScoreboard(['--run', a, b]).code, 3);
   }
   assert.equal(runScoreboard([]).code, 64);
+  assert.throws(() => scoreboardSQL(since, through, "x'; SELECT 1;--"));
   assert.match(scoreboardSQL(since, through), /^BEGIN READ ONLY;/);
 });
 
@@ -80,28 +81,28 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     started = true;
     const psql = (sql) => run('psql', ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], sql);
     psql(`CREATE TABLE profiles(id text PRIMARY KEY,is_horse boolean);
-      INSERT INTO profiles VALUES ('h',false),('h2',false),('a',true),('b',true),('unknown',null);
+      INSERT INTO profiles VALUES ('11111111-1111-4111-8111-111111111111',false),('h2',false),('a',true),('b',true),('unknown',null);
       CREATE TABLE ca_hand_facts(hand_id text,user_id text,game_variant text,big_blind numeric,
         tournament_id text,net numeric,opponent_ids text[],players_dealt int,played_at timestamptz);
       CREATE INDEX fact_user_time ON ca_hand_facts(user_id,played_at);
       INSERT INTO ca_hand_facts VALUES
-      ('cash-win','h','plo5',2,null,18,ARRAY['a','b'],3,'2026-10-26T14:10Z'),
-      ('cash-loss','h','plo5',2,null,-10,ARRAY['a','b'],3,'2026-10-26T14:11Z'),
-      ('mixed','h','plo5',2,null,900,ARRAY['h2','a'],3,'2026-10-26T14:12Z'),
-      ('mixed','h2','plo5',2,null,-900,ARRAY['h','a'],3,'2026-10-26T14:12Z'),
-      ('unknown','h','plo5',2,null,500,ARRAY['unknown'],2,'2026-10-26T14:13Z'),
-      ('missing','h','plo5',2,null,500,ARRAY['absent'],2,'2026-10-26T14:13Z'),
-      ('duplicate','h','plo5',2,null,500,ARRAY['a','a'],3,'2026-10-26T14:13Z'),
-      ('incomplete','h','plo5',2,null,500,ARRAY['a'],3,'2026-10-26T14:13Z'),
-      ('null-count','h','plo5',2,null,500,ARRAY['a'],null,'2026-10-26T14:13Z'),
-      ('invalid','h','plo5',0,null,500,ARRAY['a'],2,'2026-10-26T14:13Z'),
-      ('not-finite','h','plo5','NaN',null,500,ARRAY['a'],2,'2026-10-26T14:13Z'),
-      ('self','h','plo5',2,null,500,ARRAY['h'],2,'2026-10-26T14:13Z'),
-      ('horse','a','plo5',2,null,500,ARRAY['h'],2,'2026-10-26T14:13Z'),
-      ('tourney','h','plo5',2,'t',200,ARRAY['a'],2,'2026-10-26T14:14Z'),
-      ('other-stakes','h','plo5',10,null,50,ARRAY['a'],2,'2026-10-26T14:14Z'),
-      ('other-game','h','nlh',2,null,-2,ARRAY['a'],2,'2026-10-26T14:14Z'),
-      ('end-excluded','h','plo5',2,null,500,ARRAY['a'],2,'2026-10-26T15:00Z');`);
+      ('cash-win','11111111-1111-4111-8111-111111111111','plo5',2,null,18,ARRAY['a','b'],3,'2026-10-26T14:10Z'),
+      ('cash-loss','11111111-1111-4111-8111-111111111111','plo5',2,null,-10,ARRAY['a','b'],3,'2026-10-26T14:11Z'),
+      ('mixed','11111111-1111-4111-8111-111111111111','plo5',2,null,900,ARRAY['h2','a'],3,'2026-10-26T14:12Z'),
+      ('mixed','h2','plo5',2,null,-900,ARRAY['11111111-1111-4111-8111-111111111111','a'],3,'2026-10-26T14:12Z'),
+      ('unknown','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['unknown'],2,'2026-10-26T14:13Z'),
+      ('missing','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['absent'],2,'2026-10-26T14:13Z'),
+      ('duplicate','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['a','a'],3,'2026-10-26T14:13Z'),
+      ('incomplete','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['a'],3,'2026-10-26T14:13Z'),
+      ('null-count','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['a'],null,'2026-10-26T14:13Z'),
+      ('invalid','11111111-1111-4111-8111-111111111111','plo5',0,null,500,ARRAY['a'],2,'2026-10-26T14:13Z'),
+      ('not-finite','11111111-1111-4111-8111-111111111111','plo5','NaN',null,500,ARRAY['a'],2,'2026-10-26T14:13Z'),
+      ('self','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['11111111-1111-4111-8111-111111111111'],2,'2026-10-26T14:13Z'),
+      ('horse','a','plo5',2,null,500,ARRAY['11111111-1111-4111-8111-111111111111'],2,'2026-10-26T14:13Z'),
+      ('tourney','11111111-1111-4111-8111-111111111111','plo5',2,'t',200,ARRAY['a'],2,'2026-10-26T14:14Z'),
+      ('other-stakes','11111111-1111-4111-8111-111111111111','plo5',10,null,50,ARRAY['a'],2,'2026-10-26T14:14Z'),
+      ('other-game','11111111-1111-4111-8111-111111111111','nlh',2,null,-2,ARRAY['a'],2,'2026-10-26T14:14Z'),
+      ('end-excluded','11111111-1111-4111-8111-111111111111','plo5',2,null,500,ARRAY['a'],2,'2026-10-26T15:00Z');`);
     const report = JSON.parse(psql(scoreboardSQL(since, through)));
     assert.equal(report.status, 'observed');
     const cli = spawnSync(
@@ -130,10 +131,15 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     assert.equal(coverage.invalid_result, 2);
     assert.equal(coverage.horse_fact, undefined);
     assert.match(report.meaning, /not horse profit/);
+    const scoped = JSON.parse(
+      psql(scoreboardSQL(since, through, '11111111-1111-4111-8111-111111111111'))
+    );
+    assert.equal(scoped.player_id, '11111111-1111-4111-8111-111111111111');
+    assert.equal(scoped.coverage.find((r) => r.cohort === 'mixed_human').facts, 1);
     const empty = JSON.parse(psql(scoreboardSQL('2026-10-26T16:00:00Z', '2026-10-26T17:00:00Z')));
     assert.deepEqual(empty.scores, []);
     psql(
-      `INSERT INTO ca_hand_facts SELECT 'bulk-'||g,'h','plo5',2,null,1,ARRAY['a'],2,'2026-10-26T14:20Z' FROM generate_series(1,50001) g;`
+      `INSERT INTO ca_hand_facts SELECT 'bulk-'||g,'11111111-1111-4111-8111-111111111111','plo5',2,null,1,ARRAY['a'],2,'2026-10-26T14:20Z' FROM generate_series(1,50001) g;`
     );
     const capped = JSON.parse(psql(scoreboardSQL(since, through)));
     assert.equal(capped.status, 'incomplete_row_limit');

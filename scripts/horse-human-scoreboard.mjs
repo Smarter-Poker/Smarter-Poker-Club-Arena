@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-export function scoreboardSQL(since, through) {
+export function scoreboardSQL(since, through, userId) {
   const instant = (value) => {
     if (
       typeof value !== 'string' ||
@@ -14,6 +14,12 @@ export function scoreboardSQL(since, through) {
       throw Error('Explicit UTC timestamps required');
     return new Date(value).toISOString();
   };
+  if (
+    userId !== undefined &&
+    (typeof userId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId))
+  )
+    throw Error('Invalid player identifier');
   const start = instant(since),
     end = instant(through);
   const duration = Date.parse(end) - Date.parse(start);
@@ -31,7 +37,7 @@ WITH selected AS MATERIALIZED (
    WHERE f.user_id = p.id AND f.played_at >= '${start}'::timestamptz
      AND f.played_at < '${end}'::timestamptz
    ORDER BY f.played_at, f.hand_id LIMIT 50001
- ) f WHERE p.is_horse = false
+ ) f WHERE p.is_horse = false ${userId === undefined ? '' : `AND p.id = '${userId}'`}
  ORDER BY f.played_at, f.hand_id, f.user_id LIMIT 50001
 ), classified AS MATERIALIZED (
  SELECT f.*, CASE
@@ -68,6 +74,7 @@ SELECT jsonb_build_object(
  'version', 1, 'since', '${start}', 'through', '${end}',
  'status', CASE WHEN (SELECT count(*) FROM selected) > 50000 THEN 'incomplete_row_limit' ELSE 'observed' END,
  'classification_basis', 'current_profiles_not_historical_identity',
+ 'player_id', ${userId === undefined ? 'NULL' : `'${userId}'`},
  'candidate_scope', 'currently_classified_humans_only_unknown_actors_excluded',
  'meaning', 'Human net after rake in hands where every other dealt player is a horse. Tournament chips are not ROI. The negative of human net includes rake and is not horse profit.',
  'limits', 'No claim of sustainable win rate, causal strategy improvement, all-horse coverage, or exact individual horse transfers. Mixed-human hands excluded; no private cards read.',
@@ -80,14 +87,14 @@ COMMIT;
 }
 
 export function runScoreboard(args) {
-  if (args.length !== 3 || !['--sql', '--run'].includes(args[0]))
+  if (![3, 4].includes(args.length) || !['--sql', '--run'].includes(args[0]))
     return {
       code: 64,
       output:
-        'Usage: node scripts/horse-human-scoreboard.mjs --sql|--run <since-UTC> <through-UTC>\n',
+        'Usage: node scripts/horse-human-scoreboard.mjs --sql|--run <since-UTC> <through-UTC> [player-UUID]\n',
     };
   try {
-    const sql = scoreboardSQL(args[1], args[2]);
+    const sql = scoreboardSQL(args[1], args[2], args[3]);
     if (args[0] === '--sql') return { code: 0, output: sql };
     const result = spawnSync('psql', ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], {
       input: sql,

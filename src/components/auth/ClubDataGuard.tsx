@@ -47,7 +47,7 @@ export default function ClubDataGuard({
   if (!verdict.scope) {
     return (
       <PermissionState
-        description="Only Owners, Co-Owners, Admins And Agents Can Open Data. Agents Can See Only Themselves And Their Downline."
+        description="Only Owners, CO-Owners, Admins And Agents Can Open Data. Agents Can See Only Themselves And Their Downline."
         onBack={() => navigate(-1)}
       />
     );

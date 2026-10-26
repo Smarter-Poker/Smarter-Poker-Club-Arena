@@ -4264,6 +4264,13 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   protected override claimGapBalanceAtBoundary(tableId: string): boolean {
     if (!this.gapBalanceFencedSources.has(tableId)) return false;
+    // A table that became a durable break source after it was fenced belongs
+    // to the sweep's break step, so its park edge wakes the sweep at once.
+    const engine = this.tableEngines.get(tableId);
+    if (engine && this.retainsTournamentBreakSource(tableId, engine)) {
+      this.gapBalanceFencedSources.delete(tableId);
+      return false;
+    }
     this.boundaryBalanceRequested = true;
     this.drainBoundaryBalance();
     return true;
@@ -4320,21 +4327,32 @@ export class TournamentManager extends TournamentManagerEliminations {
       for (const tableId of parked.keys()) release(tableId);
     };
 
-    // Work that belongs to the sweep alone: a frozen platform, a tournament
-    // break, a table retirement or a seat move whose outcome is not yet known.
-    // The table deals on and the sweep plans again.
+    // A frozen platform, a tournament break, a finished event or a manager
+    // that no longer owns its tables: nothing is moved, the table deals on
+    // and the sweep plans again later.
     if (
       isMaintenanceFrozen() ||
       this.isOnBreak() ||
       this.tournamentFinished ||
-      this.pendingTableBreakRetirement ||
-      this.pendingTournamentSeatMoveOutcomes.size > 0 ||
-      !this.tournamentBreakDiscoveryComplete ||
-      this.mixedRecovery !== null ||
       !this.eliminationMutationAllowed()
     ) {
       releaseAll();
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    // Work the sweep must finish first: a table retirement, a seat move whose
+    // outcome is not yet known, break discovery or a mixed recovery. The
+    // parked source KEEPS its park and the sweep is woken now, exactly as the
+    // park edge did before this path existed: the sweep redrives that work
+    // first and then claims the source while its park is still valid.
+    // Releasing it here would let it deal again and fence it again.
+    if (
+      this.pendingTableBreakRetirement ||
+      this.pendingTournamentSeatMoveOutcomes.size > 0 ||
+      !this.tournamentBreakDiscoveryComplete ||
+      this.mixedRecovery !== null
+    ) {
+      this.requestEliminationSweep('tournament_move_parked');
       return;
     }
 
@@ -4357,32 +4375,47 @@ export class TournamentManager extends TournamentManagerEliminations {
 
     const moves = this.tableBalancer.calculateMoves(tables);
     const ready: MoveInstruction[] = [];
+    // Sources the plan still needs that cannot move at this instant.
+    const waiting = new Set<string>();
     for (const move of moves) {
-      if (parked.has(move.fromTableId)) {
-        if (await this.waitForHandComplete(move.fromTableId)) ready.push(move);
+      if (parked.has(move.fromTableId) && (await this.waitForHandComplete(move.fromTableId))) {
+        ready.push(move);
         continue;
       }
-      // Still dealing: fence it, and its own next boundary moves the player.
-      if (this.gapBalanceFencedSources.has(move.fromTableId)) continue;
-      const sourceEngine = this.tableEngines.get(move.fromTableId);
-      if (
-        sourceEngine &&
-        this.gameServer.ownsTournamentTableEngine(move.fromTableId, sourceEngine)
-      ) {
-        this.gapBalanceFencedSources.add(move.fromTableId);
-        void sourceEngine
-          .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0)
-          .catch((error) =>
-            reportError(error, 'Tournament.rebalance_source_hold_failed', {
-              tournamentId: this.tournamentId,
-              tableId: move.fromTableId,
-            })
-          );
-      }
+      waiting.add(move.fromTableId);
     }
 
     const moving = new Set(ready.map((move) => move.fromTableId));
-    for (const tableId of parked.keys()) if (!moving.has(tableId)) release(tableId);
+    for (const tableId of parked.keys())
+      if (!moving.has(tableId) && !waiting.has(tableId)) release(tableId);
+
+    // Every source the plan still needs is fenced, so it stops at its own next
+    // boundary: one still dealing, one already sitting at the gate (whose park
+    // edge has fired before and will not fire again), and a parked one whose
+    // fence expired while the board was read. A fenced source that is already
+    // fenced and still dealing keeps its fence.
+    for (const tableId of waiting) {
+      const sourceEngine = this.tableEngines.get(tableId);
+      if (!sourceEngine || !this.gameServer.ownsTournamentTableEngine(tableId, sourceEngine))
+        continue;
+      if (
+        this.gapBalanceFencedSources.has(tableId) &&
+        !parked.has(tableId) &&
+        !sourceEngine.isBetweenHands()
+      )
+        continue;
+      this.gapBalanceFencedSources.add(tableId);
+      void sourceEngine.parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0).catch((error) =>
+        reportError(error, 'Tournament.rebalance_source_hold_failed', {
+          tournamentId: this.tournamentId,
+          tableId,
+        })
+      );
+    }
+    // The tables are still apart: one coalesced follow-up claims whatever the
+    // fences above could not hand to a park edge.
+    if (waiting.size > 0 || ready.length === 0)
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
     if (ready.length === 0) return;
 
     for (const tableId of moving) this.gapBalanceFencedSources.delete(tableId);
@@ -4697,7 +4730,28 @@ export class TournamentManager extends TournamentManagerEliminations {
    * admits and acknowledges the same receipts idempotently.
    */
   protected async admitCommittedCapacityTables(): Promise<void> {
-    if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+    /*
+     * ADMISSION IS NOT BUDGETED WORK (2026-10-26).
+     *
+     * This used to bail on `eliminationMutationAllowed()`, which turns false
+     * once the sweep's 5 s work budget is spent. On a busy field the budget is
+     * always spent before this step: production 2026-10-26 13:28-13:55 UTC,
+     * engine 4dfd07ef, Sunrise Bounty (x2) and Morning Free Buy (x2), 190-350
+     * entrants, constant busts, rebuys and add-on offers. Seven capacity
+     * tables (63 seated players, Trustmefold's Sunrise Bounty table 22 among
+     * them) sat with no dealer for up to 27 minutes while every other table
+     * of the same events dealt, because each pass reached this line with the
+     * budget gone and returned silently. Starting a dealer for a table whose
+     * players are already seated is one indexed read, a local engine start
+     * and one acknowledgement; it is never the work the budget exists to
+     * share. Only manager stop, the scheduler's abort and the platform freeze
+     * may stop it.
+     */
+    const admissionAllowed = (): boolean =>
+      this.eliminationMutationAllowed() || (this.running && !this.eliminationSweepSignal?.aborted);
+    if (isMaintenanceFrozen() || !admissionAllowed()) return;
+    // A finished event never starts a dealer, whatever receipt is left over.
+    if (this.tournamentFinished || this.finalTableDealHandled) return;
     const { data, error } = await supabase
       .from('tournament_capacity_table_receipts')
       .select('table_id, created_at')
@@ -4705,7 +4759,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       .is('manager_admitted_at', null)
       .order('created_at', { ascending: true })
       .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-    if (!this.eliminationMutationAllowed()) return;
+    if (!admissionAllowed()) return;
     if (error || !Array.isArray(data)) {
       if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
       return;
@@ -4721,7 +4775,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
     const newTableIds: string[] = [];
     for (const tableId of pendingTableIds) {
-      if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+      if (isMaintenanceFrozen() || !admissionAllowed()) return;
       if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
     }
 
@@ -4731,7 +4785,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       'fn_ack_tournament_capacity_tables',
       { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
     );
-    if (!this.eliminationMutationAllowed()) return;
+    if (!admissionAllowed()) return;
     const acknowledgement = (ackData ?? {}) as {
       ok?: boolean;
       reason?: string;

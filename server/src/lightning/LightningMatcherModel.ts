@@ -275,8 +275,11 @@ export function lightningGroupSizes(
 }
 
 /** Owner choice, 2026-10-23: six ready players form immediately; five wait
- * three seconds from the fifth arrival. Never form fewer than five. */
-export const LIGHTNING_FORMATION_MAX_WAIT_MS = 3_000;
+ * from the fifth arrival for a sixth. Never form fewer than five. The wait was
+ * three seconds; Dan, 2026-10-26: "Approved: five-player Lightning hands wait
+ * 1 second" (the database's own rule moves with it in
+ * 20261026131624_lightning_five_ready_players_wait_one_second_for_a_sixth). */
+export const LIGHTNING_FORMATION_MAX_WAIT_MS = 1_000;
 
 export function lightningFormationSizes(
   players: readonly LightningPoolPlayer[],

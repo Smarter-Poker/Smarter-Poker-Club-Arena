@@ -97,7 +97,9 @@ function observeLikeTheWorker(o: CompletedHandObservation): void {
     o.bigBlind,
     o.showdown ?? null,
     o.scope ?? null,
-    false
+    false,
+    o.riverCallContext,
+    o.retainedRiverCalls
   );
   observeHandResults(o.handKey, o.results, o.bigBlind);
 }

@@ -60,7 +60,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Install Chromium For Explicit Private Access Proof
         if: inputs.stage == 'access'
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
       - name: Perform The Named Stage Step Through The Control Door
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

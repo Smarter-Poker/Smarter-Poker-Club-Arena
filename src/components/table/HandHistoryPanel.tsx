@@ -301,7 +301,7 @@ function handToText(hand: HandRecord): string {
       r.calledMuck
         ? `${r.name} mucked ${r.handName} (called the river)`
         : r.hole
-          ? `${r.name} showed ${r.handName}${r.holePrivate ? ' (yours, not shown)' : ''}`
+          ? `${r.name} showed ${r.handName}${r.holePrivate ? ' (yours, not shown)' : ''}${r.calledRiver ? ' (called the river)' : ''}`
           : `${r.name} mucked`
     );
   }

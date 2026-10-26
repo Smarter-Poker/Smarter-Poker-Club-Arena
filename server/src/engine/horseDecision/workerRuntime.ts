@@ -8,6 +8,7 @@ import { PHASE13_PROTECTED_RELEASE_SELECTIONS } from '../HorsePhase13Authority.j
 import { evidenceDigest } from '../../services/horseCorrectiveReview/authority.js';
 import {
   admitHorsePhase14ReleaseAttachment,
+  admitHorsePhase14LiveAttachment,
   HORSE_PHASE14_DOMAINS,
   horsePhase14ContinuationVersion,
   horsePhase14CorrectiveMode,
@@ -125,6 +126,7 @@ import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import type { HorseDecision } from '../../types.js';
 import {
   admitHorsePhase8ReleaseAuthority,
+  admitHorsePhase8LiveAuthority,
   PHASE8_PROTECTED_RELEASE_SELECTION,
   HorseQualifiedAuthorityHolder,
   type HorseAuthorityAdmission,
@@ -134,12 +136,14 @@ import { liveHorsePhase8Safety } from '../HorsePhase8Safety.js';
 import { PHASE8_POLICY, type Phase8Mode } from '../HorseTournamentPostflop.js';
 import {
   admitHorsePhase10ReleaseAuthority,
+  admitHorsePhase10LiveAuthority,
   horsePhase10AdmittedMode,
 } from '../HorsePhase10Authority.js';
 import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
 import type { Plo4LiveMode } from '../plo4/Plo4LivePolicy.js';
 import {
   admitHorsePhase11ReleaseAuthority,
+  admitHorsePhase11LiveAuthority,
   horsePhase11AdmittedMode,
   HORSE_PHASE11_VARIANTS,
 } from '../HorsePhase11Authority.js';
@@ -151,6 +155,7 @@ import {
 import type { OmahaVariantMode } from '../omaha/OmahaVariantLivePolicy.js';
 import {
   admitHorsePhase12ReleaseAuthority,
+  admitHorsePhase12LiveAuthority,
   horsePhase12AdmittedMode,
   HORSE_PHASE12_VARIANTS,
 } from '../HorsePhase12Authority.js';
@@ -162,6 +167,7 @@ import {
 import type { RemainingVariantMode } from '../remainingVariants/RemainingVariantLivePolicy.js';
 import {
   admitHorsePhase13ReleaseAuthority,
+  admitHorsePhase13LiveAuthority,
   horsePhase13AdmittedMode,
   horsePhase13ContinuationVersion,
   HORSE_PHASE13_VARIANTS,
@@ -489,13 +495,13 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   sourceRelease: () => resolveReleaseIdentity().releaseSha,
   startServices: startOwnedServices,
   stopServices: stopOwnedServices,
-  admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
+  admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
-  admitPhase10Authority: () => admitHorsePhase10ReleaseAuthority(),
-  admitPhase11Authority: (variant) => admitHorsePhase11ReleaseAuthority(variant),
-  admitPhase12Authority: (variant) => admitHorsePhase12ReleaseAuthority(variant),
-  admitPhase13Authority: (variant) => admitHorsePhase13ReleaseAuthority(variant),
-  admitPhase14Attachment: (domain) => admitHorsePhase14ReleaseAttachment(domain),
+  admitPhase10Authority: () => admitHorsePhase10LiveAuthority(),
+  admitPhase11Authority: (variant) => admitHorsePhase11LiveAuthority(variant),
+  admitPhase12Authority: (variant) => admitHorsePhase12LiveAuthority(variant),
+  admitPhase13Authority: (variant) => admitHorsePhase13LiveAuthority(variant),
+  admitPhase14Attachment: (domain) => admitHorsePhase14LiveAttachment(domain),
   correctiveDraw: fastRandom,
   decide: HorseLogic.decide.bind(HorseLogic),
   prepareOriginalReads: HorseLogic.prepareOriginalReads.bind(HorseLogic),
@@ -543,7 +549,9 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       request.bigBlind,
       request.showdown,
       request.scope,
-      request.durableOpponentProfiles !== undefined
+      request.durableOpponentProfiles !== undefined,
+      request.riverCallContext,
+      request.retainedRiverCalls
     );
   },
   noteDecision: noteDecisionMs,

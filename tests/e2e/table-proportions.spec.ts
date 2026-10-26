@@ -1876,3 +1876,177 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
 // Shared notice containment is part of the existing felt browser gate.
 import { registerAddOnNoticeContainmentCases } from './support/addOnNoticeContainmentCases';
 registerAddOnNoticeContainmentCases();
+
+// Full table captions: owner October 26, 2026. Included in the existing CSS Beat gate.
+const fullCaptionCss =
+  readFileSync('src/styles/club-engine.css', 'utf8').replace(/@import\s+[^;]+;/g, '') +
+  buildCss(process.cwd()) +
+  '\n' +
+  readFileSync('src/components/table/PotDisplay.css', 'utf8');
+const event = 'Morning Free Buy (NLH) · Free Buy';
+const longEvent = 'Sunday Morning No Limit Holdem Championship Celebration · 1,000 Buy-In';
+const name = 'Alexandria Championship';
+const brand = (title: string) => `<div class="table-brand"><div class="table-brand__meta">
+  <span class="table-brand__line table-brand__line--identity"><span class="table-brand__club"><span class="table-brand__club-name">Kings Club</span> <span class="table-brand__union">· Midway Union</span></span></span>
+  <span class="table-brand__line table-brand__line--level"><span class="table-brand__game">${title}</span><span class="table-brand__hand">Hand #48909509</span></span>
+</div></div>`;
+
+for (const [width, height] of [
+  [320, 667],
+  [375, 667],
+  [393, 852],
+  [430, 932],
+  [844, 390],
+  [1440, 900],
+]) {
+  for (const title of [event, longEvent]) {
+    test(`full captions at ${width}x${height}: ${title}`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      let html = buildHtml(fullCaptionCss).replace(
+        'table-page--embedded"',
+        'table-page--embedded table-page--tournament"'
+      );
+      html = html.replace(
+        '<div class="table-scaler">',
+        `<div class="table-scaler"><div class="table-surface">${brand(title)}</div>`
+      );
+      html = html.replace('>HERO<', `>${name}<`);
+      await page.setContent(html);
+      await page.evaluate(() => document.fonts.ready);
+      await expect(page.locator('.table-brand__game')).toHaveText(title);
+      await expect(page.locator('.seat__name')).toHaveText(name);
+      const results = await page
+        .locator(
+          '.table-brand__game, .table-brand__hand, .table-brand__line--identity, .seat__name'
+        )
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const el = node as HTMLElement;
+            const style = getComputedStyle(el);
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const box = el.getBoundingClientRect();
+            return {
+              text: el.textContent,
+              overflow: style.overflow,
+              ellipsis: style.textOverflow,
+              inside: [...range.getClientRects()].every(
+                (r) => r.left >= box.left - 1 && r.right <= box.right + 1
+              ),
+              widthFits: el.scrollWidth <= el.clientWidth + 1,
+            };
+          })
+        );
+      for (const result of results) {
+        expect(result, result.text || '').toMatchObject({ inside: true, widthFits: true });
+        expect(result.ellipsis).not.toBe('ellipsis');
+        expect(result.overflow).not.toBe('hidden');
+      }
+      const game = await page.locator('.table-brand__game').boundingBox();
+      const hand = await page.locator('.table-brand__hand').boundingBox();
+      expect(hand!.y).toBeGreaterThanOrEqual(game!.y + game!.height - 1);
+    });
+  }
+}
+
+for (const [paneWidth, paneHeight] of [
+  [320, 300],
+  [164, 320],
+  [500, 150],
+]) {
+  test(`full bubble text stays in a ${paneWidth}x${paneHeight} pane`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const { build } = await import('esbuild');
+    const message = 'Every Word Must Remain Visible On The Table. '.repeat(5).slice(0, 200);
+    const playerName = 'Alexandria Championship Player With A Long Display Name';
+    const built = await build({
+      stdin: {
+        contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
+          import {ChatBubble} from './src/components/table/ChatBubble';
+          createRoot(document.getElementById('fixture')).render(<div className="table-page" style={{position:'relative',width:${paneWidth},height:${paneHeight},minHeight:0}}>
+          <div style={{position:'absolute',left:0,top:'50%',width:58,height:48}}>
+          <ChatBubble text={${JSON.stringify(message)}} playerName={${JSON.stringify(playerName)}} />
+          </div><div style={{position:'absolute',right:0,top:10,width:58,height:48}}>
+          <ChatBubble text={${JSON.stringify(message)}} playerName={${JSON.stringify(playerName)}} placement="below" variant="notice" />
+          </div></div>);`,
+        resolveDir: ROOT,
+        loader: 'tsx',
+      },
+      jsx: 'automatic',
+      bundle: true,
+      write: false,
+      outfile: 'bubble.js',
+      format: 'iife',
+      loader: { '.css': 'empty' },
+      define: { 'process.env.NODE_ENV': '"test"' },
+    });
+    await page.setViewportSize({
+      width: Math.max(375, paneWidth),
+      height: Math.max(500, paneHeight),
+    });
+    const bubbleCss = readFileSync('src/components/table/ChatBubble.css', 'utf8');
+    await page.setContent(
+      `<style>body{margin:0;font-family:Inter,sans-serif}${bubbleCss}</style><div id="fixture"></div>`
+    );
+    await page.addScriptTag({ content: built.outputFiles[0].text });
+    await expect(page.locator('.chat-bubble__text')).toHaveCount(2);
+    await expect(page.locator('.chat-bubble').first()).toBeVisible();
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    const boxes = await page.locator('.chat-bubble').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const el = node as HTMLElement;
+        const box = el.getBoundingClientRect();
+        const pane = el.closest('.table-page')!.getBoundingClientRect();
+        return {
+          text: el.querySelector('.chat-bubble__text')!.textContent,
+          name: el.querySelector('.chat-bubble__name')!.textContent,
+          fits:
+            box.left >= pane.left &&
+            box.right <= pane.right &&
+            box.top >= pane.top &&
+            box.bottom <= pane.bottom,
+          complete: [...el.querySelectorAll('span:not(.chat-bubble__tail)')].every(
+            (span) => span.scrollHeight <= span.clientHeight + 1
+          ),
+        };
+      })
+    );
+    for (const box of boxes)
+      expect(box).toEqual({ text: message, name: playerName, fits: true, complete: true });
+    expect(errors).toEqual([]);
+  });
+}
+
+test('full player style, run-it-twice and jackpot names wrap on a narrow phone', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  const css = ['SeatSlot', 'RunItTwice', 'BBJCelebration']
+    .map((file) =>
+      readFileSync(`src/components/table/${file}.css`, 'utf8').replace(/@import\s+[^;]+;/g, '')
+    )
+    .join('\n');
+  await page.setContent(`<style>body{font-family:Inter,sans-serif}${css}</style>
+    <div style="width:70px"><div class="seat__style-badge">Loose Aggressive</div></div>
+    <div style="width:110px;display:flex"><span style="width:20px;flex-shrink:0">A</span><span class="rit-panel__player-name">Alexandria Championship</span><span style="width:20px;flex-shrink:0">50%</span></div>
+    <div style="width:70px"><div class="bbj-breakdown-name">Alexandria Championship</div></div>`);
+  for (const selector of ['.seat__style-badge', '.rit-panel__player-name', '.bbj-breakdown-name']) {
+    await expect(page.locator(selector)).toBeVisible();
+    const result = await page.locator(selector).evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const box = el.getBoundingClientRect();
+      return {
+        ellipsis: getComputedStyle(el).textOverflow,
+        fits: [...range.getClientRects()].every(
+          (r) => r.left >= box.left - 1 && r.right <= box.right + 1
+        ),
+      };
+    });
+    expect(result.fits).toBe(true);
+    expect(result.ellipsis).not.toBe('ellipsis');
+  }
+});

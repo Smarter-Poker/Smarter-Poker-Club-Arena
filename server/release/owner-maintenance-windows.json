@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-lightning-fold-order-and-stand-up-now",
+      "ownerOrder": "Dan, October 26, 2026 at approximately 12:38 America/Chicago, direct message in SUGGESTED PROMPTS (Codex chat 01a17939-e52c-78a1-b041-d99b4b6194b3), independently read: \"ALL UPGRADES AND BUILDS GO LIVE WHEN THEY ARE READY TODAY ONLY\" and \"MAKE SURE ANY AGENT THAT TRIES TO WAIT UNTIL 4AM DOES NOT\". One immediate qualified engine activation of protected main containing ed2600da39f5c3587bbb3b097b62ab3f5cd12de9 (the Lightning early-fold order and stand-up fix). Early intent may release a priced player to the next game, but cards, the public fold and the old hand action stay unchanged until that seat's turn. Preserve required checks, the existing last-hand notice, hand-boundary drain, database freeze, immutable provider build, certificate, rollback reserve, thaw, deployment ownership and sealed one-window-per-hour limit. This entry authorizes no migrations or unrelated work, expires today, and grants no further activation once the containing fix is serving.",
+      "contains": "ed2600da39f5c3587bbb3b097b62ab3f5cd12de9",
+      "notBefore": "2026-10-26T22:59:07Z",
+      "notAfter": "2026-10-27T03:59:07Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-diamond-balancing-8200-qualified-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" The owner subsequently ordered finishing all pending fixes and publication in this same chat. One certified activation containing the actual protected PR #8200 squash 8974a503cb13874e65c8b6f231bf4f3b47631bac. All applicable required source checks passed before that protected merge. The earlier fb048 anchor was consumed by serving a274417819f8331db77d3f3dfbbe47b3c0822164 before #8200 merged, so it cannot authorize installing this correction. This entry names only the qualified balancing merge, ends once it is serving, and expires within six hours. Preserve exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, rollback reserve, the existing one-window-per-hour seal and thaw. No migrations, second publisher, watcher or direct restart.",
       "contains": "8974a503cb13874e65c8b6f231bf4f3b47631bac",

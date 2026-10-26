@@ -40,3 +40,15 @@ The normal push hook first refused an unqualified singleton cursor reset and
 then stale workflow bindings. The reset now explicitly targets its singleton,
 and the bindings name the actual candidate workflow. These failures remain in
 the task evidence; successful hosted qualification is still required.
+
+A read-only production query preflight caught another prefix: placing even
+`has_human`/`reported` before the raw limit forces heap filtering past retained
+human history. The human-prefix regression failed before moving these flags
+after the page and passes after. The timestamp/UUID raw page now scans before
+**all** eligibility predicates; the existing candidate predicates still govern
+every disposal. The corrected raw production page takes 3.373 ms, and its
+read-only full-guard analogue takes 162.683 ms (16.339 ms planning). These
+measurements replace the row-lock clause with an OFFSET 0 point-read fence;
+they make no write and do not certify installed pruning. Earlier three-second
+preflights refused before the correction. Natural installed-run evidence
+remains required after protected merge and exact-main installation.

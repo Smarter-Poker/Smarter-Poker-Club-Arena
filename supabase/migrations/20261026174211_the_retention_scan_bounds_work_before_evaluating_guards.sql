@@ -74,8 +74,7 @@ BEGIN
     -- cannot bound the retained prefix. MATERIALIZED prevents guard pushdown.
     WITH scanned AS MATERIALIZED (
       SELECT hh.id,hh.created_at FROM public.hand_history hh
-       WHERE hh.has_human IS FALSE AND hh.reported IS NOT true
-         AND hh.created_at<now()-v_window
+       WHERE hh.created_at<now()-v_window
          AND hh.created_at>=COALESCE(v_resume_after,'-infinity'::timestamptz)
          AND (v_resume_id IS NULL OR (hh.created_at,hh.id)>(v_resume_after,v_resume_id))
        ORDER BY hh.created_at,hh.id

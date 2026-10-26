@@ -340,8 +340,7 @@ BEGIN
     -- cannot bound the retained prefix. MATERIALIZED prevents guard pushdown.
     WITH scanned AS MATERIALIZED (
       SELECT hh.id,hh.created_at FROM public.hand_history hh
-       WHERE hh.has_human IS FALSE AND hh.reported IS NOT true
-         AND hh.created_at<now()-v_window
+       WHERE hh.created_at<now()-v_window
          AND hh.created_at>=COALESCE(v_resume_after,'-infinity'::timestamptz)
          AND (v_resume_id IS NULL OR (hh.created_at,hh.id)>(v_resume_after,v_resume_id))
        ORDER BY hh.created_at,hh.id
@@ -626,3 +625,12 @@ UPDATE smarter_private.hand_history_prune_cursor SET pass_started_at=now()-inter
 SELECT sp_prune_hand_history(250);
 DO $$BEGIN IF EXISTS(SELECT 1 FROM hand_history) THEN RAISE EXCEPTION 'released lock permanently skipped'; END IF; END$$;
 RESET statement_timeout;
+-- Even cheap visibility predicates must follow the raw page. A timestamp
+-- index cannot bound finding 250 horse rows past an arbitrarily large human
+-- prefix. Humans remain retained while the cursor advances through the page.
+TRUNCATE hand_history;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
+UPDATE guard_calls SET n=0;
+INSERT INTO hand_history SELECT md5(('human-prefix'||i)::text)::uuid,'[]',now()-interval '9 days'+i*interval '1 microsecond',NULL,NULL,i,i<=1000,false FROM generate_series(1,1250)i;
+SELECT sp_prune_hand_history(250);
+DO $$BEGIN IF (SELECT count(*) FROM hand_history)<>1250 THEN RAISE EXCEPTION 'raw page scanned past the retained human prefix'; END IF; IF (SELECT n FROM guard_calls)<>0 THEN RAISE EXCEPTION 'human prefix reached accounting guards'; END IF; END$$;

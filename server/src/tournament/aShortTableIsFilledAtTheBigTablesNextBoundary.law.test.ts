@@ -56,6 +56,7 @@ function manager(board: BalancerTable[]) {
   m.eliminationMutationAllowed = () => true;
   m.requestUrgentEliminationSweepAfter = vi.fn();
   m.requestEliminationSweep = vi.fn();
+  m.requestEliminationSweep = vi.fn();
   m.recoverF06OriginalAdmissions = vi.fn(async () => {});
   m.visitTournamentBreakPage = vi.fn(async () => true);
   m.redrivePendingTournamentSeatMoveOutcomes = vi.fn(async () => true);
@@ -255,7 +256,9 @@ describe("a short table is filled at the big table's next hand boundary", () => 
       await settle();
       await settle();
       expect(m.executePlayerMoves).not.toHaveBeenCalled();
-      expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
+      if (reason === 'empty-plan')
+        expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
+      else expect(engines.get(big.tableId)!.releaseTournamentMovePause).not.toHaveBeenCalled();
       expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
     }
   );
@@ -360,4 +363,91 @@ describe("a short table is filled at the big table's next hand boundary", () => 
       else expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
     }
   );
+  it('a seat move whose outcome is unknown keeps the park and wakes the sweep at once', async () => {
+    const big = table(0, 8);
+    const short = table(1, 3);
+    const { m, engines, park } = manager([big, short]);
+    await m.checkTableBalance();
+
+    m.pendingTournamentSeatMoveOutcomes.set('pending', {});
+    park(big.tableId);
+    expect(m.claimGapBalanceAtBoundary(big.tableId)).toBe(true);
+    await settle();
+    await settle();
+
+    // Releasing here would let the big table deal again and be fenced again.
+    expect(m.executePlayerMoves).not.toHaveBeenCalled();
+    expect(engines.get(big.tableId)!.releaseTournamentMovePause).not.toHaveBeenCalled();
+    expect(m.requestEliminationSweep).toHaveBeenCalledWith('tournament_move_parked');
+    expect(m.gapBalanceFencedSources.has(big.tableId)).toBe(true);
+  });
+
+  it('a source the fresh plan needs that already sits between hands is fenced and redriven', async () => {
+    // 21 players on three tables: no table is broken, only balanced.
+    const big = table(0, 9);
+    const short = table(1, 5);
+    const mid = table(2, 7);
+    const board = [big, short, mid];
+    const { m, engines, park } = manager(board);
+    await m.checkTableBalance();
+    expect(engines.get(mid.tableId)!.parkForTournamentMove).not.toHaveBeenCalled();
+
+    // Late registration seats two more at the middle table, which is held
+    // at the hand-for-hand gate: its park edge already fired and will not
+    // fire again, so only a fence plus a redrive can reach it.
+    mid.playerCount = 9;
+    mid.players = Array.from({ length: 9 }, (_, i) => ({
+      userId: id(5000 + i),
+      stack: 10_000,
+      seat: i + 1,
+    }));
+    engines.get(mid.tableId)!.isBetweenHands = () => true;
+    m.requestUrgentEliminationSweepAfter.mockClear();
+    park(big.tableId);
+    m.claimGapBalanceAtBoundary(big.tableId);
+    await settle();
+    await settle();
+
+    expect(m.executePlayerMoves).toHaveBeenCalledTimes(1);
+    expect(engines.get(mid.tableId)!.parkForTournamentMove).toHaveBeenCalled();
+    expect(m.gapBalanceFencedSources.has(mid.tableId)).toBe(true);
+    expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+  });
+
+  it('a parked source whose fence expired while the board was read is fenced again, not released', async () => {
+    const big = table(0, 8);
+    const short = table(1, 3);
+    const { m, engines, park } = manager([big, short]);
+    await m.checkTableBalance();
+
+    park(big.tableId);
+    // The fence expired during the reads and the table dealt its next hand.
+    m.waitForHandComplete = vi.fn(async () => false);
+    engines.get(big.tableId)!.parkForTournamentMove.mockClear();
+    m.requestUrgentEliminationSweepAfter.mockClear();
+    m.claimGapBalanceAtBoundary(big.tableId);
+    await settle();
+    await settle();
+
+    expect(m.executePlayerMoves).not.toHaveBeenCalled();
+    expect(engines.get(big.tableId)!.releaseTournamentMovePause).not.toHaveBeenCalled();
+    expect(engines.get(big.tableId)!.parkForTournamentMove).toHaveBeenCalled();
+    expect(m.gapBalanceFencedSources.has(big.tableId)).toBe(true);
+    expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+  });
+
+  it('a fenced table that became a durable break source sends its edge to the sweep', async () => {
+    const big = table(0, 8);
+    const short = table(1, 3);
+    const { m, engines } = manager([big, short]);
+    await m.checkTableBalance();
+    expect(m.gapBalanceFencedSources.has(big.tableId)).toBe(true);
+
+    m.retainedTournamentBreakSources.set(big.tableId, {
+      breakId: 'break',
+      engine: engines.get(big.tableId),
+    });
+    expect(m.claimGapBalanceAtBoundary(big.tableId)).toBe(false);
+    expect(m.gapBalanceFencedSources.has(big.tableId)).toBe(false);
+  });
 });

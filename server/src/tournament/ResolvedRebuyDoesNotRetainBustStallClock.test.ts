@@ -78,12 +78,23 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
       deferredUntil: new Map(),
       answered: new Set(),
     }),
-    // Rebuy completion now proceeds to balance instead of ending the sweep.
-    checkTableBalance: vi.fn().mockResolvedValue(undefined),
     checkDynamicTableExpansion: vi.fn().mockResolvedValue(true),
     tableEngines: new Map(),
     tournamentLeaseAuthorityIsCurrent: () => true,
     gameServer: { handTournamentToSuccessorGeneration: vi.fn() },
+    // A pass whose busts all rebought or are still deciding goes on to its
+    // later stages (aRebuyWindowDoesNotStarveTheBalancer). They are isolated
+    // here; this file measures the bust clock, and the pass yields after the
+    // balance stage on top of the real work budget.
+    checkSatelliteQualifierCompletion: vi.fn(async () => 'continue'),
+    checkFinalTableDeal: vi.fn(async () => true),
+    checkTableBalance: vi.fn(async () => undefined),
+    eliminationWorkBudgetExpired(this: any) {
+      return (
+        this.eliminationSweepCursor.nextStage >= 6 ||
+        (TournamentManagerEliminations.prototype as any).eliminationWorkBudgetExpired.call(this)
+      );
+    },
   }) as any;
   manager.eliminationSweepCursor.advanceTo(1);
   return manager;

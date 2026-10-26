@@ -286,6 +286,41 @@ export interface HandRecord {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Dan 2026-10-25: the called-river mucks a hand's players may see. */
+export const CALLED_RIVER_RPC = 'fn_ca_called_river_mucked_cards';
+
+/**
+ * Fold the called-river holdings into the row's `hole_cards`, the column every
+ * surface already draws a showdown hand from. Only holders the engine ruled
+ * MUCKED are added, and a holding already on the row is never replaced. The
+ * showdown record keeps `mucked: true`, because that is what happened at the
+ * table; the cards are now simply on record beside it.
+ */
+export function withCalledRiverMucks<T extends Record<string, any>>(
+  row: T,
+  holdings: Map<string, Card[]> | undefined
+): T {
+  if (!row || !holdings || holdings.size === 0) return row;
+  const mucked = new Set(
+    (Array.isArray(row.showdown) ? (row.showdown as any[]) : [])
+      .filter((e) => e && e.mucked === true && typeof e.user_id === 'string')
+      .map((e) => e.user_id as string)
+  );
+  const existing: Record<string, unknown[]> =
+    row.hole_cards && typeof row.hole_cards === 'object' && !Array.isArray(row.hole_cards)
+      ? (row.hole_cards as Record<string, unknown[]>)
+      : {};
+  const merged: Record<string, unknown[]> = { ...existing };
+  let added = false;
+  for (const [uid, cards] of holdings) {
+    if (!mucked.has(uid) || !cards.length) continue;
+    if (Array.isArray(merged[uid]) && merged[uid].length) continue;
+    merged[uid] = cards;
+    added = true;
+  }
+  return added ? { ...row, hole_cards: merged } : row;
+}
+
 class HandHistoryServiceClass {
   /**
    * Get a single hand by ID.
@@ -319,14 +354,21 @@ class HandHistoryServiceClass {
     for (const p of (data as any).players || []) if (p?.userId) userIds.push(p.userId);
     for (const w of (data as any).winners || []) if (w?.userId) userIds.push(w.userId);
     const rowAny = data as any;
-    const [profileMap, discards, privateCards, tableNames] = await Promise.all([
+    const [profileMap, discards, privateCards, tableNames, calledRiver] = await Promise.all([
       this.fetchProfileMap(userIds),
       this.fetchOwnDiscards([rowAny]),
       this.fetchOwnHoleCards([rowAny], opts.throwOnPrivateError),
       this.fetchTableNames([rowAny]),
+      this.fetchCalledRiverMucks([rowAny]),
     ]);
 
-    return this.mapHandHistoryRow(data, profileMap, discards, privateCards, tableNames);
+    return this.mapHandHistoryRow(
+      withCalledRiverMucks(rowAny, calledRiver.get(String(rowAny.id))),
+      profileMap,
+      discards,
+      privateCards,
+      tableNames
+    );
   }
 
   /**
@@ -559,18 +601,81 @@ class HandHistoryServiceClass {
        and the private cards to this viewer's own rows, so the size of the
        result is bounded by how many of THEIR hands are on screen, not by how
        many players were in them. */
-    const [profileMap, discardsByHand, privateByHand, tableNames] = await Promise.all([
+    const [profileMap, discardsByHand, privateByHand, tableNames, calledRiver] = await Promise.all([
       this.fetchProfileMap(allUserIds),
       this.fetchOwnDiscards(data as any[]),
       this.fetchOwnHoleCards(data as any[]),
       this.fetchTableNames(data as any[]),
+      this.fetchCalledRiverMucks(data as any[]),
     ]);
 
     return data
       .map((d: any) =>
-        this.mapHandHistoryRow(d, profileMap, discardsByHand, privateByHand, tableNames)
+        this.mapHandHistoryRow(
+          withCalledRiverMucks(d, calledRiver.get(String(d?.id))),
+          profileMap,
+          discardsByHand,
+          privateByHand,
+          tableNames
+        )
       )
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
+  }
+
+  /**
+   * A HAND THAT CALLED THE RIVER IS SHOWN (Dan 2026-10-25).
+   *
+   * "WHEN A PLAYER CALLS A BET ON THE RIVER AND HIS HAND IS MUCKED, USERS
+   * SHOULD STILL BE ABLE TO SEE THE HAND 'THEY FOLDED' INSIDE THE PREVIOUS
+   * HAND. BUT ONLY IF THE HAND WAS 'CALLED' ON THE RIVER, IF THEY MUCK THE
+   * HAND SHOULDN'T BE SHOWN."
+   *
+   * The engine never stores a mucked holding in `hand_history.hole_cards`, so
+   * these come from `fn_ca_called_river_mucked_cards` (migration
+   * 20261026004819), which applies the whole rule in the database: the reader
+   * was dealt in, the holder's hand was ruled mucked at showdown, and the
+   * holder's last river decision was a CALL. Checked-down and folded hands are
+   * never returned. Only rows whose showdown record holds a muck are asked
+   * about, so a page with none costs no call.
+   *
+   * Keyed hand id -> holder id -> cards. A failure returns nothing, which is
+   * the rundown as it was before this rule: complete, with "Mucked" shown.
+   */
+  private async fetchCalledRiverMucks(
+    rows: Array<{ id?: string | null; showdown?: unknown }>
+  ): Promise<Map<string, Map<string, Card[]>>> {
+    const out = new Map<string, Map<string, Card[]>>();
+    const ids = [
+      ...new Set(
+        rows
+          .filter(
+            (r) =>
+              r?.id &&
+              Array.isArray(r.showdown) &&
+              (r.showdown as any[]).some((e) => e && e.mucked === true)
+          )
+          .map((r) => String(r.id))
+      ),
+    ];
+    if (ids.length === 0) return out;
+    try {
+      const { data, error } = await supabase.rpc(CALLED_RIVER_RPC, { p_hand_ids: ids });
+      if (error) {
+        reportError(error, 'HandHistoryService.fetchCalledRiverMucks');
+        return out;
+      }
+      for (const r of (data as any[]) || []) {
+        if (!r?.hand_id || !r?.user_id || !Array.isArray(r.hole_cards)) continue;
+        const cards = (r.hole_cards as any[]).filter((c) => c && c.rank && c.suit) as Card[];
+        if (cards.length === 0) continue;
+        const hand = String(r.hand_id);
+        if (!out.has(hand)) out.set(hand, new Map());
+        out.get(hand)!.set(String(r.user_id), cards);
+      }
+    } catch (e) {
+      reportError(e, 'HandHistoryService.fetchCalledRiverMucks_threw');
+    }
+    return out;
   }
 
   /**
@@ -926,6 +1031,9 @@ class HandHistoryServiceClass {
          alone and deliberately never persists a mucked hand. So a user id
          appearing as a key in that object is itself proof the table saw the
          cards face up, and no further gate is needed or correct.
+         The one addition (Dan 2026-10-25): a mucked hand that CALLED the river
+         is folded in by `withCalledRiverMucks` before this mapper runs, so it
+         reaches every surface the same way a shown hand does.
          `players[].cards` is the legacy fallback; it is `[]` on every
          production row, so it can only ever contribute nothing. */
       /* `players[].cards` used to be read here as a fallback. The server

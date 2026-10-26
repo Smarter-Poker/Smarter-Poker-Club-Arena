@@ -85,26 +85,56 @@ function persistence(delayMs = 0) {
 }
 
 describe('Synchronized Break Deadline', () => {
-  it('persists one deadline and releases at it despite sequential persistence latency', async () => {
-    const first = manager('first');
-    const second = manager('second');
-    const owner = server([first, second]);
-    const writes = persistence(2_000);
-    const timers = vi.spyOn(globalThis, 'setTimeout');
-    await owner.triggerSynchronizedBreak();
-    const expectedEnd = Date.parse('2026-09-10T13:00:00.000Z');
-    expect(owner.breakEndsAt).toBe(expectedEnd);
-    expect(writes).toEqual([
-      { id: 'first', deadline: new Date(expectedEnd).toISOString() },
-      { id: 'second', deadline: new Date(expectedEnd).toISOString() },
+  /*
+   * Dan 2026-10-25, verbatim: "THE 5 MINUTE BREAK FOR ALL TOURNAMENTS DOES NOT
+   * START FOR THE TOURNAMENT UNTIL ALL HANDS FOR THAT SPECIFIC TOURNAMENT ARE
+   * COMPLETED ... EVERY TOURNAMENT WILL START AND STOP THERE 5 MINUTE BREAK AT
+   * DIFFERENT TIMES WITH THIS SETTING. BUT THIS IS 100% HOW ITS SUPPOSED TO BE."
+   */
+  it('starts each tournament its own five minutes when its own last hand lands, and resumes it on its own', async () => {
+    const quick = manager('quick');
+    const slow = manager('slow');
+    const owner = server([quick, slow]);
+    const parkedAt = new Map<string, number>([
+      ['quick', Date.parse('2026-09-10T12:55:00.000Z')],
+      ['slow', Date.parse('2026-09-10T12:55:40.000Z')],
     ]);
-    for (const participant of [first, second]) {
-      expect(participant.broadcast).toHaveBeenCalledWith(
-        'tournament_break_started',
-        expect.objectContaining({ breakEndsAt: new Date(expectedEnd).toISOString() })
-      );
-    }
-    expect(timers.mock.calls.at(-1)?.[1]).toBe(expectedEnd - Date.now());
+    owner.waitForAllTablesParked.mockImplementation(async (managers: { tournamentId: string }[]) => {
+      expect(managers).toHaveLength(1);
+      const at = parkedAt.get(managers[0].tournamentId)!;
+      await vi.advanceTimersByTimeAsync(Math.max(0, at - Date.now()));
+      return true;
+    });
+    const writes = persistence();
+    await owner.triggerSynchronizedBreak();
+
+    const quickEnd = Date.parse('2026-09-10T13:00:00.000Z');
+    const slowEnd = Date.parse('2026-09-10T13:00:40.000Z');
+    // The quick tournament's clock started at once; it never waited 40s on the slow one.
+    expect(writes).toEqual([
+      { id: 'quick', deadline: new Date(quickEnd).toISOString() },
+      { id: 'slow', deadline: new Date(slowEnd).toISOString() },
+    ]);
+    expect(quick.broadcast).toHaveBeenCalledWith(
+      'tournament_break_started',
+      expect.objectContaining({ breakEndsAt: new Date(quickEnd).toISOString() })
+    );
+    expect(slow.broadcast).toHaveBeenCalledWith(
+      'tournament_break_started',
+      expect.objectContaining({ breakEndsAt: new Date(slowEnd).toISOString() })
+    );
+    expect(owner.breakEndsAt).toBe(slowEnd);
+
+    // Each resumes at its own end, and the quick one's timer does not touch the slow one.
+    await vi.advanceTimersByTimeAsync(quickEnd - Date.now());
+    expect(quick.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(slow.resumeFromBreak).not.toHaveBeenCalled();
+    // A newcomer is still held while the slow one is on its break.
+    expect(owner.remainingBreakMs()).toBe(slowEnd - Date.now());
+    await vi.advanceTimersByTimeAsync(slowEnd - Date.now());
+    expect(slow.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(quick.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(owner.breakEndsAt).toBe(0);
   });
 
   it('gives a late entrant the existing deadline even when its pause takes time', async () => {
@@ -144,7 +174,7 @@ describe('Synchronized Break Deadline', () => {
 });
 
 describe('Synchronized Break Drain', () => {
-  it('holds a newcomer in the drain phase without inventing a countdown', async () => {
+  it('gives a newcomer in the drain phase its own five minutes once its own tables are parked', async () => {
     const entrant = manager('during-drain');
     const owner = server([entrant]);
     owner.breakEndsAt = Date.now() + 420_000;
@@ -152,7 +182,8 @@ describe('Synchronized Break Drain', () => {
     const writes = persistence();
     await owner.holdIfBreakIsRunning(entrant);
     expect(entrant.pauseForBreak).toHaveBeenCalledOnce();
-    expect(writes).toEqual([]);
+    expect(owner.waitForAllTablesParked).toHaveBeenCalledWith([entrant]);
+    expect(writes).toEqual([{ id: 'during-drain', deadline: '2026-09-10T13:00:00.000Z' }]);
   });
 
   it('treats a failed table inspection as an unproven drain', () => {
@@ -437,7 +468,7 @@ describe('The tournament break ends with the maintenance break', () => {
     expect(second.resumeFromBreak).toHaveBeenCalledOnce();
   });
 
-  it('keeps the old rule without a maintenance break: five minutes from the moment every table parked', async () => {
+  it('keeps the rule without a maintenance break: five minutes from the moment its tables parked', async () => {
     const first = manager('first');
     const second = manager('second');
     slowPauses(first, second);
@@ -498,14 +529,15 @@ describe('The tournament break ends with the maintenance break', () => {
     owner.tournamentEngines.set(entrant.tournamentId, entrant);
     await owner.holdIfBreakIsRunning(entrant);
     expect(entrant.pauseForBreak).toHaveBeenCalledWith(onTheHour - Date.now());
-    // Still no countdown while a hand is in the air.
-    expect(writes).toEqual([]);
+    // The newcomer has no hand in the air, so its countdown starts now; the
+    // draining tournament's does not start until its own hand lands.
+    expect(writes).toEqual([{ id: 'newcomer', deadline: new Date(onTheHour).toISOString() }]);
 
     finish(true);
     await pending;
     expect(writes).toEqual([
-      { id: 'draining', deadline: new Date(onTheHour).toISOString() },
       { id: 'newcomer', deadline: new Date(onTheHour).toISOString() },
+      { id: 'draining', deadline: new Date(onTheHour).toISOString() },
     ]);
   });
 
@@ -552,7 +584,6 @@ describe('The tournament break ends with the maintenance break', () => {
     expect(waiting.resumeFromBreak).toHaveBeenCalledOnce();
     expect(broken.resumeFromBreak).toHaveBeenCalledOnce();
     expect(ready.resumeFromBreak).toHaveBeenCalledOnce();
-    expect(owner.breakEndsAt).toBe(0);
     await settle();
     expect(errors).toHaveBeenCalledWith(
       '[GameServer.Failed_to_resume_tournament]',

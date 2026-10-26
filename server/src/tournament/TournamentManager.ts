@@ -176,10 +176,16 @@ export class TournamentManager extends TournamentManagerEliminations {
   private mixedRecoveryOperation: Promise<Readonly<Record<string, unknown>>> | null = null;
 
   protected override eliminationMutationAllowed(): boolean {
+    if (this.balancePreparationOpen && isMaintenanceFrozen()) return false;
     if (super.eliminationMutationAllowed()) return true;
     // One discovered break's visit finishes once started; stop and abort
     // still end it (see visitTournamentBreakPage).
-    if (this.tournamentBreakVisitOpen && this.running && !this.eliminationSweepSignal?.aborted)
+    if (
+      (this.tournamentBreakVisitOpen || this.balancePreparationOpen) &&
+      this.running &&
+      !this.eliminationSweepSignal?.aborted &&
+      (!this.balancePreparationOpen || !isMaintenanceFrozen())
+    )
       return true;
     if (!this.mixedRecovery || !this.isF06RecoveryOwner() || this.mixedRecovery.completion)
       return false;
@@ -3813,11 +3819,19 @@ export class TournamentManager extends TournamentManagerEliminations {
     return data.length;
   }
 
+  // A fresh balance preparation is one bounded progress unit: read the board
+  // and request its first durable park, or fence one gap source. The shared
+  // clock may stop further units, never restart this read prefix forever.
+  private balancePreparationOpen = false;
+
   protected async checkTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
+    const redrivesBeforeRecovery = this.urgentRedrivesRequested;
+    let originalRecoveryUnproven = false;
     try {
       await this.recoverF06OriginalAdmissions();
     } catch (error) {
+      originalRecoveryUnproven = true;
       reportError(error, 'Tournament.original_admission_recovery_pending', {
         tournamentId: this.tournamentId,
       });
@@ -3843,13 +3857,40 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       return;
     }
-    if (!(await this.visitTournamentBreakPage((state) => this.recoverTournamentBreak(state))))
+    let visitedBreak = false;
+    if (
+      !(await this.visitTournamentBreakPage(async (state) => {
+        visitedBreak = true;
+        await this.recoverTournamentBreak(state);
+      }))
+    )
       return;
     if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
     if (!this.tournamentBreakDiscoveryComplete) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
+    if (!this.running || this.eliminationSweepSignal?.aborted || isMaintenanceFrozen()) return;
+    // This pass was admitted before its deadline. If it only read an empty
+    // discovery page, it still owes its first productive unit. An existing
+    // break, unknown park/move or original recovery keeps its own budget.
+    this.balancePreparationOpen =
+      !originalRecoveryUnproven &&
+      this.urgentRedrivesRequested === redrivesBeforeRecovery &&
+      !visitedBreak &&
+      this.durableTournamentBreaks.size === 0 &&
+      this.pendingTournamentParkRequests.size === 0 &&
+      this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+      !this.mixedRecovery;
+    try {
+      return await this.prepareFreshTableBalance();
+    } finally {
+      this.balancePreparationOpen = false;
+    }
+  }
+
+  private async prepareFreshTableBalance(): Promise<TournamentBalanceProgress | void> {
+    if (!this.eliminationMutationAllowed()) return;
     // Final Table is a durable MTT lifecycle transition, never a visual label
     // inferred from player count or a single-table fixed-format event.
     if (
@@ -3992,7 +4033,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
-    if (liveTableIds.length <= 1) return;
+    if (liveTableIds.length <= 1) return { kind: 'planning-complete' };
 
     // ── FIX 154: Build BalancerTable[] from a bounded live DB snapshot ──
     const balancerTables = await this.loadBalancerTables(liveTableIds, 'balanceInitial');
@@ -4086,7 +4127,14 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (requestedBreaks.length > 0 && this.eliminationWorkBudgetExpired()) break;
         const requested = await this.requestTournamentBreakPark(tableId);
         if (!this.eliminationMutationAllowed()) return;
-        if (!requested?.ok) continue;
+        if (!requested?.ok) {
+          this.balancePreparationOpen = false;
+          if (this.eliminationWorkBudgetExpired()) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return;
+          }
+          continue;
+        }
         requestedBreaks.push(requested);
         // The durable park precedes the fence. Fence now, so every source
         // stops at its own next boundary instead of waiting for its turn; the
@@ -4101,6 +4149,14 @@ export class TournamentManager extends TournamentManagerEliminations {
                 tableId,
               })
             );
+        if (this.balancePreparationOpen) {
+          this.balancePreparationOpen = false;
+          if (this.eliminationWorkBudgetExpired()) {
+            this.breakOccurredThisCycle = true;
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return;
+          }
+        }
       }
       this.breakOccurredThisCycle = true;
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
@@ -4160,6 +4216,16 @@ export class TournamentManager extends TournamentManagerEliminations {
           // regard for in-flight hands. Wait for each source table's current
           // hand to complete (final stacks persisted) before moving.
           const sourceTables = [...new Set(moves.map((m) => m.fromTableId))] as string[];
+          // A slow fresh board must not be discarded before it can act.
+          // The existing source-boundary owner rereads the board and moves it;
+          // fence only its first source, then yield the spent admission.
+          if (this.balancePreparationOpen && this.eliminationWorkBudgetExpired()) {
+            this.fenceGapBalanceSource(sourceTables[0]);
+            this.balancePreparationOpen = false;
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return;
+          }
+          this.balancePreparationOpen = false;
           const unsafeTables = new Set<string>();
           for (const t of sourceTables) {
             const safe = await this.waitForHandComplete(t);
@@ -4204,6 +4270,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
       }
     }
+    return { kind: 'planning-complete' };
   }
 
   /**

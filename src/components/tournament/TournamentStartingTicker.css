@@ -94,7 +94,7 @@
     var(--ticker-glow, 0 10px 22px -14px rgba(0, 212, 255, 0.55));
   animation: mttDrop 0.3s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
   /* Safe-area aware so it clears a notch instead of hiding under it. */
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--sp-tabbar-safe-top, env(safe-area-inset-top, 0px));
   box-sizing: content-box;
   /* Every number on this rail is a quantity a player is deciding on, and a
      proportional 3 is narrower than a proportional 0. Without this the whole

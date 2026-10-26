@@ -2187,7 +2187,10 @@ describe('every host mutation path obeys the durable release authority', () => {
   });
 
   it('independent proof keeps its immutable generation when the active control advances', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'control-proof-race-'));
+    // realpath: on macOS tmpdir() is /var/folders/..., a symlink into /private,
+    // and the workflow resolves the active control with `readlink -e`, so an
+    // unresolved fixture root never prefix-matches its own generation root.
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'control-proof-race-')));
     try {
       const repo = join(dir, 'repo');
       const parent = join(dir, 'control');

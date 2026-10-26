@@ -313,7 +313,15 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
    refused=prefix+f"BEGIN; SELECT fn_ca_launch_accounting_activate('{op}'); UPDATE ca_drift_incidents SET {change} WHERE id='1f146817-bd56-469e-a42c-601aa348d081'; SELECT fn_ca_launch_incident_prepare('{op}'); DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM ca_drift_incidents WHERE id='1f146817-bd56-469e-a42c-601aa348d081' AND status='open') OR (fn_ca_epoch3_preflight()->>'pass')::boolean IS NOT FALSE THEN RAISE EXCEPTION 'REISSUED_WRONG_BASIS_ESCAPED_PREFLIGHT'; END IF; END $$; ROLLBACK;"
    run(q,refused)
   outside_union='30000000-0000-0000-0000-000000000001';outside_club='30000000-0000-0000-0000-000000000002'
-  current_eco=prefix+f"BEGIN; SELECT fn_ca_launch_accounting_activate('{op}'); INSERT INTO unions(id,name,slug,owner_id,settings) VALUES('{outside_union}','Unwaived Current Eco Witness','unwaived-current-eco','{actor}','{{\"eco_enabled\":true}}'); INSERT INTO clubs(id,club_id,name,slug,owner_id,asset,union_id,chip_treasury,chip_pool,promo_balance,insurance_balance) VALUES('{outside_club}',10004,'Unwaived Current Eco Club','unwaived-current-eco-club','{actor}','chips','{outside_union}',0,0,0,0); INSERT INTO union_clubs(union_id,club_id) VALUES('{outside_union}','{outside_club}'); DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM fn_union_credit_risk_check() WHERE invariant='union_eco_not_recorded' AND offenders>0) THEN RAISE EXCEPTION 'REAL_CURRENT_ECO_FIXTURE_NOT_ESTABLISHED'; END IF; END $$; SELECT fn_ca_launch_incident_waive_remaining('{op}'); ROLLBACK;"
+  # The ECO row is only owed once the week's close is due (04:00 Chicago on
+  # the Monday after the week, migration 20261005113359), so between the
+  # Monday week boundary and that hour no union reports union_eco_not_recorded
+  # and this fixture could not be established: every run 05:00-09:00 UTC on a
+  # Monday failed with REAL_CURRENT_ECO_FIXTURE_NOT_ESTABLISHED (2026-10-26).
+  # The witness is about a close that IS owed, so this rolled-back transaction
+  # in the disposable cluster makes the close due rather than reading the clock.
+  owed_close="CREATE OR REPLACE FUNCTION public.fn_union_accounting_run_at(p_period_end timestamptz) RETURNS timestamptz LANGUAGE sql IMMUTABLE SET search_path = public AS $owed$ SELECT '-infinity'::timestamptz $owed$; "
+  current_eco=prefix+f"BEGIN; SELECT fn_ca_launch_accounting_activate('{op}'); "+owed_close+f"INSERT INTO unions(id,name,slug,owner_id,settings) VALUES('{outside_union}','Unwaived Current Eco Witness','unwaived-current-eco','{actor}','{{\"eco_enabled\":true}}'); INSERT INTO clubs(id,club_id,name,slug,owner_id,asset,union_id,chip_treasury,chip_pool,promo_balance,insurance_balance) VALUES('{outside_club}',10004,'Unwaived Current Eco Club','unwaived-current-eco-club','{actor}','chips','{outside_union}',0,0,0,0); INSERT INTO union_clubs(union_id,club_id) VALUES('{outside_union}','{outside_club}'); DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM fn_union_credit_risk_check() WHERE invariant='union_eco_not_recorded' AND offenders>0) THEN RAISE EXCEPTION 'REAL_CURRENT_ECO_FIXTURE_NOT_ESTABLISHED'; END IF; END $$; SELECT fn_ca_launch_incident_waive_remaining('{op}'); ROLLBACK;"
   eco_refusal=run(q,current_eco,False)
   (OUT/'current-eco-negative.txt').write_text(eco_refusal)
   assert 'LAUNCH_CURRENT_ECO_FAILURE_STILL_PRESENT' in eco_refusal,eco_refusal

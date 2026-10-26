@@ -59,3 +59,13 @@ chose it. It denies a horse nothing a person gets. Do not remove it as a
 
 Pinned in `server/src/engine/HorsePloPresumption.test.ts` against the
 production counters above.
+
+## Wiring through the decision worker (added after #8075)
+
+Since #8075 every horse reads opponents from its own observer memory inside
+the decision worker, and durable profiles are no longer sent with a decision.
+A person a horse has never seen therefore has no read at all, which is exactly
+where the presumption matters. `server/src/engine/horseDecision/ploPresumptionWorker.test.ts`
+runs a real PLO4 open from a never-seen person through the worker's FAST path:
+with the engine roster the person is read as an aggressive raiser
+(`presumed`, raise rate engaged high); without it there is no read, as before.

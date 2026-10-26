@@ -177,7 +177,11 @@ test('passed',()=>{});`
     const upload = steps.find(
       (step: any) => step.name === 'Retain named mobile skips on every outcome'
     );
-    expect(generate.if).toBe("always() && steps.live.outputs.ready == 'true'");
+    // Ordinary publication still emits the full receipt on every outcome.
+    // The closed navigation recovery has its own exact three-case report.
+    expect(generate.if).toBe(
+      "always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'"
+    );
     expect(generate.run).toContain('report-mobile-e2e-skips.mjs');
     expect(generate.run).toContain('e2e-report/first-run-iphone.json');
     expect(generate.run).toContain('e2e-report/lobby.json');

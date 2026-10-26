@@ -1,3 +1,4 @@
+import { validHorseTournamentPayoutTerms } from '../HorseTournamentPayoutTerms.js';
 import { ownPublicHistoryIsValid } from './ownPublicHistory.js';
 import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
 import { HorseObserverReads, type HorseObserverReadReceipt } from './observerReads.js';
@@ -1502,6 +1503,9 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
     }
     const status = tournament.contextStatus;
+    if (!validHorseTournamentPayoutTerms(tournament)) {
+      throw new Error('Phase 6 tournament payout capture is invalid');
+    }
     if (!(TOURNAMENT_CONTEXT_STATUSES as readonly string[]).includes(status ?? '')) {
       throw new Error('Phase 6 tournament context status is invalid');
     }

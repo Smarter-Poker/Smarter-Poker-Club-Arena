@@ -85,7 +85,7 @@ function ruleFor(s: ReturnType<typeof recorded>) {
 
 afterEach(() => HorseMind.reset());
 
-describe('PLO5/PLO6: no full house on a paired board folds to a committing bet (Dan 2026-10-25)', () => {
+describe('PLO4/PLO5/PLO6: no full house on a paired board folds to a committing bet (Dan 2026-10-25)', () => {
   it('the recorded hand folds: two pair when the Jack paired the turn, facing the shove', () => {
     const s = recorded();
     expect(ruleFor(s)).toBe(true);
@@ -119,10 +119,42 @@ describe('PLO5/PLO6: no full house on a paired board folds to a committing bet (
     expect(ruleFor(recorded({ hole: 'Jh Jc 6d Qc 2d' }))).toBe(false); // quads
   });
 
-  it('does not touch an unpaired board, the flop, PLO4, or a token call', () => {
+  it('PLO4 and the paired flop fold too ("ADD PLO4 AND PLO5 AND THE FLOP")', () => {
+    expect(ruleFor(recorded({ board: '6h Jc Jd' }))).toBe(true); // PLO5 paired flop
+    expect(ruleFor(recorded({ variant: 'plo4', hole: 'Th Qd Qc 7d' }))).toBe(true); // PLO4 turn
+    expect(ruleFor(recorded({ variant: 'plo4', hole: 'Jh Ah Kd 2c', board: '6h Jc Jd' }))).toBe(
+      true
+    ); // PLO4 flop trips
+    expect(
+      ruleFor(recorded({ variant: 'plo6', hole: 'Th Qd 6d Qc 7d 2s', board: '7h 7c Kd' }))
+    ).toBe(true); // PLO6 flop
+    for (const [variant, hole, board] of [
+      ['plo4', 'Th Qd Qc 7d', '6h 7c Jd Js'],
+      ['plo4', 'Jh Ah Kd 2c', '6h Jc Jd'],
+      ['plo5', 'Th Qd 6d Qc 7d', '6h Jc Jd'],
+    ] as const) {
+      for (const seed of [1, 42, 2026]) {
+        const s = recorded({ variant, hole, board });
+        seedFastRandom(seed);
+        expect(HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { mind: false }).action).toBe(
+          'fold'
+        );
+      }
+    }
+  });
+
+  it('a flop full house keeps its call', () => {
+    expect(ruleFor(recorded({ hole: 'Jh 6c 2d 3c 4d', board: '6h Jc Jd' }))).toBe(false); // JJJ66
+    expect(ruleFor(recorded({ variant: 'plo4', hole: '6s 6c 2d 3c', board: '6h Jc Jd' }))).toBe(
+      false
+    ); // 666JJ
+  });
+
+  it('does not touch an unpaired board, hold em, PLO8, or a token call', () => {
     expect(ruleFor(recorded({ board: '6h 7c Jd 2s' }))).toBe(false);
-    expect(ruleFor(recorded({ board: '6h Jc Jd' }))).toBe(false);
-    expect(ruleFor(recorded({ variant: 'plo4', hole: 'Th Qd Qc 7d' }))).toBe(false);
+    expect(ruleFor(recorded({ board: '6h 7c Jd' }))).toBe(false);
+    expect(ruleFor(recorded({ variant: 'nlh', hole: 'Qd Qc' }))).toBe(false);
+    expect(ruleFor(recorded({ variant: 'plo8', hole: 'Th Qd Qc 7d' }))).toBe(false);
     // 5 into a 1000 pot with plenty behind: not a call-off
     expect(ruleFor(recorded({ shove: 5, heroStack: 2000 }))).toBe(false);
   });

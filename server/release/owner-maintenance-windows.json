@@ -3,10 +3,18 @@
   "windows": [
     {
       "id": "2026-10-25-horse-tournament-aggression-now",
-      "ownerOrder": "Dan, 2026-10-25 19:43 Chicago, in this chat, on the tournament horse aggression programme (PR #8092 shove discipline, PR #8095 preflop and turn aggression): \"PROCEED TO THE NEXT PHASE, AND WHEN YOUR DONE WITH ALL 3 PHASES, I WANT THIS UPDATED WHEN ITS DONE, NOT AT 4AM.\" Repeated 20:11 Chicago: \"PROCEED TO THE NEXT PHASE WHEN READY\". One immediate certified off-cycle engine activation of protected main containing #8095, merge 95d995983be4b1a519d2e4f63ee57f25cf52bae3 (which also contains #8092, merge 90ff11d53). Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving; no other change is authorized by this entry.",
+      "ownerOrder": "Dan, 2026-10-25 19:43 Chicago, in this chat, on the tournament horse aggression programme (PR #8092 shove discipline, PR #8095 preflop and turn aggression): \"PROCEED TO THE NEXT PHASE, AND WHEN YOUR DONE WITH ALL 3 PHASES, I WANT THIS UPDATED WHEN ITS DONE, NOT AT 4AM.\" 20:33: \"THIS NEEDS TO GET FULLY PUSHED AND PUBLISHED AND ALL HORSES NEED TO ACTIVATE THIS AS SOON AS POSSIBLE FOR TOURNAMENT PLAY\"; 20:37: \"YOU HAVE TO MAKE THEM BETTER NOW, GET IT PUSHED AND PUBLISHED AS SOON AS ITS READY\". One immediate certified off-cycle engine activation of protected main containing #8095, merge 95d995983be4b1a519d2e4f63ee57f25cf52bae3 (which also contains #8092), together with this PR's seat-aware open-shove line. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving; no other change is authorized by this entry.",
       "contains": "95d995983be4b1a519d2e4f63ee57f25cf52bae3",
       "notBefore": "2026-10-26T01:19:00Z",
       "notAfter": "2026-10-26T07:09:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-plo-paired-board-fold-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, after the PLO5/PLO6 paired-board fold (#8088, merge acb5e84e9) was reported as going live at the 04:00 release: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing #8088 and its PLO4/flop widening, merged with this entry. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving.",
+      "contains": "acb5e84e9a6c7aebf94b33304cb6d0751225c35e",
+      "notBefore": "2026-10-26T00:32:40Z",
+      "notAfter": "2026-10-26T06:22:40Z",
       "migrations": []
     },
     {

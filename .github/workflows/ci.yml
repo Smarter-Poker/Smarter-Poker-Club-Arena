@@ -342,6 +342,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/ci/fixture-native-gate.mjs
       - name: Require compilation and every applicable native fixture proof
         env:
           CI_EVENT_NAME: ${{ github.event_name }}
@@ -393,6 +397,13 @@ jobs:
 
       - name: Money-trigger CI caller preserves independent authority
         run: node --test tests/money-trigger-ci-caller.test.mjs
+
+      - name: Phase14 publication preserves generation floors and withdrawal tombstones
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node --test tests/operations/phase14-generation-publication.test.mjs
+          node scripts/ci/check-phase14-generation-ledger.mjs
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
@@ -1803,6 +1814,27 @@ jobs:
         with:
           name: contract-index-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/contract-index-recovery/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Accepted horse window index preserves exact concurrent identity
+        id: accepted_horse_window_index
+        if: matrix.shard == 4
+        timeout-minutes: 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: >-
+          python3 -B scripts/ci/test-accepted-horse-window-index-postgres.py
+          --root "$GITHUB_WORKSPACE"
+          --scratch-parent "$RUNNER_TEMP"
+          --output "$GITHUB_WORKSPACE/artifacts/accepted-horse-window-index"
+          --pg-bin "$PG_BIN"
+      - name: Retain exact accepted horse window index proof
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.accepted_horse_window_index.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: accepted-horse-window-index-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/accepted-horse-window-index/
           if-no-files-found: error
           retention-days: 3
 

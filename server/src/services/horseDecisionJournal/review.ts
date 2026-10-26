@@ -624,23 +624,27 @@ export function reconcileHorseJournalHand(
         const phase11Withdrawn = w.phase11Authority?.selection === 'withdrawn_before_acceptance';
         const phase12Withdrawn = w.phase12Authority?.selection === 'withdrawn_before_acceptance';
         const phase13Withdrawn = w.phase13Authority?.selection === 'withdrawn_before_acceptance';
-        const expectedSelected = phase8Withdrawn
-          ? expectedWitness.phase8Authority?.reference
-          : phase10Withdrawn
-            ? expectedWitness.phase10Authority?.reference
-            : phase11Withdrawn
-              ? expectedWitness.phase11Authority?.reference
-              : phase12Withdrawn
-                ? expectedWitness.phase12Authority?.reference
-                : phase13Withdrawn
-                  ? expectedWitness.phase13Authority?.reference
-                  : expectedWitness.selected;
+        const phase14Withdrawn = w.phase14Authority?.selection === 'withdrawn_before_acceptance';
+        const expectedSelected = phase14Withdrawn
+          ? expectedWitness.phase14Authority?.reference
+          : phase8Withdrawn
+            ? expectedWitness.phase8Authority?.reference
+            : phase10Withdrawn
+              ? expectedWitness.phase10Authority?.reference
+              : phase11Withdrawn
+                ? expectedWitness.phase11Authority?.reference
+                : phase12Withdrawn
+                  ? expectedWitness.phase12Authority?.reference
+                  : phase13Withdrawn
+                    ? expectedWitness.phase13Authority?.reference
+                    : expectedWitness.selected;
         const expectedAmount =
           (phase8Withdrawn ||
             phase10Withdrawn ||
             phase11Withdrawn ||
             phase12Withdrawn ||
-            phase13Withdrawn) &&
+            phase13Withdrawn ||
+            phase14Withdrawn) &&
           expectedSelected
             ? expectedHorseExecutionAmount(s, {
                 action: expectedSelected.action,
@@ -662,6 +666,9 @@ export function reconcileHorseJournalHand(
           !qualifiedOutcomeIsCoherent(w, w.phase12Authority) ||
           !phase8BindingMatches(w.phase13Authority, expectedWitness.phase13Authority) ||
           !qualifiedOutcomeIsCoherent(w, w.phase13Authority) ||
+          !phase8BindingMatches(w.phase14Authority, expectedWitness.phase14Authority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase14Authority) ||
+          !same(w.phase14Inputs ?? null, expectedWitness.phase14Inputs ?? null) ||
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||

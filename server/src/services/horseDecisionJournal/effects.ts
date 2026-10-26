@@ -13,6 +13,8 @@ import type {
 } from '../../engine/horseDecision/protocol.js';
 import type { HorseDecision } from '../../types.js';
 import { HORSE_DECISION_READ_FRAME_MAX_BYTES } from '../../engine/HorseDecisionReadFrame.js';
+import { isHorseDecisionReplayState } from '../../engine/horseDecision/replayState.js';
+import { evidenceDigest } from '../horseCorrectiveReview/authority.js';
 
 export interface HorseRetainedEffectsQualification {
   status: 'qualified' | 'unavailable' | 'invalid';
@@ -44,6 +46,39 @@ export type HorseRetainedPlanContext =
   | { kind: 'current'; context: HorsePlanContext }
   | { kind: 'invalid' };
 
+/** Only this explicitly versioned producer captured a known empty DEEP batch.
+ * This validates emission metadata, not source custody of the original FAST. */
+function currentDeepEmptyCapture(
+  value: Record<string, unknown>,
+  request: FastHorseDecisionRequest | DeepHorseDecisionRequest
+): boolean {
+  try {
+    const pin = value.originalFastBinding;
+    return (
+      request.type === 'DECIDE_DEEP' &&
+      value.lifecycleVersion === 1 &&
+      value.planBinding === null &&
+      Array.isArray(value.effects) &&
+      value.effects.length === 0 &&
+      isHorseDecisionReplayState(value.replayState) &&
+      value.replayState.version === 'horse-decision-replay-state-v3' &&
+      !!pin &&
+      typeof pin === 'object' &&
+      !Array.isArray(pin) &&
+      Object.keys(pin).sort().join(',') === 'inputDigest,readFrameDigest' &&
+      'inputDigest' in pin &&
+      typeof pin.inputDigest === 'string' &&
+      /^[a-f0-9]{64}$/.test(pin.inputDigest) &&
+      'readFrameDigest' in pin &&
+      typeof pin.readFrameDigest === 'string' &&
+      /^[a-f0-9]{64}$/.test(pin.readFrameDigest) &&
+      pin.readFrameDigest === evidenceDigest(value.readFrame)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Preserve v1 under its original rules, never upgrade it from request shape.
  * New-present markers are checked against the original retained request; a
  * allocated v2/v3 frame without those markers cannot enter legacy qualification.
@@ -59,7 +94,7 @@ export function horseRetainedPlanContext(
   const hasBinding = Object.hasOwn(value, 'planBinding');
   const frame = value.readFrame as { version?: unknown; json?: unknown } | null | undefined;
   let allocatedFrame = frame?.version === 'horse-decision-reads-v2';
-  // v4 (2026-10-16) is v3 plus the opponent-exploit counters: same rules.
+  // v4/v5 add opponent counters/winner beliefs: the same allocation rules.
   if (
     frame?.version === 'horse-decision-reads-v3' ||
     frame?.version === 'horse-decision-reads-v4' ||
@@ -82,7 +117,7 @@ export function horseRetainedPlanContext(
     !horsePlanContextMatchesRequest(value.planContext, request) ||
     (request.type === 'DECIDE_FAST'
       ? !hasBinding || !horsePlanBatchBindingMatchesRequest(value.planBinding, request)
-      : hasBinding) ||
+      : hasBinding && !currentDeepEmptyCapture(value, request)) ||
     (frame != null && !allocatedFrame)
   )
     return { kind: 'invalid' };
@@ -90,8 +125,8 @@ export function horseRetainedPlanContext(
 }
 
 /** Retained ordinary decision-body contract inside a separately validated v1
- * journal envelope. Both reviewed producer generations (lifecycle absent and
- * lifecycleVersion=1) emit a FAST batch, including []. Neither emits DEEP effects.
+ * journal envelope. Historical DEEP omits effects; current bound v3 DEEP
+ * explicitly captures [] and null batch ownership, never issued effects.
  * Missing FAST evidence is never repaired from sourceRelease or version absence.
  * Other decision, snapshot/digest and receipt predicates remain the caller's job.
  * No policy execution, plan mutation, source authentication or activation occurs. */
@@ -111,6 +146,7 @@ export function qualifyHorseRetainedDecisionEffects(
     const value = capture as Record<string, unknown>;
     if (value.lifecycleVersion !== undefined && value.lifecycleVersion !== 1)
       return result('invalid', 'unsupported_capture_version');
+    const currentDeepEmpty = currentDeepEmptyCapture(value, request);
     const plan = horseRetainedPlanContext(value, request);
     if (plan.kind === 'invalid') return result('invalid', 'invalid_plan_binding');
     const qualified = (
@@ -129,6 +165,8 @@ export function qualifyHorseRetainedDecisionEffects(
     });
     const hasEffects = Object.prototype.hasOwnProperty.call(value, 'effects');
     if (request.type === 'DECIDE_DEEP') {
+      if (currentDeepEmpty && plan.kind === 'current')
+        return qualified('deep_effects_not_emitted', 0);
       return hasEffects
         ? result('invalid', 'deep_effects_unexpected')
         : qualified('deep_effects_not_emitted');

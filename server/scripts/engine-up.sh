@@ -20,7 +20,10 @@
 #                           periodic mutator is allowed to reverse one.
 #   --log-opt max-size      Unbounded json-file logs fill the disk, and a full
 #                           disk wedges the engine in exactly the way this whole
-#                           workstream exists to prevent.
+#                           workstream exists to prevent. The window is sized so
+#                           a whole day of play is still readable (see
+#                           LOG_WINDOW_* below), never so small that an incident
+#                           has rotated out before anyone asks about it.
 #
 # Callers: the frozen engine release transaction and its synchronous one-shot
 # recovery. Both must go through here so their run-spec cannot drift apart.
@@ -76,8 +79,28 @@ LOG_DIR="${LOG_DIR:-/var/log/club-arena-engine}"
 LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-14}"
 LOG_KEEP_MB="${LOG_KEEP_MB:-6144}"
 
+# THE ENGINE LOG OUTLIVES THE INCIDENT (2026-10-25).
+# The json-file window used to be 5 x 50 MB. Measured on engine-01 on
+# 2026-10-25 the engine wrote 94-140 MB an hour, so the window held under two
+# hours, and the 13:27:10 UTC kill storm's log had rotated out of the daemon
+# long before the alert was read. The dump below can only save what the daemon
+# still has, so the window is the real retention: 24 x 100 MB (2.4 GB, of 241 GB
+# free on engine-01) holds a day at the old rate and a week once the two
+# routine emitters that made up 85% of it are counted instead of printed
+# (server/src/services/errorReporter.ts reportThrottled, StateMachine.reset).
+# A larger window takes longer to dump: a 2.4 GB log gzips in about a minute,
+# so the background retirement gets a ten-minute budget and only the in-line
+# fallback (which sits inside the cutover) keeps the short one.
+LOG_WINDOW_FILE_SIZE="${LOG_WINDOW_FILE_SIZE:-100m}"
+LOG_WINDOW_FILES="${LOG_WINDOW_FILES:-24}"
+LOG_DUMP_BUDGET_INLINE="${LOG_DUMP_BUDGET_INLINE:-20s}"
+LOG_DUMP_BUDGET_BACKGROUND="${LOG_DUMP_BUDGET_BACKGROUND:-600s}"
+
 save_outgoing_log() {
-  local c="$1" id img started stamp out
+  # $2: how long the dump may take (default: the in-line budget, because the
+  # in-line caller sits inside the cutover). The background retirement passes
+  # LOG_DUMP_BUDGET_BACKGROUND; nothing waits on it.
+  local c="$1" budget="${2:-$LOG_DUMP_BUDGET_INLINE}" id img started stamp out
   mkdir -p "$LOG_DIR" || return 1
   id="$(docker inspect -f '{{.Id}}' "$c" 2>/dev/null | cut -c1-12)" || return 1
   img="$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null | sed 's#.*[:/]##' | cut -c1-8 | tr -c 'A-Za-z0-9._\n-' '_')"
@@ -86,7 +109,7 @@ save_outgoing_log() {
   out="$LOG_DIR/engine-${stamp}-started${started:-unknown}-${id:-unknown}-${img:-unknown}.log.gz"
   # -t: every line carries the daemon's timestamp, so the file is usable
   # without the process's own clock.
-  if timeout --signal=TERM --kill-after=5s 20s \
+  if timeout --signal=TERM --kill-after=5s "$budget" \
     bash -c 'set -o pipefail; docker logs -t "$1" 2>&1 | gzip -6 > "$2"' \
     _ "$c" "$out"; then
     log "saved the outgoing log to $out ($(du -h "$out" | cut -f1))"
@@ -128,7 +151,8 @@ OUTGOING_PREFIX="${CONTAINER:-club-arena-engine}-outgoing-"
 
 retire_outgoing_container() {
   local c="$1"
-  save_outgoing_log "$c" || log "WARN: could not save the outgoing log of $c (continuing)"
+  save_outgoing_log "$c" "$LOG_DUMP_BUDGET_BACKGROUND" \
+    || log "WARN: could not save the outgoing log of $c (continuing)"
   docker rm "$c" >/dev/null 2>&1 || docker rm -f "$c" >/dev/null 2>&1 \
     || log "WARN: could not remove the retired container $c"
 }
@@ -403,8 +427,8 @@ STARTED_CONTAINER_ID="$(docker create \
   --label sp.role=engine \
   --label "sp.release.sha=$AUTHORIZED_SHA" \
   --log-driver json-file \
-  --log-opt max-size=50m \
-  --log-opt max-file=5 \
+  --log-opt "max-size=$LOG_WINDOW_FILE_SIZE" \
+  --log-opt "max-file=$LOG_WINDOW_FILES" \
   -p "${PORT}:8080" \
   --env-file "$ENV_FILE" \
   --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
@@ -427,7 +451,8 @@ if [ "$HAD_OUTGOING_CONTAINER" = 1 ]; then
   # moment anyone could look: on 2026-09-07 the engine was unreachable for a
   # minute at 16:52 and resurfaced inside an off-schedule break, and there was
   # nothing left to read. Dump the whole retained log (json-file keeps up to
-  # 5 x 50 MB) to disk, compressed, named by stop time + short id + image, and
+  # LOG_WINDOW_FILES x LOG_WINDOW_FILE_SIZE, 24 x 100 MB since 2026-10-25) to
+  # disk, compressed, named by stop time + short id + image, and
   # keep fourteen days or 6 GB, whichever is hit first. Never fatal: a failed
   # dump must not stop the deploy.
   #

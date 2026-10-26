@@ -304,7 +304,9 @@ describe('stale deployment chunk recovery', () => {
       });
 
       it('recovers at the grace when the live build cannot be read', async () => {
-        const { replace, recovery, uninstall } = await departedOnBuild(new TypeError('Load failed'));
+        const { replace, recovery, uninstall } = await departedOnBuild(
+          new TypeError('Load failed')
+        );
         await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
         await flush();
         expect(replace).toHaveBeenCalledTimes(1);
@@ -447,6 +449,18 @@ describe('stale deployment chunk recovery', () => {
       await vi.advanceTimersByTimeAsync(0);
       for (let i = 0; i < 20; i++) await Promise.resolve();
     };
+    // The module's own build id in this suite (no VITE_APP_VERSION is set).
+    const THIS_BUILD = 'dev';
+    const NEWER_BUILD = 'ne0000000000000000000000000000000000000002';
+    /** The stylesheet answers 200 text/css; build-info answers `live`. */
+    const servedWithLive = (live: string | Error) =>
+      vi.fn(async (input: unknown) => {
+        if (String(input).endsWith('build-info.json')) {
+          if (live instanceof Error) throw live;
+          return new Response(JSON.stringify({ ca_sha: live }), { status: 200 });
+        }
+        return new Response('.a{}', { status: 200, headers: { 'content-type': 'text/css' } });
+      });
     afterEach(() => {
       vi.useRealTimers();
       vi.unstubAllGlobals();
@@ -489,27 +503,54 @@ describe('stale deployment chunk recovery', () => {
       expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'no-store' });
     });
 
-    it('recovers when the stylesheet put back still cannot load', async () => {
+    /* The stylesheet the server still serves is put back, and its own load
+       then fails. That replaces the document only when production serves a
+       different build: from a page already on the live build a reload fetches
+       the same files, and on WebKit (no beforeunload) the failure is usually
+       the departure itself cancelling the reinstated load (run 40260290873). */
+    async function reinstatedThenFails(live: string | Error) {
       vi.useFakeTimers();
-      const { browser, replace, recovery } = await freshDocument();
-      // The server says it exists, but this document cannot load it.
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(
-          async () => new Response('.a{}', { status: 200, headers: { 'content-type': 'text/css' } })
-        )
-      );
-      const uninstall = recovery.installVitePreloadErrorRecovery();
+      const doc = await freshDocument();
+      vi.stubGlobal('fetch', servedWithLive(live));
+      const uninstall = doc.recovery.installVitePreloadErrorRecovery();
       const failing = 'data:text/css,.gone{}';
-      browser.dispatchEvent(cancelledCss(failing));
+      doc.browser.dispatchEvent(cancelledCss(failing));
       await settle();
       const restored = document.querySelector(`link[rel="stylesheet"][href="${failing}"]`);
       expect(restored).not.toBeNull();
-      expect(replace).not.toHaveBeenCalled();
+      expect(doc.replace).not.toHaveBeenCalled();
       restored!.dispatchEvent(new Event('error'));
       await settle();
-      expect(replace).toHaveBeenCalledTimes(1);
       expect(document.querySelector(`link[href="${failing}"]`)).toBeNull();
+      return { ...doc, uninstall };
+    }
+
+    it('recovers when the stylesheet put back cannot load and a newer build is live', async () => {
+      const { replace, uninstall } = await reinstatedThenFails(NEWER_BUILD);
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(String(replace.mock.calls[0][0])).toContain('_cb=');
+      uninstall();
+    });
+
+    it('never reloads a page already on the live build when the stylesheet put back fails', async () => {
+      const { replace, recovery, uninstall } = await reinstatedThenFails(THIS_BUILD);
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS * 2);
+      await settle();
+      expect(replace).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
+      uninstall();
+    });
+
+    it('does not reload while the live build cannot be read, until its bounded patience ends', async () => {
+      const { replace, recovery, uninstall } = await reinstatedThenFails(
+        new TypeError('Fetch API cannot load build-info.json due to access control checks.')
+      );
+      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS * 3);
+      await settle();
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
+      await settle();
+      expect(replace).toHaveBeenCalledTimes(1);
       uninstall();
     });
 
@@ -546,7 +587,11 @@ describe('stale deployment chunk recovery', () => {
       expect(replace).not.toHaveBeenCalled();
     });
 
-    it('waits out the navigation grace when the server cannot be asked', async () => {
+    /* Nothing can be read (offline, or a WebKit departure cancelling every
+       fetch of the page being left). A slow navigation can outlast one grace,
+       so recovery keeps asking for up to CURRENT_BUILD_PATIENCE_MS; a page
+       still here at the end of it really is stuck, and recovers once. */
+    it('waits for its bounded patience when nothing can be asked', async () => {
       vi.useFakeTimers();
       const { browser, replace, recovery } = await freshDocument();
       vi.stubGlobal(
@@ -558,12 +603,40 @@ describe('stale deployment chunk recovery', () => {
       const uninstall = recovery.installVitePreloadErrorRecovery();
       browser.dispatchEvent(cancelledCss());
       await settle();
-      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS - 1);
-      expect(replace).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(2);
+      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
       await settle();
-      // Still here after the grace, so the failure was real: one recovery.
+      // One grace is not enough: a slow navigation is still loading here.
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
+      await settle();
       expect(replace).toHaveBeenCalledTimes(1);
+      uninstall();
+    });
+
+    it('puts the stylesheet back after the grace when the page turns out to be live', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      let reachable = false;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: unknown) => {
+          if (!reachable) throw new TypeError('Load failed');
+          if (String(input).endsWith('build-info.json'))
+            return new Response(JSON.stringify({ ca_sha: THIS_BUILD }), { status: 200 });
+          return new Response('.a{}', { status: 200, headers: { 'content-type': 'text/css' } });
+        })
+      );
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      browser.dispatchEvent(cancelledCss(SERVED));
+      await settle();
+      reachable = true;
+      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+      await settle();
+      expect(replace).not.toHaveBeenCalled();
+      expect(document.querySelectorAll(`link[rel="stylesheet"][href="${SERVED}"]`)).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS * 2);
+      await settle();
+      expect(replace).not.toHaveBeenCalled();
       uninstall();
     });
   });

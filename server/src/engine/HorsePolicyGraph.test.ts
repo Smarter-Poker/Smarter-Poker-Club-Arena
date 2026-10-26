@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HorsePolicyGraph, HORSE_POLICY_ORDER } from './HorsePolicyGraph.js';
+import {
+  HorsePolicyGraph,
+  HORSE_POLICY_ORDER,
+  horsePolicyOrderForVersion,
+} from './HorsePolicyGraph.js';
 import { HorseLogic } from './HorseLogic.js';
 import { seedFastRandom, saveFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
@@ -17,6 +21,14 @@ function completed() {
 }
 
 describe('executable Horse policy order', () => {
+  it('places correction before wager guards and timing while preserving retained v1/v2 orders', () => {
+    expect(HORSE_POLICY_ORDER.slice(-3)).toEqual(['corrective_policy', 'wager_rules', 'timing']);
+    expect(horsePolicyOrderForVersion('horse-policy-order-v1')).not.toContain('wager_rules');
+    expect(horsePolicyOrderForVersion('horse-policy-order-v1')).not.toContain('corrective_policy');
+    expect(horsePolicyOrderForVersion('horse-policy-order-v2')).toContain('wager_rules');
+    expect(horsePolicyOrderForVersion('horse-policy-order-v2')).not.toContain('corrective_policy');
+    expect(horsePolicyOrderForVersion('horse-policy-order-v3')).toEqual(HORSE_POLICY_ORDER);
+  });
   it('invokes each owner once and seals a bounded action-only trace', () => {
     const graph = new HorsePolicyGraph(() => 0);
     let decision: HorseDecision | null = null;

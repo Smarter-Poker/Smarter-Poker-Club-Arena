@@ -1,3 +1,7 @@
+import {
+  runCorrectiveKernelEvaluator,
+  type CorrectiveKernelEvaluator,
+} from '../services/horseCorrectiveReview/liveKernel.js';
 import { hasPhysicalImpliedDraw } from './HorseOmahaImpliedDraw.js';
 import { horsePlanHandKey } from './HorseDecisionEffects.js';
 import {
@@ -235,6 +239,10 @@ import {
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
 import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
+import {
+  holdemPremiumAggressionVerdict,
+  type HoldemPremiumVerdict,
+} from './HorseHoldemPremiumAggression.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
@@ -1977,6 +1985,14 @@ export interface HorseDecideOpts {
    *  paired flop, turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
    *  false exists only so an ablation can measure an older layer alone. */
   ploPairedBoardFold?: boolean;
+  /** Dan 2026-10-25: hold'em premiums are never played passively and dominated
+   *  offsuit hands fold to a big 3-bet (HorseHoldemPremiumAggression.ts). Live
+   *  always runs it; false exists only so an ablation can measure an older
+   *  layer alone. */
+  holdemPremiumAggression?: boolean;
+  /** Internal: false skips the dominated-hand fold, for the commit-time
+   *  recheck, which has no opponent reads to honour the maniac law with. */
+  holdemDominatedFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
@@ -2053,6 +2069,10 @@ export interface HorseDecideOpts {
   phase12EvidenceMode?: boolean;
   phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
   phase13EvidenceMode?: boolean;
+  /** Internal worker capability; any caller-supplied property is refused at IPC. */
+  phase14Corrective?: CorrectiveKernelEvaluator;
+  /** Callers may only disable the worker-owned correction. */
+  phase14?: 'off';
   /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
    *  read in this decision runs at that multiple of its budgeted sample. The
    *  engine uses it to replay a close decision inside the think time it was
@@ -2997,7 +3017,99 @@ function pairedBoardFold(
   return folded;
 }
 
+/**
+ * Dan 2026-10-25: in no-limit hold'em a premium (QQ+, AK) is never played
+ * passively, and a dominated offsuit hand folds to a big 3-bet. See
+ * HorseHoldemPremiumAggression.ts. Applied after every other layer, and the
+ * tournament shove discipline runs again on anything it raises, so a premium
+ * re-raise still obeys the deep-shove rule.
+ */
+export function holdemPremiumAggression(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts = {}
+): HorseDecision {
+  if (opts.holdemPremiumAggression === false) return decision;
+  let verdict: HoldemPremiumVerdict<HorseDecision> | null;
+  try {
+    verdict = holdemPremiumAggressionVerdict(decision, {
+      gameVariant: gs.gameVariant,
+      bettingStructure: gs.bettingStructure,
+      multiBoard: !!(gs.communityCards2?.length || gs.communityCards3?.length),
+      bombPot: gs.bombPot === true,
+      stage: gs.stage,
+      board: gs.communityCards ?? [],
+      hero: player,
+      players: gs.players ?? [],
+      pot: gs.pot,
+      currentBet: gs.currentBet,
+      bigBlind: gs.bigBlind,
+      toCall: gs.toCall,
+      legalActions: gs.legalActions,
+      minRaiseTo: gs.minRaiseTo,
+      maxRaiseTo: gs.maxRaiseTo,
+      actionHistory: gs.actionHistory,
+      chipUnit: gs.chipUnit ?? (isTournamentMode(gs) ? 1 : 0.01),
+      dominatedFold: opts.holdemDominatedFold !== false,
+      raiserIsManiac: (seatNo) => {
+        const raiser = (gs.players ?? []).find((p) => p.seat === seatNo);
+        if (!raiser) return false;
+        const read = HorseMind.opponentRead(raiser.user_id);
+        return maniacRaiseWidth(read) !== null || isPostflopManiac(read);
+      },
+    });
+  } catch {
+    return decision;
+  }
+  if (!verdict) return decision;
+  if (telemetryOn(opts)) {
+    if (verdict.rule === 'dominated_3bet_fold') noteFire('holdem_dominated_3bet_fold');
+    else if (verdict.rule === 'premium_preflop_raise') noteFire('holdem_premium_preflop_raise');
+    else noteFire('holdem_premium_postflop_bet');
+  }
+  const next = verdict.decision;
+  if (next.action === 'raise' || next.action === 'bet' || next.action === 'all_in') {
+    return tournamentShoveDiscipline(next, player, gs);
+  }
+  return next;
+}
+
 export class HorseLogic {
+  /** Original post-observation boundary, shared with the admitted worker path.
+   * The caller owns scope cleanup when it captures before decide(). */
+  static prepareOriginalReads(
+    player: SeatPlayer,
+    gameState: HorseGameStateV2,
+    opts: HorseDecideOpts = {}
+  ): void {
+    // V45 SCOPED READS: every read in this decision sees the bucket for
+    // this card family and table size (HorseMind.readStats). Cleared on
+    // every exit, including a throw.
+    HorseMind.setDecisionScope(
+      readScopeOf(
+        gameState.gameVariant,
+        Array.isArray(gameState.players)
+          ? gameState.dealtSeatIds === undefined
+            ? gameState.players.length
+            : horsePolicyDealtPlayers(gameState.players, player.seat, gameState.dealtSeatIds).length
+          : 0
+      ),
+      typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
+      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
+    );
+    // V3: ingest the action stream into the opponent-intelligence layer.
+    // Wrapped so observation can never take down a decision.
+    // V12: benchmark/league decisions pass mind:false — they must never
+    // write synthetic hands into the live opponent memory.
+    if (opts.mind !== false && opts.observeMind !== false) {
+      try {
+        HorseMind.observe(gameState.actionHistory, gameState.players, opts.mindObservationHand);
+      } catch {
+        /* observation is best-effort */
+      }
+    }
+  }
   static decide(
     player: SeatPlayer,
     gameState: HorseGameStateV2,
@@ -3016,41 +3128,20 @@ export class HorseLogic {
         if (telemetryOn(opts)) noteFire('phase15_policy_unregistered');
         throw new Error('Horse policy variant is not registered with its canonical name');
       }
-      // V45 SCOPED READS: every read in this decision sees the bucket for
-      // this card family and table size (HorseMind.readStats). Cleared on
-      // every exit, including a throw.
-      HorseMind.setDecisionScope(
-        readScopeOf(
-          gameState.gameVariant,
-          Array.isArray(gameState.players)
-            ? gameState.dealtSeatIds === undefined
-              ? gameState.players.length
-              : horsePolicyDealtPlayers(gameState.players, player.seat, gameState.dealtSeatIds)
-                  .length
-            : 0
-        ),
-        typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
-        gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
-      );
-      // V3: ingest the action stream into the opponent-intelligence layer.
-      // Wrapped so observation can never take down a decision.
-      // V12: benchmark/league decisions pass mind:false — they must never
-      // write synthetic hands into the live opponent memory.
-      if (opts.mind !== false && opts.observeMind !== false) {
-        try {
-          HorseMind.observe(gameState.actionHistory, gameState.players, opts.mindObservationHand);
-        } catch {
-          /* observation is best-effort */
-        }
-      }
+      this.prepareOriginalReads(player, gameState, opts);
       // V44 SECOND LOOK: a deep replay runs the same path at a larger
       // sample. Bracketed so a throw cannot leave the depth raised for the
       // next horse to act.
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return pairedBoardFold(
-            this.decideInternal(player, gameState, style, mods, opts),
+          return holdemPremiumAggression(
+            pairedBoardFold(
+              this.decideInternal(player, gameState, style, mods, opts),
+              player,
+              gameState,
+              opts
+            ),
             player,
             gameState,
             opts
@@ -3059,8 +3150,13 @@ export class HorseLogic {
           setEquityDepth(1);
         }
       }
-      return pairedBoardFold(
-        this.decideInternal(player, gameState, style, mods, opts),
+      return holdemPremiumAggression(
+        pairedBoardFold(
+          this.decideInternal(player, gameState, style, mods, opts),
+          player,
+          gameState,
+          opts
+        ),
         player,
         gameState,
         opts
@@ -3969,6 +4065,24 @@ export class HorseLogic {
             noteFire(`phase13_selection_refused_${receipt.selectionRefusal}`);
           noteFire(`phase13_selection_${receipt.selection}`);
         }
+      }
+      return { decision };
+    }).decision;
+    decision = graph.run('corrective_policy', decision, () => {
+      const baseline = decision;
+      const correction = runCorrectiveKernelEvaluator(opts.phase14Corrective, baseline);
+      if (correction.receipt) {
+        const legal = this.legalize(correction.decision, player, gs, vi);
+        if (
+          correction.receipt.applied &&
+          (legal.action !== correction.decision.action ||
+            (legal.amount ?? null) !== (correction.decision.amount ?? null))
+        ) {
+          correction.receipt.applied = false;
+          correction.receipt.reason = 'illegal_candidate';
+          correction.receipt.selected = { ...correction.receipt.baseline };
+          decision = { ...baseline, correctivePolicy: correction.receipt };
+        } else decision = { ...correction.decision, correctivePolicy: correction.receipt };
       }
       return { decision };
     }).decision;

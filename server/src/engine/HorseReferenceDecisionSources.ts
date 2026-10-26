@@ -19,6 +19,8 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/services/horseCorrectiveReview/liveKernel.ts':
+      'boundary: the Phase 14 worker-local corrective consumer; absent a separately admitted functional capability it preserves action and RNG, and it never stacks on an applied prior candidate',
     'src/engine/HorseRiverNuts.ts':
       'the final river-nuts raise and full-pot near-pot wager invariants after all strategy owners',
     'src/engine/HorseTournamentShoveDiscipline.ts':
@@ -30,6 +32,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/AnteMath.ts': 'the ante orbit cost behind the M-zones',
     'src/engine/OmahaFlushBlocker.ts':
       'physical two-hole three-board nut-flush and straight-flush blockers consumed by the reference decision',
+    'src/engine/HorseHoldemPremiumAggression.ts':
+      'the NLH premium-aggression and dominated-hand 3-bet fold rules applied to the final decision after every other layer (Dan 2026-10-25)',
     'src/engine/HorsePloPairedBoardFold.ts':
       'the PLO4/PLO5/PLO6 paired-board fold applied to the final decision after every other layer (Dan 2026-10-25)',
     'src/engine/HorseOmahaImpliedDraw.ts':
@@ -109,6 +113,7 @@ export const HORSE_REFERENCE_DECISION_SOURCE_FILES: readonly string[] = Object.f
 
 /** Hashed, imports not followed (the reasons above say why). */
 export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freeze([
+  'src/services/horseCorrectiveReview/liveKernel.ts',
   'src/engine/HorseTournamentPostflop.ts',
   'src/engine/HorseTournamentUtility.ts',
   'src/engine/horseDecision/workerRuntime.ts',

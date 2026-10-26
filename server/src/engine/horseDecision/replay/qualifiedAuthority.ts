@@ -1,5 +1,6 @@
 /** Offline replay admission uses the same protected selections and exact
  * qualification files as production. A record cannot turn a pack on. */
+import { admitHorsePhase14ReleaseAttachment } from '../../HorsePhase14Authority.js';
 import type { HorseDecision } from '../../../types.js';
 import {
   admitHorsePhase8ReleaseAuthority,
@@ -36,6 +37,7 @@ export const qualifiedReplayAdmissions = {
   admitPhase12Authority: (variant: RemainingPolicyVariant) =>
     admitHorsePhase12ReleaseAuthority(variant),
   admitPhase13Authority: (variant: JointVariant) => admitHorsePhase13ReleaseAuthority(variant),
+  admitPhase14Attachment: (domain: string) => admitHorsePhase14ReleaseAttachment(domain),
 } satisfies Pick<
   HorseDecisionWorkerDependencies,
   | 'admitPhase8Authority'
@@ -43,6 +45,7 @@ export const qualifiedReplayAdmissions = {
   | 'admitPhase11Authority'
   | 'admitPhase12Authority'
   | 'admitPhase13Authority'
+  | 'admitPhase14Attachment'
 >;
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -63,15 +66,34 @@ export function qualifiedReplayAuthorityHolders(
     ['phase11', variant, original.omahaVariantPolicy],
     ['phase12', variant, original.remainingVariantPolicy],
     ['phase13', variant, original.jointPolicy],
+    ['phase14', original.correctivePolicy?.domain ?? '', original.correctivePolicy],
   ] as const;
   for (const [owner, pack, policy] of policies) {
-    if (!object(policy) || policy.applied !== true) continue;
+    if (!object(policy) || (owner !== 'phase14' && policy.applied !== true)) continue;
     const receipt = policy.authority;
     if (!horseAuthorityReceiptIsWellFormed(receipt))
       throw new HorseReplayAuthorityRefusal(`${owner}:missing_receipt`);
     if (receipt.state !== 'usable')
       throw new HorseReplayAuthorityRefusal(`${owner}:${receipt.state}`);
     receipts.set(`${owner}:${pack ?? ''}`, receipt);
+  }
+  // An admitted corrective composition can depend on selected baseline owners
+  // even though none of their proposals applied on this decision. Their exact
+  // recorded generations remain replay inputs and require independent admission.
+  for (const [owner, receipt] of Object.entries(
+    original.correctivePolicy?.baselineAuthorities ?? {}
+  )) {
+    if (
+      !['phase8', 'phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
+      !horseAuthorityReceiptIsWellFormed(receipt) ||
+      receipt.state !== 'usable'
+    )
+      throw new HorseReplayAuthorityRefusal(`${owner}:missing_baseline_receipt`);
+    const key = `${owner}:${owner === 'phase8' || owner === 'phase10' ? '' : variant}`;
+    const prior = receipts.get(key);
+    if (prior && JSON.stringify(prior) !== JSON.stringify(receipt))
+      throw new HorseReplayAuthorityRefusal(`${owner}:conflicting_baseline_receipt`);
+    receipts.set(key, receipt);
   }
   return (owner, pack, runningVersion, epoch) => {
     const receipt = receipts.get(`${owner}:${pack ?? ''}`);
@@ -87,7 +109,9 @@ export function qualifiedReplayAuthorityHolders(
               ? admissions.admitPhase11Authority(pack as OmahaPolicyVariant)
               : owner === 'phase12'
                 ? admissions.admitPhase12Authority(pack as RemainingPolicyVariant)
-                : admissions.admitPhase13Authority(pack as JointVariant);
+                : owner === 'phase13'
+                  ? admissions.admitPhase13Authority(pack as JointVariant)
+                  : admissions.admitPhase14Attachment(pack ?? '').admission;
       return HorseQualifiedAuthorityHolder.fromReplayReceipt(receipt, admission, runningVersion);
     } catch (error) {
       throw new HorseReplayAuthorityRefusal(

@@ -36,6 +36,7 @@
 import { noteFire } from '../engine/BrainTelemetry.js';
 import { readScopeOf } from '../engine/HorseMind.js';
 import { memoryVariant, type DurableOpponentProfile } from '../engine/HorseOpponentMemory.js';
+import { isOpponentMemoryBusyRefusal, reportThrottled } from '../services/errorReporter.js';
 import type {
   CompletedHandObservation,
   LiveHorseDecisionLane,
@@ -137,7 +138,12 @@ export async function observeLightningHand(
             lightningMemorySize(hand.dealtCount)
           );
       } catch (error) {
-        deps.report(error, 'LightningHorseObservation.durable_opponent_read');
+        if (isOpponentMemoryBusyRefusal(error))
+          reportThrottled(
+            'LightningHorseObservation.durable_opponent_read',
+            'opponent memory unavailable: busy - Lightning completed-hand read refused at admission'
+          );
+        else deps.report(error, 'LightningHorseObservation.durable_opponent_read');
       }
     }
     const pending = deps.lane().observeCompletedHand(buildLightningObservation(hand, durable));

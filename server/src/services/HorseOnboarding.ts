@@ -368,7 +368,11 @@ export async function ensureHorseComplete(
     if (!error) fixed.push('social');
   } else if (author.is_active === false) {
     if (!shouldContinue()) return fixed;
-    await supabase.from('content_authors').update({ is_active: true }).eq('id', author.id);
+    const { error } = await supabase
+      .from('content_authors')
+      .update({ is_active: true })
+      .eq('id', author.id);
+    if (error) throw new Error(`content_authors reactivate: ${error.message}`);
     if (!shouldContinue()) return fixed;
     fixed.push('social-reactivated');
   }
@@ -485,14 +489,65 @@ function exactILike(value: string): string {
  * zz_ca_balance_has_its_ledger_row), so it failed every time. Putting a horse
  * on a house board is a separate, ledgered step.
  */
-export async function createHorse(opts: { realName?: string } = {}): Promise<{
+export interface HorseCreationOperation {
+  horseId: string;
+  retiredHorseId: string;
+}
+
+/** Durable replacement operations retain their reserved identity on every retry. */
+export async function createHorse(
+  opts: { realName?: string; operation?: HorseCreationOperation } = {}
+): Promise<{
   id: string;
   identity: HorseIdentity;
 } | null> {
   let createdId: string | null = null;
   try {
-    const id = crypto.randomUUID();
+    const operation = opts.operation;
+    if (
+      operation &&
+      (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        operation.horseId
+      ) ||
+        /^(00000000|face0000)-/i.test(operation.horseId))
+    )
+      throw new Error('Invalid reserved replacement identity');
+    const id = operation?.horseId ?? crypto.randomUUID();
     const ident = identityFor(id, opts.realName);
+    const recoverOriginalAuth = async (): Promise<boolean> => {
+      const { data, error } = await supabase.auth.admin.getUserById(id);
+      if (error) {
+        if (error.status === 404 || error.code === 'user_not_found') return false;
+        throw new Error(`original auth lookup unknown: ${error.message}`);
+      }
+      if (!data.user || data.user.id !== id)
+        throw new Error('Original auth lookup returned no matching account');
+      if (
+        data.user.user_metadata?.horse_creation_operation !== 'patterned-retirement-20261006' ||
+        data.user.user_metadata?.retired_horse_id !== operation?.retiredHorseId
+      )
+        throw new Error('Reserved replacement identity belongs to another operation');
+      return true;
+    };
+    const resumeCompletedHorse = async () => {
+      const { data: row, error } = await supabase
+        .from('profiles')
+        .select(
+          'id,is_horse,display_name,username,alias,player_number,avatar_url:arena_avatar_url,is_vip,vip_tier,horse_profile,status,horse_status'
+        )
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw new Error(`original profile lookup: ${error.message}`);
+      if (!row)
+        throw new Error('Original signup profile is not available; preserve the reserved account');
+      if (!isSweepEligible(row))
+        throw new Error('Reserved replacement profile is closed or benched');
+      if (!row.is_horse) return false;
+      await ensureHorseComplete(row);
+      return true;
+    };
+    let originalAuthExists = operation ? await recoverOriginalAuth() : false;
+    if (originalAuthExists && (await resumeCompletedHorse())) return { id, identity: ident };
 
     // Refuse before an account exists rather than unwind one afterwards: a
     // horse may not carry a person's name (fn_reject_horse_name_on_human) and
@@ -502,17 +557,20 @@ export async function createHorse(opts: { realName?: string } = {}): Promise<{
       .select('id')
       .eq('is_horse', false)
       .ilike('display_name', exactILike(ident.realName))
+      .neq('id', id)
       .limit(1);
     if (nameErr) throw new Error(`name check: ${nameErr.message}`);
-    if ((nameClash ?? []).length > 0)
+    if ((nameClash ?? []).some((row) => row.id !== id))
       throw new Error(`a person already answers to ${ident.realName}`);
     const { data: userClash, error: userErr } = await supabase
       .from('profiles')
       .select('id')
       .ilike('username', exactILike(ident.username))
+      .neq('id', id)
       .limit(1);
     if (userErr) throw new Error(`username check: ${userErr.message}`);
-    if ((userClash ?? []).length > 0) throw new Error(`username ${ident.username} is taken`);
+    if ((userClash ?? []).some((row) => row.id !== id))
+      throw new Error(`username ${ident.username} is taken`);
 
     // Player numbers live above the human range and are unique-checked.
     let playerNumber = 100000 + (hash(id) % 900000);
@@ -526,18 +584,37 @@ export async function createHorse(opts: { realName?: string } = {}): Promise<{
       playerNumber = 100000 + ((hash(`${id}:${attempt}`) >>> 3) % 900000);
     }
 
-    const { data: created, error: authError } = await supabase.auth.admin.createUser({
-      id,
-      email: `horse.${ident.username}@${HORSE_AUTH_EMAIL_DOMAIN}`,
-      email_confirm: true,
-      user_metadata: { full_name: ident.realName, poker_alias: ident.username },
-    });
-    if (authError) throw new Error(`auth user: ${authError.message}`);
-    if (created?.user?.id !== id)
-      throw new Error('auth user: the account returned is not the one requested');
-    createdId = id;
+    if (!originalAuthExists) {
+      try {
+        const { data: created, error: authError } = await supabase.auth.admin.createUser({
+          id,
+          email: `horse.${ident.username}@${HORSE_AUTH_EMAIL_DOMAIN}`,
+          email_confirm: true,
+          user_metadata: {
+            full_name: ident.realName,
+            poker_alias: ident.username,
+            ...(operation
+              ? {
+                  horse_creation_operation: 'patterned-retirement-20261006',
+                  retired_horse_id: operation.retiredHorseId,
+                }
+              : {}),
+          },
+        });
+        if (authError) throw new Error(`auth user: ${authError.message}`);
+        if (created?.user?.id !== id)
+          throw new Error('auth user: the account returned is not the one requested');
+        createdId = id;
+      } catch (error) {
+        // The same auth primary key is recovered after a lost acknowledgement
+        // or concurrent creation. Never mint another id or repeat its signup grant.
+        if (!operation || !(await recoverOriginalAuth())) throw error;
+        originalAuthExists = true;
+      }
+      if (operation && (await resumeCompletedHorse())) return { id, identity: ident };
+    }
 
-    const { data: updated, error } = await supabase
+    let profileUpdate = supabase
       .from('profiles')
       .update({
         username: ident.username,
@@ -551,11 +628,19 @@ export async function createHorse(opts: { realName?: string } = {}): Promise<{
         vip_tier: 'lifetime',
         vip_expires_at: '2099-12-31T23:59:59+00:00',
       })
-      .eq('id', id)
-      .select('id');
+      .eq('id', id);
+    if (operation)
+      profileUpdate = profileUpdate.or(
+        'and(or(status.is.null,status.neq.deleted),or(horse_status.is.null,horse_status.neq.disabled),or(is_horse.is.null,is_horse.eq.false))'
+      );
+    const { data: updated, error } = await profileUpdate.select('id');
     if (error) throw new Error(`profile: ${error.message}`);
-    if ((updated ?? []).length !== 1)
+    if ((updated ?? []).length !== 1) {
+      // Another invocation may have completed the same original horse after
+      // our read. Adopt its current brain; never overwrite it with birth dials.
+      if (operation && (await resumeCompletedHorse())) return { id, identity: ident };
       throw new Error('profile: the signup trigger did not create the profile row');
+    }
 
     await ensureHorseComplete({
       id,
@@ -575,7 +660,7 @@ export async function createHorse(opts: { realName?: string } = {}): Promise<{
   } catch (err) {
     // An account that never became a horse would be a nameless person with a
     // signup grant. Take it back out; if that fails, say so with the id.
-    if (createdId) {
+    if (createdId && !opts.operation) {
       const { error: undoErr } = await supabase.auth.admin
         .deleteUser(createdId)
         .catch((e: unknown) => ({

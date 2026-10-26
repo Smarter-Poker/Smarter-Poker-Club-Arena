@@ -482,10 +482,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e",
+    "scripts/ci/classify-ci-changes.mjs": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "6c2f17a53fb3468d7138daaac124ea6a9463f69f9791c58963f76a49472afae4",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "a705cfffedd0343b9a7ef8d1626cb24e05494eb8eae57bcc1f2cee20ae722fd9",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -499,12 +499,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c",
+    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "fa61a9a0453a485d990d8e55d207af70125f214070343f9ba16d3dd9c702e305",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "95f09fe2904d40416631847b624b4c80048dd6c596b5080d55f69f51c66a38b5",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -544,7 +544,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "026a00420b274a2e38654545a1b8569add55450cd83359b103b0db3b9903bead",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -5362,6 +5362,40 @@
         "current": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f"
       }
     }
+  },
+  "typecheckSummarySparseCheckout20261025": {
+    "reason": "Add six assertions for the required summary checkout sparse standalone gate, preserving all native and financial assertions. Current test-source identity only; no new financial execution or activation certificate.",
+    "previous": {
+      "tests/unit/fixtureNativeCi.test.ts": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c",
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": "026a00420b274a2e38654545a1b8569add55450cd83359b103b0db3b9903bead",
+      "tests/fixtures/sep8-spin-custody/source-binding.json": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f"
+    },
+    "current": {
+      "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
+      "tests/fixtures/sep8-spin-custody/source-binding.json": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5"
+    }
+  },
+  "acceptedWindowNativeInputIdentity20261025": {
+    "reason": "Admit only the exact accepted-horse-window native PG17 harness and its source contract into the existing required index-recovery accounting path. Refresh current classifier and dependent binding identities only. Historical financial evidence, assertions, source inventories and qualification states are unchanged; no financial or production certificate is restamped.",
+    "sourceRevision": "dd0a798995cb4c20ae9eb568bdc2fadcfd1e4203",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+        "current": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e"
+      },
+      {
+        "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9",
+        "current": "00ef978f495b95509aa764d0f1f84ca3259e82e4dbd29d560f18dfb9a161fde4"
+      },
+      {
+        "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5",
+        "current": "b3be7e105db2df95867c07898f4751069088885d85521cea8bd75b02a6e89a70"
+      }
+    ]
   },
   "horseOwnPublicHistoryRouting20261025": {
     "reason": "The reviewed classifier diff adds only scripts/ci/test-horse-own-public-history.py to existing mandatory accounting admission. Update current classifier input identity; retain all financial source pins, assertions, historical receipts and qualification statuses. This binding is not native or production execution evidence.",

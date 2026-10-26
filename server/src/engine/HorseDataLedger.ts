@@ -661,6 +661,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40'
   ),
   flag(
+    'holdemPremiumAggression',
+    'NLH premiums (QQ+, AK) never passive: raise preflop, keep betting postflop; dominated offsuit hands fold to a big 3-bet (Dan 2026-10-25); false only to ablate an older layer',
+    'Hold em premium aggression'
+  ),
+  flag(
+    'holdemDominatedFold',
+    'internal: false skips the NLH dominated-hand 3-bet fold at the commit-time recheck, which has no opponent reads to honour the maniac law with',
+    'Hold em premium aggression'
+  ),
+  flag(
     'ploPairedBoardFold',
     'PLO4/PLO5/PLO6 no full house on a paired flop, turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
     'PLO paired-board fold'
@@ -749,6 +759,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase12EvidenceMode',
     'offline fixed-work remaining-variant clock; rejected by the live decision worker',
     'Phase12'
+  ),
+  flag(
+    'phase14',
+    'caller may disable the worker-owned corrective functional policy; never requests candidate authority',
+    'Phase14',
+    'horseDecision/workerRuntime.phase14Admission'
+  ),
+  flag(
+    'phase14Corrective',
+    'branded worker-local original-state corrective capability; refused from IPC and unavailable without qualified catalog and current S4 composition',
+    'Phase14',
+    'HorseLogic corrective_policy node'
   ),
   flag(
     'phase13Joint',
@@ -1884,6 +1906,24 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.05
   ),
   receipt(
+    'holdem_dominated_3bet_fold',
+    'HorseLogic.decide (HorseHoldemPremiumAggression)',
+    'NLH offsuit dominated hand calling or raising a big 3-bet turned into a fold',
+    'Hold em premium aggression'
+  ),
+  receipt(
+    'holdem_premium_preflop_raise',
+    'HorseLogic.decide (HorseHoldemPremiumAggression)',
+    'NLH QQ+/AK limp, check or flat preflop turned into a standard raise',
+    'Hold em premium aggression'
+  ),
+  receipt(
+    'holdem_premium_postflop_bet',
+    'HorseLogic.decide (HorseHoldemPremiumAggression)',
+    'NLH overpair QQ+ or AK top pair check postflop turned into a value bet',
+    'Hold em premium aggression'
+  ),
+  receipt(
     'plo_paired_board_fold',
     'HorseLogic.decide (HorsePloPairedBoardFold)',
     'PLO4/PLO5/PLO6 call, raise or jam without a full house on a paired flop, turn or river turned into a fold',
@@ -2460,6 +2500,30 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic -> ServerTableEngineTurns (P13.3)',
     "none, shadow change (never applied), authority-backed cash selection of the decision's variant, controller acceptance or withdrawal before acceptance; never a tournament objective selection, never on top of an applied Phase 10/11/12 candidate (the named refusals are phase13_selection_refused_*)",
     'Phase13'
+  ),
+  receipt(
+    'phase14_original_reads_unavailable',
+    'horseDecision/workerRuntime.executeFast',
+    'an admitted corrective path could not capture its original private read frame; baseline retained',
+    'Phase14'
+  ),
+  receipt(
+    'phase14_authority_*',
+    'HorsePhase14Authority -> worker/client/physical and Lightning acceptance',
+    'per-domain protected authority/composition admission, withdrawal and acceptance/effect verdicts',
+    'Phase14'
+  ),
+  receipt(
+    'phase14_selection_*',
+    'HorsePhase14Acceptance',
+    'selection withdrawn before acceptance or exact controller-accepted correction; never submission proof',
+    'Phase14'
+  ),
+  receipt(
+    'phase14_execution_*',
+    'HorsePhase14Acceptance after settleHorseExecutionWitness',
+    'actual controller witness outcome for an original-state correction',
+    'Phase14'
   ),
   receipt(
     'phase13_authority_*',

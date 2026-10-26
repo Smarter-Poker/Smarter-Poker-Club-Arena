@@ -1,0 +1,9 @@
+# Diamond Arena balance continues through rebuys and boundary retries
+
+The bust sweep returned before completing its cursor stage when every candidate in its batch either rebought or still had an open decision. On a rebuy field this repeatedly prevented the later table-balance stage from running. Both paths now leave only the bust batch and advance the cursor normally, preserving the work budget, future-decision deadlines, pending-bust ages and unprocessed batch continuation. A malformed open-decision deadline retains its original stall age; it never authorizes an elimination.
+
+The hand-boundary balance path also consumes an already-parked source's successful fence result, clears a rejected fence so it can be requested again, and preserves the existing bounded scheduler wake when the fresh plan has no immediately safe moves. It rechecks freeze, break, lifecycle and unresolved-move authority after awaited reads and probes. All moves still pass through the existing atomic seat-move door; no new timer, repair loop, financial write or publication route is introduced.
+
+Verification: four rebuy/cursor cases and four boundary retry cases fail before their respective fixes and pass after; a ninth regression proves a board read cannot authorize a move after manager authority is lost. All 275 tournament test files / 3,923 tests pass, including the existing pending-rebuy stall-clock and atomic move tests. Runtime publication and natural live-table balancing are separate remaining proof and are not claimed by this source change.
+
+Live readback before this follow-up at approximately 14:21 UTC still showed Diamond Arena Sunrise Bounty tables ranging from two to seven positive-stack players. The serving engine contained the earlier boundary fix #8161; this follow-up was not yet installed. No production seats or money were changed for testing.

@@ -78,6 +78,9 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
       deferredUntil: new Map(),
       answered: new Set(),
     }),
+    // Rebuy completion now proceeds to balance instead of ending the sweep.
+    checkTableBalance: vi.fn().mockResolvedValue(undefined),
+    checkDynamicTableExpansion: vi.fn().mockResolvedValue(true),
     tableEngines: new Map(),
     tournamentLeaseAuthorityIsCurrent: () => true,
     gameServer: { handTournamentToSuccessorGeneration: vi.fn() },

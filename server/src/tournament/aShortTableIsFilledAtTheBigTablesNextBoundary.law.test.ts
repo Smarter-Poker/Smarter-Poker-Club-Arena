@@ -213,4 +213,67 @@ describe("a short table is filled at the big table's next hand boundary", () => 
     expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalledTimes(1);
     expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
   });
+  it('claims a source that is already parked when its fence request returns', async () => {
+    const big = table(0, 8);
+    const { m, engines, park } = manager([big, table(1, 3)]);
+    engines.get(big.tableId)!.parkForTournamentMove.mockImplementation(async () => {
+      park(big.tableId);
+      return true;
+    });
+    await m.checkTableBalance();
+    await settle();
+    await settle();
+    expect(m.executePlayerMoves).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rejected fence can be requested again instead of retaining a false fence', async () => {
+    const big = table(0, 8);
+    const { m, engines } = manager([big, table(1, 3)]);
+    engines
+      .get(big.tableId)!
+      .parkForTournamentMove.mockRejectedValueOnce(new Error('park refused'));
+    await m.checkTableBalance();
+    await settle();
+    expect(m.gapBalanceFencedSources.has(big.tableId)).toBe(false);
+    expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+    await m.checkTableBalance();
+    expect(engines.get(big.tableId)!.parkForTournamentMove).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['empty-plan', 'unsafe-source'] as const)(
+    'a %s does not consume the only balance wake',
+    async (reason) => {
+      const big = table(0, 8);
+      const { m, park, engines } = manager([big, table(1, 3)]);
+      await m.checkTableBalance();
+      m.requestUrgentEliminationSweepAfter.mockClear();
+      if (reason === 'empty-plan') m.tableBalancer.calculateMoves = () => [];
+      else m.waitForHandComplete = async () => false;
+      park(big.tableId);
+      m.claimGapBalanceAtBoundary(big.tableId);
+      await settle();
+      await settle();
+      expect(m.executePlayerMoves).not.toHaveBeenCalled();
+      expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
+      expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+    }
+  );
+
+  it('does not move after a board read loses manager authority', async () => {
+    const big = table(0, 8);
+    const { m, park, engines } = manager([big, table(1, 3)]);
+    await m.checkTableBalance();
+    const read = m.loadBalancerTables.getMockImplementation();
+    m.loadBalancerTables.mockImplementation(async (...args: unknown[]) => {
+      const board = await read(...args);
+      m.eliminationMutationAllowed = () => false;
+      return board;
+    });
+    park(big.tableId);
+    m.claimGapBalanceAtBoundary(big.tableId);
+    await settle();
+    await settle();
+    expect(m.executePlayerMoves).not.toHaveBeenCalled();
+    expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
+  });
 });

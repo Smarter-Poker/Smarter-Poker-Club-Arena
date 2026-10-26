@@ -19,12 +19,20 @@
  * generation: it proves what THIS process admitted, not that every other
  * process has stopped. No instantaneous global withdrawal is claimed.
  */
+import {
+  horsePhase8SourceBoundDigest,
+  runningPhase8PolicySourceReader,
+} from './HorsePhase8PolicyDigest.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PHASE8_POLICY } from './HorseTournamentPostflop.js';
 import { CONTINUATION_POLICY } from './HorseTournamentContinuation.js';
+import {
+  horseOwnerForcedAuthority,
+  withHorseOwnerForcedActivation,
+} from './HorseOwnerForcedActivation.js';
 
 export const HORSE_PHASE8_EVIDENCE_DIRECTORY = 'docs/evidence/phase8/';
 /** The only domain the Phase 8 continuation implements. */
@@ -90,6 +98,9 @@ export interface HorseQualifiedAuthority {
   readonly admittedBoardCounts?: readonly number[];
   /** Phase 14: the inactive corrective catalog and holdout the qualification binds. */
   readonly catalogDigest?: string;
+  /** Functional Phase 14 code and baseline composition, signed together. */
+  readonly correctivePolicyDigest?: string;
+  readonly baselineSelectionsDigest?: string;
   readonly holdoutDigest?: string;
   readonly authorityKey: string;
 }
@@ -148,11 +159,7 @@ export type HorseAuthorityAdmission =
     };
 
 export type HorseAuthorityState =
-  | 'unselected'
-  | 'usable'
-  | 'refused'
-  | 'refresh_failed'
-  | 'withdrawn';
+  'unselected' | 'usable' | 'refused' | 'refresh_failed' | 'withdrawn';
 
 /** Copied into the decision ledger, execution witness and journal record. */
 export interface HorseAuthorityReceipt {
@@ -202,11 +209,12 @@ export function canonical(value: unknown): unknown {
 export const sha256 = (text: string | Buffer): string =>
   createHash('sha256').update(text).digest('hex');
 
-/** Digest of the running continuation's declared boundaries. A boundary edit
- * without a version bump still changes this, so old evidence cannot cover it. */
-export function horsePhase8PolicyDigest(): string {
-  return sha256(
-    JSON.stringify(canonical({ phase8: PHASE8_POLICY, continuation: CONTINUATION_POLICY }))
+/** Bind the declared continuation and the actual reference/read source bytes.
+ * A constants-only digest cannot qualify a changed individual read path. */
+export function horsePhase8PolicyDigest(read = runningPhase8PolicySourceReader): string {
+  return horsePhase8SourceBoundDigest(
+    JSON.stringify(canonical({ phase8: PHASE8_POLICY, continuation: CONTINUATION_POLICY })),
+    read
   );
 }
 
@@ -385,6 +393,24 @@ export function admitHorsePhase8ReleaseAuthority(
   } catch {
     return { status: 'refused', reason: 'unreadable_evidence', transient: true };
   }
+}
+
+/**
+ * The live Phase 8 admission: the committed release selection when it admits
+ * (or withdraws), otherwise the authority Dan's 2026-10-26 order issues for the
+ * running continuation ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `HorseOwnerForcedActivation.ts`). The worker and the main gate both use it.
+ */
+export function admitHorsePhase8LiveAuthority(nowMs = Date.now()): HorseAuthorityAdmission {
+  return withHorseOwnerForcedActivation(admitHorsePhase8ReleaseAuthority(nowMs), () =>
+    horseOwnerForcedAuthority({
+      phase: 'phase8',
+      continuationVersion: PHASE8_POLICY.version,
+      policyDigest: horsePhase8PolicyDigest(),
+      packId: `owner-forced/${PHASE8_POLICY.version}`,
+      domain: HORSE_PHASE8_DOMAIN,
+    })
+  );
 }
 
 /**
@@ -702,4 +728,6 @@ export class HorsePhase8AuthorityGate {
 }
 
 /** Main-thread gate for this engine process. The worker thread owns its own holder. */
-export const liveHorsePhase8Authority = new HorsePhase8AuthorityGate();
+export const liveHorsePhase8Authority = new HorsePhase8AuthorityGate(() =>
+  admitHorsePhase8LiveAuthority()
+);

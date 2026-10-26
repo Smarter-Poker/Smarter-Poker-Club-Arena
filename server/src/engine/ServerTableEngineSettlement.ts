@@ -42,6 +42,7 @@ import {
   persistTimeBanks,
   reconcileTableSeatCount,
   autoRebuyHorse,
+  readHorseTopUpBatch,
   processLeavePending,
   logBBJCollection,
   logInsuranceSettlement,
@@ -64,6 +65,12 @@ import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import {
+  cappedAutoTopUp,
+  horseAutoTopUpWanted,
+  isPlo5Variant,
+} from '../services/HorseTopUpStyle.js';
+import { bankrollEvent } from '../services/HorseBankrollTelemetry.js';
 import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
 import { gestureAfterHand } from '../services/HorseTableGestures.js';
 import {
@@ -1611,6 +1618,91 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     );
   }
 
+  /** Execute the original PLO5 refill boundary after rebuys and before continuity. */
+  protected async topUpPlo5Horses(
+    players: SeatedPlayer[],
+    handNumber: number,
+    horsesReloadedThisHand: ReadonlySet<string>
+  ): Promise<void> {
+    if (
+      this.tableInfo?.arena?.asset === 'diamonds' ||
+      this.isTournamentTable() ||
+      isMaintenanceFrozen()
+    )
+      return;
+    const variant = this.tableInfo?.game_variant;
+    if (!isPlo5Variant(variant)) return;
+    // Never a Lightning table: its Cluster refills through the pooled
+    // auto-rebuy on the session's anchor seat. A Cluster table whose
+    // Lightning switch has not been read yet is treated as Lightning.
+    if (this.clusterLightningEnabled === true) return;
+    if (this.tableInfo?.cluster_id && this.clusterLightningEnabled !== false) return;
+    const maxBuyIn = this.getMaxBuyIn();
+    if (!(maxBuyIn > 0)) return;
+    const batch = await readHorseTopUpBatch(
+      this.tableId,
+      () => this.lifecycleCanMutate() && !isMaintenanceFrozen(),
+      maxBuyIn,
+      this.tableInfo?.cluster_id
+    );
+    if (!batch || !this.lifecycleCanMutate()) return;
+    for (const horse of players) {
+      if (!horse.is_horse || horsesReloadedThisHand.has(horse.user_id)) continue;
+      if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+      const seat = batch.get(horse.user_id);
+      if (!seat || !seat.autoTopUp || !seat.clubId || seat.sittingOut || seat.leaving) continue;
+      const wanted = horseAutoTopUpWanted({
+        userId: horse.user_id,
+        variant,
+        stack: Number(horse.stack),
+        maxBuyIn,
+        autoTopUp: seat.autoTopUp,
+      });
+      if (!(wanted > 0)) continue;
+      const amount = cappedAutoTopUp({
+        userId: horse.user_id,
+        wanted,
+        wallet: seat.wallet,
+        investedThisTable: seat.invested,
+        bigBlind: Number(this.tableInfo?.big_blind) || 0,
+        minBuyIn: Number(this.tableInfo?.min_buy_in) || 0,
+        maxBuyIn,
+      });
+      if (!(amount > 0)) {
+        // Counted only when it was a real reload, not a sliver of a blind.
+        if (wanted >= (Number(this.tableInfo?.big_blind) || Infinity)) {
+          bankrollEvent('topup_refused');
+        }
+        continue;
+      }
+      const funding = await autoRebuyHorse(
+        this.tableId,
+        horse.user_id,
+        amount,
+        this.tableInfo?.club_id || '',
+        handNumber,
+        'topup'
+      );
+      if (!this.lifecycleCanMutate()) return;
+      if (funding.status !== 'funded') continue; // declined or unknown: no chips moved here
+      horse.stack = funding.stack;
+      this.hub?.emitEvent(this.tableId, {
+        type: 'add_on_applied',
+        table_id: this.tableId,
+        seat: horse.seat_number ?? null,
+        user_id: horse.user_id,
+        amount,
+        stack: funding.stack,
+        kind: 'addon',
+        timestamp: Date.now(),
+      });
+      bankrollEvent('topup_funded');
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Horse Auto Top Up: ${horse.username} +${amount} -> ${funding.stack}`
+      );
+    }
+  }
+
   protected async postHandTasks(
     players: SeatedPlayer[],
     persistenceGeneration: number
@@ -1710,8 +1802,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          THE RECORD  hand_history -> rake_distribution -> bbj_contribution ->
                      promo_playthrough -> insurance_ledger -> bbj_mini_payout
                      -> bbj_payout -> tournament_chip_sync
-         THE SEATS   pending_addons -> horse_rebuys -> chip_continuity ->
-                     horse_cashouts -> horse_table_talk -> deferred_sitouts ->
+         THE SEATS   pending_addons -> horse_rebuys -> horse_top_ups ->
+                     chip_continuity -> horse_cashouts -> horse_table_talk -> deferred_sitouts ->
                      leave_pending -> table_unlock
 
        runStep files each step by NAME into its lane (STEP_LANE) and returns
@@ -1747,6 +1839,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       tournament_chip_sync: 'record',
       pending_addons: 'seats',
       horse_rebuys: 'seats',
+      horse_top_ups: 'seats',
       chip_continuity: 'seats',
       horse_cashouts: 'seats',
       horse_table_talk: 'seats',
@@ -3751,6 +3844,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     if (!this.lifecycleCanMutate()) return;
 
     // 5. Auto-rebuy busted horses (cash games only)
+    // A horse that reloaded this hand is not also topped up this hand (5.1).
+    const horsesReloadedThisHand = new Set<string>();
     await runStep('horse_rebuys', false, async () => {
       if (!isDiamondCash && !this.isTournamentTable() && !isMaintenanceFrozen()) {
         const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
@@ -3814,6 +3909,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (funding.status === 'unknown') return;
           if (funding.status === 'funded') {
             horse.stack = funding.stack;
+            horsesReloadedThisHand.add(horse.user_id);
             this.horseRebuys.set(horse.user_id, currentRebuys + 1);
             console.log(
               `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
@@ -3830,6 +3926,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
+
+    // 5.1 PLO5 HORSE AUTO TOP UP (Dan 2026-10-24): "70% OF HORSES SHOULD BE
+    // ADDING ON IN THE PLO5 GAME. 30% SHOULD BE ON 'AUTO TOP UP'." This step is
+    // the Auto Top Up horses' half: a horse whose seat has the Auto Top Up flag
+    // on is topped back toward the table maximum between hands, as a human's
+    // Auto Top Up is, inside its bankroll policy and paid from its own wallet
+    // (HorseTopUpStyle.cappedAutoTopUp). The add-on horses (flag off) add on
+    // through HorseSessionRotator, the path every horse already used. Same
+    // funding door as the rebuy above, own idempotency key, and the same
+    // add_on_applied bubble a human's add-on shows. Every other game, and every
+    // Lightning table, is untouched.
+    await runStep('horse_top_ups', false, () =>
+      this.topUpPlo5Horses(players, snap.handNumber, horsesReloadedThisHand)
+    );
     if (!this.lifecycleCanMutate()) return;
 
     // 5.7 CHIP CONTINUITY (Operation Table Stakes, Slice 0): the hand is
@@ -3982,10 +4093,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.tearDownDepartedSeats(cashedOutIds);
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
-        // ANNOUNCED ONLY (2026-09-05): the deal told the player "Moving After
-        // This Hand"; a move planned during the hand waits for the next deal
-        // to be announced, so nobody is moved off a hand they were not told
-        // about.
+        // A Main vacancy takes this completed hand boundary, including a
+        // must-move planned while this hand was running. Requiring its notice
+        // at the next deal made the player play one entire extra feeder hand.
+        // Swaps and other move reasons keep their existing announcement rule.
+        // Keep the complete list for durable swap-hold reconciliation; the
+        // executor selects which moves may land at this completed boundary.
         await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves, diagnostic);
         const afterMirrors = this.lifecycleCanMutate();
         this.recordLeavePendingGuard(diagnostic, 'after_move_mirrors', afterMirrors);

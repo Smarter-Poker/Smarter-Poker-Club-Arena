@@ -118,7 +118,7 @@ describe('the winner overlay prints the prize at the event unit', () => {
     tick(200);
     expect(prizeLine(container)).toBeNull();
     expect(container.textContent).toContain('Champion!');
-    expect(container.textContent).not.toMatch(/\d/);
+    expect(container.textContent).toContain('1st Place');
   });
 
   it('the figure appears, at its unit, the moment the arena is read', () => {
@@ -127,5 +127,55 @@ describe('the winner overlay prints the prize at the event unit', () => {
     expect(prizeLine(view.container)).toBeNull();
     view.rerender(<TournamentWinnerOverlay {...base} prize={50} unitCents={DIAMOND_UNIT_CENTS} />);
     expect(prizeLine(view.container)).toBe('Prize: 50 Diamonds');
+  });
+});
+
+describe('The Champion Announcement', () => {
+  it('names the champion and shows first place with an exact prize', () => {
+    const { container } = render(
+      <TournamentWinnerOverlay
+        {...base}
+        championName="xXVikingXx"
+        prize={98.72}
+        unitCents={CHIP_UNIT_CENTS}
+      />
+    );
+    tick(1600);
+    expect(container.textContent).toContain('xXVikingXx');
+    expect(container.textContent).toContain('1st Place');
+    expect(prizeLine(container)).toBe('Prize: 98.72');
+  });
+  it.each([CHIP_UNIT_CENTS, DIAMOND_UNIT_CENTS])(
+    'shows every qualifier with award values at unit %s, without a false rank',
+    (unitCents) => {
+      const { container } = render(
+        <TournamentWinnerOverlay
+          {...base}
+          prize={0}
+          unitCents={unitCents}
+          qualifiers={[
+            { username: 'Alice', prize: 50 },
+            { username: 'Bob', prize: 50 },
+          ]}
+        />
+      );
+      expect(container.textContent).toContain('Qualified!');
+      expect(container.textContent).toContain('Alice: Award Value 50');
+      expect(container.textContent).toContain('Bob: Award Value 50');
+      expect(container.textContent).not.toContain('1st Place');
+      expect(container.textContent).not.toContain('Champion!');
+      expect(prizeLine(container)).toBeNull();
+    }
+  );
+  it('prints a committed zero prize rather than omitting the amount', () => {
+    const { container } = render(
+      <TournamentWinnerOverlay
+        {...base}
+        championName="Champion"
+        prize={0}
+        unitCents={CHIP_UNIT_CENTS}
+      />
+    );
+    expect(prizeLine(container)).toBe('Prize: 0');
   });
 });

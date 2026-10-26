@@ -12,6 +12,7 @@ import {
   projectThemeBucketEvidence,
 } from './support/appearanceRealtimeObservation';
 import { GAMEPLAY_CERTIFICATE_BOARD } from './support/gameplayCertificateBoard';
+import { completeCustomizationSignIn } from './support/completeCustomizationSignIn';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { OneShotRequestGate, runWithOneShotRequestGate } from './support/oneShotRequestGate';
@@ -489,33 +490,8 @@ async function signIn(page: Page, baseURL: string, account: TemporaryCustomizati
     ? titled
     : page.locator('form button[type="submit"], button[type="submit"]').first();
   await submit.click();
-  await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
-  // Wait for persistence, then reject any other identity before account writes.
-  const signedInUser = await page.waitForFunction(
-    () => {
-      try {
-        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
-        return session?.user?.id || session?.currentSession?.user?.id || null;
-      } catch {
-        return null;
-      }
-    },
-    undefined,
-    { timeout: 30_000 }
-  );
-  expect(await signedInUser.jsonValue()).toBe(account.id);
-  await signedInUser.dispose();
-
+  await completeCustomizationSignIn(page, protectedURL);
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
-  // Shared sign-in may finish on World Hub's phone welcome screen. Re-enter
-  // the protected Arena route before asking its server-backed gates.
-  await page.goto(protectedURL, {
-    waitUntil: 'domcontentloaded',
-    timeout: RESPONSE_TIMEOUT,
-  });
-  if (page.url().includes('/auth')) {
-    throw new Error(`Temporary customization account ${account.id} did not remain signed in.`);
-  }
   await ensureAcceptedTerms(page);
   await ensurePlayableProfile(page);
   await expect

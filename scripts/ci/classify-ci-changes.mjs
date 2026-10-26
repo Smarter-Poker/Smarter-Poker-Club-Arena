@@ -162,7 +162,7 @@ const settlementAttribution =
 const strandedPlayerRead =
   /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
 const contractIndexRecovery =
-  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|final-table-cleanup-batches(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|apply-recorded-migration\.mjs)|\.github\/workflows\/apply-merged-migration\.yml)$/;
+  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|serial-journal-index\.mjs|final-table-cleanup-batches(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|test-accepted-horse-window-index-postgres\.py|apply-recorded-migration\.mjs)|tests\/unit\/acceptedHorseWindowIndexCi\.test\.ts|\.github\/workflows\/apply-merged-migration\.yml)$/;
 const settlementConservationIndex =
   /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
@@ -251,6 +251,13 @@ export function classifyChangedPaths(paths) {
   );
   // Both PR builds invoke this stamper; its own changes must reach them.
   const buildProvenance = paths.includes('scripts/stamp-build-provenance.mjs');
+  // Production Build runs the route-performance gate and the helpers it
+  // imports; a change to the gate must be exercised by the build that runs it
+  // before it can merge (2026-10-25: #7985 changed the gate and its build was
+  // skipped, so the new gate would first run on someone else's PR).
+  const buildGate = matches(
+    /^scripts\/ci\/(?:route-performance|initial-load-bytes|paint-readiness|e2e-port)\.mjs$/
+  );
   const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
   const horsePriority = matches(
     /^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/
@@ -327,7 +334,7 @@ export function classifyChangedPaths(paths) {
   );
   // Script/fixture-only edits must admit accounting and its routing tests.
   const commitmentAudit = matches(
-    /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
+    /^(scripts\/ci\/test-horse-(?:commitment-audit|own-public-history)\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
   );
   // THE LAW REGISTRY IS READ FROM DISK, SO IT HAS TO SEE ITS OWN DIRECTORY
   // (2026-09-20). `tests/law-registry.law.test.ts` readdirSync's docs/laws.d/
@@ -372,7 +379,12 @@ export function classifyChangedPaths(paths) {
   const devMatches = (pattern) => devPaths.some((p) => pattern.test(p));
   return {
     src:
-      broad || cashLobbyBrowser || paths.some(cssBeatInput) || buildProvenance || matches(/^src\//),
+      broad ||
+      cashLobbyBrowser ||
+      paths.some(cssBeatInput) ||
+      buildProvenance ||
+      buildGate ||
+      matches(/^src\//),
     server:
       // Default opening reuses funded welcome reserves and the real publisher.
       matches(

@@ -55,6 +55,21 @@ export function fixedLimitBetSize(bigBlind: number, street?: string | null): num
 }
 
 /** How a table's stakes read to a player: bet sizes for limit, blinds otherwise. */
+/**
+ * The number a stakes sort orders a cash game by: the LARGER figure its
+ * stakesLabel prints (2026-10-24). A no-limit or pot-limit "1/2" is blinds
+ * 1/2; a fixed-limit "1/2" is blinds 0.50/1 posted as 1/2 bets. Sorting limit
+ * rows by their raw big blind put that "1/2" half a level below the label it
+ * prints, so on the ALL tab's High To Low a "1/2" FLH appeared again after the
+ * whole 0.50/1 group - the split Dan ruled out on 2026-10-23 ("DISPLAY ALL THE
+ * 1/2 GAMES FIRST ... AND THEN DO THE .50/1.00 GAME SAME WAY"). Within one
+ * betting structure the order is unchanged (a constant factor).
+ */
+export function stakesSortValue(bigBlind: number, variant?: string | null): number {
+  const bb = Number(bigBlind) || 0;
+  return isFixedLimitVariant(variant) ? bb * 2 : bb;
+}
+
 export function stakesLabel(smallBlind: number, bigBlind: number, variant?: string | null): string {
   const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
   if (isFixedLimitVariant(variant)) return `${fmt(bigBlind)}/${fmt(bigBlind * 2)}`;

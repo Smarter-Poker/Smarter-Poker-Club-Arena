@@ -208,7 +208,7 @@ export function BombPotWheel({
     return null;
 
   const targetIndex = handsAway - BOMB_WHEEL_MIN_HANDS;
-  const landingAngle = 5 * 360 - targetIndex * (360 / SEGMENTS);
+  const landingAngle = 5 * 360 + targetIndex * (360 / SEGMENTS);
 
   return (
     <div
@@ -237,13 +237,6 @@ export function BombPotWheel({
             viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
             aria-hidden="true"
             focusable="false"
-            data-motion="keep"
-            style={
-              {
-                '--bpw-turn': `${landingAngle}deg`,
-                '--bpw-spin-ms': `${chaseMs}ms`,
-              } as React.CSSProperties
-            }
           >
             <defs>
               <linearGradient id={`bpwMetal-${artId}`} x1="0" y1="0" x2="1" y2="1">
@@ -274,12 +267,14 @@ export function BombPotWheel({
                     fill={`url(#bpwGlass-${artId})`}
                     className={`bpw__wedge${isLit ? ' is-lit' : ''}${isWinner ? ' is-winner' : ''}${phase === 'result' && !isWinner ? ' is-dimmed' : ''}`}
                   />
+                  {(isLit || isWinner) && (
+                    <path
+                      d={wedgePath(i, SEGMENTS, 112)}
+                      className={`bpw__light${isWinner ? ' bpw__light--winner' : ''}`}
+                    />
+                  )}
                   <circle cx={peg.x} cy={peg.y} r={3.2} className="bpw__peg" />
-                  <g
-                    transform={
-                      phase === 'result' ? `rotate(${-landingAngle}, ${p.x}, ${p.y})` : undefined
-                    }
-                  >
+                  <g>
                     <text x={p.x} y={p.y} className="bpw__label" textAnchor="middle" dy="0.15em">
                       {i + BOMB_WHEEL_MIN_HANDS}
                     </text>
@@ -297,12 +292,26 @@ export function BombPotWheel({
             alt=""
             draggable={false}
           />
-          <img
-            className="bpw__selector"
-            src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
-            alt=""
-            draggable={false}
-          />
+          {/* The numbered disc stays fixed. Only the pointer orbits its center. */}
+          <div
+            key={handsAway}
+            className="bpw__selector-orbit"
+            aria-hidden="true"
+            data-motion="keep"
+            style={
+              {
+                '--bpw-turn': `${landingAngle}deg`,
+                '--bpw-spin-ms': `${chaseMs}ms`,
+              } as React.CSSProperties
+            }
+          >
+            <img
+              className="bpw__selector"
+              src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
+              alt=""
+              draggable={false}
+            />
+          </div>
           <div className="bpw__hub" aria-hidden="true">
             {phase === 'result' ? (
               <>

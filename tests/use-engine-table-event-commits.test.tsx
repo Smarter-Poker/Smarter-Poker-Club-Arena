@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { useSeatAddOnBubbles } from '../src/components/table/AddOnBubble';
 import { useEngineTableState } from '../src/hooks/useEngineTableState';
 
 const clients = vi.hoisted(
@@ -76,4 +77,39 @@ it('rejects events from the prior table and from an unmounted owner', () => {
   view.unmount();
   act(() => clients[1].onEvent({ type: 'AFTER_UNMOUNT' }));
   expect(seen).toEqual(['CURRENT_HAND']);
+});
+
+it('preserves simultaneous top-up notices and does not replay them on reconnect', () => {
+  const seen: string[][] = [];
+  function TableNotices() {
+    const { lastEvent } = useEngineTableState('table-a');
+    const bubbles = useSeatAddOnBubbles(lastEvent, ['horse-a', 'horse-b']);
+    useEffect(() => {
+      seen.push(bubbles.map((b) => b.playerId!));
+    }, [bubbles]);
+    return null;
+  }
+  render(<TableNotices />);
+  const a = {
+    type: 'add_on_applied',
+    table_id: 'table-a',
+    seat: 1,
+    user_id: 'horse-a',
+    amount: 25,
+    timestamp: 100,
+  };
+  const b = {
+    type: 'add_on_applied',
+    table_id: 'table-a',
+    seat: 2,
+    user_id: 'horse-b',
+    amount: 50,
+    timestamp: 101,
+  };
+  act(() => {
+    clients[0].onEvent(a);
+    clients[0].onEvent(b);
+    clients[0].onEvent({ ...a });
+  });
+  expect(seen.at(-1)).toEqual(['horse-a', 'horse-b']);
 });

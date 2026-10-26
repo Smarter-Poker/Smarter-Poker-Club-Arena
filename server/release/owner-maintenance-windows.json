@@ -2,12 +2,178 @@
   "version": 1,
   "windows": [
     {
-      "id": "2026-10-23-river-nuts-v2",
-      "ownerOrder": "Dan, 2026-10-23 11:07 America/Chicago: \"NO, I WANT YOU TO RUN THIS NOW, DO A 11:55 ENGINE RESET AND MAKE THIS LIVE NOW.\" (river nuts always bet full, PR #7788)",
-      "contains": "6416f795ba314647f381856f1dd645be48920f22",
-      "notBefore": "2026-10-23T17:00:00Z",
-      "notAfter": "2026-10-23T21:30:00Z",
-      "announceAtChicagoMinutes": [53, 54]
+      "id": "2026-10-26-force-activate-every-horse-phase-now",
+      "ownerOrder": "Dan, 2026-10-26 in this chat: \"FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING\", after asking that every horse-brain update and all 15 phases be 100% activated for every horse; standing order the same evening for horse-brain changes: \"MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8182, merge 4a30c966e150f6edc253ec9c8ccc9e007ace3fea: Phases 8, 10, 11, 12, 13 and 14 of the horse brain make live decisions under the owner's order instead of running in shadow. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "4a30c966e150f6edc253ec9c8ccc9e007ace3fea",
+      "notBefore": "2026-10-26T14:34:40Z",
+      "notAfter": "2026-10-26T20:26:40Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-premium-set-keeps-betting-now",
+      "ownerOrder": "Dan, 2026-10-25 21:09 Chicago, in this chat, on a horse checking AA down on 9h 5s 3s 9s 6c: \"HORSES CAN NOT EVER BE PLAYING PASSIVELY WITH PREMIUM HANDS ... NEVER CHECKING IT DOWN!! MAKE THESE FIXES NOW FOR THE HORSE BRAIN AND UPDATE ALL 1000 HORSES\"; 23:12 Chicago: \"finish it up now, and push and publish now, not at 4am. finish up any and all unfinished work\". One off-cycle engine activation of protected main containing PR #8166, merge c2a5cd44bae19d689bd22e7959f272bcf0ee201a: the hold'em premium rule (live since #8122/#8138) did not count a premium pocket pair that made a set under a higher board card (QQ on a K-high board with a third queen) as a made hand, so that horse could still check its set down; #8166 counts the set, so it keeps betting. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "c2a5cd44bae19d689bd22e7959f272bcf0ee201a",
+      "notBefore": "2026-10-26T12:40:00Z",
+      "notAfter": "2026-10-26T18:30:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-paired-board-receipt-fix-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, on the PLO paired-board fold: \"MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\"; 23:10 Chicago: \"I NEED YOU TO INSURE THAT ANY AND ALL UPDATES TO THE HORSES BRAIN ... ARE 100% ACTIVATED\". One immediate certified off-cycle engine activation of protected main containing PR #8138, merge 26dab2bacc13319b063f53023730b089ddac8501: the live paired-board fold was applied after the policy graph was sealed, so the engine refused every such decision as an invalid policy receipt (495 refused decisions on 2026-10-26 against 9 the day before) and the horse snap-folded through the zero-think-time fallback; the same merge moves the not-yet-serving hold'em premium rule (#8122) into the graph before it can do the same. The 04:00 window was taken by the older queued release 63a25f18, which does not contain this merge. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
+      "contains": "26dab2bacc13319b063f53023730b089ddac8501",
+      "notBefore": "2026-10-26T09:18:00Z",
+      "notAfter": "2026-10-26T15:08:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-every-funded-horse-adds-on-tonight",
+      "ownerOrder": "Dan, 2026-10-25 23:06 Chicago, in this chat: \"Approved - activate the 100% horse add-on fix at the next :55 break tonight.\" Earlier the same evening: \"EVERY HORSE, IF THEY ARE IN THE TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD 100% BE ADDING ON IN EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE SEAT!\" One off-cycle engine activation at the next hourly :55 Chicago break (later :55 breaks as fallback) of protected main containing PR #8111, merge 867f3ec94f7b6397e377a6b94dbf34003e7d1141 (every seated funded horse takes the add-on; the offer runs in repeated passes ahead of the late-registration branch). The earlier anchor e81a9e7db (#8093) is already serving in 9f4f98f27 and grants nothing. Preserve the existing last-hand lead, drain, certified freeze, rollback reserve, thaw and the seal's one-window-per-hour limit. This exception ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "867f3ec94f7b6397e377a6b94dbf34003e7d1141",
+      "notBefore": "2026-10-26T04:07:24Z",
+      "notAfter": "2026-10-26T09:57:24Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-late-reg-tables-and-add-ons-now",
+      "ownerOrder": "Dan, 2026-10-25 18:05 Chicago, in this chat, after Sunday Funday Happy Hour table 14 sat dealt-out for 16 minutes: \"Approved - attach the Club Arena repo with push access and ship the late-registration table fix live now.\" 18:16: \"YOU NEED TO FIX THIS AT ITS ROOT CAUSE AND PREVENT THIS FROM HAPPENING EVER AGAIN!\" 18:18, on 0 of 135 horses adding on: \"70% OF HORSES ARE SUPPOSED TO ADD ON! NOT ZERO EVER!!\" One off-cycle engine activation at the next hourly :55 Chicago break (later :55 breaks as fallback) of protected main containing PR #8093 (late-registration tables and add-on windows served before a bust can rewind the sweep). Preserve the existing last-hand lead, drain, certified freeze, rollback reserve and thaw. This exception ends once the containing engine is serving.",
+      "contains": "e81a9e7dbde08d8439afd66c093bade4b55f8a24",
+      "notBefore": "2026-10-26T01:28:53Z",
+      "notAfter": "2026-10-26T07:18:53Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-plo-paired-board-fold-widening-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8104, merge afea03a164ceb5397700d594917888b382091bce (the PLO4 and paired-flop widening). The earlier anchor acb5e84e9 (#8088) is already serving in fdd0a7efd through the bust-door release and granted nothing. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
+      "contains": "afea03a164ceb5397700d594917888b382091bce",
+      "notBefore": "2026-10-26T01:50:00Z",
+      "notAfter": "2026-10-26T07:40:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-bust-door-fix-tonight",
+      "ownerOrder": "Dan, 2026-10-25 18:48 Chicago, Claude chat (claude.ai/code/session_01G1J5sfS2nZCBxr6ETNsY98): \"INSTALL THE BUST FIX TONIGHT AS AN EMERGENCY ENGINE RELEASE\", in direct response to the choice between the routine 04:00 Chicago activation and an off-cycle install before the two 20:00 Chicago chests-only Sunday Funday Mystery events. One immediate certified off-cycle engine activation of protected main containing PR #8090, merge 1efd9504e0916918f70e8e98ccdcea296ccec48a: every bounty_blocked answer from the knockout door is a recorded bust, so the elimination batch no longer stops after one bust per sweep. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "1efd9504e0916918f70e8e98ccdcea296ccec48a",
+      "notBefore": "2026-10-25T23:59:00Z",
+      "notAfter": "2026-10-26T04:59:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-mtt-restart-root-now",
+      "ownerOrder": "Dan, 2026-10-25 22:38 UTC, Codex chat 01a17361-fb77-7a81-88b6-de859e678164: \"Activate off-cycle now\", in direct response to the choice between a certified immediate cutover of the merged MTT restart fix and October 26 04:00 Chicago. One immediate certified off-cycle engine activation of protected main containing PR #8074, merge 753aecbc5ce0dc65bf35ddfcb96eaa6939be56da, which retires settled knockout wait clocks and preserves newly pending work. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving; exact stable-client and engine live-table verification remains required. No Cashier source changes or unrelated repair is authorized by this entry.",
+      "contains": "753aecbc5ce0dc65bf35ddfcb96eaa6939be56da",
+      "notBefore": "2026-10-25T22:38:00Z",
+      "notAfter": "2026-10-26T04:28:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-separable-reliability-01a17363",
+      "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs, plus the connected decline-order and cutover-deadline follow-up. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry. The anchor is protected final correctness merge 98547198 (#8051). The earlier first-batch anchor 662b8e1a is now served inside c3ed86482 and grants no additional activation. This remaining order applies to the unserved per-decision decline ordering fix. Verify containing protected source and serving ancestry before claiming completion. Carries forward the already protected #8046 named entry-big-blind constraint dependency through the same installer and its installed-history checks; never replay an installed migration or create a second installer.",
+      "contains": "98547198d5daccf29015fbea9b5d6260fa43327a",
+      "notBefore": "2026-10-25T18:18:56Z",
+      "notAfter": "2026-10-26T00:18:56Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
+    },
+    {
+      "id": "2026-10-25-plo5-immediate-cutover",
+      "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don’t call it done until it’s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8048 (whole-game 70/30 correction) and PR #8042 (cent rounding and notices); preserve drain, freeze, rollback reserve and thaw. The prior #8042 anchor is already serving in c3ed8648 but does not contain the requested whole-game quota correction. This same bounded order now names the protected #8048 merge, retains its original expiry, and ends once that corrected commit is serving.",
+      "contains": "bf3dc2a6c3e877dd5760b75f7ad992c33975bc4f",
+      "notBefore": "2026-10-25T17:57:28Z",
+      "notAfter": "2026-10-25T23:47:28Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-lightning-reset-now",
+      "ownerOrder": "Dan, 2026-10-25, Codex chat 01a17369-bfd4-7670-9634-149d8323beaf: \"reset now, not at 4 am\" in direct response to the Lightning newcomer big-blind and all-in-showdown delivery report. One immediate off-cycle reset to activate protected #8026 and #8040 and the merged main containing them, with the existing last-hand lead, drain, certified freeze, named constraint installation, rollback and thaw. This exception ends once the containing engine is serving.",
+      "contains": "80d1e6319afffa9141ca3dba86a97b9c2c4a4c18",
+      "notBefore": "2026-10-25T17:42:21Z",
+      "notAfter": "2026-10-25T23:32:21Z",
+      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
+    },
+    {
+      "id": "2026-10-25-horse-v53-phase-two-asap",
+      "ownerOrder": "Dan, 2026-10-24 17:53 Chicago, on the V53 horse pressure work: \"PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. HORSES ARE LOSING AT A RIDICULOUS RATE AGAINST WOOWOO ... THESE CHANGES NEED TO TAKE EFFECT ASAP!\"; 21:48 \"PROCEED TO THE NEXT PHASE\"; 22:11 \"FINISH EVERYTHING UP NOW, MAKE SURE ITS FULLY ACTIVATED WITH EVERY SINGLE HORSE\"; 22:23 \"KEEP GOING UNTIL THIS IS 100\". Off-cycle release at the next hourly :55 break (later :55 breaks as fallback) of main from 1b64e000f (everything merged since the serving bbd6db8e) plus the V53 follow-ups #7986 (stop flatting the aggressive human's 3-bet) and #7963 (continued barrel pressure) when merged.",
+      "contains": "1b64e000f7b52f456ca9c7e88afb9d4b721fba3a",
+      "notBefore": "2026-10-25T03:24:14Z",
+      "notAfter": "2026-10-25T09:14:14Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-lightning-horse-reads-asap",
+      "ownerOrder": "Dan, 2026-10-24 17:54 Chicago, on the Lightning horse reads programme (PR #7950 and its follow-up phases): \"PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. AS SOON AS YOUR CODE AND WORK IS COMPLETED, AND YOU VERIFIED ITS ACTIVATED WITH ALL 1000 HORSES, PUSH AND PUBLISH AND DO AN ENGINE RESET IF YOU HAVE TO.\" Repeated 21:20 Chicago: \"complete the task in full\". Applies only to making protected 99f89c63 (#7950: Lightning hands teach the horse mind) and the merged main around it live at the next hourly :55 break, later breaks as fallback.",
+      "contains": "99f89c631a46ad79ef06c139fbde95025ab4865b",
+      "notBefore": "2026-10-25T02:27:00Z",
+      "notAfter": "2026-10-25T08:26:00Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-horse-publish-asap-1855",
+      "ownerOrder": "Dan, 2026-10-24 17:52 Chicago: \"NO, PUSH AND PUBLISH THIS AS SOON AS POSSIBLE. DO NOT WAIT UNTIL 4 AM. PUSH EVERYTHING WHEN YOUR DONE.\" Off-cycle release at the next hourly :55 break (18:55 Chicago, later breaks as fallback) for everything merged on main since b1f5e761: the horse work and the merged cash, table, tournament and Lightning fixes.",
+      "contains": "6aba0e019a22243f65566608827a7252070a1b5e",
+      "notBefore": "2026-10-24T22:56:00Z",
+      "notAfter": "2026-10-25T02:58:00Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-v52-range-advantage-1555",
+      "ownerOrder": "Dan, 2026-10-24 14:33 Chicago, on the V52 range-advantage measurement (#7915) being left for the routine 04:00 release: \"NO LAUNCH IT AT THE 3:55 BREAK.\" Applies only to making protected ebe9363e (#7915, v52RangeAdvantage switch default on and its nightly league cards) live at the 15:55 Chicago break, with 16:55 as the fallback if 15:55 is missed.",
+      "contains": "ebe9363ec3189b17c655f8c87954cae1010c21f4",
+      "notBefore": "2026-10-24T19:34:22Z",
+      "notAfter": "2026-10-24T21:58:00Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-main-seat-rest-timing",
+      "ownerOrder": "Dan, 2026-10-24 09:45 Chicago: \"FINSIH UP ALL OF THIS\" on the Main seat timing report, which stated that PR #7900 (110e1b7c1) goes live at the routine 4:00 AM release tomorrow and \"To get it live sooner, you'd need to order an off-cycle release window\"; same message: \"MAKE SURE THE REMAINING 288 HORSES GET THE UPDATED BRAIN\". Applies only to making protected 110e1b7c1 (a Main seat planned or filled under the 2-second rest takes the next hand) live.",
+      "contains": "110e1b7c111bee6e442d6407cf050cd677ea3daf",
+      "notBefore": "2026-10-24T14:48:44Z",
+      "notAfter": "2026-10-24T20:47:44Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-horse-fleet-final-activation",
+      "ownerOrder": "Dan, 2026-10-23 evening: \"Fix the cutover failure and get these upgrades live on every horse NOW. Don't stop at merged or installed. Verify every horse is using the new decision making and persistent memory\"; \"ALL HORSES NEED TO BE USING THESE SKILL ON EVERY SINGLE HAND\"; \"these horses have GOT TO STOP ... CALLING OFF THERE WHOLE STACKS WITH WEAK FLUSHES IN PLO4 PLO5 AND PLO6\"; 2026-10-24 01:30 Chicago: \"PICK UP WHERE THE OTHER AGENT LEFT OFF\". The 735e and f16 cutovers rolled back on the bounded launch, so the earlier windows expire unserved. Applies only to making protected f16e2c13 (all horse gameplay repairs, weak-flush guard and bounded memory caller) live on the shared horse decision path.",
+      "contains": "f16e2c1384bfccef49ba03094f6202de05365fca",
+      "notBefore": "2026-10-24T06:33:27Z",
+      "notAfter": "2026-10-24T12:32:27Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-plo-river-range-repair",
+      "ownerOrder": "Dan, 2026-10-23 evening: \"WHY THE FUCK WOULD THE HORSE RAISE INSTEAD OF JUST CALLING ON RIVER\" (hand45872846); \"IMPLEMENT THE HORSES WITH MORE PLO SKILLS ... RANGE ADVANTAGE, BLOCKERS\" and turn/river range understanding. Continues explicit push/publish NOW for every horse, not wait until4am; limited to these connected horse decision repairs.",
+      "contains": "1a2bd6184bc91f304a06650afe91240c19f89d3b",
+      "notBefore": "2026-10-24T01:40:08Z",
+      "notAfter": "2026-10-24T07:40:08Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-24-plo-cold-flush-repair",
+      "ownerOrder": "Dan, 2026-10-23 evening: \"GOT HORSES OVER CALLING 2 ALL IN'S WITH SMALL FLUSHED IN PLO5\"; \"IT JUST COST US 400 CHIPS\"; \"EVERY SINGLE HORSE IS UPDATED IN BOTH HOLDEM AND PLO FOR EVERYTHING WE FIXED TODAY\". Continuing the explicit order to push/publish NOW and not wait until 4 am. Applies only to the confirmed hand45855223 decision repair.",
+      "contains": "1a2bd6184bc91f304a06650afe91240c19f89d3b",
+      "notBefore": "2026-10-24T01:12:00Z",
+      "notAfter": "2026-10-24T07:12:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-23-horse-memory-strategy",
+      "ownerOrder": "Dan, 2026-10-23: \"you have to push and publish all of these changes and upgrades NOW\"; \"do not wait until 4 am to do this\". Holdem and all PLO opponent memory, premium raises, continuation and range advantage.",
+      "contains": "f35c068daeefd3005f967af16844a336a53d2e6b",
+      "notBefore": "2026-10-23T20:41:08Z",
+      "notAfter": "2026-10-24T02:41:08Z",
+      "migrations": ["20261023183513_durable_variant_scoped_horse_opponent_memory.sql"]
+    },
+    {
+      "id": "2026-10-24-arena-dealing-incident",
+      "ownerOrder": "Dan, 2026-10-23: \"THIS NEEDS TO BE FIXED AT ONCE, PLAYERS ARE SITTED AT THE TABLE BUT CARDS AREN'T DEALING... FIX WHAT EVER IS BLOCKING THIS THEN FIX IT SO IT CAN'T HAPPEN AGAIN...\" Emergency incident repair includes missing satellite dealer admission while its boundary is held.",
+      "contains": "a1d1a637371f601921f0620f1d26fa517eb06f29",
+      "notBefore": "2026-10-24T02:33:00Z",
+      "notAfter": "2026-10-24T06:33:00Z"
     }
   ]
 }

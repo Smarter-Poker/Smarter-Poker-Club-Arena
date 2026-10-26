@@ -1,4 +1,5 @@
-import { test, expect, devices, type Page } from '@playwright/test';
+import { test, expect, devices, type Page, type Frame } from '@playwright/test';
+import { CASH_SPECTATOR_ACTION, CASH_TABLE_CARD_SELECTOR } from './support/cashTableCandidates';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
@@ -239,18 +240,13 @@ test.describe('the mobile lobby chrome on production', () => {
     expect(m.offCentreByPct, `${printed} is off the painted title's centre`).toBeLessThan(1);
   });
 
-  test('Play Poker opens an eligible club without opening setup options', async ({ page }) => {
+  test('Create, Find and Join lead the arena with no Play Poker plate', async ({ page }) => {
     await openLobby(page);
     await page.goto('./', { waitUntil: 'domcontentloaded' });
-    const play = page.getByRole('button', { name: /^Play Poker In / });
-    await expect(play).toBeVisible({ timeout: 45_000 });
-    const options = page
-      .locator('details')
-      .filter({ has: page.getByText('Club Options', { exact: true }) });
-    await expect(options).not.toHaveAttribute('open', '');
-    await play.click();
-    await expect(page).toHaveURL(/\/clubs\/[^/?#]+/);
-    await expect(page.locator('.club-home')).toBeVisible({ timeout: 30_000 });
+    const actions = page.getByRole('navigation', { name: 'Poker Arena Actions', exact: true });
+    await expect(actions).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole('button', { name: /^Play Poker In / })).toHaveCount(0);
+    await expect(page.getByText('Club Options', { exact: true })).toHaveCount(0);
   });
 
   test('compact rows open details and filters stay at their original position', async ({
@@ -306,6 +302,98 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toBeVisible();
     await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
     await expect(page.getByRole('dialog').locator('.arena-game-card')).toHaveCount(0);
+  });
+
+  test('tournament Details stays inside the spectator table lobby tab', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      !process.env.SP_EMAIL || !process.env.SP_PASS,
+      'The embedded lobby journey requires the isolated production certificate account.'
+    );
+    expect(
+      /^ca-customization-cert-.*@example\.invalid$/.test(process.env.SP_EMAIL || ''),
+      'This read-only journey may use only the reserved certificate identity'
+    ).toBe(true);
+    // Use this group's existing 120-second budget: navigation only, with no
+    // additional natural-hand observation or participation phase.
+    const participation: string[] = [];
+    const routeTrace: string[] = [];
+    let tableUrl = '';
+    let tournamentId: string | null = null;
+    const forbidden =
+      /\/(?:action|leave|post-bb|rabbit-hunt|rest\/v1\/(?:table_seats|tournament_players|wallet_transactions|rpc\/(?:fn_cash_game_join|atomic_table_buyin|fn_lightning_join|fn_lightning_buy_in|fn_take_seat_and_buy_in|fn_register_for_tournament|fn_unregister_from_tournament|fn_leave_seat_and_refund|atomic_table_rebuy|process_tournament_rebuy|fn_join_waitlist)))(?:[/?#]|$)/;
+    // Refuse an unintended participation request before it can move a seat or
+    // chips. The assertion below makes every attempted write a failure.
+    await page.route(forbidden, async (route) => {
+      const request = route.request();
+      if (['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.continue();
+      participation.push(`${request.method()} ${new URL(request.url()).pathname}`);
+      await route.abort('blockedbyclient');
+    });
+    const observeRoute = (frame: Frame) => {
+      if (frame === page.mainFrame()) routeTrace.push(frame.url());
+    };
+    try {
+      await openLobby(page);
+      await page.getByRole('tab', { name: 'ALL', exact: true }).click();
+      const cash = page.locator(`${CASH_TABLE_CARD_SELECTOR}:visible`).first();
+      await expect(cash, 'the certificate club has a live cash game to view').toBeVisible({
+        timeout: 20_000,
+      });
+      await cash.getByRole('button', { name: /^Details:/ }).click();
+      const panel = page.getByRole('dialog').filter({ has: page.locator('.arena-game-card') });
+      await expect(panel).toHaveCount(1);
+      // View is observation. Never press Join, a seat, a registration control,
+      // or a quick-join game tile anywhere in this journey.
+      await panel.getByRole('button', { name: CASH_SPECTATOR_ACTION }).click();
+      await expect(page).toHaveURL(/\/table\/[0-9a-f-]{36}(?:[?#]|$)/i, { timeout: 20_000 });
+      const actionBar = page.locator('.table-tab-bar:visible').first();
+      await expect(actionBar).toBeVisible({ timeout: 20_000 });
+      await actionBar.getByRole('button', { name: 'Open Another Table', exact: true }).click();
+      await page
+        .getByRole('dialog', { name: 'Quick Join', exact: true })
+        .getByRole('button', { name: 'Browse Full Lobby', exact: true })
+        .click();
+      const lobby = page.locator('.multi-table-page__lobby-tab .club-home:visible');
+      await expect(lobby).toBeVisible({ timeout: 30_000 });
+      await lobby.getByRole('tab', { name: 'MTT', exact: true }).click();
+      const tournament = lobby
+        .locator('[data-testid="lobby-game-row"][data-kind="mtt"]:visible')
+        .first();
+      await expect(tournament, 'the certificate club lists a tournament to read').toBeVisible({
+        timeout: 20_000,
+      });
+      tournamentId = await tournament.getAttribute('data-id');
+      expect(tournamentId).toMatch(/^[0-9a-f-]{36}$/i);
+      await tournament.getByRole('button', { name: /^Details:/ }).click();
+      await expect(panel).toHaveCount(1);
+      tableUrl = page.url();
+      expect(new URL(tableUrl).pathname).toMatch(/\/table\/[0-9a-f-]{36}$/i);
+      // The app can recover a wrong /tournaments route through its backstop.
+      // Observe every native same-document navigation so a final restored URL
+      // cannot hide the route departure this source repair prevents.
+      routeTrace.push(tableUrl);
+      page.on('framenavigated', observeRoute);
+      await panel.getByRole('button', { name: 'Details', exact: true }).click();
+      await expect(page.locator('.tournament-details[data-lobby-tab="true"]:visible')).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(actionBar).toBeVisible();
+      expect(page.url()).toBe(tableUrl);
+      expect(
+        routeTrace.every((url) => url === tableUrl),
+        'Details left the running table route'
+      ).toBe(true);
+      expect(participation, 'spectator navigation attempted participation').toEqual([]);
+    } finally {
+      page.off('framenavigated', observeRoute);
+      await testInfo.attach('embedded-tournament-details-route.json', {
+        body: Buffer.from(JSON.stringify({ tableUrl, tournamentId, routeTrace, participation })),
+        contentType: 'application/json',
+      });
+      // Keep the participation refusal installed through page teardown.
+    }
   });
 
   test('the footer frame sits on the bottom edge with nothing under it', async ({ page }) => {

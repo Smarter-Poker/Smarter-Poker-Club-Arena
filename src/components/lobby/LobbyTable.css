@@ -42,9 +42,11 @@
   z-index: 2;
   background: linear-gradient(180deg, #14161c 0%, #0e1014 100%);
   border-bottom: 1px solid var(--border-primary, rgba(65, 105, 225, 0.3));
-  color: var(--text-tertiary, #8b8f98);
-  font-size: 0.6875rem;
-  font-weight: 600;
+  color: #c3cad3;
+  /* Dan 2026-10-23: the column headings read larger. */
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   /* Dan 2026-08-24: "EVERYTHING SHOULD BE CENTERED UNDER THE TITLE ON THIS,
@@ -1629,7 +1631,7 @@ abbr.lt-variant[title] {
     padding-block: 12px;
     background: rgba(13, 17, 25, 0.97);
     border-bottom-color: rgba(80, 135, 225, 0.26);
-    color: #758198;
+    color: #c3cad3;
   }
 
   .lt-row {
@@ -2094,4 +2096,12 @@ abbr.lt-variant[title] {
   color: #9aa4b2;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* Lightning is a format, so its painted bolt replaces the live dot even while waiting. */
+.lt-lightning-icon {
+  flex: none;
+  width: 14px;
+  height: 20px;
+  object-fit: contain;
 }

@@ -21,6 +21,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { expectRoute } from './routes/utils';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
 
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const LOBBY = `clubs/${CLUB_ID}`;
@@ -290,3 +291,69 @@ test.describe('Club lobby', () => {
     ).toBeLessThan(4);
   });
 });
+
+// This is the ordinary must-move game, distinct from Lightning. Read only:
+// opening a card and refreshing it must never admit a player or buy chips.
+for (const width of [393, 1440]) {
+  test(`PLO5 1/2 Madness exposes its actual rules at ${width}px`, async ({ page }) => {
+    test.setTimeout(210_000);
+    expect(
+      Boolean(process.env.SP_EMAIL && process.env.SP_PASS),
+      'isolated authenticated account required'
+    ).toBe(true);
+    await page.setViewportSize({ width, height: 900 });
+    const moneyCalls: string[] = [];
+    const money = new Set([
+      'fn_cash_game_join',
+      'atomic_table_buyin',
+      'fn_lightning_join',
+      'fn_lightning_buy_in',
+    ]);
+    page.on('request', (request) => {
+      const name = new URL(request.url()).pathname.split('/').at(-1)!;
+      if (money.has(name)) moneyCalls.push(name);
+    });
+    const memberClub = process.env.E2E_LIGHTNING_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
+    const offer = diamondEntryRead(page);
+    await page.goto(`clubs/${memberClub}`, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
+    await prepareCashLobbyActions(page);
+    const all = page.getByRole('tab', { name: 'ALL', exact: true });
+    await expect(all).toBeVisible({ timeout: 45_000 });
+    await settleDiamondSpinsOffer(page, offer);
+    await all.click();
+    const row = page
+      .locator(
+        '[data-testid="lobby-game-row"][data-kind="cash"]:visible, .club-home__games .lt-row[data-kind="cash"]:visible'
+      )
+      .filter({ hasText: /PLO5/ })
+      .filter({ hasText: /1\s*\/\s*2/ })
+      .filter({ hasText: /Madness/ })
+      .filter({ hasNotText: /Lightning/ })
+      .first();
+    await expect(row, 'the member lobby must expose the running ordinary Madness game').toBeVisible(
+      { timeout: 45000 }
+    );
+    await expect(row).toContainText('50% Minimum VPIP');
+    await expect(row).toContainText('Big Blind Ante');
+    const details = row.getByRole('button', { name: /^Details:/ });
+    if (await details.count()) await details.click();
+    else await row.click();
+    const panel = page
+      .getByRole('dialog')
+      .filter({ has: page.locator('.arena-game-card') })
+      .first();
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText('Madness');
+    await expect(panel).toContainText('50% Minimum VPIP');
+    await expect(panel.getByRole('button', { name: 'Join Lightning', exact: true })).toHaveCount(0);
+    const selected = new URL(page.url()).searchParams.get('game');
+    expect(selected, 'the selected game must survive refresh').toBeTruthy();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await prepareCashLobbyActions(page);
+    await expect(panel).toBeVisible({ timeout: 45000 });
+    await expect(panel).toContainText('Madness');
+    expect(new URL(page.url()).searchParams.get('game')).toBe(selected);
+    expect(moneyCalls, 'reviewing or refreshing Madness must not spend chips').toEqual([]);
+  });
+}

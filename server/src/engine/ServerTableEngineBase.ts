@@ -152,12 +152,19 @@ import {
   pendingSeatMoves,
   seatMoveCancelledNotice,
   seatMoveNotice,
+  seatMoveIsDue,
+  type ExecuteSeatMovesOptions,
   SeatMoveBatchError,
   type PendingSeatMove,
   type SeatMoveOutcome,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
+import {
+  movesPlannedGeneration,
+  noteSeatArrival,
+  seatArrivalGeneration,
+} from '../cluster/seatBoundarySignals.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import {
   claimMovedPresence,
@@ -182,7 +189,11 @@ import type {
 import { reportError } from '../services/errorReporter.js';
 import { isMissingFunctionError } from '../lightning/rpcErrors.js';
 import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
-import { presenceFromFsm, type PresenceTableReport } from '../lightning/LightningPresence.js';
+import {
+  ENGINE_INPUT_DEVICE_PLATFORM,
+  presenceFromFsm,
+  type PresenceTableReport,
+} from '../lightning/LightningPresence.js';
 import { subscribeBombRequests, unsubscribeBombRequests } from '../services/BombRequestBus.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
@@ -2035,6 +2046,16 @@ export abstract class ServerTableEngineBase {
     mucked?: boolean;
     handDescription?: string;
   }> = [];
+
+  /**
+   * Dan 2026-10-24: two or more hands reached showdown and at least one of
+   * them is an all-in player's. Read once, at SHOWDOWN (or when a run-it-
+   * multiple hand records its results), while the hand's players are still
+   * live, and handed to handCompletionHoldMs so the felt keeps the tabled
+   * hands and the winner up for HAND_COMPLETION.ALL_IN_SHOWDOWN_EXTRA_MS
+   * longer. Reset with the showdown results at every deal.
+   */
+  protected currentHandAllInShowdown = false;
 
   /**
    * SHOWDOWN SYSTEM 2026-08-25: true when the player mucked at showdown and
@@ -4591,6 +4612,13 @@ export abstract class ServerTableEngineBase {
    * pending list no longer carries their move (it was cancelled or expired).
    */
   protected heldForSwap: Set<string> = new Set();
+  /**
+   * SEAT-BOUNDARY GENERATIONS (2026-10-24), captured before this table's
+   * pending-move read and roster read; compared, synchronously, immediately
+   * before dealHand. See server/src/cluster/seatBoundarySignals.ts.
+   */
+  protected seatMovePlanGenerationAtRead = 0;
+  protected seatArrivalGenerationAtRoster = 0;
 
   /**
    * WHAT THIS ENGINE STILL HOLDS FOR A MOVE, AGAINST WHAT IS STILL PENDING
@@ -4675,11 +4703,47 @@ export abstract class ServerTableEngineBase {
   protected async announcePendingSeatMoves(): Promise<boolean> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return true;
     if (!this.lifecycleCanMutate()) return false;
+    // Captured BEFORE the read: a plan committed after this instant reaches
+    // the synchronous check before dealHand even if this read missed it.
+    this.seatMovePlanGenerationAtRead = movesPlannedGeneration(this.tableInfo?.cluster_id);
     const pending = await this.readPendingSeatMoves();
     // A fresh engine has no local swap holds. Unknown durable readiness must
     // defer its next deal too, rather than move a player out of a live hand.
     if (!this.lifecycleCanMutate() || pending === null) return false;
     this.reconcileSeatMoveHolds(pending);
+    // A vacancy may be planned during the between-hand rest, after settlement
+    // already read its moves. Feed it here before another feeder hand starts.
+    const mainMoves = pending.filter(
+      (move) =>
+        seatMoveIsDue(move, { announcedOnly: true, mustMoveOnly: true }) &&
+        this.seatedPlayers.some(
+          (seat) =>
+            seat.user_id === move.player_id && seat.occupancy_id === move.source_occupancy_id
+        )
+    );
+    if (mainMoves.length > 0) {
+      // The outer read/deal budget cannot cancel an issued transfer. Keep this
+      // boundary until its actual result settles, including after a timeout.
+      const release = await this.acquireSeatBoundary();
+      try {
+        if (!this.lifecycleCanMutate()) return false;
+        await this.executePendingSeatMoves({ announcedOnly: true, mustMoveOnly: true }, pending);
+        if (!this.lifecycleCanMutate()) return false;
+      } finally {
+        release();
+      }
+      // A frozen or unresolved transfer must not be sent into another hand.
+      // The next normal boundary read resolves a terminal refusal as well.
+      if (
+        mainMoves.some((move) =>
+          this.seatedPlayers.some(
+            (seat) =>
+              seat.user_id === move.player_id && seat.occupancy_id === move.source_occupancy_id
+          )
+        )
+      )
+        return false;
+    }
     const fresh: string[] = [];
     for (const m of pending) {
       if (
@@ -4715,6 +4779,30 @@ export abstract class ServerTableEngineBase {
     return this.lifecycleCanMutate();
   }
 
+  /** Captured immediately before the roster read of each loop iteration. */
+  protected captureSeatArrivalGeneration(): void {
+    this.seatArrivalGenerationAtRoster = seatArrivalGeneration(this.tableId);
+  }
+
+  /**
+   * THE LAST LOOK BEFORE THE DEAL (2026-10-24). Synchronous by design: it
+   * sits between the two-second rest and dealHand, where nothing may wait
+   * (the-next-hand-deals-two-seconds-after-completion). True only when a
+   * must-move plan for this table's game, or a seat arriving at this table,
+   * committed after this iteration read them; the loop then goes round once
+   * more so the plan is executed before another feeder hand and the arrival
+   * is dealt into Main's next hand. Every ordinary deal returns false here.
+   */
+  protected seatBoundaryChangedUnderRest(): boolean {
+    if (this.isTournamentTable()) return false;
+    const planned =
+      movesPlannedGeneration(this.tableInfo?.cluster_id) !== this.seatMovePlanGenerationAtRead;
+    const arrived = seatArrivalGeneration(this.tableId) !== this.seatArrivalGenerationAtRoster;
+    if (!planned && !arrived) return false;
+    this.setLoopPhase(planned ? 'seat_move_planned_under_rest' : 'seat_arrived_under_rest');
+    return true;
+  }
+
   /**
    * A HELD PLAYER IS NOT IN THE DEAL. Read wherever the table counts who is
    * playing the next hand (activePlayers, the liveness count).
@@ -4731,18 +4819,20 @@ export abstract class ServerTableEngineBase {
    * else; `wakeCluster` never throws, and this wrapper makes sure of it, so a
    * controller fault can never become a table fault. 2026-09-05.
    */
-  protected wakeClusterGame(_reason: string): void {
+  protected wakeClusterGame(reason: string): void {
     const gameId = this.tableInfo?.cluster_id;
     if (!gameId || this.isTournamentTable()) return;
     try {
-      wakeCluster(String(gameId));
+      // A seat that opened is planned now, not after the 500 ms burst hold:
+      // see ClusterWakeOptions (a vacancy does not wait for the debounce).
+      wakeCluster(String(gameId), { now: reason === 'seat_left' });
     } catch {
       /* wakeCluster reports its own errors; nothing reaches the loop */
     }
   }
 
   /**
-   * At the END of a hand (announced moves only) and whenever the table is
+   * At the END of a hand (announced moves and ordinary must-moves) and whenever the table is
    * below the minimum to deal (every pending move - there is no hand to
    * finish) the planned moves are executed: chair, chips and session go to
    * the other table in one SQL transaction; this engine forgets the player
@@ -4792,7 +4882,7 @@ export abstract class ServerTableEngineBase {
   }
 
   protected async executePendingSeatMoves(
-    opts: { announcedOnly: boolean } = { announcedOnly: false },
+    opts: ExecuteSeatMovesOptions = { announcedOnly: false },
     /** Read at this boundary by the caller; `null` is a read that FAILED. */
     prefetched?: readonly PendingSeatMove[] | null,
     diagnostic?: LeavePendingAttempt
@@ -4813,7 +4903,7 @@ export abstract class ServerTableEngineBase {
     // may observe its committed seat before this RPC response returns, including
     // idle moves that never passed through a hand-start announcement.
     for (const m of pending) {
-      if (opts.announcedOnly && m.announced_at == null) continue;
+      if (!seatMoveIsDue(m, opts)) continue;
       this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
     }
     let outcome: SeatMoveOutcome;
@@ -4837,6 +4927,14 @@ export abstract class ServerTableEngineBase {
       incomplete = error;
     }
     const { done, held, refused } = outcome;
+    // Each landed move is a committed seat at its destination: tell that table
+    // now, before any lifecycle check, so its next deal adopts the arrival
+    // instead of dealing the roster it read under the rest. A swap partner
+    // arrived HERE. See seatBoundarySignals.
+    for (const landed of done) {
+      noteSeatArrival(landed.to_table_id);
+      if (landed.partner) noteSeatArrival(this.tableId);
+    }
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     const afterMoves = this.lifecycleCanMutate();
@@ -5672,7 +5770,9 @@ export abstract class ServerTableEngineBase {
     // this local observation every restored seat stays unknown to matching.
     // Adopt carried state before registering. The halt stops dealing, not
     // the original cash clock or a voluntary departure it is holding.
-    // Sit-out eviction, seat moves and add-ons remain outside this boundary.
+    // Seat moves and add-ons remain outside this boundary, and so does the
+    // sit-out eviction - except the cash sit-out clock of a Cluster that IS
+    // Lightning (standUpExpiredLightningSitOuts, never during a conversion).
     if (!this.isTournamentTable() && !isMaintenanceFrozen()) {
       if (!(await this.adoptMovedPresence())) return;
       if (!this.lifecycleCanMutate()) return;
@@ -5697,6 +5797,12 @@ export abstract class ServerTableEngineBase {
       if (!this.lifecycleCanMutate()) return;
     }
     await this.recoverBustedHorsesWhileHalted();
+    if (!this.lifecycleCanMutate()) return;
+    await this.reportHorsesTheEngineHeartbeatKeepsHere();
+    if (!this.lifecycleCanMutate()) return;
+    await this.standUpPlayersWhosePoolSessionEnded();
+    if (!this.lifecycleCanMutate()) return;
+    await this.standUpExpiredLightningSitOuts();
     if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();
     if (!this.lifecycleCanMutate()) return;
@@ -5741,6 +5847,108 @@ export abstract class ServerTableEngineBase {
    */
   protected async recoverBustedHorsesWhileHalted(): Promise<void> {
     /* ServerTableEngineDealing owns horse bust recovery; see its override. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE ENGINE'S HEARTBEAT IS A HORSE'S RETURNING SOCKET (2026-10-24)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A pool session is stamped `disconnected_at` on a presence transition, and
+   * the reaper exits it once the stamp is older than the Cluster's
+   * `disconnect_timeout_ms`. Until now only a Lightning ROOM socket ever
+   * reported `reconnected` (LightningRegistry.connect), so a horse - whose
+   * input device is this engine's heartbeat, never a room socket (10.5 item
+   * 2) - could be stamped and never un-stamped. Measured 2026-10-24 on "FLH
+   * 0.25/0.50 Lightning Games": one batch stamped seven horses at 15:49:46 UTC
+   * right after an engine restart, a room socket cleared three within 40 s,
+   * and the reaper exited the other four at 15:52:50 'disconnect_expired'
+   * while this engine was heartbeating every one of them.
+   *
+   * So the engine says what a person's returning socket says, through the
+   * same door: a horse seated here whose heartbeat is live (the presence FSM
+   * reads CONNECTED) and whose open pool session carries a stamp is reported
+   * `reconnected` to the presence reporter, which calls
+   * fn_lightning_presence_report exactly as a room's first socket does. Never
+   * for a seat the horse account's own client controls (that client's room is
+   * the witness), and never for a person: a person is cleared only by their
+   * own socket.
+   *
+   * ServerTableEngineDealing overrides this; the base holds nothing.
+   */
+  protected async reportHorsesTheEngineHeartbeatKeepsHere(): Promise<void> {
+    /* ServerTableEngineDealing owns it; see its override. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A PLAYER WHOSE POOL SESSION ENDED LEAVES THEIR ANCHOR SEAT (2026-10-24)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A pool session can end while its player keeps the anchor seat: the
+   * disconnect reaper (`fn_lightning_reap_expired_disconnects`) closes the
+   * session and never stands the seat up. Measured 2026-10-24 on "FLH
+   * 0.25/0.50 Lightning Games": two horses' sessions closed
+   * 'disconnect_expired' at 15:52:50 UTC while both kept funded anchor seats
+   * (38.74 and 51.77); eight hours later neither had been re-entered or cashed
+   * out, the chips sat idle, the chairs were held and each seat counted
+   * against its player's four-game limit. Nothing in the live path could ever
+   * move them: the seat-follows-pool trigger only re-enters on a seat change,
+   * the rotator's departure pass skips a three-seat anchor, and this parked
+   * pass (the only loop an anchor runs) had nothing to say about them.
+   *
+   * A PERSON IN THE SAME PLACE IS IN THE SAME PLACE (10.5, Dan 2026-10-24).
+   * The anchor does not deal while its Cluster is Lightning, so a person whose
+   * session ended and who never comes back kept the seat and the chips for as
+   * long as the Cluster stayed Lightning. The rule is one rule for every
+   * player: once the same occupancy reads ended on two looks at least 30 s
+   * apart, the player leaves through the ordinary Leave door (`leaveTable`:
+   * the stay clock, the voluntary cash-out into the club wallet with its
+   * receipt, the seat_left event and the Cluster wake). A returning person
+   * reads `fn_lightning_my_session`, finds no open session and is offered
+   * Join Lightning again, with their chips in their club wallet.
+   *
+   * ServerTableEngineDealing overrides this; the base holds nothing.
+   */
+  protected async standUpPlayersWhosePoolSessionEnded(): Promise<void> {
+    /* ServerTableEngineDealing owns it; see its override. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A SAT-OUT LIGHTNING PLAYER IS ON THE CASH SIT-OUT CLOCK (2026-10-26)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A cash seat sat out past the limit (DisconnectEngine.SITOUT_MAX_MS, five
+   * minutes, or two button passes) is stood up by `evictExpiredSitOuts`: the
+   * ordinary system cash-out into the club wallet, with seat_left
+   * 'sit_out_timeout'. A Lightning player sits out at their ANCHOR seat (the
+   * sit-out door routes there), but the anchor is parked by the dealing halt
+   * for as long as the Cluster is Lightning, and this parked pass was the only
+   * loop it ran - so the sweep never came. Measured in production: one player
+   * sat SITTING_OUT for 7 h 45 min, holding the seat and the chips, never
+   * dealt.
+   *
+   * So the parked anchor of a Cluster that IS Lightning runs the same clock
+   * and the same eviction: the five-minute half (no button passes at a parked
+   * table, as at any quiet cash table), the same thaw (the frozen interval is
+   * credited by fn_thaw_platform on `sit_out_at` and by the presence-clock
+   * thaw in memory), the same isMaintenanceFrozen() gates and the same
+   * cash-out. The seat's departure exits the pool session (the anchor-seat
+   * trigger) and the room is closed with "Your Lightning Session Has Ended".
+   * Only the sit-out clock: the away and abandoned-seat rules read this
+   * table's sockets, and a Lightning player plays in their room, not here.
+   *
+   * NEVER DURING A CONVERSION. The halt law (AHaltedTableFinishesItsHand...)
+   * keeps a halted table from cashing anyone out while a conversion re-asks
+   * its population. This runs only while the Cluster's row says 'lightning'
+   * (read when somebody's clock has actually run out), never on the way in.
+   * Every player alike, horse or human (CLAUDE.md 10.5).
+   *
+   * ServerTableEngineDealing overrides this; the base holds nothing.
+   */
+  protected async standUpExpiredLightningSitOuts(): Promise<void> {
+    /* ServerTableEngineDealing owns it; see its override. */
   }
 
   /**
@@ -6743,6 +6951,17 @@ export abstract class ServerTableEngineBase {
     }));
   }
 
+  /** Only an acknowledged Lightning halt may replace the physical public view. */
+  lightningObserverCluster(): string | null {
+    return !this.isTournamentTable() &&
+      this.dealingHaltObservedFor !== null &&
+      this.dealingHaltObservedFor === this.dealingHaltedAt &&
+      this.tableInfo?.dealing_halted_reason === 'lightning' &&
+      this.clusterLightningEnabled === true
+      ? (this.tableInfo?.cluster_id ?? null)
+      : null;
+  }
+
   /**
    * LIGHTNING PRESENCE (2026-09-25): what this engine knows about the clients
    * of the players seated at it, for the Lightning worker's p_disconnected
@@ -6750,6 +6969,21 @@ export abstract class ServerTableEngineBase {
    * horses exactly as humans (CLAUDE.md 10.5) - and a player this engine has
    * no presence entry for is `unknown`, never assumed present. See
    * src/lightning/LightningPresence.ts for how the feed uses it.
+   *
+   * A horse's input device is this engine (it heartbeats the seat), so the
+   * engine also says what a browser's `?p=` would: the desktop device class
+   * (ENGINE_INPUT_DEVICE_PLATFORM, Dan 2026-10-24 "4 GAMES MAX"). A human's
+   * class comes from their own client's room, never from here.
+   *
+   * WHICH DEVICE PLAYS THE LIGHTNING SEAT (2026-10-26). A Lightning hand is
+   * played in the player's pool-session room. For a horse that is still this
+   * engine (its input device drives the seat wherever the hand is dealt), so
+   * its observation here is its seat's device. A person's socket on this
+   * anchor table is not: they play Lightning in their room, and this socket
+   * cannot see or act in that hand. So each observation says which it is
+   * (`inputDevice`), and the matcher's feed counts only the seat's device
+   * (LightningPresence: "present in the room"). Same presence, same rule for
+   * every player; only the input device differs, as 10.5 item 2 allows.
    */
   lightningPresenceReport(): PresenceTableReport {
     return {
@@ -6761,6 +6995,8 @@ export abstract class ServerTableEngineBase {
           this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state ?? null,
           this.disconnectEngine.isConnected(this.tableId, p.user_id)
         ),
+        inputDevice: !!p.is_horse,
+        ...(p.is_horse ? { platform: ENGINE_INPUT_DEVICE_PLATFORM } : {}),
       })),
     };
   }
@@ -10324,7 +10560,17 @@ export abstract class ServerTableEngineBase {
     return true;
   }
 
-  protected async evictExpiredSitOuts(opts: { countOrbit: boolean }): Promise<void> {
+  protected async evictExpiredSitOuts(opts: {
+    countOrbit: boolean;
+    /**
+     * The sit-out clock alone (a parked Lightning anchor, 2026-10-26): the
+     * away-blind, nit and abandoned-seat rules judge this table's sockets and
+     * hands, and a Lightning player plays in their room, not here.
+     */
+    sitOutOnly?: boolean;
+    /** Judge only these players (the parked anchor's row-confirmed sit-outs). */
+    onlyUsers?: ReadonlySet<string>;
+  }): Promise<void> {
     if (this.isTournamentTable()) return;
     // THE FREEZE (CLAUDE.md 13.5): this sweep stands players up and cashes
     // them out. The wait loop and the dealing loop both park on
@@ -10341,7 +10587,11 @@ export abstract class ServerTableEngineBase {
         if (this.postHandTasksPromise === settlement) break;
       }
       if (this.terminal || isMaintenanceFrozen()) return;
-      const originalOccupancies = new Map(this.seatedPlayers.map((p) => [p.user_id, { ...p }]));
+      const originalOccupancies = new Map(
+        this.seatedPlayers
+          .filter((p) => !opts.onlyUsers || opts.onlyUsers.has(p.user_id))
+          .map((p) => [p.user_id, { ...p }])
+      );
       const seatedIds = [...originalOccupancies.keys()];
       if (seatedIds.length === 0) return;
 
@@ -10353,10 +10603,9 @@ export abstract class ServerTableEngineBase {
       // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
       // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
       // REMOVED." Collected together so one pass removes the seat once.
-      const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(
-        this.tableId,
-        seatedIds
-      );
+      const blindEvictable = opts.sitOutOnly
+        ? []
+        : this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
 
       // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
       // numbers were columns the creation page wrote and nothing read, while the
@@ -10377,7 +10626,7 @@ export abstract class ServerTableEngineBase {
       // inline block this method replaced, and it belongs wherever the other two
       // eviction reasons live — including the start-up wait loop.
       const nitEvictable: string[] = [];
-      if (this.tableInfo?.nit_game === true) {
+      if (!opts.sitOutOnly && this.tableInfo?.nit_game === true) {
         // The board every seat is judged on, kept for the brain (Dan
         // 2026-09-04). Read beside the eviction, at the same boundary, from the
         // same rows, so what a horse steers by is what it is stood up on.
@@ -10395,10 +10644,9 @@ export abstract class ServerTableEngineBase {
       // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
       // never charged a blind (a quiet table), is released on the same clock
       // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
-      const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
-        this.tableId,
-        seatedIds
-      );
+      const abandonedEvictable = opts.sitOutOnly
+        ? []
+        : this.disconnectEngine.collectAbandonedSeatEvictions(this.tableId, seatedIds);
 
       const blindEvictSet = new Set(blindEvictable);
       const nitEvictSet = new Set(nitEvictable);
@@ -10446,12 +10694,14 @@ export abstract class ServerTableEngineBase {
         const stillTimedOut = this.disconnectEngine
           .tickSitOutsAndCollectEvictions(this.tableId, [userId], { countOrbit: false })
           .includes(userId);
-        const stillAway = this.disconnectEngine
-          .collectAwayBlindEvictions(this.tableId, [userId])
-          .includes(userId);
-        const stillAbandoned = this.disconnectEngine
-          .collectAbandonedSeatEvictions(this.tableId, [userId])
-          .includes(userId);
+        const stillAway =
+          !opts.sitOutOnly &&
+          this.disconnectEngine.collectAwayBlindEvictions(this.tableId, [userId]).includes(userId);
+        const stillAbandoned =
+          !opts.sitOutOnly &&
+          this.disconnectEngine
+            .collectAbandonedSeatEvictions(this.tableId, [userId])
+            .includes(userId);
         if (!stillTimedOut && !stillAway && !stillAbandoned && !nitEvictSet.has(userId)) continue;
         const awayBlindEvict = blindEvictSet.has(userId) && stillAway;
         const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);

@@ -4,37 +4,90 @@
  *
  * The DATABASE owns the defaults (`fn_cash_template_defaults`) and the
  * validation (`fn_cash_game_create`). This file holds only what a picker has
- * to know before it asks: the three templates, the variants the engine deals
+ * to know before it asks: the two offered formats and historical aliases, the variants the engine deals
  * today (pinned against the engine's own KNOWN_VARIANTS by
  * tests/unit/cashGamesVocabulary.test.ts), and the shape of a resolved
  * snapshot so the overrides panel is typed.
  */
 
+import { isLightningVariant } from '../lightning/lightningLobby';
+
 export type CashTemplate = 'classic' | 'action' | 'madness';
+
+/** Canonical offered format; historical identifiers remain readable. */
+export function cashTemplateKey(template: string): string {
+  const key = template.toLowerCase();
+  return key === 'action' || key === 'lightning' ? 'madness' : key;
+}
+
+/**
+ * Short Deck, Omaha Hi-Lo and Pineapple run only as Classic feeder games, never
+ * as Lightning (Dan 2026-10-25: "SHORT DESK AND OMAHA HI LOW SHOULD NOT BE
+ * RUNNING LIGHTNING AT THIS POINT, JUST FEEDER GAMES." / "AND PINNEAPPLE AS
+ * WELL"). The database refuses the same request (LIGHTNING_VARIANT_NOT_ALLOWED).
+ */
+export function cashTemplateVariantAvailable(
+  template: string | null,
+  variant: string | null
+): boolean {
+  return !(
+    cashTemplateKey(template ?? '') === 'madness' &&
+    variant &&
+    !isLightningVariant(variant)
+  );
+}
+
+export const PINEAPPLE_CLASSIC_NOTE =
+  'Short Deck, Omaha Hi-Lo And Pineapple Use Classic Games. They Are Not Available In Lightning Games.';
+
+export const LIGHTNING_RULES_SUMMARY = 'Big Blind Ante, 40% Minimum VPIP';
 
 export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; blurb: string }> = [
   {
     id: 'classic',
     label: 'Classic',
-    blurb: 'Standard Ring Game. No Antes, No Bombs, No Minimum VPIP.',
-  },
-  {
-    id: 'action',
-    label: 'Action',
-    blurb: 'Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20 Minutes.',
+    blurb:
+      'Standard Ring Game. No Bombs. PLO5 And PLO6 Play A Big Blind Ante And 50% Minimum VPIP; Every Other Game Has No Ante And No Minimum VPIP.',
   },
   {
     id: 'madness',
-    label: 'Madness',
-    blurb: 'Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10 Minutes.',
+    label: 'Lightning Games',
+    blurb: `${LIGHTNING_RULES_SUMMARY}. Five Players Minimum, Three Seconds For The Sixth.`,
   },
 ];
 
 /**
- * THE BOMB CADENCE A TEMPLATE TRIGGER PROMISES, in words. Action deals a bomb
- * every 20 minutes and Madness every 10 (Dan 2026-10-16, migration
- * 20261017105834); the older tokens stay readable because a retired club's
- * snapshot is never rewritten.
+ * The Classic variants that play a big blind ante and a 50% minimum VPIP
+ * (owner 2026-10-24, migration 20261024213131): "MAKE THIS ADJUSTMENT NOW TO
+ * ALL PLO5 AND PLO6 CLASSIC GAMES. 50% VPIP AND BB ANTE FOR ALL STAKES."
+ * Mirrors fn_cash_template_defaults('classic', v), which is the authority.
+ */
+export const CLASSIC_ANTE_AND_FLOOR_VARIANTS: readonly string[] = ['plo5', 'plo6'];
+
+export const CLASSIC_PLO5_PLO6_BLURB =
+  'Standard Ring Game. Big Blind Ante, 50% Minimum VPIP, No Bombs.';
+
+/**
+ * The template card's promise for the variant being created. The card is a
+ * promise, so a Classic PLO5 or PLO6 game never reads "No Antes".
+ */
+export function cashTemplateBlurb(
+  template: CashTemplate | string,
+  variant: string | null | undefined
+): string {
+  const id = cashTemplateKey(String(template));
+  if (
+    id === 'classic' &&
+    CLASSIC_ANTE_AND_FLOOR_VARIANTS.includes(String(variant ?? '').toLowerCase())
+  ) {
+    return CLASSIC_PLO5_PLO6_BLURB;
+  }
+  return CASH_TEMPLATES.find((t) => t.id === id)?.blurb ?? '';
+}
+
+/**
+ * Render the cadence stored in a game snapshot. Historical tokens remain
+ * readable because settled and retired game snapshots are preserved.
  */
 export type CashBombTrigger = 'timed_10m' | 'timed_15m' | 'timed_20m' | 'every_orbit';
 
@@ -54,22 +107,16 @@ export function bombCadenceLabel(
  * SHOULD BE A DESCRIPTION NEXT TO THEM FOR ACTION AND MADNESS EXPLAINING WHAT
  * CHANGES THE VARIATION OF THE GAME."
  *
- * Classic is the standard ring game, so it prints nothing: only the two
- * styles that change the game explain themselves. The words are the same
- * blurb the New Cash Game picker shows (one source, never two wordings), and
- * they match fn_cash_template_defaults: Action = SB ante, 30% minimum VPIP,
- * 2-board bomb every 20 min; Madness = BB ante, 50% minimum VPIP, 2-board
- * bomb every 10 min. Dan 2026-10-16: "it should change from VPIP FLOOR to the
- * actual vpip %" and "'high vpip' should state the minimum requirement". The
- * figures are safe to print because all four are TEMPLATE_LOCKED_RULES: a
- * host cannot override them, so the card cannot say something untrue.
+ * Classic prints no additional note. Lightning uses the same 40% VPIP,
+ * big blind ante and five/six-player promise in the picker and on each card.
+ * Historical Action identifiers resolve to that one offered format.
  */
 export function cashTemplateNote(template: string | null | undefined): string | null {
   if (!template) return null;
-  const id = String(template).toLowerCase();
+  const id = cashTemplateKey(String(template));
   if (id === 'classic') return null;
-  const hit = CASH_TEMPLATES.find((t) => t.id === id);
-  return hit ? hit.blurb.replace(/\.\s*$/, '') : null;
+  const hit = CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(id));
+  return hit ? LIGHTNING_RULES_SUMMARY : null;
 }
 
 /**
@@ -143,10 +190,8 @@ export interface CashRulesetSnapshot {
  * THE FOUR FIELDS A HOST DOES NOT EDIT (2026-09-09,
  * docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md).
  *
- * The template blurb is a promise to the player: "No Antes, No Bombs, No Minimum
- * VPIP" / "Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20
- * Minutes" / "Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10
- * Minutes". Since
+ * The template blurb is a promise: Classic has no antes, bombs or minimum
+ * VPIP; Lightning has a big blind ante and 40% minimum VPIP. Since
  * that date fn_cash_game_create resolves every one of these from
  * fn_cash_template_defaults and reads NOTHING the caller sends for them. So
  * the overrides payload does not carry them, the rules step prints them as
@@ -199,7 +244,7 @@ export function overridesFromSnapshot(s: CashRulesetSnapshot): CashGameOverrides
 
 /** The template's name as a host reads it in a readout. */
 export function templateLabel(t: CashTemplate | string | null | undefined): string {
-  const hit = CASH_TEMPLATES.find((x) => x.id === t);
+  const hit = CASH_TEMPLATES.find((x) => x.id === cashTemplateKey(String(t ?? '')));
   return hit ? hit.label : 'Classic';
 }
 
@@ -313,7 +358,9 @@ export function stakesRungTaken(
 ): string | null {
   const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
   for (const g of existing) {
-    if (g.template_name !== template || g.variant !== variant) continue;
+    const existingTemplate = g.template_name === 'action' ? 'madness' : g.template_name;
+    const requestedTemplate = template === 'action' ? 'madness' : template;
+    if (existingTemplate !== requestedTemplate || g.variant !== variant) continue;
     if (
       template !== 'classic' &&
       cashGameCategoryKey(clubId, variant, g.sb, g.bb) ===
@@ -395,6 +442,7 @@ export function cashGameCreateRefusalText(raw: unknown): string | null {
   if (/STAKES_INVALID/.test(m)) return 'Those Stakes Are Not Valid';
   if (/SESSION_REVOKED/.test(m)) return 'Your Session Is Signed Out. Sign In Again.';
   if (/TEMPLATE_UNKNOWN/.test(m)) return 'Pick A Template First';
+  if (/LIGHTNING_VARIANT_NOT_(SUPPORTED|ALLOWED)/.test(m)) return PINEAPPLE_CLASSIC_NOTE;
   if (/ANTE_INVALID/.test(m)) return 'The Ante Setting Is Not Valid';
   if (/VPIP_WINDOW_INVALID/.test(m)) return 'The VPIP Window Must Be Between 10 And 200 Hands';
   if (/VPIP_INVALID/.test(m)) return 'The Minimum VPIP Must Be Between 0 And 100 Percent';

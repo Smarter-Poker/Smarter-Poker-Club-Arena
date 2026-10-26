@@ -1,0 +1,49 @@
+name: Engine Launcher Native Containers
+# Real-Docker proof for the engine launcher (server/scripts/engine-up), the one run-spec every
+# engine cutover and its rollback go through. The law tests drive the real
+# script against a fake Docker; this job drives it against GitHub's isolated
+# Docker daemon (never a production host: the fixture refuses DOCKER_HOST and
+# DOCKER_CONTEXT, uses a fixture-only seal and only UUID-labelled containers)
+# and proves, on this checkout's own launcher bytes:
+#   - `docker create` succeeds on the serving port while the old engine still
+#     answers on it, and starts no application process;
+#   - a start before the old engine exits is refused on port admission;
+#   - the launcher creates the replacement during the outgoing SIGTERM grace
+#     and starts it only after the old process has exited.
+# The previous serial launcher fails the third stage, so this cannot pass by
+# accident. Measured on 2026-10-24: f16e rolled back at 76 s of a 75 s budget
+# (stop 50 s + create 22 s + start 4 s paid in series).
+on:
+  pull_request:
+    paths:
+      - server/Dockerfile
+      - server/scripts/engine-up*
+      - tests/operations/engine-up-native-containers.py
+      - .github/workflows/engine-up-native-containers.yml
+permissions:
+  contents: read
+concurrency:
+  group: engine-up-native-containers-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Real Docker create during the outgoing grace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Overlap, port admission and start-after-exit on real Docker
+        run: |
+          mkdir -p "$RUNNER_TEMP/engine-up-native"
+          python3 -B tests/operations/engine-up-native-containers.py \
+            --scratch-root "$RUNNER_TEMP/engine-up-native"
+      - name: Preserve phase receipts and fixture result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-up-native-containers
+          path: ${{ runner.temp }}/engine-up-native/
+          if-no-files-found: warn
+          retention-days: 7

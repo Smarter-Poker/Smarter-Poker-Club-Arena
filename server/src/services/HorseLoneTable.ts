@@ -151,3 +151,17 @@ export function loneStandVerdict(s: LoneStandSituation): LoneStandVerdict {
   }
   return 'stand';
 }
+
+/**
+ * A FULLER TABLE FILLS FIRST (Dan 2026-10-23, PLO). The comparator the fleet's
+ * seeding walk uses inside one rank: the table with more seated players sorts
+ * first, so a scarce pool tops up games that are already running before it
+ * starts another, and the lobby shows a few full games rather than many thin
+ * ones. Negative when `aSeated` should come first. Non-finite counts read as
+ * zero so an unreadable count never jumps the queue.
+ */
+export function fillFirstRank(aSeated: number, bSeated: number): number {
+  const a = Number.isFinite(aSeated) ? aSeated : 0;
+  const b = Number.isFinite(bSeated) ? bSeated : 0;
+  return b - a;
+}

@@ -102,6 +102,15 @@ export interface HorseDiscardControllerReceipt {
 export class HandController {
   private config: HandConfig;
   private state: GameState;
+  private immediateFoldCount = 0;
+  /**
+   * CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call down").
+   * Per seat, whether its LAST river decision was a call - a plain call, or an
+   * all-in for no more than the bet it faced. applyShowdownRevealRules tables
+   * every such hand: the player paid to see the bet, and the bettor gets to
+   * see what called him. A checked-down loser may still muck.
+   */
+  private readonly riverCalled = new Map<number, boolean>();
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
@@ -1122,6 +1131,37 @@ export class HandController {
     origin: AcceptedActionOrigin = 'unknown',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
+    return this.performBettingAction(seat, action, amount, origin, onAccepted);
+  }
+
+  /** Early folds do not replace the current actor's still-owed decision. */
+  getDecisionActionCount(): number {
+    return this.state.actionHistory.length - this.immediateFoldCount;
+  }
+
+  /** Explicit Lightning fold: final now, even while another player owes a decision. */
+  /**
+   * An early (Lightning) fold. `origin` labels the record exactly as the
+   * turn door does: 'player' for a person's request, 'horse_policy' for a
+   * horse's own decision (Dan 2026-10-24, "HORSES SHOULD FOLD RIGHT AWAY IF
+   * THEY WERE ALREADY FOLDING"). The rules are the same for both.
+   */
+  performImmediateFold(
+    seat: number,
+    origin: AcceptedActionOrigin = 'player',
+    onAccepted?: (record: Readonly<ActionRecord>) => void
+  ): boolean {
+    return this.performBettingAction(seat, 'fold', undefined, origin, onAccepted, true);
+  }
+
+  private performBettingAction(
+    seat: number,
+    action: ActionType,
+    amount?: number,
+    origin: AcceptedActionOrigin = 'unknown',
+    onAccepted?: (record: Readonly<ActionRecord>) => void,
+    immediateFold = false
+  ): boolean {
     /* A TOURNAMENT CHIP IS WHOLE, LIKE A DIAMOND (launch audit 2026-10-05).
        Every place this controller splits or rounds already treats a
        tournament chip as one unit (chipUnit, the ante unit, the odd-chip
@@ -1141,7 +1181,9 @@ export class HandController {
     // or advance the hand with a live seat still holding three cards.
     if (this.state.stage === 'pineapple_discard') return false;
     const player = this.state.players.find((p) => p.seat === seat);
-    if (!player || seat !== this.state.currentPlayerSeat) return false;
+    const earlyFold = immediateFold && action === 'fold' && seat !== this.state.currentPlayerSeat;
+    if (earlyFold && !['preflop', 'flop', 'turn', 'river'].includes(this.state.stage)) return false;
+    if (!player || (!earlyFold && seat !== this.state.currentPlayerSeat)) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
     // whatever currentPlayerSeat claims. Without this, any stale turn pointer
     // lets an automated path (watchdog force-action, disconnect auto-action, a
@@ -1229,8 +1271,8 @@ export class HandController {
     try {
       publicNode = captureHorsePublicActionNode(
         this.config,
-        this.state,
-        this.getAuthoritativeActionState(player.user_id),
+        earlyFold ? { ...this.state, currentPlayerSeat: player.seat } : this.state,
+        this.getAuthoritativeActionState(player.user_id, { asIfToAct: earlyFold }),
         this.getActiveBoardCount(),
         this.readPublicTournamentStage
       );
@@ -1241,6 +1283,11 @@ export class HandController {
 
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
+    /* Read BEFORE the switch moves any chips: an all-in is a call when the
+       whole stack is no more than what this seat had to call. */
+    const callsTheBet =
+      action === 'call' || (action === 'all_in' && player.stack <= bettingState.toCall + 0.005);
+    if (this.state.stage === 'river') this.riverCalled.set(seat, callsTheBet);
 
     switch (action) {
       case 'fold':
@@ -1324,8 +1371,10 @@ export class HandController {
       timestamp: Date.now(),
       stage: this.state.stage,
       isFullRaise: isFullRaiseFlag,
+      publicNode,
     });
     this.state.actionHistory.push(record);
+    if (earlyFold) this.immediateFoldCount++;
 
     // Observe the exact clamped, validated and cent-snapped action before
     // broadcasts/advanceGame can change the current street or turn. A receipt
@@ -1352,7 +1401,11 @@ export class HandController {
         : 'unknown',
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
-    this.advanceGame();
+    if (!earlyFold) this.advanceGame();
+    else if (this.getActivePlayers().length === 1) this.completeHand();
+    else if (this.isBettingRoundComplete()) this.advanceStage();
+    // Otherwise the same current actor still owes the same decision. Do not
+    // call advanceGame(), which would move past that player's live clock.
     return true;
   }
 
@@ -3258,6 +3311,12 @@ export class HandController {
       ) {
         mustShow = true;
       }
+      // CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call
+      // down"). A hand whose last river decision was a call - including an
+      // all-in for no more than the bet - is tabled win or lose. It joins the
+      // shown set below like any other tabled hand, so later players are
+      // measured against it exactly as before.
+      if (this.riverCalled.get(r.seat) === true) mustShow = true;
       for (let potIdx = 0; !mustShow && potIdx < pots.length; potIdx++) {
         if (!pots[potIdx].eligiblePlayers.includes(r.userId)) continue;
         eligibleAnywhere = true;
@@ -3863,13 +3922,21 @@ export class HandController {
    * as performAction(), rather than asking either consumer to infer reopening,
    * fixed-limit or pot-limit rights from a reduced state object.
    */
-  public getAuthoritativeActionState(userId: string): AuthoritativeActionState | null {
+  public getAuthoritativeActionState(
+    userId: string,
+    opts: { asIfToAct?: boolean } = {}
+  ): AuthoritativeActionState | null {
     const player = this.state.players.find((p) => p.user_id === userId);
     if (!player) return null;
 
+    // `asIfToAct` (read-only): the menu this seat would hold if the action
+    // reached it with the table exactly as it stands now. Lightning's early
+    // fold asks it for a horse that is not yet on the turn; nothing here can
+    // act on it, and performAction still demands the real turn.
+    const asIfToAct = opts.asIfToAct === true;
     const bettingState = this.buildBettingState(player);
     const canAct =
-      this.state.currentPlayerSeat === player.seat &&
+      (asIfToAct || this.state.currentPlayerSeat === player.seat) &&
       !player.is_folded &&
       !player.is_all_in &&
       !player.is_sitting_out &&
@@ -3907,7 +3974,7 @@ export class HandController {
     return {
       schemaVersion: 1,
       heroSeat: player.seat,
-      currentPlayerSeat: this.state.currentPlayerSeat,
+      currentPlayerSeat: asIfToAct ? player.seat : this.state.currentPlayerSeat,
       canAct,
       legalActions,
       toCall: cents(Math.max(0, bettingState.toCall)),

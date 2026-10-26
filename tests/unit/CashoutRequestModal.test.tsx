@@ -193,23 +193,14 @@ it.each([
   expect(rpc).not.toHaveBeenCalled();
   expect(checkSettlementLock).not.toHaveBeenCalled();
 });
-it('Max and percentage selection retain cents and display the resulting request', async () => {
+it('offers no suggested amounts; a typed cent amount is sent exactly (Dan 2026-10-23)', async () => {
   const input = await mount(1.25);
   expect(input.getAttribute('min')).toBe('0.01');
   expect(input.getAttribute('step')).toBe('0.01');
   expect(input.getAttribute('inputmode')).toBe('decimal');
-  fireEvent.click(screen.getByRole('button', { name: '25% · 0.31' }));
-  expect((input as HTMLInputElement).value).toBe('0.31');
-  fireEvent.click(screen.getByRole('button', { name: 'Max · 1.25' }));
-  expect((input as HTMLInputElement).value).toBe('1.25');
-  await submit();
-  await waitFor(() => expect(rpc).toHaveBeenCalledOnce());
-  expect(rpc.mock.calls[0][1].p_amount).toBe('1.25');
-  await waitFor(() => expect(complete).toHaveBeenCalledOnce());
-});
-it('a fractional percentage request uses the displayed rounded-down cent value', async () => {
-  await mount(1.25);
-  fireEvent.click(screen.getByRole('button', { name: '50% · 0.62' }));
+  expect(screen.queryByRole('group', { name: 'Quick Amounts' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^(25%|50%|100%|Max)/ })).toBeNull();
+  fireEvent.change(input, { target: { value: '0.62' } });
   await submit();
   await waitFor(() => expect(rpc).toHaveBeenCalledOnce());
   expect(rpc.mock.calls[0][1].p_amount).toBe('0.62');
@@ -230,7 +221,7 @@ it('same mounted intent retries with the same operation id and amount after unkn
   await waitFor(() => expect(complete).toHaveBeenCalledOnce());
   expect(first.p_op_id).toBeTruthy();
 });
-it('balance and settlement refusal still prevent submission', async () => {
+it('refuses insufficient balance but permits a funded request during settlement', async () => {
   const input = await mount(1.25);
   fireEvent.change(input, { target: { value: '1.26' } });
   await submit();
@@ -243,15 +234,16 @@ it('balance and settlement refusal still prevent submission', async () => {
   vi.mocked(checkSettlementLock).mockResolvedValue({ locked: true } as never);
   fireEvent.change(input, { target: { value: '1.25' } });
   await submit();
-  await screen.findByText('Settlement In Progress. Cashout Requests Are Frozen');
-  expect(rpc).not.toHaveBeenCalled();
+  await waitFor(() => expect(complete).toHaveBeenCalledOnce());
+  expect(rpc).toHaveBeenCalledOnce();
+  expect(checkSettlementLock).not.toHaveBeenCalled();
 });
-it('two clicks while settlement admission is pending retain the synchronous submit lock', async () => {
+it('two clicks while receipt recovery is pending retain the synchronous submit lock', async () => {
   let release!: (value: any) => void;
-  vi.mocked(checkSettlementLock).mockReturnValue(
+  lookup.mockImplementationOnce((_name, args) =>
     new Promise((resolve) => {
-      release = resolve;
-    }) as never
+      release = () => resolve({ data: cashoutLookupEnvelope(args), error: null });
+    })
   );
   const input = await mount();
   fireEvent.change(input, { target: { value: '1.25' } });
@@ -261,7 +253,7 @@ it('two clicks while settlement admission is pending retain the synchronous subm
     fireEvent.click(button);
     fireEvent.click(button);
   });
-  await waitFor(() => expect(checkSettlementLock).toHaveBeenCalledOnce());
+  await waitFor(() => expect(lookup).toHaveBeenCalledOnce());
   await act(async () => release({ locked: false }));
   await waitFor(() => expect(rpc).toHaveBeenCalledOnce());
 });
@@ -415,18 +407,17 @@ it('close and reopen removes old rows and fences an old completion from a new in
   expect(await screen.findByText(/Chips Are Held For Review/)).toBeTruthy();
 });
 
-it('an account A to B to A change during settlement admission refuses the old action without an intermediate render', async () => {
+it('an account A to B to A change during receipt recovery refuses the old action without an intermediate render', async () => {
   let finishAdmission!: (value: any) => void;
-  vi.mocked(checkSettlementLock).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishAdmission = resolve;
-      }) as never
+  lookup.mockImplementationOnce((_name, args) =>
+    new Promise((resolve) => {
+      finishAdmission = () => resolve({ data: cashoutLookupEnvelope(args), error: null });
+    })
   );
   const input = await mount();
   fireEvent.change(input, { target: { value: '1.25' } });
   await submit();
-  await waitFor(() => expect(checkSettlementLock).toHaveBeenCalledOnce());
+  await waitFor(() => expect(lookup).toHaveBeenCalledOnce());
   expect(rpc).not.toHaveBeenCalled();
   act(() => {
     identity.userId = ID.other;
@@ -476,18 +467,17 @@ it('keeps the action unavailable until its exact preparation resolves and discar
   expect(rpc.mock.calls[0][1].p_amount).toBe('2.50');
 });
 
-it('an input A to B to A change cannot revive a captured settlement wait', async () => {
+it('an input A to B to A change cannot revive a captured receipt lookup', async () => {
   let finishAdmission!: (result: any) => void;
-  vi.mocked(checkSettlementLock).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishAdmission = resolve;
-      }) as never
+  lookup.mockImplementationOnce((_name, args) =>
+    new Promise((resolve) => {
+      finishAdmission = () => resolve({ data: cashoutLookupEnvelope(args), error: null });
+    })
   );
   const input = await mount();
   fireEvent.change(input, { target: { value: '1.25' } });
   await submit();
-  await waitFor(() => expect(checkSettlementLock).toHaveBeenCalledOnce());
+  await waitFor(() => expect(lookup).toHaveBeenCalledOnce());
   act(() => {
     // Programmatic event injection also tests the guard below disabled inputs.
     fireEvent.change(input, { target: { value: '2.50' } });

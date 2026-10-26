@@ -1013,6 +1013,7 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  correctivePolicy?: import('./services/horseCorrectiveReview/liveKernel.js').CorrectiveLiveKernelReceipt;
   /** Private reference lookup/route evidence; not final causal or GTO proof. */
   tournamentPreflopAttribution?: import('./engine/HorsePhase6Attribution.js').HorsePhase6Attribution;
   /** Finite private provenance for the brain's last-resort liveness action. */
@@ -1025,7 +1026,12 @@ export interface HorseDecision {
   policyOwnership?: import('./engine/HorsePolicyRegistry.js').HorsePolicyOwnership;
   /** Existing catastrophe owner rejected this committed continuation. An
    * uncalibrated later joint proposal cannot reopen its rejected call-off. */
-  continuationGuard?: 'multiway_commitment_floor' | 'dominated_commitment_floor';
+  // Cold multiway flush pressure is physical action evidence and survives
+  // maniac recovery; generic equity floors may still adapt to a maniac.
+  continuationGuard?:
+    | 'multiway_commitment_floor'
+    | 'dominated_commitment_floor'
+    | 'omaha_cold_flush_pressure';
   plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
   omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
   remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;

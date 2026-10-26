@@ -17,8 +17,8 @@
  *   5. The disc fades away, the table brightens, and the masthead now carries
  *      the prize pool.
  *
- * The rotor and chase share the existing reveal clock and settle the
- * server-selected prize beneath the fixed selector.
+ * The selector and chase share the existing reveal clock and settle on the
+ * server-selected prize. The numbered disc stays stationary and readable.
  *
  * ─── Honesty (unchanged from v1) ────────────────────────────────────────────
  * The result is decided by the SERVER (reserve-gated draw at game start) and
@@ -814,13 +814,6 @@ export default function SpinWheel({
                 viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
                 aria-hidden="true"
                 data-motion="keep"
-                style={
-                  {
-                    '--sw-turn': `${CHASE_LOOPS * 360 - (targetIndex * 360) / Math.max(1, order.length)}deg`,
-                    '--sw-spin-ms': `${rotorTiming.duration}ms`,
-                    '--sw-elapsed': `${-rotorTiming.elapsed}ms`,
-                  } as React.CSSProperties
-                }
               >
                 <defs>
                   <linearGradient id="swMetal" x1="0" y1="0" x2="1" y2="1">
@@ -892,6 +885,12 @@ export default function SpinWheel({
                         d={wedgePath(i, order.length, SW_R - 4)}
                         fill="url(#swGlass)"
                       />
+                      {isLit && !locked.has(tier.multiplier) && (
+                        <path
+                          className={`sw__light${isWinner ? ' sw__light--winner' : ''}`}
+                          d={wedgePath(i, order.length, SW_R - 4)}
+                        />
+                      )}
                       <text
                         className="sw__seg-label"
                         x={label.x}
@@ -956,12 +955,24 @@ export default function SpinWheel({
                 alt=""
                 draggable={false}
               />
-              <img
-                className="sw__selector"
-                src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
-                alt=""
-                draggable={false}
-              />
+              <div
+                className="sw__selector-orbit"
+                data-motion="keep"
+                style={
+                  {
+                    '--sw-turn': `${CHASE_LOOPS * 360 + (targetIndex * 360) / Math.max(1, order.length)}deg`,
+                    '--sw-spin-ms': `${rotorTiming.duration}ms`,
+                    '--sw-elapsed': `${-rotorTiming.elapsed}ms`,
+                  } as React.CSSProperties
+                }
+              >
+                <img
+                  className="sw__selector"
+                  src={`${import.meta.env.BASE_URL}assets/diamond-spins/wheel-selector-pointer-v2.webp`}
+                  alt=""
+                  draggable={false}
+                />
+              </div>
               <div className="sw__gloss" aria-hidden="true" />
               <div className="sw__hub">
                 {phase === 'result' ? (

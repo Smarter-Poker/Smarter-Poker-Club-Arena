@@ -327,6 +327,18 @@ supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS`, and each
     `tests/a-window-migration-waits-for-the-daily-break.law.test.ts`; native
     proof `scripts/ci/test-maintenance-window-migrations.sh`.
     `docs/changelog/2026-10-22-a-migration-that-needs-the-live-tables-waits-for-the-daily-break.md`.
+11. **A MIGRATION REACHES PRODUCTION ONLY FROM PROTECTED MAIN (owner
+    instruction, 2026-10-25).** Merge first; the autopilot's merge dispatches
+    every added migration to `apply-merged-migration.yml`, which sends the
+    merged bytes once and answers ALREADY-APPLIED for a version production
+    holds (after any other merge, dispatch it yourself). Never apply from an
+    unmerged branch, a local file or the Supabase MCP `apply_migration`: on
+    2026-10-24/25 three migrations ran from still-open PRs and production held
+    SQL that main had never seen until #8109 recorded it. Only an active
+    outage that cannot wait for required checks may apply directly, and the
+    same agent commits the byte-exact recording to main as its next step.
+    Full rule: `PUBLISHING.md`. Pinned by
+    `tests/unit/migrationsInstallFromMain.test.ts`.
 
 ---
 
@@ -560,6 +572,16 @@ RPCs, and sits in the same seat as anybody else. Therefore a horse:
 - **COUNTS** everywhere a human counts — player counts, engine provisioning,
   table liveness, conservation and reconciliation totals;
 - **IS NEVER** silently filtered out of a report, a total, or a ledger.
+
+### Owner exception, October 25, 2026: PLO horses read every PERSON as aggressive
+
+Dan: "TAG THEM ALL FROM THE START, UNLESS OTHERWISE PROVEN DIFFERENTLY" and
+"FOR PLO, NOT FOR HOLDEM". In Omaha games only, the horse brain presumes a
+seat the engine roster says a person plays is an aggressive raiser until the
+person's own hands prove otherwise (`presumedAggressorRead`). It reads a
+person differently from a horse; it denies a horse nothing. It is the owner's
+deliberate choice, not a 10.5 violation. Change it only on a later owner
+instruction. `docs/changelog/2026-10-25-plo-every-person-is-an-aggressive-raiser-until-proven-otherwise.md`.
 
 ### What is still allowed
 

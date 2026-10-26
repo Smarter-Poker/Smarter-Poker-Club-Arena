@@ -66,6 +66,7 @@ import { buildFloorSnapshot } from './StableHandSnapshot.js';
 import { buildBeats, writeBeats, bankVerdict, type BankVerdict } from './StableHandBeats.js';
 import { publishPlan } from './StableHandPlanBus.js';
 import { dailyGuaranteeForHost } from './FreeBuy.js';
+import { cashRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
 
 /**
  * The engine surface a stand needs. Matches ServerTableEngine.
@@ -243,7 +244,10 @@ export interface FloorStandOrders {
 }
 
 /** PURE. Both kinds of stand order, from ONE pass of the planner. */
-export function standOrdersFor(snap: FloorSnapshot): FloorStandOrders {
+export function standOrdersFor(
+  snap: FloorSnapshot,
+  bankrollOnlyCashHorse: (horseId: string) => boolean = () => false
+): FloorStandOrders {
   const waitSince = new Map<string, number>();
   const hostOfTable = new Map<string, string>();
   for (const host of snap.hosts) {
@@ -260,7 +264,7 @@ export function standOrdersFor(snap: FloorSnapshot): FloorStandOrders {
       .filter((o) => o.reason === 'human_yield')
       .map((order) => ({ order, waitingSinceMs: waitSince.get(order.tableId) ?? NaN })),
     windDowns: plan.stand
-      .filter((o) => o.reason === 'occupancy_wind_down')
+      .filter((o) => o.reason === 'occupancy_wind_down' && !bankrollOnlyCashHorse(o.horseId))
       .map((order) => ({ order, hostId: hostOfTable.get(order.tableId) ?? '' })),
     alerts: plan.alerts,
     plan,
@@ -700,7 +704,9 @@ export class StableHandExecutor {
     try {
       const snap = await buildFloorSnapshot();
       if (!this.lifecycleIsCurrent(generation)) return 0;
-      const orders = standOrdersFor(snap);
+      await refreshPloRoster();
+      if (!this.lifecycleIsCurrent(generation)) return 0;
+      const orders = standOrdersFor(snap, (id) => cashRosterAllows(id) === true);
       const now = Date.now();
 
       /* SEAT AND OPEN GO TO THE SEEDER, not to this module. Choosing which

@@ -87,6 +87,23 @@ on:
 # cannot kill the run for the sha a required check is evaluated against, and
 # superseded heads are still retired by the bounded step in `changes`.
 # tests/ci-tells-the-truth-faster.law.test.ts pins both halves.
+#
+# ── A REPLACED HEAD STOPS AT THE PUSH, NOT 30 MINUTES LATER (2026-10-25) ───
+#
+# The bounded retire step lives in `changes`, so it only acts once the NEW
+# run gets a runner. With the account saturated that was a 25-45 minute
+# queue wait, and measured over 300 PR runs (2026-10-23 22:07 to 10-25 03:36
+# UTC) 124 runs were superseded while still alive; in a 70-run sample 46% of
+# their runner time (2,272 s per run) was spent AFTER a newer push already
+# existed - work on a sha nobody can merge, ahead of the publisher in the
+# same queue.
+#
+# ci-supersede.yml joins THIS group for the replaced head (`before` on a
+# synchronize, the head on a close) with cancel-in-progress, and runs no job.
+# GitHub cancels the old run when the event arrives, without a runner. The
+# key here is unchanged, so nothing can ever cancel the run for the current
+# head, and the heavy jobs below are `!cancelled()` so that a cancelled run
+# actually stops. tests/superseded-ci-stops-at-the-push.law.test.ts.
 # ═══════════════════════════════════════════════════════════════════════════
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
@@ -301,7 +318,7 @@ jobs:
     name: Native fixture prerequisites
     needs: changes
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      !cancelled() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
     permissions:
@@ -325,6 +342,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/ci/fixture-native-gate.mjs
       - name: Require compilation and every applicable native fixture proof
         env:
           CI_EVENT_NAME: ${{ github.event_name }}
@@ -376,6 +397,13 @@ jobs:
 
       - name: Money-trigger CI caller preserves independent authority
         run: node --test tests/money-trigger-ci-caller.test.mjs
+
+      - name: Phase14 publication preserves generation floors and withdrawal tombstones
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node --test tests/operations/phase14-generation-publication.test.mjs
+          node scripts/ci/check-phase14-generation-ledger.mjs
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
@@ -1168,15 +1196,22 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
-    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
-    # treated as "could break anything", never as "nothing to do".
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed,
+    # and `needs.changes.result != 'success'` then RUNS it. An undetermined diff
+    # is treated as "could break anything", never as "nothing to do".
+    #
+    # It was `always()` until 2026-10-25. The two differ only when the RUN is
+    # cancelled: `always()` starts this heavy job inside a run that was
+    # cancelled because its head was replaced; `!cancelled()` lets it stop.
+    # The required aggregates stay on `always()`, so a cancelled run still
+    # reports red, never skipped-as-green. See ci-supersede.yml and
+    # tests/superseded-ci-stops-at-the-push.law.test.ts.
     #
     # `schedule` runs it unconditionally: that is the daily "is main actually
     # green" pass, and change detection is meaningless there because there is
     # no diff to detect - the question is about the whole branch.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         needs.changes.outputs.head_current != 'false' &&
@@ -1283,7 +1318,7 @@ jobs:
   accounting_postgres:
     needs: changes
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         needs.changes.outputs.head_current != 'false' &&
@@ -1411,6 +1446,21 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Cash horses use bankroll eligibility and table closure preserves seats
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/cash-horse-bankroll.sql --candidate supabase/migrations/20261023221116_cash_horses_are_bankroll_only_and_closed_counts_are_truthful.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: The full scheduled horse fleet can play every game
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/scheduled-horses.sql --candidate supabase/migrations/20261023222825_scheduled_horses_play_every_game_without_roster_restrictions.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: Horse layer drift uses original eligible populations
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/horse-layer-populations.sql --candidate supabase/migrations/20261025203617_horse_multiboard_descendants_use_their_decision_population.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
       - name: Club entry news is shown once across devices
         if: matrix.shard == 2
         env:
@@ -1471,6 +1521,18 @@ jobs:
         if: matrix.shard == 4
         timeout-minutes: 8
         run: python3 -B scripts/dr/build-native-export-client.py --scratch "${{ runner.temp }}" --pg-bin /usr/lib/postgresql/17/bin
+      - name: Digest counts original alerts rather than source updates
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-digest-original-alerts.py
+      - name: Messenger unread ordering and certification identity isolation
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-messenger-inbox-equipment.py
       - name: Owner alerts preserve the actual finding through the real PostgreSQL trigger
         if: matrix.shard == 1
         env:
@@ -1548,6 +1610,15 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: python3 scripts/ci/test-finance-gate-db-postgres.py
+      - name: Durable variant-scoped opponent memory PostgreSQL regression
+        if: matrix.shard == 2
+        working-directory: server
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          npx tsc --noEmit -p tsconfig.opponent-memory.json
+          npx vitest run --config vitest.opponent-memory.config.ts --reporter=verbose
       - name: A treasury-funded seat reads as a Club Bank send (20261012040542)
         if: matrix.shard == 2
         env:
@@ -1655,6 +1726,18 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-hand-review-atomic.py
 
+      - name: Horse daily counts share the original accepted-hand receipt
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-daily-counts.py
+
+      - name: Individual horse history restores only original public observations
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-horse-own-public-history.py
+
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
@@ -1731,6 +1814,27 @@ jobs:
         with:
           name: contract-index-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/contract-index-recovery/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Accepted horse window index preserves exact concurrent identity
+        id: accepted_horse_window_index
+        if: matrix.shard == 4
+        timeout-minutes: 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: >-
+          python3 -B scripts/ci/test-accepted-horse-window-index-postgres.py
+          --root "$GITHUB_WORKSPACE"
+          --scratch-parent "$RUNNER_TEMP"
+          --output "$GITHUB_WORKSPACE/artifacts/accepted-horse-window-index"
+          --pg-bin "$PG_BIN"
+      - name: Retain exact accepted horse window index proof
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.accepted_horse_window_index.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: accepted-horse-window-index-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/accepted-horse-window-index/
           if-no-files-found: error
           retention-days: 3
 
@@ -3082,13 +3186,20 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
-    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
-    # treated as "could break anything", never as "nothing to do".
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed,
+    # and `needs.changes.result != 'success'` then RUNS it. An undetermined diff
+    # is treated as "could break anything", never as "nothing to do".
+    #
+    # It was `always()` until 2026-10-25. The two differ only when the RUN is
+    # cancelled: `always()` starts this heavy job inside a run that was
+    # cancelled because its head was replaced; `!cancelled()` lets it stop.
+    # The required aggregates stay on `always()`, so a cancelled run still
+    # reports red, never skipped-as-green. See ci-supersede.yml and
+    # tests/superseded-ci-stops-at-the-push.law.test.ts.
     #
     # `schedule` runs it unconditionally - see the note on the unit job.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         needs.changes.outputs.head_current != 'false' &&
@@ -3472,7 +3583,9 @@ jobs:
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
       - name: Install Performance Browser
         if: success()
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
 
       - name: Route Performance Budget
         if: success()
@@ -3539,7 +3652,9 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
 
       - name: Wait for Production Deploy
         run: |
@@ -3757,11 +3872,18 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
-    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
-    # treated as "could break anything", never as "nothing to do".
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed,
+    # and `needs.changes.result != 'success'` then RUNS it. An undetermined diff
+    # is treated as "could break anything", never as "nothing to do".
+    #
+    # It was `always()` until 2026-10-25. The two differ only when the RUN is
+    # cancelled: `always()` starts this heavy job inside a run that was
+    # cancelled because its head was replaced; `!cancelled()` lets it stop.
+    # The required aggregates stay on `always()`, so a cancelled run still
+    # reports red, never skipped-as-green. See ci-supersede.yml and
+    # tests/superseded-ci-stops-at-the-push.law.test.ts.
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      !cancelled() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     # TWO HALVES, ONE GATE (2026-10-01). The required check named
@@ -4037,7 +4159,7 @@ jobs:
           # The JSON report beside the line reporter feeds the flaky-case
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
 
       # The CSS Beat suites run with one retry: a case that passed only on
       # retry is named, never counted as clean.
@@ -4118,7 +4240,7 @@ jobs:
   diamond-playfield-e2e:
     needs: changes
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      !cancelled() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Diamond playfield (software WebGL)
@@ -4150,7 +4272,9 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium
-        run: npx playwright install chromium --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium --with-deps
 
       - name: Run the Diamond playfields
         id: diamond-playfield

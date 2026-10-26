@@ -35,6 +35,7 @@
  */
 
 import { useMemo } from 'react';
+import RecordedPotAwards from './RecordedPotAwards';
 import CardImage, { CardBack } from '../table/CardImage';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
@@ -286,6 +287,9 @@ function ShowdownRow({
           {row.low && <span className="hdv__sd-tag hdv__sd-tag--low">LOW</span>}
           {/* Your own mucked cards, drawn face-up for you alone. */}
           {row.holePrivate && <span className="hdv__private-tag">Yours, Not Shown</span>}
+          {/* Dan 2026-10-25: a hand that called the river and lost - mucked and
+              revealed from the record, or tabled by the engine since 10-26. */}
+          {(row.calledMuck || row.calledRiver) && <span className="hdv__sd-tag">CALLED</span>}
         </span>
         <span className="hdv__sd-holerow">
           <span className="hdv__pos">{row.position}</span>
@@ -564,6 +568,7 @@ export function HandDetailView({
 
       {viewerFacts && <AllInFacts facts={viewerFacts} arenaAsset={model.arenaAsset} />}
 
+      <RecordedPotAwards model={model} />
       {model.showdown.length > 0 && (
         <section className="hdv__showdown">
           <header className="hdv__section-head">Showdown</header>

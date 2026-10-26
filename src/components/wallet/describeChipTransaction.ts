@@ -99,6 +99,123 @@ export const WALLET_MOVE_TYPES = new Set<string>([
   'admin_removal',
 ]);
 
+/**
+ * THE CASH-OUT LEGS (Dan, 2026-10-24: "WHO EVER APPROVES THE CASH OUT, THOSE
+ * CHIPS ARE CREDITED TO THAT PERSONS AGENT WALLET ... AND IT SHOULD BE APART
+ * OF THE CASHIER TRANSACTION REPORT").
+ *
+ * fn_cashier_cashout_transition writes one chip_transactions row per leg, and
+ * the row's two user ids are NOT the wallets that moved:
+ *
+ *   cashout_request_escrow  from = player    to = ASSIGNED agent
+ *                           the player's wallet is debited into a hold;
+ *                           the assigned agent receives nothing
+ *   cashout_approved        from = player    to = whoever ACCEPTED it
+ *                           the hold is released into the ACCEPTER's agent
+ *                           wallet; the player's wallet does not move again
+ *   cashout_denied          from = canceller to = player  (hold -> player)
+ *   cashout_cancelled       from = player    to = player  (hold -> player)
+ *   cashout_expired_refund  from = nobody    to = player  (hold -> player)
+ *
+ * Read by from/to alone, the report credited the ASSIGNED agent with every
+ * request (an owner who accepted a downline player's cash-out showed it
+ * against the agent who never touched it), counted the player's chips out
+ * twice, and booked the canceller as paying a refund out of their own wallet.
+ * ledgerDirection reads each leg by the wallet that actually moved, exactly
+ * as the Full Statement already does
+ * (tests/the-statement-counts-each-move-once.db.law.test.ts).
+ */
+export const CASHOUT_LEG_TYPES = new Set<string>([
+  'cashout_request_escrow',
+  'cashout_approved',
+  'cashout_denied',
+  'cashout_cancelled',
+  'cashout_expired_refund',
+]);
+
+export type LedgerDirection = 'in' | 'out' | 'managed';
+
+/**
+ * Kinds the Full Statement never books into or out of a member's wallet: a
+ * union promo move, a mint and a burn change a pot, not the viewer's chips.
+ */
+export const STATEMENT_MANAGED_TYPES = new Set<string>([
+  'union_promo_to_club',
+  'union_promo_clawback',
+  'mint',
+  'treasury_mint',
+  'treasury_burn',
+]);
+
+/**
+ * Which way a ledger row moved the VIEWER's own chips, by the Full Statement's
+ * rule (fn_cashier_statement_rows), so the history and the statement can never
+ * disagree: a cash-out leg is read by the wallet that moved; a pot move is
+ * managed; otherwise the recipient is in, the sender is out, and a self move
+ * or a row the viewer is not a side of is managed. fn_cashier_history_totals
+ * sums by exactly this rule.
+ */
+export function ledgerDirection(
+  row: ChipTransactionLike,
+  viewer: string | null | undefined
+): LedgerDirection {
+  const type = String(row.transaction_type ?? '');
+  const from = row.from_user_id ?? null;
+  const to = row.to_user_id ?? null;
+  if (!viewer) return 'managed';
+  if (CASHOUT_LEG_TYPES.has(type)) {
+    if (type === 'cashout_request_escrow') return from === viewer ? 'out' : 'managed';
+    return to === viewer ? 'in' : 'managed';
+  }
+  if (STATEMENT_MANAGED_TYPES.has(type)) return 'managed';
+  if (to === viewer && from !== viewer) return 'in';
+  if (from === viewer && to !== viewer) return 'out';
+  return 'managed';
+}
+
+/**
+ * The line a history row prints for a cash-out leg, in plain words, so a
+ * request never reads as a transfer to the agent it was sent to (it moved no
+ * chips to him) and an acceptance names who took the chips. Null for any
+ * other kind: the row keeps its usual "To / From / Transfer" line.
+ */
+export function cashoutRowTitle(
+  row: ChipTransactionLike,
+  fromName: string | null | undefined,
+  toName: string | null | undefined,
+  viewer: string | null | undefined
+): string | null {
+  const type = String(row.transaction_type ?? '');
+  if (!CASHOUT_LEG_TYPES.has(type)) return null;
+  const from = row.from_user_id ?? null;
+  const to = row.to_user_id ?? null;
+  const fromIsMe = !!viewer && from === viewer;
+  const toIsMe = !!viewer && to === viewer;
+  const fromN = fromName && fromName.trim() ? fromName : 'A Member';
+  const toN = toName && toName.trim() ? toName : 'A Member';
+  switch (type) {
+    case 'cashout_request_escrow':
+      // from = the player, to = the agent the request was sent to.
+      if (fromIsMe) return `Cash-Out Request To ${toN}`;
+      if (toIsMe) return `${fromN} Requested A Cash-Out From You`;
+      return `${fromN} Requested A Cash-Out From ${toN}`;
+    case 'cashout_approved':
+      // from = the player, to = whoever accepted it.
+      if (toIsMe) return `You Accepted ${fromN}'s Cash-Out`;
+      if (fromIsMe) return `${toN} Accepted Your Cash-Out`;
+      return `${toN} Accepted ${fromN}'s Cash-Out`;
+    case 'cashout_denied':
+      // from = whoever cancelled it, to = the player.
+      if (toIsMe) return `${fromN} Cancelled Your Cash-Out`;
+      if (fromIsMe) return `You Cancelled ${toN}'s Cash-Out`;
+      return `${fromN} Cancelled ${toN}'s Cash-Out`;
+    case 'cashout_cancelled':
+      return toIsMe ? 'You Withdrew Your Cash-Out' : `${toN} Withdrew A Cash-Out`;
+    default:
+      return toIsMe ? 'Your Cash-Out Expired' : `${toN}'s Cash-Out Expired`;
+  }
+}
+
 function walletName(key: unknown, fallback: WalletName): WalletName {
   const k = String(key ?? '').toLowerCase();
   return DESTINATION_NAMES[k] ?? fallback;
@@ -186,7 +303,7 @@ export function describeChipTransaction(
 ): string | null {
   const shown = presentChipTransaction(row);
   const type = String(shown.transaction_type ?? '');
-  if (!WALLET_MOVE_TYPES.has(type)) return null;
+  if (!WALLET_MOVE_TYPES.has(type) && !CASHOUT_LEG_TYPES.has(type)) return null;
 
   const nameOf = (id: string | null | undefined): string => {
     if (!id) return 'A Member';
@@ -256,6 +373,18 @@ export function describeChipTransaction(
       const source = walletName(meta.source, 'Player Wallet');
       return `${nameOf(to)} Removed ${amount} From ${possessive(from)} ${source} To The Club Bank`;
     }
+    // The cash-out legs (CASHOUT_LEG_TYPES): the accepter is the to side of
+    // an acceptance, and the chips land in THAT person's agent wallet.
+    case 'cashout_request_escrow':
+      return `${actor} Requested A Cash-Out Of ${amount} From ${possessive(from)} Player Wallet. The Chips Are Held Until It Is Accepted Or Cancelled`;
+    case 'cashout_approved':
+      return `${nameOf(to)} Accepted ${possessive(from)} Cash-Out Of ${amount}. The Chips Went To ${possessive(to)} Agent Wallet`;
+    case 'cashout_denied':
+      return `${actor} Cancelled ${possessive(to)} Cash-Out Of ${amount}. The Chips Went Back To ${possessive(to)} Player Wallet`;
+    case 'cashout_cancelled':
+      return `${nameOf(to)} Withdrew ${nameOf(to) === 'You' ? 'Your' : 'Their'} Cash-Out Of ${amount}. The Chips Went Back To ${possessive(to)} Player Wallet`;
+    case 'cashout_expired_refund':
+      return `${possessive(to)} Cash-Out Of ${amount} Expired. The Chips Went Back To ${possessive(to)} Player Wallet`;
     default:
       return null;
   }
@@ -268,6 +397,18 @@ export function describeChipTransaction(
 export function walletRoute(row: ChipTransactionLike): string | null {
   const shown = presentChipTransaction(row);
   const type = String(shown.transaction_type ?? '');
+  switch (type) {
+    case 'cashout_request_escrow':
+      return 'Player Wallet To Held Cash-Out';
+    case 'cashout_approved':
+      return 'Held Cash-Out To Agent Wallet';
+    case 'cashout_denied':
+    case 'cashout_cancelled':
+    case 'cashout_expired_refund':
+      return 'Held Cash-Out To Player Wallet';
+    default:
+      break;
+  }
   if (!WALLET_MOVE_TYPES.has(type)) return null;
   const meta = (shown.metadata ?? {}) as Record<string, unknown>;
   const dest = walletName(meta.destination, 'Player Wallet');

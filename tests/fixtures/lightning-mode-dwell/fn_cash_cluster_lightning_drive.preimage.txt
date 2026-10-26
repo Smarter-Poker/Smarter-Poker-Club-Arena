@@ -1,0 +1,154 @@
+CREATE OR REPLACE FUNCTION public.fn_cash_cluster_lightning_drive(p_game_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  g        record;
+  v_state  jsonb;
+  v_conv   record;
+  v_n      integer;
+  v_live   integer;
+  v_off    integer;
+  v_on_ok  boolean;
+  v_off_ok boolean;
+  v_live_ok boolean;
+  v_action text;
+  v_res    jsonb;
+  v_mode   text;
+  v_sqlstate text;
+  v_message  text;
+  v_drain    jsonb;
+BEGIN
+  SELECT cg.id, cg.cluster_mode, cg.cluster_epoch, cg.lightning_enabled, cg.enabled, cg.must_move
+    INTO g FROM public.cash_games cg WHERE cg.id = p_game_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'not_found');
+  END IF;
+
+  -- ONE CLUSTER'S FAILURE IS ITS OWN. Everything below runs in this block's
+  -- sub-transaction: a lock wait past the pass's lock_timeout, or any error,
+  -- rolls back only this Cluster's step and is answered as a row and an
+  -- event, and the tick pass goes on to the next Cluster.
+  BEGIN
+
+  -- ONE READER. The verdict is fn_cash_cluster_live_eligible against the
+  -- configured thresholds; the hysteresis is the gap between ON and OFF, and
+  -- nothing here re-derives either number.
+  v_state  := public.fn_cash_cluster_lightning_state(g.id);
+  v_on_ok := EXISTS(SELECT 1 FROM public.cash_games policy
+ WHERE policy.id=g.id AND policy.enabled AND policy.closed_at IS NULL
+ AND policy.must_move AND policy.lightning_enabled AND policy.handedness=6
+ AND policy.template_name IN ('action','madness')
+ AND policy.ruleset_snapshot#>'{lightning,always_on}'='true'::jsonb
+ AND NOT EXISTS(SELECT 1 FROM public.lightning_cluster_drain d
+   WHERE d.cluster_id=policy.id AND d.completed_at IS NULL)) OR coalesce((v_state -> 'verdict' ->> 'would_turn_on')::boolean, false);
+  v_off_ok := NOT EXISTS(SELECT 1 FROM public.cash_games policy
+ WHERE policy.id=g.id AND policy.enabled AND policy.closed_at IS NULL
+ AND policy.must_move AND policy.lightning_enabled AND policy.handedness=6
+ AND policy.template_name IN ('action','madness')
+ AND policy.ruleset_snapshot#>'{lightning,always_on}'='true'::jsonb
+ AND NOT EXISTS(SELECT 1 FROM public.lightning_cluster_drain d
+   WHERE d.cluster_id=policy.id AND d.completed_at IS NULL)) AND coalesce((v_state -> 'verdict' ->> 'would_turn_off')::boolean, false);
+  v_live   := coalesce((v_state -> 'verdict' ->> 'live_eligible')::integer, 0);
+  v_off    := coalesce((v_state -> 'thresholds' ->> 'off')::integer, 0);
+  v_live_ok := coalesce(g.lightning_enabled, false) AND g.enabled IS NOT DISTINCT FROM true;
+
+  SELECT * INTO v_conv FROM public.cash_cluster_conversion cc
+   WHERE cc.cluster_id = g.id AND cc.status = 'pending';
+  SELECT count(*)::integer INTO v_n FROM public.cash_cluster_conversion cc WHERE cc.cluster_id = g.id;
+
+  IF g.cluster_mode = 'must_move' THEN
+    IF v_on_ok AND coalesce(g.must_move, false) THEN
+      v_action := 'begin_pending_on';
+      -- THE REQUEST ID IS THE CLUSTER, ITS EPOCH, THE DIRECTION AND HOW MANY
+      -- CONVERSIONS IT HAS HAD, so two passes racing here ask for the same
+      -- conversion and the second is told already_known. An abort adds a row,
+      -- so the next attempt gets a new id.
+      v_res := public.fn_cash_cluster_begin_pending_on(g.id,
+        md5(format('lightning-drive:%s:%s:lightning:%s', g.id, g.cluster_epoch, v_n))::uuid);
+    ELSE
+      v_action := 'hold';
+    END IF;
+  ELSIF g.cluster_mode = 'pending_on' THEN
+    IF v_conv.id IS NULL THEN
+      v_action := 'no_open_conversion';
+    ELSIF NOT v_on_ok THEN
+      v_action := 'abort_pending_on';
+      v_res := public.fn_cash_cluster_abort_pending_on(g.id, v_conv.conversion_request_id,
+        CASE WHEN coalesce(g.lightning_enabled, false) = false THEN 'lightning_disabled'
+             WHEN g.enabled IS DISTINCT FROM true THEN 'game_disabled'
+             ELSE 'population_fell_below_on_threshold' END);
+    ELSE
+      v_action := 'commit_lightning';
+      v_res := public.fn_cash_cluster_commit_lightning(g.id, v_conv.conversion_request_id);
+    END IF;
+  ELSIF g.cluster_mode = 'lightning' THEN
+    IF v_off_ok OR NOT v_live_ok THEN
+      v_action := 'begin_pending_off';
+      v_res := public.fn_cash_cluster_begin_pending_off(g.id,
+        md5(format('lightning-drive:%s:%s:must_move:%s', g.id, g.cluster_epoch, v_n))::uuid,
+        'fn_cash_cluster_lightning_drive');
+    ELSE
+      v_action := 'hold';
+      -- 20261007222717: THE DWELL SIGHTING IS CONSECUTIVE-PASS STATE. A pass
+      -- that does not see the OFF condition clears the first sighting, so an
+      -- oscillating population never accumulates one.
+      UPDATE public.cash_games cg SET lightning_off_condition_since = NULL
+       WHERE cg.id = g.id AND cg.lightning_off_condition_since IS NOT NULL;
+    END IF;
+  ELSIF g.cluster_mode = 'pending_off' THEN
+    IF v_conv.id IS NULL THEN
+      v_action := 'no_open_conversion';
+    ELSIF v_live_ok AND (EXISTS(SELECT 1 FROM public.cash_games policy
+ WHERE policy.id=g.id AND policy.enabled AND policy.closed_at IS NULL
+ AND policy.must_move AND policy.lightning_enabled AND policy.handedness=6
+ AND policy.template_name IN ('action','madness')
+ AND policy.ruleset_snapshot#>'{lightning,always_on}'='true'::jsonb
+ AND NOT EXISTS(SELECT 1 FROM public.lightning_cluster_drain d
+   WHERE d.cluster_id=policy.id AND d.completed_at IS NULL)) OR v_live > v_off) THEN
+      v_action := 'abort_pending_off';
+      v_res := public.fn_cash_cluster_abort_pending_off(g.id, v_conv.conversion_request_id,
+        'population_rose_above_off_threshold');
+    ELSE
+      v_action := 'commit_must_move';
+      v_res := public.fn_cash_cluster_commit_must_move(g.id, v_conv.conversion_request_id);
+    END IF;
+  ELSIF g.cluster_mode = 'draining' THEN
+    -- LIGHTNING PHASE 13 (20261009235505): the emergency drain's own mode;
+    -- its step is the advance below.
+    v_action := 'drain';
+  ELSE
+    v_action := 'mode_not_driven';
+  END IF;
+
+  -- LIGHTNING PHASE 13 (20261009235505): THE EMERGENCY DRAIN ADVANCES HERE,
+  -- after the Cluster's own step (a pending_off committed, a pending_on
+  -- aborted), so a drain whose reversion just landed closes in the same
+  -- pass.
+  IF EXISTS (SELECT 1 FROM public.lightning_cluster_drain d
+              WHERE d.cluster_id = g.id AND d.completed_at IS NULL) THEN
+    v_drain := public.fn_lightning_drain_advance(g.id);
+  END IF;
+
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    INSERT INTO public.cash_cluster_events (game_id, kind, payload)
+    VALUES (g.id, 'lightning_drive_error', jsonb_build_object(
+      'cluster_id', g.id, 'mode', g.cluster_mode, 'action', v_action,
+      'sqlstate', v_sqlstate, 'message', v_message, 'at', clock_timestamp()));
+    RETURN jsonb_build_object('ok', false, 'cluster_id', g.id, 'action', v_action,
+      'mode_before', g.cluster_mode,
+      'error', jsonb_build_object('sqlstate', v_sqlstate, 'message', v_message));
+  END;
+
+  SELECT cg.cluster_mode INTO v_mode FROM public.cash_games cg WHERE cg.id = g.id;
+  RETURN jsonb_build_object('ok', true, 'cluster_id', g.id, 'action', v_action,
+    'mode_before', g.cluster_mode, 'cluster_mode', v_mode,
+    'live_eligible', v_live, 'thresholds', v_state -> 'thresholds',
+    'lightning_enabled', g.lightning_enabled)
+    || CASE WHEN v_res IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('result', v_res) END
+    || CASE WHEN v_drain IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('drain', v_drain) END;
+END;
+$function$

@@ -75,40 +75,63 @@ function selectorFor(needle: string): string {
 
 const rank = (a: [number, number, number]) => a[0] * 1e6 + a[1] * 1e3 + a[2];
 
-describe('the short-canvas top cap loses to the rules it must lose to', () => {
-  const capSelector = selectorFor('min(var(--seat-avatar-full), 56px)');
-  const capAt = CSS.indexOf('min(var(--seat-avatar-full), 56px)');
-  const tournamentSelector = '.table-page--tournament .seat-wrapper--top .seat';
-  const emptySelector = '.seat-wrapper--top .seat.seat--empty';
+/**
+ * Dan 2026-10-24: "IN 6 HANDED GAMES, THE AVATAR OR VILLIAN IN THE 'DONKQUEEN'
+ * POSITION CAN BE FULL SCREEN NOW THAT THE BBJ IS REMOVED FROM ABOVE THEM...
+ * MAKE THAT CHANGE GLOBALLY". The short-canvas rule no longer caps; it RESTORES
+ * the full slot and the full bust, so the arithmetic now checks that it WINS
+ * against both top-row caps it has to undo - and that the tournament and
+ * empty-seat rules, which also ask for the full slot, cannot fight it.
+ */
+describe('the short-canvas top seat is full size, and the cascade says so', () => {
+  const FULL = '--seat-avatar-base: var(--seat-avatar-full)';
+  /** The short-ring rule is the first `.table-page:where(` rule whose body restores the slot. */
+  const shortSlot = (() => {
+    const re =
+      /(\.table-page:where\(\s*\[data-seats='2'\][^{]*\.seat-wrapper--top\s+\.seat)\s*\{([^}]*)\}/;
+    const m = re.exec(CSS);
+    expect(m, 'the 2-6 top-seat rule is missing').not.toBeNull();
+    return { selector: m![1].trim(), body: m![2], at: m!.index };
+  })();
+  const shortWrapper = (() => {
+    const re = /(\.table-page:where\(\s*\[data-seats='2'\][^{]*\.seat-wrapper--top)\s*\{([^}]*)\}/;
+    const m = re.exec(CSS);
+    expect(m, 'the 2-6 top-wrapper rule is missing').not.toBeNull();
+    return { selector: m![1].trim(), body: m![2], at: m!.index };
+  })();
 
-  it('the cap rule is 0-3-0, not 0-4-0', () => {
-    // A class plus an attribute on one compound is TWO class-level units. This
-    // is the arithmetic the original comment got wrong.
-    expect(specificity(capSelector)).toEqual([0, 3, 0]);
+  it('restores the full slot and the full bust for rings of 2-6', () => {
+    expect(shortSlot.body).toContain(FULL);
+    expect(shortWrapper.body).toContain('--sp-bust-scale: 1.45');
+    for (const n of [2, 3, 4, 5, 6]) expect(shortSlot.selector).toContain(`[data-seats='${n}']`);
+    for (const n of [7, 8, 9]) expect(shortSlot.selector).not.toContain(`[data-seats='${n}']`);
   });
 
-  it('a tournament top seat is never capped', () => {
-    // TablePage puts both classes on the same element, so a Spin matches BOTH
-    // rules and the winner is decided here.
-    expect(CSS).toContain(tournamentSelector);
-    const cap = specificity(capSelector);
-    const tour = specificity(tournamentSelector);
-    expect(rank(tour), 'the tournament exemption must not be out-specified').toBeGreaterThanOrEqual(
-      rank(cap)
-    );
-    // Equal specificity is decided by source order, so the exemption must come
-    // AFTER the cap.
-    expect(CSS.indexOf(tournamentSelector)).toBeGreaterThan(capAt);
+  it('the slot rule is 0-3-0 and beats the 76px top-row cap', () => {
+    expect(specificity(shortSlot.selector)).toEqual([0, 3, 0]);
+    const cap = selectorFor('min(var(--seat-avatar-full), 76px)');
+    expect(rank(specificity(shortSlot.selector))).toBeGreaterThan(rank(specificity(cap)));
   });
 
-  it('an empty SIT plate is never capped (Dan 2026-08-31)', () => {
-    expect(CSS).toContain(emptySelector);
-    expect(rank(specificity(emptySelector))).toBeGreaterThanOrEqual(rank(specificity(capSelector)));
-    expect(CSS.indexOf(emptySelector)).toBeGreaterThan(capAt);
+  it('the wrapper rule beats the 1.05x top-row bust', () => {
+    const bust = selectorFor('--sp-bust-scale: 1.05');
+    expect(bust).toBe('.seat-wrapper--top');
+    expect(rank(specificity(shortWrapper.selector))).toBeGreaterThan(rank(specificity(bust)));
   });
 
-  it('the cap still beats the full-canvas 76px rule it replaces', () => {
-    const full = selectorFor('min(var(--seat-avatar-full), 76px)');
-    expect(rank(specificity(capSelector))).toBeGreaterThan(rank(specificity(full)));
+  it('no 56px cap survives anywhere', () => {
+    expect(CSS).not.toContain('min(var(--seat-avatar-full), 56px)');
+  });
+
+  it('a tournament top seat and an empty SIT plate still ask for the full slot', () => {
+    for (const sel of [
+      '.table-page--tournament .seat-wrapper--top .seat',
+      '.seat-wrapper--top .seat.seat--empty',
+    ]) {
+      const at = CSS.indexOf(sel);
+      expect(at, sel).toBeGreaterThan(-1);
+      const body = CSS.slice(CSS.indexOf('{', at), CSS.indexOf('}', at));
+      expect(body).toContain(FULL);
+    }
   });
 });

@@ -1323,6 +1323,15 @@
   display: none;
 }
 
+/* CENTERED ON THE SCREEN (Dan 2026-10-25). The row was 420px wide inside a
+   340px stage, so it hung off the stage's right edge and the three chests sat
+   right of centre. With chests on offer the stage itself widens to hold the
+   row, and the row fills it exactly, so the middle chest is the centre of the
+   screen at every width. */
+.mbc--choosing .mbc__stage {
+  width: min(440px, 94vw);
+}
+
 .mbc__picks {
   position: relative;
   z-index: 8;
@@ -1330,8 +1339,9 @@
   justify-content: center;
   align-items: flex-end;
   gap: clamp(8px, 4vw, 22px);
-  width: min(92vw, 420px);
-  margin: 6px auto 4px;
+  width: 100%;
+  margin: 18px auto 4px;
+  box-sizing: border-box;
 }
 
 .mbc__pick {
@@ -1489,10 +1499,10 @@
 
 /* PICK 1 OF 3: which chest held the prize, and each other chest's number. */
 .mbc__picked-slot {
+  /* First Letter Capitalized (the house rule), not shouted in capitals. */
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: rgba(255, 255, 255, 0.78);
   margin-bottom: 4px;
 }
@@ -1503,4 +1513,121 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── EVERY CHEST STAYS ON SCREEN (Dan 2026-10-25) ───────────────────────────
+   "YOU MUST ALWAYS SHOW THE OTHER 2 PRIZES THAT 'COULD OF BEEN CHOOSEN'."
+   The row of chests no longer leaves when one is picked. The picked chest
+   lifts and glows while the burst plays; on the reveal each chest carries a
+   plate with what it held - the prize, and the two that could have been. */
+
+.mbc__picks--opened {
+  /* Room for a plate of two lines (a long Diamond figure wraps). */
+  margin-bottom: 64px;
+}
+
+.mbc__picks--opened .mbc__pick {
+  animation: none;
+}
+
+.mbc__pick--picked .mbc__pick-img {
+  transform: translateY(-6px) scale(1.06);
+}
+
+/* THE PICKED CHEST IS THE ONE THAT BURSTS (2026-10-26 audit): with three on
+   offer there is no big chest, so the chosen one swells and flares while the
+   coin shower plays. Reduced motion keeps the glow, not the movement. */
+.mbc--opening .mbc__pick--picked .mbc__pick-img,
+.mbc--explosion .mbc__pick--picked .mbc__pick-img {
+  animation: mbcPickBurst 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  filter: drop-shadow(0 0 22px rgba(111, 220, 255, 0.95));
+}
+
+@keyframes mbcPickBurst {
+  0% {
+    transform: translateY(-6px) scale(1.06);
+  }
+  45% {
+    transform: translateY(-14px) scale(1.32) rotate(-3deg);
+  }
+  70% {
+    transform: translateY(-10px) scale(1.22) rotate(2deg);
+  }
+  100% {
+    transform: translateY(-8px) scale(1.16);
+  }
+}
+
+.mbc__pick--other .mbc__pick-img {
+  opacity: 0.55;
+  filter: grayscale(0.35);
+  transition:
+    opacity 0.35s ease,
+    filter 0.35s ease;
+}
+
+.mbc__pick--other.mbc__pick--shown .mbc__pick-img {
+  opacity: 0.8;
+  filter: none;
+}
+
+.mbc__pick-plate {
+  /* Spans its own chest's column, so it is centred under that chest by
+     construction and can never run past the row (2026-10-26 audit: a
+     translateX(-50%) centring was overwritten by the entry animation's
+     transform, and the third plate ran off a 375px screen). */
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  top: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  animation: mbcOtherIn 0.45s ease-out both;
+  animation-delay: calc(0.25s + var(--mbc-p, 0) * 0.12s);
+}
+
+.mbc__pick-plate-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.mbc__pick-plate-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(12px, 3.8vw, 17px);
+  line-height: 1.15;
+  font-weight: 900;
+  color: var(--mbc-tier, #6fdcff);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.mbc__pick--picked .mbc__pick-plate-label {
+  color: #e8eef7;
+}
+
+/* The pick clock: five real seconds, counting down where everyone can see. */
+.mbc__countdown {
+  display: block;
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: #e8eef7;
+  text-shadow: 0 0 12px rgba(111, 220, 255, 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mbc__pick-plate {
+    animation-duration: 0.01ms !important;
+  }
+  .mbc--opening .mbc__pick--picked .mbc__pick-img,
+  .mbc--explosion .mbc__pick--picked .mbc__pick-img {
+    animation: none;
+  }
 }

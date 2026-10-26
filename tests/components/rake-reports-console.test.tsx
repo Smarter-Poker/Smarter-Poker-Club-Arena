@@ -252,6 +252,18 @@ afterEach(() => {
 });
 
 describe('Rake Reports console and truth boundary', () => {
+  it('prints stored game identifiers as readable names in top tables and recent hands', async () => {
+    const payload = financialPayload();
+    payload.by_table[0].name = 'SHORT_DECK 0.50/1.00 Lightning Games';
+    payload.by_table[0].variant = 'SHORT_DECK';
+    payload.recent[0].table_name = payload.by_table[0].name;
+    m.rpc.mockResolvedValue({ data: payload, error: null });
+    render(<RakeReports clubId="shark-club" />);
+    await screen.findByLabelText('Verified Rake Summary');
+    expect(document.body.textContent).not.toContain('SHORT_DECK');
+    expect(screen.getAllByText('SHORT DECK 0.50/1.00 Lightning Games')).toHaveLength(2);
+  });
+
   it('renders verified financial rows on approved painted consoles without decimals', async () => {
     render(<RakeReports clubId="shark-club" />);
 

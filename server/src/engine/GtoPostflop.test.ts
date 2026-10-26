@@ -20,6 +20,8 @@ import {
   rollMix,
 } from './GtoPostflop.js';
 import { HorseLogic } from './HorseLogic.js';
+import { HorseMind } from './HorseMind.js';
+import { seedFastRandom, saveFastRandom } from './HorseEval.js';
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 
 const c = (rank: string, suit: string): Card => ({ rank, suit }) as Card;
@@ -368,6 +370,13 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
     ...over,
   });
 
+  // V58 (2026-10-26): A-K on Q-J-T is a made straight, and a set, straight,
+  // flush or better no longer reads the class-mean cell (the value ladder
+  // bets it - HorseMadeHandBeatsClassMean.law.test.ts). The cell-following
+  // pins below therefore hold an UNMADE hand: A-9 offsuit (ace high, no
+  // straight, no flush on either board).
+  const unmade = () => mkPlayer({ cards: [H('A'), S('9')] });
+
   // Turn variant of the same hand: BB check-called the flop bet, then
   // checked the turn to hero — hero still holds the lead.
   const turnHistory: ActionRecord[] = [
@@ -397,11 +406,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { bet_big: 1 } },
+        hand_matrix: { A9o: { bet_big: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), gs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), gs() as never, 'balanced');
       expect(d.action).toBe('bet');
     }
   });
@@ -415,11 +424,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { check: 1 } },
+        hand_matrix: { A9o: { check: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), gs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), gs() as never, 'balanced');
       expect(d.action).toBe('check');
     }
   });
@@ -433,11 +442,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { bet_small: 1 } },
+        hand_matrix: { A9o: { bet_small: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), turnGs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), turnGs() as never, 'balanced');
       expect(d.action).toBe('bet');
       // 0.24-0.32 of the 19 pot, before betSize's own rounding — assert the
       // band loosely: a block bet, never a barrel
@@ -455,11 +464,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { check: 1 } },
+        hand_matrix: { A9o: { check: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), turnGs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), turnGs() as never, 'balanced');
       expect(d.action).toBe('check');
     }
   });
@@ -507,6 +516,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
       [D('7'), CL('2')],
       [S('9'), S('8')],
     ]) {
+      // Compare the GTO switch from the SAME current brain and RNG state.
+      // Consecutive stochastic decisions compare different mixed-strategy
+      // rolls and speculative plans, not the effect of an empty solver store.
+      HorseMind.reset();
+      seedFastRandom(1701);
       const on = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         gs() as never,
@@ -516,6 +530,9 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
           v29GtoFlop: true,
         }
       );
+      const onRng = saveFastRandom();
+      HorseMind.reset();
+      seedFastRandom(1701);
       const off = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         gs() as never,
@@ -526,7 +543,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         }
       );
       expect(on.action).toBe(off.action);
+      expect(on.amount).toBe(off.amount);
+      expect(saveFastRandom()).toEqual(onRng);
 
+      HorseMind.reset();
+      seedFastRandom(1702);
       const onT = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         turnGs() as never,
@@ -536,6 +557,9 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
           v30GtoTurnRiver: true,
         }
       );
+      const onTurnRng = saveFastRandom();
+      HorseMind.reset();
+      seedFastRandom(1702);
       const offT = HorseLogic.decide(
         mkPlayer({ cards: cards as never }),
         turnGs() as never,
@@ -546,6 +570,8 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         }
       );
       expect(onT.action).toBe(offT.action);
+      expect(onT.amount).toBe(offT.amount);
+      expect(saveFastRandom()).toEqual(onTurnRng);
     }
   });
 

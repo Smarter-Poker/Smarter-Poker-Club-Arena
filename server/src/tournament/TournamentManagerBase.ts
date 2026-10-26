@@ -188,10 +188,7 @@ import {
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
 import { levelResumeRemainingMs } from './levelClockOutage.js';
-import {
-  everyOtherTableIsAtAHandBoundary,
-  unprovedHandNeedsSuccessorGeneration,
-} from './unprovedHandSuccessor.js';
+import { unprovedHandNeedsSuccessorGeneration } from './unprovedHandSuccessor.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -480,6 +477,31 @@ export abstract class TournamentManagerBase {
    */
   private readonly tableAdmissionLastRefusal = new Map<string, string>();
   private readonly tableAdmissionPagedAt = new Map<string, number>();
+  /**
+   * A STALLED TABLE PAGES ITS REAL REFUSAL, AND A REPEATED REFUSAL READS AS
+   * STUCK (2026-10-25).
+   *
+   * Union PKO Afternoon 12135e5b, Table 13 (3e3d1587): every re-admission of
+   * its park from 19:53 to 23:39 UTC was refused
+   * F06_MOVEMENT_WHOLE_ROSTER_REQUIRED, but the one page (20:06) read "Last
+   * refusal: F06 manager authority unavailable" - a transient retry that had
+   * overwritten the real code - and its 30-minute refreshes changed nothing,
+   * because the dedupe door returns the open row untouched. 30 of the 53 pages
+   * of the previous seven days read "Last refusal: unknown": the table was
+   * killed and rebuilt, and the kill reason was never named.
+   *
+   * So the coded refusal (an UPPER_SNAKE database code) is kept as the table's
+   * streak, a refusal without a code never replaces it, identical refusals are
+   * counted with their first and last time, the recovery reason is kept for a
+   * table that met no refusal, and each refresh rewrites the one open alert
+   * with the current streak. Identification only, like the rest of this.
+   */
+  private readonly tableAdmissionRefusalStreak = new Map<
+    string,
+    { code: string; coded: boolean; count: number; firstAt: number; lastAt: number }
+  >();
+  private readonly tableAdmissionRecoveryReason = new Map<string, string>();
+  private readonly tableAdmissionPagedCode = new Map<string, string | null>();
   static readonly TABLE_ADMISSION_PAGE_AFTER_MS = 10 * 60_000;
   static readonly TABLE_ADMISSION_PAGE_EVERY_MS = 30 * 60_000;
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
@@ -704,6 +726,9 @@ export abstract class TournamentManagerBase {
    * opened still gets theirs -- see tryTournamentAddOns.
    */
   protected lastAddOnOfferAt: number = 0;
+  /** What the last add-on offer pass did: offers answered, and whether horses
+   * remain unoffered. Read by the head-of-admission loop (2026-10-25). */
+  protected lastAddOnOfferPass: { offered: number; more: boolean } = { offered: 0, more: false };
   /** Preserve the pre-scheduler add-on retry cadence without per-manager timers. */
   static readonly ADD_ON_RETRY_MS = 20_000;
   /** Poll an enabled deal only after this manager has confirmed one final table. */
@@ -966,7 +991,7 @@ export abstract class TournamentManagerBase {
   /** Horses already offered the current add-on window in this process. */
   protected addOnAttemptedHorseIds = new Set<string>();
   /** Round-robin cursor keeps one transient refusal from starving the field. */
-  protected addOnBatchCursor = 0;
+  protected addOnBatchCursor: string | null = null;
   protected pendingAddOnPeriod: boolean = false;
   // Hand-for-hand bubble
   protected handForHandActive: boolean = false;
@@ -1120,6 +1145,17 @@ export abstract class TournamentManagerBase {
    * resumeFromBreak (this one is over).
    */
   protected breakCountdownStarted: boolean = false;
+  /**
+   * When THIS :55 break's countdown ends, once it has started (0 otherwise).
+   *
+   * Dan, 2026-10-25: "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT
+   * HAPPENS TO BE AT THE SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES, THEY
+   * ARE NOT THE SAME BREAK". An add-on that comes due while the field is
+   * already away for the :55 break opens inside it and runs to this instant,
+   * instead of waiting for the break to end and stopping every table again.
+   * Set with breakCountdownStarted, cleared with it.
+   */
+  protected synchronizedBreakEndsAtMs = 0;
   private breakResumePersisting = false;
   /** Retain the exact proposal if its database acknowledgement is lost. */
   private pendingBreakResumeClock: {
@@ -1613,7 +1649,23 @@ export abstract class TournamentManagerBase {
       this.tableEngineRecoveryAttempts.delete(tableId);
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      TournamentManagerBase.forgetTableAdmissionStreak(this, tableId);
       this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
+    }
+  }
+
+  /** Static so a test probe without the method can be cleared the same way. */
+  private static forgetTableAdmissionStreak(
+    manager: TournamentManagerBase,
+    tableId?: string
+  ): void {
+    for (const map of [
+      manager.tableAdmissionRefusalStreak,
+      manager.tableAdmissionRecoveryReason,
+      manager.tableAdmissionPagedCode,
+    ] as Array<Map<string, unknown> | undefined>) {
+      if (tableId === undefined) map?.clear();
+      else map?.delete(tableId);
     }
   }
 
@@ -1626,6 +1678,7 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
     this.tableAdmissionFailingSince.clear();
     this.tableAdmissionLastRefusal?.clear();
+    TournamentManagerBase.forgetTableAdmissionStreak(this);
     this.fieldWithoutDealerReleaseAnnouncedFor?.clear();
     this.tableRestartBackoffStore?.clear();
   }
@@ -1640,14 +1693,45 @@ export abstract class TournamentManagerBase {
     if (!this.tableEngineRecoveryTimers.has(tableId)) {
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      TournamentManagerBase.forgetTableAdmissionStreak(this, tableId);
       this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
     }
   }
 
+  /** The database's own refusal code in a refusal, e.g. F06_MOVEMENT_WHOLE_ROSTER_REQUIRED. */
+  static tableAdmissionRefusalCode(text: string): string | null {
+    return /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}\b/.exec(text)?.[0] ?? null;
+  }
+
   /** Keep the last refusal a failing table's admission met (bounded text). */
-  private noteTableAdmissionRefusal(tableId: string, error: unknown): void {
+  private noteTableAdmissionRefusal(tableId: string, error: unknown, now = Date.now()): void {
     const text = describeError(error).replace(/\s+/g, ' ').trim().slice(0, 400);
-    if (text) this.tableAdmissionLastRefusal?.set(tableId, text);
+    if (!text) return;
+    this.tableAdmissionLastRefusal?.set(tableId, text);
+    const streaks = this.tableAdmissionRefusalStreak;
+    if (!streaks) return;
+    const code = TournamentManagerBase.tableAdmissionRefusalCode(text);
+    const key = code ?? text.slice(0, 120);
+    const current = streaks.get(tableId);
+    // A refusal with no code (a fenced or superseded retry) never hides the
+    // coded refusal the table is actually stuck on.
+    if (current?.coded && !code) return;
+    if (current && current.code === key) {
+      current.count += 1;
+      current.lastAt = now;
+      return;
+    }
+    streaks.set(tableId, { code: key, coded: code !== null, count: 1, firstAt: now, lastAt: now });
+  }
+
+  /** The refusal a failing table is stuck on, and how many times it was met. */
+  getTableAdmissionRefusalStreak(
+    tableId: string
+  ): { code: string; count: number; firstAt: number; lastAt: number } | null {
+    const streak = this.tableAdmissionRefusalStreak?.get(tableId);
+    return streak
+      ? { code: streak.code, count: streak.count, firstAt: streak.firstAt, lastAt: streak.lastAt }
+      : null;
   }
 
   /** The last refusal recorded for each table still failing admission. */
@@ -1670,31 +1754,82 @@ export abstract class TournamentManagerBase {
     const failingMs = now - since;
     if (failingMs < TournamentManagerBase.TABLE_ADMISSION_PAGE_AFTER_MS) return;
     const pagedAt = this.tableAdmissionPagedAt.get(tableId);
+    const streak = this.tableAdmissionRefusalStreak?.get(tableId) ?? null;
+    const code = streak?.code ?? null;
+    // A refusal that changed since the last page refreshes it at once.
+    const codeChanged =
+      pagedAt !== undefined &&
+      this.tableAdmissionPagedCode !== undefined &&
+      (this.tableAdmissionPagedCode.get(tableId) ?? null) !== code;
     if (
       pagedAt !== undefined &&
+      !codeChanged &&
       now - pagedAt < TournamentManagerBase.TABLE_ADMISSION_PAGE_EVERY_MS
     )
       return;
+    const firstPage = pagedAt === undefined;
     this.tableAdmissionPagedAt.set(tableId, now);
+    this.tableAdmissionPagedCode?.set(tableId, code);
     const refusal = this.tableAdmissionLastRefusal?.get(tableId) ?? null;
+    const recoveryReason = this.tableAdmissionRecoveryReason?.get(tableId) ?? null;
     const minutes = Math.round(failingMs / 60_000);
+    const stuck =
+      streak && streak.count > 1
+        ? ` STUCK: refused ${streak.code} ${streak.count} times since ${new Date(streak.firstAt).toISOString()}.`
+        : streak
+          ? ` Refused ${streak.code}.`
+          : '';
+    const message =
+      `Tournament ${this.tournamentId} table ${tableId} has failed to start for ${minutes} min; its seated players have no dealer.` +
+      stuck +
+      ` Last refusal: ${refusal ?? (recoveryReason ? `none recorded (recovery reason: ${recoveryReason})` : 'unknown')}`;
+    const dedupeKey = `table-admission-failing:${tableId}`;
+    const context = {
+      tournament_id: this.tournamentId,
+      table_id: tableId,
+      failing_minutes: minutes,
+      failing_since: new Date(since).toISOString(),
+      last_refusal: refusal,
+      refusal_code: code,
+      identical_refusals: streak?.count ?? 0,
+      refusal_first_at: streak ? new Date(streak.firstAt).toISOString() : null,
+      refusal_last_at: streak ? new Date(streak.lastAt).toISOString() : null,
+      stuck: (streak?.count ?? 0) > 1,
+      recovery_reason: recoveryReason,
+      attempts: this.tableEngineRecoveryAttempts?.get(tableId) ?? null,
+    };
     void raiseFinancialAlert(
       'critical',
       'Tournament.table_admission_failing',
-      `Tournament ${this.tournamentId} table ${tableId} has failed to start for ${minutes} min; its seated players have no dealer. Last refusal: ${refusal ?? 'unknown'}`,
-      {
-        tournament_id: this.tournamentId,
-        table_id: tableId,
-        failing_minutes: minutes,
-        failing_since: new Date(since).toISOString(),
-        last_refusal: refusal,
-        attempts: this.tableEngineRecoveryAttempts?.get(tableId) ?? null,
-      },
-      `table-admission-failing:${tableId}`,
+      message,
+      context,
+      dedupeKey,
       this.tournamentId
-    ).catch((alertError) =>
-      reportError(alertError, 'Tournament.table_admission_failing_alert_failed', { tableId })
-    );
+    )
+      .then(async (raised) => {
+        // The dedupe door returns the one open row unchanged, so a refresh
+        // rewrites that row with the current streak; the keys the door and
+        // the inbox read (channel, dedupe_key, entity_id) are kept.
+        if (firstPage || !raised.alertId) return;
+        const { error } = await supabase
+          .from('financial_alerts')
+          .update({
+            message,
+            context: {
+              ...context,
+              channel: 'server_rpc',
+              dedupe_key: dedupeKey,
+              entity_id: this.tournamentId,
+            },
+          })
+          .eq('id', raised.alertId)
+          .eq('source', 'Tournament.table_admission_failing')
+          .eq('resolved', false);
+        if (error) throw new Error(`table_admission_failing_refresh_failed: ${error.message}`);
+      })
+      .catch((alertError) =>
+        reportError(alertError, 'Tournament.table_admission_failing_alert_failed', { tableId })
+      );
   }
 
   /**
@@ -1799,6 +1934,7 @@ export abstract class TournamentManagerBase {
    */
   protected releaseManagedTablePauseIfUnowned(engine: ServerTableEngine): void {
     if (!this.running || !engine.requiresExplicitPauseResume()) return;
+    if (this.successorDrainRequested) return;
     // Every authority that may still own this hold, in the order the arm
     // considered them. While one of these is true the pause has a living
     // owner and a release here would deal through it.
@@ -1816,6 +1952,10 @@ export abstract class TournamentManagerBase {
   /** A replacement inherits every pause authority before it can deal. */
   protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
+    if (this.successorDrainRequested) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      return;
+    }
     // The day is ending: a replacement dealer inherits the stage-end pause
     // before it can deal, exactly as it inherits a synchronized break.
     if (this.stageEndPause || this.addOnDrainPending) {
@@ -1866,6 +2006,9 @@ export abstract class TournamentManagerBase {
       this.clearManagedTableEngineRecovery(tableId);
       return;
     }
+    // What started this failure, for a page that met no refusal of its own.
+    if (!this.tableAdmissionRecoveryReason?.has(tableId))
+      this.tableAdmissionRecoveryReason?.set(tableId, String(reason).slice(0, 200));
     if (!this.tableAdmissionFailingSince.has(tableId)) {
       this.tableAdmissionFailingSince.set(tableId, Date.now());
     }
@@ -2144,19 +2287,44 @@ export abstract class TournamentManagerBase {
     return -1;
   }
 
-  requestSuccessorForStalledEliminationSweep(): boolean {
-    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+  // A successor request owns its pause until this exact manager retires.
+  // Otherwise onPauseReady treats it as an abandoned tournament-break hold
+  // and resumes each dealer before the rest of the field can finish draining.
+  protected successorDrainRequested = false;
+  private successorHandoffIssued = false;
+
+  private requestSuccessorDrain(): boolean {
+    if (!this.isRunning() || this.successorDrainRequested) return false;
+    this.successorDrainRequested = true;
     for (const table of this.tableEngines.values()) {
-      if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
+      if (table.isRunning())
+        table.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
     }
+    this.completeSuccessorDrain();
+    // Acceptance reserves the caller's existing bounded handoff allowance.
+    // The last park edge completes it; repeated requests spend no allowance.
+    return true;
+  }
+
+  private completeSuccessorDrain(): boolean {
+    if (!this.successorDrainRequested || this.successorHandoffIssued || !this.isRunning())
+      return false;
     for (const table of this.tableEngines.values()) {
       if (table.isRunning() && !table.isBetweenHands()) return false;
     }
+    // Mark before calling the owner: a synchronous callback or duplicate park
+    // edge must never submit another handoff of this generation.
+    this.successorHandoffIssued = true;
     console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination sweep stalled - no bust can be recorded; handing the event to a successor generation`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Every live table drained; handing the event to a successor generation`
     );
     this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
     return true;
+  }
+
+  requestSuccessorForStalledEliminationSweep(): boolean {
+    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+    return this.requestSuccessorDrain();
   }
 
   requestSuccessorForStuckTable(tableId: string): boolean {
@@ -2164,19 +2332,7 @@ export abstract class TournamentManagerBase {
       return false;
     const stuck = this.tableEngines.get(tableId);
     if (stuck?.isRunning()) return false;
-    for (const other of this.tableEngines.values()) {
-      if (other !== stuck && other.isRunning())
-        other.pauseAfterHand(undefined, { untilResumed: true });
-    }
-    for (const other of this.tableEngines.values()) {
-      if (other === stuck || !other.isRunning()) continue;
-      if (!other.isBetweenHands()) return false;
-    }
-    console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for too long - handing the event to a successor generation`
-    );
-    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
-    return true;
+    return this.requestSuccessorDrain();
   }
 
   private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
@@ -2188,18 +2344,8 @@ export abstract class TournamentManagerBase {
       })
     )
       return false;
-    for (const other of this.tableEngines.values()) {
-      // No table of this generation deals another hand: the event is leaving it.
-      if (other !== engine && other.isRunning())
-        other.pauseAfterHand(undefined, { untilResumed: true });
-    }
-    if (!everyOtherTableIsAtAHandBoundary(this.tableEngines.values(), engine)) return false;
-    console.info(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] A stopped table holds a hand this lease generation cannot resolve - handing the event to a successor generation`
-    );
     // Not awaited: the manager's stop drains this very recovery job.
-    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
-    return true;
+    return this.requestSuccessorDrain();
   }
 
   private async performManagedTableEngineRecovery(
@@ -2633,6 +2779,7 @@ export abstract class TournamentManagerBase {
       });
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
+      if (this.successorDrainRequested) this.prepareManagedTableEngineForPlay(engine);
       await engine.start();
     })().catch(async (error) => {
       reportError(error, errorContext, metadata);
@@ -2853,6 +3000,13 @@ export abstract class TournamentManagerBase {
    */
   protected bustAwaitsItsStage(): void {}
 
+  /**
+   * A hand just left a player at zero, which opens that player's rebuy offer.
+   * The elimination manager answers open horse offers at once (see
+   * answerHorseRebuyOffersNow); the base manager has no rebuy input.
+   */
+  protected horseRebuyOfferMayHaveOpened(): void {}
+
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
@@ -2989,6 +3143,27 @@ export abstract class TournamentManagerBase {
    * A field with a break or seat move outstanding is served from the
    * scheduler's consolidation lane until a balance stage finishes clean.
    */
+  /**
+   * A parked gap-balance source this manager will move itself, at once.
+   * True means the edge is handled here and needs no queued sweep. The base
+   * manager balances nothing, so it never claims one.
+   */
+  protected claimGapBalanceAtBoundary(_tableId: string): boolean {
+    return false;
+  }
+
+  /**
+   * True while a gap-balance move is being made at a source's own boundary.
+   * A sweep admitted meanwhile yields at once and is owed again afterwards
+   * (`boundaryBalanceOwesSweep`), so the two never plan seat moves at the
+   * same time.
+   */
+  protected boundaryBalanceInFlight = false;
+  protected boundaryBalanceOwesSweep = false;
+
+  /** Called as every admitted sweep settles; the balancing manager drains its edge work here. */
+  protected onEliminationSweepSettled(): void {}
+
   protected declareConsolidationOutstanding(outstanding: boolean): void {
     if (this.consolidationDeclared === outstanding) return;
     if (tournamentEliminationScheduler.setConsolidating(this.tournamentId, outstanding)) {
@@ -3001,6 +3176,103 @@ export abstract class TournamentManagerBase {
         }`
       );
     }
+  }
+
+  /**
+   * The add-on window is open for OFFERS: triggered, not finalized, no Free
+   * Buy closing drain pending, and its persisted deadline still ahead. Closing
+   * the window is a separate, later step (2026-10-25).
+   */
+  protected addOnOfferWindowOpen(nowMs: number): boolean {
+    if (!this.addOnPeriodTriggered || this.prizePoolFinalized || this.addOnDrainPending) {
+      return false;
+    }
+    const endMs = Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? ''));
+    return Number.isFinite(endMs) && nowMs < endMs;
+  }
+
+  /** Purchases in flight at once while the add-on break holds the field. */
+  static readonly ADD_ON_BREAK_CONCURRENCY = 8;
+  /** One held-field pass ends here and the next admission continues it, well
+   *  inside ELIMINATION_SWEEP_STUCK_MS, so a scheduler slot is never held long. */
+  static readonly ADD_ON_BREAK_PASS_MS = 20_000;
+
+  /**
+   * True while the add-on offer is open AND a break holds every table: the
+   * add-on break itself, or the :55 break it opened inside. No hand is dealt,
+   * so nothing else in this tournament is waiting on the sweep's budget.
+   */
+  protected addOnBreakHoldsTheField(nowMs: number): boolean {
+    return (this.addOnBreakActive || this.onBreak) && this.addOnOfferWindowOpen(nowMs);
+  }
+
+  /**
+   * Offer the add-on to every listed horse through a pool of
+   * ADD_ON_BREAK_CONCURRENCY requests, until the list is done or the
+   * persisted offer closes or ADD_ON_BREAK_PASS_MS has passed (the next
+   * admission continues from the cursor). Same RPC, same receipts, same retained identity on
+   * an ambiguous reply as the ordinary batch; only the pacing differs. The
+   * mutation batch keeps the sweep's work budget from cutting the field short;
+   * manager stop, the sweep's abort signal and the freeze still end it.
+   */
+  protected async offerAddOnsWhileTheFieldIsHeld(
+    horseRows: Array<{ id: string }>
+  ): Promise<{ taken: number; completed: number; declined: Map<string, number> }> {
+    const declined = new Map<string, number>();
+    let taken = 0;
+    let completed = 0;
+    let nextIndex = 0;
+    const passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    const batchWasOpen = this.eliminationMutationBatchIsOpen();
+    if (!batchWasOpen) this.openEliminationMutationBatch();
+    const mayContinue = () =>
+      Date.now() < passEndsAt &&
+      !isMaintenanceFrozen() &&
+      this.eliminationMutationAllowed() &&
+      this.addOnBreakHoldsTheField(Date.now());
+    const worker = async () => {
+      while (nextIndex < horseRows.length && mayContinue()) {
+        const h = horseRows[nextIndex++];
+        let message: string | null = null;
+        let data: unknown = null;
+        try {
+          const reply = await supabase.rpc('process_tournament_rebuy', {
+            p_tournament_id: this.tournamentId,
+            p_user_id: h.id,
+            p_rebuy_type: 'addon',
+            p_cost: null,
+            p_chips: null,
+            p_current_level: this.currentLevel,
+          });
+          if (reply.error) message = reply.error.message;
+          else data = reply.data;
+        } catch (error) {
+          message = String(error);
+        }
+        if (!this.running || this.eliminationSweepSignal?.aborted) return;
+        this.addOnBatchCursor = h.id;
+        if (message !== null) {
+          // A lost response may follow a committed receipt. Retain this
+          // identity for the same idempotent RPC on its next admission.
+          declined.set(message, (declined.get(message) || 0) + 1);
+          continue;
+        }
+        this.addOnAttemptedHorseIds.add(h.id);
+        completed++;
+        if ((data as { success?: boolean } | null)?.success === true) taken++;
+      }
+    };
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(TournamentManagerBase.ADD_ON_BREAK_CONCURRENCY, horseRows.length) },
+          () => worker()
+        )
+      );
+    } finally {
+      if (!batchWasOpen) this.closeEliminationMutationBatch();
+    }
+    return { taken, completed, declined };
   }
 
   /** Keep one add-on retry due while its persisted offer window is open. */
@@ -3052,13 +3324,18 @@ export abstract class TournamentManagerBase {
         if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
+        this.horseRebuyOfferMayHaveOpened();
         this.requestEliminationSweep();
       }
     });
-    engine.onPauseReady(() => {
+    engine.onPauseReady((parkedTableId) => {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
+      if (this.successorDrainRequested) {
+        if (this.tableIdForManagedEngine(engine)) this.completeSuccessorDrain();
+        return;
+      }
       // The last parked dealer starts the actual paid add-on minute. This is
       // the original hand-boundary event, not a timer or repair poll.
       if (this.addOnDrainPending && !this.addOnPeriodOpening && !this.lifecycleOperation) {
@@ -3079,7 +3356,14 @@ export abstract class TournamentManagerBase {
       // A seat move or table break whose one-second probe missed is waiting
       // for exactly this edge. Wake the sweep that claims it now, rather than
       // leaving the claim to whichever redrive the shared scheduler reaches.
-      if (engine.awaitsTournamentMoveClaim())
+      //
+      // A GAP-BALANCE SOURCE IS MOVED AT ITS OWN EDGE (2026-10-26). A source
+      // fenced to give a player to a short table is moved here, at the
+      // boundary it just reached, instead of waiting in the shared queue for a
+      // sweep that has to arrive inside the fence's 15 second window; see
+      // TournamentManager.claimGapBalanceAtBoundary. A break source (durable)
+      // still goes to the sweep, which owns its park record.
+      if (engine.awaitsTournamentMoveClaim() && !this.claimGapBalanceAtBoundary(parkedTableId))
         this.requestEliminationSweep('tournament_move_parked');
       // A table parking is the edge the stage-end barrier waits for.
       if (this.stageEndPause) this.advanceStageEndBarrier();
@@ -3453,6 +3737,7 @@ export abstract class TournamentManagerBase {
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
     // is allowed to stamp an end time exactly once. See breakCountdownStarted.
     this.breakCountdownStarted = false;
+    this.synchronizedBreakEndsAtMs = 0;
 
     // Save remaining blind timer time
     // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
@@ -3653,6 +3938,7 @@ export abstract class TournamentManagerBase {
      */
     if (this.breakCountdownStarted) return;
     this.breakCountdownStarted = true;
+    this.synchronizedBreakEndsAtMs = deadlineMs;
     const endsAt = new Date(deadlineMs).toISOString();
     try {
       await supabase
@@ -3676,6 +3962,12 @@ export abstract class TournamentManagerBase {
       synchronized: true,
     });
     if (!this.lifecycleIsCurrent(lifecycle)) return;
+    // An add-on that came due during the last hand of this break opens now,
+    // inside the break, and runs to its end (see synchronizedBreakEndsAtMs).
+    if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
+      this.pendingAddOnPeriod = false;
+      await this.triggerAddOnPeriod();
+    }
   }
 
   /**
@@ -4023,6 +4315,7 @@ export abstract class TournamentManagerBase {
     }
     this.onBreak = false;
     this.breakCountdownStarted = false;
+    this.synchronizedBreakEndsAtMs = 0;
     if (!this.running) return;
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
@@ -4043,7 +4336,12 @@ export abstract class TournamentManagerBase {
     }
     // A day-ending event keeps its tables held: the break was never the
     // stage-end pause's owner and may not lift it.
-    if (!this.handForHandActive && !addOnBreakStillActive && !this.stageEndPause) {
+    if (
+      !this.successorDrainRequested &&
+      !this.handForHandActive &&
+      !addOnBreakStillActive &&
+      !this.stageEndPause
+    ) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -4346,8 +4644,25 @@ export abstract class TournamentManagerBase {
     // add-on chips keep the pool mutable until the persisted add-on deadline.
     if (result.finalization_deferred === true && result.reason === 'addon_required') {
       this.tournamentEntryRepricePending = false;
+      if (
+        this.addOnPeriodTriggered &&
+        this.tournamentCache?.addon_from_start === true &&
+        Date.parse(String(this.tournamentCache.addon_period_ends_at)) -
+          Date.parse(String(this.tournamentCache.addon_period_started_at)) >
+          this.addOnBreakDurationMs()
+      ) {
+        // The database's earliest entry boundary also ends FreeBuy's early
+        // purchase phase. A thaw-shifted offer deadline must not leave play
+        // running after registration has closed. The existing drain still
+        // waits for every hand and owns the one full closing minute.
+        await this.continueFreeBuyClosingDrain();
+        if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      }
       if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
-        if (this.onBreak) {
+        // During the :55 break's last hand the break's end is not known yet:
+        // beginBreakCountdown opens the add-on the moment it is. Once the
+        // countdown is running the add-on opens now, inside the break.
+        if (this.onBreak && !this.breakCountdownStarted) {
           this.pendingAddOnPeriod = true;
         } else {
           await this.triggerAddOnPeriod();
@@ -4569,7 +4884,7 @@ export abstract class TournamentManagerBase {
     for (const engine of engines) {
       if (![...this.tableEngines.values()].includes(engine)) continue;
       try {
-        engine.resumeDealing();
+        if (!this.successorDrainRequested) engine.resumeDealing();
       } catch (err) {
         reportError(err, 'Tournament.mystery_activation_boundary_release_failed', {
           tournamentId: this.tournamentId,
@@ -5035,6 +5350,7 @@ export abstract class TournamentManagerBase {
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
     );
+    if (this.successorDrainRequested) return;
     for (const engine of engines) engine!.resumeDealing();
 
     if (this.handForHandRePauseTimer) {
@@ -7829,6 +8145,7 @@ export abstract class TournamentManagerBase {
           // The end time is already fixed for this break — whether it came off
           // the row or was reconstructed above — so nothing may re-stamp it.
           this.breakCountdownStarted = true;
+          this.synchronizedBreakEndsAtMs = breakEndsAt;
           // The persisted remainder was restored without arming a level
           // timer, so preserve it until resumeFromBreak releases this pause.
           if (!restoredLevelClockSuspended) this.suspendLevelClock();
@@ -10718,6 +11035,27 @@ export abstract class TournamentManagerBase {
     return minutes * 60_000;
   }
 
+  /**
+   * The end of the :55 break this add-on opens inside, or 0 (Dan 2026-10-25:
+   * "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT HAPPENS TO BE AT THE
+   * SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES").
+   *
+   * Only a break whose countdown is running has a known end. The bound is the
+   * break itself plus its last-hand grace, so a stale instant can never stretch
+   * an offer past one real break. The persisted window then runs to the
+   * break's end and its final configured minute is still the add-on break
+   * (addOnBreakStartMs): the :55 break holds every table until then and the
+   * add-on break takes the hold over, so play resumes once, at the break end.
+   */
+  private coincidingSynchronizedBreakEndMs(openingMs: number): number {
+    if (!this.onBreak || !this.breakCountdownStarted) return 0;
+    const endMs = this.synchronizedBreakEndsAtMs;
+    if (!Number.isFinite(endMs) || endMs <= openingMs) return 0;
+    const ceilingMs =
+      TournamentManagerBase.BREAK_DURATION_MS + TournamentManagerBase.LAST_HAND_GRACE_MS;
+    return endMs - openingMs <= ceilingMs ? endMs : 0;
+  }
+
   /** The persisted window's final segment is its one add-on break. */
   private addOnBreakStartMs(endsAt: string | null | undefined): number {
     const endMs = Date.parse(String(endsAt ?? ''));
@@ -11061,7 +11399,12 @@ export abstract class TournamentManagerBase {
     // Hand-for-hand may have ended while the add-on owned this shared gate.
     // With neither tournament pause remaining, release it even when the
     // add-on originally inherited the parked table from hand-for-hand.
-    if (!this.onBreak && !this.handForHandActive && !this.stageEndPause) {
+    if (
+      !this.successorDrainRequested &&
+      !this.onBreak &&
+      !this.handForHandActive &&
+      !this.stageEndPause
+    ) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -11126,7 +11469,11 @@ export abstract class TournamentManagerBase {
     this.addOnBreakOwnsPause = false;
     if (!this.running) return;
 
-    const releasePause = !this.onBreak && !this.handForHandActive && !this.stageEndPause;
+    const releasePause =
+      !this.successorDrainRequested &&
+      !this.onBreak &&
+      !this.handForHandActive &&
+      !this.stageEndPause;
     for (const engine of this.tableEngines.values()) {
       try {
         // The absolute hold was placed for the deadline that no longer exists.
@@ -11232,6 +11579,8 @@ export abstract class TournamentManagerBase {
     ) {
       return;
     }
+    let pendingHorseIds: string[] = [];
+    let completedOffers = 0;
     try {
       if (
         this.addOnDrainPending &&
@@ -11257,7 +11606,11 @@ export abstract class TournamentManagerBase {
         .from('tournament_players')
         .select('user_id, add_on')
         .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing');
+        .eq('status', 'playing')
+        // A zero stack is a bust the bust stage has not recorded yet; the
+        // offer is served ahead of that stage (2026-10-25), so it never
+        // reaches a player who no longer holds chips.
+        .gt('chips', 0);
       if (!this.eliminationMutationAllowed()) return;
       if (rowsErr || !rows || rows.length === 0) {
         if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
@@ -11341,42 +11694,82 @@ export abstract class TournamentManagerBase {
       const pendingHorseRows = eligibleHorseRows
         .filter((horse) => !this.addOnAttemptedHorseIds.has(horse.id))
         .sort((a, b) => a.id.localeCompare(b.id));
-      const start = Math.min(this.addOnBatchCursor, Math.max(0, pendingHorseRows.length - 1));
+      pendingHorseIds = pendingHorseRows.map((horse) => horse.id);
+      // The pending list shrinks after every receipt. A numeric offset into
+      // that new list skips players; retain the last identity instead.
+      const next = this.addOnBatchCursor
+        ? pendingHorseRows.findIndex((horse) => horse.id > this.addOnBatchCursor!)
+        : 0;
+      const start = Math.max(0, next);
+      /* THE ADD-ON BREAK SERVES THE WHOLE FIELD (2026-10-26). Measured on the
+         first 60-second break after every funded horse was told to add on:
+         Sunrise Bounty, 104 of 186 seated horses bought before the deadline,
+         every reply a success. Purchases went out twelve at a time, four in
+         flight, then waited ~4.5 s for the next admission's four snapshot
+         reads - 1.7 purchases a second against a field that needs three.
+         While the break holds every table there is no hand, bust or seat move
+         for the work budget to protect, so the whole remaining field is
+         offered in this one pass through a bounded pool, until the persisted
+         deadline. The canonical RPC still refuses anything it should. */
+      if (this.addOnBreakHoldsTheField(Date.now())) {
+        const rotated = pendingHorseRows.slice(start).concat(pendingHorseRows.slice(0, start));
+        if (rotated.length === 0) return;
+        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated);
+        completedOffers += served.completed;
+        if (served.taken > 0 || served.declined.size > 0) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON BREAK: ${served.taken} taken of ${rotated.length}` +
+              (served.declined.size > 0
+                ? ` - declined: ${[...served.declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
+                : '')
+          );
+        }
+        return;
+      }
       const horseRows = pendingHorseRows.slice(
         start,
         start + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE
       );
       if (horseRows.length === 0) return;
-      this.addOnBatchCursor =
-        start + horseRows.length >= pendingHorseRows.length ? 0 : start + horseRows.length;
-      if (pendingHorseRows.length > horseRows.length) this.requestEliminationSweep();
 
       let taken = 0;
       const declined = new Map<string, number>();
-      for (const h of horseRows) {
+      // Bound concurrent requests as well as total work per admission. The
+      // canonical RPC still owns the wallet, seat, price and receipt checks.
+      for (let offset = 0; offset < horseRows.length; offset += 4) {
         if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: h.id,
-          p_rebuy_type: 'addon',
-          // null: let the server price it (add-ons are charged at face value).
-          p_cost: null,
-          p_chips: null,
-          p_current_level: this.currentLevel,
-        });
-        if (!this.eliminationMutationAllowed()) return;
-        if (error) {
-          declined.set(error.message, (declined.get(error.message) || 0) + 1);
-          // Ambiguous transport failure can follow a committed idempotent
-          // purchase. Keep it retryable inside this same offer window; the
-          // canonical RPC safely answers already-taken on replay.
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          continue;
+        const group = horseRows.slice(offset, offset + 4);
+        const replies = await Promise.allSettled(
+          group.map(async (h) => {
+            if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return null;
+            return supabase.rpc('process_tournament_rebuy', {
+              p_tournament_id: this.tournamentId,
+              p_user_id: h.id,
+              p_rebuy_type: 'addon',
+              p_cost: null,
+              p_chips: null,
+              p_current_level: this.currentLevel,
+            });
+          })
+        );
+        if (!this.running || this.eliminationSweepSignal?.aborted) return;
+        for (let index = 0; index < group.length; index++) {
+          const h = group[index];
+          const reply = replies[index];
+          this.addOnBatchCursor = h.id;
+          if (reply.status === 'rejected' || reply.value?.error) {
+            const message =
+              reply.status === 'rejected' ? String(reply.reason) : reply.value!.error!.message;
+            declined.set(message, (declined.get(message) || 0) + 1);
+            // A lost response may follow a committed receipt. Retain this
+            // identity for the same idempotent RPC on its next admission.
+            continue;
+          }
+          if (!reply.value) continue;
+          this.addOnAttemptedHorseIds.add(h.id);
+          completedOffers++;
+          if ((reply.value.data as { success?: boolean } | null)?.success === true) taken++;
         }
-        // A clean grant or semantic refusal has made a final decision for this
-        // window, so later bounded batches can reach the rest of the field.
-        this.addOnAttemptedHorseIds.add(h.id);
-        if ((data as { success?: boolean } | null)?.success === true) taken++;
       }
 
       // Quiet when nothing happened: this is called repeatedly across the
@@ -11391,6 +11784,20 @@ export abstract class TournamentManagerBase {
       }
     } catch (err) {
       reportError(err, 'Tournament.tournament_addon_threw');
+    } finally {
+      const more = pendingHorseIds.some((id) => !this.addOnAttemptedHorseIds.has(id));
+      this.lastAddOnOfferPass = { offered: completedOffers, more };
+      if (more && this.running && !isMaintenanceFrozen() && !this.prizePoolFinalized) {
+        // Twenty seconds is the retry cadence once the field has been served,
+        // not a cooldown between pieces of its first offer. Yield each bounded
+        // batch to the existing scheduler and continue the same offer now.
+        // An entirely ambiguous batch retains the ordinary short retry.
+        this.requestAddOnDeadlineRetry(
+          completedOffers > 0 || this.eliminationWorkBudgetExpired()
+            ? 0
+            : TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+        );
+      }
     }
   }
 
@@ -11435,6 +11842,12 @@ export abstract class TournamentManagerBase {
         // The offer does not exist until every current hand has settled.
         // onPauseReady re-enters this exact operation when the last one parks.
         if (!this.areAllTablesParked()) return;
+        // Parked for the :55 break's last hand, before its countdown has an
+        // end: the countdown's start opens this add-on inside the break.
+        if (this.onBreak && !this.breakCountdownStarted) {
+          this.pendingAddOnPeriod = true;
+          return;
+        }
       }
       const requestedStart = new Date().toISOString();
       const requestedStartMs = Date.parse(requestedStart);
@@ -11470,7 +11883,10 @@ export abstract class TournamentManagerBase {
       const windowAnchorMs = fromStart ? Math.max(advertisedStartMs, requestedStartMs) : NaN;
       const requestedEndMs = fromStart
         ? windowAnchorMs + lateRegMs + this.addOnBreakDurationMs()
-        : requestedStartMs + this.addOnBreakDurationMs();
+        : Math.max(
+            requestedStartMs + this.addOnBreakDurationMs(),
+            this.coincidingSynchronizedBreakEndMs(requestedStartMs)
+          );
       if (!Number.isFinite(requestedEndMs) || requestedEndMs <= requestedStartMs) {
         throw new Error('the requested add-on window does not end after it starts');
       }
@@ -11541,7 +11957,7 @@ export abstract class TournamentManagerBase {
       this.addOnPeriodTriggered = true;
       durableWindowProven = true;
       this.addOnAttemptedHorseIds.clear();
-      this.addOnBatchCursor = 0;
+      this.addOnBatchCursor = null;
       if (this.tournamentCache) {
         this.tournamentCache.addon_period_started_at = startedAt;
         this.tournamentCache.addon_period_ends_at = endsAt;

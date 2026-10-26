@@ -88,6 +88,9 @@ export interface HorseExactReplayOptions {
    * for this decision's turn, with the same undefined / null meaning.
    */
   planReceipt?: unknown | null;
+  /** Complete bounded private journal candidates; DEEP requires exactly one
+   * earlier FAST matching its persisted snapshot/read-frame hash binding. */
+  originalFastRecords?: readonly unknown[];
 }
 
 /**
@@ -401,7 +404,9 @@ export async function exactReplayHorseDecisionRecord(
   // 2. Every input from the record alone (Phase 6C reconstruction, digest-bound).
   let input: HorseReplayInput;
   try {
-    input = reconstructHorseReplayInput(record);
+    input = reconstructHorseReplayInput(record, {
+      originalFastRecords: options.originalFastRecords,
+    });
   } catch (error) {
     return finish(`non_replayable:${refusalInput(error)}`);
   }
@@ -418,7 +423,9 @@ export async function exactReplayHorseDecisionRecord(
   if (!sameHorseDecisionRuntime(state.runtime, verdict.runningRuntime))
     return finish('non_replayable:original_runtime');
   if (!horseDecisionEffectsAreValid(body.effects)) return finish('non_replayable:effects');
-  if (!obj(body.planBinding)) return finish('non_replayable:plan_binding');
+  if (input.deepRequest && body.effects.length !== 0) return finish('non_replayable:effects');
+  if (input.deepRequest ? body.planBinding !== null : !obj(body.planBinding))
+    return finish('non_replayable:plan_binding');
   verdict.original = {
     action: input.original.action,
     amount: input.original.amount ?? null,
@@ -465,6 +472,13 @@ export async function exactReplayHorseDecisionRecord(
     if (outcome.result && outcome.admission?.[option] !== state.admission[option])
       return finish(`non_replayable:admission:${option}`);
 
+  if (
+    state.corrective
+      ? horseJournalJson(outcome.corrective) !== horseJournalJson(state.corrective)
+      : outcome.corrective?.mode === 'candidate'
+  )
+    return finish('non_replayable:admission:phase14');
+
   // 5. Compare decision and effects, in order.
   const original = stableReceipt(input.original);
   verdict.wallClockBudgetBound = mentionsBudget(original);
@@ -499,6 +513,9 @@ export async function exactReplayHorseDecisionRecord(
             : (firstHorseReplayDifference(original, replayedReceipt, 'decision') ??
               (result.rngAfter !== input.rngAfter ? 'rng_after' : null) ??
               firstHorseReplayDifference(body.effects, replayedEffects, 'effects') ??
+              (input.deepRequest
+                ? firstHorseReplayDifference(body.planContext, result.planContext, 'plan_context')
+                : null) ??
               firstHorseReplayDifference(body.planBinding, replayedBinding, 'plan_binding'));
   }
   verdict.acceptance = acceptance();

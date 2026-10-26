@@ -53,9 +53,30 @@
  *
  * So this tab keeps what the panel does NOT carry - the funded pool, what has
  * been claimed out of it, and what is still available, which is exactly what
- * Dan asked Rewards for - and renders the panel underneath for the ladder
- * itself. One fetch feeds both, because the page passes the hook result in
- * through `mysteryBounty` on the tab contract.
+ * Dan asked Rewards for. The ladder itself is on the Bounties tab beside this
+ * one (Dan 2026-10-25: "CREATE ANOTHER TAB, FOR 'BOUNTIES' ... INSTEAD OF
+ * PLACING IT AT THE BOTTOM OF REWARDS"), see BountiesTab. One fetch feeds
+ * both, because the page passes the hook result in through `mysteryBounty` on
+ * the tab contract.
+ *
+ * ── THE TOTAL PRIZE POOL IS EVERYTHING THE FIELD PUT IN ────────────────────
+ *
+ * Dan 2026-10-24, verbatim: "REWARDS PAGE SHOULD HAVE THE TOTAL PRIZE POOL
+ * INSIDE OF IT. THE TOTAL OF ALL THE BUY IN'S REBUYS AND ADD ON'S."
+ *
+ * The headline used to print `prize_pool` alone. On a bounty event that is only
+ * the PLACE half: fn_ca_process_tournament_chip_purchase_money_v1 splits every
+ * purchase, net of the fee, into `prize_pool` (places) and `bounty_pool`
+ * (heads). Friday Fight Night PKO (827A1B52) read 10,050 while the field had
+ * put 14,325 in: 276 buy-ins and 9 rebuys at 27, plus 221 add-ons at 30 (an
+ * add-on carries no fee). 10,050 + 4,275 = 14,325 exactly.
+ *
+ * So the headline is now places + bounties, and a "Where It Comes From" strip
+ * underneath shows the buy-ins, rebuys and add-ons that make it up and the split
+ * between place prizes and the bounty pool. The per-line amounts are priced off
+ * the event's own costs by the server's rule and are printed ONLY when they
+ * reconcile with the server's pool to the chip; an event with free entries
+ * (satellite seats, free buys) shows the counts without inventing amounts.
  *
  * ── ONE QUERY, AND ONLY WHEN IT IS NEEDED ──────────────────────────────────
  *
@@ -69,7 +90,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
-import type { TournamentTabProps, PayoutPlace } from './types';
+import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import {
   chips,
@@ -88,7 +109,6 @@ import {
   CHIP_UNIT_CENTS,
   normalizeUnitCents,
 } from '../../../../server/src/tournament/tournamentUnit';
-import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
 import './RewardsTab.css';
 
@@ -237,6 +257,9 @@ interface RewardColumns {
   current_players?: number | null;
   bubble_protection?: boolean | null;
   buy_in_amount?: number | null;
+  buy_in_fee?: number | null;
+  rebuy_cost?: number | null;
+  addon_cost?: number | null;
   variant?: string | null;
   tournament_type?: string | null;
   satellite_target_id?: string | null;
@@ -251,12 +274,7 @@ interface RewardColumns {
    (2026-08-26 audit). */
 const isStillIn = isPlayerLive;
 
-export default function RewardsTab({
-  tournament,
-  entries,
-  currentUserId,
-  mysteryBounty,
-}: TournamentTabProps) {
+export default function RewardsTab({ tournament, entries, currentUserId }: TournamentTabProps) {
   const t = (tournament || {}) as unknown as RewardColumns;
   const tournamentId = tournament?.id;
 
@@ -307,10 +325,10 @@ export default function RewardsTab({
     (async () => {
       try {
         const [live, claimed] = await Promise.all([
-          fetchAllRows<{ current_bounty: unknown }>((from, to) =>
+          fetchAllRows<{ current_bounty: unknown; status: string | null }>((from, to) =>
             supabase
               .from('tournament_players')
-              .select('current_bounty')
+              .select('current_bounty, status')
               .eq('tournament_id', tournamentId)
               .gt('current_bounty', 0)
               .range(from, to)
@@ -326,7 +344,13 @@ export default function RewardsTab({
         if (cancelled) return;
 
         setLedger({
-          liveHeads: live.map((r) => cents(num(r.current_bounty))),
+          /* A head belongs to a player still in (2026-10-26 audit). Before the
+             money a mystery bust pays nothing and leaves its head on the row,
+             so counting every row put 162 knocked-out players' heads back
+             into "Still Available". */
+          liveHeads: live
+            .filter((r) => isStillIn({ status: r.status ?? '' } as Parameters<typeof isStillIn>[0]))
+            .map((r) => cents(num(r.current_bounty))),
           claimedHeads: claimed.map((r) => cents(num(r.bounty_amount))),
           loaded: true,
           failed: false,
@@ -389,7 +413,47 @@ export default function RewardsTab({
   /* ── THE LADDER OF PLACES ─────────────────────────────────────────────── */
 
   const parsedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
-  const bands = useMemo(() => (parsedPlaces ? toBands(parsedPlaces) : []), [parsedPlaces]);
+  /**
+   * WHO FINISHED IN EACH PAID PLACE (Dan 2026-10-24: "WHAT PLAYERS WON WHAT
+   * PRIZES UNDER REWARDS").
+   *
+   * The ladder used to print place, percentage and amount and never the
+   * player, even after the event ended: Friday Fight Night PKO (827A1B52)
+   * finished with all 276 positions and 35 prizes recorded on
+   * tournament_players, and Rewards still read "1st 17.32% 1,741" with no
+   * name. A finishing position is written to the player's row when they bust,
+   * and the champion's when the event ends, so the names fill in down the
+   * ladder as the field plays into the money. A live player has no position
+   * and claims no row.
+   */
+  const finisherByPlace = useMemo(() => {
+    const byPlace = new Map<number, TournamentEntry>();
+    for (const e of entries) {
+      const place = Math.floor(num(e.position));
+      if (place > 0 && (isPlayerOut(e) || e.status === 'winner')) byPlace.set(place, e);
+    }
+    return byPlace;
+  }, [entries]);
+
+  /* A band of places sharing one percentage reads as "4-6" until somebody in
+     it finishes; then it opens into its single places so every name sits on
+     its own prize. */
+  const bands = useMemo(() => {
+    if (!parsedPlaces) return [];
+    return toBands(parsedPlaces).flatMap((band) => {
+      if (band.fromPlace === band.toPlace) return [band];
+      let decided = false;
+      for (let place = band.fromPlace; place <= band.toPlace; place++) {
+        if (finisherByPlace.has(place)) decided = true;
+      }
+      if (!decided) return [band];
+      return Array.from({ length: band.toPlace - band.fromPlace + 1 }, (_, k) => ({
+        fromPlace: band.fromPlace + k,
+        toPlace: band.fromPlace + k,
+        percentage: band.percentage,
+      }));
+    });
+  }, [parsedPlaces, finisherByPlace]);
   const paidPlaces = parsedPlaces ? parsedPlaces.length : 0;
   /* The MTT's paid depth, as the database applies it
      (fn_ca_effective_payout_depth: the stored depth, else the legacy percent). */
@@ -558,6 +622,73 @@ export default function RewardsTab({
 
   const bountyKind = isMystery ? 'Mystery Bounty' : isPko ? 'Progressive Knockout' : 'Bounty';
 
+  /* ── THE TOTAL PRIZE POOL: EVERY BUY-IN, REBUY AND ADD-ON ─────────────── */
+
+  /* The bounty half of what the field paid in. Zero on a non-bounty event. */
+  const bountyShare = bounty ? Math.max(0, bounty.total) : 0;
+  /* Places (with any guarantee overlay the club funds) plus the bounty pool. */
+  const totalPrizePool = effectivePool + bountyShare;
+
+  const composition = useMemo(() => {
+    let rebuyCount = 0;
+    let addOnCount = 0;
+    for (const e of entries) {
+      rebuyCount += Math.max(0, Math.floor(num(e.rebuys)));
+      if (num(e.add_ons) > 0) addOnCount += 1;
+    }
+    const buyInCount = entries.length;
+
+    /* The server's own pricing rule
+       (fn_ca_process_tournament_chip_purchase_money_v1): a rebuy costs
+       `rebuy_cost` (or the buy-in when unset) and sheds the same fee RATIO as
+       the buy-in; an add-on costs `addon_cost` (or the buy-in) and sheds no
+       fee at all. What is left of each purchase is what reaches the pool. */
+    const buyIn = num(t.buy_in_amount);
+    const fee = num(t.buy_in_fee);
+    const feeRatio = buyIn + fee > 0 ? fee / (buyIn + fee) : 0;
+    const rebuyGross = num(t.rebuy_cost) > 0 ? num(t.rebuy_cost) : buyIn + fee;
+    const perRebuy = cents(rebuyGross * (1 - feeRatio));
+    const perAddOn = cents(num(t.addon_cost) > 0 ? num(t.addon_cost) : buyIn);
+
+    const buyInTotal = cents(buyInCount * buyIn);
+    const rebuyTotal = cents(rebuyCount * perRebuy);
+    const addOnTotal = cents(addOnCount * perAddOn);
+    const collected = num(t.prize_pool) + bountyShare;
+    /* A cent of rounding per purchase is the most the server's fee rounding can
+       move it; anything wider means entries this rule did not price (free
+       seats, satellite winners) and the amounts are withheld, not guessed. */
+    const purchases = buyInCount + rebuyCount + addOnCount;
+    const tolerance = Math.max(1, purchases * 0.01);
+    const reconciles =
+      purchases > 0 && Math.abs(buyInTotal + rebuyTotal + addOnTotal - collected) <= tolerance;
+
+    return {
+      buyInCount,
+      rebuyCount,
+      addOnCount,
+      buyIn,
+      perRebuy,
+      perAddOn,
+      buyInTotal,
+      rebuyTotal,
+      addOnTotal,
+      reconciles,
+    };
+  }, [
+    entries,
+    t.buy_in_amount,
+    t.buy_in_fee,
+    t.rebuy_cost,
+    t.addon_cost,
+    t.prize_pool,
+    bountyShare,
+  ]);
+
+  const showRebuyLine = composition.rebuyCount > 0;
+  const showAddOnLine = composition.addOnCount > 0;
+  const showComposition =
+    totalPrizePool > 0 && (composition.buyInCount > 0 || showRebuyLine || showAddOnLine);
+
   /* ═════════════════════════════════════════════════════════════════════════
      RENDER
      ═════════════════════════════════════════════════════════════════════════ */
@@ -590,7 +721,7 @@ export default function RewardsTab({
           <div className="tl-stat tl-stat--feature rw-pool">
             <span className="tl-stat__label">Total Prize Pool</span>
             <span className="tl-stat__value tl-stat__value--accent rw-pool__value">
-              {effectivePool > 0 ? chips(effectivePool) : 'Set By Entries'}
+              {totalPrizePool > 0 ? chips(totalPrizePool) : 'Set By Entries'}
             </span>
             <span className="tl-stat__sub">
               {/* A cancelled event's pool is not "Still Growing". */}
@@ -678,6 +809,72 @@ export default function RewardsTab({
             <p className="rw-gtd__note">
               The Club Covers The {chips(overlay)} Overlay If The Field Does Not Close It
             </p>
+          </div>
+        )}
+
+        {showComposition && (
+          <div className="rw-mix" aria-label="Where The Prize Pool Comes From">
+            <div className="rw-mix__head">Where It Comes From</div>
+            <ul className="rw-mix__list">
+              <li className="rw-mix__row">
+                <span className="rw-mix__label">
+                  {chips(composition.buyInCount)}{' '}
+                  {composition.buyInCount === 1 ? 'Buy-In' : 'Buy-Ins'}
+                  {composition.reconciles && composition.buyIn > 0 && (
+                    <span className="rw-mix__each"> × {chips(composition.buyIn)}</span>
+                  )}
+                </span>
+                <span className="rw-mix__figure">
+                  {composition.reconciles ? chips(composition.buyInTotal) : '-'}
+                </span>
+              </li>
+              {showRebuyLine && (
+                <li className="rw-mix__row">
+                  <span className="rw-mix__label">
+                    {chips(composition.rebuyCount)}{' '}
+                    {composition.rebuyCount === 1 ? 'Rebuy' : 'Rebuys'}
+                    {composition.reconciles && composition.perRebuy > 0 && (
+                      <span className="rw-mix__each"> × {chips(composition.perRebuy)}</span>
+                    )}
+                  </span>
+                  <span className="rw-mix__figure">
+                    {composition.reconciles ? chips(composition.rebuyTotal) : '-'}
+                  </span>
+                </li>
+              )}
+              {showAddOnLine && (
+                <li className="rw-mix__row">
+                  <span className="rw-mix__label">
+                    {chips(composition.addOnCount)}{' '}
+                    {composition.addOnCount === 1 ? 'Add-On' : 'Add-Ons'}
+                    {composition.reconciles && composition.perAddOn > 0 && (
+                      <span className="rw-mix__each"> × {chips(composition.perAddOn)}</span>
+                    )}
+                  </span>
+                  <span className="rw-mix__figure">
+                    {composition.reconciles ? chips(composition.addOnTotal) : '-'}
+                  </span>
+                </li>
+              )}
+              {overlay > 0 && (
+                <li className="rw-mix__row">
+                  <span className="rw-mix__label">Club Overlay</span>
+                  <span className="rw-mix__figure">{chips(overlay)}</span>
+                </li>
+              )}
+            </ul>
+            {bountyShare > 0 && (
+              <div className="rw-mix__split">
+                <span className="rw-mix__part">
+                  <span className="rw-mix__part-label">Place Prizes</span>
+                  <span className="rw-mix__part-value">{chips(effectivePool)}</span>
+                </span>
+                <span className="rw-mix__part">
+                  <span className="rw-mix__part-label">Bounty Pool</span>
+                  <span className="rw-mix__part-value">{chips(bountyShare)}</span>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -775,6 +972,13 @@ export default function RewardsTab({
                 placeLadderPool !== null && placeLadderPool > 0 && parsedPlaces
                   ? placePrize(placeLadderPool, parsedPlaces, band.fromPlace, unitCents)
                   : 0;
+              /* The player who took this place, and what they were actually
+                 paid. The recorded prize wins over the projection: a final
+                 table deal or the residual on the last paid place makes them
+                 differ, and the player's wallet holds the recorded one. */
+              const finisher =
+                band.fromPlace === band.toPlace ? finisherByPlace.get(band.fromPlace) : undefined;
+              const recordedPrize = finisher ? num(finisher.prize) : 0;
 
               return (
                 <li
@@ -794,7 +998,14 @@ export default function RewardsTab({
                   </span>
 
                   <span className="rw-row__mid">
-                    <span className="rw-pct">{pct(band.percentage)}</span>
+                    {finisher ? (
+                      <span className="rw-who">
+                        <span className="tl-name rw-who__name">{finisher.username}</span>
+                        <span className="rw-pct">{pct(band.percentage)}</span>
+                      </span>
+                    ) : (
+                      <span className="rw-pct">{pct(band.percentage)}</span>
+                    )}
                     {isHeroRow && (
                       <span className="tl-badge tl-badge--action rw-tag">
                         {heroFinish ? 'Your Finish' : 'You If You Bust Now'}
@@ -806,7 +1017,7 @@ export default function RewardsTab({
                   </span>
 
                   <span className="tl-num tl-num--accent rw-prize">
-                    {prize > 0 ? chips(prize) : '-'}
+                    {recordedPrize > 0 ? unitMoney(recordedPrize) : prize > 0 ? chips(prize) : '-'}
                   </span>
                 </li>
               );
@@ -911,7 +1122,7 @@ export default function RewardsTab({
                     ? 'No Bounties Are Paid Before The Money. Once The Tournament Reaches The Money, Every Knockout Picks 1 Of 3 Sealed Chests. '
                     : ''}
                   Every Chest Is Sealed Until It Is Pulled. The Full Ladder, And Who Has Pulled
-                  What, Is Below.
+                  What, Is On The Bounties Tab.
                 </p>
               )}
             </>
@@ -919,26 +1130,8 @@ export default function RewardsTab({
         </section>
       )}
 
-      {/* ── THE MYSTERY LADDER ────────────────────────────────────────────
-          Dan 2026-08-25 asked Rewards for "the total bounty pool and whats
-          left or 'still available' in the mystery bounty pool". The pool
-          figures are the section above; the ladder is this panel.
-
-          It is `MysteryBountyPanel`, fed by the page's single
-          `useMysteryBounty` fetch (`mysteryBounty` in the tab contract), so
-          the top chest the Detail tab advertises and the ladder here read the
-          same three RPC calls and cannot disagree. It renders null for any
-          event that is not a mystery bounty. */}
-      {isMystery && mysteryBounty && tournamentId && (
-        <MysteryBountyPanel
-          tournamentId={tournamentId}
-          isMysteryBounty
-          data={mysteryBounty}
-          currentUserId={currentUserId ?? null}
-          isCompleted={String(t.status || '').toUpperCase() === 'COMPLETED'}
-          unitCents={unitCents}
-        />
-      )}
+      {/* THE MYSTERY LADDER moved to its own Bounties tab (Dan 2026-10-25):
+          see BountiesTab. Rewards keeps the pool totals above. */}
     </div>
   );
 }

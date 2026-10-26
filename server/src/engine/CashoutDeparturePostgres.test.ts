@@ -94,14 +94,20 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   const MOVE = '66666666-6666-4666-8666-666666666666';
   const PARTNER_MOVE = '77777777-7777-4777-8777-777777777777';
   const PARTNER_USER = '88888888-8888-4888-8888-888888888888';
-  const planMove = (id = MOVE, user = USER, from = TABLE, to = OTHER_TABLE) =>
+  const planMove = (
+    id = MOVE,
+    user = USER,
+    from = TABLE,
+    to = OTHER_TABLE,
+    reason: 'seat_change' | 'must_move' = 'seat_change'
+  ) =>
     sql(`INSERT INTO cash_seat_moves(id,game_id,player_id,from_table_id,to_table_id,reason,expires_at)
-      VALUES('${id}','${GAME}','${user}','${from}','${to}','seat_change',now()+interval '5 minutes')`);
-  const seedMove = () => {
+      VALUES('${id}','${GAME}','${user}','${from}','${to}','${reason}',now()+interval '5 minutes')`);
+  const seedMove = (reason: 'seat_change' | 'must_move' = 'seat_change') => {
     seedGame();
     sql(`INSERT INTO cash_games(id) VALUES('${GAME}');
       INSERT INTO cash_player_session VALUES('${USER}','table','${TABLE}','${TABLE}',NULL)`);
-    planMove();
+    planMove(MOVE, USER, TABLE, OTHER_TABLE, reason);
   };
   const seedSwap = () => {
     seedMove();
@@ -522,6 +528,8 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         expect(args).toEqual({ p_user_id: args.p_user_id, p_session_id: FIXTURE_SESSION });
         return { data: true, error: null };
       }
+      if (name === 'fn_cash_seat_moves_pending')
+        return { data: pending(args.p_table_id), error: null };
       if (name === 'fn_cash_seat_move_execute') return { data: move(args.p_move_id), error: null };
       if (name === 'fn_cash_seat_move_arrivals') {
         expect(args.p_occupancy_ids).toHaveLength(1);
@@ -613,8 +621,8 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     return { hub, roster, pending, cohort, engine, seedPresence, reconnect };
   }
 
-  it('composes real SQL, both table engines, presence/time bank and a missed-move reconnect', async () => {
-    seedMove();
+  it('composes pre-deal Main feeding, real SQL, both engines and a missed-move reconnect', async () => {
+    seedMove('must_move');
     const c = connectTransferComponents();
     const source = c.engine(TABLE),
       destination = c.engine(OTHER_TABLE);
@@ -640,9 +648,11 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       }
       return result;
     });
-    const moving = source.executePendingSeatMoves({ announcedOnly: false }, c.pending(TABLE));
+    const moving = source.announcePendingSeatMoves();
+    // Observe the committed request, not an assumed number of microtasks:
+    // the pre-deal path owns enumeration and its seat-boundary mutex first.
+    await vi.waitFor(() => expect(calls).toBe(1), { timeout: 5000 });
     // The transaction is committed, but the source has no response yet.
-    await Promise.resolve();
     destination.adoptSeatRoster(c.roster(OTHER_TABLE));
     expect(await destination.adoptMovedPresence()).toBe(true);
     expect(destination.disconnectEngine.getFsmState(OTHER_TABLE, USER)).toEqual(before);
@@ -651,7 +661,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       usesRemaining: 1,
     });
     release();
-    expect(await moving).toEqual([USER]);
+    expect(await moving).toBe(true);
     expect(calls).toBe(2);
     expect(source.disconnectEngine.getFsmState(TABLE, USER)).toBeNull();
     expect(source.timeBankEngine.getPlayerBank(TABLE, USER)).toBeNull();

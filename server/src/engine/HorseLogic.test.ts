@@ -2087,7 +2087,7 @@ describe('HorseLogic V10 - strategy layer', () => {
     expect(rakeDrag(200, 2)).toBe(0); // deep in the cap
   });
 
-  it('c-bets a range-advantage board (dry, high-card, unpaired) more with V10 on', () => {
+  it('retains the high-card c-bet fallback when no opponent ranges are available', () => {
     const mk = (): any => ({
       players: [
         mkPlayer(2, { user_id: 'raiser', cards: [c('Qh'), c('Jh')], stack: 200 }),
@@ -2113,20 +2113,25 @@ describe('HorseLogic V10 - strategy layer', () => {
       const a = mk();
       if (
         ['bet', 'all_in'].includes(
-          HorseLogic.decide(a.players[0], a, 'balanced', {}, NOMOOD).action
+          HorseLogic.decide(a.players[0], a, 'balanced', {}, { ...NOMOOD, mind: false }).action
         )
       )
         on++;
       const b = mk();
       if (
         ['bet', 'all_in'].includes(
-          HorseLogic.decide(b.players[0], b, 'balanced', {}, { v9Mood: false, v10Cbet: false })
-            .action
+          HorseLogic.decide(
+            b.players[0],
+            b,
+            'balanced',
+            {},
+            { v9Mood: false, v10Cbet: false, mind: false }
+          ).action
         )
       )
         off++;
     }
-    expect(on).toBeGreaterThan(off + 8); // the high-freq small range c-bet exists
+    expect(on).toBeGreaterThan(off + 8); // fallback only; real public range/EV wiring is qualified in HorseRangeAdvantage.test.ts
   });
 
   it('applies SPR pot control: never MORE value raises at an awkward SPR with V10 on', () => {
@@ -2461,9 +2466,10 @@ describe('HorseLogic V11 - game modes + leak fixes', () => {
 
   it('antes widen tournament opens', () => {
     const open = v7ctx({
-      // V34: the hijack bar moved 0.54 -> 0.48; 0.46 sits just under it and
+      // V34: the hijack bar moved 0.54 -> 0.48, and tournament aggression
+      // (2026-10-25) opens it 0.02 wider to 0.46; 0.44 sits just under it and
       // the 0.05 ante widen carries it over.
-      strength: 0.46,
+      strength: 0.44,
       position: 'middle',
       mode: 'tournament',
       toCall: 2,

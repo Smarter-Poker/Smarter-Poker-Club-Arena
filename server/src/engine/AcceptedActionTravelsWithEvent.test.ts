@@ -112,9 +112,9 @@ describe('accepted action facts survive a delayed history consumer', () => {
         currentBet: 2,
         actorSeat: 4,
       });
-      expect(h.controller.getState().actionHistory.every((a) => a.publicNode === undefined)).toBe(
-        true
-      );
+      const retained = h.controller.getState().actionHistory.slice(0, h.events.length);
+      expect(retained.map((a) => a.publicNode)).toEqual(h.events.map((e) => e.publicNode));
+      expect(retained.every((a) => Object.isFrozen(a.publicNode))).toBe(true);
       expect(owner.hub.emitEvent.mock.calls.map(([, e]) => e.user_id)).toEqual([
         'u4',
         'u1',

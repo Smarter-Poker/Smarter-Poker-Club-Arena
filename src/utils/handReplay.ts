@@ -391,6 +391,20 @@ export interface ReplayShowdownRow {
    * in a "Mucked" row is not read as a reveal.
    */
   holePrivate: boolean;
+  /**
+   * Dan 2026-10-25: this hand was MUCKED at the table, and its cards are on
+   * record because it CALLED the river (fn_ca_called_river_mucked_cards).
+   * The surface tags it so it is not read as a hand the player chose to show.
+   */
+  calledMuck?: boolean;
+  /**
+   * Dan 2026-10-25: this hand's LAST river decision was a call (a call, or an
+   * all-in for no more than the level it faced) and it won nothing. Since
+   * 2026-10-26 the engine tables such a hand at the table instead of letting
+   * it muck, so it is on record as shown; the surface tags it "Called" exactly
+   * as it tags a calledMuck row from before that change.
+   */
+  calledRiver?: boolean;
   /** Which board this row is for; 0 unless the hand ran more than once. */
   boardIndex: number;
   boardLabel: string | null;
@@ -408,6 +422,21 @@ export interface ReplayShowdownRow {
   isWinner: boolean;
 }
 
+/** Recorded monetary awards are independent of whether any cards were shown. */
+export interface ReplayRecordedBoardAward {
+  key: string;
+  userId: string;
+  name: string;
+  seat: number;
+  position: string;
+  boardIndex: number;
+  boardLabel: string;
+  low: boolean;
+  amount: number;
+  potSlices?: Array<{ index: number; amount: number }>;
+  handName?: string;
+}
+
 export interface ReplayModel {
   /** Read from the owning table arena; never inferred from a route or amount. */
   arenaAsset?: 'chips' | 'diamonds';
@@ -421,6 +450,8 @@ export interface ReplayModel {
   streets: ReplayStreet[];
   boards: DeckCard[][];
   showdown: ReplayShowdownRow[];
+  /** Absent on older cached models; empty when no board awards were recorded. */
+  recordedBoardAwards?: ReplayRecordedBoardAward[];
   potTotal: number;
   pots: { label: string; amount: number }[];
   rake: number;
@@ -540,6 +571,16 @@ const VERB_LABEL: Record<ReplayVerb, string> = {
  * level to the pot on top of what that seat already had in.
  */
 const TO_LEVEL_VERBS = new Set(['bet', 'raise', 'all_in', 'allin']);
+
+/** A seat's own river decision: what records whether it last CALLED there. */
+const RIVER_DECISION_VERBS = new Set<ReplayVerb>([
+  'fold',
+  'check',
+  'call',
+  'bet',
+  'raise',
+  'all_in',
+]);
 
 /**
  * The forced-money verbs that ARE a blind.
@@ -795,6 +836,13 @@ export function buildReplay(input: ReplayInput): ReplayModel {
    * and `pot_size` decides which one was real. See the reconciliation below.
    */
   const inferredReturns: Array<{ key: string; seat: number; amount: number }> = [];
+  /**
+   * Per seat, whether its LAST river decision was a call: a plain call, or an
+   * all-in that put in no more than the level it faced. The engine tables
+   * every such hand (Dan 2026-10-25: "show the hand at call down"), and the
+   * showdown rows tag the ones that lost "Called" (ReplayShowdownRow.calledRiver).
+   */
+  const riverCallBySeat = new Map<number, boolean>();
 
   const settleStreet = () => {
     if (logHasReturns) return;
@@ -875,6 +923,12 @@ export function buildReplay(input: ReplayInput): ReplayModel {
        * carried the flag, and for any importer that does not set it.
        */
       if (!isDead) committed.set(seat, money((committed.get(seat) || 0) + increment));
+    }
+    if (stage === 'river' && verb && RIVER_DECISION_VERBS.has(verb) && !isDead) {
+      const level = committed.get(seat) || 0;
+      let facing = 0;
+      for (const [s, v] of committed) if (s !== seat && v > facing) facing = v;
+      riverCallBySeat.set(seat, verb === 'call' || (verb === 'all_in' && level <= facing + 0.005));
     }
 
     rows.push({
@@ -1143,7 +1197,14 @@ export function buildReplay(input: ReplayInput): ReplayModel {
      with the 1-based board index the writer uses. */
   const perBoard = new Map<
     string,
-    { amount: number; handName?: string; pots?: Array<{ index: number; amount: number }> }
+    {
+      boardIndex: number;
+      userId: string;
+      low: boolean;
+      amount: number;
+      handName?: string;
+      pots?: Array<{ index: number; amount: number }>;
+    }
   >();
   for (const w of input.winnersByBoard || []) {
     const uid = w.userId || w.user_id;
@@ -1159,6 +1220,9 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     /* One key per (board, winner, half). A row older than the `low` flag has
        no half and is read as high, which is what it was. */
     perBoard.set(`${Number(w.board) || 1}|${uid}|${w.low ? 'lo' : 'hi'}`, {
+      boardIndex: (Number(w.board) || 1) - 1,
+      userId: uid,
+      low: w.low === true,
       amount: Number(w.amount) || 0,
       handName: w.handName || undefined,
       ...(pots.length ? { pots } : {}),
@@ -1193,8 +1257,10 @@ export function buildReplay(input: ReplayInput): ReplayModel {
          whichever is drawn, so the viewer sees what their muck was worth. */
       const hole = publicHole || privateHole;
       const holePrivate = !publicHole && !!privateHole;
+      const calledMuck = !!publicHole && muckedByUser.get(p.userId) === true;
       const made = hole ? bestFive(hole, b, input.gameVariant) : null;
       const won = wonByUser.get(p.userId) || 0;
+      const calledRiver = !!publicHole && won <= 0 && riverCallBySeat.get(Number(p.seat)) === true;
       const inv = invested.get(Number(p.seat)) || 0;
       const onThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}|hi`);
       const lowOnThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}|lo`);
@@ -1216,6 +1282,8 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         position: positions[Number(p.seat)] || '',
         hole,
         holePrivate,
+        calledMuck,
+        calledRiver,
         made: made?.cards || [],
         playing: (made?.cards || []).map(cardKey),
         handName: titleCase(boardName),
@@ -1268,6 +1336,8 @@ export function buildReplay(input: ReplayInput): ReplayModel {
             position: positions[Number(p.seat)] || '',
             hole,
             holePrivate,
+            calledMuck,
+            calledRiver,
             made: low?.cards || [],
             playing: (low?.cards || []).map(cardKey),
             handName: lowOnThisBoard?.handName || low?.name || 'Low',
@@ -1297,6 +1367,23 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     streets,
     boards,
     showdown: showdownRows,
+    recordedBoardAwards: [...perBoard.values()].map((award) => {
+      const player = players.find((p) => p.userId === award.userId);
+      const seat = Number(player?.seat) || 0;
+      return {
+        key: `award-${award.boardIndex}-${award.userId}-${award.low ? 'lo' : 'hi'}`,
+        userId: award.userId,
+        name: player?.username || 'Player',
+        seat,
+        position: positions[seat] || '',
+        boardIndex: award.boardIndex,
+        boardLabel: `Board ${award.boardIndex + 1}${award.low ? ' Low' : hiLo ? ' High' : ''}`,
+        low: award.low,
+        amount: money(award.amount),
+        ...(award.pots ? { potSlices: award.pots } : {}),
+        ...(award.handName ? { handName: award.handName } : {}),
+      };
+    }),
     potTotal: money(storedPot || rebuiltPot),
     pots: potBreakdown,
     rake: money(Number(input.rakeAmount) || 0),

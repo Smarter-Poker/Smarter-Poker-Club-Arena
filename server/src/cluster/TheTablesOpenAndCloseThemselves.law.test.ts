@@ -254,13 +254,14 @@ describe('the engine executes at the hand boundary and announces at the start', 
          notice referred to; the announcement now sits immediately before
          dealHand and the idle-branch execute is in the idle branch;
        - settlement executed every pending move, announced or not, so a move
-         planned mid-hand landed unannounced; settlement executes announced
-         moves only, and the announcement is written to the row
+         planned mid-hand landed unannounced; settlement keeps that rule for optional changes and swaps. Owner update
+         2026-10-23 requires must-move feeding at the first completed boundary.
+         The announcement is written to the row
          (fn_cash_seat_move_announce) so a slow hand cannot expire it;
        - the start() wait-for-players loop never executed a move at all, so a
          lone player on a feeder was planned onto Main 1 every minute and
          never moved (seventeen expired rows, 00:28-00:45 UTC). */
-  it('settlement executes ANNOUNCED moves after the leavers, at the end of the hand', () => {
+  it('settlement feeds Main at the first boundary and keeps other announcement rules', () => {
     const step = SETTLEMENT.slice(
       SETTLEMENT.indexOf("runStep('leave_pending'"),
       SETTLEMENT.indexOf("runStep('table_unlock'")
@@ -274,7 +275,7 @@ describe('the engine executes at the hand boundary and announces at the start', 
     );
   });
 
-  it('an idle table executes every pending move, in the idle branch and nowhere before the deal', () => {
+  it('idle tables execute every move while the seat-load sweep never moves a playing table', () => {
     const idle = DEALING.slice(
       DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');"),
       DEALING.indexOf('SPIN REVEAL HOLD')
@@ -319,7 +320,10 @@ describe('the engine executes at the hand boundary and announces at the start', 
     );
     expect(announce).toMatch(/await announceSeatMoves\(fresh\)/);
     expect(MOVES).toMatch(/fn_cash_seat_move_announce/);
-    expect(MOVES).toMatch(/pending\.filter\(\(m\) => m\.announced_at != null\)/);
+    expect(MOVES).toMatch(/pending\.filter\(\(move\) => seatMoveIsDue\(move, opts\)\)/);
+    expect(MOVES).toContain("move.reason === 'must_move' && move.swap_move_id == null");
+    expect(announce).toContain('mustMoveOnly: true');
+    expect(announce).toContain('await this.acquireSeatBoundary()');
   });
 
   it('a player is told once at the start of the hand, and never asked', () => {
@@ -383,7 +387,9 @@ describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UT
     );
     // The 1-2 trickle for a sparse table cannot leave the feeder at one.
     const trickle = FLEET.slice(
-      FLEET.indexOf("if (fill !== 'full' && !humanNeedsRescue) {"),
+      FLEET.indexOf(
+        "if (fill !== 'full' && !humanNeedsRescue && !isHoldemOrPlo(table.game_variant)) {"
+      ),
       FLEET.indexOf('seatsNeeded = Math.min(seatsNeeded, seatBudget);')
     );
     expect(trickle).toMatch(
@@ -1092,13 +1098,18 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
   it('a wake is debounced per game, leader-only, and cannot throw into the engine', () => {
     expect(CONTROLLER).toMatch(/export const CLUSTER_WAKE_DEBOUNCE_MS = 500;/);
     expect(CONTROLLER).toMatch(
-      /wake\(gameId: string\): void \{\s*if \(!this\.running \|\| !gameId\) return;/
+      /wake\(gameId: string, opts: ClusterWakeOptions = \{\}\): void \{\s*if \(!this\.running \|\| !gameId\) return;/
     );
     expect(CONTROLLER).toMatch(
-      /if \(this\.wakeTimers\.has\(gameId\)\) \{\s*this\.wakesCoalescedCount\+\+;\s*return;/
+      /const pending = this\.wakeTimers\.get\(gameId\);\s*if \(pending\) \{\s*this\.wakesCoalescedCount\+\+;\s*if \(!opts\.now\) return;/
     );
+    // 2026-10-24: a VACANCY (`now`) skips the burst hold and replaces a held
+    // wake; every other wake is still held CLUSTER_WAKE_DEBOUNCE_MS. Both
+    // still coalesce behind an in-flight tick (aCommittedPlanReachesIts-
+    // FeederBeforeTheDeal.law.test.ts drives all four cases).
+    expect(CONTROLLER).toMatch(/\},\s*opts\.now \? 0 : CLUSTER_WAKE_DEBOUNCE_MS\s*\);/);
     expect(CONTROLLER).toMatch(
-      /export function wakeCluster\(gameId: string\): void \{\s*try \{\s*activeController\?\.wake\(gameId\);\s*\} catch/
+      /export function wakeCluster\(gameId: string, opts: ClusterWakeOptions = \{\}\): void \{\s*try \{\s*activeController\?\.wake\(gameId, opts\);\s*\} catch/
     );
     // The wake ticks ONE game through the per-game RPC with its Main 1 demand.
     const wake = CONTROLLER.slice(
@@ -1179,7 +1190,7 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
   it('the engine wakes the game when a seat changes or a hand ends on a cluster table', () => {
     expect(BASE).toMatch(/import \{ wakeCluster \} from '\.\.\/cluster\/ClusterController\.js';/);
     expect(BASE).toMatch(
-      /protected wakeClusterGame\(_reason: string\): void \{\s*const gameId = this\.tableInfo\?\.cluster_id;\s*if \(!gameId \|\| this\.isTournamentTable\(\)\) return;/
+      /protected wakeClusterGame\(reason: string\): void \{\s*const gameId = this\.tableInfo\?\.cluster_id;\s*if \(!gameId \|\| this\.isTournamentTable\(\)\) return;/
     );
     // adoptSeatRoster has already retired departed/replaced occupancy mirrors.
     // Compare the retained pre-read roster so that pruning knownPlayerIds

@@ -64,8 +64,6 @@
      further ~47px DOWN, off the chrome and onto the felt. That is the drift
      Dan reported on 2026-08-25. The notch is handled once, by the bar. */
   top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
 
   background:
     var(--sp-dialog-blue) padding-box,
@@ -240,8 +238,7 @@
 .bbj-mini-plate {
   position: absolute;
   top: var(--sp-bbj-plate-h);
-  left: 50%;
-  transform: translateX(-50%);
+
   display: flex;
   align-items: center;
   justify-content: center;
@@ -817,5 +814,57 @@
   .bbj-widget__label,
   .bbj-widget__amount {
     font-size: 0.625rem;
+  }
+}
+
+/* Both banners sit beneath the hamburger in the same 6px left gutter.
+   The containing table slot already starts below the tab bar. Keep their
+   vertical budget so moving or hiding banners never moves live seats.
+   Keep the amounts unobstructed, without close controls. */
+.bbj-widget,
+.bbj-mini-plate {
+  left: 6px;
+  transform: none;
+}
+
+.bbj-widget__details,
+.bbj-mini-plate__details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bbj-widget__details {
+  flex-direction: column;
+}
+
+.bbj-widget__details:focus-visible,
+.bbj-mini-plate__details:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 768px) {
+  .bbj-widget__details {
+    flex-direction: row;
+  }
+}
+
+@media (max-width: 360px) {
+  .bbj-widget__details {
+    gap: 4px;
+  }
+
+  .bbj-widget__label {
+    letter-spacing: 0.02em;
   }
 }

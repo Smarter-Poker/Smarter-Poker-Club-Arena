@@ -303,7 +303,7 @@ describe('a failed query must never read as "nobody is left" - the money paths',
     // Defect: the error was discarded, so a failed read looked like "nobody
     // busted" and the sweep fell straight through to the finish check.
     expect(code(ELIM)).toMatch(
-      /if\s*\(\s*bustedErr\s*\)\s*\{[\s\S]{0,600}?busted_list_unavailable[\s\S]{0,120}?\n\s*return;/
+      /if\s*\(\s*bustedErr\s*\|\|\s*!Array\.isArray\(busted\)\s*\)\s*\{[\s\S]{0,600}?busted_list_unavailable[\s\S]{0,120}?\n\s*return;/
     );
   });
 
@@ -569,7 +569,7 @@ describe('one player, one stack', () => {
     // An unreadable roster is still UNKNOWN and must stop this sweep before
     // any placement, payout, or terminal decision.
     expect(code(ELIM)).toMatch(
-      /if\s*\(bustedErr\)\s*\{[\s\S]{0,700}?busted_list_unavailable[\s\S]*?return;/
+      /if\s*\(bustedErr\s*\|\|\s*!Array\.isArray\(busted\)\)\s*\{[\s\S]{0,700}?busted_list_unavailable[\s\S]*?return;/
     );
   });
 

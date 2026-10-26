@@ -70,7 +70,10 @@ const slice = (from: string, to: string) => {
   expect(b, to).toBeGreaterThan(a);
   return NEW_BODY.slice(a, b);
 };
-const REBASE = slice(" IF s->'rebased' ? (x->>'user_id') THEN", ' -- Every rebased player is a player this hand dealt');
+const REBASE = slice(
+  " IF s->'rebased' ? (x->>'user_id') THEN",
+  ' -- Every rebased player is a player this hand dealt'
+);
 const REBUY = slice(' rf:=NULL; bust:=NULL;', ' fund:=NULL;');
 
 describe('a mid-hand add-on rebase is movement evidence', () => {
@@ -100,7 +103,7 @@ describe('a mid-hand add-on rebase is movement evidence', () => {
   it('admits a rebase only by its own rebase receipt and the add-on receipts that bought it', () => {
     for (const condition of [
       // exactly one rebase receipt of this settlement, matching the request
-      "(SELECT count(*) FROM public.ca_seat_stack_rebases r WHERE r.table_id=p_table",
+      '(SELECT count(*) FROM public.ca_seat_stack_rebases r WHERE r.table_id=p_table',
       "AND r.hand_id=(s->>'hand_id')::uuid AND r.user_id=(x->>'user_id')::uuid)<>1 THEN",
       'IF credit<=0 OR rb.amount IS DISTINCT FROM credit OR rb.hand_number IS DISTINCT FROM a.hand_number',
       "OR rb.engine_after IS DISTINCT FROM (x->>'stack')::numeric",
@@ -130,7 +133,9 @@ describe('a mid-hand add-on rebase is movement evidence', () => {
     expect(NEW_BODY).toContain(
       "held:=(x->>'stack')::numeric+COALESCE((item->>'credit')::numeric,0); since:=a.committed_at;"
     );
-    expect(NEW_BODY).toContain("OR jsonb_typeof(s->'rebased') IS DISTINCT FROM 'object' OR s->'departed' IS DISTINCT FROM '[]'::jsonb");
+    expect(NEW_BODY).toContain(
+      "OR jsonb_typeof(s->'rebased') IS DISTINCT FROM 'object' OR s->'departed' IS DISTINCT FROM '[]'::jsonb"
+    );
   });
 
   it('admits a rebought chair only by its rebuy receipt and the sealed bust on that chair row', () => {
@@ -173,9 +178,7 @@ describe('a mid-hand add-on rebase is movement evidence', () => {
   });
 
   it('keeps a proof that needs neither byte-identical', () => {
-    expect(NEW_BODY).toContain(
-      "AND entries='[]'::jsonb AND rebases='[]'::jsonb THEN '{}'::jsonb"
-    );
+    expect(NEW_BODY).toContain("AND entries='[]'::jsonb AND rebases='[]'::jsonb THEN '{}'::jsonb");
     expect(NEW_BODY).toContain(
       "||CASE WHEN rebases='[]'::jsonb THEN '{}'::jsonb ELSE jsonb_build_object('rebased',rebases) END) END;"
     );
@@ -210,13 +213,30 @@ describe('a mid-hand add-on rebase is movement evidence', () => {
     const code = SQL.split('\n')
       .filter((l) => !l.trim().startsWith('--'))
       .join('\n');
-    expect(code).not.toMatch(/\b(INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+(public|smarter_private)\.)/i);
+    expect(code).not.toMatch(
+      /\b(INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+(public|smarter_private)\.)/i
+    );
     expect(code).not.toMatch(/cron\./i);
     const later = readdirSync(MIGRATIONS)
       .filter((f) => f.endsWith('.sql') && f > FILE)
       .filter((f) =>
-        readFileSync(join(MIGRATIONS, f), 'utf8').includes('FUNCTION smarter_private.f06_movement_prior(')
+        readFileSync(join(MIGRATIONS, f), 'utf8').includes(
+          'FUNCTION smarter_private.f06_movement_prior('
+        )
       );
-    expect(later).toEqual([]);
+    // 20261024211825 (a rebuy seated from another table) is the one
+    // successor, and it refuses to run unless the installed body is exactly
+    // this post-image.
+    expect(later).toEqual([
+      '20261024211825_a_rebuy_seated_from_another_table_is_movement_evidence.sql',
+      '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+    ]);
+    expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
+      `md5(p.prosrc) = '${POST_MD5}'`
+    );
+    expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
+      `md5(pg_get_functiondef(p.oid)) = '${POST_DEF_MD5}'`
+    );
   });
 });

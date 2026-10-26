@@ -52,14 +52,16 @@ describe('TablePage on a pool-session id', () => {
     );
     expect(PAGE).toContain('await sendLightningFold(tableId, userId, kind, lightningFoldHandId)');
     expect(PAGE).toMatch(
-      /\[tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId\]/
+      /\[\s*tableId,\s*userId,\s*toast,\s*isMultiTable,\s*isActive,\s*lightningCaps,\s*lightningFoldHandId,\s*applyOptimisticHeroAction,?\s*\]/
     );
   });
 
   it('reads no tables row for a pool session: every read is behind the room check', () => {
     const lines = PAGE.split('\n');
     const reads = lines.flatMap((l, i) => (l.includes(".from('tables')") ? [i] : []));
-    expect(reads.length).toBe(4);
+    // Four existing loaders plus the new HTTP404 table-status read.
+    // Every read, including that one, still requires the room exclusion below.
+    expect(reads.length).toBe(5);
     for (const i of reads) {
       const before = lines.slice(Math.max(0, i - 120), i).join('\n');
       expect(before, `tables read at line ${i + 1}`).toMatch(/lightningRoomRef\.current/);
@@ -108,13 +110,17 @@ describe('TablePage on a pool-session id', () => {
     expect(PAGE).toContain('lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)');
   });
 
-  it('mounts the Lightning controls only in a Lightning room', () => {
+  it('keeps the original actions without a duplicate Lightning fold strip', () => {
     /* For the whole room, not only while a seat shows: the idle snapshot after
        a fold carries no players, and the strip must hold its place, dimmed. */
+    expect(PAGE).not.toContain('<LightningFoldBar');
+    expect(PAGE).toContain('<ActionPanel');
+    expect(PAGE).toContain("void handleLightningFold('fast_fold')");
+    /* Lightning transition, phase 1: "Next Hand..." is a felt-level layer of
+       the room, so it shows between hands as well as in a hand. */
     expect(PAGE).toMatch(
-      /\{lightningRoom && userId && userId !== 'guest' \? \(\s*<LightningFoldBar/
+      /\{lightningRoom \? \(\s*<div className="lightning-felt-notices" data-testid="lightning-felt-notices">\s*<LightningNextHand/
     );
-    expect(PAGE).toMatch(/\{lightningRoom \? \(\s*<LightningNextHand/);
   });
 });
 
@@ -172,7 +178,6 @@ describe('JOIN LIGHTNING hand-off from the anchor table', () => {
 describe('player-visible terminology', () => {
   const FILES = [
     ...readdirSync(join(ROOT, 'src/lightning')).map((f) => `src/lightning/${f}`),
-    'src/components/table/LightningFoldBar.tsx',
     'src/components/table/LightningFoldBar.css',
     'src/components/table/LightningNextHand.tsx',
     'src/pages/LightningEntryPage.tsx',
@@ -197,8 +202,8 @@ describe('player-visible terminology', () => {
   });
   it('the controls use only the approved terms', async () => {
     const hand = await import('../../src/lightning/lightningHand');
-    expect(hand.LIGHTNING_FOLD_LABEL).toBe('LIGHTNING FOLD');
-    expect(hand.LIGHTNING_FOLD_WATCH_LABEL).toBe('FOLD & WATCH');
+    expect('LIGHTNING_FOLD_LABEL' in hand).toBe(false);
+    expect('LIGHTNING_FOLD_WATCH_LABEL' in hand).toBe(false);
     const lobby = await import('../../src/lightning/lightningLobby');
     expect(
       lobby.lightningLobbyBadge({ clusterMode: 'lightning', state: null, boardPlayers: 0 }).label

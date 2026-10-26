@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import { MemoryRouter } from 'react-router-dom';
 import GameLobbyPanel from '../../../src/components/lobby/GameLobbyPanel';
 import { cashEntry, tournamentEntry } from '../../../src/components/lobby/lobbyEntries';
 import { ToastProvider } from '../../../src/components/common/Toast';
+import { TickerRail } from '../../../src/components/tournament/TickerRail';
+import { startingSoonItem } from '../../../src/components/tournament/tickerMessages';
 const kind = document.documentElement.dataset.kind || 'cash';
 const entry =
   kind === 'cash' || kind === 'cash-full'
@@ -51,7 +54,37 @@ function Fixture() {
       <output hidden data-testid="fixture-join-table-calls">
         {JSON.stringify(joinTableCalls)}
       </output>
-      <button type="button" onClick={() => setOpen(true)}>
+      {createPortal(
+        <TickerRail
+          items={[
+            startingSoonItem({
+              id: 'fixture-tournament',
+              name: 'Evening Classic',
+              startsAt: Date.now() + 180000,
+              clubId: 'fixture',
+              buyIn: 10,
+              buyInFee: 1,
+              registered: 18,
+              isRegistered: false,
+            }),
+          ]}
+          now={Date.now()}
+          top={44}
+          appearance={{
+            backgroundColor: '#0b1a33',
+            textColor: '#f5fbff',
+            accentColor: '#00d4ff',
+            fontFamily: 'System',
+            speedSeconds: 24,
+          }}
+          onOpen={() => {
+            document.body.dataset.tickerOpened = 'true';
+          }}
+          onDismiss={noop}
+        />,
+        document.getElementById('ticker-root')!
+      )}
+      <button type="button" style={{ marginTop: 80 }} onClick={() => setOpen(true)}>
         Open Game Lobby
       </button>
       {open && (

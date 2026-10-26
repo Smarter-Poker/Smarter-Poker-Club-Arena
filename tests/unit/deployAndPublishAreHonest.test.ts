@@ -142,7 +142,13 @@ describe('engine deployment reports what actually happened', () => {
     );
     expect(preflight).toMatch(/^ {10}RELEASE_TEST_SHARD: \$\{\{ matrix\.shard \}\}$/m);
     expect(preflight).toMatch(/^\s+npm test -- --shard="\$RELEASE_TEST_SHARD\/4"\s*$/m);
-    expect(preflight).not.toMatch(/^\s+(?:if|exclude|include|continue-on-error):/m);
+    // The whole matrix belongs only to deployment events. Withdrawal has no
+    // image authority; every actual deployment still executes all four shards.
+    const eventGate = "    if: github.event.action == 'deploy-club-arena-engine'";
+    expect(preflight.split('\n').filter((line) => line === eventGate)).toHaveLength(1);
+    expect(preflight.replace(eventGate, '')).not.toMatch(
+      /^\s+(?:if|exclude|include|continue-on-error):/m
+    );
     expect(preflight).not.toMatch(/\$\{\{[^}\n]*\bsecrets\b[^}\n]*\}\}/);
     expect(preflight).not.toContain('SSH_USER: root');
 

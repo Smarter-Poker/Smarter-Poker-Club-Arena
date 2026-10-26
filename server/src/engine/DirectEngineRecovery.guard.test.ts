@@ -296,9 +296,17 @@ describe('direct table-engine terminal recovery', () => {
     expect(schedule).toContain('this.launchServerLifecycleJob(');
     expect(schedule).toContain('this.triggerSynchronizedBreak()');
     expect(trigger).toContain('const generation = this.lifecycleGeneration;');
-    expect(trigger).toContain('await this.waitForAllTablesParked(breakEngines)');
+    // Dan 2026-10-25: each tournament runs its own last hand and its own five
+    // minutes, so the trigger hands every tournament to its own break.
+    const own = method('private async runTournamentBreak(');
+    const schedule1 = method('private scheduleTournamentBreakResume(');
+    const resumeOne = method('private async resumeTournamentBreak(');
+    expect(trigger).toContain('this.runTournamentBreak(tm, maintenanceEndsAt, generation, breakGeneration)');
     expect(trigger).toContain('this.directAdmissionIsCurrent(generation)');
-    expect(trigger).toContain('this.resumeSynchronizedBreak(breakEngines, generation)');
+    expect(own).toContain('await this.waitForAllTablesParked([tm])');
+    expect(schedule1).toContain('this.launchServerLifecycleJob(');
+    expect(schedule1).toContain('this.resumeTournamentBreak(tm, generation, breakGeneration)');
+    expect(resumeOne).toContain('this.resumeSynchronizedBreak([tm], generation)');
     expect(resume).toContain('if (!this.directAdmissionIsCurrent(generation)) return;');
     expect(cleanup).toContain('const cleanupGeneration = this.lifecycleGeneration;');
     expect(cleanup).toContain('this.launchServerLifecycleJob(');

@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/ci/maintenance-window-migrations.mjs'
+      - 'scripts/ci/owner-window-migration.mjs'
       - 'scripts/ci/install-window-migrations.mjs'
       - 'scripts/ci/apply-recorded-migration.mjs'
       - 'scripts/ci/migration-session-identity.mjs'

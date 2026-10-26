@@ -32,6 +32,7 @@ import type {
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
 import { buildHorseDecisionKey } from './protocol.js';
+import { createDecisionOpponentProfileReader } from '../../services/HorseOpponentMemory.js';
 import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 
 describe('the decision deadline is the turn clock: the number', () => {
@@ -322,6 +323,46 @@ describe('the decision deadline is the turn clock: the client', () => {
       });
       const rejection = expect(pending).rejects.toThrow(/expired after 8000ms/);
       await vi.advanceTimersByTimeAsync(8_000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('independent reads do not wait for pooled opponent restoration', () => {
+  it.each([undefined, Number.NaN, 0, -1])(
+    'never fetches a stalled pooled schema and keeps the default job budget (%s)',
+    async (deadlineMs) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        jobTimeoutMs: 30,
+        opponentProfiles: createDecisionOpponentProfileReader(() => new Promise(() => {})),
+      });
+      worker.emitMessage(ready);
+      await expect(
+        client.decideFast(snapshot('schema-deadline'), undefined, { deadlineMs })
+      ).rejects.toThrow();
+      expect(worker.sent.some((m) => (m as { type?: string }).type === 'DECIDE_FAST')).toBe(true);
+    }
+  );
+  it('preserves the full compute budget without waiting for an unrelated pooled reader', async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      jobTimeoutMs: 1000,
+      opponentProfiles: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return [];
+      },
+    });
+    try {
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('memory-budget'));
+      const rejection = expect(pending).rejects.toThrow(/expired after 1000ms/);
+      await vi.advanceTimersByTimeAsync(1000);
       await rejection;
     } finally {
       vi.useRealTimers();

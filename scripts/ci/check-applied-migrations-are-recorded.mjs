@@ -261,8 +261,71 @@ export async function siblingMigrationFiles(
   return out;
 }
 
-async function repoIndex() {
-  return indexFrom([...readdirSync(DIR), ...extraFiles(), ...(await siblingMigrationFiles())]);
+async function repoFiles() {
+  return [...readdirSync(DIR), ...extraFiles(), ...(await siblingMigrationFiles())];
+}
+
+/**
+ * RECORDED UNDER A DIFFERENT VERSION (2026-10-25).
+ *
+ * The Supabase MCP `apply_migration` stamps the history row with the time of
+ * the apply, not the version in the file name. On 2026-10-24
+ * `20261024195842_cashier_transaction_history_scope.sql` was recorded as
+ * `20261024203917 cashier_transaction_history_scope`, and
+ * `20261024200548_plo5_one_two_madness_without_lightning.sql` as
+ * `20261024204032`. Every check that keys on the version - the applier's
+ * history lookup, the recording manifest, a reader comparing versions by hand -
+ * then sees one migration as two: a file that never ran and a run with no file.
+ *
+ * recordedBy() already forgives an EXACT name with a different stamp, so the
+ * gaps that reach the report here are the ones it cannot see: the history
+ * stores a long name TRUNCATED (55 characters is the documented length; 60 has
+ * been observed), and a truncated name equals no file. This names the file the
+ * gap actually belongs to, so the fix is a rename and not an export of SQL the
+ * repository already holds. It never clears the gap: a version the file does
+ * not carry is still a disagreement, and --fail still fails on it.
+ *
+ * Returns the filenames (basename only) whose NAME part - everything after the
+ * leading 14-digit version and its underscore, minus `.sql` - is the applied
+ * row's name, or begins with it when the name is long enough to have been
+ * truncated. A file already carrying the applied version is not "another"
+ * version and is never returned.
+ */
+export const TRUNCATED_NAME_LENGTH = 55;
+
+export function fileNamePart(file) {
+  const base = String(file).split('/').pop();
+  const m = /^(\d{14})_(.+)\.sql$/.exec(base);
+  return m ? { version: m[1], name: m[2].toLowerCase(), file: base } : null;
+}
+
+export function recordedUnderAnotherVersion(migration, files) {
+  const version = String(migration?.version || '');
+  const name = String(migration?.name || '')
+    .toLowerCase()
+    .replace(/\.sql$/, '');
+  if (name.length === 0) return [];
+  const wanted = [name, withoutStamp(name)].filter((n, i, a) => n.length > 0 && a.indexOf(n) === i);
+  const out = new Set();
+  for (const f of files || []) {
+    const part = fileNamePart(f);
+    if (!part || part.version === version) continue;
+    for (const n of wanted) {
+      if (part.name === n || (n.length >= TRUNCATED_NAME_LENGTH && part.name.startsWith(n))) {
+        out.add(part.file);
+      }
+    }
+  }
+  return [...out].sort();
+}
+
+/** The one line a reader acts on, for a gap whose file is here under another version. */
+export function differentVersionHint(migration, file) {
+  return (
+    `RECORDED UNDER A DIFFERENT VERSION: applied ${migration.version} ${migration.name}; ` +
+    `file ${file} - rename the file to ${migration.version}_${migration.name}.sql ` +
+    `(the database is the truth) or install through Apply Merged Migration`
+  );
 }
 
 /**
@@ -323,7 +386,8 @@ async function appliedMigrations() {
 async function main() {
   requireEnvironment();
   const applied = await appliedMigrations();
-  const index = await repoIndex();
+  const files = await repoFiles();
+  const index = indexFrom(files);
   const aliases = loadAliases(undefined, { files: readdirSync(DIR) });
   if (aliases.error) {
     // COULD NOT TELL (10.86): without the alias table a known pair reads as a
@@ -333,9 +397,20 @@ async function main() {
   for (const r of aliases.rejected) console.error(`[applied-migrations-recorded] alias refused: ${r}`);
   const missing = applied.filter((m) => !recordedBy(index, m, aliases));
   const { inFlight, overdue } = splitByGrace(missing, GRACE_HOURS);
+  // Still gaps, every one of them: this only names the file and the fix.
+  const recordedElsewhere = missing
+    .map((m) => ({ ...m, files: recordedUnderAnotherVersion(m, files) }))
+    .filter((m) => m.files.length > 0);
+  const elsewhereByVersion = new Map(recordedElsewhere.map((m) => [String(m.version), m.files]));
 
   if (AS_JSON) {
-    console.log(JSON.stringify({ since: SINCE, applied: applied.length, missing, inFlight, overdue }, null, 1));
+    console.log(
+      JSON.stringify(
+        { since: SINCE, applied: applied.length, missing, inFlight, overdue, recordedElsewhere },
+        null,
+        1
+      )
+    );
   } else if (missing.length === 0) {
     console.log(
       `[applied-migrations-recorded] OK — all ${applied.length} migration(s) applied since ${SINCE} have a file in ${DIR} or a sibling repo.`
@@ -346,8 +421,23 @@ async function main() {
       `[applied-migrations-recorded] ${missing.length} of ${applied.length} migration(s) applied since ${SINCE} have NO FILE in this repo:`
     );
     console.log('');
-    for (const m of missing) console.log(`  ${m.version}  ${m.name}`);
+    for (const m of missing) {
+      console.log(`  ${m.version}  ${m.name}`);
+      for (const f of elsewhereByVersion.get(String(m.version)) || []) {
+        console.log(`    ${differentVersionHint(m, f)}`);
+      }
+    }
     console.log('');
+    if (recordedElsewhere.length > 0) {
+      console.log(
+        `  ${recordedElsewhere.length} of them have a file here under ANOTHER version. The Supabase MCP`
+      );
+      console.log('  apply_migration records the apply time as the version, not the file\'s. They');
+      console.log('  still count as gaps until the file carries the version the database holds.');
+      console.log('');
+    }
+    console.log('  PUBLISHING.md installs migrations only from protected main, so each of these');
+    console.log('  also needs its cause found: SQL applied from an unmerged branch or by hand.');
     console.log('  These ran against production and are not written down. A rebuild from this');
     console.log('  repo would not have them. Export each one and commit it — the applied SQL is');
     console.log('  in supabase_migrations.schema_migrations.statements, and the file should be');

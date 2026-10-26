@@ -15,6 +15,10 @@
  * feet - off the top of the canvas into the BBJ banner. A 56px avatar halves
  * that offset and makes it fit. Dan chose this trade-off over flipping the
  * nameplate or letting the art overlap the banner.
+ *
+ * Dan 2026-10-24: that trade-off now applies to the 7-9 max top-cap seats only.
+ * The BBJ plates moved to the left corner (#7832/#7843), and on a 2-6 ring the
+ * single top-centre seat is full size - its box still measures on the rail.
  */
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
@@ -89,7 +93,11 @@ function readTopCapY(): number {
 const TOP_CAP_Y = readTopCapY();
 
 /** The two pairings the app actually ships. Canvas heights: TablePage.css. */
-const SMALL_RING = { y: TOP_CENTRE_Y, canvas: 960, seats: 6, cap: 56 } as const;
+/* Dan 2026-10-24: the short rings' top seat is no longer capped. The BBJ plates
+   moved to the left corner (#7832/#7843), so nothing sits above it and it is
+   the same full-size villain as every other chair - see the beats after the
+   loop. Its `cap` is therefore the full proportional slot, not a number. */
+const SMALL_RING = { y: TOP_CENTRE_Y, canvas: 960, seats: 6 } as const;
 const FULL_RING = { y: TOP_CAP_Y, canvas: 1000, seats: 9, cap: 76 } as const;
 
 const SCALER_H = 1000;
@@ -189,6 +197,8 @@ const RINGS = [
   { label: `full ring (7-9 seats, y ${FULL_RING.y}, canvas ${FULL_RING.canvas})`, ...FULL_RING },
 ];
 
+/* The rail beats hold for BOTH rings, the full-size small-ring seat included:
+   measured 2026-10-24, its box still straddles the rail band. */
 for (const ring of RINGS) {
   const content = () =>
     page(ring.y, 'seat-wrapper--top', { canvas: ring.canvas, seats: ring.seats });
@@ -204,6 +214,16 @@ for (const ring of RINGS) {
     await p.setContent(content());
     expect((await measure(p)).boxTopPct).toBeLessThan(FELT_TOP_PCT);
   });
+}
+
+/* The banner beats belong to the 7-9 rings only: their two top-cap seats still
+   sit under the jackpot's former band and keep the 76px cap. */
+for (const ring of [FULL_RING].map((r) => ({
+  label: `full ring (7-9 seats, y ${r.y}, canvas ${r.canvas})`,
+  ...r,
+}))) {
+  const content = () =>
+    page(ring.y, 'seat-wrapper--top', { canvas: ring.canvas, seats: ring.seats });
 
   test(`${ring.label}: the whole seat, bust art included, stays inside the canvas`, async ({
     page: p,
@@ -229,8 +249,45 @@ for (const ring of RINGS) {
   });
 }
 
+/* Dan 2026-10-24: "IN 6 HANDED GAMES, THE AVATAR OR VILLIAN IN THE 'DONKQUEEN'
+   POSITION CAN BE FULL SCREEN NOW THAT THE BBJ IS REMOVED FROM ABOVE THEM...
+   MAKE THAT CHANGE GLOBALLY". The short rings' top seat is the full
+   proportional slot with the full 1.45x bust, exactly like a side seat. */
+test('small ring: the top-centre seat is the same full size as every other villain', async ({
+  page: p,
+}) => {
+  await p.setContent(
+    page(SMALL_RING.y, 'seat-wrapper--top', {
+      canvas: SMALL_RING.canvas,
+      seats: SMALL_RING.seats,
+    })
+  );
+  const m = await measure(p);
+  expect(Math.abs(m.avatarPx - Math.max(50, 605 * 0.158))).toBeLessThanOrEqual(1);
+  const t = await p.evaluate(
+    () => getComputedStyle(document.querySelector('.seat__avatar-img')!).transform
+  );
+  expect(t).toContain('1.45');
+});
+
+test('every short ring (2-6 seats) gets the full-size top seat, 7-9 keep the cap', async ({
+  page: p,
+}) => {
+  for (const seats of [2, 3, 4, 5, 6, 7, 8, 9]) {
+    await p.setContent(
+      page(SMALL_RING.y, 'seat-wrapper--top', { canvas: SMALL_RING.canvas, seats })
+    );
+    const { avatarPx } = await measure(p);
+    if (seats <= 6) expect(avatarPx, `${seats}-max`).toBeGreaterThan(76 + 10);
+    else expect(avatarPx, `${seats}-max`).toBe(76);
+  }
+});
+
 test('CONTROL: a full-size seat at this height would leave the canvas', async ({ page: p }) => {
-  // Proves the compact treatment is doing real work, not decorating a fix.
+  // Since 2026-10-24 this is what the short rings SHIP: the art rises above
+  // the canvas into the open page where the BBJ banner used to be. Kept as the
+  // measurement of how far a full-size top seat reaches, so the 7-9 caps above
+  // are still seen to be doing real work.
   // No `seat-wrapper--top`, so no cap at all - the proportional slot in full.
   await p.setContent(
     page(SMALL_RING.y, '', { canvas: SMALL_RING.canvas, seats: SMALL_RING.seats })

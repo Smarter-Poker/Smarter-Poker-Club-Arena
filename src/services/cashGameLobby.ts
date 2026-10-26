@@ -10,6 +10,7 @@
 
 import { capture } from '../lib/analytics';
 import { supabase } from '../lib/supabase';
+import { awaitQueuedCashouts, hasQueuedCashout } from './queuedCashoutWatcher';
 import { cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 
@@ -127,6 +128,12 @@ export interface CashGameLobby {
     must_move: boolean;
     enabled: boolean;
     last_tick_at: string | null;
+    /**
+     * A Classic game never moves its players (Dan 2026-10-24); the database's
+     * own answer (fn_cash_game_never_moves_players, 20261024213758). Absent on
+     * a database that predates it, which reads as false.
+     */
+    never_moves_players?: boolean;
   };
   tables: LobbyTable[];
   /**
@@ -407,6 +414,8 @@ export async function joinCashGame(gameId: string): Promise<CashGameJoinResult> 
   const started = Date.now();
   captureAdmission('cash_game_admission_started', { game_id: gameId });
   try {
+    // A leave finishing its last hand returns its seat and chips first.
+    if (hasQueuedCashout()) await awaitQueuedCashouts();
     const { data, error } = await supabase.rpc('fn_cash_game_join', { p_game_id: gameId });
     if (error) throw error;
     if (data?.ok !== true) {
@@ -439,6 +448,8 @@ export async function joinCashGame(gameId: string): Promise<CashGameJoinResult> 
 export const JOIN_GAME_REFUSALS: Record<string, string> = {
   GAME_CLOSED: 'This Game Is Not Taking Players.',
   GAME_NOT_FOUND: 'This Game Is No Longer Here.',
+  // An operator stopped Lightning joins; nothing is held (2026-10-24).
+  LIGHTNING_JOINS_DISABLED: 'Lightning Is Not Taking New Players Right Now.',
   NOT_AUTHENTICATED: 'Sign In To Join A Game.',
   // Maintenance break refusal is definitive (2026-10-16).
   PLATFORM_FROZEN: PLATFORM_FROZEN_MESSAGE,

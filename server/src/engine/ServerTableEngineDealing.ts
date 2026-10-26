@@ -68,7 +68,15 @@ import {
   boardClearMs,
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { presenceFromFsm } from '../lightning/LightningPresence.js';
 import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
+import {
+  lightningClusterModeOf,
+  lightningSeatsSittingOut,
+  lightningSeatsWhosePoolSessionEnded,
+  lightningStampedPoolSessions,
+} from '../services/supabase/lightningAnchor.js';
+import { reportLightningEngineInputDeviceLive } from '../lightning/LightningEngineInputDevice.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
 import { jitteredBackoffMs } from '../services/horseEntryRefusalBackoff.js';
 import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
@@ -248,6 +256,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const previousOccupancies: Map<string, SeatedPlayer['occupancy_id']> =
           deferredRosterBeforeArrival ??
           new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
+        // Before the read: an arrival committed after this instant is caught by
+        // the synchronous last look before dealHand (seatBoundarySignals).
+        this.captureSeatArrivalGeneration();
         const nextRoster = await this.prepareNextHand();
         if (!this.lifecycleCanMutate()) return;
         // A leave and rejoin can both commit between reads. User identity is
@@ -1101,6 +1112,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           continue;
         }
 
+        // THE LAST LOOK (2026-10-24): a Main seat planned, or a player arriving
+        // here, after this iteration's reads goes round once more instead of
+        // dealing a stale roster. Synchronous, so the rest stays two seconds.
+        if (this.seatBoundaryChangedUnderRest()) continue;
+
         /* The event loop may have resumed after the local lease deadline but
            before its raw timeout callback got CPU. Re-prove authority at the
            sole new-hand edge; a stale dealer cannot allocate a hand number,
@@ -1213,6 +1229,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // hold was flat and the last winner's "+N" float was cut off by
             // the board clear on every side pot and every hi-lo split.
             potAwardGroups: countAwardGroups(this.currentHandPerPotAwards),
+            // Dan 2026-10-24: an all-in showdown keeps the tabled hands and
+            // the announced winner up two seconds longer.
+            allInShowdown: this.currentHandAllInShowdown,
           });
 
           // Phase 1: the completion sequence actually plays out. When this
@@ -2298,6 +2317,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
       this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
       this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
+      this.currentHandAllInShowdown = false; // Dan 2026-10-24: the all-in tail is per hand
       this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log
       this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
       this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
@@ -4366,5 +4386,256 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
     }
+  }
+
+  /**
+   * How often a parked anchor asks which of its players' pool sessions ended,
+   * and how long one must stay ended before the player gets up. The second
+   * observation is what stops a read racing a re-entry that is committing at
+   * the same moment (a seat change re-enters through the seat trigger).
+   */
+  static readonly POOL_ENDED_CHECK_MS = 30_000;
+  static readonly POOL_ENDED_CONFIRM_MS = 30_000;
+  /** When the parked pass last asked (0 = never). */
+  protected poolEndedCheckedAt = 0;
+  /** occupancy id -> when its ended pool session was first observed. */
+  protected poolEndedSince = new Map<string, number>();
+
+  /**
+   * How often a parked anchor asks whether a horse it is heartbeating carries
+   * a disconnect stamp. Well inside the reaper's timeout (180 s on every
+   * Lightning Cluster measured 2026-10-24), with the reporter's 2 s debounce
+   * and bounded retry on top.
+   */
+  static readonly ENGINE_PRESENCE_CHECK_MS = 15_000;
+  /** When the parked pass last asked (0 = never). */
+  protected enginePresenceCheckedAt = 0;
+
+  /**
+   * The parked anchor's answer for a horse it drives whose pool session was
+   * stamped disconnected (see the base hook for the measurement). The engine
+   * is the horse's input device (10.5 item 2): when its heartbeat for the seat
+   * is live (the presence FSM reads CONNECTED here) and the open pool session
+   * carries a stamp, it reports `reconnected` through the presence door, the
+   * same door a returning room socket uses. A seat the account's own client
+   * controls is refused by the registry; a person is never reported from here.
+   * Asked once per ENGINE_PRESENCE_CHECK_MS, never during the freeze, and
+   * nothing at all when the pool cannot be read.
+   */
+  protected override async reportHorsesTheEngineHeartbeatKeepsHere(): Promise<void> {
+    if (this.isTournamentTable() || isMaintenanceFrozen()) return;
+    const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
+    if (!clusterId) return;
+    const now = Date.now();
+    if (
+      now - (this.enginePresenceCheckedAt || 0) <
+      ServerTableEngineDealing.ENGINE_PRESENCE_CHECK_MS
+    )
+      return;
+    this.enginePresenceCheckedAt = now;
+
+    // The horses whose input device is this engine and whose heartbeat is live.
+    const driven = this.seatedPlayers.filter(
+      (p) =>
+        p.is_horse &&
+        presenceFromFsm(
+          this.disconnectEngine.getFsmState(this.tableId, p.user_id)?.state ?? null,
+          this.disconnectEngine.isConnected(this.tableId, p.user_id)
+        ) === 'connected'
+    );
+    if (driven.length === 0) return;
+    let stamped: Map<string, string>;
+    try {
+      stamped = await this.withStepBudget(
+        'horse_pool_session_stamped',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningStampedPoolSessions(
+          clusterId,
+          driven.map((p) => p.user_id)
+        )
+      );
+    } catch (err) {
+      // Could not tell: nothing is reported on a guess; the next ask reads again.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_pool_session_stamped_read');
+      return;
+    }
+    if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+    for (const horse of driven) {
+      const poolSessionId = stamped.get(horse.user_id);
+      if (!poolSessionId) continue;
+      // Re-read at report time: the heartbeat must still be live.
+      const live =
+        presenceFromFsm(
+          this.disconnectEngine.getFsmState(this.tableId, horse.user_id)?.state ?? null,
+          this.disconnectEngine.isConnected(this.tableId, horse.user_id)
+        ) === 'connected';
+      if (!live || !this.seatedPlayers.some((p) => p.user_id === horse.user_id)) continue;
+      if (reportLightningEngineInputDeviceLive(clusterId, horse.user_id, poolSessionId)) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] ${horse.username}'s Lightning reconnect ` +
+            `reported: this engine is its input device and its heartbeat is live`
+        );
+      }
+    }
+  }
+
+  /**
+   * The parked anchor's answer for a player whose pool session ended while
+   * they kept the anchor seat (see the base hook for the measurement). One
+   * rule for every player (10.5): they leave through the ordinary Leave door
+   * (`leaveTable`, the voluntary cash-out with its stay clock and receipt into
+   * the club wallet, then seat_left and the Cluster wake). Asked once per
+   * POOL_ENDED_CHECK_MS, acted on only when the same occupancy reads ended on
+   * two asks at least POOL_ENDED_CONFIRM_MS apart, never during the freeze,
+   * never for a seat sitting out, already leaving or in a live hand, and
+   * nothing at all when the pool cannot be read.
+   */
+  protected override async standUpPlayersWhosePoolSessionEnded(): Promise<void> {
+    if (this.isTournamentTable() || isMaintenanceFrozen()) return;
+    const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
+    if (!clusterId) return;
+    if (!(this.poolEndedSince instanceof Map)) this.poolEndedSince = new Map();
+    const now = Date.now();
+    if (now - (this.poolEndedCheckedAt || 0) < ServerTableEngineDealing.POOL_ENDED_CHECK_MS) return;
+    this.poolEndedCheckedAt = now;
+
+    const inLiveHand = (userId: string): boolean =>
+      this.handController?.getState()?.players?.some((h) => h.user_id === userId) === true;
+    const players = this.seatedPlayers.filter(
+      (p) =>
+        Number(p.stack) > 0 &&
+        p.is_sitting_out !== true &&
+        p.leave_pending !== true &&
+        !!p.seat_id &&
+        !!p.seat_joined_at &&
+        !!p.occupancy_id &&
+        !inLiveHand(p.user_id)
+    );
+    if (players.length === 0) {
+      this.poolEndedSince.clear();
+      return;
+    }
+    let ended: Map<string, string>;
+    try {
+      ended = await this.withStepBudget(
+        'pool_session_ended',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningSeatsWhosePoolSessionEnded(
+          clusterId,
+          players.map((p) => ({
+            seatId: p.seat_id!,
+            userId: p.user_id,
+            joinedAt: p.seat_joined_at!,
+          }))
+        )
+      );
+    } catch (err) {
+      // Could not tell: nobody gets up on a guess, and the next ask reads again.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.pool_session_ended_read');
+      return;
+    }
+    if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+
+    const stillEnded = new Set(
+      players.filter((p) => ended.has(p.seat_id!)).map((p) => p.occupancy_id!)
+    );
+    for (const occupancy of [...this.poolEndedSince.keys()]) {
+      if (!stillEnded.has(occupancy)) this.poolEndedSince.delete(occupancy);
+    }
+    for (const player of players) {
+      const occupancy = player.occupancy_id!;
+      if (!stillEnded.has(occupancy)) continue;
+      const firstSeen = this.poolEndedSince.get(occupancy);
+      if (firstSeen === undefined) {
+        this.poolEndedSince.set(occupancy, now);
+        continue;
+      }
+      if (now - firstSeen < ServerTableEngineDealing.POOL_ENDED_CONFIRM_MS) continue;
+      if (isMaintenanceFrozen()) return;
+      // Re-checked at the door: a hand that started since the read keeps them.
+      if (inLiveHand(player.user_id)) continue;
+      const result = await this.leaveTable(player.user_id, {
+        occupancyId: occupancy,
+        seatNumber: player.seat_number,
+      });
+      if (!this.lifecycleCanMutate()) return;
+      if (result.success) {
+        this.poolEndedSince.delete(occupancy);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] ${player.username} left seat ${player.seat_number}: ` +
+            `their Lightning pool session ended (${ended.get(player.seat_id!)}) and the seat had ` +
+            `nothing left to play`
+        );
+      }
+    }
+  }
+
+  /** How often a parked anchor may ask its Cluster's mode for the sit-out clock. */
+  static readonly LIGHTNING_SITOUT_CHECK_MS = 15_000;
+  /** When the parked sit-out clock last asked (0 = never). */
+  protected lightningSitOutCheckedAt = 0;
+
+  /**
+   * The parked anchor's cash sit-out clock (see the base hook for the
+   * measurement and the rule). Only at a table parked by an acknowledged
+   * Lightning halt, only once somebody's five minutes are actually up (read in
+   * memory, no orbit counted), and only after the Cluster's row is read as
+   * 'lightning' - never on the way in, while a conversion is still counting
+   * its population. Then the ordinary sweep runs, limited to the sit-out
+   * clock, and stands the seat up exactly as at a cash table. Never during the
+   * freeze, and nothing at all when the mode cannot be read.
+   */
+  protected override async standUpExpiredLightningSitOuts(): Promise<void> {
+    if (this.isTournamentTable() || isMaintenanceFrozen()) return;
+    const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
+    if (!clusterId || this.lightningObserverCluster() !== clusterId) return;
+    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
+    if (seatedIds.length === 0) return;
+    const expired = this.disconnectEngine.tickSitOutsAndCollectEvictions(this.tableId, seatedIds, {
+      countOrbit: false,
+    });
+    if (expired.length === 0) return;
+    const now = Date.now();
+    if (
+      now - (this.lightningSitOutCheckedAt || 0) <
+      ServerTableEngineDealing.LIGHTNING_SITOUT_CHECK_MS
+    )
+      return;
+    this.lightningSitOutCheckedAt = now;
+    let mode: string | null;
+    try {
+      mode = await this.withStepBudget(
+        'lightning_sitout_cluster_mode',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningClusterModeOf(clusterId)
+      );
+    } catch (err) {
+      // Could not tell: nobody is stood up on a guess; the next ask reads again.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.lightning_sitout_mode_read');
+      return;
+    }
+    if (mode !== 'lightning') return;
+    // THE ROW AGREES (2026-10-26). Memory alone never cashes a Lightning
+    // player out: only an occupant whose live seat row, read now, still says
+    // is_sitting_out is stood up. A row that says playing, a different
+    // occupancy, or a read that cannot answer stands nobody up.
+    const occupants = this.seatedPlayers
+      .filter((p) => expired.includes(p.user_id) && !!p.occupancy_id)
+      .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id! }));
+    let confirmed: Set<string>;
+    try {
+      confirmed = await this.withStepBudget(
+        'lightning_sitout_seat_rows',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningSeatsSittingOut(this.tableId, occupants)
+      );
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.lightning_sitout_seat_read');
+      return;
+    }
+    if (confirmed.size === 0) return;
+    if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+    if (this.lightningObserverCluster() !== clusterId) return;
+    await this.evictExpiredSitOuts({ countOrbit: false, sitOutOnly: true, onlyUsers: confirmed });
   }
 }

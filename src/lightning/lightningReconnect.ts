@@ -63,6 +63,27 @@ export const LIGHTNING_RG_LIMIT_TITLE = 'Your Responsible Gaming Limit Ended Thi
 export const LIGHTNING_DRAINED_EXIT_REASON = 'lightning_drained';
 /** The drain's words. Popup rules: Title Case, no em dashes. */
 export const LIGHTNING_DRAINED_TITLE = 'Lightning Has Ended For This Game';
+/**
+ * LIGHTNING TRANSITION PHASE 2: the two endings that used to fall back to the
+ * generic words. Both keep the anchor seat and every chip on it:
+ *
+ *   - 'cluster_unfrozen': fn_cash_cluster_unfreeze, an operator bringing a
+ *     Cluster back from a freeze. It exits every open pool session and returns
+ *     the game to MUST MOVE, and asserts the seats' chip total did not move
+ *     (LIGHTNING_UNFREEZE_MOVED_MONEY).
+ *   - 'lightning_off': fn_cash_cluster_commit_must_move, the game going back to
+ *     MUST MOVE because the population fell. It writes no table_seats row
+ *     (LIGHTNING_REVERSION_MOVED_MONEY) and refuses to release a player whose
+ *     anchor seat is not theirs and live (LIGHTNING_REVERSION_STRANDED_A_PLAYER).
+ *
+ * The seat line is still only printed when fn_lightning_reconnect_state names
+ * the seat (it does only while the caller still owns it), so neither ending
+ * ever claims a seat the player has since left.
+ */
+export const LIGHTNING_UNFROZEN_EXIT_REASON = 'cluster_unfrozen';
+export const LIGHTNING_UNFROZEN_TITLE = 'Your Lightning Session Ended While The Game Was Paused';
+export const LIGHTNING_OFF_EXIT_REASON = 'lightning_off';
+export const LIGHTNING_OFF_TITLE = 'Lightning Has Ended For This Game';
 
 /** The ended notice's line: how it ended, and where the player's seat is. */
 export function lightningSessionEndText(end: {
@@ -74,16 +95,24 @@ export function lightningSessionEndText(end: {
   rgLimit?: boolean;
   /** LIGHTNING PHASE 13: an operator's drain ended it (exit_reason lightning_drained). */
   drained?: boolean;
+  /** Lightning transition phase 2: an operator's unfreeze ended it (exit_reason cluster_unfrozen). */
+  unfrozen?: boolean;
+  /** Lightning transition phase 2: the game went back to MUST MOVE (exit_reason lightning_off). */
+  lightningOff?: boolean;
 }): string {
   const lead = end.drained
     ? `${LIGHTNING_DRAINED_TITLE}.`
-    : end.rgLimit
-      ? `${LIGHTNING_RG_LIMIT_TITLE}.`
-      : end.stopped
-        ? `${LIGHTNING_STOPPED_TITLE}.`
-        : end.timedOut
-          ? `${LIGHTNING_TIMED_OUT_TITLE}.`
-          : `${LIGHTNING_SESSION_OVER_TEXT}.`;
+    : end.unfrozen
+      ? `${LIGHTNING_UNFROZEN_TITLE}.`
+      : end.lightningOff
+        ? `${LIGHTNING_OFF_TITLE}.`
+        : end.rgLimit
+          ? `${LIGHTNING_RG_LIMIT_TITLE}.`
+          : end.stopped
+            ? `${LIGHTNING_STOPPED_TITLE}.`
+            : end.timedOut
+              ? `${LIGHTNING_TIMED_OUT_TITLE}.`
+              : `${LIGHTNING_SESSION_OVER_TEXT}.`;
   return end.seatTableId ? `${lead} Your Seat Is Ready At Your Table.` : lead;
 }
 
@@ -199,6 +228,10 @@ export type LightningReconnectVerdict =
       rgLimit: boolean;
       /** LIGHTNING PHASE 13: an operator's drain ended it (exit_reason lightning_drained). */
       drained?: boolean;
+      /** Transition phase 2: exit_reason cluster_unfrozen. */
+      unfrozen?: boolean;
+      /** Transition phase 2: exit_reason lightning_off. */
+      lightningOff?: boolean;
       seatTableId: string | null;
     }
   /** Nothing to say (nothing readable). */
@@ -245,6 +278,8 @@ export function lightningReconnectVerdict(
     rgLimit: reason === LIGHTNING_RG_LIMIT_EXIT_REASON,
     // Only when it happened, so every earlier ending reads exactly as before.
     ...(reason === LIGHTNING_DRAINED_EXIT_REASON ? { drained: true } : {}),
+    ...(reason === LIGHTNING_UNFROZEN_EXIT_REASON ? { unfrozen: true } : {}),
+    ...(reason === LIGHTNING_OFF_EXIT_REASON ? { lightningOff: true } : {}),
     seatTableId: state.seatTableId,
   };
 }
@@ -258,6 +293,10 @@ export interface LightningSessionEnd {
   rgLimit: boolean;
   /** LIGHTNING PHASE 13: an operator's drain ended it (exit_reason lightning_drained). */
   drained?: boolean;
+  /** Transition phase 2: an operator's unfreeze ended it (exit_reason cluster_unfrozen). */
+  unfrozen?: boolean;
+  /** Transition phase 2: the game went back to MUST MOVE (exit_reason lightning_off). */
+  lightningOff?: boolean;
   /** The seat the player still holds, when one remains. */
   seatTableId: string | null;
 }
@@ -320,6 +359,8 @@ export function useLightningSessionEnd(input: {
             stopped: verdict.stopped,
             rgLimit: verdict.rgLimit,
             ...(verdict.drained === true ? { drained: true } : {}),
+            ...(verdict.unfrozen === true ? { unfrozen: true } : {}),
+            ...(verdict.lightningOff === true ? { lightningOff: true } : {}),
             seatTableId: verdict.seatTableId,
           });
         }

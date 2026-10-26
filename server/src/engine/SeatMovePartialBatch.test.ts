@@ -220,3 +220,99 @@ describe('a later unknown transfer cannot erase earlier confirmed outcomes', () 
     expect(engine.seatedPlayers).toHaveLength(2);
   });
 });
+
+describe('Main takes the open seat before another feeder deal', () => {
+  function preparing() {
+    const engine = sourceEngine();
+    const swap = {
+      ...pending[1],
+      reason: 'seat_change' as const,
+      swap_move_id: move,
+      ready_at: '2026-10-24T03:00:00Z',
+      announced_at: '2026-10-24T03:00:00Z',
+    };
+    engine.heldForSwap.add(secondPlayer);
+    engine.readPendingSeatMoves = vi.fn().mockResolvedValue([pending[0], swap]);
+    return engine;
+  }
+  it('lands an unannounced Main move at settlement without executing another unannounced reason', async () => {
+    transport.rpc.mockResolvedValue({ data: receipt, error: null });
+    const outcome = await executePendingSeatMoves(table, { announcedOnly: true }, [
+      pending[0],
+      { ...pending[1], reason: 'seat_change' },
+      { ...pending[1], reason: 'balance' },
+      { ...pending[1], reason: 'break' },
+      { ...pending[1], swap_move_id: move },
+    ]);
+    expect(outcome.done.map((row) => row.player_id)).toEqual([player]);
+    expect(transport.rpc).toHaveBeenCalledTimes(1);
+    expect(transport.rpc).toHaveBeenCalledWith('fn_cash_seat_move_execute', {
+      p_move_id: move,
+    });
+  });
+  it("moves before the next deal and retains the other player's durable swap hold", async () => {
+    const engine = preparing();
+    const selected = [...engine.seatedPlayers];
+    transport.rpc.mockResolvedValue({ data: receipt, error: null });
+    expect(await engine.announcePendingSeatMoves()).toBe(true);
+    expect(engine.seatedPlayers.map((row: any) => row.user_id)).toEqual([secondPlayer]);
+    expect(engine.heldForSwap.has(secondPlayer)).toBe(true);
+    expect(engine.hub.emitEvent).toHaveBeenCalledWith(
+      table,
+      expect.objectContaining({ type: 'seat_moved', user_id: player })
+    );
+    engine.waitingForBB = new Set();
+    engine.tournamentMovePauseOwners = new Set();
+    engine.disconnectEngine.isSittingOut = () => false;
+    engine.minPlayersToDeal = () => 2;
+    engine.takePreparedHandNumber = vi.fn(() => {
+      throw new Error('another feeder hand');
+    });
+    await engine.dealHand(selected);
+    expect(engine.takePreparedHandNumber).not.toHaveBeenCalled();
+  });
+  it('keeps the seat boundary until the original pre-deal transfer actually resolves', async () => {
+    const engine = preparing();
+    let resolve!: (value: unknown) => void;
+    const response = new Promise((r) => {
+      resolve = r;
+    });
+    transport.rpc.mockImplementation((name) =>
+      name === 'fn_cash_seat_move_execute' ? response : Promise.resolve({ data: 1, error: null })
+    );
+    const announcing = engine.announcePendingSeatMoves();
+    await vi.waitFor(() =>
+      expect(transport.rpc.mock.calls.some(([name]) => name === 'fn_cash_seat_move_execute')).toBe(
+        true
+      )
+    );
+    let acquired = false;
+    const next = engine.acquireSeatBoundary().then((release: () => void) => {
+      acquired = true;
+      release();
+    });
+    await Promise.resolve();
+    expect(acquired).toBe(false);
+    resolve({ data: receipt, error: null });
+    await announcing;
+    await next;
+    expect(acquired).toBe(true);
+  });
+  it('does not deal another feeder hand while the transfer is refused by the maintenance freeze', async () => {
+    const engine = preparing();
+    transport.rpc.mockResolvedValue({
+      data: { ok: false, reason: 'platform_frozen' },
+      error: null,
+    });
+    expect(await engine.announcePendingSeatMoves()).toBe(false);
+    expect(engine.seatedPlayers.map((row: any) => row.user_id)).toContain(player);
+    expect(engine.heldForSwap.has(secondPlayer)).toBe(true);
+  });
+  it('does not transfer a replacement occupancy selected after the plan', async () => {
+    const engine = preparing();
+    engine.readPendingSeatMoves.mockResolvedValue([pending[0]]);
+    engine.seatedPlayers[0].occupancy_id = destinationStay;
+    expect(await engine.announcePendingSeatMoves()).toBe(true);
+    expect(transport.rpc).not.toHaveBeenCalled();
+  });
+});

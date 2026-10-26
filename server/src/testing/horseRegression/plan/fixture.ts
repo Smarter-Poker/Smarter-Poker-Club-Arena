@@ -1,3 +1,11 @@
+import { horseVariantRulesFor } from '../../../engine/VariantRules.js';
+import { bettingStructureFor } from '../../../engine/BettingStructure.js';
+import { captureHorseHandJournalContext } from '../../../engine/HorseDecisionHandBinding.js';
+import {
+  horseObserverReadContextFromRequest,
+  horseObserverReadContextKey,
+} from '../../../engine/HorseObserverReadContext.js';
+import type { HorseMindSandbox } from '../../../engine/HorseMind.js';
 import { HorseMind } from '../../../engine/HorseMind.js';
 import { HorseLogic } from '../../../engine/HorseLogic.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../../../engine/HorsePolicyGraph.js';
@@ -116,6 +124,7 @@ export function decisionRequest(): FastHorseDecisionRequest {
       },
     },
   };
+  request.handJournalContext = captureHorseHandJournalContext(request.gameState.actionHistory!);
   request.decisionKey = buildHorseDecisionKey(request);
   return request;
 }
@@ -128,6 +137,7 @@ export function requestAt(
   const request = decisionRequest();
   request.requestId = requestId;
   request.fence = `${table}:${hand}:1:${lease}:${request.generation}`;
+  request.handJournalContext = captureHorseHandJournalContext(request.gameState.actionHistory!);
   request.decisionKey = buildHorseDecisionKey(request);
   return request;
 }
@@ -201,6 +211,7 @@ export function workerHarness(
   }, deps);
   return {
     runtime,
+    inspect: <T>(fn: () => T, request = requestAt()) => inspectObserverReads(runtime, request, fn),
     messages,
     captures,
     deps,
@@ -247,4 +258,83 @@ export function acceptanceOf(result: FastHorseDecisionResult): HorsePlanAcceptan
     { action: result.decision.action, amount: result.decision.amount ?? null },
     { requestId: result.requestId, decisionKey: result.planBinding.decisionKey }
   );
+}
+
+/** Inspect the actual private materialization without advancing its cutoff or
+ * registering a synthetic FAST. Production has no public read/export API. */
+export function inspectObserverReads<T>(
+  runtime: HorseDecisionWorkerRuntime,
+  request: FastHorseDecisionRequest,
+  fn: () => T
+): T {
+  const key = horseObserverReadContextKey(horseObserverReadContextFromRequest(request));
+  const entries = (
+    runtime as unknown as { observerReads: { entries: Map<string, { state: HorseMindSandbox }> } }
+  ).observerReads.entries;
+  const entry = key ? entries.get(key) : undefined;
+  if (!entry) throw Error('Expected original observer materialization');
+  return HorseMind.runInSandbox(entry.state, fn);
+}
+
+/** Synthetic original participant FAST for completed-public-history fixtures.
+ * It exercises actual worker admission; it does not claim DB/natural-use proof. */
+export async function registerPublicObserver(
+  runtime: HorseDecisionWorkerRuntime,
+  completion: import('../../../engine/horseDecision/protocol.js').ObserveCompletedHandRequest,
+  observer: string,
+  players: SeatPlayer[],
+  variant: NonNullable<FastHorseDecisionRequest['gameState']['gameVariant']> = 'nlh',
+  format: 'cash' | 'mtt' = 'cash'
+) {
+  const request = decisionRequest();
+  const parts = completion.handKey.split(':');
+  const actor = players.find((p) => p.user_id === observer)!;
+  request.requestId = 100000 + completion.requestId;
+  request.generation = Number(parts[1]);
+  request.fence = `${parts[0]}:${parts[1]}:${actor.seat}:${completion.fence.split(':')[2]}:${request.generation}`;
+  request.decisionTimeMs = Date.now() + completion.requestId + 1000;
+  request.player = { ...request.player, user_id: observer, seat: actor.seat };
+  request.gameState = {
+    ...request.gameState,
+    players: players.map((p) => ({
+      ...request.player,
+      user_id: p.user_id,
+      seat: p.seat,
+      cards: [],
+    })),
+    dealtSeatIds: players.map((p) => p.seat),
+    heroSeat: actor.seat,
+    currentPlayerSeat: actor.seat,
+    gameVariant: variant,
+    gameMode: format === 'cash' ? 'cash' : 'tournament',
+    format,
+    actionHistory: [],
+    stage: 'preflop',
+    communityCards: [],
+    pot: 3,
+    currentBet: 0,
+  };
+  request.gameState.variantRules = horseVariantRulesFor(variant);
+  request.player.cards = (
+    [
+      { rank: 'A', suit: 'hearts' },
+      { rank: 'K', suit: 'hearts' },
+      { rank: 'Q', suit: 'diamonds' },
+      { rank: 'J', suit: 'diamonds' },
+      { rank: 'T', suit: 'diamonds' },
+      { rank: '9', suit: 'diamonds' },
+    ] as SeatPlayer['cards']
+  ).slice(0, request.gameState.variantRules.holeCardsDealt);
+  request.gameState.bettingStructure = bettingStructureFor(variant);
+  request.gameState.fixedBetSize = request.gameState.bettingStructure === 'fixed_limit' ? 2 : null;
+  request.gameState.pot = 12;
+  request.gameState.pots = [{ amount: 12, eligiblePlayers: players.map((p) => p.user_id) }];
+  request.handJournalContext = captureHorseHandJournalContext([]);
+  request.decisionKey = buildHorseDecisionKey(request);
+  (runtime as unknown as { assertEnvelope(r: FastHorseDecisionRequest): void }).assertEnvelope(
+    request
+  );
+  runtime.receive(request);
+  await runtime.drain();
+  return request;
 }

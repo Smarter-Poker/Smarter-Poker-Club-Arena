@@ -49,6 +49,7 @@ import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { clusterMetrics } from './ClusterMetrics.js';
+import { noteMovesPlanned, tickReportsMovesPlanned } from './seatBoundarySignals.js';
 
 export const CLUSTER_TICK_MS = 5000;
 
@@ -176,6 +177,33 @@ export interface ClusterTickSummary {
   actions: Array<{ game_id: string; actions: unknown[] }>;
 }
 
+/** Signal each game the pass reported `moves_planned` for. Never throws. */
+function noteCommittedPlans(data: unknown): void {
+  const results = (data as { results?: unknown } | null)?.results;
+  if (!Array.isArray(results)) return;
+  for (const entry of results) {
+    const game = (entry as { game_id?: unknown } | null)?.game_id;
+    if (typeof game !== 'string') continue;
+    if (tickReportsMovesPlanned((entry as { result?: unknown }).result)) noteMovesPlanned(game);
+  }
+}
+
+/**
+ * A VACANCY DOES NOT WAIT FOR THE DEBOUNCE (2026-10-24). The 500 ms hold
+ * exists to coalesce bursts - a feeder filling from the lobby, a break moving
+ * four players, every table's hand completing. A seat opening is the one wake
+ * Dan's rule is about ("MAIN GAME MUST BE FED RIGHT AWAY WHEN A SEAT OPENS
+ * UP ... NEXT HAND"): the plan it produces must reach a feeder before that
+ * feeder deals, and the hold plus the planner call was the whole ~0.8 s window
+ * in which a feeder could still deal the player one more hand (#7900). `now`
+ * skips the hold and replaces a pending one; it still never overlaps an
+ * in-flight tick for the same game, and a vacancy arriving during one keeps
+ * its urgency for the tick that follows.
+ */
+export interface ClusterWakeOptions {
+  now?: boolean;
+}
+
 /**
  * The controller this process is running, if it is the leader. `wakeCluster`
  * reaches it from the engine without the engine holding a reference.
@@ -188,9 +216,9 @@ let activeController: ClusterController | null = null;
  * is running in this process (non-leader). NEVER throws: this is called from
  * inside the dealing loop and a controller fault must not become a table fault.
  */
-export function wakeCluster(gameId: string): void {
+export function wakeCluster(gameId: string, opts: ClusterWakeOptions = {}): void {
   try {
-    activeController?.wake(gameId);
+    activeController?.wake(gameId, opts);
   } catch (err) {
     reportError(err, 'ClusterController.wake_threw', { game_id: gameId });
   }
@@ -226,6 +254,8 @@ export class ClusterController {
   private readonly wakeInFlight = new Set<string>();
   /** Changes arriving during that RPC need one later pass, not overlapping RPCs. */
   private readonly wakeAgain = new Set<string>();
+  /** ...and a vacancy among them keeps its urgency for that later pass. */
+  private readonly wakeAgainNow = new Set<string>();
   /** Wakes that reached the RPC (for the summary line and tests). */
   private wakesFiredCount = 0;
   private wakesCoalescedCount = 0;
@@ -326,6 +356,7 @@ export class ClusterController {
     for (const t of this.wakeTimers.values()) clearTimeout(t);
     this.wakeTimers.clear();
     this.wakeAgain.clear();
+    this.wakeAgainNow.clear();
     if (activeController === this) activeController = null;
 
     const drain = this.drainLifecycleJobs();
@@ -353,37 +384,46 @@ export class ClusterController {
    * soon - once, however many times this is called inside the debounce
    * window. No-op unless the controller is running (leader only).
    */
-  wake(gameId: string): void {
+  wake(gameId: string, opts: ClusterWakeOptions = {}): void {
     if (!this.running || !gameId) return;
     if (this.wakeInFlight.has(gameId)) {
       this.wakeAgain.add(gameId);
+      if (opts.now) this.wakeAgainNow.add(gameId);
       this.wakesCoalescedCount++;
       return;
     }
-    if (this.wakeTimers.has(gameId)) {
+    const pending = this.wakeTimers.get(gameId);
+    if (pending) {
       this.wakesCoalescedCount++;
-      return;
+      if (!opts.now) return;
+      // A vacancy replaces the held wake rather than waiting it out.
+      clearTimeout(pending);
+      this.wakeTimers.delete(gameId);
     }
     const generation = this.lifecycleGeneration;
-    const handle = setTimeout(() => {
-      if (!this.lifecycleIsCurrent(generation)) return;
-      this.wakeTimers.delete(gameId);
-      this.wakeInFlight.add(gameId);
-      this.launchLifecycleJob(
-        generation,
-        async () => {
-          try {
-            await this.tickGame(gameId);
-          } finally {
-            this.wakeInFlight.delete(gameId);
-            const again = this.wakeAgain.delete(gameId);
-            if (again && this.lifecycleIsCurrent(generation)) this.wake(gameId);
-          }
-        },
-        'ClusterController.wake_tick_error',
-        { game_id: gameId }
-      );
-    }, CLUSTER_WAKE_DEBOUNCE_MS);
+    const handle = setTimeout(
+      () => {
+        if (!this.lifecycleIsCurrent(generation)) return;
+        this.wakeTimers.delete(gameId);
+        this.wakeInFlight.add(gameId);
+        this.launchLifecycleJob(
+          generation,
+          async () => {
+            try {
+              await this.tickGame(gameId);
+            } finally {
+              this.wakeInFlight.delete(gameId);
+              const again = this.wakeAgain.delete(gameId);
+              const now = this.wakeAgainNow.delete(gameId);
+              if (again && this.lifecycleIsCurrent(generation)) this.wake(gameId, { now });
+            }
+          },
+          'ClusterController.wake_tick_error',
+          { game_id: gameId }
+        );
+      },
+      opts.now ? 0 : CLUSTER_WAKE_DEBOUNCE_MS
+    );
     this.wakeTimers.set(gameId, handle);
   }
 
@@ -412,6 +452,9 @@ export class ClusterController {
       p_eligible_horses: eligible,
     });
     if (!wakeIsCurrent()) return;
+    // Tell the game's feeders now, before anything below awaits
+    // (seatBoundarySignals). Like the pass, a fenced wake signals nothing.
+    if (!error && tickReportsMovesPlanned(data)) noteMovesPlanned(gameId);
     if (error) {
       reportError(error, 'ClusterController.wake_rpc_failed', { game_id: gameId });
       return;
@@ -524,6 +567,11 @@ export class ClusterController {
         summary.rpcs++;
         const { data, error } = await rpc('fn_cash_clusters_tick_all', { p_eligible: eligible });
         if (!passIsCurrent()) return summary;
+        // Every plan this current pass committed reaches its game's feeders
+        // now, before the per-game follow-up below awaits anything
+        // (seatBoundarySignals). A fenced pass signals nothing; its committed
+        // plans are still found by each feeder's next pending-move read.
+        if (!error) noteCommittedPlans(data);
         if (error) {
           reportError(error, 'ClusterController.pass_failed');
           summary.errors++;

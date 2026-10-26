@@ -11,7 +11,8 @@
  *      unmount or cancel.
  *   4. The idle snapshot after a fold: no LIGHTNING FOLD, and "Next Hand..."
  *      on the usual threshold.
- *   5. The lobby: MUST MOVE only for must_move, LIGHTNING LIVE for Lightning,
+ *   5. The lobby: MUST MOVE only for must_move, LIGHTNING LIVE for Lightning
+ *      (Lightning Starting / Lightning Ending while switching, phase 5),
  *      JOIN LIGHTNING only for lightning, and a closed game for paused,
  *      frozen and dead.
  *
@@ -34,9 +35,24 @@ const USER = '77777777-7777-4777-8777-777777777777';
 const rpc = vi.fn();
 const fromCalls: string[] = [];
 let clusterRows: unknown[] = [];
+let onClusterUpdate: (() => void) | null = null;
+const removeChannel = vi.fn();
+const channelOpened = vi.fn();
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...a: unknown[]) => rpc(...a),
+    removeChannel: (...a: unknown[]) => removeChannel(...a),
+    channel: (...a: unknown[]) => {
+      channelOpened(...a);
+      const channel = {
+        on: (_event: unknown, _filter: unknown, callback: () => void) => {
+          onClusterUpdate = callback;
+          return channel;
+        },
+        subscribe: () => channel,
+      };
+      return channel;
+    },
     from: (table: string) => {
       fromCalls.push(table);
       const chain: Record<string, unknown> = {};
@@ -48,6 +64,25 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+/* tests/setup.ts mocks MasterBus with no-ops; these tests need its delivery. */
+const bus = vi.hoisted(() => {
+  const handlers = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  return {
+    handlers,
+    masterBus: {
+      subscribe: (type: string, handler: (event: { payload: unknown }) => void) => {
+        if (!handlers.has(type)) handlers.set(type, new Set());
+        handlers.get(type)!.add(handler);
+        return () => handlers.get(type)?.delete(handler);
+      },
+      emit: (type: string, payload: unknown) => {
+        handlers.get(type)?.forEach((handler) => handler({ payload }));
+      },
+      reset: () => handlers.clear(),
+    },
+  };
+});
+vi.mock('../../src/core/MasterBus', () => ({ masterBus: bus.masterBus }));
 const notifyLeave = vi.fn();
 vi.mock('../../src/services/GameServerAPI', () => ({
   notifyServerLeaveOccupancy: (...a: unknown[]) => notifyLeave(...a),
@@ -84,6 +119,7 @@ import {
   lightningHandOnFelt,
 } from '../../src/lightning/lightningHand';
 import { lightningCapabilities } from '../../src/lightning/lightningCapabilities';
+import { masterBus } from '../../src/core/MasterBus';
 import {
   clusterModeDisplay,
   lightningLobbyBadge,
@@ -99,6 +135,17 @@ import LightningNextHand from '../../src/components/table/LightningNextHand';
 const ROOT = resolve(__dirname, '../..');
 const PAGE = readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
 
+/* The conversion commit's private signal, as ProfileAccountSync relays it
+   (20261025025154). */
+async function roomOpened(
+  payload: { userId: string; clusterId?: string } = { userId: USER, clusterId: CLUSTER }
+) {
+  await act(async () => {
+    masterBus.emit('LIGHTNING_ROOM_OPENED', payload);
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+}
+
 const SESSION_WITH_ANCHOR = {
   pool_session_id: POOL,
   state: 'active',
@@ -112,6 +159,7 @@ const SESSION_WITH_ANCHOR = {
 };
 
 beforeEach(() => {
+  masterBus.reset();
   sessionStorage.clear();
   localStorage.clear();
   resetLightningRegistryForTests();
@@ -119,6 +167,9 @@ beforeEach(() => {
   notifyLeave.mockReset();
   fromCalls.length = 0;
   clusterRows = [];
+  onClusterUpdate = null;
+  removeChannel.mockReset();
+  channelOpened.mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -420,6 +471,199 @@ describe('3. JOIN LIGHTNING keeps waiting, says so, and stops when told', () => 
   });
 });
 
+describe('conversion of an already seated player', () => {
+  it('discovers the existing pool without entry intent and follows only on View Game', async () => {
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    const follow = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow,
+      })
+    );
+    await act(async () => {});
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    expect(follow).not.toHaveBeenCalled();
+    act(() => result.current.viewReady());
+    expect(getLightningPoolSession(POOL)?.clusterId).toBe(CLUSTER);
+    expect(follow).toHaveBeenCalledWith(POOL);
+    unmount();
+    /* No realtime channel of its own. `cash_games` is not published (19.7M
+       updates on 266 rows), so a row subscription could never fire; the room
+       signal arrives on the account carrier ProfileAccountSync already holds. */
+    expect(channelOpened).not.toHaveBeenCalled();
+    expect(removeChannel).not.toHaveBeenCalled();
+  });
+  it('reads the original cluster transition and rejects a different anchor', async () => {
+    vi.useFakeTimers();
+    rpc.mockResolvedValue({
+      data: { pool_session_id: null, cluster_mode: 'must_move' },
+      error: null,
+    });
+    const follow = vi.fn();
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow,
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.readyPoolSessionId).toBeNull();
+    rpc.mockResolvedValue({
+      data: { ...SESSION_WITH_ANCHOR, anchor_table_id: OTHER_CLUSTER },
+      error: null,
+    });
+    await roomOpened();
+    expect(result.current.readyPoolSessionId).toBeNull();
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    await roomOpened();
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    expect(follow).not.toHaveBeenCalled();
+  });
+
+  it('reads nothing while the tab is hidden, and reads a signal it missed the moment it is shown', async () => {
+    vi.useFakeTimers();
+    rpc.mockResolvedValue({
+      data: { pool_session_id: null, cluster_mode: 'pending_on' },
+      error: null,
+    });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow: vi.fn(),
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const afterMount = rpc.mock.calls.length;
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    await roomOpened();
+    expect(rpc.mock.calls.length).toBe(afterMount);
+    visibility.mockReturnValue('visible');
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    visibility.mockRestore();
+  });
+
+  it('stops reading once the room is ready', async () => {
+    vi.useFakeTimers();
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow: vi.fn(),
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    const reads = rpc.mock.calls.length;
+    await roomOpened();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    expect(rpc.mock.calls.length).toBe(reads);
+  });
+
+  it('does not reuse a conversion response or View Game callback after an account change', async () => {
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    const follow = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ userId }) =>
+        useLightningAnchorHandoff({
+          tableId: ANCHOR,
+          clusterId: CLUSTER,
+          userId,
+          isPoolSession: false,
+          heroBoughtIn: true,
+          follow,
+        }),
+      { initialProps: { userId: USER } }
+    );
+    await act(async () => {});
+    const previousView = result.current.viewReady;
+    let complete: (value: unknown) => void = () => {};
+    rpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        })
+    );
+    rerender({ userId: OTHER_CLUSTER });
+    expect(result.current.readyPoolSessionId).toBeNull();
+    act(() => previousView());
+    expect(follow).not.toHaveBeenCalled();
+    await act(async () => complete({ data: { pool_session_id: null }, error: null }));
+    expect(result.current.readyPoolSessionId).toBeNull();
+  });
+  it('keeps the newest conversion result when an earlier read finishes last', async () => {
+    vi.useFakeTimers();
+    let oldRead: (value: unknown) => void = () => {};
+    rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          oldRead = resolve;
+        })
+    );
+    const { result } = renderHook(() =>
+      useLightningAnchorHandoff({
+        tableId: ANCHOR,
+        clusterId: CLUSTER,
+        userId: USER,
+        isPoolSession: false,
+        heroBoughtIn: true,
+        follow: vi.fn(),
+      })
+    );
+    rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    await roomOpened();
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+    await act(async () => oldRead({ data: { pool_session_id: null }, error: null }));
+    expect(result.current.readyPoolSessionId).toBe(POOL);
+  });
+  it('the Lightning room names the format on the felt independently of historical template metadata', () => {
+    expect(PAGE).toMatch(/lightningRoom\s*\? 'Lightning Games '/);
+    expect(PAGE).toContain('t.id === cashTemplateKey(template)');
+  });
+  it('Lightning preselected Fold uses the shared handler, which queues preflop before releasing', () => {
+    expect(PAGE).toMatch(
+      /onPreActionChange=\{\(next\) => \{[\s\S]*?if \(lightningRoom && next === 'fold' && !heroOwesNothing\) \{\s*void handleLightningFold\('fast_fold'\);\s*return;/
+    );
+    /* Check/Fold while checking is free arms the ordinary auto check/fold:
+       an immediate fold there would throw away a free look (2026-10-24). */
+    expect(PAGE).toMatch(
+      /const heroOwesNothing =\s+\(tableState\.currentBet \|\| 0\) <=\s+\(tableState\.lastBetAmounts\?\.\[tableState\.heroSeat - 1\] \|\| 0\);/
+    );
+    expect(PAGE).toContain('if (lightningFoldBusyRef.current) return;');
+    expect(PAGE).toContain('lightningFoldOnTurn(engineSnapshotRef.current, userId, kind)');
+    expect(PAGE).toContain('preActionFoldOnTurnHandRef.current = queued.handId;');
+  });
+});
+
 // ─── 4. The idle snapshot after a fold ──────────────────────────────────────
 
 describe('4. the idle snapshot after a fold', () => {
@@ -496,12 +740,12 @@ describe('4. the idle snapshot after a fold', () => {
     expect(screen.getByTestId('lightning-next-hand').textContent).toBe(LIGHTNING_NEXT_HAND_TEXT);
   });
 
-  it('TablePage: the controls read the snapshot, and stay mounted (dimmed) between hands', () => {
+  it('TablePage: original controls read the snapshot without a duplicate fold strip', () => {
     expect(PAGE).toContain('lightningHandOnFelt(engineSnapshot as LightningSnapshotFields)');
     expect(PAGE).toContain('handOnFelt: lightningHandLive,');
-    expect(PAGE).toMatch(
-      /\{lightningRoom && userId && userId !== 'guest' \? \(\s*<LightningFoldBar/
-    );
+    expect(PAGE).not.toContain('<LightningFoldBar');
+    expect(PAGE).toContain('<ActionPanel');
+    expect(PAGE).toContain("void handleLightningFold('fast_fold')");
     expect(PAGE).toMatch(
       /<LightningNextHand\s+handInProgress=\{lightningHandLive && tableState\.isHandInProgress\}/
     );
@@ -549,51 +793,67 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
       cluster_mode: mode,
       cluster_lightning: pool(mode),
     }) as LobbyTableRow;
+  const MODE_WORDS = ['MUST MOVE', 'LIGHTNING LIVE', 'Lightning Starting', 'Lightning Ending'];
   const modeWords = (e: ReturnType<typeof cashEntry>) =>
-    e.rules.map((r) => r.label).filter((l) => l === 'MUST MOVE' || l === 'LIGHTNING LIVE');
+    e.rules.map((r) => r.label).filter((l) => MODE_WORDS.includes(l));
 
   it('the mode table', () => {
     expect(clusterModeDisplay('must_move')).toEqual({
       label: 'MUST MOVE',
       joinLightning: false,
       closedLabel: null,
+      switching: null,
     });
+    /* Transition phase 5 (2026-10-26): a game switching modes says so. */
     expect(clusterModeDisplay('pending_on')).toEqual({
-      label: 'MUST MOVE',
+      label: 'Lightning Starting',
       joinLightning: false,
       closedLabel: null,
+      switching: 'starting',
     });
     expect(clusterModeDisplay('lightning')).toEqual({
       label: 'LIGHTNING LIVE',
       joinLightning: true,
       closedLabel: null,
+      switching: null,
     });
     for (const m of ['pending_off', 'draining'])
       expect(clusterModeDisplay(m)).toEqual({
-        label: 'LIGHTNING LIVE',
+        label: 'Lightning Ending',
         joinLightning: false,
         closedLabel: null,
+        switching: 'ending',
       });
     for (const m of ['paused', 'frozen'])
       expect(clusterModeDisplay(m)).toEqual({
         label: null,
         joinLightning: false,
         closedLabel: 'Paused',
+        switching: null,
       });
     expect(clusterModeDisplay('dead')).toEqual({
       label: null,
       joinLightning: false,
       closedLabel: 'Closed',
+      switching: null,
     });
   });
 
-  it('must_move and pending_on: MUST MOVE and JOIN GAME', () => {
-    for (const m of ['must_move', 'pending_on']) {
-      const e = cashEntry(row(m));
-      expect(modeWords(e), m).toEqual(['MUST MOVE']);
-      expect(e.game?.lightning, m).toBeUndefined();
-      expect(actions(e).primaryLabel, m).toBe('Join Game');
-    }
+  it('must_move: MUST MOVE and JOIN GAME', () => {
+    const e = cashEntry(row('must_move'));
+    expect(modeWords(e)).toEqual(['MUST MOVE']);
+    expect(e.game?.lightning).toBeUndefined();
+    expect(e.game?.switching).toBeUndefined();
+    expect(actions(e).primaryLabel).toBe('Join Game');
+    expect(actions(e).primaryDisabled).toBe(false);
+  });
+
+  it('pending_on: Lightning Starting, and JOIN GAME shown disabled', () => {
+    const e = cashEntry(row('pending_on'));
+    expect(modeWords(e)).toEqual(['Lightning Starting']);
+    expect(e.game?.lightning).toBeUndefined();
+    expect(e.game?.switching).toBe('starting');
+    expect(actions(e)).toMatchObject({ primaryLabel: 'Join Game', primaryDisabled: true });
   });
 
   it('lightning: LIGHTNING LIVE and JOIN LIGHTNING', () => {
@@ -603,13 +863,14 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
     expect(actions(e).primaryLabel).toBe('Join Lightning');
   });
 
-  it('pending_off and draining: still LIGHTNING LIVE (THIN), but JOIN GAME, never JOIN LIGHTNING', () => {
+  it('pending_off and draining: Lightning Ending, JOIN GAME shown disabled, never JOIN LIGHTNING', () => {
     for (const m of ['pending_off', 'draining']) {
       const e = cashEntry(row(m));
-      expect(modeWords(e), m).toEqual(['LIGHTNING LIVE']);
-      expect(e.rules.find((r) => r.label === 'LIGHTNING LIVE')?.detail, m).toBe('THIN');
+      expect(modeWords(e), m).toEqual(['Lightning Ending']);
+      expect(e.rules.find((r) => r.label === 'Lightning Ending')?.detail, m).toBeUndefined();
       expect(e.game?.lightning, m).toBeUndefined();
-      expect(actions(e).primaryLabel, m).toBe('Join Game');
+      expect(e.game?.switching, m).toBe('ending');
+      expect(actions(e), m).toMatchObject({ primaryLabel: 'Join Game', primaryDisabled: true });
       expect(lightningLobbyBadge({ clusterMode: m, state: null, boardPlayers: 3 }).status).toBe(
         'THIN'
       );

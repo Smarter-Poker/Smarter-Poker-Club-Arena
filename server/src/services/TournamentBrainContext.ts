@@ -1,5 +1,9 @@
 import { projectTournamentAdmission } from '../tournament/tournamentAdmission.js';
 import {
+  captureHorseTournamentPayoutTerms,
+  type HorseTournamentPayoutTerms,
+} from '../engine/HorseTournamentPayoutTerms.js';
+import {
   isPersistedUnlimitedMtt,
   readPersistedTournamentFormatContract,
 } from '../tournament/tournamentEntryCapacity.js';
@@ -56,7 +60,7 @@ import {
 
 export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
 
-export interface TournamentBrainContext {
+export interface TournamentBrainContext extends HorseTournamentPayoutTerms {
   schemaVersion: 1;
   contextStatus: Extract<TournamentContextStatus, 'complete' | 'incomplete'>;
   contextIssues: string[];
@@ -195,6 +199,9 @@ export interface TournamentBrainContext {
 }
 
 export interface TournamentRowLite {
+  id?: string;
+  bubble_protection?: boolean | null;
+  payout_club?: unknown;
   /** V37: satellite columns (either target column may carry the link). */
   satellite_seats?: number | null;
   satellite_target_id?: string | null;
@@ -797,6 +804,27 @@ export function deriveContext(
   const stacks = allLive;
 
   const seatsPerTable = seatsAtOneTable(row);
+  // A REBUY OFFER IS NOT A BUBBLE (2026-10-26). A zero-stack player with an
+  // unexpired recovery prompt has no stack ICM can price yet, so the context
+  // used to fail closed for the WHOLE event while any one offer was open: in
+  // a 350-player rebuy MTT that withheld tournament stage, ICM, bounty and
+  // payout context from 20-80% of horse decisions on every table, for up to
+  // ~50 s per bust, all through the rebuy period. That pending seat can only
+  // change a decision near the money, at the final table or in a satellite
+  // (where one seat moves the award depth). Elsewhere the field is priced
+  // without it - its stack is 0 either way - and it is reported, not refused.
+  const pendingRecoveryPlayers = Math.max(
+    0,
+    Math.floor(Number(playerOptions.pendingRecoveryPlayers) || 0)
+  );
+  const settledPlayersLeft = playersLeft - pendingRecoveryPlayers;
+  const recoveryMovesTheMoney =
+    pendingRecoveryPlayers > 0 &&
+    (isSatellite ||
+      spotsPaid <= 0 ||
+      settledPlayersLeft <= seatsPerTable ||
+      settledPlayersLeft <= Math.max(spotsPaid + 1, Math.ceil(spotsPaid * 1.15)));
+  if (pendingRecoveryPlayers > 0 && !recoveryMovesTheMoney) playersLeft = settledPlayersLeft;
   const allLiveAscending = [...allLive].sort((a, b) => a - b);
   const medianStackChips =
     allLiveAscending.length === 0
@@ -926,7 +954,7 @@ export function deriveContext(
   if (!status) contextIssues.push('tournament_status_missing');
   if (!gameVariant) contextIssues.push('game_variant_missing');
   if (!(playersLeft > 0) || entrants < playersLeft) contextIssues.push('player_population_invalid');
-  if (Math.max(0, Math.floor(Number(playerOptions.pendingRecoveryPlayers) || 0)) > 0) {
+  if (recoveryMovesTheMoney) {
     // A player with a durable, unexpired recovery prompt is not eliminated,
     // but has no positive stack that an ICM calculation can price yet. Keep
     // the lifecycle count honest and fail closed until accept/decline/expiry
@@ -1017,6 +1045,7 @@ export function deriveContext(
   if (contextIssues.length > 0) contextIssues.unshift(TOURNAMENT_CONTEXT_INCOMPLETE);
 
   return {
+    ...captureHorseTournamentPayoutTerms(row, places, entrants, isSatellite),
     schemaVersion: 1,
     contextStatus: contextIssues.length === 0 ? 'complete' : 'incomplete',
     contextIssues,
@@ -1658,7 +1687,7 @@ async function refresh(
         supabase
           .from('tournaments')
           .select(
-            'format_contract, tournament_type, status, game_type, variant, free_buy, max_players, table_size, payout_structure, spin_multiplier, prize_pool, prize_pool_finalized, bounty_pool, buy_in_amount, buy_in_fee, starting_chips, rebuy_cost, rebuy_chips, bounty_amount, is_pko, is_bounty, is_mystery_bounty, mystery_bounty_stage, blind_structure, current_level, level_started_at, started_at, late_reg_mins, late_reg_levels, is_reentry, max_reentries, is_rebuy, rebuy_levels, max_rebuys, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, on_break, break_started_at, break_ends_at, accelerated_mtt, big_blind_ante, authorized_to_register, satellite_seats, satellite_target_id, satellite_target'
+            'payout_club:clubs!tournaments_club_id_fkey(asset, is_platform, union_id), bubble_protection, format_contract, tournament_type, status, game_type, variant, free_buy, max_players, table_size, payout_structure, spin_multiplier, prize_pool, prize_pool_finalized, bounty_pool, buy_in_amount, buy_in_fee, starting_chips, rebuy_cost, rebuy_chips, bounty_amount, is_pko, is_bounty, is_mystery_bounty, mystery_bounty_stage, blind_structure, current_level, level_started_at, started_at, late_reg_mins, late_reg_levels, is_reentry, max_reentries, is_rebuy, rebuy_levels, max_rebuys, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, on_break, break_started_at, break_ends_at, accelerated_mtt, big_blind_ante, authorized_to_register, satellite_seats, satellite_target_id, satellite_target'
           )
           .eq('id', tournamentId)
           .maybeSingle(),

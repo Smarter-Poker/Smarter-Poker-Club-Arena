@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
 import { clusterModeDisplay, isLightningEligible } from './lightningLobby';
 import { markLightningRoom } from './lightningDeviceReport';
+import { clearLightningClusterStatus } from './lightningDecisionQueue';
 
 /** fn_lightning_my_session, as the client reads it. */
 export interface LightningMySession {
@@ -180,6 +181,8 @@ export interface LightningClusterMeta {
   smallBlind: number;
   bigBlind: number;
   maxPlayers: number;
+  minBuyIn?: number | null;
+  maxBuyIn?: number | null;
   /**
    * `cash_games.handedness` exactly as read: null when absent or unreadable.
    * maxPlayers above falls back to 6 for display; eligibility never does.
@@ -196,10 +199,19 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
   const id = text(row.id);
   if (!id) return null;
   const handedness = num(row.handedness);
+  const rules =
+    row.ruleset_snapshot && typeof row.ruleset_snapshot === 'object'
+      ? (row.ruleset_snapshot as Record<string, unknown>)
+      : {};
+  const minBuyInBb = num(rules.min_buyin_bb),
+    maxBuyInBb = num(rules.max_buyin_bb);
+  const bigBlind = num(row.bb);
   return {
     clusterId: id,
     clubId: text(row.club_id),
     name: text(row.name) ?? 'Lightning',
+    minBuyIn: minBuyInBb !== null && bigBlind !== null ? minBuyInBb * bigBlind : null,
+    maxBuyIn: maxBuyInBb !== null && bigBlind !== null ? maxBuyInBb * bigBlind : null,
     variant: text(row.variant) ?? 'nlh',
     smallBlind: num(row.sb) ?? 0,
     bigBlind: num(row.bb) ?? 0,
@@ -212,7 +224,7 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
 }
 
 const LIGHTNING_CLUSTER_META_COLUMNS =
-  'id, club_id, name, variant, sb, bb, handedness, template_name, cluster_mode, enabled';
+  'id, club_id, name, variant, sb, bb, handedness, template_name, cluster_mode, enabled, ruleset_snapshot';
 
 export async function fetchLightningClusterMeta(
   clusterId: string
@@ -281,7 +293,10 @@ function emit(): void {
   for (const l of listeners) l();
 }
 
-export function registerLightningPoolSession(entry: LightningPoolEntry): void {
+export function registerLightningPoolSession(
+  entry: LightningPoolEntry,
+  opts: { keepClusterStatus?: boolean } = {}
+): void {
   if (!isUUID(entry.poolSessionId) || !isUUID(entry.clusterId)) return;
   hydrate();
   markLightningRoom(entry.poolSessionId);
@@ -299,6 +314,13 @@ export function registerLightningPoolSession(entry: LightningPoolEntry): void {
     return;
   }
   registry.set(entry.poolSessionId, next);
+  /* A NEW room for this Cluster: whatever an earlier room of it was told about
+     the Cluster's hold no longer stands (Lightning transition, phase 1). The
+     engine re-sends a hold that is still on when this room connects, so every
+     caller that registers BEFORE connecting may clear. A room learned from its
+     own snapshot is already connected (its resync frame may have landed), and
+     keeps what it was told. */
+  if (!prev && !opts.keepClusterStatus) clearLightningClusterStatus(next.clusterId);
   persist();
   emit();
 }
@@ -511,7 +533,7 @@ export function lightningEntryDecision(
      six-seat Action or Madness game. On its way in (pending_on) or out
      (pending_off, draining) the door is JOIN GAME. */
   const lightning =
-    isLightningEligible(meta?.templateName, meta?.handedness) &&
+    isLightningEligible(meta?.templateName, meta?.handedness, meta?.variant) &&
     clusterModeDisplay(mode).joinLightning;
   return { kind: 'entry', joinLabel: lightning ? 'Join Lightning' : 'Join Game', lightning };
 }

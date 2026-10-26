@@ -205,3 +205,59 @@ export function pendingStackHold(
   const remainingCents = Math.round(w.amount * 100) - Math.round(shipped * 100);
   return remainingCents > 0 ? remainingCents / 100 : 0;
 }
+
+/**
+ * ── THE ALL-IN SHOWDOWN, AND WHO WON IT (Dan 2026-10-24) ──
+ *
+ * Dan, verbatim: "WHEN PLAYERS ARE ALL IN, ON THE RIVER, KEEP THE CARDS
+ * SHOWN FOR 2 MORE SECONDS, AND PROPERLY DISPLAY AND ANNOUCE THE WINNING
+ * HANDS BETTER..."
+ *
+ * `isAllInShowdown` is the client's half of the engine's question
+ * (server/src/engine/presentation/handEventFrames.ts isAllInShowdown): two or
+ * more hands reached showdown and at least one of them belongs to a player
+ * whose seat is all-in. Both sides pass the answer to handCompletionHoldMs,
+ * so the felt and the engine hold for the same ALL_IN_SHOWDOWN_EXTRA_MS.
+ */
+export function isAllInShowdown(
+  shownUserIds: readonly string[],
+  players: ReadonlyArray<{ id: string; status?: string } | null | undefined>
+): boolean {
+  if (shownUserIds.length < 2) return false;
+  const shown = new Set(shownUserIds);
+  return players.some((p) => !!p && shown.has(p.id) && p.status === 'all_in');
+}
+
+/**
+ * The line that says WHO won, printed on the board's winning-hand band above
+ * the hand's name. The hand name alone ("Full House") never said whose it
+ * was; at a full ring the player had to find the lit seat to learn it.
+ * Empty when nobody is known. No em dashes, first letter of every word
+ * capitalized at render (formatPopupText), and no currency sign.
+ */
+export function showdownWinnerLine(names: readonly string[]): string {
+  const clean = names.map((n) => (n ?? '').trim()).filter((n) => n.length > 0);
+  if (clean.length === 0) return '';
+  if (clean.length === 1) return `${clean[0]} Wins`;
+  if (clean.length === 2) return `${clean[0]} And ${clean[1]} Split The Pot`;
+  return `${clean.length} Players Split The Pot`;
+}
+
+/**
+ * Every tabled hand's name at showdown, keyed by player. The engine's
+ * `showdown` event already carries `hand_name` for each hand it turned face
+ * up (blank for a mucked hand, whose identity stays private), but only the
+ * WINNER's seat ever printed one, so a beaten hand sat face up with nothing
+ * to say what it was. Mucked and nameless rows are left out.
+ */
+export function showdownHandNamesFrom(
+  results: ReadonlyArray<{ user_id?: string; hand_name?: string; mucked?: boolean }> | undefined
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of results ?? []) {
+    if (!r || typeof r.user_id !== 'string' || r.mucked === true) continue;
+    const name = typeof r.hand_name === 'string' ? r.hand_name.trim() : '';
+    if (name) out[r.user_id] = name;
+  }
+  return out;
+}

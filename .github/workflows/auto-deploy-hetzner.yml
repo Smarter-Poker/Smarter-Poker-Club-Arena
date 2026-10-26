@@ -1,5 +1,5 @@
 name: Auto-Deploy Hetzner Engine (on server/ changes)
-run-name: Engine Release ${{ github.event.client_payload.ref_sha }}
+run-name: ${{ github.event.action == 'observe-club-arena-horse-fleet' && format('Private Horse Fleet Observation {0}', github.event.client_payload.source_sha) || github.event.action == 'withdraw-club-arena-engine' && format('Engine Withdrawal {0}', github.event.client_payload.withdrawal.runKey) || format('Engine Release {0}', github.event.client_payload.ref_sha) }}
 
 # Club Arena owns this release lane. World Hub, database jobs, timers, and
 # operator laptops cannot publish or restart the game engine. Protected main
@@ -8,7 +8,7 @@ run-name: Engine Release ${{ github.event.client_payload.ref_sha }}
 # break, cuts over, proves local/public/database identity, and seals or recovers.
 on:
   repository_dispatch:
-    types: [deploy-club-arena-engine]
+    types: [deploy-club-arena-engine, withdraw-club-arena-engine, observe-club-arena-horse-fleet]
 
 permissions: {}
 
@@ -16,11 +16,127 @@ permissions: {}
 # main SHAs still reach the durable Hetzner intake immediately and let host
 # locks plus freshness decide which release owns the next certified break.
 concurrency:
-  group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}
+  group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}${{ github.event.action == 'observe-club-arena-horse-fleet' && format('-private-observation-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 
 jobs:
+  observe-private-horse-fleet:
+    name: Observe One Private Natural Horse Cohort
+    if: github.event.action == 'observe-club-arena-horse-fleet'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: club-arena-private-horse-fleet-observation
+      cancel-in-progress: false
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      SSH_USER: root
+      FLEET_SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
+      FLEET_FROM_UTC: ${{ github.event.client_payload.from_utc }}
+      FLEET_TO_UTC: ${{ github.event.client_payload.to_utc }}
+    steps:
+      - name: Checkout protected observer control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/ci/horse-fleet-packet.py
+            /server/scripts/phase6d-population.mjs
+          persist-credentials: false
+      - name: Refuse unprotected source and unavailable local clients
+        run: |
+          set -euo pipefail
+          [[ "$FLEET_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$FLEET_SOURCE_SHA" origin/main
+          git ls-tree "$FLEET_SOURCE_SHA" -- server/src/services/horseDecisionJournal/fleet.ts \
+            | grep -Eq '^100644 blob [0-9a-f]{40}[[:space:]]server/src/services/horseDecisionJournal/fleet\.ts$'
+          psql --version >/dev/null
+          node --version >/dev/null
+          PRIVATE_DIR="$RUNNER_TEMP/horse-fleet-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install -d -m 0700 "$PRIVATE_DIR"
+          echo "PRIVATE_DIR=$PRIVATE_DIR" >> "$GITHUB_ENV"
+      - name: Read one canonical cohort and original accepted coordinates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=2s 20s python3 -B scripts/ci/horse-fleet-packet.py \
+            "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json"
+      - name: Establish existing pinned SSH service identity
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [ -n "$SSH_KEY" ] && [ -n "$HOST_KEY" ]
+          printf '%s\n' "$SSH_KEY" > "$PRIVATE_DIR/key"
+          chmod 0600 "$PRIVATE_DIR/key"
+          ssh-keygen -y -f "$PRIVATE_DIR/key" >/dev/null
+          printf '%s\n' "$HOST_KEY" > "$PRIVATE_DIR/known_hosts"
+          chmod 0600 "$PRIVATE_DIR/known_hosts"
+          ssh-keygen -l -f "$PRIVATE_DIR/known_hosts" >/dev/null
+          HSSH="$PRIVATE_DIR/hssh"
+          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
+            "$PRIVATE_DIR/key" "$PRIVATE_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
+          chmod 0700 "$HSSH"
+          echo "HSSH=$HSSH" >> "$GITHUB_ENV"
+      - name: Observe the installed CLI without release or maintenance actions
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=5s 115s node server/scripts/phase6d-population.mjs fleet \
+            --packet "$PRIVATE_DIR/packet.json" --ssh-command "$HSSH" --out "$PRIVATE_DIR/result.json"
+      - name: Reconcile canonical cohort and retained capture witnesses
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/horse-fleet-packet.py --summarize \
+            "$PRIVATE_DIR/attestation.json" "$PRIVATE_DIR/result.json"
+      - name: Remove private packet and exact ephemeral transport
+        if: always()
+        run: |
+          set -euo pipefail
+          PRIVATE_DIR="$RUNNER_TEMP/horse-fleet-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf -- "$PRIVATE_DIR"
+
+  withdraw-waiting-release:
+    name: Withdraw One Exact Waiting Original Transaction
+    if: github.event.action == 'withdraw-club-arena-engine'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: club-arena-engine-withdrawal-${{ github.event.client_payload.withdrawal.runKey }}
+      cancel-in-progress: false
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the protected receiver control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Qualify exact selection, refusal and terminal signal boundaries
+        run: python3 -B tests/operations/waiting-engine-release-withdrawal.test.py
+      - name: Withdraw only the waiting transaction through its original wrapper
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 -B scripts/ci/withdraw-waiting-engine-release.py
+      - name: Retain the exact original terminal retirement receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-withdrawal-${{ github.run_id }}
+          path: artifacts/engine-withdrawal/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
   preflight:
+    if: github.event.action == 'deploy-club-arena-engine'
     name: Test The Exact Engine Release Request (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -465,28 +581,42 @@ jobs:
             "$HSSH" "EXPECTED_SHA='$SHA' EXPECTED_CONTROL_SHA='$CONTROL_SHA' bash -se" <<'REMOTE'
           set -euo pipefail
           CONTROL=/usr/local/lib/club-arena/engine-control
-          # Release control is installed separately from the game image. Prove
-          # the immutable generation and exact gate bytes, including when the
-          # requested game SHA is already serving and needs no replacement.
+          # A newer intake may advance the active symlink after this release
+          # seals. Prove this request's immutable generation, then prove the
+          # current active generation is the same or a protected descendant.
+          GENERATIONS=/usr/local/lib/club-arena/engine-control-generations
+          ACTIVE_CONTROL="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve(strict=True))' "$CONTROL")"
+          ACTIVE_CONTROL_SHA="$(tr -d '\r\n' < "$ACTIVE_CONTROL/control-sha")"
+          [[ "$EXPECTED_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTIVE_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$ACTIVE_CONTROL" = "$GENERATIONS/$ACTIVE_CONTROL_SHA" ]
+          CONTROL="$GENERATIONS/$EXPECTED_CONTROL_SHA"
+          [ -d "$CONTROL" ] && [ ! -L "$CONTROL" ]
+          [ -d "$ACTIVE_CONTROL" ] && [ ! -L "$ACTIVE_CONTROL" ]
           [ "$(tr -d '\r\n' < "$CONTROL/control-sha")" = "$EXPECTED_CONTROL_SHA" ]
-          git -C /opt/club-arena show "$EXPECTED_CONTROL_SHA:server/scripts/engine-release-transaction.sh" \
-            | cmp -s - "$CONTROL/engine-release-transaction.sh"
-          python3 - "$CONTROL/engine-release-transaction.sh" <<'PYTHON'
+          for CONTROL_PROOF_SHA in "$EXPECTED_CONTROL_SHA" "$ACTIVE_CONTROL_SHA"; do
+            GIT_NO_REPLACE_OBJECTS=1 git -C /opt/club-arena merge-base --is-ancestor "$CONTROL_PROOF_SHA" origin/main
+            GIT_NO_REPLACE_OBJECTS=1 git -C /opt/club-arena show "$CONTROL_PROOF_SHA:server/scripts/engine-release-transaction.sh" \
+              | cmp -s - "$GENERATIONS/$CONTROL_PROOF_SHA/engine-release-transaction.sh"
+          done
+          GIT_NO_REPLACE_OBJECTS=1 git -C /opt/club-arena merge-base --is-ancestor "$EXPECTED_CONTROL_SHA" "$ACTIVE_CONTROL_SHA"
+          python3 - "$CONTROL/engine-release-transaction.sh" "$ACTIVE_CONTROL/engine-release-transaction.sh" <<'PYTHON'
           import json, pathlib, subprocess, sys, urllib.request
-          source = pathlib.Path(sys.argv[1]).read_text()
-          start = source.index('recovery_window_reason() {')
-          end = source.index('\n}\n', start) + 3
-          health = urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=15).read().decode()
-          d = json.loads(health)
-          if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True:
-              raise SystemExit('live routine-admission proof requires a healthy engine')
-          # Execute the installed decision with real live health and the old
-          # urgency flag. This function is read-only and cannot announce a break.
-          code = 'set -euo pipefail\nRECOVERY_URGENT=1\nRECOVERY_QUARANTINED_MANAGERS=100\n' + source[start:end] + '\nhealth=$(cat)\nrecovery_window_reason "$health"\n'
-          result = subprocess.run(['bash', '-c', code], input=health, text=True, capture_output=True, timeout=10)
-          if result.returncode != 0 or result.stdout.strip():
-              raise SystemExit('installed gate granted routine urgency: ' + result.stdout + result.stderr)
-          print('Installed routine-admission gate refuses legacy urgency against live healthy play')
+          for gate_path in dict.fromkeys(sys.argv[1:]):
+              source = pathlib.Path(gate_path).read_text()
+              start = source.index('recovery_window_reason() {')
+              end = source.index('\n}\n', start) + 3
+              health = urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=15).read().decode()
+              d = json.loads(health)
+              if d.get('liveness') != 'ok' or d.get('wholeFleetStalled') is True:
+                  raise SystemExit('live routine-admission proof requires a healthy engine')
+              # Execute the installed decision with real live health and the old
+              # urgency flag. This function is read-only and cannot announce a break.
+              code = 'set -euo pipefail\nRECOVERY_URGENT=1\nRECOVERY_QUARANTINED_MANAGERS=100\n' + source[start:end] + '\nhealth=$(cat)\nrecovery_window_reason "$health"\n'
+              result = subprocess.run(['bash', '-c', code], input=health, text=True, capture_output=True, timeout=10)
+              if result.returncode != 0 or result.stdout.strip():
+                  raise SystemExit('installed gate granted routine urgency: ' + result.stdout + result.stderr)
+              print('Installed routine-admission gate refuses legacy urgency against live healthy play')
           PYTHON
           echo "__ENGINE_CONTROL_PROOF__ $EXPECTED_CONTROL_SHA"
           DESIRED_SHA="$($CONTROL/engine-release-seal.py get desired-sha)"

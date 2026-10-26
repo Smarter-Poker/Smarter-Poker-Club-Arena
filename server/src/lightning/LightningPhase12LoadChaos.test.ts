@@ -117,6 +117,8 @@ interface RunSpec {
   noAckShare?: number;
   driver?: Partial<ConstructorParameters<typeof TableDriver>[1]>;
   maxHands?: number;
+  /** Configure faults before any join or hand can start. */
+  configureWorld?: (world: World) => void;
   /** Chaos injected while the run is live. */
   chaos?: (ctx: RunCtx) => Promise<void>;
   /** The reaper may be needed (a crash leaves instances nobody hosts). */
@@ -170,6 +172,7 @@ async function run(spec: RunSpec) {
     latencyWindowMs: 10_000,
     maxHands: spec.maxHands,
   });
+  spec.configureWorld?.(world);
   const timersBefore = process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
   const passes = instrumentWorkerPasses();
   instrumented = passes;
@@ -383,9 +386,14 @@ describe('load: 10, 50, 100, 500, 1,000 players (5,000 and 10,000 with LIGHTNING
         });
         assertRequiredOutcome(r, { label: `load ${row.players}` });
         expect(r.world.settledHands).toBeGreaterThanOrEqual(Math.min(row.hands, 10));
-        // Every leg the spec names was measured, the render leg included.
+        // Every active leg is measured, the render leg included. Legacy watch
+        // input now releases immediately into the fast-fold lane.
         for (const seg of LIGHTNING_LATENCY_SEGMENTS) {
-          if (seg === 'fold_watch_to_next_hand' && row.players < 50) continue;
+          if (seg === 'fold_watch_to_next_hand') {
+            expect(r.engine.samples.get(seg)?.length ?? 0, 'retired watch lane').toBe(0);
+            expect(r.engine.samples.get('fast_fold_to_next_hand')?.length ?? 0).toBeGreaterThan(0);
+            continue;
+          }
           expect(r.engine.samples.get(seg)?.length ?? 0, `leg ${seg}`).toBeGreaterThan(0);
         }
         assertLedgerMatchesSamples(r);
@@ -793,8 +801,8 @@ describe('chaos: every fault the spec names, the required outcome every time', (
       hands: 100,
       capMs: 15_000,
       seed: 5008,
-      chaos: async (ctx) => {
-        ctx.world.faults = (fn, c) => {
+      configureWorld: (world) => {
+        world.faults = (fn, c) => {
           if (fn !== 'settle' || !c.handId || lostOnce.has(c.handId)) return null;
           lostOnce.add(c.handId);
           return { kind: 'transport_after' };
@@ -802,7 +810,10 @@ describe('chaos: every fault the spec names, the required outcome every time', (
       },
     });
     assertRequiredOutcome(r, { label: 'settlement retry' });
-    expect(r.world.counters.settleReplays).toBeGreaterThanOrEqual(r.world.settledHands - 5);
+    // Every hand was faulted before the engine started, including hands formed
+    // during joinAll. Each committed hand must recover its exact stored receipt.
+    expect(lostOnce.size).toBe(r.world.settledHands);
+    expect(r.world.counters.settleReplays).toBe(r.world.settledHands);
     record('chaos-settlement-retry', r);
   }, 60_000);
 

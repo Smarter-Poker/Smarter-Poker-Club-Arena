@@ -28,7 +28,7 @@ import {
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
-import { isBbjPlateShown } from './bbjPlateVisibility';
+import { isBbjPlateShown, isBbjCelebrationEligible } from './bbjPlateVisibility';
 import { miniPlateAmount, miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import BBJInfoModal from '../bbj/BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
@@ -106,6 +106,7 @@ export interface TableModalsLayerProps {
   maxPlayers: number;
   players: (SeatPlayer | null)[];
   heroStack: number;
+  heroStackPending?: boolean;
   rakePercent: number | undefined;
   rakeCap: number | undefined;
   runItTwice: boolean | undefined;
@@ -348,7 +349,7 @@ export interface TableModalsLayerProps {
    * response debits the player twice. Declaring it makes that edit fail to
    * compile instead of failing in a wallet.
    */
-  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
+  onAddChips: (amount: number, opId?: string, onTerminalRefusal?: () => void) => Promise<boolean>;
 
   // Bust Rebuy
   bustRebuyOpen: boolean;
@@ -358,6 +359,13 @@ export interface TableModalsLayerProps {
   onCancelBustRebuy: () => void;
   onRetryBustBalance: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
+  /**
+   * Lightning transition phase 2: a busted Lightning player's rebuy. The
+   * room's allowed maximum (readLightningTopUp) and its Leave, which runs the
+   * room's own leave. Both undefined at every other table.
+   */
+  bustRebuyMaxBuyIn?: number;
+  onLeaveBustRebuy?: () => void;
 
   showProfileModal: boolean;
   onCloseProfileModal: () => void;
@@ -473,9 +481,14 @@ export interface TableModalsLayerProps {
   onCloseRebuyModal: () => void;
 
   // Tournament Break
+  tableAnchorRef?: React.RefObject<HTMLElement | null>;
   tournamentBreak: {
     active: boolean;
     timeRemaining: number;
+    /** 'last_hand' until THIS tournament's last hand is complete; see TournamentBreakScreen. */
+    phase?: 'last_hand' | 'counting_down';
+    /** The server's real end, epoch ms, once this tournament's five minutes have started. */
+    breakEndsAtMs?: number | null;
     nextLevel?: {
       level: number;
       smallBlind: number;
@@ -490,7 +503,13 @@ export interface TableModalsLayerProps {
   onDismissAnnouncement: () => void;
 
   // Tournament Winner
-  tournamentWinner: { prize: number; name: string; position?: number } | null;
+  tournamentWinner: {
+    prize: number;
+    name: string;
+    position?: number;
+    championName?: string;
+    qualifiers?: Array<{ username: string; prize: number }>;
+  } | null;
   onDismissTournamentWinner: () => void;
 
   // Hand History Panel
@@ -539,6 +558,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     maxPlayers,
     players,
     heroStack,
+    heroStackPending = false,
     runItTwice,
     isHandInProgress,
     v8Settings,
@@ -660,6 +680,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onCancelBustRebuy,
     onRetryBustBalance,
     onConfirmBustRebuy,
+    bustRebuyMaxBuyIn,
+    onLeaveBustRebuy,
     showProfileModal,
     onCloseProfileModal,
     clubName,
@@ -709,6 +731,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onConfirmRebuy,
     onCloseRebuyModal,
     // Tournament Break
+    tableAnchorRef,
     tournamentBreak,
     // Announcement
     announcement,
@@ -1010,13 +1033,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         currency={ritCurrency}
       />
 
-      {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
-          Hidden entirely for variants the server never pays (PLO6, Short Deck),
-          and never displayed during MTT, Spins, or Heads-Up games. */}
-      {isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers }) &&
+      {/* Jackpot readouts stay in the lobby; eligible hit animations still play. */}
+      {isBbjCelebrationEligible({ gameType, isTournament, tournamentId, maxPlayers }) &&
         (jackpotAsset !== 'diamonds' ||
           (diamondJackpot?.enabled && (diamondJackpotStake?.drop ?? 0) > 0)) && (
           <BadBeatJackpot
+            showBanners={isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers })}
             amount={bbjAmount}
             asset={jackpotAsset}
             currency={jackpotAsset === 'diamonds' ? 'D ' : ''}
@@ -1171,6 +1193,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         // is what threw the success flag away originally.
         onAddChips={onAddChips}
         currentStack={heroStack}
+        currentStackPending={heroStackPending}
         accountBalance={accountBalance}
         /* The in-table Retry for an unread balance (cashier launch B-1). The
            buy-in sheet already had it; without it here the top-up sheet sat on
@@ -1193,8 +1216,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           await onConfirmBustRebuy(amount);
         }}
         tableName={tableName}
-        minBuyIn={minBuyIn}
-        maxBuyIn={maxBuyIn}
+        minBuyIn={
+          bustRebuyMaxBuyIn !== undefined ? Math.min(minBuyIn, bustRebuyMaxBuyIn) : minBuyIn
+        }
+        maxBuyIn={bustRebuyMaxBuyIn ?? maxBuyIn}
+        onLeave={onLeaveBustRebuy}
         /* NULL STAYS NULL, here too (Dan 2026-09-04). The 2026-08-27 fix
            made TablePage keep "unknown" as null; this `?? 0` turned it back
            into "you have nothing" one file later, and the bust rebuy read as
@@ -1254,6 +1280,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       <LeaveTableConfirm
         isOpen={showLeaveConfirm}
         currentStack={heroStack}
+        currentStackPending={heroStackPending}
         tableName={tableName || 'this table'}
         isTournament={isTournament}
         lockedLabel={leaveLockedLabel}
@@ -1395,8 +1422,18 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           "players remaining" - four falsehoods on every break. */}
       {isTournament && (
         <TournamentBreakScreen
+          tableAnchorRef={tableAnchorRef}
           isVisible={tournamentBreak.active}
           breakTimeRemaining={tournamentBreak.timeRemaining}
+          /* THE CLOCK DOES NOT RUN UNTIL THIS TOURNAMENT'S LAST HAND IS DONE
+             (Dan 2026-10-25). The phase and the server's end time were set on
+             the page and never handed over, so the screen fell back to its
+             'counting_down' default and counted a local five minutes from :55
+             while the last hand was still being played. Without the phase it
+             now shows "Last Hand" until the server starts this tournament's
+             countdown. */
+          phase={tournamentBreak.phase ?? 'last_hand'}
+          breakEndsAtMs={tournamentBreak.breakEndsAtMs ?? null}
           tournamentName={tableName}
           tournamentId={tournamentId ?? null}
           heroUserId={userId ?? null}
@@ -1424,6 +1461,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           unitCents={tournamentPrizeUnitCents}
           tournamentName={tournamentWinner.name}
           position={tournamentWinner.position}
+          championName={tournamentWinner.championName}
+          qualifiers={tournamentWinner.qualifiers}
           onDismiss={onDismissTournamentWinner}
         />
       )}

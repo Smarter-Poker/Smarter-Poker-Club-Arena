@@ -1,0 +1,3 @@
+# server/src/engine/aMainSeatTakesTheNextHand.law.test.ts
+
+Dan 2026-10-23: when a Main seat opens, the player goes to Main on the NEXT hand. A must-move planned after a feeder's pre-deal read, or a player whose transfer into Main committed after Main's roster read, used to cost one extra feeder hand or one missed Main hand (live on c485ce7a: 0.8-1.4 s before the deal, inside the two-second rest). Pins the synchronous last look between the rest and dealHand: the plan and arrival generations are captured before their reads, the source executor signals the destination when a transfer lands (a refused one signals nobody), the check runs once immediately before the deal, waits for nothing, ignores other games and tables, and never applies to tournament tables.

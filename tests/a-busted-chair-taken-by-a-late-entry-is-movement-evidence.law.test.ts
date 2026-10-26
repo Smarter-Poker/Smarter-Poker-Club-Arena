@@ -144,7 +144,12 @@ describe('a busted chair taken by a late entry is movement evidence', () => {
       );
     // 20261016183932 (a mid-hand add-on rebase) is the one successor, and it
     // refuses to run unless the installed body is exactly this post-image.
-    expect(later).toEqual(['20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql']);
+    expect(later).toEqual([
+      '20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql',
+      '20261024211825_a_rebuy_seated_from_another_table_is_movement_evidence.sql',
+      '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+    ]);
     expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`
     );

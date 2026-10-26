@@ -165,12 +165,26 @@ export async function lightningAnchorTimeBanks(
   const out = new Map<string, { remainingSeconds: number | null; usesRemaining: number | null }>();
   const ids = userIds.filter(isUuid);
   if (!isUuid(clusterId) || ids.length === 0) return out;
-  const { data: sessions, error } = await supabase
-    .from('lightning_pool_session')
-    .select('player_id, anchor_seat_id')
-    .eq('cluster_id', clusterId)
-    .in('player_id', ids)
-    .is('exited_at', null);
+  // ONE ROUND TRIP (2026-10-26). The open sessions name the anchor seats, and
+  // the players' live seats carry the banks; the second read used to wait for
+  // the first to learn the seat ids. Both are asked together now: the seats are
+  // read by their players (an anchor seat of an open pool session is always
+  // live - leaving it exits the session in the same transaction), and only the
+  // seat an open session anchors, held by that session's own player, is used.
+  const [sessionsRead, seatsRead] = await Promise.all([
+    supabase
+      .from('lightning_pool_session')
+      .select('player_id, anchor_seat_id')
+      .eq('cluster_id', clusterId)
+      .in('player_id', ids)
+      .is('exited_at', null),
+    supabase
+      .from('table_seats')
+      .select('id, user_id, time_bank_remaining, time_bank_uses_remaining')
+      .in('user_id', ids)
+      .is('left_at', null),
+  ]);
+  const { data: sessions, error } = sessionsRead;
   if (error) throw new Error(`lightning_pool_session read failed: ${error.message}`);
   const seatToPlayer = new Map<string, string>();
   for (const r of (sessions ?? []) as Array<{ player_id?: unknown; anchor_seat_id?: unknown }>) {
@@ -178,10 +192,7 @@ export async function lightningAnchorTimeBanks(
       seatToPlayer.set(r.anchor_seat_id, r.player_id);
   }
   if (seatToPlayer.size === 0) return out;
-  const { data: seats, error: seatError } = await supabase
-    .from('table_seats')
-    .select('id, user_id, time_bank_remaining, time_bank_uses_remaining')
-    .in('id', [...seatToPlayer.keys()]);
+  const { data: seats, error: seatError } = seatsRead;
   if (seatError) throw new Error(`anchor seat time bank read failed: ${seatError.message}`);
   const num = (v: unknown): number | null => {
     if (v === null || v === undefined) return null;
@@ -223,4 +234,185 @@ export async function lightningFrontTable(clusterId: string): Promise<string | n
   });
   if (error) throw new Error(`fn_cash_cluster_front_table failed: ${error.message}`);
   return isUuid(data) ? data : null;
+}
+
+/** One seated occupancy, as the ended-session read needs it. */
+export interface LightningSeatOccupancy {
+  /** table_seats.id: what lightning_pool_session.anchor_seat_id names. */
+  seatId: string;
+  userId: string;
+  /** table_seats.joined_at of THIS occupancy (a seat row can be re-owned). */
+  joinedAt: string;
+}
+
+/**
+ * THE SEATS WHOSE POOL SESSION ENDED WHILE THEIR OCCUPANT STAYED (2026-10-24).
+ *
+ * For a Cluster that IS Lightning right now (`cluster_mode` 'lightning' and
+ * `lightning_enabled`), which of these occupancies entered the pool from this
+ * very seat during this very occupancy, saw that pool session close, and has
+ * no open pool session anywhere in the Cluster since. Answers seat id ->
+ * the closed session's exit_reason. A seat that never entered the pool in
+ * this occupancy is not here (nothing ended), nor is one whose player plays
+ * on from another seat, nor any seat of a Cluster that is not Lightning (a
+ * draining or frozen Cluster owns its own sessions).
+ *
+ * READS ONLY, and it throws when it cannot answer: an unreadable pool is not
+ * an empty one, and the caller does nothing on a throw (10.86 rule 2).
+ */
+export async function lightningSeatsWhosePoolSessionEnded(
+  clusterId: string,
+  seats: LightningSeatOccupancy[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const valid = seats.filter(
+    (s) => isUuid(s.seatId) && isUuid(s.userId) && Number.isFinite(Date.parse(s.joinedAt))
+  );
+  if (!isUuid(clusterId) || valid.length === 0) return out;
+
+  const { data: game, error: gameError } = await supabase
+    .from('cash_games')
+    .select('cluster_mode, lightning_enabled')
+    .eq('id', clusterId)
+    .maybeSingle();
+  if (gameError) throw new Error(`cash_games read failed: ${gameError.message}`);
+  const g = game as { cluster_mode?: unknown; lightning_enabled?: unknown } | null;
+  if (!g || g.cluster_mode !== 'lightning' || g.lightning_enabled !== true) return out;
+
+  const players = [...new Set(valid.map((s) => s.userId))];
+  const { data: open, error: openError } = await supabase
+    .from('lightning_pool_session')
+    .select('player_id')
+    .eq('cluster_id', clusterId)
+    .in('player_id', players)
+    .is('exited_at', null);
+  if (openError) throw new Error(`lightning_pool_session read failed: ${openError.message}`);
+  const playing = new Set(
+    ((open ?? []) as Array<{ player_id?: unknown }>)
+      .map((r) => r.player_id)
+      .filter((v): v is string => isUuid(v))
+  );
+
+  const { data: closed, error: closedError } = await supabase
+    .from('lightning_pool_session')
+    .select('player_id, anchor_seat_id, entered_at, exit_reason')
+    .eq('cluster_id', clusterId)
+    .in(
+      'anchor_seat_id',
+      valid.map((s) => s.seatId)
+    )
+    .not('exited_at', 'is', null);
+  if (closedError) throw new Error(`lightning_pool_session read failed: ${closedError.message}`);
+  const rows = (closed ?? []) as Array<{
+    player_id?: unknown;
+    anchor_seat_id?: unknown;
+    entered_at?: unknown;
+    exit_reason?: unknown;
+  }>;
+  for (const seat of valid) {
+    if (playing.has(seat.userId)) continue;
+    const joined = Date.parse(seat.joinedAt);
+    let latest: { at: number; reason: string } | null = null;
+    for (const r of rows) {
+      if (r.anchor_seat_id !== seat.seatId || r.player_id !== seat.userId) continue;
+      const at = typeof r.entered_at === 'string' ? Date.parse(r.entered_at) : NaN;
+      // Only a session THIS occupancy entered: a re-owned seat row keeps the
+      // sessions of everyone who sat in it before.
+      if (!Number.isFinite(at) || at < joined) continue;
+      if (!latest || at > latest.at)
+        latest = { at, reason: typeof r.exit_reason === 'string' ? r.exit_reason : 'unknown' };
+    }
+    if (latest) out.set(seat.seatId, latest.reason);
+  }
+  return out;
+}
+
+/**
+ * THE OPEN POOL SESSIONS THAT CARRY A DISCONNECT STAMP (2026-10-24).
+ *
+ * Of these players, which hold an OPEN pool session in this Cluster whose
+ * `disconnected_at` is set: player id -> pool_session_id (the player's room).
+ * The anchor engine asks it for the horses it is heartbeating, so its live
+ * heartbeat can clear the stamp through the presence door exactly as a
+ * returning room socket does (ServerTableEngineDealing
+ * .reportHorsesTheEngineHeartbeatKeepsHere).
+ *
+ * READS ONLY, and it throws when it cannot answer: an unreadable pool is not
+ * an empty one (10.86 rule 2).
+ */
+export async function lightningStampedPoolSessions(
+  clusterId: string,
+  playerIds: string[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const players = [...new Set(playerIds.filter(isUuid))];
+  if (!isUuid(clusterId) || players.length === 0) return out;
+  const { data, error } = await supabase
+    .from('lightning_pool_session')
+    .select('id, player_id')
+    .eq('cluster_id', clusterId)
+    .in('player_id', players)
+    .is('exited_at', null)
+    .not('disconnected_at', 'is', null);
+  if (error) throw new Error(`lightning_pool_session read failed: ${error.message}`);
+  for (const r of (data ?? []) as Array<{ id?: unknown; player_id?: unknown }>) {
+    if (isUuid(r.id) && isUuid(r.player_id)) out.set(r.player_id, r.id);
+  }
+  return out;
+}
+
+/**
+ * `cash_games.cluster_mode` of a Cluster ('lightning', 'must_move', ...), or
+ * null when the row has none. A READ for the parked anchor's sit-out clock
+ * (ServerTableEngineDealing.standUpExpiredLightningSitOuts), which runs only
+ * while the Cluster IS Lightning. Throws when it cannot answer, so the caller
+ * stands nobody up on a guess.
+ */
+export async function lightningClusterModeOf(clusterId: string): Promise<string | null> {
+  if (!isUuid(clusterId)) return null;
+  const { data, error } = await supabase
+    .from('cash_games')
+    .select('cluster_mode')
+    .eq('id', clusterId)
+    .maybeSingle();
+  if (error) throw new Error(`cash_games cluster_mode read failed: ${error.message}`);
+  const mode = (data as { cluster_mode?: unknown } | null)?.cluster_mode;
+  return typeof mode === 'string' ? mode : null;
+}
+
+/**
+ * Of these occupants of `tableId`, the ones whose live seat row says
+ * `is_sitting_out = true` right now (same occupancy, not departed). A READ for
+ * the parked anchor's sit-out clock: memory alone never stands a Lightning
+ * player up. Throws when it cannot answer, so the caller stands nobody up.
+ */
+export async function lightningSeatsSittingOut(
+  tableId: string,
+  occupants: Array<{ userId: string; occupancyId: string }>
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  const wanted = occupants.filter((o) => isUuid(o.userId) && isUuid(o.occupancyId));
+  if (!isUuid(tableId) || wanted.length === 0) return out;
+  const { data, error } = await supabase
+    .from('table_seats')
+    .select('user_id, occupancy_id, is_sitting_out, left_at')
+    .eq('table_id', tableId)
+    .in(
+      'user_id',
+      wanted.map((o) => o.userId)
+    )
+    .is('left_at', null);
+  if (error) throw new Error(`table_seats sit-out read failed: ${error.message}`);
+  const occupancyOf = new Map(wanted.map((o) => [o.userId, o.occupancyId]));
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const userId = r.user_id;
+    if (typeof userId !== 'string') continue;
+    if (
+      r.left_at === null &&
+      r.is_sitting_out === true &&
+      occupancyOf.get(userId) === r.occupancy_id
+    )
+      out.add(userId);
+  }
+  return out;
 }

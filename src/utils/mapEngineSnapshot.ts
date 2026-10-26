@@ -19,6 +19,7 @@
 
 import type { EngineSnapshot } from '../services/EngineStateClient';
 import { recordServerTime } from './serverClock';
+import { canonicalCards } from './tableGeometry';
 import {
   parseKillHand,
   parseKillNext,
@@ -397,12 +398,18 @@ function derivePerSeatLastAction(
   return { lastActions, lastBetAmounts };
 }
 
+export function isLightningObserverSnapshot(raw: EngineSnapshot | null | undefined): boolean {
+  return raw?.lightning_observer === true;
+}
+
 export function mapEngineSnapshot(
   raw: EngineSnapshot,
   heroUserId: string,
   maxSeats: number
 ): MappedTableStatePatch {
   const s = raw as unknown as EnginePublishedState;
+  // Identity in a public virtual hand does not grant control of this physical room.
+  if (isLightningObserverSnapshot(raw)) heroUserId = '';
 
   /* ═══ NEVER DROP A SEAT THE ENGINE SAYS EXISTS (Dan 2026-08-30) ═══════════
      `maxSeats` is caller state (`tableState.maxPlayers`), which BOOTS AT 6 and
@@ -468,7 +475,7 @@ export function mapEngineSnapshot(
       aura: p.equipped_aura || undefined,
       stack: p.stack,
       status: STATUS_FROM_PLAYER(p),
-      holeCards: p.cards && p.cards.length > 0 ? p.cards : undefined,
+      holeCards: p.cards && p.cards.length > 0 ? canonicalCards(p.cards) : undefined,
       showCards: !!(p.cards && p.cards.length > 0 && p.user_id !== heroUserId),
       isHero: p.user_id === heroUserId,
       isMucked: p.is_mucked === true,
@@ -578,10 +585,10 @@ export function mapEngineSnapshot(
     // See LIVE E2E FIX above: with a settlement partition present, the main
     // pot is pots[0]; otherwise the running total s.pot is the main pot.
     pot: rawPots.length > 0 ? rawPots[0].amount : (s.pot ?? 0),
-    communityCards: s.community_cards ?? [],
-    communityCards2: s.community_cards2 ?? [],
+    communityCards: canonicalCards(s.community_cards),
+    communityCards2: canonicalCards(s.community_cards2),
     // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
-    communityCards3: s.community_cards3 ?? [],
+    communityCards3: canonicalCards(s.community_cards3),
     bombPotIn: typeof s.bomb_pot_in === 'number' ? s.bomb_pot_in : null,
     // BOMB POT STANDARDIZATION 2026-08-27: timed-mode due timestamp (epoch ms).
     bombPotNextAt: typeof s.bomb_pot_next_at === 'number' ? s.bomb_pot_next_at : null,

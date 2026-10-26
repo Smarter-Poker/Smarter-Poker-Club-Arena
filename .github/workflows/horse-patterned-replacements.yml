@@ -1,0 +1,119 @@
+name: Original patterned horse replacements
+run-name: Original 62 horse replacements - ${{ inputs.mode || 'qualification' }}
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - server/src/services/HorseOnboarding.ts
+      - server/src/services/HorseOnboardingLifecycle.test.ts
+      - server/src/services/HorseReplacement*.ts
+      - server/src/scripts/replaceRetiredHorses.ts
+      - server/src/services/supabase/client.ts
+      - supabase/migrations/*_retired_patterned_horses_reserve_their_replacement_identity_.sql
+      - supabase/migrations/20261023222825_scheduled_horses_play_every_game_without_roster_restrictions.sql
+      - scripts/ci/test-patterned-horse-replacements.py
+      - scripts/ci/fixtures/patterned-horse-*.json
+      - scripts/ci/fixtures/scheduled-horses.sql
+      - .github/workflows/horse-patterned-replacements.yml
+      - scripts/ci/horse-fleet-packet.py
+      - scripts/ci/test-horse-fleet-packet.py
+      - server/scripts/phase6d-population.mjs
+      - server/src/services/horseDecisionJournal/fleet*.ts
+      - server/src/lightning/LightningHandHost.ts
+      - server/src/lightning/LightningHandBackend.ts
+      - server/src/lightning/LightningJournalIdentity.test.ts
+      - supabase/migrations/*_lightning_retains_the_original_private_journal_coordinate.sql
+      - scripts/ci/test-lightning-journal-coordinate.py
+      - scripts/ci/fixtures/lightning-journal-*.sql
+      - tests/unit/horseFleetObservation.test.ts
+      - .github/workflows/auto-deploy-hetzner.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect, or execute the original owner-authorized finite replacement batch
+        type: choice
+        options: [inspect, execute]
+        default: inspect
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: original-patterned-horses-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix server --ignore-scripts
+      - name: Compile the maintained onboarding and finite CLI
+        run: server/node_modules/.bin/tsc --noEmit -p server/tsconfig.json
+      - name: Qualify original Auth operation recovery and finite caller boundaries
+        working-directory: server
+        run: node_modules/.bin/vitest run src/services/HorseOnboardingLifecycle.test.ts src/services/HorseReplacementOnboarding.test.ts src/services/HorseReplacementAuthTransport.test.ts src/services/HorseReplacementBatch.test.ts src/services/HorseReplacementCli.test.ts
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Qualify bounded private fleet packet against isolated PostgreSQL 17
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-horse-fleet-packet.py
+      - name: Qualify original private Lightning lease against isolated PostgreSQL 17
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-lightning-journal-coordinate.py
+      - name: Qualify private reservation concurrency and actual canonical roster owners
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 scripts/ci/test-patterned-horse-replacements.py --output artifacts/horse-replacements
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-horse-replacements-${{ github.run_id }}
+          path: artifacts/horse-replacements/RESULTS.json
+          if-no-files-found: error
+          retention-days: 90
+  original-operation:
+    needs: qualification
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: original-patterned-horse-replacement-20261006
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix server --ignore-scripts
+      - name: Use the maintained original identity and ordinary signup doors once
+        working-directory: server
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node --import tsx src/scripts/replaceRetiredHorses.ts --${{ inputs.mode }}

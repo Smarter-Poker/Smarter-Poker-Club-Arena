@@ -56,6 +56,7 @@ import { reportError } from '../../../utils/errorReporter';
 import type { TournamentTabProps, TournamentEntry } from './types';
 import { initials } from './types';
 import SatelliteSeatBadge from './SatelliteSeatBadge';
+import BuyInMarks from './BuyInMarks';
 import '../../../styles/tournament-lobby-3d.css';
 import './EntriesTab.css';
 
@@ -415,16 +416,9 @@ export default function EntriesTab({
                     RE
                   </span>
                 )}
-                {showRebuys && rebuys > 0 && (
-                  <span className="tl-badge" title={`${rebuys.toLocaleString()} Rebuys`}>
-                    {`RB ${rebuys.toLocaleString()}`}
-                  </span>
-                )}
-                {showAddOns && addOn && (
-                  <span className="tl-badge tl-badge--good" title="Add-On Taken">
-                    AO
-                  </span>
-                )}
+                {/* Dan 2026-10-24: how many times they rebought and whether
+                    they added on, in words - the same marks Ranking carries. */}
+                <BuyInMarks rebuys={showRebuys ? rebuys : 0} addOn={showAddOns && addOn} />
               </span>
             </>
           );

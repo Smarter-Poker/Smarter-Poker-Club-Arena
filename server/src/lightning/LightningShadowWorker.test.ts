@@ -503,10 +503,14 @@ describe('the engine and GameServer wiring', () => {
     const report = e.lightningPresenceReport();
     expect(report.clusterId).toBe(CLUSTER_A);
     expect(report.players).toEqual([
-      { userId: P1, presence: 'connected' },
-      { userId: P2, presence: 'connected' },
-      { userId: P3, presence: 'unknown' },
-      { userId: P4, presence: 'disconnected' },
+      // A person's socket here is not the device that plays their Lightning
+      // seat (their room is, 2026-10-26): reported, but `inputDevice: false`.
+      { userId: P1, presence: 'connected', inputDevice: false },
+      // A horse's input device is the engine: it reports the desktop class a
+      // browser would (Dan 2026-10-24, "4 GAMES MAX"). Presence is unchanged.
+      { userId: P2, presence: 'connected', inputDevice: true, platform: 'desktop' },
+      { userId: P3, presence: 'unknown', inputDevice: false },
+      { userId: P4, presence: 'disconnected', inputDevice: true, platform: 'desktop' },
     ]);
     e.preciseTimer?.dispose?.();
     vi.doUnmock('../services/supabase/client.js');

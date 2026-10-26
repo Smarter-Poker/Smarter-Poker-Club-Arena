@@ -47,3 +47,33 @@ python3 -B "$fixture/concurrency.py" "$pgbin/psql" "$work/socket" 57642 "$repo/s
 "${psql[@]}" -c 'CREATE DATABASE member_record_context_locks'
 "${psql[@]}" -d member_record_context_locks -f "$fixture/bootstrap.sql" -f "$fixture/readers.sql" -f "$fixture/before.sql" -f "$migration" -f "$repo/supabase/migrations/20261018140249_activate_funded_member_record_daily_facts_without_repeated_r.sql" -f "$fixture/global-before.sql"
 python3 -B "$fixture/trigger-locks.py" "$pgbin/psql" "$work/socket" 57642 "$repo/supabase/migrations/20261018195412_member_record_all_field_source_events.sql"
+
+# Today is a Chicago calendar day in both funded member readers.
+"${psql[@]}" -f "$fixture/chicago-today-before.sql"
+if "${psql[@]}" -f "$fixture/chicago-today-after.sql" > "$work/chicago-before.log" 2>&1; then
+  echo 'Chicago Today regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Chicago Today boundary mismatch' "$work/chicago-before.log"; then
+  cat "$work/chicago-before.log"; exit 1
+fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261023213635_today_win_loss_resets_at_chicago_midnight.sql" -f "$fixture/chicago-today-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261023213635_today_win_loss_resets_at_chicago_midnight.sql" > "$work/chicago-replay.log" 2>&1; then
+  echo 'Chicago Today migration replay unexpectedly accepted'; exit 1
+fi
+echo 'CHICAGO_TODAY_POSTGRES PASS: midnight, DST, funded attribution, accounting cutoff, access, both readers, unchanged longer periods, replay refusal'
+
+# This Week and This Month are Chicago calendar ranges in both funded member readers.
+if "${psql[@]}" -f "$fixture/chicago-week-month-after.sql" > "$work/chicago-week-before.log" 2>&1; then
+  echo 'Chicago week/month regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Chicago week/month boundary mismatch' "$work/chicago-week-before.log"; then
+  cat "$work/chicago-week-before.log"; exit 1
+fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261026011138_week_and_month_win_loss_reset_at_chicago_midnight.sql" -f "$fixture/chicago-week-month-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261026011138_week_and_month_win_loss_reset_at_chicago_midnight.sql" > "$work/chicago-week-replay.log" 2>&1; then
+  echo 'Chicago week/month migration replay unexpectedly accepted'; exit 1
+fi
+if ! grep -q 'Chicago week and month reader preimage changed' "$work/chicago-week-replay.log"; then
+  cat "$work/chicago-week-replay.log"; exit 1
+fi
+echo 'CHICAGO_WEEK_MONTH_POSTGRES PASS: Monday and 1st at Chicago midnight, DST, year rollover, accounting cutoff, access, both readers agree, replay refusal'

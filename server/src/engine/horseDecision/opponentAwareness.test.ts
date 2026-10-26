@@ -1,3 +1,7 @@
+import {
+  registerPublicObserver,
+  inspectObserverReads,
+} from '../../testing/horseRegression/plan/fixture.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { HandController } from '../HandController.js';
 import { HorseMind, readScopeOf } from '../HorseMind.js';
@@ -52,6 +56,7 @@ it.each(['open', 'limp_reraise'] as const)(
       noteDecision: () => {},
     });
     await worker.start();
+    let admitted: Awaited<ReturnType<typeof registerPublicObserver>>;
     let lastActions: ActionRecord[] = [];
     let lastPlayers: SeatPlayer[] = [];
     for (let h = 0; h < 30; h++) {
@@ -102,56 +107,60 @@ it.each(['open', 'limp_reraise'] as const)(
         showdown: null,
         scope: readScopeOf('flh', 2),
       };
+      admitted = await registerPublicObserver(worker, observation, hero, lastPlayers, 'flh');
       worker.receive(observation);
       worker.receive({ ...observation, requestId: h * 2 + 2 });
       await worker.drain();
       expect(messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
     }
-    expect(HorseMind.getStats(opponent)).toMatchObject({
-      hands: 30,
-      vpip: 30,
-      pfr: 30,
-      threeBet: line === 'limp_reraise' ? 30 : 0,
-    });
-    const scoped = HorseMind.snapshotDecisionReads(lastPlayers, null).scoped.get(
-      `${readScopeOf('flh', 2)}|${opponent}`
-    );
-    expect(scoped).toMatchObject({ hands: 30, vpip: 30, pfr: 30 });
-    HorseMind.setDecisionScope(readScopeOf('flh', 2), 'flh');
-    const learned = HorseMind.bandFor(opponent, lastActions, 2, false);
-    // 2026-10-16 OPPONENT EXPLOIT: thirty straight raises are credibly outside
-    // the horse envelope, so the raiser's own measured width replaces the
-    // seat band (and the lifetime -0.1 PFR widening that read it).
-    const read = HorseMind.opponentRead(opponent);
-    expect(read).not.toBeNull();
-    // 2026-10-22 MANIAC PRESSURE: a re-raise from a maniac is read at its
-    // whole raising width, not its 3-bet statistic alone.
-    const width =
-      line === 'open' ? openerRangeWidth(read) : (maniacRaiseWidth(read) ?? reRaiseWidth(read));
-    const legacy = (() => {
-      const real = HorseMind.opponentRead;
-      (HorseMind as unknown as { opponentRead: () => null }).opponentRead = () => null;
-      try {
-        return HorseMind.bandFor(opponent, lastActions, 2, false);
-      } finally {
-        (HorseMind as unknown as { opponentRead: typeof real }).opponentRead = real;
-      }
-    })();
-    HorseMind.reset();
-    const prior = HorseMind.bandFor(opponent, lastActions, 2, false);
-    expect(learned).not.toBeNull();
-    // Without the read the lifetime widening still applies, exactly as before.
-    expect(legacy![0]).toBeCloseTo(prior![0] - 0.1, 10);
-    if (width === null) expect(learned![0]).toBeCloseTo(prior![0] - 0.1, 10);
-    else {
-      // A width is a share of hands; a hold'em band is a score bar
-      // (2026-10-22: `1 - width` read a 100% raiser as a top-60% range).
-      expect(learned![0]).toBeCloseTo(
-        Math.max(0, Math.min(0.9, strengthBarForTopShare(width))),
-        10
+    expect(HorseMind.getStats(opponent)).toBeUndefined();
+    inspectObserverReads(worker, admitted!, () => {
+      expect(HorseMind.getStats(opponent)).toMatchObject({
+        hands: 30,
+        vpip: 30,
+        pfr: 30,
+        threeBet: line === 'limp_reraise' ? 30 : 0,
+      });
+      const scoped = HorseMind.snapshotDecisionReads(lastPlayers, null).scoped.get(
+        `${readScopeOf('flh', 2)}|${opponent}`
       );
-      expect(learned![0]).toBeLessThan(legacy![0]);
-    }
+      expect(scoped).toMatchObject({ hands: 30, vpip: 30, pfr: 30 });
+      HorseMind.setDecisionScope(readScopeOf('flh', 2), 'flh');
+      const learned = HorseMind.bandFor(opponent, lastActions, 2, false);
+      // 2026-10-16 OPPONENT EXPLOIT: thirty straight raises are credibly outside
+      // the horse envelope, so the raiser's own measured width replaces the
+      // seat band (and the lifetime -0.1 PFR widening that read it).
+      const read = HorseMind.opponentRead(opponent);
+      expect(read).not.toBeNull();
+      // 2026-10-22 MANIAC PRESSURE: a re-raise from a maniac is read at its
+      // whole raising width, not its 3-bet statistic alone.
+      const width =
+        line === 'open' ? openerRangeWidth(read) : (maniacRaiseWidth(read) ?? reRaiseWidth(read));
+      const legacy = (() => {
+        const real = HorseMind.opponentRead;
+        (HorseMind as unknown as { opponentRead: () => null }).opponentRead = () => null;
+        try {
+          return HorseMind.bandFor(opponent, lastActions, 2, false);
+        } finally {
+          (HorseMind as unknown as { opponentRead: typeof real }).opponentRead = real;
+        }
+      })();
+      HorseMind.reset();
+      const prior = HorseMind.bandFor(opponent, lastActions, 2, false);
+      expect(learned).not.toBeNull();
+      // Without the read the lifetime widening still applies, exactly as before.
+      expect(legacy![0]).toBeCloseTo(prior![0] - 0.1, 10);
+      if (width === null) expect(learned![0]).toBeCloseTo(prior![0] - 0.1, 10);
+      else {
+        // A width is a share of hands; a hold'em band is a score bar
+        // (2026-10-22: `1 - width` read a 100% raiser as a top-60% range).
+        expect(learned![0]).toBeCloseTo(
+          Math.max(0, Math.min(0.9, strengthBarForTopShare(width))),
+          10
+        );
+        expect(learned![0]).toBeLessThan(legacy![0]);
+      }
+    });
   }
 );
 
@@ -238,8 +247,8 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
       expect(controller.performAction(1, 'bet', pot)).toBe(true);
       expect(controller.performAction(2, stage === 'river' ? 'fold' : 'call')).toBe(true);
     }
-    worker.receive({
-      type: 'OBSERVE_COMPLETED_HAND',
+    const completed = {
+      type: 'OBSERVE_COMPLETED_HAND' as const,
       requestId: h + 1,
       generation: handNumber,
       fence: `${table}:${handNumber}:9:observe`,
@@ -249,7 +258,9 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
       bigBlind: 2,
       showdown: null,
       scope: readScopeOf('nlh', 2),
-    });
+    };
+    await registerPublicObserver(worker, completed, hero, controller.getState().players);
+    worker.receive(completed);
     await worker.drain();
     expect(messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
   }
@@ -267,6 +278,8 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     0,
     2
   ).commitmentCapRemaining;
+  captures.length = 0;
+  messages.length = 0;
   const range = vi.spyOn(HorseMind, 'bandFor');
   const exploit = vi.spyOn(HorseMind, 'exploit');
   const request = {
@@ -275,7 +288,7 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     generation: 1,
     fence: `${table}:1000140:2:9:1`,
     decisionKey: '',
-    decisionTimeMs: 1700000000000,
+    decisionTimeMs: Date.now() + 10000,
     player: spot.hero,
     gameState: spot.state,
     style: 'balanced' as const,
@@ -401,11 +414,15 @@ it.each([
       noteDecision: () => {},
     });
     await worker.start();
+    const admitted = await registerPublicObserver(worker, request, hero, players);
     worker.receive(request);
     worker.receive({ ...request, requestId: 301 });
     await worker.drain();
-    expect(HorseMind.getStats(opponent)?.f3bOpps).toBe(opportunities);
-    expect(HorseMind.getStats(hero)?.pfr).toBe(opportunities);
+    expect(HorseMind.getStats(opponent)).toBeUndefined();
+    inspectObserverReads(worker, admitted, () => {
+      expect(HorseMind.getStats(opponent)?.f3bOpps).toBe(opportunities);
+      expect(HorseMind.getStats(hero)?.pfr).toBe(opportunities);
+    });
   }
 );
 

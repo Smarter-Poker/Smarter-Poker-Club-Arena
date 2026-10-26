@@ -1,3 +1,5 @@
+import { horseOpponentMemorySchema, readHorseOpponentProfiles } from '../HorseOpponentMemory.js';
+import { memoryVariant, type DurableOpponentProfile } from '../../engine/HorseOpponentMemory.js';
 /**
  * Supabase helpers — the 4-tier hand history writer (Bible V8 §2.18).
  *
@@ -10,14 +12,16 @@
  */
 
 import { supabase } from './client.js';
-import { reportError } from '../errorReporter.js';
+import { isOpponentMemoryBusyRefusal, reportError, reportThrottled } from '../errorReporter.js';
 import {
   releaseHandFactsCapture,
   writeHandFacts,
   type DurableStatsFactPayload,
   type HandFactsInput,
 } from './handFacts.js';
-import { recordHorseHandReviews } from '../HorseHandReview.js';
+import { recordHorseHandReviews, type HorseReviewInput } from '../HorseHandReview.js';
+import { buildHorseDailyRollupFacts } from '../HorseDailyRollupFacts.js';
+import { horseDailyRollupContract } from '../HorseDailyRollupContract.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
@@ -728,7 +732,13 @@ export async function logHandHistory(params: {
       : record;
   });
 
+  const opponentDealtCount = params.holeCardsAll?.size;
   const row = {
+    // The RLS roster can include non-dealt chairs. Only the authoritative
+    // dealt-card map can state the population the opponent read belongs to.
+    ...(opponentDealtCount !== undefined && opponentDealtCount >= 2 && opponentDealtCount <= 10
+      ? { horse_exploit_dealt_count: opponentDealtCount }
+      : {}),
     // See `handId` on the params above. Omitted entirely when the caller did
     // not mint one, so the column keeps its gen_random_uuid() default and
     // every other caller of this function is byte-identical to before.
@@ -838,6 +848,45 @@ export async function logHandHistory(params: {
         }
       : null;
 
+  const horseReviewInput: HorseReviewInput | null = factsInput
+    ? {
+        handId: params.handId!,
+        tableId: params.tableId,
+        clubId: params.clubId ?? null,
+        tournamentId: params.tournamentId ?? null,
+        gameVariant: params.gameVariant,
+        bigBlind: params.bigBlind,
+        playedAt: endedAtIso,
+        potSize: params.potSize,
+        board: params.communityCards ?? null,
+        // 2026-09-30: every board, so a double-board bomb pot or a run-it-twice
+        // hand is not judged on board 1 alone.
+        boards: [
+          params.communityCards,
+          params.communityCards2,
+          params.communityCards3,
+          ...(params.ritBoards ?? []),
+        ].filter((b): b is string[] => Array.isArray(b) && b.length > 0),
+        holeCardsAll: factsInput.holeCardsAll,
+        contributions: factsInput.contributions,
+        winners: params.winners,
+        actions: params.actions,
+        roster: factsInput.roster,
+        // 2026-09-05: the rake is part of the result (horse_daily_nets.rake_bb),
+        // and the button places the blinds for horse_daily_play.
+        rakeAmount: params.rakeAmount,
+        // 2026-09-06: THE DROP IS THE RAKE AND THE JACKPOT. On 2026-09-06 the
+        // fleet's residual after rake was -1,778bb and the day's BBJ drop was
+        // 1,761bb - a 1% match. Both halves of the drop must reach the horse
+        // row or the tuner reads the house take as a leak.
+        bbjAmount: params.bbjAmount ?? 0,
+        buttonSeat: params.buttonSeat ?? null,
+        // 2026-09-06: a floored table's play is measured separately - the
+        // horse is required to be loose there.
+        vpipFloor: params.vpipFloor ?? 0,
+      }
+    : null;
+
   // Protocol-2 commits carry the complete private fact rows in their immutable
   // receipt. The projector persists them before deleting the durable outbox
   // claim. Folded holdings never enter `row`/hand_history.
@@ -845,6 +894,14 @@ export async function logHandHistory(params: {
     const statsFacts = await writeHandFacts({ ...factsInput, collectOnly: true });
     if (!statsFacts) {
       throw new Error('atomic hand commit refused (stats_facts_unavailable)');
+    }
+    if (
+      horseReviewInput &&
+      process.env.HORSE_NET_ROLLUP_ENABLED !== 'false' &&
+      process.env.HORSE_PLAY_ROLLUP_ENABLED !== 'false' &&
+      (await horseDailyRollupContract())
+    ) {
+      statsFacts.horse_rollups = buildHorseDailyRollupFacts(horseReviewInput);
     }
     params.atomicCommit.acceptedPostCommitFacts.stats_facts = statsFacts;
   }
@@ -883,7 +940,37 @@ export async function logHandHistory(params: {
     );
     // P14.2: private only. Absent (never undefined-valued) is the explicit unknown.
     const acceptedRosterField = acceptedActorRoster ? { acceptedActorRoster } : {};
+    const variant = memoryVariant(params.gameVariant);
+    const dealt = params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0;
+    let durableOpponentProfiles: DurableOpponentProfile[] | undefined;
+    if (variant && (await horseOpponentMemorySchema()) === 'installed') {
+      durableOpponentProfiles = [];
+      try {
+        const actors = [
+          ...new Set(
+            acceptedActions
+              .map((a) => a.userId)
+              .filter((id): id is string => typeof id === 'string' && id.length > 0)
+          ),
+        ];
+        if (actors.length)
+          durableOpponentProfiles = await readHorseOpponentProfiles(
+            actors,
+            variant,
+            params.tournamentId ? 'tournament' : 'cash',
+            dealt <= 2 ? 'hu' : dealt <= 5 ? 'short' : 'full'
+          );
+      } catch (error) {
+        if (isOpponentMemoryBusyRefusal(error))
+          reportThrottled(
+            'HandHistory.durable_opponent_read',
+            'opponent memory unavailable: busy - completed-hand read refused at admission'
+          );
+        else reportError(error, 'HandHistory.durable_opponent_read');
+      }
+    }
     const observation = getLiveHorseDecisionWorker().observeCompletedHand({
+      durableOpponentProfiles,
       generation: params.handNumber,
       fence: [
         params.tableId,
@@ -896,6 +983,17 @@ export async function logHandHistory(params: {
       actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
+      riverCallContext: {
+        variant: params.gameVariant,
+        boardCount: Math.max(
+          params.ritBoards?.length ?? 0,
+          params.communityCards3?.length ? 3 : params.communityCards2?.length ? 2 : 1
+        ),
+      },
+      // HorseWinnerRead: every dealt player's net, from the committed hand.
+      ...(params.contributions
+        ? { results: handNetResults(params.contributions, params.winners) }
+        : {}),
       // V45: the hand's scope - card family and how many were dealt in.
       scope: readScopeOf(
         params.gameVariant,
@@ -922,42 +1020,14 @@ export async function logHandHistory(params: {
     // HORSE HAND REVIEW 2026-08-26 (Dan): every horse that won or lost 20bb+
     // in this hand gets a review row with leak tags — same exact in-memory
     // inputs as the fact write above, same fire-and-forget contract.
-    void recordHorseHandReviews({
-      handId,
-      tableId: params.tableId,
-      clubId: params.clubId ?? null,
-      tournamentId: params.tournamentId ?? null,
-      gameVariant: params.gameVariant,
-      bigBlind: params.bigBlind,
-      playedAt: endedAtIso,
-      potSize: params.potSize,
-      board: params.communityCards ?? null,
-      // 2026-09-30: every board, so a double-board bomb pot or a run-it-twice
-      // hand is not judged on board 1 alone.
-      boards: [
-        params.communityCards,
-        params.communityCards2,
-        params.communityCards3,
-        ...(params.ritBoards ?? []),
-      ].filter((b): b is string[] => Array.isArray(b) && b.length > 0),
-      holeCardsAll: factsInput.holeCardsAll,
-      contributions: factsInput.contributions,
-      winners: params.winners,
-      actions: params.actions,
-      roster: factsInput.roster,
-      // 2026-09-05: the rake is part of the result (horse_daily_nets.rake_bb),
-      // and the button places the blinds for horse_daily_play.
-      rakeAmount: params.rakeAmount,
-      // 2026-09-06: THE DROP IS THE RAKE AND THE JACKPOT. On 2026-09-06 the
-      // fleet's residual after rake was -1,778bb and the day's BBJ drop was
-      // 1,761bb - a 1% match. Both halves of the drop must reach the horse
-      // row or the tuner reads the house take as a leak.
-      bbjAmount: params.bbjAmount ?? 0,
-      buttonSeat: params.buttonSeat ?? null,
-      // 2026-09-06: a floored table's play is measured separately - the
-      // horse is required to be loose there.
-      vpipFloor: params.vpipFloor ?? 0,
-    });
+    if (horseReviewInput)
+      void recordHorseHandReviews({
+        ...horseReviewInput,
+        handId,
+        rollupsInAcceptedFacts: Boolean(
+          params.atomicCommit.acceptedPostCommitFacts?.stats_facts?.horse_rollups
+        ),
+      });
   }
 
   return {
@@ -1447,4 +1517,21 @@ export function buildHandHistoryTiers(hand: StoredHandHistoryRow) {
       integrity_hash: `${hand.table_id}:${hand.hand_number}`,
     },
   };
+}
+
+/** Every contributor's net for the winner read: chips taken out less chips put in. */
+export function handNetResults(
+  contributions: ReadonlyMap<string, number>,
+  winners: ReadonlyArray<{ userId?: string; amount?: number }> | null | undefined
+): Array<{ user_id: string; net: number }> {
+  const won = new Map<string, number>();
+  for (const w of winners ?? []) {
+    if (!w?.userId) continue;
+    won.set(w.userId, (won.get(w.userId) ?? 0) + (Number(w.amount) || 0));
+  }
+  const ids = new Set([...contributions.keys(), ...won.keys()]);
+  return [...ids].map((id) => ({
+    user_id: id,
+    net: Math.round(((won.get(id) ?? 0) - (contributions.get(id) ?? 0)) * 100) / 100,
+  }));
 }

@@ -833,7 +833,13 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 
 // Real occupied components, not placeholder rectangles: this guards the
 // overlap missed by the old containment-only regression.
-for (const width of [320, 375, 393, 430, 480])
+// 600 and 768: portrait viewports above the 480px phone breakpoint (large
+// phones, foldables, an upright iPad mini or 768px tablet) share the phone's
+// tabled-hand and marker placement (PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX). On
+// 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
+// another player. They are certified on the PLO5/PLO6 scenes this regime is
+// for; their seat pods keep the tablet ring (see `largePortrait` below).
+for (const width of [320, 375, 393, 430, 480, 600, 768])
   for (const count of [6, 9])
     test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px with ${count} seats`, async ({
       page,
@@ -986,9 +992,19 @@ for (const width of [320, 375, 393, 430, 480])
         [true, 'mini', 6, 'all-shown'],
       ] as const) {
         // Both rings exercise every occupied state at every phone width.
+        if (width > 480 && villainCards < 5) continue;
         await page.setViewportSize({
           width,
-          height: width === 320 ? 568 : width === 375 ? 667 : 852,
+          height:
+            width === 320
+              ? 568
+              : width === 375
+                ? 667
+                : width === 600
+                  ? 960
+                  : width === 768
+                    ? 1024
+                    : 852,
         });
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
@@ -1120,6 +1136,12 @@ for (const width of [320, 375, 393, 430, 480])
             a.bottom > b.top + 0.5;
           const board = box(document.querySelector('.community-area')!);
           const violations: string[] = [];
+          // Above 480px the seat pods keep their tablet sizes and ring: the
+          // phone-only pod rules (compact 7-9 max top pod, outboard lanes off
+          // the painted felt, dense-ring pods clear of the board) are not
+          // theirs. Every ownership, overlap, readability and fixed-placement
+          // rule for hands, wagers and the button still applies.
+          const largePortrait = innerWidth > 480;
           const compactPlo6 =
             innerWidth <= 340 &&
             document.querySelector('.table-page')?.getAttribute('data-seats') === '9' &&
@@ -1128,16 +1150,34 @@ for (const width of [320, 375, 393, 430, 480])
           // printing fallback may use the watermark lane. Player facts,
           // shown cards, the board and the pot remain protected.
           for (const e of document.querySelectorAll(
-            '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
+            largePortrait
+              ? '.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
+              : '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
           )) {
             if (overlaps(box(e), board)) violations.push(`${e.className} Covers Board`);
           }
+          /* Dan 2026-10-25: a bet is always in front of the player who made
+             it. A portrait phone now lays the table out at the desktop's
+             width (useTableEnvironment), so the rings below 481px certify
+             the fallback ring a browser ignoring the viewport tag shows. On
+             the first-generation SE's fallback ring the players, board and
+             pot leave no lane that is both the owner's own and clear of the
+             felt's printing and the pot's chip pile; the bet keeps its
+             owner's lane and may touch those two, as the PLO6 lane below
+             already may. Players, cards, tags, the button and the board stay
+             protected. */
+          const ownersLaneFirst = innerWidth <= 340;
           for (const bet of document.querySelectorAll('.seat__bet-chips'))
             for (const pod of document.querySelectorAll(
               '.seat__info,.seat__avatar-img,.seat__action,.seat__cards--revealed .seat__card,.table-brand,.pot-display,.pot-display__pile,.dealer-button'
             ))
               if (
                 !(compactPlo6 && pod.classList.contains('table-brand')) &&
+                !(
+                  ownersLaneFirst &&
+                  (pod.classList.contains('table-brand') ||
+                    pod.classList.contains('pot-display__pile'))
+                ) &&
                 overlaps(box(bet), box(pod))
               )
                 violations.push(
@@ -1267,10 +1307,29 @@ for (const width of [320, 375, 393, 430, 480])
             for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
               if (overlaps(box(action), box(plaque)))
                 violations.push('Action Badge Covers Jackpot');
+          // Dan 2026-10-24: the compact top pod belongs to 7-9 max only. A 2-6
+          // ring's single top seat is full size ("CAN BE FULL SCREEN NOW THAT
+          // THE BBJ IS REMOVED FROM ABOVE THEM"), so there it must match the
+          // other villains instead.
+          const ringSeats = Number(document.documentElement.dataset.seats);
+          const villainAvatars = [
+            ...document.querySelectorAll(
+              '.seat-wrapper:not(.seat-wrapper--top):not(.seat-wrapper--hero) .seat__avatar'
+            ),
+          ].map((e) => box(e).width);
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar-img'))
-            if (box(e).height > 40.5) violations.push('Top Avatar Is Not Compact');
+            if (ringSeats >= 7 && !largePortrait && box(e).height > 40.5)
+              violations.push('Top Avatar Is Not Compact');
+          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar'))
+            if (
+              ringSeats <= 6 &&
+              villainAvatars.length &&
+              Math.abs(box(e).width - Math.max(...villainAvatars)) > 1.5
+            )
+              violations.push('Top Avatar Is Not Full Size');
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__info'))
-            if (box(e).width > 64.5) violations.push('Top Plate Is Not Compact');
+            if (ringSeats >= 7 && !largePortrait && box(e).width > 64.5)
+              violations.push('Top Plate Is Not Compact');
           const canvas = box(document.querySelector('.table-scaler')!);
           const felt = box(document.querySelector('.table-surface')!);
           // The browser's inverse homography maps a DOM rectangle to a
@@ -1342,7 +1401,8 @@ for (const width of [320, 375, 393, 430, 480])
                   radius - 0.5
               );
             });
-            if (touches) violations.push(`Player On Painted Felt: ${e.className}`);
+            if (touches && !largePortrait)
+              violations.push(`Player On Painted Felt: ${e.className}`);
           }
           const contextualTools = ['.tbc-widget', '.rabbit-hunt__button'].filter((selector) =>
             document.querySelector(selector)
@@ -1812,3 +1872,181 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
       await page.unroute('http://spectator.fixture/');
     }
   });
+
+// Shared notice containment is part of the existing felt browser gate.
+import { registerAddOnNoticeContainmentCases } from './support/addOnNoticeContainmentCases';
+registerAddOnNoticeContainmentCases();
+
+// Full table captions: owner October 26, 2026. Included in the existing CSS Beat gate.
+const fullCaptionCss =
+  readFileSync('src/styles/club-engine.css', 'utf8').replace(/@import\s+[^;]+;/g, '') +
+  buildCss(process.cwd()) +
+  '\n' +
+  readFileSync('src/components/table/PotDisplay.css', 'utf8');
+const event = 'Morning Free Buy (NLH) · Free Buy';
+const longEvent = 'Sunday Morning No Limit Holdem Championship Celebration · 1,000 Buy-In';
+const name = 'Alexandria Championship';
+const brand = (title: string) => `<div class="table-brand"><div class="table-brand__meta">
+  <span class="table-brand__line table-brand__line--identity"><span class="table-brand__club"><span class="table-brand__club-name">Kings Club</span> <span class="table-brand__union">· Midway Union</span></span></span>
+  <span class="table-brand__line table-brand__line--level"><span class="table-brand__game">${title}</span><span class="table-brand__hand">Hand #48909509</span></span>
+</div></div>`;
+
+for (const [width, height] of [
+  [320, 667],
+  [375, 667],
+  [393, 852],
+  [430, 932],
+  [844, 390],
+  [1440, 900],
+]) {
+  for (const title of [event, longEvent]) {
+    test(`full captions at ${width}x${height}: ${title}`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      let html = buildHtml(fullCaptionCss).replace(
+        'table-page--embedded"',
+        'table-page--embedded table-page--tournament"'
+      );
+      html = html.replace(
+        '<div class="table-scaler">',
+        `<div class="table-scaler"><div class="table-surface">${brand(title)}</div>`
+      );
+      html = html.replace('>HERO<', `>${name}<`);
+      await page.setContent(html);
+      await page.evaluate(() => document.fonts.ready);
+      await expect(page.locator('.table-brand__game')).toHaveText(title);
+      await expect(page.locator('.seat__name')).toHaveText(name);
+      const results = await page
+        .locator(
+          '.table-brand__game, .table-brand__hand, .table-brand__line--identity, .seat__name'
+        )
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const el = node as HTMLElement;
+            const style = getComputedStyle(el);
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const box = el.getBoundingClientRect();
+            return {
+              text: el.textContent,
+              overflow: style.overflow,
+              ellipsis: style.textOverflow,
+              inside: [...range.getClientRects()].every(
+                (r) => r.left >= box.left - 1 && r.right <= box.right + 1
+              ),
+              widthFits: el.scrollWidth <= el.clientWidth + 1,
+            };
+          })
+        );
+      for (const result of results) {
+        expect(result, result.text || '').toMatchObject({ inside: true, widthFits: true });
+        expect(result.ellipsis).not.toBe('ellipsis');
+        expect(result.overflow).not.toBe('hidden');
+      }
+      const game = await page.locator('.table-brand__game').boundingBox();
+      const hand = await page.locator('.table-brand__hand').boundingBox();
+      expect(hand!.y).toBeGreaterThanOrEqual(game!.y + game!.height - 1);
+    });
+  }
+}
+
+for (const [paneWidth, paneHeight] of [
+  [320, 300],
+  [164, 320],
+  [500, 150],
+]) {
+  test(`full bubble text stays in a ${paneWidth}x${paneHeight} pane`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const { build } = await import('esbuild');
+    const message = 'Every Word Must Remain Visible On The Table. '.repeat(5).slice(0, 200);
+    const playerName = 'Alexandria Championship Player With A Long Display Name';
+    const built = await build({
+      stdin: {
+        contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
+          import {ChatBubble} from './src/components/table/ChatBubble';
+          createRoot(document.getElementById('fixture')).render(<div className="table-page" style={{position:'relative',width:${paneWidth},height:${paneHeight},minHeight:0}}>
+          <div style={{position:'absolute',left:0,top:'50%',width:58,height:48}}>
+          <ChatBubble text={${JSON.stringify(message)}} playerName={${JSON.stringify(playerName)}} />
+          </div><div style={{position:'absolute',right:0,top:10,width:58,height:48}}>
+          <ChatBubble text={${JSON.stringify(message)}} playerName={${JSON.stringify(playerName)}} placement="below" variant="notice" />
+          </div></div>);`,
+        resolveDir: ROOT,
+        loader: 'tsx',
+      },
+      jsx: 'automatic',
+      bundle: true,
+      write: false,
+      outfile: 'bubble.js',
+      format: 'iife',
+      loader: { '.css': 'empty' },
+      define: { 'process.env.NODE_ENV': '"test"' },
+    });
+    await page.setViewportSize({
+      width: Math.max(375, paneWidth),
+      height: Math.max(500, paneHeight),
+    });
+    const bubbleCss = readFileSync('src/components/table/ChatBubble.css', 'utf8');
+    await page.setContent(
+      `<style>body{margin:0;font-family:Inter,sans-serif}${bubbleCss}</style><div id="fixture"></div>`
+    );
+    await page.addScriptTag({ content: built.outputFiles[0].text });
+    await expect(page.locator('.chat-bubble__text')).toHaveCount(2);
+    await expect(page.locator('.chat-bubble').first()).toBeVisible();
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    const boxes = await page.locator('.chat-bubble').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const el = node as HTMLElement;
+        const box = el.getBoundingClientRect();
+        const pane = el.closest('.table-page')!.getBoundingClientRect();
+        return {
+          text: el.querySelector('.chat-bubble__text')!.textContent,
+          name: el.querySelector('.chat-bubble__name')!.textContent,
+          fits:
+            box.left >= pane.left &&
+            box.right <= pane.right &&
+            box.top >= pane.top &&
+            box.bottom <= pane.bottom,
+          complete: [...el.querySelectorAll('span:not(.chat-bubble__tail)')].every(
+            (span) => span.scrollHeight <= span.clientHeight + 1
+          ),
+        };
+      })
+    );
+    for (const box of boxes)
+      expect(box).toEqual({ text: message, name: playerName, fits: true, complete: true });
+    expect(errors).toEqual([]);
+  });
+}
+
+test('full player style, run-it-twice and jackpot names wrap on a narrow phone', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  const css = ['SeatSlot', 'RunItTwice', 'BBJCelebration']
+    .map((file) =>
+      readFileSync(`src/components/table/${file}.css`, 'utf8').replace(/@import\s+[^;]+;/g, '')
+    )
+    .join('\n');
+  await page.setContent(`<style>body{font-family:Inter,sans-serif}${css}</style>
+    <div style="width:70px"><div class="seat__style-badge">Loose Aggressive</div></div>
+    <div style="width:110px;display:flex"><span style="width:20px;flex-shrink:0">A</span><span class="rit-panel__player-name">Alexandria Championship</span><span style="width:20px;flex-shrink:0">50%</span></div>
+    <div style="width:70px"><div class="bbj-breakdown-name">Alexandria Championship</div></div>`);
+  for (const selector of ['.seat__style-badge', '.rit-panel__player-name', '.bbj-breakdown-name']) {
+    await expect(page.locator(selector)).toBeVisible();
+    const result = await page.locator(selector).evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const box = el.getBoundingClientRect();
+      return {
+        ellipsis: getComputedStyle(el).textOverflow,
+        fits: [...range.getClientRects()].every(
+          (r) => r.left >= box.left - 1 && r.right <= box.right + 1
+        ),
+      };
+    });
+    expect(result.fits).toBe(true);
+    expect(result.ellipsis).not.toBe('ellipsis');
+  }
+});

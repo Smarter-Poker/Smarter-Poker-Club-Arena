@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/woowoo-fee-reporting-01a16aec",
+  "_comment": "Declared object inventory for 20261023224850. This fragment is not installation evidence: require the exact migration history and live member/player fee readback before closing the delivery. 20261024223153 (recorded byte-exact) widened its amount_cents CHECK to <> 0 and added a five-minute sync; 20261025030629 keeps the CHECK and the fixed rows, drops the sync and moves the standing share to smarter_private.player_rake_share_rules (player-rake-share-rules.json).",
+  "tables": [
+    "smarter_private.player_fee_redemptions"
+  ],
+  "functions": []
+}

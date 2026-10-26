@@ -28,9 +28,15 @@
  * The native proof of all five is scripts/ci/test-maintenance-window-migrations.sh,
  * run by .github/workflows/maintenance-window-migrations.yml.
  */
+import {
+  validateOwnerMigrationWindow,
+  ownerWindowPredicate,
+} from '../scripts/ci/owner-window-migration.mjs';
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import {
   WINDOW_ANNOTATION,
@@ -206,10 +212,12 @@ describe('the ordinary applier refuses it; only the window route installs it', (
 
   it('skips the :50-:03 refusal only on the window route, which asks the database instead', () => {
     expect(applier).toContain('if (!MAINTENANCE_WINDOW && (minute >= 50 || minute <= 3)) {');
-    expect(applier).toContain('state = (await client.query(WINDOW_STATE_QUERY)).rows[0];');
+    expect(applier).toMatch(
+      /state = \(\s*await client.query\(ownerWindow \? ownerWindowState\(ownerWindow, 150\) : WINDOW_STATE_QUERY\)\s*\).rows\[0\];/
+    );
     expect(applier).toContain('refused(\n        `the daily maintenance window is not open');
     expect(applier).toContain(
-      'if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);'
+      'if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL, ownerWindow);'
     );
     expect(applier).toContain('the window route installs only declared files');
   });
@@ -234,10 +242,10 @@ describe('the route runs on the daily schedule that already exists', () => {
   const stage = parse(stageText);
   const job = stage.jobs['window-migrations'];
 
-  it('runs only on the admitted 03:30 Chicago scheduled run, never on a push', () => {
+  it('runs on daily preparation or an explicit expiring owner migration window', () => {
     expect(job.needs).toBe('detect');
     expect(job.if).toBe(
-      "github.event_name == 'schedule' && needs.detect.outputs.admission_allowed == 'true'"
+      "needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')"
     );
     expect(stage.on.schedule).toEqual([{ cron: '30 8 * * *' }, { cron: '30 9 * * *' }]);
     expect(job.permissions).toEqual({ contents: 'read' });
@@ -275,5 +283,94 @@ describe('the route runs on the daily schedule that already exists', () => {
       if (!/@install-window/.test(sql)) continue;
       expect(() => validateWindowMigration(f, sql, { preamble: [] }), f).not.toThrow();
     }
+  });
+});
+
+describe('a later explicit owner exception preserves freeze and transaction safeguards', () => {
+  const at = Date.now();
+  const w = {
+    id: 'horse-test',
+    contains: 'a'.repeat(40),
+    ownerOrder: "Dan: publish this upgrade now, don't wait",
+    notBefore: new Date(at - 60_000).toISOString(),
+    notAfter: new Date(at + 3600000).toISOString(),
+    migrations: [FILE],
+  };
+  it('admits only named files in a bounded currently valid owner window', () => {
+    expect(validateOwnerMigrationWindow(w, FILE, at)).toEqual(w);
+    expect(() => validateOwnerMigrationWindow(w, '20991231000002_other.sql', at)).toThrow();
+    expect(() => validateOwnerMigrationWindow(w, FILE, at + 3600000)).toThrow();
+    expect(() =>
+      validateOwnerMigrationWindow(
+        { ...w, notAfter: new Date(at + 7 * 3600000).toISOString() },
+        FILE,
+        at
+      )
+    ).toThrow();
+    expect(() => validateOwnerMigrationWindow({ ...w, ownerOrder: '' }, FILE, at)).toThrow();
+  });
+  it('requires owned recovery, actual freeze and unchanged opening/closing reserves', () => {
+    const sql = windowTransactionSQL(FILE, 'BEGIN; SELECT 1; COMMIT;', w);
+    expect(sql).toContain(ownerWindowPredicate(150, w));
+    expect(sql).toContain(ownerWindowPredicate(100, w));
+    expect(sql).toContain("b.reason = 'Deployment Recovery'");
+    expect(sql).toContain('b.ownership_token IS NOT NULL');
+    expect(sql).toContain('public.fn_platform_frozen()');
+    expect(sql).toContain('make_interval(secs => 8)');
+    expect(sql).toContain("don''t wait");
+  });
+});
+
+describe('a superseded window migration is never queued', () => {
+  // Without DATABASE_URL the installer stops right after building its queue:
+  // exit 0 "NOTHING QUEUED" when every declared file is superseded, exit 3
+  // "DATABASE_URL is not set" when something is still queued.
+  const runInstaller = (cwd: string) => {
+    const env = { ...process.env };
+    delete env.DATABASE_URL;
+    delete env.GITHUB_STEP_SUMMARY;
+    return spawnSync(
+      process.execPath,
+      [resolve(root, 'scripts/ci/install-window-migrations.mjs')],
+      { cwd, env, encoding: 'utf8' }
+    );
+  };
+  const tree = (files: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'window-superseded-'));
+    mkdirSync(join(dir, 'supabase', 'migrations'), { recursive: true });
+    for (const [name, sql] of Object.entries(files))
+      writeFileSync(join(dir, 'supabase', 'migrations', name), sql);
+    return dir;
+  };
+  const SUCCESSOR = '20991231000010_window_fixture_successor.sql';
+
+  it('skips a declared file whose SUPERSEDED BY names a file in this tree', () => {
+    const run = runInstaller(
+      tree({
+        [FILE]: `-- SUPERSEDED BY 20991231000010\n${fixture}`,
+        [SUCCESSOR]: 'BEGIN;\nSELECT 1;\nCOMMIT;\n',
+      })
+    );
+    expect(run.stdout).toContain(`skipped \`${FILE}\`: SUPERSEDED BY 20991231000010`);
+    expect(run.stdout).toContain('NOTHING QUEUED');
+    expect(run.status).toBe(0);
+  });
+
+  it('still queues a file whose SUPERSEDED BY names no file in this tree', () => {
+    const run = runInstaller(tree({ [FILE]: `-- SUPERSEDED BY 20991231000010\n${fixture}` }));
+    expect(run.stdout).not.toContain('skipped');
+    expect(run.stdout).toContain('DATABASE_URL is not set');
+    expect(run.status).toBe(3);
+  });
+
+  it('does not queue 20261024020328, superseded by 20261024193818', () => {
+    const name = '20261024020328_agents_can_watch_every_live_downline_table.sql';
+    const sql = read(`supabase/migrations/${name}`);
+    expect(sql.split('\n')[0]).toBe('-- SUPERSEDED BY 20261024193818');
+    expect(
+      readdirSync(resolve(root, 'supabase/migrations')).some((f) => f.startsWith('20261024193818_'))
+    ).toBe(true);
+    const run = runInstaller(root);
+    expect(run.stdout).toContain(`skipped \`${name}\`: SUPERSEDED BY 20261024193818`);
   });
 });

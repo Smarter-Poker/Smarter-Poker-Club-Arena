@@ -105,6 +105,19 @@ describe('the real script, end to end', () => {
     );
   });
 
+  it('can prepare before the optional downline observation migration installs at the daily break', async () => {
+    const { engineDoors } = await load();
+    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    expect(all).toContain('fn_agent_can_watch_table');
+    const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
+    const fixture = join(dir, 'live.json');
+    writeFileSync(fixture, JSON.stringify(all.filter((n) => n !== 'fn_agent_can_watch_table')));
+    const res = runScript({ ENGINE_DOORS_LIVE_FIXTURE: fixture });
+    expect(res.status).toBe(0);
+    expect(ALLOW.fn_agent_can_watch_table).toContain('daily-maintenance');
+    expect(ALLOW.fn_agent_can_watch_table).toContain('TableViewerAccess.test.ts');
+  });
+
   it('passes when every door exists', async () => {
     const { engineDoors } = await load();
     const all = [...engineDoors(resolve(root, 'server/src')).keys()];

@@ -47,6 +47,7 @@ import haptic from '../../services/HapticService';
 import {
   EMPTY_AFFILIATIONS,
   FUZZY_MIN_CHARS,
+  QUERY_MAX_CHARS,
   PlayerSearchService,
   type PlayerClubAffiliation,
   type PlayerPresenceFilter,
@@ -82,6 +83,9 @@ const PAGE_SIZE = 20;
  * on every keystroke of a fast typist.
  */
 const SUGGEST_DEBOUNCE_MS = 180;
+const SUGGESTION_LIST_ID = 'find-player-suggestions';
+/** fn_search_players' own refusal when the find_player feature flag is off. */
+const SEARCH_UNAVAILABLE = 'Player search is temporarily unavailable.';
 
 /** The three filters, as lit words rather than three drawn selects. */
 const SCOPE_OPTIONS: ReadonlyArray<{ value: PlayerSearchScope; label: string }> = [
@@ -146,12 +150,17 @@ export default function FindPlayerModal({
 
   const runSearch = useCallback(
     async (query: string, offset = 0, append = false) => {
-      const normalized = query.trim();
+      const normalized = query.trim().slice(0, QUERY_MAX_CHARS).trim();
       if (normalized.length < 2) {
         setError('Enter at least two characters.');
         return;
       }
       searchAbortRef.current?.abort();
+      // A suggestion lookup still waiting on its debounce would reopen the
+      // dropdown over the results the player just asked for (2026-10-25).
+      if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+      suggestionTimerRef.current = null;
+      suggestionAbortRef.current?.abort();
       const controller = new AbortController();
       searchAbortRef.current = controller;
       if (append) setIsLoadingMore(true);
@@ -172,14 +181,27 @@ export default function FindPlayerModal({
           sort,
           signal: controller.signal,
         });
-        setResults((current) => (append ? [...current, ...page.items] : page.items));
+        // A player whose presence changed between pages can land on the next page
+        // too; Load More never prints the same player twice.
+        setResults((current) =>
+          append
+            ? [
+                ...current,
+                ...page.items.filter((item) => !current.some((row) => row.id === item.id)),
+              ]
+            : page.items
+        );
         setTotal(page.total);
         setHasMore(page.hasMore);
         lastCompletedQueryRef.current = normalized;
       } catch (searchError) {
         if (searchError instanceof DOMException && searchError.name === 'AbortError') return;
         reportError(searchError, 'FindPlayerModal.Search');
-        setError('Could not search right now. Please try again.');
+        setError(
+          searchError instanceof Error && searchError.message === SEARCH_UNAVAILABLE
+            ? SEARCH_UNAVAILABLE
+            : 'Could not search right now. Please try again.'
+        );
       } finally {
         if (searchAbortRef.current === controller) {
           setIsSearching(false);
@@ -237,9 +259,21 @@ export default function FindPlayerModal({
     [presence, scope]
   );
 
-  const handleInputChange = (value: string) => {
+  const handleInputChange = (raw: string) => {
+    // maxLength already stops typing and pasting past the limit; this also covers
+    // autofill and anything else that sets the value without going through it.
+    const value = raw.slice(0, QUERY_MAX_CHARS);
     setSearchQuery(value);
     setError(null);
+    if (!value.trim()) {
+      // An emptied field shows nothing: results for words no longer there are noise.
+      searchAbortRef.current?.abort();
+      setResults([]);
+      setTotal(0);
+      setHasMore(false);
+      setExpandedAccounts(new Set());
+      lastCompletedQueryRef.current = '';
+    }
     if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
     suggestionAbortRef.current?.abort();
     // Live fuzzy matching starts at the third character: that is the point where
@@ -273,12 +307,27 @@ export default function FindPlayerModal({
     });
   };
 
+  /**
+   * Picking a suggestion shows that player, and only that player, at once. The
+   * suggestion row is a full result from the same search, so there is nothing
+   * to fetch; re-searching the name used to list everyone else who shared it.
+   */
   const chooseSuggestion = (player: PlayerSearchResult) => {
-    const value = player.display_name || player.username;
+    const value = (player.display_name || player.username).slice(0, QUERY_MAX_CHARS);
     haptic.selection();
+    if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+    suggestionTimerRef.current = null;
+    suggestionAbortRef.current?.abort();
+    searchAbortRef.current?.abort();
     setSearchQuery(value);
     setShowSuggestions(false);
-    runSearch(value);
+    setHighlightedIndex(-1);
+    setError(null);
+    setIsSearching(false);
+    setResults([player]);
+    setTotal(1);
+    setHasMore(false);
+    lastCompletedQueryRef.current = value.trim();
   };
 
   const handleTableClick = async (table: PlayerSearchTable, targetUserId: string) => {
@@ -432,6 +481,7 @@ export default function FindPlayerModal({
                 type="search"
                 className={styles.input}
                 placeholder="Name, Alias Or Player Number"
+                maxLength={QUERY_MAX_CHARS}
                 value={searchQuery}
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={(event) => {
@@ -451,10 +501,21 @@ export default function FindPlayerModal({
                   // Escape is handled once, by useDialogEscape, so the dropdown
                   // and the dialog cannot both react to the same keypress.
                 }}
-                onFocus={() => suggestions.length && setShowSuggestions(true)}
+                onFocus={() => {
+                  if (suggestions.length) setShowSuggestions(true);
+                }}
+                // The list closes when focus leaves the field, so it cannot sit
+                // open over the filters or the results.
+                onBlur={() => setShowSuggestions(false)}
                 aria-label="Name, Alias Or Number"
                 aria-autocomplete="list"
                 aria-expanded={showSuggestions}
+                aria-controls={showSuggestions ? SUGGESTION_LIST_ID : undefined}
+                aria-activedescendant={
+                  showSuggestions && highlightedIndex >= 0
+                    ? `${SUGGESTION_LIST_ID}-${highlightedIndex}`
+                    : undefined
+                }
                 autoFocus
               />
               {isSuggesting && (
@@ -467,14 +528,24 @@ export default function FindPlayerModal({
             {/* Suggestions print as rows under the groove. A floating card over
                 the glass would be a frame on a frame. */}
             {showSuggestions && (
-              <div className={styles.suggestList} role="listbox">
+              <div
+                id={SUGGESTION_LIST_ID}
+                className={styles.suggestList}
+                role="listbox"
+                aria-label="Suggested Players"
+              >
                 {suggestions.map((player, index) => (
                   <button
                     key={player.id}
+                    id={`${SUGGESTION_LIST_ID}-${index}`}
+                    type="button"
                     role="option"
                     aria-selected={index === highlightedIndex}
                     className={styles.suggestRow}
                     onPointerMove={() => setHighlightedIndex(index)}
+                    // Keep focus in the field so its blur does not close the list
+                    // before this row's click lands.
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => chooseSuggestion(player)}
                   >
                     <span
@@ -484,7 +555,7 @@ export default function FindPlayerModal({
                     >
                       {titleCase(player.display_name || player.username)}
                     </span>
-                    {player.display_name && (
+                    {showsHandle(player) && (
                       <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
                         @{titleCase(player.username)}
                       </span>
@@ -532,11 +603,17 @@ export default function FindPlayerModal({
 
             <div className={styles.results} aria-live="polite" aria-busy={isSearching}>
               {error && <p className={`sc-copy sc-ink--red ${styles.copy}`}>{titleCase(error)}</p>}
-              {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
-                <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
-                  No Matching Players Were Found.
-                </p>
-              )}
+              {/* Only for the words in the field now: an empty answer to an
+                  earlier search never sits under a new one (2026-10-25). */}
+              {!error &&
+                !isSearching &&
+                lastCompletedQueryRef.current &&
+                lastCompletedQueryRef.current === searchQuery.trim() &&
+                results.length === 0 && (
+                  <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
+                    No Matching Players Were Found.
+                  </p>
+                )}
               {results.length > 0 && (
                 <div className={styles.resultList}>
                   {results.map((player) => (

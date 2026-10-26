@@ -149,6 +149,60 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
  * The caller's response is never touched: the body is read from a clone, in
  * the background, and nothing here can throw or delay the request.
  */
+/**
+ * The time bank lost a race with the turn itself (2026-10-24).
+ *
+ * The client posts /timebank the instant its local ring reaches zero, and a
+ * player can press the button in the same frame the engine moves the action
+ * on. When the turn - or the hand, or the Lightning decision - is already gone
+ * by the time the request lands, the engine refuses with one of these
+ * sentences. Nothing is wrong: the engine resolved the seat, which is its job,
+ * and the player has nothing to do about it. Production, the 24 hours to
+ * 2026-10-24: 196 "Not Your Turn", 43 "No Active Hand" and 3 "That decision
+ * is no longer active" from /timebank, all filed as client errors.
+ *
+ * "Your Time Bank Is Already Running" is the same race seen from the other
+ * side: the engine's own automatic grant landed first (TablePage's onTimeout
+ * already treats it as success). 22 more in the same window.
+ *
+ * Exact sentences, from server/src/engine/ServerTableEngineBase.ts,
+ * ServerTableEngineTurns.ts and server/src/lightning/LightningHandHost.ts.
+ * "No Time Bank Uses Remaining" is deliberately absent: that is a true answer
+ * about the player's account, not a race, and it stays reported and shown.
+ */
+const TIME_BANK_RACE_REFUSALS: ReadonlySet<string> = new Set([
+  'not your turn',
+  'no active hand at this table',
+  'no active hand',
+  'that decision is no longer active',
+  'your time bank is already running',
+]);
+
+/** True when a /timebank refusal means "the turn and the request crossed". */
+export function isTimeBankRaceRefusal(error: unknown): boolean {
+  return typeof error === 'string' && TIME_BANK_RACE_REFUSALS.has(error.trim().toLowerCase());
+}
+
+/**
+ * The race refusals after which there is no turn left to spend a bank on.
+ * These never become an error toast: by the time the answer arrives the
+ * action has moved, and a popup would describe a press that could not have
+ * done anything. "Already running" is excluded - it is still the player's
+ * turn, and the existing callers handle it on their own terms.
+ */
+export function isTimeBankTurnGone(error: unknown): boolean {
+  return isTimeBankRaceRefusal(error) && !/already running/i.test(String(error));
+}
+
+/**
+ * An engine refusal that is an expected race rather than a client error.
+ * Scoped to /timebank on purpose: the same words from /action are a real
+ * desync worth seeing.
+ */
+function isExpectedEngineRefusal(path: string, status: number, error: unknown): boolean {
+  return path.endsWith('/timebank') && status === 400 && isTimeBankRaceRefusal(error);
+}
+
 function noteEngineRefusal(url: string, resp: Response): void {
   try {
     if (resp.ok || resp.status === 401 || resp.status === 429) return;
@@ -162,6 +216,7 @@ function noteEngineRefusal(url: string, resp: Response): void {
     const status = resp.status;
     const record = (body?: unknown) => {
       const b = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+      if (isExpectedEngineRefusal(path, status, b.error)) return;
       const code = typeof b.code === 'string' && b.code ? b.code : `HTTP_${status}`;
       const message =
         typeof b.error === 'string' && b.error ? b.error : `Engine refused ${path} (${status})`;
@@ -438,6 +493,12 @@ export interface ActionResult {
    */
   applied?: number;
   queued?: boolean;
+  /** Lightning pending requests are uncharged until their terminal receipt. */
+  charged?: boolean;
+  requested?: number;
+  request_id?: string;
+  occupancy_id?: string;
+  pool_session_id?: string;
 }
 
 export interface PlayerActions {
@@ -1083,7 +1144,23 @@ export async function addChips(
         typeof errorData?.error === 'string' &&
         errorData.error
       ) {
-        return { success: false, error: errorData.error };
+        // A Lightning RPC can commit before its acknowledgement is lost. The
+        // Older HTTP adapters use 400 for success:false; preserve the engine's
+        // explicit unknown outcome before considering terminal refusal.
+        if (errorData.code === 'TRANSPORT')
+          return { success: false, error: errorData.error, code: 'TRANSPORT' };
+        return {
+          success: false,
+          error: errorData.error,
+          ...(opId &&
+          errorData.request_id === opId &&
+          errorData.status === 'refused' &&
+          errorData.charged === false &&
+          errorData.queued === false &&
+          errorData.applied === 0
+            ? { code: 'LIGHTNING_TOP_UP_TERMINAL_REFUSAL', request_id: opId }
+            : {}),
+        };
       }
       throw new Error(errorData.error || 'Failed to add chips via GameServerAPI');
     }
@@ -1097,6 +1174,11 @@ export async function addChips(
       error: data.error,
       applied: typeof data.applied === 'number' ? data.applied : undefined,
       queued: data.queued === true,
+      charged: typeof data.charged === 'boolean' ? data.charged : undefined,
+      requested: typeof data.requested === 'number' ? data.requested : undefined,
+      request_id: typeof data.request_id === 'string' ? data.request_id : undefined,
+      occupancy_id: typeof data.occupancy_id === 'string' ? data.occupancy_id : undefined,
+      pool_session_id: typeof data.pool_session_id === 'string' ? data.pool_session_id : undefined,
     };
   } catch (err: any) {
     console.error(`[GameServerAPI] addChips error:`, err);

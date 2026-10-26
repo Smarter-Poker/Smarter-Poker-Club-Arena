@@ -1,0 +1,3 @@
+# tests/the-inbox-never-shows-a-nameless-thread.law.test.ts
+
+Dan, 2026-10-24: no "Unknown" threads, every player named, and reading a thread clears its notification counter. Pins that `fn_get_user_conversations` lists a one-to-one thread only while the other person exists and names them down to "Player #<number>" without the protected `full_name`; that `fn_mark_messages_read_through` marks that thread's `new_message` alerts read up to the first still-unread message; and that `fn_deliver_club_messenger_welcome` skips certification equipment through `fn_ca_is_cert_account` (which never classifies a horse), so post-deploy probes no longer leave nameless threads in an agent's inbox.

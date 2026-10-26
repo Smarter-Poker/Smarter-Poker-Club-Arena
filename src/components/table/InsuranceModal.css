@@ -85,7 +85,7 @@
   width: 100%;
   aspect-ratio: 1000 / 348;
   border-bottom: 0 !important;
-  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
+  background: url('/assets/club-buttons/console/spade-console-v2/top.png') top center / 100% auto
     no-repeat !important;
   box-shadow: none !important;
 }
@@ -101,7 +101,7 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
+  background: url('/assets/club-buttons/console/spade-console-v2/mid.png') top center / 100% auto
     repeat-y;
 }
 
@@ -128,7 +128,7 @@
   flex: 0 0 auto;
   width: 100%;
   aspect-ratio: 1000 / 277;
-  background: url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png') bottom center /
+  background: url('/assets/club-buttons/console/spade-console-v2/bottom-plates.png') bottom center /
     100% auto no-repeat;
 }
 

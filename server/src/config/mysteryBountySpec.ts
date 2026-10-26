@@ -45,8 +45,9 @@ import { CHEST_LANDING_MS, CHEST_AUTO_OPEN_MS } from './mysteryChestSpec.js';
  * How long the engine waits after reserving a chest before it reveals and pays
  * authoritatively.
  *
- * The winner's own client opens the chest at CHEST_AUTO_OPEN_MS whether they
- * tap or not, so this is the moment the amount is on their screen either way.
+ * The winner's own client picks within CHEST_PICK_WINDOW_MS (five seconds,
+ * at random if they do not), well inside this deadline; past it the engine
+ * picks at random for a revealer whose screen never answered.
  * A tap earlier than this calls fn_mystery_bounty_reveal itself and shows them
  * the number first — which is the whole point of the tap — and the engine's
  * later call is idempotent and returns the identical payload, so the table

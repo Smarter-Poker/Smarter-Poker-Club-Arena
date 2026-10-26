@@ -12,6 +12,7 @@
 import type { Card, HandConfig, HorseStyle, SeatPlayer } from '../types.js';
 import { HandController } from './HandController.js';
 import { HorseLogic } from './HorseLogic.js';
+import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
 import { HorseMind, readScopeOf } from './HorseMind.js';
 import {
   holdemPreflopScore,
@@ -41,6 +42,8 @@ export interface PressureOptions {
   then?: ManiacKind;
   /** starting stacks in big blinds (default 100 cash / 60 tournament) */
   stackBB?: number;
+  /** false ablates the 2026-10-25 paired-board fold, for read-speed pins */
+  pairedBoardFold?: boolean;
 }
 
 export interface PressureTally {
@@ -65,7 +68,8 @@ export interface PressureTally {
    * and the price. A fold with equity above the price is a fold the maniac
    * profits from.
    */
-  postflopFolds: { equity: number; price: number }[];
+  /** pairedBoardRule: the fold Dan ordered on 2026-10-25 (HorsePloPairedBoardFold) */
+  postflopFolds: { equity: number; price: number; pairedBoardRule: boolean }[];
   postflopCalls: number;
   /** 2026-10-22: per hand, at its start, is the seat read as a preflop maniac */
   maniacReadByHand: boolean[];
@@ -249,6 +253,7 @@ export function playManiacPressure(
           {
             decisionTimeMs: 1_792_000_000_000 + hand * 60_000 + step,
             mindObservationHand: { version: 1 as const, tableId: table, handNumber: hand + 1 },
+            ...(options.pairedBoardFold === false ? { ploPairedBoardFold: false } : {}),
           }
         );
         const act = decision.action;
@@ -310,7 +315,24 @@ export function playManiacPressure(
               );
               restoreFastRandom(saved);
               const call = Math.min(menu.toCall, spot.hero.stack);
-              tally.postflopFolds.push({ equity: eq, price: call / (spot.state.pot + call) });
+              const pairedBoardRule =
+                options.pairedBoardFold !== false &&
+                ploPairedBoardMustFold({
+                  gameVariant: variant,
+                  hiLo: variantInfo(variant).isHiLo,
+                  multiBoard: false,
+                  board: spot.state.communityCards,
+                  hero: spot.hero,
+                  players: spot.state.players,
+                  currentBet: spot.state.currentBet,
+                  toCall: menu.toCall,
+                  pot: spot.state.pot,
+                });
+              tally.postflopFolds.push({
+                equity: eq,
+                price: call / (spot.state.pot + call),
+                pairedBoardRule,
+              });
             } else tally.postflopCalls++;
           }
           if (menu.toCall > 0 && lastAggr?.userId === PRESSURE_MANIAC) {

@@ -10,10 +10,15 @@
  * - Average stack display
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { serverNow } from '../../utils/serverClock';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
+import { publicOrigin, IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import './TournamentBreakScreen.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -47,12 +52,15 @@ export interface BlindLevel {
 
 export interface TournamentBreakScreenProps {
   isVisible: boolean;
+  /** The owning table canvas, so the minimized clock never covers its action bar. */
+  tableAnchorRef?: React.RefObject<HTMLElement | null>;
   breakTimeRemaining: number; // seconds
   /**
    * THE BREAK HAS TWO PHASES AND THE SCREEN MUST SAY WHICH (2026-08-27).
    *
    * At :55 the server announces the LAST HAND. The five minutes do not start
-   * until every table across every tournament has finished it, which is why a
+   * until every table of THIS tournament has finished it (Dan 2026-10-25:
+   * every tournament starts and stops its own five minutes), which is why a
    * break runs a little over five minutes end to end. The server deliberately
    * writes `break_ends_at` as NULL for that window.
    *
@@ -106,14 +114,10 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// EXACT precision — no abbreviations, no rounding
+// This is the break summary, outside the felt. Full amounts remain available
+// on the value's title; compactChips floors rather than overstating a stack.
 function formatStack(amount: number): string {
-  // Tournament chips are integers; only show decimals if sub-chip precision exists
-  const truncated = Math.trunc(amount * 100) / 100;
-  if (truncated === Math.trunc(truncated)) {
-    return Math.trunc(truncated).toLocaleString('en-US');
-  }
-  return truncated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return compactChips(amount);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -122,6 +126,7 @@ function formatStack(amount: number): string {
 
 export function TournamentBreakScreen({
   isVisible,
+  tableAnchorRef,
   breakTimeRemaining,
   phase = 'counting_down',
   breakEndsAtMs = null,
@@ -140,6 +145,37 @@ export function TournamentBreakScreen({
   onDismiss,
 }: TournamentBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
+  const sharing = useRef(false);
+  const [shareMessage, setShareMessage] = useState('');
+  const shareTournament = async () => {
+    if (sharing.current) return;
+    if (!tournamentId) {
+      setShareMessage('Tournament Link Unavailable');
+      return;
+    }
+    sharing.current = true;
+    setShareMessage('');
+    const url = `${publicOrigin()}/hub/club-arena/tournaments/${encodeURIComponent(tournamentId)}`;
+    try {
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
+        const { nativeShareText } = await import('../../lib/native/share');
+        await nativeShareText(tournamentName, '', url);
+      } else if (typeof navigator.share === 'function') {
+        await navigator.share({ title: tournamentName, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareMessage('Tournament Link Copied');
+      }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'AbortError')) {
+        setShareMessage('Could Not Share Tournament. Please Try Again.');
+      }
+    } finally {
+      sharing.current = false;
+    }
+  };
+
+  const [factsFailed, setFactsFailed] = useState(false);
 
   /* What the rows say, read when the screen opens for a tournament. */
   const [facts, setFacts] = useState<{
@@ -154,6 +190,8 @@ export function TournamentBreakScreen({
   useEffect(() => {
     if (!isVisible || !tournamentId) return;
     let mounted = true;
+    setFacts(null);
+    setFactsFailed(false);
     (async () => {
       try {
         const [tRes, pRes] = await Promise.all([
@@ -171,6 +209,7 @@ export function TournamentBreakScreen({
         ]);
         if (!mounted) return;
         if (tRes.error || pRes.error) {
+          setFactsFailed(true);
           reportError(tRes.error ?? pRes.error, 'TournamentBreakScreen.load', { tournamentId });
           return;
         }
@@ -210,7 +249,10 @@ export function TournamentBreakScreen({
           myPlayer: ranked.find((r) => r.isCurrentUser),
         });
       } catch (err) {
-        if (mounted) reportError(err, 'TournamentBreakScreen.load', { tournamentId });
+        if (mounted) {
+          setFactsFailed(true);
+          reportError(err, 'TournamentBreakScreen.load', { tournamentId });
+        }
       }
     })();
     return () => {
@@ -225,6 +267,8 @@ export function TournamentBreakScreen({
   const topPlayers = topPlayersProp ?? facts?.topPlayers ?? [];
   const myPlayer = myPlayerProp ?? facts?.myPlayer;
   const prizePool = prizePoolProp ?? facts?.prizePool ?? 0;
+  const factsPending = Boolean(tournamentId) && facts === null;
+  const unknownValue = factsFailed ? 'N/A' : '...';
   const countingDown = phase === 'counting_down';
   const [displayTime, setDisplayTime] = useState(() =>
     breakEndsAtMs
@@ -290,170 +334,231 @@ export function TournamentBreakScreen({
     return Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0;
   }, [countingDown, displayTime, breakTotalSeconds]);
 
-  // Calculate timer color based on remaining time
   const getTimerColor = () => {
-    if (!countingDown) return '#3b82f6';
-    if (progressPercent > 50) return '#3b82f6';
-    if (progressPercent > 25) return '#f59e0b';
-    return '#ef4444';
+    if (!countingDown) return '#45adff';
+    return displayTime <= 10 ? '#ff5b6e' : '#ffd700';
   };
+  const waitingForResume = countingDown && displayTime === 0;
 
   if (!isVisible) return null;
 
-  // Minimized view — small floating badge showing time remaining
+  // A real button keeps the clock reachable by keyboard as well as touch.
   if (minimized) {
-    return (
-      <div className="break-screen__minimized" onClick={() => setMinimized(false)}>
-        <span className="break-screen__mini-badge">
-          {countingDown ? ` Break: ${formatTime(displayTime)}` : ' Break: Last Hand In Play'}
+    const tableAnchor = tableAnchorRef?.current;
+    const button = (
+      <button
+        type="button"
+        className={`break-screen__minimized${tableAnchor ? ' break-screen__minimized--on-table' : ''}`}
+        onClick={() => setMinimized(false)}
+        aria-label="Open Break Screen"
+      >
+        <span className="break-screen__mini-face">
+          <span className="break-screen__mini-badge">
+            {countingDown ? `Break: ${formatTime(displayTime)}` : 'Break: Last Hand'}
+          </span>
+          <span className="break-screen__mini-state">Paused</span>
         </span>
-      </div>
+      </button>
     );
+    return tableAnchor ? createPortal(button, tableAnchor) : button;
   }
 
   return (
-    <div className="break-screen" role="dialog" aria-modal="true" aria-labelledby="break-title">
-      <div className="break-screen__overlay" aria-hidden="true" />
-      <div className="break-screen__content">
-        <span className="break-screen__medallion" aria-hidden="true" />
-        {/* Header */}
-        {/* Dan 2026-08-30: an X, not a "Minimize" button. Closing collapses
-            to the floating badge so the countdown stays reachable. */}
+    <div
+      className="break-screen"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="break-title"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') setMinimized(true);
+      }}
+    >
+      <div className="break-screen__frame">
         <button
-          className="break-screen__close"
-          onClick={() => setMinimized(true)}
-          aria-label="Close Break Screen"
+          type="button"
+          className="break-screen__share"
+          aria-label="Share Tournament"
+          onClick={shareTournament}
+        />
+        <SpadeConsole
+          className="break-screen__content"
+          title="Tournament Break"
+          onClose={() => setMinimized(true)}
+          pill="Share"
+          pillInk="gold"
+          foot="foot"
         >
-          X
-        </button>
-        <div className="break-screen__header">
-          <span className="break-screen__badge">Tournament On Break</span>
+          {shareMessage && (
+            <p className="break-screen__share-message" role="alert">
+              {shareMessage}
+            </p>
+          )}
           <h1 id="break-title" className="break-screen__title">
-            {tournamentName}
+            {titleCase(tournamentName)}
           </h1>
-        </div>
 
-        {/* Timer */}
-        <div className="break-screen__timer-container">
-          <div className="break-screen__timer-ring break-screen__timer-ring--animated">
-            <svg viewBox="0 0 100 100">
-              <circle className="break-screen__ring-bg" cx="50" cy="50" r="45" />
-              <circle
-                className="break-screen__ring-fill"
-                cx="50"
-                cy="50"
-                r="45"
-                strokeDasharray={`${progressPercent * 2.83} 283`}
-                style={{ stroke: getTimerColor() }}
-              />
-            </svg>
-            <div className="break-screen__timer-text">
-              <span className="break-screen__time" style={{ color: getTimerColor() }}>
+          <div className="break-screen__resumption">
+            <div className="break-screen__timer-container">
+              <span className="break-screen__time-label">
+                {countingDown ? 'Play Resumes In' : 'Finishing The Last Hand'}
+              </span>
+              <span
+                className={`break-screen__time ${!countingDown ? 'break-screen__time--waiting' : ''}`}
+                role="timer"
+                aria-label={countingDown ? 'Time Until Play Resumes' : 'Last Hand In Play'}
+                style={{ color: getTimerColor() }}
+              >
                 {countingDown ? formatTime(displayTime) : 'Last Hand'}
               </span>
-              <span className="break-screen__time-label">
-                {countingDown ? 'Until Play Resumes' : 'Break Starts When Every Table Finishes'}
-              </span>
+              <svg className="break-screen__progress" viewBox="0 0 200 4" aria-hidden="true">
+                <path className="break-screen__progress-track" d="M0 2 H200" />
+                <path
+                  d="M0 2 H200"
+                  pathLength="100"
+                  strokeDasharray={`${progressPercent} 100`}
+                  style={{ stroke: getTimerColor() }}
+                />
+              </svg>
             </div>
-          </div>
-          <div
-            className="break-screen__progress-bar"
-            style={{ width: `${progressPercent}%`, backgroundColor: getTimerColor() }}
-          />
-        </div>
-
-        {/* Next Level Info */}
-        <div className="break-screen__next-level">
-          <span className="break-screen__section-title">Coming Next: Level {currentLevel + 1}</span>
-          <div className="break-screen__blinds">
-            <div className="break-screen__blind-item">
+            <div className="break-screen__next-level">
+              <span className="break-screen__section-title">
+                Coming Next: Level {currentLevel + 1}
+              </span>
               <span className="break-screen__blind-label">Blinds</span>
-              <span className="break-screen__blind-value">
-                {formatStack(nextLevel.smallBlind)}/{formatStack(nextLevel.bigBlind)}
+              <span
+                className="break-screen__blind-value"
+                title={`${nextLevel.smallBlind.toLocaleString('en-US')} / ${nextLevel.bigBlind.toLocaleString('en-US')}`}
+              >
+                {formatStack(nextLevel.smallBlind)} / {formatStack(nextLevel.bigBlind)}
+              </span>
+              {nextLevel.ante && nextLevel.ante > 0 ? (
+                <span className="break-screen__ante">
+                  Ante <strong>{formatStack(nextLevel.ante)}</strong>
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <p className="break-screen__resume-note" role="status">
+            {!countingDown
+              ? 'Break Starts When Every Table Finishes'
+              : waitingForResume
+                ? 'Waiting For Play To Resume'
+                : 'Play Resumes Automatically'}
+          </p>
+
+          <div className="break-screen__stats">
+            <div className="break-screen__stat">
+              <span className="break-screen__stat-label">Players</span>
+              <span className="break-screen__stat-value">
+                {factsPending && playersRemainingProp === undefined
+                  ? unknownValue
+                  : playersRemaining}
+              </span>
+              <span className="break-screen__stat-sub">
+                {factsPending && totalPlayersProp === undefined
+                  ? 'Remaining'
+                  : `Of ${totalPlayers}`}
               </span>
             </div>
-            {nextLevel.ante && nextLevel.ante > 0 && (
-              <div className="break-screen__blind-item">
-                <span className="break-screen__blind-label">Ante</span>
-                <span className="break-screen__blind-value">{formatStack(nextLevel.ante)}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="break-screen__stats">
-          <div className="break-screen__stat">
-            <span className="break-screen__stat-label">Players</span>
-            <span className="break-screen__stat-value">{playersRemaining}</span>
-            <span className="break-screen__stat-sub">Of {totalPlayers}</span>
-          </div>
-          <div className="break-screen__stat">
-            <span className="break-screen__stat-label">Avg Stack</span>
-            <span className="break-screen__stat-value">{formatStack(averageStack)}</span>
-            <span className="break-screen__stat-sub">
-              {Math.trunc(averageStack / Math.max(nextLevel.bigBlind, 1))} BB
-            </span>
-          </div>
-          <div className="break-screen__stat">
-            <span className="break-screen__stat-label">Prize Pool</span>
-            <span className="break-screen__stat-value">{formatStack(prizePool)}</span>
-            <span className="break-screen__stat-sub">{currency ? currency + ' Total' : ''}</span>
-          </div>
-        </div>
-
-        {/* My Position */}
-        {myPlayer && (
-          <div className="break-screen__my-position">
-            <span className="break-screen__section-title">Your Status</span>
-            <div className="break-screen__my-info">
-              <div className="break-screen__my-rank">
-                <span className="break-screen__rank-label">Rank</span>
-                <span className="break-screen__rank-number">#{myPlayer.rank}</span>
-                <span className="break-screen__rank-of">Of {playersRemaining}</span>
-              </div>
-              <div className="break-screen__divider"></div>
-              <div className="break-screen__my-stack">
-                <span className="break-screen__stack-label">Stack</span>
-                <span className="break-screen__stack-value">{formatStack(myPlayer.stack)}</span>
-                <span className="break-screen__stack-bb">
-                  {Math.trunc(myPlayer.stack / Math.max(nextLevel.bigBlind, 1))} BB
-                </span>
-              </div>
+            <div className="break-screen__stat">
+              <span className="break-screen__stat-label">Avg Stack</span>
+              <span
+                className="break-screen__stat-value"
+                title={
+                  factsPending && averageStackProp === undefined
+                    ? undefined
+                    : averageStack.toLocaleString('en-US')
+                }
+              >
+                {factsPending && averageStackProp === undefined
+                  ? unknownValue
+                  : formatStack(averageStack)}
+              </span>
+              <span className="break-screen__stat-sub">
+                {factsPending && averageStackProp === undefined
+                  ? 'Chips'
+                  : `${Math.trunc(averageStack / Math.max(nextLevel.bigBlind, 1))} BB`}
+              </span>
+            </div>
+            <div className="break-screen__stat">
+              <span className="break-screen__stat-label">Prize Pool</span>
+              <span
+                className="break-screen__stat-value"
+                title={
+                  factsPending && prizePoolProp === undefined
+                    ? undefined
+                    : prizePool.toLocaleString('en-US')
+                }
+              >
+                {factsPending && prizePoolProp === undefined
+                  ? unknownValue
+                  : formatStack(prizePool)}
+              </span>
+              <span className="break-screen__stat-sub">
+                {currency ? titleCase(currency) + ' Total' : 'Total Chips'}
+              </span>
             </div>
           </div>
-        )}
 
-        {/* Leaders */}
-        <div className="break-screen__leaders">
-          <span className="break-screen__section-title">Chip Leaders</span>
-          <div className="break-screen__leader-list">
-            {topPlayers.length > 0 ? (
-              topPlayers.slice(0, 5).map((player) => (
-                <div
-                  key={player.playerId}
-                  className={`break-screen__leader ${player.isCurrentUser ? 'break-screen__leader--me' : ''}`}
-                >
-                  <span className="break-screen__leader-rank">#{player.rank}</span>
-                  {player.avatar ? (
-                    <img
-                      className="break-screen__leader-avatar"
-                      src={player.avatar}
-                      alt=""
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="break-screen__leader-avatar" aria-hidden="true" />
-                  )}
-                  <span className="break-screen__leader-name">{player.playerName}</span>
-                  <span className="break-screen__leader-stack">{formatStack(player.stack)}</span>
-                </div>
-              ))
-            ) : (
-              <p className="break-screen__leaders-empty">Standings Update During The Break</p>
-            )}
-          </div>
-        </div>
+          {myPlayer && (
+            <div className="break-screen__my-position">
+              <span className="break-screen__section-title">Your Status</span>
+              <span className="break-screen__my-rank">
+                #{myPlayer.rank} <small>Of {playersRemaining}</small>
+              </span>
+              <span
+                className="break-screen__my-stack"
+                title={myPlayer.stack.toLocaleString('en-US')}
+              >
+                {formatStack(myPlayer.stack)}{' '}
+                <small>{Math.trunc(myPlayer.stack / Math.max(nextLevel.bigBlind, 1))} BB</small>
+              </span>
+            </div>
+          )}
+
+          <section className="break-screen__leaders" aria-label="Chip Leaders">
+            <div className="break-screen__leader-heading">
+              <h2 className="break-screen__section-title">Chip Leaders</h2>
+              <span className="break-screen__stat-sub">Chips</span>
+            </div>
+            <ol className="break-screen__leader-list">
+              {topPlayers.length > 0 ? (
+                topPlayers.slice(0, 5).map((player) => (
+                  <li
+                    key={player.playerId}
+                    className={`break-screen__leader ${player.isCurrentUser ? 'break-screen__leader--me' : ''}`}
+                  >
+                    <span className="break-screen__leader-rank">{player.rank}</span>
+                    {player.avatar ? (
+                      <img
+                        className="break-screen__leader-avatar"
+                        src={player.avatar}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : null}
+                    <span className="break-screen__leader-name">{player.playerName}</span>
+                    {player.isCurrentUser && <span className="break-screen__you">You</span>}
+                    <span
+                      className="break-screen__leader-stack"
+                      title={player.stack.toLocaleString('en-US')}
+                    >
+                      {formatStack(player.stack)}
+                    </span>
+                  </li>
+                ))
+              ) : (
+                <li className="break-screen__leaders-empty" role="status">
+                  {factsFailed
+                    ? 'Standings Unavailable'
+                    : factsPending
+                      ? 'Loading Standings'
+                      : 'Standings Update During The Break'}
+                </li>
+              )}
+            </ol>
+          </section>
+        </SpadeConsole>
       </div>
     </div>
   );

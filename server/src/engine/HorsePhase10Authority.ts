@@ -27,6 +27,10 @@
  * heuristic (`calibratedConfidence: null`); a qualification is a paired
  * after-rake comparison against the deployed reference, not a solver claim.
  */
+import {
+  horseOwnerForcedAuthority,
+  withHorseOwnerForcedActivation,
+} from './HorseOwnerForcedActivation.js';
 import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -78,7 +82,7 @@ export const PHASE10_RUNNING_CONTRACT_DIGEST: string = plo4StrengthContractDiges
  * sources (HorseReferenceDecisionSources.ts): the PLO4 pack returns the
  * reference wherever it does not deviate, and those files decide it.
  */
-export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v3';
+export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v5';
 
 /**
  * The code that determines PLO4 candidate behaviour, as server-relative source
@@ -104,9 +108,7 @@ export const HORSE_PHASE10_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/engine/omaha/OmahaCardFacts.ts',
   'src/engine/PokerEngine.ts',
   'src/engine/multiway/DealtSeatCensus.ts',
-  'src/engine/HorseObservationWindow.ts',
   'src/engine/HorseTournamentUtilityEvidence.ts',
-  'src/engine/HorseMind.ts',
   // v3 (2026-10-16): the reference decision's own sources (the digest hole).
   ...HORSE_REFERENCE_DECISION_SOURCE_FILES,
 ]);
@@ -449,6 +451,26 @@ export function admitHorsePhase10ReleaseAuthority(
   }
 }
 
+/**
+ * The live Phase 10 admission.
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `HorseOwnerForcedActivation.ts`): the committed release selection when it
+ * admits or withdraws, otherwise the owner's authority for the running code.
+ * The worker and the main-thread gate both use it.
+ */
+export function admitHorsePhase10LiveAuthority(nowMs = Date.now()): HorseAuthorityAdmission {
+  return withHorseOwnerForcedActivation(admitHorsePhase10ReleaseAuthority(nowMs), () =>
+    horseOwnerForcedAuthority({
+      phase: 'phase10',
+      continuationVersion: PLO4_POLICY_PACK.version,
+      policyDigest: horsePhase10PolicyDigest(),
+      packId: PLO4_POLICY_PACK.version,
+      domain: HORSE_PHASE10_DOMAIN,
+      contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
+    })
+  );
+}
+
 /** The admitted Phase 10 authority, or null: the protected selection's effect. */
 export function selectedHorsePhase10Authority(
   admission: HorseAuthorityAdmission
@@ -476,7 +498,7 @@ export function horsePhase10AdmittedMode(input: {
 
 /** Main-thread Phase 10 gate for this engine process (Phase 8's gate class). */
 export const liveHorsePhase10Authority = new HorsePhase8AuthorityGate(
-  () => admitHorsePhase10ReleaseAuthority(),
+  () => admitHorsePhase10LiveAuthority(),
   undefined,
   PLO4_POLICY_PACK.version
 );

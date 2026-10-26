@@ -49,7 +49,7 @@ import {
   type FilterableTournament,
 } from '../../utils/tournamentFilters';
 import { SPIN_VARIANT_KEYS, TOURNAMENT_VARIANT_KEYS } from '../../config/tournamentVariants';
-import { CASH_TEMPLATES } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import type { PlatformCapabilityId } from '../../config/platformCapabilities';
 import { killModeOf } from '../../utils/killPot';
 
@@ -382,10 +382,14 @@ const chipsFor = (
   keys.map((key) => ({ key, label: labels[key] ?? key.toUpperCase() }));
 
 /** The three cash templates as chips, in the vocabulary's order. */
-export const CASH_STYLES: { key: string; label: string }[] = CASH_TEMPLATES.map((t) => ({
-  key: t.id,
-  label: t.label,
-}));
+/* Classic, Lightning Games, and Madness without Lightning (Dan 2026-10-24:
+   "THERE IS ONLY LIGHTNING AND CLASSIC. NO STRAIGHT MADNESS GAME WITHOUT
+   LIGHTNING"). The third is a style a player can pick, not a template a host
+   creates: lobbyEntries.cashStyleKeyOf decides it from the table's rules. */
+export const CASH_STYLES: { key: string; label: string }[] = [
+  ...CASH_TEMPLATES.map((t) => ({ key: t.id, label: t.label })),
+  { key: 'straight_madness', label: 'Madness' },
+];
 
 export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec> = {
   HOLDEM: {
@@ -516,6 +520,8 @@ export interface GameFilterValue {
   format: string[];
   /** Show ONLY games of these styles (classic / action / madness). Optional: saved values predate it. */
   styles?: string[];
+  /** Style catalog understood when this choice was made; absent on older clients. */
+  stylesVersion?: number;
   rangeMin: number;
   rangeMax: number;
   selectedRanges?: string[];
@@ -533,6 +539,7 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
     games: [],
     format: [],
     styles: [],
+    stylesVersion: 1,
     rangeMin: spec.range.min,
     rangeMax: spec.range.max,
     selectedRanges: [],
@@ -720,8 +727,8 @@ export function rowPassesFilter(
 
   // ── Game Style chips (cash: classic / action / madness) ──────────────────
   if (v.styles && v.styles.length > 0) {
-    const style = typeof r.style === 'string' ? r.style.toLowerCase() : null;
-    if (!style || !v.styles.includes(style)) return false;
+    const style = typeof r.style === 'string' ? cashTemplateKey(r.style) : null;
+    if (!style || !v.styles.some((selected) => cashTemplateKey(selected) === style)) return false;
   }
 
   // ── Format chips (SN only: satellite vs regular) ─────────────────────────

@@ -19,6 +19,7 @@ import {
   STALE_ACCOUNT_AGE_MS,
   retireCertificationClubWithRetry,
   retireProductionCreateClubFixtures,
+  RETIREMENT_REFUSAL_CLUB_HAS_HISTORY,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
 const USER_ID = '00000000-0000-4000-8000-000000000099';
@@ -868,9 +869,8 @@ describe('post-deploy production account', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/clubs?');
   });
 
-  it('prepares Lightning independently of an invalid standalone template scope', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-'));
-    const env = { ...environment(directory), E2E_TEMPLATE_CLUB_ID: 'not-standalone' };
+  const LIGHTNING_UNION = 'fade0000-0000-0000-0000-000000000001';
+  const lightningAccount = (directory: string) =>
     writeFileSync(
       join(directory, 'club-arena-production-e2e-account.json'),
       JSON.stringify({
@@ -879,22 +879,57 @@ describe('post-deploy production account', () => {
         password: 'unused',
       })
     );
-    const row = {
-      club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
-      user_id: USER_ID,
-      role: 'admin',
-      status: 'active',
-      chip_balance: 0,
-    };
-    const fetchMock = vi.fn().mockResolvedValue(Response.json([row]));
+  const adminRow = (clubId: string) => ({
+    club_id: clubId,
+    user_id: USER_ID,
+    role: 'admin',
+    status: 'active',
+    chip_balance: 0,
+  });
+  /** Membership reads answer per club; the club read answers the scope. */
+  const lightningFetch = (unionId: string | null, rows: Record<string, unknown[]>) =>
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?'))
+        return Response.json([
+          { id: DEFAULT_E2E_LIGHTNING_CLUB_ID, union_id: unionId, status: 'active' },
+        ]);
+      const club = /club_id=eq\.([0-9a-f-]{36})/.exec(url)?.[1] ?? '';
+      return Response.json(rows[club] ?? []);
+    });
+
+  it('prepares Lightning independently of an invalid standalone template scope', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-'));
+    const env = { ...environment(directory), E2E_TEMPLATE_CLUB_ID: 'not-standalone' };
+    lightningAccount(directory);
+    const row = adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID);
+    const fetchMock = lightningFetch(null, { [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [row] });
     await expect(
       prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
     ).resolves.toEqual(row);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain(
-      `club_id=eq.${DEFAULT_E2E_LIGHTNING_CLUB_ID}`
-    );
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain('/clubs?');
+    const urls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(urls[0]).toContain(`club_id=eq.${DEFAULT_E2E_LIGHTNING_CLUB_ID}`);
+    expect(urls.some((url) => url.includes('not-standalone'))).toBe(false);
+    // A standalone club owns its games: no second membership is read or made.
+    expect(urls.filter((url) => url.includes('/club_members?'))).toHaveLength(1);
+  });
+
+  it('also holds the reserved admin membership on the union that owns the games (#7884)', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-union-'));
+    const env = environment(directory);
+    lightningAccount(directory);
+    const fetchMock = lightningFetch(LIGHTNING_UNION, {
+      [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID)],
+      [LIGHTNING_UNION]: [adminRow(LIGHTNING_UNION)],
+    });
+    await expect(
+      prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toEqual(adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID));
+    const memberships = fetchMock.mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.includes('/club_members?'));
+    expect(memberships).toHaveLength(2);
+    expect(memberships[1]).toContain(`club_id=eq.${LIGHTNING_UNION}`);
   });
 
   it.each([{ chip_balance: 1 }, { role: 'player' }, { status: 'inactive' }, { user_id: 'other' }])(
@@ -902,29 +937,92 @@ describe('post-deploy production account', () => {
     async (difference) => {
       const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-refused-'));
       const env = environment(directory);
-      writeFileSync(
-        join(directory, 'club-arena-production-e2e-account.json'),
-        JSON.stringify({
-          id: USER_ID,
-          email: 'ca-customization-cert-postdeploy-lightning@example.invalid',
-          password: 'unused',
-        })
-      );
-      const row = {
-        club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
-        user_id: USER_ID,
-        role: 'admin',
-        status: 'active',
-        chip_balance: 0,
-        ...difference,
-      };
-      const fetchMock = vi.fn().mockResolvedValue(Response.json([row]));
+      lightningAccount(directory);
+      const row = { ...adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID), ...difference };
+      const fetchMock = lightningFetch(LIGHTNING_UNION, { [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [row] });
       await expect(
         prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
       ).rejects.toThrow('Refusing to change an existing');
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
   );
+
+  it.each([{ chip_balance: 1 }, { role: 'player' }, { status: 'inactive' }])(
+    'never reuses a union-owner membership outside the reserved admin shape: %j',
+    async (difference) => {
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-union-refused-'));
+      const env = environment(directory);
+      lightningAccount(directory);
+      const fetchMock = lightningFetch(LIGHTNING_UNION, {
+        [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID)],
+        [LIGHTNING_UNION]: [{ ...adminRow(LIGHTNING_UNION), ...difference }],
+      });
+      await expect(
+        prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+      ).rejects.toThrow('Refusing to change an existing');
+    }
+  );
+
+  it('refuses a malformed union owner instead of guessing', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-lightning-malformed-'));
+    const env = environment(directory);
+    lightningAccount(directory);
+    const fetchMock = lightningFetch('not-a-club', {
+      [DEFAULT_E2E_LIGHTNING_CLUB_ID]: [adminRow(DEFAULT_E2E_LIGHTNING_CLUB_ID)],
+    });
+    await expect(
+      prepareProductionE2ELightningMembership({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('union owner is malformed');
+  });
+
+  it.each([
+    [{ code: '57014', message: 'canceling statement due to statement timeout' }, true],
+    [{ code: 'P0001', message: 'guard refused' }, false],
+  ])('retries a timed-out membership promotion, never a refusal: %j', async (failure, retried) => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-promotion-retry-'));
+    const env = { ...environment(directory), E2E_CLUB_ID: DEFAULT_E2E_LIGHTNING_CLUB_ID };
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-promotion@example.invalid',
+        password: 'unused',
+      })
+    );
+    const pending = {
+      club_id: DEFAULT_E2E_LIGHTNING_CLUB_ID,
+      user_id: USER_ID,
+      role: 'player',
+      status: 'pending',
+      chip_balance: 0,
+    };
+    const admin = { ...pending, role: 'admin', status: 'active' };
+    let reads = 0;
+    let patches = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/token')) return Response.json({ access_token: 'token' });
+      if (url.includes('/rpc/fn_join_club')) return Response.json({ ok: true });
+      if (init?.method === 'PATCH') {
+        patches += 1;
+        return patches === 1 ? Response.json(failure, { status: 500 }) : Response.json([admin]);
+      }
+      reads += 1;
+      return Response.json(reads === 1 ? [] : [pending]);
+    });
+    const run = prepareProductionE2EStaffMembership({
+      environment: env,
+      fetchImpl: fetchMock,
+      wait: async () => {},
+    });
+    if (retried) {
+      await expect(run).resolves.toEqual(admin);
+      expect(patches).toBe(2);
+    } else {
+      await expect(run).rejects.toThrow('guard refused');
+      expect(patches).toBe(1);
+    }
+  });
 
   it('refuses to overwrite an existing reserved membership', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-existing-staff-'));
@@ -2187,5 +2285,201 @@ describe('a certification fixture that leaked must not wedge the next certificat
         record: { id: USER_ID, email: STALE_EMAIL },
       })
     ).rejects.toThrow('unreadable number of owned club fixture');
+  });
+});
+
+describe('one refused stale identity no longer strands the others (2026-10-26)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const NOW = Date.parse('2026-10-26T14:00:00.000Z');
+  const account = (n: number) => ({
+    id: `00000000-0000-4000-8000-00000000010${n}`,
+    email: `ca-customization-cert-postdeploy-179277923823${n}-stale@example.invalid`,
+    created_at: `2026-10-2${n}T18:14:22.000Z`,
+  });
+  type Club = { id: string; name: string; owner_id: string; lifecycle_status: string };
+
+  /**
+   * Production as it stood on 2026-10-26: several stale identities, each
+   * owning Crest Cert clubs. The retire door answers per club, the account
+   * door refuses any identity that still owns a club, and every request is
+   * recorded so the order of work can be read back.
+   */
+  function world(
+    accounts: Array<ReturnType<typeof account>>,
+    clubs: Club[],
+    door: (clubId: string) => Response
+  ) {
+    const owned = new Map(clubs.map((club) => [club.id, club]));
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes('/rpc/fn_ca_stale_certification_accounts')) return Response.json(accounts);
+      if (url.includes('/rest/v1/clubs?')) {
+        const owner = /owner_id=eq\.([0-9a-f-]+)/.exec(url)?.[1];
+        return Response.json([...owned.values()].filter((club) => club.owner_id === owner));
+      }
+      if (url.includes('/rpc/fn_ca_retire_welcome_certification_club')) {
+        const clubId = JSON.parse(String(init?.body)).p_club_id;
+        calls.push(`retire ${clubId}`);
+        const response = door(clubId);
+        const parsed = await response.clone().json();
+        if (response.ok && parsed?.success === true) owned.delete(clubId);
+        return response;
+      }
+      if (url.includes('/rpc/cleanup_reserved_certification_account')) {
+        const userId = JSON.parse(String(init?.body)).p_user_id;
+        calls.push(`account ${userId}`);
+        return [...owned.values()].some((club) => club.owner_id === userId)
+          ? Response.json(
+              { code: '55000', message: 'CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY' },
+              { status: 500 }
+            )
+          : Response.json({ success: true });
+      }
+      if (url.includes('/auth/v1/admin/users/')) return new Response(null, { status: 404 });
+      return new Response('unexpected request ' + url, { status: 500 });
+    });
+    return { fetchImpl, calls, owned };
+  }
+
+  const run = (fetchImpl: unknown) =>
+    cleanupStaleProductionE2EAccounts({
+      environment: environment(mkdtempSync(join(tmpdir(), 'production-e2e-stranded-'))),
+      fetchImpl: fetchImpl as typeof fetch,
+      now: NOW,
+      wait: vi.fn().mockResolvedValue(undefined),
+    });
+
+  const LOBBY = '11111111-1111-4111-8111-111111111111';
+  const TEMPLATE_A = '22222222-2222-4222-8222-222222222222';
+  const TEMPLATE_B = '33333333-3333-4333-8333-333333333333';
+  const history = () =>
+    Response.json({ success: false, error: RETIREMENT_REFUSAL_CLUB_HAS_HISTORY });
+  const retired = () => Response.json({ success: true, chips_retired: 100000 });
+
+  it('keeps a retired fixture that holds history as owned, names it, and still recovers the identities behind it', async () => {
+    const [lobbyOwner, ownerA, ownerB] = [account(3), account(4), account(5)];
+    const model = world(
+      [lobbyOwner, ownerA, ownerB],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Lobby 01a16659',
+          owner_id: lobbyOwner.id,
+          lifecycle_status: 'retired',
+        },
+        {
+          id: TEMPLATE_A,
+          name: 'Crest Cert Template 2793e75d',
+          owner_id: ownerA.id,
+          lifecycle_status: 'active',
+        },
+        {
+          id: TEMPLATE_B,
+          name: 'Crest Cert Template 095896f4',
+          owner_id: ownerB.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      (clubId) => (clubId === LOBBY ? history() : retired())
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(run(model.fetchImpl)).resolves.toBe(2);
+
+    expect(model.calls).toEqual([
+      `retire ${LOBBY}`,
+      `retire ${TEMPLATE_A}`,
+      `account ${ownerA.id}`,
+      `retire ${TEMPLATE_B}`,
+      `account ${ownerB.id}`,
+    ]);
+    // The identity that owns the retired history is never sent to the account door.
+    expect(model.calls).not.toContain(`account ${lobbyOwner.id}`);
+    expect([...model.owned.keys()]).toEqual([LOBBY]);
+    expect(log.mock.calls.flat().join('\n')).toContain(
+      `kept stale identity ${lobbyOwner.id} as the owner of record of retired fixture(s) ${LOBBY}`
+    );
+  });
+
+  it('still fails the run for a club with history that has NOT left the live board', async () => {
+    const owner = account(3);
+    const model = world(
+      [owner],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Lobby 01a16659',
+          owner_id: owner.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      history
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await expect(run(model.fetchImpl)).rejects.toThrow(
+      `Certification club ${LOBBY} retirement was refused: ${RETIREMENT_REFUSAL_CLUB_HAS_HISTORY}`
+    );
+    expect(model.calls).toEqual([`retire ${LOBBY}`]);
+  });
+
+  it('tries every identity after one fails, then fails the run naming the failure', async () => {
+    const [stuck, behind] = [account(3), account(4)];
+    const model = world(
+      [stuck, behind],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Template aaaaaaaa',
+          owner_id: stuck.id,
+          lifecycle_status: 'active',
+        },
+        {
+          id: TEMPLATE_A,
+          name: 'Crest Cert Template 2793e75d',
+          owner_id: behind.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      (clubId) =>
+        clubId === LOBBY
+          ? Response.json({ success: false, error: 'some other refusal' })
+          : retired()
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const outcome = run(model.fetchImpl);
+    await expect(outcome).rejects.toBeInstanceOf(AggregateError);
+    await expect(outcome).rejects.toThrow(
+      `Stale recovery left 1 of 2 stale account(s) unrecovered (1 recovered, 0 kept as owners of retired history): ` +
+        `Certification club ${LOBBY} retirement was refused: some other refusal`
+    );
+    // The identity behind the refusal was still recovered in the same run.
+    expect(model.calls).toEqual([
+      `retire ${LOBBY}`,
+      `retire ${TEMPLATE_A}`,
+      `account ${behind.id}`,
+    ]);
+  });
+
+  it('validates the whole inventory before touching any identity', async () => {
+    const good = account(3);
+    const model = world(
+      [good, { ...account(4), email: 'someone@example.com' }],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Template aaaaaaaa',
+          owner_id: good.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      retired
+    );
+    await expect(run(model.fetchImpl)).rejects.toThrow(
+      'Refusing an invalid stale post-deploy account candidate.'
+    );
+    expect(model.calls).toEqual([]);
   });
 });

@@ -250,7 +250,7 @@ describe('actual local client/worker and controller acceptance composition', () 
           )
         ).resolves.toMatchObject({ type: 'ACK', operation: 'COMMIT_DECISION_EFFECTS' });
         expect(transport.harness.applied()).toBe(1);
-        expect(HorseMind.getPlan(key, heroId)).toBe(true);
+        expect(transport.harness.inspect(() => HorseMind.getPlan(key, heroId), request)).toBe(true);
       } finally {
         await client.stop();
         await transport.harness.close();
@@ -309,7 +309,9 @@ describe('actual local client/worker and controller acceptance composition', () 
             });
         }
         expect(transport.harness.applied()).toBe(mode === 'exact' ? 1 : 0);
-        expect(HorseMind.getPlan(key, heroId)).toBe(mode === 'exact' ? true : undefined);
+        expect(transport.harness.inspect(() => HorseMind.getPlan(key, heroId), request)).toBe(
+          mode === 'exact' ? true : undefined
+        );
         const commitRequest = transport.sent.find((m) => m.type === 'COMMIT_DECISION_EFFECTS');
         if (mode === 'exact' || mode === 'mutated_batch')
           expect(commitRequest).toMatchObject({ requestId: 2, planBinding: { fastRequestId: 1 } });
@@ -426,7 +428,9 @@ describe('actual local client/worker and controller acceptance composition', () 
             }),
           ]);
           expect(transport.harness.applied()).toBe(1);
-          expect(HorseMind.getPlan(key, heroId)).toBe(true);
+          expect(transport.harness.inspect(() => HorseMind.getPlan(key, heroId), request)).toBe(
+            true
+          );
           // The durable receipt: issued and accepted are the same wager.
           expect(receipts).toHaveLength(1);
           expect(receipts[0]!.disposition).toBe('applied');

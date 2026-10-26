@@ -93,10 +93,24 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     // work between the rest and the deal.
     const requestedPauseGate =
       /if \(this\.isNextHandPaused\(\)\) \{\s*if \(this\.maintenancePaused\) await this\.persistPresenceForRestart\('parked'\);\s*if \(\s*!this\.adminPauseLock\s*&&\s*!this\.maintenanceLock\s*&&\s*!this\.dealingHaltLock\s*&&\s*!this\.operatorFloorPaused\s*\)\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    // 2026-10-24, THE LAST LOOK (Dan 2026-10-23: "NEXT HAND, PLAYER GOES TO
+    // THE MAIN GAME"). One more term is admitted here and nothing else: a
+    // SYNCHRONOUS comparison of in-process seat-boundary generations. It
+    // awaits nothing, so an ordinary deal still waits exactly the rest; only
+    // when a Main seat was planned, or a player arrived, after this
+    // iteration's reads does the loop go round once more instead of dealing
+    // a stale roster. Its synchronous body and position are pinned in
+    // server/src/engine/aMainSeatTakesTheNextHand.law.test.ts.
+    const lastLook = /if \(this\.seatBoundaryChangedUnderRest\(\)\) continue;/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
+    expect(betweenRestAndDeal.match(lastLook)).toHaveLength(1);
     expect(
-      betweenRestAndDeal.replace(boundaryGate, '').replace(requestedPauseGate, '').trim()
+      betweenRestAndDeal
+        .replace(boundaryGate, '')
+        .replace(requestedPauseGate, '')
+        .replace(lastLook, '')
+        .trim()
     ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 

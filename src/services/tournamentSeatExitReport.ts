@@ -6,14 +6,15 @@ import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrich
 import { reportError } from '../utils/errorReporter';
 
 /** The seat rebuild must deliver a finish before it unmounts its table owner.
- * A playing entrant was moved, not eliminated. An unreadable finish retains
- * its tab rather than turning an unknown answer into an unreported exit. */
+ * A replacement live seat proves a move. A playing or unreadable entrant
+ * without that witness retains its tab until the result owner can finish. */
 export async function reportRemovedTournamentSeats(
   removedTableIds: string[],
   userId: string,
-  isCurrent: () => boolean
+  isCurrent: () => boolean,
+  liveTournamentIds: ReadonlySet<string> = new Set()
 ): Promise<Set<string>> {
-  const retain = new Set<string>();
+  const retain = new Set(removedTableIds);
   if (removedTableIds.length === 0) return retain;
   try {
     const response = await awaitTournamentResultEnrichment(
@@ -28,22 +29,28 @@ export async function reportRemovedTournamentSeats(
     if (!response || response.error || !Array.isArray(response.data)) {
       throw response?.error ?? new Error('Closed Seat Report Read Timed Out');
     }
-    const seen = new Set<string>();
     for (const row of response.data) {
-      if (!row.tournament_id || seen.has(row.tournament_id)) continue;
-      seen.add(row.tournament_id);
+      if (!row.tournament_id) {
+        retain.delete(row.id); // A readable cash table has no tournament report.
+        continue;
+      }
       const result = await awaitTournamentResultEnrichment(
         fetchTournamentResult(row.tournament_id, userId)
       );
       if (!isCurrent()) return retain;
-      if (result?.entryStatus === 'playing' || result?.entryStatus === 'registered') continue;
+      if (result?.entryStatus === 'playing' || result?.entryStatus === 'registered') {
+        // Seat release can commit before elimination. Only a confirmed live
+        // seat in this same event proves a move/rebuy; keep the result owner
+        // mounted while the entrant's terminal event is still in flight.
+        if (liveTournamentIds.has(row.tournament_id)) retain.delete(row.id);
+        continue;
+      }
       const qualified = !!result?.satelliteQualification;
       if (
         !result ||
         !['eliminated', 'winner'].includes(result.entryStatus ?? '') ||
         (!qualified && !(Number.isInteger(result.finishPlace) && Number(result.finishPlace) > 0))
       ) {
-        retain.add(row.id);
         continue;
       }
       const arena = parseTableArenaIdentity(row);
@@ -61,6 +68,7 @@ export async function reportRemovedTournamentSeats(
         sessionEnd: Date.now(),
         tournament: result,
       });
+      retain.delete(row.id);
     }
     return retain;
   } catch (error) {

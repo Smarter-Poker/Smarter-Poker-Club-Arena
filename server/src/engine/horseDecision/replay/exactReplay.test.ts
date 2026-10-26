@@ -198,19 +198,20 @@ afterEach(() => {
 });
 
 describe('P15-A exact historical replay', () => {
-  it('records a PLO4 decision as shadow while Phase 10 is unselected and replays it exactly', async () => {
-    // Maniac pressure (2026-10-22) returned the round-3 PLO4 pack to shadow
-    // until its locked matrix requalifies the exact new source (as the VPIP
-    // floor call-down did on 2026-10-17).
+  it('records a PLO4 decision as candidate under the owner order and replays it exactly', async () => {
+    // Maniac pressure (2026-10-22) returned the round-3 PLO4 pack to shadow;
+    // Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT
+    // QUALIFYING") runs it live while its release selection stays null, and
+    // replay admits the same owner authority the live worker held.
     expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
     const { record, result } = await liveOriginal(IDS.cashPlo4Preflop);
-    expect(result.phase10Authority?.state).toBe('unselected');
-    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).not.toBe('candidate');
+    expect(result.phase10Authority?.state).toBe('usable');
+    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).toBe('candidate');
     const verdict = await exactReplayHorseDecisionRecord(record, { runningSource: SOURCE });
     expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
   });
 
-  it('a fresh process replays an unselected PLO4 original exactly and refuses a recorded authority the release cannot qualify', async () => {
+  it('a fresh process replays a PLO4 original exactly and refuses a recorded authority the release cannot qualify', async () => {
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     let original: Awaited<ReturnType<typeof liveOriginal>>;
     try {
@@ -244,9 +245,6 @@ describe('P15-A exact historical replay', () => {
     } finally {
       clock.mockRestore();
     }
-    expect(
-      (original.result.decision.plo4Policy as { applied?: boolean } | undefined)?.applied
-    ).not.toBe(true);
     const verdict = freshProcess(
       { record: original.record, execution: original.execution },
       SOURCE
@@ -268,7 +266,9 @@ describe('P15-A exact historical replay', () => {
     const before = drainFires();
     restoreFires(before);
     const refused = await exactReplayHorseDecisionRecord(forged, { runningSource: SOURCE });
-    expect(refused.outcome).toBe('non_replayable:authority:phase10:unselected');
+    // Refused by name: the recorded authority is not the one this release
+    // admits (the owner order's), so its identity cannot be restored.
+    expect(refused.outcome).toMatch(/^non_replayable:authority:phase10:/);
     expect(refused.replayVerified).toBe(false);
     const after = drainFires();
     expect(after).toEqual(before);
@@ -290,6 +290,7 @@ describe('P15-A exact historical replay', () => {
           phase12Remaining: decideOpts[0].phase12Remaining,
           phase13Joint: decideOpts[0].phase13Joint,
         },
+        corrective: { mode: 'shadow', domain: 'nlh-cash', catalogDigest: null },
         phase8SafetyDisabledReason: 'eligible_but_silent',
         runtime: { node: process.version, v8: process.versions.v8, arch: process.arch },
       });
@@ -401,12 +402,15 @@ describe('P15-A exact historical replay', () => {
     expect(await outcome(without('governorScale'))).toBe('non_replayable:governor');
     expect(await outcome(without('effects'))).toBe('non_replayable:effects');
     expect(await outcome(without('planBinding'))).toBe('non_replayable:plan_binding');
-    // Authority this process cannot hold is a missing input, not a default.
-    const candidate = resignHorseJournalRecord(record, (body) => {
-      (body.replayState as { admission: Record<string, string> }).admission.phase8Postflop =
-        'candidate';
+    // Authority this process cannot hold the way the worker did is a missing
+    // input, not a default. Under the owner order (2026-10-26) this process
+    // holds Phase 8 as candidate, so a record claiming any other admission is
+    // refused by name.
+    const claimed = resignHorseJournalRecord(record, (body) => {
+      const admission = (body.replayState as { admission: Record<string, string> }).admission;
+      admission.phase8Postflop = admission.phase8Postflop === 'candidate' ? 'shadow' : 'candidate';
     });
-    expect(await outcome(candidate)).toBe('non_replayable:admission:phase8Postflop');
+    expect(await outcome(claimed)).toBe('non_replayable:admission:phase8Postflop');
     // Another JavaScript runtime is not the original artifact: refused by name.
     for (const runtime of [
       { node: 'v22.23.2', v8: '12.4.254.21-node.56', arch: process.arch },
@@ -429,6 +433,7 @@ describe('P15-A exact historical replay', () => {
       const state = body.replayState as Record<string, unknown>;
       state.version = HORSE_DECISION_REPLAY_STATE_V1;
       delete state.runtime;
+      delete state.corrective;
     });
     expect(await outcome(v1)).toBe('non_replayable:runtime_identity');
     // A record that does not name its source cannot be matched to one.

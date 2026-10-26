@@ -1,49 +1,48 @@
-/**
- * Phase 14.4 (plan package P14-D, inactive slice; shared package S4): admission
- * of corrective candidates through the SAME generation-bound authority path
- * Phase 8 built and Phases 10 to 13 reused (`HorseQualifiedAuthority`). Nothing
- * here is a second authority system: the holder, the main-scheduler gate, the
- * receipt, the verdicts and the withdrawal laws are Phase 8's, reused once per
- * corrective domain (`<variant>-<format>`, the 45 domains
- * `horseCorrectiveReview/domain.ts` names).
- *
- * ACTIVATION IS UNAVAILABLE. Every entry of
- * `PHASE14_PROTECTED_RELEASE_SELECTIONS` is null, and that is not a default
- * waiting to be flipped: three inputs this repository does not have are
- * required first, and each is an unavailable external input:
- *  1. a qualified reference producer: a solver or exact enumerator that emits
- *     `reviewed_reference` alternative-action references for a covered domain,
- *     with a reproducible sampling contract and producer identity;
- *  2. an independent signer: a key, held and reviewed outside this code, whose
- *     digest the owner configures as `HORSE_CORRECTIVE_REVIEW_TRUSTED_KEY_SHA256`.
- *     No key is generated here or in any test that touches committed evidence;
- *     generating one would be self-qualification;
- *  3. a decision-time corrective applier: the consumer that would read an
- *     admitted catalog entry and move the live action distribution at the
- *     exact original information set, inside the worker FAST/DEEP path, with
- *     the acceptance-time and effect-time rechecks. It does not exist.
- * Until all three exist and a held-out evaluation of a built catalog is
- * committed under `docs/evidence/phase14/` with `qualified: true`, nothing can
- * select, and no decision path reads this module.
- *
- * Deliberately left out: worker holders, `protocol.ts` receipts, the client
- * stamp/forget, the acceptance-time recheck in `ServerTableEngineTurns` and the
- * witness binding that Phases 8 to 13 wire. Each of those gates an applier's
- * output, and there is no applier output to gate: adding them would put
- * always-unselected receipts on every decision and a recheck that can only ever
- * refuse nothing. They belong in the same change as the applier.
- * `horsePhase14CorrectiveMode` exists so the "a caller can never supply
- * candidate control" law is pinned now; it never returns an active mode.
- *
- * Each domain is selected only at a protected code release, by a reviewed change
- * to its own entry of `PHASE14_PROTECTED_RELEASE_SELECTIONS`, naming that
- * domain's committed qualification file and its exact sha256, the catalog
- * digest and the holdout digest the qualification evaluated. Nothing reads a
- * request, an IPC message, an environment variable or a database row.
- */
+/** Phase 14 functional admission reuses the generation-bound S4 holder and
+ * main gate. Legacy literal catalogs retain their historical inactive schema;
+ * a functional attachment additionally requires an independently pinned
+ * signature, untouched heldout measurement and exact code/baseline binding.
+ * All protected selections remain null until real qualification is supplied.
+ * No runtime caller or envelope can select a policy or pin its own signer. */
+import {
+  PHASE10_PROTECTED_RELEASE_SELECTION,
+  liveHorsePhase10Authority,
+} from './HorsePhase10Authority.js';
+import {
+  PHASE11_PROTECTED_RELEASE_SELECTIONS,
+  liveHorsePhase11Authorities,
+} from './HorsePhase11Authority.js';
+import {
+  PHASE12_PROTECTED_RELEASE_SELECTIONS,
+  liveHorsePhase12Authorities,
+} from './HorsePhase12Authority.js';
+import {
+  PHASE13_PROTECTED_RELEASE_SELECTIONS,
+  liveHorsePhase13Authorities,
+} from './HorsePhase13Authority.js';
 import { posix } from 'node:path';
 import {
+  admitCorrectiveKernelAttachment,
+  admitOwnerForcedCorrectiveKernelAttachment,
+  type CorrectiveKernelAttachmentAdmission,
+} from '../services/horseCorrectiveReview/kernelAdmission.js';
+import { TOURNAMENT_KERNEL_CATALOG_VERSION } from '../services/horseCorrectiveReview/kernelTournamentCatalog.js';
+import {
+  CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  tournamentKernelDefinitionFor,
+} from '../services/horseCorrectiveReview/kernelTournamentDefinition.js';
+import { HORSE_OWNER_FORCED_ACTIVATION_ENABLED } from './HorseOwnerForcedActivation.js';
+import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../services/horseCorrectiveReview/kernelCatalog.js';
+import {
+  functionalKernelCatalogVersionIsKnown,
+  isValidatedFunctionalKernelCatalog as isValidatedCorrectiveKernelCatalog,
+  type CorrectiveFunctionalKernelCatalog as CorrectiveKernelCatalog,
+} from '../services/horseCorrectiveReview/kernelObjective.js';
+import {
   canonical,
+  PHASE8_PROTECTED_RELEASE_SELECTION,
+  liveHorsePhase8Authority,
   HorsePhase8AuthorityGate,
   isoMs,
   repositoryEvidenceReader,
@@ -52,10 +51,15 @@ import {
   type HorseAuthorityEvidenceReader,
   type HorseAuthorityRefusal,
   type HorseAuthorityVerdict,
+  type HorseAuthorityReceipt,
   type HorseQualifiedAuthority,
 } from './HorseQualifiedAuthority.js';
 import { CORRECTIVE_CATALOG_VERSION } from '../services/horseCorrectiveReview/candidateCatalog.js';
-import { CORRECTIVE_DOMAIN_KEYS } from '../services/horseCorrectiveReview/domain.js';
+import {
+  CORRECTIVE_DOMAIN_KEYS,
+  CORRECTIVE_DOMAINS,
+  correctiveDomainKey,
+} from '../services/horseCorrectiveReview/domain.js';
 
 /** Where a Phase 14 qualification would be committed. Nothing is there today. */
 export const HORSE_PHASE14_EVIDENCE_DIRECTORY = 'docs/evidence/phase14/';
@@ -68,8 +72,11 @@ export const isHorsePhase14Domain = (value: unknown): value is string =>
   typeof value === 'string' && HORSE_PHASE14_DOMAINS.includes(value);
 
 /** The running version a Phase 14 holder of `domain` admits. */
-export function horsePhase14ContinuationVersion(domain: string): string {
-  return `${HORSE_PHASE14_CATALOG_VERSION}/${domain}`;
+export function horsePhase14ContinuationVersion(
+  domain: string,
+  catalogVersion = HORSE_PHASE14_CATALOG_VERSION
+): string {
+  return `${catalogVersion}/${domain}`;
 }
 
 /** The exact keys of a `horse-phase14-qualification-v1` file. */
@@ -93,6 +100,8 @@ export interface HorsePhase14AuthoritySelection {
   /** Exact 40-hex source revision the holdout evaluation ran at. */
   readonly sourceSha: string;
   readonly catalogVersion: string;
+  /** Functional catalogs pin an independently held signing identity here. */
+  readonly trustedSignerKeySha256?: string;
   /** `correctiveCatalogDigest` of the inactive catalog the evaluation measured. */
   readonly catalogDigest: string;
   /** The catalog's holdout digest; the evaluation must name the same one. */
@@ -107,14 +116,8 @@ export interface HorsePhase14AuthoritySelection {
   readonly withdrawn: Readonly<{ at: string; reason: string }> | null;
 }
 
-/**
- * THE PROTECTED RELEASE SELECTIONS, one per corrective domain. All null: no
- * qualified reference producer, independent signer, held-out evaluation or
- * corrective applier exists, so no corrective candidate can be admitted.
- */
-export const PHASE14_PROTECTED_RELEASE_SELECTIONS: Readonly<
-  Record<string, HorsePhase14AuthoritySelection | null>
-> = Object.freeze(Object.fromEntries(HORSE_PHASE14_DOMAINS.map((domain) => [domain, null])));
+import { PHASE14_PROTECTED_RELEASE_SELECTIONS } from './HorsePhase14ReleaseSelections.js';
+export { PHASE14_PROTECTED_RELEASE_SELECTIONS } from './HorsePhase14ReleaseSelections.js';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -185,6 +188,8 @@ export function admitHorsePhase14QualifiedAuthority(
     transient,
   });
   if (selection === null) return refuse('unselected');
+  if (functionalKernelCatalogVersionIsKnown(selection.catalogVersion))
+    return admitCorrectiveKernelAttachment(domain, selection, reader, nowMs).admission;
   if (!isHorsePhase14Domain(domain) || !selectionIsWellFormed(selection))
     return refuse('invalid_selection');
   if (selection.withdrawn !== null)
@@ -267,6 +272,54 @@ export function admitHorsePhase14ReleaseAuthority(
   }
 }
 
+/** Atomically load the functional attachment and the same S4 admission. */
+export function admitHorsePhase14ReleaseAttachment(
+  domain: string,
+  nowMs = Date.now(),
+  selection: HorsePhase14AuthoritySelection | null = isHorsePhase14Domain(domain)
+    ? (PHASE14_PROTECTED_RELEASE_SELECTIONS[domain] ?? null)
+    : null,
+  reader: HorseAuthorityEvidenceReader = repositoryEvidenceReader
+): CorrectiveKernelAttachmentAdmission {
+  try {
+    return admitCorrectiveKernelAttachment(domain, selection, reader, nowMs);
+  } catch {
+    return {
+      admission: { status: 'refused', reason: 'unreadable_evidence', transient: true },
+      catalog: null,
+    };
+  }
+}
+
+/**
+ * The live Phase 14 attachment: the committed release selection when it admits
+ * (or withdraws), otherwise the corrective catalog and authority Dan's
+ * 2026-10-26 order issues for the running code ("FORCE ACTIVATE EVERY PHASE
+ * NOW WITHOUT QUALIFYING", `HorseOwnerForcedActivation.ts`). The worker and
+ * the main-thread gate both use it.
+ */
+export function admitHorsePhase14LiveAttachment(
+  domain: string,
+  nowMs = Date.now()
+): CorrectiveKernelAttachmentAdmission {
+  const release = admitHorsePhase14ReleaseAttachment(domain, nowMs);
+  if (release.admission.status !== 'refused' || release.admission.transient) return release;
+  try {
+    const forced = admitOwnerForcedCorrectiveKernelAttachment(domain);
+    return forced.admission.status === 'admitted' ? forced : release;
+  } catch {
+    return release;
+  }
+}
+
+/** The live Phase 14 admission alone, for the main-thread gate. */
+export function admitHorsePhase14LiveAuthority(
+  domain: string,
+  nowMs = Date.now()
+): HorseAuthorityAdmission {
+  return admitHorsePhase14LiveAttachment(domain, nowMs).admission;
+}
+
 /** The admitted Phase 14 authority for `domain`, or null. */
 export function selectedHorsePhase14Authority(
   domain: string,
@@ -276,31 +329,34 @@ export function selectedHorsePhase14Authority(
     admission.authority.phase === 'phase14' &&
     isHorsePhase14Domain(domain) &&
     admission.authority.domain === domain &&
-    admission.authority.continuationVersion === horsePhase14ContinuationVersion(domain)
+    (admission.authority.packId === HORSE_PHASE14_CATALOG_VERSION ||
+      functionalKernelCatalogVersionIsKnown(admission.authority.packId)) &&
+    admission.authority.continuationVersion ===
+      horsePhase14ContinuationVersion(domain, admission.authority.packId)
     ? admission.authority
     : null;
 }
 
 export interface HorsePhase14CorrectiveMode {
-  readonly mode: 'off' | 'shadow';
+  readonly mode: 'off' | 'shadow' | 'candidate';
   /** The deciding domain's holder reported usable authority for that domain. */
   readonly authorityUsable: boolean;
-  readonly activationAllowed: false;
+  readonly activationAllowed: boolean;
   readonly reason: string;
 }
 
 /**
  * The only mode question a Phase 14 caller may ask. The caller can turn the
- * corrective path off; it can never ask for candidate control. Authority comes
- * only from the deciding domain's own holder verdict, and even usable
- * authority is reported as `corrective_applier_unavailable` with no active
- * mode, because no applier exists to consume it.
+ * corrective path off; it can never ask for candidate control. Candidate mode
+ * requires both the deciding domain's usable holder and its runtime-branded
+ * functional catalog. A legacy inactive catalog cannot activate this path.
  */
 export function horsePhase14CorrectiveMode(input: {
   callerMode: unknown;
   domain: unknown;
   packDomain: string | null;
   verdict: HorseAuthorityVerdict;
+  catalog?: Readonly<CorrectiveKernelCatalog> | null;
 }): HorsePhase14CorrectiveMode {
   const base = { activationAllowed: false as const };
   if (input.callerMode === 'off')
@@ -309,19 +365,45 @@ export function horsePhase14CorrectiveMode(input: {
     return { ...base, mode: 'shadow', authorityUsable: false, reason: 'domain_mismatch' };
   if (input.verdict !== 'usable')
     return { ...base, mode: 'shadow', authorityUsable: false, reason: input.verdict };
+  if (
+    isValidatedCorrectiveKernelCatalog(input.catalog) &&
+    correctiveDomainKey(input.catalog.domain) === input.domain
+  )
+    return {
+      mode: 'candidate',
+      authorityUsable: true,
+      activationAllowed: true,
+      reason: 'qualified_functional_catalog',
+    };
   return {
     ...base,
     mode: 'shadow',
     authorityUsable: true,
-    reason: 'corrective_applier_unavailable',
+    reason: 'functional_catalog_unavailable',
   };
+}
+
+/** Running continuation derives solely from the protected domain selection. */
+export function horsePhase14RunningCatalogVersion(domain: string): string {
+  const selected = PHASE14_PROTECTED_RELEASE_SELECTIONS[domain]?.catalogVersion;
+  if (functionalKernelCatalogVersionIsKnown(selected)) return selected;
+  // Dan's 2026-10-26 order: an unselected tournament domain runs the
+  // owner-issued tournament catalog, whose version is the v2 protocol.
+  const d = CORRECTIVE_DOMAINS.find((x) => correctiveDomainKey(x) === domain);
+  return HORSE_OWNER_FORCED_ACTIVATION_ENABLED &&
+    selected === undefined &&
+    d?.mode === 'tournament' &&
+    [TOURNAMENT_KERNEL_OBJECTIVE, CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE].some(
+      (o) => tournamentKernelDefinitionFor(o, d) !== null
+    )
+    ? TOURNAMENT_KERNEL_CATALOG_VERSION
+    : CORRECTIVE_KERNEL_CATALOG_VERSION;
 }
 
 /**
  * Main-thread Phase 14 gates: Phase 8's gate class, one per corrective domain,
  * each with that domain's admission and running continuation, so a withdrawal,
- * refresh failure or restart of one domain never touches another. No engine
- * path imports them; they exist so the null proof is executable.
+ * refresh failure or restart of one domain never touches another.
  */
 export const liveHorsePhase14Authorities: Readonly<Record<string, HorsePhase8AuthorityGate>> =
   Object.freeze(
@@ -329,10 +411,87 @@ export const liveHorsePhase14Authorities: Readonly<Record<string, HorsePhase8Aut
       HORSE_PHASE14_DOMAINS.map((domain) => [
         domain,
         new HorsePhase8AuthorityGate(
-          () => admitHorsePhase14ReleaseAuthority(domain),
+          () => admitHorsePhase14LiveAuthority(domain),
           undefined,
-          horsePhase14ContinuationVersion(domain)
+          horsePhase14ContinuationVersion(domain, horsePhase14RunningCatalogVersion(domain))
         ),
       ])
     )
   );
+
+/** Exact functional code/catalog composition as well as ordinary S4 freshness. */
+export function horsePhase14AuthorityVerdict(receipt: {
+  domain: string;
+  catalogDigest: string;
+  policyDigest: string;
+  baselineSelectionsDigest: string;
+  authority?: HorseAuthorityReceipt;
+  baselineAuthorities?: Partial<
+    Record<'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
+  >;
+}): HorseAuthorityVerdict {
+  const gate = liveHorsePhase14Authorities[receipt.domain],
+    checked = gate?.check(receipt.authority) ?? 'mismatched',
+    authority = gate?.mainAuthority();
+  if (checked === 'usable') {
+    const correctiveDomain = CORRECTIVE_DOMAINS.find(
+      (d) => correctiveDomainKey(d) === receipt.domain
+    );
+    if (!correctiveDomain) return 'mismatched';
+    const variant = correctiveDomain.variant,
+      now = Date.now();
+    const baselineGateUsable = (
+      owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+      selected: unknown,
+      gate: HorsePhase8AuthorityGate | undefined
+    ) => {
+      if (selected == null) return true;
+      const a = gate?.mainAuthority();
+      return (
+        gate?.check(receipt.baselineAuthorities?.[owner]) === 'usable' &&
+        !!a &&
+        (a.expiresAt === null || now < Date.parse(a.expiresAt))
+      );
+    };
+    if (
+      !baselineGateUsable(
+        'phase8',
+        correctiveDomain.mode === 'tournament' ? PHASE8_PROTECTED_RELEASE_SELECTION : null,
+        liveHorsePhase8Authority
+      ) ||
+      !baselineGateUsable(
+        'phase10',
+        variant === 'plo4' ? PHASE10_PROTECTED_RELEASE_SELECTION : null,
+        liveHorsePhase10Authority
+      ) ||
+      !baselineGateUsable(
+        'phase11',
+        PHASE11_PROTECTED_RELEASE_SELECTIONS[
+          variant as keyof typeof PHASE11_PROTECTED_RELEASE_SELECTIONS
+        ],
+        liveHorsePhase11Authorities[variant as keyof typeof liveHorsePhase11Authorities]
+      ) ||
+      !baselineGateUsable(
+        'phase12',
+        PHASE12_PROTECTED_RELEASE_SELECTIONS[
+          variant as keyof typeof PHASE12_PROTECTED_RELEASE_SELECTIONS
+        ],
+        liveHorsePhase12Authorities[variant as keyof typeof liveHorsePhase12Authorities]
+      ) ||
+      !baselineGateUsable(
+        'phase13',
+        PHASE13_PROTECTED_RELEASE_SELECTIONS[
+          variant as keyof typeof PHASE13_PROTECTED_RELEASE_SELECTIONS
+        ],
+        liveHorsePhase13Authorities[variant as keyof typeof liveHorsePhase13Authorities]
+      )
+    )
+      return 'mismatched';
+  }
+  return checked === 'usable' &&
+    (authority?.catalogDigest !== receipt.catalogDigest ||
+      authority.correctivePolicyDigest !== receipt.policyDigest ||
+      authority.baselineSelectionsDigest !== receipt.baselineSelectionsDigest)
+    ? 'mismatched'
+    : checked;
+}

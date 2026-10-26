@@ -8,10 +8,12 @@
  *     the player's current tab. Every hand of the session arrives in that one
  *     room, so the view never has to change rooms again.
  *   - No: the Cluster's entry, with JOIN LIGHTNING (JOIN GAME while the
- *     Cluster runs as MUST MOVE). The join is the Cluster's existing door and
- *     the table's existing buy-in; nothing about money is decided here. The
- *     database moves a player who buys in at a Lightning Cluster into its pool,
- *     and the table view carries that tab on to the pool-session room.
+ *     Cluster runs as MUST MOVE). JOIN LIGHTNING asks one question, the
+ *     buy-in amount, and then seats the player itself (Dan 2026-10-24: "YOU
+ *     DON'T SELECT YOUR SEAT ... SELECT HOW MUCH YOU WANT TO BUY IN FOR, AND
+ *     THEN YOU AUTO ASSIGN THEM TO A SEAT AND TABLE"): the Cluster's join door
+ *     holds a chair, the cash buy-in door buys it (lightningJoinBuyIn), the
+ *     database moves the seat into the pool, and the room opens.
  *
  *   - LIGHTNING PHASE 7: the Cluster is back in MUST MOVE and the caller
  *     already holds a seat in it. Their table is offered (VIEW GAME), never a
@@ -28,7 +30,7 @@
  *     through the table's own buy-in confirmation.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { EmptyState } from '../components/common/EmptyState';
 import { useToast } from '../components/common/Toast';
 import {
@@ -37,15 +39,16 @@ import {
   lightningEntryDecision,
   lightningRoomPath,
   registerLightningPoolSession,
-  setLightningEntryIntent,
   type LightningClusterMeta,
   type LightningEntryDecision,
 } from '../lightning/lightningSession';
 import { LIGHTNING_NEXT_HAND_NOTICE_MS } from '../lightning/lightningHand';
-import { clusterModeDisplay } from '../lightning/lightningLobby';
+import { clusterModeDisplay, isLightningMode } from '../lightning/lightningLobby';
 import {
   LIGHTNING_ENDED_EYEBROW,
   LIGHTNING_ENDED_TEXT,
+  LIGHTNING_SEAT_WAITING_EYEBROW,
+  LIGHTNING_SEAT_WAITING_TEXT,
   LIGHTNING_RETURN_LABEL,
   lightningReturnPath,
 } from '../lightning/lightningReversion';
@@ -55,24 +58,23 @@ import { isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { lightningMultiTableLimit } from '../lightning/lightningCapabilities';
 import { lightningDeviceNow } from '../lightning/lightningDeviceReport';
-import { readLightningPrefs, writeLightningPrefs } from '../lightning/lightningPrefs';
-import { lightningRoute } from '../lightning/lightningLobby';
-import type { LightningMySessionRow } from '../lightning/lightningSessionApi';
-import LightningMySessions, {
+import { writeLightningPrefs } from '../lightning/lightningPrefs';
+import {
   lightningJoinWithinLimit,
   useLightningMySessions,
 } from '../components/lightning/LightningMySessions';
-import LightningPoolBadge from '../components/lightning/LightningPoolBadge';
+import LightningCashEntryCard from '../components/lightning/LightningCashEntryCard';
 import { useLightningPoolHealth } from '../components/lightning/useLightningSessionData';
+import { BuyInModal, type BuyInConfirmation } from '../components/table/BuyInModal';
+import {
+  buyIntoLightning,
+  currentLightningUserId,
+  readLightningBuyInContext,
+  rememberLightningBuyIn,
+  rememberedLightningBuyIn,
+  type LightningBuyInContext,
+} from '../lightning/lightningJoinBuyIn';
 import './LightningEntryPage.css';
-
-/** The room path for one of the player's other sessions, with its tab name and stakes. */
-function mySessionPath(row: LightningMySessionRow): string {
-  const params = new URLSearchParams();
-  params.set('name', row.name);
-  if (row.stakes) params.set('stakes', row.stakes);
-  return `/table/${row.poolSessionId}?${params.toString()}`;
-}
 
 /** What the device allows, in the page's words. */
 export const LIGHTNING_LIMIT_TEXT =
@@ -85,11 +87,6 @@ export const LIGHTNING_LIMIT_TEXT =
  */
 export const LIGHTNING_JOINS_CLOSED_TEXT = 'Lightning Is Not Taking New Players Right Now.';
 
-/** Mode guidance uses the actual cluster metadata, never inferred population. */
-export const MUST_MOVE_ENTRY_TEXT =
-  'This Game Uses Regular Tables And The Normal Buy-In. Lightning Is Not Active Here. Lightning Hands Require Enough Eligible Players.';
-export const REGULAR_ENTRY_TEXT = 'Join Game Opens The Normal Table Buy-In.';
-
 type Phase =
   | { kind: 'resolving' }
   | { kind: 'entry'; meta: LightningClusterMeta | null; decision: LightningEntryDecision }
@@ -98,10 +95,13 @@ type Phase =
 export default function LightningEntryPage() {
   const { clusterId } = useParams<{ clusterId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const [phase, setPhase] = useState<Phase>({ kind: 'resolving' });
   const [attempt, setAttempt] = useState(0);
   const [joining, setJoining] = useState(false);
+  /* JOIN LIGHTNING asks one question, the amount (Dan 2026-10-24). */
+  const [buyIn, setBuyIn] = useState<(LightningBuyInContext & { userId: string }) | null>(null);
   const [slow, setSlow] = useState(false);
   const mounted = useRef(true);
   const routeGeneration = useRef(0);
@@ -110,6 +110,7 @@ export default function LightningEntryPage() {
     routeGeneration.current += 1;
     activeJoin.current = null;
     setJoining(false);
+    setBuyIn(null);
     return () => {
       // A route change does not cancel the backend join, only its obsolete UI result.
       routeGeneration.current += 1;
@@ -126,7 +127,6 @@ export default function LightningEntryPage() {
   const validId = Boolean(clusterId && isUUID(clusterId));
   /* LIGHTNING PHASE 8: the player's other Lightning tables and the device limit. */
   const mine = useLightningMySessions(clusterId ?? null, validId);
-  const [prefs] = useState(() => readLightningPrefs());
 
   useEffect(() => {
     if (!validId || !clusterId) return;
@@ -191,7 +191,90 @@ export default function LightningEntryPage() {
     poolHealth?.multiTableLimit ?? null
   );
   const withinLimit = clusterId ? lightningJoinWithinLimit(mine.rows, clusterId, tableLimit) : true;
-  const join = useCallback(async () => {
+  /** The Lightning door: read the price, then ask only for the amount. */
+  const openLightningBuyIn = useCallback(async () => {
+    if (!clusterId || joining || activeJoin.current) return;
+    const operation = { generation: routeGeneration.current };
+    activeJoin.current = operation;
+    const ownsPage = () =>
+      mounted.current &&
+      operation.generation === routeGeneration.current &&
+      activeJoin.current === operation;
+    setJoining(true);
+    try {
+      const userId = await currentLightningUserId();
+      if (!ownsPage()) return;
+      if (!userId) {
+        toast.warning('Sign In To Join A Game.');
+        return;
+      }
+      const context = await readLightningBuyInContext(clusterId, userId);
+      if (!ownsPage()) return;
+      if (!context) {
+        toast.warning('This Game Is Not Taking Players.');
+        return;
+      }
+      setBuyIn({ ...context, userId });
+    } catch (err) {
+      if (!ownsPage()) return;
+      reportError(err, 'LightningEntryPage.buyin_context_failed', { clusterId });
+      toast.warning('We Could Not Open The Buy-In Right Now. Please Try Again.');
+    } finally {
+      if (ownsPage()) {
+        activeJoin.current = null;
+        setJoining(false);
+      }
+    }
+  }, [clusterId, joining, toast]);
+
+  /** The amount is confirmed: hold a chair, buy it, open the room. */
+  const confirmLightningBuyIn = useCallback(
+    async (amount: number): Promise<BuyInConfirmation> => {
+      if (!clusterId || !buyIn) return false;
+      const result = await buyIntoLightning({
+        clusterId,
+        userId: buyIn.userId,
+        amount,
+        /* The wallet shown is the one the table's own door reads; the buy-in
+           lets that same door choose it, so the two can never differ. */
+        clubId: null,
+      });
+      if (!mounted.current) return result.kind === 'seated';
+      if (result.kind === 'rejected') return { status: 'rejected', message: result.message };
+      if (result.kind === 'seated') rememberLightningBuyIn(clusterId, amount);
+      setBuyIn(null);
+      const meta = phase.kind === 'entry' ? phase.meta : null;
+      writeLightningPrefs({
+        lastClusterId: clusterId,
+        lastClusterName: meta?.name ?? null,
+        lastStakes:
+          meta && meta.smallBlind > 0 && meta.bigBlind > 0
+            ? `${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
+            : null,
+        tableCount: Math.min(4, (mine.rows?.length ?? 0) + 1),
+      });
+      if (result.kind === 'unconfirmed') {
+        toast.warning(result.message);
+        warmTable(result.tableId);
+        navigate(`/table/${result.tableId}`);
+        return false;
+      }
+      if (result.poolSessionId) {
+        registerLightningPoolSession({ poolSessionId: result.poolSessionId, clusterId, meta });
+        navigate(lightningRoomPath(result.poolSessionId, meta));
+      } else {
+        /* The pool session lands a moment after the seat; the table carries
+           this tab on to the room as soon as it exists (the entry intent). */
+        warmTable(result.tableId);
+        navigate(`/table/${result.tableId}`);
+      }
+      return true;
+    },
+    [clusterId, buyIn, phase, mine.rows, navigate, toast]
+  );
+
+  /** JOIN GAME on a Cluster still running as MUST MOVE: the table's own door. */
+  const joinGame = useCallback(async () => {
     if (!clusterId || joining || activeJoin.current) return;
     const operation = { generation: routeGeneration.current };
     activeJoin.current = operation;
@@ -207,24 +290,6 @@ export default function LightningEntryPage() {
         toast.info(waitlistedText(r));
         return;
       }
-      /* The table's own buy-in takes it from here. The intent lets that table
-         carry this tab on to the pool-session room once the buy-in lands. It
-         is set only for JOIN LIGHTNING: a JOIN GAME seat is an ordinary seat,
-         and the table must not wait for a pool session that will never come. */
-      if (joinsLightning) {
-        setLightningEntryIntent(r.table_id, clusterId);
-        /* Warm resume: where the player went, never what they spent. */
-        const meta = phase.kind === 'entry' ? phase.meta : null;
-        writeLightningPrefs({
-          lastClusterId: clusterId,
-          lastClusterName: meta?.name ?? null,
-          lastStakes:
-            meta && meta.smallBlind > 0 && meta.bigBlind > 0
-              ? `${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
-              : null,
-          tableCount: Math.min(4, (mine.rows?.length ?? 0) + 1),
-        });
-      }
       warmTable(r.table_id);
       navigate(`/table/${r.table_id}`);
     } catch (err) {
@@ -237,7 +302,43 @@ export default function LightningEntryPage() {
         setJoining(false);
       }
     }
-  }, [clusterId, joining, joinsLightning, navigate, toast, phase, mine.rows]);
+  }, [clusterId, joining, navigate, toast]);
+
+  const join = useCallback(
+    () => (joinsLightning ? openLightningBuyIn() : joinGame()),
+    [joinsLightning, openLightningBuyIn, joinGame]
+  );
+
+  /* JOIN LIGHTNING TAPPED ON A LIGHTNING TABLE arrives as ?join=1: the player
+     already asked to join, so the amount question opens at once, never a
+     second Join button. Once per arrival, and only where the page would offer
+     the door itself (open, not stopped, within the device's limit). */
+  const autoJoinDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!clusterId || autoJoinDone.current === clusterId) return;
+    if (new URLSearchParams(location.search).get('join') !== '1') return;
+    if (phase.kind !== 'entry' || !joinsLightning) return;
+    const meta = phase.meta;
+    const open =
+      meta?.enabled !== false &&
+      clusterModeDisplay(meta?.clusterMode ?? null).closedLabel === null &&
+      poolHealth?.joinable !== false &&
+      poolHealth?.joinsEnabled !== false &&
+      withinLimit;
+    autoJoinDone.current = clusterId;
+    navigate(location.pathname, { replace: true });
+    if (open) void openLightningBuyIn();
+  }, [
+    clusterId,
+    location.search,
+    location.pathname,
+    phase,
+    joinsLightning,
+    poolHealth,
+    withinLimit,
+    navigate,
+    openLightningBuyIn,
+  ]);
 
   if (!validId) {
     return (
@@ -279,12 +380,13 @@ export default function LightningEntryPage() {
   const { meta, decision } = phase;
   if (decision.kind === 'seat') {
     const seatTableId = decision.seatTableId;
+    const stillLightning = isLightningMode(meta?.clusterMode) && meta?.clusterMode === 'lightning';
     return (
       <div className="lightning-entry" data-testid="lightning-entry">
         <EmptyState
-          eyebrow={LIGHTNING_ENDED_EYEBROW}
+          eyebrow={stillLightning ? LIGHTNING_SEAT_WAITING_EYEBROW : LIGHTNING_ENDED_EYEBROW}
           title={meta?.name ?? 'Lightning'}
-          description={LIGHTNING_ENDED_TEXT}
+          description={stillLightning ? LIGHTNING_SEAT_WAITING_TEXT : LIGHTNING_ENDED_TEXT}
           action={{
             label: LIGHTNING_RETURN_LABEL,
             onClick: () => {
@@ -299,15 +401,6 @@ export default function LightningEntryPage() {
   }
   const joinLabel = decision.kind === 'entry' ? decision.joinLabel : 'Join Game';
   const lightning = decision.kind === 'entry' && decision.lightning;
-  const entryGuidance = lightning
-    ? 'Buy In Once And Play One Stream Of Hands.'
-    : meta?.clusterMode === 'must_move'
-      ? MUST_MOVE_ENTRY_TEXT
-      : REGULAR_ENTRY_TEXT;
-  const stakes =
-    meta && meta.smallBlind > 0 && meta.bigBlind > 0
-      ? `Blinds ${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
-      : '';
   /* A paused, frozen or dead Cluster offers no door at all, and says so in the
      board's own words; a disabled one is closed as before. The database's own
      verdict (fn_lightning_pool_status.joinable, where pool_status's
@@ -315,6 +408,10 @@ export default function LightningEntryPage() {
      read yet decides nothing. The lobby label keeps its own cluster_mode
      source from the lobby feed. */
   const modeDisplay = clusterModeDisplay(meta?.clusterMode ?? null);
+  /* LIGHTNING TRANSITION, PHASE 5: while the game is switching (starting or
+     ending Lightning) this door is shown disabled with the lobby's own words,
+     exactly like the lobby card, so nobody buys into a halted table. */
+  const switchingLabel = modeDisplay.switching ? modeDisplay.label : null;
   const closed =
     meta?.enabled === false ||
     modeDisplay.closedLabel !== null ||
@@ -328,72 +425,66 @@ export default function LightningEntryPage() {
     poolHealth?.joinsEnabled === false;
   /* At the device's limit, another Cluster's JOIN LIGHTNING is not offered. */
   const atLimit = lightning && !closed && !withinLimit;
-  const eyebrow = modeDisplay.closedLabel
-    ? `Game ${modeDisplay.closedLabel}`
-    : lightning || modeDisplay.label === 'LIGHTNING LIVE'
-      ? 'Lightning'
-      : 'Must Move';
   return (
     <div className="lightning-entry" data-testid="lightning-entry">
-      <EmptyState
-        eyebrow={eyebrow}
+      <LightningCashEntryCard
         title={meta?.name ?? 'Lightning'}
-        description={
-          joinsClosed
-            ? LIGHTNING_JOINS_CLOSED_TEXT
-            : closed
-              ? 'This Game Is Not Taking Players.'
-              : atLimit
-                ? LIGHTNING_LIMIT_TEXT
-                : [stakes, entryGuidance].filter(Boolean).join('. ')
+        variant={meta?.variant ?? 'NLH'}
+        stakes={meta ? `${meta.smallBlind}/${meta.bigBlind}` : ''}
+        players={poolHealth?.players}
+        buyIn={
+          meta?.minBuyIn != null && meta.maxBuyIn != null
+            ? `${meta.minBuyIn.toLocaleString()} - ${meta.maxBuyIn.toLocaleString()}`
+            : undefined
         }
-        action={
-          joinsClosed || closed || atLimit
-            ? undefined
-            : { label: joining ? 'Joining...' : joinLabel, onClick: () => void join() }
+        status={
+          joining
+            ? 'Joining'
+            : switchingLabel
+              ? switchingLabel
+              : joinsClosed || closed
+                ? (modeDisplay.closedLabel ?? 'Closed')
+                : atLimit
+                  ? 'Limit'
+                  : 'Running'
         }
-        secondaryAction={{ label: 'Return To Lobby', onClick: () => navigate('/') }}
-      >
-        {joinsClosed ? (
-          <button
-            type="button"
-            className="lightning-entry__join-closed"
-            data-testid="lightning-entry-join-closed"
-            disabled
-            aria-disabled="true"
-          >
-            {joinLabel}
-          </button>
-        ) : null}
-        {lightning && poolHealth ? (
-          <div className="lightning-entry__badge">
-            <LightningPoolBadge status={poolHealth.status} players={poolHealth.players} />
-          </div>
-        ) : null}
-      </EmptyState>
-      {clusterId && mine.rows ? (
-        <LightningMySessions
-          rows={mine.rows}
-          currentClusterId={clusterId}
-          limit={tableLimit}
-          lastPlayed={
-            prefs.lastClusterId
-              ? {
-                  clusterId: prefs.lastClusterId,
-                  name: prefs.lastClusterName,
-                  stakes: prefs.lastStakes,
-                }
-              : null
-          }
-          onViewGame={(row) => {
-            registerLightningPoolSession({
-              poolSessionId: row.poolSessionId,
-              clusterId: row.clusterId,
-              meta: null,
-            });
-            navigate(mySessionPath(row));
-          }}
-          onOpenCluster={(id) => navigate(lightningRoute(id))}
+        primaryTestId={joinsClosed ? 'lightning-entry-join-closed' : undefined}
+        actions={{
+          primaryLabel: joining ? 'Joining...' : joinLabel,
+          primaryDisabled:
+            joining ||
+            closed ||
+            joinsClosed ||
+            atLimit ||
+            switchingLabel !== null ||
+            buyIn !== null,
+          onPrimary: () => void join(),
+          secondaryLabel: 'Return To Lobby',
+          onSecondary: () => navigate('/'),
+        }}
+      />
+      {/* A door that is not offered says why, in one line. */}
+      {atLimit ? (
+        <p className="lightning-entry__quiet" role="status" data-testid="lightning-entry-why">
+          {LIGHTNING_LIMIT_TEXT}
+        </p>
+      ) : joinsClosed ? (
+        <p className="lightning-entry__quiet" role="status" data-testid="lightning-entry-why">
+          {LIGHTNING_JOINS_CLOSED_TEXT}
+        </p>
+      ) : null}
+      {buyIn ? (
+        <BuyInModal
+          isOpen
+          onClose={() => setBuyIn(null)}
+          onConfirm={(amount) => confirmLightningBuyIn(amount)}
+          tableName={meta?.name ?? 'Lightning'}
+          gameType={meta?.variant ?? null}
+          minBuyIn={buyIn.minBuyIn}
+          maxBuyIn={buyIn.maxBuyIn}
+          defaultBuyIn={clusterId ? rememberedLightningBuyIn(clusterId, buyIn) : undefined}
+          accountBalance={buyIn.balance}
+          bigBlind={buyIn.bigBlind || meta?.bigBlind || 0}
         />
       ) : null}
     </div>

@@ -144,8 +144,73 @@ const KILL_WINDOW_MS = 15 * 60_000;
 const KILL_STORM_THRESHOLD = 30;
 /** Rows read back to name a storm's causes; a storm larger than this is named from a sample. */
 const KILL_BREAKDOWN_ROWS = 2_000;
+/**
+ * Kills whose first and last fall inside this span are ONE BURST: one cause
+ * hit many tables at once, not a loop. The 13:27:10Z storm of 2026-10-25 put
+ * 41 kills inside 138 ms; a loop spreads its kills across the window.
+ */
+const KILL_BURST_SPAN_MS = 60_000;
 
 const COMPONENT = 'club-arena-engine';
+
+/** What a storm's kill rows say, read back so the page can say it. */
+export interface KillBreakdown {
+  kills: number;
+  tables: number;
+  /** Top causes, most frequent first (phase or stage, elapsed suffix stripped). */
+  causes: Array<[string, number]>;
+  /** Every kill inside KILL_BURST_SPAN_MS: one cause hit many tables at once. */
+  burst: boolean;
+  firstAt: string | null;
+  spanMs: number | null;
+  /** Tournaments the killed tables belonged to, most hit first (up to three). */
+  tournaments: Array<[string, number]>;
+  /** How many distinct tournaments were hit in all (the list above is capped). */
+  tournamentCount: number;
+  names: Map<string, string>;
+}
+
+/**
+ * THE PAGE SAYS WHOSE TABLES AND WHETHER IT WAS ONE BURST (2026-10-26).
+ *
+ * "41 engine kills in 15min on 41 tables, most at tournament_lease_lost -
+ * tables are being destroyed and rebuilt in a loop" was true and unhelpful:
+ * the kills were one tournament's 41 tables inside 138 ms, so there was no
+ * loop, and the event was not named. A reader with the page alone could not
+ * tell which event to look at or whether it was still happening. Now: the
+ * tournament when the killed tables were all one event's, the moment when the
+ * kills were one burst, and "all <cause>" when every kill had the same cause.
+ * Pure, so the wording is tested without a database.
+ */
+export function killStormSummary(
+  kills: number,
+  windowMinutes: number,
+  why: KillBreakdown | null
+): string {
+  let text = kills + ' engine kills in ' + windowMinutes + 'min';
+  if (!why) return text + ' - tables are being destroyed and rebuilt in a loop';
+  text += ' on ' + why.tables + ' tables';
+  if (why.tournaments.length === 1) {
+    const [id] = why.tournaments[0];
+    const name = why.names.get(id);
+    text += ' of tournament ' + (name ? '"' + name + '" (' + id.slice(0, 8) + ')' : id.slice(0, 8));
+  } else if (why.tournaments.length > 1) {
+    text += ' across ' + why.tournamentCount + ' tournaments';
+  }
+  const [topCause, topCount] = why.causes[0];
+  text += (topCount >= why.kills ? ', all ' : ', most at ') + topCause;
+  if (why.burst && why.firstAt) {
+    text += ' - one burst at ' + why.firstAt.slice(11, 19) + 'Z, not a loop';
+  } else if (why.spanMs !== null) {
+    text +=
+      ' - spread over ' +
+      Math.max(1, Math.round(why.spanMs / 60_000)) +
+      'min, tables are being destroyed and rebuilt in a loop';
+  } else {
+    text += ' - tables are being destroyed and rebuilt in a loop';
+  }
+  return text;
+}
 
 export interface DealRateSnapshot {
   /** Consecutive checks where the DB confirmed zero hands on a dealing fleet. */
@@ -338,23 +403,30 @@ export class DealRateVerifier {
             alertname: 'ClubArenaEngineKillStorm',
             severity: 'critical',
             component: COMPONENT,
-            summary:
-              kills +
-              ' engine kills in ' +
-              Math.round(KILL_WINDOW_MS / 60_000) +
-              'min' +
-              (why ? ' on ' + why.tables + ' tables, most at ' + why.causes[0][0] : '') +
-              ' - tables are being destroyed and rebuilt in a loop',
+            summary: killStormSummary(kills, Math.round(KILL_WINDOW_MS / 60_000), why),
             description:
               'Healthy is under one an hour. ' +
               (why
                 ? 'Kills by phase or stage: ' +
                   why.causes.map(([cause, n]) => cause + ' x' + n).join(', ') +
-                  '. '
+                  '. ' +
+                  (why.tournaments.length > 0
+                    ? 'Tournaments hit: ' +
+                      why.tournaments
+                        .map(([id, n]) => (why.names.get(id) ?? id.slice(0, 8)) + ' x' + n)
+                        .join(', ') +
+                      '. '
+                    : '')
                 : '') +
               'engine_recovery_events.detail names the phase or stage of every kill.',
             labels: why
-              ? { kills: String(kills), tables: String(why.tables), top_cause: why.causes[0][0] }
+              ? {
+                  kills: String(kills),
+                  tables: String(why.tables),
+                  top_cause: why.causes[0][0],
+                  shape: why.burst ? 'burst' : 'spread',
+                  ...(why.tournaments.length === 1 ? { tournament_id: why.tournaments[0][0] } : {}),
+                }
               : { kills: String(kills) },
           }),
           'DealRateVerifier.kill_storm_alert_failed'
@@ -386,13 +458,11 @@ export class DealRateVerifier {
    * hit and the top causes, most frequent first. Read-only, and null when it
    * cannot be read: the alert is raised either way.
    */
-  private async killBreakdown(
-    since: string
-  ): Promise<{ tables: number; causes: Array<[string, number]> } | null> {
+  private async killBreakdown(since: string): Promise<KillBreakdown | null> {
     try {
       const { data, error } = await supabase
         .from('engine_recovery_events')
-        .select('detail, table_id')
+        .select('detail, table_id, created_at')
         .eq('event', 'watchdog_kill_rebuild')
         .eq('event_class', 'automatic_recovery')
         .gt('created_at', since)
@@ -400,7 +470,13 @@ export class DealRateVerifier {
       if (error || !Array.isArray(data) || data.length === 0) return null;
       const tables = new Set<string>();
       const causes = new Map<string, number>();
-      for (const row of data as Array<{ detail?: unknown; table_id?: unknown }>) {
+      let firstAt = Number.POSITIVE_INFINITY;
+      let lastAt = Number.NEGATIVE_INFINITY;
+      for (const row of data as Array<{
+        detail?: unknown;
+        table_id?: unknown;
+        created_at?: unknown;
+      }>) {
         if (row.table_id) tables.add(String(row.table_id));
         // `dealing_loop_died+96s` and `start_failed:start_crash_recovery` keep
         // their cause; the elapsed suffix would split one cause into many.
@@ -409,13 +485,90 @@ export class DealRateVerifier {
             .split('+')[0]
             .trim() || 'unnamed';
         causes.set(cause, (causes.get(cause) ?? 0) + 1);
+        const at = Date.parse(String(row.created_at ?? ''));
+        if (Number.isFinite(at)) {
+          if (at < firstAt) firstAt = at;
+          if (at > lastAt) lastAt = at;
+        }
       }
+      const timed = Number.isFinite(firstAt) && Number.isFinite(lastAt);
+      // Best effort, like the breakdown itself: a tournament that cannot be
+      // named leaves the page exactly as it was without this read.
+      const hit = await this.killedTournaments([...tables]);
       return {
+        kills: data.length,
         tables: tables.size,
         causes: [...causes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3),
+        burst: timed && lastAt - firstAt <= KILL_BURST_SPAN_MS,
+        firstAt: timed ? new Date(firstAt).toISOString() : null,
+        spanMs: timed ? lastAt - firstAt : null,
+        ...hit,
       };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * WHICH TOURNAMENT THE KILLED TABLES BELONGED TO (2026-10-26).
+   *
+   * The 13:27:10Z storm paged "41 engine kills in 15min on 41 tables, most at
+   * tournament_lease_lost": 41 tables, one tournament, one lost lease, and the
+   * page did not say which event. Every killed table row names its tournament,
+   * so this reads them back (bounded) and counts kills per tournament, most
+   * hit first, with each one's name. Read-only, best effort: on any failure it
+   * returns no tournaments and the page is raised as before.
+   */
+  private async killedTournaments(
+    tableIds: string[]
+  ): Promise<Pick<KillBreakdown, 'tournaments' | 'tournamentCount' | 'names'>> {
+    const none = {
+      tournaments: [] as Array<[string, number]>,
+      tournamentCount: 0,
+      names: new Map<string, string>(),
+    };
+    if (tableIds.length === 0) return none;
+    try {
+      const byTournament = new Map<string, number>();
+      for (let i = 0; i < tableIds.length; i += IN_LIST_CHUNK) {
+        const { data, error } = await supabase
+          .from('tables')
+          .select('id, tournament_id')
+          .in('id', tableIds.slice(i, i + IN_LIST_CHUNK));
+        if (error || !Array.isArray(data)) return none;
+        for (const row of data as Array<{ tournament_id?: unknown }>) {
+          if (!row.tournament_id) continue;
+          const id = String(row.tournament_id);
+          byTournament.set(id, (byTournament.get(id) ?? 0) + 1);
+        }
+      }
+      const tournaments = [...byTournament.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const names = new Map<string, string>();
+      // A name that cannot be read costs the name, never the count: the id
+      // still says which event.
+      if (tournaments.length > 0) {
+        try {
+          const { data, error } = await supabase
+            .from('tournaments')
+            .select('id, name')
+            .in(
+              'id',
+              tournaments.map(([id]) => id)
+            );
+          if (!error && Array.isArray(data)) {
+            for (const row of data as Array<{ id?: unknown; name?: unknown }>) {
+              if (row.id && typeof row.name === 'string' && row.name.trim()) {
+                names.set(String(row.id), row.name.trim());
+              }
+            }
+          }
+        } catch {
+          // names stay empty
+        }
+      }
+      return { tournaments, tournamentCount: byTournament.size, names };
+    } catch {
+      return none;
     }
   }
 

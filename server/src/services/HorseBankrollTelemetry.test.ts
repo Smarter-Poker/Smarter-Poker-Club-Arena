@@ -28,6 +28,8 @@ const TELEMETRY = read('services/HorseBankrollTelemetry.ts');
    predicate (HorseSitVerdict), which RETURNS its telemetry for the fleet to
    emit where the verdict is acted on. It names the event; the fleet emits it. */
 const VERDICT = read('services/HorseSitVerdict.ts');
+// The PLO5 Auto Top Up step (HorseTopUpStyle) emits topup_funded / topup_refused.
+const SETTLEMENT = read('engine/ServerTableEngineSettlement.ts');
 
 describe('telemetry says WHY, and stays quiet when there is nothing to say', () => {
   beforeEach(() => resetBankrollCounters());
@@ -198,7 +200,7 @@ describe('WIRING - the module exists and something calls it', () => {
     /* Every file that may emit. A name whose only emitter is a file missing
        from this list reads as dead vocabulary and fails the pin, which is how
        the tournament gate's two events were caught when they landed. */
-    const emitters = FLEET + ROTATOR + TOURNEY + REBUY + VERDICT;
+    const emitters = FLEET + ROTATOR + TOURNEY + REBUY + VERDICT + SETTLEMENT;
     for (const event of declared) {
       expect(emitters, `no emitter for ${event}`).toContain(`'${event}'`);
     }

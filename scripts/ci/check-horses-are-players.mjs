@@ -81,7 +81,20 @@ const EXCLUDE = [
  * number, or adding a file, is the moment to prove the difference is
  * identification or an equal outcome - and to say so here.
  */
+const PRESUME_ROSTER =
+  'humanUserIds (Dan 2026-10-25, "TAG THEM ALL FROM THE START, UNLESS OTHERWISE PROVEN DIFFERENTLY", PLO only) hands the horse brain the roster of seats a person plays, so presumedAggressorRead can read each PERSON as an aggressive raiser until their own hands prove otherwise. It is IDENTIFICATION passed as data to the brain\'s opponent read: no horse is denied, paid, timed or treated differently by it, and it is recorded as the owner exception in CLAUDE.md 10.5. See docs/changelog/2026-10-25-plo-every-person-is-an-aggressive-raiser-until-proven-otherwise.md.';
+
 const REGISTER = {
+  'server/src/services/HorseReplacementBoarding.ts': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: 'The explicit original replacement boarding command verifies that the reserved Auth identity still belongs to an eligible horse before generating that horse’s subject session. This prevents the horse-control input device from signing in or joining for a human account. Every admitted horse uses the ordinary player membership transaction, limits and receipt; no horse player benefit or evidence is excluded.',
+  },
+  'server/src/services/HorseOnboarding.ts': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: 'The original reserved replacement signup checks whether its own profile is already a horse. A false flag continues the normal onboarding conversion; a true flag resumes completion while preserving that horse’s learned brain and social identity. This identifies partial versus completed onboarding, never excludes a horse from play, evidence, earnings or a player feature.',
+  },
   'server/src/engine/ServerTableEngineBase.ts': {
     allowed: 1,
     kind: 'EQUAL OUTCOME',
@@ -103,9 +116,9 @@ const REGISTER = {
     ].join('\n'),
   },
   'server/src/engine/ServerTableEngineSettlement.ts': {
-    allowed: 1,
+    allowed: 2,
     kind: 'IDENTIFICATION',
-    why: 'Horse cash-out plumbing: picks the horses that have hit their deterministic stack target and stands them up on their big blind. Fleet steering, and it denies a horse nothing.',
+    why: "Horse cash-out plumbing: picks the horses that have hit their deterministic stack target and stands them up on their big blind. Fleet steering, and it denies a horse nothing. And the PLO5 horse top-up step (Dan 2026-10-24, 30% Auto Top Up / 70% add-on): it selects the horses because a human refills through their own Auto Top Up switch or Add Chips button in the client; this is the horse's input device for the same two features, paid from its own wallet like a human's. It gives a horse what a human has, and denies it nothing.",
   },
   'server/src/handlers/faultInjection.ts': {
     allowed: 1,
@@ -113,17 +126,22 @@ const REGISTER = {
     why: 'Refuses a chaos DRILL on any table with a real person at it. Drills are deliberate damage; declining to inflict it on humans is not a benefit withheld from horses.',
   },
   'server/src/lightning/LightningHandHost.ts': {
-    allowed: 2,
+    allowed: 5,
     kind: 'IDENTIFICATION',
     why: [
       'Sets has_human on the Lightning hand_history row exactly as services/supabase/handHistory.ts does for a physical hand, so sp_prune_hand_history applies the same retention rule. Storage policy only: the horse is matched, dealt, timed and settled identically.',
       "clientControls() (2026-10-22) answers false for a non-horse participant: it only decides WHO supplies a horse's input, the brain or the account's own authenticated client (the Lightning pilot witnesses). A horse whose client controls its seat gets exactly the human clock, time bank, timeout and decision announcement; nothing is withheld. See docs/changelog/2026-10-22-a-horse-accounts-own-client-drives-its-seat.md.",
+      "offerHorseEarlyLooks() (Dan 2026-10-24, \"HORSES SHOULD FOLD RIGHT AWAY IF THEY WERE ALREADY FOLDING\") skips a non-horse participant because it is the horse INPUT DEVICE pressing Lightning Fold: a person presses the same fast_fold door with their own button, and the horse's press goes through that identical door (handlePlayerAction 'fast_fold', foldAvailable, the operator switch). Nothing is withheld from either. See docs/changelog/2026-10-24-lightning-horses-four-games-and-fast-fold.md.",
+      `Both decideLightningHorse calls (two filters): ${PRESUME_ROSTER}`,
     ].join('\n'),
   },
   'server/src/engine/ServerTableEngineTurns.ts': {
-    allowed: 2,
+    allowed: 3,
     kind: 'IDENTIFICATION',
-    why: "Both are the horse INPUT DEVICE (2026-10-22): yieldHorseTurnToOwnClient and releaseOwnClientControl return early for a non-horse seat because they only cancel or resume the brain's decision for a horse account whose own authenticated client took or released its seat. A human seat has no brain decision to cancel or resume. The horse driven by its own client gets the same human clock, time bank and timeout as anybody else. See docs/changelog/2026-10-22-a-horse-accounts-own-client-drives-its-seat.md.",
+    why:
+      "The horse decision's gameState.humanUserIds: " +
+      PRESUME_ROSTER +
+      "\nThe other two are the horse INPUT DEVICE (2026-10-22): yieldHorseTurnToOwnClient and releaseOwnClientControl return early for a non-horse seat because they only cancel or resume the brain's decision for a horse account whose own authenticated client took or released its seat. A human seat has no brain decision to cancel or resume. The horse driven by its own client gets the same human clock, time bank and timeout as anybody else. See docs/changelog/2026-10-22-a-horse-accounts-own-client-drives-its-seat.md.",
   },
   'server/src/services/supabase/handHistory.ts': {
     allowed: 1,

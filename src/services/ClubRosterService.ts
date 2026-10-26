@@ -353,7 +353,7 @@ export interface DownlineMember {
   is_online: boolean;
 }
 
-/** A win / loss window. Days are UTC calendar days; the week starts Monday. */
+/** Today uses Chicago midnight. Week/month use UTC; the week starts Monday. */
 export type WinLossPeriod = 'today' | 'week' | 'month' | 'overall';
 
 /** One window of a member's results, in club chips. Positive is a win. */
@@ -548,6 +548,8 @@ export const ClubRosterService = {
             ? null
             : String(row.player_number),
         role: row.role ? normaliseRole(row.role) : null,
+        // The owner fallback is display-only, not club_members.agent_id.
+        assigned: typeof row.assigned === 'boolean' ? row.assigned : undefined,
       }))
       .sort((a, b) => a.depth - b.depth);
   },

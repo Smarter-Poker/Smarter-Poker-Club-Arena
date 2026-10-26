@@ -73,7 +73,12 @@ import {
   sameLightningConfig,
   type LightningConfig,
 } from './LightningConfig.js';
-import { isUuid, lightningConfig, type LightningRpcClient } from './LightningRpc.js';
+import {
+  LIGHTNING_ENTRY_BIG_BLIND_HEADER,
+  isUuid,
+  lightningConfig,
+  type LightningRpcClient,
+} from './LightningRpc.js';
 import { LightningPresence, type PresenceSource } from './LightningPresence.js';
 import {
   LightningClusterWorker,
@@ -274,8 +279,15 @@ function normalizeDiscovered(
   return out;
 }
 
+// Every Lightning RPC says this engine posts the entry big blind
+// (LIGHTNING_ENTRY_BIG_BLIND_HEADER): the matcher and the barrier read it.
 const defaultRpc: LightningRpcClient = (fn, args) =>
-  supabase.rpc(fn, args) as unknown as PromiseLike<{ data: unknown; error: unknown }>;
+  supabase
+    .rpc(fn, args)
+    .setHeader(LIGHTNING_ENTRY_BIG_BLIND_HEADER, '1') as unknown as PromiseLike<{
+    data: unknown;
+    error: unknown;
+  }>;
 
 const consoleLogger: LightningWorkerLogger = {
   log: (m) => console.log(m),
@@ -337,6 +349,26 @@ export class LightningSupervisor {
       this.workers.get(clusterId)?.admit();
     } catch {
       /* an admission hint must never take the supervisor down */
+    }
+  }
+
+  /**
+   * A hand of `fromClusterId` freed a player (a fold, or the hand's end, after
+   * the database released them). Every OTHER Cluster's worker that held
+   * somebody for the multi-table limit on its last pass and has seen this
+   * player runs its next pass within the admission window: the player may be
+   * legal there now. Without it that pool learned of the release only at its
+   * next pass interval. A hint: it never throws and never forms anything itself.
+   */
+  peerReleased(fromClusterId: string, playerId: string): void {
+    if (!this.running) return;
+    for (const [clusterId, worker] of this.workers) {
+      if (clusterId === fromClusterId) continue;
+      try {
+        worker.peerReleased(playerId);
+      } catch {
+        /* a release hint must never take the supervisor down */
+      }
     }
   }
 
@@ -604,13 +636,22 @@ export class LightningSupervisor {
         ? {
             startHand: (hand) => {
               hosting.startHand(
-                hand,
+                // The front table the forming pass just checked the lease on:
+                // the host reads its rules alongside begin_dealing (a hint the
+                // bind confirms or overrules).
+                { ...hand, hostTableHint: hand.hostTableHint ?? this.cachedFrontTable(clusterId) },
                 worker.currentConfig,
-                (playerId) => worker.wake(playerId),
+                (playerId) => {
+                  worker.wake(playerId);
+                  if (playerId) this.peerReleased(clusterId, playerId);
+                },
                 (id) => onFrozen(id),
                 // LIGHTNING PHASE 13: the fold flags are read live, at the action door.
                 () => worker.currentConfig,
-                (playerId) => worker.noteIdle(playerId)
+                (playerId) => {
+                  worker.noteIdle(playerId);
+                  this.peerReleased(clusterId, playerId);
+                }
               );
             },
             hasInstance: (id) => hosting.hasInstance(id),
@@ -624,6 +665,13 @@ export class LightningSupervisor {
         : {}),
     });
     return worker;
+  }
+
+  /** The cached front table, if still fresh; never reads. */
+  private cachedFrontTable(clusterId: string): string | null {
+    const nowMs = (this.deps.now?.() ?? new Date()).getTime();
+    const cached = this.frontTables.get(clusterId);
+    return cached && nowMs - cached.at < FRONT_TABLE_TTL_MS ? cached.tableId : null;
   }
 
   /** The Cluster's front table, cached briefly (the host table every hand binds to). */

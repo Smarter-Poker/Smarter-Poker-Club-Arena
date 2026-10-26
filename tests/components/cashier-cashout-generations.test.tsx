@@ -191,18 +191,18 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it('captures before the first settlement await and refuses same-frame duplicate clicks', async () => {
-  const gate = deferred<{ locked: boolean }>();
-  state.lock.mockReturnValueOnce(gate.promise);
+it('captures before receipt recovery and refuses same-frame duplicate clicks', async () => {
+  const gate = deferred<{ found: false }>();
+  state.recover.mockReturnValueOnce(gate.promise);
   const button = await mount('250');
   act(() => {
     fireEvent.click(button);
     fireEvent.click(button);
   });
   expect(state.capture).toHaveBeenCalledTimes(1);
-  await waitFor(() => expect(state.lock).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(state.recover).toHaveBeenCalledTimes(1));
   expect(state.run).not.toHaveBeenCalled();
-  await act(async () => gate.resolve({ locked: false }));
+  await act(async () => gate.resolve({ found: false }));
   await waitFor(() => expect(state.run).toHaveBeenCalledTimes(1));
   expect(state.run.mock.calls[0][0]).toBe(state.capture.mock.calls[0][0]);
 });
@@ -316,14 +316,14 @@ it('auth notification remounts the Cashier during an old pending action and its 
   await screen.findByText(/chips are held for review/i);
 });
 
-it('a scope change during settlement cannot dispatch or show old success', async () => {
-  const gate = deferred<{ locked: boolean }>();
-  state.lock.mockReturnValueOnce(gate.promise);
+it('a scope change during receipt recovery cannot dispatch or show old success', async () => {
+  const gate = deferred<{ found: false }>();
+  state.recover.mockReturnValueOnce(gate.promise);
   fireEvent.click(await mount('250'));
   expect(state.capture).toHaveBeenCalledTimes(1);
-  await waitFor(() => expect(state.lock).toHaveBeenCalledOnce());
+  await waitFor(() => expect(state.recover).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole('button', { name: 'Switch Club' }));
-  await act(async () => gate.resolve({ locked: false }));
+  await act(async () => gate.resolve({ found: false }));
   expect(state.run).not.toHaveBeenCalled();
   expect(screen.queryByText(/chips are held for review/i)).toBeNull();
 });
@@ -358,4 +358,11 @@ it('unknown recovery and a changed account during lookup cannot reach payment ch
   await act(async () => gate.resolve({ found: false }));
   expect(state.lock).not.toHaveBeenCalled();
   expect(state.run).not.toHaveBeenCalled();
+});
+
+it('requests a cashout without settlement admission', async () => {
+  state.lock.mockResolvedValue({ locked: true });
+  fireEvent.click(await mount('250'));
+  await waitFor(() => expect(state.run).toHaveBeenCalledOnce());
+  expect(state.lock).not.toHaveBeenCalled();
 });

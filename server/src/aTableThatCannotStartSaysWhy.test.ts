@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as alerts from './services/financialAlerts.js';
+import { supabase } from './services/supabase.js';
 import { TournamentManagerBase } from './tournament/TournamentManagerBase.js';
 
 afterEach(() => vi.restoreAllMocks());
@@ -84,6 +85,9 @@ describe('a table failing for ten minutes pages once per half hour with its reas
     const raise = vi
       .spyOn(alerts, 'raiseFinancialAlert')
       .mockResolvedValue({ persisted: true, alertId: 'a' });
+    // A refresh rewrites the open row (aStalledTablePagesItsRealRefusal).
+    const chain = { update: () => chain, eq: () => chain, then: (f: any) => f({ error: null }) };
+    vi.spyOn(supabase, 'from').mockReturnValue(chain as never);
     const m = probe();
     m.tableAdmissionFailingSince.set('t1', 0);
     m.tableAdmissionLastRefusal.set('t1', REFUSAL);

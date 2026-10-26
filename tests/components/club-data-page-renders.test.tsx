@@ -1,6 +1,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// These snapshots describe one reporting day. A heartbeat test must not turn
+// into a midnight-rollover test just because CI starts at 23:59 Chicago.
+const FIXTURE_NOW = vi.hoisted(() => {
+  const now = new Date('2026-10-23T18:00:00Z');
+  vi.setSystemTime(now);
+  return now;
+});
+
 // Club Data counts America/Chicago days (20261022120121): today is the Chicago date.
 const chicagoToday = (): string =>
   new Intl.DateTimeFormat('en-CA', {
@@ -296,9 +304,13 @@ import {
   writeClubDataCache,
 } from '../../src/lib/clubDataCache';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
+  vi.setSystemTime(FIXTURE_NOW);
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
   routeState.clubId = CLUB_ID;
   rpcMock.mockReset();
@@ -1787,7 +1799,7 @@ describe('ClubDataPage', () => {
   });
 
   it('aborts a protected request when its response deadline expires', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ now: FIXTURE_NOW });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const snapshotSignals: AbortSignal[] = [];
     const pending = new Promise<never>(() => undefined);
@@ -1840,7 +1852,7 @@ describe('ClubDataPage', () => {
     // scans after the operator left, and in this file it leaked into the next
     // test's mock: the deadline test above saw an extra request on loaded CI
     // runners (PRs #7281, #7282, #7283).
-    vi.useFakeTimers();
+    vi.useFakeTimers({ now: FIXTURE_NOW });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const pending = new Promise<never>(() => undefined);
     let snapshotCalls = 0;
@@ -2266,7 +2278,8 @@ describe('ClubDataPage', () => {
   });
 
   it('keeps an expanded recent ledger through the 60-second verified refresh', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: FIXTURE_NOW });
+    expect(chicagoToday()).toBe(snapshot.range.end);
     const recentRows = Array.from({ length: 200 }, (_, index) => ({
       ...snapshot.rows[0],
       id: `heartbeat-game-${index + 1}`,
@@ -2328,6 +2341,7 @@ describe('ClubDataPage', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(60_000);
       });
+      expect(chicagoToday()).toBe(snapshot.range.end);
 
       // Two hundred ledger rows render after the page lands; under a loaded CI
       // runner that took longer than the default 1s (publish run 38981365558).

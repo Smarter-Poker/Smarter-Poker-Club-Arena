@@ -172,6 +172,25 @@ BEGIN
       'replacement_hash', 'dd389f9dd3013aef5e50bbd456291297'
     ),
     jsonb_build_object(
+      'signature', 'public.fn_cashier_transaction_history(uuid,text,integer,integer)',
+      -- The Cashier's Transaction History door (Dan 2026-10-24). Migration
+      -- 20261024203917, installed and recorded under that version; full definition
+      -- read back live the same day as owner, agent and player.
+      'hash', '3919f3ef7a21ed33e2f0c7a80113c7d2'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_history_page(uuid,text,text,timestamp with time zone,timestamp with time zone,integer,integer)',
+      -- Transaction History filters, date range and the agent's downline book
+      -- (Dan 2026-10-24). Migration 20261024213601, installed through Apply
+      -- Merged Migration and recorded under that version; read back live.
+      'hash', '25db80241e3b8e5823b7335631b6a18f'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_history_totals(uuid,text,timestamp with time zone,timestamp with time zone)',
+      -- The viewer's own In, Out and Net over the filtered book (same migration).
+      'hash', '52ae19055464aa6525a02a04ce7fdec0'
+    ),
+    jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
       -- Installed 20261016021637 takes the agreement mutex before the retained
       -- bank core. Exact full definition and owner/ACL posture read back live.

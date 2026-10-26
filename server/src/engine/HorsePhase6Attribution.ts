@@ -2,7 +2,7 @@
  * Captures the lookup actually performed; does not certify causal influence. */
 import type { HorseDecision, SeatPlayer } from '../types.js';
 import { isDeepStrictEqual as samePhase6Provenance } from 'node:util';
-import { vpipFloorCallDown, type HorseGameStateV2 } from './HorseLogic.js';
+import { vpipFloorCallDown, SHORT_STACK_NO_FLAT_BB, type HorseGameStateV2 } from './HorseLogic.js';
 import {
   horseTournamentProvenanceIsValid,
   horseTournamentProvenanceMatchesSnapshot,
@@ -29,7 +29,7 @@ import {
 } from './HorseTournamentPreflop.js';
 import { horsePolicyDealtPlayers } from './multiway/DealtSeatCensus.js';
 import { holeCardCount, isOmahaVariant, isShortDeckVariant } from './VariantRules.js';
-import { isFixedLimitVariant } from './BettingStructure.js';
+import { isFixedLimitVariant, isPotLimitVariant } from './BettingStructure.js';
 
 export type Phase6ReferenceRoute =
   | 'legacy_preflop'
@@ -85,6 +85,8 @@ type Phase6Snapshot = {
     v18Straddle?: boolean;
     v27GtoCharts?: boolean;
     v38Ev?: boolean;
+    v53Pressure?: boolean;
+    mind?: boolean;
   };
 };
 export interface Phase6ReferenceObservation {
@@ -538,7 +540,94 @@ export function necessaryReferenceRouteGates(
 }
 /** Check only literal returns of the named source route; no equity or draw
  * is repeated. These are raw reference proposals, before legalizer/controller. */
-function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapshot): boolean {
+/** V53 PRESSURE 4-BET IS A VARIANT_PRICE RETURN (2026-10-26).
+ * HorseLogic's variant_price route also returns a raise: hero opened, a
+ * pressure target re-raised without going all in, hero still has chips
+ * behind, and hero is clear of the price (v53_pressure_four_bet). The shape
+ * check knew only fold, call and all-in, so every such tournament 4-bet was
+ * refused as reference_shape and the horse folded on the fallback. The
+ * opponent read and the equity gap are private; this admits exactly the
+ * public shape and the deterministic target of that one return. */
+function v53PressureFourBetShape(amount: number | null, snapshot: Phase6Snapshot): boolean {
+  const s = snapshot.gameState,
+    p = snapshot.player,
+    o = snapshot.opts ?? {};
+  if ((o.v53Pressure ?? true) === false || o.mind === false) return false;
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return false;
+  if (
+    !s.legalActions?.includes('raise') ||
+    s.minRaiseTo == null ||
+    s.maxRaiseTo == null ||
+    s.maxRaiseTo < s.minRaiseTo
+  )
+    return false;
+  const history = (s.actionHistory || []).filter((a) => a.stage === 'preflop');
+  let raises = 0,
+    last = -1;
+  for (const a of history)
+    if (
+      a.action === 'raise' ||
+      a.action === 'bet' ||
+      (a.action === 'all_in' && a.isFullRaise !== undefined)
+    ) {
+      raises++;
+      last = a.seat;
+    }
+  if (raises !== 2) return false;
+  const raiser = s.players.find((x) => x.seat === last);
+  if (!raiser || raiser.is_all_in === true) return false;
+  const toCall = Math.max(0, s.currentBet - p.bet);
+  if (Math.min(toCall, p.stack) >= p.stack) return false;
+  if (
+    !history.some((a) => a.userId === p.user_id && (a.action === 'raise' || a.action === 'all_in'))
+  )
+    return false;
+  const potLimit =
+    s.variantRules && s.bettingStructure !== undefined
+      ? s.bettingStructure === 'pot_limit'
+      : isPotLimitVariant((s.gameVariant || 'nlh').toLowerCase());
+  const target = potLimit
+    ? s.maxRaiseTo
+    : Math.min(s.maxRaiseTo, Math.max(s.minRaiseTo, s.currentBet * 2.3));
+  return amount === Math.round(target * 100) / 100;
+}
+/** V58 A SHORT TOURNAMENT STACK DOES NOT FLAT (HorseLogic, Dan 2026-10-25):
+ * a no-limit hold'em tournament stack of at most SHORT_STACK_NO_FLAT_BB big
+ * blinds, facing a raise that leaves it chips behind, answers with the JAM or
+ * the fold - from the V38 variant price and from the reference's maniac
+ * call-down alike, on every seat including a big blind heads-up against the
+ * opener. That jam is a reference proposal: before this shape was admitted
+ * the big-blind and heads-up jams were refused as reference_shape, and the
+ * engine's liveness fallback folded the hand the brain had chosen to jam.
+ * Public facts only; no strategy or equity is re-run here. */
+function v58ShortStackJamShape(snapshot: Phase6Snapshot): boolean {
+  const s = snapshot.gameState,
+    p = snapshot.player;
+  if (snapshot.opts?.mind === false || s.stage !== 'preflop') return false;
+  const tournament = s.gameMode
+    ? s.gameMode === 'tournament'
+    : s.tournament != null || (s.bigBlind ?? 0) >= 10;
+  if (!tournament) return false;
+  const f = sourceVariantFacts(s);
+  const potLimit =
+    s.variantRules && s.bettingStructure !== undefined
+      ? s.bettingStructure === 'pot_limit'
+      : isPotLimitVariant((s.gameVariant || 'nlh').toLowerCase());
+  if (f.omaha || f.short || f.fixed || potLimit || f.holes !== 2) return false;
+  const bb = s.bigBlind > 0 ? s.bigBlind : 0;
+  if (!(bb > 0) || (p.stack + (p.bet || 0)) / bb > SHORT_STACK_NO_FLAT_BB) return false;
+  const toCall = Math.max(0, s.currentBet - (p.bet || 0));
+  if (!(toCall > 0) || !(p.stack > toCall)) return false;
+  return (s.actionHistory || []).some(
+    (a) =>
+      a.stage === 'preflop' &&
+      a.seat !== p.seat &&
+      (a.action === 'raise' ||
+        a.action === 'bet' ||
+        (a.action === 'all_in' && a.isFullRaise !== undefined))
+  );
+}
+export function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapshot): boolean {
   if (r.route === 'intent_engine' || r.route === 'legacy_preflop') return true;
   const s = snapshot.gameState,
     p = snapshot.player,
@@ -555,6 +644,7 @@ function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapsho
     const floorCall = vpipFloorCallDown({ action: 'fold', thinkTime: 0 }, p, s, () => 0);
     if (floorCall.action === 'call' && amount === floorCall.amount) return true;
   }
+  if (action === 'all_in' && amount === null && v58ShortStackJamShape(snapshot)) return true;
   if (r.route === 'chart_open_jam')
     return (
       amount === null &&
@@ -564,6 +654,8 @@ function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapsho
     );
   if (action === 'fold') return amount === null;
   if (action === 'call') return amount === call;
+  if (r.route === 'variant_price' && action === 'raise')
+    return v53PressureFourBetShape(amount, snapshot);
   if (r.route === 'chart_bb_defend') return false;
   const last = (s.actionHistory || [])
     .filter(
@@ -782,7 +874,9 @@ export function horsePhase6AttributionMismatch(
     const graph = decision.policyGraph,
       first = graph?.transitions?.[0];
     if (
-      (graph?.version !== 'horse-policy-order-v1' && graph?.version !== 'horse-policy-order-v2') ||
+      (graph?.version !== 'horse-policy-order-v1' &&
+        graph?.version !== 'horse-policy-order-v2' &&
+        graph?.version !== 'horse-policy-order-v3') ||
       !Array.isArray(graph.transitions) ||
       !exact(first, ['node', 'before', 'after', 'changed', 'elapsedMs']) ||
       first.node !== 'reference' ||

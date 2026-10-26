@@ -1,10 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { signInUrl } from '../../lib/signIn';
+import { IS_NATIVE_BUILD } from '../../lib/appBase';
 import { useUserStore } from '../../stores/useUserStore';
 import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
 import PageSkeleton from '../common/PageSkeleton';
+import {
+  arenaAccessFailure,
+  ARENA_ACCESS_FAILURE_COPY,
+  type ArenaAccessFailure,
+} from '../../services/arenaAccessFailure';
 import DiamondCustodyBalance from './DiamondCustodyBalance';
 import DiamondArenaWallet from './DiamondArenaWallet';
 import { SpadeConsole } from '../console/SpadeConsole';
@@ -12,12 +19,16 @@ import { ArenaAccessProvider } from './arenaAccess';
 import { isDiamondArenaLobbyPath, isDiamondArenaPlayerPath } from './diamondArenaRoutes';
 import './DiamondArenaShell.css';
 
+/** How soon a transient access failure re-reads the entitlement by itself. */
+const ARENA_ACCESS_RECHECK_MS = 15_000;
+
 interface AccessState {
   key: string;
   accountGeneration: number;
   context: ArenaAccessContext | null;
   settled: boolean;
   failed: boolean;
+  failure?: ArenaAccessFailure;
 }
 
 /** Checks entry before cached chip content can mount. This never navigates the host table. */
@@ -59,15 +70,57 @@ export default function ArenaAccessBoundary({
     let request = 0;
     let accountId = useUserStore.getState().user?.id ?? null;
     let accountGeneration = 0;
+    let recheck: ReturnType<typeof setTimeout> | undefined;
     const refresh = async () => {
       const token = ++request;
+      if (recheck !== undefined) clearTimeout(recheck);
+      recheck = undefined;
       try {
         const context = key ? await getArenaContext(key) : null;
         if (alive && token === request)
           setState({ key, accountGeneration, context, settled: true, failed: false });
-      } catch {
-        if (alive && token === request)
-          setState({ key, accountGeneration, context: null, settled: true, failed: true });
+      } catch (error) {
+        if (!alive || token !== request) return;
+        const failure = arenaAccessFailure(error);
+        const generation = accountGeneration;
+        /* A SLOW OR DROPPED RE-CHECK KEEPS THE VERIFIED PAGE (2026-10-24).
+           Focus and visibility re-read the entitlement. During the database
+           timeouts of 2026-10-23 every such re-read that timed out unmounted a
+           page this same account had already been verified for - the lobby, a
+           half-typed cashier amount - and put up "Access Not Verified". A
+           timeout or an unreachable service is neither a denial nor a new
+           identity (arenaAccessFailure.ts). So for exactly those two, while
+           the same club and the same account hold a verified context, the page
+           stays and the entitlement is read again shortly; any answer the
+           server does give (not a member, unknown arena, signed out, a sign-in
+           or service error) still applies at once. A first read has no
+           verified page to keep and reports the failure as before. */
+        const transient = failure === 'timeout' || failure === 'connection';
+        setState((previous) => {
+          if (
+            transient &&
+            previous.key === key &&
+            previous.accountGeneration === generation &&
+            previous.settled &&
+            !previous.failed &&
+            previous.context !== null
+          )
+            return previous;
+          return {
+            key,
+            accountGeneration: generation,
+            context: null,
+            settled: true,
+            failed: true,
+            failure,
+          };
+        });
+        // Transient failures re-read by themselves, on the kept page or the notice.
+        if (transient)
+          recheck = setTimeout(() => {
+            recheck = undefined;
+            if (alive && generation === accountGeneration) void refresh();
+          }, ARENA_ACCESS_RECHECK_MS);
       }
     };
     void refresh();
@@ -97,6 +150,7 @@ export default function ArenaAccessBoundary({
           context: null,
           settled: event === 'SIGNED_OUT',
           failed: event === 'SIGNED_OUT',
+          failure: event === 'SIGNED_OUT' ? 'authentication' : undefined,
         });
       }
       // Do not run Supabase calls synchronously inside the auth callback.
@@ -109,6 +163,7 @@ export default function ArenaAccessBoundary({
     return () => {
       alive = false;
       ++request;
+      if (recheck !== undefined) clearTimeout(recheck);
       subscription.unsubscribe();
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
@@ -121,21 +176,31 @@ export default function ArenaAccessBoundary({
       <section className="club-home error" role="alert">
         <SpadeConsole
           eyebrow="Poker Arena"
-          title="Could Not Verify Arena Access"
-          pill="Offline"
+          title="Access Not Verified"
+          pill={ARENA_ACCESS_FAILURE_COPY[state.failure ?? 'service'].pill}
           pillInk="red"
           plates={{
             primary: {
               label: 'Retry',
               ink: 'white',
-              onClick: () => setRetry((value) => value + 1),
+              onClick: () => {
+                setState((value) => ({ ...value, settled: false }));
+                setRetry((value) => value + 1);
+              },
+            },
+            secondary: {
+              label: state.failure === 'authentication' ? 'Sign In' : 'Back To Clubs',
+              ink: 'white',
+              onClick: () => {
+                if (state.failure !== 'authentication') return navigate('/clubs');
+                const url = signInUrl(path);
+                if (IS_NATIVE_BUILD) navigate(url);
+                else window.location.assign(url);
+              },
             },
           }}
         >
-          <p className="sc-copy">
-            The Arena Did Not Answer. Nothing Is Wrong With Your Account; The Check Simply Did Not
-            Come Back. Try Again In A Moment.
-          </p>
+          <p className="sc-copy">{ARENA_ACCESS_FAILURE_COPY[state.failure ?? 'service'].message}</p>
         </SpadeConsole>
       </section>
     );

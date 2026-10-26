@@ -1,3 +1,5 @@
+import { MEMORY_VARIANTS, opponentMemoryKey } from './HorseOpponentMemory.js';
+import { type HorseWinnerReadRow } from './HorseWinnerRead.js';
 import {
   horsePlanContextIsValid,
   horsePlanContextKey,
@@ -25,7 +27,9 @@ export interface HorseDecisionReadFrame {
     | 'horse-decision-reads-v1'
     | 'horse-decision-reads-v2'
     | 'horse-decision-reads-v3'
-    | 'horse-decision-reads-v4';
+    | 'horse-decision-reads-v4'
+    | 'horse-decision-reads-v5'
+    | 'horse-decision-reads-v6';
   readonly bytes: number;
   readonly sha256: string;
   readonly json: string;
@@ -37,7 +41,17 @@ const WINDOW_VERSION = 'horse-decision-reads-v3';
 /** 2026-10-16: v3 plus the decayed opponent-exploit counters. Written only
  * when the view carries any, so every earlier frame keeps its exact bytes. */
 const EXPLOIT_VERSION = 'horse-decision-reads-v4';
-const windowed = (version: unknown) => version === WINDOW_VERSION || version === EXPLOIT_VERSION;
+const WINNER_VERSION = 'horse-decision-reads-v5';
+/** 2026-10-25: v5 plus the river-call counters (riverCallSD/riverCallSDWeak),
+ * carried in their own row lists beside the stat rows. Written only when a
+ * captured row has a non-zero river-call counter, so every frame without one
+ * keeps its exact v1-v5 bytes, and a v1-v5 frame decodes with both at 0. A v6
+ * frame always carries winnerReads; a view without winner evidence travels as
+ * an empty list, which a sandbox reads exactly like an absent one. */
+const RIVER_CALL_VERSION = 'horse-decision-reads-v6';
+const winnered = (version: unknown) => version === WINNER_VERSION || version === RIVER_CALL_VERSION;
+const exploited = (version: unknown) => version === EXPLOIT_VERSION || winnered(version);
+const windowed = (version: unknown) => version === WINDOW_VERSION || exploited(version);
 const FIELDS = [
   'hands',
   'vpip',
@@ -69,10 +83,15 @@ const FIELDS = [
   'tankBetSD',
   'tankBetSDStrong',
 ] as const satisfies readonly (keyof OpponentStats)[];
+/** Not in FIELDS: the positional stat rows keep their v1-v5 length. */
+const RIVER_CALL_FIELDS = [
+  'riverCallSD',
+  'riverCallSDWeak',
+] as const satisfies readonly (keyof OpponentStats)[];
 // A new consumed statistic must be considered explicitly in this codec.
 const completeFields: Exclude<
   keyof OpponentStats,
-  (typeof FIELDS)[number] | 'sourceWindow'
+  (typeof FIELDS)[number] | (typeof RIVER_CALL_FIELDS)[number] | 'sourceWindow'
 > extends never
   ? true
   : false = true;
@@ -84,7 +103,12 @@ type Body = {
     | typeof VERSION
     | typeof ALLOCATED_VERSION
     | typeof WINDOW_VERSION
-    | typeof EXPLOIT_VERSION;
+    | typeof EXPLOIT_VERSION
+    | typeof WINNER_VERSION
+    | typeof RIVER_CALL_VERSION;
+  winnerReads?: Rows<HorseWinnerReadRow>;
+  riverCalls?: Rows<number[]>;
+  scopedRiverCalls?: Rows<number[]>;
   statsWindows?: Rows<HorseObservationWindow>;
   scopedWindows?: Rows<HorseObservationWindow>;
   exploit?: Rows<number[]>;
@@ -123,13 +147,19 @@ function boundary(players: readonly Pick<SeatPlayer, 'user_id'>[], handKey: stri
     (handKey !== null && (typeof handKey !== 'string' || handKey.length > 512))
   )
     return fail();
-  const scoped = new Set<string>(),
+  const exploit = new Set<string>(),
+    scoped = new Set<string>(),
     pairs = new Set<string>(),
     plans = new Set<string>(),
     streets = new Set<string>();
   for (const id of actors) {
     for (const family of ['holdem', 'omaha', 'sixplus'])
       for (const size of ['hu', 'short', 'full']) scoped.add(`${family}:${size}|${id}`);
+    for (const key of scoped) exploit.add(key);
+    for (const variant of MEMORY_VARIANTS)
+      for (const mode of ['cash', 'tournament'] as const)
+        for (const size of ['hu', 'short', 'full'] as const)
+          exploit.add(opponentMemoryKey(id, variant, mode, size));
     for (const other of actors) pairs.add(`${id}|${other}`);
     if (handKey !== null) {
       const key = `${handKey}|${id}`;
@@ -137,7 +167,7 @@ function boundary(players: readonly Pick<SeatPlayer, 'user_id'>[], handKey: stri
       for (const street of ['preflop', 'flop', 'turn', 'river']) streets.add(`${key}|${street}`);
     }
   }
-  return { actors, stats: new Set(actors), scoped, pairs, plans, streets };
+  return { actors, stats: new Set(actors), scoped, exploit, pairs, plans, streets };
 }
 
 function validRows(
@@ -178,7 +208,9 @@ function validateBody(
     !exact(value, [
       'version',
       ...(windowed(value.version) ? ['statsWindows', 'scopedWindows'] : []),
-      ...(value.version === EXPLOIT_VERSION ? ['exploit'] : []),
+      ...(exploited(value.version) ? ['exploit'] : []),
+      ...(winnered(value.version) ? ['winnerReads'] : []),
+      ...(value.version === RIVER_CALL_VERSION ? ['riverCalls', 'scopedRiverCalls'] : []),
       ...(planContext === undefined ? [] : ['planContext']),
       'actors',
       'handKey',
@@ -212,8 +244,21 @@ function validateBody(
       b.streets,
       (v) => object(v) && exact(v, ['good', 'scare']) && cards(v.good) && cards(v.scare)
     ) ||
-    (value.version === EXPLOIT_VERSION &&
-      !validRows(value.exploit, b.scoped, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length)))
+    (exploited(value.version) &&
+      !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length))) ||
+    (winnered(value.version) &&
+      !validRows(
+        value.winnerReads,
+        b.stats,
+        (v) =>
+          object(v) &&
+          exact(v, ['w', 'w2', 's', 'q']) &&
+          finite(v.w) &&
+          finite(v.w2) &&
+          finite(v.q) &&
+          typeof v.s === 'number' &&
+          Number.isFinite(v.s)
+      ))
   )
     return fail();
   if (windowed(value.version)) {
@@ -224,6 +269,17 @@ function validateBody(
     if (
       !windows(value.statsWindows, value.stats as Rows<number[]>, b.stats) ||
       !windows(value.scopedWindows, value.scoped as Rows<number[]>, b.scoped)
+    )
+      return fail();
+  }
+  if (value.version === RIVER_CALL_VERSION) {
+    const aligned = (rows: unknown, statRows: Rows<number[]>, allowed: ReadonlySet<string>) =>
+      validRows(rows, allowed, (v) => numbers(v, RIVER_CALL_FIELDS.length)) &&
+      (rows as Rows<number[]>).length === statRows.length &&
+      (rows as Rows<number[]>).every(([id], i) => id === statRows[i][0]);
+    if (
+      !aligned(value.riverCalls, value.stats as Rows<number[]>, b.stats) ||
+      !aligned(value.scopedRiverCalls, value.scoped as Rows<number[]>, b.scoped)
     )
       return fail();
   }
@@ -257,22 +313,40 @@ export function encodeHorseDecisionReads(
     bounded(map, max).map(([id, row]): [string, number[]] => {
       if (
         !object(row) ||
-        !exact(row, [...FIELDS, ...(Object.hasOwn(row, 'sourceWindow') ? ['sourceWindow'] : [])])
+        !exact(row, [
+          ...FIELDS,
+          // A row carries both river-call counters or neither (a view built
+          // before they existed); never one alone.
+          ...(Object.hasOwn(row, RIVER_CALL_FIELDS[0]) ? RIVER_CALL_FIELDS : []),
+          ...(Object.hasOwn(row, 'sourceWindow') ? ['sourceWindow'] : []),
+        ])
       )
         return fail();
       return [id, FIELDS.map((f) => row[f])];
     });
+  const riverCallRows = (map: Map<string, OpponentStats>): Rows<number[]> =>
+    [...map].map(([id, row]) => [id, RIVER_CALL_FIELDS.map((f) => row[f] ?? 0)]);
   // Do not alter predecessor bytes for metadata-absent historical views.
   const boundedStats = bounded(view.stats, b.stats.size);
   const boundedScoped = bounded(view.scoped, b.scoped.size);
-  const exploitRows: Rows<number[]> = bounded(view.exploit ?? new Map(), b.scoped.size).map(
+  const exploitRows: Rows<number[]> = bounded(view.exploit ?? new Map(), b.exploit.size).map(
     ([id, row]: [string, ExploitCounters]): [string, number[]] => {
       if (!object(row) || !exact(row, EXPLOIT_COUNTER_FIELDS)) return fail();
       return [id, EXPLOIT_COUNTER_FIELDS.map((f) => row[f])];
     }
   );
   const hasExploit = exploitRows.length > 0;
+  const hasWinner = view.winnerReads !== undefined;
+  if (hasWinner && (!(view.winnerReads!.seen instanceof Set) || view.winnerReads!.seen.size !== 0))
+    return fail();
+  const hasRiverCalls = [boundedStats, boundedScoped].some((rows) =>
+    rows.some(
+      ([, row]) => object(row) && RIVER_CALL_FIELDS.some((f) => finite(row[f]) && row[f] > 0)
+    )
+  );
   const hasWindows =
+    hasRiverCalls ||
+    hasWinner ||
     hasExploit ||
     [boundedStats, boundedScoped].some((rows) =>
       rows.some(([, row]) => object(row) && Object.hasOwn(row, 'sourceWindow'))
@@ -280,17 +354,29 @@ export function encodeHorseDecisionReads(
   const windows = (map: Map<string, OpponentStats>): Rows<HorseObservationWindow> =>
     [...map].map(([id, row]) => [id, normalizeHorseObservationWindow(row.sourceWindow)]);
   const body: Body = {
-    version: hasExploit
-      ? EXPLOIT_VERSION
-      : hasWindows
-        ? WINDOW_VERSION
-        : planContext === undefined
-          ? VERSION
-          : ALLOCATED_VERSION,
+    version: hasRiverCalls
+      ? RIVER_CALL_VERSION
+      : hasWinner
+        ? WINNER_VERSION
+        : hasExploit
+          ? EXPLOIT_VERSION
+          : hasWindows
+            ? WINDOW_VERSION
+            : planContext === undefined
+              ? VERSION
+              : ALLOCATED_VERSION,
     ...(hasWindows
       ? { statsWindows: windows(view.stats), scopedWindows: windows(view.scoped) }
       : {}),
-    ...(hasExploit ? { exploit: exploitRows } : {}),
+    ...(hasRiverCalls || hasWinner || hasExploit ? { exploit: exploitRows } : {}),
+    ...(hasWinner
+      ? { winnerReads: bounded(view.winnerReads!.rows, b.stats.size) }
+      : hasRiverCalls
+        ? { winnerReads: [] }
+        : {}),
+    ...(hasRiverCalls
+      ? { riverCalls: riverCallRows(view.stats), scopedRiverCalls: riverCallRows(view.scoped) }
+      : {}),
     ...(planContext === undefined ? {} : { planContext }),
     actors: b.actors,
     handKey,
@@ -354,18 +440,24 @@ export function decodeHorseDecisionReads(
   validateBody(body, b, handKey, planContext);
   if (body.version !== frame.version) return fail();
   const view = HorseMind.createSandbox();
-  const stats = (rows: Rows<number[]>, windows?: Rows<HorseObservationWindow>) =>
+  const stats = (
+    rows: Rows<number[]>,
+    windows?: Rows<HorseObservationWindow>,
+    riverCalls?: Rows<number[]>
+  ) =>
     new Map(
       rows.map(([id, values], i) => [
         id,
         {
           ...Object.fromEntries(FIELDS.map((f, i) => [f, values[i]])),
+          // v1-v5 frames predate the river-call counters: no sample, read as 0.
+          ...Object.fromEntries(RIVER_CALL_FIELDS.map((f, j) => [f, riverCalls?.[i][1][j] ?? 0])),
           ...(windows ? { sourceWindow: normalizeHorseObservationWindow(windows[i][1]) } : {}),
         } as unknown as OpponentStats,
       ])
     );
-  view.stats = stats(body.stats, body.statsWindows);
-  view.scoped = stats(body.scoped, body.scopedWindows);
+  view.stats = stats(body.stats, body.statsWindows, body.riverCalls);
+  view.scoped = stats(body.scoped, body.scopedWindows, body.scopedRiverCalls);
   view.pairs = new Map(
     body.pairs.map(([id, v]) => [id, { n3: v[0], opp3: v[1], nR: v[2], oppR: v[3] }])
   );
@@ -382,5 +474,7 @@ export function decodeHorseDecisionReads(
       ) as unknown as ExploitCounters,
     ])
   );
+  if (winnered(body.version))
+    view.winnerReads = { rows: new Map(body.winnerReads), seen: new Set() };
   return view;
 }

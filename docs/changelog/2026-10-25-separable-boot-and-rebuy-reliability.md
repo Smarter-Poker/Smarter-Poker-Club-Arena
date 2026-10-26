@@ -1,0 +1,11 @@
+# Boot and rebuy reliability
+
+The explicit rebuy-decline repair in #8021 is integrated with current main. The newer turn-only Lightning timebank fixture is retained; offer timing, purchase outcome uncertainty and maintenance fences are preserved. A declining horse closes its offer through the same authorized transaction as an explicit player decline, immediately when its final answer is computed. A reproduced ordering gap in the original repair collected declines until all other purchases finished; a stalled purchase could therefore retain an already-declined offer. Each decline now completes before later batch work, and freeze/stop fences are checked before any later purchase. No new funding or payout path is added.
+
+The strategy-neutral boot change from #8014 starts independent worker lanes beside cleanup after leadership is established, joins prerequisites before discovery and admission, and reports boot phases through health. Worker hydration retains its import-before-replay order. No strategy flags, chat simulation, decision policy or gameplay timing changes are included.
+
+Two additional defects were reproduced by retained failing regressions: a rejected parallel load allowed teardown before another hydration read completed, and a throwing timing logger could fail otherwise successful boot work or replace its original error. Boot reads are now joined before teardown; timing logs cannot change readiness. Tests cover withheld readiness, failed startup, admission cancellation, explicit declines, free-buy allowance exhaustion, transport failure and maintenance fences.
+
+Delivery uses existing protected PR #8021 and the existing engine release transaction. The owner's later instruction requests the next eligible hourly break rather than 04:00, with drain/freeze/certificate/rollback safeguards retained. This source note is not production proof; the task evidence checkpoint records exact checks, release operation and live readback.
+
+The final decline-ordering repair merged as #8051 / 98547198. After the first batch served inside c3ed86482, the existing one-shot window anchors that protected final merge; its original expiry, hourly announcement minutes and all cutover/rollback budgets remain unchanged. Other owners' entries are retained.

@@ -66,11 +66,20 @@ describe('TablePage wiring', () => {
     );
     expect(wait).toBeGreaterThan(fn.indexOf("res.code === 'ACTION_NOT_DELIVERED'"));
     expect(wait).toBeLessThan(fn.indexOf('showActionError({'));
-    expect(wait).toBeLessThan(fn.indexOf('return false;'));
+    // The public-observer gate precedes submission. This contract owns the
+    // failure path after a real action was sent.
+    expect(wait).toBeLessThan(
+      fn.indexOf('return false;', fn.indexOf('const res = await submitAction'))
+    );
   });
 
   it('the snapshot releases the wait after the merge effect is queued', () => {
-    const merge = TABLE_PAGE.indexOf('}, [engineSnapshot, USE_ENGINE_WS, userId]);');
+    // LIGHTNING TRANSITION, PHASE 3 added `lightningExitTick` to the merge
+    // effect's dependencies (it re-applies the latest snapshot when a Lightning
+    // exit hold ends); the order this contract pins is unchanged.
+    const merge = TABLE_PAGE.indexOf(
+      '}, [engineSnapshot, USE_ENGINE_WS, userId, lightningExitTick]);'
+    );
     const release = TABLE_PAGE.indexOf('const snapshotWaitersRef = useRef<Set<() => void>>');
     expect(merge).toBeGreaterThan(-1);
     expect(release).toBeGreaterThan(merge);

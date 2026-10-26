@@ -82,6 +82,10 @@ type DbRow = {
   snap_bet_sd_strong?: number;
   tank_bet_sd?: number;
   tank_bet_sd_strong?: number;
+  /** 2026-10-25: river call reads - see the horse_mind_river_call_reads
+   *  migration. Absent on a database that has not installed it yet. */
+  river_call_sd?: number;
+  river_call_sd_weak?: number;
   r_hands: number;
   r_folds: number;
   r_faced_aggr: number;
@@ -116,6 +120,11 @@ const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
   snap_bet_sd_strong: r.snapBetSDStrong,
   tank_bet_sd: r.tankBetSD,
   tank_bet_sd_strong: r.tankBetSDStrong,
+  // Sent before and after the migration alike: until the RPC reads these
+  // keys it ignores them (it takes named keys from each JSON row), so a flush
+  // never fails on them; the counters simply are not stored until then.
+  river_call_sd: r.riverCallSD,
+  river_call_sd_weak: r.riverCallSDWeak,
   checks: r.checks,
   r_checks: r.rChecks,
   r_hands: r.rHands,
@@ -155,6 +164,8 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   snapBetSDStrong: r.snap_bet_sd_strong ?? 0,
   tankBetSD: r.tank_bet_sd ?? 0,
   tankBetSDStrong: r.tank_bet_sd_strong ?? 0,
+  riverCallSD: r.river_call_sd ?? 0,
+  riverCallSDWeak: r.river_call_sd_weak ?? 0,
   rHands: r.r_hands,
   rFolds: r.r_folds,
   rFacedAggr: r.r_faced_aggr,
@@ -357,24 +368,41 @@ export async function flushHorseMind(): Promise<{ flushed: number; failed: numbe
   return { flushed, failed };
 }
 
-/** A new engine may start before the additive schema is installed. Only the
- * specific absent metadata column permits one legacy projection; never mask
- * permission, transport or other schema errors. Legacy time remains unknown. */
+/** Additive columns a new engine may read before their migration installs.
+ * Each group is dropped from the projection as a unit, at most once. */
+const OPTIONAL_COLUMN_GROUPS: ReadonlyArray<readonly string[]> = [
+  ['river_call_sd', 'river_call_sd_weak'],
+  ['source_window'],
+];
+
+/** A new engine may start before the additive schema is installed. Only a
+ * specific absent optional column permits one narrower projection (one per
+ * group, so at most three reads); never mask permission, transport or other
+ * schema errors. Legacy time remains unknown and absent river-call counters
+ * read as 0 (fromDb). The river-call columns install in the 04:00 daily
+ * maintenance window, so an engine can run a day without them. */
 async function readStatsWithWindow(
   table: 'horse_mind_stats' | 'horse_mind_stats_scoped',
   columns: string,
   limit: number
 ): Promise<{ data: unknown[] | null; error: { code: string; message: string } | null }> {
-  const read = (withWindow: boolean) =>
+  const read = (optional: ReadonlyArray<readonly string[]>) =>
     supabase
       .from(table)
-      .select(withWindow ? `${columns},source_window` : columns)
+      .select([columns, ...optional.flat()].join(','))
       .order('hands', { ascending: false })
       .limit(limit);
-  const result = await read(true);
-  if (result.error?.code === '42703' && /\bsource_window\b/.test(result.error.message ?? ''))
-    return read(false);
-  return result;
+  let optional = OPTIONAL_COLUMN_GROUPS;
+  for (;;) {
+    const result = await read(optional);
+    const message = result.error?.message ?? '';
+    const absent =
+      result.error?.code === '42703'
+        ? optional.find((group) => group.some((c) => new RegExp(`\\b${c}\\b`).test(message)))
+        : undefined;
+    if (!absent) return result;
+    optional = optional.filter((group) => group !== absent);
+  }
 }
 
 /**

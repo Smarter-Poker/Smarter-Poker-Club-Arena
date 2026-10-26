@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, statfsSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, statfsSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
 /** A closed window of capture time whose published segments the ring never
@@ -190,11 +190,19 @@ function archiveDirectoryName(index: number): string {
  * later shards' that exist, lowest index first. Empty when neither exists
  * yet (a fresh or disabled journal) - never a guess at a layout nobody wrote. */
 export function horseJournalArchiveDirectoryNames(directory: string): string[] {
-  const names: string[] = [];
-  if (existsSync(join(directory, 'archive'))) names.push('archive');
-  for (let i = 1; existsSync(join(directory, `archive-shard-${i}`)); i++)
-    names.push(`archive-shard-${i}`);
-  return names;
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter(
+      (name) =>
+        name === 'archive' ||
+        (/^archive-shard-[1-9][0-9]*$/.test(name) &&
+          Number.isSafeInteger(Number(name.slice('archive-shard-'.length))))
+    )
+    .sort((a, b) => {
+      const index = (name: string) =>
+        name === 'archive' ? 0 : Number(name.slice('archive-shard-'.length));
+      return index(a) - index(b);
+    });
 }
 
 /** This runs in the existing journal owner before its dedicated writer starts.
@@ -409,13 +417,46 @@ export async function horseJournalArchiveAllocatedBytesAsync(
   return parseHorseJournalDu(output, directories);
 }
 
-/** The capacity, with the archive walk measured asynchronously first. The
- * same reading and the same refusals as horseJournalShardCapacity. */
+/**
+ * THE WALK LEAVES THE BOOT PATH WHEN IT CANNOT CHANGE THE ANSWER (2026-10-24).
+ * Lane construction awaits this before any table can be dealt, so the du walk
+ * over every archive shard (about 3.5 million segment files on engine-01) sat
+ * on the critical path of every engine start. Release c485ce7a booted with the
+ * lane starting 23 s after the process; the same walk is why release e4f7
+ * reached dealer readiness too late for its final database proof inside the
+ * maintenance break and rolled back.
+ *
+ * The walk only ever matters through the default worker count, which takes the
+ * minimum of the CPU default, this capacity and a fixed maximum. So the
+ * capacity is first priced with every existing archive assumed EMPTY - the
+ * most growth those archives could still claim, which can only lower the
+ * answer - from one statfs and a directory listing. When even that lower bound
+ * already admits `sufficientShards` (the lane passes its maximum worker count),
+ * the measured answer could not change the worker count and the walk is
+ * skipped; the published capacity is that lower bound. Otherwise, or when the
+ * bound itself is unreadable, the original walk runs with every refusal rule
+ * unchanged, so a full disk is still measured exactly and an unreadable
+ * reading still keeps the legacy two-worker ceiling.
+ */
 export async function horseJournalShardCapacityMeasured(
-  environment: Readonly<Record<string, string | undefined>> = process.env
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  options: { sufficientShards?: number } = {}
 ): Promise<number | undefined> {
   const directory = environment.HORSE_DECISION_JOURNAL_DIR;
   if (!directory) return horseJournalShardCapacity(environment);
+  const sufficient = options.sufficientShards;
+  if (sufficient !== undefined && Number.isSafeInteger(sufficient) && sufficient >= 1) {
+    const lowerBound = horseJournalShardCapacity(environment, (directories) =>
+      directories.map(() => 0)
+    );
+    if (
+      horseJournalCapacityUnreadableReason() === null &&
+      lowerBound !== undefined &&
+      lowerBound >= sufficient
+    ) {
+      return lowerBound;
+    }
+  }
   let measured: number[] | { error: unknown };
   try {
     const names = horseJournalArchiveDirectoryNames(directory);

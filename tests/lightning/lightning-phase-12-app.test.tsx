@@ -154,15 +154,14 @@ describe('Lightning hotkeys (spec HOTKEYS): safe modifiers, the strip’s own ha
   const press = (key: string, init: KeyboardEventInit = {}) =>
     window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }));
 
-  it('Shift+F is LIGHTNING FOLD and Shift+V is FOLD & WATCH; neither is also a plain fold or call', () => {
+  it('Shift+F is the Lightning fold; the retired Shift+V does nothing and is never a plain fold or call', () => {
     const onLightningFold = vi.fn();
-    const onLightningFoldWatch = vi.fn();
-    const { opts, unmount } = mount({ onLightningFold, onLightningFoldWatch });
+    const { opts, unmount } = mount({ onLightningFold });
     press('F', { shiftKey: true });
     press('V', { shiftKey: true });
     expect(onLightningFold).toHaveBeenCalledTimes(1);
-    expect(onLightningFoldWatch).toHaveBeenCalledTimes(1);
     expect(opts.onFold).not.toHaveBeenCalled();
+    expect(opts.onCallCheck).not.toHaveBeenCalled();
     // The single-letter row is unchanged.
     press('f');
     expect(opts.onFold).toHaveBeenCalledTimes(1);
@@ -205,7 +204,8 @@ describe('Lightning hotkeys (spec HOTKEYS): safe modifiers, the strip’s own ha
     expect(page).toContain(
       "fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,"
     );
-    expect(page).toContain('lightningCaps.fold_and_watch && lightningFold.foldWatch');
+    expect(page).not.toContain('onLightningFoldWatch:');
+    expect(page).not.toContain("handleLightningFold('fold_watch')");
     expect(page).toMatch(
       /onLightningFold: lightningRoom \? \(\) => lightningHotkeysRef\.current\.fold\?\.\(\) : undefined,/
     );
@@ -213,17 +213,25 @@ describe('Lightning hotkeys (spec HOTKEYS): safe modifiers, the strip’s own ha
 });
 
 describe('the fold cue (spec SOUND SYSTEM)', () => {
-  it('an accepted LIGHTNING FOLD plays the fold cue, gated on the row, the switch and the table in front', () => {
+  it('a LIGHTNING FOLD plays the fold cue on the press, gated on the row, the switch and the table in front', () => {
+    /* LIGHTNING TRANSITION, PHASE 3 moved the cue from the engine's reply to
+       the press (the panel's Fold already answered the press), with the
+       cards' muck flight started optimistically and put back on a refusal. */
     const page = read('src/pages/TablePage.tsx');
-    const handler = sliceEnclosingBlock(
-      page,
-      'await sendLightningFold(tableId, userId, kind, lightningFoldHandId)',
-      0,
-      1
-    );
+    const start = page.indexOf('const handleLightningFold = useCallback(');
+    expect(start).toBeGreaterThan(0);
+    const handler = page.slice(start, page.indexOf('lightningHotkeysRef.current =', start));
     expect(handler).toMatch(
-      /lightningCaps\.sound &&\s*soundService\.isEnabled\(\) &&\s*\(isActive \|\| !isMultiTable\)\s*\)\s*\{\s*soundService\.playFold\(\);/
+      /pressAnswered &&\s*lightningCaps\.sound &&\s*soundService\.isEnabled\(\) &&\s*\(isActive \|\| !isMultiTable\)\s*\)\s*\{\s*soundService\.playFold\(\);/
     );
+    const cue = handler.indexOf('soundService.playFold();');
+    const send = handler.indexOf(
+      'await sendLightningFold(tableId, userId, kind, lightningFoldHandId)'
+    );
+    expect(cue).toBeGreaterThan(0);
+    expect(send).toBeGreaterThan(cue);
+    expect(handler).toContain("applyOptimisticHeroAction('fold')");
+    expect(handler).toMatch(/if \(!result\.success\) \{\s*revert\(\);/);
     expect(LIGHTNING_CAPABILITY_MAP.desktop.sound).toBe(true);
     expect(lightningCapabilities('android').sound).toBe(true);
   });

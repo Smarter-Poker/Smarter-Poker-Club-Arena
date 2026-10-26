@@ -133,9 +133,13 @@ export interface LightningHandBackend {
     /** The chips the folder has put in this hand's pot (p_committed). */
     committed: number
   ): Promise<LightningCallOutcome<null>>;
-  settle(
-    args: LightningSettleArgs
-  ): Promise<LightningCallOutcome<{ handHistoryId: string; receiptHash: string | null }>>;
+  settle(args: LightningSettleArgs): Promise<
+    LightningCallOutcome<{
+      handHistoryId: string;
+      receiptHash: string | null;
+      acceptedLeaseGeneration?: string | null;
+    }>
+  >;
   /**
    * fn_ca_process_hand_post_commit_obligations: `ok !== true` is a failure
    * (predecessor_pending is the common one with several hands per front table).
@@ -329,29 +333,11 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
     },
 
     async loadHostRules(hostTableId) {
-      // The same rule row the physical engine deals from (loadTable), plus the
-      // club rake defaults refreshRakeConfig reads beside it.
+      // The same rule row the physical engine deals from (loadTable), with
+      // the club rake defaults refreshRakeConfig reads beside it. Those ride
+      // loadTable's own club embed (2026-10-26): one round trip, not two.
       const table = (await loadTable(hostTableId)) as unknown as LightningHostRules;
-      let clubRakeDefaults: {
-        rakePercent: number | null;
-        rakeCapBB: number | null;
-        unionId?: string | null;
-      } | null = null;
-      if (table.club_id) {
-        const { data: club } = await supabase
-          .from('clubs')
-          .select('default_rake_percent, rake_cap, union_id')
-          .eq('id', table.club_id)
-          .maybeSingle();
-        if (club) {
-          clubRakeDefaults = {
-            rakePercent: (club as any).default_rake_percent ?? null,
-            rakeCapBB: (club as any).rake_cap ?? null,
-            unionId: (club as any).union_id,
-          };
-        }
-      }
-      return { ...table, club_rake_defaults: clubRakeDefaults };
+      return { ...table, club_rake_defaults: table.club_id ? table.club_rake_defaults : null };
     },
 
     async insertHoleCards(hostTableId, handNumber, rows) {
@@ -431,6 +417,9 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
         ok: true,
         value: {
           handHistoryId: id,
+          acceptedLeaseGeneration: isUuid(out.value.accepted_lease_generation)
+            ? out.value.accepted_lease_generation
+            : null,
           receiptHash: typeof out.value.receipt_hash === 'string' ? out.value.receipt_hash : null,
         },
       };

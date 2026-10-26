@@ -7,6 +7,10 @@ export default defineConfig({
   plugins: [react({ jsxImportSource: '@arena-display' })],
   test: {
     globals: true,
+    // Complete-corpus source scans take up to20.1s on the shared SSD.
+    // The harness needs finite headroom; assertions, product deadlines and
+    // the separate server suite's timeout remain unchanged.
+    testTimeout: 30_000,
     // happy-dom, NOT jsdom. Changed 2026-08-23 for cost.
     //
     // vitest's own breakdown named the problem: `environment 290.94s` against

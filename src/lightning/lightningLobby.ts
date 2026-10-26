@@ -12,10 +12,13 @@
  *
  * MUST MOVE is said only for a Cluster whose mode is must_move (or a row that
  * does not carry its mode, which reads as the column's default, must_move).
- * JOIN LIGHTNING is offered only while the mode is lightning: on the way in
- * (pending_on) the card still says MUST MOVE, and on the way out (pending_off,
- * draining) it still says LIGHTNING LIVE, each with the ordinary JOIN GAME
- * door. A paused, frozen or dead Cluster says neither: it is a closed game,
+ * JOIN LIGHTNING is offered only while the mode is lightning. WHILE THE GAME
+ * IS SWITCHING (transition phase 5 of 5, 2026-10-26) the card says so: on the
+ * way in (pending_on) it says Lightning Starting, and on the way out
+ * (pending_off, draining) Lightning Ending. Either way the tables are halted
+ * until the switch commits (up to 146 s in, 80 s out, measured), so the door
+ * is shown and not offered; nobody is moved anywhere by the board.
+ * A paused, frozen or dead Cluster says neither: it is a closed game,
  * in the words the board already uses for one (Game Paused, Game Closed). The
  * numbers come from the one reader of a Cluster's Lightning state,
  * fn_cash_cluster_lightning_state, which fn_cash_game_lobby embeds as
@@ -40,13 +43,49 @@ export function isLightningTableSize(handedness: unknown): boolean {
 }
 
 /**
- * Lightning is offered only for a six-seat Action or Madness game. Every other
- * game - Classic, unknown, or Action/Madness at any other size - keeps its
- * ordinary entry and lobby actions. The database refuses the rest the same way
- * (cash_games_lightning_six_seat_only, LIGHTNING_TABLE_SIZE_NOT_ALLOWED).
+ * Owner rulings, 2026-10-25: "SHORT DESK AND OMAHA HI LOW SHOULD NOT BE RUNNING
+ * LIGHTNING AT THIS POINT, JUST FEEDER GAMES." / "AND PINNEAPPLE AS WELL,
+ * SHOULD ONLY BE FEEDER GAME, NOT LIGHTNING". These variants run only as
+ * ordinary feeder games. Mirrors fn_lightning_variant_allowed in the database.
  */
-export function isLightningEligible(template: unknown, handedness: unknown): boolean {
-  return isLightningTemplate(template) && isLightningTableSize(handedness);
+export const LIGHTNING_EXCLUDED_VARIANTS: readonly string[] = [
+  'short_deck',
+  'shortdeck',
+  'flo8',
+  'plo8',
+  'omaha8',
+  'o8',
+  'pineapple',
+  'pineapple_holdem',
+];
+
+/** A missing or excluded variant is ineligible; case, spaces and dashes are ignored. */
+export function isLightningVariant(variant: unknown): boolean {
+  if (typeof variant !== 'string' || variant.trim() === '') return false;
+  const key = variant
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  return !LIGHTNING_EXCLUDED_VARIANTS.includes(key);
+}
+
+/**
+ * Lightning is offered only for a six-seat Action or Madness game whose
+ * variant may run Lightning. Every other game - Classic, unknown, Action or
+ * Madness at any other size, or Short Deck, Omaha Hi-Lo and Pineapple - keeps
+ * its ordinary entry and lobby actions. The database refuses the rest the same
+ * way (cash_games_lightning_six_seat_only, LIGHTNING_TABLE_SIZE_NOT_ALLOWED,
+ * cash_games_lightning_variant_allowed, LIGHTNING_VARIANT_NOT_ALLOWED). A
+ * read that does not carry the variant (undefined) keeps the template-and-size
+ * answer; the database still refuses an excluded variant on its own.
+ */
+export function isLightningEligible(
+  template: unknown,
+  handedness: unknown,
+  variant?: unknown
+): boolean {
+  if (!isLightningTemplate(template) || !isLightningTableSize(handedness)) return false;
+  return variant === undefined || isLightningVariant(variant);
 }
 
 export type LightningPoolStatus = 'BUILDING' | 'ACTIVE' | 'HOT' | 'THIN';
@@ -68,6 +107,11 @@ export interface LightningLobbyState {
    * entering the pool. Present only when the Cluster's state carries it.
    */
   joinsEnabled?: boolean;
+  /**
+   * The game's own Lightning switch (cash_games.lightning_enabled). False on
+   * every Classic game. Present only when the Cluster's state carries it.
+   */
+  lightningEnabled?: boolean;
 }
 
 /**
@@ -78,25 +122,73 @@ export function isLightningMode(mode: string | null | undefined): boolean {
   return mode === 'lightning' || mode === 'pending_off' || mode === 'draining';
 }
 
+/**
+ * A Classic game: its Lightning switch is off and it is not dealing (or
+ * draining) Lightning. fn_cash_cluster_lightning_state answers with a full
+ * object for EVERY cash game, Classic included (measured 2026-10-24: 246
+ * must_move games, lightning_enabled false), so "has a state" never means
+ * "is Lightning". No state at all (the game does not exist) is Classic too.
+ * Dan 2026-10-24: "NO PART OF THE LIGHTNING GAMES OR FUNCTIONALITY SHOULD BE
+ * TOUCHING THE CLASSIC GAMES."
+ */
+export function isClassicLobbyState(state: LightningLobbyState | null | undefined): boolean {
+  if (!state) return true;
+  return state.lightningEnabled === false && !isLightningMode(state.clusterMode);
+}
+
+/** The two words the board says while a game is switching modes. */
+export const LIGHTNING_STARTING_LABEL = 'Lightning Starting';
+export const LIGHTNING_ENDING_LABEL = 'Lightning Ending';
+
+/** Which way a game is switching: into Lightning, or out of it. */
+export type LightningSwitching = 'starting' | 'ending';
+
 /** What the board says about a Cluster's mode, and which door it offers. */
 export interface ClusterModeDisplay {
   /** The mode word on the card, or null for a paused or closed game. */
-  label: 'LIGHTNING LIVE' | 'MUST MOVE' | null;
+  label:
+    | 'LIGHTNING LIVE'
+    | 'MUST MOVE'
+    | typeof LIGHTNING_STARTING_LABEL
+    | typeof LIGHTNING_ENDING_LABEL
+    | null;
   /** JOIN LIGHTNING is the door. Only while the mode is lightning. */
   joinLightning: boolean;
   /** A game nobody can join right now, in the board's existing words. */
   closedLabel: 'Paused' | 'Closed' | null;
+  /**
+   * Set while the game is switching (pending_on: starting; pending_off or
+   * draining: ending). Its tables are halted until the switch commits, so the
+   * board shows the join door and does not offer it.
+   */
+  switching: LightningSwitching | null;
+}
+
+/** pending_on is starting; pending_off and draining are ending; anything else is not switching. */
+export function lightningSwitchingOf(mode: string | null | undefined): LightningSwitching | null {
+  if (mode === 'pending_on') return 'starting';
+  if (mode === 'pending_off' || mode === 'draining') return 'ending';
+  return null;
 }
 
 export function clusterModeDisplay(mode: string | null | undefined): ClusterModeDisplay {
   if (mode === 'paused' || mode === 'frozen') {
-    return { label: null, joinLightning: false, closedLabel: 'Paused' };
+    return { label: null, joinLightning: false, closedLabel: 'Paused', switching: null };
   }
-  if (mode === 'dead') return { label: null, joinLightning: false, closedLabel: 'Closed' };
-  if (isLightningMode(mode)) {
-    return { label: 'LIGHTNING LIVE', joinLightning: mode === 'lightning', closedLabel: null };
+  if (mode === 'dead') {
+    return { label: null, joinLightning: false, closedLabel: 'Closed', switching: null };
   }
-  return { label: 'MUST MOVE', joinLightning: false, closedLabel: null };
+  const switching = lightningSwitchingOf(mode);
+  if (switching === 'starting') {
+    return { label: LIGHTNING_STARTING_LABEL, joinLightning: false, closedLabel: null, switching };
+  }
+  if (switching === 'ending') {
+    return { label: LIGHTNING_ENDING_LABEL, joinLightning: false, closedLabel: null, switching };
+  }
+  if (mode === 'lightning') {
+    return { label: 'LIGHTNING LIVE', joinLightning: true, closedLabel: null, switching: null };
+  }
+  return { label: 'MUST MOVE', joinLightning: false, closedLabel: null, switching: null };
 }
 
 function count(v: unknown): number | null {
@@ -124,6 +216,7 @@ export function parseLightningLobbyState(raw: unknown): LightningLobbyState | nu
     offThreshold: count(thresholds?.off),
     // LIGHTNING PHASE 13: only when the state says so; absent decides nothing.
     ...(joins !== undefined ? { joinsEnabled: joins } : {}),
+    ...(typeof r.lightning_enabled === 'boolean' ? { lightningEnabled: r.lightning_enabled } : {}),
   };
 }
 
@@ -143,7 +236,7 @@ export function lightningPoolStatus(state: LightningLobbyState | null): Lightnin
 
 export interface LightningLobbyBadge {
   mode: 'lightning' | 'must_move' | 'closed';
-  label: 'LIGHTNING LIVE' | 'MUST MOVE' | null;
+  label: ClusterModeDisplay['label'];
   players: number;
   status: LightningPoolStatus | null;
   /** JOIN LIGHTNING is offered. True only while the mode is lightning. */
@@ -155,6 +248,11 @@ export interface LightningLobbyBadge {
    * pool. JOIN LIGHTNING is still shown, and not offered. Present only then.
    */
   joinsClosed?: true;
+  /**
+   * The game is switching modes (Lightning Starting or Lightning Ending). Its
+   * join door is shown, and not offered. Present only then.
+   */
+  switching?: LightningSwitching;
 }
 
 /** What a Cluster's card says about its mode. */
@@ -174,20 +272,23 @@ export function lightningLobbyBadge(input: {
       closedLabel: display.closedLabel,
     };
   }
-  if (display.label !== 'LIGHTNING LIVE') {
+  /* On the way in the game is still its must-move self, players and all; the
+     card only says it is switching. */
+  if (!isLightningMode(input.clusterMode)) {
     return {
       mode: 'must_move',
-      label: 'MUST MOVE',
+      label: display.label,
       players: input.boardPlayers,
       status: null,
       joinLightning: false,
       closedLabel: null,
+      ...(display.switching ? { switching: display.switching } : {}),
     };
   }
   const state = input.state ?? null;
   return {
     mode: 'lightning',
-    label: 'LIGHTNING LIVE',
+    label: display.label,
     players: state?.poolPlayers ?? state?.liveEligible ?? input.boardPlayers,
     /* On its way out the pool is THIN by definition, whatever the last read said. */
     status: input.clusterMode === 'lightning' ? lightningPoolStatus(state) : 'THIN',
@@ -196,12 +297,22 @@ export function lightningLobbyBadge(input: {
     ...(display.joinLightning && state?.joinsEnabled === false
       ? { joinsClosed: true as const }
       : {}),
+    ...(display.switching ? { switching: display.switching } : {}),
   };
 }
 
 /** The Lightning route for a Cluster. The only door a Lightning card opens. */
 export function lightningRoute(clusterId: string): string {
   return `/lightning/${clusterId}`;
+}
+
+/**
+ * JOIN LIGHTNING, as one tap (Dan 2026-10-24): the game's door with the
+ * amount question already open. A player who already holds a pool session
+ * still goes straight to their room; one already seated is shown their seat.
+ */
+export function lightningJoinRoute(clusterId: string): string {
+  return `${lightningRoute(clusterId)}?join=1`;
 }
 
 interface LightningBoardRow {

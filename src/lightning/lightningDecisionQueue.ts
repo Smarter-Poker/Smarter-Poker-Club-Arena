@@ -182,6 +182,22 @@ export function subscribeLightningClusterStatus(listener: () => void): () => voi
   };
 }
 
+/**
+ * LIGHTNING TRANSITION, PHASE 1: forget what the engine said about one
+ * Cluster. The map is module-level and used to be cleared only by an explicit
+ * null frame, so a frame lost with a closing room left "Lightning Is Ending"
+ * stuck: on the next room of that Cluster, for the rest of the page's life.
+ * It is cleared when that Cluster's room closes for good (the room answered
+ * 4404 and the database confirmed the session ended), and when a new pool
+ * session room for that Cluster opens. A Cluster that really is still ending
+ * is told so again on the new room's RESYNC (the engine re-sends it).
+ */
+export function clearLightningClusterStatus(clusterId: string | null | undefined): void {
+  if (!clusterId || !clusterStatuses.has(clusterId)) return;
+  clusterStatuses.delete(clusterId);
+  for (const l of statusListeners) l();
+}
+
 /** Tests only. */
 export function resetLightningClusterStatusForTests(): void {
   clusterStatuses.clear();

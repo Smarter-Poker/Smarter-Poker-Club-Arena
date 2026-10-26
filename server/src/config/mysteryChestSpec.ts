@@ -25,8 +25,18 @@
 /** Chest drops in and thumps before it can be tapped. */
 export const CHEST_LANDING_MS = 700;
 
-/** The winner's client opens it automatically if they never tap. */
-export const CHEST_AUTO_OPEN_MS = 9000;
+/**
+ * THE PICK WINDOW (Dan 2026-10-25): "THEY HAVE 5 SECONDS TO PICK THERE BOX,
+ * AND IF THEY DON'T RANDOMLY CHOOSE IT." The revealer's client gives five real
+ * seconds and then picks at random itself (MysteryBountyChest PICK_WINDOW_MS).
+ */
+export const CHEST_PICK_WINDOW_MS = 5000;
+/**
+ * The engine's own deadline after the chest lands: the pick window plus room
+ * for a last-second pick to reach the database. Past it the engine picks at
+ * random for a revealer who dropped, and opens the chest itself. Was 9000.
+ */
+export const CHEST_AUTO_OPEN_MS = CHEST_PICK_WINDOW_MS + 1500;
 
 /** Latch pops, lid swings, light floods the seam. */
 export const CHEST_OPENING_MS = 900;
@@ -42,7 +52,7 @@ export const CHEST_SETTLE_MS = 400;
 
 /**
  * Total time to hold dealing after a mystery bounty is revealed at a table.
- * ~16.8s at 1x animation speed.
+ * ~14.3s at 1x animation speed (16.8s before the five-second pick rule).
  */
 export function mysteryChestHoldMs(): number {
   return (

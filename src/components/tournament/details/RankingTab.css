@@ -341,6 +341,22 @@
   display: block;
 }
 
+/* The table line, then how many times the player rebought and whether they
+   took the add-on (Dan 2026-10-24). Wraps under the table name on a narrow
+   phone rather than squeezing it. */
+.rk-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.rk-subline .tl-badge {
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+}
+
 .rk-meter {
   display: block;
   margin-top: 1px;
@@ -352,6 +368,12 @@
   align-items: flex-end;
   gap: 1px;
   white-space: nowrap;
+}
+
+/* "Won", under what a finished player was paid. */
+.rk-won {
+  color: var(--tl-text-dim);
+  text-transform: none;
 }
 
 .rk-bb {

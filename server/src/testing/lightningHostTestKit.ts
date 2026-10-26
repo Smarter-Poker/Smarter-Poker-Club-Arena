@@ -20,7 +20,9 @@ import {
 import { LightningMetrics } from '../lightning/LightningMetrics.js';
 import { MetricsRegistry } from '../observability/Metrics.js';
 import { HorseLogic } from '../engine/HorseLogic.js';
+import type { HorseReviewInput } from '../services/HorseHandReview.js';
 import type {
+  CompletedHandObservation,
   FastHorseDecisionResult,
   LiveHorseDecisionLane,
   LiveHorseDecisionSnapshot,
@@ -34,6 +36,7 @@ import type {
 export function fakeHorseLane(opts: { fail?: boolean } = {}) {
   const calls: LiveHorseDecisionSnapshot[] = [];
   const committed: FastHorseDecisionResult[] = [];
+  const observed: CompletedHandObservation[] = [];
   const lane = {
     decideFast: vi.fn(async (snap: LiveHorseDecisionSnapshot): Promise<FastHorseDecisionResult> => {
       calls.push(snap);
@@ -62,8 +65,12 @@ export function fakeHorseLane(opts: { fail?: boolean } = {}) {
       return { ok: true } as never;
     }),
     runWithDispatchBarrier: vi.fn(<T>(fn: () => T): T => fn()),
+    observeCompletedHand: vi.fn(async (o: CompletedHandObservation) => {
+      observed.push(o);
+      return { type: 'ACK' } as never;
+    }),
   };
-  return { lane: lane as unknown as LiveHorseDecisionLane, calls, committed, raw: lane };
+  return { lane: lane as unknown as LiveHorseDecisionLane, calls, committed, observed, raw: lane };
 }
 
 export const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -215,7 +222,13 @@ export function fakeBackend(
     settle: vi.fn(
       async (
         a: LightningSettleArgs
-      ): Promise<LightningCallOutcome<{ handHistoryId: string; receiptHash: string | null }>> => {
+      ): Promise<
+        LightningCallOutcome<{
+          handHistoryId: string;
+          receiptHash: string | null;
+          acceptedLeaseGeneration?: string | null;
+        }>
+      > => {
         calls.settle.push(structuredClone(a));
         const next = script.length > 1 ? script.shift()! : script[0];
         if (next === 'transport')
@@ -223,7 +236,14 @@ export function fakeBackend(
         if (next === 'refuse') return { ok: false, reason: 'lease_mismatch' };
         if (next === 'frozen') return { ok: false, reason: 'stack_invariant_failed', frozen: true };
         if (next === 'cluster_frozen') return { ok: false, reason: 'cluster_frozen' };
-        return { ok: true, value: { handHistoryId: uid(7777), receiptHash: 'r' } };
+        return {
+          ok: true,
+          value: {
+            handHistoryId: uid(7777),
+            receiptHash: 'r',
+            acceptedLeaseGeneration: a.leaseGeneration,
+          },
+        };
       }
     ),
     postCommit: vi.fn(async (id: string) => {
@@ -268,6 +288,7 @@ export function buildHost(
   const released: Array<{ playerId: string; why: string }> = [];
   const metrics = new LightningMetrics(new MetricsRegistry());
   const horseLane = fakeHorseLane();
+  const scoreboard: HorseReviewInput[] = [];
   const jackpot = {
     payMain: vi.fn(async () => ({ status: 'nothing_to_pay' as const, reason: 'fixture' })),
     payMini: vi.fn(async () => ({ status: 'skipped' as const, reason: 'fixture' })),
@@ -284,10 +305,16 @@ export function buildHost(
     isConnected: () => true,
     onPlayerReleased: (playerId, why) => released.push({ playerId, why }),
     horseLane: () => horseLane.lane,
+    // No database in a unit test: the durable schema reads as absent, so the
+    // observation still reaches the fake lane, with no profile read.
+    horseObservation: { schema: async () => 'unavailable' as const, report: () => {} },
+    recordHorseResults: async (input) => {
+      scoreboard.push(input);
+    },
     jackpot: jackpot as never,
     ...(opts.deps ?? {}),
   });
-  return { host, hub, released, metrics, horseLane, jackpot, ...fb };
+  return { host, hub, released, metrics, horseLane, jackpot, scoreboard, ...fb };
 }
 
 /** Let promise chains settle without advancing any fake clock. */

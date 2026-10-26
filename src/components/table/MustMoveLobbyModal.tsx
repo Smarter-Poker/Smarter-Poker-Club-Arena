@@ -55,7 +55,7 @@ import {
 } from '../../services/cashGameLobby';
 import { formatChips } from '../../lib/utils';
 import { formatPrizeAtUnit } from '../../utils/format';
-import { CASH_TEMPLATES } from '../../config/cashGames';
+import { CASH_TEMPLATES, cashTemplateKey } from '../../config/cashGames';
 import { useToast } from '../common/Toast';
 import { lobbyReadErrorText } from './mustMoveLobbyCopy';
 import { useCashGameLobby } from './useCashGameLobby';
@@ -227,9 +227,17 @@ export function MustMoveLobbyModal({
 
   const me = lobby?.me ?? null;
   const game = lobby?.game ?? null;
+  /* A CLASSIC GAME NEVER MOVES ITS PLAYERS (Dan 2026-10-24: "PLAYERS SHOULD
+     NOT BE MOVING ON CLASSIC GAMES PERIOD"). The database says so itself
+     (game.never_moves_players, 20261024213758) and refuses every automatic
+     move, so this lobby shows no Must Move List, no place on it and no Must
+     Move figure: none of them would ever move anyone. It is the game's lobby;
+     the tables, the waiting list and the player's own seat change stay. */
+  const neverMoves = game?.never_moves_players === true;
+  const lobbyTitle = neverMoves ? 'Game Lobby' : 'Must Move Lobby';
   const styleLabel = game
-    ? (CASH_TEMPLATES.find((t) => t.id === String(game.template_name ?? '').toLowerCase())?.label ??
-      null)
+    ? (CASH_TEMPLATES.find((t) => t.id === cashTemplateKey(String(game.template_name ?? '')))
+        ?.label ?? null)
     : null;
   const playersTotal = (lobby?.tables ?? []).reduce((n, t) => n + Number(t.seated ?? 0), 0);
   const tablesOpen = (lobby?.tables ?? []).length;
@@ -253,7 +261,7 @@ export function MustMoveLobbyModal({
         className="tlm-panel mml-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Must Move Lobby"
+        aria-label={lobbyTitle}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="tlm-grab" aria-hidden="true">
@@ -261,7 +269,7 @@ export function MustMoveLobbyModal({
         </div>
 
         <div className="tlm-header">
-          <span className="tlm-title">Must Move Lobby</span>
+          <span className="tlm-title">{lobbyTitle}</span>
           {/* JOIN GAME sits beside Close for anybody looking at this game
               without a chair in it - viewing a table, or opening the lobby
               from the game list. A seated player never sees it. */}
@@ -316,10 +324,12 @@ export function MustMoveLobbyModal({
                     <span className="mml-figure-value">{lobby.waitlist?.waiting ?? 0}</span>
                     <span className="mml-figure-label">Waiting</span>
                   </div>
-                  <div className="mml-figure">
-                    <span className="mml-figure-value">{lobby.must_move_list.length}</span>
-                    <span className="mml-figure-label">Must Move</span>
-                  </div>
+                  {!neverMoves && (
+                    <div className="mml-figure">
+                      <span className="mml-figure-value">{lobby.must_move_list.length}</span>
+                      <span className="mml-figure-label">Must Move</span>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -332,7 +342,7 @@ export function MustMoveLobbyModal({
                     {me.seat_number ? `, Seat ${me.seat_number}` : ''}
                     {me.stack != null ? ` (${formatAmount(Number(me.stack))})` : ''}
                   </div>
-                  {me.on_main_one ? (
+                  {neverMoves ? null : me.on_main_one ? (
                     <div className="mml-me-note">You Are In The Main Game.</div>
                   ) : me.must_move_position ? (
                     <div className="mml-me-note">
@@ -483,33 +493,36 @@ export function MustMoveLobbyModal({
                 ))}
               </section>
 
-              {/* ─── The must-move list ─── */}
-              <section className="mml-list">
-                <div className="mml-section-title">Must Move List</div>
-                <div className="mml-list-note">
-                  The Order Players Joined The Game. Number 1 Takes The Next Seat In The Main Game.
-                </div>
-                {lobby.must_move_list.length === 0 ? (
-                  <div className="mml-me-note">Everyone Is In The Main Game.</div>
-                ) : (
-                  <ol className="mml-list-rows" aria-label="Must Move List, In Join Order">
-                    {mustMoveListRows(lobby.must_move_list, me?.user_id).map((row) => (
-                      <li
-                        key={row.key}
-                        className={`mml-list-row${row.me ? ' mml-list-row--me' : ''}`}
-                        aria-current={row.me ? 'true' : undefined}
-                      >
-                        <span className="mml-list-pos">{row.position}</span>
-                        <span className="mml-list-name">
-                          {row.name}
-                          {row.me && <span className="mml-list-you">You</span>}
-                        </span>
-                        <span className="mml-list-table">{row.tableLabel}</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </section>
+              {/* ─── The must-move list (never on a Classic game) ─── */}
+              {!neverMoves && (
+                <section className="mml-list">
+                  <div className="mml-section-title">Must Move List</div>
+                  <div className="mml-list-note">
+                    The Order Players Joined The Game. Number 1 Takes The Next Seat In The Main
+                    Game.
+                  </div>
+                  {lobby.must_move_list.length === 0 ? (
+                    <div className="mml-me-note">Everyone Is In The Main Game.</div>
+                  ) : (
+                    <ol className="mml-list-rows" aria-label="Must Move List, In Join Order">
+                      {mustMoveListRows(lobby.must_move_list, me?.user_id).map((row) => (
+                        <li
+                          key={row.key}
+                          className={`mml-list-row${row.me ? ' mml-list-row--me' : ''}`}
+                          aria-current={row.me ? 'true' : undefined}
+                        >
+                          <span className="mml-list-pos">{row.position}</span>
+                          <span className="mml-list-name">
+                            {row.name}
+                            {row.me && <span className="mml-list-you">You</span>}
+                          </span>
+                          <span className="mml-list-table">{row.tableLabel}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+              )}
             </>
           )}
         </div>

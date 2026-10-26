@@ -73,9 +73,11 @@ describe('the database admits and stores exactly the same list', () => {
   });
 });
 
-describe('the three templates are the three sections 8 names', () => {
-  it('classic, action, madness - in that order', () => {
-    expect(CASH_TEMPLATES.map((t) => t.id)).toEqual(['classic', 'action', 'madness']);
+describe('Classic and Lightning Games are the only offered formats', () => {
+  it('offers two formats while retaining readable historical identifiers', () => {
+    expect(CASH_TEMPLATES.map((t) => t.id)).toEqual(['classic', 'madness']);
+    expect(CASH_TEMPLATES.map((t) => t.label)).toEqual(['Classic', 'Lightning Games']);
+    expect(CASH_TEMPLATES[1].blurb).toContain('40% Minimum VPIP');
     expect(SQL).toMatch(
       /template_name\s+text NOT NULL CHECK \(template_name IN \('classic', 'action', 'madness'\)\)/
     );
@@ -137,7 +139,7 @@ const LIVE_REFUSALS: ReadonlyArray<[message: string, copy: RegExp]> = [
   ],
   [
     'ONE_GAME_PER_BLIND_CATEGORY: this club already runs NLH 1/2 Action (1.00/2.00) as its Action low game. Close it before opening another.',
-    /^This Club Already Runs NLH 1\/2 Action \(1\.00\/2\.00\) As Its Action Small Stakes Game\. Close It Before Opening Another\.$/,
+    /^This Club Already Runs NLH 1\/2 Action \(1\.00\/2\.00\) As Its Lightning Games Small Stakes Game\. Close It Before Opening Another\.$/,
   ],
   [
     'OVERRIDE_LOCKED: regular_ante is set by the classic template (sent bb, template none)',
@@ -145,11 +147,11 @@ const LIVE_REFUSALS: ReadonlyArray<[message: string, copy: RegExp]> = [
   ],
   [
     'OVERRIDE_LOCKED: vpip_floor is set by the action template (sent 65, template 30)',
-    /^The Minimum VPIP Is Set By The Action Template\. Reload And Try Again\.$/,
+    /^The Minimum VPIP Is Set By The Lightning Games Template\. Reload And Try Again\.$/,
   ],
   [
     'OVERRIDE_LOCKED: bombs is set by the madness template (sent {}, template {})',
-    /Bombs Is Set By The Madness Template/,
+    /Bombs Is Set By The Lightning Games Template/,
   ],
   // 20260924102056: the enforced commerce admission gate in fn_cash_game_create
   // raises fn_ca_commerce_admission_message's sentence (HINT
@@ -196,7 +198,7 @@ describe('every refusal the live create function raises has house copy', () => {
         )
       )
     ).toBe(
-      'This Club Already Runs PLO4 0.25/0.50 Madness (0.25/0.50) As Its Madness Micro Stakes Game. Close It Before Opening Another.'
+      'This Club Already Runs PLO4 0.25/0.50 Madness (0.25/0.50) As Its Lightning Games Micro Stakes Game. Close It Before Opening Another.'
     );
   });
 });
@@ -258,7 +260,7 @@ describe('the four template-locked rules are printed, never sent', () => {
       ['vpip', '30% Over 10 Hands'],
       ['bombs', 'Double Board, 2 BB Ante, Every 15 Minutes'],
     ]);
-    for (const l of action) expect(l.note).toContain('Set By The Action Template');
+    for (const l of action) expect(l.note).toContain('Set By The Lightning Games Template');
 
     const madness = templatePromiseLines(
       snapshot({
@@ -363,15 +365,15 @@ describe('the client band is the twin of fn_cash_stake_band (one game per band, 
     ];
     // Action: the whole low band is closed, must-move or manual, other bands open.
     expect(stakesRungTaken(club, 'action', 'nlh', 0.5, 1, false)).toMatch(
-      /NLH 1\/2 Action As Its Action Small Stakes Game/
+      /NLH 1\/2 Action As Its Lightning Games Small Stakes Game/
     );
     expect(stakesRungTaken(club, 'action', 'nlh', 1, 2, true)).not.toBeNull();
     expect(stakesRungTaken(club, 'action', 'nlh', 0.25, 0.5, true)).toBeNull();
     expect(stakesRungTaken(club, 'action', 'nlh', 2, 5, true)).toBeNull();
     // Another variant is another ladder.
     expect(stakesRungTaken(club, 'action', 'plo4', 1, 2, true)).toBeNull();
-    // Madness does not collide with Action.
-    expect(stakesRungTaken(club, 'madness', 'nlh', 1, 2, true)).toBeNull();
+    // Both historical identifiers now select the same Lightning format.
+    expect(stakesRungTaken(club, 'madness', 'nlh', 1, 2, true)).not.toBeNull();
     // Classic: exact must-move key only; manual is unrestricted; a manual holder closes nothing.
     expect(stakesRungTaken(club, 'classic', 'nlh', 1, 2, true)).toBe(
       'This Club Already Runs NLH 1/2 Classic'

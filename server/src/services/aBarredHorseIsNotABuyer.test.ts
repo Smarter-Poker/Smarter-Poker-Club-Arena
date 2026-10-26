@@ -190,7 +190,9 @@ describe('a buyer is counted once', () => {
     expect(cand).toMatch(
       /if \(!capacityByHorse\.has\(h\.id\)\) \{\s*capacityByHorse\.set\(h\.id, remainingGameCapacity\(gameLoad\)\);\s*\}/
     );
-    expect(cand).toContain('ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),');
+    expect(cand).toMatch(
+      /ownCashCeiling: bankrollOnly\s*\? MAX_TABLES_PER_HORSE\s*: tagMaxTables\(tag, MAX_TABLES_PER_HORSE\),/
+    );
     expect(cand).toContain('seats: tablesForHorse?.size ?? 0,');
     expect(cand).toContain('bookings: bookingLoad.get(h.id) ?? 0,');
   });

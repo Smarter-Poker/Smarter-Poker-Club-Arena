@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
+    "scripts/ci/classify-ci-changes.mjs": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -41,6 +41,15 @@
     "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
     "tests/fixtures/legacy-fee-finality/setup.sql": "ee83d419415ded41cecb3f6877ebc4fe9b12cb7a3e1e63b5d5d98c28c4c60599",
     "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8"
+  },
+  "routePerformanceGateInputs20261025": {
+    "reason": "Route-performance gate inputs (PR #7985): classify-ci-changes.mjs now routes the four route-performance gate scripts to the Production Build job so a change to the gate is executed before it merges. Current source identity only; historical audits, financial pins/assertions and qualification states unchanged. No financial certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335",
+        "current": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+      }
+    }
   },
   "diamondLaunchMainInputMerge20261013": {
     "reason": "Preserve latest protected-main0152591fbeb scoped reset/recovery qualification and unchanged Lightning reallocation with Diamond bounded budget. Current source identity only; historical audits/financial pins/assertions and qualification states unchanged.",
@@ -1099,5 +1108,33 @@
     "file": "scripts/ci/classify-ci-changes.mjs",
     "previous_sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6",
     "current_sha256": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9"
+  },
+  "serialJournalIndexCiInput20261023": {
+    "reason": "Add the source-bound serial journal index module to the existing required contract-index recovery CI selector. Refresh only the current classifier input identity; preserve all historical financial certificates, qualification states, assertions and source inventories. This is not financial execution or installation evidence.",
+    "source_revision": "f133610656b1cf6ee94757629efe9214a67671a1",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6",
+    "current_sha256": "843281f8506b206eb0702c03a32e13298ed76a923c58a1df8544b725d00277a5"
+  },
+  "migrationAuditIntegration20261024": {
+    "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
+    "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+  },
+  "acceptedWindowNativeInputIdentity20261025": {
+    "reason": "Admit only the exact accepted-horse-window native PG17 harness and its source contract into the existing required index-recovery accounting path. Refresh current classifier and dependent binding identities only. Historical financial evidence, assertions, source inventories and qualification states are unchanged; no financial or production certificate is restamped.",
+    "sourceRevision": "dd0a798995cb4c20ae9eb568bdc2fadcfd1e4203",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+        "current": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e"
+      }
+    ]
+  },
+  "horseOwnPublicHistoryRouting20261025": {
+    "reason": "The reviewed classifier diff adds only scripts/ci/test-horse-own-public-history.py to existing mandatory accounting admission. Update current classifier input identity; retain all financial source pins, assertions, historical receipts and qualification statuses. This binding is not native or production execution evidence.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previousSha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+    "currentSha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
   }
 }

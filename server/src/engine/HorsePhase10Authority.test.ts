@@ -1,4 +1,5 @@
 import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
+import { isHorseOwnerForcedAuthority } from './HorseOwnerForcedActivation.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -179,10 +180,10 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
       const file = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
       expect(file).toMatchObject({ qualified: true, mode: 'contract' });
       // Generations 3, 4 and 5 were measured under the running digest
-      // definition (v3); only its bytes moved. Generations 1 and 2 predate it.
+      // definition v3; the original-coordinate repair now uses v4. Generations 1 and 2 predate it.
       expect(file.policyDigestDefinition).toBe(
         previous === generation3 || previous === generation4 || previous === generation5
-          ? HORSE_PHASE10_POLICY_DIGEST_DEFINITION
+          ? 'horse-phase10-policy-digest-v3'
           : 'horse-phase10-policy-digest-v2'
       );
       expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
@@ -214,9 +215,14 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is unselected until a new generation is committed', () => {
+  it('no generation is committed, so the live gate runs on the owner order (Dan 2026-10-26)', () => {
+    // "FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING": the release
+    // selection stays null (a requalification is still a reviewed change),
+    // and the live gate is usable under the owner's authority instead.
+    expect(admitHorsePhase10ReleaseAuthority().status).toBe('refused');
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
+    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
+    expect(isHorseOwnerForcedAuthority(liveHorsePhase10Authority.mainAuthority())).toBe(true);
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -506,7 +512,7 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
   const serverFile = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
   it('the running policy digest is the versioned hash of exactly the PLO4 candidate code', () => {
-    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v3');
+    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v5');
     expect(HORSE_PHASE10_POLICY_SOURCE_FILES).toEqual([
       'src/engine/plo4/Plo4PolicyPack.ts',
       'src/engine/plo4/Plo4LivePolicy.ts',
@@ -516,15 +522,13 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
       'src/engine/omaha/OmahaCardFacts.ts',
       'src/engine/PokerEngine.ts',
       'src/engine/multiway/DealtSeatCensus.ts',
-      'src/engine/HorseObservationWindow.ts',
       'src/engine/HorseTournamentUtilityEvidence.ts',
-      'src/engine/HorseMind.ts',
       // v3 (2026-10-16): the reference decision's own sources (digest hole).
       ...HORSE_REFERENCE_DECISION_SOURCE_FILES,
     ]);
     // Independent recomputation from the files on disk.
     const hash = createHash('sha256').update(
-      `horse-phase10-policy-digest-v3\0${PLO4_POLICY_PACK.version}\0`
+      `horse-phase10-policy-digest-v5\0${PLO4_POLICY_PACK.version}\0`
     );
     for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES)
       hash

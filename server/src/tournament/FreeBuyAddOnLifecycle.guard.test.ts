@@ -77,8 +77,11 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(trigger).toMatch(
       /const windowAnchorMs = fromStart \? Math\.max\(advertisedStartMs, requestedStartMs\) : NaN;/
     );
+    // A paid (non-Free-Buy) add-on keeps its configured minute, stretched only
+    // to the end of a :55 break it opens inside (Dan 2026-10-25; pinned by
+    // AnAddOnAtTheBreakIsTheBreak.test.ts). The Free Buy branch is unchanged.
     expect(trigger).toMatch(
-      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*requestedStartMs \+ this\.addOnBreakDurationMs\(\)/
+      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*Math\.max\(\s*requestedStartMs \+ this\.addOnBreakDurationMs\(\),\s*this\.coincidingSynchronizedBreakEndMs\(requestedStartMs\)\s*\)/
     );
     expect(trigger).toContain('addon_period_started_at: requestedStart');
     expect(trigger).toContain('addon_period_ends_at: requestedEnd');
@@ -226,16 +229,17 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
       /if \(addOnBreakStillActive\) \{[\s\S]*?this\.addOnBreakOwnsPause = true;[\s\S]*?this\.addOnBreakOwnsLevelClock = true;/
     );
     // Multi-day (2026-09-24): the stage-end pause is a fourth authority that
-    // neither break end may lift, so each release also names it.
+    // neither break end may lift. A successor drain owns the same gate until
+    // this manager retires; both releases must preserve every authority.
     expect(resumeBreak).toMatch(
-      /if \(!this\.handForHandActive && !addOnBreakStillActive && !this\.stageEndPause\)/
+      /if \(\s*!this\.successorDrainRequested &&\s*!this\.handForHandActive &&\s*!addOnBreakStillActive &&\s*!this\.stageEndPause\s*\)/
     );
     expect(resumeBreak).toContain('if (!addOnBreakStillActive && !this.stageEndPause) {');
     expect(finishBreak).toContain('if (!this.running) return');
     // A bubble can end during this break; its inherited gate must still release.
     // HandForHandBreakOwnership.test.ts exercises that transition with real engine pause methods.
     expect(finishBreak).toMatch(
-      /if \(!this\.onBreak && !this\.handForHandActive && !this\.stageEndPause\)/
+      /if \(\s*!this\.successorDrainRequested &&\s*!this\.onBreak &&\s*!this\.handForHandActive &&\s*!this\.stageEndPause\s*\)/
     );
     expect(finishBreak).toMatch(/if \(ownsLevelClock && !this\.onBreak && !this\.stageEndPause\)/);
   });

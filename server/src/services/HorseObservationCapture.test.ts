@@ -362,14 +362,55 @@ describe('sequential capture slices retain the original request', () => {
     expect((await processOne()).status).toBe('unknown');
   });
 
-  it('accepts refinement only for the exact midpoint of a confirmed source-budget failure', async () => {
+  // HORSE CAPTURE DRAINS IN ORDER (2026-10-25): a refused or timed-out read
+  // is refined to any strictly narrower slice from the same start (the hand
+  // boundary, half its hands or half its time); a refine that does not narrow,
+  // moves the start, or answers a successful or invalid read stays unknown.
+  it('accepts refinement only to a narrower slice from the same start of a refused or timed-out read', async () => {
     install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1250 });
     m.read.mockResolvedValue({ status: 'unavailable', reason: 'hand_budget_exceeded' });
     expect((await processOne()).status).toBe('refined');
+    install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1499 });
+    expect((await processOne()).status).toBe('refined');
+    // A transport error is a timed-out read (source_unavailable): refined too.
     m.read.mockResolvedValue({ status: 'unavailable', reason: 'transport_error' });
-    expect((await processOne()).status).toBe('unknown');
+    install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1250 });
+    expect((await processOne()).status).toBe('refined');
+    expect(m.rpc.mock.calls.at(-1)![1].p_reason).toBe('source_unavailable');
     m.read.mockResolvedValue({ status: 'unavailable', reason: 'hand_budget_exceeded' });
-    install({}, { status: 'refined', nextFromMs: 1001, nextThroughMs: 1250 });
+    for (const bad of [
+      { nextFromMs: 1001, nextThroughMs: 1250 },
+      { nextFromMs: 1000, nextThroughMs: 1500 },
+      { nextFromMs: 1000, nextThroughMs: 1000 },
+      { nextFromMs: 1000, nextThroughMs: 1250.5 },
+    ]) {
+      install({}, { status: 'refined', ...bad });
+      expect((await processOne()).status).toBe('unknown');
+    }
+    // An invalid source is never refined.
+    m.read.mockResolvedValue({ status: 'unavailable', reason: 'invalid_or_oversized_hand' });
+    install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1250 });
+    expect((await processOne()).status).toBe('unknown');
+    // A successful read is never answered with a refine.
+    m.read.mockResolvedValue({ status: 'snapshot' });
+    install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1250 });
+    expect((await processOne()).status).toBe('unknown');
+  });
+
+  it('continues a success to the end of the request, and still accepts the earlier 3x growth', async () => {
+    install({}, progress);
+    expect(await processOne()).toEqual({ status: 'continued', requestKey: key });
+    // A slice (1000, 1200]: the rest of the request is 2000; 3x growth is 1600.
+    const at = (next: number) =>
+      install(
+        { sliceThroughMs: 1200 },
+        { ...progress, sliceThroughMs: 1200, nextFromMs: 1200, nextThroughMs: next }
+      );
+    at(2000);
+    expect((await processOne()).status).toBe('continued');
+    at(1600);
+    expect((await processOne()).status).toBe('continued');
+    at(1700);
     expect((await processOne()).status).toBe('unknown');
   });
 

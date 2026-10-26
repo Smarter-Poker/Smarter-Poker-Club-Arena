@@ -1,9 +1,12 @@
+import { HORSE_PHASE14_DOMAINS } from '../HorsePhase14Authority.js';
 import { HandController } from '../HandController.js';
 import { priceDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { withPhase6Provenance } from '../../testing/horseRegression/merged/fixture.js';
 import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
+import { observeHandResults, resetWinnerReads } from '../HorseWinnerRead.js';
+import { decodeHorseDecisionReads } from '../HorseDecisionReadFrame.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import {
@@ -1504,9 +1507,9 @@ describe('HorseDecisionWorkerRuntime', () => {
     // The 18 authority admission counters are taken once the services start,
     // before READY and before this decision's own counters.
     const admissions = h.features.filter((feature) => feature.includes('_authority_worker_'));
-    expect(admissions).toHaveLength(18);
-    expect(h.features.slice(0, 18)).toEqual(admissions);
-    expect(h.features.slice(18)).toEqual([
+    expect(admissions).toHaveLength(18 + HORSE_PHASE14_DOMAINS.length);
+    expect(h.features.slice(0, 18 + HORSE_PHASE14_DOMAINS.length)).toEqual(admissions);
+    expect(h.features.slice(18 + HORSE_PHASE14_DOMAINS.length)).toEqual([
       'horse_observer_reads_unknown_context',
       'phase5_canonical_state',
       'phase15_plan_issue_no_effects',
@@ -1791,6 +1794,9 @@ describe('HorseDecisionWorkerRuntime', () => {
     { phase13Joint: 'candidate' },
     { phase13EvidenceMode: true },
     { phase13EvidenceMode: false },
+    { phase14Corrective: {} },
+    { phase14: 'candidate' },
+    { phase14EvidenceMode: true },
   ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({
@@ -1839,6 +1845,68 @@ describe('HorseDecisionWorkerRuntime', () => {
       spy.mockRestore();
     }
   });
+
+  it.each(['late_learning', 'late_reset'] as const)(
+    'FAST capture, portable replay and the actual DEEP lane retain winner beliefs after %s',
+    async (change) => {
+      HorseMind.reset();
+      resetWinnerReads();
+      const learn = () => {
+        for (let n = 0; n < 400; n++)
+          observeHandResults(`frozen-winner:${n}`, [{ user_id: 'horse-3', net: 2 }], 2);
+      };
+      try {
+        if (change === 'late_reset') learn();
+        const h = harness();
+        const reads: number[] = [];
+        const decide = h.deps.decide;
+        h.deps.decide = (...args) => {
+          reads.push(HorseMind.exploit('horse-3').bluffMod);
+          return decide(...args);
+        };
+        const request = fastRequest(1);
+        h.runtime.receive(request);
+        await h.runtime.drain();
+        const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+        const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
+        expect(entry.frame.version).toBe('horse-decision-reads-v5');
+        const original = reads[0];
+        // #8075: an observer never inherits floor-wide winner learning, so the
+        // FAST read is the neutral 1 either way; later live changes must not move it.
+        expect(original).toBe(1);
+        // The v5 row format is owned by HorseDecisionReadFrame (#8075); this
+        // test pins the behaviour: FAST, replay and DEEP read the same belief.
+        if (change === 'late_reset') resetWinnerReads();
+        else learn();
+        const body = JSON.parse(entry.frame.json);
+        const replay = decodeHorseDecisionReads(
+          entry.frame,
+          body.actors.map((user_id: string) => ({ user_id })),
+          body.handKey,
+          body.planContext
+        );
+        expect(HorseMind.runInSandbox(replay, () => HorseMind.exploit('horse-3').bluffMod)).toBe(
+          original
+        );
+        h.runtime.receive({
+          ...request,
+          type: 'DECIDE_DEEP',
+          requestId: 2,
+          rngBefore: fast.rngBefore,
+          deepEquity: 2,
+        });
+        await h.runtime.drain();
+        expect(h.messages.at(-1)?.type).toBe('DEEP_RESULT');
+        expect(reads).toEqual([original, original]);
+        expect(HorseMind.exploit('horse-3').bluffMod).toBe(change === 'late_reset' ? 1 : 0.6);
+        expect(JSON.stringify(fast)).not.toContain('winnerReads');
+      } finally {
+        HorseMind.reset();
+        resetWinnerReads();
+      }
+    }
+  );
 
   it.each([false, true])(
     'refuses a corrupted private frame before changing the canonical RNG or invoking a second decision (windows=%s)',
@@ -5342,6 +5410,7 @@ describe('worker authority admission counters (audit of October 7, 2026)', () =>
     ...OMAHA.map((variant) => `phase11_authority_worker_${variant}_unselected`),
     ...REMAINING.map((variant) => `phase12_authority_worker_${variant}_unselected`),
     ...JOINT.map((variant) => `phase13_authority_worker_${variant}_unselected`),
+    ...HORSE_PHASE14_DOMAINS.map((domain) => `phase14_authority_worker_${domain}_unselected`),
   ];
 
   it('counts every holder state through noteFeature once the owned services have started', async () => {

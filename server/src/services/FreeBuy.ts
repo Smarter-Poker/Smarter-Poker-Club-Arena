@@ -257,10 +257,13 @@ export function rebuysOpen(nowMs: number, startMs: number, cfg: FreeBuyConfig): 
 /* Horse behaviour                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Owner update 2026-10-22: 90% of surviving funded horses take an add-on.
- * Keep the existing early timing split inside that stable participation cohort. */
+/** Owner update 2026-10-25 (replaces 90% from 2026-10-22): "EVERY HORSE, IF
+ * THEY ARE IN THE TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD
+ * 100% BE ADDING ON IN EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE
+ * SEAT!" Every seated, funded horse takes the add-on; the purchase RPC still
+ * refuses a seatless or unfunded entry. The early timing split is unchanged. */
 export const HORSE_ADDON_IMMEDIATE_RATE = 0.35;
-export const HORSE_ADDON_PARTICIPATION_RATE = 0.9;
+export const HORSE_ADDON_PARTICIPATION_RATE = 1;
 
 export function horseTakesAddOn(horseId: string, eventId: string): boolean {
   return (

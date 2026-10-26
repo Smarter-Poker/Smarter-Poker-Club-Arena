@@ -23,7 +23,47 @@
  * live decision; a replay that cannot establish the same state refuses by
  * name instead of substituting its own.
  */
-export const HORSE_DECISION_REPLAY_STATE_VERSION = 'horse-decision-replay-state-v2';
+import { correctiveKernelEvaluatorIdentity } from '../../services/horseCorrectiveReview/liveKernel.js';
+import {
+  correctiveDecisionDomain,
+  correctiveDomainKey,
+  CORRECTIVE_DOMAIN_KEYS,
+} from '../../services/horseCorrectiveReview/domain.js';
+export const HORSE_DECISION_REPLAY_STATE_VERSION = 'horse-decision-replay-state-v3';
+export const HORSE_DECISION_REPLAY_STATE_V2 = 'horse-decision-replay-state-v2';
+export interface HorseCorrectiveReplayState {
+  mode: 'off' | 'shadow' | 'candidate';
+  domain: string | null;
+  catalogDigest: string | null;
+}
+export function horseCorrectiveReplayState(
+  gameState: Parameters<typeof correctiveDecisionDomain>[0],
+  callerMode: unknown,
+  evaluator: unknown
+): HorseCorrectiveReplayState {
+  const domain = correctiveDecisionDomain(gameState),
+    identity = correctiveKernelEvaluatorIdentity(evaluator);
+  return {
+    mode: callerMode === 'off' ? 'off' : identity ? 'candidate' : 'shadow',
+    domain: domain ? correctiveDomainKey(domain) : null,
+    catalogDigest: identity?.catalogDigest ?? null,
+  };
+}
+function validCorrective(value: unknown): value is HorseCorrectiveReplayState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    Object.keys(v).sort().join(',') === 'catalogDigest,domain,mode' &&
+    ['off', 'shadow', 'candidate'].includes(String(v.mode)) &&
+    (v.domain === null ||
+      (typeof v.domain === 'string' && CORRECTIVE_DOMAIN_KEYS.includes(v.domain))) &&
+    (v.mode === 'candidate'
+      ? typeof v.domain === 'string' &&
+        typeof v.catalogDigest === 'string' &&
+        /^[a-f0-9]{64}$/.test(v.catalogDigest)
+      : v.catalogDigest === null)
+  );
+}
 /** Journaled by release 71ab03df through 30ef59ad: no runtime identity. */
 export const HORSE_DECISION_REPLAY_STATE_V1 = 'horse-decision-replay-state-v1';
 
@@ -48,7 +88,9 @@ export interface HorseDecisionRuntimeIdentity {
 }
 
 export interface HorseDecisionReplayState {
-  version: typeof HORSE_DECISION_REPLAY_STATE_VERSION;
+  version: typeof HORSE_DECISION_REPLAY_STATE_VERSION | typeof HORSE_DECISION_REPLAY_STATE_V2;
+  /** Absent only on retained v2 records. */
+  corrective?: HorseCorrectiveReplayState;
   admission: HorseDecisionReplayAdmission;
   phase8SafetyDisabledReason: string | null;
   runtime: HorseDecisionRuntimeIdentity;
@@ -91,11 +133,13 @@ export function horseDecisionReplayAdmission(
 export function horseDecisionReplayState(
   admission: HorseDecisionReplayAdmission,
   phase8SafetyDisabledReason: string | null,
-  runtime: HorseDecisionRuntimeIdentity = currentHorseDecisionRuntime()
+  runtime: HorseDecisionRuntimeIdentity = currentHorseDecisionRuntime(),
+  corrective: HorseCorrectiveReplayState = { mode: 'shadow', domain: null, catalogDigest: null }
 ): HorseDecisionReplayState {
   return {
     version: HORSE_DECISION_REPLAY_STATE_VERSION,
     admission: { ...admission },
+    corrective: { ...corrective },
     phase8SafetyDisabledReason,
     runtime: { node: runtime.node, v8: runtime.v8, arch: runtime.arch },
   };
@@ -116,8 +160,10 @@ export function isHorseDecisionReplayState(value: unknown): value is HorseDecisi
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   return (
-    Object.keys(v).length === 4 &&
-    v.version === HORSE_DECISION_REPLAY_STATE_VERSION &&
+    ((Object.keys(v).length === 4 && v.version === HORSE_DECISION_REPLAY_STATE_V2) ||
+      (Object.keys(v).length === 5 &&
+        v.version === HORSE_DECISION_REPLAY_STATE_VERSION &&
+        validCorrective(v.corrective))) &&
     isRuntime(v.runtime) &&
     validStateFields(v)
   );

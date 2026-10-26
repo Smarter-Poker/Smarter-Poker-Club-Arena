@@ -1,3 +1,4 @@
+import { correctiveKernelReceiptIsValid } from '../../services/horseCorrectiveReview/kernelReceipt.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
@@ -701,11 +702,14 @@ export function horseDecisionReceiptIsValid(
   )
     return false;
   if (!policyGraphIsValid(value)) return false;
+  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input
   // to the final rule; the graph itself still binds the executed output.
   const graph = value.policyGraph as HorseDecision['policyGraph'];
-  const beforeNuts = graph?.transitions.find((t) => t.node === 'wager_rules')?.before;
+  const beforeNuts =
+    graph?.transitions.find((t) => t.node === 'corrective_policy')?.before ??
+    graph?.transitions.find((t) => t.node === 'wager_rules')?.before;
   const selected: RecordValue = beforeNuts
     ? { ...value, action: beforeNuts.action, amount: beforeNuts.amount ?? undefined }
     : value;

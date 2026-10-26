@@ -156,4 +156,27 @@ describe('qualified replay restores recorded holder identity without granting au
       );
     }
   );
+  it('restores a selected baseline holder recorded by a corrective composition even when its own candidate did not apply', () => {
+    const { receipt } = qualifiedReceipt();
+    const original = {
+      action: 'fold',
+      thinkTime: 0,
+      correctivePolicy: {
+        domain: 'plo4-cash',
+        authority: receipt,
+        baselineAuthorities: { phase10: receipt },
+      },
+    } as unknown as HorseDecision;
+    const factory = qualifiedReplayAuthorityHolders(original, 'plo4', testAdmissions);
+    expect(
+      factory('phase10', null, PLO4_POLICY_PACK.version, 'different-worker').receipt()
+    ).toEqual(receipt);
+    const conflicting = {
+      ...original,
+      plo4Policy: { applied: true, authority: { ...receipt, generation: receipt.generation + 1 } },
+    } as unknown as HorseDecision;
+    expect(() => qualifiedReplayAuthorityHolders(conflicting, 'plo4', testAdmissions)).toThrow(
+      /conflicting_baseline_receipt/
+    );
+  });
 });

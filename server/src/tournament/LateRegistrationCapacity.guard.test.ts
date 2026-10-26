@@ -426,9 +426,22 @@ describe('late-registration capacity authority', () => {
     // rarely inside the window; Happy Hour (Midway Union) 0 of 135 horses.
     const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
     const head = ELIMINATIONS.slice(0, recoveryStage);
-    expect(head).toMatch(
-      /if \(this\.addOnOfferWindowOpen\(addOnNowMs\) && !isMaintenanceFrozen\(\)\) \{[\s\S]{0,400}await this\.tryTournamentAddOns\(\);[\s\S]{0,120}this\.scheduleAddOnRetry\(\);/
+    const addOnGate = head.indexOf(
+      'if (this.addOnOfferWindowOpen(addOnNowMs) && !isMaintenanceFrozen()) {'
     );
+    expect(addOnGate).toBeGreaterThan(-1);
+    // Ahead of the late-registration branch, which can end the admission
+    // while the entry window that the add-on follows is being closed.
+    expect(addOnGate).toBeLessThan(
+      head.indexOf("await this.reconcileTournamentEntryWindow('engine.manager_wake')")
+    );
+    const addOnBlock = head.slice(addOnGate, head.indexOf('this.scheduleAddOnRetry();', addOnGate));
+    expect(addOnBlock).toMatch(/for \(let pass = 0; pass < 10; pass\+\+\) \{/);
+    expect(addOnBlock).toContain('await this.tryTournamentAddOns();');
+    expect(addOnBlock).toContain('this.eliminationWorkBudgetExpired()');
+    expect(addOnBlock).toContain('!this.addOnOfferWindowOpen(Date.now())');
+    expect(addOnBlock).toMatch(/!more \|\|\s*offered === 0/);
+    expect(BASE).toContain('this.lastAddOnOfferPass = { offered: completedOffers, more };');
     // Only offers move ahead of the bust stage: a closed or closing window
     // (deadline passed, Free Buy drain pending) finalizes the pool in stage 4.
     const open = BASE.slice(

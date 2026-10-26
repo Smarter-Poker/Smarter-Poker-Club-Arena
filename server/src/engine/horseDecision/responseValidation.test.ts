@@ -53,7 +53,7 @@ describe('river nuts final rule receipt transport', () => {
     const value = receipt();
     value.policyGraph!.version = 'horse-policy-order-v1';
     value.policyGraph!.transitions = value.policyGraph!.transitions.filter(
-      (t) => t.node !== 'wager_rules'
+      (t) => t.node !== 'wager_rules' && t.node !== 'corrective_policy'
     );
     expect(horseDecisionReceiptIsValid(value)).toBe(true);
     value.policyGraph!.version = 'horse-policy-order-v2';
@@ -387,6 +387,7 @@ describe('bounded Horse response receipt validation', () => {
         'tournament_continuation',
         'variant_utility_guard',
         'joint_policy',
+        'corrective_policy',
         'wager_rules',
         'timing',
       ]);

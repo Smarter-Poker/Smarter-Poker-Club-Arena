@@ -549,7 +549,7 @@ $replacement$;
 END $install$;
 -- Start a complete pass once, including any equal-timestamp rows omitted by
 -- the old timestamp-only cursor. No history or money row is changed here.
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 COMMIT;
 
 -- One-batch adapter changes only the time budget, retaining the actual query and mutation path.
@@ -565,7 +565,7 @@ SELECT sp_prune_hand_history(250) FROM generate_series(1,4);
 DO $$BEGIN IF (SELECT count(*) FROM hand_history)<>1000 THEN RAISE EXCEPTION 'later eligible page never reached'; END IF; END$$;
 -- Hash-join planning must not move expensive guards before the bounded page.
 TRUNCATE hand_history;
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 UPDATE guard_calls SET n=0;
 INSERT INTO hand_history SELECT md5(i::text)::uuid,'[]',now()-interval '9 days'+i*interval '1 microsecond',CASE WHEN i<=1000 THEN '00000000-0000-0000-0000-000000000001'::uuid END,NULL,i,false,false FROM generate_series(1,1250)i;
 SET enable_nestloop=off;
@@ -574,7 +574,7 @@ DO $$BEGIN IF (SELECT n FROM guard_calls)>250 THEN RAISE EXCEPTION 'join planner
 RESET enable_nestloop;
 -- Equal timestamps span three pages; every UUID must eventually be visited.
 TRUNCATE hand_history;
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 INSERT INTO hand_history SELECT md5(('tie'||i)::text)::uuid,'[]',now()-interval '9 days',NULL,NULL,i,false,false FROM generate_series(1,600)i;
 SELECT sp_prune_hand_history(250) FROM generate_series(1,3);
 DO $$BEGIN IF EXISTS(SELECT 1 FROM hand_history) THEN RAISE EXCEPTION 'equal timestamp page omitted hands'; END IF; END$$;
@@ -586,7 +586,7 @@ DO $$BEGIN IF EXISTS((SELECT * FROM frozen_cursor EXCEPT SELECT * FROM smarter_p
 CREATE OR REPLACE FUNCTION fn_platform_frozen() RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
 -- A released guard is revisited on the next hourly pass; a human is retained.
 TRUNCATE hand_history;
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 INSERT INTO profiles VALUES('00000000-0000-0000-0000-000000000099',false);
 INSERT INTO hand_history VALUES('00000000-0000-0000-0000-000000000011','[]',now()-interval '9 days','00000000-0000-0000-0000-000000000001',NULL,11,false,false),('00000000-0000-0000-0000-000000000012','[{"userId":"00000000-0000-0000-0000-000000000099"}]',now()-interval '9 days',NULL,NULL,12,false,false);
 -- Attach the human hand to a cash table so the existing shape guard admits classification.
@@ -602,7 +602,7 @@ SELECT sp_prune_hand_history(250);
 DO $$BEGIN IF EXISTS(SELECT 1 FROM hand_history WHERE hand_number=11) OR NOT EXISTS(SELECT 1 FROM hand_history WHERE hand_number=12 AND has_human) THEN RAISE EXCEPTION 'released guard or human boundary failed'; END IF; END$$;
 -- Cursor and deletion roll back as one transaction.
 INSERT INTO hand_history VALUES('00000000-0000-0000-0000-000000000013','[]',now()-interval '9 days',NULL,NULL,13,false,false);
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 CREATE TEMP TABLE before_rollback AS SELECT * FROM smarter_private.hand_history_prune_cursor;
 BEGIN;
 SELECT sp_prune_hand_history(250);
@@ -612,7 +612,7 @@ DO $$BEGIN IF NOT EXISTS(SELECT 1 FROM hand_history WHERE hand_number=13) OR EXI
 -- scan must skip it without waiting, then revisit it on the next pass.
 CREATE EXTENSION dblink;
 TRUNCATE hand_history;
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 INSERT INTO hand_history SELECT md5(('locked'||i)::text)::uuid,'[]',now()-interval '9 days'+i*interval '1 microsecond',NULL,NULL,i,false,false FROM generate_series(21,22)i;
 SELECT dblink_connect('holder','host='||current_setting('unix_socket_directories')||' port='||current_setting('port')||' dbname='||current_database()||' user='||current_user);
 SELECT dblink_exec('holder','BEGIN');

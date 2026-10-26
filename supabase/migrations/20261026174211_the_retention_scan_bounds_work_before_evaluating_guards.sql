@@ -283,5 +283,5 @@ $replacement$;
 END $install$;
 -- Start a complete pass once, including any equal-timestamp rows omitted by
 -- the old timestamp-only cursor. No history or money row is changed here.
-UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL;
+UPDATE smarter_private.hand_history_prune_cursor SET resume_after=NULL,resume_id=NULL,pass_started_at=NULL WHERE singleton;
 COMMIT;

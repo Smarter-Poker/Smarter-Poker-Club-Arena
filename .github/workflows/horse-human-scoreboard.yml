@@ -11,6 +11,9 @@ on:
       - scripts/horse-human-scoreboard.mjs
       - scripts/ci/test-horse-human-scoreboard.mjs
       - .github/workflows/horse-human-scoreboard.yml
+concurrency:
+  group: horse-human-scoreboard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:

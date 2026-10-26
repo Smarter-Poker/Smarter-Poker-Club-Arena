@@ -52,3 +52,10 @@ report completed with 2,828 sole-human facts; the full 14-day roster query
 remains unavailable under the five-second budget. A single-player 14-day
 query completed, so wider history can be inspected per player without
 raising the database deadline or manufacturing a whole-fleet result.
+
+Follow-up review reproduced JavaScript's normalization of invalid calendar dates
+(February 30 and April 31). The UTC parser now verifies the canonical calendar
+instant before querying. The workflow now cancels superseded checks per PR,
+preserving main-branch verification. All 85 existing concurrency-law cases pass.
+Over-limit reads stop without sorting or classifying a sample that cannot be
+scored; the candidate count remains explicit and no partial scores are emitted.

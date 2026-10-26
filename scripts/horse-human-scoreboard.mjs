@@ -12,7 +12,9 @@ export function scoreboardSQL(since, through, userId) {
       !Number.isFinite(Date.parse(value))
     )
       throw Error('Explicit UTC timestamps required');
-    return new Date(value).toISOString();
+    const canonical = new Date(value).toISOString();
+    if (canonical.slice(0, 19) !== value.slice(0, 19)) throw Error('Invalid calendar instant');
+    return canonical;
   };
   if (
     userId !== undefined &&
@@ -27,6 +29,8 @@ export function scoreboardSQL(since, through, userId) {
     throw Error('Window must be positive and at most fourteen days');
   return `BEGIN READ ONLY;
 SET LOCAL statement_timeout = '5000ms';
+-- Ordering an over-limit sample is unnecessary: it never emits scores.
+-- Let LIMIT stop the existing per-player index scans as soon as the cap is known.
 WITH selected AS MATERIALIZED (
  SELECT f.hand_id, f.user_id, f.game_variant, f.big_blind, f.tournament_id,
         f.net, f.opponent_ids, f.players_dealt, p.is_horse
@@ -36,9 +40,9 @@ WITH selected AS MATERIALIZED (
    FROM public.ca_hand_facts f
    WHERE f.user_id = p.id AND f.played_at >= '${start}'::timestamptz
      AND f.played_at < '${end}'::timestamptz
-   ORDER BY f.played_at, f.hand_id LIMIT 50001
+   LIMIT 50001
  ) f WHERE p.is_horse = false ${userId === undefined ? '' : `AND p.id = '${userId}'`}
- ORDER BY f.played_at, f.hand_id, f.user_id LIMIT 50001
+ LIMIT 50001
 ), classified AS MATERIALIZED (
  SELECT f.*, CASE
  WHEN f.is_horse IS NULL THEN 'unknown_actor'
@@ -57,7 +61,7 @@ WITH selected AS MATERIALIZED (
  WHEN EXISTS (SELECT 1 FROM unnest(f.opponent_ids) o(id)
    JOIN public.profiles p ON p.id = o.id WHERE p.is_horse = false) THEN 'mixed_human'
  ELSE 'sole_human_against_horses' END AS cohort
- FROM selected f
+ FROM selected f WHERE (SELECT count(*) FROM selected) <= 50000
 ), scores AS (
  SELECT game_variant, big_blind, tournament_id IS NOT NULL AS tournament,
         user_id, count(*) AS hands,
@@ -71,6 +75,7 @@ WITH selected AS MATERIALIZED (
  SELECT cohort, count(*) AS facts FROM classified GROUP BY cohort
 )
 SELECT jsonb_build_object(
+ 'candidate_facts', (SELECT count(*) FROM selected),
  'version', 1, 'since', '${start}', 'through', '${end}',
  'status', CASE WHEN (SELECT count(*) FROM selected) > 50000 THEN 'incomplete_row_limit' ELSE 'observed' END,
  'classification_basis', 'current_profiles_not_historical_identity',

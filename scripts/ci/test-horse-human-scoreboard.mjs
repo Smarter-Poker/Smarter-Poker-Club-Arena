@@ -26,6 +26,8 @@ test('report refuses invalid, injected, reversed and unbounded windows before co
     ['2026-09-01T00:00:00Z', through],
     [since, since],
     ['not-a-date', through],
+    ['2026-02-30T00:00:00Z', '2026-03-03T00:00:00Z'],
+    ['2026-04-31T00:00:00Z', '2026-05-03T00:00:00Z'],
   ]) {
     assert.throws(() => scoreboardSQL(a, b));
     assert.equal(runScoreboard(['--run', a, b]).code, 3);
@@ -143,6 +145,8 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     );
     const capped = JSON.parse(psql(scoreboardSQL(since, through)));
     assert.equal(capped.status, 'incomplete_row_limit');
+    assert.equal(capped.candidate_facts, 50001);
+    assert.deepEqual(capped.coverage, []);
     assert.deepEqual(capped.scores, []);
     assert.equal(psql('SELECT count(*) FROM ca_hand_facts;').trim(), '50018');
   } finally {

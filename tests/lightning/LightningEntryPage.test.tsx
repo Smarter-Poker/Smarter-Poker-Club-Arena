@@ -208,11 +208,14 @@ describe('the Lightning route', () => {
     gameRow.cluster_mode = 'lightning';
   });
 
-  it('JOIN GAME on a Cluster leaving Lightning leaves no intent: the table never waits for a pool', async () => {
-    gameRow.cluster_mode = 'pending_off';
+  it('JOIN GAME on a MUST MOVE Cluster leaves no intent: the table never waits for a pool', async () => {
+    /* LIGHTNING TRANSITION, PHASE 5: a Cluster LEAVING Lightning (pending_off,
+       draining) now shows its door disabled (the switching test below), so the
+       no-intent rule is pinned on a MUST MOVE Cluster, where JOIN GAME seats. */
+    gameRow.cluster_mode = 'must_move';
     rpc.mockImplementation(async (name: string) => {
       if (name === 'fn_lightning_my_session') {
-        return { data: { pool_session_id: null, cluster_mode: 'pending_off' }, error: null };
+        return { data: { pool_session_id: null, cluster_mode: 'must_move' }, error: null };
       }
       if (name === 'fn_cash_game_join') {
         return { data: { ok: true, action: 'seat', table_id: ANCHOR }, error: null };
@@ -242,6 +245,25 @@ describe('the Lightning route', () => {
       gameRow.cluster_mode = 'lightning';
     }
   });
+
+  it.each([
+    ['pending_on', 'Lightning Starting'],
+    ['pending_off', 'Lightning Ending'],
+    ['draining', 'Lightning Ending'],
+  ])(
+    'a Cluster switching modes (%s) shows the lobby words and a disabled door',
+    async (mode, words) => {
+      gameRow.cluster_mode = mode;
+      rpc.mockResolvedValue({ data: { pool_session_id: null, cluster_mode: mode }, error: null });
+      try {
+        renderAt(`/lightning/${CLUSTER}`);
+        expect(await screen.findByText(words)).toBeTruthy();
+        expect(screen.getByRole('button', { name: /join/i }).hasAttribute('disabled')).toBe(true);
+      } finally {
+        gameRow.cluster_mode = 'lightning';
+      }
+    }
+  );
 
   it('prints no technical loading text while it resolves', async () => {
     let release: (v: unknown) => void = () => {};

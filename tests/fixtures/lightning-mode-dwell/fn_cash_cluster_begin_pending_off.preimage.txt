@@ -1,0 +1,192 @@
+CREATE OR REPLACE FUNCTION public.fn_cash_cluster_begin_pending_off(p_game_id uuid, p_request_id uuid DEFAULT gen_random_uuid(), p_reason text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  g          record;
+  v_prior    record;
+  v_state    jsonb;
+  v_why      text;
+  v_voided   integer := 0;
+  v_inflight integer := 0;
+  v_dwell    integer;
+  v_chips    numeric;
+  i          record;
+BEGIN
+  -- IDEMPOTENCY FIRST, as begin_pending_on asks it: a worker retrying a
+  -- request that already succeeded is told so, and an id that names a
+  -- conversion in the other direction is named as the caller's bug.
+  SELECT * INTO v_prior FROM public.cash_cluster_conversion
+   WHERE conversion_request_id = p_request_id AND cluster_id = p_game_id;
+  IF FOUND THEN
+    IF v_prior.to_mode IS DISTINCT FROM 'must_move' THEN
+      RETURN jsonb_build_object('ok', false, 'pending', false,
+        'reason', 'request_id_belongs_to_another_conversion',
+        'conversion_id', v_prior.id, 'to_mode', v_prior.to_mode);
+    END IF;
+    RETURN jsonb_build_object(
+      'ok', v_prior.status <> 'aborted',
+      'pending', v_prior.status = 'pending',
+      'reason', CASE v_prior.status
+                  WHEN 'pending'   THEN 'already_known'
+                  WHEN 'committed' THEN 'already_committed'
+                  ELSE 'conversion_already_aborted' END,
+      'conversion_id', v_prior.id, 'status', v_prior.status,
+      'abort_reason', v_prior.abort_reason,
+      'cluster_mode', (SELECT cluster_mode FROM public.cash_games WHERE id = p_game_id));
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.cash_cluster_conversion
+              WHERE conversion_request_id = p_request_id) THEN
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'request_id_belongs_to_another_cluster');
+  END IF;
+
+  -- NOT GATED ON fn_platform_frozen(). Leaving Lightning must always be
+  -- possible (the verdict's own asymmetry: entering is gated, leaving never
+  -- is), and this call deals nothing and moves no chip. The commit, which
+  -- lets the physical tables deal again, is gated.
+
+  -- THE CLUSTER ROW FIRST, in the order the ON path and formation take it.
+  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'not_found');
+  END IF;
+
+  -- ASKED AGAIN UNDER THE LOCK, for two callers sharing one request id.
+  SELECT * INTO v_prior FROM public.cash_cluster_conversion
+   WHERE conversion_request_id = p_request_id AND cluster_id = p_game_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'ok', v_prior.status <> 'aborted' AND v_prior.to_mode = 'must_move',
+      'pending', v_prior.status = 'pending',
+      'reason', CASE WHEN v_prior.to_mode IS DISTINCT FROM 'must_move' THEN 'request_id_belongs_to_another_conversion'
+                     WHEN v_prior.status = 'pending' THEN 'already_known'
+                     WHEN v_prior.status = 'committed' THEN 'already_committed'
+                     ELSE 'conversion_already_aborted' END,
+      'conversion_id', v_prior.id, 'status', v_prior.status,
+      'abort_reason', v_prior.abort_reason, 'cluster_mode', g.cluster_mode);
+  END IF;
+
+  -- LIGHTNING PHASE 13 (20261009235505): the emergency drain ends through
+  -- this path; a draining Cluster is admitted for the drain alone.
+  IF g.cluster_mode IS DISTINCT FROM 'lightning'
+     AND NOT (g.cluster_mode = 'draining' AND p_reason IS NOT DISTINCT FROM 'lightning_drain') THEN
+    RETURN jsonb_build_object('ok', false,
+      'pending', g.cluster_mode IN ('pending_on', 'pending_off'),
+      'reason', 'wrong_state', 'cluster_mode', g.cluster_mode);
+  END IF;
+
+  -- LIGHTNING PHASE 7 REMEDIATION (20261007222717): AN OPEN CONVERSION IS AN
+  -- ANSWER, NOT AN EXCEPTION - exactly as begin_pending_on now answers it.
+  SELECT * INTO v_prior FROM public.cash_cluster_conversion
+   WHERE cluster_id = g.id AND status = 'pending';
+  IF FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'pending', true,
+      'reason', 'conversion_already_open',
+      'conversion_id', v_prior.id, 'conversion_request_id', v_prior.conversion_request_id,
+      'to_mode', v_prior.to_mode, 'cluster_mode', g.cluster_mode);
+  END IF;
+
+  -- THE TRIGGER. The verdict is the one population reader the lobby and the
+  -- ON path embed; a disabled Cluster drains whatever its population.
+  v_state := public.fn_cash_cluster_lightning_state(g.id);
+  v_why := CASE
+    WHEN coalesce(g.lightning_enabled, false) = false THEN 'lightning_disabled'
+    WHEN g.enabled IS DISTINCT FROM true THEN 'game_disabled'
+    WHEN coalesce((v_state -> 'verdict' ->> 'would_turn_off')::boolean, false) THEN 'population_at_or_below_off_threshold'
+    ELSE NULL END;
+  IF v_why IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'threshold_not_reached',
+      'verdict', v_state -> 'verdict', 'thresholds', v_state -> 'thresholds');
+  END IF;
+
+  -- LIGHTNING PHASE 7 REMEDIATION (20261007222717), TIGHTENED BY
+  -- 20261008043021: THE OFF CONDITION MUST DWELL, AND THE DWELL IS A
+  -- DURATION, NOT A COUNT OF CALLS. A population hovering at the OFF
+  -- threshold used to open a conversion, void every reserved formation, and
+  -- abort, on every oscillation; and a seat-change wake half a second after
+  -- the first sighting used to open PENDING_OFF anyway, because any second
+  -- call proceeded. The first sighting is recorded durably on the Cluster
+  -- row this call already holds FOR UPDATE, and a drive pass that does not
+  -- see the condition clears it; every later sighting is refused, with the
+  -- STANDING first_seen_at, until the recorded sighting has stood for the
+  -- configured pending_off_dwell_ms (default 10000; 0 keeps the two-sighting
+  -- rule with no minimum duration). A disabled Cluster or game always drains
+  -- at once: the dwell gates only the population trigger.
+  IF v_why = 'population_at_or_below_off_threshold' THEN
+    v_dwell := (public.fn_lightning_config_number(
+                  CASE WHEN jsonb_typeof(g.ruleset_snapshot -> 'lightning') = 'object'
+                       THEN g.ruleset_snapshot -> 'lightning' ELSE '{}'::jsonb END,
+                  'pending_off_dwell_ms', 10000, 0, 3600000, true) ->> 'value')::integer;
+    IF g.lightning_off_condition_since IS NULL THEN
+      UPDATE public.cash_games
+         SET lightning_off_condition_since = clock_timestamp(), updated_at = now()
+       WHERE id = g.id;
+      RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'off_condition_dwell',
+        'why', v_why, 'first_seen_at', clock_timestamp(), 'dwell_ms', v_dwell,
+        'verdict', v_state -> 'verdict', 'thresholds', v_state -> 'thresholds');
+    ELSIF clock_timestamp() < g.lightning_off_condition_since + make_interval(secs => v_dwell / 1000.0) THEN
+      RETURN jsonb_build_object('ok', false, 'pending', false, 'reason', 'off_condition_dwell',
+        'why', v_why, 'first_seen_at', g.lightning_off_condition_since, 'dwell_ms', v_dwell,
+        'verdict', v_state -> 'verdict', 'thresholds', v_state -> 'thresholds');
+    END IF;
+  END IF;
+
+  UPDATE public.cash_games
+     SET cluster_mode = 'pending_off', lightning_off_condition_since = NULL, updated_at = now()
+   WHERE id = g.id;
+
+  -- THE DRAIN POLICY. Nothing new forms: fn_lightning_form_hand refuses every
+  -- mode but 'lightning'. A formation that has not been dealt is void now,
+  -- rather than when begin_dealing or the reaper finds it; nothing was dealt,
+  -- so nothing is owed, and the AFTER trigger on lightning_instance hands its
+  -- players back. A hand already dealing or settling is left to finish.
+  FOR i IN
+    SELECT li.id FROM public.lightning_instance li
+     WHERE li.cluster_id = g.id AND li.state IN ('forming', 'reserved')
+     ORDER BY li.id
+     FOR UPDATE
+  LOOP
+    PERFORM public.fn_lightning_instance_abandon(i.id,
+      'lightning pending_off: a hand not yet dealt is void; nothing was dealt and no chip moved',
+      clock_timestamp());
+    v_voided := v_voided + 1;
+  END LOOP;
+
+  SELECT count(*)::integer INTO v_inflight
+    FROM public.lightning_instance li
+   WHERE li.cluster_id = g.id AND li.state IN ('dealing', 'settling');
+
+  SELECT coalesce(sum(ts.stack), 0) INTO v_chips
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE tb.cluster_id = g.id AND ts.left_at IS NULL;
+
+  INSERT INTO public.cash_cluster_conversion (
+    cluster_id, conversion_request_id, from_mode, to_mode, trigger_population,
+    on_threshold, off_threshold, epoch_before, chips_at_begin)
+  VALUES (
+    g.id, p_request_id, g.cluster_mode, 'must_move',
+    coalesce((v_state -> 'verdict' ->> 'live_eligible')::integer, 0),
+    coalesce((v_state -> 'thresholds' ->> 'on')::integer, 0),
+    coalesce((v_state -> 'thresholds' ->> 'off')::integer, 0),
+    g.cluster_epoch, v_chips)
+  RETURNING * INTO v_prior;
+
+  INSERT INTO public.cash_cluster_events (game_id, kind, payload, request_id)
+  VALUES (g.id, 'lightning_pending_off', jsonb_build_object(
+    'conversion_id', v_prior.id, 'conversion_request_id', p_request_id,
+    'reason', v_why, 'note', nullif(btrim(coalesce(p_reason, '')), ''),
+    'trigger_population', v_prior.trigger_population,
+    'on_threshold', v_prior.on_threshold, 'off_threshold', v_prior.off_threshold,
+    'epoch_before', g.cluster_epoch, 'lightning_enabled', g.lightning_enabled,
+    'instances_voided', v_voided, 'hands_in_flight', v_inflight,
+    'chips_at_begin', v_chips), p_request_id);
+
+  RETURN jsonb_build_object('ok', true, 'pending', true, 'reason', 'pending_off',
+    'why', v_why, 'conversion_id', v_prior.id, 'conversion_request_id', p_request_id,
+    'cluster_mode', 'pending_off', 'trigger_population', v_prior.trigger_population,
+    'instances_voided', v_voided, 'hands_in_flight', v_inflight,
+    'thresholds', v_state -> 'thresholds');
+END;
+$function$

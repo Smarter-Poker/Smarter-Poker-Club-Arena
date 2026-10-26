@@ -408,6 +408,10 @@ export default function LightningEntryPage() {
      read yet decides nothing. The lobby label keeps its own cluster_mode
      source from the lobby feed. */
   const modeDisplay = clusterModeDisplay(meta?.clusterMode ?? null);
+  /* LIGHTNING TRANSITION, PHASE 5: while the game is switching (starting or
+     ending Lightning) this door is shown disabled with the lobby's own words,
+     exactly like the lobby card, so nobody buys into a halted table. */
+  const switchingLabel = modeDisplay.switching ? modeDisplay.label : null;
   const closed =
     meta?.enabled === false ||
     modeDisplay.closedLabel !== null ||
@@ -436,16 +440,24 @@ export default function LightningEntryPage() {
         status={
           joining
             ? 'Joining'
-            : joinsClosed || closed
-              ? (modeDisplay.closedLabel ?? 'Closed')
-              : atLimit
-                ? 'Limit'
-                : 'Running'
+            : switchingLabel
+              ? switchingLabel
+              : joinsClosed || closed
+                ? (modeDisplay.closedLabel ?? 'Closed')
+                : atLimit
+                  ? 'Limit'
+                  : 'Running'
         }
         primaryTestId={joinsClosed ? 'lightning-entry-join-closed' : undefined}
         actions={{
           primaryLabel: joining ? 'Joining...' : joinLabel,
-          primaryDisabled: joining || closed || joinsClosed || atLimit || buyIn !== null,
+          primaryDisabled:
+            joining ||
+            closed ||
+            joinsClosed ||
+            atLimit ||
+            switchingLabel !== null ||
+            buyIn !== null,
           onPrimary: () => void join(),
           secondaryLabel: 'Return To Lobby',
           onSecondary: () => navigate('/'),

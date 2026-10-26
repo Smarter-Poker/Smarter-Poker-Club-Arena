@@ -12,10 +12,13 @@
  *
  * MUST MOVE is said only for a Cluster whose mode is must_move (or a row that
  * does not carry its mode, which reads as the column's default, must_move).
- * JOIN LIGHTNING is offered only while the mode is lightning: on the way in
- * (pending_on) the card still says MUST MOVE, and on the way out (pending_off,
- * draining) it still says LIGHTNING LIVE, each with the ordinary JOIN GAME
- * door. A paused, frozen or dead Cluster says neither: it is a closed game,
+ * JOIN LIGHTNING is offered only while the mode is lightning. WHILE THE GAME
+ * IS SWITCHING (transition phase 5 of 5, 2026-10-26) the card says so: on the
+ * way in (pending_on) it says Lightning Starting, and on the way out
+ * (pending_off, draining) Lightning Ending. Either way the tables are halted
+ * until the switch commits (up to 146 s in, 80 s out, measured), so the door
+ * is shown and not offered; nobody is moved anywhere by the board.
+ * A paused, frozen or dead Cluster says neither: it is a closed game,
  * in the words the board already uses for one (Game Paused, Game Closed). The
  * numbers come from the one reader of a Cluster's Lightning state,
  * fn_cash_cluster_lightning_state, which fn_cash_game_lobby embeds as
@@ -133,25 +136,59 @@ export function isClassicLobbyState(state: LightningLobbyState | null | undefine
   return state.lightningEnabled === false && !isLightningMode(state.clusterMode);
 }
 
+/** The two words the board says while a game is switching modes. */
+export const LIGHTNING_STARTING_LABEL = 'Lightning Starting';
+export const LIGHTNING_ENDING_LABEL = 'Lightning Ending';
+
+/** Which way a game is switching: into Lightning, or out of it. */
+export type LightningSwitching = 'starting' | 'ending';
+
 /** What the board says about a Cluster's mode, and which door it offers. */
 export interface ClusterModeDisplay {
   /** The mode word on the card, or null for a paused or closed game. */
-  label: 'LIGHTNING LIVE' | 'MUST MOVE' | null;
+  label:
+    | 'LIGHTNING LIVE'
+    | 'MUST MOVE'
+    | typeof LIGHTNING_STARTING_LABEL
+    | typeof LIGHTNING_ENDING_LABEL
+    | null;
   /** JOIN LIGHTNING is the door. Only while the mode is lightning. */
   joinLightning: boolean;
   /** A game nobody can join right now, in the board's existing words. */
   closedLabel: 'Paused' | 'Closed' | null;
+  /**
+   * Set while the game is switching (pending_on: starting; pending_off or
+   * draining: ending). Its tables are halted until the switch commits, so the
+   * board shows the join door and does not offer it.
+   */
+  switching: LightningSwitching | null;
+}
+
+/** pending_on is starting; pending_off and draining are ending; anything else is not switching. */
+export function lightningSwitchingOf(mode: string | null | undefined): LightningSwitching | null {
+  if (mode === 'pending_on') return 'starting';
+  if (mode === 'pending_off' || mode === 'draining') return 'ending';
+  return null;
 }
 
 export function clusterModeDisplay(mode: string | null | undefined): ClusterModeDisplay {
   if (mode === 'paused' || mode === 'frozen') {
-    return { label: null, joinLightning: false, closedLabel: 'Paused' };
+    return { label: null, joinLightning: false, closedLabel: 'Paused', switching: null };
   }
-  if (mode === 'dead') return { label: null, joinLightning: false, closedLabel: 'Closed' };
-  if (isLightningMode(mode)) {
-    return { label: 'LIGHTNING LIVE', joinLightning: mode === 'lightning', closedLabel: null };
+  if (mode === 'dead') {
+    return { label: null, joinLightning: false, closedLabel: 'Closed', switching: null };
   }
-  return { label: 'MUST MOVE', joinLightning: false, closedLabel: null };
+  const switching = lightningSwitchingOf(mode);
+  if (switching === 'starting') {
+    return { label: LIGHTNING_STARTING_LABEL, joinLightning: false, closedLabel: null, switching };
+  }
+  if (switching === 'ending') {
+    return { label: LIGHTNING_ENDING_LABEL, joinLightning: false, closedLabel: null, switching };
+  }
+  if (mode === 'lightning') {
+    return { label: 'LIGHTNING LIVE', joinLightning: true, closedLabel: null, switching: null };
+  }
+  return { label: 'MUST MOVE', joinLightning: false, closedLabel: null, switching: null };
 }
 
 function count(v: unknown): number | null {
@@ -199,7 +236,7 @@ export function lightningPoolStatus(state: LightningLobbyState | null): Lightnin
 
 export interface LightningLobbyBadge {
   mode: 'lightning' | 'must_move' | 'closed';
-  label: 'LIGHTNING LIVE' | 'MUST MOVE' | null;
+  label: ClusterModeDisplay['label'];
   players: number;
   status: LightningPoolStatus | null;
   /** JOIN LIGHTNING is offered. True only while the mode is lightning. */
@@ -211,6 +248,11 @@ export interface LightningLobbyBadge {
    * pool. JOIN LIGHTNING is still shown, and not offered. Present only then.
    */
   joinsClosed?: true;
+  /**
+   * The game is switching modes (Lightning Starting or Lightning Ending). Its
+   * join door is shown, and not offered. Present only then.
+   */
+  switching?: LightningSwitching;
 }
 
 /** What a Cluster's card says about its mode. */
@@ -230,20 +272,23 @@ export function lightningLobbyBadge(input: {
       closedLabel: display.closedLabel,
     };
   }
-  if (display.label !== 'LIGHTNING LIVE') {
+  /* On the way in the game is still its must-move self, players and all; the
+     card only says it is switching. */
+  if (!isLightningMode(input.clusterMode)) {
     return {
       mode: 'must_move',
-      label: 'MUST MOVE',
+      label: display.label,
       players: input.boardPlayers,
       status: null,
       joinLightning: false,
       closedLabel: null,
+      ...(display.switching ? { switching: display.switching } : {}),
     };
   }
   const state = input.state ?? null;
   return {
     mode: 'lightning',
-    label: 'LIGHTNING LIVE',
+    label: display.label,
     players: state?.poolPlayers ?? state?.liveEligible ?? input.boardPlayers,
     /* On its way out the pool is THIN by definition, whatever the last read said. */
     status: input.clusterMode === 'lightning' ? lightningPoolStatus(state) : 'THIN',
@@ -252,6 +297,7 @@ export function lightningLobbyBadge(input: {
     ...(display.joinLightning && state?.joinsEnabled === false
       ? { joinsClosed: true as const }
       : {}),
+    ...(display.switching ? { switching: display.switching } : {}),
   };
 }
 

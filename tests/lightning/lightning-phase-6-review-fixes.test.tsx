@@ -11,7 +11,8 @@
  *      unmount or cancel.
  *   4. The idle snapshot after a fold: no LIGHTNING FOLD, and "Next Hand..."
  *      on the usual threshold.
- *   5. The lobby: MUST MOVE only for must_move, LIGHTNING LIVE for Lightning,
+ *   5. The lobby: MUST MOVE only for must_move, LIGHTNING LIVE for Lightning
+ *      (Lightning Starting / Lightning Ending while switching, phase 5),
  *      JOIN LIGHTNING only for lightning, and a closed game for paused,
  *      frozen and dead.
  *
@@ -792,51 +793,67 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
       cluster_mode: mode,
       cluster_lightning: pool(mode),
     }) as LobbyTableRow;
+  const MODE_WORDS = ['MUST MOVE', 'LIGHTNING LIVE', 'Lightning Starting', 'Lightning Ending'];
   const modeWords = (e: ReturnType<typeof cashEntry>) =>
-    e.rules.map((r) => r.label).filter((l) => l === 'MUST MOVE' || l === 'LIGHTNING LIVE');
+    e.rules.map((r) => r.label).filter((l) => MODE_WORDS.includes(l));
 
   it('the mode table', () => {
     expect(clusterModeDisplay('must_move')).toEqual({
       label: 'MUST MOVE',
       joinLightning: false,
       closedLabel: null,
+      switching: null,
     });
+    /* Transition phase 5 (2026-10-26): a game switching modes says so. */
     expect(clusterModeDisplay('pending_on')).toEqual({
-      label: 'MUST MOVE',
+      label: 'Lightning Starting',
       joinLightning: false,
       closedLabel: null,
+      switching: 'starting',
     });
     expect(clusterModeDisplay('lightning')).toEqual({
       label: 'LIGHTNING LIVE',
       joinLightning: true,
       closedLabel: null,
+      switching: null,
     });
     for (const m of ['pending_off', 'draining'])
       expect(clusterModeDisplay(m)).toEqual({
-        label: 'LIGHTNING LIVE',
+        label: 'Lightning Ending',
         joinLightning: false,
         closedLabel: null,
+        switching: 'ending',
       });
     for (const m of ['paused', 'frozen'])
       expect(clusterModeDisplay(m)).toEqual({
         label: null,
         joinLightning: false,
         closedLabel: 'Paused',
+        switching: null,
       });
     expect(clusterModeDisplay('dead')).toEqual({
       label: null,
       joinLightning: false,
       closedLabel: 'Closed',
+      switching: null,
     });
   });
 
-  it('must_move and pending_on: MUST MOVE and JOIN GAME', () => {
-    for (const m of ['must_move', 'pending_on']) {
-      const e = cashEntry(row(m));
-      expect(modeWords(e), m).toEqual(['MUST MOVE']);
-      expect(e.game?.lightning, m).toBeUndefined();
-      expect(actions(e).primaryLabel, m).toBe('Join Game');
-    }
+  it('must_move: MUST MOVE and JOIN GAME', () => {
+    const e = cashEntry(row('must_move'));
+    expect(modeWords(e)).toEqual(['MUST MOVE']);
+    expect(e.game?.lightning).toBeUndefined();
+    expect(e.game?.switching).toBeUndefined();
+    expect(actions(e).primaryLabel).toBe('Join Game');
+    expect(actions(e).primaryDisabled).toBe(false);
+  });
+
+  it('pending_on: Lightning Starting, and JOIN GAME shown disabled', () => {
+    const e = cashEntry(row('pending_on'));
+    expect(modeWords(e)).toEqual(['Lightning Starting']);
+    expect(e.game?.lightning).toBeUndefined();
+    expect(e.game?.switching).toBe('starting');
+    expect(actions(e)).toMatchObject({ primaryLabel: 'Join Game', primaryDisabled: true });
   });
 
   it('lightning: LIGHTNING LIVE and JOIN LIGHTNING', () => {
@@ -846,13 +863,14 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
     expect(actions(e).primaryLabel).toBe('Join Lightning');
   });
 
-  it('pending_off and draining: still LIGHTNING LIVE (THIN), but JOIN GAME, never JOIN LIGHTNING', () => {
+  it('pending_off and draining: Lightning Ending, JOIN GAME shown disabled, never JOIN LIGHTNING', () => {
     for (const m of ['pending_off', 'draining']) {
       const e = cashEntry(row(m));
-      expect(modeWords(e), m).toEqual(['LIGHTNING LIVE']);
-      expect(e.rules.find((r) => r.label === 'LIGHTNING LIVE')?.detail, m).toBe('THIN');
+      expect(modeWords(e), m).toEqual(['Lightning Ending']);
+      expect(e.rules.find((r) => r.label === 'Lightning Ending')?.detail, m).toBeUndefined();
       expect(e.game?.lightning, m).toBeUndefined();
-      expect(actions(e).primaryLabel, m).toBe('Join Game');
+      expect(e.game?.switching, m).toBe('ending');
+      expect(actions(e), m).toMatchObject({ primaryLabel: 'Join Game', primaryDisabled: true });
       expect(lightningLobbyBadge({ clusterMode: m, state: null, boardPlayers: 3 }).status).toBe(
         'THIN'
       );

@@ -1052,6 +1052,11 @@ const COL_ACTIONS: ColumnDef = {
          only fail. A seat the player already holds still wins - they finish
          their hand through Return To Game. */
       const closed = !seated && e.status === 'closed';
+      /* LIGHTNING TRANSITION PHASE 5: a game switching modes (Lightning
+         Starting, Lightning Ending) has its tables halted until the switch
+         commits, so Join Game is shown and not offered. A seated player still
+         returns to their own seat. */
+      const switching = !seated && Boolean(e.game?.switching);
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
@@ -1106,7 +1111,9 @@ const COL_ACTIONS: ColumnDef = {
               type="button"
               className="lt-act lt-act--primary"
               data-act="join"
-              onClick={run}
+              onClick={switching ? undefined : run}
+              disabled={switching}
+              aria-disabled={switching ? 'true' : undefined}
               aria-label={`${seated ? 'Return To' : headsUp ? 'Sit Down At' : 'Join'} ${e.name}`}
             >
               {seated

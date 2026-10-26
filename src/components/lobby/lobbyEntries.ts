@@ -28,6 +28,7 @@ import {
   isLightningVariant,
   type LightningLobbyState,
   type LightningPoolStatus,
+  type LightningSwitching,
 } from '../../lightning/lightningLobby';
 import {
   describeStoredMttStructure,
@@ -275,6 +276,15 @@ export interface LobbyEntry {
      */
     /** LIGHTNING PHASE 13: `joinsClosed` while an operator has stopped new players. */
     lightning?: { players: number; status: LightningPoolStatus; joinsClosed?: true } | null;
+    /**
+     * LIGHTNING TRANSITION PHASE 5 (2026-10-26): set only while the game is
+     * switching modes - 'starting' in pending_on, 'ending' in pending_off or
+     * draining. Its tables are halted until the switch commits, so the card
+     * says Lightning Starting or Lightning Ending and its join door is shown
+     * disabled. Never set for a Classic game or for Short Deck, Omaha Hi-Lo
+     * or Pineapple, which never run Lightning.
+     */
+    switching?: LightningSwitching;
     /**
      * MADNESS WITHOUT LIGHTNING (Dan 2026-10-24). An ordinary must-move game
      * whose tables play Madness rules - a big blind ante and a VPIP floor -
@@ -1478,6 +1488,9 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
         })
       : null;
   const lightningStatus = lightning && lightning.mode === 'lightning' ? lightning.status : null;
+  /* LIGHTNING TRANSITION PHASE 5: the game is switching modes. Only an
+     eligible game can be (the mode passed above is must_move for the rest). */
+  const switching = lightning?.switching ?? null;
   /* A paused, frozen or dead Cluster is a closed game: no mode word, no join. */
   const modeClosedLabel = lightning?.closedLabel ?? null;
   const cluster =
@@ -1493,8 +1506,10 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           tables: figures.tables,
           state: t.cluster_state ?? null,
           /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
-             set only while the mode is lightning itself. pending_off and
-             draining still say LIGHTNING LIVE below, with JOIN GAME. */
+             set only while the mode is lightning itself. While the game is
+             switching (pending_on, pending_off, draining) `switching` is set
+             instead and the JOIN GAME door is shown disabled. */
+          ...(switching ? { switching } : {}),
           ...(lightning && lightningStatus && lightning.joinLightning
             ? {
                 lightning: {
@@ -1579,33 +1594,42 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           ...(modeClosedLabel
             ? []
             : [
-                lightning && lightningStatus
+                switching && lightning?.label
                   ? {
-                      key: 'lightning_live',
-                      label: 'LIGHTNING LIVE',
-                      detail: lightningStatus,
-                      tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
+                      /* LIGHTNING TRANSITION PHASE 5: the game is switching.
+                         The two words are the whole message. */
+                      key: switching === 'starting' ? 'lightning_starting' : 'lightning_ending',
+                      label: lightning.label,
+                      detail: undefined,
+                      tip: '',
                     }
-                  : /* A CLASSIC GAME NEVER MOVES ITS PLAYERS (Dan 2026-10-24: "PLAYERS
+                  : lightning && lightningStatus
+                    ? {
+                        key: 'lightning_live',
+                        label: 'LIGHTNING LIVE',
+                        detail: lightningStatus,
+                        tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
+                      }
+                    : /* A CLASSIC GAME NEVER MOVES ITS PLAYERS (Dan 2026-10-24: "PLAYERS
                        SHOULD NOT BE MOVING ON CLASSIC GAMES PERIOD"). The database refuses
                        every automatic move on a Classic game
                        (20261024213758), so its card never promises one. */
-                    cluster.mustMove &&
-                      cashGameNeverMovesPlayers(cluster.template, t.cluster_rules_profile)
-                    ? {
-                        key: 'classic_seat_stays',
-                        label: 'CLASSIC',
-                        detail: undefined,
-                        tip: 'Regular Ring Game. Your Seat Is Yours Until You Leave Or Ask To Change It.',
-                      }
-                    : {
-                        key: cluster.mustMove ? 'must_move' : 'manual_table',
-                        label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
-                        detail: cluster.template ? cluster.template.toUpperCase() : undefined,
-                        tip: cluster.mustMove
-                          ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
-                          : 'One Table The Host Runs By Hand.',
-                      },
+                      cluster.mustMove &&
+                        cashGameNeverMovesPlayers(cluster.template, t.cluster_rules_profile)
+                      ? {
+                          key: 'classic_seat_stays',
+                          label: 'CLASSIC',
+                          detail: undefined,
+                          tip: 'Regular Ring Game. Your Seat Is Yours Until You Leave Or Ask To Change It.',
+                        }
+                      : {
+                          key: cluster.mustMove ? 'must_move' : 'manual_table',
+                          label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+                          detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+                          tip: cluster.mustMove
+                            ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+                            : 'One Table The Host Runs By Hand.',
+                        },
               ]),
           ...cashRuleMedallions(t),
         ]

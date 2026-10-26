@@ -1973,8 +1973,8 @@ export interface HorseDecideOpts {
    *  board, and non-nut made hands stop firing pot on the turn and river.
    *  Disable to ablate (default: enabled). */
   v40Omaha?: boolean;
-  /** Dan 2026-10-25: PLO5/PLO6 never call off without a full house on a
-   *  paired turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
+  /** Dan 2026-10-25: PLO4/PLO5/PLO6 never call off without a full house on a
+   *  paired flop, turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
    *  false exists only so an ablation can measure an older layer alone. */
   ploPairedBoardFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
@@ -2958,8 +2958,8 @@ function enforceAuthoritativeDecision(
 }
 
 /**
- * Dan 2026-10-25: in PLO5/PLO6 a horse without a full house never calls or
- * raises a committing bet on a paired turn or river. See
+ * Dan 2026-10-25: in PLO4/PLO5/PLO6 a horse without a full house never calls or
+ * raises a committing bet on a paired flop, turn or river. See
  * HorsePloPairedBoardFold.ts. Applied after every other layer so no later
  * tweak to an equity cap can reopen the call.
  */

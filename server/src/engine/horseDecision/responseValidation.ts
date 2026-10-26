@@ -23,6 +23,7 @@ import {
 import { isJointVariant } from '../multiway/JointInputBinding.js';
 import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
 import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
+import { PLO_PAIRED_BOARD_VARIANTS } from '../HorsePloPairedBoardFold.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -628,7 +629,7 @@ function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'am
   return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
 }
 
-function policyGraphIsValid(value: RecordValue): boolean {
+function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boolean {
   if (value.policyGraph === undefined) return true;
   const graph = value.policyGraph;
   const order = record(graph) ? horsePolicyOrderForVersion(graph.version) : null;
@@ -660,9 +661,23 @@ function policyGraphIsValid(value: RecordValue): boolean {
       return false;
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
+    // Wager rules only add aggression, with one exception: two owner rules of
+    // 2026-10-25 turn a call, raise or jam into a fold. The PLO4/5/6
+    // paired-board fold (HorsePloPairedBoardFold) and the no-limit hold'em
+    // dominated-hand fold to a big 3-bet (HorseHoldemPremiumAggression). A
+    // fold is the one action that can never put a chip in, and it is
+    // admitted only in those games.
+    const variant = String(expectedVariant ?? '').toLowerCase();
+    const pairedBoardFold =
+      transition.after.action === 'fold' &&
+      // `previous` is the validated predecessor, equal to transition.before.
+      previous !== null &&
+      ['call', 'raise', 'all_in'].includes(previous.action) &&
+      (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
     if (
       transition.node === 'wager_rules' &&
       changed &&
+      !pairedBoardFold &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;
@@ -701,7 +716,7 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtilityRefusal !== undefined)
   )
     return false;
-  if (!policyGraphIsValid(value)) return false;
+  if (!policyGraphIsValid(value, expectedVariant)) return false;
   if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input

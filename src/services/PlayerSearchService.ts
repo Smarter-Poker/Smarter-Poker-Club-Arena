@@ -86,6 +86,15 @@ export const EMPTY_AFFILIATIONS: PlayerAffiliations = {
 /** Minimum characters before the server widens matching from substring to trigram-similar. */
 export const FUZZY_MIN_CHARS = 3;
 
+/**
+ * The longest search fn_search_players accepts. Anything longer is refused with
+ * 22023 "Search must be between 2 and 64 characters", which the locator used to
+ * print as "Could not search right now". On 2026-10-25 a pasted paragraph sat in
+ * the field and every search failed that way, so the field now holds at most
+ * this many characters and the request never carries more.
+ */
+export const QUERY_MAX_CHARS = 64;
+
 export interface PlayerSearchResult {
   id: string;
   username: string;
@@ -155,7 +164,7 @@ export async function searchPlayers(options: {
 }): Promise<PlayerSearchPage> {
   const startedAt = performance.now();
   let request = supabase.rpc('fn_search_players', {
-    p_query: options.query.trim(),
+    p_query: options.query.trim().slice(0, QUERY_MAX_CHARS).trim(),
     p_limit: options.limit ?? 20,
     p_offset: options.offset ?? 0,
     p_scope: options.scope ?? 'all',

@@ -25,6 +25,13 @@ const job = workflow.jobs['stood-down-is-not-green'];
 const script: string = job.steps.map((step: { run?: string }) => step.run ?? '').join('\n');
 
 describe('a stood-down post-deploy verification is never green', () => {
+  it('is stopped by its own cancellation: !cancelled(), never always()', () => {
+    // An always() job keeps running after its run is cancelled; on main runs
+    // 40268560267 and 40269218566 it sat out the 300 s guard and failed.
+    expect(String(job.if)).toMatch(/^!cancelled\(\) &&/);
+    expect(String(job.if)).not.toContain('always()');
+  });
+
   it('runs only for a confirmed publisher stand-down', () => {
     const condition = String(job.if);
     expect(condition).toContain("github.event_name == 'workflow_run'");

@@ -37,3 +37,14 @@ the recorder's unchanged "nothing to verify" decision, and that the detector
 keeps reporting the failure a stand-down follows. It fails on the previous
 workflow. All 31 test files that read this workflow or the verdict logic pass
 (687 tests), plus `record-post-deploy-verdict.test.mjs` (38).
+
+## Follow-up: the job is stopped by its own cancellation
+
+Live on main, stand-down runs 40268560267 and 40269218566 concluded
+`cancelled`, as intended, but the `stood-down-is-not-green` job itself showed
+`failure`. GitHub does not stop an `always()` job when its run is cancelled,
+so the step's accepted cancel did not end it. It sat out its 300 s guard and
+reported "still running". The job now uses `!cancelled()`, which still
+evaluates past skipped needs and is stopped by the run's cancellation, the
+same pattern ci.yml uses for its heavy jobs. The unit test pins
+`!cancelled()` and refuses `always()`.

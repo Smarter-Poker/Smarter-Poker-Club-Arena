@@ -24,6 +24,7 @@ import {
   MARKER_MIN_GAP_WIDTH_PCT,
   FELT_WINDOW,
   NOMINAL_SCALER,
+  PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX,
   type Pos,
   type Size,
 } from './tableGeometry';
@@ -457,6 +458,11 @@ export function DealerButton({
       const h = host.offsetHeight;
       if (w <= 0 || h <= 0) return;
       const railBets = window.innerWidth <= 480 && h > w;
+      // The same flag TablePage gives its bets, so the button reasons about
+      // the wagers where they really rest.
+      const portraitTags =
+        window.innerWidth <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
+        window.innerHeight > window.innerWidth;
       const portraitTaper =
         host.closest('.table-page')?.getAttribute('data-hero') === 'false' ? 0 : undefined;
       setScalerSize((prev) =>
@@ -464,9 +470,10 @@ export function DealerButton({
         prev.w === w &&
         prev.h === h &&
         prev.railBets === railBets &&
+        prev.portraitTags === portraitTags &&
         prev.portraitTaper === portraitTaper
           ? prev
-          : { w, h, railBets, portraitTaper }
+          : { w, h, railBets, portraitTags, portraitTaper }
       );
     };
     read();

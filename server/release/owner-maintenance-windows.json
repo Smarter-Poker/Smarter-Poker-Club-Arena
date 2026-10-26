@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-plo-horse-upgrades-now",
+      "ownerOrder": "Dan, 2026-10-26 08:08 Chicago, in this chat: \"SHIP THE PLO HORSE UPGRADES (#8110) AT THE NEXT AVAILABLE BREAK, DON'T WAIT FOR 4 AM.\" One off-cycle certified engine activation of protected main containing PR #8110, merge e01ac0115e340cd124f1eab7eb863f66f0f6994d: PLO horses read every person as an aggressive raiser until proven otherwise, a maniac's read is corroborated across table sizes, and PLO6 river nut discipline on paired (V58) and unpaired (V59) boards. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "e01ac0115e340cd124f1eab7eb863f66f0f6994d",
+      "notBefore": "2026-10-26T13:08:00Z",
+      "notAfter": "2026-10-26T19:08:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-paired-board-receipt-fix-now",
       "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, on the PLO paired-board fold: \"MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\"; 23:10 Chicago: \"I NEED YOU TO INSURE THAT ANY AND ALL UPDATES TO THE HORSES BRAIN ... ARE 100% ACTIVATED\". One immediate certified off-cycle engine activation of protected main containing PR #8138, merge 26dab2bacc13319b063f53023730b089ddac8501: the live paired-board fold was applied after the policy graph was sealed, so the engine refused every such decision as an invalid policy receipt (495 refused decisions on 2026-10-26 against 9 the day before) and the horse snap-folded through the zero-think-time fallback; the same merge moves the not-yet-serving hold'em premium rule (#8122) into the graph before it can do the same. The 04:00 window was taken by the older queued release 63a25f18, which does not contain this merge. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
       "contains": "26dab2bacc13319b063f53023730b089ddac8501",

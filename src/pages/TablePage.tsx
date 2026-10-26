@@ -1,3 +1,6 @@
+import { fetchStoppedLightningAnchor } from '../lightning/lightningLeaveAnchor';
+import { useLightningLeaveStop } from '../lightning/useLightningLeaveStop';
+import { LightningLeaveControl } from '../components/lightning/LightningLeaveControl';
 import { useSeatArrivals } from '../components/table/seatArrival';
 import {
   usePreActionBoundary,
@@ -11107,7 +11110,9 @@ function LiveTablePage({
     if (!room || !userId || userId === 'guest') return undefined;
     try {
       const session = await fetchMyLightningSession(room.clusterId);
-      if (!hasLightningRoom(session)) return null;
+      if (!hasLightningRoom(session)) return await fetchStoppedLightningAnchor(session, userId);
+      if (session.poolSessionId !== room.poolSessionId)
+        throw new Error('Lightning Leave Session Changed');
       const anchor = lightningAnchorSeat(session);
       if (anchor) return anchor;
       /* An open session whose anchor the answer did not name: the chips are
@@ -11125,9 +11130,14 @@ function LiveTablePage({
       return 'unreadable';
     }
   };
+  const stopLightningForLeave = useLightningLeaveStop(lightningRoom, userId);
   const handleLeaveTable = async () => {
     setLeaveNotice(null);
     leaveNavigatedRef.current = false;
+    if (!(await stopLightningForLeave())) {
+      toast.warning('Could Not Confirm Your Stop Request. Please Try Again.');
+      return;
+    }
 
     /* LIGHTNING PHASE 6: a pool-session room holds no seat of its own. The
        chips sit on the player's anchor seat, so the leave and the cash out
@@ -11422,6 +11432,10 @@ function LiveTablePage({
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
     leaveNavigatedRef.current = false;
+    if (!(await stopLightningForLeave())) {
+      toast.warning('Could Not Confirm Your Stop Request. Please Try Again.');
+      return;
+    }
     /* Dan 2026-09-04 (the door is never locked): a tab with no seat behind it
        closes without asking the engine anything. That covers the spectator,
        the guest and the not-yet-hydrated session - before this, all three
@@ -26430,7 +26444,16 @@ function LiveTablePage({
             />
           </div>
         }
-        centerTop={null /* Game info moved to on-felt strip below community cards */}
+        centerTop={
+          lightningRoom && !lightningRoomClosed && userId && userId !== 'guest' ? (
+            <LightningLeaveControl
+              key={`${lightningRoom.poolSessionId}/${userId}`}
+              clusterId={lightningRoom.clusterId}
+              onLeave={handleLeaveTable}
+              ensureStopped={stopLightningForLeave}
+            />
+          ) : null
+        }
       />
       {/* ═══════════════════════════════════════════════════════════════════════
           TABLE AREA

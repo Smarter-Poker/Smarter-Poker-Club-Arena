@@ -59,6 +59,7 @@ export interface LightningSnapshotFields {
     variant?: unknown;
     /** The engine's own answer: may the hero LIGHTNING FOLD right now. */
     fast_fold_available?: unknown;
+    fold_on_turn?: unknown;
     /**
      * LIGHTNING PHASE 13: whether the Cluster offers each control at all (an
      * operator can switch either off). Absent on an older engine: both offered.

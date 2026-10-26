@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
@@ -36,7 +36,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatBuyIn } from '../../utils/buyIn';
 import { withClubContext } from '../../utils/clubScopedPath';
 import { reportError } from '../../utils/errorReporter';
-import { useInTabLobby } from '../../context/InTabLobbyContext';
+import { useAppNavigate, useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
 import {
   effectivePlaceLadderPool,
@@ -164,7 +164,7 @@ const lvlNum = (
 ) => Number(l[snake] ?? l[camel] ?? 0);
 
 export default function GameLobbyPanel(props: GameLobbyPanelProps) {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const {
     entry,
     clubId,
@@ -471,7 +471,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       if (entry.game?.lightning)
         return {
           label: 'Join Lightning',
-          kind: entry.game.lightning.joinsClosed ? 'disabled' as const : 'primary' as const,
+          kind: entry.game.lightning.joinsClosed ? ('disabled' as const) : ('primary' as const),
           run: () => onJoinTable(entry.id),
           note: 'Buy In Once And Play One Stream Of Hands',
         };
@@ -884,10 +884,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     </div>
                   )}
                   {!isLightning && (
-                  <div>
-                    <dt>Waiting</dt>
-                    <dd className="glp__mono">{waitlistError ? '-' : waitlist.length}</dd>
-                  </div>)}
+                    <div>
+                      <dt>Waiting</dt>
+                      <dd className="glp__mono">{waitlistError ? '-' : waitlist.length}</dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Status</dt>
                     <dd>{entry.statusLabel}</dd>
@@ -1260,10 +1261,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   title attribute needs a hover this panel's traffic does not
                   have. It renders under all three tabs, as the plaque does. */}
               {entry.rules.length > 0 && (
-                <PanelSection
-                  title="Format"
-                  pill={entry.gameLabel}
-                >
+                <PanelSection title="Format" pill={entry.gameLabel}>
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
                       <RuleLine key={r.key} r={titleCaseRule(r)} lit />

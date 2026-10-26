@@ -9,8 +9,9 @@
  *      moves the player without the button (CLAUDE.md 10.6).
  *   3. The Lightning route on a MUST MOVE Cluster where the caller is seated
  *      offers their table (VIEW GAME), never JOIN LIGHTNING.
- *   4. The lobby through the reversion: LIGHTNING LIVE (THIN) without JOIN
- *      LIGHTNING while pending_off, then MUST MOVE / JOIN GAME.
+ *   4. The lobby through the reversion: Lightning Ending with JOIN GAME shown
+ *      disabled while pending_off (phase 5, 2026-10-26), then MUST MOVE /
+ *      JOIN GAME.
  */
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -367,17 +368,36 @@ describe('4. the lobby card through LIGHTNING -> PENDING_OFF -> MUST_MOVE', () =
   const card = (mode: string) => {
     const e = cashEntry(row(mode));
     const words = e.rules
-      .filter((r) => r.label === 'LIGHTNING LIVE' || r.label === 'MUST MOVE')
+      .filter((r) =>
+        ['LIGHTNING LIVE', 'MUST MOVE', 'Lightning Ending', 'Lightning Starting'].includes(r.label)
+      )
       .map((r) => (r.detail && r.label === 'LIGHTNING LIVE' ? `${r.label} ${r.detail}` : r.label));
-    return { words, door: arenaGameCardActionsForEntry(e, cardCtx).primaryLabel };
+    const a = arenaGameCardActionsForEntry(e, cardCtx);
+    return { words, door: a.primaryLabel, disabled: a.primaryDisabled === true };
   };
 
   it('each step says what the Cluster is, and offers the door it really has', () => {
-    expect(card('lightning')).toEqual({ words: ['LIGHTNING LIVE ACTIVE'], door: 'Join Lightning' });
-    expect(card('pending_off')).toEqual({ words: ['LIGHTNING LIVE THIN'], door: 'Join Game' });
-    expect(card('must_move')).toEqual({ words: ['MUST MOVE'], door: 'Join Game' });
+    expect(card('lightning')).toEqual({
+      words: ['LIGHTNING LIVE ACTIVE'],
+      door: 'Join Lightning',
+      disabled: false,
+    });
+    /* Transition phase 5 (2026-10-26): on the way out the tables are halted
+       until the commit, so the card says Lightning Ending and the door is
+       shown, not offered. */
+    expect(card('pending_off')).toEqual({
+      words: ['Lightning Ending'],
+      door: 'Join Game',
+      disabled: true,
+    });
+    expect(card('must_move')).toEqual({ words: ['MUST MOVE'], door: 'Join Game', disabled: false });
     expect(
       lightningLobbyBadge({ clusterMode: 'pending_off', state: null, boardPlayers: 4 })
-    ).toMatchObject({ label: 'LIGHTNING LIVE', status: 'THIN', joinLightning: false });
+    ).toMatchObject({
+      label: 'Lightning Ending',
+      status: 'THIN',
+      joinLightning: false,
+      switching: 'ending',
+    });
   });
 });

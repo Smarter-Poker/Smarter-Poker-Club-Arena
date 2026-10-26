@@ -464,6 +464,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           run: () => onWaitlistToggle(entry.id, true),
           needsAuth: true,
         };
+      /* LIGHTNING TRANSITION PHASE 5: the game is switching modes and its
+         tables are halted until the switch commits. Shown, not offered. */
+      if (entry.game?.switching) return { label: 'Join Game', kind: 'disabled' as const };
       /* LIGHTNING PHASE 6: no table, no seat; the page opens the Lightning route. */
       if (entry.game?.lightning)
         return {

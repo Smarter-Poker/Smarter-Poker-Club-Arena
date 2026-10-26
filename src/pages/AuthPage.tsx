@@ -50,6 +50,7 @@ import styles from './AuthPage.module.css';
 import { reportError } from '../utils/errorReporter';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { AI_OPPONENTS_DISCLOSURE } from '../components/legal/aiOpponentsDisclosure';
 type AuthMode = 'login' | 'signup' | 'reset' | 'update';
 
 /**
@@ -630,6 +631,13 @@ export default function AuthPage() {
                   autoComplete="off"
                 />
               </div>
+
+              {/* The sign-up disclosure (Dan, 2026-10-25). The same sentence is
+                  in the Terms page and the acceptance modal; the law test
+                  tests/ai-opponents-are-disclosed.law.test.tsx keeps all three. */}
+              <p className={`${styles.resetText} sc-ink--muted`} data-testid="signup-ai-disclosure">
+                {AI_OPPONENTS_DISCLOSURE}
+              </p>
             </>
           )}
 

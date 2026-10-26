@@ -905,6 +905,8 @@ export async function cleanupStaleProductionE2EAccounts({
   if (accounts.length > STALE_ACCOUNT_LIMIT) {
     throw new Error(`Refusing to clean more than ${STALE_ACCOUNT_LIMIT} stale accounts at once.`);
   }
+  // Every candidate is validated before any is touched: an invalid one means
+  // the inventory itself cannot be trusted, so nothing is recovered from it.
   for (const account of accounts) {
     if (
       !account.id ||
@@ -914,26 +916,67 @@ export async function cleanupStaleProductionE2EAccounts({
     ) {
       throw new Error('Refusing an invalid stale post-deploy account candidate.');
     }
-    // A certification run that died between creating its fixture clubs and
-    // retiring them leaves an identity that still owns a club, and the guarded
-    // account sweep refuses exactly that (CERTIFICATION_RETIREMENT_HAS_AUTHORITY_
-    // OR_CUSTODY). Refusing is right; wedging every later certificate on it is
-    // not. Retire the clubs this identity owns through the same guarded door the
-    // run itself uses, THEN sweep the identity. A club that is not a recognized
-    // fixture still throws here and is never retired.
-    await retireProductionCreateClubFixtures({
-      environment,
-      fetchImpl,
-      wait,
-      record: account,
-      reason: 'stale-cert-recovery',
-    });
-    await cleanupProductionE2EAccount({ environment, fetchImpl, wait, record: account });
   }
-  if (accounts.length) {
-    console.log(`[production-e2e-account] recovered ${accounts.length} stale account(s).`);
+  // ONE REFUSED ACCOUNT NO LONGER STRANDS THE REST (2026-10-26). This loop
+  // used to throw on the first account it could not recover. On 2026-10-26 the
+  // oldest stale identity owned an already-retired fixture the door can never
+  // delete, so every Club Create Certification failed on it for 14 hours and
+  // the two stale identities behind it, each still owning an ACTIVE Crest Cert
+  // Template with 21 tables and 12 registering tournaments, were never
+  // reached. Each account is now recovered on its own; any that fails is still
+  // reported, all together, after every other account has been tried.
+  const failures = [];
+  const keptOwners = [];
+  let recovered = 0;
+  for (const account of accounts) {
+    try {
+      // A certification run that died between creating its fixture clubs and
+      // retiring them leaves an identity that still owns a club, and the guarded
+      // account sweep refuses exactly that (CERTIFICATION_RETIREMENT_HAS_AUTHORITY_
+      // OR_CUSTODY). Refusing is right; wedging every later certificate on it is
+      // not. Retire the clubs this identity owns through the same guarded door the
+      // run itself uses, THEN sweep the identity. A club that is not a recognized
+      // fixture still throws here and is never retired.
+      const retainedRetiredClubs = [];
+      await retireProductionCreateClubFixtures({
+        environment,
+        fetchImpl,
+        wait,
+        record: account,
+        reason: 'stale-cert-recovery',
+        retainedRetiredClubs,
+      });
+      if (retainedRetiredClubs.length) {
+        // The identity stays as the owner of record of retired clubs that keep
+        // immutable history; the account door refuses any club owner, and a
+        // retired club with that history is never deleted. Nothing here is
+        // live: it is the recorded terminal state, named on every run.
+        keptOwners.push(account.id);
+        console.log(
+          `[production-e2e-account] kept stale identity ${account.id} as the owner of record of ` +
+            `retired fixture(s) ${retainedRetiredClubs.join(', ')}: they keep immutable history ` +
+            'and are never deleted.'
+        );
+        continue;
+      }
+      await cleanupProductionE2EAccount({ environment, fetchImpl, wait, record: account });
+      recovered += 1;
+    } catch (error) {
+      failures.push(error);
+    }
   }
-  return accounts.length;
+  if (recovered) {
+    console.log(`[production-e2e-account] recovered ${recovered} stale account(s).`);
+  }
+  if (failures.length) {
+    throw new AggregateError(
+      failures,
+      `Stale recovery left ${failures.length} of ${accounts.length} stale account(s) unrecovered ` +
+        `(${recovered} recovered, ${keptOwners.length} kept as owners of retired history): ` +
+        failures.map((error) => String(error?.message || error)).join('; ')
+    );
+  }
+  return recovered;
 }
 
 /**
@@ -1356,10 +1399,24 @@ export async function retireCertificationClubWithRetry({
     throw error;
   }
   if (result?.success === false) {
-    throw new Error(`Certification club ${clubId} retirement was refused: ${result.error}`);
+    const refused = new Error(
+      `Certification club ${clubId} retirement was refused: ${result.error}`
+    );
+    // The door's own refusal, kept as data so a caller can tell one definitive
+    // refusal from another without parsing this sentence.
+    refused.refusal = String(result.error ?? '');
+    refused.clubId = clubId;
+    throw refused;
   }
   return result;
 }
+
+/**
+ * The door's answer for a club that carries tables, tournaments or agents
+ * (fn_ca_retire_certification_club). It is definitive: the door never deletes
+ * a club with history.
+ */
+export const RETIREMENT_REFUSAL_CLUB_HAS_HISTORY = 'this club has played: it is not a fixture';
 
 /**
  * Retire only clubs owned by a reserved Create A Club certificate identity.
@@ -1377,6 +1434,11 @@ export async function retireProductionCreateClubFixtures({
   record,
   reason = 'ui-cert-cleanup',
   databaseClientFactory,
+  // Stale recovery only: collect, instead of throwing on, a fixture the door
+  // definitively refuses because it already holds history AND that has
+  // already left the live board (lifecycle_status 'retired'). See
+  // cleanupStaleProductionE2EAccounts. Every other caller keeps the refusal.
+  retainedRetiredClubs,
 } = {}) {
   const path = fixturePath(environment);
   const account = record || (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null);
@@ -1391,7 +1453,7 @@ export async function retireProductionCreateClubFixtures({
   }
   const configuration = requireEnvironment(environment);
   const query = new URLSearchParams({
-    select: 'id,name,owner_id',
+    select: 'id,name,owner_id,lifecycle_status',
     owner_id: `eq.${account.id}`,
   });
   const clubs = await serviceRequest(
@@ -1413,16 +1475,36 @@ export async function retireProductionCreateClubFixtures({
       throw new Error(`Refusing to retire unrecognized club ${String(club.id || 'unknown')}.`);
     }
   }
+  const retained = [];
   for (const club of clubs) {
-    await retireCertificationClubWithRetry({
-      configuration,
-      clubId: club.id,
-      reason,
-      fetchImpl,
-      wait,
-      environment,
-      databaseClientFactory,
-    });
+    try {
+      await retireCertificationClubWithRetry({
+        configuration,
+        clubId: club.id,
+        reason,
+        fetchImpl,
+        wait,
+        environment,
+        databaseClientFactory,
+      });
+    } catch (error) {
+      // A RETIRED FIXTURE THAT KEEPS ITS HISTORY IS FINISHED, NOT FAILED
+      // (2026-10-26). "Crest Cert Lobby 01a16659" was retired off the live
+      // board on 2026-10-23 but keeps a closed table and a cancelled
+      // tournament whose cancellation receipt is immutable (RESTRICT), so the
+      // door can never delete it and answers RETIREMENT_REFUSAL_CLUB_HAS_HISTORY
+      // every time. Only that exact refusal, only for a club already retired,
+      // and only when the stale sweep asks.
+      if (
+        Array.isArray(retainedRetiredClubs) &&
+        error?.refusal === RETIREMENT_REFUSAL_CLUB_HAS_HISTORY &&
+        club.lifecycle_status === 'retired'
+      ) {
+        retained.push(String(club.id));
+        continue;
+      }
+      throw error;
+    }
   }
   const remaining = await serviceRequest(
     configuration,
@@ -1430,15 +1512,22 @@ export async function retireProductionCreateClubFixtures({
     {},
     fetchImpl
   );
-  if (!Array.isArray(remaining) || remaining.length) {
+  const left = Array.isArray(remaining)
+    ? remaining.filter((club) => !retained.includes(String(club?.id)))
+    : null;
+  if (!left || left.length) {
     throw new Error(
-      `Certification left ${Array.isArray(remaining) ? remaining.length : 'an unreadable number of'} owned club fixture(s) behind.`
+      `Certification left ${left ? left.length : 'an unreadable number of'} owned club fixture(s) behind.`
     );
   }
+  if (retained.length) retainedRetiredClubs.push(...retained);
   console.log(
-    `[production-e2e-account] retired and verified ${clubs.length} Create Club fixture(s).`
+    `[production-e2e-account] retired and verified ${clubs.length - retained.length} Create Club fixture(s)` +
+      (retained.length
+        ? `; ${retained.length} already-retired fixture(s) keep their history.`
+        : '.')
   );
-  return clubs.length;
+  return clubs.length - retained.length;
 }
 
 export async function createProductionE2EAccount({

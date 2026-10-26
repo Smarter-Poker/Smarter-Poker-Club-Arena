@@ -113,6 +113,7 @@ const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
 const ClubDashboard = lazyWithRetry(() => import('./pages/club/ClubDashboard'));
 const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
+const ClubDataGuard = lazyWithRetry(() => import('./components/auth/ClubDataGuard'));
 const ClubDataSimplePage = lazyWithRetry(() => import('./pages/club/ClubDataSimplePage'));
 const ClubOperationsPage = lazyWithRetry(() => import('./pages/club/ClubOperationsPage'));
 const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
@@ -1454,7 +1455,9 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Data">
-                          <ClubDataSimplePage />
+                          <ClubDataGuard>
+                            <ClubDataSimplePage />
+                          </ClubDataGuard>
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -1466,7 +1469,9 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Data Report">
-                          <ClubDataPage />
+                          <ClubDataGuard wholeClub>
+                            <ClubDataPage />
+                          </ClubDataGuard>
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

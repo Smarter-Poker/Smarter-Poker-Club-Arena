@@ -343,8 +343,6 @@ describe('E - every switch and every slider of the rules step has help', () => {
     expect(sliders.map((s) => s.getAttribute('aria-label'))).toEqual([
       'Minimum Buy In',
       'Maximum Buy In',
-      'Stay Clock',
-      'Rejoin Window',
       'Action Time',
     ]);
     for (const slider of sliders) {
@@ -360,7 +358,7 @@ describe('E - every switch and every slider of the rules step has help', () => {
     const helps = [
       ...document.querySelectorAll('[data-step="overrides"] button[aria-label^="Help: "]'),
     ] as HTMLButtonElement[];
-    expect(helps.length).toBe(11);
+    expect(helps.length).toBe(9);
     for (const help of helps) {
       fireEvent.click(help);
       const text = screen.getByRole('tooltip').textContent ?? '';

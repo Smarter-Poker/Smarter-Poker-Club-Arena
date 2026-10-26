@@ -848,30 +848,6 @@ export default function CashGameCreateFlow({
               ))}
             </div>
 
-            {/* ROE 7: the two clocks may only be raised. The floor IS the slider minimum. */}
-            <Slider
-              label="Stay Clock"
-              value={overrides.stay_clock_min}
-              onChange={(v) => setOverride('stay_clock_min', Math.max(snapshot.stay_clock_min, v))}
-              min={snapshot.stay_clock_min}
-              max={60}
-              step={5}
-              suffix=" Minutes"
-              tooltip={`A Player Ahead Of The Money They Put In Stays Seated This Long Before They Can Leave. ${snapshot.stay_clock_min} Minutes Is The Minimum.`}
-            />
-            <Slider
-              label="Rejoin Window"
-              value={overrides.rejoin_window_min}
-              onChange={(v) =>
-                setOverride('rejoin_window_min', Math.max(snapshot.rejoin_window_min, v))
-              }
-              min={snapshot.rejoin_window_min}
-              max={720}
-              step={30}
-              suffix=" Minutes"
-              tooltip={`A Player Who Returns To This Game Inside The Window Buys In For At Least The Stack They Left With. ${snapshot.rejoin_window_min} Minutes Is The Minimum.`}
-            />
-
             <Toggle
               label="Private Game"
               value={overrides.options.is_private}

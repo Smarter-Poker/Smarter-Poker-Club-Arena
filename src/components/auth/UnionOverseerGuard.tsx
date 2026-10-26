@@ -46,13 +46,17 @@ export default function UnionOverseerGuard({
   const { user, isHydrating } = useAuthUser();
   const { unionId, unionRef } = useUnionRouteId();
   const navigate = useNavigate();
-  const [verdict, setVerdict] = useState<{ unionId: string; allowed: boolean } | null>(null);
+  const [verdict, setVerdict] = useState<{
+    unionId: string;
+    userId: string;
+    allowed: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     if (!user?.id || !unionId) return undefined;
     if (!isUUID(unionId)) {
-      setVerdict({ unionId, allowed: false });
+      setVerdict({ unionId, userId: user.id, allowed: false });
       return undefined;
     }
     (async () => {
@@ -67,7 +71,7 @@ export default function UnionOverseerGuard({
                 p_union_id: unionId,
               });
         if (error) throw error;
-        if (!cancelled) setVerdict({ unionId, allowed: data === true });
+        if (!cancelled) setVerdict({ unionId, userId: user.id, allowed: data === true });
       } catch (e) {
         reportError(
           e,
@@ -75,7 +79,7 @@ export default function UnionOverseerGuard({
             ? 'UnionOverseerGuard.fn_is_union_operator'
             : 'UnionOverseerGuard.ca_can_oversee_union'
         );
-        if (!cancelled) setVerdict({ unionId, allowed: false });
+        if (!cancelled) setVerdict({ unionId, userId: user.id, allowed: false });
       }
     })();
     return () => {
@@ -97,7 +101,13 @@ export default function UnionOverseerGuard({
 
   // The verdict is keyed by the union it was reached for, so a slug-to-slug
   // navigation cannot carry the previous union's answer across.
-  if (!unionId || !verdict || verdict.unionId !== unionId) {
+  if (
+    isHydrating ||
+    !unionId ||
+    !verdict ||
+    verdict.unionId !== unionId ||
+    verdict.userId !== user.id
+  ) {
     return <LoadingState message="Checking Your Access" />;
   }
 

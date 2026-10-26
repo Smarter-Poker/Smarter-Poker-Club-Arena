@@ -235,7 +235,18 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
     expect(isPremiumMadeHand(cards('Ac Kd'), cards('Ah 5s 3s'))).toBe(true);
     expect(isPremiumMadeHand(cards('Ac Kd'), cards('Kh 5s 3s'))).toBe(true);
     expect(isPremiumMadeHand(cards('Qc Qd'), cards('Kh 5s 3s'))).toBe(false);
+    // Sets (2026-10-26 live: QsQc on Qh 9s 3d Ad 4d checked the river down).
+    expect(isPremiumMadeHand(cards('Qs Qc'), cards('Qh 9s 3d'))).toBe(true);
+    expect(isPremiumMadeHand(cards('Qs Qc'), cards('Qh 9s 3d Ad 4d'))).toBe(true);
+    expect(isPremiumMadeHand(cards('Kc Kd'), cards('Ah Ks 3s'))).toBe(true);
     expect(isPremiumMadeHand(cards('Ac Kd'), cards('Qh 5s 3s'))).toBe(false);
+  });
+
+  it('the recorded set of queens bets the river instead of checking it down', () => {
+    for (const seed of SEEDS) {
+      const d = decide(aceSpot({ hole: 'Qs Qc', board: 'Qh 9s 3d Ad 4d' }), seed);
+      expect(['bet', 'all_in']).toContain(d.action);
+    }
   });
 
   it('only a board that has plainly passed the hand still allows a check', () => {

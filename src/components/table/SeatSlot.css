@@ -3067,6 +3067,14 @@
      100%— At rest, normal size + rotation
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* LIGHTNING TRANSITION, PHASE 3: through a Lightning hand's 700 ms button
+   beat the seats' cards wait for the deal (SeatSlot `dealPending`), so they
+   arrive with it instead of showing first and blinking out. The beat is held
+   to its own length by TablePage, never longer. */
+.seat__cards--deal-pending .seat__card {
+  opacity: 0;
+}
+
 .seat__cards--dealing .seat__card {
   animation: cardDealIn calc(0.35s * var(--animation-speed, 1))
     cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;

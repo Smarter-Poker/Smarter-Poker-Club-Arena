@@ -214,3 +214,25 @@
   text-transform: uppercase;
   cursor: pointer;
 }
+
+/* LIGHTNING TRANSITION, PHASE 3: THE FOLDED HAND LEAVES THE FELT.
+   TablePage marks a Lightning room's .table-page with data-lightning-exit for
+   one fold window (500 ms x Animation Speed) after the engine's idle
+   snapshot. The opponents and the board fade out over that window instead of
+   vanishing in one frame; the hero's own seat is left alone so its cards
+   finish their flight to the muck. The duration carries the Animation Speed
+   multiplier like every other keyframe, and the global reduced-motion rule
+   collapses it. Never set at a Classic table. */
+.table-page[data-lightning-exit='true'] .seat:not(.seat--hero),
+.table-page[data-lightning-exit='true'] .community-cards {
+  animation: lightningFeltExit calc(0.5s * var(--animation-speed, 1)) ease-in forwards;
+}
+
+@keyframes lightningFeltExit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

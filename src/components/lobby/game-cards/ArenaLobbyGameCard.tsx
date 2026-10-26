@@ -62,6 +62,18 @@ export function arenaGameCardActionsForEntry(
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
+    /* LIGHTNING TRANSITION PHASE 5: a game switching modes (Lightning
+       Starting, Lightning Ending) has its tables halted until the switch
+       commits. The door is shown, and not offered; watching still is. */
+    if (entry.game?.switching) {
+      return {
+        primaryLabel: 'Join Game',
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: 'View Game',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     /* LIGHTNING PHASE 6: a Lightning Cluster's door is JOIN LIGHTNING; the
        page routes it to the Lightning route, never to a table. */
     if (entry.game?.lightning) {

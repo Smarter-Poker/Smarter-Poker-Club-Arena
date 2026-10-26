@@ -29,3 +29,11 @@ Recovery validation: the explicit-access check correctly refused inherited
 service-role defaults on both snapshot tables. The migration now revokes all
 service-role table privileges before granting SELECT, keeping writes inside
 the existing security-definer functions. This changes no player balance.
+
+The exact snapshot/period owner is qualified by
+`scripts/ci/test-digest-player-period.py` in the existing accounting shard2.
+It rejects the old multi-day request, proves one current-day snapshot before
+explicit history initialization, then verifies missing-day truthfulness,
+day/week/month arithmetic, distinct players, wallets and inherited grants.
+Existing daily-report input is a deterministic fixture; this is not a claim
+that production money paths were tested with synthetic data.

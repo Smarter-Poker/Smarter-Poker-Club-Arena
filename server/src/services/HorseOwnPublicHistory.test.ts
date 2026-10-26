@@ -2,9 +2,14 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   rpc: vi.fn(),
   abort: vi.fn(),
+  from: vi.fn(),
+  select: vi.fn(),
+  inIds: vi.fn(),
+  limit: vi.fn(),
+  categoryAbort: vi.fn(),
   response: { data: null, error: null } as any,
 }));
-vi.mock('./supabase/client.js', () => ({ supabase: { rpc: fixture.rpc } }));
+vi.mock('./supabase/client.js', () => ({ supabase: { rpc: fixture.rpc, from: fixture.from } }));
 import {
   readHorseOwnPublicHistory,
   HORSE_OWN_PUBLIC_HISTORY_DEFINITION_MD5,
@@ -19,13 +24,18 @@ const context: HorseObserverReadContext = {
 };
 beforeEach(() => {
   fixture.rpc.mockReset();
+  fixture.from.mockReset().mockReturnValue({ select: fixture.select });
+  fixture.select.mockReset().mockReturnValue({ in: fixture.inIds });
+  fixture.inIds.mockReset().mockReturnValue({ limit: fixture.limit });
+  fixture.limit.mockReset().mockReturnValue({ abortSignal: fixture.categoryAbort });
+  fixture.categoryAbort.mockReset().mockResolvedValue({ data: [], error: null });
   fixture.abort.mockReset();
   fixture.rpc.mockReturnValue({ abortSignal: fixture.abort });
   fixture.abort.mockImplementation(async () => fixture.response);
   fixture.response = {
     data: {
       definitionMd5: HORSE_OWN_PUBLIC_HISTORY_DEFINITION_MD5,
-      window: { context, hands: [] },
+      window: { version: 1, source: 'original_dealt_public_v1', context, capped: false, hands: [] },
     },
     error: null,
   };
@@ -85,4 +95,82 @@ it.each([
   const fired = new Map(telemetry.drainFires().map((f) => [f.feature, f.fires]));
   expect(fired.get('horse_observer_history_unavailable')).toBe(1);
   expect(fired.get(named)).toBe(1);
+});
+
+const handId = '55555555-5555-4555-8555-555555555555';
+const callerId = '22222222-2222-4222-8222-222222222222';
+function withCalledHand() {
+  const hand = {
+    handId,
+    tableId: '33333333-3333-4333-8333-333333333333',
+    handNumber: 1000001,
+    observerId: context.observerId,
+    observerSeat: 1,
+    position: 'BTN',
+    playersDealt: 2,
+    variant: 'nlh',
+    format: 'cash',
+    playedAtMs: 100,
+    bigBlind: 2,
+    actions: [
+      {
+        userId: context.observerId,
+        seat: 1,
+        action: 'bet',
+        amount: 10,
+        stage: 'river',
+        timestamp: 1,
+      },
+      { userId: callerId, seat: 2, action: 'call', amount: 10, stage: 'river', timestamp: 2 },
+    ],
+    results: null,
+  };
+  fixture.response.data.window.hands = [hand];
+  const row = {
+    id: handId,
+    game_variant: 'nlh',
+    community_cards2: null,
+    community_cards3: null,
+    rit_boards: null,
+    showdown: [{ user_id: callerId, mucked: false, hand_name: 'Pair', hole_cards: ['SECRET'] }],
+  };
+  fixture.categoryAbort.mockResolvedValue({ data: [row], error: null });
+  return { hand, row };
+}
+it('restores public call categories only from validated original participant hands, without cards', async () => {
+  withCalledHand();
+  const result: any = await readHorseOwnPublicHistory(context);
+  expect(result.hands[0].riverCalls).toEqual([{ userId: callerId, weak: true }]);
+  expect(fixture.from).toHaveBeenCalledWith('hand_history');
+  expect(fixture.inIds).toHaveBeenCalledWith('id', [handId]);
+  expect(fixture.limit).toHaveBeenCalledWith(64);
+  expect(fixture.categoryAbort.mock.calls[0][0]).toBe(fixture.abort.mock.calls[0][0]);
+  expect(JSON.stringify(result)).not.toMatch(/SECRET|hole_cards|showdown|hand_name/);
+  expect(fixture.response.data.window.hands[0]).not.toHaveProperty('riverCalls');
+});
+it.each([
+  'mucked',
+  'multi_board',
+  'rit',
+  'unknown_category',
+  'other_hand',
+  'query_error',
+  'invalid_participation',
+])('never fabricates restart call evidence for %s', async (fault) => {
+  const { row, hand } = withCalledHand();
+  if (fault === 'mucked') row.showdown[0].mucked = true;
+  if (fault === 'rit') (row as any).rit_boards = [['Ah'], ['Kh']];
+  if (fault === 'multi_board') (row as any).community_cards2 = ['Ah'];
+  if (fault === 'unknown_category') row.showdown[0].hand_name = '';
+  if (fault === 'other_hand') row.id = callerId;
+  if (fault === 'query_error')
+    fixture.categoryAbort.mockResolvedValue({ data: null, error: { message: 'unavailable' } });
+  if (fault === 'invalid_participation') hand.observerId = callerId;
+  const result: any = await readHorseOwnPublicHistory(context);
+  if (fault === 'invalid_participation') {
+    expect(result).toBeNull();
+    expect(fixture.from).not.toHaveBeenCalled();
+  } else if (fault === 'other_hand' || fault === 'query_error') {
+    expect(result.hands[0]).not.toHaveProperty('riverCalls');
+  } else expect(result.hands[0].riverCalls).toEqual([]);
 });

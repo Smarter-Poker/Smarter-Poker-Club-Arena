@@ -43,6 +43,7 @@ const DETAILS = read('src/pages/tournament/TournamentDetails.tsx');
 const SAT_CARD = read('src/components/tournament/TournamentLobbyCard.tsx');
 const REG_HOOK = read('src/hooks/useTournamentRegistration.ts');
 const LOBBY_TABLE = read('src/components/lobby/LobbyTable.tsx');
+const GAME_PANEL = read('src/components/lobby/GameLobbyPanel.tsx');
 
 /**
  * The files that can render inside the in-tab lobby subtree. Every one of them
@@ -54,6 +55,7 @@ const IN_TAB_SURFACES: Array<[string, string]> = [
   ['HomePage', HOME],
   ['TournamentDetails', DETAILS],
   ['TournamentLobbyCard', SAT_CARD],
+  ['GameLobbyPanel', GAME_PANEL],
   ['useTournamentRegistration', REG_HOOK],
 ];
 
@@ -120,7 +122,10 @@ describe('a page reached through the + button keeps its action bar', () => {
     // BEFORE the navigate, exactly as every other borrowed-URL caller does.
     const start = MULTI.indexOf("matchPath('/tournaments/:tournamentId', location.pathname)");
     expect(start).toBeGreaterThan(-1);
-    const backstop = MULTI.slice(start, MULTI.indexOf('THE SAME BACKSTOP FOR THE TOURNAMENT *LIST*'));
+    const backstop = MULTI.slice(
+      start,
+      MULTI.indexOf('THE SAME BACKSTOP FOR THE TOURNAMENT *LIST*')
+    );
     const pending = backstop.indexOf('pendingTabIndexRef.current = tournamentTabIdx;');
     const nav = backstop.indexOf('navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`');
     expect(pending).toBeGreaterThan(-1);

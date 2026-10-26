@@ -152,14 +152,22 @@ export function useTableTournament(): UseTableTournamentReturn {
   // Cleanup subscriptions on unmount
   useEffect(() => {
     return () => {
-      // Unsubscribe from break channel if active
-      if (breakChannelRef.current) {
-        try {
-          breakChannelRef.current.unsubscribe?.();
-        } catch (err) {
-          reportError(err, 'useTableTournament.Failed_to_unsubscribe_from_break_channel');
-        }
-      }
+      /* THE BREAK CHANNEL IS NOT THIS HOOK'S TO CLOSE (2026-10-24).
+         `t-break-<tournamentId>` is the MasterBus registry's SHARED channel:
+         every TablePage in the event, the tournament lobby's useMysteryBounty
+         and MysteryBountyCelebration hold references to the same object, and
+         TablePage gives its own reference back through the refcounted
+         removeRegisteredChannel in the effect that took it. Calling
+         `unsubscribe()` here closed the channel under every other holder -
+         and this cleanup runs BEFORE TablePage's (it is declared first), so
+         the registry was left holding a closed channel the SDK had already
+         dropped from its socket. Nothing can rejoin that object, the other
+         holders went deaf to breaks, level-ups and eliminations, and the
+         health monitor reported "Critical realtime channel dead with no
+         recovery factory" every 30s for hours (247 in a day, all after a
+         table move). Releasing it is TablePage's job, and TablePage reads
+         this ref to do it, so this cleanup touches neither the channel nor
+         the ref. */
 
       // Unsubscribe from add-on channel if active
       if (addOnChannelRef.current) {

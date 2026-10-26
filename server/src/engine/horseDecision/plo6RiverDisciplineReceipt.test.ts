@@ -92,5 +92,11 @@ describe('PLO6 river discipline is a valid final wager-rule call', () => {
     expect(finalRule.after).toEqual({ action: 'call', amount: 9 });
     expect(decision.action).toBe('call');
     expect(horseDecisionReceiptIsValid(decision, 'plo6')).toBe(true);
+    expect(
+      horseDecisionReceiptIsValid(decision, 'plo6', {
+        player: request.player,
+        gameState: request.gameState,
+      })
+    ).toBe(true);
   });
 });

@@ -201,3 +201,61 @@ it('does not let a transport caller mutate the cached public window', async () =
   returned.hands[0].actions[0].amount = 999;
   expect(cache.forSnapshot(context(), 201)!.hands[0].actions[0].amount).toBe(6);
 });
+
+it('restores river-call evidence after restart only inside the original observer window, once per hand', () => {
+  const source: any = window();
+  source.hands = Array.from({ length: 12 }, (_, i) => ({
+    ...structuredClone(window().hands[0]),
+    handId: `55555555-5555-4555-8555-${String(i + 1).padStart(12, '0')}`,
+    handNumber: 1000001 + i,
+    playedAtMs: 100 + i,
+    actions: [
+      { seat: 1, userId: heroId, action: 'bet', amount: 10, stage: 'river', timestamp: 1 },
+      { seat: 2, userId: opponentId, action: 'call', amount: 10, stage: 'river', timestamp: 2 },
+    ],
+    riverCalls: [{ userId: opponentId, weak: true }],
+  }));
+  const packet = makeOwnPublicHistoryPacket(source, 200)!;
+  expect(packet).not.toBeNull();
+  expect(JSON.stringify(packet)).not.toMatch(/cards|showdown|hand_name|pooled/);
+  for (let restart = 0; restart < 2; restart++) {
+    HorseMind.reset();
+    const bank = new HorseObserverReads(2048, 4096, () => 50);
+    const first = { ...decisionRequest(), ownPublicHistoryState: 'pending' as const };
+    bank.run(first, () => undefined);
+    const restored = { ...first, requestId: first.requestId + 1, ownPublicHistory: packet };
+    for (let duplicate = 0; duplicate < 2; duplicate++)
+      bank.run(restored, () => {
+        expect(HorseMind.getScopedStats(opponentId, 'holdem:hu')).toMatchObject({
+          riverCallSD: 12,
+          riverCallSDWeak: 12,
+        });
+        HorseMind.setDecisionScope('holdem:hu', 'nlh');
+        expect(HorseMind.riverCallLightTendency(opponentId, 0.4)).toBe(1);
+      });
+    expect(HorseMind.getStats(opponentId)).toBeUndefined();
+  }
+  HorseMind.reset();
+});
+it.each(['duplicate', 'other_actor', 'extra', 'wrong_type', 'not_called'])(
+  'refuses malformed retained public river evidence: %s',
+  (fault) => {
+    const source: any = window();
+    source.hands[0].actions[1] = {
+      seat: 2,
+      userId: opponentId,
+      action: 'call',
+      amount: 10,
+      stage: 'river',
+      timestamp: 2,
+    };
+    source.hands[0].riverCalls = [{ userId: opponentId, weak: true }];
+    const sample = source.hands[0].riverCalls[0];
+    if (fault === 'duplicate') source.hands[0].riverCalls.push({ ...sample });
+    if (fault === 'other_actor') sample.userId = heroId;
+    if (fault === 'extra') sample.cards = ['Ah'];
+    if (fault === 'wrong_type') sample.weak = 'true';
+    if (fault === 'not_called') source.hands[0].actions[1].action = 'fold';
+    expect(makeOwnPublicHistoryPacket(source, 200)).toBeNull();
+  }
+);

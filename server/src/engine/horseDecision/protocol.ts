@@ -234,6 +234,8 @@ export interface CompletedHandObservation extends HorseDecisionFence {
     | undefined;
   bigBlind: number;
   showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null;
+  riverCallContext?: import('../HorseRiverCallEvidence.js').RiverCallContext;
+  retainedRiverCalls?: import('../HorseRiverCallEvidence.js').RiverCallSample[];
   /** Every dealt player's net (chips out less chips in), for the winner read
    *  (HorseWinnerRead). Absent on legacy callers and replay. */
   results?: Array<{ user_id: string; net: number }>;

@@ -24,6 +24,7 @@ import { isJointVariant } from '../multiway/JointInputBinding.js';
 import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
 import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
 import { PLO_PAIRED_BOARD_VARIANTS } from '../HorsePloPairedBoardFold.js';
+import { shortAllInSpot } from '../HorseShortAllInCallFloor.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -629,7 +630,17 @@ function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'am
   return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
 }
 
-function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boolean {
+/** The decision's own request, when the caller has it. */
+export interface HorseDecisionReceiptContext {
+  player: SeatPlayer;
+  gameState: HorseGameStateV2;
+}
+
+function policyGraphIsValid(
+  value: RecordValue,
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
+): boolean {
   if (value.policyGraph === undefined) return true;
   const graph = value.policyGraph;
   const order = record(graph) ? horsePolicyOrderForVersion(graph.version) : null;
@@ -686,11 +697,20 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
       transition.after.action === 'call' &&
       transition.after.amount !== null &&
       transition.after.amount > 0;
+    // The short all-in call floor (Dan 2026-10-26, HorseShortAllInCallFloor)
+    // turns a fold into a call; its all-in form is already a wager action.
+    // When the request is known, only in the spot that rule covers.
+    const shortAllInCall =
+      transition.after.action === 'call' &&
+      previous !== null &&
+      previous.action === 'fold' &&
+      (context === undefined || shortAllInSpot(context.player, context.gameState) !== null);
     if (
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
       !plo6DisciplineCall &&
+      !shortAllInCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;
@@ -708,7 +728,8 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
 
 export function horseDecisionReceiptIsValid(
   value: unknown,
-  expectedVariant?: string
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
 ): value is HorseDecision {
   if (
     !record(value) ||
@@ -729,7 +750,7 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtilityRefusal !== undefined)
   )
     return false;
-  if (!policyGraphIsValid(value, expectedVariant)) return false;
+  if (!policyGraphIsValid(value, expectedVariant, context)) return false;
   if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input

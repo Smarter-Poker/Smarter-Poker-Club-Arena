@@ -1,0 +1,58 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { summarize, profileTarget } from '../../scripts/ci/profile-engine-main-thread.mjs';
+
+async function target(t) {
+  const child=spawn(process.execPath,['--no-opt','--inspect=127.0.0.1:0','-e',
+    'setInterval(function cpuSampleWitness(){ const end=Date.now()+8;while(Date.now()<end) Math.sqrt(Math.random()); },10)'],{stdio:['ignore','ignore','pipe']});
+  t.after(async()=>{ if(child.exitCode===null && child.signalCode===null){child.kill();await once(child,'exit');} });
+  const endpoint=await new Promise((resolve,reject)=>{
+    let text='';const timer=setTimeout(()=>reject(new Error('fixture_start_timeout')),5000);
+    child.stderr.on('data',d=>{text+=d;const m=text.match(/ws:\/\/127\.0\.0\.1:\d+\/[^\s]+/);if(m){clearTimeout(timer);resolve(m[0]);}});
+    child.once('error',reject);
+  });
+  return {child,endpoint};
+}
+
+test('real V8 CPU samples are summarized and the owned inspector closes',async t=>{
+  const {child,endpoint}=await target(t);
+  const result=await profileTarget(endpoint,child.pid,1000);
+  assert.ok(result.samples>0);assert.ok(result.sampledUs>0);
+  assert.ok(result.topSelf.some(x=>x.functionName==='cpuSampleWitness'));
+  assert.equal(child.exitCode,null);
+  let closed=false;
+  const deadline=Date.now()+2000;
+  while(Date.now()<deadline && !closed){
+    try { await fetch(endpoint.replace('ws:','http:').replace(/\/[^/]+$/,'/json/list')); await new Promise(r=>setTimeout(r,20)); }
+    catch { closed=true; }
+  }
+  assert.equal(closed,true,'the owned inspector must actually stop listening');
+});
+
+test('a mismatched process is refused without closing its inspector',async t=>{
+  const {child,endpoint}=await target(t);
+  await assert.rejects(profileTarget(endpoint,child.pid+1,50),/profile_pid_mismatch/);
+  assert.equal((await fetch(endpoint.replace('ws:','http:').replace(/\/[^/]+$/,'/json/list'))).status,200);
+});
+
+test('only loopback and bounded collection are admitted',async()=>{
+  await assert.rejects(profileTarget('ws://example.com:9229/x',1,50),/profile_target_refused/);
+  await assert.rejects(profileTarget('ws://127.0.0.1:9229/x',1,30001),/profile_target_refused/);
+});
+
+test('missing or invalid samples are unknown, never a successful empty profile',()=>{
+  assert.throws(()=>summarize({nodes:[],samples:[],timeDeltas:[]}),/profile_samples_missing/);
+  assert.throws(()=>summarize({nodes:[],samples:[1],timeDeltas:[1]}),/profile_sample_invalid/);
+  const r=summarize({nodes:[{id:1,callFrame:{functionName:'witness',url:'https://private.invalid/token',lineNumber:0}}],samples:[1],timeDeltas:[50]});
+  assert.equal(r.topSelf[0].file,'(runtime)');
+  assert.equal(r.topSelf[0].percent,100);
+});
+
+test('a disconnected target never returns a successful profile',async t=>{
+  const {child,endpoint}=await target(t);
+  const timer=setTimeout(()=>child.kill(),100);
+  try { await assert.rejects(profileTarget(endpoint,child.pid,300)); }
+  finally { clearTimeout(timer); }
+});

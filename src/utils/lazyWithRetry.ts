@@ -87,14 +87,95 @@ export function documentIsNavigatingAway(now = Date.now()): boolean {
   return now - leavingAt < NAVIGATION_GRACE_MS;
 }
 
+/**
+ * A SLOW NAVIGATION IS NOT A CANCELLED ONE (2026-10-25, production
+ * post-deploy, WebKit: "Navigation to /hub/club-arena/ is interrupted by
+ * another navigation to /clubs/kings-club?_cb=..." again, ten seconds after
+ * the lobby was requested). The grace above assumed a navigation that has
+ * not finished in ten seconds never will. Right after a publish the lobby
+ * document took longer than that, the deferred recovery fired while it was
+ * still loading, and its cache-busted reload of the page being left cancelled
+ * the navigation the player had started.
+ *
+ * That reload could not have fetched anything newer: the document was already
+ * running the build production serves, and the origin's asset pool is
+ * append-only, so every chunk it asked for still existed. The departure's
+ * cancellations had been read as staleness without ever checking. So when the
+ * grace ends and the page is still here, recovery first asks production which
+ * build it serves. A document on that build keeps waiting for its navigation,
+ * bounded by CURRENT_BUILD_PATIENCE_MS so a navigation that really was
+ * cancelled still gets its suspended route back. A different build, an
+ * unreadable answer, or a local build recovers exactly as before.
+ */
+export const CURRENT_BUILD_PATIENCE_MS = 60_000;
+export const LIVE_BUILD_READ_TIMEOUT_MS = 3_000;
+
+const BUILD_INFO_URL: string = (() => {
+  try {
+    const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+    const base = env?.BASE_URL;
+    const root = typeof base === 'string' && base !== '' ? base : '/';
+    return `${root.endsWith('/') ? root : `${root}/`}build-info.json`;
+  } catch {
+    return '/build-info.json';
+  }
+})();
+
+/** True only when production positively reports this document's own build. */
+export async function liveBuildIsThisDocument(): Promise<boolean> {
+  // A local build reports 'dev', which never equals a published ca_sha.
+  if (typeof fetch !== 'function') return false;
+  const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<false>((resolve) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      resolve(false);
+    }, LIVE_BUILD_READ_TIMEOUT_MS);
+  });
+  const read = (async (): Promise<boolean> => {
+    try {
+      const response = await fetch(BUILD_INFO_URL, {
+        cache: 'no-store',
+        signal: controller?.signal,
+      });
+      if (!response.ok) return false;
+      const info = (await response.json()) as { ca_sha?: unknown } | null;
+      return typeof info?.ca_sha === 'string' && info.ca_sha.trim() === BUILD_ID;
+    } catch {
+      // Offline, refused or malformed: this cannot prove the bundle is current.
+      return false;
+    }
+  })();
+  try {
+    return await Promise.race([read, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Run `recover` once the current navigation has had its chance to finish. */
 function afterNavigationGrace(recover: () => void): void {
   if (deferredRecovery !== null) return;
-  const wait = Math.max(0, leavingAt + NAVIGATION_GRACE_MS - Date.now());
-  deferredRecovery = setTimeout(() => {
-    deferredRecovery = null;
-    recover();
-  }, wait);
+  const departedAt = leavingAt;
+  const schedule = (wait: number): void => {
+    deferredRecovery = setTimeout(() => {
+      void (async () => {
+        if (
+          Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS &&
+          (await liveBuildIsThisDocument())
+        ) {
+          // Still current, so a reload cannot help and would cancel the
+          // navigation if it is merely slow. Keep the single deferral armed.
+          schedule(NAVIGATION_GRACE_MS);
+          return;
+        }
+        deferredRecovery = null;
+        recover();
+      })();
+    }, wait);
+  };
+  schedule(Math.max(0, leavingAt + NAVIGATION_GRACE_MS - Date.now()));
 }
 
 /**

@@ -23,8 +23,16 @@ import {
 import { posix } from 'node:path';
 import {
   admitCorrectiveKernelAttachment,
+  admitOwnerForcedCorrectiveKernelAttachment,
   type CorrectiveKernelAttachmentAdmission,
 } from '../services/horseCorrectiveReview/kernelAdmission.js';
+import { TOURNAMENT_KERNEL_CATALOG_VERSION } from '../services/horseCorrectiveReview/kernelTournamentCatalog.js';
+import {
+  CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+  TOURNAMENT_KERNEL_OBJECTIVE,
+  tournamentKernelDefinitionFor,
+} from '../services/horseCorrectiveReview/kernelTournamentDefinition.js';
+import { HORSE_OWNER_FORCED_ACTIVATION_ENABLED } from './HorseOwnerForcedActivation.js';
 import { CORRECTIVE_KERNEL_CATALOG_VERSION } from '../services/horseCorrectiveReview/kernelCatalog.js';
 import {
   functionalKernelCatalogVersionIsKnown,
@@ -283,6 +291,35 @@ export function admitHorsePhase14ReleaseAttachment(
   }
 }
 
+/**
+ * The live Phase 14 attachment: the committed release selection when it admits
+ * (or withdraws), otherwise the corrective catalog and authority Dan's
+ * 2026-10-26 order issues for the running code ("FORCE ACTIVATE EVERY PHASE
+ * NOW WITHOUT QUALIFYING", `HorseOwnerForcedActivation.ts`). The worker and
+ * the main-thread gate both use it.
+ */
+export function admitHorsePhase14LiveAttachment(
+  domain: string,
+  nowMs = Date.now()
+): CorrectiveKernelAttachmentAdmission {
+  const release = admitHorsePhase14ReleaseAttachment(domain, nowMs);
+  if (release.admission.status !== 'refused' || release.admission.transient) return release;
+  try {
+    const forced = admitOwnerForcedCorrectiveKernelAttachment(domain);
+    return forced.admission.status === 'admitted' ? forced : release;
+  } catch {
+    return release;
+  }
+}
+
+/** The live Phase 14 admission alone, for the main-thread gate. */
+export function admitHorsePhase14LiveAuthority(
+  domain: string,
+  nowMs = Date.now()
+): HorseAuthorityAdmission {
+  return admitHorsePhase14LiveAttachment(domain, nowMs).admission;
+}
+
 /** The admitted Phase 14 authority for `domain`, or null. */
 export function selectedHorsePhase14Authority(
   domain: string,
@@ -349,8 +386,17 @@ export function horsePhase14CorrectiveMode(input: {
 /** Running continuation derives solely from the protected domain selection. */
 export function horsePhase14RunningCatalogVersion(domain: string): string {
   const selected = PHASE14_PROTECTED_RELEASE_SELECTIONS[domain]?.catalogVersion;
-  return functionalKernelCatalogVersionIsKnown(selected)
-    ? selected
+  if (functionalKernelCatalogVersionIsKnown(selected)) return selected;
+  // Dan's 2026-10-26 order: an unselected tournament domain runs the
+  // owner-issued tournament catalog, whose version is the v2 protocol.
+  const d = CORRECTIVE_DOMAINS.find((x) => correctiveDomainKey(x) === domain);
+  return HORSE_OWNER_FORCED_ACTIVATION_ENABLED &&
+    selected === undefined &&
+    d?.mode === 'tournament' &&
+    [TOURNAMENT_KERNEL_OBJECTIVE, CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE].some(
+      (o) => tournamentKernelDefinitionFor(o, d) !== null
+    )
+    ? TOURNAMENT_KERNEL_CATALOG_VERSION
     : CORRECTIVE_KERNEL_CATALOG_VERSION;
 }
 
@@ -365,7 +411,7 @@ export const liveHorsePhase14Authorities: Readonly<Record<string, HorsePhase8Aut
       HORSE_PHASE14_DOMAINS.map((domain) => [
         domain,
         new HorsePhase8AuthorityGate(
-          () => admitHorsePhase14ReleaseAuthority(domain),
+          () => admitHorsePhase14LiveAuthority(domain),
           undefined,
           horsePhase14ContinuationVersion(domain, horsePhase14RunningCatalogVersion(domain))
         ),

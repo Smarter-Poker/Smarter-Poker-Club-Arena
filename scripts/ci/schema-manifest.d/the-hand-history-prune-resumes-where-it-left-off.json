@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/the-hand-prune-resumes-where-it-left-off. PROMISED, not yet observed: migration 20261026133101_the_hand_history_prune_resumes_where_it_left_off is installed through apply-merged-migration.yml after the protected merge, never from a branch (CLAUDE.md production DDL policy 11). One cursor row read and written only by sp_prune_hand_history (postgres, via pg_cron): the newest created_at the current pass has examined.",
+  "tables": ["smarter_private.hand_history_prune_cursor"]
+}

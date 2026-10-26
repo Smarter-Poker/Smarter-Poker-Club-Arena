@@ -29,6 +29,10 @@ import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PHASE8_POLICY } from './HorseTournamentPostflop.js';
 import { CONTINUATION_POLICY } from './HorseTournamentContinuation.js';
+import {
+  horseOwnerForcedAuthority,
+  withHorseOwnerForcedActivation,
+} from './HorseOwnerForcedActivation.js';
 
 export const HORSE_PHASE8_EVIDENCE_DIRECTORY = 'docs/evidence/phase8/';
 /** The only domain the Phase 8 continuation implements. */
@@ -155,11 +159,7 @@ export type HorseAuthorityAdmission =
     };
 
 export type HorseAuthorityState =
-  | 'unselected'
-  | 'usable'
-  | 'refused'
-  | 'refresh_failed'
-  | 'withdrawn';
+  'unselected' | 'usable' | 'refused' | 'refresh_failed' | 'withdrawn';
 
 /** Copied into the decision ledger, execution witness and journal record. */
 export interface HorseAuthorityReceipt {
@@ -393,6 +393,24 @@ export function admitHorsePhase8ReleaseAuthority(
   } catch {
     return { status: 'refused', reason: 'unreadable_evidence', transient: true };
   }
+}
+
+/**
+ * The live Phase 8 admission: the committed release selection when it admits
+ * (or withdraws), otherwise the authority Dan's 2026-10-26 order issues for the
+ * running continuation ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `HorseOwnerForcedActivation.ts`). The worker and the main gate both use it.
+ */
+export function admitHorsePhase8LiveAuthority(nowMs = Date.now()): HorseAuthorityAdmission {
+  return withHorseOwnerForcedActivation(admitHorsePhase8ReleaseAuthority(nowMs), () =>
+    horseOwnerForcedAuthority({
+      phase: 'phase8',
+      continuationVersion: PHASE8_POLICY.version,
+      policyDigest: horsePhase8PolicyDigest(),
+      packId: `owner-forced/${PHASE8_POLICY.version}`,
+      domain: HORSE_PHASE8_DOMAIN,
+    })
+  );
 }
 
 /**
@@ -710,4 +728,6 @@ export class HorsePhase8AuthorityGate {
 }
 
 /** Main-thread gate for this engine process. The worker thread owns its own holder. */
-export const liveHorsePhase8Authority = new HorsePhase8AuthorityGate();
+export const liveHorsePhase8Authority = new HorsePhase8AuthorityGate(() =>
+  admitHorsePhase8LiveAuthority()
+);

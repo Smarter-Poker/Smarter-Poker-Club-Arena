@@ -1,4 +1,5 @@
 import { HORSE_PHASE13_POLICY_DIGEST_DEFINITION } from './HorsePhase13PolicyDigest.js';
+import { isHorseOwnerForcedAuthority } from './HorseOwnerForcedActivation.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -234,11 +235,12 @@ describe('P13.3 maniac pressure (2026-10-22): every selection is null and the PL
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('every live main-scheduler gate is unselected and accepts no receipt', () => {
+  it('every live main-scheduler gate runs on the owner order and accepts no other receipt (Dan 2026-10-26)', () => {
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const gate = liveHorsePhase13Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe('unselected');
+      expect(gate.mainState(), variant).toBe('usable');
+      expect(isHorseOwnerForcedAuthority(gate.mainAuthority()), variant).toBe(true);
       const worker = new HorseQualifiedAuthorityHolder(
         `p133-null-${variant}`,
         horsePhase13ContinuationVersion(variant)
@@ -246,7 +248,7 @@ describe('P13.3 maniac pressure (2026-10-22): every selection is null and the PL
       worker.apply(qualifiedPhase13TestAdmission(variant));
       expect(worker.currentState()).toBe('usable');
       gate.observeWorker(worker.receipt());
-      expect(gate.check(gate.stamp(worker.receipt())), variant).toBe('unselected');
+      expect(gate.check(gate.stamp(worker.receipt())), variant).toBe('mismatched');
       gate.forgetWorker(worker.epoch);
     }
   });

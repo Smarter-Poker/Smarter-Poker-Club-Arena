@@ -16,8 +16,19 @@ import {
 } from '../../engine/HorseQualifiedAuthority.js';
 import type { HorsePhase14AuthoritySelection } from '../../engine/HorsePhase14Authority.js';
 import { CORRECTIVE_DOMAIN_KEYS, correctiveDomainKey } from './domain.js';
-import {} from './kernelCatalog.js';
+import { ownerForcedCorrectiveKernelCatalog } from './kernelCatalog.js';
+import { ownerForcedTournamentCorrectiveKernelCatalog } from './kernelTournamentCatalog.js';
 import {
+  HORSE_OWNER_FORCED_ACTIVATION,
+  HORSE_OWNER_FORCED_ACTIVATION_ENABLED,
+  HORSE_OWNER_FORCED_APPROVAL_GENERATION,
+  HORSE_OWNER_FORCED_EVIDENCE_PATH,
+  HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+  HORSE_OWNER_FORCED_SOURCE_SHA,
+} from '../../engine/HorseOwnerForcedActivation.js';
+import { CORRECTIVE_DOMAINS } from './domain.js';
+import {
+  functionalKernelCatalogDigest,
   verifyFunctionalKernelApproval as verifyCorrectiveKernelApproval,
   validateFunctionalKernelCatalog as validateCorrectiveKernelCatalog,
   functionalKernelCatalogVersionIsKnown,
@@ -177,5 +188,70 @@ export function admitCorrectiveKernelAttachment(
       }),
     },
     catalog: checked.catalog,
+  };
+}
+
+/**
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `engine/HorseOwnerForcedActivation.ts`): one domain's corrective attachment
+ * for the running code, the catalog and the S4 authority issued together by
+ * the owner in place of a signed qualification. Cash domains get the cash
+ * river kernel; tournament domains get a tournament kernel where one is
+ * defined (no-limit hold'em). Anything else stays refused `unselected`.
+ */
+export function admitOwnerForcedCorrectiveKernelAttachment(
+  domain: string,
+  running?: { policyDigest: string | null; baselineSelectionsDigest: string }
+): CorrectiveKernelAttachmentAdmission {
+  const refused: CorrectiveKernelAttachmentAdmission = {
+    admission: { status: 'refused', reason: 'unselected', transient: false },
+    catalog: null,
+  };
+  if (!HORSE_OWNER_FORCED_ACTIVATION_ENABLED) return refused;
+  const d = CORRECTIVE_DOMAINS.find((x) => correctiveDomainKey(x) === domain);
+  if (!d) return refused;
+  const context = running ?? {
+    policyDigest: correctiveKernelPolicyDigest(),
+    baselineSelectionsDigest: correctiveKernelBaselineSelectionsDigest(),
+  };
+  const inputs = {
+    sourceRelease: HORSE_OWNER_FORCED_SOURCE_SHA,
+    policyDigest: context.policyDigest,
+    baselineSelectionsDigest: context.baselineSelectionsDigest,
+    holdoutDigest: HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+  };
+  const catalog =
+    d.mode === 'cash'
+      ? ownerForcedCorrectiveKernelCatalog(d, inputs)
+      : ownerForcedTournamentCorrectiveKernelCatalog(d, inputs);
+  if (!catalog) return refused;
+  const catalogDigest = functionalKernelCatalogDigest(catalog);
+  const identity = {
+    schema: 'horse-qualified-authority-v1' as const,
+    phase: 'phase14' as const,
+    sourceSha: HORSE_OWNER_FORCED_SOURCE_SHA,
+    continuationVersion: `${catalog.version}/${domain}`,
+    policyDigest: catalogDigest,
+    packId: catalog.version,
+    domain,
+    evidencePath: HORSE_OWNER_FORCED_EVIDENCE_PATH,
+    evidenceSha256: HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+    approvalGeneration: HORSE_OWNER_FORCED_APPROVAL_GENERATION,
+    issuedAt: HORSE_OWNER_FORCED_ACTIVATION.orderedAt,
+    expiresAt: null,
+    catalogDigest,
+    correctivePolicyDigest: catalog.policyDigest,
+    baselineSelectionsDigest: catalog.baselineSelectionsDigest,
+    holdoutDigest: catalog.holdoutDigest,
+  };
+  return {
+    admission: {
+      status: 'admitted',
+      authority: Object.freeze({
+        ...identity,
+        authorityKey: sha256(JSON.stringify(canonical(identity))),
+      }),
+    },
+    catalog,
   };
 }

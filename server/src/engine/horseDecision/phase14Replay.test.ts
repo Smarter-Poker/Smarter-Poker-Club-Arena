@@ -382,9 +382,11 @@ describe('qualified Phase14 replay authority and versioned state', () => {
       const factory = qualifiedReplayAuthorityHolders(original, 'nlh', admitted),
         replay = factory('phase14', 'nlh-cash', version, 'must-not-substitute-epoch');
       expect(replay.receipt()).toEqual(receipt);
+      // The default release admits the owner order's authority (Dan
+      // 2026-10-26), never the recorded one: refused by identity.
       const unselected = qualifiedReplayAuthorityHolders(original, 'nlh');
       expect(() => unselected('phase14', 'nlh-cash', version, 'another-epoch')).toThrow(
-        /unselected/
+        /identity_authorityKey/
       );
     }
   );

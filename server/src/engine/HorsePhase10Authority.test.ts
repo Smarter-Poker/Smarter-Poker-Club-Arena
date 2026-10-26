@@ -1,4 +1,5 @@
 import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
+import { isHorseOwnerForcedAuthority } from './HorseOwnerForcedActivation.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -214,9 +215,14 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is unselected until a new generation is committed', () => {
+  it('no generation is committed, so the live gate runs on the owner order (Dan 2026-10-26)', () => {
+    // "FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING": the release
+    // selection stays null (a requalification is still a reviewed change),
+    // and the live gate is usable under the owner's authority instead.
+    expect(admitHorsePhase10ReleaseAuthority().status).toBe('refused');
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
+    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
+    expect(isHorseOwnerForcedAuthority(liveHorsePhase10Authority.mainAuthority())).toBe(true);
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {

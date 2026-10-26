@@ -120,10 +120,9 @@ export interface ClubRakeDefaults {
  * embeds the table's club (`arena:clubs!fk_tables_club_id`) for its arena
  * identity; the same embed carries the two default columns, so a caller that
  * needs them (the Lightning host's rules) no longer asks `clubs` a second
- * time. The values are exactly what a separate
- * `clubs.select('default_rake_percent, rake_cap, union_id')` read returns,
- * shaped as the physical engine's refreshRakeConfig shapes them. A table with
- * no club (a union-only table) has none, as before.
+ * time. The values are exactly what a separate read of those three club
+ * columns returns, shaped as the physical engine's refreshRakeConfig shapes
+ * them. A table with no club (a union-only table) has none, as before.
  */
 export function clubRakeDefaultsFromArena(raw: unknown): ClubRakeDefaults | null {
   const club = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | null | undefined;

@@ -205,15 +205,7 @@ try:
  pending=json.loads(sql("SELECT public.fn_union_pnl_inventory_checkpoint_due();").stdout)
  assert pending['status']=='sealing' and len(pending['sealed'])==1 and pending['progress']['stage']=='pending_boundary',pending
  assert sql("SELECT last_kind,last_source,last_row,last_event FROM public.union_pnl_inventory_seal_builds WHERE boundary='2026-10-12 07:00Z';").stdout==retained
- # checkpoint_due walks every weekly boundary from the fixture's capture up to
- # clock_timestamp(), and each empty boundary costs its own calls. A fixed
- # ten-call budget therefore shrank by one week every Monday: it held through
- # 2026-10-19 and failed from the 2026-10-26 boundary onward on every PR
- # ("Backlog never reached truthful readiness"). The budget now scales with the
- # weeks the walk must cover, and every non-ready answer must still be a
- # truthful 'sealing'.
- weeks=int(sql("SELECT ceil(extract(epoch FROM clock_timestamp()-timestamptz '2026-10-12 07:00Z')/604800)::int;").stdout.strip())
- for i in range(10+8*max(weeks,1)):
+ for i in range(10):
   due=json.loads(sql("SELECT set_config('app.weekly_accounting_chunked','on',false);SELECT public.fn_union_pnl_inventory_checkpoint_due();").stdout.splitlines()[-1])
   if due['status']=='ready':break
   assert due['status']=='sealing',due

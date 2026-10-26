@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-holdem-premium-aggression-now",
+      "ownerOrder": "Dan, 2026-10-25 21:09 Chicago, in this chat, on two horses that played a real player's hand passively (a KQo cold-call of a huge 3-bet, then AA checked down): \"MAKE THESE FIXES NOW FOR THE HORSE BRAIN AND UPDATE ALL 1000 HORSES\"; 23:12 Chicago: \"finish it up now, and push and publish now, not at 4am.\" One immediate certified off-cycle engine activation of protected main containing PR #8122, merge fbb4931ff515c6d5bc9103ef20c202d13912ae31 (HorseHoldemPremiumAggression: hold'em premiums are never passive, dominated hands fold to a 3-bet, every NLH horse). Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "fbb4931ff515c6d5bc9103ef20c202d13912ae31",
+      "notBefore": "2026-10-26T04:33:56Z",
+      "notAfter": "2026-10-26T10:23:56Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-every-funded-horse-adds-on-tonight",
       "ownerOrder": "Dan, 2026-10-25 23:06 Chicago, in this chat: \"Approved - activate the 100% horse add-on fix at the next :55 break tonight.\" Earlier the same evening: \"EVERY HORSE, IF THEY ARE IN THE TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD 100% BE ADDING ON IN EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE SEAT!\" One off-cycle engine activation at the next hourly :55 Chicago break (later :55 breaks as fallback) of protected main containing PR #8111, merge 867f3ec94f7b6397e377a6b94dbf34003e7d1141 (every seated funded horse takes the add-on; the offer runs in repeated passes ahead of the late-registration branch). The earlier anchor e81a9e7db (#8093) is already serving in 9f4f98f27 and grants nothing. Preserve the existing last-hand lead, drain, certified freeze, rollback reserve, thaw and the seal's one-window-per-hour limit. This exception ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "867f3ec94f7b6397e377a6b94dbf34003e7d1141",

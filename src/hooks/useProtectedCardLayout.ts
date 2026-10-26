@@ -560,16 +560,11 @@ export function useProtectedCardLayout(
                 depth: point.depth,
               })),
             ];
-            // Short-phone PLO cap lanes can be narrower than a sampled oval band.
-            // Include exact obstacle-edge intersections so a clear 23px slot
-            // between two plates is not missed by the radial sampling grid.
-            // Above 480px the side pods stand beside the board and the felt's
-            // printing, so every wager there needs the same exact slots.
-            if (
-              window.innerWidth > 480 ||
-              (window.innerWidth <= 375 &&
-                page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)'))
-            ) {
+            // Full captions can narrow any short-phone lane, including Holdem.
+            // Sample exact obstacle edges as well as the oval, so a clear slot
+            // beside a label is found before the overlapping last-resort tier.
+            // Wider portrait side pods need the same exact slots.
+            if (window.innerWidth > 480 || window.innerWidth <= 375) {
               const xs = new Set([anchor.x - box.width / 2]);
               const ys = new Set([anchor.y - box.height / 2]);
               for (const obstacle of hardObstacles) {

@@ -3034,7 +3034,10 @@
   border-radius: 4px;
   font-size: 0.55rem;
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
   z-index: 5;
   letter-spacing: 0.3px;
   animation: styleBadgeFadeIn 0.4s ease-out;
@@ -3617,12 +3620,11 @@
     overflow-wrap: anywhere;
   }
 
-  /* Hide verbose style badge label on mobile — show icon only */
+  /* Keep the selected style badge's full wording on narrow seats. */
   .seat__style-badge {
-    max-width: 22px;
-    overflow: hidden;
+    max-width: 100%;
+    overflow: visible;
     padding: 1px 3px;
-    text-overflow: clip;
   }
 }
 
@@ -3737,11 +3739,6 @@
     overflow: visible;
     white-space: normal;
     overflow-wrap: anywhere;
-  }
-
-  /* Hide style badge entirely on very small screens */
-  .seat__style-badge {
-    display: none;
   }
 }
 

@@ -2019,3 +2019,34 @@ for (const [paneWidth, paneHeight] of [
     expect(errors).toEqual([]);
   });
 }
+
+test('full player style, run-it-twice and jackpot names wrap on a narrow phone', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  const css = ['SeatSlot', 'RunItTwice', 'BBJCelebration']
+    .map((file) =>
+      readFileSync(`src/components/table/${file}.css`, 'utf8').replace(/@import\s+[^;]+;/g, '')
+    )
+    .join('\n');
+  await page.setContent(`<style>body{font-family:Inter,sans-serif}${css}</style>
+    <div style="width:70px"><div class="seat__style-badge">Loose Aggressive</div></div>
+    <div style="width:110px;display:flex"><span style="width:20px;flex-shrink:0">A</span><span class="rit-panel__player-name">Alexandria Championship</span><span style="width:20px;flex-shrink:0">50%</span></div>
+    <div style="width:70px"><div class="bbj-breakdown-name">Alexandria Championship</div></div>`);
+  for (const selector of ['.seat__style-badge', '.rit-panel__player-name', '.bbj-breakdown-name']) {
+    await expect(page.locator(selector)).toBeVisible();
+    const result = await page.locator(selector).evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const box = el.getBoundingClientRect();
+      return {
+        ellipsis: getComputedStyle(el).textOverflow,
+        fits: [...range.getClientRects()].every(
+          (r) => r.left >= box.left - 1 && r.right <= box.right + 1
+        ),
+      };
+    });
+    expect(result.fits).toBe(true);
+    expect(result.ellipsis).not.toBe('ellipsis');
+  }
+});

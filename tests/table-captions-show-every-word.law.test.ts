@@ -42,4 +42,15 @@ describe('table captions show every word (owner 2026-10-26)', () => {
     expect(css).not.toMatch(/(?:-webkit-)?line-clamp\s*:/);
     expect(css).toContain('overflow-wrap: anywhere');
   });
+  it('keeps selected player style, run-it-twice and jackpot names complete', () => {
+    for (const file of ['SeatSlot', 'RunItTwice', 'BBJCelebration']) {
+      const css = read(`src/components/table/${file}.css`);
+      expect(css).not.toContain('text-overflow: ellipsis');
+    }
+    const css = read('src/components/table/SeatSlot.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const rule of css.matchAll(/\.seat__style-badge\s*\{([^}]*)\}/g)) {
+      expect(rule[1]).not.toContain('display: none');
+      expect(rule[1]).not.toContain('overflow: hidden');
+    }
+  });
 });

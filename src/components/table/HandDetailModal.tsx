@@ -280,6 +280,8 @@ function SummaryRow({
           {row.name}
           {row.low && <span className="hdm-tag hdm-tag--low">Low</span>}
           {row.holePrivate && <span className="hdm-tag hdm-tag--private">Yours, Not Shown</span>}
+          {/* Dan 2026-10-25: mucked at the table, shown because it called the river. */}
+          {row.calledMuck && <span className="hdm-tag">Called</span>}
         </span>
         <span className="hdm-sd__pos">{row.position}</span>
       </div>

@@ -436,6 +436,8 @@ async function main() {
       console.log('  still count as gaps until the file carries the version the database holds.');
       console.log('');
     }
+    console.log('  PUBLISHING.md installs migrations only from protected main, so each of these');
+    console.log('  also needs its cause found: SQL applied from an unmerged branch or by hand.');
     console.log('  These ran against production and are not written down. A rebuild from this');
     console.log('  repo would not have them. Export each one and commit it — the applied SQL is');
     console.log('  in supabase_migrations.schema_migrations.statements, and the file should be');

@@ -287,6 +287,8 @@ function ShowdownRow({
           {row.low && <span className="hdv__sd-tag hdv__sd-tag--low">LOW</span>}
           {/* Your own mucked cards, drawn face-up for you alone. */}
           {row.holePrivate && <span className="hdv__private-tag">Yours, Not Shown</span>}
+          {/* Dan 2026-10-25: mucked at the table, shown because it called the river. */}
+          {row.calledMuck && <span className="hdv__sd-tag">CALLED</span>}
         </span>
         <span className="hdv__sd-holerow">
           <span className="hdv__pos">{row.position}</span>

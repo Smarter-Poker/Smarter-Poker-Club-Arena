@@ -1,0 +1,3 @@
+# server/src/engine/HorseTurnInitiative.law.test.ts
+
+Dan, 2026-10-25: "IT IS SO PASSIVE AND EASY". The compact turn solver cells are not keyed by who bet the flop and every tournament turn cell averages a 16% bet frequency, so a tournament horse that c-bet the flop and was called gave the turn up (24.5% fired when checked to heads-up; humans 47%). In NLH tournaments, a horse holding the flop lead does not read the turn cell; its barrel plan, value ladder and continuation decide. A solver flop bet now plans the barrel too. Cash games, and turns where the horse does not hold the lead, still read the cell exactly.

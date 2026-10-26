@@ -31,8 +31,8 @@ The retained PostgreSQL test invokes the real CLI and report query against an
 isolated local database, covering mixed human pots, rake, missing identities,
 invalid blinds, NaN, participant counts, duplicate opponents, endpoint exclusion,
 variant/stake separation, tournament chips, empty windows and row-limit refusal.
-The existing required accounting shard 3 runs this test; script changes select
-that lane. No schema change, strategy activation, engine restart or schedule.
+The dedicated Horse human results workflow runs this test for report, regression
+or workflow changes. Existing financial qualification inputs remain unchanged. No schema change, strategy activation, engine restart or schedule.
 
 Read-only production execution for 14:27:29–15:00 UTC observed 51 sole-human
 facts, all tournament NLH/PLO4. This is too small and has no cash PLO5 sample;

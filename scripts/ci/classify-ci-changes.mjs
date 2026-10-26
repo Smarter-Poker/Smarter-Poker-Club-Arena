@@ -386,7 +386,6 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
-      matches(/^scripts\/(horse-human-scoreboard\.mjs|ci\/test-horse-human-scoreboard\.mjs)$/) ||
       // Default opening reuses funded welcome reserves and the real publisher.
       matches(
         /^(src\/services\/Club(?:QuickStart|OpeningSetup|WelcomePackage)Service\.ts|scripts\/ci\/test-quick-club-opening\.py|tests\/unit\/clubQuickStart\.test\.ts)$/

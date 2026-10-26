@@ -1,18 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { scoreboardSQL, runScoreboard } from '../horse-human-scoreboard.mjs';
-import { classifyChangedPaths } from './classify-ci-changes.mjs';
 
-test('both report and native regression edits select required PostgreSQL checks', () => {
+test('report and native regression changes trigger their PostgreSQL check', () => {
+  const workflow = readFileSync('.github/workflows/horse-human-scoreboard.yml', 'utf8');
   for (const path of [
     'scripts/horse-human-scoreboard.mjs',
     'scripts/ci/test-horse-human-scoreboard.mjs',
+    '.github/workflows/horse-human-scoreboard.yml',
   ])
-    assert.equal(classifyChangedPaths([path]).server, true);
+    assert.equal(workflow.split(path).length - 1 >= 2, true);
+  assert.match(workflow, /node --test scripts\/ci\/test-horse-human-scoreboard.mjs/);
 });
 
 const since = '2026-10-26T14:00:00Z',

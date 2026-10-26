@@ -1,3 +1,4 @@
+import { fetchStoppedLightningAnchor } from '../lightning/lightningLeaveAnchor';
 import { useLightningLeaveStop } from '../lightning/useLightningLeaveStop';
 import { LightningLeaveControl } from '../components/lightning/LightningLeaveControl';
 import { useSeatArrivals } from '../components/table/seatArrival';
@@ -11100,7 +11101,9 @@ function LiveTablePage({
     if (!room || !userId || userId === 'guest') return undefined;
     try {
       const session = await fetchMyLightningSession(room.clusterId);
-      if (!hasLightningRoom(session)) return null;
+      if (!hasLightningRoom(session)) return await fetchStoppedLightningAnchor(session, userId);
+      if (session.poolSessionId !== room.poolSessionId)
+        throw new Error('Lightning Leave Session Changed');
       const anchor = lightningAnchorSeat(session);
       if (anchor) return anchor;
       /* An open session whose anchor the answer did not name: the chips are

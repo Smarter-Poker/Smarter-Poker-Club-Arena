@@ -19,7 +19,7 @@ export function useLightningLeaveStop(
     };
   }, [key]);
   return async (): Promise<boolean> => {
-    if (!room) return true;
+    if (!room || !userId || userId === 'guest') return true;
     if (!key || current.current !== key) return false;
     if (request.current?.key === key) return request.current.result;
     const result = stopLightningPlaying(room.clusterId).then(

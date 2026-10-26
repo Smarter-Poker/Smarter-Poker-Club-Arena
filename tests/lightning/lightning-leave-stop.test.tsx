@@ -69,3 +69,9 @@ it('an unmounted leave cannot navigate after the stop response', async () => {
   answer({ ok: true });
   expect(await pending).toBe(false);
 });
+
+it('spectators and guests can close a room without a stop RPC', async () => {
+  const hook = renderHook(() => useLightningLeaveStop(room, 'guest'));
+  expect(await hook.result.current()).toBe(true);
+  expect(mocks.stop).not.toHaveBeenCalled();
+});

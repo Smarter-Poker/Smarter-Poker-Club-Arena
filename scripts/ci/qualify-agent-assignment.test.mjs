@@ -7,18 +7,16 @@ import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
 const source=readFileSync(new URL('./qualify-agent-assignment.mjs',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 async function fixture(failure) {
- // Since 20261026031314 a fresh member sits under the club owner.
- const owner=randomUUID();
- const startUpline=failure==='owner-placement'?owner:null;
  const staff={id:randomUUID(),email:'ca-customization-cert-postdeploy-staff@example.invalid',password:'fixture'};
+ const owner=randomUUID();
  const members=new Map(),agents=new Map(),receipts=new Map(),accounts=new Map([[staff.id,staff]]);
  const state={created:[],cleaned:[],result:null,sequence:0,channels:[],closed:0};
  const createClient=()=>({realtime:{async setAuth(){},disconnect(){}},channel(){const channel={callback:null,on(_kind,_filter,callback){channel.callback=callback;return channel;},subscribe(callback){callback('SUBSCRIBED');return channel;}};state.channels.push(channel);return channel;},async removeAllChannels(){state.closed++;}});
- function row(id,role='player',agent=null) {return {user_id:id,role,status:'active',agent_id:agent,chip_balance:0,promo_balance:0,held_chips:0,locked_chips:0,credit_used:0,credit_limit:0};}
+ function row(id,role='player') {return {user_id:id,role,status:'active',agent_id:null,chip_balance:0,promo_balance:0,held_chips:0,locked_chips:0,credit_used:0,credit_limit:0};}
  members.set(staff.id,row(staff.id,'admin'));
  const create=async()=>{const account={id:randomUUID(),email:'ca-customization-cert-postdeploy-'+randomUUID()+'@example.invalid',password:'fixture'};accounts.set(account.id,account);state.created.push(account.id);return account;};
  let preparing=0;
- const prepare=async()=>{const id=state.created[preparing++];members.set(id,row(id,'player',startUpline));};
+ const prepare=async()=>{const id=state.created[preparing++];members.set(id,{...row(id),agent_id:owner});};
  const cleanup=async({record})=>{assert.ok(state.created.includes(record.id));members.delete(record.id);accounts.delete(record.id);state.cleaned.push(record.id);};
  const fetch=async(url,init)=>{
   const u=new URL(url),body=init.body?JSON.parse(init.body):null,method=init.method;
@@ -53,7 +51,7 @@ async function fixture(failure) {
   return {ok:status<400,status,async text(){return status===204?'':JSON.stringify(data)},async json(){return data}};
  };
  const club='a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
- const startAssignmentBrowserProof=async({account,playerId,initialAssignment})=>{assert.equal(members.get(playerId).agent_id,startUpline);const first={p_club_id:club,p_member_user_ids:[playerId],p_agent_user_id:account.id,p_op_id:randomUUID(),p_expected_agent_user_id:startUpline,p_review_token:'b'.repeat(32)};await initialAssignment.beforeWrite(first);const assigned=await fetch('https://fixture.invalid/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',body:JSON.stringify(first),headers:{}});assert.ok(assigned.ok);state.browserInitiallyAssigned=true;assert.equal(members.get(playerId).agent_id,account.id);state.browserStarted=true;return {async saveFromPlayerRecord(_actor,_session,target,beforeWrite){const move={p_club_id:club,p_member_user_ids:[playerId],p_agent_user_id:target,p_op_id:randomUUID(),p_expected_agent_user_id:account.id,p_review_token:'a'.repeat(32)};await beforeWrite(move);const result=await fetch('https://fixture.invalid/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',body:JSON.stringify(move),headers:{}});assert.ok(result.ok);state.browserSaved=true;return move;},async verifyAfterTransfer(){assert.notEqual(members.get(playerId).agent_id,account.id);state.browserChanged=true;},async verifyDestination(destination){assert.equal(members.get(playerId).agent_id,destination.id);},async close(){state.browserClosed=true;}};};
+ const startAssignmentBrowserProof=async({account,playerId,initialAssignment})=>{assert.equal(members.get(playerId).agent_id,owner);const first={p_club_id:club,p_member_user_ids:[playerId],p_agent_user_id:account.id,p_op_id:randomUUID(),p_expected_agent_user_id:owner,p_review_token:'b'.repeat(32)};await initialAssignment.beforeWrite(first);const assigned=await fetch('https://fixture.invalid/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',body:JSON.stringify(first),headers:{}});assert.ok(assigned.ok);state.browserInitiallyAssigned=true;assert.equal(members.get(playerId).agent_id,account.id);state.browserStarted=true;return {async saveFromPlayerRecord(_actor,_session,target,beforeWrite){const move={p_club_id:club,p_member_user_ids:[playerId],p_agent_user_id:target,p_op_id:randomUUID(),p_expected_agent_user_id:account.id,p_review_token:'a'.repeat(32)};await beforeWrite(move);const result=await fetch('https://fixture.invalid/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',body:JSON.stringify(move),headers:{}});assert.ok(result.ok);state.browserSaved=true;return move;},async verifyAfterTransfer(){assert.notEqual(members.get(playerId).agent_id,account.id);state.browserChanged=true;},async verifyDestination(destination){assert.equal(members.get(playerId).agent_id,destination.id);},async close(){state.browserClosed=true;}};};
  const run=new AsyncFunction('assert','readFileSync','writeFileSync','join','randomUUID','createProductionE2EAccount','prepareProductionE2EStaffMembership','cleanupProductionE2EAccount','supabaseServerHeaders','createClient','WebSocket','startAssignmentBrowserProof','process','fetch','console',source);
  const pending=run(assert,()=>JSON.stringify(staff),()=>{},join,randomUUID,create,prepare,cleanup,supabaseServerHeaders,createClient,undefined,startAssignmentBrowserProof,{cwd:()=>'/fixture',env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_test_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(s){state.result=JSON.parse(s)}});
  return {state,pending,members,agents};
@@ -65,15 +63,6 @@ test('assignment, transfer, replay and immediate scope change retire all three o
 for(const failure of ['transfer','unknown-agent']) test('durable fixture cleanup after '+failure,async()=>{
  const {state,pending,members,agents}=await fixture(failure);await assert.rejects(pending);
  assert.equal(state.cleaned.length,state.created.length);assert.equal(members.size,1);assert.equal(agents.size,0);
-});
-
-/* Post-deploy run 40292901952: after 20261026031314 a fresh player joins under
-   the club owner, and the qualifier refused it as a pre-existing agent, which
-   stopped the job before its private template club was made. */
-test('a fresh player placed under the club owner is assigned, transferred and retired',async()=>{
- const {state,pending,members,agents}=await fixture('owner-placement');await pending;
- assert.equal(state.browserInitiallyAssigned,true);assert.equal(state.browserSaved,true);
- assert.equal(state.cleaned.length,3);assert.equal(members.size,1);assert.equal(agents.size,0);
 });
 
 test('missing transfer Realtime event refuses proof and still retires owned fixtures',async()=>{

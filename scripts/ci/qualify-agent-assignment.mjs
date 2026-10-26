@@ -78,18 +78,16 @@ let passed=false;
 try {
  const token=await login(staff);
  const commissionRate=await earningAgentCommission();
- const clubOwnerRows=await req(`/rest/v1/clubs?id=eq.${club}&select=owner_id`);
- const clubOwner=clubOwnerRows[0]?.owner_id ?? null;assert.ok(clubOwner,'certification club owner is readable');
+ // A member who joins without an agent sits under the club owner
+ // (20261026031314), so a fresh player's starting upline is the owner, or
+ // none on a club whose join door predates that rule.
+ const clubOwner=(await req(`/rest/v1/clubs?id=eq.${club}&select=owner_id`))[0]?.owner_id;assert.ok(clubOwner,'Unreadable club owner');
  for(let index=0;index<3;index++) {
   const childEnv={...env,E2E_TEST_ACCOUNT_FILE:join(root,`agent-assignment-${index}.json`),GITHUB_ENV:join(root,`agent-assignment-${index}.env`),E2E_CLUB_ID:club};
   const account=await createProductionE2EAccount({environment:childEnv});
   const item={account,environment:childEnv,agentId:index<2?randomUUID():null};owned.push(item);
   await prepareProductionE2EStaffMembership({environment:childEnv,memberRole:'player'});
-  // Since 20261026031314 a member with no agent sits under the club owner
-  // (Dan, 2026-10-25). A fresh identity starts with no agent or that owner
-  // placement, never under anybody else.
-  const current=await membership(account.id);assert.ok(current.agent_id===null || current.agent_id===clubOwner,'fresh member starts under no agent or the club owner');
-  item.startAgent=current.agent_id;
+  const current=await membership(account.id);assert.ok(current.agent_id===null || current.agent_id===clubOwner,'A new player starts under the club owner or no one');item.startingAgent=current.agent_id;
   if(item.agentId) {
    await req(member(account.id),{method:'PATCH',body:{role:'agent'}});
    await req('/rest/v1/agents',{method:'POST',body:{id:item.agentId,user_id:account.id,club_id:club,role:'agent',status:'active',commission_rate:commissionRate,player_rakeback_rate:0}});
@@ -104,8 +102,8 @@ try {
  const playerProfile=await req(`/rest/v1/profiles?id=eq.${player.account.id}&select=alias,username`);
  const playerSearch=playerProfile[0].alias || playerProfile[0].username;assert.ok(playerSearch);
  browserProof=await startAssignmentBrowserProof({account:source.account,session:loginSessions.get(source.account.id),clubId:club,playerId:player.account.id,playerAlias:playerSearch,evidenceDir:join(process.cwd(),'e2e-report','agent-assignment'),initialAssignment:{actor:staff,session:loginSessions.get(staff.id),beforeWrite:async body=>{
-  // The record sends the player's current upline: none, or the owner placement.
-  assert.ok(body.p_expected_agent_user_id==null || body.p_expected_agent_user_id===player.startAgent,'first assignment expects the starting upline');
+  // The record save names the upline it read: the owner placement, or none.
+  assert.equal(body.p_expected_agent_user_id,player.startingAgent);
   Object.assign(first,body);
   writeFileSync(join(root,'agent-assignment-operations.json'),JSON.stringify({first,move}),{mode:0o600});
  }}});

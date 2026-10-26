@@ -19,6 +19,7 @@ import {
   STALE_ACCOUNT_AGE_MS,
   retireCertificationClubWithRetry,
   retireProductionCreateClubFixtures,
+  RETIREMENT_REFUSAL_CLUB_HAS_HISTORY,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
 const USER_ID = '00000000-0000-4000-8000-000000000099';
@@ -2284,5 +2285,201 @@ describe('a certification fixture that leaked must not wedge the next certificat
         record: { id: USER_ID, email: STALE_EMAIL },
       })
     ).rejects.toThrow('unreadable number of owned club fixture');
+  });
+});
+
+describe('one refused stale identity no longer strands the others (2026-10-26)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const NOW = Date.parse('2026-10-26T14:00:00.000Z');
+  const account = (n: number) => ({
+    id: `00000000-0000-4000-8000-00000000010${n}`,
+    email: `ca-customization-cert-postdeploy-179277923823${n}-stale@example.invalid`,
+    created_at: `2026-10-2${n}T18:14:22.000Z`,
+  });
+  type Club = { id: string; name: string; owner_id: string; lifecycle_status: string };
+
+  /**
+   * Production as it stood on 2026-10-26: several stale identities, each
+   * owning Crest Cert clubs. The retire door answers per club, the account
+   * door refuses any identity that still owns a club, and every request is
+   * recorded so the order of work can be read back.
+   */
+  function world(
+    accounts: Array<ReturnType<typeof account>>,
+    clubs: Club[],
+    door: (clubId: string) => Response
+  ) {
+    const owned = new Map(clubs.map((club) => [club.id, club]));
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = decodeURIComponent(String(input));
+      if (url.includes('/rpc/fn_ca_stale_certification_accounts')) return Response.json(accounts);
+      if (url.includes('/rest/v1/clubs?')) {
+        const owner = /owner_id=eq\.([0-9a-f-]+)/.exec(url)?.[1];
+        return Response.json([...owned.values()].filter((club) => club.owner_id === owner));
+      }
+      if (url.includes('/rpc/fn_ca_retire_welcome_certification_club')) {
+        const clubId = JSON.parse(String(init?.body)).p_club_id;
+        calls.push(`retire ${clubId}`);
+        const response = door(clubId);
+        const parsed = await response.clone().json();
+        if (response.ok && parsed?.success === true) owned.delete(clubId);
+        return response;
+      }
+      if (url.includes('/rpc/cleanup_reserved_certification_account')) {
+        const userId = JSON.parse(String(init?.body)).p_user_id;
+        calls.push(`account ${userId}`);
+        return [...owned.values()].some((club) => club.owner_id === userId)
+          ? Response.json(
+              { code: '55000', message: 'CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY' },
+              { status: 500 }
+            )
+          : Response.json({ success: true });
+      }
+      if (url.includes('/auth/v1/admin/users/')) return new Response(null, { status: 404 });
+      return new Response('unexpected request ' + url, { status: 500 });
+    });
+    return { fetchImpl, calls, owned };
+  }
+
+  const run = (fetchImpl: unknown) =>
+    cleanupStaleProductionE2EAccounts({
+      environment: environment(mkdtempSync(join(tmpdir(), 'production-e2e-stranded-'))),
+      fetchImpl: fetchImpl as typeof fetch,
+      now: NOW,
+      wait: vi.fn().mockResolvedValue(undefined),
+    });
+
+  const LOBBY = '11111111-1111-4111-8111-111111111111';
+  const TEMPLATE_A = '22222222-2222-4222-8222-222222222222';
+  const TEMPLATE_B = '33333333-3333-4333-8333-333333333333';
+  const history = () =>
+    Response.json({ success: false, error: RETIREMENT_REFUSAL_CLUB_HAS_HISTORY });
+  const retired = () => Response.json({ success: true, chips_retired: 100000 });
+
+  it('keeps a retired fixture that holds history as owned, names it, and still recovers the identities behind it', async () => {
+    const [lobbyOwner, ownerA, ownerB] = [account(3), account(4), account(5)];
+    const model = world(
+      [lobbyOwner, ownerA, ownerB],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Lobby 01a16659',
+          owner_id: lobbyOwner.id,
+          lifecycle_status: 'retired',
+        },
+        {
+          id: TEMPLATE_A,
+          name: 'Crest Cert Template 2793e75d',
+          owner_id: ownerA.id,
+          lifecycle_status: 'active',
+        },
+        {
+          id: TEMPLATE_B,
+          name: 'Crest Cert Template 095896f4',
+          owner_id: ownerB.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      (clubId) => (clubId === LOBBY ? history() : retired())
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(run(model.fetchImpl)).resolves.toBe(2);
+
+    expect(model.calls).toEqual([
+      `retire ${LOBBY}`,
+      `retire ${TEMPLATE_A}`,
+      `account ${ownerA.id}`,
+      `retire ${TEMPLATE_B}`,
+      `account ${ownerB.id}`,
+    ]);
+    // The identity that owns the retired history is never sent to the account door.
+    expect(model.calls).not.toContain(`account ${lobbyOwner.id}`);
+    expect([...model.owned.keys()]).toEqual([LOBBY]);
+    expect(log.mock.calls.flat().join('\n')).toContain(
+      `kept stale identity ${lobbyOwner.id} as the owner of record of retired fixture(s) ${LOBBY}`
+    );
+  });
+
+  it('still fails the run for a club with history that has NOT left the live board', async () => {
+    const owner = account(3);
+    const model = world(
+      [owner],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Lobby 01a16659',
+          owner_id: owner.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      history
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await expect(run(model.fetchImpl)).rejects.toThrow(
+      `Certification club ${LOBBY} retirement was refused: ${RETIREMENT_REFUSAL_CLUB_HAS_HISTORY}`
+    );
+    expect(model.calls).toEqual([`retire ${LOBBY}`]);
+  });
+
+  it('tries every identity after one fails, then fails the run naming the failure', async () => {
+    const [stuck, behind] = [account(3), account(4)];
+    const model = world(
+      [stuck, behind],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Template aaaaaaaa',
+          owner_id: stuck.id,
+          lifecycle_status: 'active',
+        },
+        {
+          id: TEMPLATE_A,
+          name: 'Crest Cert Template 2793e75d',
+          owner_id: behind.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      (clubId) =>
+        clubId === LOBBY
+          ? Response.json({ success: false, error: 'some other refusal' })
+          : retired()
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const outcome = run(model.fetchImpl);
+    await expect(outcome).rejects.toBeInstanceOf(AggregateError);
+    await expect(outcome).rejects.toThrow(
+      `Stale recovery left 1 of 2 stale account(s) unrecovered (1 recovered, 0 kept as owners of retired history): ` +
+        `Certification club ${LOBBY} retirement was refused: some other refusal`
+    );
+    // The identity behind the refusal was still recovered in the same run.
+    expect(model.calls).toEqual([
+      `retire ${LOBBY}`,
+      `retire ${TEMPLATE_A}`,
+      `account ${behind.id}`,
+    ]);
+  });
+
+  it('validates the whole inventory before touching any identity', async () => {
+    const good = account(3);
+    const model = world(
+      [good, { ...account(4), email: 'someone@example.com' }],
+      [
+        {
+          id: LOBBY,
+          name: 'Crest Cert Template aaaaaaaa',
+          owner_id: good.id,
+          lifecycle_status: 'active',
+        },
+      ],
+      retired
+    );
+    await expect(run(model.fetchImpl)).rejects.toThrow(
+      'Refusing an invalid stale post-deploy account candidate.'
+    );
+    expect(model.calls).toEqual([]);
   });
 });

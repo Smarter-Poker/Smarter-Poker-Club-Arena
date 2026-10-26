@@ -108,3 +108,16 @@ it('the historical correction reporter keeps exact native parity and runs in CI'
     'python3 -B scripts/ci/test-daily-reporting-attribution-change-postgres.py'
   );
 });
+
+it('an absent report cutoff never eagerly reads the whole hand heap', () => {
+  const source = read(
+    'supabase/migrations/20261026213150_daily_reporting_reads_hand_time_only_for_a_cutoff.sql'
+  );
+  expect(source).toContain(
+    'CASE WHEN c.cutoff IS NULL THEN true ELSE EXISTS(SELECT FROM public.rake_records rr'
+  );
+  expect(source).not.toContain('LEFT JOIN public.rake_records');
+  expect(read('scripts/ci/test-daily-reporting-attribution-change-postgres.py')).toContain(
+    '20261026213150_daily_reporting_reads_hand_time_only_for_a_cutoff.sql'
+  );
+});

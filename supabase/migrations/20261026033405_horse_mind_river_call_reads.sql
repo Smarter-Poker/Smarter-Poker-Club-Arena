@@ -329,4 +329,12 @@ begin
   return n;
 end $function$;
 
+-- The engine's service role is the only caller. Production already grants
+-- EXECUTE to postgres and service_role only (proacl read 2026-10-26);
+-- restated so this file states the boundary it relies on.
+REVOKE ALL ON FUNCTION public.upsert_horse_mind_stats(jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.upsert_horse_mind_stats_scoped(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_horse_mind_stats(jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.upsert_horse_mind_stats_scoped(jsonb) TO service_role;
+
 COMMIT;

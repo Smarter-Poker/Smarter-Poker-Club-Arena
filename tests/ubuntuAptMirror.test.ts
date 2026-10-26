@@ -60,6 +60,35 @@ describe('Ubuntu browser dependency mirror', () => {
     expect(missing).toEqual([]);
   });
 
+  it('bounds client browser installation before any production identity can be created', () => {
+    const workflow = parse(readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8'));
+    const job = workflow.jobs['production-e2e'];
+    const installIndex = job.steps.findIndex(
+      (step: { name?: string }) => step.name === 'Install Chromium and WebKit'
+    );
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    const install = job.steps[installIndex];
+    // Successful job121591382452 installed in49s; job121619175020 took
+    // 49m32s, then created a fixture before hitting its80m job ceiling.
+    // Ten minutes allows >12x the successful install without spending the
+    // suite's proof and cleanup budget on dependency setup.
+    expect(install['timeout-minutes']).toBeGreaterThan(0);
+    expect(install['timeout-minutes']).toBeLessThanOrEqual(10);
+    expect(install['continue-on-error']).not.toBe(true);
+    expect(job['timeout-minutes']).toBe(80);
+    const liveIndex = job.steps.findIndex((step: { id?: string }) => step.id === 'live');
+    expect(liveIndex).toBeGreaterThan(installIndex);
+    expect(job.steps[liveIndex].if).toBeUndefined();
+    const creates = job.steps.filter((step: { run?: string }) =>
+      /production-e2e-account\.mjs create/.test(step.run ?? '')
+    );
+    expect(creates.length).toBeGreaterThanOrEqual(2);
+    for (const step of creates) {
+      expect(job.steps.indexOf(step)).toBeGreaterThan(liveIndex);
+      expect(step.if).toContain("steps.live.outputs.ready == 'true'");
+    }
+  });
+
   it('changes only active Azure Ubuntu URIs, preserves trust and is idempotent', () => {
     const root = mkdtempSync(join(tmpdir(), 'ca-apt-mirror-'));
     try {

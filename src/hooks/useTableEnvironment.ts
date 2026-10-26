@@ -1,6 +1,10 @@
 import { arenaDisplayText } from '../lib/arenaDisplay/text';
 import { useEffect, type RefObject } from 'react';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
+import {
+  PHONE_TABLE_LAYOUT_WIDTH_PX,
+  PHONE_TABLE_MAX_DEVICE_WIDTH_PX,
+} from '../components/table/tableGeometry';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -81,9 +85,7 @@ let viewportMetaCreated: HTMLMetaElement | null = null;
  * Landscape keeps it too, since the desktop window being matched is portrait.
  * Pinned by tests/a-phone-lays-the-table-out-like-desktop.law.test.ts.
  */
-export const PHONE_TABLE_LAYOUT_WIDTH_PX = 600;
-/** Portrait devices this narrow (CSS px) take the desktop table layout. */
-export const PHONE_TABLE_MAX_DEVICE_WIDTH_PX = 480;
+export { PHONE_TABLE_LAYOUT_WIDTH_PX, PHONE_TABLE_MAX_DEVICE_WIDTH_PX };
 let desktopLayoutHolders = 0;
 const POKER_VIEWPORT =
   'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';

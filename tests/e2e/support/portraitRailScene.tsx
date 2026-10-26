@@ -267,10 +267,7 @@ export function Review() {
                         lastBetAmount={
                           /* data-bets="0,3,5" bets only those chairs; absent, every chair bets. */
                           document.documentElement.dataset.bets === undefined ||
-                          document.documentElement.dataset.bets
-                            .split(',')
-                            .map(Number)
-                            .includes(i)
+                          document.documentElement.dataset.bets.split(',').map(Number).includes(i)
                             ? 120
                             : 0
                         }

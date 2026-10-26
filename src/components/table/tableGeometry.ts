@@ -170,6 +170,13 @@ export function boardCardWidthPx(
  */
 export const PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX = 768;
 
+/** Dan 2026-10-25: a portrait phone lays the table in front out at this
+ *  width, the desktop layout he showed, and the browser scales it to the
+ *  phone (useTableEnvironment). */
+export const PHONE_TABLE_LAYOUT_WIDTH_PX = 600;
+/** Portrait devices this narrow (CSS px) take that desktop table layout. */
+export const PHONE_TABLE_MAX_DEVICE_WIDTH_PX = 480;
+
 /** Dense mobile rings and the narrowest phones reserve a fixed side lane beside the board. At 7.8%
  * of the canvas, a six-card half-step row clears that lane's four-pixel
  * gutter at every phone width. Every player shares it, with a 20px legibility
@@ -1516,7 +1523,8 @@ function phoneBetOnBoard(p: Pos, size: Size): boolean {
 /**
  * The desktop walk is computed for the desktop board; a phone's board fills
  * almost the whole felt width and its pot pill is upright chrome. When the
- * walked rest point would print a wager over either, it is nudged the
+ * walked rest point would print a wager over either (or over the felt's own
+ * printing), it is nudged the
  * smallest distance that clears both - straight away from the board (toward
  * its own player's side of it) or straight outward toward its own player -
  * never across the table, so it is still in front of the player who bet it.
@@ -1525,7 +1533,9 @@ function phoneBetClearOfBoardAndPot(rest: Pos, seat: Pos, size: Size): Pos {
   const halfW = (PHONE_BET_HALF_W_PX / size.w) * 100;
   const halfH = (PHONE_BET_HALF_H_PX / size.w) * 100;
   const clear = (p: Pos) =>
-    !phoneBetOnBoard(p, size) && !overlapsPortraitPot(p, size, halfW, halfH);
+    !phoneBetOnBoard(p, size) &&
+    !overlapsPortraitPot(p, size, halfW, halfH) &&
+    !isOnFeltText(p, size, halfW);
   if (clear(rest)) return rest;
   const boardY = FELT_WINDOW.top + 0.425 * FELT_WINDOW.height;
   const awayY = seat.y >= boardY ? 1 : -1;

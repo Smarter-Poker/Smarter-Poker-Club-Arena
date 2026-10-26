@@ -37,7 +37,7 @@ const ROOT = join(__dirname, '..');
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
 
 describe('a bet sits in front of its own player', () => {
-  it('the portrait placement pass keeps every wager its own player\'s', () => {
+  it("the portrait placement pass keeps every wager its own player's", () => {
     const hook = read('src/hooks/useProtectedCardLayout.ts');
     // Searched from the wager's own rest point in front of its player...
     expect(hook).toMatch(/const anchor = \{/);
@@ -53,9 +53,7 @@ describe('a bet sits in front of its own player', () => {
 
   it('a dropped top pod carries its bet with it', () => {
     const css = read('src/components/table/SeatSlot.css');
-    expect(css).not.toMatch(
-      /\.seat-wrapper--top\s+\.seat__bet-chips\s*\{[^}]*--sp-top-seat-shift/
-    );
+    expect(css).not.toMatch(/\.seat-wrapper--top\s+\.seat__bet-chips\s*\{[^}]*--sp-top-seat-shift/);
   });
 
   it('at the desktop layout a phone renders, every bet is on the felt and nearest its own chair', () => {
@@ -65,15 +63,18 @@ describe('a bet sits in front of its own player', () => {
         const width = 600;
         const size = { w: 600 * 0.86, h: 1060, portraitTags: true, portraitTaper: taper };
         const seats = seatLayoutFor(count).map((raw) => {
-          const pod = seatPodPx(width, isHero(raw), size.w, { seats: count, canvasHeightPx: size.h });
+          const pod = seatPodPx(width, isHero(raw), size.w, {
+            seats: count,
+            canvasHeightPx: size.h,
+          });
           return { seat: fitSeatToViewport(raw, size, width, pod, undefined, count), pod };
         });
         const px = (p: Pos) => ({ x: (p.x * size.w) / 100, y: (p.y * size.h) / 100 });
         for (const { seat, pod } of seats) {
           const rest = px(chipRestPosition(seat, size, pod));
-          expect(isInsideFelt(chipRestPosition(seat, size, pod), size, chipRadiusWidthPct(size))).toBe(
-            true
-          );
+          expect(
+            isInsideFelt(chipRestPosition(seat, size, pod), size, chipRadiusWidthPct(size))
+          ).toBe(true);
           const own = Math.hypot(rest.x - px(seat).x, rest.y - px(seat).y);
           for (const other of seats) {
             if (other.seat === seat) continue;

@@ -78,6 +78,7 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
       deferredUntil: new Map(),
       answered: new Set(),
     }),
+    checkDynamicTableExpansion: vi.fn().mockResolvedValue(true),
     tableEngines: new Map(),
     tournamentLeaseAuthorityIsCurrent: () => true,
     gameServer: { handTournamentToSuccessorGeneration: vi.fn() },

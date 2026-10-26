@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import {
   mysteryBountyFieldTooSmall,
   mysteryBountyThresholdReached,
@@ -129,8 +130,8 @@ describe('the mystery phase opens at a boundary the engine holds', () => {
   });
 
   it('the bubble-burst resume cannot lift the mystery boundary', () => {
-    const burst = sweep.slice(sweep.indexOf('BUBBLE BURST -'));
-    expect(burst.slice(0, 900)).toContain('!this.mysteryActivationBoundaryPending');
+    const burst = sliceEnclosingBlock(sweep, 'BUBBLE BURST -');
+    expect(burst).toContain('!this.mysteryActivationBoundaryPending');
   });
 
   it('a bust far from the threshold, the final bust, or an open phase holds nothing', () => {

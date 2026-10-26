@@ -155,6 +155,13 @@ describe('the V58 short-stack jam on the variant_price route', () => {
     expect(referenceReturnShape(jam, snapshot({ heroStack: 1000, gameMode: 'cash' }))).toBe(false);
   });
 
+  it('refuses a free or nonpositive-stack call-off', () => {
+    for (const heroStack of [0, -1])
+      expect(
+        referenceReturnShape(jam, snapshot({ heroStack, raiseTo: 20, gameMode: 'cash' }))
+      ).toBe(false);
+  });
+
   it('the maniac call-down still answers a whole-stack call with the all-in', () => {
     const source = readFileSync(join(here, 'HorseLogic.ts'), 'utf8');
     const block = sliceBetween(source, "noteFire('maniac_call_down');", '} catch {');

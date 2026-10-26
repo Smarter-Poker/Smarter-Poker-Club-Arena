@@ -11,8 +11,10 @@ Both were found by the 2026-10-26 horse decision audit (independently by the pip
 
 ## What changed
 
-The V58 jam half landed first on main in #8183 (`v58ShortStackJamShape`, any route, preflop, someone else raised, call below stack, stack plus bet at most `SHORT_STACK_NO_FLAT_BB`); this PR adopts that shape unchanged on merge. What this PR adds is the call-off: `referenceReturnShape` admits, on `variant_price` only, an unsized `all_in` whose owed call is at least the whole stack. The private maniac read and the equity are not repeated; every other check is unchanged. HorseLogic is not edited.
+The V58 jam half landed first on main in #8183 (`v58ShortStackJamShape`, any route, preflop, someone else raised, call below stack, stack plus bet at most `SHORT_STACK_NO_FLAT_BB`); this PR adopts that shape unchanged on merge. What this PR adds is the call-off: `referenceReturnShape` admits, on `variant_price` only, an unsized `all_in` whose owed call is at least the positive remaining stack. A zero or negative stack cannot qualify as a call-off. The private maniac read and the equity are not repeated; every other check is unchanged. HorseLogic is not edited.
 
 ## Proof
 
 `aV58ShortStackJamIsAReferenceReturn.guard.test.ts`: the HU jam, a three-handed jam with the call near the stack, the exact 12bb ceiling and the call-off (cash and tournament) are admitted; cash, Omaha, short deck, a sized all-in and a heads-up shove with chips behind are refused; source pins require HorseLogic to keep the V58 conditions and the call-down's `allInCall` return. Phase 6 suites, V53 and the bubble short-stack law pass on the merged tree.
+
+Conflict recovery retained the newer protected-main PLO6 priced-call validator and refusal classifier unchanged. A new zero-stack regression failed before the positive-stack guard and passes after it; free and negative-stack call-offs remain refused.

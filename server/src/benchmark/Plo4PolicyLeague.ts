@@ -443,15 +443,23 @@ export async function playPlo4PolicyHand(
           cards: [],
           ...(variant === 'pineapple' ? { knownDeadCards: undefined } : {}),
         })),
+        ...(profile.opponentPopulation === HUMAN_CALIBRATED_POPULATION_ID
+          ? {
+              humanUserIds: state.players.filter((p) => p.is_horse === false).map((p) => p.user_id),
+            }
+          : {}),
         communityCards: state.communityCards,
+        // Match the live worker's public pricing snapshot in every policy
+        // league, not only joint-policy hands. Settlement already charges
+        // these fees; the decision must see their units and dealt census.
+        dealtSeatIds: state.players.filter((p) => p.cards.length > 0).map((p) => p.seat),
+        ...controller.getChipRulesSnapshot(),
         ...(profile.jointPolicy
           ? {
               communityCards2: state.communityCards2,
               communityCards3: state.communityCards3,
               bombPot: Boolean(profile.bombBoards),
               boardCount: controller.getActiveBoardCount(),
-              dealtSeatIds: state.players.filter((p) => p.cards.length > 0).map((p) => p.seat),
-              ...controller.getChipRulesSnapshot(),
             }
           : {}),
         pot: state.pot,

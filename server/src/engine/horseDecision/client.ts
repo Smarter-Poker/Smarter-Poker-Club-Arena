@@ -85,7 +85,7 @@ import type {
 } from './protocol.js';
 import { horseDecisionSolverStoresAreValid } from './protocol.js';
 import {
-  horseDecisionReceiptIsValid,
+  horseDecisionReceiptRefusal,
   horseGovernorSnapshotIsValid,
   horseComputeMetadataIsValid,
   horseSamplingStateIsValid,
@@ -1791,16 +1791,16 @@ export class LiveHorseDecisionWorkerClient {
         delete message.decision.jointPolicy;
         noteFire('phase13_shadow_receipt_binding_dropped');
       }
-      if (
-        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant, {
-          player: active.request.player,
-          gameState: active.request.gameState,
-        })
-      ) {
+      const receiptRefusal = horseDecisionReceiptRefusal(
+        message.decision,
+        active.request.gameState.gameVariant,
+        { player: active.request.player, gameState: active.request.gameState }
+      );
+      if (receiptRefusal !== null) {
         this.refuseDecision(
           active,
           message,
-          new Error('horse decision worker returned invalid policy receipt')
+          new Error(`horse decision worker returned invalid policy receipt: ${receiptRefusal}`)
         );
         return;
       }

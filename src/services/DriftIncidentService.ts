@@ -676,16 +676,17 @@ export const DriftIncidentService = {
     action: IncidentAction,
     params: IncidentActionParams = {}
   ): Promise<IncidentActionResult> {
-    const { data, error } = await retryAsync(() =>
-      supabase.rpc('fn_ca_incident_action', {
-        p_incident_id: incidentId,
-        p_action: action,
-        p_note: params.note ?? null,
-        p_assignee: params.assignee ?? null,
-        p_root_cause: params.rootCause ?? null,
-        p_correction_ref: params.correctionRef ?? null,
-      })
-    );
+    // A lost response may follow a committed action. This RPC has no request
+    // key, so generic network retries could append the action twice. Let the
+    // caller report the unknown outcome and read the authoritative timeline.
+    const { data, error } = await supabase.rpc('fn_ca_incident_action', {
+      p_incident_id: incidentId,
+      p_action: action,
+      p_note: params.note ?? null,
+      p_assignee: params.assignee ?? null,
+      p_root_cause: params.rootCause ?? null,
+      p_correction_ref: params.correctionRef ?? null,
+    });
 
     if (error) {
       reportError(error, 'DriftIncidentService.act', { incidentId, action });

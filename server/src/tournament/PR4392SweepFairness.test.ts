@@ -365,6 +365,60 @@ describe('PR4392 actual staged sweep fairness', () => {
       scheduler.stop();
     }
   });
+  it.each(['rebought', 'open', 'concurrent'] as const)(
+    'reaches balance when every bust in the batch is %s',
+    async (outcome) => {
+      oneBustOfTwo((request) => {
+        if (request.table === 'rpc:fn_open_tournament_rebuy_decisions') {
+          return {
+            data:
+              outcome === 'concurrent'
+                ? []
+                : [
+                    {
+                      user_id: bustedId,
+                      decision_open: true,
+                      rebuy_prompt_until: new Date(Date.now() + 30_000).toISOString(),
+                    },
+                  ],
+          };
+        }
+        if (request.table === 'tournament_players' && request.head) return { count: 3 };
+      });
+      const { manager } = bustStageManager();
+      Object.assign(manager, {
+        tryTournamentRebuys: vi.fn(async () => ({
+          rebought: new Set(outcome === 'rebought' ? [bustedId] : []),
+          deferredUntil: new Map(),
+        })),
+        maybeActivateMysteryBounty: vi.fn().mockResolvedValue(undefined),
+        checkFinalTableDeal: vi.fn().mockResolvedValue(true),
+        checkTableBalance: vi.fn().mockResolvedValue(undefined),
+        finishTournament: vi.fn(),
+        eliminationWorkBudgetExpired: () => manager.eliminationSweepCursor.nextStage >= 6,
+      });
+      await sweep(manager);
+      expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
+      expect(manager.eliminationSweepCursor.nextStage).toBe(6);
+      expect(manager.eliminatePlayer).not.toHaveBeenCalled();
+      expect(manager.finishTournament).not.toHaveBeenCalled();
+      expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+      expect(fixture.reportError).not.toHaveBeenCalled();
+    }
+  );
+  it('a rebought batch advances the cursor before yielding its spent budget', async () => {
+    oneBustOfTwo();
+    const { manager } = bustStageManager();
+    manager.tryTournamentRebuys = vi.fn(async () => ({
+      rebought: new Set([bustedId]),
+      deferredUntil: new Map(),
+    }));
+    manager.eliminationWorkBudgetExpired = () => true;
+    await sweep(manager);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(2);
+    expect(manager.requestEliminationSweep).toHaveBeenCalled();
+    expect(manager.eliminatePlayer).not.toHaveBeenCalled();
+  });
   it('maintenance still prevents balance dispatch at its reached stage', async () => {
     const { manager } = backlog();
     fixture.frozen = true;

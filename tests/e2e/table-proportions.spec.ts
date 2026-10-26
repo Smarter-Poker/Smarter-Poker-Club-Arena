@@ -731,7 +731,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
       await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}${styles}</style>
       <div class="multi-table-page" style="--sp-tabbar-inset:${inset}px;--mtt-ticker-h:24px">
         <div class="multi-table-page__tab-bar-wrapper multi-table-page__tab-bar-wrapper--with-lobby">
-          <div class="table-tab-bar"><div class="table-tab-bar__menu-container" style="width:34px;flex-shrink:0"></div><div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO5</button><button class="table-tab-bar__tab">PLO4</button></div></div>
+          <div class="table-tab-bar"><div class="table-tab-bar__menu-container" style="width:44px;flex-shrink:0"></div><div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO5</button><button class="table-tab-bar__tab">PLO4</button></div></div>
           <button class="multi-table-page__pnl-chip multi-table-page__pnl-chip--down">-170.37</button>
           <button class="mtp-lobby-btn">Lobby</button>
         </div>
@@ -754,7 +754,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
         };
       });
       expect(measured.width).toBe(width <= 480 ? 52 : 100);
-      expect(measured.height).toBe(width <= 480 ? 34 : 36);
+      expect(measured.height).toBe(width <= 480 ? 44 : 36);
       expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);
@@ -841,7 +841,7 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // for; their seat pods keep the tablet ring (see `largePortrait` below).
 for (const width of [320, 375, 393, 430, 480, 600, 768])
   for (const count of [6, 9])
-    test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px with ${count} seats`, async ({
+    test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats`, async ({
       page,
     }, testInfo) => {
       // Keep each ring independently bounded on hosted runners while retaining
@@ -1435,8 +1435,11 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
           `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`
         ).toEqual([]);
         for (const tool of result.tools) {
-          expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
-          expect(tool.height, tool.selector).toBeCloseTo(result.tools[0].height, 1);
+          // The owner's mobile enlargement is confined to the action strip.
+          // Felt tools retain their existing footprint.
+          const expected = width <= 480 ? (tool.selector === '.mtp-lobby-btn' ? 44 : 34) : 40;
+          expect(tool.width, tool.selector).toBeCloseTo(expected, 1);
+          expect(tool.height, tool.selector).toBeCloseTo(expected, 1);
         }
         for (const [selector, icon] of [
           ['.chat-collapsed', 'chat'],
@@ -1452,7 +1455,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             };
           }, toolAlpha[icon]);
           expect(Math.max(painted.width, painted.height), `${icon} painted frame`).toBeCloseTo(
-            result.tools[0].width,
+            width <= 480 ? 34 : 40,
             0
           );
         }

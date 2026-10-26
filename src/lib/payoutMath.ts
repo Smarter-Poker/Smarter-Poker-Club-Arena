@@ -95,6 +95,18 @@ export function computePlacePrize(
 ): number {
   if (!Array.isArray(payouts) || payouts.length === 0) return 0;
   if (!Number.isFinite(place)) return 0;
+  return computePrizeLadder(pool, payouts, unitCents).get(place) ?? 0;
+}
+
+/** Build the canonical ladder once for callers that need every place. Values
+ * use the same currency units as computePlacePrize; this is its single shared
+ * normalization and rounding implementation, with a fresh map on each call. */
+export function computePrizeLadder(
+  pool: number,
+  payouts: Array<{ place?: number; percentage?: number }>,
+  unitCents: number
+): Map<number, number> {
+  if (!Array.isArray(payouts) || payouts.length === 0) return new Map();
 
   // PAYOUT-INTEGRITY 2026-08-25: sanitise the structure BEFORE any arithmetic
   // reads it. Three malformations were reachable and each one broke the
@@ -123,11 +135,10 @@ export function computePlacePrize(
     const pct = Number(p?.percentage ?? 0);
     entries.push({ place: pl, percentage: Number.isFinite(pct) && pct > 0 ? pct : 0 });
   }
-  if (entries.length === 0) return 0;
-  if (!entries.some((p) => p.place === place)) return 0;
+  if (entries.length === 0) return new Map();
 
   const safePool = Number.isFinite(pool) && pool > 0 ? pool : 0;
-  if (safePool === 0) return 0;
+  if (safePool === 0) return new Map();
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -177,7 +188,7 @@ export function computePlacePrize(
    * and starving the last one.
    */
   const poolCents = Math.round(safePool * 100);
-  if (poolCents <= 0) return 0;
+  if (poolCents <= 0) return new Map();
 
   /** The unit, normalised once. A nonsense value is a cent, never a grid. */
   const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
@@ -186,7 +197,7 @@ export function computePlacePrize(
   const bp = (pct: number) => Math.round(pct * 100);
 
   const totalBp = entries.reduce((sum, p) => sum + bp(p.percentage), 0);
-  if (totalBp <= 0) return 0;
+  if (totalBp <= 0) return new Map();
 
   /**
    * THE WHOLE LADDER IS BUILT AT ONCE, then the caller's place is read out of
@@ -244,7 +255,7 @@ export function computePlacePrize(
     for (let i = 0; i < ordered.length; i++) {
       centsByPlace.set(ordered[i].place, i < unitsInPool ? unit : 0);
     }
-    return (centsByPlace.get(place) ?? 0) / 100;
+    return new Map([...centsByPlace].map(([place, cents]) => [place, cents / 100]));
   }
 
   for (let i = 0; i < ordered.length; i++) {
@@ -263,7 +274,7 @@ export function computePlacePrize(
     remaining -= cents;
   }
 
-  return (centsByPlace.get(place) ?? 0) / 100;
+  return new Map([...centsByPlace].map(([place, cents]) => [place, cents / 100]));
 }
 
 /**

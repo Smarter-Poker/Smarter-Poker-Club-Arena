@@ -1446,6 +1446,11 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Retention bounds retained prefixes before accounting guards
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/hand-prune-bounded-scan.sql --candidate supabase/migrations/20261026174211_the_retention_scan_bounds_work_before_evaluating_guards.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
       - name: Cash horses use bankroll eligibility and table closure preserves seats
         if: matrix.shard == 2
         env:
@@ -1474,6 +1479,13 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           QUICK_CLUB_TEST_WORK: ${{ runner.temp }}
         run: python3 -B scripts/ci/test-quick-club-opening.py
+
+      - name: Digest player periods stay within one daily request
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-digest-player-period.py
 
       - name: Digest database sources stay qualified
         if: matrix.shard == 2
@@ -1646,6 +1658,7 @@ jobs:
           node --test scripts/qualification/stable-admin-close-selector/source.test.mjs
           node scripts/qualify-stable-admin-floor.mjs
           node scripts/qualify-stable-admin-close-selector.mjs
+          node scripts/qualify-lightning-rejoin.mjs
       - name: Stable Admin original cancellation and emergency-stop writers qualify on native PostgreSQL 17
         if: matrix.shard == 3
         env:

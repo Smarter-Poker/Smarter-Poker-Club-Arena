@@ -1325,29 +1325,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     return { success: true, willFoldNextHand };
   }
 
-  /**
-   * LEAVE MEANS NOW (Dan 2026-10-25): "IF A USER CLICKS LEAVE GAME, IT NEEDS
-   * TO LEAVE GAME RIGHT AWAY ... EVEN IF ITS IN THE MIDDLE OF A HAND." And
-   * "AVATARS SHOULD NOT LEAVE THE TABLE UNTIL AFTER THEIR ACTION IS
-   * COMPLETED."
-   *
-   * Folds a leaving player out of the live hand at once. On their turn that
-   * is the ordinary fold; off their turn it is the controller's early fold
-   * (the same door Lightning uses), which records and broadcasts a real FOLD
-   * immediately and leaves the player whose turn it is on their own clock.
-   *
-   * It used to queue an `auto_fold` pre-action whenever it was not the
-   * leaver's turn, and the caller sat them out straight away. Every watcher
-   * then saw the seat grey out, lose its cards and wear SITTING OUT with no
-   * fold ever shown, and the player stayed live in the hand until action
-   * came round to them. That is the avatar leaving before its action was
-   * done, and the leave not happening "now".
-   *
-   * Returns true while the seat is STILL LIVE in the hand after the attempt:
-   * an all-in seat (it cannot fold; it plays the hand out and settlement
-   * cashes it out), or the rare stage where no fold is possible yet (the
-   * queued auto_fold remains the fallback there).
-   */
+  /** Leave prevents another deal now, but the hand folds only on this seat's turn. */
   protected foldLeaverNow(userId: string): boolean {
     const hc = this.handController;
     if (!hc) return false;
@@ -1360,7 +1338,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       folded =
         seatPlayer.seat === state.currentPlayerSeat
           ? hc.performAction(seatPlayer.seat, 'fold', undefined, 'forced') === true
-          : hc.performImmediateFold(seatPlayer.seat, 'forced') === true;
+          : false;
     } catch (err) {
       console.warn(`[ServerTableEngine:${this.tableId}] Fold on leave threw: ${err}`);
     }

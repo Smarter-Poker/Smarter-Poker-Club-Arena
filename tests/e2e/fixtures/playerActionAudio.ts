@@ -45,14 +45,23 @@ async function render(actions: { action: string; amount?: number; at?: number }[
   const samples = buffer.getChannelData(0);
   let peak = 0,
     energy = 0,
-    last = 0;
+    last = 0,
+    lowEnergy = 0,
+    low = 0;
   for (let i = 0; i < samples.length; i += 1) {
     if (!Number.isFinite(samples[i])) throw new Error('Nonfinite rendered audio');
     peak = Math.max(peak, Math.abs(samples[i]));
     energy += samples[i] ** 2;
+    low += (1 - Math.exp((-2 * Math.PI * 600) / ctx.sampleRate)) * (samples[i] - low);
+    lowEnergy += low ** 2;
     if (Math.abs(samples[i]) > 0.0001) last = i;
   }
-  return { peak, rms: Math.sqrt(energy / samples.length), duration: last / ctx.sampleRate };
+  return {
+    peak,
+    rms: Math.sqrt(energy / samples.length),
+    duration: last / ctx.sampleRate,
+    lowFraction: lowEnergy / energy,
+  };
 }
 Object.assign(window, {
   audioFixture: {

@@ -1,0 +1,357 @@
+{
+  "provenance": "Synthetic production-worker graph and request excerpt captured by the PLO6 diagnostic; unused action history omitted. No live player data. Full original capture retained in task evidence.",
+  "sourceRevision": "506d90b93a5d9b1017a1a16c84c65e1d9e4f90af",
+  "context": {
+    "player": {
+      "seat": 1,
+      "user_id": "40000000-0000-4000-8000-000000000080",
+      "username": "H0",
+      "stack": 142,
+      "bet": 0,
+      "totalInvested": 58,
+      "cards": [
+        {
+          "rank": "7",
+          "suit": "hearts"
+        },
+        {
+          "rank": "3",
+          "suit": "spades"
+        },
+        {
+          "rank": "Q",
+          "suit": "spades"
+        },
+        {
+          "rank": "2",
+          "suit": "clubs"
+        },
+        {
+          "rank": "4",
+          "suit": "clubs"
+        },
+        {
+          "rank": "T",
+          "suit": "diamonds"
+        }
+      ],
+      "is_folded": false,
+      "is_all_in": false,
+      "is_sitting_out": false,
+      "is_horse": true,
+      "returnedUncalled": 0,
+      "deadInvested": 0,
+      "individualAnteInvested": 0,
+      "knownDeadCards": []
+    },
+    "gameState": {
+      "stateSchemaVersion": 1,
+      "dealtSeatIds": [1, 2, 3, 4, 5],
+      "blindSeats": {
+        "smallBlind": 5,
+        "bigBlind": 1
+      },
+      "asset": "chips",
+      "chipUnit": 0.01,
+      "bbjConfig": null,
+      "heroSeat": 1,
+      "currentPlayerSeat": 1,
+      "legalActions": ["fold", "call", "all_in"],
+      "toCall": 123,
+      "minRaiseTo": null,
+      "maxRaiseTo": null,
+      "bettingStructure": "pot_limit",
+      "fixedBetSize": null,
+      "fixedLimitSmallBet": null,
+      "wagersCapped": false,
+      "pots": [
+        {
+          "amount": 123,
+          "eligiblePlayers": [
+            "40000000-0000-4000-8000-000000000080",
+            "40000000-0000-4000-8000-000000000084"
+          ]
+        },
+        {
+          "amount": 123,
+          "eligiblePlayers": ["40000000-0000-4000-8000-000000000084"]
+        }
+      ],
+      "contestablePot": 246,
+      "rakeConfig": {
+        "percent": 5,
+        "cap": 6,
+        "noFlopNoDrop": true
+      },
+      "variantRules": {
+        "holeCardsDealt": 6,
+        "holeCardsUse": "exactly_two",
+        "boardCardsUse": "exactly_three",
+        "deckSize": 52,
+        "splitLow8OrBetter": false
+      },
+      "players": [
+        {
+          "seat": 1,
+          "user_id": "40000000-0000-4000-8000-000000000080",
+          "username": "H0",
+          "stack": 142,
+          "bet": 0,
+          "totalInvested": 58,
+          "cards": [],
+          "is_folded": false,
+          "is_all_in": false,
+          "is_sitting_out": false,
+          "is_horse": true,
+          "returnedUncalled": 0,
+          "deadInvested": 0,
+          "individualAnteInvested": 0
+        },
+        {
+          "seat": 2,
+          "user_id": "40000000-0000-4000-8000-000000000081",
+          "username": "H1",
+          "stack": 237,
+          "bet": 0,
+          "totalInvested": 0,
+          "cards": [],
+          "is_folded": true,
+          "is_all_in": false,
+          "is_sitting_out": false,
+          "is_horse": true,
+          "returnedUncalled": 0,
+          "deadInvested": 0,
+          "individualAnteInvested": 0
+        },
+        {
+          "seat": 3,
+          "user_id": "40000000-0000-4000-8000-000000000082",
+          "username": "H2",
+          "stack": 274,
+          "bet": 0,
+          "totalInvested": 0,
+          "cards": [],
+          "is_folded": true,
+          "is_all_in": false,
+          "is_sitting_out": false,
+          "is_horse": true,
+          "returnedUncalled": 0,
+          "deadInvested": 0,
+          "individualAnteInvested": 0
+        },
+        {
+          "seat": 4,
+          "user_id": "40000000-0000-4000-8000-000000000083",
+          "username": "H3",
+          "stack": 304,
+          "bet": 0,
+          "totalInvested": 7,
+          "cards": [],
+          "is_folded": true,
+          "is_all_in": false,
+          "is_sitting_out": false,
+          "is_horse": true,
+          "returnedUncalled": 0,
+          "deadInvested": 0,
+          "individualAnteInvested": 0
+        },
+        {
+          "seat": 5,
+          "user_id": "40000000-0000-4000-8000-000000000084",
+          "username": "H4",
+          "stack": 167,
+          "bet": 123,
+          "totalInvested": 181,
+          "cards": [],
+          "is_folded": false,
+          "is_all_in": false,
+          "is_sitting_out": false,
+          "is_horse": true,
+          "returnedUncalled": 0,
+          "deadInvested": 0,
+          "individualAnteInvested": 0
+        }
+      ],
+      "communityCards": [
+        {
+          "rank": "4",
+          "suit": "spades"
+        },
+        {
+          "rank": "A",
+          "suit": "spades"
+        },
+        {
+          "rank": "T",
+          "suit": "spades"
+        },
+        {
+          "rank": "8",
+          "suit": "hearts"
+        },
+        {
+          "rank": "T",
+          "suit": "clubs"
+        }
+      ],
+      "communityCards2": [],
+      "communityCards3": [],
+      "bombPot": false,
+      "boardCount": 1,
+      "pot": 246,
+      "currentBet": 123,
+      "minRaise": 123,
+      "lastRaise": 123,
+      "stage": "river",
+      "gameVariant": "plo6",
+      "bigBlind": 2,
+      "dealerSeat": 4,
+      "gameMode": "cash",
+      "format": "cash",
+      "ante": 0,
+      "straddleActive": false,
+      "commitmentCapRemaining": null
+    }
+  },
+  "decision": {
+    "action": "call",
+    "amount": 123,
+    "thinkTime": 4420,
+    "policyGraph": {
+      "version": "horse-policy-order-v3",
+      "transitions": [
+        {
+          "node": "reference",
+          "before": null,
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 19.214833
+        },
+        {
+          "node": "reference_legality",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.016208999999889784
+        },
+        {
+          "node": "variant_policy",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.953291999999692
+        },
+        {
+          "node": "tournament_utility",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.000792000000274129
+        },
+        {
+          "node": "tournament_continuation",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.0005830000000059954
+        },
+        {
+          "node": "variant_utility_guard",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.001958999999715161
+        },
+        {
+          "node": "joint_policy",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.22054100000013932
+        },
+        {
+          "node": "corrective_policy",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "all_in",
+            "amount": null
+          },
+          "changed": false,
+          "elapsedMs": 0.0014160000000629225
+        },
+        {
+          "node": "wager_rules",
+          "before": {
+            "action": "all_in",
+            "amount": null
+          },
+          "after": {
+            "action": "call",
+            "amount": 123
+          },
+          "changed": true,
+          "elapsedMs": 5.001874999999927
+        },
+        {
+          "node": "timing",
+          "before": {
+            "action": "call",
+            "amount": 123
+          },
+          "after": {
+            "action": "call",
+            "amount": 123
+          },
+          "changed": false,
+          "elapsedMs": 0.011207999999896856
+        }
+      ],
+      "finalAction": {
+        "action": "call",
+        "amount": 123
+      }
+    }
+  }
+}

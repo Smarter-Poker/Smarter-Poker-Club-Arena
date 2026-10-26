@@ -2,6 +2,22 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-diamond-balancing-8200-qualified-now",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" The owner subsequently ordered finishing all pending fixes and publication in this same chat. One certified activation containing the actual protected PR #8200 squash 8974a503cb13874e65c8b6f231bf4f3b47631bac. All applicable required source checks passed before that protected merge. The earlier fb048 anchor was consumed by serving a274417819f8331db77d3f3dfbbe47b3c0822164 before #8200 merged, so it cannot authorize installing this correction. This entry names only the qualified balancing merge, ends once it is serving, and expires within six hours. Preserve exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, rollback reserve, the existing one-window-per-hour seal and thaw. No migrations, second publisher, watcher or direct restart.",
+      "contains": "8974a503cb13874e65c8b6f231bf4f3b47631bac",
+      "notBefore": "2026-10-26T18:14:35Z",
+      "notAfter": "2026-10-27T00:13:35Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-diamond-balancing-and-todays-work-now",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" One immediate certified activation of the protected main carrying this entry and the Diamond Arena table-balancing repair in PR #8200. The minimum protected anchor is today's latest merged main fb048ff8c3a40961aabdb3f049d9855ba1e90a09 (#8190), independently proved absent from the currently serving dbc2f328dc9edce7f89f4935b82e0f32e2932f80; this source PR also carries the balancing repair and must pass its own required checks before its entry can reach main. The order covers today's authorized work rather than only an earlier narrow horse fix. Do not treat anchor ancestry alone as proof that PR #8200 is live: independently prove the balancing merge is included and its live behavior. Preserve exact-SHA staging, last-hand notice, hand-boundary drain, durable database freeze, certificate, rollback reserve, the one-window-per-hour seal and thaw. No migrations are installed by this entry. This entry expires and grants nothing once its protected anchor is serving.",
+      "contains": "fb048ff8c3a40961aabdb3f049d9855ba1e90a09",
+      "notBefore": "2026-10-26T15:08:55Z",
+      "notAfter": "2026-10-26T21:07:55Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-force-activate-every-horse-phase-now",
       "ownerOrder": "Dan, 2026-10-26 in this chat: \"FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING\", after asking that every horse-brain update and all 15 phases be 100% activated for every horse; standing order the same evening for horse-brain changes: \"MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8182, merge 4a30c966e150f6edc253ec9c8ccc9e007ace3fea: Phases 8, 10, 11, 12, 13 and 14 of the horse brain make live decisions under the owner's order instead of running in shadow. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "4a30c966e150f6edc253ec9c8ccc9e007ace3fea",

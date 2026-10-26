@@ -1,3 +1,5 @@
+import { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
+export { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
 import { qualifyHorseRetainedDecisionEffects, horseRetainedPlanContext } from './effects.js';
 import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
 import { horsePhase6AttributionMatchesSnapshot } from '../../engine/HorsePhase6Attribution.js';
@@ -92,6 +94,8 @@ export interface HorseJournalHandReview {
   retainedRecords: number;
   acceptedHorseActions: number;
   matchedActions: number;
+  independentReadActions: number;
+  independentReadsVerified: boolean;
   retiredDecisions: number;
   discardDecisions: number;
   acceptedDiscardActions: number;
@@ -118,6 +122,8 @@ const empty = (): HorseJournalHandReview => ({
   retainedRecords: 0,
   acceptedHorseActions: 0,
   matchedActions: 0,
+  independentReadActions: 0,
+  independentReadsVerified: false,
   retiredDecisions: 0,
   discardDecisions: 0,
   acceptedDiscardActions: 0,
@@ -249,6 +255,7 @@ function completedActionsAreValid(actions: unknown): boolean {
 }
 
 type Capture = {
+  observerReads?: unknown;
   snapshot: FastHorseDecisionRequest | DeepHorseDecisionRequest;
   readFrame: Parameters<typeof decodeHorseDecisionReads>[0];
   decision: HorseDecision;
@@ -557,6 +564,7 @@ export function reconcileHorseJournalHand(
     });
     out.acceptedHorseActions = expected.size;
     const matches = new Map<number, number>();
+    const independentMatches = new Map<number, number>();
     for (const turn of turns.values()) {
       if (turn.decisions.length > 1 || turn.executions.length > 1) {
         gap('turn_conflict');
@@ -736,16 +744,27 @@ export function reconcileHorseJournalHand(
           continue;
         }
         matches.set(binding.actionOrdinal, (matches.get(binding.actionOrdinal) ?? 0) + 1);
+        if (horseObserverReadsWereIndependent(d.observerReads, s))
+          independentMatches.set(
+            binding.actionOrdinal,
+            (independentMatches.get(binding.actionOrdinal) ?? 0) + 1
+          );
       } catch {
         gap('input_mismatch');
       }
     }
     for (const ordinal of expected) {
       const count = matches.get(ordinal) ?? 0;
-      if (count === 1) out.matchedActions++;
-      else gap(count > 1 ? 'multiple_decisions_for_action' : 'unmatched_horse_action');
+      if (count === 1) {
+        out.matchedActions++;
+        if (independentMatches.get(ordinal) === 1) out.independentReadActions++;
+      } else gap(count > 1 ? 'multiple_decisions_for_action' : 'unmatched_horse_action');
     }
     out.status = out.gaps.length ? 'incomplete' : 'reconciled';
+    out.independentReadsVerified =
+      out.status === 'reconciled' &&
+      out.acceptedHorseActions > 0 &&
+      out.independentReadActions === out.acceptedHorseActions;
     return out;
   } catch {
     gap('invalid_records');

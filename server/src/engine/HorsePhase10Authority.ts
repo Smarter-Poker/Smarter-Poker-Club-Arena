@@ -78,7 +78,7 @@ export const PHASE10_RUNNING_CONTRACT_DIGEST: string = plo4StrengthContractDiges
  * sources (HorseReferenceDecisionSources.ts): the PLO4 pack returns the
  * reference wherever it does not deviate, and those files decide it.
  */
-export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v4';
+export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v5';
 
 /**
  * The code that determines PLO4 candidate behaviour, as server-relative source
@@ -104,9 +104,7 @@ export const HORSE_PHASE10_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/engine/omaha/OmahaCardFacts.ts',
   'src/engine/PokerEngine.ts',
   'src/engine/multiway/DealtSeatCensus.ts',
-  'src/engine/HorseObservationWindow.ts',
   'src/engine/HorseTournamentUtilityEvidence.ts',
-  'src/engine/HorseMind.ts',
   // v3 (2026-10-16): the reference decision's own sources (the digest hole).
   ...HORSE_REFERENCE_DECISION_SOURCE_FILES,
 ]);

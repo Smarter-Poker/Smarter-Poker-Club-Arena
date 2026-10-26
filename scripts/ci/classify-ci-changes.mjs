@@ -334,7 +334,7 @@ export function classifyChangedPaths(paths) {
   );
   // Script/fixture-only edits must admit accounting and its routing tests.
   const commitmentAudit = matches(
-    /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
+    /^(scripts\/ci\/test-horse-(?:commitment-audit|own-public-history)\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
   );
   // THE LAW REGISTRY IS READ FROM DISK, SO IT HAS TO SEE ITS OWN DIRECTORY
   // (2026-09-20). `tests/law-registry.law.test.ts` readdirSync's docs/laws.d/

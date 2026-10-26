@@ -600,7 +600,7 @@ import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage'
 import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
+import { bestFive, cardKey } from '../utils/handEvaluator';
 import { ritAwardHighlights } from '../utils/ritAwardHighlights';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
@@ -622,42 +622,8 @@ import {
   showdownWinnerLine,
 } from '../lib/showdownPresentation';
 
-/** Rank ordering for the preflop label. Ace high; T/J/Q/K above the numbers. */
-const RANK_ORDER = (r: string): number =>
-  ({
-    '2': 2,
-    '3': 3,
-    '4': 4,
-    '5': 5,
-    '6': 6,
-    '7': 7,
-    '8': 8,
-    '9': 9,
-    T: 10,
-    J: 11,
-    Q: 12,
-    K: 13,
-    A: 14,
-  })[String(r).toUpperCase()] ?? 0;
-
-/** "A" -> "Ace", "T" -> "Ten", so the preflop label reads like a poker room. */
-const RANK_WORD = (r: string): string =>
-  ({
-    '2': 'Two',
-    '3': 'Three',
-    '4': 'Four',
-    '5': 'Five',
-    '6': 'Six',
-    '7': 'Seven',
-    '8': 'Eight',
-    '9': 'Nine',
-    T: 'Ten',
-    J: 'Jack',
-    Q: 'Queen',
-    K: 'King',
-    A: 'Ace',
-  })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { canonicalCards, normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+import { heroHandLabel } from '../lib/heroHandLabel';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 // The unit a printed amount is named in: Chips, or Diamonds at a Diamond seat.
@@ -21222,56 +21188,38 @@ function LiveTablePage({
     () => (tableState.communityCards || []).filter((c): c is Card => !!c),
     [tableState.communityCards]
   );
+  /* Every board in play (2026-10-25): a double- or triple-board bomb pot deals
+     full independent boards, and the label names the hand on each one. */
+  const heroBoard2Cards = useMemo(
+    () => (tableState.communityCards2 || []).filter((c): c is Card => !!c),
+    [tableState.communityCards2]
+  );
+  const heroBoard3Cards = useMemo(
+    () => (tableState.communityCards3 || []).filter((c): c is Card => !!c),
+    [tableState.communityCards3]
+  );
   /** Identity-independent keys: the memo below re-runs only on real changes. */
   const heroHoleKey = heroHoleCards.map(cardKey).join(',');
-  const heroBoardKey = heroBoardCards.map(cardKey).join(',');
+  const heroBoardKey = [heroBoardCards, heroBoard2Cards, heroBoard3Cards]
+    .map((b) => b.map(cardKey).join(','))
+    .join('|');
   const heroHandVariant = tableState.handVariant || tableState.gameType;
-  const heroCardsRef = useRef({ hole: heroHoleCards, board: heroBoardCards });
-  heroCardsRef.current = { hole: heroHoleCards, board: heroBoardCards };
+  const heroCardsRef = useRef({
+    hole: heroHoleCards,
+    boards: [heroBoardCards, heroBoard2Cards, heroBoard3Cards],
+  });
+  heroCardsRef.current = {
+    hole: heroHoleCards,
+    boards: [heroBoardCards, heroBoard2Cards, heroBoard3Cards],
+  };
 
+  /* The rules - a pair at most before the flop, both halves in hi-lo, every
+     board in a multi-board pot - live in src/lib/heroHandLabel.ts, pinned by
+     tests/unit/heroHandLabel.test.ts (Dan 2026-10-25: "IT MUST 100% OF THE
+     TIME DISPLAY THE BEST CURRENT HAND THAT THE USER HAS"). */
   const heroHandStrengthLive = useMemo<string | null>(() => {
-    const hole = heroCardsRef.current.hole;
-    if (hole.length < 2) return null;
-    const board = heroCardsRef.current.board;
-
-    let strength: string | null = null;
-    if (board.length === 0) {
-      const ranks = hole.map((c) => String(c.rank).toUpperCase());
-      const counts = new Map<string, number>();
-      for (const r of ranks) counts.set(r, (counts.get(r) || 0) + 1);
-      let best = null;
-      for (const [rank, n] of counts) {
-        if (!best || n > best.n || (n === best.n && RANK_ORDER(rank) > RANK_ORDER(best.rank))) {
-          best = { rank, n };
-        }
-      }
-      if (best) {
-        /* PINEAPPLE 2026-09-01: three in the hand, two of them survive the
-           discard, so trips preflop is a hand that cannot be played and must
-           not be named. Capped rather than special-cased so the rest of this
-           branch - the high-card wording below included - is untouched. See
-           isPineappleVariant in handEvaluator.ts for the same rule on the
-           flop. */
-        const holdable = isPineappleVariant(heroHandVariant) ? Math.min(best.n, 2) : best.n;
-        if (holdable >= 4) strength = 'Four of a Kind';
-        else if (holdable === 3) strength = 'Three of a Kind';
-        else if (holdable === 2) strength = 'Pair';
-        else {
-          const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
-          strength = `${RANK_WORD(high)} High`;
-        }
-      }
-    } else {
-      try {
-        const best = bestFive(hole, board, heroHandVariant);
-        strength = best?.name ?? null;
-      } catch {
-        strength = null;
-      }
-    }
-    return strength;
-
-    // are read through heroCardsRef; these keys change exactly when they do.
+    return heroHandLabel(heroCardsRef.current.hole, heroCardsRef.current.boards, heroHandVariant);
+    // The cards are read through heroCardsRef; these keys change exactly when they do.
   }, [heroHoleKey, heroBoardKey, heroHandVariant]);
 
   /* Once the hand is over, hold the last known strength rather than letting

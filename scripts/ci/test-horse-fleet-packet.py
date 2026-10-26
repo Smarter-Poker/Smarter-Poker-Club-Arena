@@ -164,6 +164,16 @@ class PacketContracts(unittest.TestCase):
   q=module.query('2000-01-01T00:00:00.000Z','2000-01-01T00:15:00.000Z')
   self.assertIn("statement_timeout='1500ms'",q);self.assertIn("lock_timeout='250ms'",q)
   self.assertIn('WHERE l.hand_id IS NULL AND table_id=h.table_id AND hand_number=h.hand_number',q)
+ def test_capture_diagnostics_preserves_bounds_gaps_and_unknown_without_private_keys(self):
+  a={'selectedHands':759,'sourceOwnerCounts':{'classic':2,'lightning':757}}
+  o={'selectedHands':759,'inspectedHands':200,'remainingHands':559,'validatedBytes':67108864,'acceptedDecisions':328,'boundReached':True,'captureUnfinished':True,'gaps':{'bound_reached':1,'SECRET-HORSE':2}}
+  d=module.capture_diagnostics(a,o)
+  self.assertEqual(d['gaps'],{'bound_reached':1,'other_retained_capture_gap':2});self.assertNotIn('SECRET',json.dumps(d));self.assertFalse(d['inspectedHandsIsContinuationCursor'])
+  self.assertIsNone(module.capture_diagnostics(a,{})['boundReached'])
+  self.assertIsNone(module.capture_diagnostics(a,{})['gaps'])
+  for field,value in [('inspectedHands',760),('remainingHands',-1),('validatedBytes',67108865),('acceptedDecisions',True),('boundReached',1)]:
+   bad=dict(o);bad[field]=value
+   with self.assertRaises(ValueError):module.capture_diagnostics(a,bad)
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)

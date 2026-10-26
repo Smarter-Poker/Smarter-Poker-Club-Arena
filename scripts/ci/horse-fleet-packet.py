@@ -147,13 +147,43 @@ def phase_summary(observation):
         phases[key]=axes
     return {'status':'reported','schema':'horse-fleet-phase-summary-v1','counterUnit':'selected_accepted_decisions','acceptedDecisions':n,'phases':phases,'allPhasesVerified':False}
 
+# Maintained fleet/reconciler closed literals only; never emit arbitrary keys.
+CAPTURE_GAP_REASONS = frozenset(['accepted_hand_conflict', 'accepted_hand_missing', 'action_origin_unavailable', 'actor_outside_roster', 'binding_unavailable', 'bound_reached', 'capture_outside_window', 'capture_unavailable', 'decision_missing', 'decision_outside_window', 'discard_binding_unavailable', 'discard_capture_conflict', 'discard_decision_missing', 'discard_execution_missing', 'discard_input_mismatch', 'execution_conflict', 'execution_missing', 'fallback_lineage_unavailable', 'hand_bound_reached', 'input_mismatch', 'invalid_records', 'multiple_decisions_for_action', 'plan_receipt_conflict', 'plan_receipt_missing', 'plan_receipt_unbound', 'read_frame_unavailable', 'record_conflict', 'request_lifecycle_missing', 'source_mismatch', 'storage_close_unavailable', 'turn_conflict', 'unmatched_discard_action', 'unmatched_horse_action'])
+def capture_diagnostics(attestation, observation):
+    def count(value, maximum):
+        if type(value) is not int or not 0<=value<=maximum:raise ValueError('capture_counts')
+        return value
+    selected=count(attestation.get('selectedHands'),10000)
+    owners=attestation.get('sourceOwnerCounts')
+    if not isinstance(owners,dict) or set(owners)!={'classic','lightning'} or sum(count(v,10000) for v in owners.values())!=selected:raise ValueError('capture_source_counts')
+    out={'selectedHands':selected,'sourceOwnerCounts':dict(owners),'inspectedHandsIsContinuationCursor':False,'inspectionMayIncludeIncompleteHand':True}
+    fields={'inspectedHands':selected,'remainingHands':selected,'validatedBytes':64*1024*1024,'acceptedDecisions':256*selected}
+    for key,maximum in fields.items():out[key]=count(observation[key],maximum) if key in observation else None
+    if 'selectedHands' in observation and count(observation['selectedHands'],10000)!=selected:raise ValueError('capture_counts')
+    if out['inspectedHands'] is not None and out['remainingHands'] is not None and out['inspectedHands']+out['remainingHands']!=selected:raise ValueError('capture_counts')
+    for key in ['boundReached','captureUnfinished']:
+        if key in observation and type(observation[key]) is not bool:raise ValueError('capture_counts')
+        out[key]=observation.get(key)
+    gaps=observation.get('gaps')
+    out['gaps']=None
+    if gaps is not None:
+        if not isinstance(gaps,dict):raise ValueError('capture_gaps')
+        safe={}
+        for reason,value in gaps.items():
+            number=count(value,256*selected+32)
+            key=reason if reason in CAPTURE_GAP_REASONS else 'other_retained_capture_gap'
+            safe[key]=safe.get(key,0)+number
+        out['gaps']=safe
+    out['missingFieldMeaning']='unknown'
+    return out
+
 def summarize(attestation,result):
     observation=(result.get('execution') or {}).get('observation') or {}
     count=observation.get('observedHorses')
     if not isinstance(count,int) or isinstance(count,bool) or not 0<=count<=1000:raise ValueError('counts')
     canonical=(attestation.get('authority')=='canonical_database_snapshot' and attestation.get('rosterCount')==1000 and bool(attestation.get('snapshot')) and re.fullmatch('[0-9a-f]{64}',attestation.get('packetDigest','')) is not None and attestation.get('packetDigest')==result.get('packetDigest') and attestation.get('sourceSha')==result.get('sourceSha') and result.get('qualifiedExecution') is True)
     complete=canonical and observation.get('completeHorseCoverage') is True and count==1000
-    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
+    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'captureDiagnostics':capture_diagnostics(attestation,observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'},'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
 
 def database_failure(stderr):
     # VERBOSITY=verbose supplies a machine SQLSTATE. Never return the message,

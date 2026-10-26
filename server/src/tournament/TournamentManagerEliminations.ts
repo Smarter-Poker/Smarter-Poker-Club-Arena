@@ -573,6 +573,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // would create the concurrent writes the scheduler cap is designed to
     // prevent. Stalled work remains counted/alerted until it really settles.
     if (this.isProcessingEliminations) return;
+    // A gap-balance move is being made at a source's own boundary. It plans
+    // and moves seats; this sweep may too, so it yields and is owed again the
+    // moment that move settles (claimGapBalanceAtBoundary).
+    if (this.boundaryBalanceInFlight) {
+      this.boundaryBalanceOwesSweep = true;
+      return;
+    }
 
     this.isProcessingEliminations = true;
     this.eliminationSweepStartedAt = Date.now();
@@ -2171,6 +2178,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (completedWholeSweep && this.stageEndPause && this.running && !signal.aborted) {
         this.advanceStageEndBarrier();
       }
+      // A source that parked while this sweep held the manager is moved now.
+      this.onEliminationSweepSettled();
     }
   }
 

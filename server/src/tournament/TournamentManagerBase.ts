@@ -3016,6 +3016,27 @@ export abstract class TournamentManagerBase {
    * A field with a break or seat move outstanding is served from the
    * scheduler's consolidation lane until a balance stage finishes clean.
    */
+  /**
+   * A parked gap-balance source this manager will move itself, at once.
+   * True means the edge is handled here and needs no queued sweep. The base
+   * manager balances nothing, so it never claims one.
+   */
+  protected claimGapBalanceAtBoundary(_tableId: string): boolean {
+    return false;
+  }
+
+  /**
+   * True while a gap-balance move is being made at a source's own boundary.
+   * A sweep admitted meanwhile yields at once and is owed again afterwards
+   * (`boundaryBalanceOwesSweep`), so the two never plan seat moves at the
+   * same time.
+   */
+  protected boundaryBalanceInFlight = false;
+  protected boundaryBalanceOwesSweep = false;
+
+  /** Called as every admitted sweep settles; the balancing manager drains its edge work here. */
+  protected onEliminationSweepSettled(): void {}
+
   protected declareConsolidationOutstanding(outstanding: boolean): void {
     if (this.consolidationDeclared === outstanding) return;
     if (tournamentEliminationScheduler.setConsolidating(this.tournamentId, outstanding)) {
@@ -3096,7 +3117,7 @@ export abstract class TournamentManagerBase {
         this.requestEliminationSweep();
       }
     });
-    engine.onPauseReady(() => {
+    engine.onPauseReady((parkedTableId) => {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
@@ -3124,7 +3145,14 @@ export abstract class TournamentManagerBase {
       // A seat move or table break whose one-second probe missed is waiting
       // for exactly this edge. Wake the sweep that claims it now, rather than
       // leaving the claim to whichever redrive the shared scheduler reaches.
-      if (engine.awaitsTournamentMoveClaim())
+      //
+      // A GAP-BALANCE SOURCE IS MOVED AT ITS OWN EDGE (2026-10-26). A source
+      // fenced to give a player to a short table is moved here, at the
+      // boundary it just reached, instead of waiting in the shared queue for a
+      // sweep that has to arrive inside the fence's 15 second window; see
+      // TournamentManager.claimGapBalanceAtBoundary. A break source (durable)
+      // still goes to the sweep, which owns its park record.
+      if (engine.awaitsTournamentMoveClaim() && !this.claimGapBalanceAtBoundary(parkedTableId))
         this.requestEliminationSweep('tournament_move_parked');
       // A table parking is the edge the stage-end barrier waits for.
       if (this.stageEndPause) this.advanceStageEndBarrier();

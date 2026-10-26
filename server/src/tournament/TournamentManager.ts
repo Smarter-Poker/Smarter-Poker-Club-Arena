@@ -2612,9 +2612,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   private readonly unprovenMovementParkSince = new Map<string, number>();
 
-  protected async withdrawUnprovenMovementPark(
-    state: TournamentTableBreakState
-  ): Promise<boolean> {
+  protected async withdrawUnprovenMovementPark(state: TournamentTableBreakState): Promise<boolean> {
     const refusal = this.lastBreakPreparationRefusal(state.break_id);
     if (
       !state.ok ||
@@ -4168,6 +4166,8 @@ export class TournamentManager extends TournamentManagerEliminations {
             if (!this.eliminationMutationAllowed()) return;
             if (safe) continue;
             unsafeTables.add(t);
+            // Its own park edge moves the player (claimGapBalanceAtBoundary).
+            this.gapBalanceFencedSources.add(t);
             /* A DEFERRED MOVE FENCES ITS SOURCE (2026-10-02). This check is a
                snapshot, and a dealing table is between hands for a moment
                only, so a move deferred here was deferred again on every
@@ -4199,6 +4199,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           }
           if (safeMoves.length > 0) {
             const movedCount = await this.executePlayerMoves(safeMoves);
+            for (const m of safeMoves) this.gapBalanceFencedSources.delete(m.fromTableId);
             if (!this.eliminationMutationAllowed()) return;
             if (movedCount < safeMoves.length) {
               console.warn(
@@ -4218,6 +4219,187 @@ export class TournamentManager extends TournamentManagerEliminations {
           }
         }
       }
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A SHORT TABLE IS FILLED AT THE BIG TABLE'S NEXT HAND BOUNDARY
+   *  (Dan, 2026-10-26: "TABLES NEED TO ALWAYS BE BALANCED 100% OF THE TIME
+   *  NO MATTER WHAT")
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The gap rebalance (STEP 2 of checkTableBalance) plans "move one player
+   * from the 8-handed table to the 3-handed one". The 8-handed table is
+   * almost always mid-hand when the plan is made, so the move is deferred and
+   * the source is fenced: it parks after its hand and waits 15 seconds
+   * (TOURNAMENT_MOVE_UNCLAIMED_PARK_MS) for a sweep to come back and claim it.
+   * The claim used to need a WHOLE new sweep: queued behind every other
+   * tournament in the shared scheduler, re-running every stage, re-reading
+   * the board, inside a 5 second budget on a loaded event loop. It almost
+   * never arrived inside the window, the fence expired, the table dealt on,
+   * and the next plan fenced it again.
+   *
+   * Measured on production 2026-10-26 05:00-06:00 UTC: 390 seat moves that
+   * broke a table and 30 that balanced one, platform wide, while live
+   * Diamond Arena events sat at 8/3, 9/4 and 7/6/6/6/6/6/5/5/4 for 10-45
+   * minutes with players busting the whole time. Every one of them balanced
+   * at the :55 break, the one moment their tables were parked anyway.
+   *
+   * A floor balances the big table at its own next hand boundary. So does
+   * this: the source's park edge (TournamentManagerBase onPauseReady) calls
+   * here, the board is read fresh, the planner is asked again, and the moves
+   * whose source is this parked table are made at once through the same
+   * atomic move door (executePlayerMoves). Sources the new plan names that
+   * are still dealing are fenced the same way, so each one is moved at its
+   * own next boundary. A parked source the fresh plan no longer needs is
+   * released immediately, so the table never sits idle for nothing.
+   *
+   * Never concurrent with a sweep: it runs only while no sweep holds the
+   * manager, a sweep admitted meanwhile yields and is owed again, and an edge
+   * that arrives during a sweep is drained when that sweep settles.
+   */
+  private readonly gapBalanceFencedSources = new Set<string>();
+  private boundaryBalanceRequested = false;
+
+  protected override claimGapBalanceAtBoundary(tableId: string): boolean {
+    if (!this.gapBalanceFencedSources.has(tableId)) return false;
+    this.boundaryBalanceRequested = true;
+    this.drainBoundaryBalance();
+    return true;
+  }
+
+  protected override onEliminationSweepSettled(): void {
+    if (this.boundaryBalanceRequested) this.drainBoundaryBalance();
+  }
+
+  private drainBoundaryBalance(): void {
+    if (this.boundaryBalanceInFlight || this.isProcessingEliminations || !this.running) return;
+    this.boundaryBalanceInFlight = true;
+    void (async () => {
+      try {
+        while (this.boundaryBalanceRequested && this.running) {
+          this.boundaryBalanceRequested = false;
+          await this.balanceParkedGapSources();
+        }
+      } catch (error) {
+        reportError(error, 'Tournament.boundary_balance_failed', {
+          tournamentId: this.tournamentId,
+        });
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      } finally {
+        this.boundaryBalanceInFlight = false;
+        if (this.boundaryBalanceOwesSweep) {
+          this.boundaryBalanceOwesSweep = false;
+          if (this.running) this.requestEliminationSweep('boundary_balance_settled');
+        }
+      }
+    })();
+  }
+
+  private async balanceParkedGapSources(): Promise<void> {
+    const parked = new Map<string, ServerTableEngine>();
+    for (const tableId of [...this.gapBalanceFencedSources]) {
+      const engine = this.tableEngines.get(tableId);
+      if (!engine || !this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
+        this.gapBalanceFencedSources.delete(tableId);
+        continue;
+      }
+      if (engine.awaitsTournamentMoveClaim()) parked.set(tableId, engine);
+    }
+    if (parked.size === 0) return;
+
+    // Give a parked source back to the dealer unless a break owns it.
+    const release = (tableId: string): void => {
+      this.gapBalanceFencedSources.delete(tableId);
+      const engine = parked.get(tableId);
+      if (engine && !this.retainsTournamentBreakSource(tableId, engine))
+        engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+    };
+    const releaseAll = (): void => {
+      for (const tableId of parked.keys()) release(tableId);
+    };
+
+    // Work that belongs to the sweep alone: a frozen platform, a tournament
+    // break, a table retirement or a seat move whose outcome is not yet known.
+    // The table deals on and the sweep plans again.
+    if (
+      isMaintenanceFrozen() ||
+      this.isOnBreak() ||
+      this.tournamentFinished ||
+      this.pendingTableBreakRetirement ||
+      this.pendingTournamentSeatMoveOutcomes.size > 0 ||
+      !this.tournamentBreakDiscoveryComplete ||
+      this.mixedRecovery !== null ||
+      !this.eliminationMutationAllowed()
+    ) {
+      releaseAll();
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+
+    const liveTableIds = await this.liveTournamentTableIdsWithPlayers();
+    if (liveTableIds === null) {
+      releaseAll();
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    const tables =
+      liveTableIds.length > 1
+        ? await this.loadBalancerTables(liveTableIds, 'balanceAtBoundary')
+        : null;
+    if (!tables || !this.tableBalancer.shouldRebalance(tables)) {
+      releaseAll();
+      if (!tables && liveTableIds.length > 1)
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+
+    const moves = this.tableBalancer.calculateMoves(tables);
+    const ready: MoveInstruction[] = [];
+    for (const move of moves) {
+      if (parked.has(move.fromTableId)) {
+        if (await this.waitForHandComplete(move.fromTableId)) ready.push(move);
+        continue;
+      }
+      // Still dealing: fence it, and its own next boundary moves the player.
+      if (this.gapBalanceFencedSources.has(move.fromTableId)) continue;
+      const sourceEngine = this.tableEngines.get(move.fromTableId);
+      if (
+        sourceEngine &&
+        this.gameServer.ownsTournamentTableEngine(move.fromTableId, sourceEngine)
+      ) {
+        this.gapBalanceFencedSources.add(move.fromTableId);
+        void sourceEngine
+          .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0)
+          .catch((error) =>
+            reportError(error, 'Tournament.rebalance_source_hold_failed', {
+              tournamentId: this.tournamentId,
+              tableId: move.fromTableId,
+            })
+          );
+      }
+    }
+
+    const moving = new Set(ready.map((move) => move.fromTableId));
+    for (const tableId of parked.keys()) if (!moving.has(tableId)) release(tableId);
+    if (ready.length === 0) return;
+
+    for (const tableId of moving) this.gapBalanceFencedSources.delete(tableId);
+    // executePlayerMoves claims each parked boundary, makes the atomic moves
+    // and gives the boundary back when its source is done.
+    const movedCount = await this.executePlayerMoves(ready);
+    const score = this.tableBalancer.evaluateBalance(tables);
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Balanced at the hand boundary: ${movedCount}/${ready.length} move(s) (gap was ${score.gap}, target <=1)`
+    );
+    // One coalesced follow-up proves the shape from fresh rows.
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+    if (movedCount > 0) {
+      await this.broadcast('table_rebalance', {
+        moveCount: movedCount,
+        reason: 'gap_balance',
+      });
     }
   }
 
@@ -4550,7 +4732,11 @@ export class TournamentManager extends TournamentManagerEliminations {
       { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
     );
     if (!this.eliminationMutationAllowed()) return;
-    const acknowledgement = (ackData ?? {}) as { ok?: boolean; reason?: string; requested?: number };
+    const acknowledgement = (ackData ?? {}) as {
+      ok?: boolean;
+      reason?: string;
+      requested?: number;
+    };
     if (
       ackError ||
       acknowledgement.ok !== true ||

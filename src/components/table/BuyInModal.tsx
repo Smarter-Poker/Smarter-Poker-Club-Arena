@@ -76,6 +76,12 @@ export interface BuyInModalProps {
    */
   diamondGamesClubId?: string | null;
   onPlayDiamonds?: (path: string) => void;
+  /**
+   * Rebuy mode only: the painted secondary plate reads LEAVE and runs this
+   * instead of closing (Lightning transition phase 2, the busted Lightning
+   * player). The corner close still only closes. Omitted, nothing changes.
+   */
+  onLeave?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -120,6 +126,7 @@ export function BuyInModal({
   diamondGamesClubId,
   onPlayDiamonds,
   onRetryBalance,
+  onLeave,
 }: BuyInModalProps) {
   const rebuyDialogRef = useFocusTrap(isOpen && purchaseKind === 'rebuy', '#buy-in-modal-title');
   // State
@@ -410,12 +417,23 @@ export function BuyInModal({
                 </strong>
               </React.Fragment>,
             ]}
-            secondary={{
-              label: 'Close',
-              'aria-label': 'Close Buy-In',
-              onClick: closeRebuy,
-              disabled: isProcessing,
-            }}
+            secondary={
+              onLeave
+                ? {
+                    label: 'Leave',
+                    'aria-label': 'Leave Table',
+                    onClick: () => {
+                      if (!confirmInFlightRef.current && !isProcessing) onLeave();
+                    },
+                    disabled: isProcessing,
+                  }
+                : {
+                    label: 'Close',
+                    'aria-label': 'Close Buy-In',
+                    onClick: closeRebuy,
+                    disabled: isProcessing,
+                  }
+            }
             primary={{
               label: isProcessing
                 ? 'Joining'

@@ -1,0 +1,10 @@
+# Lucky removal, balance and rejoin
+
+Owner request: remove Lucky from all tables, set account balance to 225 chips, fix rejoining.
+Scope: user 388dc5ea-0e9f-4a49-865f-d14737f58713, Kings Club a41434bb-8d0c-400a-8f0d-e8b3d65afed4; connected Lightning admission only.
+Owner: chat 01a17a14; branch fix/lucky-rejoin-01a17a14; base 7fdb2223b2.
+Policy 2.9 read 2026-10-26, canonical four paths under /Users/smarter.poker/Documents; manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b. Portable check --canonical passed. Full canonical content, storage, repository AGENTS/CLAUDE/playbook, publishing and deploy-paths read.
+Live data: initial wallet zero; PLO4 anchor stack 202; expired PLO5 anchor stack zero. Both removed through fn_cashout_seat_occupancy after self-aborting rollback probe; no live hand/reservation/exposure. Readback active seats 0 and balance 202. Occupancy receipts 534a8c68-2fa6-42cd-8b97-99508c8d014f and d63a0adf-f911-4b61-bdfe-3b76a769b0c3.
+23-chip house-funded owner adjustment rollback probe passed, exact balance 225; committed with key owner-lucky-225:01a17a14. Readback pending.
+Rejoin investigation: fn_cash_game_join returns seated for expired zero-stack anchors. Client buyIntoLightning assumes seated implies live pool and default readPoolSession returns closed-session UUID without checking state. Funded expired anchor also has no explicit pool reentry door. Need reproduction and smallest authoritative repair, maintained regression, protected delivery and live proof. Exact observed user error requested asynchronously.
+Readback confirmed balance 225, active seats 0, open sessions 0, one 23-chip key. Owner clarified it would not deal him in or actually sit him. Root repaired funded expired-anchor reentry before amount question and empty-anchor canonical exit before new purchase; closed pool UUID rejected. All 600 Lightning tests in 47 files passed. tsc --noEmit passed. Native PG17 qualification passed with real original pool/slot/cashout/session owners and synthetic surrounding inputs; registered in existing accounting CI shard 2. No engine code/replacement, only client/database.

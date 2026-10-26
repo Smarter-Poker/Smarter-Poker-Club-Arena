@@ -2962,7 +2962,7 @@ function rakeDrag(
  * and table commitment caps. When intent cannot be represented legally, this
  * degrades without committing extra chips: check first, otherwise fold.
  */
-function enforceAuthoritativeDecision(
+export function enforceAuthoritativeDecision(
   decision: HorseDecision,
   player: SeatPlayer,
   gs: HorseGameStateV2
@@ -2987,7 +2987,15 @@ function enforceAuthoritativeDecision(
     return { action: 'fold', thinkTime: 0 };
   };
   const call = (): HorseDecision => {
-    if (!legal.has('call')) return safe();
+    if (!legal.has('call')) {
+      // ALL-IN-OR-FOLD (2026-10-26): the menu is fold/all-in, so calling an
+      // owed bet IS the all-in (the controller settles it as the call). The
+      // V27 big-blind-vs-jam chart and the priced-in guard propose `call`;
+      // degrading that to safe() folded every hand the brain chose to call.
+      if (gs.allInOrFold === true && legal.has('all_in') && toCall > 0.005)
+        return { action: 'all_in', thinkTime: 0 };
+      return safe();
+    }
     if (toCall >= stack - 0.005 && legal.has('all_in')) {
       return { action: 'all_in', thinkTime: 0 };
     }
@@ -6658,17 +6666,26 @@ export class HorseLogic {
     }
     // ═══ RIVER CALL READ (2026-10-25) ═══ every river call that ends a
     // player's river is now shown, so the table sees what they call with.
-    // Against a player whose shown river calls are one pair or worse at least
-    // half the time, a river bluff earns less (they call it) and a thinner
-    // value bet earns more (they pay it). Bounded: bluff volume x0.85 at a
-    // 0.5 read down to x0.70 at 0.75 or more; the thin-value bar drops 2 to
+    // Against a player whose shown weak-call rate exceeds their family baseline
+    // with a twelve-call minimum and one-sided confidence, a river bluff earns
+    // less (they call it) and a thinner
+    // value bet earns more (they pay it). Bounded: bluff volume x0.85 down
+    // to x0.70 as excess weak-call frequency increases; the thin-value bar drops 2 to
     // 4 equity points. Heads-up rivers only, read identically for every
-    // opponent, human or horse; null under five shown calls does nothing.
-    if ((opts.v23Reads ?? true) !== false && useMind && isRiver && oppCount === 1) {
+    // opponent, human or horse. Split/multi-board high names are incomplete.
+    if (
+      (opts.v23Reads ?? true) !== false &&
+      useMind &&
+      isRiver &&
+      oppCount === 1 &&
+      !vi.isHiLo &&
+      !multiBoard36
+    ) {
       try {
-        const light = HorseMind.riverCallLightTendency(opponents[0].user_id);
-        if (light !== null && light >= 0.5) {
-          const k = Math.min(1, (light - 0.5) / 0.25);
+        const baseline = vi.isOmaha || vi.isShortDeck ? 0.04 : 0.4;
+        const light = HorseMind.riverCallLightTendency(opponents[0].user_id, baseline);
+        if (light !== null) {
+          const k = Math.max(0, Math.min(1, (light - baseline) / (1 - baseline)));
           bluffScale *= 0.85 - 0.15 * k;
           thinAdj23 -= 0.02 + 0.02 * k;
           if (tele15) noteFire('river_call_light_read');

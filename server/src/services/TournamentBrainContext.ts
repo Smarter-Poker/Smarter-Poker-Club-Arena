@@ -804,6 +804,27 @@ export function deriveContext(
   const stacks = allLive;
 
   const seatsPerTable = seatsAtOneTable(row);
+  // A REBUY OFFER IS NOT A BUBBLE (2026-10-26). A zero-stack player with an
+  // unexpired recovery prompt has no stack ICM can price yet, so the context
+  // used to fail closed for the WHOLE event while any one offer was open: in
+  // a 350-player rebuy MTT that withheld tournament stage, ICM, bounty and
+  // payout context from 20-80% of horse decisions on every table, for up to
+  // ~50 s per bust, all through the rebuy period. That pending seat can only
+  // change a decision near the money, at the final table or in a satellite
+  // (where one seat moves the award depth). Elsewhere the field is priced
+  // without it - its stack is 0 either way - and it is reported, not refused.
+  const pendingRecoveryPlayers = Math.max(
+    0,
+    Math.floor(Number(playerOptions.pendingRecoveryPlayers) || 0)
+  );
+  const settledPlayersLeft = playersLeft - pendingRecoveryPlayers;
+  const recoveryMovesTheMoney =
+    pendingRecoveryPlayers > 0 &&
+    (isSatellite ||
+      spotsPaid <= 0 ||
+      settledPlayersLeft <= seatsPerTable ||
+      settledPlayersLeft <= Math.max(spotsPaid + 1, Math.ceil(spotsPaid * 1.15)));
+  if (pendingRecoveryPlayers > 0 && !recoveryMovesTheMoney) playersLeft = settledPlayersLeft;
   const allLiveAscending = [...allLive].sort((a, b) => a - b);
   const medianStackChips =
     allLiveAscending.length === 0
@@ -933,7 +954,7 @@ export function deriveContext(
   if (!status) contextIssues.push('tournament_status_missing');
   if (!gameVariant) contextIssues.push('game_variant_missing');
   if (!(playersLeft > 0) || entrants < playersLeft) contextIssues.push('player_population_invalid');
-  if (Math.max(0, Math.floor(Number(playerOptions.pendingRecoveryPlayers) || 0)) > 0) {
+  if (recoveryMovesTheMoney) {
     // A player with a durable, unexpired recovery prompt is not eliminated,
     // but has no positive stack that an ICM calculation can price yet. Keep
     // the lifecycle count honest and fail closed until accept/decline/expiry

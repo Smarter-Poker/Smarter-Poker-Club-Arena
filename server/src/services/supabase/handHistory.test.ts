@@ -514,8 +514,25 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       bigBlind: input.bigBlind,
       showdown: showdownReveal,
       scope: 'holdem:hu',
+      riverCallContext: { variant: 'nlh', boardCount: 1 },
     });
   });
+
+  it.each(['plo8', 'nlh'])(
+    'carries the actual split/multi-board category context for %s',
+    async (variant) => {
+      acceptAtomicHand();
+      const input = {
+        ...atomicParams(GLOBAL_HAND + 809),
+        gameVariant: variant,
+        communityCards2: ['Ah', 'Kh', 'Qh', 'Jh', 'Th'],
+      };
+      await logHandHistory(input);
+      expect(mockObserveCompletedHand.mock.calls[0]![0]).toMatchObject({
+        riverCallContext: { variant, boardCount: 2 },
+      });
+    }
+  );
 
   it('returns after enqueue without waiting behind older worker FIFO jobs', async () => {
     acceptAtomicHand();
@@ -671,6 +688,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
       bigBlind: input.bigBlind,
       showdown: null,
       scope: 'holdem:hu',
+      riverCallContext: { variant: 'nlh', boardCount: 1 },
     });
     const emitted = mockObserveCompletedHand.mock.calls[0]![0];
     expect(

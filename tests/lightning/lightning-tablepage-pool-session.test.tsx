@@ -59,7 +59,9 @@ describe('TablePage on a pool-session id', () => {
   it('reads no tables row for a pool session: every read is behind the room check', () => {
     const lines = PAGE.split('\n');
     const reads = lines.flatMap((l, i) => (l.includes(".from('tables')") ? [i] : []));
-    expect(reads.length).toBe(4);
+    // Four existing loaders plus the new HTTP404 table-status read.
+    // Every read, including that one, still requires the room exclusion below.
+    expect(reads.length).toBe(5);
     for (const i of reads) {
       const before = lines.slice(Math.max(0, i - 120), i).join('\n');
       expect(before, `tables read at line ${i + 1}`).toMatch(/lightningRoomRef\.current/);

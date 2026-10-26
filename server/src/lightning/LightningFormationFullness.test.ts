@@ -28,26 +28,26 @@ const plan = (population: LightningPoolPlayer[], now: number, size: number) =>
     { ...LIGHTNING_MATCHER_PARAM_DEFAULTS, instanceTarget: size, instanceMax: size }
   );
 
-describe('Lightning deals six immediately or five after three seconds from the fifth arrival', () => {
+describe('Lightning deals six immediately or five after one second from the fifth arrival (Dan, 2026-10-26)', () => {
   it.each([0, 1, 2, 3, 4])('never forms a %i-player hand, regardless of queue age', (n) => {
     expect(plan(players(n), 1_000_000, 6).groups).toHaveLength(0);
   });
   it('holds five until the exact deadline, then forms five', () => {
-    expect(plan(players(5), 12_999, 6).groups).toHaveLength(0);
-    expect(plan(players(5), 13_000, 6).groups.map((g) => g.players.length)).toEqual([5]);
+    expect(plan(players(5), 10_999, 6).groups).toHaveLength(0);
+    expect(plan(players(5), 11_000, 6).groups.map((g) => g.players.length)).toEqual([5]);
   });
   it('deals six immediately and leaves a fresh five waiting', () => {
     expect(plan(players(6), 10_000, 6).groups.map((g) => g.players.length)).toEqual([6]);
     expect(plan(players(11), 10_000, 6).groups.map((g) => g.players.length)).toEqual([6]);
-    expect(plan(players(11), 13_000, 6).groups.map((g) => g.players.length)).toEqual([6, 5]);
+    expect(plan(players(11), 11_000, 6).groups.map((g) => g.players.length)).toEqual([6, 5]);
   });
   it('starts the wait at the fifth ready player, never at the oldest arrival', () => {
     const p = players(5);
     p[0].idleSinceMs = 0;
     p[4].idleSinceMs = 20_000;
     const before = structuredClone(p);
-    expect(plan(p, 22_999, 6).groups).toHaveLength(0);
-    expect(plan(p, 23_000, 6).groups.map((g) => g.players.length)).toEqual([5]);
+    expect(plan(p, 20_999, 6).groups).toHaveLength(0);
+    expect(plan(p, 21_000, 6).groups.map((g) => g.players.length)).toEqual([5]);
     expect(p).toEqual(before);
   });
   it.each(['m1', 'm1-port', 'm2'])(
@@ -72,12 +72,12 @@ describe('Lightning deals six immediately or five after three seconds from the f
       }
     }
   );
-  it('holds a replacement fifth player for their own three-second wait', () => {
+  it('holds a replacement fifth player for their own one-second wait', () => {
     const p = players(5, 0);
     expect(plan(p, 10_000, 6).groups).toHaveLength(1);
     p[4] = { ...p[4], playerId: 'replacement', idleSinceMs: 10_000 };
-    expect(plan(p, 12_999, 6).groups).toHaveLength(0);
-    expect(plan(p, 13_000, 6).groups.map((g) => g.players.length)).toEqual([5]);
+    expect(plan(p, 10_999, 6).groups).toHaveLength(0);
+    expect(plan(p, 11_000, 6).groups.map((g) => g.players.length)).toEqual([5]);
   });
   it('does not reset an aged five-player group for a fresh player assigned to the full six', () => {
     const p = players(11, 0);

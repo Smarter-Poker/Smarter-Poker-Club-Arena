@@ -549,7 +549,9 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
       request.bigBlind,
       request.showdown,
       request.scope,
-      request.durableOpponentProfiles !== undefined
+      request.durableOpponentProfiles !== undefined,
+      request.riverCallContext,
+      request.retainedRiverCalls
     );
   },
   noteDecision: noteDecisionMs,

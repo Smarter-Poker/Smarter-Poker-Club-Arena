@@ -67,6 +67,28 @@ function learn() {
 }
 afterEach(() => HorseMind.reset());
 describe('each horse learns only its own public observations', () => {
+  it.each([1, 2])(
+    'preserves the river-call board context through queued public observations (%s boards)',
+    (boardCount) => {
+      const bank = new HorseObserverReads(20, 20, () => 100);
+      bank.run({ ...request(), ownPublicHistoryState: 'pending' }, () => undefined);
+      const done = {
+        ...completion(),
+        riverCallContext: { variant: 'nlh', boardCount },
+        actions: [
+          { userId: actor, action: 'bet', amount: 10, stage: 'river' },
+          { userId: opponent, action: 'call', amount: 10, stage: 'river' },
+        ],
+        showdown: [{ user_id: opponent, mucked: false, hand_name: 'Pair' }],
+      };
+      expect(bank.complete(done, () => undefined)).toBe(1);
+      bank.run(request(), () => {
+        expect(HorseMind.getStats(opponent)?.riverCallSD ?? 0).toBe(boardCount === 1 ? 1 : 0);
+      });
+      expect(HorseMind.getStats(opponent)).toBeUndefined();
+    }
+  );
+
   it('retains its own reads and isolates observer, variant and tournament format', () => {
     const bank = new HorseObserverReads();
     bank.run(request(), learn);

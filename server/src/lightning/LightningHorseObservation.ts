@@ -90,6 +90,9 @@ export function buildLightningObservation(
     committedHandId: hand.handHistoryId,
     actions: hand.actions.map((a) => ({ ...a })) as CompletedHandObservation['actions'],
     bigBlind: hand.bigBlind,
+    // Lightning currently settles a single board; carry the actual variant
+    // so hi-lo categories cannot be treated as high-only weak calls.
+    riverCallContext: { variant: hand.variant, boardCount: 1 },
     showdown: hand.showdown.length
       ? hand.showdown.map((r) => ({
           user_id: r.userId,

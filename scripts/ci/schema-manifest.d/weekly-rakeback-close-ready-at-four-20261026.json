@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/root/fix/weekly-rakeback-close-on-time",
+  "_comment": "Migration 20261026131306: the running week's inventory seal layers are staged during the week and job 272 runs every tick until every active scope had its first visit. Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": [
+    "fn_union_pnl_inventory_layer_settled",
+    "fn_union_pnl_inventory_layer_precompute",
+    "fn_weekly_close_first_visits_pending"
+  ],
+  "columns": {}
+}

@@ -1,0 +1,9 @@
+# Cash leaves and full-stack returns
+
+Owner direction October 26: remove the ten-minute minimum stay. Players can request a cashout immediately; a hand in progress still settles through the existing departure path before its final stack is credited. A return to the same club, game variant and blinds within two hours requires at least the full positive departing stack, even when that player lost money or the stack exceeds the ordinary maximum. A different variant or stake retains normal limits.
+
+The maintained migration retires old stay-clock reads, preserves session financial capture and VPIP bars, removes the winning-only restriction and cap truncation, and updates chip, treasury-funded and Diamond admission. Cashout and buy-in retain their existing transaction/receipt authority. Treasury admission now shares the same player lock as cashout. Client/engine ignore old clock payloads; the buy-in sheet can accept the full return stack above its usual cap while preserving wallet checks. Obsolete operator clock controls are removed.
+
+Verification: real isolated PostgreSQL reproduces the original cap bypass and exercises scoped floors, exact expiry, losing-player cashout, financial capture, VPIP bars and atomic patch replay refusal. Engine leave behavior and shared buy-in UI have focused regressions. Delivery evidence remains in CHECKPOINT-two-hour-rathole.md; local tests alone do not establish production installation.
+
+The owner's explicit continuation orders immediate publication rather than waiting for 04:00. A bounded entry in the existing owner-maintenance manifest accompanies this PR, using the newest protected anchor proven absent from the serving engine; all certified activation safeguards remain intact. Actual installed/live identity and inclusion remain required, and a consumed anchor admits no second restart.

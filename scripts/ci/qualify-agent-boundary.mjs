@@ -61,6 +61,23 @@ try {
   await request(agent,{method:'PATCH',body:{role}});
   assert.equal(await rpc('fn_can_use_club_bank',{p_club_id:club}),false);
   assert.equal(await rpc('ca_can_view_club_finances',{p_club_id:club}),false);
+  // Data uses the same current JWT, never the service credential or a cached
+  // owner verdict. This reserved zero-balance account has no play/downline.
+  assert.equal(await rpc('fn_ca_club_data_scope',{p_club_id:club}),'downline');
+  assert.equal(await rpc('ca_can_view_whole_club_report',{p_club_id:club}),false);
+  const dataScreen=await rpc('ca_club_data_screen',{p_club_id:club,p_limit:1});
+  assert.equal(dataScreen.scope,'downline');
+  assert.deepEqual(dataScreen.rows,[]);
+  for(const field of ['games','fee','total_winnings','mtt_winnings','on_felt']) assert.equal(Number(dataScreen.summary[field]),0,'Data leaked another member: '+field);
+  for(const [name,args] of [
+   ['ca_club_data_snapshot_v2',{p_club_id:club}],
+   ['ca_rake_snapshot_v2',{p_scope:'club',p_club_id:club}],
+   ['ca_rake_snapshot_v2',{p_scope:'union',p_union_id:'fade0000-0000-0000-0000-000000000001'}],
+  ]) {
+   const denied=await request('/rest/v1/rpc/'+name,{...caller,method:'POST',allowFailure:true,body:args});
+   assert.equal(denied.status,403,name+' must refuse whole club/union Data');
+  }
+
   assert.equal(await rpc('fn_can_manage_club_assignments',{p_club_id:club}),false);
   assert.equal(await rpc('is_club_admin',{p_club_id:club}),false);
   assert.equal(await rpc('fn_club_viewer_cashier_scope',{p_club_id:club}),'downline');
@@ -99,7 +116,7 @@ try {
    const denied=await request('/rest/v1/rpc/'+name,{...caller,method:'POST',allowFailure:true,body:args});
    assert.equal(denied.status,403,name+' must refuse agent access');
   }
-  results.push({role,bankDenied:true,privateColumnsDenied:true,unrelatedMembers:0,assignmentDenied:true});
+  results.push({role,bankDenied:true,privateColumnsDenied:true,unrelatedMembers:0,assignmentDenied:true,dataDownlineOnly:true});
  }
 } finally {
  if(mutationStarted) {

@@ -28,8 +28,19 @@ export const LIGHTNING_FOLD_WATCH_ACTION = 'fold_watch';
    2026-10-24). */
 export const LIGHTNING_NEXT_HAND_TEXT = 'Next Hand...';
 
-/** A quiet gap shorter than this says nothing at all. */
-export const LIGHTNING_NEXT_HAND_NOTICE_MS = 2500;
+/**
+ * A quiet gap shorter than this says nothing at all. 2500 until the Lightning
+ * transition review (2026-10-26): a player who had folded looked at a silent
+ * felt for two and a half seconds before anything acknowledged the wait.
+ */
+export const LIGHTNING_NEXT_HAND_NOTICE_MS = 1200;
+
+/**
+ * How long "Next Hand..." takes to fade in, and to fade out once the next deal
+ * starts, at Animation Speed 1. LightningFoldBar.css carries the same number
+ * as its keyframe duration, scaled by `--animation-speed`.
+ */
+export const LIGHTNING_NEXT_HAND_FADE_MS = 240;
 
 /** The part of an engine snapshot these rules read. Every field is optional. */
 export interface LightningSnapshotFields {
@@ -106,6 +117,23 @@ export function isLightningIdleSnapshot(
   );
 }
 
+/**
+ * LIGHTNING TRANSITION, PHASE 1: does this snapshot end the hand on the felt
+ * for the BOARD? In a Lightning room the idle snapshot after a fold repeats
+ * the folded hand's number (the engine's idle shape carries `hand_number`), so
+ * the table's never-shrink-within-a-hand rule kept the folded hand's cards on
+ * the felt for the whole wait. In a Lightning room an idle snapshot means this
+ * player has no hand on the felt: the board is cleared, through the same clear
+ * the end-of-hand reset gives it. Never true outside a Lightning room, so a
+ * Classic table's board rules are untouched.
+ */
+export function lightningSnapshotClearsBoard(input: {
+  lightningRoom: boolean;
+  snapshot: LightningSnapshotFields | null | undefined;
+}): boolean {
+  return input.lightningRoom && isLightningIdleSnapshot(input.snapshot);
+}
+
 /** A hand this player is in is on the felt right now. */
 export function lightningHandOnFelt(snapshot: LightningSnapshotFields | null | undefined): boolean {
   return lightningHandKey(snapshot) !== null;
@@ -136,9 +164,12 @@ export function lightningFoldFlags(
  * LIGHTNING PHASE 13: the room's words while its Cluster drains back to MUST
  * MOVE (an operator's drain, or the pool thinning out). Every hand in the air
  * finishes first; the player's seat is kept. Popup rules: Title Case, no dashes.
+ *
+ * It used to promise "After This Hand", and measured endings take 21 to 80
+ * seconds (several hands for a player still being dealt). The words now say
+ * only what is true for the whole of that wait.
  */
-export const LIGHTNING_ENDING_TEXT =
-  'Lightning Is Ending. Your Game Returns To MUST MOVE After This Hand.';
+export const LIGHTNING_ENDING_TEXT = 'Lightning Is Ending. Your Seat Is Kept.';
 
 // ─── The two Lightning controls ────────────────────────────────────────────
 

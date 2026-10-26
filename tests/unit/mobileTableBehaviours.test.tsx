@@ -126,7 +126,7 @@ describe('an uncontested win still names itself', () => {
 describe('data-hero-action is published on the table root', () => {
   it('sits on the same element as data-hero', () => {
     const rootAttrs = TABLE_PAGE.slice(
-      TABLE_PAGE.indexOf('data-hero={tableState.players.some((p) => p?.isHero)'),
+      TABLE_PAGE.indexOf("data-hero={heroAtTable ? 'true' : 'false'}"),
       TABLE_PAGE.indexOf('data-felt-theme=')
     );
     expect(rootAttrs).toContain('data-hero-action={heroActionState}');

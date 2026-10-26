@@ -85,7 +85,62 @@ describe('the discovery loop wiring', () => {
     expect(start).toBeGreaterThan(-1);
     expect(branch).toContain('shouldCancelEmptyPastStartEvent({');
     expect(branch).toContain('rosterCount: rosterByTournament.get(tournament.id)');
-    expect(branch).toContain('emptyTopUps: emptyClock?.misses ?? 0');
+    expect(branch).toMatch(/emptyTopUps: Math\.max\(\s*emptyClock\?\.misses \?\? 0,/);
+  });
+
+  /**
+   * THE EMPTY COUNT SURVIVES A RESTART (2026-10-26). "Daily 25 Chip Freezeout"
+   * 501008e1 was due to cancel at 19:30 UTC on 2026-10-25; the engine restarted
+   * at 19:30, forgot every top-up it had asked, and the cancel landed at 19:52
+   * while TournamentNeverStarted paged. The count the predicate reads is the
+   * larger of this process's and the one written to
+   * public.tournament_past_start_top_ups by whichever process asked.
+   */
+  it('reads the durable empty-top-up count beside the roster read and takes the larger', () => {
+    expect(branch).toContain('durableEmptyTopUps.get(tournament.id) ?? 0');
+    const read = source.indexOf('const durableEmptyTopUps = await this.readDurableEmptyTopUps(');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(start);
+    expect(
+      source.indexOf('const rosterByTournament = await this.readEntrantRosterCounts(')
+    ).toBeLessThan(read);
+    expect(source).toContain(".from('tournament_past_start_top_ups')");
+  });
+
+  it('writes the count when a past-start top-up settles for an event with no entrant, and clears it when anyone is added or the event is cancelled', () => {
+    const topUp = source.slice(source.indexOf('/* At most every 45 s', start));
+    expect(topUp).toContain('if (rosterByTournament.get(tournament.id) === 0 && !held) {');
+    expect(topUp).toMatch(
+      /recordPastStartTopUpOutcome\(\s*tournament\.id,\s*added > 0\s*\?\s*null\s*:/
+    );
+    expect(branch).toContain('await this.recordPastStartTopUpOutcome(tournament.id, null);');
+    // A delete clears it; the upsert keys on the event.
+    expect(source).toMatch(
+      /\.from\('tournament_past_start_top_ups'\)\s*\.delete\(\)\s*\.eq\('tournament_id', tournamentId\)/
+    );
+    expect(source).toMatch(/\.from\('tournament_past_start_top_ups'\)\s*\.upsert\(/);
+    expect(source).toContain("{ onConflict: 'tournament_id' }");
+  });
+
+  /**
+   * THE CANCEL HAS ITS OWN LANE (2026-10-26). It used to ride
+   * launchDiscoveryTopUp and queue behind PAST_START_TOP_UP_CONCURRENCY horse
+   * top-ups, which a restart re-asks all at once. A cancel is one RPC that
+   * seats nobody; it never waits for a horse.
+   */
+  it('cancels through its own single-flight lane, not the horse top-up slots', () => {
+    expect(branch).toContain('this.launchEmptyEventCancel(');
+    expect(branch).not.toContain('this.launchDiscoveryTopUp(');
+    const lane = source.slice(
+      source.indexOf('private launchEmptyEventCancel('),
+      source.indexOf('private pastStartTopUpClock: Map<string, PastStartTopUpClock>')
+    );
+    expect(lane).toContain('this.emptyEventCancelsInFlight.has(tournamentId)');
+    expect(lane).toContain('this.tournamentTopUpsInFlight.has(tournamentId)');
+    expect(lane).not.toContain('PAST_START_TOP_UP_CONCURRENCY');
+    expect(lane).toContain('!isMaintenanceFrozen()');
+    // The walk leaves an event alone while its cancel is in flight, as it does for a top-up.
+    expect(source).toContain('this.emptyEventCancelsInFlight.has(tournament.id) ||');
   });
 
   it('cancels only through the database cancellation authority', () => {

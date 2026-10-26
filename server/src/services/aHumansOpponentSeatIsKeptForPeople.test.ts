@@ -299,7 +299,12 @@ describe('a refusal by the hold is never a miss or an alarm (stale occupancy cac
   });
 
   it('the past-start lane does not back an event off for a hold', () => {
-    expect(GAME_SERVER).toContain('misses: added > 0 ? 0 : held ? misses : misses + 1,');
+    expect(GAME_SERVER).toContain(
+      'const settledMisses = added > 0 ? 0 : held ? misses : misses + 1;'
+    );
+    expect(GAME_SERVER).toContain(
+      'this.pastStartTopUpClock.set(tournament.id, { at: now, misses: settledMisses });'
+    );
   });
 });
 

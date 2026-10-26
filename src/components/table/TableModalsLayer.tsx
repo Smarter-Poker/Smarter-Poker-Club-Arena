@@ -359,6 +359,13 @@ export interface TableModalsLayerProps {
   onCancelBustRebuy: () => void;
   onRetryBustBalance: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
+  /**
+   * Lightning transition phase 2: a busted Lightning player's rebuy. The
+   * room's allowed maximum (readLightningTopUp) and its Leave, which runs the
+   * room's own leave. Both undefined at every other table.
+   */
+  bustRebuyMaxBuyIn?: number;
+  onLeaveBustRebuy?: () => void;
 
   showProfileModal: boolean;
   onCloseProfileModal: () => void;
@@ -673,6 +680,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onCancelBustRebuy,
     onRetryBustBalance,
     onConfirmBustRebuy,
+    bustRebuyMaxBuyIn,
+    onLeaveBustRebuy,
     showProfileModal,
     onCloseProfileModal,
     clubName,
@@ -1207,8 +1216,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           await onConfirmBustRebuy(amount);
         }}
         tableName={tableName}
-        minBuyIn={minBuyIn}
-        maxBuyIn={maxBuyIn}
+        minBuyIn={
+          bustRebuyMaxBuyIn !== undefined ? Math.min(minBuyIn, bustRebuyMaxBuyIn) : minBuyIn
+        }
+        maxBuyIn={bustRebuyMaxBuyIn ?? maxBuyIn}
+        onLeave={onLeaveBustRebuy}
         /* NULL STAYS NULL, here too (Dan 2026-09-04). The 2026-08-27 fix
            made TablePage keep "unknown" as null; this `?? 0` turned it back
            into "you have nothing" one file later, and the bust rebuy read as

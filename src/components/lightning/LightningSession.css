@@ -321,13 +321,17 @@
   white-space: nowrap;
   cursor: pointer;
 }
+/* Urgency is said in the house palette (Lightning transition, phase 1): blue,
+   then teal, then bright silver, each one brighter and heavier than the last.
+   Amber and red are not Smarter.Poker colours for a clock that is merely
+   running down. */
 .lightning-queue__item--high {
-  border-color: #ffb547;
-  background: rgba(255, 181, 71, 0.12);
+  border-color: var(--info-cyan, #00d4ff);
+  background: rgba(0, 212, 255, 0.12);
 }
 .lightning-queue__item--critical {
-  border-color: #ff5a5a;
-  background: rgba(255, 90, 90, 0.18);
+  border-color: #e4e7ec;
+  background: rgba(228, 231, 236, 0.16);
 }
 .lightning-queue__street {
   color: rgba(255, 255, 255, 0.62);
@@ -337,18 +341,23 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The room that owes a decision, highlighted where it sits (tile or tab). */
+/* The room that owes a decision, highlighted where it sits (tile or tab).
+   Lightning transition, phase 1: the steps were blue, amber and red. They are
+   blue, teal and bright silver now, and urgency is carried by brightness and
+   width (2px, 3px, 4px with a glow), never by a warning colour outside the
+   palette (black, blue, teal, silver, white). */
 .lightning-urgent--normal {
   outline: 2px solid rgba(69, 173, 255, 0.7);
   outline-offset: -2px;
 }
 .lightning-urgent--high {
-  outline: 2px solid #ffb547;
-  outline-offset: -2px;
+  outline: 3px solid var(--info-cyan, #00d4ff);
+  outline-offset: -3px;
 }
 .lightning-urgent--critical {
-  outline: 3px solid #ff5a5a;
-  outline-offset: -3px;
+  outline: 4px solid #e4e7ec;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 14px rgba(0, 212, 255, 0.55);
 }
 
 .lightning-mine {

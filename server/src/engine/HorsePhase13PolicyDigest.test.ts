@@ -94,7 +94,8 @@ describe('P13.3 Phase 13 policy digest', () => {
     const closure = runtimeClosure(MULTIWAY_OWNERS);
     // 48 since 2026-10-23: HorseMind also reads HorseOpponentMemory.
     // 50: independent plan ownership now validates HorseObserverReadContext.
-    expect(closure).toHaveLength(50);
+    // 51 since 2026-10-25: HorseMind notes read telemetry (BrainTelemetry).
+    expect(closure).toHaveLength(51);
     expect(closure).toContain('src/engine/HorseOpponentMemory.ts');
     expect(HORSE_PHASE13_POLICY_SOURCE_FILES).toContain('src/engine/HorseContinuation.ts');
     const excluded = new Set(Object.keys(HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES));

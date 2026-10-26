@@ -326,3 +326,76 @@ describe('original observation windows in private read frames', () => {
     ).toEqual({ kind: 'invalid' });
   });
 });
+
+describe('river-call counters in private read frames (2026-10-25)', () => {
+  const reseal = (frame: ReturnType<typeof encodeHorseDecisionReads>, body: unknown) => {
+    const json = JSON.stringify(body);
+    return {
+      ...frame,
+      json,
+      bytes: Buffer.byteLength(json),
+      sha256: createHash('sha256').update(json).digest('hex'),
+    };
+  };
+
+  it('keeps v5 bytes while every river-call counter is zero, and decodes them as 0', () => {
+    const view = populated();
+    const frame = encodeHorseDecisionReads(view, players, 'hand');
+    expect(frame.version).toBe('horse-decision-reads-v5');
+    expect(frame.json).not.toContain('riverCalls');
+    const restored = decodeHorseDecisionReads(frame, players, 'hand');
+    expect(restored.stats.get('villain')).toMatchObject({ riverCallSD: 0, riverCallSDWeak: 0 });
+    expect(encodeHorseDecisionReads(restored, players, 'hand').json).toBe(frame.json);
+  });
+
+  it('carries non-zero counters in a v6 frame and restores them for the worker read', () => {
+    HorseMind.importStats([{ user_id: 'villain', hands: 40, riverCallSD: 6, riverCallSDWeak: 4 }]);
+    HorseMind.importScoped([
+      { user_id: 'villain', scope: 'holdem:hu', hands: 30, riverCallSD: 5, riverCallSDWeak: 5 },
+    ]);
+    const view = HorseMind.snapshotDecisionReads(players, null);
+    const frame = encodeHorseDecisionReads(view, players, null);
+    expect(frame.version).toBe('horse-decision-reads-v6');
+    const restored = decodeHorseDecisionReads(frame, players, null);
+    expect(restored).toEqual(view);
+    HorseMind.reset();
+    HorseMind.runInSandbox(restored, () => {
+      expect(HorseMind.riverCallLightTendency('villain')).toBeCloseTo(4 / 6, 5);
+    });
+  });
+
+  it('carries the counters without winner evidence as an empty winner list', () => {
+    const view = HorseMind.createSandbox();
+    HorseMind.importStats([{ user_id: 'villain', hands: 9, riverCallSD: 5, riverCallSDWeak: 1 }]);
+    view.stats.set('villain', { ...HorseMind.getStats('villain')! });
+    const frame = encodeHorseDecisionReads(view, players, null);
+    expect(frame.version).toBe('horse-decision-reads-v6');
+    const restored = decodeHorseDecisionReads(frame, players, null);
+    expect(restored.winnerReads?.rows.size).toBe(0);
+    expect(restored.stats.get('villain')).toMatchObject({ riverCallSD: 5, riverCallSDWeak: 1 });
+  });
+
+  it.each(['missing', 'misaligned', 'length', 'negative', 'v5_with_counters'])(
+    'refuses a resealed malformed v6 body: %s',
+    (fault) => {
+      HorseMind.importStats([
+        { user_id: 'villain', hands: 40, riverCallSD: 6, riverCallSDWeak: 4 },
+      ]);
+      HorseMind.importStats([{ user_id: 'hero', hands: 40 }]);
+      const frame = encodeHorseDecisionReads(
+        HorseMind.snapshotDecisionReads(players, null),
+        players,
+        null
+      );
+      const body = JSON.parse(frame.json);
+      if (fault === 'missing') delete body.riverCalls;
+      if (fault === 'misaligned') body.riverCalls.reverse();
+      if (fault === 'length') body.riverCalls[0][1].push(0);
+      if (fault === 'negative') body.riverCalls[0][1][0] = -1;
+      if (fault === 'v5_with_counters') body.version = 'horse-decision-reads-v5';
+      const bad = reseal(frame, body);
+      if (fault === 'v5_with_counters') bad.version = 'horse-decision-reads-v5';
+      expect(() => decodeHorseDecisionReads(bad, players, null)).toThrow('invalid');
+    }
+  );
+});

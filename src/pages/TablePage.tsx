@@ -323,8 +323,11 @@ import {
   lightningIdleBalanceFor,
   type LightningIdleBalanceSnapshot,
   lightningSessionStackFor,
+  lightningStandInIdentity,
   lightningWaitingHero,
+  heroIsAtTable,
 } from '../lightning/lightningWaitingHero';
+import { lightningBustCandidate, useLightningBustRebuy } from '../lightning/lightningBustRebuy';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningTopUpReceipts } from '../lightning/useLightningTopUpReceipts';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
@@ -400,6 +403,7 @@ import {
   hasLightningRoom,
   lightningAnchorSeat,
   lightningClusterIdOfSnapshot,
+  clearLightningEntryIntent,
   registerLightningPoolSession,
   setLightningEntryIntent,
   useLightningPoolSession,
@@ -409,6 +413,7 @@ import {
   lightningFastFoldFlag,
   lightningFoldFlags,
   lightningFoldAvailability,
+  lightningSnapshotClearsBoard,
   lightningHandOnFelt,
   lightningHandId,
   lightningHandKey,
@@ -431,7 +436,10 @@ import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandof
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs } from '../lightning/lightningPrefs';
 import { createLightningMilestoneTracker } from '../lightning/lightningMilestone';
-import { lightningDecisions as pendingLightningDecisions } from '../lightning/lightningDecisionQueue';
+import {
+  clearLightningClusterStatus,
+  lightningDecisions as pendingLightningDecisions,
+} from '../lightning/lightningDecisionQueue';
 import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -1468,6 +1476,9 @@ function warmSeatsToPlayers(
   return players;
 }
 
+/** The remote-open key for a chest that carries no award id (legacy path). */
+const MYSTERY_CHEST_LEGACY_KEY = '__legacy_chest__';
+
 export default function TablePage(props: TablePageProps = {}) {
   return (
     <TableRouteBoundary embeddedTableId={props.embeddedTableId}>
@@ -1561,7 +1572,29 @@ function LiveTablePage({
   // `chestChannelRef` below.
   //
   const chestQueue = useAnimationQueue<MysteryChestData>();
-  const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+  /**
+   * WHICH chest the table has been told is open (2026-10-25). This was one
+   * boolean for the whole table, so a "chest opened" from an earlier chest at
+   * this table - a horse's late tap, a reconnect replay - could open the NEXT
+   * chest the instant it landed, before its revealer had picked anything.
+   * Keyed by award, it can only open the chest it was sent for.
+   */
+  const [chestRemoteOpenedAwards, setChestRemoteOpenedAwards] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  /* One set, several awards (a reconnect can restore a whole burst at once). */
+  const markChestOpened = useCallback((awardKey: string) => {
+    setChestRemoteOpenedAwards((prev) => {
+      if (prev.has(awardKey)) return prev;
+      const next = new Set(prev);
+      next.add(awardKey);
+      // Bounded: only the chests of this table's recent bursts matter.
+      if (next.size > 40) next.delete(next.values().next().value as string);
+      return next;
+    });
+  }, []);
+  /** Award ids whose chest has started opening on THIS client. */
+  const [chestOpenedLocally, setChestOpenedLocally] = useState<string | null>(null);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -1703,7 +1736,9 @@ function LiveTablePage({
   >({});
   /* The slot the revealer's tap broadcast, per award: the rest of the table
      shows it until the server's offer (with every chest's amount) arrives. */
-  const [chestRemoteSlots, setChestRemoteSlots] = useState<Record<string, number>>({});
+  const [chestRemoteSlots, setChestRemoteSlots] = useState<
+    Record<string, { slot: number; auto: boolean }>
+  >({});
   const loadChestOfferRef = useRef<(awardId: string) => Promise<void>>(async () => {});
   const loadChestOffer = useCallback(async (awardId: string) => {
     if (!awardId) return;
@@ -1716,9 +1751,12 @@ function LiveTablePage({
       if (!offer) return;
       // A slow read from before the reveal must never replace the revealed
       // answer that already arrived (it would wipe what the chests held).
-      setChestOffers((prev) =>
-        prev[awardId]?.revealed && !offer.revealed ? prev : { ...prev, [awardId]: offer }
-      );
+      setChestOffers((prev) => {
+        if (prev[awardId]?.revealed && !offer.revealed) return prev;
+        // Unchanged answers do not re-render the table (2026-10-26 audit).
+        if (JSON.stringify(prev[awardId]) === JSON.stringify(offer)) return prev;
+        return { ...prev, [awardId]: offer };
+      });
     } catch (err) {
       reportError(err, 'TablePage.loadChestOffer');
     }
@@ -1748,18 +1786,37 @@ function LiveTablePage({
   const mysteryChest = useMemo<MysteryChestData | null>(() => {
     if (!queuedChest) return null;
     const offer = queuedChest.awardId ? chestOffers[queuedChest.awardId] : undefined;
-    const remoteSlot = queuedChest.awardId ? chestRemoteSlots[queuedChest.awardId] : undefined;
+    const remote = queuedChest.awardId ? chestRemoteSlots[queuedChest.awardId] : undefined;
     const offered: MysteryChestData = offer
       ? {
           ...queuedChest,
           offerSlots: offer.slots,
-          pickedSlot: offer.pickedSlot ?? remoteSlot ?? null,
-          chosen: offer.revealed ? offer.chosen : remoteSlot != null ? true : undefined,
+          pickedSlot: offer.pickedSlot ?? remote?.slot ?? null,
+          autoPicked: remote?.auto === true,
+          chosen: offer.revealed ? offer.chosen : remote != null ? true : undefined,
           choices: offer.choices,
         }
-      : queuedChest;
+      : remote
+        ? { ...queuedChest, pickedSlot: remote.slot, autoPicked: remote.auto }
+        : queuedChest;
     const revealed = queuedChest.awardId ? chestReveals[queuedChest.awardId] : undefined;
-    if (!revealed) return offered;
+    if (!revealed) {
+      /* THE AMOUNT FROM THE OFFER (2026-10-25). A seat that is not the
+         revealer used to learn the prize only from the engine's deadline
+         broadcast, which can land after its reveal has closed: it showed 0.
+         Once the award is revealed, the offer names every chest's amount,
+         the picked one included, so that is the figure this seat shows. */
+      const won = offer?.revealed ? offer.choices?.find((c) => c.picked) : undefined;
+      if (!won || !(won.amount > 0)) return offered;
+      return {
+        ...offered,
+        amount: won.amount,
+        amountPending: false,
+        tier: won.tier ?? queuedChest.tier,
+        tierLabel: won.tierLabel ?? queuedChest.tierLabel,
+        isJackpot: won.tier === 'jackpot' || queuedChest.isJackpot,
+      };
+    }
     return {
       ...offered,
       amount: revealed.amount,
@@ -1770,6 +1827,41 @@ function LiveTablePage({
       recipients: revealed.recipients ?? queuedChest.recipients,
     };
   }, [queuedChest, chestReveals, chestOffers, chestRemoteSlots]);
+  /**
+   * EVERY CHEST'S AMOUNT REACHES EVERY SEAT (Dan 2026-10-25): "YOU MUST
+   * ALWAYS SHOW THE OTHER 2 PRIZES THAT 'COULD OF BEEN CHOOSEN'."
+   *
+   * The amounts come from `fn_mystery_bounty_offer`, and only once the award
+   * is revealed. The open broadcast reaches the table BEFORE the reveal lands,
+   * so a single read at that moment answers "not yet" and the other two chests
+   * were never shown. This reads the chest on screen until the server says it
+   * is revealed with every chest described - a bounded presentation read (twenty
+   * tries at most, one chest), never a write - and stops the moment it
+   * has the answer or the chest leaves the screen.
+   */
+  const currentChestId = queuedChest?.awardId ?? null;
+  const currentOffer = currentChestId ? chestOffers[currentChestId] : undefined;
+  const currentChestOpened =
+    !!currentChestId &&
+    (chestOpenedLocally === currentChestId ||
+      chestRemoteOpenedAwards.has(currentChestId) ||
+      !!chestReveals[currentChestId]);
+  const currentOfferComplete = !!currentOffer?.revealed && !!currentOffer?.choices;
+  const currentOfferMissing = !currentOffer;
+  useEffect(() => {
+    if (!currentChestId) return;
+    if (currentOfferComplete) return;
+    // Before the chest opens, only a MISSING offer is worth reading: it is
+    // what decides whether there are three chests to pick from at all.
+    if (!currentChestOpened && !currentOfferMissing) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      void loadChestOfferRef.current(currentChestId);
+      if (tries >= 20) clearInterval(id);
+    }, 700);
+    return () => clearInterval(id);
+  }, [currentChestId, currentChestOpened, currentOfferComplete, currentOfferMissing]);
   /* The chest on screen, for the tap broadcast (whose callback stays stable). */
   const currentChestAwardRef = useRef<string | null>(null);
   currentChestAwardRef.current = queuedChest?.awardId ?? null;
@@ -1832,7 +1924,7 @@ function LiveTablePage({
    * exists purely so the other seats open at the same moment.
    */
   const broadcastChestOpen = useCallback(
-    (slot?: number) => {
+    (slot?: number, autoPicked?: boolean) => {
       const awardId = currentChestAwardRef.current;
       const chan = chestChannelRef.current;
       if (!chan) return;
@@ -1840,7 +1932,7 @@ function LiveTablePage({
         chan.send({
           type: 'broadcast',
           event: 'mystery_chest_opened',
-          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId },
+          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId, auto: !!autoPicked },
         });
       } catch (err) {
         // A failed broadcast degrades to each spectator's own failsafe timer.
@@ -1977,6 +2069,9 @@ function LiveTablePage({
               }))
             : [];
           if (cents !== null) {
+            // Opened before this client arrived (2026-10-26 audit): it must not
+            // sit on "Is Picking" with the clock on 0.
+            markChestOpened(awardKey);
             // Already revealed before this client arrived. Seed the amount so
             // the chest opens onto the real figure rather than asking for it
             // again — which would be harmless (the RPC is idempotent) but is
@@ -2028,20 +2123,19 @@ function LiveTablePage({
     const chan = masterBus.getOrCreateChannel(`mystery-chest-${tableId}`);
     chestChannelRef.current = chan;
     chan.on('broadcast', { event: 'mystery_chest_opened' }, (msg: { payload?: unknown }) => {
-      setChestRemoteOpened(true);
-      /* PICK 1 OF 3: the tap carries the chest the revealer picked. Show it at
-         once, then read the offer as soon as the reveal can have landed, so
-         every seat sees what the other chests held before its overlay closes. */
-      const p = (msg?.payload ?? {}) as { awardId?: unknown; slot?: unknown };
+      /* PICK 1 OF 3: the tap carries the chest the revealer picked, and
+         whether the 5-second window ran out and drew it at random. Show it at
+         once; the offer (every chest's amount) is read by the effect below
+         until it lands. */
+      const p = (msg?.payload ?? {}) as { awardId?: unknown; slot?: unknown; auto?: unknown };
       const awardId = typeof p.awardId === 'string' ? p.awardId : '';
+      // Only the chest it was sent for. An older sender with no award id opens
+      // only a chest that has none either (the legacy one-shot path).
+      markChestOpened(awardId || MYSTERY_CHEST_LEGACY_KEY);
       if (!awardId) return;
       const slot = Math.floor(Number(p.slot));
       if (slot >= 1 && slot <= 3) {
-        setChestRemoteSlots((prev) => ({ ...prev, [awardId]: slot }));
-      }
-      for (const wait of [1500, 4000]) {
-        const t = setTimeout(() => void loadChestOfferRef.current(awardId), wait);
-        (t as unknown as { unref?: () => void }).unref?.();
+        setChestRemoteSlots((prev) => ({ ...prev, [awardId]: { slot, auto: p.auto === true } }));
       }
     });
     if (chan.state !== 'joined') {
@@ -2754,7 +2848,22 @@ function LiveTablePage({
         river: 3,
         showdown: 4,
       };
-      const sameHand = mapped.handNumber > 0 && mapped.handNumber === prev.handNumber;
+      /* LIGHTNING TRANSITION, PHASE 1: AN IDLE SNAPSHOT ENDS THE FOLDED HAND
+         FOR THE BOARD. The engine answers a Lightning fold with the idle shape
+         (stage 'waiting', no players, an empty board) and repeats the folded
+         hand's NUMBER on it, so the never-shrink rule below read it as the
+         same hand and kept the folded hand's cards on the felt for the whole
+         wait, until the next deal. In a Lightning room that snapshot means
+         this player has no hand on the felt: the board takes the same clear
+         the end-of-hand reset gives it (empty boards, stage back to preflop),
+         and the next hand's flop deals in onto an empty felt. Classic tables
+         never take this branch. */
+      const lightningIdleBoard = lightningSnapshotClearsBoard({
+        lightningRoom: !!lightningRoomRef.current,
+        snapshot: engineSnapshot as LightningSnapshotFields,
+      });
+      const sameHand =
+        !lightningIdleBoard && mapped.handNumber > 0 && mapped.handNumber === prev.handNumber;
       let nextCards = mapped.communityCards as Card[];
       if (sameHand && nextCards.length < prev.communityCards.length) {
         nextCards = prev.communityCards;
@@ -2770,7 +2879,12 @@ function LiveTablePage({
       if (sameHand && nextCards3.length < prev.communityCards3.length) {
         nextCards3 = prev.communityCards3;
       }
-      let nextStage = mapped.boardStage as BoardStage;
+      if (lightningIdleBoard) {
+        nextCards = [];
+        nextCards2 = [];
+        nextCards3 = [];
+      }
+      let nextStage = (lightningIdleBoard ? 'preflop' : mapped.boardStage) as BoardStage;
       const n = nextCards.length;
       const derivedStage = n >= 5 ? 'river' : n === 4 ? 'turn' : n >= 3 ? 'flop' : null;
       if (derivedStage && (STAGE_RANK[nextStage] ?? 0) < (STAGE_RANK[derivedStage] ?? 0)) {
@@ -3991,6 +4105,18 @@ function LiveTablePage({
   });
   const lightningEndedRef = useRef(lightningSessionEnd.ended);
   lightningEndedRef.current = lightningSessionEnd.ended;
+  /* LIGHTNING TRANSITION, PHASE 1: THIS CLUSTER'S "ENDING" DIES WITH ITS ROOM.
+     The room closed (a 4404 the database confirmed: MUST MOVE reversion, or the
+     session ended), so whatever the engine last said about the Cluster's hold
+     belongs to a room that no longer exists. Without this a lost null frame
+     left "Lightning Is Ending" on the next room of the Cluster. */
+  const lightningRoomClosed = !!lightningReversion.seatTableId || !!lightningSessionEnd.ended;
+  const lightningClosedClusterId = lightningRoom?.clusterId ?? null;
+  useEffect(() => {
+    if (lightningRoomClosed && lightningClosedClusterId) {
+      clearLightningClusterStatus(lightningClosedClusterId);
+    }
+  }, [lightningRoomClosed, lightningClosedClusterId]);
   /* True while a fn_lightning_reconnect_state question is in flight: the
      ending is about to be named properly, so the generic 4404 toast stands
      down rather than speak first and be repeated by the notice. */
@@ -4288,6 +4414,10 @@ function LiveTablePage({
   const bustRebuyOpenRef = useRef(false);
   bustRebuyOpenRef.current = bustRebuyOpen;
   const [bustRebuyProcessing, setBustRebuyProcessing] = useState(false);
+  /* Lightning transition phase 2: the allowed maximum for a busted Lightning
+     player's rebuy, as the database answered it (readLightningTopUp). Set
+     only while that prompt is the one open; null at every other table. */
+  const [lightningBustMax, setLightningBustMax] = useState<number | null>(null);
   // bustPromptFiredRef provided by useTableSession hook
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [showPlayerNotes, setShowPlayerNotes] = useState(false);
@@ -4508,6 +4638,22 @@ function LiveTablePage({
   const lightningLastSeenStackRef = useRef<number | null>(null);
   if (lightningHeroInRoster && Number.isFinite(lightningHeroInRoster.stack)) {
     lightningLastSeenStackRef.current = lightningHeroInRoster.stack;
+  }
+  /* The hero's face as the last hand showed it: the waiting chair between
+     hands wears the same name, frame and aura (lightningStandInIdentity). */
+  const lightningLastHeroRowRef = useRef<{
+    name?: string;
+    avatar?: string;
+    frame?: string;
+    aura?: string;
+  } | null>(null);
+  if (lightningHeroInRoster) {
+    lightningLastHeroRowRef.current = {
+      name: lightningHeroInRoster.name,
+      avatar: lightningHeroInRoster.avatar,
+      frame: lightningHeroInRoster.frame,
+      aura: lightningHeroInRoster.aura,
+    };
   }
   const [lightningSessionStack, setLightningSessionStack] = useState<number | null>(null);
   /* The idle snapshot whose engine balance chips added since have made stale. */
@@ -9882,8 +10028,11 @@ function LiveTablePage({
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
-    /* A Lightning room rebuys through its own pool session (auto rebuy and
-       the anchor seat), never through this cash table prompt. */
+    /* A Lightning room rebuys through its own watch (useLightningBustRebuy,
+       below), never through this cash table prompt: its roster is empty
+       between hands, so the zero this effect reads is not the player's stack,
+       and its rebuy is the pool session's top-up, not atomic_table_rebuy at a
+       room id. Same sheet, same key rule. */
     if (lightningRoomRef.current) return;
     /* A FELTED DIAMOND SEAT IS PROMPTED TOO (2026-09-12). This returned for
        every non-chip asset, on a note saying Diamond re-entry needs a new
@@ -10375,6 +10524,37 @@ function LiveTablePage({
         bustAsset === 'diamonds' ? Math.floor(requested) : Math.round(requested * 100) / 100;
       if (!(amount > 0)) return;
       setBustRebuyProcessing(true);
+      /* A LIGHTNING SEAT REBUYS THROUGH ITS POOL SESSION (Lightning transition
+         phase 2). The chips sit on the anchor seat, so the rebuy is the room's
+         own top-up: handleAddChips with the Lightning scope, which addresses
+         the anchor, re-reads it around the request and accepts only this pool
+         session's own receipt. ONE key per bust and amount, held across
+         retries exactly as below, so a lost answer replays the same request
+         (fn_lightning_top_up_request answers a known key with its receipt and
+         moves nothing). A refusal the engine proves terminal releases it. */
+      if (lightningRoomRef.current) {
+        try {
+          if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
+            bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
+          }
+          const held = bustRebuyKeyRef.current.key;
+          const landed = await handleAddChipsRef.current(amount, held, {
+            source: 'manual',
+            onTerminalRefusal: () => {
+              if (bustRebuyKeyRef.current?.key === held) bustRebuyKeyRef.current = null;
+            },
+          });
+          if (!landed) return;
+          bustRebuyKeyRef.current = null;
+          const result = lastAddChipsResultRef.current;
+          if (result && !result.queued && result.applied > 0)
+            toast?.success(`Rebought For ${result.applied.toLocaleString()}`);
+          setBustRebuyOpen(false);
+        } finally {
+          setBustRebuyProcessing(false);
+        }
+        return;
+      }
       /* A DIAMOND SEAT REBUYS THROUGH ITS OWN DOOR. `atomic_table_rebuy`
          debits `club_members.chip_balance`, and a Diamond entitlement has no
          row in that table, so the chip RPC below cannot serve this seat. The
@@ -15436,7 +15616,6 @@ function LiveTablePage({
                   queueIndex: Number(p.queueIndex) || 1,
                   queueTotal: Number(p.queueTotal) || 1,
                 });
-                setChestRemoteOpened(false);
               } else if (data?.type === 'mystery_bounty_activated') {
                 /* THE CHESTS ARE LIVE (2026-10-05). Only the lobby listened to
                    this, so the table learned the phase had changed from its
@@ -15458,7 +15637,12 @@ function LiveTablePage({
                 // stops the page holding award ids nobody will ask about again.
                 const c = data.payload || {};
                 if (c.tableId && c.tableId !== tableId) return;
-                setChestReveals({});
+                /* Keep the chest still on screen: wiping its amount mid-reveal
+                   is how a seat that opened late counted up to zero. */
+                const onScreen = currentChestAwardRef.current;
+                setChestReveals((prev) =>
+                  onScreen && prev[onScreen] ? { [onScreen]: prev[onScreen] } : {}
+                );
               } else if (
                 data?.type === 'bounty_collected' ||
                 data?.type === 'mystery_bounty_revealed'
@@ -15516,6 +15700,12 @@ function LiveTablePage({
                     : [];
                   if (b.awardId) {
                     void loadChestOffer(String(b.awardId));
+                    /* THE SERVER OPENED IT (2026-10-25). If the revealer's own
+                       open never reached this seat (they dropped, or were the
+                       one who never picked), the server's reveal is the open:
+                       every seat opens the chest now instead of staring at a
+                       locked one until its own failsafe. */
+                    markChestOpened(String(b.awardId));
                     // Keyed by award: a duplicate broadcast (section 80/33)
                     // overwrites the same entry instead of queueing a second
                     // chest or crediting anything twice.
@@ -15551,7 +15741,6 @@ function LiveTablePage({
                       queueTotal: Number(b.queueTotal) || undefined,
                       recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
                     });
-                    setChestRemoteOpened(false);
                   }
                 } else {
                   /* ── THE KNOCKOUT (Dan 2026-08-28, PokerBros parity) ──────
@@ -20901,8 +21090,32 @@ function LiveTablePage({
   );
 
   const seatViewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+  /* IS THE HERO AT THIS TABLE (Lightning transition, phase 1). One answer for
+     every decision that changes the felt's shape: the seat taper here and
+     `data-hero` on the page root (which the phone spectator layout,
+     DealerButton and useProtectedCardLayout read). A Classic table asks the
+     roster, exactly as before. A Lightning room's roster is empty between
+     hands, so the chair the hero still holds counts there; reading the roster
+     alone resized the phone table on every fold and back on every deal. */
+  const heroAtTable = heroIsAtTable({
+    heroInRoster: tableState.players.some((p) => p?.isHero),
+    lightningRoom: !!lightningRoom,
+    heroSeat: tableState.heroSeat,
+  });
   // Spectators use the desktop reference's unprojected oval on phones.
-  const tablePerspectiveTaper = tableState.players.some((p) => p?.isHero) ? undefined : 0;
+  const tablePerspectiveTaper = heroAtTable ? undefined : 0;
+  /* The face of the hero's waiting chair between Lightning hands, worked out
+     once rather than per seat (lightningStandInIdentity). Null at a Classic
+     table, whose stand-in chair is untouched. */
+  const lightningStandIn = lightningRoom
+    ? lightningStandInIdentity({
+        tableAlias: v8Settings.use_alias ? v8Settings.table_alias : null,
+        profileName: heroProfile ? playerDisplayName(heroProfile) : null,
+        lastRow: lightningLastHeroRowRef.current,
+        username,
+        avatarUrl: heroAvatarUrl,
+      })
+    : null;
   const seatPositions = useMemo(() => {
     const canvasLeft = tableScalerRef.current?.getBoundingClientRect().left;
     return seatRotationMap.map(({ pos }) =>
@@ -24052,7 +24265,7 @@ function LiveTablePage({
        note on isHeroTurnContext documents. */
     isHeroTurn: isHeroTurnContext,
     isSizingOpen: raiseIntent.open,
-    isSpectator: !tableState.players.some((p) => p?.isHero),
+    isSpectator: !heroAtTable,
     isModalOpen:
       !!tournamentWinner ||
       showMustMoveLobby ||
@@ -24526,11 +24739,15 @@ function LiveTablePage({
     : lightningClusterIdOfSnapshot(engineSnapshot);
   useEffect(() => {
     if (!tableId || !snapshotLightningClusterId) return;
-    registerLightningPoolSession({
-      poolSessionId: tableId,
-      clusterId: snapshotLightningClusterId,
-      meta: null,
-    });
+    registerLightningPoolSession(
+      {
+        poolSessionId: tableId,
+        clusterId: snapshotLightningClusterId,
+        meta: null,
+      },
+      /* Already connected: a Cluster status its resync just delivered stands. */
+      { keepClusterStatus: true }
+    );
     setTableLoadFailure(null);
   }, [tableId, snapshotLightningClusterId]);
 
@@ -24759,6 +24976,44 @@ function LiveTablePage({
       if (tableId) sessionStatsService.restoreFunding(tableId, funding.baseline);
     },
   });
+
+  /* LIGHTNING TRANSITION PHASE 2: A BUSTED PLAYER IS ASKED, ONCE PER BUST.
+     The same rebuy sheet as the cash table, funded through this room's own
+     top-up (confirmBustRebuy's Lightning branch), opened only between hands
+     on a zero the database confirms. LEAVE runs the room's own leave, which
+     opens the Lightning session summary. Nothing here moves the player. */
+  const lightningBust = lightningBustCandidate({
+    room: !!lightningRoom,
+    heroInRoster: !!lightningHeroInRoster,
+    rosterStack: lightningHeroInRoster?.stack,
+    waitingStack: lightningWaitingSeat?.stack,
+    handLive: lightningHandLive,
+    roomClosed: lightningRoomClosed,
+    sittingOut: lightningSitOut.sittingOut,
+  });
+  useLightningBustRebuy({
+    room: lightningRoom,
+    userId,
+    candidate: lightningBust,
+    autoTopUpEnabled: isAutoRebuyEnabled,
+    blocked: bustRebuyOpen || showBuyInModal || showCashier || showLeaveConfirm,
+    onPrompt: (maximum) => {
+      setLightningBustMax(maximum);
+      setBustWalletBalance(null);
+      setBustRebuyOpen(true);
+      if (userId && tableId)
+        void readBustBalance(userId, tableId).then((b) => setBustWalletBalance(b));
+    },
+  });
+  /* The question stops applying: chips arrived (the auto top-up, another
+     device) or the room closed. A confirm in flight finishes first. */
+  useEffect(() => {
+    if (!lightningRoom || !bustRebuyOpen || bustRebuyProcessing) return;
+    if (lightningBust === 'funded' || lightningRoomClosed) setBustRebuyOpen(false);
+  }, [lightningRoom, bustRebuyOpen, bustRebuyProcessing, lightningBust, lightningRoomClosed]);
+  useEffect(() => {
+    if (!bustRebuyOpen) setLightningBustMax(null);
+  }, [bustRebuyOpen]);
 
   // A Lightning idle room intentionally has no hand seat. Its normal opt-in
   // top-up is triggered by the committed receipt, including after an early fold.
@@ -25081,7 +25336,7 @@ function LiveTablePage({
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
-      data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      data-hero={heroAtTable ? 'true' : 'false'}
       /* THE TOURNAMENT INFO DOCK (Dan 2026-10-04). Present only on a
          tournament table; TournamentHUD.css reads it to reserve the dock's
          height under the felt and to stand the bottom bars on top of it.
@@ -25249,8 +25504,12 @@ function LiveTablePage({
            figure at all while this table's arena is still unread. */
         unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         viewerUserId={userId}
-        remoteOpened={chestRemoteOpened}
+        remoteOpened={
+          !!queuedChest &&
+          chestRemoteOpenedAwards.has(queuedChest.awardId || MYSTERY_CHEST_LEGACY_KEY)
+        }
         onBroadcastOpen={broadcastChestOpen}
+        onOpened={() => setChestOpenedLocally(queuedChest?.awardId ?? null)}
         /* THE TAP (section 19). Fired once per chest, by the designated
            revealer's client only, from the tap and the auto-open alike. */
         onRequestReveal={
@@ -25261,7 +25520,14 @@ function LiveTablePage({
         queuedBehind={chestQueue.pending}
         onDone={() => {
           chestQueue.complete();
-          setChestRemoteOpened(false);
+          /* The legacy key is shared by every award-less chest, so it is
+             cleared when one finishes; award keys never need it. */
+          setChestRemoteOpenedAwards((prev) => {
+            if (!prev.has(MYSTERY_CHEST_LEGACY_KEY)) return prev;
+            const next = new Set(prev);
+            next.delete(MYSTERY_CHEST_LEGACY_KEY);
+            return next;
+          });
         }}
         playSounds={ambientSoundsAllowed}
       />
@@ -26026,6 +26292,20 @@ function LiveTablePage({
                       : undefined
                   }
                 />
+                {/* LIGHTNING: THE ROOM'S WORDS ON THE FELT (Lightning transition,
+                    phase 1). "Next Hand..." after a long quiet, and "Lightning
+                    Is Ending" while the Cluster drains, in felt coordinates
+                    just above the wordmark (the band the connection banner
+                    uses), so they read the same between hands and in a hand.
+                    Words only: nothing here navigates (CLAUDE.md 10.6). */}
+                {lightningRoom ? (
+                  <div className="lightning-felt-notices" data-testid="lightning-felt-notices">
+                    <LightningNextHand
+                      handInProgress={lightningHandLive && tableState.isHandInProgress}
+                    />
+                    <LightningEndingNotice clusterId={lightningRoom.clusterId} />
+                  </div>
+                ) : null}
 
                 <div className="table-brand" aria-hidden="true">
                   <img
@@ -27031,10 +27311,16 @@ function LiveTablePage({
               !displayPlayer &&
               (pendingSeat === seatNumber || tableState.heroSeat === seatNumber)
             ) {
+              /* A Lightning player between hands keeps the face the hand
+                 showed: table alias, frame and aura (Lightning transition,
+                 phase 1). A Classic stand-in is unchanged (null). */
+              const standIn = lightningStandIn;
               displayPlayer = {
                 id: userId,
-                name: username || 'You',
-                avatar: heroAvatarUrl || '',
+                name: standIn ? standIn.name : username || 'You',
+                avatar: standIn ? standIn.avatar : heroAvatarUrl || '',
+                ...(standIn?.frame ? { frame: standIn.frame } : {}),
+                ...(standIn?.aura ? { aura: standIn.aura } : {}),
                 // A confirmed seat balance supersedes the original buy-in,
                 // including zero. The buy-in is only a pre-row placeholder.
                 stack:
@@ -27520,6 +27806,10 @@ function LiveTablePage({
                        footer's "Tap An Open Seat To Join" is a dead letter. */
                     (!tableState.isTournament || !!seatFirstBuyIn)
                   }
+                  /* Lightning transition, phase 1: a Lightning room's open
+                     chairs draw nothing (nobody can sit there). Classic
+                     tables never pass it and keep EMPTY. */
+                  hideEmptyChair={!!lightningRoom}
                   /* Dan 2026-08-18: the hero's own reserved seat reads
                      "YOUR SEAT" instead of the generic EMPTY. */
                   isHeroReservedSeat={
@@ -27693,6 +27983,70 @@ function LiveTablePage({
           floats={potWinFloats}
           onAnimationComplete={handleAnimationComplete}
         />
+        {/* LIGHTNING: THE ROOM AFTER IT ENDS, OVER THE TABLE AREA (Lightning
+            transition, phase 1). Mounted here, not in the footer chain, so the
+            notice and its VIEW GAME are on screen whatever the footer shows:
+            the between-hands bar used to shadow them for exactly the player
+            who had just folded. */}
+        {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
+            and this room will deal no more. Never a dead felt: the notice
+            and the player's own way back to their seat. The player moves
+            themselves, by the button (CLAUDE.md 10.6). */}
+        {lightningRoom && lightningReversion.seatTableId ? (
+          <LightningEndedNotice
+            session={
+              tableId
+                ? {
+                    poolSessionId: tableId,
+                    clusterId: lightningRoom.clusterId,
+                    name: lightningRoom.meta?.name ?? null,
+                  }
+                : null
+            }
+            onViewGame={() => {
+              const seatTable = lightningReversion.seatTableId;
+              if (!seatTable) return;
+              if (embeddedTableId) {
+                onTableInfoUpdate?.({ movedToTableId: seatTable });
+                return;
+              }
+              navigate(lightningReturnPath(seatTable), { replace: true });
+            }}
+          />
+        ) : null}
+        {/* LIGHTNING PHASE 9: the session ended while the player was away
+            (the disconnect reaper timed it out, or a queued leave
+            finished) and this room is gone. Never a dead felt and never a
+            spinner that cannot end: the ending's words, the session
+            summary, and VIEW GAME to the seat that remains, or to the
+            Cluster's entry. The player moves themselves (CLAUDE.md 10.6). */}
+        {lightningRoom && !lightningReversion.seatTableId && lightningSessionEnd.ended ? (
+          <LightningEndedNotice
+            eyebrow="Lightning"
+            text={lightningSessionEndText(lightningSessionEnd.ended)}
+            session={
+              tableId
+                ? {
+                    poolSessionId: tableId,
+                    clusterId: lightningRoom.clusterId,
+                    name: lightningRoom.meta?.name ?? null,
+                  }
+                : null
+            }
+            onViewGame={() => {
+              const seatTable = lightningSessionEnd.ended?.seatTableId ?? null;
+              if (seatTable) {
+                if (embeddedTableId) {
+                  onTableInfoUpdate?.({ movedToTableId: seatTable });
+                  return;
+                }
+                navigate(lightningReturnPath(seatTable), { replace: true });
+                return;
+              }
+              navigate(lightningRoute(lightningRoom.clusterId), { replace: true });
+            }}
+          />
+        ) : null}
       </div>
       {/* ═══════════════════════════════════════════════════════════════════════
           SEAT-FIRST BUY-IN CONFIRMATION (Dan 2026-08-23)
@@ -28293,15 +28647,12 @@ function LiveTablePage({
                 2026-08-25; the twin of it was removed from the ActionPanel on
                 2026-08-15 for exactly the same reason. There is one button. */}
 
-            {lightningRoom ? (
-              <LightningNextHand
-                handInProgress={lightningHandLive && tableState.isHandInProgress}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 13: the Cluster is draining back to MUST MOVE.
-                Words only; the room closes on its own once the last hand has
-                settled, and the ended notice below offers VIEW GAME. */}
-            {lightningRoom ? <LightningEndingNotice clusterId={lightningRoom.clusterId} /> : null}
+            {/* The Lightning room's own notices ("Next Hand...", "Lightning Is
+                Ending" and the ended notices with VIEW GAME) are felt-level
+                overlays now, mounted in the table area below the seats, so
+                they show between hands too (Lightning transition, phase 1).
+                They used to live here, in a branch the between-hands bar
+                shadowed, and centred in this fixed bar instead of the felt. */}
             {/* JOIN LIGHTNING completing: the anchor table never deals this
                 player a hand, so it says one neutral line until the tab
                 moves on, rather than showing a dead felt. */}
@@ -28313,65 +28664,6 @@ function LiveTablePage({
                 eyebrow="Lightning Games"
                 text="Your Game Is Now Lightning. Your Seat Is Ready."
                 onViewGame={lightningHandoff.viewReady}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
-                and this room will deal no more. Never a dead felt: the notice
-                and the player's own way back to their seat. The player moves
-                themselves, by the button (CLAUDE.md 10.6). */}
-            {lightningRoom && lightningReversion.seatTableId ? (
-              <LightningEndedNotice
-                session={
-                  tableId
-                    ? {
-                        poolSessionId: tableId,
-                        clusterId: lightningRoom.clusterId,
-                        name: lightningRoom.meta?.name ?? null,
-                      }
-                    : null
-                }
-                onViewGame={() => {
-                  const seatTable = lightningReversion.seatTableId;
-                  if (!seatTable) return;
-                  if (embeddedTableId) {
-                    onTableInfoUpdate?.({ movedToTableId: seatTable });
-                    return;
-                  }
-                  navigate(lightningReturnPath(seatTable), { replace: true });
-                }}
-              />
-            ) : null}
-            {/* LIGHTNING PHASE 9: the session ended while the player was away
-                (the disconnect reaper timed it out, or a queued leave
-                finished) and this room is gone. Never a dead felt and never a
-                spinner that cannot end: the ending's words, the session
-                summary, and VIEW GAME to the seat that remains, or to the
-                Cluster's entry. The player moves themselves (CLAUDE.md 10.6). */}
-            {lightningRoom && !lightningReversion.seatTableId && lightningSessionEnd.ended ? (
-              <LightningEndedNotice
-                eyebrow="Lightning"
-                text={lightningSessionEndText(lightningSessionEnd.ended)}
-                session={
-                  tableId
-                    ? {
-                        poolSessionId: tableId,
-                        clusterId: lightningRoom.clusterId,
-                        name: lightningRoom.meta?.name ?? null,
-                      }
-                    : null
-                }
-                onViewGame={() => {
-                  const seatTable = lightningSessionEnd.ended?.seatTableId ?? null;
-                  if (seatTable) {
-                    if (embeddedTableId) {
-                      onTableInfoUpdate?.({ movedToTableId: seatTable });
-                      return;
-                    }
-                    navigate(lightningReturnPath(seatTable), { replace: true });
-                    return;
-                  }
-                  navigate(lightningRoute(lightningRoom.clusterId), { replace: true });
-                }}
               />
             ) : null}
 
@@ -29319,6 +29611,17 @@ function LiveTablePage({
         onCancelBustRebuy={cancelBustRebuy}
         onRetryBustBalance={retryBustBalance}
         onConfirmBustRebuy={confirmBustRebuy}
+        bustRebuyMaxBuyIn={lightningRoom && lightningBustMax !== null ? lightningBustMax : undefined}
+        onLeaveBustRebuy={
+          lightningRoom
+            ? () => {
+                /* The room's own leave: the anchor seat cashes out (nothing is
+                   on it) and the Lightning session summary opens. */
+                setBustRebuyOpen(false);
+                void handleLeaveTable();
+              }
+            : undefined
+        }
         showProfileModal={showProfileModal}
         onCloseProfileModal={() => setShowProfileModal(false)}
         clubName={tableState.clubName}
@@ -29399,6 +29702,8 @@ function LiveTablePage({
                 !sameCashBuyInIntent(intent, attempt.payload))
             ) {
               setSelectedSeat(attempt.payload.p_seat_number);
+              /* Nothing was bought by this request (phase 2, as below). */
+              if (anchorLightningClusterId) clearLightningEntryIntent(tableId);
               toast.warning('Review Your Original Buy-In Before Retrying.');
               return false;
             }
@@ -29417,6 +29722,11 @@ function LiveTablePage({
             if (!stillCurrent()) return false;
             if (outcome.kind === 'unknown') {
               reportError(outcome.error, 'TablePage.cash_buyin_outcome_unknown');
+              /* NOT CONFIRMED IS NOT JOINING (Lightning transition phase 2):
+                 the intent marked above would hold this table on "Joining
+                 Lightning..." until Cancel, over the sheet's own retry. The
+                 retry marks it again under the same request. */
+              if (anchorLightningClusterId) clearLightningEntryIntent(tableId);
               if (isDeadSessionRefusal(outcome.error)) {
                 /* Phase 11 line 7: a revoked session is refused again on every
                    retry. The saved request stays, so signing in and retrying
@@ -29433,6 +29743,8 @@ function LiveTablePage({
             setCashBuyInRecovery(null);
             if (outcome.kind === 'rejected') {
               reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
+              /* No seat was bought: there is no room for this tab to follow. */
+              if (anchorLightningClusterId) clearLightningEntryIntent(tableId);
               const message =
                 cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.';
               if (

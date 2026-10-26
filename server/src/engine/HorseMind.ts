@@ -18,6 +18,7 @@ import {
   resetWinnerReads,
   type HorseWinnerReadState,
 } from './HorseWinnerRead.js';
+import { noteFire } from './BrainTelemetry.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -75,6 +76,7 @@ import {
   observeExploitRow,
   openerRangeWidth,
   opponentExploitRead,
+  presumedAggressorRead,
   postflopBluffMod,
   reRaiseLineWidth,
   reRaiseWidth,
@@ -169,6 +171,14 @@ export interface OpponentStats {
   tankBetSD: number;
   /** ... where the shown hand was two pair or better */
   tankBetSDStrong: number;
+  // ── RIVER CALL READS (2026-10-25). Dan ruled that a hand whose last river
+  // decision was a call is shown at showdown, so every player at the table
+  // now sees what an opponent called the river with. Horses learn it too
+  // (CLAUDE.md 10.5): the caller-side mirror of bigBetSD.
+  /** showdowns where their LAST river action was a call and the hand was shown */
+  riverCallSD: number;
+  /** ... where the shown hand was one pair or worse (a light call) */
+  riverCallSDWeak: number;
 }
 
 /** V43: a bet within this many ms of the previous action is a snap. */
@@ -206,6 +216,8 @@ const freshStats = (): OpponentStats => ({
   snapBetSDStrong: 0,
   tankBetSD: 0,
   tankBetSDStrong: 0,
+  riverCallSD: 0,
+  riverCallSDWeak: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -231,6 +243,11 @@ const STRONG_HAND_NAMES = new Set([
   'straight flush',
   'royal flush',
 ]);
+
+/** 2026-10-25: hand names that make a river CALL light - one pair or worse.
+ *  The engine's evaluator names them 'High Card' and 'Pair' (PokerEngine);
+ *  'one pair' is accepted for any evaluator that spells it out. */
+const WEAK_HAND_NAMES = new Set(['high card', 'pair', 'one pair']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOARD TEXTURE
@@ -404,6 +421,8 @@ const SCOPED_FIELDS = [
   'snapBetSDStrong',
   'tankBetSD',
   'tankBetSDStrong',
+  'riverCallSD',
+  'riverCallSDWeak',
 ] as const;
 
 const COUNTER_FIELDS = [
@@ -448,6 +467,8 @@ export class HorseMind {
   private static durableOpponentMemory = false;
   private static durableOpponentVersions = new Map<string, number>();
   private static decisionVariant: string | null = null;
+  /** PLO PRESUMPTION: the people at the decision's table; null outside one. */
+  private static decisionHumans: ReadonlySet<string> | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
@@ -840,14 +861,45 @@ export class HorseMind {
           )
         )
       : undefined;
-    return opponentExploitRead(
+    // A KNOWN MANIAC IS A MANIAC AT EVERY TABLE SIZE (2026-10-25): the same
+    // game's sibling table size, read against ITS own envelope, may
+    // corroborate a statistic this size already places past every horse.
+    const family = scope.split(':')[0];
+    const siblings =
+      durable && variant
+        ? opponentMemoryDonors(this.decisionMode, size).map(([mode, donorSize]) =>
+            opponentExploitRead(
+              this.exploitCounters.get(opponentMemoryKey(userId, variant, mode, donorSize)),
+              `${family}:${donorSize}` as ReadScope,
+              this.decisionVariant
+            )
+          )
+        : [];
+    const read = opponentExploitRead(
       durable ??
         (this.durableOpponentMemory && variant
           ? undefined
           : this.exploitCounters.get(`${scope}|${userId}`)),
       scope,
-      this.decisionVariant
+      this.decisionVariant,
+      siblings
     );
+    if (read?.corroborated) noteFire('opponent_exploit_corroborated');
+    // PLO PRESUMPTION (Dan 2026-10-25): "TAG THEM ALL FROM THE START, UNLESS
+    // OTHERWISE PROVEN DIFFERENTLY" - every person at an Omaha table is read
+    // as an aggressive raiser until their own hands prove otherwise.
+    if (family === 'omaha' && this.decisionHumans?.has(userId)) {
+      const presumed = presumedAggressorRead(
+        read,
+        durable ?? this.exploitCounters.get(`${scope}|${userId}`),
+        scope,
+        this.decisionVariant
+      );
+      if (presumed.outcome === 'presumed') noteFire('plo_human_presumed_aggressive');
+      else if (presumed.outcome === 'disproved') noteFire('plo_human_presumption_disproved');
+      return presumed.read;
+    }
+    return read;
   }
 
   static targetingOf(heroId: string, oppId: string): number {
@@ -894,11 +946,13 @@ export class HorseMind {
   static setDecisionScope(
     scope: ReadScope | null,
     variant: string | null = null,
-    mode: MemoryMode = 'cash'
+    mode: MemoryMode = 'cash',
+    humans: readonly string[] | null = null
   ): void {
     this.decisionMode = mode;
     this.decisionScope = scope;
     this.decisionVariant = scope ? variant : null;
+    this.decisionHumans = scope && humans ? new Set(humans) : null;
   }
 
   static currentScope(): ReadScope | null {
@@ -1112,6 +1166,10 @@ export class HorseMind {
         snapBetSDStrong: keep(existing?.snapBetSDStrong, num(r.snapBetSDStrong)),
         tankBetSD: keep(existing?.tankBetSD, num(r.tankBetSD)),
         tankBetSDStrong: keep(existing?.tankBetSDStrong, num(r.tankBetSDStrong)),
+        // 2026-10-25: persisted from the river-call migration on; a snapshot
+        // older than it reads 0, so keep the larger like the V43 reads.
+        riverCallSD: keep(existing?.riverCallSD, num(r.riverCallSD)),
+        riverCallSDWeak: keep(existing?.riverCallSDWeak, num(r.riverCallSDWeak)),
       });
       applied++;
     }
@@ -2472,6 +2530,35 @@ export class HorseMind {
             if (strong) s.tankBetSDStrong++;
           }
         }
+
+        // ── River: what did a CALLER show? (2026-10-25) ──
+        // The caller-side mirror of the loop above. A player whose LAST river
+        // action was a call, and whose hand was shown (mucked === false), is
+        // one sample; a shown hand of one pair or worse is a light call. A
+        // call is the `call` action, or an `all_in` whose amount (the street
+        // bet level it reaches) does not exceed the river bet level already
+        // standing - an all-in for less or equal is a call, one above it
+        // raised (full or short) and is not. Once per player per hand by
+        // construction: the map keeps each player's last river action only.
+        let riverLevel = 0;
+        const lastRiver = new Map<string, boolean>();
+        for (const a of actions) {
+          if (a.stage !== 'river' || !a.userId) continue;
+          const amt = typeof a.amount === 'number' && isFinite(a.amount) ? a.amount : 0;
+          let called = a.action === 'call';
+          if (a.action === 'all_in') called = riverLevel > 0 && amt <= riverLevel + 0.005;
+          lastRiver.set(a.userId, called);
+          if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+            riverLevel = Math.max(riverLevel, amt);
+        }
+        for (const [id, called] of lastRiver) {
+          if (!called) continue;
+          const sd = shown.get(id);
+          if (!sd || sd.mucked !== false) continue;
+          const s = touch(id);
+          s.riverCallSD++;
+          if (WEAK_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase())) s.riverCallSDWeak++;
+        }
       }
       mirror();
       // 2026-10-16 OPPONENT EXPLOIT: one completed hand decays and feeds the
@@ -2540,6 +2627,18 @@ export class HorseMind {
     const s = this.readStats(id);
     if (!s || s.bigBetSD < 5) return null;
     return s.bigBetSDStrong / s.bigBetSD;
+  }
+
+  /** 2026-10-25 RIVER CALL READ: of this player's shown river calls, the
+   *  fraction that were one pair or worse. Null below five shown calls. High =
+   *  they call rivers light (bluff them less, value-bet them thinner). Read
+   *  identically for every player, human or horse. A row decoded from a frame
+   *  that predates the counters reads as no sample. */
+  static riverCallLightTendency(id: string): number | null {
+    const s = this.readStats(id);
+    const n = s?.riverCallSD ?? 0;
+    if (!s || !(n >= 5)) return null;
+    return (s.riverCallSDWeak ?? 0) / n;
   }
 
   static tableExploit(

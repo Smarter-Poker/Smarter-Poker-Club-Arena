@@ -370,6 +370,13 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
     ...over,
   });
 
+  // V58 (2026-10-26): A-K on Q-J-T is a made straight, and a set, straight,
+  // flush or better no longer reads the class-mean cell (the value ladder
+  // bets it - HorseMadeHandBeatsClassMean.law.test.ts). The cell-following
+  // pins below therefore hold an UNMADE hand: A-9 offsuit (ace high, no
+  // straight, no flush on either board).
+  const unmade = () => mkPlayer({ cards: [H('A'), S('9')] });
+
   // Turn variant of the same hand: BB check-called the flop bet, then
   // checked the turn to hero — hero still holds the lead.
   const turnHistory: ActionRecord[] = [
@@ -399,11 +406,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { bet_big: 1 } },
+        hand_matrix: { A9o: { bet_big: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), gs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), gs() as never, 'balanced');
       expect(d.action).toBe('bet');
     }
   });
@@ -417,11 +424,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { check: 1 } },
+        hand_matrix: { A9o: { check: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), gs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), gs() as never, 'balanced');
       expect(d.action).toBe('check');
     }
   });
@@ -435,11 +442,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { bet_small: 1 } },
+        hand_matrix: { A9o: { bet_small: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), turnGs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), turnGs() as never, 'balanced');
       expect(d.action).toBe('bet');
       // 0.24-0.32 of the 19 pot, before betSize's own rounding — assert the
       // band loosely: a block bet, never a barrel
@@ -457,11 +464,11 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
         depth_bucket: 40,
         texture_class: 'Btuc',
         facing: 'open',
-        hand_matrix: { AKs: { check: 1 } },
+        hand_matrix: { A9o: { check: 1 } },
       },
     ] as never);
     for (let i = 0; i < 15; i++) {
-      const d = HorseLogic.decide(mkPlayer(), turnGs() as never, 'balanced');
+      const d = HorseLogic.decide(unmade(), turnGs() as never, 'balanced');
       expect(d.action).toBe('check');
     }
   });

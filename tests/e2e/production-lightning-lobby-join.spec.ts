@@ -69,19 +69,27 @@ for (const width of [393, 1440]) {
     // the first panel that offers an enabled Join Lightning is the door.
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     if (await allGames.count()) await allGames.click();
-    const rows = page
-      .locator(
-        // Both layouts are in the document; only the one this width shows counts
-        // (run 40132784246 picked the hidden phone row at 1440px).
-        '[data-testid="lobby-game-row"][data-kind="cash"]:visible, .club-home__games .lt-row[data-kind="cash"]:visible'
-      )
-      .filter({ hasText: /lightning/i });
+    // A row is chosen by its live mode, not its name (post-deploy run
+    // 40292901952): games named "Lightning" that are not running Lightning -
+    // the variants Dan took off Lightning on 2026-10-25, nine-handed pilots,
+    // games below the switch-on count - offer Join Game, and eight of them
+    // filled every try. data-lightning is set only while the game is in
+    // Lightning mode with Join Lightning on offer.
+    const rows = page.locator(
+      // Both layouts are in the document; only the one this width shows counts
+      // (run 40132784246 picked the hidden phone row at 1440px).
+      '[data-testid="lobby-game-row"][data-kind="cash"][data-lightning="on"]:visible, .club-home__games .lt-row[data-kind="cash"][data-lightning="on"]:visible'
+    );
     await expect(rows.first(), 'the member lobby lists a Lightning game').toBeVisible({
       timeout: 45_000,
     });
     const panel = page.getByRole('dialog').filter({ has: page.locator('.arena-game-card') });
     const tries = Math.min(await rows.count(), 8);
     let opened = false;
+    // What each tried panel offered, so a refusal names the cause instead of
+    // only "false" (runs 40290005874 and 40292901952 failed with no screenshot
+    // surviving the later Playwright runs in the same job).
+    const saw: string[] = [];
     for (let i = 0; i < tries && !opened; i += 1) {
       const row = rows.nth(i);
       const details = row.getByRole('button', { name: /^Details:/ });
@@ -95,11 +103,31 @@ for (const width of [393, 1440]) {
         await join.click();
         opened = true;
       } else {
+        const title = ((await row.innerText().catch(() => '')) || '')
+          .replace(/\s+/g, ' ')
+          .slice(0, 80);
+        const offered = await panel
+          .first()
+          .getByRole('button')
+          .evaluateAll((buttons) =>
+            buttons
+              .map(
+                (b) =>
+                  `${(b.textContent || '').replace(/\s+/g, ' ').trim()}${(b as HTMLButtonElement).disabled ? ' (disabled)' : ''}`
+              )
+              .filter((label) => label && !/^Close Game Lobby/.test(label))
+              .slice(0, 6)
+          )
+          .catch(() => [] as string[]);
+        saw.push(`${title} -> ${offered.join(' | ') || 'no buttons'}`);
         await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
         await expect(panel).toHaveCount(0);
       }
     }
-    expect(opened, 'a Lightning game panel offers an enabled Join Lightning').toBe(true);
+    expect(
+      opened,
+      `a Lightning game panel offers an enabled Join Lightning; tried ${saw.length} of ${await rows.count()} rows:\n${saw.join('\n')}`
+    ).toBe(true);
 
     await expect(page).toHaveURL(LIGHTNING_ROUTE, { timeout: 15_000 });
     const landed = new URL(page.url());

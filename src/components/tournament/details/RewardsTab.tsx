@@ -325,10 +325,10 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     (async () => {
       try {
         const [live, claimed] = await Promise.all([
-          fetchAllRows<{ current_bounty: unknown }>((from, to) =>
+          fetchAllRows<{ current_bounty: unknown; status: string | null }>((from, to) =>
             supabase
               .from('tournament_players')
-              .select('current_bounty')
+              .select('current_bounty, status')
               .eq('tournament_id', tournamentId)
               .gt('current_bounty', 0)
               .range(from, to)
@@ -344,7 +344,13 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
         if (cancelled) return;
 
         setLedger({
-          liveHeads: live.map((r) => cents(num(r.current_bounty))),
+          /* A head belongs to a player still in (2026-10-26 audit). Before the
+             money a mystery bust pays nothing and leaves its head on the row,
+             so counting every row put 162 knocked-out players' heads back
+             into "Still Available". */
+          liveHeads: live
+            .filter((r) => isStillIn({ status: r.status ?? '' } as Parameters<typeof isStillIn>[0]))
+            .map((r) => cents(num(r.current_bounty))),
           claimedHeads: claimed.map((r) => cents(num(r.bounty_amount))),
           loaded: true,
           failed: false,

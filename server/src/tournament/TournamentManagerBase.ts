@@ -477,6 +477,31 @@ export abstract class TournamentManagerBase {
    */
   private readonly tableAdmissionLastRefusal = new Map<string, string>();
   private readonly tableAdmissionPagedAt = new Map<string, number>();
+  /**
+   * A STALLED TABLE PAGES ITS REAL REFUSAL, AND A REPEATED REFUSAL READS AS
+   * STUCK (2026-10-25).
+   *
+   * Union PKO Afternoon 12135e5b, Table 13 (3e3d1587): every re-admission of
+   * its park from 19:53 to 23:39 UTC was refused
+   * F06_MOVEMENT_WHOLE_ROSTER_REQUIRED, but the one page (20:06) read "Last
+   * refusal: F06 manager authority unavailable" - a transient retry that had
+   * overwritten the real code - and its 30-minute refreshes changed nothing,
+   * because the dedupe door returns the open row untouched. 30 of the 53 pages
+   * of the previous seven days read "Last refusal: unknown": the table was
+   * killed and rebuilt, and the kill reason was never named.
+   *
+   * So the coded refusal (an UPPER_SNAKE database code) is kept as the table's
+   * streak, a refusal without a code never replaces it, identical refusals are
+   * counted with their first and last time, the recovery reason is kept for a
+   * table that met no refusal, and each refresh rewrites the one open alert
+   * with the current streak. Identification only, like the rest of this.
+   */
+  private readonly tableAdmissionRefusalStreak = new Map<
+    string,
+    { code: string; coded: boolean; count: number; firstAt: number; lastAt: number }
+  >();
+  private readonly tableAdmissionRecoveryReason = new Map<string, string>();
+  private readonly tableAdmissionPagedCode = new Map<string, string | null>();
   static readonly TABLE_ADMISSION_PAGE_AFTER_MS = 10 * 60_000;
   static readonly TABLE_ADMISSION_PAGE_EVERY_MS = 30 * 60_000;
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
@@ -1624,7 +1649,23 @@ export abstract class TournamentManagerBase {
       this.tableEngineRecoveryAttempts.delete(tableId);
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      TournamentManagerBase.forgetTableAdmissionStreak(this, tableId);
       this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
+    }
+  }
+
+  /** Static so a test probe without the method can be cleared the same way. */
+  private static forgetTableAdmissionStreak(
+    manager: TournamentManagerBase,
+    tableId?: string
+  ): void {
+    for (const map of [
+      manager.tableAdmissionRefusalStreak,
+      manager.tableAdmissionRecoveryReason,
+      manager.tableAdmissionPagedCode,
+    ] as Array<Map<string, unknown> | undefined>) {
+      if (tableId === undefined) map?.clear();
+      else map?.delete(tableId);
     }
   }
 
@@ -1637,6 +1678,7 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
     this.tableAdmissionFailingSince.clear();
     this.tableAdmissionLastRefusal?.clear();
+    TournamentManagerBase.forgetTableAdmissionStreak(this);
     this.fieldWithoutDealerReleaseAnnouncedFor?.clear();
     this.tableRestartBackoffStore?.clear();
   }
@@ -1651,14 +1693,45 @@ export abstract class TournamentManagerBase {
     if (!this.tableEngineRecoveryTimers.has(tableId)) {
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      TournamentManagerBase.forgetTableAdmissionStreak(this, tableId);
       this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
     }
   }
 
+  /** The database's own refusal code in a refusal, e.g. F06_MOVEMENT_WHOLE_ROSTER_REQUIRED. */
+  static tableAdmissionRefusalCode(text: string): string | null {
+    return /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){2,}\b/.exec(text)?.[0] ?? null;
+  }
+
   /** Keep the last refusal a failing table's admission met (bounded text). */
-  private noteTableAdmissionRefusal(tableId: string, error: unknown): void {
+  private noteTableAdmissionRefusal(tableId: string, error: unknown, now = Date.now()): void {
     const text = describeError(error).replace(/\s+/g, ' ').trim().slice(0, 400);
-    if (text) this.tableAdmissionLastRefusal?.set(tableId, text);
+    if (!text) return;
+    this.tableAdmissionLastRefusal?.set(tableId, text);
+    const streaks = this.tableAdmissionRefusalStreak;
+    if (!streaks) return;
+    const code = TournamentManagerBase.tableAdmissionRefusalCode(text);
+    const key = code ?? text.slice(0, 120);
+    const current = streaks.get(tableId);
+    // A refusal with no code (a fenced or superseded retry) never hides the
+    // coded refusal the table is actually stuck on.
+    if (current?.coded && !code) return;
+    if (current && current.code === key) {
+      current.count += 1;
+      current.lastAt = now;
+      return;
+    }
+    streaks.set(tableId, { code: key, coded: code !== null, count: 1, firstAt: now, lastAt: now });
+  }
+
+  /** The refusal a failing table is stuck on, and how many times it was met. */
+  getTableAdmissionRefusalStreak(
+    tableId: string
+  ): { code: string; count: number; firstAt: number; lastAt: number } | null {
+    const streak = this.tableAdmissionRefusalStreak?.get(tableId);
+    return streak
+      ? { code: streak.code, count: streak.count, firstAt: streak.firstAt, lastAt: streak.lastAt }
+      : null;
   }
 
   /** The last refusal recorded for each table still failing admission. */
@@ -1681,31 +1754,82 @@ export abstract class TournamentManagerBase {
     const failingMs = now - since;
     if (failingMs < TournamentManagerBase.TABLE_ADMISSION_PAGE_AFTER_MS) return;
     const pagedAt = this.tableAdmissionPagedAt.get(tableId);
+    const streak = this.tableAdmissionRefusalStreak?.get(tableId) ?? null;
+    const code = streak?.code ?? null;
+    // A refusal that changed since the last page refreshes it at once.
+    const codeChanged =
+      pagedAt !== undefined &&
+      this.tableAdmissionPagedCode !== undefined &&
+      (this.tableAdmissionPagedCode.get(tableId) ?? null) !== code;
     if (
       pagedAt !== undefined &&
+      !codeChanged &&
       now - pagedAt < TournamentManagerBase.TABLE_ADMISSION_PAGE_EVERY_MS
     )
       return;
+    const firstPage = pagedAt === undefined;
     this.tableAdmissionPagedAt.set(tableId, now);
+    this.tableAdmissionPagedCode?.set(tableId, code);
     const refusal = this.tableAdmissionLastRefusal?.get(tableId) ?? null;
+    const recoveryReason = this.tableAdmissionRecoveryReason?.get(tableId) ?? null;
     const minutes = Math.round(failingMs / 60_000);
+    const stuck =
+      streak && streak.count > 1
+        ? ` STUCK: refused ${streak.code} ${streak.count} times since ${new Date(streak.firstAt).toISOString()}.`
+        : streak
+          ? ` Refused ${streak.code}.`
+          : '';
+    const message =
+      `Tournament ${this.tournamentId} table ${tableId} has failed to start for ${minutes} min; its seated players have no dealer.` +
+      stuck +
+      ` Last refusal: ${refusal ?? (recoveryReason ? `none recorded (recovery reason: ${recoveryReason})` : 'unknown')}`;
+    const dedupeKey = `table-admission-failing:${tableId}`;
+    const context = {
+      tournament_id: this.tournamentId,
+      table_id: tableId,
+      failing_minutes: minutes,
+      failing_since: new Date(since).toISOString(),
+      last_refusal: refusal,
+      refusal_code: code,
+      identical_refusals: streak?.count ?? 0,
+      refusal_first_at: streak ? new Date(streak.firstAt).toISOString() : null,
+      refusal_last_at: streak ? new Date(streak.lastAt).toISOString() : null,
+      stuck: (streak?.count ?? 0) > 1,
+      recovery_reason: recoveryReason,
+      attempts: this.tableEngineRecoveryAttempts?.get(tableId) ?? null,
+    };
     void raiseFinancialAlert(
       'critical',
       'Tournament.table_admission_failing',
-      `Tournament ${this.tournamentId} table ${tableId} has failed to start for ${minutes} min; its seated players have no dealer. Last refusal: ${refusal ?? 'unknown'}`,
-      {
-        tournament_id: this.tournamentId,
-        table_id: tableId,
-        failing_minutes: minutes,
-        failing_since: new Date(since).toISOString(),
-        last_refusal: refusal,
-        attempts: this.tableEngineRecoveryAttempts?.get(tableId) ?? null,
-      },
-      `table-admission-failing:${tableId}`,
+      message,
+      context,
+      dedupeKey,
       this.tournamentId
-    ).catch((alertError) =>
-      reportError(alertError, 'Tournament.table_admission_failing_alert_failed', { tableId })
-    );
+    )
+      .then(async (raised) => {
+        // The dedupe door returns the one open row unchanged, so a refresh
+        // rewrites that row with the current streak; the keys the door and
+        // the inbox read (channel, dedupe_key, entity_id) are kept.
+        if (firstPage || !raised.alertId) return;
+        const { error } = await supabase
+          .from('financial_alerts')
+          .update({
+            message,
+            context: {
+              ...context,
+              channel: 'server_rpc',
+              dedupe_key: dedupeKey,
+              entity_id: this.tournamentId,
+            },
+          })
+          .eq('id', raised.alertId)
+          .eq('source', 'Tournament.table_admission_failing')
+          .eq('resolved', false);
+        if (error) throw new Error(`table_admission_failing_refresh_failed: ${error.message}`);
+      })
+      .catch((alertError) =>
+        reportError(alertError, 'Tournament.table_admission_failing_alert_failed', { tableId })
+      );
   }
 
   /**
@@ -1882,6 +2006,9 @@ export abstract class TournamentManagerBase {
       this.clearManagedTableEngineRecovery(tableId);
       return;
     }
+    // What started this failure, for a page that met no refusal of its own.
+    if (!this.tableAdmissionRecoveryReason?.has(tableId))
+      this.tableAdmissionRecoveryReason?.set(tableId, String(reason).slice(0, 200));
     if (!this.tableAdmissionFailingSince.has(tableId)) {
       this.tableAdmissionFailingSince.set(tableId, Date.now());
     }
@@ -3016,6 +3143,27 @@ export abstract class TournamentManagerBase {
    * A field with a break or seat move outstanding is served from the
    * scheduler's consolidation lane until a balance stage finishes clean.
    */
+  /**
+   * A parked gap-balance source this manager will move itself, at once.
+   * True means the edge is handled here and needs no queued sweep. The base
+   * manager balances nothing, so it never claims one.
+   */
+  protected claimGapBalanceAtBoundary(_tableId: string): boolean {
+    return false;
+  }
+
+  /**
+   * True while a gap-balance move is being made at a source's own boundary.
+   * A sweep admitted meanwhile yields at once and is owed again afterwards
+   * (`boundaryBalanceOwesSweep`), so the two never plan seat moves at the
+   * same time.
+   */
+  protected boundaryBalanceInFlight = false;
+  protected boundaryBalanceOwesSweep = false;
+
+  /** Called as every admitted sweep settles; the balancing manager drains its edge work here. */
+  protected onEliminationSweepSettled(): void {}
+
   protected declareConsolidationOutstanding(outstanding: boolean): void {
     if (this.consolidationDeclared === outstanding) return;
     if (tournamentEliminationScheduler.setConsolidating(this.tournamentId, outstanding)) {
@@ -3096,7 +3244,7 @@ export abstract class TournamentManagerBase {
         this.requestEliminationSweep();
       }
     });
-    engine.onPauseReady(() => {
+    engine.onPauseReady((parkedTableId) => {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
@@ -3124,7 +3272,14 @@ export abstract class TournamentManagerBase {
       // A seat move or table break whose one-second probe missed is waiting
       // for exactly this edge. Wake the sweep that claims it now, rather than
       // leaving the claim to whichever redrive the shared scheduler reaches.
-      if (engine.awaitsTournamentMoveClaim())
+      //
+      // A GAP-BALANCE SOURCE IS MOVED AT ITS OWN EDGE (2026-10-26). A source
+      // fenced to give a player to a short table is moved here, at the
+      // boundary it just reached, instead of waiting in the shared queue for a
+      // sweep that has to arrive inside the fence's 15 second window; see
+      // TournamentManager.claimGapBalanceAtBoundary. A break source (durable)
+      // still goes to the sweep, which owns its park record.
+      if (engine.awaitsTournamentMoveClaim() && !this.claimGapBalanceAtBoundary(parkedTableId))
         this.requestEliminationSweep('tournament_move_parked');
       // A table parking is the edge the stage-end barrier waits for.
       if (this.stageEndPause) this.advanceStageEndBarrier();

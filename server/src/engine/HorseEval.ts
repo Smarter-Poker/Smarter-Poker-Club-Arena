@@ -3386,3 +3386,123 @@ function publicPhysicalNutHigh(board: Card[]): number {
     omahaPhysicalNutCache.delete(omahaPhysicalNutCache.keys().next().value!);
   return best;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// PLO6 RIVER: HOW MANY HOLDINGS BEAT THIS HAND (2026-10-25)
+// ─────────────────────────────────────────────────────────────────────────
+/** Best Omaha score: exactly two hole cards and three board cards. */
+function omahaBestScore(hole: Card[], board: Card[]): number {
+  let best = -1;
+  for (let a = 0; a < hole.length; a++)
+    for (let b = a + 1; b < hole.length; b++)
+      for (let x = 0; x < board.length; x++)
+        for (let y = x + 1; y < board.length; y++)
+          for (let z = y + 1; z < board.length; z++) {
+            const s = scoreFiveCards([hole[a], hole[b], board[x], board[y], board[z]]);
+            if (s > best) best = s;
+          }
+  return best;
+}
+
+/**
+ * On a complete five-card board, the number of two-card holdings from the
+ * unseen cards that make a strictly better Omaha hand than `hole`, counted up
+ * to `cap` (the answer is min(true count, cap)). 0 is the effective nuts. A
+ * tie is not a beater. Null when the board is not complete or cards overlap.
+ */
+export function omahaRiverBeatingCombos(hole: Card[], board: Card[], cap = 64): number | null {
+  if (!Array.isArray(hole) || !Array.isArray(board) || board.length !== 5 || hole.length < 2)
+    return null;
+  const key = (c: Card) => `${c.rank}${c.suit}`;
+  const seen = new Set([...hole, ...board].map(key));
+  if (seen.size !== hole.length + board.length) return null;
+  const mine = omahaBestScore(hole, board);
+  const unseen: Card[] = [];
+  for (const rank of RANKS)
+    for (const suit of SUITS) {
+      const c = { rank, suit } as Card;
+      if (!seen.has(key(c))) unseen.push(c);
+    }
+  let beaters = 0;
+  for (let i = 0; i < unseen.length; i++)
+    for (let j = i + 1; j < unseen.length; j++)
+      if (omahaBestScore([unseen[i], unseen[j]], board) > mine && ++beaters >= cap) return cap;
+  return beaters;
+}
+
+/** Deterministic samples behind omahaRiverBeatProbability. */
+export const OMAHA_BEAT_PROBABILITY_SAMPLES = 20_000;
+
+/**
+ * On a complete board, the probability that ONE random opponent holding
+ * `handSize` unseen cards can make a strictly better Omaha hand than `hole`.
+ * Counting beating two-card holdings overstates a single-card threat: on
+ * 2-2-2 every holding with the last deuce is quads, 40 holdings that all
+ * share one card, which a six-card hand holds about 15% of the time. The
+ * sample is deterministic (seeded by the cards, never the shared horse RNG),
+ * so a replay of the same spot always answers the same. Null when the board
+ * is incomplete or cards overlap.
+ */
+export function omahaRiverBeatProbability(
+  hole: Card[],
+  board: Card[],
+  handSize = hole.length,
+  samples = OMAHA_BEAT_PROBABILITY_SAMPLES
+): number | null {
+  if (!Array.isArray(hole) || !Array.isArray(board) || board.length !== 5 || hole.length < 2)
+    return null;
+  const key = (c: Card) => `${c.rank}${c.suit}`;
+  const seen = new Set([...hole, ...board].map(key));
+  if (seen.size !== hole.length + board.length) return null;
+  const mine = omahaBestScore(hole, board);
+  const unseen: Card[] = [];
+  for (const rank of RANKS)
+    for (const suit of SUITS) {
+      const c = { rank, suit } as Card;
+      if (!seen.has(key(c))) unseen.push(c);
+    }
+  const n = unseen.length;
+  const beats = new Uint8Array(n * n);
+  let any = false;
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++)
+      if (omahaBestScore([unseen[i], unseen[j]], board) > mine) {
+        beats[i * n + j] = 1;
+        beats[j * n + i] = 1;
+        any = true;
+      }
+  if (!any) return 0;
+  const size = Math.max(2, Math.min(handSize, n));
+  // FNV-1a over the spot, then xorshift32: a private, reproducible stream.
+  let seed = 0x811c9dc5;
+  for (const ch of [...hole.map(key).sort(), '|', ...board.map(key)].join(''))
+    seed = Math.imul(seed ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+  if (seed === 0) seed = 1;
+  const next = (): number => {
+    seed ^= seed << 13;
+    seed >>>= 0;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    seed >>>= 0;
+    return seed / 4294967296;
+  };
+  const pool = Array.from({ length: n }, (_, i) => i);
+  let hits = 0;
+  for (let t = 0; t < samples; t++) {
+    for (let k = 0; k < size; k++) {
+      const r = k + Math.floor(next() * (n - k));
+      const tmp = pool[k];
+      pool[k] = pool[r];
+      pool[r] = tmp;
+    }
+    let hit = false;
+    for (let a = 0; a < size && !hit; a++)
+      for (let b = a + 1; b < size; b++)
+        if (beats[pool[a] * n + pool[b]]) {
+          hit = true;
+          break;
+        }
+    if (hit) hits++;
+  }
+  return hits / samples;
+}

@@ -37,7 +37,7 @@ export { resolvePayoutStructure } from '../../../lib/payoutStructure';
 export type { PayoutPlace, PayoutSubject } from '../../../lib/payoutStructure';
 
 /**
- * SEVEN TABS. Dan 2026-08-25, verbatim: "CHIPS SHOULD BE CALLED 'RANKING'" and
+ * SEVEN TABS (EIGHT ON A MYSTERY EVENT). Dan 2026-08-25, verbatim: "CHIPS SHOULD BE CALLED 'RANKING'" and
  * "RANKING SHOULD BE DELETED, AS WE CONVERTED 'CHIPS' TO RANKING." The old
  * `chips` tab is the one that survived, under the name Ranking; the old
  * `ranking` tab (a TournamentStandings wrapper) is gone.

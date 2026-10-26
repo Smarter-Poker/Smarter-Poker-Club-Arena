@@ -197,6 +197,7 @@ vi.mock('./HorsePhase13Authority.js', async (importOriginal) => {
 });
 
 import { HandController } from './HandController.js';
+import { Deck, RANKS } from './PokerEngine.js';
 import {
   horsePhase13ContinuationVersion,
   liveHorsePhase13Authorities,
@@ -481,6 +482,15 @@ describe('authoritative horse action effect commit', () => {
       enginePlayer.user_id = player.user_id;
       engine.getEngineLeaseAuthority = () => ({ verified: true, generation: '9' });
       engine.broadcastCurrentState = vi.fn();
+      // The hole cards are fixed low (only 2s and 3s reach the four seats).
+      // This case asserts the selected CALL is executed; a shuffled deal
+      // occasionally handed seat 1 QQ+/AK, and holdemPremiumAggression
+      // (#8122) then correctly turns that call into a raise, failing the
+      // case about 1 run in 40 (seen on #8139, 2026-10-26).
+      vi.spyOn(Deck.prototype, 'shuffle').mockImplementation(function (this: Deck) {
+        const cards = (this as unknown as { cards: { rank: string }[] }).cards;
+        cards.sort((a, b) => RANKS.indexOf(a.rank as never) - RANKS.indexOf(b.rank as never));
+      });
       const hc = new HandController(
         {
           tableId: TABLE,

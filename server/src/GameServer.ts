@@ -230,6 +230,7 @@ import {
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError } from './services/errorReporter.js';
+import { IN_LIST_CHUNK } from './services/supabase/chunkedIn.js';
 import { raiseFinancialAlert } from './services/financialAlerts.js';
 import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
@@ -3429,10 +3430,64 @@ export class GameServer {
     return true;
   }
   /**
+   * AN EMPTY EVENT'S CANCELLATION DOES NOT QUEUE BEHIND HORSE TOP-UPS
+   * (2026-10-26). The cancel of an event nobody entered used to ride
+   * launchDiscoveryTopUp, so it competed for PAST_START_TOP_UP_CONCURRENCY
+   * slots with every horse top-up on the platform - and after an engine
+   * restart every past-start board asks at once (their backoff clocks are
+   * gone too). "Daily 25 Chip Freezeout" 501008e1 was due to cancel at 19:30
+   * UTC on 2026-10-25, the engine restarted at 19:30, and the cancel landed
+   * at 19:52 while TournamentNeverStarted paged. A cancel is one RPC that
+   * seats nobody and moves no chip; it has its own single-flight lane,
+   * bounded by the number of empty events, which is small by construction.
+   */
+  private readonly emptyEventCancelsInFlight = new Map<string, Promise<void>>();
+
+  private launchEmptyEventCancel(
+    tournamentId: string,
+    generation: number,
+    work: () => Promise<void>
+  ): boolean {
+    const canStart = () =>
+      this.directAdmissionIsCurrent(generation) &&
+      !isMaintenanceFrozen() &&
+      !this.tournamentEngines.has(tournamentId) &&
+      !this.tournamentManagerAdmissionOperations.has(tournamentId) &&
+      !this.tournamentManagerAdmissionRetryTimers.has(tournamentId);
+    if (
+      !canStart() ||
+      this.tournamentTopUpsInFlight.has(tournamentId) ||
+      this.emptyEventCancelsInFlight.has(tournamentId)
+    ) {
+      return false;
+    }
+    const operation = Promise.resolve().then(async () => {
+      if (!canStart()) return;
+      await work();
+    });
+    const tracked = operation.finally(() => {
+      if (this.emptyEventCancelsInFlight.get(tournamentId) === tracked) {
+        this.emptyEventCancelsInFlight.delete(tournamentId);
+      }
+    });
+    this.emptyEventCancelsInFlight.set(tournamentId, tracked);
+    this.launchDiscoveryJob(tracked, 'GameServer.empty_past_start_event_cancel_failed', {
+      tournamentId,
+    });
+    return true;
+  }
+
+  /**
    * When each REGISTERING event was last topped up past its start, and how many
    * top-ups in a row came back empty (2026-09-11). The branch never had a
    * throttle of its own - the pass was the throttle - and the pass is now
    * seconds long. Pruned with lastMttRampAt.
+   *
+   * THE EMPTY COUNT IS ALSO DURABLE (2026-10-26). This map dies with the
+   * process; public.tournament_past_start_top_ups (written when a top-up
+   * settles, read beside the roster read) does not, so the empty-event cancel
+   * does not have to wait for a fresh empty top-up after a restart. See
+   * readDurableEmptyTopUps / recordPastStartTopUpOutcome.
    */
   private pastStartTopUpClock: Map<string, PastStartTopUpClock> = new Map();
   /**
@@ -5133,6 +5188,7 @@ export class GameServer {
           secsIdle: Math.round(t.msFailing / 1000),
           admission: 'failing' as const,
           refusal: t.refusal,
+          stuckOn: t.stuckOn,
         })),
     ];
     // LIVENESS RACE FIX (2026-08-22): the per-table recovery chain (watchdog
@@ -6297,17 +6353,32 @@ export class GameServer {
    * 120 s stall threshold, oldest first. Between retries such a table has no
    * engine, so tableLivenessSnapshot() cannot see it.
    */
-  private tournamentTablesFailingAdmission(
-    now: number
-  ): Array<{ tableId: string; msFailing: number; refusal: string | null }> {
-    const failing: Array<{ tableId: string; msFailing: number; refusal: string | null }> = [];
+  private tournamentTablesFailingAdmission(now: number): Array<{
+    tableId: string;
+    msFailing: number;
+    refusal: string | null;
+    stuckOn: { code: string; count: number } | null;
+  }> {
+    const failing: Array<{
+      tableId: string;
+      msFailing: number;
+      refusal: string | null;
+      stuckOn: { code: string; count: number } | null;
+    }> = [];
     for (const manager of this.tournamentEngines.values()) {
       const refusals = new Map(
         (manager.getTableAdmissionRefusals?.() ?? []).map((r) => [r.tableId, r.refusal])
       );
       for (const table of manager.getTablesFailingAdmission?.(now) ?? []) {
-        if (table.msFailing > 120_000)
-          failing.push({ ...table, refusal: refusals.get(table.tableId) ?? null });
+        if (table.msFailing <= 120_000) continue;
+        // The refusal this table is stuck on and how many times it was met
+        // (A STALLED TABLE PAGES ITS REAL REFUSAL, 2026-10-25).
+        const streak = manager.getTableAdmissionRefusalStreak?.(table.tableId) ?? null;
+        failing.push({
+          ...table,
+          refusal: refusals.get(table.tableId) ?? null,
+          stuckOn: streak ? { code: streak.code, count: streak.count } : null,
+        });
       }
     }
     return failing.sort((x, y) => y.msFailing - x.msFailing);
@@ -8066,6 +8137,20 @@ export class GameServer {
                 rosterHorizon)
         );
         const rosterByTournament = await this.readEntrantRosterCounts(rosterRows);
+        /* The durable empty-top-up count, for the events whose cancel could
+           depend on it this pass: registration-first, roster read complete and
+           empty, counter zero, past start. Usually none; one read when any. */
+        const durableEmptyTopUps = await this.readDurableEmptyTopUps(
+          (registering || [])
+            .filter(
+              (t) =>
+                !isPersistedSeatFirst(t) &&
+                rosterByTournament.get(t.id) === 0 &&
+                (t.current_players ?? 0) === 0 &&
+                Date.parse(String(t.start_time)) <= registeringReadAt
+            )
+            .map((t) => t.id)
+        );
 
         /* ONE FLEET READ PER PASS, AND THE TOP-UPS BESIDE THE WALK (2026-09-11).
            Every top-up below re-read the fleet, its load, the cash-room reserve
@@ -8094,6 +8179,7 @@ export class GameServer {
           if (
             this.tournamentEngines.has(tournament.id) ||
             this.tournamentTopUpsInFlight.has(tournament.id) ||
+            this.emptyEventCancelsInFlight.has(tournament.id) ||
             this.tournamentManagerAdmissionOperations.has(tournament.id) ||
             this.tournamentManagerAdmissionRetryTimers.has(tournament.id)
           ) {
@@ -8446,48 +8532,49 @@ export class GameServer {
                 currentPlayers: tournament.current_players,
                 startTimeMs: startTime,
                 nowMs: now,
-                emptyTopUps: emptyClock?.misses ?? 0,
+                /* This process's count, or the one the previous process wrote
+                   down (2026-10-26): a restart forgets the first, not the second. */
+                emptyTopUps: Math.max(
+                  emptyClock?.misses ?? 0,
+                  durableEmptyTopUps.get(tournament.id) ?? 0
+                ),
               })
             ) {
               const askedAt = emptyClock?.cancelAskedAt ?? 0;
               if (now - askedAt >= EMPTY_PAST_START_CANCEL_RETRY_MS) {
-                this.launchDiscoveryTopUp(
-                  tournament.id,
-                  generation,
-                  async () => {
-                    const settled = this.pastStartTopUpClock.get(tournament.id);
-                    this.pastStartTopUpClock.set(tournament.id, {
-                      at: settled?.at ?? now,
-                      misses: settled?.misses ?? 0,
-                      cancelAskedAt: now,
-                    });
-                    const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
-                      p_tournament_id: tournament.id,
-                      p_admin_id: null,
-                    });
-                    if (cancelError) {
-                      reportError(
-                        new Error(
-                          `[GameServer] empty past-start event ${tournament.name} (${String(
-                            tournament.id
-                          ).slice(0, 8)}) was not cancelled: ${cancelError.message}`
-                        ),
-                        'GameServer.empty_past_start_event_cancel_refused',
-                        { tournamentId: tournament.id }
-                      );
-                      return;
-                    }
-                    console.log(
-                      `[GameServer] Cancelled "${tournament.name}" (${String(tournament.id).slice(
-                        0,
-                        8
-                      )}): nobody entered it, it is ${Math.round(
-                        (now - startTime) / 60_000
-                      )} minute(s) past its start and no horse could fill it; nothing to refund`
+                this.launchEmptyEventCancel(tournament.id, generation, async () => {
+                  const settled = this.pastStartTopUpClock.get(tournament.id);
+                  this.pastStartTopUpClock.set(tournament.id, {
+                    at: settled?.at ?? now,
+                    misses: settled?.misses ?? 0,
+                    cancelAskedAt: now,
+                  });
+                  const { error: cancelError } = await supabase.rpc('atomic_cancel_tournament', {
+                    p_tournament_id: tournament.id,
+                    p_admin_id: null,
+                  });
+                  if (cancelError) {
+                    reportError(
+                      new Error(
+                        `[GameServer] empty past-start event ${tournament.name} (${String(
+                          tournament.id
+                        ).slice(0, 8)}) was not cancelled: ${cancelError.message}`
+                      ),
+                      'GameServer.empty_past_start_event_cancel_refused',
+                      { tournamentId: tournament.id }
                     );
-                  },
-                  'GameServer.empty_past_start_event_cancel_failed'
-                );
+                    return;
+                  }
+                  console.log(
+                    `[GameServer] Cancelled "${tournament.name}" (${String(tournament.id).slice(
+                      0,
+                      8
+                    )}): nobody entered it, it is ${Math.round(
+                      (now - startTime) / 60_000
+                    )} minute(s) past its start and no horse could fill it; nothing to refund`
+                  );
+                  await this.recordPastStartTopUpOutcome(tournament.id, null);
+                });
               }
               continue;
             }
@@ -8522,10 +8609,18 @@ export class GameServer {
                   const held =
                     added === 0 &&
                     this.tournamentRecurring.seatFirstPartnerHoldUntil(tournament.id) > Date.now();
-                  this.pastStartTopUpClock.set(tournament.id, {
-                    at: now,
-                    misses: added > 0 ? 0 : held ? misses : misses + 1,
-                  });
+                  const settledMisses = added > 0 ? 0 : held ? misses : misses + 1;
+                  this.pastStartTopUpClock.set(tournament.id, { at: now, misses: settledMisses });
+                  /* Durable only where it decides anything: an event with no
+                     entrant, whose cancellation reads it after a restart. */
+                  if (rosterByTournament.get(tournament.id) === 0 && !held) {
+                    await this.recordPastStartTopUpOutcome(
+                      tournament.id,
+                      added > 0
+                        ? null
+                        : Math.max(settledMisses, durableEmptyTopUps.get(tournament.id) ?? 0)
+                    );
+                  }
                   if (added > 0) {
                     console.log(
                       `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
@@ -10702,6 +10797,77 @@ export class GameServer {
       }
     }
     return counts;
+  }
+
+  /**
+   * The durable empty-top-up count for these events (2026-10-26). Read-only;
+   * an unreadable table reads as no count, which only ever delays a cancel
+   * until this process's own top-up has come back empty, as before.
+   */
+  private async readDurableEmptyTopUps(ids: string[]): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (ids.length === 0) return counts;
+    try {
+      for (let offset = 0; offset < ids.length; offset += IN_LIST_CHUNK) {
+        const { data, error } = await supabase
+          .from('tournament_past_start_top_ups')
+          .select('tournament_id, empty_top_ups')
+          .in('tournament_id', ids.slice(offset, offset + IN_LIST_CHUNK));
+        if (error) {
+          reportError(error, 'GameServer.durable_empty_top_ups_unreadable');
+          return counts;
+        }
+        for (const row of (data ?? []) as Array<{
+          tournament_id?: unknown;
+          empty_top_ups?: unknown;
+        }>) {
+          const n = Number(row.empty_top_ups);
+          if (row.tournament_id && Number.isFinite(n) && n > 0) {
+            counts.set(String(row.tournament_id), n);
+          }
+        }
+      }
+    } catch (error) {
+      reportError(error, 'GameServer.durable_empty_top_ups_unreadable');
+    }
+    return counts;
+  }
+
+  /**
+   * Write what the past-start top-up found (2026-10-26): `emptyTopUps` empty
+   * asks in a row, or null when somebody was added or the event was
+   * cancelled, which deletes the row. Best effort; a failed write is reported
+   * and costs only the restart-survival of the count.
+   */
+  private async recordPastStartTopUpOutcome(
+    tournamentId: string,
+    emptyTopUps: number | null
+  ): Promise<void> {
+    try {
+      if (emptyTopUps === null) {
+        const { error } = await supabase
+          .from('tournament_past_start_top_ups')
+          .delete()
+          .eq('tournament_id', tournamentId);
+        if (error)
+          reportError(error, 'GameServer.durable_empty_top_ups_write_failed', { tournamentId });
+        return;
+      }
+      const at = new Date().toISOString();
+      const { error } = await supabase.from('tournament_past_start_top_ups').upsert(
+        {
+          tournament_id: tournamentId,
+          empty_top_ups: emptyTopUps,
+          last_asked_at: at,
+          updated_at: at,
+        },
+        { onConflict: 'tournament_id' }
+      );
+      if (error)
+        reportError(error, 'GameServer.durable_empty_top_ups_write_failed', { tournamentId });
+    } catch (error) {
+      reportError(error, 'GameServer.durable_empty_top_ups_write_failed', { tournamentId });
+    }
   }
 
   private async readSeatFirstPaidSeats(

@@ -721,6 +721,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V53'
   ),
   flag(
+    'v58Plo6RiverNuts',
+    'PLO6 paired-board river nut discipline: facing a bet, fold a hand a random six-card hand beats 15% of the time unless the price is tiny, and call instead of raising one beaten 5% of the time (league plo6_v58_river_nuts)',
+    'V58'
+  ),
+  flag(
+    'v59Plo6RiverUnpaired',
+    'PLO6 unpaired-board river discipline: facing a bet, fold a hand a random six-card hand beats 30% of the time unless the price is tiny, and call instead of raising one beaten 15% of the time (league plo6_v59_river_unpaired)',
+    'V59'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -909,6 +919,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseMind.tankBetValueTendency (V43)'
   ),
   mind('bigBetSDStrong', '... that showed real strength', 'HorseMind.bigBetValueTendency (V16)'),
+  mind(
+    'riverCallSD',
+    'shown hands whose last river action was a call (2026-10-25)',
+    'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+  ),
+  mind(
+    'riverCallSDWeak',
+    '... shown as one pair or worse (a light river call)',
+    'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+  ),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
   mind('rHands', 'recency window: hands', 'HorseMind counter-adaptation blend (V7)'),
@@ -929,6 +949,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'every public seat: stack, bet, folded/all-in/sitting-out, totalInvested; private cards are always empty here and hero cards travel separately'
   ),
   state('stateSchemaVersion', 'canonical live decision schema; production requires version 1'),
+  state(
+    'humanUserIds',
+    'PLO presumption: the seats a person plays, from the engine roster; server-side only'
+  ),
   state('heroSeat', 'seat whose private cards and action are being decided'),
   state('currentPlayerSeat', 'authoritative HandController turn owner'),
   state('legalActions', 'authoritative action menu including reopen and structure rules'),
@@ -1608,6 +1632,48 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
+    'v58_short_stack_maniac_no_flat',
+    'HorseLogic (maniac pressure)',
+    'a push/fold tournament stack facing a wide raiser was priced for the jam, never the flat (Dan 2026-10-25, bubble hand 48403158)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_short_stack_maniac_jam',
+    'HorseLogic (maniac pressure)',
+    'a push/fold tournament stack facing a wide raiser moved all in because its equity pays for the jam (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_short_stack_no_flat',
+    'HorseLogic (maniac pressure)',
+    'the preflop all-in price answered a push/fold tournament stack with the jam or the fold, never the flat (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_low_spr_stack_off',
+    'HorseLogic (tournament aggression)',
+    'a tournament holdem hand with at most one pot behind and the equity to want it all in moved all in instead of checking (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_one_card_low_flush_fold',
+    'HorseLogic (tournament aggression)',
+    'a one-card low flush on a four-flush board folded instead of calling off a tournament stack (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
+    'v58_made_hand_cell_skip',
+    'HorseLogic (tournament aggression)',
+    'a set, straight, flush or better was bet by the value ladder instead of following a hand-class-mean solver cell that cannot see it (2026-10-26)',
+    'OPPX'
+  ),
+  receipt(
+    'v57_turn_cell_initiative_skip',
+    'HorseLogic (tournament aggression)',
+    'a tournament flop bettor played the turn from its barrel plan, not the check-heavy turn cell keyed without initiative (2026-10-25)',
+    'OPPX'
+  ),
+  receipt(
     'maniac_call_down',
     'HorseLogic (maniac pressure)',
     "a fold facing a maniac's bet became the call its equity pays for (Dan: 'CALL OFF LIGHTER')",
@@ -1629,6 +1695,48 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'opponent_exploit_calldown',
     'HorseLogic (opponent exploit)',
     "the current bettor's own read priced the call instead of the table average",
+    'OPPX'
+  ),
+  receipt(
+    'v58_plo6_river_fold',
+    'HorseLogic (V58 PLO6 river nuts)',
+    "a PLO6 river bet on a paired board was folded because a random hand beats the hand 15% of the time or more (Dan: 'IF ITS NOT THE NUTS, ITS PROBABLY NOT GOOD')",
+    'V58'
+  ),
+  receipt(
+    'v58_plo6_river_raise_to_call',
+    'HorseLogic (V58 PLO6 river nuts)',
+    'a PLO6 river raise on a paired board became a call because a better hand was possible',
+    'V58'
+  ),
+  receipt(
+    'v59_plo6_river_unpaired_fold',
+    'HorseLogic (V59 PLO6 river, unpaired board)',
+    'a PLO6 river bet on a board with no pair was folded because a random hand beats the hand 30% of the time or more',
+    'V59'
+  ),
+  receipt(
+    'v59_plo6_river_unpaired_raise_to_call',
+    'HorseLogic (V59 PLO6 river, unpaired board)',
+    'a PLO6 river raise on a board with no pair became a call because a random hand beats it 15% of the time or more',
+    'V59'
+  ),
+  receipt(
+    'opponent_exploit_corroborated',
+    'HorseMind (opponent exploit)',
+    "a statistic past every horse at this table size engaged because the same player's other table size engaged it (2026-10-25)",
+    'OPPX'
+  ),
+  receipt(
+    'plo_human_presumed_aggressive',
+    'HorseMind (PLO presumption)',
+    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'OPPX'
+  ),
+  receipt(
+    'plo_human_presumption_disproved',
+    'HorseMind (PLO presumption)',
+    "a person's own hands showed raising no higher than the average horse, so the PLO presumption came off",
     'OPPX'
   ),
   receipt(
@@ -1735,6 +1843,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   receipt('v21_war_gate', 'HorseLogic (V21)', 'river raise-war governor', 'V21', 'decide', 0.0002),
   receipt('v23_river_read', 'HorseLogic (V23)', 'river read consulted', 'V23', 'decide', 0.01),
+  receipt(
+    'river_call_light_read',
+    'HorseLogic (river call read)',
+    'heads-up river vs a light river caller: fewer bluffs, thinner value',
+    '2026-10-25'
+  ),
   receipt(
     'v23_plan_callonce',
     'HorseLogic (V23)',

@@ -573,6 +573,16 @@ RPCs, and sits in the same seat as anybody else. Therefore a horse:
   table liveness, conservation and reconciliation totals;
 - **IS NEVER** silently filtered out of a report, a total, or a ledger.
 
+### Owner exception, October 25, 2026: PLO horses read every PERSON as aggressive
+
+Dan: "TAG THEM ALL FROM THE START, UNLESS OTHERWISE PROVEN DIFFERENTLY" and
+"FOR PLO, NOT FOR HOLDEM". In Omaha games only, the horse brain presumes a
+seat the engine roster says a person plays is an aggressive raiser until the
+person's own hands prove otherwise (`presumedAggressorRead`). It reads a
+person differently from a horse; it denies a horse nothing. It is the owner's
+deliberate choice, not a 10.5 violation. Change it only on a later owner
+instruction. `docs/changelog/2026-10-25-plo-every-person-is-an-aggressive-raiser-until-proven-otherwise.md`.
+
 ### What is still allowed
 
 `is_horse` remains legitimate for exactly two things:

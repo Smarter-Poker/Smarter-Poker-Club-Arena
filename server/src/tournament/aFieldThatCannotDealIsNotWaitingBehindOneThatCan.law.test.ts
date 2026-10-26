@@ -382,6 +382,23 @@ describe('the balance stage declares the lane', () => {
     expect(manager.requestEliminationSweep).toHaveBeenCalled();
   });
 
+  it('a completed slow board advances instead of occupying the consolidation lane forever', async () => {
+    const setConsolidating = vi
+      .spyOn(tournamentEliminationScheduler, 'setConsolidating')
+      .mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    let spent = false;
+    const manager = balanceManager(async () => {
+      spent = true;
+      return { kind: 'planning-complete' };
+    });
+    manager.consolidationDeclared = true;
+    manager.eliminationWorkBudgetExpired = () => spent;
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(6);
+    expect(setConsolidating).toHaveBeenLastCalledWith(tournamentId, false);
+  });
+
   it('a field that is already balanced never touches the lane', async () => {
     const setConsolidating = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating');
     const manager = balanceManager(async () => undefined);

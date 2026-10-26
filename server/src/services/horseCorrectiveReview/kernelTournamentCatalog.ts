@@ -5,6 +5,8 @@ import { correctiveDomainIsValid } from './domain.js';
 import { evidenceDigest, sha256 } from './authority.js';
 import { horseJournalJson } from '../horseDecisionJournal/record.js';
 import {
+  CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE,
+  TOURNAMENT_KERNEL_OBJECTIVE,
   tournamentKernelDefinitionFor,
   type TournamentKernelObjective,
   TOURNAMENT_KERNEL_UTILITY_UNIT,
@@ -132,4 +134,56 @@ export function isValidatedTournamentCorrectiveKernelCatalog(
   value: unknown
 ): value is Readonly<TournamentCorrectiveKernelCatalog> {
   return !!value && typeof value === 'object' && validated.has(value);
+}
+
+/**
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `engine/HorseOwnerForcedActivation.ts`): the tournament corrective catalog
+ * for the running code where a tournament kernel exists for the domain (no-limit
+ * hold'em spins: winner-take-all; MTT, SNG and heads-up SNG: the closed
+ * heads-up ladder), issued by the owner instead of a signed holdout approval.
+ * A domain with no tournament kernel definition has nothing to activate.
+ */
+export function ownerForcedTournamentCorrectiveKernelCatalog(
+  domain: CorrectiveReferenceDomain,
+  running: {
+    sourceRelease: string;
+    policyDigest: string | null;
+    baselineSelectionsDigest: string;
+    holdoutDigest: string;
+  }
+): Readonly<TournamentCorrectiveKernelCatalog> | null {
+  if (!correctiveDomainIsValid(domain)) return null;
+  const objective = [TOURNAMENT_KERNEL_OBJECTIVE, CLOSED_HU_TOURNAMENT_KERNEL_OBJECTIVE].find(
+    (o) => tournamentKernelDefinitionFor(o, domain) !== null
+  );
+  const definition = objective ? tournamentKernelDefinitionFor(objective, domain) : null;
+  if (
+    !objective ||
+    !definition ||
+    !/^[a-f0-9]{40}$/.test(running.sourceRelease) ||
+    !sha256(running.policyDigest) ||
+    !sha256(running.baselineSelectionsDigest) ||
+    !sha256(running.holdoutDigest)
+  )
+    return null;
+  const catalog: TournamentCorrectiveKernelCatalog = {
+    version: TOURNAMENT_KERNEL_CATALOG_VERSION,
+    kind: 'original_state_function',
+    objective,
+    utilityUnit: TOURNAMENT_KERNEL_UTILITY_UNIT,
+    domain: { variant: domain.variant, format: domain.format, mode: domain.mode },
+    sourceRelease: running.sourceRelease,
+    kernelVersion: definition.kernel.version,
+    modelVersion: definition.model.version,
+    policyDigest: running.policyDigest as string,
+    baselineSelectionsDigest: running.baselineSelectionsDigest,
+    holdoutDigest: running.holdoutDigest,
+    maximumConditionalProbability: definition.kernel.conditionalProbability,
+    minimumModelGainPrizeShare: definition.kernel.minimumModelGainPrizeShare,
+  };
+  Object.freeze(catalog.domain);
+  Object.freeze(catalog);
+  validated.add(catalog);
+  return catalog;
 }

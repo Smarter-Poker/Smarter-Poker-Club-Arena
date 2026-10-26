@@ -1,18 +1,18 @@
 /** Offline replay admission uses the same protected selections and exact
  * qualification files as production. A record cannot turn a pack on. */
-import { admitHorsePhase14ReleaseAttachment } from '../../HorsePhase14Authority.js';
+import { admitHorsePhase14LiveAttachment } from '../../HorsePhase14Authority.js';
 import type { HorseDecision } from '../../../types.js';
 import {
-  admitHorsePhase8ReleaseAuthority,
+  admitHorsePhase8LiveAuthority,
   HorseQualifiedAuthorityHolder,
   horseAuthorityReceiptIsWellFormed,
   type HorseAuthorityAdmission,
   type HorseAuthorityReceipt,
 } from '../../HorseQualifiedAuthority.js';
-import { admitHorsePhase10ReleaseAuthority } from '../../HorsePhase10Authority.js';
-import { admitHorsePhase11ReleaseAuthority } from '../../HorsePhase11Authority.js';
-import { admitHorsePhase12ReleaseAuthority } from '../../HorsePhase12Authority.js';
-import { admitHorsePhase13ReleaseAuthority } from '../../HorsePhase13Authority.js';
+import { admitHorsePhase10LiveAuthority } from '../../HorsePhase10Authority.js';
+import { admitHorsePhase11LiveAuthority } from '../../HorsePhase11Authority.js';
+import { admitHorsePhase12LiveAuthority } from '../../HorsePhase12Authority.js';
+import { admitHorsePhase13LiveAuthority } from '../../HorsePhase13Authority.js';
 import type { OmahaPolicyVariant } from '../../omaha/OmahaVariantPolicyPack.js';
 import type { RemainingPolicyVariant } from '../../remainingVariants/RemainingVariantPolicyPack.js';
 import type { JointVariant } from '../../multiway/JointInputBinding.js';
@@ -30,14 +30,13 @@ export class HorseReplayAuthorityRefusal extends Error {
 /** No mode override: the production runtime still derives each mode from
  * its own holder, original request/domain and ordinary qualified verdict. */
 export const qualifiedReplayAdmissions = {
-  admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
-  admitPhase10Authority: () => admitHorsePhase10ReleaseAuthority(),
-  admitPhase11Authority: (variant: OmahaPolicyVariant) =>
-    admitHorsePhase11ReleaseAuthority(variant),
+  admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
+  admitPhase10Authority: () => admitHorsePhase10LiveAuthority(),
+  admitPhase11Authority: (variant: OmahaPolicyVariant) => admitHorsePhase11LiveAuthority(variant),
   admitPhase12Authority: (variant: RemainingPolicyVariant) =>
-    admitHorsePhase12ReleaseAuthority(variant),
-  admitPhase13Authority: (variant: JointVariant) => admitHorsePhase13ReleaseAuthority(variant),
-  admitPhase14Attachment: (domain: string) => admitHorsePhase14ReleaseAttachment(domain),
+    admitHorsePhase12LiveAuthority(variant),
+  admitPhase13Authority: (variant: JointVariant) => admitHorsePhase13LiveAuthority(variant),
+  admitPhase14Attachment: (domain: string) => admitHorsePhase14LiveAttachment(domain),
 } satisfies Pick<
   HorseDecisionWorkerDependencies,
   | 'admitPhase8Authority'

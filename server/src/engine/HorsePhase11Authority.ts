@@ -29,6 +29,10 @@
  * heuristics (`calibratedConfidence: null`); a qualification is a paired
  * after-rake comparison against the deployed reference, not a solver claim.
  */
+import {
+  horseOwnerForcedAuthority,
+  withHorseOwnerForcedActivation,
+} from './HorseOwnerForcedActivation.js';
 import { posix } from 'node:path';
 import {
   canonical,
@@ -804,6 +808,36 @@ export function admitHorsePhase11ReleaseAuthority(
   }
 }
 
+/**
+ * The live Phase 11 admission for one pack.
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `HorseOwnerForcedActivation.ts`): the committed release selection when it
+ * admits or withdraws, otherwise the owner's authority for the running code.
+ * The worker and the main-thread gate both use it.
+ */
+export function admitHorsePhase11LiveAuthority(
+  variant: OmahaPolicyVariant,
+  nowMs = Date.now()
+): HorseAuthorityAdmission {
+  return withHorseOwnerForcedActivation(admitHorsePhase11ReleaseAuthority(variant, nowMs), () =>
+    isOmahaPolicyVariant(variant)
+      ? horseOwnerForcedAuthority({
+          phase: 'phase11',
+          variant,
+          continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
+          policyDigest: horsePhase11PolicyDigest(variant),
+          packId: OMAHA_VARIANT_PACKS[variant].version,
+          domain: omahaVariantStrengthDomain(variant),
+          contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
+          keyExtras: {
+            completionDefinition: HORSE_PHASE11_COMPLETION_DEFINITION,
+            completionFloor: HORSE_PHASE11_COMPLETION_FLOOR,
+          },
+        })
+      : null
+  );
+}
+
 /** The admitted Phase 11 authority for `variant`, or null. */
 export function selectedHorsePhase11Authority(
   variant: OmahaPolicyVariant,
@@ -851,17 +885,17 @@ export const liveHorsePhase11Authorities: Readonly<
   Record<OmahaPolicyVariant, HorsePhase8AuthorityGate>
 > = Object.freeze({
   plo5: new HorsePhase8AuthorityGate(
-    () => admitHorsePhase11ReleaseAuthority('plo5'),
+    () => admitHorsePhase11LiveAuthority('plo5'),
     undefined,
     OMAHA_VARIANT_PACKS.plo5.version
   ),
   plo6: new HorsePhase8AuthorityGate(
-    () => admitHorsePhase11ReleaseAuthority('plo6'),
+    () => admitHorsePhase11LiveAuthority('plo6'),
     undefined,
     OMAHA_VARIANT_PACKS.plo6.version
   ),
   plo8: new HorsePhase8AuthorityGate(
-    () => admitHorsePhase11ReleaseAuthority('plo8'),
+    () => admitHorsePhase11LiveAuthority('plo8'),
     undefined,
     OMAHA_VARIANT_PACKS.plo8.version
   ),

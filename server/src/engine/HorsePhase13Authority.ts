@@ -26,6 +26,10 @@
  * Calibration and solver authority: none. The joint packs remain explicit
  * heuristics (`calibratedConfidence: null`).
  */
+import {
+  horseOwnerForcedAuthority,
+  withHorseOwnerForcedActivation,
+} from './HorseOwnerForcedActivation.js';
 import { posix } from 'node:path';
 import {
   canonical,
@@ -999,6 +1003,38 @@ export function admitHorsePhase13ReleaseAuthority(
   }
 }
 
+/**
+ * The live Phase 13 admission for one joint variant, on every board count
+ * (1, 2 and 3).
+ * Dan's 2026-10-26 order ("FORCE ACTIVATE EVERY PHASE NOW WITHOUT QUALIFYING",
+ * `HorseOwnerForcedActivation.ts`): the committed release selection when it
+ * admits or withdraws, otherwise the owner's authority for the running code.
+ * The worker and the main-thread gate both use it.
+ */
+export function admitHorsePhase13LiveAuthority(
+  variant: JointVariant,
+  nowMs = Date.now()
+): HorseAuthorityAdmission {
+  return withHorseOwnerForcedActivation(admitHorsePhase13ReleaseAuthority(variant, nowMs), () =>
+    isJointVariant(variant)
+      ? horseOwnerForcedAuthority({
+          phase: 'phase13',
+          variant,
+          continuationVersion: horsePhase13ContinuationVersion(variant),
+          policyDigest: horsePhase13PolicyDigest(variant),
+          packId: HORSE_PHASE13_PACK_VERSION,
+          domain: jointStrengthDomain(variant),
+          contractDigest: PHASE13_RUNNING_CONTRACT_DIGEST,
+          admittedBoardCounts: [1, 2, 3],
+          keyExtras: {
+            completionDefinition: HORSE_PHASE13_COMPLETION_DEFINITION,
+            completionFloor: HORSE_PHASE13_COMPLETION_FLOOR,
+          },
+        })
+      : null
+  );
+}
+
 /** The admitted Phase 13 authority for `variant`, or null. */
 export function selectedHorsePhase13Authority(
   variant: JointVariant,
@@ -1070,7 +1106,7 @@ export const liveHorsePhase13Authorities: Readonly<Record<JointVariant, HorsePha
       HORSE_PHASE13_VARIANTS.map((variant) => [
         variant,
         new HorsePhase8AuthorityGate(
-          () => admitHorsePhase13ReleaseAuthority(variant),
+          () => admitHorsePhase13LiveAuthority(variant),
           undefined,
           horsePhase13ContinuationVersion(variant)
         ),

@@ -10568,6 +10568,8 @@ export abstract class ServerTableEngineBase {
      * hands, and a Lightning player plays in their room, not here.
      */
     sitOutOnly?: boolean;
+    /** Judge only these players (the parked anchor's row-confirmed sit-outs). */
+    onlyUsers?: ReadonlySet<string>;
   }): Promise<void> {
     if (this.isTournamentTable()) return;
     // THE FREEZE (CLAUDE.md 13.5): this sweep stands players up and cashes
@@ -10585,7 +10587,11 @@ export abstract class ServerTableEngineBase {
         if (this.postHandTasksPromise === settlement) break;
       }
       if (this.terminal || isMaintenanceFrozen()) return;
-      const originalOccupancies = new Map(this.seatedPlayers.map((p) => [p.user_id, { ...p }]));
+      const originalOccupancies = new Map(
+        this.seatedPlayers
+          .filter((p) => !opts.onlyUsers || opts.onlyUsers.has(p.user_id))
+          .map((p) => [p.user_id, { ...p }])
+      );
       const seatedIds = [...originalOccupancies.keys()];
       if (seatedIds.length === 0) return;
 

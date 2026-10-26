@@ -897,7 +897,14 @@ describe('a halted table finishes its hand and deals no other', () => {
     // ...only when the Cluster's row says it is Lightning (never mid-conversion)...
     expect(body).toMatch(/if \(mode !== 'lightning'\) return;/);
     // ...and only the sit-out clock of the ordinary cash eviction.
-    expect(body).toMatch(/this\.evictExpiredSitOuts\(\{ countOrbit: false, sitOutOnly: true \}\)/);
+    // ...only for occupants whose live seat row, read now, still says sat out...
+    expect(body.indexOf('lightningSeatsSittingOut(')).toBeGreaterThan(
+      body.indexOf("if (mode !== 'lightning') return;")
+    );
+    expect(body).toMatch(/if \(confirmed\.size === 0\) return;/);
+    expect(body).toMatch(
+      /this\.evictExpiredSitOuts\(\{\s*countOrbit: false,\s*sitOutOnly: true,\s*onlyUsers: confirmed,?\s*\}\)/
+    );
     const pass = BASE.slice(
       BASE.indexOf('protected async passWhileDealingHalted(): Promise<void> {')
     );

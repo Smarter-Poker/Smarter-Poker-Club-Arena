@@ -379,3 +379,40 @@ export async function lightningClusterModeOf(clusterId: string): Promise<string 
   const mode = (data as { cluster_mode?: unknown } | null)?.cluster_mode;
   return typeof mode === 'string' ? mode : null;
 }
+
+/**
+ * Of these occupants of `tableId`, the ones whose live seat row says
+ * `is_sitting_out = true` right now (same occupancy, not departed). A READ for
+ * the parked anchor's sit-out clock: memory alone never stands a Lightning
+ * player up. Throws when it cannot answer, so the caller stands nobody up.
+ */
+export async function lightningSeatsSittingOut(
+  tableId: string,
+  occupants: Array<{ userId: string; occupancyId: string }>
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  const wanted = occupants.filter((o) => isUuid(o.userId) && isUuid(o.occupancyId));
+  if (!isUuid(tableId) || wanted.length === 0) return out;
+  const { data, error } = await supabase
+    .from('table_seats')
+    .select('user_id, occupancy_id, is_sitting_out, left_at')
+    .eq('table_id', tableId)
+    .in(
+      'user_id',
+      wanted.map((o) => o.userId)
+    )
+    .is('left_at', null);
+  if (error) throw new Error(`table_seats sit-out read failed: ${error.message}`);
+  const occupancyOf = new Map(wanted.map((o) => [o.userId, o.occupancyId]));
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const userId = r.user_id;
+    if (typeof userId !== 'string') continue;
+    if (
+      r.left_at === null &&
+      r.is_sitting_out === true &&
+      occupancyOf.get(userId) === r.occupancy_id
+    )
+      out.add(userId);
+  }
+  return out;
+}

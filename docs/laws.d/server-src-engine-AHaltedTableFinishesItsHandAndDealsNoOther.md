@@ -112,7 +112,9 @@ runs only at an acknowledged Lightning halt (`lightningObserverCluster()`), only
 cash sit-out clock (`DisconnectEngine.SITOUT_MAX_MS`, the same thaw) has actually run out, read
 in memory first, and only after `cash_games.cluster_mode` reads 'lightning' - never while a
 conversion is still counting its population, which is what "unseats nobody and moves no chip"
-protects. Then it runs the ordinary `evictExpiredSitOuts` limited to the sit-out clock
+protects, and only for occupants whose live seat row, read then, still says `is_sitting_out`
+(memory alone never cashes anyone out; an unreadable row stands nobody up). Then it runs the
+ordinary `evictExpiredSitOuts` limited to the sit-out clock and those occupants
 (`sitOutOnly`): the away-blind, nit and abandoned-seat rules judge the anchor's own sockets and
 hands, and a Lightning player plays in their room. The departure is the cash rule's own
 cash-out and `seat_left` 'sit_out_timeout'; the anchor-seat trigger exits the pool session. Every

@@ -30,7 +30,7 @@ vi.mock('./client.js', () => ({
   },
 }));
 
-const { lightningAnchorTimeBanks } = await import('./lightningAnchor.js');
+const { lightningAnchorTimeBanks, lightningSeatsSittingOut } = await import('./lightningAnchor.js');
 const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const tick = () => new Promise<void>((r) => setImmediate(r));
 
@@ -80,5 +80,41 @@ describe('lightningAnchorTimeBanks', () => {
       .find((p) => p.table === 'lightning_pool_session')!
       .answer({ data: [{ player_id: uid(1), anchor_seat_id: uid(11) }], error: null });
     await expect(done).rejects.toThrow('anchor seat time bank read failed');
+  });
+});
+
+describe('lightningSeatsSittingOut (the parked anchor sit-out clock reads the row)', () => {
+  it('names only occupants whose live row, same occupancy, says is_sitting_out', async () => {
+    io.pending.length = 0;
+    const T = uid(500);
+    const done = lightningSeatsSittingOut(T, [
+      { userId: uid(1), occupancyId: uid(61) },
+      { userId: uid(2), occupancyId: uid(62) },
+      { userId: uid(3), occupancyId: uid(63) },
+    ]);
+    await tick();
+    io.pending
+      .find((p) => p.table === 'table_seats')!
+      .answer({
+        data: [
+          { user_id: uid(1), occupancy_id: uid(61), is_sitting_out: true, left_at: null },
+          // Memory said sat out; the row says playing.
+          { user_id: uid(2), occupancy_id: uid(62), is_sitting_out: false, left_at: null },
+          // A different occupancy of the chair: not the occupant memory meant.
+          { user_id: uid(3), occupancy_id: uid(99), is_sitting_out: true, left_at: null },
+        ],
+        error: null,
+      });
+    expect([...(await done)]).toEqual([uid(1)]);
+  });
+
+  it('a read that fails throws, so nobody is stood up on a guess', async () => {
+    io.pending.length = 0;
+    const done = lightningSeatsSittingOut(uid(500), [{ userId: uid(1), occupancyId: uid(61) }]);
+    await tick();
+    io.pending
+      .find((p) => p.table === 'table_seats')!
+      .answer({ data: null, error: { message: 'x' } });
+    await expect(done).rejects.toThrow('table_seats sit-out read failed');
   });
 });

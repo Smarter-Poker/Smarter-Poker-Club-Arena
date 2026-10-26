@@ -8,9 +8,10 @@
  *     table the supervisor knows, and the bind stays the authority;
  *   - every step of start() is marked, so event-loop delay and database time
  *     can be told apart;
- *   - the settlement's commit releases the hand's players and wakes the
- *     Cluster before the post-commit drain, after the boundary's rebuy and
- *     top-up asks have answered;
+ *   - the settlement's commit sends every participant's receipt at once (a
+ *     person's Auto Top Up rides it), then releases the hand's players and
+ *     wakes the Cluster before the post-commit drain, after the boundary's
+ *     rebuy and horse top-up asks have answered;
  *   - a new player's time-bank reads go out together.
  */
 import { readFileSync } from 'node:fs';
@@ -299,7 +300,7 @@ describe('start(): the host rules ride alongside begin_dealing', () => {
 // ─── SETTLED IS FREE ──────────────────────────────────────────────────────
 
 describe('the committed settlement frees its players and wakes the Cluster before the drain', () => {
-  it('order: boundary asks answered -> players released -> wake -> post-commit drain -> receipt', async () => {
+  it('order: receipt -> boundary asks answered -> players released -> wake -> post-commit drain', async () => {
     const order: string[] = [];
     let drainAnswer!: () => void;
     const t = buildHost(formedHand(3, 9900), [100, 100, 100], {
@@ -315,6 +316,11 @@ describe('the committed settlement frees its players and wakes the Cluster befor
         },
       },
     });
+    const emit = t.hub.emitEvent.bind(t.hub);
+    t.hub.emitEvent = (room: string, payload: Record<string, unknown>) => {
+      if (payload.type === 'hand_history_saved') order.push(`receipt:${String(payload.player_id)}`);
+      emit(room, payload);
+    };
     (t.backend.postCommit as ReturnType<typeof vi.fn>).mockImplementation(() => {
       order.push('drain');
       return new Promise((r) => {
@@ -330,18 +336,30 @@ describe('the committed settlement frees its players and wakes the Cluster befor
       );
       await flush();
       expect(t.calls.settle).toHaveLength(1);
-      // The drain has NOT answered, and the players are already free.
-      const releasedAt = order.indexOf('released');
-      expect(order.slice(0, 2)).toEqual(['boundary', 'released']);
-      expect(order.indexOf('wake')).toBeGreaterThan(releasedAt);
-      expect(order.indexOf('drain')).toBeGreaterThan(order.indexOf('wake'));
-      expect(t.hub.frames.some((f) => f.payload.type === 'hand_history_saved')).toBe(false);
+      // A PERSON'S INPUT-DEVICE MOMENT: every participant's receipt (the frame
+      // a person's client sends its Auto Top Up on) goes out at the commit,
+      // before the boundary (where a horse's top-up is sent) and before
+      // anyone is released, so the two requests are in flight together.
+      const receipts = order.filter((o) => o.startsWith('receipt:'));
+      expect(receipts.sort()).toEqual(
+        formedHand(3, 9900)
+          .players.map((p) => `receipt:${p}`)
+          .sort()
+      );
+      const lastReceipt = Math.max(...receipts.map((r) => order.indexOf(r)));
+      expect(lastReceipt).toBeLessThan(order.indexOf('boundary'));
+      expect(lastReceipt).toBeLessThan(order.indexOf('released'));
+      // Then: boundary answered -> released -> wake -> drain (not yet answered).
+      const rest = order.filter((o) => !o.startsWith('receipt:'));
+      expect(rest.slice(0, 2)).toEqual(['boundary', 'released']);
+      expect(rest.indexOf('wake')).toBeGreaterThan(rest.indexOf('released'));
+      expect(rest.indexOf('drain')).toBeGreaterThan(rest.indexOf('wake'));
       drainAnswer();
       await t.host.whenFinished();
-      expect(t.hub.frames.some((f) => f.payload.type === 'hand_history_saved')).toBe(true);
       // Released once each, at the commit; finish() frees nobody a second time.
       expect(order.filter((o) => o === 'released')).toHaveLength(3);
       expect(order.filter((o) => o === 'wake')).toHaveLength(1);
+      expect(receipts).toHaveLength(3);
     } finally {
       drainAnswer?.();
       await t.host.abort('test_cleanup');

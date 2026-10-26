@@ -14,12 +14,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   mode: vi.fn(),
+  rows: vi.fn(),
   cashout: vi.fn(),
   frozen: { v: false },
 }));
 vi.mock('../services/supabase/lightningAnchor.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   lightningClusterModeOf: (...a: unknown[]) => mocks.mode(...a),
+  lightningSeatsSittingOut: (...a: unknown[]) => mocks.rows(...a),
 }));
 vi.mock('../services/supabase.js', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('../services/supabase.js')),
@@ -79,6 +81,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.frozen.v = false;
   mocks.mode.mockResolvedValue('lightning');
+  // By default the live seat rows agree with memory: every asked occupant is sat out.
+  mocks.rows.mockImplementation(
+    async (_t: string, occupants: Array<{ userId: string }>) =>
+      new Set(occupants.map((o) => o.userId))
+  );
   mocks.cashout.mockResolvedValue(100);
   for (const e of engines.splice(0)) e.preciseTimer?.dispose?.();
 });
@@ -90,7 +97,11 @@ describe('the parked anchor of a Lightning Cluster', () => {
     sitOut(e, HUMAN, DisconnectEngine.SITOUT_MAX_MS / 60_000 + 1);
     await e.standUpExpiredLightningSitOuts();
     expect(mocks.mode).toHaveBeenCalledWith(CLUSTER);
-    expect(evict).toHaveBeenCalledWith({ countOrbit: false, sitOutOnly: true });
+    expect(evict).toHaveBeenCalledWith({
+      countOrbit: false,
+      sitOutOnly: true,
+      onlyUsers: new Set([HUMAN]),
+    });
     // The cash rule's own cash-out and departure.
     expect(mocks.cashout).toHaveBeenCalledTimes(1);
     expect(mocks.cashout.mock.calls[0].slice(0, 3)).toEqual([HUMAN, TABLE, 1]);
@@ -99,6 +110,37 @@ describe('the parked anchor of a Lightning Cluster', () => {
       expect.objectContaining({ type: 'seat_left', user_id: HUMAN, reason: 'sit_out_timeout' })
     );
     expect(e.seatedPlayers).toHaveLength(0);
+  });
+
+  it('memory alone never cashes anyone out: a seat row that says playing keeps the seat', async () => {
+    const e = parkedAnchor([
+      { id: HUMAN, horse: false },
+      { id: HORSE, horse: true },
+    ]);
+    sitOut(e, HUMAN, 30);
+    sitOut(e, HORSE, 30);
+    // The engine's memory says both are sat out; the live row says HUMAN is playing.
+    mocks.rows.mockResolvedValueOnce(new Set([HORSE]));
+    const [humanSeat, horseSeat] = e.seatedPlayers.map((p: any) => p.occupancy_id);
+    await e.standUpExpiredLightningSitOuts();
+    expect(mocks.rows).toHaveBeenCalledWith(TABLE, [
+      { userId: HUMAN, occupancyId: humanSeat },
+      { userId: HORSE, occupancyId: horseSeat },
+    ]);
+    expect(mocks.cashout.mock.calls.map((c) => c[0])).toEqual([HORSE]);
+    expect(e.seatedPlayers.map((p: any) => p.user_id)).toEqual([HUMAN]);
+  });
+
+  it('a seat row that says playing, or cannot be read, stands nobody up', async () => {
+    const a = parkedAnchor([{ id: HUMAN, horse: false }]);
+    sitOut(a, HUMAN, 30);
+    mocks.rows.mockResolvedValueOnce(new Set());
+    await a.standUpExpiredLightningSitOuts();
+    const b = parkedAnchor([{ id: HUMAN, horse: false }]);
+    sitOut(b, HUMAN, 30);
+    mocks.rows.mockRejectedValueOnce(new Error('seat read failed'));
+    await b.standUpExpiredLightningSitOuts();
+    expect(mocks.cashout).not.toHaveBeenCalled();
   });
 
   it('a horse is on exactly the same clock', async () => {

@@ -72,6 +72,7 @@ import { presenceFromFsm } from '../lightning/LightningPresence.js';
 import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
 import {
   lightningClusterModeOf,
+  lightningSeatsSittingOut,
   lightningSeatsWhosePoolSessionEnded,
   lightningStampedPoolSessions,
 } from '../services/supabase/lightningAnchor.js';
@@ -4614,8 +4615,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       return;
     }
     if (mode !== 'lightning') return;
+    // THE ROW AGREES (2026-10-26). Memory alone never cashes a Lightning
+    // player out: only an occupant whose live seat row, read now, still says
+    // is_sitting_out is stood up. A row that says playing, a different
+    // occupancy, or a read that cannot answer stands nobody up.
+    const occupants = this.seatedPlayers
+      .filter((p) => expired.includes(p.user_id) && !!p.occupancy_id)
+      .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id! }));
+    let confirmed: Set<string>;
+    try {
+      confirmed = await this.withStepBudget(
+        'lightning_sitout_seat_rows',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningSeatsSittingOut(this.tableId, occupants)
+      );
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.lightning_sitout_seat_read');
+      return;
+    }
+    if (confirmed.size === 0) return;
     if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
     if (this.lightningObserverCluster() !== clusterId) return;
-    await this.evictExpiredSitOuts({ countOrbit: false, sitOutOnly: true });
+    await this.evictExpiredSitOuts({ countOrbit: false, sitOutOnly: true, onlyUsers: confirmed });
   }
 }

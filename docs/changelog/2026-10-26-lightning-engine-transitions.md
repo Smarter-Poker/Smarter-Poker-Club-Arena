@@ -81,7 +81,9 @@ wallet and `seat_left` 'sit_out_timeout'. The seat's departure ends the pool ses
 existing anchor-seat trigger) and the room closes with the existing "Your Lightning Session Has
 Ended". Only the sit-out clock runs: the away and abandoned-seat rules read the anchor's
 sockets, and a Lightning player plays in their room. It never runs while a conversion is still
-counting its population: it acts only after the Cluster's row reads 'lightning'. The halt law
+counting its population: it acts only after the Cluster's row reads 'lightning'. And memory
+alone never cashes anyone out: the player's live seat row, read at that moment, must still say
+`is_sitting_out` (a row that says playing, or a read that fails, stands nobody up). The halt law
 (`AHaltedTableFinishesItsHandAndDealsNoOther`) records this one exception. Horses and humans
 alike.
 
@@ -107,11 +109,21 @@ alike.
 
 ## 7. Freed sooner after settlement
 
-**What changed.** Once a settlement commits and the boundary's auto-rebuy and horse top-up asks
-have answered, the hand's players are released (their time banks handed back first) and the
-Cluster is woken at once, before the post-commit drain (which can retry for up to 15 s) and the
-hand-history receipt. Each horse's top-up request now goes out at the same moment as every other
-horse's, through the same path; one horse's failure no longer holds up another's.
+**What changed.** The moment a settlement commits, every participant's hand-history receipt
+(`hand_history_saved`) goes out. That receipt is also when a person's client sends its seat
+Auto Top Up, so a person's top-up request is now in flight at the same moment as a horse's
+(CLAUDE.md 10.5: timing is part of the treatment). Then the boundary's auto-rebuy and horse
+top-up asks are answered, the hand's players are released (their time banks handed back first)
+and the Cluster is woken at once, before the post-commit drain, which can retry for up to 15 s.
+Each horse's top-up request now goes out at the same moment as every other horse's, through the
+same path; one horse's failure no longer holds up another's.
+
+The drain is not nothing: it runs the hand's post-commit obligations (it resolves the host
+table's pending add-ons that the settlement names and records the hand's BBJ contributions,
+with the accepted stats facts). None of that is a condition of matching: a Lightning top-up is
+its own intent, applied by the settlement's own reservation-release trigger, and the matcher
+refuses a player whose Lightning top-up is still pending. The receipt names the `hand_history`
+row, which exists from the commit on.
 
 Not moved before the boundary asks: the database refuses an auto-rebuy for a player who is
 already in a hand, and a boundary gets one attempt, so waking the matcher first could cost a
@@ -133,7 +145,8 @@ any money path.
 New: `server/src/lightning/LightningHandToHand.test.ts` (deal wait, start path, settled wake,
 bank reads), `LightningPresentInTheRoom.test.ts`, `LightningHorseTopUpTogether.test.ts`,
 `LightningHostRulesOneRead.test.ts`, `server/src/services/supabase/lightningAnchorTimeBanks.test.ts`,
-`server/src/engine/aSatOutLightningPlayerIsOnTheCashSitOutClock.test.ts`; two new cases in
+`server/src/engine/aSatOutLightningPlayerIsOnTheCashSitOutClock.test.ts` (including the case
+where memory says sat out and the row says playing); two new cases in
 `LightningShowdownHold.test.ts`, two in `tables.killSettings.test.ts`, one in the halt law.
 
 Updated because the behaviour they pinned changed on purpose: `LightningPhase13RolloutDrain.test.ts`

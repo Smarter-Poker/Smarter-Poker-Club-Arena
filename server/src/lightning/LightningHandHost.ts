@@ -2984,26 +2984,16 @@ export class LightningHandHost {
           Boolean(statsFacts?.horse_rollups) && out.value.handHistoryId === this.handId,
           Date.parse(String(handRow.ended_at))
         );
-        // LIGHTNING PHASE 10: the settled boundary, before anyone is released:
-        // every auto-rebuy and horse top-up ask of this boundary has been
-        // answered before its players can be matched again (the database
-        // refuses a rebuy IN_HAND, and one attempt is all a boundary gets).
-        await this.reportSettledBoundary(results);
-        // SETTLED IS FREE (2026-10-26). The commit released this hand's pool
-        // reservations, so the players it frees are freed HERE - their banks
-        // handed back first, so a hand they are dealt next reads what this one
-        // left - and the Cluster is woken now, not after the post-commit
-        // drain (which may retry for up to POST_COMMIT_BUDGET_MS) and the
-        // hand-history receipt. Neither of those reads or moves a seat.
-        this.releaseAtHandEnd();
-        try {
-          this.deps.onSettled?.(this);
-        } catch (err) {
-          this.logger.error(`[LightningHost:${this.instanceId}] settled wake failed`, err);
-        }
-        await this.drainPostCommit(out.value.handHistoryId);
-        // This is the committed hand's receipt, including for a player freed
-        // by an earlier fold. Gameplay frames still go only to watching rooms.
+        // THE RECEIPT GOES OUT AT THE COMMIT (2026-10-26). This is the committed
+        // hand's receipt, to every participant's room, including a player
+        // freed by an earlier fold (gameplay frames still go only to watching
+        // rooms). It names the hand_history row, which exists from the commit
+        // on. It is also a person's input-device moment: their client sends its
+        // seat Auto Top Up on it (useLightningAutoTopUp), exactly as the engine
+        // sends a horse's below. So it goes out BEFORE the boundary is reported
+        // and before anyone is released, and a person's top-up request is in
+        // flight beside a horse's before either can be matched again
+        // (CLAUDE.md 10.5: timing is part of the treatment).
         const savedAt = this.now();
         for (const participant of this.participants.values())
           this.deps.hub.emitEvent(participant.poolSessionId, {
@@ -3016,6 +3006,26 @@ export class LightningHandHost {
             player_id: participant.playerId,
             timestamp: savedAt,
           });
+        // LIGHTNING PHASE 10: the settled boundary, before anyone is released:
+        // every auto-rebuy and horse top-up ask of this boundary has been
+        // answered before its players can be matched again (the database
+        // refuses a rebuy IN_HAND, and one attempt is all a boundary gets).
+        await this.reportSettledBoundary(results);
+        // SETTLED IS FREE (2026-10-26). The commit released this hand's pool
+        // reservations, so the players it frees are freed HERE - their banks
+        // handed back first, so a hand they are dealt next reads what this one
+        // left - and the Cluster is woken now, not after the post-commit drain
+        // (which may retry for up to POST_COMMIT_BUDGET_MS). The drain resolves
+        // the host table's pending add-ons and records the hand's BBJ
+        // contributions; neither is a condition of matching (a Lightning top-up
+        // is its own intent, applied by the settlement's own trigger).
+        this.releaseAtHandEnd();
+        try {
+          this.deps.onSettled?.(this);
+        } catch (err) {
+          this.logger.error(`[LightningHost:${this.instanceId}] settled wake failed`, err);
+        }
+        await this.drainPostCommit(out.value.handHistoryId);
         this.metrics.recordHand('settled');
         // Captured before finish() clears who is watching: the jackpot is
         // every participant's, folded or not (the table share is the dealt-in).

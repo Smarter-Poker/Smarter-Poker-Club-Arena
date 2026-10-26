@@ -36,4 +36,10 @@ describe('table captions show every word (owner 2026-10-26)', () => {
     expect(css).not.toContain('text-overflow: ellipsis');
     expect(read('src/components/table/PotDisplay.css')).not.toContain('text-overflow: ellipsis');
   });
+  it('keeps complete speech and add-on notices instead of a four-line excerpt', () => {
+    const css = read('src/components/table/ChatBubble.css');
+    expect(css).not.toContain('text-overflow: ellipsis');
+    expect(css).not.toMatch(/(?:-webkit-)?line-clamp\s*:/);
+    expect(css).toContain('overflow-wrap: anywhere');
+  });
 });

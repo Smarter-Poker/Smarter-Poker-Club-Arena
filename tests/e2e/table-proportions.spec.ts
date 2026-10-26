@@ -1948,3 +1948,74 @@ for (const [width, height] of [
     });
   }
 }
+
+for (const [paneWidth, paneHeight] of [
+  [320, 300],
+  [164, 320],
+  [500, 150],
+]) {
+  test(`full bubble text stays in a ${paneWidth}x${paneHeight} pane`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const { build } = await import('esbuild');
+    const message = 'Every Word Must Remain Visible On The Table. '.repeat(5).slice(0, 200);
+    const playerName = 'Alexandria Championship Player With A Long Display Name';
+    const built = await build({
+      stdin: {
+        contents: `import React from 'react'; import {createRoot} from 'react-dom/client';
+          import {ChatBubble} from './src/components/table/ChatBubble';
+          createRoot(document.getElementById('fixture')).render(<div className="table-page" style={{position:'relative',width:${paneWidth},height:${paneHeight},minHeight:0}}>
+          <div style={{position:'absolute',left:0,top:'50%',width:58,height:48}}>
+          <ChatBubble text={${JSON.stringify(message)}} playerName={${JSON.stringify(playerName)}} />
+          </div><div style={{position:'absolute',right:0,top:10,width:58,height:48}}>
+          <ChatBubble text={${JSON.stringify(message)}} playerName={${JSON.stringify(playerName)}} placement="below" variant="notice" />
+          </div></div>);`,
+        resolveDir: ROOT,
+        loader: 'tsx',
+      },
+      jsx: 'automatic',
+      bundle: true,
+      write: false,
+      outfile: 'bubble.js',
+      format: 'iife',
+      loader: { '.css': 'empty' },
+      define: { 'process.env.NODE_ENV': '"test"' },
+    });
+    await page.setViewportSize({
+      width: Math.max(375, paneWidth),
+      height: Math.max(500, paneHeight),
+    });
+    const bubbleCss = readFileSync('src/components/table/ChatBubble.css', 'utf8');
+    await page.setContent(
+      `<style>body{margin:0;font-family:Inter,sans-serif}${bubbleCss}</style><div id="fixture"></div>`
+    );
+    await page.addScriptTag({ content: built.outputFiles[0].text });
+    await expect(page.locator('.chat-bubble__text')).toHaveCount(2);
+    await expect(page.locator('.chat-bubble').first()).toBeVisible();
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    const boxes = await page.locator('.chat-bubble').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const el = node as HTMLElement;
+        const box = el.getBoundingClientRect();
+        const pane = el.closest('.table-page')!.getBoundingClientRect();
+        return {
+          text: el.querySelector('.chat-bubble__text')!.textContent,
+          name: el.querySelector('.chat-bubble__name')!.textContent,
+          fits:
+            box.left >= pane.left &&
+            box.right <= pane.right &&
+            box.top >= pane.top &&
+            box.bottom <= pane.bottom,
+          complete: [...el.querySelectorAll('span:not(.chat-bubble__tail)')].every(
+            (span) => span.scrollHeight <= span.clientHeight + 1
+          ),
+        };
+      })
+    );
+    for (const box of boxes)
+      expect(box).toEqual({ text: message, name: playerName, fits: true, complete: true });
+    expect(errors).toEqual([]);
+  });
+}

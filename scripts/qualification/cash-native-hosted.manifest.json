@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237050,
-      "sha256": "ef0d68b828e45bdd21a8c8760e8ac49b3166d6c7d333c41bd24f39429d05d169"
+      "bytes": 237289,
+      "sha256": "b343017dad36977b91a9d036914c2ac4626a5a3c6bc47c4a117352d39150f1e9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41940,
-      "sha256": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e"
+      "bytes": 41963,
+      "sha256": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3810,6 +3810,36 @@
     "currentClassifierPin": {
       "bytes": 41940,
       "sha256": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e"
+    }
+  },
+  "horseOwnPublicHistoryNative20261025": {
+    "reason": "Add isolated PG17 original-observer public-history qualification in existing required Accounting4. Refresh only current workflow input identity; preserve historical pins, financial assertions and qualification verdicts. This is source binding, not financial or production execution evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 235596,
+          "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+        },
+        "current": {
+          "bytes": 235835,
+          "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
+        }
+      }
+    }
+  },
+  "horseOwnPublicHistoryInputRouting20261025": {
+    "reason": "Ensure an individual public-history native runner edit alone selects the existing required accounting job and routing contracts. Only current classifier input identity changes; all historical pins, financial assertions and qualification verdicts preserved. Source identity is not execution evidence.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 41844,
+          "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+        },
+        "current": {
+          "bytes": 41867,
+          "sha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
+        }
+      }
     }
   }
 }

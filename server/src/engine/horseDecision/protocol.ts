@@ -188,6 +188,9 @@ export function validatedHorsePolicySamplingKey(
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
+  /** Private individual read hydration, not a caller policy control or action authority. */
+  ownPublicHistory?: import('./ownPublicHistory.js').HorseOwnPublicHistoryPacket;
+  ownPublicHistoryState?: 'pending' | 'available' | 'unavailable';
   /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
   durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
@@ -205,6 +208,8 @@ export interface DeepHorseDecisionRequest extends LiveHorseDecisionSnapshot {
 }
 
 export interface CompletedHandObservation extends HorseDecisionFence {
+  /** Pool-owned original observer routing; separate from the accepted Phase 14 roster. */
+  observerParticipants?: import('./observerParticipants.js').HorseObserverParticipants;
   /** Validated public-action profiles from the accepted hand path, back-filled or not
    * (HorseOpponentMemory.opponentProfileVersion).
    * Empty means unavailable; presence suppresses non-durable family pooling. */
@@ -411,6 +416,8 @@ export type HorseDecisionWorkerReadiness = Omit<HorseDecisionWorkerReady, 'type'
 
 export interface FastHorseDecisionResult extends HorseDecisionFence {
   type: 'FAST_RESULT';
+  /** A payload acknowledgement only; the journal read receipt says whether it loaded. */
+  observerHistoryAckDigest?: string | null;
   requestId: number;
   planBinding: HorsePlanBatchBinding;
   planIssueDisposition: HorsePlanIssueDisposition;

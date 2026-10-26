@@ -1,3 +1,4 @@
+import { horseObserverReadContextFromRequest } from '../engine/HorseObserverReadContext.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
@@ -58,6 +59,10 @@ describe('the original Lightning journal coordinate', () => {
         leaseGeneration: lease,
       });
       expect(horseMindHandFromDecision(snap)).not.toBeNull();
+      expect(horseObserverReadContextFromRequest(snap)).toMatchObject({
+        observerId: snap.player.user_id,
+        format: 'cash',
+      });
       expect(horsePlanContextKey(horsePlanContextFromDecision(snap))).not.toBeNull();
     }
   });

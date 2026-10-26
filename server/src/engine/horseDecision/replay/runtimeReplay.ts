@@ -107,7 +107,6 @@ export async function replayThroughWorkerRuntime(
   let admission: HorseDecisionReplayAdmission | null = null;
   let corrective: HorseCorrectiveReplayState | null = null;
   let deepRngAfter: number | null = null;
-  let replayingDeep = false;
   const deps: HorseDecisionWorkerDependencies = {
     ...qualifiedReplayAdmissions,
     // Local capture only, never an external writer. DEEP has no RNG/effects
@@ -129,29 +128,24 @@ export async function replayThroughWorkerRuntime(
       return readiness();
     },
     async stopServices() {},
+    // runDecisionReadView below already installs the historical sandbox
+    // around FAST; a second sandbox here would be refused as nested.
     prepareOriginalReads: (player, gameState, opts) =>
-      HorseMind.runInSandbox(readView, () =>
-        HorseLogic.prepareOriginalReads(player, gameState, { ...opts, observeMind: false })
-      ),
+      HorseLogic.prepareOriginalReads(player, gameState, { ...opts, observeMind: false }),
     decide: (player, gameState, style, mods, opts) => {
       admission = horseDecisionReplayAdmission(opts);
       corrective = horseCorrectiveReplayState(gameState, opts?.phase14, opts?.phase14Corrective);
       return HorseLogic.decide(player, gameState, style, mods, { ...opts, observeMind: false });
     },
     decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
-    captureDecisionEffects: (fn) =>
-      // executeDeep itself installs its retained sandbox; FAST needs the
-      // historical sandbox supplied by this replay adapter.
-      replayingDeep
-        ? HorseMind.captureDecisionEffects(fn)
-        : HorseMind.runInSandbox(readView, () => HorseMind.captureDecisionEffects(fn)),
+    runDecisionReadView: (_request, fn) => HorseMind.runInSandbox(readView, fn),
+    captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
     applyDecisionEffects: () => {
       throw new Error('a replay never applies plan effects');
     },
     // The frame is re-encoded from the view the replay decided in, never from
     // whatever this process's own HorseMind holds.
-    snapshotDecisionReads: (players, handKey) =>
-      HorseMind.runInSandbox(readView, () => HorseMind.snapshotDecisionReads(players, handKey)),
+    snapshotDecisionReads: (players, handKey) => HorseMind.snapshotDecisionReads(players, handKey),
     saveRng: saveFastRandom,
     restoreRng: restoreFastRandom,
     governorScale: () => equityGovernor.current(),
@@ -187,7 +181,6 @@ export async function replayThroughWorkerRuntime(
     await runtime.drain();
     if (input.deepRequest) {
       equityGovernor.__setScaleForTest(input.governorScale);
-      replayingDeep = true;
       runtime.receive(input.deepRequest);
       await runtime.drain();
     }

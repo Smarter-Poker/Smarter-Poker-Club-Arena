@@ -312,7 +312,7 @@ describe('phase13-strength-assemble', () => {
         contractDigest: jointStrengthContractDigest(),
         domain: PACK.domain,
         policyDigest: horsePhase13PolicyDigest(VARIANT),
-        policyDigestDefinition: 'horse-phase13-policy-digest-v3',
+        policyDigestDefinition: 'horse-phase13-policy-digest-v4',
         evidencePath: 'docs/evidence/phase13/strength-2026-10-05-flh/strength.json',
       });
       // Exactly the sixteen keys of the Phase 12 qualification.

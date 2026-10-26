@@ -51,7 +51,7 @@ const DECAY = Math.pow(0.5, 1 / WINNER_HALF_LIFE_HANDS);
 const MAX_PLAYERS = 50_000;
 const MAX_HANDS_SEEN = 40_000;
 
-interface Row {
+export interface HorseWinnerReadRow {
   /** sum of weights */
   w: number;
   /** sum of squared weights (effective sample = w^2 / w2) */
@@ -62,8 +62,39 @@ interface Row {
   q: number;
 }
 
-const rows = new Map<string, Row>();
-const seen = new Set<string>();
+export interface HorseWinnerReadState {
+  rows: Map<string, HorseWinnerReadRow>;
+  seen: Set<string>;
+}
+
+export const createWinnerReadState = (): HorseWinnerReadState => ({
+  rows: new Map(),
+  seen: new Set(),
+});
+let state = createWinnerReadState();
+
+/** Synchronous private boundary, restored even when a decision throws. */
+export function runWithWinnerReadState<T>(isolated: HorseWinnerReadState, fn: () => T): T {
+  const live = state;
+  state = isolated;
+  try {
+    return fn();
+  } finally {
+    state = live;
+  }
+}
+
+/** Read evidence only: dedupe and unrelated players never enter a frame. */
+export function snapshotWinnerReads(ids: readonly string[]): HorseWinnerReadState {
+  if (ids.length > 10 || new Set(ids).size !== ids.length)
+    throw Error('Invalid Horse winner read boundary');
+  const snapshot = createWinnerReadState();
+  for (const id of ids) {
+    const row = state.rows.get(id);
+    if (row) snapshot.rows.set(id, { ...row });
+  }
+  return snapshot;
+}
 
 export interface WinnerResult {
   user_id: string;
@@ -77,21 +108,21 @@ export function observeHandResults(
   results: ReadonlyArray<WinnerResult> | null | undefined,
   bigBlind: number
 ): boolean {
-  if (!handKey || !results?.length || !(bigBlind > 0) || seen.has(handKey)) return false;
-  seen.add(handKey);
-  if (seen.size > MAX_HANDS_SEEN) seen.delete(seen.values().next().value!);
+  if (!handKey || !results?.length || !(bigBlind > 0) || state.seen.has(handKey)) return false;
+  state.seen.add(handKey);
+  if (state.seen.size > MAX_HANDS_SEEN) state.seen.delete(state.seen.values().next().value!);
   for (const r of results) {
     if (!r || typeof r.user_id !== 'string' || !Number.isFinite(r.net)) continue;
     const x = Math.max(-WINNER_CLIP_BB, Math.min(WINNER_CLIP_BB, r.net / bigBlind));
-    const row = rows.get(r.user_id) ?? { w: 0, w2: 0, s: 0, q: 0 };
-    rows.delete(r.user_id);
+    const row = state.rows.get(r.user_id) ?? { w: 0, w2: 0, s: 0, q: 0 };
+    state.rows.delete(r.user_id);
     row.w = row.w * DECAY + 1;
     row.w2 = row.w2 * DECAY * DECAY + 1;
     row.s = row.s * DECAY + x;
     row.q = row.q * DECAY + x * x;
-    rows.set(r.user_id, row);
+    state.rows.set(r.user_id, row);
   }
-  while (rows.size > MAX_PLAYERS) rows.delete(rows.keys().next().value!);
+  while (state.rows.size > MAX_PLAYERS) state.rows.delete(state.rows.keys().next().value!);
   return true;
 }
 
@@ -105,7 +136,7 @@ export interface WinnerReadout {
 }
 
 export function winnerReadout(userId: string): WinnerReadout | null {
-  const row = rows.get(userId);
+  const row = state.rows.get(userId);
   if (!row || row.w <= 0) return null;
   const mean = row.s / row.w;
   const variance = Math.max(0, row.q / row.w - mean * mean);
@@ -120,12 +151,8 @@ export function isProvenWinner(userId: string): boolean {
 }
 
 /** The counter-strategy: fewer bluffs, no thin value; every other lever untouched. */
-export function respectWinner(
-  profile: ExploitProfile,
-  userId: string,
-  provenOverride?: boolean
-): ExploitProfile {
-  if (!(provenOverride ?? isProvenWinner(userId))) return profile;
+export function respectWinner(profile: ExploitProfile, userId: string): ExploitProfile {
+  if (!isProvenWinner(userId)) return profile;
   return {
     bluffMod: profile.bluffMod * WINNER_BLUFF_MOD,
     callDownMod: profile.callDownMod,
@@ -135,6 +162,6 @@ export function respectWinner(
 
 /** Test hook. */
 export function resetWinnerReads(): void {
-  rows.clear();
-  seen.clear();
+  state.rows.clear();
+  state.seen.clear();
 }

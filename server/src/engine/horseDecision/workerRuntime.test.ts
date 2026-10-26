@@ -412,6 +412,27 @@ const fastRequest = (requestId = 1): FastHorseDecisionRequest => ({
   requestId,
 });
 
+function independentFastForHand(table: string, hand: number, lease: string) {
+  const request = JSON.parse(
+    JSON.stringify(fastRequest(990))
+      .replaceAll('horse-2', '20000000-0000-4000-8000-000000000001')
+      .replaceAll('horse-3', '20000000-0000-4000-8000-000000000002')
+  ) as FastHorseDecisionRequest;
+  const actor = '20000000-0000-4000-8000-000000000001';
+  request.player.user_id = actor;
+  request.gameState.players = request.gameState.players.map((p) => ({
+    ...p,
+    user_id: p.seat === request.player.seat ? actor : '20000000-0000-4000-8000-000000000002',
+  }));
+  request.gameState.format = 'cash';
+  request.gameState.gameMode = 'cash';
+  request.gameState.dealtSeatIds = request.gameState.players.map((p) => p.seat);
+  request.fence = `${table}:${hand}:${request.player.seat}:${lease}:${request.generation}`;
+  request.handJournalContext = captureHorseHandJournalContext([]);
+  request.decisionKey = buildHorseDecisionKey(request);
+  return request;
+}
+
 const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => ({
   ...request,
   decisionKey: buildHorseDecisionKey(request),
@@ -1489,6 +1510,7 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(admissions).toHaveLength(18 + HORSE_PHASE14_DOMAINS.length);
     expect(h.features.slice(0, 18 + HORSE_PHASE14_DOMAINS.length)).toEqual(admissions);
     expect(h.features.slice(18 + HORSE_PHASE14_DOMAINS.length)).toEqual([
+      'horse_observer_reads_unknown_context',
       'phase5_canonical_state',
       'phase15_plan_issue_no_effects',
     ]);
@@ -1850,11 +1872,11 @@ describe('HorseDecisionWorkerRuntime', () => {
         const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
         expect(entry.frame.version).toBe('horse-decision-reads-v5');
         const original = reads[0];
-        expect(original).toBe(change === 'late_reset' ? 0.6 : 1);
-        expect(JSON.parse(entry.frame.json).winnerReads).toContainEqual([
-          'horse-3',
-          change === 'late_reset',
-        ]);
+        // #8075: an observer never inherits floor-wide winner learning, so the
+        // FAST read is the neutral 1 either way; later live changes must not move it.
+        expect(original).toBe(1);
+        // The v5 row format is owned by HorseDecisionReadFrame (#8075); this
+        // test pins the behaviour: FAST, replay and DEEP read the same belief.
         if (change === 'late_reset') resetWinnerReads();
         else learn();
         const body = JSON.parse(entry.frame.json);
@@ -1901,6 +1923,19 @@ describe('HorseDecisionWorkerRuntime', () => {
       try {
         const h = harness(),
           request = fastRequest(1);
+        if (windows) {
+          const decide = h.deps.decide;
+          h.deps.decide = (...args) => {
+            HorseMind.importStats([
+              {
+                user_id: 'horse-3',
+                hands: 20,
+                sourceWindow: { version: 1, coverage: 'complete', fromMs: 100, toMs: 200 },
+              },
+            ]);
+            return decide(...args);
+          };
+        }
         h.runtime.receive(request);
         await h.runtime.drain();
         const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
@@ -2153,7 +2188,8 @@ describe('HorseDecisionWorkerRuntime', () => {
       'ACK',
       'STOPPED',
     ]);
-    expect(h.observations).toEqual(['table:hand']);
+    expect(h.observations).toEqual([]);
+    expect(h.features).toContain('horse_observer_completion_unavailable');
     expect(h.stopped()).toBe(1);
   });
 
@@ -2178,6 +2214,11 @@ describe('HorseDecisionWorkerRuntime', () => {
       const learned: ObserveCompletedHandRequest[] = [];
       h.deps.journalAcceptedHand = (hand) => journaled.push(structuredClone(hand));
       h.deps.observeCompletedHand = (r) => learned.push(r);
+      h.runtime.receive(independentFastForHand(table, 12, '9'));
+      await h.runtime.drain();
+      expect(h.messages.at(-1), JSON.stringify(h.messages.at(-1))).toMatchObject({
+        type: 'FAST_RESULT',
+      });
       h.runtime.receive(request);
       await h.runtime.drain();
       return { h, journaled, learned };
@@ -2808,7 +2849,7 @@ describe('HorseDecisionWorkerRuntime', () => {
       rngAfter: first.rngAfter,
       runtimePins: 'incomplete',
     });
-    expect(JSON.stringify(first)).not.toContain('horse-decision-reads-v2');
+    expect(JSON.stringify(first)).not.toContain('horse-decision-reads-');
     h.runtime.receive({
       ...fast,
       type: 'DECIDE_DEEP',
@@ -5496,7 +5537,7 @@ describe('Diamond cash fee envelope transport', () => {
   );
 });
 
-describe('ONE FLOOR, ONE READ: a hand another shard owns is only learned (2026-10-16)', () => {
+describe('public completion transport does not grant other horses an observation', () => {
   const table = '10000000-0000-4000-8000-0000000000cc';
   const committed = '30000000-0000-4000-8000-0000000000cc';
   const hand = (): ObserveCompletedHandRequest =>
@@ -5512,7 +5553,7 @@ describe('ONE FLOOR, ONE READ: a hand another shard owns is only learned (2026-1
       acceptedActorRoster: { rosterDigest: 'x' } as never,
     }) as ObserveCompletedHandRequest;
 
-  it('learns it, acknowledges it, and never journals or binds it', async () => {
+  it('refuses unobserved mirrored history, acknowledges it, and never journals it', async () => {
     const h = harness();
     const journaled: unknown[] = [];
     const ownerLearned: unknown[] = [];
@@ -5528,9 +5569,9 @@ describe('ONE FLOOR, ONE READ: a hand another shard owns is only learned (2026-1
     await h.runtime.drain();
     expect(journaled).toEqual([]);
     expect(ownerLearned).toEqual([]);
-    expect(mirrored).toHaveLength(1);
-    expect(h.features).toContain('horse_mind_mirror_learned');
-    expect(h.features).not.toContain('phase14_accepted_roster_refused');
+    expect(mirrored).toHaveLength(0);
+    expect(h.features).toContain('horse_observer_completion_unavailable');
+    expect(h.features).toContain('phase14_accepted_roster_refused');
     expect(h.messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
   });
 
@@ -5542,7 +5583,7 @@ describe('ONE FLOOR, ONE READ: a hand another shard owns is only learned (2026-1
     };
     h.runtime.receive(hand());
     await h.runtime.drain();
-    expect(h.features).toContain('horse_mind_mirror_refused');
+    expect(h.features).toContain('horse_observer_completion_unavailable');
     expect(h.messages.at(-1)).toMatchObject({ type: 'ACK', operation: 'OBSERVE_COMPLETED_HAND' });
   });
 
@@ -5557,7 +5598,38 @@ describe('ONE FLOOR, ONE READ: a hand another shard owns is only learned (2026-1
     h.runtime.receive(hand());
     await h.runtime.drain();
     expect(journaled).toHaveLength(1);
-    expect(h.observations).toEqual([`${table}:1000001`]);
+    expect(h.observations).toEqual([]);
+    expect(h.features).toContain('horse_observer_completion_unavailable');
     expect(h.features.some((f) => f.startsWith('horse_mind_mirror_'))).toBe(false);
+  });
+});
+
+describe('independent live observer reads', () => {
+  it('does not expose process-wide opponent history to a FAST horse', async () => {
+    HorseMind.reset();
+    HorseMind.observe(
+      [
+        {
+          seat: 3,
+          userId: 'horse-3',
+          action: 'raise',
+          amount: 9,
+          stage: 'preflop',
+          timestamp: 123,
+        },
+      ] as never,
+      []
+    );
+    expect(HorseMind.getStats('horse-3')).toBeDefined();
+    const h = harness();
+    const seen: unknown[] = [];
+    h.deps.decide = (() => {
+      seen.push(HorseMind.getStats('horse-3'));
+      return { action: 'call', amount: 4, thinkTime: 2500 };
+    }) as never;
+    h.runtime.receive(fastRequest(991));
+    await h.runtime.drain();
+    expect(seen).toEqual([undefined]);
+    HorseMind.reset();
   });
 });

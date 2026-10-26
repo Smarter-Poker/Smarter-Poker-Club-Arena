@@ -37,6 +37,7 @@ import { basename, dirname, join, resolve, isAbsolute } from 'node:path';
 export const CHAIN_LINKS = Object.freeze([
   'request',
   'calculation',
+  'independentReads',
   'reference',
   'acceptedAction',
   'completedHand',
@@ -346,6 +347,11 @@ export function assembleChain({ records, decisionRecord, handKey, deps }) {
     calculation = false;
   }
   links.calculation = calculation ? 'present' : 'missing:calculation_receipt';
+  let independent = false;
+  try {
+    independent = deps.observerReadsWereIndependent?.(capture.observerReads, snapshot) === true;
+  } catch {}
+  links.independentReads = independent ? 'present' : 'missing:independent_observer_reads';
   const attribution = decision?.tournamentPreflopAttribution ?? null;
   if (!attribution) links.reference = 'missing:reference';
   else {
@@ -588,7 +594,10 @@ async function observe(declarationB64) {
     ]);
   if (review.HORSE_JOURNAL_HAND_READER_VERSION !== 2)
     throw Error('complete_hand_reader_unavailable');
+  if (typeof review.horseObserverReadsWereIndependent !== 'function')
+    throw Error('independent_read_verifier_unavailable');
   const deps = {
+    observerReadsWereIndependent: review.horseObserverReadsWereIndependent,
     lifecycleRequestDigest: lifecycle.horseLifecycleRequestDigest,
     samplingStateIsValid: validation.horseSamplingStateIsValid,
     computeMetadataIsValid: validation.horseComputeMetadataIsValid,
@@ -871,7 +880,11 @@ async function observe(declarationB64) {
                 rowid: Number(row.rowid),
                 atMs: decisionRecord.atMs,
                 at: new Date(decisionRecord.atMs).toISOString(),
-                review: { status: verdict.status, gaps: verdict.gaps },
+                review: {
+                  status: verdict.status,
+                  gaps: verdict.gaps,
+                  independentReadsVerified: verdict.independentReadsVerified === true,
+                },
                 decisionId: decisionRecord.eventId,
                 decisionRecordDigest: decisionRecord.sha256,
                 capture: captureMark(continuity, decisionRecord, shedAtMs),

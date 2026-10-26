@@ -1,4 +1,5 @@
 import { MEMORY_VARIANTS, opponentMemoryKey } from './HorseOpponentMemory.js';
+import { type HorseWinnerReadRow } from './HorseWinnerRead.js';
 import {
   horsePlanContextIsValid,
   horsePlanContextKey,
@@ -39,7 +40,6 @@ const WINDOW_VERSION = 'horse-decision-reads-v3';
 /** 2026-10-16: v3 plus the decayed opponent-exploit counters. Written only
  * when the view carries any, so every earlier frame keeps its exact bytes. */
 const EXPLOIT_VERSION = 'horse-decision-reads-v4';
-/** v4 plus the exact winner belief consumed for every actor, including false. */
 const WINNER_VERSION = 'horse-decision-reads-v5';
 const exploited = (version: unknown) => version === EXPLOIT_VERSION || version === WINNER_VERSION;
 const windowed = (version: unknown) => version === WINDOW_VERSION || exploited(version);
@@ -91,10 +91,10 @@ type Body = {
     | typeof WINDOW_VERSION
     | typeof EXPLOIT_VERSION
     | typeof WINNER_VERSION;
+  winnerReads?: Rows<HorseWinnerReadRow>;
   statsWindows?: Rows<HorseObservationWindow>;
   scopedWindows?: Rows<HorseObservationWindow>;
   exploit?: Rows<number[]>;
-  winnerReads?: Rows<boolean>;
   planContext?: HorsePlanContext;
   actors: string[];
   handKey: string | null;
@@ -229,8 +229,18 @@ function validateBody(
     (exploited(value.version) &&
       !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length))) ||
     (value.version === WINNER_VERSION &&
-      (!validRows(value.winnerReads, b.stats, (v) => typeof v === 'boolean') ||
-        (value.winnerReads as Rows<boolean>).length !== b.actors.length))
+      !validRows(
+        value.winnerReads,
+        b.stats,
+        (v) =>
+          object(v) &&
+          exact(v, ['w', 'w2', 's', 'q']) &&
+          finite(v.w) &&
+          finite(v.w2) &&
+          finite(v.q) &&
+          typeof v.s === 'number' &&
+          Number.isFinite(v.s)
+      ))
   )
     return fail();
   if (windowed(value.version)) {
@@ -288,9 +298,12 @@ export function encodeHorseDecisionReads(
       return [id, EXPLOIT_COUNTER_FIELDS.map((f) => row[f])];
     }
   );
-  const hasWinnerReads = view.winnerReads !== undefined;
-  const hasExploit = hasWinnerReads || exploitRows.length > 0;
+  const hasExploit = exploitRows.length > 0;
+  const hasWinner = view.winnerReads !== undefined;
+  if (hasWinner && (!(view.winnerReads!.seen instanceof Set) || view.winnerReads!.seen.size !== 0))
+    return fail();
   const hasWindows =
+    hasWinner ||
     hasExploit ||
     [boundedStats, boundedScoped].some((rows) =>
       rows.some(([, row]) => object(row) && Object.hasOwn(row, 'sourceWindow'))
@@ -298,7 +311,7 @@ export function encodeHorseDecisionReads(
   const windows = (map: Map<string, OpponentStats>): Rows<HorseObservationWindow> =>
     [...map].map(([id, row]) => [id, normalizeHorseObservationWindow(row.sourceWindow)]);
   const body: Body = {
-    version: hasWinnerReads
+    version: hasWinner
       ? WINNER_VERSION
       : hasExploit
         ? EXPLOIT_VERSION
@@ -310,8 +323,8 @@ export function encodeHorseDecisionReads(
     ...(hasWindows
       ? { statsWindows: windows(view.stats), scopedWindows: windows(view.scoped) }
       : {}),
-    ...(hasExploit ? { exploit: exploitRows } : {}),
-    ...(hasWinnerReads ? { winnerReads: bounded(view.winnerReads!, b.actors.length) } : {}),
+    ...(hasWinner || hasExploit ? { exploit: exploitRows } : {}),
+    ...(hasWinner ? { winnerReads: bounded(view.winnerReads!.rows, b.stats.size) } : {}),
     ...(planContext === undefined ? {} : { planContext }),
     actors: b.actors,
     handKey,
@@ -403,6 +416,7 @@ export function decodeHorseDecisionReads(
       ) as unknown as ExploitCounters,
     ])
   );
-  if (body.winnerReads !== undefined) view.winnerReads = new Map(body.winnerReads);
+  if (body.version === WINNER_VERSION)
+    view.winnerReads = { rows: new Map(body.winnerReads), seen: new Set() };
   return view;
 }

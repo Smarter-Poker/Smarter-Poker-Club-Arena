@@ -73,7 +73,7 @@ it('canonical variants remain distinct and donor batches keep the ten actor boun
   ).toBe(false);
 });
 it.each(['flh', 'flo8', 'short_deck'] as const)(
-  'first %s FAST after restart imports donor before reading and preserves second look',
+  'first %s FAST after restart refuses pooled donor and preserves independent second look',
   async (variant) => {
     HorseMind.reset();
     const messages: HorseDecisionWorkerResponse[] = [];
@@ -158,7 +158,7 @@ it.each(['flh', 'flo8', 'short_deck'] as const)(
     expect(captures[0].readFrame).not.toBeNull();
     HorseMind.setDecisionScope(readScopeOf(variant, 6), variant, 'cash');
     const first = HorseMind.opponentRead(ids[1]);
-    expect(first?.stats.pfr.engaged).toBe('high');
+    expect(first).toBeNull();
     const frame = captures[0].readFrame!;
     const view = decodeHorseDecisionReads(
       frame,

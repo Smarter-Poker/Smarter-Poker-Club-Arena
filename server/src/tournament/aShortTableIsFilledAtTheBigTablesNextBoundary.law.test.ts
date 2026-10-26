@@ -17,6 +17,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TournamentManager } from './TournamentManager.js';
+import { ServerTableEngineBase } from '../engine/ServerTableEngineBase.js';
 import type { BalancerTable } from '../engine/TableBalancer.js';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -289,4 +290,74 @@ describe("a short table is filled at the big table's next hand boundary", () => 
     expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
     expect(m.executePlayerMoves).not.toHaveBeenCalled();
   });
+  it('consumes the real park method returning an already claimed physical boundary', async () => {
+    const big = table(0, 8);
+    const { m, engines } = manager([big, table(1, 3)]);
+    const engine: any = engines.get(big.tableId)!;
+    Object.assign(engine, {
+      running: true,
+      handForHandResolve: () => {},
+      tournamentMovePauseOwners: new Set(),
+      claimedTournamentMovePauseOwners: new Set(),
+      breakHeldTournamentMovePauseOwners: new Set(),
+      tournamentMovePauseExpiryTimers: new Map(),
+      terminalBoundaryPendingGenerations: new Set(),
+      postHandTasksPromise: null,
+      pausedSinceMs: 0,
+      notifyBoundaryPauseWaiters: vi.fn(),
+      isBetweenHands: () => true,
+    });
+    engine.awaitsTournamentMoveClaim = () =>
+      ServerTableEngineBase.prototype.awaitsTournamentMoveClaim.call(engine);
+    engine.parkForTournamentMove = vi.fn(async (owner: string, wait: number) => {
+      // The source reaches its physical gate after the manager's first
+      // negative probe. Use the real producer, which claims before returning.
+      engine.dealing = false;
+      return ServerTableEngineBase.prototype.parkForTournamentMove.call(engine, owner, wait);
+    });
+    await m.checkTableBalance();
+    await settle();
+    await settle();
+    expect(engine.claimedTournamentMovePauseOwners.has(m.tournamentMoveBoundaryOwner)).toBe(true);
+    expect(engine.awaitsTournamentMoveClaim()).toBe(false);
+    expect(m.executePlayerMoves).toHaveBeenCalledTimes(1);
+  });
+  it('forgets a claimed result when the source engine generation is replaced', async () => {
+    const big = table(0, 8);
+    const { m, engines } = manager([big, table(1, 3)]);
+    const oldEngine = engines.get(big.tableId)!;
+    m.gapBalanceFencedSources.add(big.tableId);
+    m.gapBalanceClaimedSources.set(big.tableId, oldEngine);
+    const replacement = fakeEngine();
+    engines.set(big.tableId, replacement);
+    await m.balanceParkedGapSources();
+    expect(m.gapBalanceClaimedSources.has(big.tableId)).toBe(false);
+    expect(m.executePlayerMoves).not.toHaveBeenCalled();
+    expect(oldEngine.releaseTournamentMovePause).not.toHaveBeenCalled();
+    expect(replacement.releaseTournamentMovePause).not.toHaveBeenCalled();
+  });
+  it.each(['no-move', 'rejected', 'unknown'] as const)(
+    'releases a parked hold after a %s move door unless its outcome is unknown',
+    async (outcome) => {
+      const big = table(0, 8);
+      const { m, engines, park } = manager([big, table(1, 3)]);
+      await m.checkTableBalance();
+      m.executePlayerMoves = vi.fn(async () => {
+        if (outcome === 'unknown')
+          m.pendingTournamentSeatMoveOutcomes.set('retained-request', {
+            input: { sourceTableId: big.tableId },
+          });
+        if (outcome === 'rejected') throw new Error('move door unavailable');
+        return 0;
+      });
+      park(big.tableId);
+      m.claimGapBalanceAtBoundary(big.tableId);
+      await settle();
+      await settle();
+      expect(m.executePlayerMoves).toHaveBeenCalledTimes(1);
+      if (outcome === 'unknown')
+        expect(engines.get(big.tableId)!.releaseTournamentMovePause).not.toHaveBeenCalled();
+      else expect(engines.get(big.tableId)!.releaseTournamentMovePause).toHaveBeenCalled();
+    }
+  );
 });

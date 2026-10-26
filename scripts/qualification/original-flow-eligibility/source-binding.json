@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237289,
-      "sha256": "b343017dad36977b91a9d036914c2ac4626a5a3c6bc47c4a117352d39150f1e9"
+      "bytes": 237741,
+      "sha256": "520b13740a44ff72478cf2cbf9d05e8f237fdc0a463b2f20b4553a323e3961d6"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -407,5 +407,6 @@
         }
       }
     }
-  }
+  },
+  "horseOutcomeAuditWorkflowInput20261026": "Current workflow identity only: append one source-bound Horse outcome audit fixture to accounting shard4. Existing financial commands, authority, matrix and assertions unchanged. Historical qualification evidence is not restamped; required hosted checks remain pending."
 }

@@ -3216,13 +3216,13 @@ export abstract class TournamentManagerBase {
    * manager stop, the sweep's abort signal and the freeze still end it.
    */
   protected async offerAddOnsWhileTheFieldIsHeld(
-    horseRows: Array<{ id: string }>
+    horseRows: Array<{ id: string }>,
+    passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS
   ): Promise<{ taken: number; completed: number; declined: Map<string, number> }> {
     const declined = new Map<string, number>();
     let taken = 0;
     let completed = 0;
     let nextIndex = 0;
-    const passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
     const batchWasOpen = this.eliminationMutationBatchIsOpen();
     if (!batchWasOpen) this.openEliminationMutationBatch();
     const mayContinue = () =>
@@ -11572,11 +11572,18 @@ export abstract class TournamentManagerBase {
    * disappears again the deploy fails rather than the feature silently dying.
    */
   protected async tryTournamentAddOns(): Promise<void> {
-    if (
-      isMaintenanceFrozen() ||
-      !this.tournamentCache?.add_on_available ||
-      !this.eliminationMutationAllowed()
-    ) {
+    // The held-field pass includes its eligibility reads. A slow snapshot
+    // must not spend the ordinary five-second budget before the pool starts.
+    // Keep one bounded deadline across reads and purchases; lifecycle, the
+    // persisted offer deadline and maintenance remain authoritative.
+    const heldPassEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    const addOnWorkAllowed = () =>
+      !isMaintenanceFrozen() &&
+      this.running &&
+      !this.eliminationSweepSignal?.aborted &&
+      (this.eliminationMutationAllowed() ||
+        (Date.now() < heldPassEndsAt && this.addOnBreakHoldsTheField(Date.now())));
+    if (isMaintenanceFrozen() || !this.tournamentCache?.add_on_available || !addOnWorkAllowed()) {
       return;
     }
     let pendingHorseIds: string[] = [];
@@ -11611,7 +11618,7 @@ export abstract class TournamentManagerBase {
         // offer is served ahead of that stage (2026-10-25), so it never
         // reaches a player who no longer holds chips.
         .gt('chips', 0);
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (rowsErr || !rows || rows.length === 0) {
         if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -11627,7 +11634,7 @@ export abstract class TournamentManagerBase {
         .select('id')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['waiting', 'running', 'RUNNING', 'active']);
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (tableRowsErr || !tableRows) {
         reportError(
           tableRowsErr ?? new Error('add-on table snapshot returned no rows'),
@@ -11642,7 +11649,7 @@ export abstract class TournamentManagerBase {
           supabase.from('table_seats').select('user_id').in('table_id', batch).is('left_at', null),
         `Tournament.addOnSeats(${this.tournamentId.slice(0, 8)})`
       );
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (!seatRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -11664,7 +11671,7 @@ export abstract class TournamentManagerBase {
         (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
         `Tournament.addOnHorses(${this.tournamentId.slice(0, 8)})`
       );
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (!horseRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -11714,7 +11721,7 @@ export abstract class TournamentManagerBase {
       if (this.addOnBreakHoldsTheField(Date.now())) {
         const rotated = pendingHorseRows.slice(start).concat(pendingHorseRows.slice(0, start));
         if (rotated.length === 0) return;
-        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated);
+        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPassEndsAt);
         completedOffers += served.completed;
         if (served.taken > 0 || served.declined.size > 0) {
           console.log(

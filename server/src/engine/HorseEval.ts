@@ -23,6 +23,7 @@
  */
 
 import type { Card } from '../types.js';
+import { isBoardOnlyRiverHand } from './HorseBoardContact.js';
 import {
   CONTINUATION_POLICY,
   continuationStrength,
@@ -1596,14 +1597,20 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
   // ("pair-equivalent connection") so the acceptance logic treats a real
   // draw like real contact.
   const all = hole.concat(board);
-  const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
+  const madeScore = scoreHoldem(all, all.length, shortDeck);
+  const cat = Math.floor(madeScore / 0x100000);
   // V13: the hole cards must IMPROVE on what the board already makes. This
   // scored the board's own hand as opponent contact, so on any paired board
   // (~17% of flops) every holding "connected" — 32o on K K 7 returned a pair
   // of kings — and the whole V12 board-contact conditioning became a no-op
   // exactly where reads matter most. A pocket pair stays contact by intent.
-  const boardCat =
-    board.length > 0 ? Math.floor(scoreHoldem(board, board.length, shortDeck) / 0x100000) : 0;
+  const boardScore = board.length > 0 ? scoreHoldem(board, board.length, shortDeck) : 0;
+  const boardCat = Math.floor(boardScore / 0x100000);
+  // A pocket pair is contact only while it contributes. On a complete board,
+  // an unused underpair cannot turn shared two pair, a straight or a full
+  // house into the private value the aggressor sampler is looking for.
+  // Compare the whole score: a pair improving only the kicker still counts.
+  if (isBoardOnlyRiverHand(board.length, madeScore, boardScore)) return 1;
   const isPocketPair = hole.length === 2 && hole[0].rank === hole[1].rank;
   if (cat >= 2 && (cat > boardCat || isPocketPair)) {
     // A pocket pair UNDER every board card is a hidden non-connector — but it

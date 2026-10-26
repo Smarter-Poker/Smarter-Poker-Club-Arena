@@ -19,6 +19,8 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseBoardContact.ts':
+      'physical private river value consumed by board-conditioned equity and sampled continuation strength',
     'src/services/horseCorrectiveReview/liveKernel.ts':
       'boundary: the Phase 14 worker-local corrective consumer; absent a separately admitted functional capability it preserves action and RNG, and it never stacks on an applied prior candidate',
     'src/engine/HorseRiverNuts.ts':

@@ -31,6 +31,28 @@ const c = (spec: string): Card => {
 const nlh = variantInfo('nlh');
 
 describe('HorseEval V12 - connectsBoard', () => {
+  it.each([
+    ['NLH board two pair', '2c 2d', 'As Ah Kc Kd Qs', false],
+    ['NLH board straight', '2c 2d', '7s 8h 9c Td Js', false],
+    ['NLH board full house', 'Jc Jd', 'As Ah Ad Qc Qd', false],
+    ['Short Deck board full house', '6c 6d', 'As Ah Ad Kc Kd', true],
+  ])(
+    '%s does not turn an unused pocket pair into private value',
+    (_name, hole, board, shortDeck) => {
+      expect(connectsBoard(hole.split(' ').map(c), board.split(' ').map(c), shortDeck)).toBe(1);
+    }
+  );
+
+  it('retains pocket-pair contact when the pair improves the board, including the kicker', () => {
+    expect(connectsBoard(['7c', '7d'].map(c), ['As', 'Ah', 'Kc', 'Kd', '2s'].map(c), false)).toBe(
+      3
+    );
+    expect(connectsBoard(['Qc', 'Qd'].map(c), ['As', 'Ah', 'Ad', 'Kh', '2s'].map(c), false)).toBe(
+      7
+    );
+    expect(connectsBoard(['6c', '6d'].map(c), ['As', 'Kh', 'Qd'].map(c), false)).toBe(2);
+  });
+
   it('recognizes pairs, flush draws, and open straight draws as contact', () => {
     const board = [c('Ah'), c('Kd'), c('7c')];
     expect(connectsBoard([c('As'), c('2d')], board, false)).toBeGreaterThanOrEqual(2); // top pair

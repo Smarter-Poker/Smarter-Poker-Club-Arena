@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-short-stack-jam-receipt-fix-now",
+      "ownerOrder": "Dan, 2026-10-26 08:07 Chicago, in this chat: \"MAKE SURE ANY AND ALL UPGRADES OVER THE LAST COUPLE DAYS AND ALL HORSE BRAIN LOGIC AND SKILL ARE FULLY UPDATED AND ACTIVATED BY 1000 OF 1000 HORSES.\"; 2026-10-25 23:18 Chicago on bubble hand 48403158: \"THIS CAN NEVER FUCKING HAPPEN AGAIN!!\". One off-cycle engine activation of protected main containing PR #8183, merge ca8430859a54915110ea30a52d48c82498d4ac9b: the short-stack rule from #8144 (a 12bb-or-less tournament stack facing a raise jams or folds, never flats) is live, but its jam from the big blind heads-up against the opener was refused by the policy receipt check as reference_shape, so the engine's liveness fallback folded the hand the brain chose to jam (about 7 a hour since 12:07 UTC). #8183 admits exactly that public shape. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit (the previous owner window served at 14:18 UTC). This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "ca8430859a54915110ea30a52d48c82498d4ac9b",
+      "notBefore": "2026-10-26T15:20:00Z",
+      "notAfter": "2026-10-26T21:10:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-premium-set-keeps-betting-now",
       "ownerOrder": "Dan, 2026-10-25 21:09 Chicago, in this chat, on a horse checking AA down on 9h 5s 3s 9s 6c: \"HORSES CAN NOT EVER BE PLAYING PASSIVELY WITH PREMIUM HANDS ... NEVER CHECKING IT DOWN!! MAKE THESE FIXES NOW FOR THE HORSE BRAIN AND UPDATE ALL 1000 HORSES\"; 23:12 Chicago: \"finish it up now, and push and publish now, not at 4am. finish up any and all unfinished work\". One off-cycle engine activation of protected main containing PR #8166, merge c2a5cd44bae19d689bd22e7959f272bcf0ee201a: the hold'em premium rule (live since #8122/#8138) did not count a premium pocket pair that made a set under a higher board card (QQ on a K-high board with a third queen) as a made hand, so that horse could still check its set down; #8166 counts the set, so it keeps betting. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "c2a5cd44bae19d689bd22e7959f272bcf0ee201a",
@@ -23,7 +31,10 @@
       "contains": "867f3ec94f7b6397e377a6b94dbf34003e7d1141",
       "notBefore": "2026-10-26T04:07:24Z",
       "notAfter": "2026-10-26T09:57:24Z",
-      "announceAtChicagoMinutes": [53, 54],
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
       "migrations": []
     },
     {
@@ -32,7 +43,10 @@
       "contains": "e81a9e7dbde08d8439afd66c093bade4b55f8a24",
       "notBefore": "2026-10-26T01:28:53Z",
       "notAfter": "2026-10-26T07:18:53Z",
-      "announceAtChicagoMinutes": [53, 54],
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
       "migrations": []
     },
     {
@@ -65,12 +79,17 @@
       "contains": "98547198d5daccf29015fbea9b5d6260fa43327a",
       "notBefore": "2026-10-25T18:18:56Z",
       "notAfter": "2026-10-26T00:18:56Z",
-      "announceAtChicagoMinutes": [53, 54],
-      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
+      "migrations": [
+        "20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"
+      ]
     },
     {
       "id": "2026-10-25-plo5-immediate-cutover",
-      "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don’t call it done until it’s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8048 (whole-game 70/30 correction) and PR #8042 (cent rounding and notices); preserve drain, freeze, rollback reserve and thaw. The prior #8042 anchor is already serving in c3ed8648 but does not contain the requested whole-game quota correction. This same bounded order now names the protected #8048 merge, retains its original expiry, and ends once that corrected commit is serving.",
+      "ownerOrder": "Dan, 2026-10-25, in this chat: \"Finish the engine deployment at the 4:00 AM Chicago window and verify the PLO5 70/30 split, cent rounding, and add-on notices on live tables. Don\u2019t call it done until it\u2019s live and verified. but do it now, not at 4am\". One immediate certified engine cutover of protected main containing PR #8048 (whole-game 70/30 correction) and PR #8042 (cent rounding and notices); preserve drain, freeze, rollback reserve and thaw. The prior #8042 anchor is already serving in c3ed8648 but does not contain the requested whole-game quota correction. This same bounded order now names the protected #8048 merge, retains its original expiry, and ends once that corrected commit is serving.",
       "contains": "bf3dc2a6c3e877dd5760b75f7ad992c33975bc4f",
       "notBefore": "2026-10-25T17:57:28Z",
       "notAfter": "2026-10-25T23:47:28Z",
@@ -82,7 +101,9 @@
       "contains": "80d1e6319afffa9141ca3dba86a97b9c2c4a4c18",
       "notBefore": "2026-10-25T17:42:21Z",
       "notAfter": "2026-10-25T23:32:21Z",
-      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
+      "migrations": [
+        "20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"
+      ]
     },
     {
       "id": "2026-10-25-horse-v53-phase-two-asap",
@@ -90,7 +111,10 @@
       "contains": "1b64e000f7b52f456ca9c7e88afb9d4b721fba3a",
       "notBefore": "2026-10-25T03:24:14Z",
       "notAfter": "2026-10-25T09:14:14Z",
-      "announceAtChicagoMinutes": [53, 54],
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
       "migrations": []
     },
     {
@@ -99,7 +123,10 @@
       "contains": "99f89c631a46ad79ef06c139fbde95025ab4865b",
       "notBefore": "2026-10-25T02:27:00Z",
       "notAfter": "2026-10-25T08:26:00Z",
-      "announceAtChicagoMinutes": [53, 54],
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
       "migrations": []
     },
     {
@@ -108,7 +135,10 @@
       "contains": "6aba0e019a22243f65566608827a7252070a1b5e",
       "notBefore": "2026-10-24T22:56:00Z",
       "notAfter": "2026-10-25T02:58:00Z",
-      "announceAtChicagoMinutes": [53, 54],
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
       "migrations": []
     },
     {
@@ -117,7 +147,10 @@
       "contains": "ebe9363ec3189b17c655f8c87954cae1010c21f4",
       "notBefore": "2026-10-24T19:34:22Z",
       "notAfter": "2026-10-24T21:58:00Z",
-      "announceAtChicagoMinutes": [53, 54],
+      "announceAtChicagoMinutes": [
+        53,
+        54
+      ],
       "migrations": []
     },
     {
@@ -158,7 +191,9 @@
       "contains": "f35c068daeefd3005f967af16844a336a53d2e6b",
       "notBefore": "2026-10-23T20:41:08Z",
       "notAfter": "2026-10-24T02:41:08Z",
-      "migrations": ["20261023183513_durable_variant_scoped_horse_opponent_memory.sql"]
+      "migrations": [
+        "20261023183513_durable_variant_scoped_horse_opponent_memory.sql"
+      ]
     },
     {
       "id": "2026-10-24-arena-dealing-incident",

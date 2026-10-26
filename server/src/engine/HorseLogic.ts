@@ -7402,8 +7402,19 @@ export class HorseLogic {
           tourneyAggro &&
           (opts.v57TournamentAggression ?? true) !== false;
         if (initiativeTurn57 && telemetryOn(opts)) noteFire('v57_turn_cell_initiative_skip');
+        // ═══ V58 THE CLASS MEAN CANNOT SEE A MADE HAND (Dan 2026-10-26) ══════
+        // "I JUST WATCHED A HORSE RAISE AJc ... FLIP THE NUT FLUSH AND CHECK IT
+        // EVERY SINGLE STREET". Hand 48442708: A-J of clubs on Q-5-8 of clubs,
+        // then 5h, Kh. These cells hold the MEAN of a hand class over every
+        // board in a texture class: "AJs" on a monotone-paired turn is mostly
+        // ace-high with no club, so the cell says check 81%, and the river cell
+        // says check 100%. It cannot know that THIS AJs holds the ace of the
+        // board's suit. A set, trips, a straight, a flush or better on this
+        // board is not the class average; the value ladder below bets it.
+        const madeBeyondClass58 = cat >= 4 && (opts.v57TournamentAggression ?? true) !== false;
+        if (madeBeyondClass58 && telemetryOn(opts)) noteFire('v58_made_hand_cell_skip');
         const advice29 =
-          tooDeep29 || initiativeTurn57
+          tooDeep29 || initiativeTurn57 || madeBeyondClass58
             ? null
             : gtoStreetAdvice({
                 street,

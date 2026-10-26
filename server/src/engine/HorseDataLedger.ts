@@ -1638,6 +1638,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
+    'v58_made_hand_cell_skip',
+    'HorseLogic (tournament aggression)',
+    'a set, straight, flush or better was bet by the value ladder instead of following a hand-class-mean solver cell that cannot see it (2026-10-26)',
+    'OPPX'
+  ),
+  receipt(
     'v57_turn_cell_initiative_skip',
     'HorseLogic (tournament aggression)',
     'a tournament flop bettor played the turn from its barrel plan, not the check-heavy turn cell keyed without initiative (2026-10-25)',

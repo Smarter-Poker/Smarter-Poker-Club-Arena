@@ -64,10 +64,7 @@ import {
   playerTotalsFromAwards,
   type MysteryBountyAward,
 } from '../../services/MysteryBountyService';
-import {
-  isHeadlineTier,
-  mysteryBountyTierLabel,
-} from '../../config/mysteryBountyTiers';
+import { isHeadlineTier, mysteryBountyTierLabel } from '../../config/mysteryBountyTiers';
 import { moneyAdjectiveAtUnit } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useMysteryBountyProjection } from '../../hooks/useMysteryBountyProjection';
@@ -128,6 +125,8 @@ interface PlayerPayout {
   position: number | null;
   prize: number;
   status: string | null;
+  /** The row could not be read: say so rather than print 0 as a fact. */
+  unread?: boolean;
 }
 
 export default function MysteryBountyPanel({
@@ -138,7 +137,7 @@ export default function MysteryBountyPanel({
   isCompleted,
   unitCents,
 }: MysteryBountyPanelProps) {
-  const { inventory, awards, leaderboard, isLoading, pendingReveals } = data;
+  const { inventory, awards, awardsTotal, leaderboard, isLoading, pendingReveals } = data;
 
   const [showAllAwards, setShowAllAwards] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -186,13 +185,14 @@ export default function MysteryBountyPanel({
     }
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('tournament_players')
           .select('position, prize, status')
           .eq('tournament_id', tournamentId)
           .eq('user_id', selectedUserId)
           .maybeSingle();
         if (!alive) return;
+        if (error) throw error;
         setPlayerPayout(
           data
             ? {
@@ -204,7 +204,7 @@ export default function MysteryBountyPanel({
         );
       } catch (err) {
         reportError(err, 'MysteryBountyPanel.loadPlayerPayout');
-        if (alive) setPlayerPayout({ position: null, prize: 0, status: null });
+        if (alive) setPlayerPayout({ position: null, prize: 0, status: null, unread: true });
       }
     })();
     return () => {
@@ -261,7 +261,9 @@ export default function MysteryBountyPanel({
           <span className={`${styles.headlineLabel} sc-label sc-ink--blue`}>
             Top Mystery Bounty
           </span>
-          <span className={`${styles.headlineValue} sc-ink--gold`}>{formatCents(top, unitCents)}</span>
+          <span className={`${styles.headlineValue} sc-ink--gold`}>
+            {formatCents(top, unitCents)}
+          </span>
           <span className={styles.headlineSub}>
             {counts.original.toLocaleString('en-US')} Mystery Bounties Drawn From A{' '}
             {formatCents(inventory?.poolCents ?? 0, unitCents)} {moneyAdjectiveAtUnit(unitCents)}{' '}
@@ -319,9 +321,10 @@ export default function MysteryBountyPanel({
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Chests Left</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {(showProjection && projected ? projected.drawCount : counts.remaining).toLocaleString(
-                'en-US'
-              )}{' '}
+              {(showProjection && projected
+                ? projected.drawCount
+                : counts.remaining
+              ).toLocaleString('en-US')}{' '}
               Of{' '}
               {(showProjection && projected ? projected.drawCount : counts.original).toLocaleString(
                 'en-US'
@@ -347,8 +350,8 @@ export default function MysteryBountyPanel({
           {showProjection && projected ? (
             <>
               <div className={`${styles.empty} sc-copy sc-copy--center`}>
-                {projected.drawCount.toLocaleString('en-US')} Mystery Bounties From The Pool So
-                Far. Amounts Grow With Every Entry, Rebuy And Add-On Until The Ladder Is Sealed
+                {projected.drawCount.toLocaleString('en-US')} Mystery Bounties From The Pool So Far.
+                Amounts Grow With Every Entry, Rebuy And Add-On Until The Ladder Is Sealed
               </div>
               {projected.tiers.map((t) => (
                 <div key={`${t.tier}:${t.amountCents}`} className={styles.tierRow}>
@@ -436,7 +439,7 @@ export default function MysteryBountyPanel({
         <div className={styles.sectionHead}>
           <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Mystery Bounties Awarded</h4>
           <span className={`${styles.sectionNote} sc-ink--blue`}>
-            {awards.length.toLocaleString('en-US')} Revealed
+            {Math.max(awards.length, awardsTotal ?? 0).toLocaleString('en-US')} Revealed
           </span>
         </div>
         <div className={styles.rows}>
@@ -572,13 +575,19 @@ export default function MysteryBountyPanel({
                 <div className={styles.figure}>
                   <span className="sc-label sc-ink--blue">Final Position</span>
                   <span className={`${styles.figureValue} sc-ink--silver`}>
-                    {playerPayout?.position ? `#${playerPayout.position}` : 'Not Finished'}
+                    {playerPayout?.unread
+                      ? 'Could Not Be Read'
+                      : playerPayout?.position
+                        ? `#${playerPayout.position}`
+                        : 'Not Finished'}
                   </span>
                 </div>
                 <div className={styles.figure}>
                   <span className="sc-label sc-ink--blue">Tournament Prize</span>
                   <span className={`${styles.figureValue} sc-ink--silver`}>
-                    {(playerPayout?.prize ?? 0).toLocaleString('en-US')}
+                    {playerPayout?.unread
+                      ? 'Could Not Be Read'
+                      : formatCents(Math.round((playerPayout?.prize ?? 0) * 100), unitCents)}
                   </span>
                 </div>
               </>
@@ -586,10 +595,12 @@ export default function MysteryBountyPanel({
             <div className={styles.figure}>
               <span className="sc-label sc-ink--blue">Total Payout</span>
               <span className={`${styles.figureValue} sc-ink--gold`}>
-                {formatCents(
-                  Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings,
-                  unitCents
-                )}
+                {playerPayout?.unread
+                  ? 'Could Not Be Read'
+                  : formatCents(
+                      Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings,
+                      unitCents
+                    )}
               </span>
             </div>
           </div>

@@ -44,9 +44,13 @@ describe('tournament lobby shell contract', () => {
   });
 
   it('keeps all seven tabs on the shared live tab contract', () => {
-    for (const id of ['detail', 'blinds', 'ranking', 'entries', 'unions', 'tables', 'rewards']) {
+    for (const id of ['detail', 'blinds', 'ranking', 'entries', 'unions', 'tables']) {
       expect(PAGE).toContain(`activeTab === '${id}'`);
     }
+    // Rewards and Bounties render off `shownTab` (2026-10-26): Bounties exists
+    // only on a mystery event, and a bounties link elsewhere shows Rewards.
+    expect(PAGE).toContain("shownTab === 'rewards'");
+    expect(PAGE).toContain("shownTab === 'bounties'");
     expect(PAGE).toContain('data-active-tab={activeTab}');
   });
 

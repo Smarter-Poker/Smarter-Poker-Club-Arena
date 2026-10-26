@@ -1151,7 +1151,7 @@ export default function DetailOverviewTab({
               <button
                 type="button"
                 className="dov-ladder-link"
-                onClick={() => onOpenTab('rewards')}
+                onClick={() => onOpenTab('bounties')}
               >
                 Open The Full Mystery Ladder
               </button>

@@ -94,9 +94,10 @@ export function useMysteryBounty(
       inFlight = true;
       try {
         const [inv, aw, lb] = await Promise.all([
-          MysteryBountyService.getInventory(tournamentId),
-          MysteryBountyService.getAllAwards(tournamentId),
-          MysteryBountyService.getLeaderboard(tournamentId),
+          // Strict: a failed refresh keeps what is on screen (2026-10-26).
+          MysteryBountyService.getInventory(tournamentId, { strict: true }),
+          MysteryBountyService.getAllAwards(tournamentId, { strict: true }),
+          MysteryBountyService.getLeaderboard(tournamentId, { strict: true }),
         ]);
         if (!active) return;
         setInventory(inv);

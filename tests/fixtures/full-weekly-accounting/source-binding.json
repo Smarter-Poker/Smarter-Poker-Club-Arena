@@ -244,7 +244,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "227203c3742bcfe42dd6b6b72eb82cc2c9f80512627c2c96db027f625312db08",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",

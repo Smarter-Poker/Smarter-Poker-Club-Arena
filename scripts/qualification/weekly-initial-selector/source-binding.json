@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237289,
-      "sha256": "b343017dad36977b91a9d036914c2ac4626a5a3c6bc47c4a117352d39150f1e9"
+      "bytes": 237557,
+      "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -355,6 +355,18 @@
           "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
         }
       }
+    }
+  },
+  "digestPlayerPeriodNative20261026": {
+    "reason": "Add exact isolated PostgreSQL17 player-period qualification in existing accounting shard2. Reviewed diff adds one step only. Current workflow identity changes; all financial inputs, assertions, historical execution receipts and qualification states are preserved. Not production or financial execution evidence.",
+    "execution_performed": false,
+    "previousWorkflowPin": {
+      "bytes": 237289,
+      "sha256": "b343017dad36977b91a9d036914c2ac4626a5a3c6bc47c4a117352d39150f1e9"
+    },
+    "currentWorkflowPin": {
+      "bytes": 237557,
+      "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
     }
   }
 }

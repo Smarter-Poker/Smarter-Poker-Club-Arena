@@ -276,9 +276,9 @@ it.each([
       if (legacy) {
         expect(observed[0]!.fence).toContain(':unleased:observe');
         expect(horseCompletedHandKey(observed[0]!)).toBeNull();
-        expect(formed.players.some((id) => (winnerReadout(id)?.effectiveHands ?? 0) > 0)).toBe(
-          true
-        );
+        // #8075: completed-hand learning reaches only registered observers'
+        // own read state; nothing is learned into the floor-wide winner read.
+        expect(formed.players.every((id) => winnerReadout(id) === null)).toBe(true);
       } else {
         expect(observed[0]!.fence).toContain(`:${original}:observe`);
         const key = journalHash(horseCompletedHandKey(observed[0]!)!);

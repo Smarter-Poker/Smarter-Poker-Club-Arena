@@ -5,6 +5,9 @@ import {
   type HorseObserverReadContext,
 } from '../engine/HorseObserverReadContext.js';
 import { noteFire } from '../engine/BrainTelemetry.js';
+import { makeOwnPublicHistoryPacket } from '../engine/horseDecision/ownPublicHistory.js';
+import { shownRiverCallSamples } from '../engine/HorseRiverCallEvidence.js';
+import { reportThrottled } from './errorReporter.js';
 
 // Native PG17 qualification checks this against the exact installed function.
 export const HORSE_OWN_PUBLIC_HISTORY_DEFINITION_MD5 = '9106fc84c02669f38f554af45db6d867';
@@ -32,6 +35,7 @@ export async function readHorseOwnPublicHistory(
 ): Promise<unknown> {
   if (!horseObserverReadContextIsValid(context)) return null;
   try {
+    const deadline = AbortSignal.timeout(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS);
     const { data, error } = await supabase
       .rpc('fn_horse_own_public_history_read', {
         p_observer: context.observerId,
@@ -40,7 +44,7 @@ export async function readHorseOwnPublicHistory(
         p_dealt_count: context.dealtCount,
         p_before: new Date().toISOString(),
       })
-      .abortSignal(AbortSignal.timeout(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS));
+      .abortSignal(deadline);
     if (error || !data || typeof data !== 'object' || Array.isArray(data)) {
       noteFire('horse_observer_history_unavailable');
       noteFire(error ? 'horse_observer_history_error' : 'horse_observer_history_empty_response');
@@ -55,7 +59,52 @@ export async function readHorseOwnPublicHistory(
       noteFire('horse_observer_history_source_mismatch');
       return null;
     }
-    return data.window;
+    // Validate original dealt participation and the bounded closed schema
+    // BEFORE selecting public categories by those exact hand IDs. The SQL
+    // reader stays unchanged; older engines never receive additional fields.
+    const packet = makeOwnPublicHistoryPacket(data.window, Date.now());
+    if (!packet) return null;
+    if (!packet.hands.length) return data.window;
+    const window = structuredClone(data.window);
+    try {
+      const { data: rows, error: categoryError } = await supabase
+        .from('hand_history')
+        .select('id,game_variant,showdown,community_cards2,community_cards3,rit_boards')
+        .in(
+          'id',
+          packet.hands.map((h) => h.handId)
+        )
+        .limit(64)
+        .abortSignal(deadline);
+      if (categoryError || !Array.isArray(rows)) throw Error('public categories unavailable');
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      for (const hand of window.hands) {
+        const row = byId.get(hand.handId);
+        if (
+          !row ||
+          row.game_variant !== hand.variant ||
+          (row.community_cards2 !== null && !Array.isArray(row.community_cards2)) ||
+          (row.community_cards3 !== null && !Array.isArray(row.community_cards3)) ||
+          (row.rit_boards !== null && !Array.isArray(row.rit_boards))
+        )
+          continue;
+        hand.riverCalls = shownRiverCallSamples(hand.actions, row.showdown, {
+          variant: hand.variant,
+          boardCount: Math.max(
+            row.rit_boards?.length ?? 0,
+            row.community_cards3?.length ? 3 : row.community_cards2?.length ? 2 : 1
+          ),
+        });
+      }
+    } catch {
+      // Preserve known public actions/results; absent categories remain
+      // explicitly unknown. No retry, guessed category or pooled fallback.
+      reportThrottled(
+        'HorseOwnPublicHistory.river_calls',
+        'Public river-call evidence unavailable'
+      );
+    }
+    return window;
   } catch {
     noteFire('horse_observer_history_unavailable');
     noteFire('horse_observer_history_thrown');

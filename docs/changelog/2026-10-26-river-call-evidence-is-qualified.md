@@ -45,3 +45,32 @@ This changes engine source. A protected merge is not activation. The existing
 `20261026033405_horse_mind_river_call_reads.sql` remains a daily-window migration;
 readback on October 26 found it absent, with no columns installed. Never replay
 or install this declared-window file outside its existing owning transaction.
+
+## Restart recovery in the current individual-observer architecture
+
+The older `horse_mind_stats` flush is not the private observer bank. Its
+columns alone cannot prove the current horses retain their own river-call
+knowledge across resets. The original individual-history reader restores
+public actions/results but no showdown categories, so those counters could
+not be rebuilt after restart.
+
+After validating that reader's pinned definition, exact observer context,
+original participation and bounded closed window, the server now reads public
+showdown categories for only those hand IDs (at most 64, same five-second
+non-blocking load deadline). It adds only per-hand `{userId, weak}` evidence.
+No cards, board cards, hand names, descriptions or another table's history
+enter the horse packet. Hi-lo, double/triple boards and run-it-twice hands
+produce no high-only category evidence. A failed or missing secondary read
+leaves the categories explicitly unknown while preserving known actions and
+results, with no retry or pooled fallback.
+
+The closed packet schema validates each sample against the hand's final river
+callers, rejects duplicate/foreign actors and extra fields, and binds the
+additional bytes into its existing digest and actual availability cutoff.
+The original observer's sandbox replays these samples through the same
+idempotent completion boundary. A restart test reconstructs twelve samples in
+two fresh banks, with duplicate reads still counting twelve and no writes to
+the global mind. Historical packets without this optional evidence remain
+valid. Recovery retains the existing bounded 64-hand/eight-day history limits;
+it is not an unlimited lifetime history claim. No SQL definition, permissions,
+schedule, table or migration is changed by this recovery path.

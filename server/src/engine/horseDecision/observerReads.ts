@@ -106,7 +106,8 @@ export class HorseObserverReads {
         hand.showdown,
         scope,
         false,
-        hand.riverCallContext
+        hand.riverCallContext,
+        hand.retainedRiverCalls
       );
       observeHandResults(hand.handKey, hand.results, hand.bigBlind);
     });
@@ -123,6 +124,7 @@ export class HorseObserverReads {
       committedHandId: hand.committedHandId,
       bigBlind: hand.bigBlind,
       riverCallContext: hand.riverCallContext ? { ...hand.riverCallContext } : undefined,
+      retainedRiverCalls: hand.retainedRiverCalls?.map((s) => ({ ...s })),
       scope: hand.scope,
       actions: hand.actions?.map((a) => ({
         seat: a.seat,
@@ -192,6 +194,12 @@ export class HorseObserverReads {
         actions: h.actions,
         results: h.results ?? undefined,
         showdown: null,
+        ...(h.riverCalls === undefined
+          ? {}
+          : {
+              riverCallContext: { variant: h.variant, boardCount: 1 },
+              retainedRiverCalls: h.riverCalls,
+            }),
       });
     }
     for (const hand of entry.pendingCompletions ?? []) {

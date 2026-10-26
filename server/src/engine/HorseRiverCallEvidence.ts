@@ -3,6 +3,75 @@ export interface RiverCallContext {
   variant: string;
   boardCount: number;
 }
+export interface RiverCallSample {
+  userId: string;
+  weak: boolean;
+}
+
+type PublicAction = { userId?: string; action: string; stage: string; amount?: number };
+const weakNames = new Set(['high card', 'pair', 'one pair']);
+const strongNames = new Set([
+  'two pair',
+  'three of a kind',
+  'straight',
+  'flush',
+  'full house',
+  'four of a kind',
+  'straight flush',
+  'royal flush',
+]);
+
+export function finalRiverCallers(actions: readonly PublicAction[]): Set<string> {
+  let level = 0;
+  const last = new Map<string, boolean>();
+  for (const a of actions) {
+    if (
+      a.stage !== 'river' ||
+      !a.userId ||
+      !['fold', 'check', 'bet', 'call', 'raise', 'all_in'].includes(a.action)
+    )
+      continue;
+    const amount = Number.isFinite(a.amount) ? a.amount! : 0;
+    last.set(
+      a.userId,
+      a.action === 'call' ||
+        (a.action === 'all_in' &&
+          typeof a.amount === 'number' &&
+          Number.isFinite(a.amount) &&
+          a.amount >= 0 &&
+          level > 0 &&
+          amount <= level + 0.005)
+    );
+    if (['bet', 'raise', 'all_in'].includes(a.action)) level = Math.max(level, amount);
+  }
+  return new Set([...last].filter(([, called]) => called).map(([id]) => id));
+}
+
+/** Emit only public category evidence, never names, descriptions or cards. */
+export function shownRiverCallSamples(
+  actions: readonly PublicAction[],
+  showdown: unknown,
+  context: RiverCallContext
+): RiverCallSample[] {
+  if (!riverCallCategoryIsUsable(context) || !Array.isArray(showdown)) return [];
+  const callers = finalRiverCallers(actions);
+  const samples = new Map<string, RiverCallSample>();
+  for (const row of showdown) {
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      row.mucked !== false ||
+      typeof row.user_id !== 'string' ||
+      !callers.has(row.user_id) ||
+      typeof row.hand_name !== 'string'
+    )
+      continue;
+    const category = row.hand_name.toLowerCase();
+    if (weakNames.has(category) || strongNames.has(category))
+      samples.set(row.user_id, { userId: row.user_id, weak: weakNames.has(category) });
+  }
+  return [...samples.values()];
+}
 
 export function riverCallCategoryIsUsable(context: RiverCallContext | undefined): boolean {
   return (

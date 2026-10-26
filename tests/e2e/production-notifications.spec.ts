@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
@@ -10,6 +10,43 @@ import {
   updateServiceRows,
 } from './support/temporaryCustomizationAccount';
 import { diamondInvitation, registerDiamondInvitationDismissal } from './support/cashLobbyOverlays';
+import { recordNonVerdict } from './support/nonVerdict';
+
+/**
+ * A PUBLISH THAT LANDS MID-RUN IS NOT A FAILED PROOF (2026-10-26). Each proof
+ * below certifies the ONE release production served when it began, and reads
+ * build-info again when it ends. Post-deploy run 40242809027 failed here with
+ * "Expected 09ea5c49... Received 96818b8b...": a newer publish landed while the
+ * proof ran, every product assertion had passed, and the run reported the
+ * notifications surface as broken. A changed release means this run neither
+ * certifies nor condemns either one, so it is recorded as a named non-verdict
+ * (support/nonVerdict.ts) after cleanup - never as a pass and never as a
+ * defect. assert-e2e-actually-ran.mjs still fails a file in which every proof
+ * stood down, so a run that verified nothing cannot report success.
+ */
+async function servedRelease(page: Page): Promise<string> {
+  const response = await page.request.get('build-info.json');
+  expect(response.ok()).toBe(true);
+  const sha = (await response.json()).ca_sha;
+  expect(sha).toMatch(/^[a-f0-9]{40}$/);
+  return sha;
+}
+
+async function standDownIfReplaced(
+  testInfo: TestInfo,
+  proof: string,
+  began: string,
+  ended: string | undefined
+): Promise<void> {
+  if (ended === undefined || ended === began) return;
+  const description = await recordNonVerdict(testInfo, {
+    title: `The ${proof} could not certify one release`,
+    detail: `production served ${began} when it began and ${ended} when it ended; a publish landed mid-run, so neither release is certified or condemned by this run`,
+    evidence: { began, ended },
+    tag: 'release-replaced-mid-run',
+  });
+  test.skip(true, description);
+}
 
 /** Real inbox/feed/mutations, exclusively the workflow's disposable account. */
 test('published notifications retain pending signals and confirm durable actions', async ({
@@ -31,10 +68,8 @@ test('published notifications retain pending signals and confirm durable actions
   const id = randomUUID();
   const query = new URLSearchParams({ id: `eq.${id}`, user_id: `eq.${account.id}` });
   const title = `Notification Proof ${id.slice(0, 8)}`;
-  const before = await page.request.get('build-info.json');
-  expect(before.ok()).toBe(true);
-  const selected = (await before.json()).ca_sha;
-  expect(selected).toMatch(/^[a-f0-9]{40}$/);
+  const selected = await servedRelease(page);
+  let served: string | undefined;
   let releaseDelete: (() => void) | undefined;
   try {
     console.log('[notification-proof] Create The Reserved Inbox Signal');
@@ -133,26 +168,26 @@ test('published notifications retain pending signals and confirm durable actions
     console.log('[notification-proof] Confirm Alert Controls And Release Identity');
     await page.getByRole('button', { name: 'Alert Controls', exact: true }).click();
     await expect(page).toHaveURL(/\/settings\?tab=notifications$/);
-    const after = await page.request.get('build-info.json');
-    expect(after.ok()).toBe(true);
-    expect((await after.json()).ca_sha).toBe(selected);
-    await testInfo.attach('notification-live-proof', {
-      body: JSON.stringify({
-        clientSha: selected,
-        widths: [375, 393, 1440],
-        pendingVisible: true,
-        refusalVisible: true,
-        readConfirmed: true,
-        dismissalConfirmed: true,
-      }),
-      contentType: 'application/json',
-    });
+    served = await servedRelease(page);
+    if (served === selected)
+      await testInfo.attach('notification-live-proof', {
+        body: JSON.stringify({
+          clientSha: selected,
+          widths: [375, 393, 1440],
+          pendingVisible: true,
+          refusalVisible: true,
+          readConfirmed: true,
+          dismissalConfirmed: true,
+        }),
+        contentType: 'application/json',
+      });
   } finally {
     console.log('[notification-proof] Remove The Reserved Signal');
     releaseDelete?.();
     await deleteServiceRows(environment, 'notifications', query);
     expect(await readServiceRows(environment, 'notifications', query)).toHaveLength(0);
   }
+  await standDownIfReplaced(testInfo, 'notification proof', selected, served);
 });
 
 /** Exact published popup and durable receipts, only in the owning private club. */
@@ -243,11 +278,9 @@ test('published club news appears once per new message across fresh browser cont
   const postBody = `New Announcement Body ${suffix}`;
   const editedBody = `Changed Announcement Body ${suffix}`;
   const announcementQuery = new URLSearchParams({ id: `eq.${newsId}`, club_id: `eq.${clubId}` });
-  const before = await page.request.get('build-info.json');
-  expect(before.ok()).toBe(true);
-  const clientSha = (await before.json()).ca_sha;
-  expect(clientSha).toMatch(/^[a-f0-9]{40}$/);
+  const clientSha = await servedRelease(page);
   if (process.env.LIVE_SHA) expect(clientSha).toBe(process.env.LIVE_SHA);
+  let served: string | undefined;
   const failures: unknown[] = [];
   let secondContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
   let wroteMessage = false;
@@ -375,20 +408,19 @@ test('published club news appears once per new message across fresh browser cont
     await expect(popup(second).getByText(editedBody, { exact: true })).toBeVisible();
     await popup(second).getByRole('button', { name: 'Close', exact: true }).click();
     await silent(page);
-    const after = await page.request.get('build-info.json');
-    expect(after.ok()).toBe(true);
-    expect((await after.json()).ca_sha).toBe(clientSha);
-    await testInfo.attach('club-news-once-live-proof', {
-      body: JSON.stringify({
-        clientSha,
-        onceAcrossColdContexts: true,
-        unchangedSaveSilent: true,
-        changedMessageShownOnce: true,
-        newAndEditedAnnouncementShownOnce: true,
-        noOptOut: true,
-      }),
-      contentType: 'application/json',
-    });
+    served = await servedRelease(page);
+    if (served === clientSha)
+      await testInfo.attach('club-news-once-live-proof', {
+        body: JSON.stringify({
+          clientSha,
+          onceAcrossColdContexts: true,
+          unchangedSaveSilent: true,
+          changedMessageShownOnce: true,
+          newAndEditedAnnouncementShownOnce: true,
+          noOptOut: true,
+        }),
+        contentType: 'application/json',
+      });
   } catch (error) {
     failures.push(error);
   } finally {
@@ -435,4 +467,5 @@ test('published club news appears once per new message across fresh browser cont
   }
   if (failures.length)
     throw new AggregateError(failures, 'Published club-news proof or isolated cleanup failed.');
+  await standDownIfReplaced(testInfo, 'club-news proof', clientSha, served);
 });

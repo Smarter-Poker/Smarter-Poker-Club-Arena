@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { summarize, profileTarget } from '../../scripts/ci/profile-engine-main-thread.mjs';
 
 async function target(t) {
+  // Keep the fixture witness out of the timers' optimized/inlined frames.
   const child=spawn(process.execPath,['--no-opt','--inspect=127.0.0.1:0','-e',
     'setInterval(function cpuSampleWitness(){ const end=Date.now()+8;while(Date.now()<end) Math.sqrt(Math.random()); },10)'],{stdio:['ignore','ignore','pipe']});
   t.after(async()=>{ if(child.exitCode===null && child.signalCode===null){child.kill();await once(child,'exit');} });
@@ -55,4 +57,18 @@ test('a disconnected target never returns a successful profile',async t=>{
   const timer=setTimeout(()=>child.kill(),100);
   try { await assert.rejects(profileTarget(endpoint,child.pid,300)); }
   finally { clearTimeout(timer); }
+});
+
+
+test('the exact stdin entry refuses invalid identity before touching a target',()=>{
+  const source=readFileSync(new URL('../../scripts/ci/profile-engine-main-thread.mjs',import.meta.url),'utf8');
+  const r=spawnSync(process.execPath,['--input-type=module','-','invalid-sha'],{input:source,encoding:'utf8',timeout:3000});
+  assert.equal(r.status,1);assert.equal(r.stdout,'');
+  assert.match(r.stderr,/^CPU profile failed; inspect owning run and inspector state before any retry\./);
+});
+
+test('importing the helper from a stdin module never invokes the production entry',()=>{
+  const url=new URL('../../scripts/ci/profile-engine-main-thread.mjs',import.meta.url).href;
+  const r=spawnSync(process.execPath,['--input-type=module','-'],{input:'await import('+JSON.stringify(url)+'); console.log(\"imported\");',encoding:'utf8',timeout:3000});
+  assert.equal(r.status,0);assert.equal(r.stderr,'');assert.equal(r.stdout.trim(),'imported');
 });

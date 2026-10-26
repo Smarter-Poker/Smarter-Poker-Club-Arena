@@ -34,7 +34,7 @@ isolated local database, covering mixed human pots, rake, missing identities,
 invalid blinds, NaN, participant counts, duplicate opponents, endpoint exclusion,
 variant/stake separation, tournament chips, empty windows and row-limit refusal.
 The dedicated Horse human results workflow runs this test for report, regression
-or workflow changes. Existing financial qualification inputs remain unchanged. No schema change, strategy activation, engine restart or schedule.
+or workflow changes. Existing financial qualification inputs remain unchanged. No schema change, strategy activation or engine restart. The accepted weekly reporting phase is read-only and has no release authority.
 
 Read-only production execution for 14:27:29–15:00 UTC observed 51 sole-human
 facts, all tournament NLH/PLO4. This is too small and has no cash PLO5 sample;
@@ -59,3 +59,28 @@ instant before querying. The workflow now cancels superseded checks per PR,
 preserving main-branch verification. All 85 existing concurrency-law cases pass.
 Over-limit reads stop without sorting or classifying a sample that cannot be
 scored; the candidate count remains explicit and no partial scores are emitted.
+
+## Complete historical and weekly reporting
+
+The original report now partitions a long window into at most 56 six-hour
+reads, each under the same five-second database limit and ten-second client
+limit, with a 90-second overall request budget. This is finite pagination,
+with no retry or repair process. It merges only complete, contiguous,
+non-overlapping windows with identical roster digests and validated coverage,
+counts and score groups. Missing/failed/capped windows refuse the whole report.
+BB/100 is recomputed from total hands and total BB, never averaged across
+windows. A 14-day production read completed across 23 previously qualified
+contiguous windows: 17,107 candidate human facts, 620 mixed-human rows excluded,
+16,487 sole-human-against-horses rows. Cash human results: NLH -1,258.905BB
+over 2,343hands; PLO4 -908.895/1,508; PLO5 +421.735/1,661;
+PLO6 -949.58/289; PLO8 +72.23/78. These historical results span releases.
+
+The accepted phase 6 weekly scoreboard runs Monday 14:00UTC (Monday morning
+in Chicago), on protected main, through the same read-only report command.
+It uses the existing canonical DATABASE_URL secret through psql, enforces
+default_transaction_read_only, and retains the private JSON as an Actions
+artifact for 14days. Manual dispatch can select explicit endpoints, or leave
+both empty for seven days. PR execution cannot run the production-report job.
+It cannot merge, publish an application, alter gameplay, or advance a release.
+The timer registry records this one weekly business report; unrelated timers
+and financial qualification source pins remain unchanged.

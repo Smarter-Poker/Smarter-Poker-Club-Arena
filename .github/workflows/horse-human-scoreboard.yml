@@ -1,5 +1,17 @@
 name: Horse human results
 on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: Optional UTC start; supply both endpoints or leave both empty for seven days
+        required: false
+        type: string
+      through:
+        description: Optional UTC end
+        required: false
+        type: string
+  schedule:
+    - cron: '0 14 * * 1'
   pull_request:
     paths:
       - scripts/horse-human-scoreboard.mjs
@@ -18,6 +30,7 @@ permissions:
   contents: read
 jobs:
   scoreboard:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -39,3 +52,48 @@ jobs:
           PG_SCOREBOARD_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: node --test scripts/ci/test-horse-human-scoreboard.mjs
+
+  private-report:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.2'
+      - name: Produce the requested private read-only scoreboard
+        env:
+          PGDATABASE: ${{ secrets.DATABASE_URL }}
+          PGOPTIONS: -c default_transaction_read_only=on -c statement_timeout=5000
+          PGCONNECT_TIMEOUT: '5'
+          REPORT_SOURCE_SHA: ${{ github.sha }}
+          REPORT_SINCE: ${{ inputs.since }}
+          REPORT_THROUGH: ${{ inputs.through }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v psql >/dev/null
+          test -n "$PGDATABASE"
+          mkdir -p "$RUNNER_TEMP/horse-human-results"
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          import {runScoreboard} from './scripts/horse-human-scoreboard.mjs';
+          const end=process.env.REPORT_THROUGH || new Date().toISOString();
+          const start=process.env.REPORT_SINCE || new Date(Date.parse(end)-7*86400000).toISOString();
+          if(Boolean(process.env.REPORT_THROUGH)!==Boolean(process.env.REPORT_SINCE)) throw Error('Both endpoints are required');
+          const result=runScoreboard(['--run',start,end]);
+          if(result.code!==0) { process.stderr.write(result.output); process.exit(result.code); }
+          const report={...JSON.parse(result.output), source_revision:process.env.REPORT_SOURCE_SHA, generated_at:new Date().toISOString()};
+          writeFileSync(process.env.RUNNER_TEMP+'/horse-human-results/report.json',JSON.stringify(report)+'\n',{mode:0o600});
+          JS
+      - name: Retain the private report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: horse-human-results-${{ github.run_id }}
+          path: ${{ runner.temp }}/horse-human-results/report.json
+          if-no-files-found: error
+          retention-days: 14

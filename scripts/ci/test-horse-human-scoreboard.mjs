@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { scoreboardSQL, runScoreboard } from '../horse-human-scoreboard.mjs';
+import {
+  scoreboardSQL,
+  runScoreboard,
+  scoreboardWindows,
+  mergeScoreboards,
+} from '../horse-human-scoreboard.mjs';
 
 test('report and native regression changes trigger their PostgreSQL check', () => {
   const workflow = readFileSync('.github/workflows/horse-human-scoreboard.yml', 'utf8');
@@ -15,6 +20,9 @@ test('report and native regression changes trigger their PostgreSQL check', () =
   ])
     assert.equal(workflow.split(path).length - 1 >= 2, true);
   assert.match(workflow, /node --test scripts\/ci\/test-horse-human-scoreboard.mjs/);
+  assert.match(workflow, /default_transaction_read_only=on/);
+  assert.match(workflow, /github.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /runScoreboard\(\['--run'/);
 });
 
 const since = '2026-10-26T14:00:00Z',
@@ -35,6 +43,70 @@ test('report refuses invalid, injected, reversed and unbounded windows before co
   assert.equal(runScoreboard([]).code, 64);
   assert.throws(() => scoreboardSQL(since, through, "x'; SELECT 1;--"));
   assert.match(scoreboardSQL(since, through), /^BEGIN READ ONLY;/);
+});
+
+test('daily reports merge complete windows using hand-weighted results and reject gaps or drift', () => {
+  const from = '2026-10-24T00:00:00Z',
+    until = '2026-10-24T12:00:00Z';
+  const windows = scoreboardWindows(from, until);
+  assert.equal(windows.length, 2);
+  assert.equal(scoreboardWindows('2026-10-12T00:00:00Z', '2026-10-26T00:00:00Z').length, 56);
+  const receipt = (w, hands, bb) => ({
+    version: 1,
+    status: 'observed',
+    ...w,
+    player_id: null,
+    roster_digest: '1'.repeat(32),
+    classification_basis: 'current_profiles_not_historical_identity',
+    candidate_scope: 'currently_classified_humans_only_unknown_actors_excluded',
+    candidate_facts: hands,
+    coverage: [{ cohort: 'sole_human_against_horses', facts: hands }],
+    scores: [
+      {
+        game_variant: 'plo5',
+        big_blind: 2,
+        tournament: false,
+        user_id: 'player',
+        hands,
+        distinct_hands: hands,
+        human_net_chips_after_rake: bb * 2,
+        human_net_bb_after_rake: bb,
+        human_bb_per_100: (100 * bb) / hands,
+      },
+    ],
+  });
+  const reports = [receipt(windows[0], 1, 2), receipt(windows[1], 3, -1)];
+  const result = mergeScoreboards(reports, from, until);
+  assert.equal(result.candidate_facts, 4);
+  assert.equal(result.scores[0].hands, 4);
+  assert.equal(result.scores[0].human_net_chips_after_rake, 2);
+  assert.equal(result.scores[0].human_net_bb_after_rake, 1);
+  assert.equal(result.scores[0].human_bb_per_100, 25);
+  assert.throws(() => mergeScoreboards(reports.slice(1), from, until));
+  for (const patch of [
+    { status: 'incomplete_row_limit' },
+    { roster_digest: '2'.repeat(32) },
+    { since: windows[0].since },
+    { candidate_scope: 'all' },
+    { candidate_facts: 99 },
+    { scores: [] },
+  ]) {
+    assert.throws(() => mergeScoreboards([reports[0], { ...reports[1], ...patch }], from, until));
+  }
+  assert.throws(() =>
+    mergeScoreboards(
+      [reports[0], { ...reports[1], scores: [...reports[1].scores, ...reports[1].scores] }],
+      from,
+      until
+    )
+  );
+  assert.throws(() =>
+    mergeScoreboards(
+      [reports[0], { ...reports[1], scores: [{ ...reports[1].scores[0], human_bb_per_100: 300 }] }],
+      from,
+      until
+    )
+  );
 });
 
 test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes and tournament chips', () => {
@@ -117,7 +189,29 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
       }
     );
     assert.equal(cli.status, 0, cli.stderr);
-    assert.deepEqual(JSON.parse(cli.stdout), report);
+    assert.deepEqual(JSON.parse(cli.stdout), { ...report, windows: 1 });
+    const multi = spawnSync(
+      process.execPath,
+      [
+        resolve('scripts/horse-human-scoreboard.mjs'),
+        '--run',
+        '2026-10-25T14:00:00Z',
+        '2026-10-27T14:00:00Z',
+      ],
+      {
+        env: { ...env, PATH: bin ? bin + ':' + env.PATH : env.PATH },
+        encoding: 'utf8',
+        timeout: 30000,
+      }
+    );
+    assert.equal(multi.status, 0, multi.stderr);
+    const merged = JSON.parse(multi.stdout);
+    assert.equal(merged.windows, 8);
+    const mergedCash = merged.scores.find(
+      (r) => r.game_variant === 'plo5' && r.big_blind === 2 && !r.tournament
+    );
+    assert.equal(mergedCash.hands, 3);
+    assert.equal(mergedCash.human_net_chips_after_rake, 508);
     assert.equal(report.scores.length, 4);
     const cash = report.scores.find(
       (r) => r.game_variant === 'plo5' && r.big_blind === 2 && !r.tournament
@@ -150,7 +244,13 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     assert.deepEqual(capped.scores, []);
     assert.equal(psql('SELECT count(*) FROM ca_hand_facts;').trim(), '50018');
   } finally {
-    if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop']);
+    if (started || existsSync(join(data, 'postmaster.pid')))
+      run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop']);
+    assert.equal(
+      existsSync(join(data, 'postmaster.pid')),
+      false,
+      'Unconfirmed cleanup retains its private allocation'
+    );
     rmSync(root, { recursive: true, force: true });
   }
 });

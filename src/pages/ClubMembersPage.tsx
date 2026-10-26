@@ -2046,6 +2046,16 @@ export const MemberRow = memo(function MemberRow({
             {member.username && member.username.toLowerCase() !== member.alias.toLowerCase() && (
               <span className="member-username">{highlight(member.username, query)}</span>
             )}
+            {/* Dan, 2026-10-25: "I WANT TO SEE THE UPLINE AGENT, UNDER THE
+                PLAYER OR AGENTS NAME." Its own line directly beneath the
+                name, in Simple and Advanced mode alike. The roster nulls
+                upline_name for viewers without financial access. */}
+            {member.upline_name && (
+              <span className="member-upline">
+                {'Upline: '}
+                {highlight(member.upline_name, query)}
+              </span>
+            )}
           </span>
           <span className="member-subline">
             {(!simpleMode || member.role !== 'player') && (
@@ -2064,9 +2074,6 @@ export const MemberRow = memo(function MemberRow({
             )}
             {member.home_club_name && (
               <span className="member-club">{highlight(member.home_club_name, query)}</span>
-            )}
-            {member.upline_name && (
-              <span className="member-upline">Under {highlight(member.upline_name, query)}</span>
             )}
             {member.is_seated ? (
               <span className="member-seated">At Table</span>

@@ -75,6 +75,13 @@
  *      LIGHTNING_HAND_IN_PROGRESS stays `leave_pending`; a halted table sweeps
  *      again on each pass while its roster shows a leaver, instead of once per
  *      halt, and a quiet table sweeps above its own gate.
+ *  11. ONE NARROW EXCEPTION ONCE THE CLUSTER IS LIGHTNING (2026-10-26). The
+ *      halt also parks every anchor for as long as its Cluster IS Lightning,
+ *      and a player who sat out there was never stood up (one sat out for
+ *      7 h 45 min, seat and chips held). The parked pass now runs the CASH
+ *      sit-out clock and nothing else of the sweep, and only once the
+ *      Cluster's row reads 'lightning' - never while a conversion is still
+ *      counting its population, which is what rule 3 protects.
  *
  * Source-text guards in the house style (see
  * ATableThatCannotDealHoldsNobodyForABlind.law.test.ts), plus the behavioural
@@ -872,5 +879,37 @@ describe('a halted table finishes its hand and deals no other', () => {
     expect(owner).toMatch(/DEALING_HALT_TTL_MS \(5s\)/);
     expect(owner).toMatch(/AT MOST 5 SECONDS/);
     expect(BASE).toMatch(/const DEALING_HALT_TTL_MS = 5_000;/);
+  });
+
+  it('its one sit-out exception is the cash clock of a Cluster that IS Lightning, and nothing more', () => {
+    const at = DEALING.indexOf(
+      'protected override async standUpExpiredLightningSitOuts(): Promise<void> {'
+    );
+    expect(at, 'the parked anchor sit-out clock has moved or gone').toBeGreaterThan(-1);
+    const body = DEALING.slice(at, DEALING.indexOf('\n  }\n', at));
+    // Only at an acknowledged Lightning halt, never in the freeze...
+    expect(body).toMatch(/this\.lightningObserverCluster\(\) !== clusterId/);
+    expect(body).toMatch(/isMaintenanceFrozen\(\)/);
+    // ...only once somebody's clock has run out, asked in memory first...
+    expect(body.indexOf('tickSitOutsAndCollectEvictions')).toBeLessThan(
+      body.indexOf('lightningClusterModeOf(clusterId)')
+    );
+    // ...only when the Cluster's row says it is Lightning (never mid-conversion)...
+    expect(body).toMatch(/if \(mode !== 'lightning'\) return;/);
+    // ...and only the sit-out clock of the ordinary cash eviction.
+    // ...only for occupants whose live seat row, read now, still says sat out...
+    expect(body.indexOf('lightningSeatsSittingOut(')).toBeGreaterThan(
+      body.indexOf("if (mode !== 'lightning') return;")
+    );
+    expect(body).toMatch(/if \(confirmed\.size === 0\) return;/);
+    expect(body).toMatch(
+      /this\.evictExpiredSitOuts\(\{\s*countOrbit: false,\s*sitOutOnly: true,\s*onlyUsers: confirmed,?\s*\}\)/
+    );
+    const pass = BASE.slice(
+      BASE.indexOf('protected async passWhileDealingHalted(): Promise<void> {')
+    );
+    const passBody = pass.slice(0, pass.indexOf('\n  }\n'));
+    expect(passBody).not.toMatch(/evictExpiredSitOuts\(/);
+    expect(passBody).toMatch(/await this\.standUpExpiredLightningSitOuts\(\);/);
   });
 });

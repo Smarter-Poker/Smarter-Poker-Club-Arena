@@ -134,6 +134,8 @@ import type {
 } from './LightningHandBackend.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
 import { traceLightningFold } from './LightningFoldTiming.js';
+import { beginLightningStartTiming, type LightningStartSpan } from './LightningStartTiming.js';
+import { lightningDealPresentationMs } from './LightningDealPresentation.js';
 import { lightningTelemetry, type LightningTelemetry } from './LightningTelemetry.js';
 import type { LightningDecision } from './LightningRegistry.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
@@ -174,6 +176,13 @@ export interface LightningFormedHand {
   players: string[];
   /** When the pass that formed it returned (for latency telemetry). */
   formedAtMs: number;
+  /**
+   * The Cluster's front table as the supervisor last read it (the host table
+   * every hand binds to), when it knows one. Only a HINT: it lets the host
+   * table's rules be read alongside begin_dealing, and is checked against the
+   * table bind_hand_number names - the bind stays the authority.
+   */
+  hostTableHint?: string | null;
 }
 
 /** The slice of TableStateHub a host publishes through. */
@@ -236,25 +245,37 @@ export class LightningTimeBankLedger {
   async ensure(userIds: string[]): Promise<void> {
     const missing = userIds.filter((u) => !this.banks.has(u));
     if (missing.length === 0) return;
-    let allowance = new Map<string, { extraSeconds: number; unlimitedActivations: boolean }>();
-    try {
-      allowance = await this.backend.timeBankAllowance(missing);
-    } catch {
-      /* the approved fallback: the base allowance, exactly as the engine */
-    }
-    let durable = new Map<
+    // A NEW PLAYER'S FIRST HAND (2026-10-26): the allowance and the durable
+    // bank answer different questions and neither needs the other, so they
+    // are asked together - one round trip on the first-hand path, not two.
+    // Each keeps its own fallback exactly as before.
+    const noAllowance = new Map<string, { extraSeconds: number; unlimitedActivations: boolean }>();
+    const noDurable = new Map<
       string,
       { remainingSeconds: number | null; usesRemaining: number | null }
     >();
-    if (this.clusterId && this.backend.durableTimeBanks) {
-      try {
-        durable = await this.backend.durableTimeBanks(this.clusterId, missing);
-      } catch (err) {
-        this.logger.warn(
-          `[LightningTimeBank:${this.clusterId}] durable bank unreadable; seeding from the allowance (${describeError(err)})`
-        );
-      }
-    }
+    const clusterId = this.clusterId;
+    const [allowance, durable] = await Promise.all([
+      (async () => {
+        try {
+          return await this.backend.timeBankAllowance(missing);
+        } catch {
+          /* the approved fallback: the base allowance, exactly as the engine */
+          return noAllowance;
+        }
+      })(),
+      (async () => {
+        if (!clusterId || !this.backend.durableTimeBanks) return noDurable;
+        try {
+          return await this.backend.durableTimeBanks(clusterId, missing);
+        } catch (err) {
+          this.logger.warn(
+            `[LightningTimeBank:${clusterId}] durable bank unreadable; seeding from the allowance (${describeError(err)})`
+          );
+          return noDurable;
+        }
+      })(),
+    ]);
     for (const u of missing) {
       if (this.banks.has(u)) continue;
       const a = allowance.get(u);
@@ -416,7 +437,20 @@ export interface LightningHandHostDeps {
   jackpot?: Pick<LightningJackpotDeps, 'payMain' | 'payMini'>;
   /** How long the post-commit drain may keep trying while the lease is held. */
   postCommitBudgetMs?: number;
+  /**
+   * The settlement COMMITTED: the database has released this hand's pool
+   * reservations, the players this boundary frees are released here, and the
+   * Cluster may match them again now (2026-10-26). Called once, right after
+   * the commit and before the post-commit drain, the settled-boundary report
+   * (auto-rebuy and horse top-up asks) and the hand-history receipt.
+   */
+  onSettled?(host: LightningHandHost): void;
+  /** Per-step start timing (LightningStartTiming); injected for tests. */
+  startTiming?: (handId: string, formedAtMs: number) => LightningStartSpan;
 }
+
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuidLike = (v: unknown): v is string => typeof v === 'string' && UUID_LIKE.test(v);
 
 export type LightningHostState =
   | 'created'
@@ -501,6 +535,8 @@ export class LightningHandHost {
   private timeBankActive = false;
   private lastStreetAtMs = 0;
   private handStartAtMs = 0;
+  /** Engine clock: when the client's deal presentation of this hand is over. */
+  private dealShownAtMs = 0;
   private startedAtMs = 0;
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private horseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -603,52 +639,100 @@ export class LightningHandHost {
   async start(): Promise<void> {
     if (this.state !== 'created') return;
     this.state = 'starting';
+    // Per-step marks (2026-10-26): the next measurement of match_to_hand can
+    // tell this process's event-loop delay from the database's time.
+    const timing = (this.deps.startTiming ?? beginLightningStartTiming)(
+      this.handId,
+      this.formed.formedAtMs
+    );
+    let outcome = 'failed';
     try {
       // FIRST-HAND PATH (Lightning Phase 12): the reads that do not depend on
       // each other go out together. The hand number and the formation's
       // participants (written by the barrier) are asked for alongside
-      // begin_dealing, the host rules and the time banks alongside each
-      // other once the bind names the host table: three round trips where
-      // there were six. Refusals are still judged in the same order, and
+      // begin_dealing. Refusals are still judged in the same order, and
       // nothing is written before begin_dealing has answered.
+      //
+      // 2026-10-26: two more go out at the top. The host table's rules, for
+      // the front table the supervisor already knows (`hostTableHint`), and
+      // the formation's time banks (the matcher's own player list, which the
+      // formation check below must match exactly). Both are reads. The bind
+      // stays the authority on the host table: a hint it does not confirm is
+      // discarded and the rules are read again for the table it names.
       const handNumberP = this.deps.backend.nextHandNumber();
       const participantsP = this.deps.backend.loadParticipants(this.handId, this.formed.players);
       handNumberP.catch(() => undefined);
       participantsP.catch(() => undefined);
+      const hint = isUuidLike(this.formed.hostTableHint) ? this.formed.hostTableHint : null;
+      const hintedRulesP = hint ? this.deps.backend.loadHostRules(hint) : null;
+      hintedRulesP?.catch(() => undefined);
+      const banksP = this.deps.timeBanks.ensure([...this.formed.players]);
+      banksP.catch(() => undefined);
       const begun = await this.deps.backend.beginDealing(
         this.instanceId,
         this.deps.dealWindowMs,
         new Date(this.now())
       );
-      if (!begun.ok) return void (await this.abandon(`begin_dealing_refused:${begun.reason}`));
-      if (begun.value.handId && begun.value.handId !== this.handId)
+      timing.mark('begin_dealing');
+      if (!begun.ok) {
+        outcome = 'begin_dealing_refused';
+        return void (await this.abandon(`begin_dealing_refused:${begun.reason}`));
+      }
+      if (begun.value.handId && begun.value.handId !== this.handId) {
+        outcome = 'begin_dealing_hand_mismatch';
         return void (await this.abandon('begin_dealing_hand_mismatch'));
+      }
 
       this.handNumber = await handNumberP;
+      timing.mark('hand_number');
       const bound = await this.deps.backend.bindHandNumber(this.instanceId, this.handNumber);
-      if (!bound.ok) return void (await this.abandon(`bind_refused:${bound.reason}`));
-      if (bound.value.handId !== this.handId)
+      timing.mark('bind');
+      if (!bound.ok) {
+        outcome = 'bind_refused';
+        return void (await this.abandon(`bind_refused:${bound.reason}`));
+      }
+      if (bound.value.handId !== this.handId) {
+        outcome = 'bind_hand_mismatch';
         return void (await this.abandon('bind_hand_mismatch'));
+      }
       this.hostTableId = bound.value.hostTableId;
-      if (!this.deps.leaseFor(this.hostTableId))
+      if (!this.deps.leaseFor(this.hostTableId)) {
+        outcome = 'host_lease_not_held';
         return void (await this.abandon('host_lease_not_held'));
+      }
 
-      const rulesP = this.deps.backend.loadHostRules(this.hostTableId);
+      // The hint read only stands for the table the bind named.
+      const rulesP =
+        hintedRulesP && hint === this.hostTableId
+          ? hintedRulesP
+          : this.deps.backend.loadHostRules(this.hostTableId);
       rulesP.catch(() => undefined);
       const participants = await participantsP;
+      timing.mark('participants');
       const refusal = this.checkFormation(participants);
-      if (refusal) return void (await this.abandon(refusal));
+      if (refusal) {
+        outcome = refusal;
+        return void (await this.abandon(refusal));
+      }
       for (const p of participants) {
         this.participants.set(p.playerId, p);
         this.watching.set(p.playerId, p.poolSessionId);
       }
-      const banksP = this.deps.timeBanks.ensure([...this.participants.keys()]);
-      banksP.catch(() => undefined);
       this.rules = await rulesP;
+      timing.mark('rules');
       const variantRefusal = this.checkVariant(this.rules);
-      if (variantRefusal) return void (await this.abandon(variantRefusal));
+      if (variantRefusal) {
+        outcome = variantRefusal;
+        return void (await this.abandon(variantRefusal));
+      }
+      // Asked above for the matcher's list, which the formation check has
+      // just proved is exactly these participants.
       await banksP;
-      if (this.state !== 'starting') return; // aborted while reading
+      timing.mark('time_banks');
+      if (this.state !== 'starting') {
+        outcome = 'aborted_while_reading';
+        return; // aborted while reading
+      }
 
       this.configureClocks(this.rules);
       const btn = participants.find((p) => p.position === 'btn')!;
@@ -700,6 +784,8 @@ export class LightningHandHost {
       this.keepaliveTimer = setInterval(() => void this.keepalive(), this.deps.keepaliveIntervalMs);
       (this.keepaliveTimer as { unref?: () => void }).unref?.();
       this.hc.start();
+      timing.mark('dealt');
+      outcome = 'dealt';
       this.metrics.noteDealt([...this.participants.keys()], this.now(), this.clusterId);
       this.telemetry.handDealt(
         this.clusterId,
@@ -714,12 +800,17 @@ export class LightningHandHost {
         seat_number: h.seat,
         cards: h.cards,
       }));
+      // The deal is out; the durable hole-card row follows and is not part
+      // of match_to_hand, so the timing closes here.
+      timing.finish(outcome);
       await this.withRetry(() =>
         this.deps.backend.insertHoleCards(this.hostTableId, this.handNumber, rows)
       );
     } catch (err) {
       this.logger.error(`[LightningHost:${this.instanceId}] could not deal`, err);
       await this.abandon('deal_failed');
+    } finally {
+      timing.finish(outcome);
     }
   }
 
@@ -1222,6 +1313,9 @@ export class LightningHandHost {
     switch (event.type) {
       case 'HAND_START':
         this.handStartAtMs = now;
+        // The client holds every action panel until its deal has been shown
+        // (LightningDealPresentation): no turn clock starts before that.
+        this.dealShownAtMs = now + lightningDealPresentationMs(hc.getState().players.length);
         // LIGHTNING PHASE 12: the hand's first frame goes to every room now -
         // the hand_to_first_render leg starts here, on the engine's clock.
         for (const [playerId, room] of this.rooms()) {
@@ -1485,9 +1579,15 @@ export class LightningHandHost {
     // The turn reached a horse before its early fold: the brain decides now.
     this.clearTurn();
     // The physical turn settle: a just-dealt hand or street gets its beat first.
+    // THE DEAL IS SHOWN FIRST (2026-10-26): no clock starts while the client
+    // is still presenting the deal and holding the action panel, so the first
+    // player to act gets the whole of their clock. The same wait for every
+    // seat - a horse's decision is scheduled from this turn, so it waits too.
     const now = this.now();
-    const settle =
-      now - this.handStartAtMs < 1000 ? 400 : now - this.lastStreetAtMs < 1000 ? 500 : 0;
+    const settle = Math.max(
+      now - this.handStartAtMs < 1000 ? 400 : now - this.lastStreetAtMs < 1000 ? 500 : 0,
+      this.dealShownAtMs - now
+    );
     // Always yields: the turn is never handled inside HandController's own emit.
     await this.sleep(settle);
     if (this.isTerminal() || this.hc !== hc || playerActionContext(hc) !== contextAtTurn) return;
@@ -2541,10 +2641,18 @@ export class LightningHandHost {
         })
       );
     }
-    if (this.allInShowdown) {
-      // Settlement releases the pool reservations atomically. Hold BEFORE it,
-      // or a new match can replace the winner while their cards still belong
-      // on the felt. The pre-award showdown read above has already elapsed.
+    if (this.showdown.length >= 2) {
+      // EVERY SHOWDOWN HOLDS (2026-10-26; all-in showdowns since 2026-10-24).
+      // Settlement releases the pool reservations atomically, and a released
+      // player can be dealt their next hand at once. Hold BEFORE it, for the
+      // physical tables' own end-of-hand hold (handCompletionHoldMs, the
+      // ServerTableEngineDealing resultDisplayMs arithmetic: the showdown
+      // read, the sweep, the pot push with its total, the muck, the pause),
+      // or the next deal cuts off the winner's pot push on the client
+      // (Animation Law, CLAUDE.md 10.6). The same two-hands-shown test the
+      // physical engine uses (wentToShowdown = showdownHands >= 2). The
+      // pre-award showdown read above has already elapsed. A hand won without
+      // a showdown is not held here, as before.
       const awardGroups = new Set(
         (
           this.perPotAwards as Array<{
@@ -2562,7 +2670,7 @@ export class LightningHandHost {
           wentToShowdown: true,
           showdownHands: this.showdown.length,
           potAwardGroups: Math.max(1, awardGroups),
-          allInShowdown: true,
+          allInShowdown: this.allInShowdown,
         }) - HAND_COMPLETION.SHOWDOWN_READ_BASE_MS
       );
     }
@@ -2876,9 +2984,16 @@ export class LightningHandHost {
           Boolean(statsFacts?.horse_rollups) && out.value.handHistoryId === this.handId,
           Date.parse(String(handRow.ended_at))
         );
-        await this.drainPostCommit(out.value.handHistoryId);
-        // This is the committed hand's receipt, including for a player freed
-        // by an earlier fold. Gameplay frames still go only to watching rooms.
+        // THE RECEIPT GOES OUT AT THE COMMIT (2026-10-26). This is the committed
+        // hand's receipt, to every participant's room, including a player
+        // freed by an earlier fold (gameplay frames still go only to watching
+        // rooms). It names the hand_history row, which exists from the commit
+        // on. It is also a person's input-device moment: their client sends its
+        // seat Auto Top Up on it (useLightningAutoTopUp), exactly as the engine
+        // sends a horse's below. So it goes out BEFORE the boundary is reported
+        // and before anyone is released, and a person's top-up request is in
+        // flight beside a horse's before either can be matched again
+        // (CLAUDE.md 10.5: timing is part of the treatment).
         const savedAt = this.now();
         for (const participant of this.participants.values())
           this.deps.hub.emitEvent(participant.poolSessionId, {
@@ -2891,12 +3006,30 @@ export class LightningHandHost {
             player_id: participant.playerId,
             timestamp: savedAt,
           });
+        // LIGHTNING PHASE 10: the settled boundary, before anyone is released:
+        // every auto-rebuy and horse top-up ask of this boundary has been
+        // answered before its players can be matched again (the database
+        // refuses a rebuy IN_HAND, and one attempt is all a boundary gets).
+        await this.reportSettledBoundary(results);
+        // SETTLED IS FREE (2026-10-26). The commit released this hand's pool
+        // reservations, so the players it frees are freed HERE - their banks
+        // handed back first, so a hand they are dealt next reads what this one
+        // left - and the Cluster is woken now, not after the post-commit drain
+        // (which may retry for up to POST_COMMIT_BUDGET_MS). The drain resolves
+        // the host table's pending add-ons and records the hand's BBJ
+        // contributions; neither is a condition of matching (a Lightning top-up
+        // is its own intent, applied by the settlement's own trigger).
+        this.releaseAtHandEnd();
+        try {
+          this.deps.onSettled?.(this);
+        } catch (err) {
+          this.logger.error(`[LightningHost:${this.instanceId}] settled wake failed`, err);
+        }
+        await this.drainPostCommit(out.value.handHistoryId);
         this.metrics.recordHand('settled');
         // Captured before finish() clears who is watching: the jackpot is
         // every participant's, folded or not (the table share is the dealt-in).
         const jackpotHand = this.jackpotHand(state);
-        // LIGHTNING PHASE 10: the settled boundary, before anyone is released.
-        await this.reportSettledBoundary(results);
         this.finish('hand_end');
         await settleLightningJackpot(jackpotHand, {
           emit: (room, payload) => this.deps.hub.emitEvent(room, payload),
@@ -3086,7 +3219,7 @@ export class LightningHandHost {
     this.finish('hand_end');
   }
 
-  private finish(why: 'hand_end'): void {
+  private finish(_why: 'hand_end'): void {
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     this.clearTurn();
@@ -3094,10 +3227,29 @@ export class LightningHandHost {
       this.recordBank(p.playerId);
       this.timer.cancelTimer(this.timerKey, p.playerId);
     }
+    // Everyone not already freed (by a fold, or at the committed settlement)
+    // is free now: the instance ended.
+    this.releaseAtHandEnd();
     this.timeBank.dispose(this.timerKey);
     this.disconnect.dispose(this.timerKey);
     this.preActions.dispose(this.timerKey);
-    // Everyone not already freed by a fold is free now (the instance ended).
+    this.watching.clear();
+    this.telemetry.handEnded(this.clusterId, this.handId, this.now());
+    this.resolveFinished();
+    this.deps.onFinished?.(this);
+  }
+
+  /**
+   * The players this hand still holds are free (once per hand): their banks
+   * go back to the ledger, then each is released to the matcher, exactly as
+   * the instance's end has always released them. A player a fold already
+   * freed is not released twice. Called at the committed settlement and again
+   * (a no-op by then) from finish().
+   */
+  private releaseAtHandEnd(): void {
+    if (this.handEndReleased) return;
+    this.handEndReleased = true;
+    for (const p of this.participants.values()) this.recordBank(p.playerId);
     for (const p of this.participants.values()) {
       const type = this.foldTypes.get(p.playerId);
       if (type === 'fast' || type === 'normal') continue;
@@ -3108,13 +3260,10 @@ export class LightningHandHost {
         this.clusterId,
         type === 'fold_watch' ? this.foldRequestedAt.get(p.playerId) : null
       );
-      this.deps.onPlayerReleased?.(p.playerId, why);
+      this.deps.onPlayerReleased?.(p.playerId, 'hand_end');
     }
-    this.watching.clear();
-    this.telemetry.handEnded(this.clusterId, this.handId, this.now());
-    this.resolveFinished();
-    this.deps.onFinished?.(this);
   }
+  private handEndReleased = false;
 
   /** This hand is done with the player's bank: hand it back to the ledger, once. */
   private recordBank(playerId: string): void {

@@ -2692,6 +2692,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Cash returns retain full stacks without a minimum stay
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-cash-return-rule-postgres.py
+
       - name: Original posthand escrow stays distinct from poker winnings
         id: posthand_escrow
         if: matrix.shard == 3

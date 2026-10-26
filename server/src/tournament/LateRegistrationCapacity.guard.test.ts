@@ -385,7 +385,7 @@ describe('late-registration capacity authority', () => {
     // the expansion stage (6) ran only at the :55 break, and capacity tables
     // sat seated with no dealer for a median of 12 minutes (max 53.8).
     const wakeBranchStart = ELIMINATIONS.indexOf(
-      "!(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))"
+      '// The entry authority above must still adopt an external terminal'
     );
     const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
     expect(wakeBranchStart).toBeGreaterThan(-1);
@@ -397,11 +397,16 @@ describe('late-registration capacity authority', () => {
     // The early step only admits: creation and the post-expansion rebalance
     // stay in the expansion stage after balancing (theFreezeIsTotal law).
     expect(wakeBranch).not.toContain('checkDynamicTableExpansion()');
+    expect(wakeBranch.indexOf('await this.admitCommittedCapacityTables()')).toBeLessThan(
+      wakeBranch.indexOf("await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake')")
+    );
     const admit = MANAGER.slice(
       MANAGER.indexOf('protected async admitCommittedCapacityTables(): Promise<void>'),
       MANAGER.indexOf('protected async checkDynamicTableExpansion(): Promise<boolean>')
     );
-    expect(admit).toContain("if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;");
+    expect(admit).toContain(
+      'if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;'
+    );
     expect(admit).toContain(".from('tournament_capacity_table_receipts')");
     expect(admit).toContain(".is('manager_admitted_at', null)");
     expect(admit).toContain("'fn_ack_tournament_capacity_tables'");
@@ -417,7 +422,7 @@ describe('late-registration capacity authority', () => {
     expect(MANAGER.match(/this\.createManagedTableEngine\(tableId\)/g)?.length).toBe(1);
     // The ordinary expansion stage still runs as before.
     expect(ELIMINATIONS.slice(recoveryStage)).toContain(
-      "if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;"
+      'if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;'
     );
   });
 

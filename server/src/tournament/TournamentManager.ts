@@ -4697,69 +4697,79 @@ export class TournamentManager extends TournamentManagerEliminations {
    * admits and acknowledges the same receipts idempotently.
    */
   protected async admitCommittedCapacityTables(): Promise<void> {
-    if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
-    const { data, error } = await supabase
-      .from('tournament_capacity_table_receipts')
-      .select('table_id, created_at')
-      .eq('tournament_id', this.tournamentId)
-      .is('manager_admitted_at', null)
-      .order('created_at', { ascending: true })
-      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-    if (!this.eliminationMutationAllowed()) return;
-    if (error || !Array.isArray(data)) {
-      if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
-      return;
-    }
-    const pendingTableIds = [
-      ...new Set(
-        data
-          .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
-          .filter((id) => id.length > 0)
-      ),
-    ];
-    if (pendingTableIds.length === 0) return;
-
-    const newTableIds: string[] = [];
-    for (const tableId of pendingTableIds) {
-      if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
-      if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
-    }
-
-    // Same order as the expansion stage: queue the continuation, then ack.
-    this.requestUrgentEliminationSweepAfter(0);
-    const { data: ackData, error: ackError } = await supabase.rpc(
-      'fn_ack_tournament_capacity_tables',
-      { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
-    );
-    if (!this.eliminationMutationAllowed()) return;
-    const acknowledgement = (ackData ?? {}) as {
-      ok?: boolean;
-      reason?: string;
-      requested?: number;
-    };
-    if (
-      ackError ||
-      acknowledgement.ok !== true ||
-      Number(acknowledgement.requested) !== pendingTableIds.length
-    ) {
-      reportError(
-        new Error(
-          `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+    if (isMaintenanceFrozen() || !this.running || this.eliminationSweepSignal?.aborted) return;
+    // One page is a prepared bounded admission batch. A slow receipt read
+    // must not spend the budget and make the same page start over forever.
+    // Stop, abort and freeze still prevent starting the next dealer.
+    const batchWasOpen = this.eliminationMutationBatchIsOpen();
+    if (!batchWasOpen) this.openEliminationMutationBatch();
+    try {
+      const { data, error } = await supabase
+        .from('tournament_capacity_table_receipts')
+        .select('table_id, created_at')
+        .eq('tournament_id', this.tournamentId)
+        .is('manager_admitted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+      if (!this.eliminationMutationAllowed()) return;
+      if (error || !Array.isArray(data)) {
+        if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
+        return;
+      }
+      const pendingTableIds = [
+        ...new Set(
+          data
+            .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
+            .filter((id) => id.length > 0)
         ),
-        'Tournament.wake_capacity_table_handoff_ack_failed'
+      ];
+      if (pendingTableIds.length === 0) return;
+
+      const newTableIds: string[] = [];
+      for (const tableId of pendingTableIds) {
+        if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+        if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
+      }
+
+      // Same order as the expansion stage: queue the continuation, then ack.
+      this.requestUrgentEliminationSweepAfter(0);
+      if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+      const { data: ackData, error: ackError } = await supabase.rpc(
+        'fn_ack_tournament_capacity_tables',
+        { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
       );
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      return;
-    }
-    if (newTableIds.length > 0) {
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
-      );
-      await this.broadcast('table_expansion', {
-        newTableIds,
-        totalTables: this.tableEngines.size,
-        reason: 'late_registration_capacity',
-      });
+      if (!this.eliminationMutationAllowed()) return;
+      const acknowledgement = (ackData ?? {}) as {
+        ok?: boolean;
+        reason?: string;
+        requested?: number;
+      };
+      if (
+        ackError ||
+        acknowledgement.ok !== true ||
+        Number(acknowledgement.requested) !== pendingTableIds.length
+      ) {
+        reportError(
+          new Error(
+            `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+          ),
+          'Tournament.wake_capacity_table_handoff_ack_failed'
+        );
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return;
+      }
+      if (newTableIds.length > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
+        );
+        await this.broadcast('table_expansion', {
+          newTableIds,
+          totalTables: this.tableEngines.size,
+          reason: 'late_registration_capacity',
+        });
+      }
+    } finally {
+      if (!batchWasOpen) this.closeEliminationMutationBatch();
     }
   }
 

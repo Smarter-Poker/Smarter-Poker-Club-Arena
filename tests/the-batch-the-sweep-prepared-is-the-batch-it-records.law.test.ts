@@ -17,9 +17,9 @@
  *      nothing else: once the reads are paid for, the prepared, ordered batch
  *      (bounded by SWEEP_MUTATION_BATCH_SIZE) is recorded whole inside a batch
  *      window the clock cannot close; manager stop and the abort signal can;
- *   2. the window is opened by the bust assignment pass alone, closed with it
- *      in a finally, and reset at every sweep admission, so no other stage and
- *      no later sweep inherits it;
+ *   2. each prepared batch closes its window in finally and every admission
+ *      resets it, so no other stage or later sweep inherits it. Committed
+ *      capacity receipts also own one bounded page (2026-10-26);
  *   3. a pass that ran past the budget says so once, with the backlog size;
  *   4. the movement admission of a parked table names the door's refusal
  *      instead of the bare label (CLAUDE.md 10.86 rule 1);
@@ -67,9 +67,18 @@ describe('the batch the sweep prepared is the batch it records', () => {
     const loopBody = ELIM.slice(loop, close);
     expect(loopBody).not.toContain('eliminationWorkBudgetExpired()');
     expect(loopBody).toContain('if (!this.running || signal.aborted) return;');
-    // and the window is opened nowhere else
+    // Only these two bounded owners open a batch. Capacity admission is
+    // already committed seating, not permission to create or move a seat.
     expect(ELIM.match(/openEliminationMutationBatch\(\)/g)).toHaveLength(1);
-    expect(MANAGER).not.toContain('openEliminationMutationBatch');
+    const capacity = sliceMethod(MANAGER, 'protected async admitCommittedCapacityTables()');
+    expect(capacity).toContain('.limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE)');
+    expect(capacity).toContain('if (!batchWasOpen) this.openEliminationMutationBatch();');
+    expect(capacity).toMatch(
+      /finally \{\s*if \(!batchWasOpen\) this\.closeEliminationMutationBatch\(\);/
+    );
+    expect(capacity).toContain('this.eliminationSweepSignal?.aborted');
+    expect(capacity).toContain('isMaintenanceFrozen()');
+    expect(MANAGER.replace(capacity, '')).not.toContain('openEliminationMutationBatch');
   });
 
   it('the window is reset with the deadline at every sweep admission', () => {

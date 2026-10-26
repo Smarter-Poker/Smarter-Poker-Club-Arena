@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-horse-tournament-aggression-now",
+      "ownerOrder": "Dan, 2026-10-25 19:43 Chicago, in this chat, on the tournament horse aggression programme (PR #8092 shove discipline, PR #8095 preflop and turn aggression): \"PROCEED TO THE NEXT PHASE, AND WHEN YOUR DONE WITH ALL 3 PHASES, I WANT THIS UPDATED WHEN ITS DONE, NOT AT 4AM.\" Repeated 20:11 Chicago: \"PROCEED TO THE NEXT PHASE WHEN READY\". One immediate certified off-cycle engine activation of protected main containing #8095, merge 95d995983be4b1a519d2e4f63ee57f25cf52bae3 (which also contains #8092, merge 90ff11d53). Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving; no other change is authorized by this entry.",
+      "contains": "95d995983be4b1a519d2e4f63ee57f25cf52bae3",
+      "notBefore": "2026-10-26T01:19:00Z",
+      "notAfter": "2026-10-26T07:09:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-bust-door-fix-tonight",
       "ownerOrder": "Dan, 2026-10-25 18:48 Chicago, Claude chat (claude.ai/code/session_01G1J5sfS2nZCBxr6ETNsY98): \"INSTALL THE BUST FIX TONIGHT AS AN EMERGENCY ENGINE RELEASE\", in direct response to the choice between the routine 04:00 Chicago activation and an off-cycle install before the two 20:00 Chicago chests-only Sunday Funday Mystery events. One immediate certified off-cycle engine activation of protected main containing PR #8090, merge 1efd9504e0916918f70e8e98ccdcea296ccec48a: every bounty_blocked answer from the knockout door is a recorded bust, so the elimination batch no longer stops after one bust per sweep. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "1efd9504e0916918f70e8e98ccdcea296ccec48a",

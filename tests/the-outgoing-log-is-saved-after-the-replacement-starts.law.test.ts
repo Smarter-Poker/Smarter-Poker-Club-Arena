@@ -28,8 +28,18 @@ import { describe, expect, it } from 'vitest';
  * The log is still kept, in full: the stopped container is renamed out of the
  * way with its restart policy cleared, the replacement is started at once, and
  * the rename is dumped and removed in the background. This runs the real
- * script against a fake Docker whose `logs` takes two seconds, and requires
- * engine-up to have started the replacement and returned before the dump ends.
+ * script against a fake Docker whose `logs` cannot finish until the test opens
+ * a gate, and requires engine-up to have started the replacement and returned
+ * while every dump is still held at that gate.
+ *
+ * ORDER, NOT A STOPWATCH (2026-10-26). The proof used to give the fake dump two
+ * seconds and require engine-up to return in under 2000 ms. On a busy shared
+ * runner the script's own fake-Docker work took 3425 ms with nothing waiting on
+ * a dump, and publisher run 40316088773 failed on that number alone. A gate
+ * proves the same property with no clock in it: a script that waited on a dump
+ * or on the stalled inspection would block until the gate's 30 s ceiling and be
+ * killed by spawnSync's 20 s timeout, and a returned script must leave no saved
+ * log behind, because no dump can finish before the test opens the gate.
  */
 const root = process.cwd();
 const script = join(root, 'server/scripts/engine-up.sh');
@@ -91,7 +101,8 @@ case "$1" in
   create) printf '%s\\n' '${'f00dfeed'.repeat(8)}'; exit 0 ;;
   start) : > "$running"; exit 0 ;;
   logs)
-    sleep 2
+    held=0
+    while [ ! -e '${state}/release' ] && [ "$held" -lt 300 ]; do sleep 0.1; held=$((held + 1)); done
     printf '%s\\n' "2026-10-19T17:55:13Z [GameServer] the log of $3"
     exit 0
     ;;
@@ -109,7 +120,10 @@ case "$1" in
   inspect)
     case "$3" in
       '{{.Id}}')
-        if [ "$4" = club-arena-engine ] && [ -e "$running" ]; then sleep 3; printf '%s\\n' '${'f00dfeed'.repeat(8)}'
+        if [ "$4" = club-arena-engine ] && [ -e "$running" ]; then
+          held=0
+          while [ ! -e '${state}/release' ] && [ "$held" -lt 300 ]; do sleep 0.1; held=$((held + 1)); done
+          printf '%s\\n' '${'f00dfeed'.repeat(8)}'
         elif [ "$4" = '${leftover}' ]; then printf '%s\\n' 'fedcba987654beef'
         else printf '%s\\n' '${outgoingId}cafe'; fi ;;
       '{{.State.Status}}') printf '%s\\n' exited ;;
@@ -206,9 +220,22 @@ exit 0
           .some((line) => line === 'inspect -f {{.Id}} club-arena-engine')
       ).toBe(false);
 
-      const deadline = Date.now() + 12_000;
       const saved = () =>
         existsSync(logs) ? readdirSync(logs).filter((f) => f.endsWith('.log.gz')) : [];
+      // engine-up returned while every dump was still held at the gate. The
+      // .log.gz file exists from the moment a dump starts (gzip opens it), so
+      // completion is read from the "saved the outgoing log" line, which is
+      // written only after a dump succeeds. No dump can succeed before the
+      // gate opens; finding one here would mean the gate held nothing.
+      const loggerOut = join(state, 'logger.out');
+      const completed = () =>
+        existsSync(loggerOut)
+          ? readFileSync(loggerOut, 'utf8').includes('saved the outgoing log')
+          : false;
+      expect(completed(), readFileSync(calls, 'utf8')).toBe(false);
+      writeFileSync(join(state, 'release'), '');
+
+      const deadline = Date.now() + 12_000;
       const retired = () => {
         const lines = readFileSync(calls, 'utf8').split('\n');
         return (
@@ -229,10 +256,10 @@ exit 0
       expect(readFileSync(join(state, 'logger.out'), 'utf8')).toContain(
         'saved the outgoing log to'
       );
-      // Two dumps of two seconds each were still running when launch returned.
-      // Assert after the background fixture has retired so a failing timing
-      // assertion cannot race its cleanup and hide the actual regression.
-      expect(elapsed, output).toBeLessThan(2000);
+      // A gross bound only: a script that waited on a held dump or on the
+      // stalled inspection blocks until the 30 s gate ceiling. The real script
+      // has measured 3.4 s on a busy runner, so 15 s carries no stopwatch risk.
+      expect(elapsed, output).toBeLessThan(15_000);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

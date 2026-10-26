@@ -10,7 +10,9 @@ import {
 } from '../../engine/HorseExecutionWitness.js';
 import { captureHorseHandJournalContext } from '../../engine/HorseDecisionHandBinding.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
-import { HorseMind } from '../../engine/HorseMind.js';
+import { HorseMind, readScopeOf } from '../../engine/HorseMind.js';
+import { horseObserverReadContextFromRequest } from '../../engine/HorseObserverReadContext.js';
+import { makeOwnPublicHistoryPacket } from '../../engine/horseDecision/ownPublicHistory.js';
 import { HorseLogic } from '../../engine/HorseLogic.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../../engine/HorseEval.js';
 import type { HorseDecision } from '../../types.js';
@@ -219,6 +221,280 @@ function stored(shard = 0, phase7 = false) {
   store.close();
   return { dir, f };
 }
+
+function riverFixture(otherScope = false) {
+  const f = fixture();
+  const request = f.d.snapshot;
+  const context = horseObserverReadContextFromRequest(request)!;
+  if (!context) throw Error('Fixture observer context missing');
+  const opponent = request.gameState.players.find((p) => p.user_id !== request.player.user_id)!;
+  const view = HorseMind.runInSandbox(HorseMind.createSandbox(), () => {
+    HorseMind.importScoped([
+      {
+        user_id: opponent.user_id,
+        scope: otherScope ? 'omaha:hu' : readScopeOf(context.variant, context.dealtCount),
+        hands: 24,
+        riverCallSD: 24,
+        riverCallSDWeak: 18,
+      },
+    ]);
+    return HorseMind.snapshotDecisionReads(
+      request.gameState.players,
+      HorseMind.handKeyOf(request.gameState.actionHistory)
+    );
+  });
+  f.d.readFrame = encodeHorseDecisionReads(
+    view,
+    request.gameState.players,
+    HorseMind.handKeyOf(request.gameState.actionHistory)
+  );
+  Object.assign(f.d, {
+    observerReads: {
+      version: 2,
+      disposition: 'independent',
+      context,
+      cutoffMs: request.decisionTimeMs,
+      learnedThroughMs: 500,
+      history: 'own_public_window',
+      historyDigest: 'b'.repeat(64),
+      historyAvailableAtMs: 500,
+      historyHands: 2,
+      historyCapped: false,
+    },
+  });
+  return f;
+}
+function storeRiverFixture(f: ReturnType<typeof fixture>, duplicateShard = false) {
+  const dir = mkdtempSync(join(tmpdir(), 'horse-fleet-river-'));
+  dirs.push(dir);
+  for (const shard of duplicateShard ? [0, 1] : [0]) {
+    const store = new HorseDecisionJournalStore(dir, {
+      archive: runtimeHorseJournalArchiveOptions(dir, {}, { index: shard }),
+    });
+    store.appendBatch(f.rows());
+    store.close();
+  }
+  return readHorseJournalFleet(dir, packet());
+}
+function attachRetainedRiverHistory(f: ReturnType<typeof fixture>, count = 1, categories = true) {
+  const request = f.d.snapshot;
+  const context = horseObserverReadContextFromRequest(request)!;
+  const opponent = request.gameState.players.find((p) => p.user_id !== request.player.user_id)!;
+  const history = makeOwnPublicHistoryPacket(
+    {
+      version: 1,
+      source: 'original_dealt_public_v1',
+      context,
+      capped: false,
+      hands: Array.from({ length: count }, (_, i) => ({
+        handId: `55555555-5555-4555-8555-${(i + 1).toString(16).padStart(12, '0')}`,
+        tableId: table,
+        handNumber: 1000001 + i,
+        observerId: context.observerId,
+        observerSeat: request.player.seat,
+        position: 'BTN',
+        playersDealt: context.dealtCount,
+        variant: context.variant,
+        format: context.format,
+        playedAtMs: 100 + i,
+        bigBlind: 2,
+        results: null,
+        actions: [
+          {
+            seat: request.player.seat,
+            userId: request.player.user_id,
+            action: 'bet',
+            amount: 10,
+            stage: 'river',
+            timestamp: 90,
+          },
+          {
+            seat: opponent.seat,
+            userId: opponent.user_id,
+            action: 'call',
+            amount: 10,
+            stage: 'river',
+            timestamp: 91,
+          },
+        ],
+        ...(categories ? { riverCalls: [{ userId: opponent.user_id, weak: true }] } : {}),
+      })),
+    },
+    500
+  );
+  if (!history) throw Error('Fixture retained history invalid');
+  request.ownPublicHistory = history;
+  const capture = f.d as typeof f.d & { observerReads: any };
+  capture.observerReads.historyDigest = history.digest;
+  capture.observerReads.historyHands = history.hands.length;
+  return history;
+}
+describe('finite retained individual river learning evidence', () => {
+  it('separately proves packet-bound retained public samples reached the accepted scoped frame', () => {
+    const f = riverFixture();
+    attachRetainedRiverHistory(f);
+    const result = storeRiverFixture(f, true);
+    expect(result.riverLearningEvidence).toMatchObject({
+      retainedHistoryRiverSampleHorses: 1,
+      withoutRetainedHistoryRiverSampleHorses: 999,
+      completeSelectedCohortRetainedHistoryRiverSamples: false,
+      durablePersistenceVerified: false,
+      allContextsVerified: false,
+    });
+    expect(
+      result.horses.find((h) => h.horseId === f.d.snapshot.player.user_id)!.riverLearning
+    ).toMatchObject({
+      retainedHistoryRiverSampleDecisions: 1,
+      maxRetainedHistoryRiverSamples: 1,
+      retainedHistoryRiverSampleStatus: 'bounded_retained_samples_recovered',
+      retainedHistoryReasons: { retained_river_samples_recovered: 1 },
+    });
+  });
+  it.each([
+    'wrong_digest',
+    'missing_packet',
+    'legacy_history',
+    'legacy_frame',
+    'insufficient_counters',
+    'invalid_packet',
+  ])(
+    'leaves retained recovery unverified for %s while preserving the separate loaded-history axis',
+    (fault) => {
+      const f = riverFixture();
+      attachRetainedRiverHistory(
+        f,
+        fault === 'insufficient_counters' ? 25 : 1,
+        fault !== 'legacy_history'
+      );
+      const capture = f.d as typeof f.d & { observerReads: any };
+      if (fault === 'wrong_digest') capture.observerReads.historyDigest = 'c'.repeat(64);
+      if (fault === 'missing_packet') delete f.d.snapshot.ownPublicHistory;
+      if (fault === 'legacy_frame') f.d.readFrame = fixture().d.readFrame;
+      if (fault === 'invalid_packet') f.d.snapshot.ownPublicHistory!.hands[0].playedAtMs = 1001;
+      const result = storeRiverFixture(f);
+      expect(result.riverLearningEvidence).toMatchObject({
+        ownHistoryLoadedHorses: 1,
+        retainedHistoryRiverSampleHorses: 0,
+        withoutRetainedHistoryRiverSampleHorses: 1000,
+      });
+      const reasons = result.horses.find((h) => h.horseId === f.d.snapshot.player.user_id)!
+        .riverLearning.retainedHistoryReasons;
+      expect(reasons).toEqual({
+        [fault === 'wrong_digest'
+          ? 'history_receipt_mismatch'
+          : fault === 'missing_packet'
+            ? 'history_packet_not_captured'
+            : fault === 'legacy_history'
+              ? 'retained_river_samples_unavailable'
+              : fault === 'invalid_packet'
+                ? 'history_packet_invalid'
+                : 'retained_river_counters_unverified']: 1,
+      });
+    }
+  );
+  it('counts a validated accepted v6 scoped sample and bounded own history once across duplicate shards', () => {
+    const f = riverFixture();
+    const result = storeRiverFixture(f, true);
+    expect(result.gaps).toEqual({});
+    const own = result.horses.find((h) => h.horseId === f.d.snapshot.player.user_id)!;
+    expect(own.riverLearning).toMatchObject({
+      qualifiedReadDecisions: 1,
+      ownHistoryLoadedDecisions: 1,
+      positiveSampleDecisions: 1,
+      positiveSampleWithHistoryDecisions: 1,
+      maxScopedRiverCalls: 24,
+    });
+    expect(result.riverLearningEvidence).toMatchObject({
+      scope: 'at_least_one_qualified_observer_context',
+      positiveSampleHorses: 1,
+      withoutPositiveSampleHorses: 999,
+      positiveSampleWithHistoryHorses: 1,
+      withoutPositiveSampleWithHistoryHorses: 999,
+      completeSelectedCohortLearning: false,
+      allContextsVerified: false,
+      durablePersistenceVerified: false,
+      strategyApplicationVerified: false,
+    });
+    expect(
+      result.horses
+        .filter((h) => h.acceptedDecisions === 0)
+        .every((h) => h.riverLearning.qualifiedReadDecisions === 0)
+    ).toBe(true);
+    for (const value of ['readFrame', 'scopedRiverCalls', 'historyDigest', 'hole_cards'])
+      expect(JSON.stringify(result.riverLearningEvidence)).not.toContain(value);
+    const wrong = packet();
+    wrong.sourceSha = 'c'.repeat(40);
+    const wrongDir = dirs[dirs.length - 1]!;
+    expect(readHorseJournalFleet(wrongDir, wrong).riverLearningEvidence.positiveSampleHorses).toBe(
+      0
+    );
+  });
+  it('valid legacy frames remain no positive sample rather than evidence of learned counters', () => {
+    const f = riverFixture();
+    f.d.readFrame = fixture().d.readFrame;
+    const result = storeRiverFixture(f);
+    expect(result.riverLearningEvidence).toMatchObject({
+      qualifiedReadHorses: 1,
+      positiveSampleHorses: 0,
+    });
+  });
+  it('does not count another family scope as a sample in the accepted observer context', () => {
+    expect(storeRiverFixture(riverFixture(true)).riverLearningEvidence).toMatchObject({
+      qualifiedReadHorses: 1,
+      positiveSampleHorses: 0,
+    });
+  });
+  it.each(['wrong_observer', 'extra_receipt_field', 'malformed_frame', 'incoherent_counters'])(
+    'does not certify %s even inside a hash-valid journal record',
+    (fault) => {
+      const f = riverFixture();
+      const capture = f.d as typeof f.d & { observerReads: any };
+      if (fault === 'wrong_observer')
+        capture.observerReads.context = {
+          ...capture.observerReads.context,
+          observerId: roster()[999],
+        };
+      if (fault === 'extra_receipt_field') capture.observerReads.extra = true;
+      if (fault === 'malformed_frame') f.d.readFrame = { ...f.d.readFrame, sha256: '0'.repeat(64) };
+      if (fault === 'incoherent_counters') {
+        const body = JSON.parse(f.d.readFrame.json);
+        body.scopedRiverCalls[0][1] = [1, 2];
+        const json = JSON.stringify(body);
+        f.d.readFrame = {
+          ...f.d.readFrame,
+          json,
+          bytes: Buffer.byteLength(json),
+          sha256: journalHash(json),
+        };
+      }
+      const result = storeRiverFixture(f);
+      expect(result.riverLearningEvidence).toMatchObject({
+        qualifiedReadHorses: 0,
+        positiveSampleHorses: 0,
+      });
+    }
+  );
+  it.each(['volatile', 'empty'])('does not claim history recovery from %s history', (history) => {
+    const f = riverFixture();
+    const capture = f.d as typeof f.d & { observerReads: any };
+    if (history === 'empty') capture.observerReads.historyHands = 0;
+    else
+      capture.observerReads = {
+        version: 1,
+        disposition: 'independent',
+        context: capture.observerReads.context,
+        cutoffMs: 1000,
+        learnedThroughMs: 500,
+        history: 'volatile_only',
+      };
+    expect(storeRiverFixture(f).riverLearningEvidence).toMatchObject({
+      qualifiedReadHorses: 1,
+      positiveSampleHorses: 1,
+      ownHistoryLoadedHorses: 0,
+      positiveSampleWithHistoryHorses: 0,
+    });
+  });
+});
 describe('finite private fleet accepted-decision reader', () => {
   it('reports supported Phase7 baseline activation from a real utility receipt persisted in SQLite without a calibration claim', () => {
     const { dir, f } = stored(0, true);

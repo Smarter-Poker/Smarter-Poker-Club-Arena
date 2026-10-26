@@ -15,11 +15,16 @@ import {
   type HorseJournalRecord,
 } from './record.js';
 import { bindHorseDecisionToCommittedHand } from '../../engine/HorseDecisionHandBinding.js';
+import { decodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
+import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
+import { horseObserverReadsWereIndependent } from '../../engine/HorseObserverReadEvidence.js';
+import { horseObserverReadContextFromRequest } from '../../engine/HorseObserverReadContext.js';
+import { readScopeOf } from '../../engine/HorseMind.js';
+import { riverCallCategoryIsUsable } from '../../engine/HorseRiverCallEvidence.js';
+import { horseRetainedPlanContext } from './effects.js';
+import { ownPublicHistoryIsValid } from '../../engine/horseDecision/ownPublicHistory.js';
 import type { HorseExecutionWitness } from '../../engine/HorseExecutionWitness.js';
-import type {
-  CompletedHandObservation,
-  FastHorseDecisionRequest,
-} from '../../engine/horseDecision/protocol.js';
+import type { CompletedHandObservation } from '../../engine/horseDecision/protocol.js';
 
 /** Selection belongs to the trusted accepted-hand owner, not this observer.
  * This packet is a finite selection, never an assertion of complete capture. */
@@ -112,6 +117,116 @@ function readFleetHand(
   return [...records.values()];
 }
 
+/** A retained read proves a sample in one original observer context, not
+ * universal context coverage, strategy use, or a durable lifetime checkpoint. */
+function riverReadEvidence(capture: HorsePhaseCapture & { observerReads?: unknown }) {
+  const request = capture.snapshot;
+  const unavailable = (reason: string) => ({
+    qualified: false,
+    history: false,
+    samples: 0,
+    retainedHistorySamples: 0,
+    retainedHistoryReason: 'qualified_read_unavailable',
+    reason,
+  });
+  if (!horseObserverReadsWereIndependent(capture.observerReads, request))
+    return unavailable('independent_read_unavailable');
+  const context = horseObserverReadContextFromRequest(request)!;
+  const receipt = capture.observerReads as {
+    history: string;
+    historyHands?: number;
+    historyDigest?: string;
+    historyAvailableAtMs?: number;
+    historyCapped?: boolean;
+  };
+  const history = receipt.history === 'own_public_window' && (receipt.historyHands ?? 0) > 0;
+  try {
+    const plan = horseRetainedPlanContext(capture, request);
+    if (plan.kind === 'invalid') return unavailable('read_frame_unavailable');
+    const planContext = plan.kind === 'current' ? plan.context : undefined;
+    const decoded = decodeHorseDecisionReads(
+      capture.readFrame,
+      request.gameState.players,
+      horsePlanHandKey(request.gameState.actionHistory, planContext),
+      planContext
+    );
+    const eligible = riverCallCategoryIsUsable({ variant: context.variant, boardCount: 1 });
+    const prefix = `${readScopeOf(context.variant, context.dealtCount)}|`;
+    let samples = 0;
+    for (const [key, row] of decoded.scoped) {
+      if (!key.startsWith(prefix) || key.slice(prefix.length) === request.player.user_id) continue;
+      if (
+        !Number.isFinite(row.riverCallSD) ||
+        !Number.isFinite(row.riverCallSDWeak) ||
+        row.riverCallSD < 0 ||
+        row.riverCallSDWeak < 0 ||
+        row.riverCallSDWeak > row.riverCallSD
+      )
+        return unavailable('river_counters_invalid');
+      // Scoped and pooled rows mirror the same samples. Never sum them, nor
+      // accumulate repeated decision snapshots into invented observations.
+      samples = Math.max(samples, row.riverCallSD);
+    }
+    if (!eligible || capture.readFrame.version !== 'horse-decision-reads-v6') samples = 0;
+    let retainedHistorySamples = 0;
+    let retainedHistoryReason = 'history_packet_not_captured';
+    const packet = request.type === 'DECIDE_FAST' ? request.ownPublicHistory : undefined;
+    if (packet) {
+      if (!history) retainedHistoryReason = 'own_history_not_loaded';
+      else if (!ownPublicHistoryIsValid(packet, context, request.decisionTimeMs))
+        retainedHistoryReason = 'history_packet_invalid';
+      else if (
+        packet.digest !== receipt.historyDigest ||
+        packet.availableAtMs !== receipt.historyAvailableAtMs ||
+        packet.hands.length !== receipt.historyHands ||
+        packet.capped !== receipt.historyCapped
+      )
+        retainedHistoryReason = 'history_receipt_mismatch';
+      else {
+        const retained = new Map<string, { calls: number; weak: number }>();
+        for (const hand of packet.hands)
+          for (const sample of hand.riverCalls ?? []) {
+            if (sample.userId === context.observerId) continue;
+            const count = retained.get(sample.userId) ?? { calls: 0, weak: 0 };
+            count.calls++;
+            if (sample.weak) count.weak++;
+            retained.set(sample.userId, count);
+          }
+        const recovered =
+          eligible &&
+          samples > 0 &&
+          retained.size > 0 &&
+          [...retained].every(([id, count]) => {
+            const row = decoded.scoped.get(`${prefix}${id}`);
+            return !!row && row.riverCallSD >= count.calls && row.riverCallSDWeak >= count.weak;
+          });
+        retainedHistoryReason =
+          retained.size === 0
+            ? 'retained_river_samples_unavailable'
+            : recovered
+              ? 'retained_river_samples_recovered'
+              : 'retained_river_counters_unverified';
+        if (recovered)
+          retainedHistorySamples = [...retained.values()].reduce((n, row) => n + row.calls, 0);
+      }
+    }
+    return {
+      qualified: true,
+      history,
+      samples,
+      retainedHistorySamples,
+      retainedHistoryReason,
+      reason: !eligible
+        ? 'outside_supported_category'
+        : samples > 0
+          ? 'positive_scoped_sample'
+          : 'no_positive_scoped_sample',
+    };
+  } catch {
+    return unavailable('read_frame_unavailable');
+  }
+}
+
 export function readHorseJournalFleet(directory: string, input: unknown) {
   const packet = validateHorseFleetPacket(input);
   const start = Date.parse(packet.window.startUtc),
@@ -128,6 +243,17 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
         retainedReceiptCounts: {} as Record<string, number>,
         phaseStatusCounts: {} as Record<string, number[]>,
         phaseAcceptedApplications: {} as Record<string, number>,
+        riverLearning: {
+          qualifiedReadDecisions: 0,
+          ownHistoryLoadedDecisions: 0,
+          positiveSampleDecisions: 0,
+          positiveSampleWithHistoryDecisions: 0,
+          maxScopedRiverCalls: 0,
+          retainedHistoryRiverSampleDecisions: 0,
+          maxRetainedHistoryRiverSamples: 0,
+          retainedHistoryReasons: {} as Record<string, number>,
+          reasons: {} as Record<string, number>,
+        },
       },
     ])
   );
@@ -215,7 +341,7 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
       const hand: CompletedHandObservation = JSON.parse(accepted.body);
       const seen = new Set<number>();
       for (const record of records.filter((r) => r.kind === 'decision')) {
-        const capture = JSON.parse(record.body) as { snapshot: FastHorseDecisionRequest };
+        const capture = JSON.parse(record.body) as HorsePhaseCapture & { observerReads?: unknown };
         const request = capture.snapshot;
         if (request.decisionTimeMs < start || request.decisionTimeMs >= end) {
           gap('decision_outside_window');
@@ -238,6 +364,25 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
         if (!horse) {
           gap('actor_outside_roster');
           continue;
+        }
+        const river = riverReadEvidence(capture);
+        const learning = horse.riverLearning;
+        learning.reasons[river.reason] = (learning.reasons[river.reason] ?? 0) + 1;
+        learning.retainedHistoryReasons[river.retainedHistoryReason] =
+          (learning.retainedHistoryReasons[river.retainedHistoryReason] ?? 0) + 1;
+        if (river.retainedHistorySamples > 0) {
+          learning.retainedHistoryRiverSampleDecisions++;
+          learning.maxRetainedHistoryRiverSamples = Math.max(
+            learning.maxRetainedHistoryRiverSamples,
+            river.retainedHistorySamples
+          );
+        }
+        if (river.qualified) learning.qualifiedReadDecisions++;
+        if (river.history) learning.ownHistoryLoadedDecisions++;
+        if (river.samples > 0) {
+          learning.positiveSampleDecisions++;
+          if (river.history) learning.positiveSampleWithHistoryDecisions++;
+          learning.maxScopedRiverCalls = Math.max(learning.maxScopedRiverCalls, river.samples);
         }
         for (const [phase, receipt] of Object.entries({
           phase6: witness.phase6Attribution,
@@ -314,6 +459,16 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
       }
   }
   const observedHorses = [...horses.values()].filter((h) => h.acceptedDecisions > 0).length;
+  const riverHorses = [...horses.values()];
+  const positiveRiverHorses = riverHorses.filter(
+    (h) => h.riverLearning.positiveSampleDecisions > 0
+  ).length;
+  const historyRiverHorses = riverHorses.filter(
+    (h) => h.riverLearning.positiveSampleWithHistoryDecisions > 0
+  ).length;
+  const retainedHistoryRiverHorses = riverHorses.filter(
+    (h) => h.riverLearning.retainedHistoryRiverSampleDecisions > 0
+  ).length;
   return {
     version: 1,
     scope: 'selected_accepted_decision_capture',
@@ -336,6 +491,30 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
     observedHorses,
     unobservedHorses: 1000 - observedHorses,
     completeHorseCoverage: observedHorses === 1000 && Object.keys(gaps).length === 0,
+    riverLearningEvidence: {
+      scope: 'at_least_one_qualified_observer_context' as const,
+      counterMeaning: 'maximum_scoped_opponent_samples_per_accepted_read' as const,
+      qualifiedReadHorses: riverHorses.filter((h) => h.riverLearning.qualifiedReadDecisions > 0)
+        .length,
+      ownHistoryLoadedHorses: riverHorses.filter(
+        (h) => h.riverLearning.ownHistoryLoadedDecisions > 0
+      ).length,
+      positiveSampleHorses: positiveRiverHorses,
+      withoutPositiveSampleHorses: 1000 - positiveRiverHorses,
+      positiveSampleWithHistoryHorses: historyRiverHorses,
+      retainedHistoryRiverSampleHorses: retainedHistoryRiverHorses,
+      withoutRetainedHistoryRiverSampleHorses: 1000 - retainedHistoryRiverHorses,
+      completeSelectedCohortRetainedHistoryRiverSamples:
+        retainedHistoryRiverHorses === 1000 && Object.keys(gaps).length === 0,
+      withoutPositiveSampleWithHistoryHorses: 1000 - historyRiverHorses,
+      completeSelectedCohortLearning:
+        positiveRiverHorses === 1000 && Object.keys(gaps).length === 0,
+      completeSelectedCohortHistoryAndLearning:
+        historyRiverHorses === 1000 && Object.keys(gaps).length === 0,
+      allContextsVerified: false,
+      durablePersistenceVerified: false,
+      strategyApplicationVerified: false,
+    },
     completePopulation: false,
     replayVerified: false,
     gtoVerified: false,
@@ -353,6 +532,27 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
       Array.from({ length: 15 }, (_, i) => [`phase${i + 1}`, 'unknown'])
     ),
     gaps,
-    horses: [...horses.values()],
+    horses: [...horses.values()].map((horse) => ({
+      ...horse,
+      riverLearning: {
+        ...horse.riverLearning,
+        status:
+          horse.riverLearning.positiveSampleDecisions > 0
+            ? 'positive_sample_observed'
+            : horse.riverLearning.qualifiedReadDecisions > 0
+              ? 'no_positive_sample_observed'
+              : horse.acceptedDecisions > 0
+                ? 'qualified_read_unavailable'
+                : 'unobserved',
+        historyStatus:
+          horse.riverLearning.ownHistoryLoadedDecisions > 0
+            ? 'bounded_own_history_loaded'
+            : 'unverified',
+        retainedHistoryRiverSampleStatus:
+          horse.riverLearning.retainedHistoryRiverSampleDecisions > 0
+            ? 'bounded_retained_samples_recovered'
+            : 'unverified',
+      },
+    })),
   };
 }

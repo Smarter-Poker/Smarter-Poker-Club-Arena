@@ -159,6 +159,11 @@ function gateFor(key: keyof HorseDecision, variant: string): HorsePhase8Authorit
 
 /** Plays real cash hands through the production worker for one variant. */
 async function playCash(variant: string, hands: number) {
+  // A filtered variant must admit its own main-thread gates; another test's
+  // admission assertions are not setup for this real-worker exercise.
+  const pack = PACK[variant];
+  if (pack) gateFor(pack, variant)?.ensureAdmitted();
+  gateFor('jointPolicy', variant)?.ensureAdmitted();
   const messages: HorseDecisionWorkerResponse[] = [];
   const worker = new HorseDecisionWorkerRuntime((m) => messages.push(m), {
     ...defaults,
@@ -171,7 +176,13 @@ async function playCash(variant: string, hands: number) {
     noteDecision: () => {},
   });
   await worker.start();
-  const seen = { decisions: 0, invalid: 0, refusedAtGate: 0, modes: new Map<string, number>() };
+  const seen = {
+    decisions: 0,
+    invalid: 0,
+    refusedAtGate: 0,
+    modes: new Map<string, number>(),
+    invalidCases: [] as unknown[],
+  };
   const bump = (k: string) => seen.modes.set(k, (seen.modes.get(k) ?? 0) + 1);
   let requestId = 1;
   for (let hand = 0; hand < hands; hand++) {
@@ -242,7 +253,23 @@ async function playCash(variant: string, hands: number) {
       if (!result) break;
       seen.decisions++;
       const decision = result.decision;
-      if (!horseDecisionReceiptIsValid(decision, variant)) seen.invalid++;
+      if (!horseDecisionReceiptIsValid(decision, variant)) {
+        seen.invalid++;
+        // Retain the first synthetic rejection for diagnosis. The secure deal
+        // is intentionally unchanged; the fast RNG seed alone cannot replay it.
+        if (seen.invalidCases.length === 0)
+          seen.invalidCases.push(
+            structuredClone({
+              variant,
+              hand,
+              step,
+              fastRandomSeed: 1000 + hand,
+              config,
+              request,
+              decision,
+            })
+          );
+      }
       // Mirror the client: observe every pack's worker receipt, stamp, recheck.
       const r = result as Record<string, any>;
       if (r.phase10Authority) liveHorsePhase10Authority.observeWorker(r.phase10Authority);
@@ -256,7 +283,8 @@ async function playCash(variant: string, hands: number) {
             (gates as Record<string, HorsePhase8AuthorityGate>)[v]?.observeWorker(receipt);
       for (const key of [PACK[variant], 'jointPolicy'] as const) {
         const receipt = decision[key] as
-          { mode?: string; applied?: boolean; authority?: any; variant?: string } | undefined;
+          | { mode?: string; applied?: boolean; authority?: any; variant?: string }
+          | undefined;
         if (!receipt) continue;
         bump(`${String(key)}:${receipt.mode}`);
         if (receipt.applied) {
@@ -286,7 +314,13 @@ describe('the real worker decides every game with its phase pack in charge', () 
     it(`${variant}: the ${PACK[variant]} pack runs as candidate and every decision is accepted`, async () => {
       const seen = await playCash(variant, 6);
       expect(seen.decisions).toBeGreaterThan(5);
-      expect(seen.invalid, JSON.stringify([...seen.modes])).toBe(0);
+      expect(
+        seen.invalid,
+        JSON.stringify({ modes: [...seen.modes], invalidCases: seen.invalidCases }).slice(
+          0,
+          256 * 1024
+        )
+      ).toBe(0);
       expect(seen.refusedAtGate).toBe(0);
       expect(
         seen.modes.get(`${PACK[variant]}:candidate`) ?? 0,
@@ -300,7 +334,13 @@ describe('the real worker decides every game with its phase pack in charge', () 
   it('nlh: the joint multiway owner runs as candidate and every decision is accepted', async () => {
     const seen = await playCash('nlh', 8);
     expect(seen.decisions).toBeGreaterThan(5);
-    expect(seen.invalid).toBe(0);
+    expect(
+      seen.invalid,
+      JSON.stringify({ modes: [...seen.modes], invalidCases: seen.invalidCases }).slice(
+        0,
+        256 * 1024
+      )
+    ).toBe(0);
     expect(seen.refusedAtGate).toBe(0);
     expect(seen.modes.get('jointPolicy:shadow') ?? 0, JSON.stringify([...seen.modes])).toBe(0);
   }, 120_000);

@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237490,
-      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+      "bytes": 237730,
+      "sha256": "89de912d60c85c09f69c2d72dfc0249c928d3040414c3b18f263fb55e19cac78"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -404,6 +404,21 @@
         "current": {
           "bytes": 235835,
           "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
+        }
+      }
+    }
+  },
+  "horseRiverCallPersistenceNative20261026": {
+    "reason": "Add the exact river-call persistence migration and legacy-writer PostgreSQL 17 qualification to existing required accounting shard 4. Refresh only the reviewed additive workflow input identity; preserve historical receipts, source pins, financial assertions and qualification verdicts. Source binding is not production installation evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 237490,
+          "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+        },
+        "current": {
+          "bytes": 237730,
+          "sha256": "89de912d60c85c09f69c2d72dfc0249c928d3040414c3b18f263fb55e19cac78"
         }
       }
     }

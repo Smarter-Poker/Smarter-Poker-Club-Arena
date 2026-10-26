@@ -33,3 +33,24 @@ only, rather than wait for 04:00. The expiring named owner window carries only
 this river-call delivery and its unchanged migration through the existing
 certified freeze and installer. It retains the transaction, lock, proof,
 rollback and thaw safeguards; no general maintenance schedule changes.
+
+The stronger retained-history proof exposed an insertion-order bug in packet
+digests: journal serialization sorts object keys, so a valid history packet
+could fail validation after storage. History digests now canonicalize object
+keys while preserving array order. The actual journal round-trip regression
+fails before the fix and passes afterward; content changes still fail.
+
+The existing bounded, read-only fleet reader now reports qualified river-read
+and retained-history evidence separately for each selected horse. It validates
+the original accepted execution, exact release, independent observer receipt,
+read frame, current scope and matching retained history packet. It emits counts
+and explicit unknowns rather than cards or opponent identities, and preserves
+all read limits. These observations do not establish every context, lifetime
+memory or strategy quality.
+
+The older #8214 release also found one PLO6 invalid receipt in its activation
+law. The original test retained no rejected input. The law now keeps bounded
+synthetic rejection details and initializes each filtered variant's existing
+gate fixture independently. A single diagnostic 100-hand cohort found no
+invalid receipt; this is not a runtime root-cause fix or a passing replacement
+for the failed release. Existing phase and zero-refusal assertions remain.

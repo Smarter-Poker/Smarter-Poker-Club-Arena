@@ -30,7 +30,8 @@ def window(lo, hi, coverage='complete'):
 
 
 def main():
-    assert __debug__, 'optimized qualification forbidden'
+    if not __debug__:
+        raise RuntimeError('optimized qualification forbidden')
     base = Path(os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or tempfile.gettempdir()).resolve()
     if sys.platform == 'darwin' and not str(base).startswith('/Volumes/SmarterWork/agent-work/'):
         raise RuntimeError('Set TMPDIR to the assigned external SSD task scratch directory')

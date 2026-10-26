@@ -16,6 +16,7 @@ import { horsePlanHandKey } from '../HorseDecisionEffects.js';
 import { horsePlanContextFromDecision } from '../HorsePlanHandIdentity.js';
 import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
 import type { ObserveCompletedHandRequest } from './protocol.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 
 const context = () => horseObserverReadContextFromRequest(decisionRequest())!;
 const window = () => ({
@@ -60,6 +61,13 @@ it('makes an explicit bounded public window, with no cards or pooled profile fie
   expect(ownPublicHistoryIsValid(packet, context(), 200)).toBe(true);
   expect(packet.digest).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(packet)).not.toMatch(/cards|showdown|hole_cards|donor|counters/);
+});
+it('retains its digest through the actual journal key ordering without accepting changed content', () => {
+  const packet = makeOwnPublicHistoryPacket(window(), 200)!;
+  const retained = JSON.parse(horseJournalJson(packet));
+  expect(ownPublicHistoryIsValid(retained, context(), 200)).toBe(true);
+  retained.hands[0].actions[0].amount++;
+  expect(ownPublicHistoryIsValid(retained, context(), 200)).toBe(false);
 });
 it.each([
   'observer',

@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-horse-seat-open-shove-now",
+      "ownerOrder": "Dan, 2026-10-25 in this chat, on the tournament horse aggression programme: 19:43 \"WHEN YOUR DONE WITH ALL 3 PHASES, I WANT THIS UPDATED WHEN ITS DONE, NOT AT 4AM\"; 20:33 \"SINCE WHEN IS IT GTO TO OPEN RIP 20BB FROM UTG?!\" and \"THIS NEEDS TO GET FULLY PUSHED AND PUBLISHED AND ALL HORSES NEED TO ACTIVATE THIS AS SOON AS POSSIBLE FOR TOURNAMENT PLAY\"; 20:37 \"YOU HAVE TO MAKE THEM BETTER NOW, GET IT PUSHED AND PUBLISHED AS SOON AS ITS READY\"; 22:12 \"make sure this is fully pushed and published and activated in every single horse\". One immediate certified off-cycle engine activation of protected main containing #8107, merge 7d8615108f28bf78f384caf89f01ed5f961b981d (the seat-aware tournament open-shove line). Phases 1-3 (#8092, #8095) are already serving in 9f4f98f2. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving; no other change is authorized by this entry.",
+      "contains": "7d8615108f28bf78f384caf89f01ed5f961b981d",
+      "notBefore": "2026-10-26T03:41:00Z",
+      "notAfter": "2026-10-26T09:31:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-plo-paired-board-fold-widening-now",
       "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8104, merge afea03a164ceb5397700d594917888b382091bce (the PLO4 and paired-flop widening). The earlier anchor acb5e84e9 (#8088) is already serving in fdd0a7efd through the bust-door release and granted nothing. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
       "contains": "afea03a164ceb5397700d594917888b382091bce",

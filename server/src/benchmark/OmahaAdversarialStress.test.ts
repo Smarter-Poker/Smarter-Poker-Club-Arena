@@ -21,6 +21,25 @@ const request = (): OmahaStressRequest => ({
 });
 
 describe('explicit synthetic Omaha stress', () => {
+  it('retains validated inputs when the caller mutates its request during a hand', async () => {
+    const input = { ...request(), hands: 2 };
+    const original = { ...input };
+    const decide = HorseLogic.decide.bind(HorseLogic);
+    const spy = vi.spyOn(HorseLogic, 'decide').mockImplementation((...args) => {
+      input.seed = PLO4_STRENGTH_CONTRACT.holdout.seeds[0];
+      input.hands = 0;
+      input.stackBB = 200;
+      return decide(...args);
+    });
+    try {
+      const out = await runOmahaAdversarialStress(input);
+      expect(out.request).toEqual(original);
+      expect(out.completedHands).toBe(2);
+      expect(Number.isFinite(out.heroBb100)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('carries the actual non-horse roster into the real brain, with no foreign cards', async () => {
     const decide = HorseLogic.decide.bind(HorseLogic);
     let calls = 0;

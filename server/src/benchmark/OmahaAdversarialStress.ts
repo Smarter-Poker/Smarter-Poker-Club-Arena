@@ -81,6 +81,9 @@ export function validateOmahaStressRequest(request: OmahaStressRequest): void {
 }
 
 export async function runOmahaAdversarialStress(request: OmahaStressRequest) {
+  // Bind every deal and the result to the same validated primitive inputs,
+  // even if the caller changes its own request while a hand is running.
+  request = Object.freeze({ ...request });
   validateOmahaStressRequest(request);
   if (
     process.env.EQUITY_GOVERNOR !== 'off' ||

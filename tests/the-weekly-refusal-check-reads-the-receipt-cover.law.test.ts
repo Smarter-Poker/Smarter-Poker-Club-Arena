@@ -18,8 +18,8 @@ describe('the weekly refusal check reads the receipt cover', () => {
     expect(sql).toContain('WHERE x.id=w.receipt_id OFFSET 0');
     expect(sql).not.toMatch(/UPDATE public\.|INSERT INTO public\.|cron\.schedule/);
   });
-  it('executes native parity and index-only proof in the existing financial check', () => {
-    const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
+  it('executes native parity and index-only proof in the pull request financial check', () => {
+    const ci = readFileSync('.github/workflows/weekly-refusal-cover.yml', 'utf8');
     expect(ci).toContain(
       'python3 -B scripts/ci/test-weekly-refusal-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"'
     );

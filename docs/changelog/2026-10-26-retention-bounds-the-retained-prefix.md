@@ -52,3 +52,9 @@ measurements replace the row-lock clause with an OFFSET 0 point-read fence;
 they make no write and do not certify installed pruning. Earlier three-second
 preflights refused before the correction. Natural installed-run evidence
 remains required after protected merge and exact-main installation.
+
+The read-only full-guard page at the naturally advancing production cursor
+also completes in 1,498.314 ms (59.546 ms planning), below the existing
+20-second round budget. The concurrent fixture additionally proves that
+retention's open cursor transaction does not hold a human report update;
+that update succeeds from a separate PostgreSQL session within 300 ms.

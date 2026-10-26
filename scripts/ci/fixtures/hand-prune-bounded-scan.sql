@@ -634,3 +634,12 @@ UPDATE guard_calls SET n=0;
 INSERT INTO hand_history SELECT md5(('human-prefix'||i)::text)::uuid,'[]',now()-interval '9 days'+i*interval '1 microsecond',NULL,NULL,i,i<=1000,false FROM generate_series(1,1250)i;
 SELECT sp_prune_hand_history(250);
 DO $$BEGIN IF (SELECT count(*) FROM hand_history)<>1250 THEN RAISE EXCEPTION 'raw page scanned past the retained human prefix'; END IF; IF (SELECT n FROM guard_calls)<>0 THEN RAISE EXCEPTION 'human prefix reached accounting guards'; END IF; END$$;
+-- The scan must not hold a human's report update behind retention's cursor
+-- transaction, including while a page contains only human history.
+SELECT dblink_connect('reporter','host='||current_setting('unix_socket_directories')||' port='||current_setting('port')||' dbname='||current_database()||' user='||current_user);
+SELECT dblink_exec('reporter','SET statement_timeout=''300ms''');
+BEGIN;
+SELECT sp_prune_hand_history(250);
+SELECT dblink_exec('reporter','UPDATE public.hand_history SET reported=true WHERE hand_number=251');
+COMMIT;
+SELECT dblink_disconnect('reporter');

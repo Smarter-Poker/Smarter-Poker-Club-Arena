@@ -12,6 +12,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { LightningPresence, type PresenceTableReport } from './LightningPresence.js';
 import { LightningRegistry } from './LightningRegistry.js';
 import { reconcileLightningPresence } from './LightningPresenceReconciliation.js';
@@ -107,8 +108,8 @@ describe('matching counts the device that plays the Lightning seat', () => {
   it('the anchor engine says which seats it is the input device of, and nothing else changes', () => {
     // The real report: ServerTableEngineBase.lightningPresenceReport.
     const src = readFileSync('src/engine/ServerTableEngineBase.ts', 'utf8');
-    const report = src.slice(src.indexOf('lightningPresenceReport(): PresenceTableReport {'));
-    expect(report.slice(0, 900)).toMatch(/inputDevice: !!p\.is_horse,/);
+    const report = sliceMethod(src, 'lightningPresenceReport(): PresenceTableReport {');
+    expect(report).toMatch(/inputDevice: !!p\.is_horse,/);
   });
 });
 

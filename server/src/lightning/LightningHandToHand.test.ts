@@ -17,6 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { sliceCall } from '../testHelpers/sourceWindow.js';
 
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
@@ -152,8 +153,8 @@ describe('the first turn clock starts only once the deal has been shown', () => 
     expect(deal).toMatch(new RegExp(`let base = ${LIGHTNING_DEAL_FLIGHT_MS};`));
     expect(deal).toMatch(/const cardCount = seats\.length \* 2;/);
     const page = readFileSync(resolve(process.cwd(), '../src/pages/TablePage.tsx'), 'utf8');
-    const hold = page.slice(page.indexOf('const beginDealHold = useCallback('));
-    expect(hold.slice(0, 900)).toMatch(new RegExp(`\\}, ${LIGHTNING_DEAL_HOLD_CEILING_MS}\\);`));
+    const hold = sliceCall(page, 'const beginDealHold = useCallback(');
+    expect(hold).toMatch(new RegExp(`\\}, ${LIGHTNING_DEAL_HOLD_CEILING_MS}\\);`));
     expect(page).toMatch(/Math\.round\(HAND_COMPLETION\.BUTTON_MOVE_MS \* getAnimationSpeed\(\)\)/);
     // A full ring never runs into the client's own ceiling at speed 1.
     for (let n = 2; n <= 10; n++)

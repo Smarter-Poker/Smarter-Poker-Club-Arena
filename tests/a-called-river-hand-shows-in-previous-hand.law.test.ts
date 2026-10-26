@@ -18,7 +18,7 @@
  * seat 6 called and was auto-mucked, seat 7 folded the river.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const BETTOR = 'a6cd08f3-d81f-4d69-a4bb-42e869393a9d';
@@ -66,6 +66,8 @@ import {
   handHistoryService,
   withCalledRiverMucks,
 } from '../src/services/HandHistoryService';
+import { toPokerStarsHand } from '../src/utils/pokerStarsExport';
+import { replayFromShareable, shareableFromModel } from '../src/lib/shareHandModel';
 
 const KhQc = [
   { rank: 'K', suit: 'hearts' },
@@ -195,17 +197,24 @@ describe('Previous Hand draws the called hand face up', () => {
 });
 
 describe('the database door applies the whole rule', () => {
-  const sql = readFileSync(
-    join(
-      __dirname,
-      '..',
-      'supabase',
-      'migrations',
-      '20261026004819_a_called_river_hand_shows_in_previous_hand.sql'
-    ),
-    'utf8'
-  );
+  /* Always the NEWEST migration that defines the door, so a later edit is
+     held to the same rule. */
+  const dir = join(__dirname, '..', 'supabase', 'migrations');
+  const latest = readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .filter((f) =>
+      readFileSync(join(dir, f), 'utf8').includes(
+        'CREATE OR REPLACE FUNCTION public.fn_ca_called_river_mucked_cards'
+      )
+    )
+    .pop()!;
+  const sql = readFileSync(join(dir, latest), 'utf8');
   const body = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION'), sql.indexOf('$$;'));
+
+  it('is the all-in-aware version', () => {
+    expect(latest >= '20261026031500').toBe(true);
+  });
 
   it('only for a reader dealt into the hand', () => {
     expect(body).toMatch(/auth\.uid\(\)/);
@@ -218,9 +227,14 @@ describe('the database door applies the whole rule', () => {
     expect(body).toMatch(/e->>'mucked'\s*=\s*'true'/);
   });
 
-  it('only when the last river decision was a call', () => {
+  it('only when the last river decision was a call, or an all-in for no more than the bet', () => {
     expect(body).toMatch(/a->>'stage'\s*=\s*'river'/);
-    expect(body).toMatch(/ORDER BY ord DESC\s+LIMIT 1\s*\)\s*=\s*'call'/);
+    expect(body).toMatch(/ORDER BY ord DESC\s+LIMIT 1/);
+    expect(body).toMatch(/l\.a->>'action'\s*=\s*'call'/);
+    expect(body).toMatch(/l\.a->>'action'\s*=\s*'all_in'/);
+    expect(body).toMatch(/\(s->>1\)::numeric\s*<=\s*\(l\.a->'publicNode'->>'toCall'\)::numeric/);
+    // A check, bet, raise or fold is never a call.
+    expect(body).not.toMatch(/=\s*'check'\s*(OR|\))/);
   });
 
   it('is read-only and open to signed-in players only', () => {
@@ -234,5 +248,46 @@ describe('the database door applies the whole rule', () => {
       /GRANT EXECUTE ON FUNCTION public\.fn_ca_called_river_mucked_cards\(uuid\[\]\) TO authenticated;/
     );
     expect(sql).not.toMatch(/CREATE POLICY/i);
+  });
+});
+
+describe('every surface says the hand was called, not shown', () => {
+  async function calledHand() {
+    mocks.row = handRow();
+    mocks.rpc.mockReset();
+    mocks.rpc.mockResolvedValue({
+      data: [{ hand_id: HAND, user_id: CALLER, hole_cards: KhQc }],
+      error: null,
+    });
+    return (await handHistoryService.getHand(HAND))!;
+  }
+
+  it('the replay row is tagged as a called muck; the shown winner is not', async () => {
+    const hand = await calledHand();
+    const caller = hand.replay.showdown.find((r) => r.userId === CALLER)!;
+    const bettor = hand.replay.showdown.find((r) => r.userId === BETTOR)!;
+    expect(caller.calledMuck).toBe(true);
+    expect(bettor.calledMuck).toBe(false);
+  });
+
+  it('the tracker export writes "mucks hand" and "mucked [cards]"', async () => {
+    const hand = await calledHand();
+    const { text } = toPokerStarsHand(hand.replay, { handNumber: 1, tableName: 'Table' });
+    expect(text).toMatch(/: mucks hand/);
+    expect(text).toMatch(/Seat 6: .* mucked \[Kh Qc\]/);
+    expect(text).not.toMatch(/Seat 6: .* showed/);
+  });
+
+  it('a shared hand link carries the called cards and the muck', async () => {
+    const hand = await calledHand();
+    const shared = shareableFromModel(hand.replay, { id: HAND, tableName: 'Table' });
+    const seat6 = shared.players.find((p) => p.seat === 6)!;
+    expect(seat6.cards?.length).toBe(2);
+    expect(seat6.privateCards).toBeFalsy();
+    expect(seat6.mucked).toBe(true);
+    const back = replayFromShareable(shared);
+    const row = back.showdown.find((r) => r.seat === 6)!;
+    expect(row.hole?.length).toBe(2);
+    expect(row.calledMuck).toBe(true);
   });
 });

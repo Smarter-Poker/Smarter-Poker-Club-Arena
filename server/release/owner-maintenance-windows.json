@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-horse-history-deadline-now",
+      "ownerOrder": "Dan, 2026-10-25 20:44 Chicago, Claude chat (claude.ai/code/session_01AM1oHS6z73duqBhzVS19mV): \"GO ONTO THE NEXT PHASE AND MAKE IT LIVE NOW, NOT AT 4AM\", on the live verification of the independent horse reads (#8075). That verification found about a quarter of each horse's own-history reads abandoned at the engine's 1,500 ms deadline although the database answered every one; PR #8119 (merge b0fd60ee4) waits 5,000 ms instead. One immediate certified off-cycle engine activation of protected main containing #8119. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. Announced at :53 or :54 Chicago so the pause meets the hourly tournament break, like the other entries tonight. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "b0fd60ee4417c05238f1d95b34e011a31ff373ab",
+      "notBefore": "2026-10-26T03:15:00Z",
+      "notAfter": "2026-10-26T08:50:00Z",
+      "migrations": [],
+      "announceAtChicagoMinutes": [53, 54]
+    },
+    {
       "id": "2026-10-25-every-funded-horse-adds-on-tonight",
       "ownerOrder": "Dan, 2026-10-25 23:06 Chicago, in this chat: \"Approved - activate the 100% horse add-on fix at the next :55 break tonight.\" Earlier the same evening: \"EVERY HORSE, IF THEY ARE IN THE TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD 100% BE ADDING ON IN EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE SEAT!\" One off-cycle engine activation at the next hourly :55 Chicago break (later :55 breaks as fallback) of protected main containing PR #8111, merge 867f3ec94f7b6397e377a6b94dbf34003e7d1141 (every seated funded horse takes the add-on; the offer runs in repeated passes ahead of the late-registration branch). The earlier anchor e81a9e7db (#8093) is already serving in 9f4f98f27 and grants nothing. Preserve the existing last-hand lead, drain, certified freeze, rollback reserve, thaw and the seal's one-window-per-hour limit. This exception ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "867f3ec94f7b6397e377a6b94dbf34003e7d1141",

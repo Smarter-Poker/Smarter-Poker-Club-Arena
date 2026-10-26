@@ -23,3 +23,8 @@ rake 751.45 + 50.76, wallets 5,540.42); last 7 days 44 players, 15,527 hands,
 
 The email side is World Hub `src/lib/dailyDigest` (`loadPlayerTotals` falls back
 to the day alone if this function is not installed yet).
+
+Recovery validation: the explicit-access check correctly refused inherited
+service-role defaults on both snapshot tables. The migration now revokes all
+service-role table privileges before granting SELECT, keeping writes inside
+the existing security-definer functions. This changes no player balance.

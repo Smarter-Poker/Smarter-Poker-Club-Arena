@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS public.sp_digest_player_day_runs (
 
 ALTER TABLE public.sp_digest_player_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sp_digest_player_day_runs ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.sp_digest_player_days, public.sp_digest_player_day_runs FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.sp_digest_player_days, public.sp_digest_player_day_runs FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON public.sp_digest_player_days, public.sp_digest_player_day_runs TO service_role;
 
 COMMENT ON TABLE public.sp_digest_player_days IS

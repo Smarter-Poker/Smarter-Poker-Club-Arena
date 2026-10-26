@@ -79,6 +79,35 @@ vi.mock('../src/utils/downloadCsv', async (importOriginal) => {
   };
 });
 
+// A slug lookup the test can hold open, and the realtime subscriptions the
+// page opens. Both pass straight through to the real modules otherwise.
+const slugLookup = vi.hoisted(() => ({
+  gate: null as null | Promise<string>,
+}));
+vi.mock('../src/utils/clubIdResolver', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/utils/clubIdResolver')>();
+  return {
+    ...actual,
+    resolveClubUUID: (param: string, signal?: AbortSignal) =>
+      slugLookup.gate && param === 'ledger-club'
+        ? slugLookup.gate
+        : actual.resolveClubUUID(param, signal),
+  };
+});
+const channelOptions = vi.hoisted(
+  () => [] as Array<{ channelName?: string | null; onSubscriptionStatus?: (s: string) => void }>
+);
+vi.mock('../src/hooks/useMasterBusChannel', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/hooks/useMasterBusChannel')>();
+  return {
+    ...actual,
+    useMasterBusChannel: (options: Parameters<typeof actual.useMasterBusChannel>[0]) => {
+      channelOptions.push(options as (typeof channelOptions)[number]);
+      return actual.useMasterBusChannel(options);
+    },
+  };
+});
+
 vi.mock('../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: USER_ID }, isHydrating: false }),
 }));
@@ -204,6 +233,8 @@ describe('CashierTradePage club load ordering', () => {
     localStorage.clear();
     recoveryRpc.clear();
     rejectRecovery = false;
+    slugLookup.gate = null;
+    channelOptions.length = 0;
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
@@ -820,6 +851,150 @@ describe('CashierTradePage club load ordering', () => {
     });
     expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(100);
     expect(within(panel).getByRole('button', { name: 'Load 50 Older Entries' })).toBeEnabled();
+  });
+
+  it('drops a late older page when a refresh fails, so Retry leaves no gap', async () => {
+    installHistoryTables();
+    const older = deferred<{ data: ReturnType<typeof historyEntry>[]; error: null }>();
+    let headReads = 0;
+    let failHead = false;
+    installRpc((name, args) => {
+      if (name === 'fn_cashier_history_summary')
+        return Promise.resolve({ data: clubHistoryTotals, error: null });
+      if (name === 'fn_cashier_history_feed') {
+        if (args.p_before_id) return older.promise;
+        headReads++;
+        if (failHead) return Promise.resolve({ data: null, error: new Error('head failed') });
+        // The refresh after Retry starts one row newer: a balance event wrote it.
+        const top = headReads > 2 ? 101 : 100;
+        return Promise.resolve({
+          data: Array.from({ length: 51 }, (_, index) => historyEntry(top - index)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    const panel = await openHistory();
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
+    const before = headReads;
+    failHead = true;
+    const balanceHandlers = vi
+      .mocked(masterBus.subscribe)
+      .mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')
+      .map(([, handler]) => handler as (payload: unknown) => void);
+    act(() => {
+      for (const handler of balanceHandlers)
+        handler({ source: 'cashout_approved', userId: USER_ID });
+    });
+    await waitFor(() => expect(headReads).toBeGreaterThan(before), { timeout: 3000 });
+    await within(panel).findByText('Could not load your transaction history.', { exact: false });
+    // The older page answers AFTER the failure. It continues a book that is no
+    // longer on screen, so it must not be painted or merged by Retry.
+    await act(async () => {
+      older.resolve({
+        data: Array.from({ length: 51 }, (_, index) => historyEntry(50 - index)),
+        error: null,
+      });
+      await older.promise;
+    });
+    expect(
+      within(panel).queryByRole('button', { name: /^Open Receipt For/ })
+    ).not.toBeInTheDocument();
+    failHead = false;
+    const failedReads = headReads;
+    fireEvent.click(within(panel).getByRole('button', { name: 'Retry', exact: true }));
+    // Count only once Retry's own first page has landed: a row set painted
+    // before it (the late older page) must not satisfy the assertion.
+    await waitFor(() => expect(headReads).toBe(failedReads + 1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(within(panel).queryByText('Loading Transactions...')).toBeNull());
+    // One fresh page of 50, not 50 plus the stale older page merged below it
+    // (which skipped every row between them).
+    expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(50);
+    expect(within(panel).getByRole('button', { name: 'Load 50 Older Entries' })).toBeEnabled();
+  });
+
+  it('keeps Transaction History opened while a club link is still resolving', async () => {
+    const lookup = deferred<string>();
+    slugLookup.gate = lookup.promise;
+    installHistoryTables();
+    installRpc((name: string) =>
+      Promise.resolve({
+        data:
+          name === 'fn_cashier_history_feed'
+            ? [historyEntry()]
+            : name === 'fn_cashier_history_summary'
+              ? clubHistoryTotals
+              : [],
+        error: null,
+      })
+    );
+    render(
+      <MemoryRouter initialEntries={['/clubs/ledger-club/cashier']}>
+        <Routes>
+          <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Transaction History', exact: true })
+    );
+    await screen.findByRole('tabpanel', { name: 'Transaction History' });
+    await act(async () => {
+      lookup.resolve(CLUB_ID);
+      await lookup.promise;
+    });
+    await screen.findByText('Balances Synchronized');
+    const panel = screen.getByRole('tabpanel', { name: 'Transaction History' });
+    await waitFor(() =>
+      expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+    );
+  });
+
+  it('offers Retry when the live authority check cannot be read', async () => {
+    let failAuthority = false;
+    installHistoryTables(
+      () =>
+        (failAuthority
+          ? Promise.resolve({ data: null, error: { message: 'network dropped' } })
+          : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })) as never
+    );
+    installRpc((name: string) =>
+      Promise.resolve({
+        data:
+          name === 'fn_cashier_history_feed'
+            ? [historyEntry()]
+            : name === 'fn_cashier_history_summary'
+              ? clubHistoryTotals
+              : [],
+        error: null,
+      })
+    );
+    const panel = await openHistory();
+    await waitFor(() =>
+      expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+    );
+    const authority = channelOptions
+      .filter((options) => options.channelName?.startsWith('cashier-member-authority:'))
+      .at(-1);
+    expect(authority?.onSubscriptionStatus).toBeTypeOf('function');
+    failAuthority = true;
+    await act(async () => {
+      authority!.onSubscriptionStatus!('SUBSCRIBED');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const message = 'Cashier Access Could Not Be Verified. Check Your Connection And Try Again.';
+    await within(panel).findByText(message, { exact: false });
+    expect(screen.queryByText('Balances Synchronized')).not.toBeInTheDocument();
+    expect(within(panel).queryByText('Loading Transactions...')).not.toBeInTheDocument();
+    failAuthority = false;
+    fireEvent.click(within(panel).getByRole('button', { name: 'Retry', exact: true }));
+    await screen.findByText('Balances Synchronized');
+    await waitFor(() =>
+      expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
+    );
   });
 
   it('does not invalidate the request that loads the first Trade tab', async () => {

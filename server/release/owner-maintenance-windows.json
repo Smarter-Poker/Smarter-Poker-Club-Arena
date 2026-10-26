@@ -11,11 +11,11 @@
       "migrations": []
     },
     {
-      "id": "2026-10-26-plo-paired-board-fold-now",
-      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, after the PLO5/PLO6 paired-board fold (#8088, merge acb5e84e9) was reported as going live at the 04:00 release: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing #8088 and its PLO4/flop widening, merged with this entry. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving.",
-      "contains": "acb5e84e9a6c7aebf94b33304cb6d0751225c35e",
-      "notBefore": "2026-10-26T00:32:40Z",
-      "notAfter": "2026-10-26T06:22:40Z",
+      "id": "2026-10-26-plo-paired-board-fold-widening-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8104, merge afea03a164ceb5397700d594917888b382091bce (the PLO4 and paired-flop widening). The earlier anchor acb5e84e9 (#8088) is already serving in fdd0a7efd through the bust-door release and granted nothing. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
+      "contains": "afea03a164ceb5397700d594917888b382091bce",
+      "notBefore": "2026-10-26T01:50:00Z",
+      "notAfter": "2026-10-26T07:40:00Z",
       "migrations": []
     },
     {

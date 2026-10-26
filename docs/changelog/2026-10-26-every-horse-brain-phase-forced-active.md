@@ -59,3 +59,27 @@ The 2026-10-22 maniac-pressure laws that asserted the live gates were
 unselected now assert that the release selections are still null (so a future
 requalification is still a reviewed change) while the live gates are usable
 under the order.
+
+## Protected delivery continuation
+
+PR #8182 merged as `4a30c966e150f6edc253ec9c8ccc9e007ace3fea` after
+the required engine, accounting, client and type checks passed. The owner's
+Detlegend continuation requests publication and activation for all horses,
+continuing the supplied immediate-activation handoff. The bounded entry
+`2026-10-26-detlegend-all-phases-now` anchors the existing release transaction
+to that protected merge. It expires within six hours and grants no further
+window once a containing release is serving. The existing maintenance
+certificate, drain, database freeze, rollback reserve, thaw and rolling-hour
+limit remain authoritative.
+
+Local recovery verification at the original PR head passed 538 activation and
+authority tests, 20 exact-replay tests, server TypeScript compilation, and 21
+disclosure/release-contract tests. The published Club Arena disclosure assets
+contain the AI-opponent sentence; the earlier undisclosed-opponent audit is
+historical. Before activation, the live roster held 1,000 distinct active
+horses and release-bound telemetry still reported unselected authorities and
+baseline retention. These are baseline observations, not post-release proof.
+
+Merge, staging, sealed activation and natural accepted phase-use evidence
+remain separate delivery milestones. This entry does not claim measured
+strategy strength or that every phase applies to every game or hand.

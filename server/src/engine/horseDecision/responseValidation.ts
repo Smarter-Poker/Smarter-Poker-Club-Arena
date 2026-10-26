@@ -693,10 +693,11 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
   );
 }
 
-export function horseDecisionReceiptIsValid(
+/** Finite refusal names only: no player identity, cards or raw receipt data. */
+export function horseDecisionReceiptRefusal(
   value: unknown,
   expectedVariant?: string
-): value is HorseDecision {
+): string | null {
   if (
     !record(value) ||
     !ACTIONS.includes(value.action as (typeof ACTIONS)[number]) ||
@@ -704,7 +705,7 @@ export function horseDecisionReceiptIsValid(
     (value.amount !== undefined && !nonnegative(value.amount)) ||
     (value.policyFallback !== undefined && value.policyFallback !== 'brain_exception')
   )
-    return false;
+    return 'decision_shape';
   if (
     value.policyFallback === 'brain_exception' &&
     (!['check', 'fold'].includes(value.action as string) ||
@@ -715,9 +716,10 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtility !== undefined ||
       value.tournamentUtilityRefusal !== undefined)
   )
-    return false;
-  if (!policyGraphIsValid(value, expectedVariant)) return false;
-  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
+    return 'exception_fallback';
+  if (!policyGraphIsValid(value, expectedVariant)) return 'policy_graph';
+  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision))
+    return 'corrective_kernel';
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input
   // to the final rule; the graph itself still binds the executed output.
@@ -735,48 +737,56 @@ export function horseDecisionReceiptIsValid(
       !/^[a-z0-9_]{1,64}$/.test(value.tournamentUtilityRefusal) ||
       value.tournamentUtility !== undefined)
   )
-    return false;
+    return 'phase7_refusal';
   if (
     value.tournamentUtility !== undefined &&
     !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(selected))
   )
-    return false;
-  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return false;
+    return 'phase7_utility';
+  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return 'phase8_ledger';
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
-    return false;
-  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return false;
+    return 'phase10_binding';
+  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return 'phase10_selection';
   // P11.1: a Phase 11 receipt's input binding is shape-checked at the boundary.
   if (
     value.omahaVariantPolicy !== undefined &&
     !omahaVariantReceiptBindingIsValid(value.omahaVariantPolicy)
   )
-    return false;
-  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return false;
+    return 'phase11_binding';
+  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return 'phase11_selection';
   // P12.1: a Phase 12 receipt's bindings (inputs, and the P12-B net-action
   // economics) are re-checked at the boundary.
   if (
     value.remainingVariantPolicy !== undefined &&
     !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
   )
-    return false;
-  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected)) return false;
+    return 'phase12_binding';
+  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected))
+    return 'phase12_selection';
   // P13.1: a Phase 13 receipt's input binding, pack versions and selection
   // refusal are re-checked at the boundary.
   if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
-    return false;
+    return 'phase13_binding';
   // P13.3: and its selection, by the Phase 10/11/12 law.
-  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return false;
+  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return 'phase13_selection';
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)
   )
-    return false;
-  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return false;
+    return 'phase6_attribution';
+  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return 'policy_ownership';
   if (
     value.policyOwnership !== undefined &&
     expectedVariant !== undefined &&
     (value.policyOwnership as HorseDecision['policyOwnership'])?.variant !== expectedVariant
   )
-    return false;
-  return true;
+    return 'owner_variant';
+  return null;
+}
+
+export function horseDecisionReceiptIsValid(
+  value: unknown,
+  expectedVariant?: string
+): value is HorseDecision {
+  return horseDecisionReceiptRefusal(value, expectedVariant) === null;
 }

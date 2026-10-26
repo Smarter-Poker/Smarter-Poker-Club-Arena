@@ -673,7 +673,7 @@ export function scoreOmahaLow(hole: Card[], board: Card[]): number {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface OmahaDrawInfo {
-  /** flush draw to the NUT flush (ace of suit, or king when the ace is on board) */
+  /** flush draw holding the highest suited rank that is not already on board */
   nutFlushDraw: boolean;
   /** flush draw that is NOT to the nuts — the classic PLO trap hand */
   dominatedFlushDraw: boolean;
@@ -725,10 +725,11 @@ export function omahaDrawQuality(
       if (n !== 2) continue;
       const heroSuited = hole.filter((c) => c.suit === suit);
       if (heroSuited.length >= 2) {
-        const hasAce = heroSuited.some((c) => c.rank === 'A');
-        const aceOnBoard = board.some((c) => c.suit === suit && c.rank === 'A');
-        const hasKing = heroSuited.some((c) => c.rank === 'K');
-        if (hasAce || (aceOnBoard && hasKing)) nutFlushDraw = true;
+        // Board cards cannot be held by an opponent. In particular Q-high
+        // is the nut draw on A-K of the suit, just as K-high is on A-x.
+        const boardRanks = new Set(board.filter((c) => c.suit === suit).map((c) => c.rank));
+        const highestLive = [...RANKS].reverse().find((rank) => !boardRanks.has(rank));
+        if (heroSuited.some((c) => c.rank === highestLive)) nutFlushDraw = true;
         else dominatedFlushDraw = true;
       }
     }

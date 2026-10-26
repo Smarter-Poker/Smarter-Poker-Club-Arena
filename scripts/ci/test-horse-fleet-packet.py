@@ -80,12 +80,47 @@ INSERT INTO public.lightning_hand VALUES('50000000-0000-4000-8000-000000000002',
 INSERT INTO public.hand_atomic_commits VALUES('20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002',1000002,'2026-10-25T19:01:03Z','{"accepted_hand_facts":{"horse_journal_identity":{"version":1,"lease_generation":"40000000-0000-4000-8000-000000000002"}}}');
 INSERT INTO smarter_private.hand_submissions VALUES('30000000-0000-4000-8000-000000000002',1000002,'90000000-0000-4000-8000-000000000002');""")
   try:
+   # Actual isolated execution, not a source-string performance claim: select
+   # just the Lightning row and compare archive scan loops against prior SQL.
+   q=module.query('2026-10-25T19:00:00.000Z','2026-10-25T19:15:00.000Z')
+   body=q[q.index('WITH cohort'):q.index('\\else')].replace("WHERE created_at>=", "WHERE id='20000000-0000-4000-8000-000000000002' AND created_at>=")
+   prior=body.replace(" -- A Lightning receipt owns its original lease; do not probe the classic\n -- archive for those hands. OFFSET 0 retains the correlated one-time filter.\n LEFT JOIN LATERAL (\n   SELECT lease_generation FROM smarter_private.hand_submissions\n   WHERE l.hand_id IS NULL AND table_id=h.table_id AND hand_number=h.hand_number\n   OFFSET 0\n ) s ON true", " LEFT JOIN smarter_private.hand_submissions s ON s.table_id=h.table_id AND s.hand_number=h.hand_number")
+   self.assertNotEqual(prior,body)
+   def archive_loops(sql):
+    plan=json.loads(self.sql('BEGIN READ ONLY; SET LOCAL enable_seqscan=off; EXPLAIN (ANALYZE,FORMAT JSON) '+sql+' ROLLBACK;'))[0]['Plan']
+    def nodes(p):
+     yield p
+     for child in p.get('Plans',[]):yield from nodes(child)
+    scans=[n for n in nodes(plan) if n.get('Relation Name')=='hand_submissions']
+    self.assertTrue(scans)
+    return sum(n['Actual Loops'] for n in scans)
+   self.assertGreater(archive_loops(prior),0)
+   self.assertEqual(archive_loops(body),0)
    rows=self.rows();lightning=next(h for h in rows['hands'] if h['source_owner']=='lightning');self.assertEqual(lightning['lease_generation'],'40000000-0000-4000-8000-000000000002')
    packet,receipt=self.convert(rows);self.assertEqual(len(packet['handKeys']),2);self.assertEqual(receipt['sourceOwnerCounts'],{'classic':1,'lightning':1})
    self.sql("UPDATE public.hand_atomic_commits SET post_commit_payload='{}' WHERE hand_number=1000002;")
    with self.assertRaises(module.PacketGap) as gap:self.convert(self.rows())
    self.assertEqual(str(gap.exception),'lightning_original_lease_unavailable');self.assertEqual(gap.exception.counts['lightningMissingOriginalCoordinates'],1)
   finally:self.sql('DELETE FROM smarter_private.hand_submissions WHERE hand_number=1000002;DELETE FROM public.hand_atomic_commits WHERE hand_number=1000002;DELETE FROM public.lightning_hand;DELETE FROM public.hand_history WHERE hand_number=1000002;')
+ def test_actual_native_cancel_and_schema_classification_never_echo_stderr(self):
+  for sql,expected in [("SET statement_timeout='1ms'; SELECT pg_sleep(0.05);",'database_statement_cancelled'),('SELECT nonexistent_private_column FROM public.hand_history;','database_schema_unavailable')]:
+   result=subprocess.run(['psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],input=sql,text=True,capture_output=True,timeout=5,env=self.env)
+   self.assertNotEqual(result.returncode,0);self.assertEqual(module.database_failure(result.stderr),expected)
+ def test_native_classic_lookup_is_gated_before_index_scan(self):
+  q=module.query('2026-10-25T19:00:00.000Z','2026-10-25T19:15:00.000Z')
+  body=q[q.index('WITH cohort'):q.index('\\else')]
+  plan=json.loads(self.sql('EXPLAIN (FORMAT JSON) '+body))[0]['Plan']
+  def nodes(p):
+   yield p
+   for child in p.get('Plans',[]):yield from nodes(child)
+  filters=[p.get('One-Time Filter','') for p in nodes(plan)]
+  self.assertTrue(any('hand_id IS NULL' in x for x in filters),filters)
+ def test_pending_original_remains_refused(self):
+  self.sql('UPDATE public.hand_atomic_commits SET post_commit_completed_at=NULL WHERE hand_number=1000001;')
+  try:
+   with self.assertRaises(module.PacketGap) as gap:self.convert(self.rows())
+   self.assertEqual(str(gap.exception),'original_acceptance_pending')
+  finally:self.sql("UPDATE public.hand_atomic_commits SET post_commit_completed_at='2026-10-25T19:01:01Z' WHERE hand_number=1000001;")
  def test_reader_transaction_rejects_writes(self):
   with self.assertRaises(subprocess.CalledProcessError):self.sql('BEGIN READ ONLY;INSERT INTO public.ca_horse_active_roster VALUES(gen_random_uuid());ROLLBACK;')
 class PacketContracts(unittest.TestCase):
@@ -122,6 +157,13 @@ class PacketContracts(unittest.TestCase):
   self.assertEqual(module.summarize(a,r)['phaseEvidence']['status'],'reported')
   r['sourceSha']='b'*40
   self.assertEqual(module.summarize(a,r)['phaseEvidence']['reason'],'canonical_binding_unverified')
+ def test_closed_database_error_classification_redacts_messages(self):
+  for state,expected in [('57014','database_statement_cancelled'),('55P03','database_lock_unavailable'),('42501','database_permission_denied'),('42703','database_schema_unavailable'),('28P01','database_authentication_failed'),('08006','database_connection_unavailable'),('XX000','database_unavailable_or_bounds')]:
+   self.assertEqual(module.database_failure(f'psql: ERROR:  {state}: SECRET postgres://user:password@private-host CARD PLAYER QUERY'),expected)
+  self.assertEqual(module.database_failure('SECRET connection failed postgres://private'), 'database_unavailable_or_bounds')
+  q=module.query('2000-01-01T00:00:00.000Z','2000-01-01T00:15:00.000Z')
+  self.assertIn("statement_timeout='1500ms'",q);self.assertIn("lock_timeout='250ms'",q)
+  self.assertIn('WHERE l.hand_id IS NULL AND table_id=h.table_id AND hand_number=h.hand_number',q)
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)

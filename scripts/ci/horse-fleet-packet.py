@@ -63,8 +63,13 @@ WITH cohort AS MATERIALIZED (
  FROM selected h LEFT JOIN public.lightning_hand l ON l.hand_history_id=h.id
  LEFT JOIN public.hand_atomic_commits c
  ON c.hand_id=h.id AND c.table_id=h.table_id AND c.hand_number=h.hand_number
- LEFT JOIN smarter_private.hand_submissions s
- ON s.table_id=h.table_id AND s.hand_number=h.hand_number
+ -- A Lightning receipt owns its original lease; do not probe the classic
+ -- archive for those hands. OFFSET 0 retains the correlated one-time filter.
+ LEFT JOIN LATERAL (
+   SELECT lease_generation FROM smarter_private.hand_submissions
+   WHERE l.hand_id IS NULL AND table_id=h.table_id AND hand_number=h.hand_number
+   OFFSET 0
+ ) s ON true
 )
 SELECT jsonb_build_object('snapshot',pg_current_snapshot()::text,'readAt',statement_timestamp(),
  'timeIndexValid',true,
@@ -150,6 +155,19 @@ def summarize(attestation,result):
     complete=canonical and observation.get('completeHorseCoverage') is True and count==1000
     return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
 
+def database_failure(stderr):
+    # VERBOSITY=verbose supplies a machine SQLSTATE. Never return the message,
+    # URI, detail, relation, query text or an unrecognized token.
+    match=re.search(r'(?:ERROR|FATAL):\s+([0-9A-Z]{5}):',stderr or '')
+    state=match.group(1) if match else ''
+    if state=='57014':return 'database_statement_cancelled'
+    if state=='55P03':return 'database_lock_unavailable'
+    if state=='42501':return 'database_permission_denied'
+    if state in {'42P01','42703','42883','3F000'}:return 'database_schema_unavailable'
+    if state.startswith('28'):return 'database_authentication_failed'
+    if state.startswith('08'):return 'database_connection_unavailable'
+    return 'database_unavailable_or_bounds'
+
 def main():
     try:
         if len(sys.argv)==4 and sys.argv[1]=='--summarize':
@@ -161,15 +179,16 @@ def main():
         output=Path(sys.argv[1]);attestation_path=Path(sys.argv[2])
         if not output.is_absolute() or not attestation_path.is_absolute() or output.exists() or attestation_path.exists():raise ValueError('private_output')
         env=database_environment(os.environ)
-        result=subprocess.run(['psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1'],input=query(start,end),text=True,capture_output=True,timeout=15,env=env)
-        if result.returncode or len(result.stdout.encode())>4194304:raise ValueError('database_unavailable_or_bounds')
+        result=subprocess.run(['psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],input=query(start,end),text=True,capture_output=True,timeout=15,env=env)
+        if result.returncode:raise ValueError(database_failure(result.stderr))
+        if len(result.stdout.encode())>4194304:raise ValueError('database_reply_bound_reached')
         packet,attestation=packet_from_rows(json.loads(result.stdout),sha,start,end)
         for path,value in [(output,packet),(attestation_path,attestation)]:
             fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
             with os.fdopen(fd,'w') as f:json.dump(value,f,separators=(',',':'));f.write('\n')
         print(json.dumps({'canonicalRosterVerified':True,'rosterCount':1000,'selectedHands':len(packet['handKeys']),'packetDigest':attestation['packetDigest'],'sourceSha':sha,'completePopulation':False,'allPhasesVerified':False}))
     except Exception as error:
-        reasons={'source','utc','window','private_output','database_configuration','database_option','snapshot_or_index','canonical_cohort_not_1000','accepted_source_reply_invalid','accepted_source_selection_empty','accepted_source_hand_bound_reached','original_acceptance_unavailable','original_acceptance_pending','lightning_original_lease_unavailable','duplicate_coordinate','counts','private_result','database_unavailable_or_bounds'}
+        reasons={'source','utc','window','private_output','database_configuration','database_option','snapshot_or_index','canonical_cohort_not_1000','accepted_source_reply_invalid','accepted_source_selection_empty','accepted_source_hand_bound_reached','original_acceptance_unavailable','original_acceptance_pending','lightning_original_lease_unavailable','duplicate_coordinate','counts','private_result','database_unavailable_or_bounds','database_statement_cancelled','database_lock_unavailable','database_permission_denied','database_schema_unavailable','database_authentication_failed','database_connection_unavailable','database_reply_bound_reached'}
         reason=str(error) if isinstance(error,ValueError) and str(error) in reasons else 'canonical_packet_input_or_database_unavailable'
         print(json.dumps({'canonicalRosterVerified':False,'status':'unavailable','gap':reason,'counts':error.counts if isinstance(error,PacketGap) else {},'completePopulation':False,'allPhasesVerified':False}))
         return 3

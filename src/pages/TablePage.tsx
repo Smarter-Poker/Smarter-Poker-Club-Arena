@@ -4068,7 +4068,7 @@ function LiveTablePage({
          to land. */
       if (res?.code === HEARTBEAT_TABLE_NOT_RUNNING) {
         notRunningBeats += 1;
-        if (shouldAskTableRow(notRunningBeats) && !rowCheckInFlight) {
+        if (shouldAskTableRow(notRunningBeats) && !rowCheckInFlight && isUUID(tableId)) {
           rowCheckInFlight = true;
           void Promise.resolve(
             supabase.from('tables').select('status, is_deleted').eq('id', tableId).maybeSingle()

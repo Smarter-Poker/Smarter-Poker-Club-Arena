@@ -7,7 +7,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  HEARTBEAT_ROW_RECHECK_BEATS,
   shouldAskTableRow,
   shouldHeartbeatOverHttp,
   tableRowSaysClosed,
@@ -42,15 +41,9 @@ describe('tableRowSaysClosed', () => {
 });
 
 describe('shouldAskTableRow', () => {
-  it('asks on the first 404 and once a minute after, not every beat', () => {
+  it('asks only at the first404 of an episode, without a new row-polling loop', () => {
     const asked = Array.from({ length: 60 }, (_, i) => i + 1).filter(shouldAskTableRow);
-    expect(asked).toEqual([
-      1,
-      1 + HEARTBEAT_ROW_RECHECK_BEATS,
-      1 + 2 * HEARTBEAT_ROW_RECHECK_BEATS,
-      1 + 3 * HEARTBEAT_ROW_RECHECK_BEATS,
-      1 + 4 * HEARTBEAT_ROW_RECHECK_BEATS,
-    ]);
+    expect(asked).toEqual([1]);
     expect(shouldAskTableRow(0)).toBe(false);
   });
 });
@@ -70,6 +63,9 @@ describe('TablePage heartbeat wiring', () => {
   it('a closed row stops the beat and a connected socket starts it again', () => {
     expect(page).toContain('if (heartbeatRowClosedRef.current) return;');
     expect(page).toContain('heartbeatRowClosedRef.current = true;');
+    expect(page).toContain(
+      'shouldAskTableRow(notRunningBeats) && !rowCheckInFlight && isUUID(tableId)'
+    );
     const connected = page.indexOf("if (engineWsStatus === 'connected') {");
     expect(page.indexOf('heartbeatRowClosedRef.current = false;', connected)).toBeGreaterThan(
       connected

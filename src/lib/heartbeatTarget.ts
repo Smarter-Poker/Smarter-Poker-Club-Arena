@@ -32,17 +32,9 @@ export function shouldHeartbeatOverHttp(input: { isLightningRoom: boolean }): bo
   return !input.isLightningRoom;
 }
 
-/**
- * Which consecutive "table not running" beats ask the row: the first, then
- * every twelfth (one minute at the five-second cadence). One read per minute
- * at most for a table that stays absent but whose row stays live.
- */
-export const HEARTBEAT_ROW_RECHECK_BEATS = 12;
+/** One bounded row read at the first404 of an absent-engine episode. */
 export function shouldAskTableRow(consecutiveNotRunning: number): boolean {
-  return (
-    consecutiveNotRunning === 1 ||
-    (consecutiveNotRunning > 1 && (consecutiveNotRunning - 1) % HEARTBEAT_ROW_RECHECK_BEATS === 0)
-  );
+  return consecutiveNotRunning === 1;
 }
 
 export interface HeartbeatRowCheck {

@@ -3,7 +3,7 @@
 Recovered the current compatible heartbeat and shared tournament-channel fixes
 from PR8016. A Lightning pool room has socket presence but no table engine,
 so none of the three HTTP heartbeat callers addresses it. A heartbeat404
-checks the table row at bounded points in the existing heartbeat; a positive
+checks the table row once per absent-engine episode; a positive
 closed verdict stops it, and a connected engine socket releases the verdict.
 Unknown or live rows never stop a live player's presence.
 

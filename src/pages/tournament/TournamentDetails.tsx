@@ -78,6 +78,7 @@ import EntriesTab from '../../components/tournament/details/EntriesTab';
 import UnionsTab from '../../components/tournament/details/UnionsTab';
 import TablesTab from '../../components/tournament/details/TablesTab';
 import RewardsTab from '../../components/tournament/details/RewardsTab';
+import BountiesTab from '../../components/tournament/details/BountiesTab';
 import SatellitesTab from '../../components/tournament/details/SatellitesTab';
 import { chipsCompact, tournamentRowUnitCents } from '../../components/tournament/details/types';
 import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
@@ -88,7 +89,7 @@ import type {
   TournamentTable,
   TournamentTabProps,
 } from '../../components/tournament/details/types';
-import { TABS, normaliseTabId } from '../../components/tournament/details/types';
+import { normaliseTabId, tabsFor } from '../../components/tournament/details/types';
 import { blindLevelMinutes } from '../../components/lobby/tournamentFigures';
 import { reportError } from '../../utils/errorReporter';
 import { platformFrozenMessage } from '../../utils/platformFrozen';
@@ -196,7 +197,10 @@ export default function TournamentDetails({
      arrow key, a `?tab=` link or another tab's `onOpenTab` - is brought into
      view. `nearest` on both axes: it must never scroll the PAGE to do it. */
   useEffect(() => {
-    const index = TABS.findIndex((tab) => tab.id === activeTab);
+    const visible = tabsFor(
+      Boolean((tournament as unknown as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty)
+    );
+    const index = visible.findIndex((tab) => tab.id === activeTab);
     const el = tabRefs.current[index];
     if (el && typeof el.scrollIntoView === 'function') {
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -2120,7 +2124,7 @@ export default function TournamentDetails({
             is tabbable, Left/Right move (wrapping), Home/End jump, and each
             tab owns the panel by id. */}
         <div className="details-tabs" role="tablist" aria-label="Tournament Sections">
-          {TABS.map((tab, i, visibleTabs) => (
+          {tabsFor(isMysteryBountyEvent).map((tab, i, visibleTabs) => (
             <button
               key={tab.id}
               id={`tl-tab-${tab.id}`}
@@ -2172,7 +2176,13 @@ export default function TournamentDetails({
           {activeTab === 'entries' && <EntriesTab {...tabProps} />}
           {activeTab === 'unions' && <UnionsTab {...tabProps} />}
           {activeTab === 'tables' && <TablesTab {...tabProps} />}
-          {activeTab === 'rewards' && <RewardsTab {...tabProps} />}
+          {(activeTab === 'rewards' || (activeTab === 'bounties' && !isMysteryBountyEvent)) && (
+            <RewardsTab {...tabProps} />
+          )}
+          {/* BOUNTIES (Dan 2026-10-25): its own tab for every mystery bounty
+              event, beside Rewards. A `?tab=bounties` link to any other event
+              lands on Rewards rather than a blank page. */}
+          {activeTab === 'bounties' && isMysteryBountyEvent && <BountiesTab {...tabProps} />}
           {activeTab === 'satellites' && <SatellitesTab {...tabProps} />}
         </div>
 

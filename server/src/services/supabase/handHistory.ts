@@ -12,7 +12,7 @@ import { memoryVariant, type DurableOpponentProfile } from '../../engine/HorseOp
  */
 
 import { supabase } from './client.js';
-import { reportError } from '../errorReporter.js';
+import { isOpponentMemoryBusyRefusal, reportError, reportThrottled } from '../errorReporter.js';
 import {
   releaseHandFactsCapture,
   writeHandFacts,
@@ -961,7 +961,12 @@ export async function logHandHistory(params: {
             dealt <= 2 ? 'hu' : dealt <= 5 ? 'short' : 'full'
           );
       } catch (error) {
-        reportError(error, 'HandHistory.durable_opponent_read');
+        if (isOpponentMemoryBusyRefusal(error))
+          reportThrottled(
+            'HandHistory.durable_opponent_read',
+            'opponent memory unavailable: busy - completed-hand read refused at admission'
+          );
+        else reportError(error, 'HandHistory.durable_opponent_read');
       }
     }
     const observation = getLiveHorseDecisionWorker().observeCompletedHand({

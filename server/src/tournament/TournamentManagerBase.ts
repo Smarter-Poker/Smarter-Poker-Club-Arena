@@ -1940,6 +1940,7 @@ export abstract class TournamentManagerBase {
     // owner and a release here would deal through it.
     if (this.onBreak || this.stageEndPause || this.handForHandActive) return;
     if (this.addOnDrainPending || (this.addOnBreakActive && this.addOnBreakOwnsPause)) return;
+    if (this.mysteryActivationBoundaryPending) return;
     try {
       engine.resumeDealing();
     } catch (err) {
@@ -1952,6 +1953,10 @@ export abstract class TournamentManagerBase {
   /** A replacement inherits every pause authority before it can deal. */
   protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
+    if (this.mysteryActivationBoundaryPending) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      this.mysteryActivationBoundaryEngines.add(engine);
+    }
     if (this.successorDrainRequested) {
       engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
       return;
@@ -4340,6 +4345,7 @@ export abstract class TournamentManagerBase {
       !this.successorDrainRequested &&
       !this.handForHandActive &&
       !addOnBreakStillActive &&
+      !this.mysteryActivationBoundaryPending &&
       !this.stageEndPause
     ) {
       for (const engine of this.tableEngines.values()) {
@@ -4770,18 +4776,16 @@ export abstract class TournamentManagerBase {
    * A bust that can cross the threshold now parks every table before its next
    * deal until the sweep has answered. A `hand_in_progress` answer keeps the
    * hold, and each table parking re-drives the sweep; any other answer
-   * releases it. The engine pause carries its own safety budget and the
-   * manager clears its flag on the same budget, so the hold can only ever
-   * cost seconds, never wedge a table.
+   * releases it. The hold belongs to the activation result, never an elapsed
+   * timeout: an expired pause previously allowed a paid knockout to happen
+   * before activation. Hand-for-hand cannot release this overlapping hold.
    */
-  static readonly MYSTERY_ACTIVATION_HOLD_MS = 20_000;
   protected mysteryActivationBoundaryPending = false;
-  /** Players still playing at the last verified sweep count; null = unknown. */
+  /** Conservative survivor hint, reduced at every post-close hand completion. */
   protected mysteryPlayersRemainingHint: number | null = null;
-  private mysteryActivationBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly mysteryActivationBoundaryEngines = new Set<ServerTableEngine>();
 
-  /** Could the busts in this hand open the mystery phase? Pure on cached state. */
+  /** Record this hand's bust hint and decide whether to hold the next deal. */
   protected mysteryActivationMayOpenOnBust(
     finalStacks: ReadonlyArray<{ stack: unknown }>
   ): boolean {
@@ -4793,6 +4797,10 @@ export abstract class TournamentManagerBase {
     // Unknown is not "far away": hold, and let the verified count decide.
     if (hint == null) return true;
     const after = hint - busted;
+    // Hand completions can outrun the asynchronous sweep. Carry every bust
+    // forward once entry is closed, or two tables can cross the paid boundary
+    // while both callbacks still subtract from the same old field count.
+    if (this.prizePoolFinalized) this.mysteryPlayersRemainingHint = after;
     // The bust that leaves one player ends the event; there is nothing to open.
     if (after <= 1) return false;
     const mode = (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode;
@@ -4829,43 +4837,19 @@ export abstract class TournamentManagerBase {
   /** Park every table before its next deal until the activation sweep answers. */
   protected holdMysteryActivationBoundary(): void {
     if (!this.running) return;
-    // A break, a stage end or an owning add-on break already parks every
-    // table before its next deal; their release is theirs, not ours.
-    if (
-      this.onBreak ||
-      this.stageEndPause ||
-      this.addOnDrainPending ||
-      (this.addOnBreakActive && this.addOnBreakOwnsPause)
-    )
-      return;
     this.mysteryActivationBoundaryPending = true;
-    if (!this.handForHandActive) {
-      // Hand-for-hand already parks each table after its hand, and the flag
-      // above stops its barrier from resuming them before the sweep answers.
-      for (const engine of this.tableEngines.values()) {
-        engine.pauseAfterHand(TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS, {
-          beforeNextHand: true,
-        });
-        this.mysteryActivationBoundaryEngines.add(engine);
-      }
+    // Mystery owns its pause even when hand-for-hand overlaps it. A clock
+    // expiring must never authorize an ITM hand before the chests are sealed.
+    for (const engine of this.tableEngines.values()) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      this.mysteryActivationBoundaryEngines.add(engine);
     }
-    if (this.mysteryActivationBoundaryTimer) {
-      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
-    }
-    this.mysteryActivationBoundaryTimer = this.setLifecycleTimeout(() => {
-      this.mysteryActivationBoundaryTimer = null;
-      this.releaseMysteryActivationBoundary();
-    }, TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS);
   }
 
   /** Give back exactly the hold armed above, deferring to any other owner. */
   protected releaseMysteryActivationBoundary(): void {
     if (!this.mysteryActivationBoundaryPending) return;
     this.mysteryActivationBoundaryPending = false;
-    if (this.mysteryActivationBoundaryTimer) {
-      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
-      this.mysteryActivationBoundaryTimer = null;
-    }
     const engines = [...this.mysteryActivationBoundaryEngines];
     this.mysteryActivationBoundaryEngines.clear();
     if (!this.running) return;
@@ -4926,7 +4910,7 @@ export abstract class TournamentManagerBase {
     if (this.mysteryBountyStage !== 'pending') return;
     const t = this.tournamentCache;
     if (!t?.is_mystery_bounty) return;
-    if (this.mysteryBountySeeding) return;
+    if (this.mysteryBountySeeding) return true;
 
     // The bounty pool grows with every late entry, so read it fresh rather
     // than from the cache: the cached row was loaded at start().
@@ -4954,7 +4938,7 @@ export abstract class TournamentManagerBase {
       .eq('id', this.tournamentId)
       .maybeSingle();
     const fresh = freshRow as any;
-    if (!fresh) return;
+    if (!fresh) return true;
 
     if (fresh.mystery_bounty_stage && fresh.mystery_bounty_stage !== 'pending') {
       // Another process (a previous incarnation of this manager, most likely)
@@ -4978,7 +4962,7 @@ export abstract class TournamentManagerBase {
         ),
         'Tournament.mystery_bounty_unit_unknown'
       );
-      return;
+      return true;
     }
     /* MYSTERY CHESTS ARE WHOLE CHIPS (Dan 2026-10-22: "MYSTERY BOUNTIES ARE
        ALWAYS FULL CHIP AMOUNTS, NEVER FRACTIONS"). A chip event's money unit is
@@ -5005,7 +4989,7 @@ export abstract class TournamentManagerBase {
       // upstream started writing fractions of a cent. Seeding an inventory
       // from it would put the event permanently out of balance.
       reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
-      return;
+      return true;
     }
 
     // `payout_structure` is jsonb, and the client reads it back as an array in
@@ -5014,8 +4998,10 @@ export abstract class TournamentManagerBase {
     // with zero paid places, and the default activation mode (at the money)
     // would then never fire for them: the chests would sit unopened for the
     // whole tournament and every knockout would keep paying the flat bounty.
-    const paidPlaces =
-      countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
+    // The finalized durable ladder outranks a nonempty start-time cache.
+    // Refresh the boundary predicate too: it runs synchronously on hand end.
+    const paidPlaces = countPaidPlaces(fresh.payout_structure);
+    if (this.tournamentCache) this.tournamentCache.payout_structure = fresh.payout_structure;
 
     const entryClosed = Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized;
     const activationMode = (fresh.mystery_bounty_activation ||
@@ -5037,7 +5023,7 @@ export abstract class TournamentManagerBase {
       if (this.mysteryTotalEntries == null) {
         this.mysteryTotalEntries = await this.readMysteryTotalEntries();
       }
-      if (this.mysteryTotalEntries == null) return;
+      if (this.mysteryTotalEntries == null) return true;
       totalEntries = this.mysteryTotalEntries;
     }
 
@@ -5058,8 +5044,12 @@ export abstract class TournamentManagerBase {
         String(fresh.mystery_bounty_regular_pool_percent) !== '' &&
         Number(fresh.mystery_bounty_regular_pool_percent) === 0,
     });
-    // True only for the one transient refusal: the caller keeps the
-    // activation boundary armed so the tables park and the sweep re-asks.
+    // A fresh authoritative count can discover the boundary before a hand
+    // callback did. Arm the same hold here, synchronously, before any funding
+    // or seed await. Otherwise "wait for hands" never asks them to stop.
+    if (decision.activate || decision.reason === 'hand_in_progress') {
+      this.holdMysteryActivationBoundary();
+    }
     if (!decision.activate) return decision.reason === 'hand_in_progress';
 
     /* A BUST BELONGS TO THE PHASE ITS HAND WAS PLAYED IN (2026-09-11,
@@ -5082,7 +5072,7 @@ export abstract class TournamentManagerBase {
           new Error(`unrecorded head figure is not whole cents: ${String(unrecordedRaw)}`),
         'Tournament.mystery_bounty_unrecorded_heads_unreadable'
       );
-      return;
+      return true;
     }
     /* A BUST ALREADY PLAYED IS NOT A CHEST STILL OWED (2026-10-05). The
        heads above are paid flat from the regular half, so the players they
@@ -5093,7 +5083,7 @@ export abstract class TournamentManagerBase {
        still be knocked out, and the seed is told the same figure, because it
        derives its chest count from it (players - 1). */
     const unrecordedKnockouts = await this.readUnrecordedKnockoutCount();
-    if (unrecordedKnockouts == null) return;
+    if (unrecordedKnockouts == null) return true;
     const chestPlayers = playersRemaining - unrecordedKnockouts;
     // Nobody left who can be knocked out for a chest: nothing to open.
     if (chestPlayers <= 1) return;
@@ -5110,7 +5100,7 @@ export abstract class TournamentManagerBase {
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
-        return;
+        return true;
       }
     }
 
@@ -5149,7 +5139,7 @@ export abstract class TournamentManagerBase {
           ),
           'Tournament.mystery_bounty_seed_failed'
         );
-        return;
+        return true;
       }
       const res = (seeded ?? {}) as { ok?: boolean; reason?: string; pool_cents?: number };
       if (!res.ok) {
@@ -5164,7 +5154,7 @@ export abstract class TournamentManagerBase {
             'Tournament.mystery_bounty_seed_refused'
           );
         }
-        return;
+        return true;
       }
 
       this.mysteryBountyStage = 'active';
@@ -5178,6 +5168,7 @@ export abstract class TournamentManagerBase {
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
+      return true;
     } finally {
       this.mysteryBountySeeding = false;
     }
@@ -11403,6 +11394,7 @@ export abstract class TournamentManagerBase {
       !this.successorDrainRequested &&
       !this.onBreak &&
       !this.handForHandActive &&
+      !this.mysteryActivationBoundaryPending &&
       !this.stageEndPause
     ) {
       for (const engine of this.tableEngines.values()) {
@@ -11473,6 +11465,7 @@ export abstract class TournamentManagerBase {
       !this.successorDrainRequested &&
       !this.onBreak &&
       !this.handForHandActive &&
+      !this.mysteryActivationBoundaryPending &&
       !this.stageEndPause;
     for (const engine of this.tableEngines.values()) {
       try {

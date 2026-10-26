@@ -1637,7 +1637,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         } else if (remainingCount > 1) {
-          this.mysteryPlayersRemainingHint = remainingCount;
+          // A hand may complete while this read is in flight. A closed field
+          // cannot grow; never overwrite a newer synchronous bust hint upward.
+          this.mysteryPlayersRemainingHint = this.prizePoolFinalized
+            ? Math.min(this.mysteryPlayersRemainingHint ?? remainingCount, remainingCount)
+            : remainingCount;
           // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
           // the engine that knows, between hands and from a count it has just
           // verified, how many players can still be knocked out — which is
@@ -1648,9 +1652,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.noteEliminationSweepStep('maybeActivateMysteryBounty');
             const awaitingBoundary = await this.maybeActivateMysteryBounty(remainingCount);
             if (sweepStopped()) return;
-            // Hold the parked boundary only while a hand is still in the air;
-            // every other answer is final for this count, so deal on.
+            // Unknown/unfinished activation retains custody; only a confirmed
+            // activation or a definitive ineligible answer releases the deal.
             if (awaitingBoundary !== true) this.releaseMysteryActivationBoundary();
+            else if (this.mysteryActivationBoundaryPending) {
+              // Continue this exact held transition after an unavailable RPC.
+              // Park edges also wake it; no independent repair job owns it.
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+            }
           } catch (mbErr) {
             reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
@@ -2127,8 +2138,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               this.noteEliminationSweepStep('broadcast');
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               if (sweepStopped()) return;
-              // Ending the bubble cannot release an overlapping tournament break.
-              if (!this.isOnBreak() && !this.successorDrainRequested) {
+              // The bubble does not own an overlapping mystery activation.
+              // Keep every table parked until its chest inventory is sealed.
+              if (
+                !this.isOnBreak() &&
+                !this.successorDrainRequested &&
+                !this.mysteryActivationBoundaryPending
+              ) {
                 for (const engine of this.tableEngines.values()) {
                   engine.resumeDealing();
                 }

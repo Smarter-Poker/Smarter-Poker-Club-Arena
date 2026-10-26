@@ -54,10 +54,8 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { validateSerialJournalIndex, serialJournalConnection, bindSerialJournalIndex } from './serial-journal-index.mjs';
 import { join } from 'node:path';
 import { supersededBy } from './check-migrations-are-live.mjs';
-import {
-  splitConcurrentPreamble,
-  minutesBeforeBreakWindow,
-} from './migration-concurrent-preamble.mjs';
+import { minutesBeforeBreakWindow } from './migration-concurrent-preamble.mjs';
+import { migrationTransactionShape } from './migration-transaction-shape.mjs';
 
 import {
   recoveryRequest,
@@ -197,17 +195,14 @@ try {
 // because this sends the whole file as a single simple query and an unwrapped
 // file would autocommit statement by statement - up to one ~28s PostgREST
 // schema reload each, and a partial schema if one of them fails.
-if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
-  refused(
-    `${file} does not open with BEGIN; and close with COMMIT; - refusing to apply it outside one transaction`
-  );
-}
 // The one sanctioned exception (migration-concurrent-preamble.mjs): CREATE
 // INDEX CONCURRENTLY statements before BEGIN;, which cannot run inside any
 // transaction block. Each is sent on its own; everything else must still be
-// inside the one transaction.
-const shape = splitConcurrentPreamble(sql);
-if (!shape.ok) refused(`${file}: ${shape.reason}`);
+// inside the one transaction. The rule lives in migration-transaction-shape.mjs,
+// which the merge-time check tests/unit/aMergedMigrationIsInstallable.test.ts
+// shares, so a file the applier would refuse cannot merge.
+const shape = migrationTransactionShape(file, sql);
+if (!shape.ok) refused(shape.reason);
 const preamble = shape.indexes;
 let serialJournalIndex;
 try {
@@ -429,6 +424,25 @@ console.log(
 // or its thaw refuses DDL outside the fixed :50-:03 minutes too
 // (fn_ca_break_window_refuses_migrations). Read it before sending anything, so
 // a refusal is a sentence here and not an aborted build there.
+// The bounded wait for a refusal that releases on its own. The applier job's
+// timeout (apply-merged-migration.yml) carries this budget plus the queue
+// wait above; tests/unit/aMergedMigrationIsInstallable.test.ts pins both.
+const DDL_ADMISSION_WAIT_MS = 12 * 60_000;
+const DDL_ADMISSION_POLL_MS = 15_000;
+async function waitForDdlAdmission(first) {
+  const deadline = Date.now() + DDL_ADMISSION_WAIT_MS;
+  let last = first;
+  console.log(`[apply]   the database refuses DDL now: ${first}. Waiting up to ${DDL_ADMISSION_WAIT_MS / 60_000} minutes for it to admit the file; nothing is sent meanwhile.`);
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, DDL_ADMISSION_POLL_MS));
+    last = await refusalNow();
+    if (!last) {
+      console.log('[apply]   the database now admits DDL.');
+      return null;
+    }
+  }
+  return last;
+}
 async function refusalNow() {
   try {
     const { rows } = await client.query(
@@ -468,8 +482,23 @@ async function refusalNow() {
       refused('maintenance thaw repair requires an expired coherent owned freeze');
     }
   } else if (refusal) {
-    await client.end().catch(() => {});
-    refused(`the database would refuse DDL now: ${refusal}. Nothing was sent. Do not loop.`);
+    // A REFUSAL THAT ENDS IN MINUTES IS WAITED OUT, ONCE (2026-10-26). An
+    // announced engine maintenance window or its thaw refuses DDL for a few
+    // minutes, and a merged file dispatched into it was refused and then owned
+    // by nobody: 20261025233013_registered_add_on_breaks_are_sixty_seconds
+    // (run 40252376234) stayed uninstalled. So before sending anything this
+    // re-reads the database's own answer on a fixed cadence for a bounded
+    // time. Nothing is sent until the database admits the file, nothing is
+    // ever sent twice, and a check-only run never waits.
+    const still = DRY_RUN ? refusal : await waitForDdlAdmission(refusal);
+    if (still) {
+      await client.end().catch(() => {});
+      refused(
+        DRY_RUN
+          ? `the database would refuse DDL now: ${still}. Nothing was sent. Do not loop.`
+          : `the database still refused DDL after waiting ${DDL_ADMISSION_WAIT_MS / 60_000} minutes: ${still}. Nothing was sent. Dispatch again once it is released; do not loop.`
+      );
+    }
   }
 }
 if (preamble.length > 0 && minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED) {

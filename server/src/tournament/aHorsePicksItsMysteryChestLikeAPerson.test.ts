@@ -65,6 +65,6 @@ describe('a horse picks its mystery chest like a person', () => {
     const announce = settle.indexOf("httpSend('mystery_chest_opened'");
     expect(announce).toBeGreaterThan(pick);
     expect(announce).toBeLessThan(reveal);
-    expect(settle.slice(announce, announce + 200)).toContain('auto: true');
+    expect(settle.slice(announce, reveal)).toContain('auto: true');
   });
 });

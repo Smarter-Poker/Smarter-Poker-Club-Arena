@@ -11,6 +11,7 @@ import {
   createOpponentMemoryProfileCache,
   createDecisionOpponentProfileReader,
   readHorseOpponentProfiles,
+  readExistingHorseOpponentDonors,
 } from './HorseOpponentMemory.js';
 const uid = '90000000-0000-4000-8000-000000000001';
 const row = (): DurableOpponentProfile => ({
@@ -304,5 +305,32 @@ describe('the cost of every opponent read is a number (2026-10-24)', () => {
     expect(
       [...fired.keys()].filter((k) => k.startsWith('horse_opponent_memory_read_ms_')).length
     ).toBe(1);
+  });
+});
+
+describe('donor reads have their own admission', () => {
+  it('a failed exact read does not turn the next donor read away as busy', async () => {
+    const id = '90000000-0000-4000-8000-0000000000d1';
+    mocks.rpc.mockImplementation(() => ({
+      abortSignal: async () => ({ data: null, error: { code: 'XX000' } }),
+    }));
+    await expect(readHorseOpponentProfiles([id], 'plo5', 'cash', 'short')).rejects.toThrow(
+      'opponent memory unavailable'
+    );
+    // The exact gate is now closed for its 1.5 second budget.
+    await expect(readHorseOpponentProfiles([id], 'plo5', 'cash', 'short')).rejects.toThrow('busy');
+    const donor = { ...row(), user_id: id, size: 'full' as const };
+    const abortSignal = vi.fn(async () => ({ data: [donor], error: null }));
+    const chain = {
+      select: () => chain,
+      in: () => chain,
+      eq: () => chain,
+      limit: () => ({ abortSignal }),
+    };
+    mocks.from.mockReturnValue(chain);
+    expect(await readExistingHorseOpponentDonors([id], 'plo5', 'cash', 'short')).toMatchObject([
+      { user_id: id, size: 'full' },
+    ]);
+    expect(abortSignal).toHaveBeenCalledTimes(1);
   });
 });

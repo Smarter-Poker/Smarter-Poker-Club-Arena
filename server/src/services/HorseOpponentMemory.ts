@@ -70,6 +70,16 @@ export function createOpponentMemoryReadAdmission(now = () => Date.now()) {
   };
 }
 const admitOpponentMemoryRead = createOpponentMemoryReadAdmission();
+/**
+ * Donor reads (the sibling table size's saved row) are admitted on their own.
+ * Measured 2026-10-25 over six production hours: 36,244 donor reads were
+ * turned away as busy and 156 reached the database, because one slow or
+ * canceled exact read closes the shared gate for 1.5 seconds. The donor read
+ * is a plain indexed select of saved rows (pg_stat_statements: 0.1 ms mean),
+ * never the cold initializer, so its own gate keeps the same bound without
+ * inheriting the exact read's lockout.
+ */
+const admitOpponentDonorRead = createOpponentMemoryReadAdmission();
 
 /** Bounded last-validated snapshots survive transient load, never cross a
  * game context, and never let an older in-flight receipt regress knowledge. */
@@ -262,7 +272,7 @@ export async function readExistingHorseOpponentDonors(
   if (!ids.length || ids.length > 10 || new Set(ids).size !== ids.length)
     throw new Error('invalid opponent memory donor roster');
   signal?.throwIfAborted();
-  return admitOpponentMemoryRead(async () => {
+  return admitOpponentDonorRead(async () => {
     const { data, error } = await supabase
       .from('horse_exploit_profiles')
       .select('user_id,variant,mode,size,counters,observed_hands,initialized')

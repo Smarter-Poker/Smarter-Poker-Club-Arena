@@ -15,6 +15,7 @@ import { HorseMind } from '../HorseMind.js';
 import { horsePlanHandKey } from '../HorseDecisionEffects.js';
 import { horsePlanContextFromDecision } from '../HorsePlanHandIdentity.js';
 import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
+import type { ObserveCompletedHandRequest } from './protocol.js';
 
 const context = () => horseObserverReadContextFromRequest(decisionRequest())!;
 const window = () => ({
@@ -237,6 +238,57 @@ it('restores river-call evidence after restart only inside the original observer
   }
   HorseMind.reset();
 });
+it.each(['missing', 'empty', 'present'] as const)(
+  'keeps live showdown evidence when overlapping history categories are %s, without counting twice',
+  (categories) => {
+    HorseMind.reset();
+    const source: any = window();
+    const hand = source.hands[0];
+    hand.handNumber = 1000100;
+    hand.actions = [
+      { seat: 1, userId: heroId, action: 'bet', amount: 10, stage: 'river', timestamp: 1 },
+      { seat: 2, userId: opponentId, action: 'call', amount: 10, stage: 'river', timestamp: 2 },
+    ];
+    if (categories !== 'missing')
+      hand.riverCalls = categories === 'empty' ? [] : [{ userId: opponentId, weak: true }];
+    const packet = makeOwnPublicHistoryPacket(source, 200)!;
+    expect(packet).not.toBeNull();
+    const bank = new HorseObserverReads(2048, 4096, () => 50);
+    const first = { ...decisionRequest(), ownPublicHistoryState: 'pending' as const };
+    bank.run(first, () => undefined);
+    const live: ObserveCompletedHandRequest = {
+      type: 'OBSERVE_COMPLETED_HAND',
+      requestId: 101,
+      generation: hand.handNumber,
+      fence: `${tableId}:${hand.handNumber}:${first.fence.split(':')[3]}:observe`,
+      handKey: `${tableId}:${hand.handNumber}`,
+      committedHandId: hand.handId,
+      bigBlind: hand.bigBlind,
+      actions: hand.actions,
+      results: hand.results,
+      riverCallContext: { variant: 'nlh', boardCount: 1 },
+      showdown: [{ user_id: opponentId, mucked: false, hand_name: 'Pair' }],
+    };
+    expect(bank.complete(live, () => undefined)).toBe(1);
+    const restored = {
+      ...first,
+      requestId: first.requestId + 1,
+      decisionTimeMs: first.decisionTimeMs + 1,
+      ownPublicHistory: packet,
+    };
+    for (let duplicate = 0; duplicate < 2; duplicate++)
+      bank.run(restored, () => {
+        expect(HorseMind.getScopedStats(opponentId, 'holdem:hu')).toMatchObject({
+          hands: 1,
+          riverCallSD: 1,
+          riverCallSDWeak: 1,
+        });
+      });
+    expect(bank.complete(live, () => undefined)).toBe(0);
+    expect(HorseMind.getStats(opponentId)).toBeUndefined();
+    HorseMind.reset();
+  }
+);
 it.each(['duplicate', 'other_actor', 'extra', 'wrong_type', 'not_called'])(
   'refuses malformed retained public river evidence: %s',
   (fault) => {

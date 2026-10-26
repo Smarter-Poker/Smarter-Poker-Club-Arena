@@ -731,6 +731,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V59'
   ),
   flag(
+    'drawOutlookQuality',
+    'NLH continuation planning excludes shared board improvements and dirty straight outs; false retains the historical outlook for paired offline comparisons',
+    'Draw outlook quality'
+  ),
+  flag(
+    'callDeductionPricing',
+    'canonical cash calls price actual capped rake and BBJ on matched awards after uncalled returns; false retains the historical marginal-rate approximation for offline comparisons',
+    'Net call deductions'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'

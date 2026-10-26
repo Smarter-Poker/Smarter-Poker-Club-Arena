@@ -37,7 +37,7 @@ try:
  sql("UPDATE accounting_cash_accrual_batches b SET source_fingerprint=md5(jsonb_build_object('record',r.id,'hand',r.hand_id,'rake',r.rake_amount,'earned_at',r.created_at,'shares',(SELECT coalesce(jsonb_agg(jsonb_build_array(a.id,a.player_id,a.club_id,a.weighted_rake_credit) ORDER BY a.player_id),'[]'::jsonb) FROM rake_attributions a WHERE a.rake_record_id=r.id))::text) FROM rake_records r WHERE r.id=b.rake_record_id")
  for r in data['definitions']:
   sql(r['definition']);assert sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure))")==r['md5']
- sql('CREATE VIEW accounting_effective_cash_rake_sources AS '+data['effective_view'])
+ sql('CREATE VIEW accounting_effective_cash_rake_sources WITH(security_invoker=true) AS '+data['effective_view'])
  sql('REVOKE ALL ON accounting_effective_cash_rake_sources FROM PUBLIC,anon,authenticated,service_role;REVOKE ALL ON FUNCTION fn_accrue_cash_hand_commissions(uuid) FROM PUBLIC,anon,authenticated;GRANT EXECUTE ON FUNCTION fn_accrue_cash_hand_commissions(uuid) TO service_role;')
  sql('CREATE TABLE accounting_tournament_fee_sources(id uuid,rake_record_id uuid,tournament_id uuid,player_id uuid,club_id uuid,union_id uuid,coordinator_union_id uuid,charged_at timestamptz,rake_credit numeric,contract jsonb);CREATE TABLE accounting_tournament_recognized_sources(source_id uuid,tournament_id uuid,recognized_at timestamptz,disposition text,rake_credit numeric);CREATE TABLE accounting_tournament_fee_recognitions(tournament_id uuid,recognized_at timestamptz,status text,union_id uuid);CREATE FUNCTION fn_ca_launch_accounting_club_cutoffs() RETURNS TABLE(club_id uuid,cutoff_at timestamptz) LANGUAGE sql AS $$SELECT NULL::uuid,NULL::timestamptz WHERE false$$;CREATE VIEW accounting_payable_earning_sources AS '+data['payable_view'])
  sql('CREATE TRIGGER immutable_source BEFORE UPDATE OR DELETE ON accounting_cash_rake_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable();CREATE TRIGGER immutable_batch BEFORE UPDATE OR DELETE ON accounting_cash_accrual_batches FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable();CREATE TRIGGER immutable_attribution BEFORE UPDATE OR DELETE ON rake_attributions FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable();CREATE TRIGGER commission_guard BEFORE INSERT ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_accounting_cash_commission_source_guard();')
@@ -50,7 +50,8 @@ try:
   expected[source]={'original_md5':sql("SELECT md5(contract::text) FROM accounting_cash_rake_sources WHERE id='"+source+"'"),'admitted_md5':sql("SELECT md5((fn_accounting_earning_contract('"+e['funding_club']+"',player_id,rake_credit,union_id,earned_at)||jsonb_build_object('attribution_id',contract->>'attribution_id'))::text) FROM accounting_cash_rake_sources WHERE id='"+source+"'")}
   by_record.setdefault(e['rake_record_id'],{})[source]=expected[source]
  hands={r['id']:r['hand_id']for r in data['records']};first_record=next(iter(by_record));first_source=next(iter(by_record[first_record]));first=next(e for e in data['expected']if e['source_id']==first_source)
- candidate=next((root/'supabase/migrations').glob('20261026161532_*')).read_text();sql(candidate)
+ candidate=next((root/'supabase/migrations').glob('20261026161532_*')).read_text()
+ preamble,transaction=candidate.split('BEGIN;',1);sql(preamble);sql('BEGIN;'+transaction)
  assert sql('SELECT '+candidate.splitlines()[0].split(': ',1)[1])=='t'
  assert sql("SELECT proacl::text FROM pg_proc WHERE oid='fn_accrue_cash_hand_commissions(uuid)'::regprocedure")==acl
  # The uncorrected original contract visibly names the host; raw receipts

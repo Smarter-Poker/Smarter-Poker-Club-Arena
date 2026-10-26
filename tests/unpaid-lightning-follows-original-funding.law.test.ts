@@ -48,8 +48,15 @@ describe('an unpaid Lightning earning follows its original funding witness', () 
       ).toBe(true);
     }
     expect(migration).toContain("current_setting('app.accounting_funding_contracts',true)");
-    expect(migration).toContain('COALESCE(f.admitted_contract,a.admitted_contract,s.contract)');
-    expect(migration).toContain('COALESCE(f.funding_club_id,s.club_id)');
+    expect(migration).toContain('f.admitted_contract AS contract');
+    expect(migration).toContain('f.funding_club_id AS club_id');
+    expect(migration).toContain(
+      'WHERE NOT EXISTS(SELECT FROM public.accounting_cash_funding_contract_admissions f WHERE f.source_id=s.id)'
+    );
+    expect(migration).toContain('UNION ALL');
+    expect(migration).toContain(
+      'ON public.accounting_cash_rake_sources(club_id,earned_at) INCLUDE(player_id,id)'
+    );
     expect(migration).toContain("'funding_cash_admission_replay_conflict'");
     expect(migration).toContain("'funding_cash_admission_original_changed'");
     expect(migration).toContain("'funding_cash_admission_canonical_changed'");

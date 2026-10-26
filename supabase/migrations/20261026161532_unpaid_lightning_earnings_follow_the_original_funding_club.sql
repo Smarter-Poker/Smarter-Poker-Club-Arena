@@ -4,6 +4,11 @@
 -- restart of the SAME accrual. Keep raw sources/attributions immutable, post
 -- newly proven agent liabilities through the original writer, and retain the
 -- original funding journals. No wallet credit, payout route or schedule here.
+-- The effective view must retain the original club/time index restriction.
+-- A source-id cover also permits its immutable-admission join to stay index-only.
+-- @live-proof: (SELECT indisvalid AND indisready AND indislive FROM pg_index WHERE indexrelid=to_regclass('public.accounting_cash_club_week_player_cover'))
+CREATE INDEX CONCURRENTLY IF NOT EXISTS accounting_cash_club_week_player_cover
+ ON public.accounting_cash_rake_sources(club_id,earned_at) INCLUDE(player_id,id);
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='30s';
@@ -32,12 +37,19 @@ REVOKE ALL ON public.accounting_cash_funding_contract_admissions FROM PUBLIC,ano
 CREATE TRIGGER accounting_cash_funding_admission_immutable BEFORE UPDATE OR DELETE ON public.accounting_cash_funding_contract_admissions FOR EACH ROW EXECUTE FUNCTION public.fn_accounting_agreement_history_immutable();
 CREATE TRIGGER accounting_cash_funding_admission_no_truncate BEFORE TRUNCATE ON public.accounting_cash_funding_contract_admissions FOR EACH STATEMENT EXECUTE FUNCTION public.fn_accounting_agreement_history_immutable();
 CREATE OR REPLACE VIEW public.accounting_effective_cash_rake_sources AS
- SELECT s.id,s.rake_record_id,s.player_id,COALESCE(f.funding_club_id,s.club_id) AS club_id,s.union_id,s.coordinator_union_id,
- s.earned_at,s.rake_credit,COALESCE(f.admitted_contract,a.admitted_contract,s.contract) AS contract,
- greatest(s.recorded_at,a.admitted_at,f.admitted_at) AS recorded_at
+ SELECT s.id,s.rake_record_id,s.player_id,s.club_id,s.union_id,s.coordinator_union_id,
+ s.earned_at,s.rake_credit,COALESCE(a.admitted_contract,s.contract) AS contract,
+ greatest(s.recorded_at,a.admitted_at) AS recorded_at
  FROM public.accounting_cash_rake_sources s
  LEFT JOIN public.accounting_cash_atomic_contract_admissions a ON a.source_id=s.id
- LEFT JOIN public.accounting_cash_funding_contract_admissions f ON f.source_id=s.id;
+ WHERE NOT EXISTS(SELECT FROM public.accounting_cash_funding_contract_admissions f WHERE f.source_id=s.id)
+ UNION ALL
+ SELECT s.id,s.rake_record_id,s.player_id,f.funding_club_id AS club_id,s.union_id,s.coordinator_union_id,
+ s.earned_at,s.rake_credit,f.admitted_contract AS contract,
+ greatest(s.recorded_at,a.admitted_at,f.admitted_at) AS recorded_at
+ FROM public.accounting_cash_funding_contract_admissions f
+ JOIN public.accounting_cash_rake_sources s ON s.id=f.source_id
+ LEFT JOIN public.accounting_cash_atomic_contract_admissions a ON a.source_id=s.id;
 REVOKE ALL ON public.accounting_effective_cash_rake_sources FROM PUBLIC,anon,authenticated,service_role;
 CREATE FUNCTION smarter_private.admit_cash_funding_contracts(p_record uuid,p_expected jsonb)
  RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp SET TimeZone='UTC' AS $admit$

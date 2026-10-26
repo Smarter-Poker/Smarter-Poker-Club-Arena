@@ -157,13 +157,18 @@ def capture_diagnostics(attestation, observation):
     owners=attestation.get('sourceOwnerCounts')
     if not isinstance(owners,dict) or set(owners)!={'classic','lightning'} or sum(count(v,10000) for v in owners.values())!=selected:raise ValueError('capture_source_counts')
     out={'selectedHands':selected,'sourceOwnerCounts':dict(owners),'inspectedHandsIsContinuationCursor':False,'inspectionMayIncludeIncompleteHand':True}
-    fields={'inspectedHands':selected,'remainingHands':selected,'validatedBytes':64*1024*1024,'acceptedDecisions':256*selected}
+    fields={'inspectedHands':selected,'remainingHands':selected,'validatedBytes':(64+8)*1024*1024,'acceptedDecisions':256*selected}
     for key,maximum in fields.items():out[key]=count(observation[key],maximum) if key in observation else None
     if 'selectedHands' in observation and count(observation['selectedHands'],10000)!=selected:raise ValueError('capture_counts')
     if out['inspectedHands'] is not None and out['remainingHands'] is not None and out['inspectedHands']+out['remainingHands']!=selected:raise ValueError('capture_counts')
     for key in ['boundReached','captureUnfinished']:
         if key in observation and type(observation[key]) is not bool:raise ValueError('capture_counts')
         out[key]=observation.get(key)
+    # fleet.charge increments before refusal; readFleetHand is bounded to
+    # 8 MiB, so the diagnostic counter can exceed the unchanged 64 MiB budget
+    # by one bounded read. This does not enlarge the observer's read limit.
+    out['validatedBytesLimit']=64*1024*1024
+    if out['validatedBytes'] is not None and out['validatedBytes']>out['validatedBytesLimit'] and (out['boundReached'] is not True or out['captureUnfinished'] is not True):raise ValueError('capture_counts')
     gaps=observation.get('gaps')
     out['gaps']=None
     if gaps is not None:

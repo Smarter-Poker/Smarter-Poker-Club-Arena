@@ -171,7 +171,13 @@ class PacketContracts(unittest.TestCase):
   self.assertEqual(d['gaps'],{'bound_reached':1,'other_retained_capture_gap':2});self.assertNotIn('SECRET',json.dumps(d));self.assertFalse(d['inspectedHandsIsContinuationCursor'])
   self.assertIsNone(module.capture_diagnostics(a,{})['boundReached'])
   self.assertIsNone(module.capture_diagnostics(a,{})['gaps'])
-  for field,value in [('inspectedHands',760),('remainingHands',-1),('validatedBytes',67108865),('acceptedDecisions',True),('boundReached',1)]:
+  over=dict(o);over['validatedBytes']=67108865
+  self.assertEqual(module.capture_diagnostics(a,over)['validatedBytes'],67108865)
+  self.assertEqual(module.capture_diagnostics(a,over)['validatedBytesLimit'],67108864)
+  for flag in ['boundReached','captureUnfinished']:
+   bad=dict(over);bad[flag]=False
+   with self.assertRaises(ValueError):module.capture_diagnostics(a,bad)
+  for field,value in [('inspectedHands',760),('remainingHands',-1),('validatedBytes',75497473),('acceptedDecisions',True),('boundReached',1)]:
    bad=dict(o);bad[field]=value
    with self.assertRaises(ValueError):module.capture_diagnostics(a,bad)
  def test_configured_uri_is_internal_environment_not_arguments(self):

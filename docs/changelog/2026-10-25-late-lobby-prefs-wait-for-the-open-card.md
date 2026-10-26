@@ -1,0 +1,5 @@
+# Late saved lobby settings wait for the open card, not the whole visit (2026-10-25)
+
+PR #8072 kept a just-opened game card from being closed by a late saved tab or filter reply, but it keyed that on `browseJourney.selected`, an analytics flag that stays true for the rest of the visit once any card has opened. So after a player opened one card, another device's newer saved tab, sort, Favorites and filters were discarded for the whole visit, and the player's next tab, sort or chip tap pushed this browser's stale copy over them on the server.
+
+The guard is now "a card is open right now" (`cardOpenRef`, set in the same handler that opens the card). While a card is open, a late reply still updates the saved preferences in state and in this browser's cache, and only the visible tab, sort, Favorites and filters are held; they apply when the card closes, unless the player has since chosen their own. Regression: `tests/unit/clubHomeLightningJoinRoute.test.tsx` (fails before, passes after; the two #8072 cases still pass).

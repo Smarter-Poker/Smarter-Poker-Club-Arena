@@ -1,7 +1,10 @@
 import { createServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { expect, it } from 'vitest';
-import { openChannelWithUnavailableRetry } from '../e2e/support/channelHandshake';
+import {
+  openChannelWithUnavailableRetry,
+  rejectedHandshakeStatus,
+} from '../e2e/support/channelHandshake';
 
 it.each([{ sequence: [503, 101] }, { sequence: [401] }, { sequence: [503, 503, 503] }])(
   'handles only explicit pre-upgrade 503: $sequence',
@@ -64,4 +67,20 @@ it.each([null, 401, 101, 503])('never retries unknown or non-503 failure %s', as
     )
   ).rejects.toThrow('Channel handshake refused');
   expect(calls).toBe(1);
+});
+
+it('extracts only the exact Chromium numeric rejected-upgrade diagnostic', () => {
+  expect(rejectedHandshakeStatus('Unexpected response code: 503')).toBe(503);
+  expect(
+    rejectedHandshakeStatus('Error during WebSocket handshake: Unexpected response code: 503')
+  ).toBe(503);
+  expect(rejectedHandshakeStatus('Unexpected response code: 401')).toBe(401);
+  for (const message of [
+    'network failed',
+    'Unexpected response code: 503 SECRET_SENTINEL',
+    'Bearer SECRET_SENTINEL',
+    'Unexpected response code: 999',
+  ]) {
+    expect(rejectedHandshakeStatus(message)).toBeNull();
+  }
 });

@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { readFile } from 'node:fs/promises';
-import { openChannelWithUnavailableRetry } from './support/channelHandshake';
+import {
+  openChannelWithUnavailableRetry,
+  rejectedHandshakeStatus,
+} from './support/channelHandshake';
 import {
   CLEANUP_FREEZE_ALLOWANCE_MS,
   cleanupTemporaryCustomizationAccount,
@@ -121,6 +124,10 @@ test('exact serving engine refuses absent and departed financial club channels',
           });
           cdp.on('Network.webSocketHandshakeResponseReceived', (event) => {
             if (event.requestId === requestId) status = event.response.status;
+          });
+          cdp.on('Network.webSocketFrameError', (event) => {
+            if (event.requestId === requestId && status !== 101)
+              status = rejectedHandshakeStatus(event.errorMessage);
           });
           try {
             const result = await page.evaluate(

@@ -27,3 +27,12 @@ export async function openChannelWithUnavailableRetry(
   }
   throw new Error('Channel handshake attempts exhausted');
 }
+
+/** Chromium reports rejected upgrades here instead of a handshake response. */
+export function rejectedHandshakeStatus(message: string): number | null {
+  const match =
+    /^(?:Error during WebSocket handshake: )?Unexpected response code: ([1-5][0-9]{2})$/.exec(
+      message
+    );
+  return match ? Number(match[1]) : null;
+}

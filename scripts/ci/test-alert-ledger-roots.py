@@ -40,6 +40,10 @@ try:
 CREATE TRIGGER stamp BEFORE UPDATE OF investigation,investigation_status ON operational_alert_events FOR EACH ROW WHEN (OLD.investigation IS DISTINCT FROM NEW.investigation OR OLD.investigation_status IS DISTINCT FROM NEW.investigation_status) EXECUTE FUNCTION stamp();''')
     sql((F/'fn_ca_mint_velocity_watch.sql').read_text())
     sql((F/'fn_ca_incident_action.sql').read_text())
+    sql('''REVOKE ALL ON FUNCTION fn_ca_mint_velocity_watch() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION fn_ca_mint_velocity_watch() TO service_role;
+REVOKE ALL ON FUNCTION fn_ca_incident_action(uuid,text,text,uuid,text,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION fn_ca_incident_action(uuid,text,text,uuid,text,text) TO authenticated,service_role;''')
     # Avoid mocking the raised result: compile the actual watch's complete
     # signature against a recorder with the same concrete argument types.
     sql('DROP FUNCTION fn_ca_raise_drift_incident(text[]);')
@@ -62,6 +66,20 @@ INSERT INTO ca_op_claims SELECT 'op{i}','fn_ca_mint',jsonb_build_object('ok',tru
     sql(migration.read_text())
     check('fn_ca_mint_velocity_watch()=0')
     check('(SELECT count(*)=0 FROM raised)')
+    check("NOT has_function_privilege('anon','fn_ca_mint_velocity_watch()','EXECUTE') AND has_function_privilege('service_role','fn_ca_mint_velocity_watch()','EXECUTE')")
+    check("NOT has_function_privilege('anon','fn_ca_incident_action(uuid,text,text,uuid,text,text)','EXECUTE') AND has_function_privilege('authenticated','fn_ca_incident_action(uuid,text,text,uuid,text,text)','EXECUTE')")
+    sql('''BEGIN;
+UPDATE chip_ledger SET to_type='union_bank' WHERE idempotency_key='mint:op11';
+UPDATE ca_mint_ledger SET holder_type='union' WHERE op_id='op11';
+UPDATE ca_op_claims SET result=result||'{"destination":"union"}' WHERE op_id='op11';
+DO $$BEGIN IF fn_ca_mint_velocity_watch()<>0 THEN RAISE EXCEPTION 'union receipt'; END IF; END$$; ROLLBACK;
+BEGIN;
+UPDATE ca_mint_ledger SET op_id='mint:op11',performed_by_label='fn_ca_fund_club' WHERE op_id='op11';
+DELETE FROM ca_op_claims WHERE op_id='op11';
+DO $$BEGIN IF fn_ca_mint_velocity_watch()<>0 THEN RAISE EXCEPTION 'legacy receipt'; END IF; END$$; ROLLBACK;
+BEGIN;
+UPDATE ca_mint_ledger SET origin='journal' WHERE op_id='op11';
+DO $$BEGIN IF fn_ca_mint_velocity_watch()<>620000 THEN RAISE EXCEPTION 'journal receipt hidden'; END IF; END$$; ROLLBACK;''')
     mint(14); check('fn_ca_mint_velocity_watch()=2480000')
     sql("DELETE FROM chip_ledger WHERE idempotency_key='mint:op14'; TRUNCATE raised;")
     for mutation in ["result=result||'{\"ok\":false}'", "result=result||'{\"amount\":1}'", "finalized_at=NULL", "result=result||'{\"target_id\":\"bad\"}'", "result=result||'{\"ledger_id\":\"bad\"}'"]:

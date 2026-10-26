@@ -327,6 +327,7 @@ import {
   lightningWaitingHero,
   heroIsAtTable,
 } from '../lightning/lightningWaitingHero';
+import { lightningBustCandidate, useLightningBustRebuy } from '../lightning/lightningBustRebuy';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningTopUpReceipts } from '../lightning/useLightningTopUpReceipts';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
@@ -402,6 +403,7 @@ import {
   hasLightningRoom,
   lightningAnchorSeat,
   lightningClusterIdOfSnapshot,
+  clearLightningEntryIntent,
   registerLightningPoolSession,
   setLightningEntryIntent,
   useLightningPoolSession,
@@ -4326,6 +4328,10 @@ function LiveTablePage({
   const bustRebuyOpenRef = useRef(false);
   bustRebuyOpenRef.current = bustRebuyOpen;
   const [bustRebuyProcessing, setBustRebuyProcessing] = useState(false);
+  /* Lightning transition phase 2: the allowed maximum for a busted Lightning
+     player's rebuy, as the database answered it (readLightningTopUp). Set
+     only while that prompt is the one open; null at every other table. */
+  const [lightningBustMax, setLightningBustMax] = useState<number | null>(null);
   // bustPromptFiredRef provided by useTableSession hook
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [showPlayerNotes, setShowPlayerNotes] = useState(false);
@@ -9936,8 +9942,11 @@ function LiveTablePage({
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
-    /* A Lightning room rebuys through its own pool session (auto rebuy and
-       the anchor seat), never through this cash table prompt. */
+    /* A Lightning room rebuys through its own watch (useLightningBustRebuy,
+       below), never through this cash table prompt: its roster is empty
+       between hands, so the zero this effect reads is not the player's stack,
+       and its rebuy is the pool session's top-up, not atomic_table_rebuy at a
+       room id. Same sheet, same key rule. */
     if (lightningRoomRef.current) return;
     /* A FELTED DIAMOND SEAT IS PROMPTED TOO (2026-09-12). This returned for
        every non-chip asset, on a note saying Diamond re-entry needs a new
@@ -10429,6 +10438,37 @@ function LiveTablePage({
         bustAsset === 'diamonds' ? Math.floor(requested) : Math.round(requested * 100) / 100;
       if (!(amount > 0)) return;
       setBustRebuyProcessing(true);
+      /* A LIGHTNING SEAT REBUYS THROUGH ITS POOL SESSION (Lightning transition
+         phase 2). The chips sit on the anchor seat, so the rebuy is the room's
+         own top-up: handleAddChips with the Lightning scope, which addresses
+         the anchor, re-reads it around the request and accepts only this pool
+         session's own receipt. ONE key per bust and amount, held across
+         retries exactly as below, so a lost answer replays the same request
+         (fn_lightning_top_up_request answers a known key with its receipt and
+         moves nothing). A refusal the engine proves terminal releases it. */
+      if (lightningRoomRef.current) {
+        try {
+          if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
+            bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
+          }
+          const held = bustRebuyKeyRef.current.key;
+          const landed = await handleAddChipsRef.current(amount, held, {
+            source: 'manual',
+            onTerminalRefusal: () => {
+              if (bustRebuyKeyRef.current?.key === held) bustRebuyKeyRef.current = null;
+            },
+          });
+          if (!landed) return;
+          bustRebuyKeyRef.current = null;
+          const result = lastAddChipsResultRef.current;
+          if (result && !result.queued && result.applied > 0)
+            toast?.success(`Rebought For ${result.applied.toLocaleString()}`);
+          setBustRebuyOpen(false);
+        } finally {
+          setBustRebuyProcessing(false);
+        }
+        return;
+      }
       /* A DIAMOND SEAT REBUYS THROUGH ITS OWN DOOR. `atomic_table_rebuy`
          debits `club_members.chip_balance`, and a Diamond entitlement has no
          row in that table, so the chip RPC below cannot serve this seat. The
@@ -24842,6 +24882,44 @@ function LiveTablePage({
     },
   });
 
+  /* LIGHTNING TRANSITION PHASE 2: A BUSTED PLAYER IS ASKED, ONCE PER BUST.
+     The same rebuy sheet as the cash table, funded through this room's own
+     top-up (confirmBustRebuy's Lightning branch), opened only between hands
+     on a zero the database confirms. LEAVE runs the room's own leave, which
+     opens the Lightning session summary. Nothing here moves the player. */
+  const lightningBust = lightningBustCandidate({
+    room: !!lightningRoom,
+    heroInRoster: !!lightningHeroInRoster,
+    rosterStack: lightningHeroInRoster?.stack,
+    waitingStack: lightningWaitingSeat?.stack,
+    handLive: lightningHandLive,
+    roomClosed: lightningRoomClosed,
+    sittingOut: lightningSitOut.sittingOut,
+  });
+  useLightningBustRebuy({
+    room: lightningRoom,
+    userId,
+    candidate: lightningBust,
+    autoTopUpEnabled: isAutoRebuyEnabled,
+    blocked: bustRebuyOpen || showBuyInModal || showCashier || showLeaveConfirm,
+    onPrompt: (maximum) => {
+      setLightningBustMax(maximum);
+      setBustWalletBalance(null);
+      setBustRebuyOpen(true);
+      if (userId && tableId)
+        void readBustBalance(userId, tableId).then((b) => setBustWalletBalance(b));
+    },
+  });
+  /* The question stops applying: chips arrived (the auto top-up, another
+     device) or the room closed. A confirm in flight finishes first. */
+  useEffect(() => {
+    if (!lightningRoom || !bustRebuyOpen || bustRebuyProcessing) return;
+    if (lightningBust === 'funded' || lightningRoomClosed) setBustRebuyOpen(false);
+  }, [lightningRoom, bustRebuyOpen, bustRebuyProcessing, lightningBust, lightningRoomClosed]);
+  useEffect(() => {
+    if (!bustRebuyOpen) setLightningBustMax(null);
+  }, [bustRebuyOpen]);
+
   // A Lightning idle room intentionally has no hand seat. Its normal opt-in
   // top-up is triggered by the committed receipt, including after an early fold.
   useLightningAutoTopUp({
@@ -29427,6 +29505,17 @@ function LiveTablePage({
         onCancelBustRebuy={cancelBustRebuy}
         onRetryBustBalance={retryBustBalance}
         onConfirmBustRebuy={confirmBustRebuy}
+        bustRebuyMaxBuyIn={lightningRoom && lightningBustMax !== null ? lightningBustMax : undefined}
+        onLeaveBustRebuy={
+          lightningRoom
+            ? () => {
+                /* The room's own leave: the anchor seat cashes out (nothing is
+                   on it) and the Lightning session summary opens. */
+                setBustRebuyOpen(false);
+                void handleLeaveTable();
+              }
+            : undefined
+        }
         showProfileModal={showProfileModal}
         onCloseProfileModal={() => setShowProfileModal(false)}
         clubName={tableState.clubName}
@@ -29507,6 +29596,8 @@ function LiveTablePage({
                 !sameCashBuyInIntent(intent, attempt.payload))
             ) {
               setSelectedSeat(attempt.payload.p_seat_number);
+              /* Nothing was bought by this request (phase 2, as below). */
+              if (anchorLightningClusterId) clearLightningEntryIntent(tableId);
               toast.warning('Review Your Original Buy-In Before Retrying.');
               return false;
             }
@@ -29525,6 +29616,11 @@ function LiveTablePage({
             if (!stillCurrent()) return false;
             if (outcome.kind === 'unknown') {
               reportError(outcome.error, 'TablePage.cash_buyin_outcome_unknown');
+              /* NOT CONFIRMED IS NOT JOINING (Lightning transition phase 2):
+                 the intent marked above would hold this table on "Joining
+                 Lightning..." until Cancel, over the sheet's own retry. The
+                 retry marks it again under the same request. */
+              if (anchorLightningClusterId) clearLightningEntryIntent(tableId);
               if (isDeadSessionRefusal(outcome.error)) {
                 /* Phase 11 line 7: a revoked session is refused again on every
                    retry. The saved request stays, so signing in and retrying
@@ -29541,6 +29637,8 @@ function LiveTablePage({
             setCashBuyInRecovery(null);
             if (outcome.kind === 'rejected') {
               reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
+              /* No seat was bought: there is no room for this tab to follow. */
+              if (anchorLightningClusterId) clearLightningEntryIntent(tableId);
               const message =
                 cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.';
               if (

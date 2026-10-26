@@ -179,7 +179,11 @@ export async function buyIntoLightning(
     const { attempt, recovered } = await deps.reserve(intent);
     if (recovered && !sameCashBuyInIntent(intent, attempt.payload)) {
       /* An earlier buy-in at this table is still unanswered. It is reviewed
-         where it was made, never replaced by a new amount here. */
+         where it was made, never replaced by a new amount here. Nothing was
+         bought by this request, so the tab has no room to follow: the intent
+         goes, or the anchor table says "Joining Lightning..." until Cancel
+         (Lightning transition phase 2). */
+      deps.clearIntent(held.table_id);
       return {
         kind: 'unconfirmed',
         tableId: held.table_id,
@@ -188,6 +192,17 @@ export async function buyIntoLightning(
     }
     const outcome = await deps.execute(attempt, recovered);
     if (outcome.kind === 'unknown') {
+      /* NOT CONFIRMED IS NOT JOINING (Lightning transition phase 2). The intent
+         is what makes the anchor table say "Joining Lightning..." and wait for
+         a pool session, and it was left standing here, so a buy-in nobody
+         could confirm left the player on that line, with no buy-in in sight,
+         until they pressed Cancel. It goes now, and the table shows what is
+         true: the saved request, which its own buy-in sheet retries under the
+         same key (that retry marks the intent again). Had the purchase in fact
+         committed, the seat is funded and the table's existing conversion read
+         offers VIEW GAME the moment the pool session exists; the tab never
+         moves without the player (CLAUDE.md 10.6). */
+      deps.clearIntent(held.table_id);
       return {
         kind: 'unconfirmed',
         tableId: held.table_id,

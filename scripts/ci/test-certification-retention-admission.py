@@ -86,6 +86,18 @@ try:
     sql('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA smarter_private; CREATE TABLE public.clubs(id uuid);'
         + PREIMAGE.read_text())
     sql("CREATE FUNCTION public.fn_platform_frozen() RETURNS boolean LANGUAGE sql AS 'SELECT false';")
+    # Installer waits ONLY on the original cron lane before taking a cursor
+    # relation lock. Existing cron uses try-lock, so its successor yields.
+    active, ar = background("BEGIN; SELECT pg_advisory_lock(hashtext('sp-prune-hand-history')); SELECT pg_sleep(2); COMMIT;")
+    deadline = time.monotonic() + 5
+    while sql("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=(hashtext('sp-prune-hand-history')::bigint & 4294967295) AND granted);").stdout.strip() != 't':
+        if time.monotonic() > deadline:
+            raise AssertionError('Original cron lane not held')
+        time.sleep(.02)
+    installer_sql = (ROOT / 'supabase/migrations/20261026174211_the_retention_scan_bounds_work_before_evaluating_guards.sql').read_text().split('BEGIN;', 1)[1].split('ALTER TABLE', 1)[0]
+    installer, ir = background('BEGIN;' + installer_sql + 'SELECT pg_sleep(1); COMMIT;')
+    active.join(); installer.join()
+    expect('installer drains existing retention through cron-only admission', ir[0].returncode == 0)
     # BEFORE: the exact old admission prefix lets a successor retention batch
     # enter while cleanup is already trying the platform gate (the root cause).
     old_fixture = sql("SELECT prosrc FROM pg_proc WHERE proname='fn_ca_prepare_unused_welcome_certification_board_leases';").stdout

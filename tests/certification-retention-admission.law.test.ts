@@ -7,6 +7,21 @@ const migration = readFileSync(
 const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
 
 describe('certification cleanup gets a turn without queueing player operations', () => {
+  it('the prerequisite drains only its existing cron lane before altering the private cursor', () => {
+    const prerequisite = readFileSync(
+      'supabase/migrations/20261026174211_the_retention_scan_bounds_work_before_evaluating_guards.sql',
+      'utf8'
+    );
+    expect(prerequisite).toContain("SET LOCAL lock_timeout='125s'");
+    expect(prerequisite).toContain("pg_advisory_xact_lock(hashtext('sp-prune-hand-history'))");
+    expect(
+      prerequisite.indexOf("pg_advisory_xact_lock(hashtext('sp-prune-hand-history'))")
+    ).toBeLessThan(prerequisite.indexOf('ALTER TABLE'));
+    expect(prerequisite).toContain(
+      "SET LOCAL lock_timeout='2s';\nSET LOCAL statement_timeout='60s';\nALTER TABLE"
+    );
+  });
+
   it('reserves only the retention lane with a bounded private helper', () => {
     const helper = migration.split('CREATE FUNCTION')[1].split('DO $patch$')[0];
     expect(helper).toContain("SET lock_timeout = '32s'");

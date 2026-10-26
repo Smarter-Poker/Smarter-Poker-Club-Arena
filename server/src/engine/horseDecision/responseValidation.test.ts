@@ -10,6 +10,7 @@ import { qualifiedPhase13TestAdmission } from '../HorsePhase13Authority.test-sup
 import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUtilityEvidence.js';
 import {
   horseDecisionReceiptIsValid,
+  horseDecisionReceiptRefusal,
   horsePhase7EvidenceMismatch,
   horseTournamentUtilityReceiptIsValid,
 } from './responseValidation.js';
@@ -24,6 +25,33 @@ function receipt(): HorseDecision {
   }
   return graph.finish(decision);
 }
+
+describe('receipt rejection names retain the original refusal boundary', () => {
+  it('accepts the same complete graph without mutation', () => {
+    const value = receipt();
+    const before = structuredClone(value);
+    expect(horseDecisionReceiptRefusal(value)).toBeNull();
+    expect(horseDecisionReceiptIsValid(value)).toBe(true);
+    expect(value).toEqual(before);
+  });
+  it.each([
+    ['decision_shape', () => ({ ...receipt(), thinkTime: NaN })],
+    ['policy_graph', () => ({ ...receipt(), policyGraph: {} })],
+    ['exception_fallback', () => ({ ...receipt(), policyFallback: 'brain_exception' })],
+    ['phase7_refusal', () => ({ ...receipt(), tournamentUtilityRefusal: 'private cards 123' })],
+    ['phase10_binding', () => ({ ...receipt(), plo4Policy: { inputs: {} } })],
+    ['phase11_binding', () => ({ ...receipt(), omahaVariantPolicy: { inputs: {} } })],
+    ['phase12_binding', () => ({ ...receipt(), remainingVariantPolicy: { inputs: {} } })],
+    ['phase13_binding', () => ({ ...receipt(), jointPolicy: { inputs: {} } })],
+    ['phase6_attribution', () => ({ ...receipt(), tournamentPreflopAttribution: {} })],
+  ] as const)('names %s without leaking the rejected input', (reason, corrupt) => {
+    const value = corrupt();
+    const before = structuredClone(value);
+    expect(horseDecisionReceiptRefusal(value)).toBe(reason);
+    expect(horseDecisionReceiptIsValid(value)).toBe(false);
+    expect(value).toEqual(before);
+  });
+});
 
 let capturedUtilityDecision: HorseDecision | undefined;
 function utilityReceipt(): HorseDecision {

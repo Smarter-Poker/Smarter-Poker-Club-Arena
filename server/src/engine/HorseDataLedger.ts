@@ -909,6 +909,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseMind.tankBetValueTendency (V43)'
   ),
   mind('bigBetSDStrong', '... that showed real strength', 'HorseMind.bigBetValueTendency (V16)'),
+  mind(
+    'riverCallSD',
+    'shown hands whose last river action was a call (2026-10-25)',
+    'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+  ),
+  mind(
+    'riverCallSDWeak',
+    '... shown as one pair or worse (a light river call)',
+    'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+  ),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
   mind('rHands', 'recency window: hands', 'HorseMind counter-adaptation blend (V7)'),
@@ -1777,6 +1787,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   receipt('v21_war_gate', 'HorseLogic (V21)', 'river raise-war governor', 'V21', 'decide', 0.0002),
   receipt('v23_river_read', 'HorseLogic (V23)', 'river read consulted', 'V23', 'decide', 0.01),
+  receipt(
+    'river_call_light_read',
+    'HorseLogic (river call read)',
+    'heads-up river vs a light river caller: fewer bluffs, thinner value',
+    '2026-10-25'
+  ),
   receipt(
     'v23_plan_callonce',
     'HorseLogic (V23)',

@@ -26631,8 +26631,7 @@ function LiveTablePage({
                                   </span>
                                   {(tableState.handNumber ?? 0) > 0 && (
                                     <span className="table-brand__hand">
-                                      {' '}
-                                      · Hand #{tableState.handNumber}
+                                      Hand #{tableState.handNumber}
                                     </span>
                                   )}
                                 </span>

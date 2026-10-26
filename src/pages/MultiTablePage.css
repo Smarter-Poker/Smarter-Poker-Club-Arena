@@ -356,22 +356,22 @@
   min-width: 0;
 }
 /* Static reserve: 49px tab bar plus the 1px wrapper border; on phones
-   43px plus 1px. Tracker visibility never resizes the felt. */
+   53px plus 1px. Tracker visibility never resizes the felt. */
 .multi-table-page {
-  --sp-tabbar-h: calc(50px + env(safe-area-inset-top, 0px));
+  --sp-tabbar-h: calc(50px + var(--sp-tabbar-safe-top));
 }
 @media (max-width: 480px) {
   .multi-table-page__tab-bar-wrapper {
     --mtp-profit-width: 52px;
     --mtp-profit-font: 0.8125rem;
-    --mtp-profit-height: 34px;
+    --mtp-profit-height: 44px;
   }
   .multi-table-page__tab-bar-wrapper > .multi-table-page__pnl-chip {
     /* Keep a signed cents total legible inside the compact phone pill. */
     padding-inline: 1px;
   }
   .multi-table-page {
-    --sp-tabbar-h: calc(44px + env(safe-area-inset-top, 0px));
+    --sp-tabbar-h: calc(54px + var(--sp-tabbar-safe-top));
   }
 }
 
@@ -569,7 +569,7 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   position: relative;
   top: auto;
   right: auto;
-  margin: var(--sp-tabbar-inset, env(safe-area-inset-top, 0px)) var(--mtp-edge) 0;
+  margin: var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)) var(--mtp-edge) 0;
   z-index: 210;
   display: flex;
   align-items: center;
@@ -651,13 +651,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     min-height: 44px;
   }
 
-  /* TRACK THE HAMBURGER DOWN TO 34px (Dan 2026-09-07, item 2). TableTabBar.css
-     shrinks `.table-menu__trigger` to 34px / radius 8 at this exact breakpoint;
-     "the same size and shape" has to mean the same size at every width, not
-     just the one a desktop shows. */
+  /* Lobby and hamburger keep the same 44px mobile touch size. */
   .multi-table-page__tab-bar-wrapper,
   .mtp-lobby-btn {
-    --mtp-lobby-w: 34px;
+    --mtp-lobby-w: 44px;
   }
 
   .mtp-lobby-btn {
@@ -1231,7 +1228,7 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   width: var(--mtp-profit-width);
   max-width: var(--mtp-profit-width);
   height: var(--mtp-profit-height);
-  margin-top: var(--sp-tabbar-inset, env(safe-area-inset-top, 0px));
+  margin-top: var(--sp-tabbar-inset, var(--sp-tabbar-safe-top));
   margin-left: auto;
   line-height: 1;
   overflow: hidden;
@@ -1481,5 +1478,11 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 @media (max-width: 480px) {
   .multi-table-page {
     --sp-game-tool-size: 34px;
+  }
+}
+
+@media (max-width: 480px) {
+  body[data-ca-pinned-bar='1'] {
+    --ca-pinned-bar-offset: calc(54px + var(--mtt-ticker-h, 0px));
   }
 }

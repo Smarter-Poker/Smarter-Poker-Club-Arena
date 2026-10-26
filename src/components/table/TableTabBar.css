@@ -19,7 +19,7 @@
      the inset itself, and paying it again here is the ~47px double band that
      has been fixed once already in this same relationship. With no ticker up
      the property is absent and the fallback is the real inset. */
-  padding-top: calc(6px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0)));
+  padding-top: calc(6px + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
   /* Dan 2026-08-30: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
      SAME COLOR. (INCLUDING THE ACTION TAB AREA.)"
 
@@ -60,7 +60,8 @@
    pill height, a pad or the border moves, change this in the same commit and
    re-do the sum. */
 :root {
-  --sp-tabbar-h: calc(49px + env(safe-area-inset-top, 0));
+  --sp-tabbar-safe-top: env(safe-area-inset-top, 0px);
+  --sp-tabbar-h: calc(49px + var(--sp-tabbar-safe-top));
 }
 
 /* The white sheen that used to run along this bar's bottom edge is gone with
@@ -477,75 +478,11 @@
   z-index: 300;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   RESPONSIVE — THE 375px BUDGET (Dan 2026-08-25)
-   ─────────────────────────────────────────────────────────────────────────────
-   "The Action Buttons at the top need to have room for the Bad Beat Jackpot.
-   It does not have enough room for four games. These need to be scaled down
-   smaller so 4 can be shown at once."
-
-   Every number in this section is derived from ONE budget, taken at 375px
-   portrait — the narrowest phone this ships to.
-
-   ── RE-DERIVED 2026-09-07 (Dan item 1 + item 2) ────────────────────────────
-   "THE 4 SQUARE OPTION NEEDS TO LIVE INSIDE THE HAMBURGER MENU" and "ITS
-   IMPARATIVE THAT THERE IS ENOUGH ROOM TO HAVE 4 ACTION TABS OPEN IN BETWEEN
-   THE HAMBURGER MENU AND THE LOBBY BUTTON INSIDE THE ACTION BAR."
-
-   The chrome on the right edge changed and this budget had to change with it.
-   It is written down here in a comment AND spent in `max-width` below, and the
-   two had drifted apart before — CLAUDE.md 1.1.7's warning about a number
-   tuned to a layout outliving the layout, in this file, about this bar.
-
-       375   viewport
-       -  0  tile-view toggle   (GONE — it is a hamburger item now)
-       - 40  LOBBY button       (--mtp-lobby-w in MultiTablePage.css; it is
-                                 34px at this breakpoint, but the wrapper's
-                                 reserve is computed at the desktop 40 and the
-                                 extra 6px is slack we keep)
-       - 52  session P&L chip   (hard-capped at 52px there, so this line is
-                                 arithmetic rather than an estimate)
-       -  8  this bar's own 4px horizontal padding
-       - 34  hamburger trigger  (32px + 2px margin — overrides below)
-       -  4  this bar's flex gap before the strip
-       = 237  available to .table-tab-bar__tabs
-       -  6  three 2px gaps between four pills
-       -  4  slack, so sub-pixel rounding cannot be what starts a scrollbar
-       = 227  for four pills  ->  56.75px each
-
-   Four pills got 55.25px before and get 56.75px now: removing a 46px button
-   and shrinking a 76px pill to a 40px square returns 82px to the right edge,
-   and 76 of it is spent reserving the LOBBY button that is still there. The
-   gain is small because the LOBBY button did not exist in the old budget at
-   all — it was drawn over the strip's padding. Counting it is the correction.
-
-   Four pills IS the worst case: MAX_TABLES is 4 on a phone (MultiTablePage.tsx)
-   and a lobby tab spends one of those four slots, while the "+" only renders
-   while emptySlots > 0 — i.e. at three pills or fewer. Three pills plus the
-   "+" comes to 3x55 + 2x2 + 2 + 32 = 203 of the 231 available, so that case
-   has 28px of slack.
-
-   The pill cap is an expression rather than a flat 55px so a 430px Pro Max
-   gets 69px pills instead of being frozen at the smallest phone's size. Below
-   ~330px the 44px floor wins and the strip scrolls again — that is the honest
-   fallback, because a pill narrower than 44px is not worth tapping.
-
-   The old @media (max-width: 380px) block is gone rather than retuned: it set
-   min-width BACK UP to 70px, so at 375px — the exact width this was all sized
-   for — it silently undid the 480px rules above it. One breakpoint, derived
-   from the narrowest device, cannot disagree with itself.
-
-   ROUND 2 (Dan 2026-08-25) DID NOT SPEND ANY OF THIS. The strip now packs to
-   the start instead of centring, the pill centres its own children, and the
-   active pill's close-control reserve went from 16px on one side to 12px on
-   both. None of those touch a pill's min-width, max-width, border or the
-   strip's gap, so the worst case is the same as it was: four capped pills at
-   4 x 55.25 = 221, plus three 2px gaps = 227, inside the 231 available. The
-   only width the reserve change moves is the ACTIVE pill's, and it moves it in
-   both directions at once — +8px of padding against -4px of close-disc
-   footprint — while that pill's shrink-to-fit width stays under the same
-   55.25px cap. Four pills still fit at 375px with 4px to spare.
-   ───────────────────────────────────────────────────────────────────────────── */
+/* Mobile controls share a 44px touch height (owner correction October 26).
+   At 375px, allow 44px Lobby + 52px tracker + 8px padding + 44px menu +
+   2px menu margin + 4px gap + 6px pill gaps + 8px rounding slack = 168px.
+   Four inactive pills cap at 51.75px; the active label may use 55px. Wider
+   card previews and very narrow phones use the existing horizontal scroller. */
 
 @media (max-width: 480px) {
   .table-tab-bar {
@@ -557,39 +494,28 @@
        env(), so the double-inset it fixed survived below 480px. 375px is the
        design width, so the fix applied everywhere except the screens that have
        a notch in the first place. */
-    padding-top: calc(4px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0)));
+    padding-top: calc(4px + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
     gap: 4px;
-    /* 34px pill + 4px padding top and bottom. */
-    min-height: 42px;
+    /* 44px pill + 4px padding top and bottom. */
+    min-height: 52px;
   }
 
-  /* The published contract at this breakpoint. 34px pill + 4px top pad + 4px
+  /* The published contract at this breakpoint. 44px pill + 4px top pad + 4px
      bottom pad + 1px border. See the base rule for why TablePage.css needs it. */
   :root {
-    --sp-tabbar-h: calc(43px + env(safe-area-inset-top, 0));
+    --sp-tabbar-h: calc(53px + var(--sp-tabbar-safe-top));
   }
 
   .table-tab-bar__tabs {
     gap: 2px;
   }
 
-  /* The hamburger is 40px square in TableMenu.css because it also lives on the
-     felt, where it is the only control in its corner. Scoped to this container
-     so the on-felt trigger is untouched.
-
-     Dan 2026-08-28: "the hamburger menu icon should be larger and encompass
-     the entire area, top to bottom and left to right, where it sits." Two
-     halves: (a) 34px, the full pill height at this breakpoint — the trigger
-     now spans the strip's inner height edge to edge (it was 32px, 2px shy);
-     (b) the icon-hamburger artwork itself was re-cropped in storage to its
-     visible bounds (the old canvas carried ~20% transparent margin on every
-     side, which is why the glyph floated small inside the button). The 2px
-     comes out of the 375px budget's documented 4px slack. */
+  /* Enlarge the real trigger and its approved artwork together. */
   .table-tab-bar__menu-container .table-menu__trigger {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    min-height: 34px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
     border-radius: 8px;
   }
 
@@ -598,104 +524,25 @@
   }
 
   .table-tab-bar__tab {
-    /* 100vw minus the chrome itemised at the head of this section, minus the
-       three 2px gaps, minus 4px of slack, split four ways. 44px floor = the
-       smallest pill still worth tapping with a thumb.
-
-       148 = 40 LOBBY + 52 P&L + 8 padding + 34 hamburger + 4 gap + 6 gaps
-             + 4 slack. It was 154 and that still counted the 46px four-square
-             button, which is now a hamburger item, while counting the LOBBY
-             button not at all. */
+    /* The width budget above keeps four ordinary tabs reachable. */
     min-width: 44px;
-    max-width: calc((100vw - 148px) / 4);
-    /* 34px, so the pill itself clears the 32px touch floor while the bar as a
-       whole is 2px SHORTER than it used to be — the felt below wants every
-       pixel of that band back. */
-    height: 34px;
+    max-width: calc((100vw - 168px) / 4);
+    height: 44px;
     padding: 0 3px;
     gap: 2px;
     border-width: 1px;
-    font-size: 0.625rem;
+    font-size: 0.75rem;
     border-radius: 17px;
   }
 
-  /* THE RESERVE IS SYMMETRIC NOW (Dan 2026-08-25, round 2: "Centre the content
-     about the pill's true middle, not about the middle of what is left after
-     the X").
-
-     It used to be `padding-right: 16px` alone. That does clear the floating X,
-     but a one-sided pad moves the pill's CONTENT box 8px left of the pill, and
-     a label centred in a content box that is itself off-centre is off-centre —
-     which is the leftward lean Dan photographed on the single "PLO5 / Pot 55"
-     pill.
-
-     Padding the same 13px on BOTH sides keeps the content box concentric with
-     the pill, so `justify-content: center` lands the label on the pill's true
-     middle, and still holds it off the X. Both numbers below are MEASURED in a
-     browser at 375px against this exact stylesheet, not estimated:
-
-       "PLO5" is the widest game code: 26.13px at 10px/800 Inter.
-       Close disc 12px wide at `right: 1px` = 13px of the pill's right end.
-       Pill = 26.13 + 26 (padding) + 2 (borders) = 54.13px, inside the
-       55.25px cap the 375px budget allows.
-       Centred, the code's midpoint lands 0.00px off the pill's own midpoint
-       and its right edge stops 0.44px short of the disc; the "Pot 55" line
-       under it stops 1.50px short. Vertically the pair sits 6.84px from the
-       pill's top and 6.86px from its bottom.
-
-     12px was tried first and measured at -1px — the code's last glyph touching
-     the disc. The extra pixel each side is the difference between "flush" and
-     "clear", and the pill has it to give.
-
-     13px, not the old one-sided 16: a symmetric reserve costs twice what a
-     one-sided one did, and the label had 34.25px before. At 13px it has
-     27.25px on a max-width pill, which still carries every game code whole.
-     The lines that do not fit — "DISCARD", "Pot 12,500" — ellipsised at
-     34.25px too, so the centring is bought from slack rather than from a
-     legible label.
-
-     THE MIN-WIDTH IS PART OF THE RESERVE, not decoration. Below ~330px the
-     pill's `max-width: calc((100vw - 148px) / 4)` falls under the 44px floor,
-     and a 44px pill minus a 26px symmetric reserve leaves 18px — measured at
-     320px, "PLO5" clipped to "PL". 55px is 54.13 rounded up, so the code
-     always has its own width; the strip is already scrolling at that viewport
-     (see THE 375px BUDGET), which is the documented fallback, so a wider
-     active pill there costs nothing that was not already spent. At 375px 55px
-     sits under the 55.25px cap, so the four-pill sum is untouched.
-
-     A cards pill still reserves nothing: the mini cards are centred and the X
-     lands on the outer card's edge, which reads as the stack being fanned.
-     Only the active pill shows the X on a touch device (there is no hover), so
-     this costs exactly one pill — and it is the one table whose pot is already
-     printed across the felt in front of the player. */
-  /* THE 26px RESERVE IS GONE (Dan 2026-09-05: "THE ACTION PILL SHOULD NEVER
-     ABBRIEVATE LO.... IT NEEDS TO SAY Lobby SPELLED OUT"). Everything above
-     this rule describes a reserve held for the inline × close disc — and THAT ×
-     WAS DELETED ON 2026-08-26 (TableTabBar.tsx:479 and :866; the note further
-     down this file records it). The padding outlived the thing it was clearing,
-     and went on charging the label 26px of a pill only 55.25px wide.
-
-       Pill cap at 375px  = calc((100vw - 148px) / 4) = 56.75px
-       With the reserve   = 56.75 - 26 - 2 (borders)  = 28.75px for text
-       "Lobby" at 10px/800 Inter                      = ~30px  -> "Lo..."
-       At the base 3px padding                        = 47.25px, and it fits.
-
-     "PLO5", the widest game code at 26.13px, still fits with room over. Nothing
-     else in the 375px budget moves - min-width, borders and the gap are
-     untouched - so four pills sum to 233 of the 237px available (2026-09-07:
-     was 227 of 231, before the four-square button left the strip and the LOBBY
-     button started being counted), and min-width 55px keeps guaranteeing the
-     code its own width below ~330px.
-     Do not reintroduce this padding unless an inline × comes back with it. */
+  /* No close-button reserve remains; keep the active label legible. */
   .table-tab-bar__tab--active:not(.table-tab-bar__tab--cards) {
     min-width: 55px;
   }
 
   .table-tab-bar__tab-sub {
-    /* 8px. "Pot 12,500" is 10 glyphs, ~44px, and fits the 47.25px a background
-       pill has inside its 3px paddings and 1px borders — which is the pill
-       that needs it, since the active table's pot is on the felt anyway. */
-    font-size: 0.5rem;
+    /* A secondary line remains smaller than the 12px game label. */
+    font-size: 0.5625rem;
     letter-spacing: 0;
   }
 
@@ -781,8 +628,8 @@
   }
 
   .table-tab-bar__add {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     font-size: 1.1rem;
   }
 
@@ -815,10 +662,10 @@
      scrolling out of reach is a worse failure than four slightly tighter
      pills, and this state is transient by definition.
 
-     170 = the 148 above + 22 for the chip. Both moved together on 2026-09-07
+     190 = the 168 above + 22 for the chip. Both moved together on 2026-09-07
      (148 was 154); they are one budget stated twice and must never disagree. */
   .table-tab-bar__offline ~ .table-tab-bar__tabs .table-tab-bar__tab {
-    max-width: calc((100vw - 170px) / 4);
+    max-width: calc((100vw - 190px) / 4);
   }
 }
 
@@ -846,8 +693,8 @@
 
 /* Same source-order trap as __tab-sub above (2026-08-28). The <=480px block
    earlier in this file shrinks the chip to `3px 5px` + `4px` margin, and the
-   four-tab width reserve is computed from that: `calc((100vw - 170px) / 4)`,
-   where the 170 is 148 + 22 and the comment states the 22 outright — "even
+   four-tab width reserve is computed from that: `calc((100vw - 190px) / 4)`,
+   where the 190 is 168 + 22 and the comment states the 22 outright — "even
    shrunk to its dot the offline chip is 18px plus a 4px margin". The base
    rule was winning at ~28px + 8px, overrunning the reserve by 14px, and the
    same comment names the consequence: the fourth table's tab scrolls out of
@@ -934,7 +781,7 @@
    base, so the phone value is the one that survives. */
 @media (max-width: 480px) {
   .table-tab-bar__tab-sub {
-    font-size: 0.5rem;
+    font-size: 0.5625rem;
     letter-spacing: 0;
   }
 }
@@ -1100,7 +947,7 @@
      symmetric 13px close-control reserve is taken — which is the tighter of
      the two and therefore the one that sets this size. */
   .table-tab-bar__tab-label .table-tab-bar__tab-name {
-    font-size: 0.625rem;
+    font-size: 0.75rem;
     letter-spacing: 0;
   }
 }
@@ -1206,4 +1053,12 @@
 
 .table-tab-bar__tab-label--seat-urgent .table-tab-bar__tab-sub {
   font-weight: 800;
+}
+
+/* Installed iOS can report a zero or undersized inset under its status bar.
+   Reserve that band once, at the topmost strip. Landscape uses the real inset. */
+@media (display-mode: standalone) and (orientation: portrait) {
+  :root {
+    --sp-tabbar-safe-top: max(48px, env(safe-area-inset-top, 0px));
+  }
 }

@@ -61,3 +61,19 @@ if "${psql[@]}" -f "$repo/supabase/migrations/20261023213635_today_win_loss_rese
   echo 'Chicago Today migration replay unexpectedly accepted'; exit 1
 fi
 echo 'CHICAGO_TODAY_POSTGRES PASS: midnight, DST, funded attribution, accounting cutoff, access, both readers, unchanged longer periods, replay refusal'
+
+# This Week and This Month are Chicago calendar ranges in both funded member readers.
+if "${psql[@]}" -f "$fixture/chicago-week-month-after.sql" > "$work/chicago-week-before.log" 2>&1; then
+  echo 'Chicago week/month regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Chicago week/month boundary mismatch' "$work/chicago-week-before.log"; then
+  cat "$work/chicago-week-before.log"; exit 1
+fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261026011138_week_and_month_win_loss_reset_at_chicago_midnight.sql" -f "$fixture/chicago-week-month-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261026011138_week_and_month_win_loss_reset_at_chicago_midnight.sql" > "$work/chicago-week-replay.log" 2>&1; then
+  echo 'Chicago week/month migration replay unexpectedly accepted'; exit 1
+fi
+if ! grep -q 'Chicago week and month reader preimage changed' "$work/chicago-week-replay.log"; then
+  cat "$work/chicago-week-replay.log"; exit 1
+fi
+echo 'CHICAGO_WEEK_MONTH_POSTGRES PASS: Monday and 1st at Chicago midnight, DST, year rollover, accounting cutoff, access, both readers agree, replay refusal'

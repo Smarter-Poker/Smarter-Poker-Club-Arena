@@ -3179,6 +3179,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         mysteryTopLive: tctx?.mysteryTopLive ?? false,
         meanBountyCents: tctx?.meanBountyCents ?? 0,
         prizePoolCents: tctx?.prizePoolCents ?? 0,
+        ...(tctx?.payoutTermsVersion === 1
+          ? {
+              payoutTermsVersion: 1 as const,
+              prizePoolFinalized: tctx.prizePoolFinalized,
+              bubbleProtection: tctx.bubbleProtection,
+              prizeUnitCents: tctx.prizeUnitCents,
+              finalizedPrizeLadder: tctx.finalizedPrizeLadder
+                ? {
+                    ...tctx.finalizedPrizeLadder,
+                    prizesCents: tctx.finalizedPrizeLadder.prizesCents.slice(),
+                  }
+                : undefined,
+            }
+          : {}),
         bountyPoolCents: tctx?.bountyPoolCents ?? 0,
         buyInCents: tctx?.buyInCents ?? null,
         startingStackChips: tctx?.startingStackChips ?? null,

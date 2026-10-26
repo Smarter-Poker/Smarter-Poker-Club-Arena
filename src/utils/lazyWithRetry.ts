@@ -122,25 +122,25 @@ const BUILD_INFO_URL: string = (() => {
 })();
 
 /**
- * What production says it serves, compared with this document's build.
- * 'unknown' is its own answer (CLAUDE.md 10.86): WebKit refuses every new
- * fetch from a document whose navigation is pending, so during a departure
- * the read fails, and that failure is evidence of leaving, not of staleness.
+ * Which build production serves, as seen from this document. 'unknown' is its
+ * own answer (CLAUDE.md 10.86): offline, refused, timed out, malformed, or a
+ * read the browser cancelled because this page is leaving. WebKit cancels a
+ * leaving document's new fetches too, so an unreadable answer is exactly what
+ * a departure looks like from inside it, and must never be read as "stale".
  */
-export type LiveBuildState = 'current' | 'different' | 'unknown';
+export type LiveBuild = 'this' | 'other' | 'unknown';
 
-export async function liveBuildState(): Promise<LiveBuildState> {
-  // A local build reports 'dev', which never equals a published ca_sha.
+export async function readLiveBuild(): Promise<LiveBuild> {
   if (typeof fetch !== 'function') return 'unknown';
   const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<LiveBuildState>((resolve) => {
+  const deadline = new Promise<LiveBuild>((resolve) => {
     timer = setTimeout(() => {
       controller?.abort();
       resolve('unknown');
     }, LIVE_BUILD_READ_TIMEOUT_MS);
   });
-  const read = (async (): Promise<LiveBuildState> => {
+  const read = (async (): Promise<LiveBuild> => {
     try {
       const response = await fetch(BUILD_INFO_URL, {
         cache: 'no-store',
@@ -149,9 +149,9 @@ export async function liveBuildState(): Promise<LiveBuildState> {
       if (!response.ok) return 'unknown';
       const info = (await response.json()) as { ca_sha?: unknown } | null;
       if (typeof info?.ca_sha !== 'string' || info.ca_sha.trim() === '') return 'unknown';
-      return info.ca_sha.trim() === BUILD_ID ? 'current' : 'different';
+      // A local build reports 'dev', which never equals a published ca_sha.
+      return info.ca_sha.trim() === BUILD_ID ? 'this' : 'other';
     } catch {
-      // Offline, refused, cancelled or malformed: no answer either way.
       return 'unknown';
     }
   })();
@@ -164,7 +164,12 @@ export async function liveBuildState(): Promise<LiveBuildState> {
 
 /** True only when production positively reports this document's own build. */
 export async function liveBuildIsThisDocument(): Promise<boolean> {
-  return (await liveBuildState()) === 'current';
+  return (await readLiveBuild()) === 'this';
+}
+
+/** True from a departure until afterNavigationGrace decides its outcome. */
+function departureUndecided(now = Date.now()): boolean {
+  return now - leavingAt < CURRENT_BUILD_PATIENCE_MS;
 }
 
 /** Run `recover` once the current navigation has had its chance to finish. */
@@ -176,17 +181,18 @@ function afterNavigationGrace(recover: () => void): void {
       void (async () => {
         if (
           Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS &&
-          (await liveBuildState()) !== 'different'
+          (await readLiveBuild()) !== 'other'
         ) {
-          // Current, or unreadable because the browser is mid-navigation:
-          // a reload cannot help and would cancel the navigation if it is
-          // merely slow. Keep the single deferral armed.
+          // Current, or unreadable because the browser is mid-navigation
+          // (WebKit refuses a leaving page's new fetches): a reload cannot
+          // help and would cancel the navigation if it is merely slow. Keep
+          // the single deferral armed.
           schedule(NAVIGATION_GRACE_MS);
           return;
         }
         deferredRecovery = null;
-        // The departure is decided: either it never completed or the build
-        // is stale. Recovery from here replaces this document directly.
+        // The departure is decided: it never completed, or the build is
+        // stale. Recovery from here replaces this document directly.
         leavingAt = Number.NEGATIVE_INFINITY;
         recover();
       })();
@@ -363,79 +369,15 @@ export function reportExhaustedChunkLoad(error: unknown, surface: string): void 
     .catch(() => undefined);
 }
 
-/**
- * ASK BEFORE REPLACING THE DOCUMENT, ON EVERY PATH (2026-10-25, production
- * post-deploy run 40260290873, WebKit, the same "interrupted by another
- * navigation to /clubs/kings-club?_cb=..." after #8100 and #8101 were live).
- * The departure's aborted stylesheet preloads reached the probe while the
- * lobby navigation was pending; WebKit refused the probe's fetch too, so it
- * answered 'unknown' and scheduled recovery NAVIGATION_GRACE_MS later. That
- * navigation had fired no beforeunload, so nothing marked the page as
- * leaving, and ten seconds on the cache-busted reload cancelled it.
- *
- * A clock cannot tell a slow navigation from a stale page. Production can.
- * Recovery now reads the live build before it replaces anything:
- *
- * - 'different': this document is stale. Recover now.
- * - 'unknown': no answer, which in WebKit is what a pending navigation looks
- *   like. Ask again each grace period until CURRENT_BUILD_PATIENCE_MS.
- * - 'current' while the page is leaving: the navigation may just be slow.
- *   Keep waiting, bounded the same way.
- * - 'current' with no departure: a genuine failure on a page that stays.
- *   Recover now, exactly as before.
- *
- * A failure with no departure and no uncertainty still recovers at once:
- * only a page that has started leaving, or evidence that could not be read
- * (the stylesheet probe's 'unknown'), waits for this confirmation.
- *
- * When the patience runs out the page is still here, so the failure was real
- * and recovery runs. One confirmation runs at a time and none of the waiting
- * spends reload budget.
- */
-let confirmation: Promise<void> | null = null;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function confirmThenRecover(): Promise<void> {
-  const firstAt = Date.now();
-  for (;;) {
-    const graceLeft = leavingAt + NAVIGATION_GRACE_MS - Date.now();
-    if (graceLeft > 0) await wait(graceLeft);
-    if (Date.now() - firstAt >= CURRENT_BUILD_PATIENCE_MS) break;
-    const state = await liveBuildState();
-    if (state === 'different') break;
-    const leaving = Date.now() - leavingAt < CURRENT_BUILD_PATIENCE_MS;
-    if (state === 'current' && !leaving) break;
-    await wait(NAVIGATION_GRACE_MS);
-  }
-  recoveryStarted = true;
-  incrementReloadCount();
-  leavingAt = Number.NEGATIVE_INFINITY;
-  await hardReload();
-}
-
-function startConfirmation(): void {
-  if (confirmation !== null) return;
-  confirmation = confirmThenRecover().finally(() => {
-    confirmation = null;
-  });
-}
-
-/** True from a departure until its outcome is decided (or the patience ends). */
-function departureUndecided(now = Date.now()): boolean {
-  return now - leavingAt < CURRENT_BUILD_PATIENCE_MS;
-}
-
 export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
   if (!canOwnChunkRecovery(error)) return false;
   if (recoveryStarted) return true;
-  // A failure during or after a departure, even one that arrives after the
-  // grace period, is confirmed against production first. It spends no reload
-  // budget while it waits.
-  if (confirmation !== null || departureUndecided()) {
-    startConfirmation();
+  // A cancelled load during navigation spends no reload budget. A failure
+  // that arrives after the grace while the departure is still undecided
+  // (a lazy retry's backoff can outlast it) is confirmed the same way rather
+  // than replacing the document on the spot.
+  if (documentIsNavigatingAway() || departureUndecided()) {
+    afterNavigationGrace(() => void recoverFromStaleChunk(error));
     return true;
   }
 
@@ -443,12 +385,6 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
   incrementReloadCount();
   await hardReload();
   return true;
-}
-
-/** Recovery whose evidence could not be read: confirm before replacing. */
-export function recoverWhenConfirmed(error: unknown): void {
-  if (!canOwnChunkRecovery(error) || recoveryStarted) return;
-  startConfirmation();
 }
 
 /**
@@ -511,9 +447,8 @@ export function dropFailedStylesheet(error: unknown): boolean {
  *   reload budget is spent.
  * - 'gone': the asset is retired; guarded document recovery runs as before.
  * - 'unknown': the probe itself could not answer (offline, aborted, 5xx).
- *   Recovery asks production for the live build before replacing anything
- *   (see "ASK BEFORE REPLACING THE DOCUMENT" above), so a page that is
- *   leaving is gone before it fires.
+ *   Recovery waits out the navigation grace period and then runs, so a page
+ *   that really is leaving is gone before it fires.
  */
 export type StylesheetProbe = 'present' | 'gone' | 'unknown';
 
@@ -548,19 +483,60 @@ function reinstateStylesheet(href: string, onError: () => void): void {
   document.head.appendChild(link);
 }
 
+/**
+ * A STYLESHEET NEVER RELOADS A PAGE THAT IS ALREADY LIVE (2026-10-26,
+ * production post-deploy run 40260290873, WebKit as an iPhone: the Kings Club
+ * lobby was left while its stylesheet probe was in flight; WebKit cancelled
+ * the probe as well ("due to access control checks"), the 'unknown' path
+ * waited out the grace while the slow navigation was still loading, and its
+ * reload of the page being left cancelled that navigation). iOS Safari sends
+ * no beforeunload, so documentIsNavigatingAway() never knew.
+ *
+ * A reload only helps a document that is NOT on the build production serves.
+ * So before a stylesheet failure replaces the document, production is asked:
+ *   - 'this':    a reload would fetch the same files. Put the stylesheet back
+ *                (once) instead, so the route is never unstyled, and stop.
+ *   - 'other':   a newer build is live; recover exactly as before.
+ *   - 'unknown': cannot tell, which is what a departure looks like from inside
+ *                it. Ask again after each grace, for up to
+ *                CURRENT_BUILD_PATIENCE_MS; a page that really left is gone
+ *                long before then, and one that is really offline recovers
+ *                at the end of it.
+ * A stylesheet the server answers with 404 is retired and recovers at once.
+ */
+async function recoverStylesheetUnlessLive(
+  error: unknown,
+  href: string | undefined,
+  since: number
+): Promise<void> {
+  const live = await readLiveBuild();
+  if (live === 'this') {
+    // Reinstated at most once: its own failure asks again without an href.
+    if (href)
+      reinstateStylesheet(href, () => void recoverStylesheetUnlessLive(error, undefined, since));
+    return;
+  }
+  if (live === 'other' || Date.now() - since >= CURRENT_BUILD_PATIENCE_MS) {
+    void recoverFromStaleChunk(error);
+    return;
+  }
+  setTimeout(() => void recoverStylesheetUnlessLive(error, href, since), NAVIGATION_GRACE_MS);
+}
+
 export async function recoverFailedStylesheet(href: string, error: unknown): Promise<void> {
+  const since = Date.now();
   const verdict = await probeStylesheet(href);
   if (verdict === 'present') {
-    reinstateStylesheet(href, () => void recoverFromStaleChunk(error));
+    // Served now, but its reinstated load can still fail (a departure cancels
+    // it too): that asks production first rather than reloading blind.
+    reinstateStylesheet(href, () => void recoverStylesheetUnlessLive(error, undefined, since));
     return;
   }
   if (verdict === 'gone') {
     void recoverFromStaleChunk(error);
     return;
   }
-  // No answer: in WebKit that is a pending navigation refusing new fetches.
-  // Confirm against production instead of reloading on a clock.
-  recoverWhenConfirmed(error);
+  setTimeout(() => void recoverStylesheetUnlessLive(error, href, since), NAVIGATION_GRACE_MS);
 }
 
 export function installVitePreloadErrorRecovery(): () => void {
@@ -612,7 +588,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
         // undefined. If recovery or navigation already owns that failure,
         // keep React suspended instead of passing it an invalid module.
         if (module == null || module.default == null) {
-          if (recoveryStarted || confirmation !== null || documentIsNavigatingAway())
+          if (recoveryStarted || documentIsNavigatingAway() || departureUndecided())
             return new Promise<never>(() => {});
           throw new Error('Lazy route module has no default export');
         }

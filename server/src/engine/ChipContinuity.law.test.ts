@@ -57,25 +57,25 @@ const row = (over: Partial<CashSessionRow> = {}): CashSessionRow => ({
   ...over,
 });
 
-describe('the stay clock the engine renders is the one the database keeps', () => {
-  it('counts down from the last tick only while running (A0.2, A0.5)', () => {
-    expect(stayRemainingMs(row(), 1_000_000 + 120_000)).toBe(480_000);
-    expect(stayRemainingMs(row({ stay_running: false }), 1_000_000 + 120_000)).toBe(600_000);
+describe('retired stay clocks cannot lock a cash leave', () => {
+  it('ignores running and paused legacy clocks', () => {
+    expect(stayRemainingMs(row(), 1_000_000 + 120_000)).toBe(0);
+    expect(stayRemainingMs(row({ stay_running: false }), 1_000_000 + 120_000)).toBe(0);
     expect(stayRemainingMs(row(), 1_000_000 + 900_000)).toBe(0);
   });
 
-  it('never resets to 10:00 on dip-and-recover: the remainder is whatever the row says (A0.3, A0.4)', () => {
+  it('ignores a recovered legacy clock', () => {
     const recovered = row({
       stay_remaining_ms: 480_000,
       stay_running: true,
       stay_last_tick_at: new Date(5_000).toISOString(),
     });
-    expect(stayRemainingMs(recovered, 5_000)).toBe(480_000);
+    expect(stayRemainingMs(recovered, 5_000)).toBe(0);
   });
 
-  it('locks iff ahead of the baseline AND time remains, running or not (I5, A0.5)', () => {
-    expect(isLeaveLocked(row(), 180, 1_000_000)).toBe(true);
-    expect(isLeaveLocked(row({ stay_running: false }), 180, 1_000_000)).toBe(true);
+  it('allows winners, losers and break-even players regardless of old clock state', () => {
+    expect(isLeaveLocked(row(), 180, 1_000_000)).toBe(false);
+    expect(isLeaveLocked(row({ stay_running: false }), 180, 1_000_000)).toBe(false);
     expect(isLeaveLocked(row(), 90, 1_000_000)).toBe(false);
     expect(isLeaveLocked(row(), 100, 1_000_000)).toBe(false); // equal is not ahead
     expect(isLeaveLocked(row({ stay_remaining_ms: 0 }), 180, 1_000_000)).toBe(false);
@@ -138,9 +138,9 @@ describe('the tracker reports transitions and renders answers', () => {
     ]);
     const t = make(evaluate);
     await t.evaluate([{ user_id: 'a', stack: 180, active: true }]);
-    expect(t.leaveLock('a', 180).locked).toBe(true);
+    expect(t.leaveLock('a', 180).locked).toBe(false);
     expect(t.leaveLock('a', 90).locked).toBe(false);
-    expect(t.seatFields('a', 180).leave_locked).toBe(true);
+    expect(t.seatFields('a', 180).leave_locked).toBe(false);
     expect(t.seatFields('a', 180).session_baseline).toBe(100);
     t.forget('a');
     expect(t.leaveLock('a', 180).locked).toBe(false);
@@ -165,7 +165,7 @@ describe('the tracker reports transitions and renders answers', () => {
     expect(evaluate.mock.calls[0][1]).toEqual([{ user_id: 'a', active: true }]);
   });
 
-  it('trusts a refusal from the door over its own mirror', async () => {
+  it('retains a refusal for compatibility without reviving the minimum stay', async () => {
     const evaluate = vi.fn(async () => [
       row({
         user_id: 'a',
@@ -176,7 +176,7 @@ describe('the tracker reports transitions and renders answers', () => {
     const t = make(evaluate);
     await t.evaluate([{ user_id: 'a', stack: 180, active: true }]);
     t.noteRefusal('a', 300_000);
-    expect(t.leaveLock('a', 180).remainingMs).toBeGreaterThan(290_000);
+    expect(t.leaveLock('a', 180)).toEqual({ locked: false, remainingMs: 0 });
   });
 });
 

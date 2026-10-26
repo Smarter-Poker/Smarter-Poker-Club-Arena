@@ -31,3 +31,16 @@ river spots, asserts the graph's final action and `wager_rules` transition are
 the fold, and asserts `horseDecisionReceiptIsValid` accepts it for that game
 and refuses it for a game without an owner fold rule. On the shipped code the same test fails: the graph
 reports `call 190.52` while the decision is `fold`.
+
+## The hold'em premium rule had the same defect, and is fixed with it
+
+#8122 (Dan 2026-10-25: hold'em premiums are never passive, dominated offsuit
+hands fold to a big 3-bet) merged while this was in review and used the same
+after-`graph.finish` pattern. It was not yet serving. On main, its recorded
+KQo spot produced a graph ending in `call` while the decision was `fold`, so
+the next engine release would have had the engine refuse those decisions too
+and fall back to the safety default. It now runs as the final wager rule,
+after the paired-board fold, in the order it had before. The validator admits
+its dominated-hand fold for no-limit hold'em; its raises and bets were already
+admitted. `HorseHoldemPremiumAggression.law.test.ts` now asserts every rule
+decision is signed by the graph and accepted by the receipt check.

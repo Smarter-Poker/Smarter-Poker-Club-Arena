@@ -431,7 +431,8 @@ describe('late-registration capacity authority', () => {
     expect(admit).not.toMatch(/if \(!this\.eliminationMutationAllowed\(\)\) return;/);
     expect(admit).not.toContain('|| !this.eliminationMutationAllowed()) return;');
     // A finished event never starts a dealer for a leftover receipt.
-    expect(admit).toContain('if (this.tournamentFinished || this.finalTableDealHandled) return;');
+    expect(admit).toContain('!this.tournamentFinished &&');
+    expect(admit).toContain('!this.finalTableDealHandled &&');
     expect(admit).toContain(".from('tournament_capacity_table_receipts')");
     expect(admit).toContain(".is('manager_admitted_at', null)");
     expect(admit).toContain("'fn_ack_tournament_capacity_tables'");

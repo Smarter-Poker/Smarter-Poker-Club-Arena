@@ -12,9 +12,10 @@ One query over a month ran past 120 s on production, so migration
 `20261026140704` keeps each day's per-player result once in
 `sp_digest_player_days` and `fn_sp_digest_player_period` adds the week and month
 up from the kept days. Players are a distinct count per column; wallets are the
-period's players' balances at the end of the day. A day costs 3-7 s cold, so a
-call keeps at most three earlier days; until every day is kept the card says how
-many are still missing.
+period's players' balances at the end of the day. The live daily query measured27.2s in pg_stat_statements on October26.
+Each email/view request therefore computes only its own day. A finite explicit
+installation fill keeps older days separately; missing history is always
+labeled until that fill completes. No new scheduled job or repair loop.
 
 Checked read-only on production for Oct 25 before shipping: the Day column
 matches the sent email exactly (27 players, 3,659 hands, 49h 20m, -2,890.48,

@@ -640,7 +640,7 @@ describe('PLO6 final river discipline receipt', () => {
       })).decision;
     }
     const { hero, state } = jointPolicyFixture('plo6', 1, 'cash', 'river');
-    // This is a priced river call, not the fixture's default free-check menu.
+    // This receipt claims a 40-chip call, so its request must actually offer it.
     state.toCall = 40;
     state.currentBet = hero.bet + 40;
     state.legalActions = ['fold', 'call', 'raise', 'all_in'];

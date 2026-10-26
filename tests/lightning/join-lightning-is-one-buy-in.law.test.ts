@@ -36,6 +36,43 @@ function deps(over: Partial<LightningBuyInDeps> = {}): LightningBuyInDeps {
 const args = { clusterId: CLUSTER, userId: USER, amount: 120, clubId: null };
 
 describe('Join Lightning is one buy-in: the amount, then an assigned seat', () => {
+  it('rejoins a funded expired anchor without another purchase', async () => {
+    const d = deps({ rejoin: vi.fn(async () => ({ tableId: TABLE, poolSessionId: POOL })) });
+    expect(await buyIntoLightning(args, d)).toEqual({
+      kind: 'seated',
+      tableId: TABLE,
+      poolSessionId: POOL,
+    });
+    expect(d.join).not.toHaveBeenCalled();
+    expect(d.reserve).not.toHaveBeenCalled();
+    expect(d.execute).not.toHaveBeenCalled();
+  });
+  it('an expired empty anchor is released before reserving and buying a new chair', async () => {
+    const order: string[] = [];
+    const d = deps({
+      rejoin: vi.fn(async () => {
+        order.push('release');
+        return null;
+      }),
+      join: vi.fn(async () => {
+        order.push('join');
+        return { ok: true, action: 'seat', table_id: TABLE, seat_number: 4 };
+      }),
+    });
+    expect((await buyIntoLightning(args, d)).kind).toBe('seated');
+    expect(order).toEqual(['release', 'join']);
+    expect(d.execute).toHaveBeenCalledTimes(1);
+  });
+  it('an uncertain rejoin never falls through to a second purchase', async () => {
+    const d = deps({
+      rejoin: vi.fn(async () => {
+        throw new Error('LIGHTNING_REJOIN_PENDING');
+      }),
+    });
+    expect((await buyIntoLightning(args, d)).kind).toBe('rejected');
+    expect(d.join).not.toHaveBeenCalled();
+    expect(d.execute).not.toHaveBeenCalled();
+  });
   it('holds a chair, buys exactly that chair for the amount, and opens the pool room', async () => {
     const d = deps();
     const r = await buyIntoLightning(args, d);

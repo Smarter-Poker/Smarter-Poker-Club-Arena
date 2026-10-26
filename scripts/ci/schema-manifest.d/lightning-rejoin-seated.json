@@ -1,0 +1,5 @@
+{
+  "_owner": "Lucky rejoin 01a17a14. PROMISED source-qualified RPC, pending protected merge and exact migration installation. This fragment is not live evidence.",
+  "tables": [],
+  "functions": ["fn_lightning_rejoin_seated"]
+}

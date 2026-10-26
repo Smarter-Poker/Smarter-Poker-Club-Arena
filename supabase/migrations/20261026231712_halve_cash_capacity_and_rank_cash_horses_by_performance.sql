@@ -87,7 +87,7 @@ BEGIN
   v_result := jsonb_build_object('ok',true,'size',v_size,'active',v_active,
     'selection','top_half_cash_bb100','minimum_hands',p_min_hands,'days',p_days);
   INSERT INTO public.ca_horse_roster_log(size,demand,active,plo,result)
-  VALUES(v_size,0,
+  VALUES(v_size,(SELECT count(*) FROM public.cash_games WHERE enabled AND closed_at IS NULL AND state='live'),
     ARRAY(SELECT horse_id FROM public.ca_horse_active_roster ORDER BY rank),
     ARRAY(SELECT horse_id FROM public.ca_horse_plo_roster ORDER BY rank),v_result);
   RETURN v_result;

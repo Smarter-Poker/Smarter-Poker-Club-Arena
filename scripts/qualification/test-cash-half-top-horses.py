@@ -18,6 +18,8 @@ def definition(name):
 bootstrap = """
 CREATE TYPE public.cash_cluster_census_row AS (id uuid,role text,main_index integer,lifecycle text,status text,created_at timestamptz,max_players integer,seated integer,reserved integer,open_unreserved integer,breaking boolean);
 CREATE FUNCTION fn_platform_frozen() RETURNS boolean LANGUAGE sql AS 'SELECT true';
+CREATE TABLE cash_games(enabled boolean,closed_at timestamptz,state text);
+INSERT INTO cash_games VALUES(true,null,'live'),(false,null,'live'),(true,now(),'live');
 CREATE TABLE profiles(id uuid primary key,is_horse boolean,status text,horse_status text);
 CREATE TABLE ca_horse_fleet_register(horse_id uuid primary key,retired_at timestamptz);
 CREATE TABLE horse_daily_nets(horse_user_id uuid, hands bigint,net_bb numeric,format text,day date,game_variant text);
@@ -53,6 +55,7 @@ END $proof$;
 assertions = """
 SELECT fn_ca_horse_roster_refresh(999);
 DO $proof$ BEGIN
+  IF (SELECT demand FROM ca_horse_roster_log ORDER BY size LIMIT 1)<>1 THEN RAISE EXCEPTION 'live game demand was fabricated'; END IF;
   IF (SELECT array_agg(rank order by rank) FROM ca_horse_active_roster) <> array[1,2,3,4,5,6]
     OR (SELECT count(*) FROM ca_horse_active_roster WHERE horse_id IN(SELECT lpad(i::text,32,'0')::uuid FROM generate_series(1,6)i))<>6
   THEN RAISE EXCEPTION 'top half or sample admission wrong'; END IF;

@@ -23,6 +23,7 @@ import { recordHorseHandReviews, type HorseReviewInput } from '../HorseHandRevie
 import { buildHorseDailyRollupFacts } from '../HorseDailyRollupFacts.js';
 import { horseDailyRollupContract } from '../HorseDailyRollupContract.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
+import { variantInfo } from '../../engine/HorseEval.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
 import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
@@ -987,6 +988,13 @@ export async function logHandHistory(params: {
       ...(params.contributions
         ? { results: handNetResults(params.contributions, params.winners) }
         : {}),
+      // 2026-10-26: a hi-lo or multi-board showdown name describes half the
+      // hand, so it teaches the river-call read nothing.
+      riverCallSample:
+        !variantInfo(params.gameVariant).isHiLo &&
+        ![params.communityCards2, params.communityCards3, ...(params.ritBoards ?? [])].some(
+          (b) => Array.isArray(b) && b.length > 0
+        ),
       // V45: the hand's scope - card family and how many were dealt in.
       scope: readScopeOf(
         params.gameVariant,

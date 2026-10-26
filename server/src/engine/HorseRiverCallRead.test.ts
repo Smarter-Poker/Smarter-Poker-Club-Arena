@@ -42,19 +42,19 @@ beforeEach(() => HorseMind.reset());
 
 describe('river call read: observation', () => {
   it('counts a shown river call once, and a one-pair-or-worse hand as light', () => {
-    for (const name of ['Pair', 'High Card', 'One Pair']) feed(...calledRiver('cc', name));
-    for (const name of ['Two Pair', 'Flush']) feed(...calledRiver('cc', name));
+    for (const name of ['Pair', 'High Card', 'One Pair']) feed(...calledRiver('cc', name), 3);
+    for (const name of ['Two Pair', 'Flush']) feed(...calledRiver('cc', name), 2);
     const s = HorseMind.getStats('cc')!;
-    expect(s.riverCallSD).toBe(5);
-    expect(s.riverCallSDWeak).toBe(3);
-    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(3 / 5, 5);
+    expect(s.riverCallSD).toBe(13);
+    expect(s.riverCallSDWeak).toBe(9);
+    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(9 / 13, 5);
     // The bettor's own line is the V16 read, never a river call.
     expect(HorseMind.getStats('bettor')?.riverCallSD ?? 0).toBe(0);
   });
 
-  it('is null under five shown calls', () => {
-    feed(...calledRiver('cc', 'Pair'), 4);
-    expect(HorseMind.getStats('cc')!.riverCallSD).toBe(4);
+  it('is null under twelve shown calls', () => {
+    feed(...calledRiver('cc', 'Pair'), 11);
+    expect(HorseMind.getStats('cc')!.riverCallSD).toBe(11);
     expect(HorseMind.riverCallLightTendency('cc')).toBeNull();
     feed(...calledRiver('cc', 'Pair'));
     expect(HorseMind.riverCallLightTendency('cc')).toBe(1);
@@ -181,8 +181,8 @@ describe('river call read: observation', () => {
       riverCallSDWeak: 5,
     });
     HorseMind.reset();
-    HorseMind.importStats([{ user_id: 'cc', hands: 9, riverCallSD: 7, riverCallSDWeak: 4 }]);
-    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(4 / 7, 5);
+    HorseMind.importStats([{ user_id: 'cc', hands: 19, riverCallSD: 14, riverCallSDWeak: 8 }]);
+    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(8 / 14, 5);
   });
 });
 
@@ -258,12 +258,22 @@ describe('river call read: decision', () => {
     }
     return bets / trials;
   }
-  /** Five shown river calls each: one light caller, one who only calls strong. */
+  /** Twelve shown river calls each: one light caller, one who only calls strong. */
   function seedReads() {
-    feed(...calledRiver('light-caller', 'Pair'), 5);
-    feed(...calledRiver('strong-caller', 'Two Pair'), 5);
+    // Production observes every hand with its scope; the read is the game's
+    // own bucket (heads-up hold'em here).
+    for (const [id, hand] of [
+      ['light-caller', 'Pair'],
+      ['strong-caller', 'Two Pair'],
+    ] as const) {
+      const [a, s] = calledRiver(id, hand);
+      for (let i = 0; i < 12; i++)
+        HorseMind.observeHandComplete(`seed:${id}:${i}`, a as never, 2, s, 'holdem:hu');
+    }
+    HorseMind.setDecisionScope('holdem:hu');
     expect(HorseMind.riverCallLightTendency('light-caller')).toBe(1);
     expect(HorseMind.riverCallLightTendency('strong-caller')).toBe(0);
+    HorseMind.setDecisionScope(null);
   }
 
   it('bluffs a light river caller less than an opponent who calls only strong', () => {
@@ -272,7 +282,7 @@ describe('river call read: decision', () => {
     seedReads();
     const vsLight = riverBetRate('light-caller', air, 600);
     const vsStrong = riverBetRate('strong-caller', air, 600);
-    // A strong-only caller's read (0) is below the 0.5 bar: no change at all.
+    // A strong-only caller's read (0) is below the bar: no change at all.
     expect(vsStrong).toBe(before);
     expect(before).toBeGreaterThan(0.05);
     expect(vsLight).toBeLessThan(vsStrong);
@@ -293,6 +303,66 @@ describe('river call read: decision', () => {
     const thin = [c('3', 'hearts'), c('7', 'clubs')];
     expect(riverBetRate('light-caller', thin, 300, true)).toBe(
       riverBetRate('light-caller', thin, 300, false)
+    );
+  });
+});
+
+describe('river call read: calibration and the hands that cannot teach it (2026-10-26)', () => {
+  const seed = (id: string, weak: number, strong: number, scope?: string) => {
+    for (let i = 0; i < weak; i++)
+      HorseMind.observeHandComplete(
+        `cal:${id}:w${i}`,
+        calledRiver(id, 'Pair')[0] as never,
+        2,
+        calledRiver(id, 'Pair')[1],
+        scope as never
+      );
+    for (let i = 0; i < strong; i++)
+      HorseMind.observeHandComplete(
+        `cal:${id}:s${i}`,
+        calledRiver(id, 'Flush')[0] as never,
+        2,
+        calledRiver(id, 'Flush')[1],
+        scope as never
+      );
+  };
+
+  it("does not fire against an ordinary hold'em caller, fires against a light one", () => {
+    seed('ordinary', 6, 8); // 0.43: about the hold'em base of 0.40
+    seed('light', 10, 4); // 0.71: base + margin (0.65) cleared
+    expect(HorseMind.riverCallLightRead('ordinary')).toBeNull();
+    const k = HorseMind.riverCallLightRead('light')!;
+    expect(k).toBeGreaterThan(0);
+    expect(k).toBeLessThan(1);
+  });
+
+  it("judges a call by its own game: an Omaha one-pair call is light, a hold'em one is not", () => {
+    seed('pa', 5, 9, 'omaha:hu'); // 0.36 in Omaha, base 0.04
+    seed('pa', 5, 9, 'holdem:hu'); // 0.36 in hold'em, base 0.40
+    HorseMind.setDecisionScope('omaha:hu');
+    expect(HorseMind.riverCallLightRead('pa')).not.toBeNull();
+    HorseMind.setDecisionScope('holdem:hu');
+    expect(HorseMind.riverCallLightRead('pa')).toBeNull();
+    HorseMind.setDecisionScope(null);
+  });
+
+  it('takes no sample from a hand flagged as unable to teach it (hi-lo, multi-board)', () => {
+    const [a, s] = calledRiver('lo', 'Pair');
+    HorseMind.observeHandComplete('hilo:1', a as never, 2, s, 'omaha:hu', false, false);
+    expect(HorseMind.getStats('lo')?.riverCallSD ?? 0).toBe(0);
+    HorseMind.observeHandComplete('hilo:2', a as never, 2, s, 'omaha:hu', false, true);
+    expect(HorseMind.getStats('lo')!.riverCallSD).toBe(1);
+  });
+
+  it('the live settlement path flags hi-lo and multi-board hands', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(
+      new URL('../services/supabase/handHistory.ts', import.meta.url),
+      'utf8'
+    );
+    expect(src).toMatch(/riverCallSample:\s*!variantInfo\(params\.gameVariant\)\.isHiLo &&/);
+    expect(src).toMatch(
+      /params\.communityCards2, params\.communityCards3, \.\.\.\(params\.ritBoards/
     );
   });
 });

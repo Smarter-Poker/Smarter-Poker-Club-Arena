@@ -619,6 +619,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v23Endgame', 'tournament endgame adjust (bounties, prizes)', 'V23'),
   flag('v23Plan', 'raise-response plans decided at bet time', 'V23'),
   flag('v23Reads', 'river reads', 'V23'),
+  flag(
+    'riverCallRead',
+    'river call read: bluff less into and value-bet thinner against a player whose shown river calls are light for their game',
+    '2026-10-25'
+  ),
   flag('v23Variants', 'plo8 low-only draw discipline (plo8_v23_lowdraw)', 'V23'),
   flag(
     'v23ShortDeck',
@@ -922,12 +927,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   mind(
     'riverCallSD',
     'shown hands whose last river action was a call (2026-10-25)',
-    'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+    'HorseMind.riverCallLightRead -> HorseLogic river bluff/thin-value read'
   ),
   mind(
     'riverCallSDWeak',
     '... shown as one pair or worse (a light river call)',
-    'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+    'HorseMind.riverCallLightRead -> HorseLogic river bluff/thin-value read'
   ),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),

@@ -105,7 +105,8 @@ export class HorseObserverReads {
         hand.bigBlind,
         hand.showdown,
         scope,
-        false
+        false,
+        hand.riverCallSample !== false
       );
       observeHandResults(hand.handKey, hand.results, hand.bigBlind);
     });
@@ -122,6 +123,7 @@ export class HorseObserverReads {
       committedHandId: hand.committedHandId,
       bigBlind: hand.bigBlind,
       scope: hand.scope,
+      ...(hand.riverCallSample === undefined ? {} : { riverCallSample: hand.riverCallSample }),
       actions: hand.actions?.map((a) => ({
         seat: a.seat,
         userId: a.userId,

@@ -22,7 +22,7 @@ import {
   simulateEquity,
   variantInfo,
 } from './HorseEval.js';
-import { Deck } from './PokerEngine.js';
+import { Deck, calculateRake } from './PokerEngine.js';
 import { isPostflopManiac, maniacRaiseWidth } from './HorseOpponentExploit.js';
 import {
   controllerDecisionState,
@@ -51,7 +51,7 @@ export interface PressureTally {
   vsJam: { call: number; fold: number; callScores: number[]; foldScores: number[] };
   /** facing the maniac's shove with nobody else in yet: every fold, with
    *  hero's true equity against the shover's real holding (any hand) */
-  jamFoldsAlone: { equity: number; price: number }[];
+  jamFoldsAlone: { equity: number; price: number; hand: number; hole: Card[] }[];
   /** hands in which a horse raised/bet voluntarily and later folded */
   raiseThenFold: number;
   /** hands in which a horse raised/bet voluntarily against the maniac */
@@ -286,7 +286,18 @@ export function playManiacPressure(
                 const eq = simulateEquity(spot.hero.cards, [], 1, variantInfo(variant), 1500);
                 restoreFastRandom(saved);
                 const call = Math.min(menu.toCall, spot.hero.stack);
-                tally.jamFoldsAlone.push({ equity: eq, price: call / (spot.state.pot + call) });
+                // This fixture's equal starting stacks have no side pots.
+                // Independently price the award using its controller config;
+                // the cap remains charged even when marginal rake is zero.
+                const gross = spot.state.pot + call;
+                const rake =
+                  mode === 'cash' ? calculateRake(gross, true, config.rakeConfig!, seats) : 0;
+                tally.jamFoldsAlone.push({
+                  equity: eq,
+                  price: call / (gross - rake),
+                  hand,
+                  hole: spot.hero.cards,
+                });
               }
               tally.vsJam.fold++;
               tally.vsJam.foldScores.push(score);
@@ -330,7 +341,13 @@ export function playManiacPressure(
                 });
               tally.postflopFolds.push({
                 equity: eq,
-                price: call / (spot.state.pot + call),
+                price:
+                  call /
+                  (spot.state.pot +
+                    call -
+                    (mode === 'cash'
+                      ? calculateRake(spot.state.pot + call, true, config.rakeConfig!, seats)
+                      : 0)),
                 pairedBoardRule,
               });
             } else tally.postflopCalls++;

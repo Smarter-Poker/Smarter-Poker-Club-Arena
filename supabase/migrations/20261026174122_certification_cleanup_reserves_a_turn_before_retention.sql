@@ -1,4 +1,5 @@
 -- Reserved by scripts/new-migration.mjs; exact production preimages read 2026-10-26.
+-- Requires the protected bounded-scan migration 20261026174211 installed first.
 -- Browser run 40345982952 passed its suites but cleanup exhausted five 30s
 -- platform-gate attempts. History retention held that gate SHARED for 23-34s
 -- every 30s. Trying EXCLUSIVE without a reservation could starve indefinitely.
@@ -9,7 +10,7 @@
 -- priority, all identity/activity/lease/financial guards and cron stay intact.
 -- The reservation is transaction-scoped and bounded at 32s (cron timeout 30s
 -- plus admission headroom). No global lock queues, new schedules or retries.
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_ca_prepare_unused_welcome_certification_board_leases(uuid)'::regprocedure)) = '52135b92428b122b02b2bb6094758442' AND md5(pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure)) = '6f7acd77614c5c5599ec6d966598f47a')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_ca_prepare_unused_welcome_certification_board_leases(uuid)'::regprocedure)) = '52135b92428b122b02b2bb6094758442' AND md5(pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure)) = '92ef94b3abace0012fd6338e84378816')
 BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '60s';
@@ -39,7 +40,7 @@ BEGIN
     ('public.fn_ca_prepare_unused_welcome_certification_board_games(uuid)','ffda181a8ba22495a37681d707d40404','023dad99aeb5671a19cbc83ba622d2d4',false),
     ('public.fn_ca_prepare_unused_welcome_certification_board_leases(uuid)','c0e56e2aafcf8a21aba03edca44a2268','52135b92428b122b02b2bb6094758442',false),
     ('public.fn_ca_prepare_unused_welcome_certification_board_origins(uuid)','adc1f35047877485a1ac35a124dc7e84','7d43b2872d4dad240b67c4c2267c6d50',false),
-    ('public.sp_prune_hand_history(integer)','60bf472a763ad182ffd53c3b2bb3e14c','6f7acd77614c5c5599ec6d966598f47a',true)
+    ('public.sp_prune_hand_history(integer)','191263561b195f387a8befd278eaca43','92ef94b3abace0012fd6338e84378816',true)
   ) AS patches(sig,pre_hash,post_hash,is_retention) LOOP
     signature := item.sig::regprocedure;
     before_text := pg_get_functiondef(signature);
@@ -48,6 +49,9 @@ BEGIN
     END IF;
     SELECT proacl INTO prior_acl FROM pg_proc WHERE oid=signature;
     IF item.is_retention THEN
+      IF position('horse_retention_days' in before_text) = 0 THEN
+        RAISE EXCEPTION 'CERTIFICATION_RETENTION_POLICY_READ_MISSING';
+      END IF;
       old_fragment := $oldprune$  -- Preserve the original maintenance/settlement owner before any ledger read.
 $oldprune$;
       new_fragment := $newprune$  -- A waiting fixture reserves its turn on a lane used only by retention.

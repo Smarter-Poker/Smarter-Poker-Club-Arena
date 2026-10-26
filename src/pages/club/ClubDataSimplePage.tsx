@@ -29,7 +29,7 @@
  * lives one tap away at ./advanced.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -182,6 +182,7 @@ export function isSnapshot(value: unknown): value is Snapshot {
   const v = value as Record<string, unknown>;
   const s = v.summary as Record<string, unknown> | undefined;
   return (
+    (v.scope === 'club' || v.scope === 'downline') &&
     !!v.range &&
     !!s &&
     typeof s === 'object' &&
@@ -210,6 +211,7 @@ export default function ClubDataSimplePage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshotScope, setSnapshotScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
@@ -223,6 +225,35 @@ export default function ClubDataSimplePage() {
   const isToday = endDate >= today;
   const startDate = addDays(endDate, -(preset - 1));
   const stakesApply = game === 'ALL' || game === 'HOLDEM' || game === 'OMAHA' || game === 'MIXED';
+  const scopeKey = JSON.stringify([
+    userId,
+    clubParam,
+    clubUuid,
+    startDate,
+    endDate,
+    game,
+    stakes,
+    search,
+  ]);
+  const activeScopeRef = useRef(scopeKey);
+  activeScopeRef.current = scopeKey;
+  const visibleSnapshot = snapshotScope === scopeKey ? snapshot : null;
+
+  // Retire private figures and pending completions before another account or
+  // club can paint. A request number alone does not cover an account switch
+  // while the new session is still hydrating, or a response after unmount.
+  useLayoutEffect(() => {
+    ++requestRef.current;
+    setSnapshot(null);
+    setSnapshotScope(null);
+    setDenied(false);
+    setError(null);
+    setUpdatedAt(null);
+    setLoading(true);
+    return () => {
+      ++requestRef.current;
+    };
+  }, [scopeKey]);
 
   useEffect(() => {
     if (isUUID(clubParam)) {
@@ -284,6 +315,8 @@ export default function ClubDataSimplePage() {
   const load = useCallback(async () => {
     if (!clubUuid || isHydrating || !userId) return;
     const mine = ++requestRef.current;
+    const requestScope = scopeKey;
+    const isCurrent = () => mine === requestRef.current && activeScopeRef.current === requestScope;
     let timer = 0;
     try {
       const read = supabase.rpc('ca_club_data_screen', {
@@ -299,9 +332,11 @@ export default function ClubDataSimplePage() {
         timer = window.setTimeout(() => reject(new Error('club_data_timeout')), REQUEST_TIMEOUT_MS);
       });
       const { data, error: rpcError } = await Promise.race([Promise.resolve(read), timeout]);
-      if (mine !== requestRef.current) return;
+      if (!isCurrent()) return;
       if (rpcError) {
         if (isAuthzError(rpcError)) {
+          setSnapshot(null);
+          setSnapshotScope(null);
           setDenied(true);
           setError(null);
         } else {
@@ -315,19 +350,31 @@ export default function ClubDataSimplePage() {
         return;
       }
       setSnapshot(data);
+      setSnapshotScope(requestScope);
       if (data.club_name) setClubName(data.club_name);
       setDenied(false);
       setError(null);
       setUpdatedAt(Date.now());
     } catch (err) {
-      if (mine !== requestRef.current) return;
+      if (!isCurrent()) return;
       reportError(err, 'ClubDataSimplePage.snapshot');
       setError('Club Data Could Not Be Read. Showing The Last Good Figures.');
     } finally {
       window.clearTimeout(timer);
-      if (mine === requestRef.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [clubUuid, isHydrating, userId, startDate, endDate, game, stakes, stakesApply, search]);
+  }, [
+    clubUuid,
+    isHydrating,
+    userId,
+    startDate,
+    endDate,
+    game,
+    stakes,
+    stakesApply,
+    search,
+    scopeKey,
+  ]);
 
   // Read now, then keep reading while the screen is in view.
   useEffect(() => {
@@ -379,10 +426,10 @@ export default function ClubDataSimplePage() {
     setEndDate(next > today ? today : next);
   };
 
-  const summary = snapshot?.summary ?? null;
-  const isDownline = snapshot?.scope === 'downline';
-  const factsFrom = snapshot?.facts_from ?? null;
-  const rows = useMemo(() => snapshot?.rows ?? [], [snapshot]);
+  const summary = visibleSnapshot?.summary ?? null;
+  const isDownline = visibleSnapshot?.scope === 'downline';
+  const factsFrom = visibleSnapshot?.facts_from ?? null;
+  const rows = useMemo(() => visibleSnapshot?.rows ?? [], [visibleSnapshot]);
   const liveCount = summary?.live_games ?? rows.filter((r) => r.live).length;
   // A route segment, never a `??` inside the template: the reachability law
   // reads everything after a `?` as a query string.
@@ -409,10 +456,14 @@ export default function ClubDataSimplePage() {
         onBack={() => navigate(-1)}
         clubName={clubName}
         /* The full report is the whole club's; an agent's view is his own. */
-        onAdvanced={isDownline ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}
+        onAdvanced={
+          visibleSnapshot?.scope === 'club'
+            ? () => navigate(`/clubs/${clubKey}/data/advanced`)
+            : undefined
+        }
       />
 
-      {snapshot?.reporting_scope === 'union' && (
+      {visibleSnapshot?.reporting_scope === 'union' && (
         <div className={styles.agentScopeBanner}>All Member Clubs And Union Account</div>
       )}
       {isDownline && <div className={styles.agentScopeBanner}>You And Your Downline</div>}
@@ -528,13 +579,13 @@ export default function ClubDataSimplePage() {
           </>
         )}
       </div>
-      {snapshot?.accounting_basis === 'chicago_net_money_flow' && (
+      {visibleSnapshot?.accounting_basis === 'chicago_net_money_flow' && (
         <p className={styles.liveLine}>
           Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished
           MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
         </p>
       )}
-      {snapshot?.accounting_basis === 'utc_net_money_flow' && (
+      {visibleSnapshot?.accounting_basis === 'utc_net_money_flow' && (
         <p className={styles.liveLine}>
           Net Entries And Payouts In UTC. Unfinished Event Entries Included.
         </p>

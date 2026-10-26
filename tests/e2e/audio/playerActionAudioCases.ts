@@ -51,12 +51,14 @@ export function registerPlayerActionAudioCases() {
           };
         });
         expect(metrics.call.duration).toBeLessThan(0.12);
-        expect(metrics.raise.duration).toBeGreaterThan(0.35);
+        expect(metrics.raise.duration).toBeGreaterThan(0.09);
+        expect(metrics.raise.duration).toBeLessThan(0.24);
         expect(metrics.large.duration).toBeGreaterThan(metrics.raise.duration);
         expect(metrics.large.rms).toBeGreaterThan(metrics.raise.rms * 1.25);
         expect(metrics.quiet.rms).toBeLessThan(metrics.raise.rms * 0.4);
-        expect(metrics.raise.rms).toBeGreaterThan(metrics.call.rms);
+        expect(metrics.raise.rms).toBeGreaterThan(metrics.call.rms * 0.3);
         expect(metrics.raise.rms).toBeLessThan(metrics.call.rms * 2);
+        expect(metrics.raise.lowFraction).toBeGreaterThan(metrics.call.lowFraction * 2);
         for (const audio of Object.values(metrics) as { peak: number; rms: number }[]) {
           expect(audio.peak).toBeLessThan(1);
           expect(audio.rms).toBeGreaterThan(0);

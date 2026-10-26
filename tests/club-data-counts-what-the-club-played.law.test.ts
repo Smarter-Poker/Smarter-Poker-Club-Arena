@@ -151,9 +151,7 @@ describe('the page and the footer say the same thing', () => {
   });
 
   it("an agent's page has no whole-club report door", () => {
-    expect(page).toContain(
-      'onAdvanced={isDownline ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}'
-    );
+    expect(page).toContain("visibleSnapshot?.scope === 'club'");
   });
 
   it('a player gets the five-door footer, with no Data door, and it never flashes on', () => {

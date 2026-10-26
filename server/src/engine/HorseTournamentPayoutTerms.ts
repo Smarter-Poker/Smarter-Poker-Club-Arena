@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { computePlacePrize, prizePoolAvailableToPlaces } from '../tournament/payoutMath.js';
+import { computePrizeLadder, prizePoolAvailableToPlaces } from '../tournament/payoutMath.js';
 import { tournamentUnitCents } from '../tournament/tournamentUnit.js';
 
 export interface HorseFinalizedPrizeLadder {
@@ -110,9 +110,8 @@ export function captureHorseTournamentPayoutTerms(
   );
   if (ladderPool === null || !(pool > 0)) return captured;
   const poolCents = Math.round(pool * 100);
-  const prizesCents = sorted.map(({ place }) =>
-    Math.round(computePlacePrize(ladderPool, sorted, place, unit) * 100)
-  );
+  const ladder = computePrizeLadder(ladderPool, sorted, unit);
+  const prizesCents = sorted.map(({ place }) => Math.round((ladder.get(place) ?? 0) * 100));
   const bubbleReserveCents = poolCents - Math.round(ladderPool * 100);
   if (
     !Number.isSafeInteger(poolCents) ||

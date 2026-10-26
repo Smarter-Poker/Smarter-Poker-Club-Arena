@@ -9,6 +9,7 @@
  * bet): calls with a hand 7-40 holdings beat lost 3,410 bb over 138 spots.
  */
 import { describe, expect, it } from 'vitest';
+import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
 import {
   HorseLogic,
   PLO6_RIVER_FOLD_BEAT_PROB,
@@ -295,6 +296,7 @@ describe('V59 PLO6 unpaired-board river discipline', () => {
       if (off.action === 'raise' || off.action === 'all_in') {
         raisedOff++;
         expect(on.action).toBe('call');
+        expect(horseDecisionReceiptIsValid(on, 'plo6')).toBe(true);
       } else expect(on.action).toBe(off.action);
     }
     expect(raisedOff).toBeGreaterThan(0);

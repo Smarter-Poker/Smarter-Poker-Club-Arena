@@ -19,12 +19,24 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseBoardContact.ts':
+      'physical private river value consumed by board-conditioned equity and sampled continuation strength',
     'src/services/horseCorrectiveReview/liveKernel.ts':
       'boundary: the Phase 14 worker-local corrective consumer; absent a separately admitted functional capability it preserves action and RNG, and it never stacks on an applied prior candidate',
     'src/engine/HorseRiverNuts.ts':
       'the final river-nuts raise and full-pot near-pot wager invariants after all strategy owners',
     'src/engine/HorseTournamentShoveDiscipline.ts':
       'the final tournament preflop shove-depth wager rule (no deep open or re-raise shove) after all strategy owners',
+    'src/engine/HorseCallDeductions.ts':
+      'the projected call award deduction fraction, including capped rake, BBJ fees, side pots and returned unmatched contributions',
+    'src/engine/multiway/JointPotDistribution.ts':
+      'the settlement contribution and uncalled-return arithmetic used to project a canonical call before pricing deductions',
+    'src/domain/diamondCashFeeSnapshot.ts':
+      'the hand-frozen Diamond fee schedule used for projected call award deductions',
+    'src/domain/diamondCashRakeSchedule.ts':
+      'the authoritative whole-Diamond rake arithmetic used for projected call pricing',
+    'src/domain/diamondCashJackpotSchedule.ts':
+      'the authoritative whole-Diamond jackpot collection used for projected call pricing',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':

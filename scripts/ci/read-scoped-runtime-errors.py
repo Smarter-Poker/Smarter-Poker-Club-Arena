@@ -29,6 +29,21 @@ CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
 # Managers emit this marker immediately after the Error label. A prefix is
 # inferred attribution only, never evidence that the full UUID was logged.
 EVENT_PREFIX = re.compile(r'^\[Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80}\] Error: \[Tournament:([0-9a-f]{8})\](?:[ \t]|$)')
+# Fixed existing manager transitions, with bounded counts only. Never export
+# the rest of a console line, a generic message, or an arbitrary object.
+BALANCE_PROGRESS = re.compile(r'^\[Tournament:([0-9a-f]{8})\] (?:(consolidation outstanding - sweeps move to the consolidation lane|consolidation finished - sweeps return to the general lanes)|Resumed - ([0-9]{1,4}) tables, level ([0-9]{1,4}))$')
+BALANCE_REFUSAL = re.compile(r'^\[Tournament:([0-9a-f]{8})\] Break ([0-9a-f]{8}) (not begun|members not dispatched|not retired): ([a-z_]{1,64})(?::.{0,512})?$')
+BREAK_REFUSAL_REASONS = frozenset({
+    'source_engine_absent', 'source_retention_refused', 'source_park_probe_missed',
+    'source_engine_replaced', 'mutation_not_allowed', 'source_roster_unread',
+    'source_roster_empty', 'source_seat_unfunded_or_unbound',
+    'source_registrations_unread', 'source_roster_disagrees', 'destinations_unread',
+    'destinations_full', 'movement_unproven', 'begin_refused',
+    'seat_move_outcome_pending', 'source_boundary_unclaimed',
+    'terminal_handoff_required', 'original_owner_lifecycle_changed',
+    'members_unresolved', 'state_not_retirable', 'manager_authority_unavailable',
+    'reconcile_refused', 'amendment_refused',
+})
 # Keep the original deal refusals as well as their later watchdog consequence.
 # Only these emitted call sites, with an exactly selected table, are admitted.
 ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start)\]')
@@ -293,6 +308,37 @@ def extract(raw, scopes):
         body = line[ts.end():] if ts else line
         if HEADER.match(body):
             finish()
+            refusal = BALANCE_REFUSAL.fullmatch(body)
+            if refusal and refusal[4] in BREAK_REFUSAL_REASONS:
+                block, context, stamp = [], None, None
+                candidates = event_prefixes.get(refusal[1], [])
+                if len(candidates) == 1:
+                    records.append({'timestamp': ts.group(1) if ts else None,
+                                    'context': 'Tournament.break_refused', 'scopeIds': [],
+                                    'inferredScopeIds': candidates,
+                                    'scopeAttribution': 'canonical_event_prefix_inferred',
+                                    'symbolicErrors': sorted(set(ERROR.findall(body))),
+                                    'engineReasons': [],
+                                    'breakRefusal': {'breakIdPrefix': refusal[2],
+                                                     'stage': refusal[3], 'reason': refusal[4]}})
+                continue
+            progress = BALANCE_PROGRESS.fullmatch(body)
+            if progress:
+                block, context, stamp = [], None, None
+                candidates = event_prefixes.get(progress[1], [])
+                if len(candidates) == 1:
+                    kind = ('resumed' if progress[3] is not None else
+                            'consolidation_outstanding' if progress[2].startswith('consolidation outstanding') else
+                            'consolidation_finished')
+                    record = {'timestamp': ts.group(1) if ts else None,
+                              'context': 'Tournament.'+kind, 'scopeIds': [],
+                              'inferredScopeIds': candidates,
+                              'scopeAttribution': 'canonical_event_prefix_inferred',
+                              'symbolicErrors': [], 'engineReasons': []}
+                    if kind == 'resumed':
+                        record['resumedBoard'] = {'tables': int(progress[3]), 'level': int(progress[4])}
+                    records.append(record)
+                continue
             match = CONTEXT.match(body) or ADMISSION_CONTEXT.match(body) or POSTCOMMIT_CONTEXT.match(body)
             context = match.group(1) if match else None
             engine_match = ENGINE_CONTEXT.match(body)
@@ -347,7 +393,7 @@ MAX_PHYSICAL_LINES = 20000
 MAX_ARCHIVE_EXPANSION = 256 * 1024 * 1024
 
 
-def archived_window(window, current, seconds=10):
+def archived_window(window, current, seconds=10, scopes=None):
     """Bounded scan of the run-spec's existing outgoing logs, never caller paths.
 
     Prefixes come from the archive name, not today's host health. Neither an
@@ -401,7 +447,35 @@ def archived_window(window, current, seconds=10):
                         'imageIdPrefix': image, 'fullEngineRevision': 'unproven; archive filename prefix only'}
             item = {**identity, 'status': 'observed', 'retainedBytes': 0, 'retainedPhysicalLines': 0}
             metadata['archives'].append(item)
-            output, pending = [], b''
+            output, pending, block = [], b'', []
+
+            def retain(record):
+                nonlocal size, lines
+                if not record:
+                    return True
+                raw_record = b''.join(record)
+                # Scope before the retained-input bound. Otherwise unrelated
+                # fleet traffic can consume all 20,000 lines before the named
+                # event's original refusal, even in an explicitly selected
+                # incident window. Extraction remains the same allowlisted,
+                # redacted parser; raw records never leave the host.
+                if scopes is not None and not extract(raw_record, scopes)['matchingRecords']:
+                    return True
+                fresh, record_seen = [], set()
+                for line in record:
+                    key = line.rstrip(b'\n')
+                    if key not in seen and key not in record_seen:
+                        record_seen.add(key)
+                        fresh.append(line)
+                byte_count = sum(map(len, fresh))
+                if size+byte_count > MAX_BYTES or lines+len(fresh) > MAX_PHYSICAL_LINES:
+                    item['status'] = 'inputBound'; metadata['truncated'] = True
+                    return False
+                for line in fresh:
+                    seen.add(line.rstrip(b'\n'))
+                output.extend(fresh)
+                size += byte_count; lines += len(fresh)
+                return True
             process, stream = None, None
             try:
                 if time.monotonic() >= deadline:
@@ -451,14 +525,25 @@ def archived_window(window, current, seconds=10):
                                 continue
                             if not start <= timestamp < until or line in seen:
                                 continue
-                            if size+len(line)+1 > MAX_BYTES or lines >= MAX_PHYSICAL_LINES:
-                                item['status'] = 'inputBound'; metadata['truncated'] = True
-                                stop = True
-                                break
-                            seen.add(line); output.append(line+b'\n')
-                            size += len(line)+1; lines += 1
+                            if scopes is None:
+                                if not retain([line+b'\n']):
+                                    stop = True
+                                    break
+                            else:
+                                body = line.decode('utf-8', errors='replace')[match.end():]
+                                if HEADER.match(body):
+                                    if not retain(block):
+                                        stop = True
+                                        break
+                                    block = []
+                                # Same oversized-record refusal as extract():
+                                # a later scope cannot attach to a lost header.
+                                if len(block) <= 64:
+                                    block.append(line[:65537]+b'\n')
                         if stop:
                             break
+                if scopes is not None and item['status'] != 'inputBound':
+                    retain(block)
                 raw = b''.join(output)
                 item.update(retainedBytes=len(raw), retainedPhysicalLines=len(output))
                 sources.append((raw, identity))
@@ -535,7 +620,9 @@ def main():
         if len(raw.splitlines()) > MAX_PHYSICAL_LINES:
             raise RuntimeError('Log read exceeded bounded physical lines')
         archives, archive_metadata = archived_window(
-            window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)))
+            window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)),
+            # Explicit anonymous timing reads retain their existing framing.
+            scopes=None if mux_timing or fold_timing else scopes)
         current_raw = raw
         raw += b''.join(source for source, _identity in archives)
         after = health('http://127.0.0.1:8080')

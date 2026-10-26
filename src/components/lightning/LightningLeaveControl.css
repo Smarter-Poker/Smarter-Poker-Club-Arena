@@ -1,0 +1,39 @@
+/* Live text in the face of the approved 1280 x 315 action shell. */
+.lightning-leave-control {
+  position: relative;
+  width: 180px;
+  aspect-ratio: 1280 / 315;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: url('/assets/club-buttons/action-primary-shell.webp') center / 100% 100% no-repeat;
+  color: #e4e7ec;
+  cursor: pointer;
+  pointer-events: auto;
+  container-type: inline-size;
+  -webkit-tap-highlight-color: transparent;
+}
+.lightning-leave-control > span {
+  position: absolute;
+  left: 23.44%;
+  top: 22%;
+  width: 66.41%;
+  height: 56%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-weight: 700;
+  font-size: calc(7.5cqw * var(--fit, 1));
+  white-space: nowrap;
+}
+.lightning-leave-control:active {
+  transform: translateY(1px);
+}
+.lightning-leave-control:focus-visible {
+  outline: 2px solid #45adff;
+}
+.lightning-leave-control:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}

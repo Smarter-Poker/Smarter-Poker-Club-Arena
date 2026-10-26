@@ -6,6 +6,10 @@ on:
         description: Exact full currently serving engine release SHA
         required: true
         type: string
+      reference_cases_json:
+        description: Optional exact original metadata for at most six reference-shape cases; no private records or commands
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
@@ -15,6 +19,7 @@ jobs:
     timeout-minutes: 3
     env:
       EXPECTED_ENGINE_SHA: ${{ inputs.expected_engine_sha }}
+      REFERENCE_CASES_JSON: ${{ inputs.reference_cases_json }}
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +35,11 @@ jobs:
           [[ "$EXPECTED_ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::Expected SHA refused'; exit 1; }
           [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo '::error::Configured host refused'; exit 1; }
           [ -n "$SSH_KEY" ] && [ -n "$HOST_KEY" ] || { echo '::error::Configured SSH metadata unavailable'; exit 1; }
+          REFERENCE_CASES_B64=''
+          if [ -n "$REFERENCE_CASES_JSON" ]; then
+            REFERENCE_CASES_B64=$(printf '%s' "$REFERENCE_CASES_JSON" | python3 scripts/ci/inspect-tournament-refill.py --encode-reference-cases "$EXPECTED_ENGINE_SHA")
+            [[ "$REFERENCE_CASES_B64" =~ ^[A-Za-z0-9+/=]+$ ]] || { echo '::error::Case metadata refused'; exit 1; }
+          fi
           SSH_DIR="$RUNNER_TEMP/tournament-refill-ssh-$GITHUB_RUN_ID"
           install -d -m 0700 "$SSH_DIR"
           trap 'rm -rf "$SSH_DIR"' EXIT
@@ -43,7 +53,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_DIR/known_hosts" \
             -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
-            "root@$HETZNER_HOST" "python3 - '$EXPECTED_ENGINE_SHA'" \
+            "root@$HETZNER_HOST" "python3 - '$EXPECTED_ENGINE_SHA' '$REFERENCE_CASES_B64'" \
             < scripts/ci/inspect-tournament-refill.py > "$RUNNER_TEMP/tournament-refill.json"
           cat "$RUNNER_TEMP/tournament-refill.json"
       - uses: actions/upload-artifact@v4

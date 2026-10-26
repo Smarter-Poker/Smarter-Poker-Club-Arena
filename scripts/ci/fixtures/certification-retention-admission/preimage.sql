@@ -1191,13 +1191,14 @@ DECLARE
   v_round integer;
   -- THE SCAN RESUMES WHERE IT LEFT OFF (2026-10-26, migration 20261026133101).
   -- v_resume_after is the newest created_at this pass has examined; the
-  -- candidate scan starts after it, so a row a guard retains is evaluated
-  -- once per pass rather than once per round. Measured before: 219,000
-  -- retained rows re-read every round, 7.2 s of each round, 90% of the day.
+  -- Bounded raw pages advance even when every guard retains their rows.
+  -- The uuid tie-breaker prevents equal timestamps from skipping later rows.
   v_pass_length constant interval := interval '60 minutes';
   v_resume_after timestamptz;
   v_pass_started timestamptz;
   v_reached timestamptz;
+  v_resume_id uuid;
+  v_reached_id uuid;
 BEGIN
   -- Retention never holds the maintenance lane while the platform is frozen.
   IF public.fn_platform_frozen() IS DISTINCT FROM false THEN RETURN 0; END IF;
@@ -1210,21 +1211,37 @@ BEGIN
   IF v_days IS NULL THEN v_days := 8; END IF;
   v_window := make_interval(days=>v_days);
   INSERT INTO smarter_private.hand_history_prune_cursor(singleton) VALUES(true) ON CONFLICT DO NOTHING;
-  SELECT c.resume_after,c.pass_started_at INTO v_resume_after,v_pass_started
+  SELECT c.resume_after,c.pass_started_at,c.resume_id INTO v_resume_after,v_pass_started,v_resume_id
     FROM smarter_private.hand_history_prune_cursor c WHERE c.singleton FOR UPDATE;
   IF v_pass_started IS NULL OR v_pass_started<clock_timestamp()-v_pass_length THEN
     v_resume_after := NULL;
+    v_resume_id := NULL;
     v_pass_started := clock_timestamp();
   END IF;
 
   LOOP
     v_doomed := NULL;
     v_keepers := NULL;
-    WITH candidates AS (
+    -- Bound the scan BEFORE accounting/F06 guards: LIMIT on eligible rows
+    -- cannot bound the retained prefix. MATERIALIZED prevents guard pushdown.
+    WITH scanned AS MATERIALIZED (
+      SELECT hh.id,hh.created_at FROM public.hand_history hh
+       WHERE hh.created_at<now()-v_window
+         AND hh.created_at>=COALESCE(v_resume_after,'-infinity'::timestamptz)
+         AND (v_resume_id IS NULL OR (hh.created_at,hh.id)>(v_resume_after,v_resume_id))
+       ORDER BY hh.created_at,hh.id
+       LIMIT LEAST(GREATEST(p_batch,1),250)
+    ), candidates AS (
       SELECT hh.id,hh.players,hh.created_at,
              (hh.table_id IS NULL AND hh.tournament_id IS NULL
               AND hh.players = '[]'::jsonb) AS unattached
-        FROM public.hand_history hh
+        FROM scanned scan CROSS JOIN LATERAL (
+          -- Keep every guard downstream of a bounded point read even when
+          -- the planner chooses hash joins. Lock only this page; refuse a
+          -- concurrently held row through the existing SKIP LOCKED rule.
+          SELECT locked.* FROM public.hand_history locked
+           WHERE locked.id=scan.id FOR UPDATE SKIP LOCKED
+        ) hh
        WHERE hh.has_human IS FALSE
          AND NOT EXISTS (SELECT 1 FROM smarter_private.hand_submissions original
            WHERE original.table_id=hh.table_id AND original.hand_number=hh.hand_number
@@ -1235,9 +1252,6 @@ BEGIN
          AND smarter_private.horse_cash_retention_accounting_ready(hh.table_id,hh.hand_number)
          AND (hh.table_id IS NULL OR EXISTS (SELECT 1 FROM public.hand_atomic_commits a WHERE a.hand_id=hh.id AND a.table_id=hh.table_id AND a.hand_number=hh.hand_number AND isfinite(a.post_commit_completed_at) AND a.post_commit_completed_at<now()-v_window AND a.post_commit_result->>'ok'='true'))
          AND hh.created_at<now()-v_window
-         -- Resume after the newest row this pass has already examined
-         -- (migration 20261026133101). NULL is a fresh pass from the oldest row.
-         AND hh.created_at>COALESCE(v_resume_after,'-infinity'::timestamptz)
          -- A SEALED RESTORATION CASE KEEPS THE HANDS IT CITES (2026-10-14). The
          -- finite witness re-reads the atomic commit of every cited hand; a pruned
          -- hand voids the case and halts the weekly union accounting for ever.
@@ -1340,7 +1354,6 @@ BEGIN
          ))
        ORDER BY hh.created_at
        LIMIT LEAST(GREATEST(p_batch,1),250)
-       FOR UPDATE SKIP LOCKED
     ), classified AS (
       SELECT c.id,c.created_at,
         CASE
@@ -1361,14 +1374,17 @@ BEGIN
     )
     SELECT array_agg(id) FILTER (WHERE is_human IS false),
            array_agg(id) FILTER (WHERE is_human IS DISTINCT FROM false),
-           max(created_at)
-      INTO v_doomed,v_keepers,v_reached FROM classified;
+           (SELECT created_at FROM scanned ORDER BY created_at DESC,id DESC LIMIT 1),
+           (SELECT id FROM scanned ORDER BY created_at DESC,id DESC LIMIT 1)
+      INTO v_doomed,v_keepers,v_reached,v_reached_id FROM classified;
 
-    IF v_doomed IS NULL AND v_keepers IS NULL THEN
+    IF v_reached IS NULL THEN
       v_resume_after := now()-v_window;
+      v_resume_id := NULL;
       EXIT;
     END IF;
-    v_resume_after := GREATEST(COALESCE(v_resume_after,'-infinity'::timestamptz),v_reached);
+    v_resume_after := v_reached;
+    v_resume_id := v_reached_id;
     IF v_keepers IS NOT NULL AND cardinality(v_keepers)>0 THEN
       UPDATE public.hand_history SET has_human=true WHERE id=ANY(v_keepers);
     END IF;
@@ -1406,7 +1422,7 @@ BEGIN
     EXIT WHEN clock_timestamp()>=v_deadline;
   END LOOP;
   UPDATE smarter_private.hand_history_prune_cursor
-     SET resume_after=v_resume_after,pass_started_at=v_pass_started,updated_at=clock_timestamp()
+     SET resume_after=v_resume_after,resume_id=v_resume_id,pass_started_at=v_pass_started,updated_at=clock_timestamp()
    WHERE singleton;
   RETURN v_deleted;
 END;

@@ -311,11 +311,13 @@ describe('V40 tiered aggressor sampling', () => {
 describe('V40 hand #6046101 - aces-up vs pot, pot, pot', () => {
   it('folds the river pot bet with aces-up (with V40 off it called)', () => {
     const on = foldRate(() => riverMonkSpot('river'), {});
-    // The 2026-10-25 paired-board rule would fold it too; ablate both so the
-    // control still measures what V40 alone changed.
+    // Isolate V40: the 2026-10-25 paired-board fold and the PLO6 river nut
+    // rule (V58) would fold this river too; ablate both so the control still
+    // measures what V40 alone changed.
     const off = foldRate(() => riverMonkSpot('river'), {
       v40Omaha: false,
       ploPairedBoardFold: false,
+      v58Plo6RiverNuts: false,
     });
     expect(on).toBeGreaterThanOrEqual(0.85);
     expect(off).toBeLessThan(0.5);

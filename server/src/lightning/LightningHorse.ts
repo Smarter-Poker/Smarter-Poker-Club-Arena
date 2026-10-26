@@ -74,6 +74,8 @@ export interface LightningHorseTurn {
    * the one the seat would hold (HandController asIfToAct).
    */
   earlyLook?: boolean;
+  /** PLO PRESUMPTION (2026-10-25): the participants a person plays. */
+  humanUserIds?: readonly string[];
 }
 
 export interface LightningHorseDecision {
@@ -118,6 +120,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
   });
   const gameState = {
     stateSchemaVersion: 1,
+    ...(turn.humanUserIds ? { humanUserIds: [...turn.humanUserIds] } : {}),
     dealtSeatIds: state.players
       .filter((c) => c.cards.length > 0)
       .map((c) => c.seat)

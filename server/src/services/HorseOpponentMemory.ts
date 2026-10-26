@@ -12,6 +12,8 @@ import {
   type MemoryMode,
   type MemorySize,
 } from '../engine/HorseOpponentMemory.js';
+import { corroborationCandidate } from '../engine/HorseOpponentExploit.js';
+import { readScopeOf } from '../engine/HorseMind.js';
 
 export type OpponentMemorySchema = 'installed' | 'unavailable' | 'unknown';
 /** Installed schema is cached. Failed probes recover on an original request
@@ -396,13 +398,18 @@ export function createDecisionOpponentProfilePacketReader(schema = horseOpponent
     const mode = gs.gameMode === 'tournament' || gs.tournament ? 'tournament' : 'cash';
     const ids = gs.players.map((p) => p.user_id).sort();
     if (!variant || size === 'hu') return { profiles, donorProfiles: [] };
-    const thinIds = ids.filter(
-      (id) =>
-        !profiles.some(
-          (profile) =>
-            profile.user_id === id && profile.counters.hands >= OPPONENT_MEMORY_THIN_HANDS
-        )
-    );
+    // Thin rows borrow the sibling table size; a row whose statistics already
+    // sit past every horse here may be corroborated by it (2026-10-25, A
+    // KNOWN MANIAC IS A MANIAC AT EVERY TABLE SIZE). Same single donor read.
+    const scope = readScopeOf(gs.gameVariant, count);
+    const thinIds = ids.filter((id) => {
+      const own = profiles.find((profile) => profile.user_id === id);
+      return (
+        !own ||
+        own.counters.hands < OPPONENT_MEMORY_THIN_HANDS ||
+        corroborationCandidate(own.counters, scope, gs.gameVariant)
+      );
+    });
     if (!thinIds.length) return { profiles, donorProfiles: [] };
     const key = JSON.stringify([
       request.fence.split(':').slice(0, 2),

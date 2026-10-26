@@ -3569,6 +3569,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     });
     const gameState: HorseGameStateV2 = {
       stateSchemaVersion: 1,
+      // PLO PRESUMPTION (2026-10-25): who at this table is a person. The
+      // decision worker is server-side; this never reaches a client payload.
+      humanUserIds: this.seatedPlayers
+        .filter((seated) => seated.is_horse === false)
+        .map((seated) => seated.user_id),
       dealtSeatIds: state.players
         .filter((candidate) => candidate.cards.length > 0)
         .map((candidate) => candidate.seat)

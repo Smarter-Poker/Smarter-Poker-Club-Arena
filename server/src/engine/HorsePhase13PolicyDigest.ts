@@ -151,6 +151,8 @@ export const HORSE_PHASE13_POLICY_SOURCE_FILES: readonly string[] = Object.freez
  * change a Phase 13 proposal, its legal form, or whether it may act. */
 export const HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/BrainTelemetry.ts':
+      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
     'src/engine/horseDecision/protocol.ts':
       'boundary: buildHorseDecisionKey only names the decision state (the receipt stateKey and the acquisition binding); it seeds nothing, and the worker has already refused a non-canonical request before any decision; the rest of the file is the worker transport',
     'src/engine/remainingVariants/RemainingVariantActionEconomics.ts':

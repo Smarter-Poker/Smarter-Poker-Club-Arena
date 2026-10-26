@@ -20,12 +20,18 @@ export function scoreboardSQL(since, through) {
   if (duration <= 0 || duration > 14 * 86400000)
     throw Error('Window must be positive and at most fourteen days');
   return `BEGIN READ ONLY;
-SET LOCAL statement_timeout = '1000ms';
+SET LOCAL statement_timeout = '5000ms';
 WITH selected AS MATERIALIZED (
  SELECT f.hand_id, f.user_id, f.game_variant, f.big_blind, f.tournament_id,
         f.net, f.opponent_ids, f.players_dealt, p.is_horse
- FROM public.ca_hand_facts f LEFT JOIN public.profiles p ON p.id = f.user_id
- WHERE p.is_horse IS DISTINCT FROM true AND f.played_at >= '${start}'::timestamptz AND f.played_at < '${end}'::timestamptz
+ FROM public.profiles p CROSS JOIN LATERAL (
+   SELECT f.hand_id, f.user_id, f.game_variant, f.big_blind, f.tournament_id,
+          f.net, f.opponent_ids, f.players_dealt, f.played_at
+   FROM public.ca_hand_facts f
+   WHERE f.user_id = p.id AND f.played_at >= '${start}'::timestamptz
+     AND f.played_at < '${end}'::timestamptz
+   ORDER BY f.played_at, f.hand_id LIMIT 50001
+ ) f WHERE p.is_horse = false
  ORDER BY f.played_at, f.hand_id, f.user_id LIMIT 50001
 ), classified AS MATERIALIZED (
  SELECT f.*, CASE
@@ -62,6 +68,7 @@ SELECT jsonb_build_object(
  'version', 1, 'since', '${start}', 'through', '${end}',
  'status', CASE WHEN (SELECT count(*) FROM selected) > 50000 THEN 'incomplete_row_limit' ELSE 'observed' END,
  'classification_basis', 'current_profiles_not_historical_identity',
+ 'candidate_scope', 'currently_classified_humans_only_unknown_actors_excluded',
  'meaning', 'Human net after rake in hands where every other dealt player is a horse. Tournament chips are not ROI. The negative of human net includes rake and is not horse profit.',
  'limits', 'No claim of sustainable win rate, causal strategy improvement, all-horse coverage, or exact individual horse transfers. Mixed-human hands excluded; no private cards read.',
  'coverage', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY cohort) FROM coverage c), '[]'::jsonb),

@@ -83,6 +83,7 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
       INSERT INTO profiles VALUES ('h',false),('h2',false),('a',true),('b',true),('unknown',null);
       CREATE TABLE ca_hand_facts(hand_id text,user_id text,game_variant text,big_blind numeric,
         tournament_id text,net numeric,opponent_ids text[],players_dealt int,played_at timestamptz);
+      CREATE INDEX fact_user_time ON ca_hand_facts(user_id,played_at);
       INSERT INTO ca_hand_facts VALUES
       ('cash-win','h','plo5',2,null,18,ARRAY['a','b'],3,'2026-10-26T14:10Z'),
       ('cash-loss','h','plo5',2,null,-10,ARRAY['a','b'],3,'2026-10-26T14:11Z'),

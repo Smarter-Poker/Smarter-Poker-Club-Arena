@@ -11,7 +11,9 @@ participant is currently classified as a horse. Mixed-human hands and unknown
 or malformed participant sets are counted separately. Variant, blind level,
 player and cash/tournament status remain separate. Tournament chip results are
 not ROI, and negating a human's net includes rake rather than measuring horse
-profit. Current profile classification is identified as such; historical
+profit. Candidate reads use the existing player/time index for the current human roster;
+unknown actor identities are excluded explicitly. Unknown opponents remain
+unscored. Current profile classification is identified as such; historical
 identity is not reconstructed.
 
 Run with existing authenticated psql configuration (no credential file loading
@@ -22,7 +24,7 @@ node scripts/horse-human-scoreboard.mjs --run 2026-10-26T14:27:29Z 2026-10-26T15
 ```
 
 `--sql` prints the same read-only SQL for an authorized SQL interface. Explicit
-UTC endpoints are mandatory; maximum window fourteen days, a one-second server
+UTC endpoints are mandatory; maximum window fourteen days, a five-second server
 statement budget and ten-second client deadline. Over 50,000 candidate facts
 produces an incomplete result with no scores, never a passing partial sample.
 Empty observations do not imply no horses or no human traffic elsewhere.
@@ -37,3 +39,7 @@ or workflow changes. Existing financial qualification inputs remain unchanged. N
 Read-only production execution for 14:27:29–15:00 UTC observed 51 sole-human
 facts, all tournament NLH/PLO4. This is too small and has no cash PLO5 sample;
 it is not evidence for a new PLO5 strategy or sustainable winning performance.
+
+The wider 24-hour query initially exceeded the one-second read budget.
+The bounded roster-driven index plan and explicit five-second report budget
+replace the full fact-window scan; timeouts still refuse the report.

@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/digest-real-player-totals",
+  "_comment": "Migration 20261026033215: fn_sp_digest_player_totals(date), the Real Player Totals card of the daily digest. Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": ["fn_sp_digest_player_totals"],
+  "columns": {}
+}

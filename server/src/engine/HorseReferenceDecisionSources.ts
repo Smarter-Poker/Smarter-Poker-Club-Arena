@@ -32,6 +32,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/AnteMath.ts': 'the ante orbit cost behind the M-zones',
     'src/engine/OmahaFlushBlocker.ts':
       'physical two-hole three-board nut-flush and straight-flush blockers consumed by the reference decision',
+    'src/engine/HorseHoldemPremiumAggression.ts':
+      'the NLH premium-aggression and dominated-hand 3-bet fold rules applied to the final decision after every other layer (Dan 2026-10-25)',
     'src/engine/HorsePloPairedBoardFold.ts':
       'the PLO4/PLO5/PLO6 paired-board fold applied to the final decision after every other layer (Dan 2026-10-25)',
     'src/engine/HorseOmahaImpliedDraw.ts':

@@ -96,3 +96,15 @@ because `tryTournamentAddOns` returns at once when the admission's 5-second
 work budget is spent (`eliminationMutationAllowed()`), and 83% of admissions
 spend it before stage 4. The head-of-admission offer from Part 2 runs while the
 budget is still available, which is what lets this rate be reached.
+
+## Part 4: The offer fills its sixty-second window
+
+With a one-minute add-on break, a paid event's whole offer window is sixty
+seconds. `process_tournament_rebuy` takes the tournament row FOR UPDATE, so
+purchases are serial per event (production p50 363 ms, p95 927 ms, 20:00-02:25
+UTC); the time lost was the wait between admissions, one 20-player batch each.
+The head-of-admission offer now loops batch after batch (at most ten) while the
+admission's budget lasts, stops when no horse is left, nothing was answered,
+the window closes or the platform freezes, and runs ahead of the
+late-registration branch, which can end an admission while the entry window
+that precedes the add-on is being closed.

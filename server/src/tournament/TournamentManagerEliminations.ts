@@ -600,6 +600,62 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (await this.resumeCommittedTerminalCleanup()) return;
       if (sweepStopped()) return;
 
+      /*
+       * AN OPEN ADD-ON WINDOW IS SERVED BEFORE THE STAGES A BUST REWINDS
+       * (2026-10-25).
+       *
+       * The add-on window is a deadline: when it closes, a horse that was never
+       * offered has lost its add-on for good. The offer lived only in stage 4,
+       * and every bust rewinds the cursor to stage 0. On 2026-10-25 83% of
+       * sweep admissions (14,182 of 17,047) overran the 5-second work budget,
+       * so on a busy field stage 4 was effectively never reached inside the
+       * window: Sunday Funday Happy Hour (Midway Union) 0 of 135 horses added
+       * on, Bounty Builder 0 of 192, PLO Classic 0 of 132, PLO PKO 4 of 201,
+       * while quiet satellites reached 89-92%. Dan: 70% of horses add on,
+       * "NOT ZERO EVER".
+       *
+       * Serving it here is safe by construction (see the stage-4 comment): the
+       * RPC is idempotent per player, refuses a player with no live seat, and
+       * tryTournamentAddOns offers only players holding chips. The same 20 s
+       * cadence applies, so the stage-4 call below never doubles an offer.
+       *
+       * It runs before the late-registration branch too: when the entry window
+       * closes (exactly when the add-on opens) that branch may end the
+       * admission early while early finishers are repriced.
+       *
+       * Only OFFERS move here. Closing the window (the persisted deadline has
+       * passed, or a Free Buy closing drain is pending) finalizes the prize
+       * pool, and that must still follow the bust stage so a bust recorded in
+       * this pass keeps its rebuy. Those branches stay in stage 4.
+       */
+      const addOnNowMs = Date.now();
+      if (this.addOnOfferWindowOpen(addOnNowMs) && !isMaintenanceFrozen()) {
+        if (addOnNowMs - this.lastAddOnOfferAt >= TournamentManagerBase.ADD_ON_RETRY_MS) {
+          this.noteEliminationSweepStep('tryTournamentAddOns');
+          // Keep offering, batch after batch, while this admission still has
+          // budget. Each purchase locks the tournament row, so offers are
+          // serial per event and the loss was the wait BETWEEN admissions:
+          // one 20-player batch, then back to the queue. A 165-entry field in
+          // a sixty-second window needs the whole budget of each admission.
+          for (let pass = 0; pass < 10; pass++) {
+            this.lastAddOnOfferAt = Date.now();
+            await this.tryTournamentAddOns();
+            if (sweepStopped()) return;
+            const { offered, more } = this.lastAddOnOfferPass;
+            if (
+              !more ||
+              offered === 0 ||
+              this.eliminationWorkBudgetExpired() ||
+              isMaintenanceFrozen() ||
+              !this.addOnOfferWindowOpen(Date.now())
+            ) {
+              break;
+            }
+          }
+        }
+        this.scheduleAddOnRetry();
+      }
+
       // A close commits its durable receipt and a `late_registration` wake in
       // one database transaction. Registration uses the same reason while the
       // window is open; asking the authoritative RPC then is a cheap no-op.
@@ -653,41 +709,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           await this.admitCommittedCapacityTables();
           if (sweepStopped()) return;
         }
-      }
-
-      /*
-       * AN OPEN ADD-ON WINDOW IS SERVED BEFORE THE STAGES A BUST REWINDS
-       * (2026-10-25).
-       *
-       * The add-on window is a deadline: when it closes, a horse that was never
-       * offered has lost its add-on for good. The offer lived only in stage 4,
-       * and every bust rewinds the cursor to stage 0. On 2026-10-25 83% of
-       * sweep admissions (14,182 of 17,047) overran the 5-second work budget,
-       * so on a busy field stage 4 was effectively never reached inside the
-       * window: Sunday Funday Happy Hour (Midway Union) 0 of 135 horses added
-       * on, Bounty Builder 0 of 192, PLO Classic 0 of 132, PLO PKO 4 of 201,
-       * while quiet satellites reached 89-92%. Dan: 70% of horses add on,
-       * "NOT ZERO EVER".
-       *
-       * Serving it here is safe by construction (see the stage-4 comment): the
-       * RPC is idempotent per player, refuses a player with no live seat, and
-       * tryTournamentAddOns offers only players holding chips. The same 20 s
-       * cadence applies, so the stage-4 call below never doubles an offer.
-       *
-       * Only OFFERS move here. Closing the window (the persisted deadline has
-       * passed, or a Free Buy closing drain is pending) finalizes the prize
-       * pool, and that must still follow the bust stage so a bust recorded in
-       * this pass keeps its rebuy. Those branches stay in stage 4.
-       */
-      const addOnNowMs = Date.now();
-      if (this.addOnOfferWindowOpen(addOnNowMs) && !isMaintenanceFrozen()) {
-        if (addOnNowMs - this.lastAddOnOfferAt >= TournamentManagerBase.ADD_ON_RETRY_MS) {
-          this.lastAddOnOfferAt = addOnNowMs;
-          this.noteEliminationSweepStep('tryTournamentAddOns');
-          await this.tryTournamentAddOns();
-          if (sweepStopped()) return;
-        }
-        this.scheduleAddOnRetry();
       }
 
       recoveryStage: {

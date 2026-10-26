@@ -1461,6 +1461,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/horse-layer-populations.sql --candidate supabase/migrations/20261025203617_horse_multiboard_descendants_use_their_decision_population.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+
+      - name: Horse audit distinguishes branch outcomes from execution layers
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/horse-layer-outcomes.sql --candidate supabase/migrations/20261026143605_horse_audit_separates_outcomes_from_execution_layers.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
       - name: Club entry news is shown once across devices
         if: matrix.shard == 2
         env:

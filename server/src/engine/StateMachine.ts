@@ -101,9 +101,31 @@ export class StateMachine<S extends string> {
 
   /**
    * Force state (for recovery scenarios only). Logs a warning.
+   *
+   * A DESIGNED RESET IS NOT A RECOVERY (2026-10-25). Measured on engine-01,
+   * ten minutes of the live log: 49,517 `[TurnFSM] FORCED state:
+   * timer_running -> waiting` and 2,601 `[PreActionFSM] FORCED state: idle ->
+   * idle` against 8,551 hands - a quarter of every line the engine wrote, on
+   * the two call sites whose own comments say "reset to waiting at turn
+   * start" and "reset all player FSMs back to idle". Those are the designed
+   * resets at a turn and hand boundary, not recoveries, and at 80 lines a
+   * second they rotated the 250 MB json-file window in under two hours, which
+   * is why the 13:27:10 UTC storm's log was gone by 19:50. They go through
+   * `reset()` below and say nothing. This method keeps its warning for the
+   * sites that genuinely force a state the table did not expect.
    */
   forceState(state: S): void {
     console.warn(`[${this.name}] FORCED state: ${this._state} → ${state}`);
+    this._state = state;
+  }
+
+  /**
+   * Return to a boundary state by design: a new turn, a new hand. Not a
+   * transition (the graph does not model every state a boundary can be
+   * reached from) and not a recovery (nothing went wrong), so nothing is
+   * logged. Use `forceState` for a state the table did not expect to be in.
+   */
+  reset(state: S): void {
     this._state = state;
   }
 

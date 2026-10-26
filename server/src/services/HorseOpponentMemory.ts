@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { reportError } from './errorReporter.js';
+import { isOpponentMemoryBusyRefusal, reportError, reportThrottled } from './errorReporter.js';
 import { noteFire } from '../engine/BrainTelemetry.js';
 import {
   memoryVariant,
@@ -70,6 +70,17 @@ export function createOpponentMemoryReadAdmission(now = () => Date.now()) {
   };
 }
 const admitOpponentMemoryRead = createOpponentMemoryReadAdmission();
+
+/** A busy admission refusal is counted (noteFire) and logged as one throttled
+ * line; any other failure keeps its full report. See errorReporter.reportThrottled. */
+function reportOpponentMemoryFailure(error: unknown, context: string): void {
+  if (isOpponentMemoryBusyRefusal(error))
+    reportThrottled(
+      context,
+      'opponent memory unavailable: busy - read refused at admission, answered from known profiles where any exist'
+    );
+  else reportError(error, context);
+}
 
 /** Bounded last-validated snapshots survive transient load, never cross a
  * game context, and never let an older in-flight receipt regress knowledge. */
@@ -179,7 +190,7 @@ export async function readHorseOpponentProfiles(
     const known = validatedOpponentProfiles.read(ids, v, mode, size);
     if (!known.length) throw error;
     noteFire('horse_opponent_memory_read_cache_fallback');
-    reportError(error, 'HorseOpponentMemory.decisionRead');
+    reportOpponentMemoryFailure(error, 'HorseOpponentMemory.decisionRead');
     return known;
   });
 }
@@ -234,7 +245,7 @@ export function createDecisionOpponentProfileReader(schema = horseOpponentMemory
     const read = readHorseOpponentProfiles(ids, variant, mode, size, signal).catch((error) => {
       // A failed hand is retained too: later streets must not repeatedly
       // launch the same cold initializer. A new hand may try after admission.
-      reportError(error, 'HorseOpponentMemory.decisionRead');
+      reportOpponentMemoryFailure(error, 'HorseOpponentMemory.decisionRead');
       return validatedOpponentProfiles.read(ids, variant, mode, size);
     });
     pending.set(key, read);
@@ -282,7 +293,7 @@ export async function readExistingHorseOpponentDonors(
     return validatedOpponentProfiles.read(ids, variant, mode, donorSize);
   }).catch((error) => {
     noteFire('horse_opponent_memory_donor_read_failed');
-    reportError(error, 'HorseOpponentMemory.donorRead');
+    reportOpponentMemoryFailure(error, 'HorseOpponentMemory.donorRead');
     return validatedOpponentProfiles.read(ids, variant, mode, donorSize);
   });
 }

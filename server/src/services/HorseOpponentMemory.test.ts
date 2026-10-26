@@ -4,7 +4,10 @@ import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 import type { LiveHorseDecisionSnapshot } from '../engine/horseDecision/protocol.js';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), report: vi.fn(), from: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }));
-vi.mock('./errorReporter.js', () => ({ reportError: mocks.report }));
+vi.mock('./errorReporter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./errorReporter.js')>()),
+  reportError: mocks.report,
+}));
 import {
   createOpponentMemorySchemaProbe,
   createOpponentMemoryReadAdmission,

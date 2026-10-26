@@ -2743,9 +2743,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // restores normal time-bank behaviour.
     this.timeBankSuppressedThisTurn = false;
 
-    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running
+    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running.
+    // A designed reset, not a recovery: `reset` says nothing (StateMachine.reset).
     if (this.turnFSM.state !== 'waiting') {
-      this.turnFSM.forceState('waiting');
+      this.turnFSM.reset('waiting');
     }
 
     // Step 1: Check for queued pre-action before starting timer (applies to ALL players)

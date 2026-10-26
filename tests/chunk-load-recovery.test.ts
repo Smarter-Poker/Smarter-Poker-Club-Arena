@@ -228,7 +228,12 @@ describe('stale deployment chunk recovery', () => {
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
       await flush();
-      // Still on this page, so the failure was real: one recovery, not two.
+      // Production could not be asked from a leaving page, so it waits.
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
+      await flush();
+      // Still on this page after the bounded patience, so the failure was
+      // real: one recovery, not two.
       expect(replace).toHaveBeenCalledTimes(1);
       expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
       uninstall();
@@ -241,6 +246,9 @@ describe('stale deployment chunk recovery', () => {
       await recovery.hardReload();
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+      await flush();
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
       await flush();
       expect(replace).toHaveBeenCalledTimes(1);
     });
@@ -303,13 +311,34 @@ describe('stale deployment chunk recovery', () => {
         uninstall();
       });
 
-      it('recovers at the grace when the live build cannot be read', async () => {
+      /* 2026-10-26, production post-deploy run 40260290873: the leaving page
+         could not start the build read ("Load failed", no request in the
+         trace), and treating that as stale cancelled the slow lobby
+         navigation for the third time. */
+      it('does not cancel a slow navigation when the leaving page cannot read the live build', async () => {
         const { replace, recovery, uninstall } = await departedOnBuild(
           new TypeError('Load failed')
         );
         await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
         await flush();
+        expect(replace).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS * 3);
+        await flush();
+        expect(replace).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
+        uninstall();
+      });
+
+      it('still recovers an unreadable departure once its bounded patience runs out', async () => {
+        const { replace, recovery, uninstall } = await departedOnBuild(
+          new TypeError('Load failed')
+        );
+        await vi.advanceTimersByTimeAsync(
+          recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS + 1
+        );
+        await flush();
         expect(replace).toHaveBeenCalledTimes(1);
+        expect(String(replace.mock.calls[0][0])).toContain('_cb=');
         uninstall();
       });
     });

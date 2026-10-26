@@ -174,12 +174,16 @@ function afterNavigationGrace(recover: () => void): void {
   const schedule = (wait: number): void => {
     deferredRecovery = setTimeout(() => {
       void (async () => {
+        // AN UNANSWERED QUESTION IS NOT A STALE BUILD (2026-10-26, run
+        // 40260290873: the leaving page's build read failed at once, no
+        // request ever reached the network, and "unreadable" reloaded the
+        // page being left exactly like "newer"). Only a positively different
+        // live build recovers early; 'this' and 'unknown' keep waiting,
+        // still bounded by CURRENT_BUILD_PATIENCE_MS.
         if (
           Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS &&
-          (await liveBuildIsThisDocument())
+          (await readLiveBuild()) !== 'other'
         ) {
-          // Still current, so a reload cannot help and would cancel the
-          // navigation if it is merely slow. Keep the single deferral armed.
           schedule(NAVIGATION_GRACE_MS);
           return;
         }

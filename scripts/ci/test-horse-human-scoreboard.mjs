@@ -43,6 +43,10 @@ test('report refuses invalid, injected, reversed and unbounded windows before co
   assert.equal(runScoreboard([]).code, 64);
   assert.throws(() => scoreboardSQL(since, through, "x'; SELECT 1;--"));
   assert.match(scoreboardSQL(since, through), /^BEGIN READ ONLY;/);
+  assert.match(
+    scoreboardSQL(since, through, 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'),
+    /p.id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'/
+  );
 });
 
 test('daily reports merge complete windows using hand-weighted results and reject gaps or drift', () => {
@@ -82,6 +86,15 @@ test('daily reports merge complete windows using hand-weighted results and rejec
   assert.equal(result.scores[0].human_net_chips_after_rake, 2);
   assert.equal(result.scores[0].human_net_bb_after_rake, 1);
   assert.equal(result.scores[0].human_bb_per_100, 25);
+  const scopedReports = reports.map((r) => ({
+    ...r,
+    player_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    scores: r.scores.map((row) => ({ ...row, user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' })),
+  }));
+  assert.equal(
+    mergeScoreboards(scopedReports, from, until, 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA').player_id,
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  );
   assert.throws(() => mergeScoreboards(reports.slice(1), from, until));
   for (const patch of [
     { status: 'incomplete_row_limit' },

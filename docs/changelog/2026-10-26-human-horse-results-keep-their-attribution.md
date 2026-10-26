@@ -84,3 +84,5 @@ both empty for seven days. PR execution cannot run the production-report job.
 It cannot merge, publish an application, alter gameplay, or advance a release.
 The timer registry records this one weekly business report; unrelated timers
 and financial qualification source pins remain unchanged.
+
+Player UUIDs are canonicalized before querying and comparing receipts, so an uppercase spelling cannot select a player successfully and then falsely fail aggregation. The retained regression fails before this correction and passes afterward.

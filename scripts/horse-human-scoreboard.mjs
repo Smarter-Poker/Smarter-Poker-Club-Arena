@@ -22,6 +22,7 @@ export function scoreboardSQL(since, through, userId) {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId))
   )
     throw Error('Invalid player identifier');
+  userId = userId?.toLowerCase();
   const start = instant(since),
     end = instant(through);
   const duration = Date.parse(end) - Date.parse(start);
@@ -107,6 +108,7 @@ export function scoreboardWindows(since, through, userId) {
 
 export function mergeScoreboards(reports, since, through, userId) {
   const windows = scoreboardWindows(since, through, userId);
+  userId = userId?.toLowerCase();
   if (!Array.isArray(reports) || reports.length === 0 || reports.length > 56)
     throw Error('Incomplete window receipts');
   let cursor = new Date(since).toISOString();

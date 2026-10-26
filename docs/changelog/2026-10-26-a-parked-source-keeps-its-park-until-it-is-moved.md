@@ -40,3 +40,32 @@ What this does not change: a player is never moved in the middle of a hand,
 so a table that falls out of balance mid-hand is balanced at its own next hand
 boundary. Busts, late registration and re-entries all wake the balance sweep
 (late registration through its durable manager wake).
+
+## The bigger cause, found on the live tables the same day: a rebuy window starved the balancer
+
+With #8161 serving (from 12:19 UTC), live Diamond Arena events still sat out
+of balance for long stretches. Rebuilt from seat history every 10 seconds for
+the hour before 13:33 UTC: Sunrise Bounty a5741141 was more than one player
+apart in 93% of samples (3-4 apart from 13:00 to 13:28), its Midway twin
+3675640e in 98%, and only 9 balance moves were made platform wide in 75
+minutes, with no table break requested at all. The gaps closed only as late
+registrants happened to fill the short tables.
+
+The sweep's bust stage ended the WHOLE sweep (`return`) in two ordinary
+situations: every busted player in the batch had bought back in, or every one
+of them was still inside the 30-second rebuy decision window. In a rebuy or
+Free Buy event during late registration busts arrive every few seconds, so
+almost every sweep found exactly that and stopped there. The balance stage,
+the only caller of `checkTableBalance`, ran only in a quiet moment, in
+practice the :55 break. This is the same class of defect as the 2026-09-12
+backlog `return` (drift incident 7ab0dcbe).
+
+Both now finish the bust stage (`break bustStage`) and the pass goes on to
+its later stages, balancing above all, exactly as it already did when part of
+the batch was recorded and the rest was still deciding. The open windows stay
+open and are re-read when they close; a player deciding a rebuy still counts
+as playing, so the finish stage cannot end the event on them.
+
+Pinned by `server/src/tournament/aRebuyWindowDoesNotStarveTheBalancer.law.test.ts`
+(fails on the old code, passes on the new). `ResolvedRebuyDoesNotRetainBustStallClock.test.ts`
+now isolates the later stages its passes reach; its clock assertions are unchanged.

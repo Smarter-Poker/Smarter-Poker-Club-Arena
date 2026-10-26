@@ -213,17 +213,25 @@ describe('Lightning hotkeys (spec HOTKEYS): safe modifiers, the strip’s own ha
 });
 
 describe('the fold cue (spec SOUND SYSTEM)', () => {
-  it('an accepted LIGHTNING FOLD plays the fold cue, gated on the row, the switch and the table in front', () => {
+  it('a LIGHTNING FOLD plays the fold cue on the press, gated on the row, the switch and the table in front', () => {
+    /* LIGHTNING TRANSITION, PHASE 3 moved the cue from the engine's reply to
+       the press (the panel's Fold already answered the press), with the
+       cards' muck flight started optimistically and put back on a refusal. */
     const page = read('src/pages/TablePage.tsx');
-    const handler = sliceEnclosingBlock(
-      page,
-      'await sendLightningFold(tableId, userId, kind, lightningFoldHandId)',
-      0,
-      1
-    );
+    const start = page.indexOf('const handleLightningFold = useCallback(');
+    expect(start).toBeGreaterThan(0);
+    const handler = page.slice(start, page.indexOf('lightningHotkeysRef.current =', start));
     expect(handler).toMatch(
-      /lightningCaps\.sound &&\s*soundService\.isEnabled\(\) &&\s*\(isActive \|\| !isMultiTable\)\s*\)\s*\{\s*soundService\.playFold\(\);/
+      /pressAnswered &&\s*lightningCaps\.sound &&\s*soundService\.isEnabled\(\) &&\s*\(isActive \|\| !isMultiTable\)\s*\)\s*\{\s*soundService\.playFold\(\);/
     );
+    const cue = handler.indexOf('soundService.playFold();');
+    const send = handler.indexOf(
+      'await sendLightningFold(tableId, userId, kind, lightningFoldHandId)'
+    );
+    expect(cue).toBeGreaterThan(0);
+    expect(send).toBeGreaterThan(cue);
+    expect(handler).toContain("applyOptimisticHeroAction('fold')");
+    expect(handler).toMatch(/if \(!result\.success\) \{\s*revert\(\);/);
     expect(LIGHTNING_CAPABILITY_MAP.desktop.sound).toBe(true);
     expect(lightningCapabilities('android').sound).toBe(true);
   });

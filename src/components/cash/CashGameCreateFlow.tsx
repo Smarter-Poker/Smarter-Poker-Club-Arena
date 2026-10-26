@@ -86,6 +86,7 @@ import {
   type KillTableRule,
   type KillThresholdBb,
 } from '../../utils/killPot';
+import { isLightningVariant } from '../../lightning/lightningLobby';
 import './CashGameCreateFlow.css';
 
 /* ═══ THE WAKE HAS AN ANSWER, AND START READS IT (2026-09-20) ═══════════════
@@ -585,7 +586,7 @@ export default function CashGameCreateFlow({
             </button>
           )}
         </div>
-        {(isLightningTemplate || variant === 'pineapple') && (
+        {(isLightningTemplate || (variant !== null && !isLightningVariant(variant))) && (
           <p className="cash-create__note">{PINEAPPLE_CLASSIC_NOTE}</p>
         )}
       </section>

@@ -192,6 +192,23 @@ whichever test the next agent notices first.
   `scripts/dev/test-lightning-six-seat-boundary.sh`. Do not reintroduce a
   nine-seat Lightning target to satisfy an older coverage document.
 
+- **Short Deck, Omaha Hi-Lo and Pineapple never run Lightning (ruled 2026-10-25, Dan):**
+  "SHORT DESK AND OMAHA HI LOW SHOULD NOT BE RUNNING LIGHTNING AT THIS POINT,
+  JUST FEEDER GAMES." and "AND PINNEAPPLE AS WELL, SHOULD ONLY BE FEEDER GAME,
+  NOT LIGHTNING" (16:55 Central). Short Deck, PLO8, FLO8 and Pineapple run only
+  as ordinary must-move feeder games. The four that were live in Lightning were
+  drained through the operator door at 21:57 UTC that day (every hand settled,
+  every chip accounted for) and renamed for their own template. The database
+  refuses Lightning for them by name (`LIGHTNING_VARIANT_NOT_ALLOWED`, constraint
+  `cash_games_lightning_variant_allowed`, migration `20261026015255`) at the
+  operator door, readiness, hand formation, the hand guard, the thresholds
+  reader and game creation; the create screen offers them only as Classic, the
+  lobby never offers Join Lightning or the Lightning mark for them. Pinned by
+  `tests/lightning/lightning-never-short-deck-hi-lo-pineapple.law.test.ts`.
+  "At this point" makes this the current ruling, not a permanent one: lifting
+  it is Dan's call, made by changing `fn_lightning_variant_allowed` and
+  `LIGHTNING_EXCLUDED_VARIANTS` together.
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

@@ -7,6 +7,7 @@
  * input is not a replay of the decision.
  */
 import type { HorseDecision } from '../../../types.js';
+import { validHorseTournamentPayoutTerms } from '../../HorseTournamentPayoutTerms.js';
 import type { HorseDecisionReadFrame } from '../../HorseDecisionReadFrame.js';
 import type { HorsePlanContext } from '../../HorsePlanHandIdentity.js';
 import {
@@ -129,6 +130,7 @@ export function reconstructHorseReplayInput(raw: unknown): HorseReplayInput {
   if (tournamentMode) {
     const t = gs.tournament;
     if (!obj(t) || t.schemaVersion !== 1) refuse('field');
+    if (!validHorseTournamentPayoutTerms(t)) refuse('payout_terms');
     const provenance = t.contextProvenance;
     // Source: the exact cache generation the decision read (a null source is a
     // recorded fact of the read; a missing provenance record is not).

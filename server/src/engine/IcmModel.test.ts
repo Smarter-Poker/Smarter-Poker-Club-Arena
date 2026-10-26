@@ -50,7 +50,7 @@ describe('icmEquity', () => {
     // The eleventh entrant has committed its chips, not been eliminated.
     // Both opponents can survive a split while the remote field stays fixed.
     const stacks = Array.from({ length: 10 }, () => 100).concat(0);
-    const prizes = [100];
+    const prizes = [60, 40];
     const mutable = [0, 10];
     const workspace = createIcmEquityEstimator(stacks, prizes, 0, mutable, 128);
     const reference = stacks.slice();
@@ -60,7 +60,7 @@ describe('icmEquity', () => {
     expect(workspace.estimate(reference).equity).toBeCloseTo(10, 12);
     expect(workspace.estimate(reference).errorBound).toBe(0);
 
-    // Winner-take-all equity has the independent closed form stack / total.
+    // Equal stacks share the full prize pool by symmetry.
     const result = workspace.estimate(restored);
     expect(result.method).toBe('plackett_luce_mc');
     expect(result.modeledPlayers).toBe(11);

@@ -23,6 +23,7 @@
  */
 
 import type { Card } from '../types.js';
+import { isBoardOnlyRiverHand } from './HorseBoardContact.js';
 import {
   CONTINUATION_POLICY,
   continuationStrength,
@@ -1579,7 +1580,7 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
   // an unused underpair cannot turn shared two pair, a straight or a full
   // house into the private value the aggressor sampler is looking for.
   // Compare the whole score: a pair improving only the kicker still counts.
-  if (board.length === 5 && madeScore === boardScore) return 1;
+  if (isBoardOnlyRiverHand(board.length, madeScore, boardScore)) return 1;
   const isPocketPair = hole.length === 2 && hole[0].rank === hole[1].rank;
   if (cat >= 2 && (cat > boardCat || isPocketPair)) {
     // A pocket pair UNDER every board card is a hidden non-connector — but it

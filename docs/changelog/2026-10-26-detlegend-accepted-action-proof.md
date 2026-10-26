@@ -57,6 +57,16 @@ a full house made using the pair, and an early-street underpair. The connected
 range, Phase 8, river-flat, forced-worker and maniac checks pass (90 assertions
 across six files); broader final-candidate checks remain separately recorded.
 
+The first full push check rejected the change: 16,354 assertions passed and
+three assertions in the historical October 16 exploit-neutrality replay
+failed because this independent evaluator repair changed NLH/Short Deck
+decisions and their RNG stream. The existing historical isolation boundary
+now retains the old pure board-contact predicate only in that replay. All
+eighteen variant/format runs and the original corpus, hashes, RNG and coverage
+assertions remain unchanged; its twenty checks pass. Production has no
+opt-out. The new pure source is included in every reference policy digest;
+the unmocked board regressions and real worker matrix exercise the repair.
+
 ## Review boundaries
 
 The production review tag `board_paired_two_pair_stackoff` describes the final

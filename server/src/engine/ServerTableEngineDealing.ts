@@ -71,6 +71,7 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { presenceFromFsm } from '../lightning/LightningPresence.js';
 import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
 import {
+  lightningClusterModeOf,
   lightningSeatsWhosePoolSessionEnded,
   lightningStampedPoolSessions,
 } from '../services/supabase/lightningAnchor.js';
@@ -4566,5 +4567,55 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
     }
+  }
+
+  /** How often a parked anchor may ask its Cluster's mode for the sit-out clock. */
+  static readonly LIGHTNING_SITOUT_CHECK_MS = 15_000;
+  /** When the parked sit-out clock last asked (0 = never). */
+  protected lightningSitOutCheckedAt = 0;
+
+  /**
+   * The parked anchor's cash sit-out clock (see the base hook for the
+   * measurement and the rule). Only at a table parked by an acknowledged
+   * Lightning halt, only once somebody's five minutes are actually up (read in
+   * memory, no orbit counted), and only after the Cluster's row is read as
+   * 'lightning' - never on the way in, while a conversion is still counting
+   * its population. Then the ordinary sweep runs, limited to the sit-out
+   * clock, and stands the seat up exactly as at a cash table. Never during the
+   * freeze, and nothing at all when the mode cannot be read.
+   */
+  protected override async standUpExpiredLightningSitOuts(): Promise<void> {
+    if (this.isTournamentTable() || isMaintenanceFrozen()) return;
+    const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
+    if (!clusterId || this.lightningObserverCluster() !== clusterId) return;
+    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
+    if (seatedIds.length === 0) return;
+    const expired = this.disconnectEngine.tickSitOutsAndCollectEvictions(this.tableId, seatedIds, {
+      countOrbit: false,
+    });
+    if (expired.length === 0) return;
+    const now = Date.now();
+    if (
+      now - (this.lightningSitOutCheckedAt || 0) <
+      ServerTableEngineDealing.LIGHTNING_SITOUT_CHECK_MS
+    )
+      return;
+    this.lightningSitOutCheckedAt = now;
+    let mode: string | null;
+    try {
+      mode = await this.withStepBudget(
+        'lightning_sitout_cluster_mode',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        lightningClusterModeOf(clusterId)
+      );
+    } catch (err) {
+      // Could not tell: nobody is stood up on a guess; the next ask reads again.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.lightning_sitout_mode_read');
+      return;
+    }
+    if (mode !== 'lightning') return;
+    if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
+    if (this.lightningObserverCluster() !== clusterId) return;
+    await this.evictExpiredSitOuts({ countOrbit: false, sitOutOnly: true });
   }
 }

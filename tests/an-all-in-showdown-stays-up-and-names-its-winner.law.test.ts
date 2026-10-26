@@ -175,11 +175,14 @@ describe('the winning hand is displayed and announced', () => {
     expect(host).toContain(
       'this.allInShowdown = isAllInShowdown(this.showdown, this.hc?.getState().players)'
     );
-    const hold = host.indexOf('if (this.allInShowdown)');
+    // 2026-10-26: the hold covers EVERY showdown (two or more hands shown),
+    // not only all-in ones, and still carries the all-in fact into the same
+    // shared hold - so an all-in showdown keeps exactly its two extra seconds.
+    const hold = host.indexOf('if (this.showdown.length >= 2) {');
     const settle = host.indexOf('await this.settle(state, rake, bbj)', hold);
     expect(hold).toBeGreaterThan(0);
     expect(settle).toBeGreaterThan(hold);
     expect(host.slice(hold, settle)).toContain('handCompletionHoldMs({');
-    expect(host.slice(hold, settle)).toContain('allInShowdown: true');
+    expect(host.slice(hold, settle)).toContain('allInShowdown: this.allInShowdown');
   });
 });

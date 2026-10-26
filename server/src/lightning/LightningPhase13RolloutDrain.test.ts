@@ -501,8 +501,15 @@ describe('lightning_cluster_status reaches every room of the Cluster, and only i
     ]);
     registry.rePushHoleCards(ROOM, USER);
     expect(sent).toHaveLength(2);
-    registry.rePushHoleCards(ROOM2, USER2); // B is not held: nothing to say
-    expect(sent).toHaveLength(2);
+    // B is not held: RESYNC still says so (2026-10-26), so a tab that missed
+    // an earlier null frame can never keep an old hold on screen.
+    registry.rePushHoleCards(ROOM2, USER2);
+    expect(sent).toHaveLength(3);
+    expect(sent[2]).toEqual([
+      ROOM2,
+      USER2,
+      { type: 'lightning_cluster_status', cluster_id: B, status: null },
+    ]);
     registry.setClusterStatus(A, null);
     expect(sent.at(-1)).toEqual([
       ROOM,
@@ -510,6 +517,13 @@ describe('lightning_cluster_status reaches every room of the Cluster, and only i
       { type: 'lightning_cluster_status', cluster_id: A, status: null },
     ]);
     expect(registry.clusterStatusOf(A)).toBeNull();
+    // THE MISSED FRAME: the hold's single null frame was lost on the way, and
+    // the room RESYNCs. It is told null again, not left on "ending".
+    const beforeResync = sent.length;
+    registry.rePushHoleCards(ROOM, USER);
+    expect(sent.slice(beforeResync)).toEqual([
+      [ROOM, USER, { type: 'lightning_cluster_status', cluster_id: A, status: null }],
+    ]);
     for (const [, , payload] of sent) {
       expect(Object.keys(payload).sort()).toEqual(['cluster_id', 'status', 'type']);
     }

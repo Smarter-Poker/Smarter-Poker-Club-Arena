@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { HorseObserverReads } from '../../engine/horseDecision/observerReads.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -220,6 +221,45 @@ function stored(shard = 0, phase7 = false) {
   return { dir, f };
 }
 describe('finite private fleet accepted-decision reader', () => {
+  it.each([false, true])(
+    'retains only accepted validated pooled provenance, future=%s',
+    (future) => {
+      const f = fixture();
+      const bank = new HorseObserverReads();
+      bank.run(f.d.snapshot, () => {});
+      const original = bank.receipt(f.d.snapshot)!;
+      expect(original?.disposition).toBe('independent');
+      Object.assign(f.d, {
+        observerReads: {
+          ...original,
+          version: 3,
+          individualVersion: original.version,
+          disposition: 'pooled_public',
+          pooledPublicProfiles: {
+            version: 1,
+            source: 'accepted_hand_public_profiles',
+            availableAtMs: future ? 1001 : 100,
+            digest: 'a'.repeat(64),
+            profiles: 1,
+          },
+        },
+      });
+      const dir = mkdtempSync(join(tmpdir(), 'horse-fleet-public-'));
+      dirs.push(dir);
+      const store = new HorseDecisionJournalStore(dir, {
+        archive: runtimeHorseJournalArchiveOptions(dir, {}),
+      });
+      store.appendBatch(f.rows());
+      store.close();
+      const result = readHorseJournalFleet(dir, packet());
+      const horse = result.horses.find((h) => h.horseId === f.d.snapshot.player.user_id)!;
+      expect(horse.retainedReceiptCounts.pooledPublicReads).toBe(future ? undefined : 1);
+      expect(horse.retainedReceiptCounts.independentPublicReads).toBeUndefined();
+      expect(result).toMatchObject({ allPhasesVerified: false, gtoVerified: false });
+      expect(JSON.stringify(result)).not.toContain('pooledPublicProfiles');
+    }
+  );
+
   it('reports supported Phase7 baseline activation from a real utility receipt persisted in SQLite without a calibration claim', () => {
     const { dir, f } = stored(0, true);
     expect(f.d.decision.tournamentUtility!.evidence!.responseModel.calibration).toBe(

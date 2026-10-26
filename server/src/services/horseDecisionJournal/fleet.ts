@@ -1,4 +1,8 @@
 import { performance } from 'node:perf_hooks';
+import {
+  horseObserverReadsUsedPublicPool,
+  horseObserverReadsWereIndependent,
+} from '../../engine/HorseObserverReadEvidence.js';
 import { horseJournalArchiveDirectoryNames, readonlyHorseJournalStoreOptions } from './config.js';
 import { HorseDecisionJournalStore } from './store.js';
 import { reconcileHorseJournalHand, reviewHorsePlanEffects } from './review.js';
@@ -239,6 +243,15 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
           gap('actor_outside_roster');
           continue;
         }
+        const observerReceipt = (JSON.parse(record.body) as { observerReads?: unknown })
+          .observerReads;
+        const readKind = horseObserverReadsUsedPublicPool(observerReceipt, request)
+          ? 'pooledPublicReads'
+          : horseObserverReadsWereIndependent(observerReceipt, request)
+            ? 'independentPublicReads'
+            : null;
+        if (readKind)
+          horse.retainedReceiptCounts[readKind] = (horse.retainedReceiptCounts[readKind] ?? 0) + 1;
         for (const [phase, receipt] of Object.entries({
           phase6: witness.phase6Attribution,
           phase7: witness.phase7Evidence,

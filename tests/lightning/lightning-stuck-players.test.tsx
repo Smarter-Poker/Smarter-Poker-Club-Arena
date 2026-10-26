@@ -38,6 +38,7 @@ import {
   lightningBustVerdict,
   useLightningBustRebuy,
   LIGHTNING_BUST_AUTO_TOP_UP_GRACE_MS,
+  LIGHTNING_BUST_MAX_READS,
 } from '../../src/lightning/lightningBustRebuy';
 import BuyInModal from '../../src/components/table/BuyInModal';
 import { buyIntoLightning, type LightningBuyInDeps } from '../../src/lightning/lightningJoinBuyIn';
@@ -95,7 +96,9 @@ describe('a busted Lightning player is offered the rebuy sheet', () => {
     expect(lightningBustCandidate({ ...idle, roomClosed: true })).toBe('unknown');
     expect(lightningBustCandidate({ ...idle, sittingOut: true })).toBe('unknown');
     // An all-in hero in the roster reads 0 behind until the pot is paid.
-    expect(lightningBustCandidate({ ...idle, heroInRoster: true, rosterStack: 0 })).toBe('unknown');
+    expect(
+      lightningBustCandidate({ ...idle, heroInRoster: true, rosterStack: 0, handLive: true })
+    ).toBe('unknown');
     expect(lightningBustCandidate({ ...idle, heroInRoster: true, rosterStack: 40 })).toBe('funded');
     // Never at a Classic table.
     expect(lightningBustCandidate({ ...idle, room: false })).toBe('unknown');
@@ -126,6 +129,39 @@ describe('a busted Lightning player is offered the rebuy sheet', () => {
     const h = renderHook((p: typeof props) => useLightningBustRebuy(p), { initialProps: props });
     return { h, props, onPrompt };
   }
+
+  it('offers a showdown loser the prompt after presentation ends, even when the final roster stays', async () => {
+    vi.useFakeTimers();
+    const readTopUp = vi.fn(async () => ({ stack: 0, maximum: 200 }));
+    const finalRoster = { ...idle, heroInRoster: true, rosterStack: 0, handLive: false };
+    const candidate = lightningBustCandidate(finalRoster);
+    expect(candidate).toBe('bust');
+    const { onPrompt } = mount(readTopUp, { candidate });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(onPrompt).toHaveBeenCalledWith(200);
+  });
+
+  it('a new room owns a fresh read budget after the old room could not confirm a bust', async () => {
+    vi.useFakeTimers();
+    const readTopUp = vi.fn().mockResolvedValue(null);
+    const { h, props, onPrompt } = mount(readTopUp);
+    for (let n = 0; n < LIGHTNING_BUST_MAX_READS + 1; n++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600);
+      });
+    }
+    expect(readTopUp).toHaveBeenCalledTimes(LIGHTNING_BUST_MAX_READS);
+    readTopUp.mockResolvedValue({ stack: 0, maximum: 150 });
+    const nextPool = '77777777-7777-4777-8777-777777777777';
+    h.rerender({ ...props, room: { ...room, poolSessionId: nextPool } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(readTopUp).toHaveBeenLastCalledWith(CLUSTER, nextPool, USER);
+    expect(onPrompt).toHaveBeenCalledWith(150);
+  });
 
   it('prompts once per bust (not on every snapshot), and again after chips are seen', async () => {
     vi.useFakeTimers();
@@ -268,6 +304,7 @@ describe('a busted Lightning player is offered the rebuy sheet', () => {
       page.indexOf('// A Lightning idle room intentionally has no hand seat.')
     );
     expect(wiring).toContain('useLightningBustRebuy({');
+    expect(wiring).toContain('handLive: lightningHandLive && !tableHandIsOver');
     expect(wiring).not.toMatch(/navigate\(|movedToTableId/);
     const leave = page.slice(
       page.indexOf('onLeaveBustRebuy={'),

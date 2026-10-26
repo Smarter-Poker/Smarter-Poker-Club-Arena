@@ -140,3 +140,27 @@ Updated because the behaviour they pinned changed on purpose: `LightningPhase13R
 and `LightningPhase8SessionApp.test.ts` (RESYNC now re-sends a null status),
 `LightningShadowWorker.test.ts` and `AHorsePlaysFourLightningGamesLikeADesktop.law.test.ts` (the
 anchor report carries `inputDevice`).
+
+## Five-player hands wait one second (Dan, 2026-10-26)
+
+Dan approved: "five-player Lightning hands wait 1 second". Six ready players
+still deal at once and fewer than five never deal; exactly five now wait ONE
+second (was three) from the fifth player becoming ready. Measured before the
+change: five-player hands were about 14% of all Lightning hands, and their
+last-freed-to-reserved time was 3.4 s p50 against 0.3 s for six.
+
+- Database: `20261026131624_lightning_five_ready_players_wait_one_second_for_a_sixth.sql`
+  rewrites the five `interval '3 seconds'` sites in `fn_lightning_match_plan`
+  (3), `fn_lightning_form_hand` (1) and `fn_lightning_formation_sizes` (1),
+  refusing any image that does not hold exactly those sites. It takes no table
+  lock and installs on merge. The rewrite was checked against the live images
+  by a read-only SELECT (counts before and after, nothing left at three
+  seconds), and the file itself was run on a scratch PostgreSQL: one second
+  forms five, half a second does not, grants are kept, and a second run refuses.
+- Engine: `LIGHTNING_FORMATION_MAX_WAIT_MS` 3,000 to 1,000, so the worker's
+  deadline pass and the TypeScript port agree with the database. It is live
+  with this engine at the daily 04:00 window; until then the database decides
+  and the worker's ordinary one-second passes pick the groups up.
+- The matcher parity harness installs the new file last, so the port is
+  compared with the same rule. `LightningFormationFullness.test.ts` and the
+  deadline-pass test in `LightningFormWorker.test.ts` moved to one second.

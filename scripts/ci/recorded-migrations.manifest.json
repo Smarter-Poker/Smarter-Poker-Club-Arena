@@ -1214,6 +1214,19 @@
         "check-no-new-band-aids: periodic work woowoo-half-rake-to-kingfish without a periodic-work reason"
       ],
       "liveVerdict": "Read 2026-10-25 03:15 UTC: the finding is TRUE of production - pg_cron job 505 woowoo-half-rake-to-kingfish (*/5) runs smarter_private.fn_woowoo_half_rake_to_kingfish_sync() (md5(prosrc) 07856466d30eb04ce34698e82110c1f7), a compensating write that upserts woowoo-half-split-<day> / kingfish-from-woowoo-split-<day> rows into smarter_private.player_fee_redemptions (reporting only; no chips move). It is retired by 20261025030629_a_standing_rake_share_replaces_the_woowoo_cron, which unschedules the job, drops the function, deletes only those split rows and applies smarter_private.player_rake_share_rules at read time in the three fee readers; the job remains live until that migration is installed. supabase_migrations.schema_migrations holds this version with md5(statements) 06c2de274fd75213f0decf83b2b62f20, equal to this file (3353 bytes)."
+    },
+    {
+      "version": "20261024233424",
+      "name": "a_refunded_earlier_registration_is_not_a_second_entry",
+      "file": "supabase/migrations/20261024233424_a_refunded_earlier_registration_is_not_a_second_entry.sql",
+      "md5": "7c6506dcc60068f55cff10b9c3878ad1",
+      "appliedToProductionAt": "2026-10-24T23:34:24Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "supabase_migrations.schema_migrations.statements joined by newlines, byte for byte; md5 equals public.fn_ca_migration_text('20261024233424')",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: creates no persistent object and declares no @live-proof (a recording cannot be edited to add one)"
+      ],
+      "liveVerdict": "Read 2026-10-26 01:40 UTC: the finding is not a defect of production. This migration edits one reader, smarter_private.f06_movement_never_dealt_prior(uuid,uuid,uuid), by replacing one passage (a receipt by user_id counts only if f.observed_at>=registration.registered_at), guarded by a pre-image md5 1952ea35ef547fd1102a4eca7ae1427e and reversible post-image checks; it creates nothing. Production carries it: pg_get_functiondef of that function contains 'observed_at>=registration.registered_at' (this edit) and 'AN EARLIER REFUNDED ENTRY IS NOT A SECOND ENTRY' (the later edit from 20261024232734, applied under 20261025022423), live md5 0ff3bcaef0476a3dc46d6d6931515bb7. Its liveness is its history row: schema_migrations holds version 20261024233424 with md5(statements) 7c6506dcc60068f55cff10b9c3878ad1, equal to this file (2109 bytes). It is a different change from 20261024232734 (same pre-image, different edit), so no alias applies and it needed its own recording. Found when Installed and merged migrations agree went red on main on 2026-10-26 after the 24-hour grace."
     }
   ]
 }

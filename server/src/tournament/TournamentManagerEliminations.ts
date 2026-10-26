@@ -4268,8 +4268,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('id', revealerId)
         .maybeSingle();
       if (!(horse as { is_horse?: boolean } | null)?.is_horse) return;
-      // Inside the window a person has: 1.8 s to 6 s after the chest lands.
-      const waitMs = 1800 + nodeCrypto.randomInt(0, 4200);
+      // Inside the five-second window a person has (Dan 2026-10-25).
+      const waitMs = 1500 + nodeCrypto.randomInt(0, 3500);
       const timer = this.setLifecycleTimeout(() => {
         // setLifecycleTimeout drops this if the tournament's lifecycle moved on.
         return (async () => {
@@ -4412,6 +4412,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     queueTotal: number
   ): Promise<boolean> {
     try {
+      /* NOBODY PICKED: PICK AT RANDOM (Dan 2026-10-25). A revealer whose
+         screen never answered (dropped, closed the app) still gets a real
+         chest chosen for them, at random, recorded before the reveal so every
+         seat shows the prize in that chest and the other two beside it. A
+         refused pick (already picked, single chest) changes nothing. */
+      try {
+        const { data: offer } = await supabase.rpc('fn_mystery_bounty_offer', {
+          p_award_id: awardId,
+        });
+        const o = (offer ?? {}) as { slots?: unknown; picked_slot?: unknown; revealed?: unknown };
+        const slots = Math.max(1, Math.min(3, Math.floor(Number(o.slots) || 1)));
+        if (slots > 1 && o.picked_slot == null && o.revealed !== true) {
+          await supabase.rpc('fn_mystery_bounty_pick', {
+            p_award_id: awardId,
+            p_slot: 1 + nodeCrypto.randomInt(0, slots),
+          });
+        }
+      } catch (err) {
+        reportError(err, 'Tournament.mystery_bounty_random_pick_failed');
+      }
       const { data: revealed, error: revealErr } = await supabase.rpc('fn_mystery_bounty_reveal', {
         p_award_id: awardId,
         p_actor_user_id: null,

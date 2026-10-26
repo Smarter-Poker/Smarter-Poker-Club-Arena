@@ -2537,6 +2537,12 @@ jobs:
           path: ${{ runner.temp }}/f06-movement-admission/
           if-no-files-found: error
           retention-days: 7
+      - name: Human versus horse scoreboard keeps attribution and sample limits honest
+        if: matrix.shard == 3
+        env:
+          PG_SCOREBOARD_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: node --test scripts/ci/test-horse-human-scoreboard.mjs
       - name: Horse profile authority, API roles and concurrent writes
         if: matrix.shard == 3
         env:

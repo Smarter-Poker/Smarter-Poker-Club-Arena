@@ -1262,6 +1262,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payment outage: qualified original funding-contract admission installed under PUBLISHING.md outage exception while hosted checks blocked. No payment bypass. Concurrent cover index valid ready live; exact history bytes recorded atomically by maintained installer. Original source rows remain immutable; private admission cannot be executed by authenticated roles. Original accrual invokes explicit expected-hash admission; no wallet payment or schedule added. Required protected recording and unrelated hosted engine-test failure remain to resolve."
+    },
+    {
+      "version": "20261026212454",
+      "name": "historical_club_corrections_rebuild_daily_reporting_once",
+      "file": "supabase/migrations/20261026212454_historical_club_corrections_rebuild_daily_reporting_once.sql",
+      "md5": "b6acada52df61da89d5dc3c351e72db8",
+      "appliedToProductionAt": "2026-10-26T21:26:50Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Exact qualified file committed atomically with schema_migrations.statements by maintained installer; live history readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
+      "refusedBy": [],
+      "liveVerdict": "Required payment-outage correction under PUBLISHING.md exception: original attribution-change reporter spent231.335s rebuilding2000hands and larger batches rolledback at240s. Set-based original statement-trigger body retains affected daily keys, rake and hand sums, original earned-time boundary, NULL handling and warning rollback. Native12000rows10casesUTC/LA parity, rollback and warning atomicity passed; focusedlaws andnormalprepushpassed before application. Originaltriggerremainsenabled; no wallets, financialsource rows, payout route or schedule changed. Installer committed121ms and livehistoryMD5 matches bytes; protectedrecording follows immediately."
     }
   ]
 }

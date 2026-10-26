@@ -57,7 +57,7 @@ describe('Chicago stats calendar', () => {
     const list = renderHook(() => useRosterWinLoss('club', members, 'today', true, 1));
     await screen.findByText('Today');
     await waitFor(() => expect(list.result.current.get('player')?.net).toBe(12));
-    expect(screen.getByText(/Today Resets At 12 AM Chicago Time/)).toBeInTheDocument();
+    expect(screen.getByText(/Today, Week And Month Reset At 12 AM Chicago Time/)).toBeInTheDocument();
     clock.mockReturnValue(Date.parse('2026-10-24T05:00:00Z'));
     record.mockResolvedValue({
       as_of: '2026-10-24',

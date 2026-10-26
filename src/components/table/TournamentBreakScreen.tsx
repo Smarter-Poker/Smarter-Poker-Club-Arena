@@ -59,7 +59,8 @@ export interface TournamentBreakScreenProps {
    * THE BREAK HAS TWO PHASES AND THE SCREEN MUST SAY WHICH (2026-08-27).
    *
    * At :55 the server announces the LAST HAND. The five minutes do not start
-   * until every table across every tournament has finished it, which is why a
+   * until every table of THIS tournament has finished it (Dan 2026-10-25:
+   * every tournament starts and stops its own five minutes), which is why a
    * break runs a little over five minutes end to end. The server deliberately
    * writes `break_ends_at` as NULL for that window.
    *

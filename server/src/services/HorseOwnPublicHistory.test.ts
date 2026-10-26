@@ -62,3 +62,27 @@ it('never asks the provider for an invalid individual context', async () => {
   expect(await readHorseOwnPublicHistory({ ...context, observerId: 'unknown' })).toBeNull();
   expect(fixture.rpc).not.toHaveBeenCalled();
 });
+it('waits the measured non-blocking deadline, not the old 1.5 s that gave up on answered reads', async () => {
+  const { HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS } = await import('./HorseOwnPublicHistory.js');
+  expect(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS).toBe(5_000);
+  const timeout = vi.spyOn(AbortSignal, 'timeout');
+  await readHorseOwnPublicHistory(context);
+  expect(timeout).toHaveBeenCalledWith(5_000);
+  timeout.mockRestore();
+});
+it.each([
+  ['error', 'horse_observer_history_error'],
+  ['empty', 'horse_observer_history_empty_response'],
+  ['throw', 'horse_observer_history_thrown'],
+] as const)('names how a %s load failed beside the unavailable count', async (fault, named) => {
+  const telemetry = await import('../engine/BrainTelemetry.js');
+  telemetry.enableBrainTelemetry();
+  telemetry.drainFires();
+  if (fault === 'error') fixture.response.error = { message: 'unavailable' };
+  if (fault === 'empty') fixture.response.data = null;
+  if (fault === 'throw') fixture.abort.mockRejectedValueOnce(Error('unavailable'));
+  expect(await readHorseOwnPublicHistory(context)).toBeNull();
+  const fired = new Map(telemetry.drainFires().map((f) => [f.feature, f.fires]));
+  expect(fired.get('horse_observer_history_unavailable')).toBe(1);
+  expect(fired.get(named)).toBe(1);
+});

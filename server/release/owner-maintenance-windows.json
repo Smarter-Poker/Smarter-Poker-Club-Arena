@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-diamond-balancing-and-todays-work-now",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" One immediate certified activation of the protected main carrying this entry and the Diamond Arena table-balancing repair in PR #8200. The minimum protected anchor is today's latest merged main fb048ff8c3a40961aabdb3f049d9855ba1e90a09 (#8190), independently proved absent from the currently serving dbc2f328dc9edce7f89f4935b82e0f32e2932f80; this source PR also carries the balancing repair and must pass its own required checks before its entry can reach main. The order covers today's authorized work rather than only an earlier narrow horse fix. Do not treat anchor ancestry alone as proof that PR #8200 is live: independently prove the balancing merge is included and its live behavior. Preserve exact-SHA staging, last-hand notice, hand-boundary drain, durable database freeze, certificate, rollback reserve, the one-window-per-hour seal and thaw. No migrations are installed by this entry. This entry expires and grants nothing once its protected anchor is serving.",
+      "contains": "fb048ff8c3a40961aabdb3f049d9855ba1e90a09",
+      "notBefore": "2026-10-26T15:08:55Z",
+      "notAfter": "2026-10-26T21:07:55Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-premium-set-keeps-betting-now",
       "ownerOrder": "Dan, 2026-10-25 21:09 Chicago, in this chat, on a horse checking AA down on 9h 5s 3s 9s 6c: \"HORSES CAN NOT EVER BE PLAYING PASSIVELY WITH PREMIUM HANDS ... NEVER CHECKING IT DOWN!! MAKE THESE FIXES NOW FOR THE HORSE BRAIN AND UPDATE ALL 1000 HORSES\"; 23:12 Chicago: \"finish it up now, and push and publish now, not at 4am. finish up any and all unfinished work\". One off-cycle engine activation of protected main containing PR #8166, merge c2a5cd44bae19d689bd22e7959f272bcf0ee201a: the hold'em premium rule (live since #8122/#8138) did not count a premium pocket pair that made a set under a higher board card (QQ on a K-high board with a third queen) as a made hand, so that horse could still check its set down; #8166 counts the set, so it keeps betting. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "c2a5cd44bae19d689bd22e7959f272bcf0ee201a",

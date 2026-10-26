@@ -2980,8 +2980,12 @@ function enforceAuthoritativeDecision(
 /**
  * Dan 2026-10-25: in PLO4/PLO5/PLO6 a horse without a full house never calls or
  * raises a committing bet on a paired flop, turn or river. See
- * HorsePloPairedBoardFold.ts. Applied after every other layer so no later
- * tweak to an equity cap can reopen the call.
+ * HorsePloPairedBoardFold.ts. It runs as the last rule of the policy graph's
+ * `wager_rules` node, after every owner and the river-nuts rule, so no equity
+ * cap or variant pack can reopen the call, and the signed graph records the
+ * change (applying it after `graph.finish` made every such decision an
+ * "invalid policy receipt" the worker refused). The outer call in `decide`
+ * only covers a decision that never entered the graph.
  */
 function pairedBoardFold(
   decision: HorseDecision,
@@ -3010,8 +3014,8 @@ function pairedBoardFold(
   if (!mustFold) return decision;
   if (telemetryOn(opts)) noteFire('plo_paired_board_fold');
   if (Array.isArray(gs.legalActions) && !gs.legalActions.includes('fold')) return decision;
-  // Keep the brain's own think time: a fold that snaps faster than the call
-  // it replaced would be a tell.
+  // Inside the graph the timing node then prices the fold's own think time;
+  // outside it the brain's think time is kept, so the fold never snaps.
   const folded: HorseDecision = { ...decision, action: 'fold' };
   delete folded.amount;
   return folded;
@@ -3075,6 +3079,30 @@ export function holdemPremiumAggression(
   return next;
 }
 
+/** The outer safety net for the hold'em premium rule (#8122), as below. */
+function holdemPremiumAggressionOutsideGraph(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  return decision.policyGraph === undefined
+    ? holdemPremiumAggression(decision, player, gs, opts)
+    : decision;
+}
+
+/** The outer safety net: only a decision the policy graph never signed. */
+function pairedBoardFoldOutsideGraph(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  return decision.policyGraph === undefined
+    ? pairedBoardFold(decision, player, gs, opts)
+    : decision;
+}
+
 export class HorseLogic {
   /** Original post-observation boundary, shared with the admitted worker path.
    * The caller owns scope cleanup when it captures before decide(). */
@@ -3135,8 +3163,8 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return holdemPremiumAggression(
-            pairedBoardFold(
+          return holdemPremiumAggressionOutsideGraph(
+            pairedBoardFoldOutsideGraph(
               this.decideInternal(player, gameState, style, mods, opts),
               player,
               gameState,
@@ -3150,8 +3178,8 @@ export class HorseLogic {
           setEquityDepth(1);
         }
       }
-      return holdemPremiumAggression(
-        pairedBoardFold(
+      return holdemPremiumAggressionOutsideGraph(
+        pairedBoardFoldOutsideGraph(
           this.decideInternal(player, gameState, style, mods, opts),
           player,
           gameState,
@@ -4086,11 +4114,25 @@ export class HorseLogic {
       }
       return { decision };
     }).decision;
+    // The two 2026-10-25 owner rules run last, inside the graph, so the
+    // signed graph and its timing node see the action they choose: the PLO
+    // paired-board fold, then the hold'em premium rule (#8122), the same order
+    // they had when they ran after decide().
     decision = graph.run('wager_rules', decision, () => ({
-      decision: fullPotNearPotWager(
-        riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+      decision: holdemPremiumAggression(
+        pairedBoardFold(
+          fullPotNearPotWager(
+            riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+            player,
+            gs
+          ),
+          player,
+          gs,
+          opts
+        ),
         player,
-        gs
+        gs,
+        opts
       ),
     })).decision;
     decision = graph.run('timing', decision, () => {

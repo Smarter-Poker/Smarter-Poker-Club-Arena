@@ -488,7 +488,14 @@ export async function prepareProductionE2EStaffMembership({
         {
           method: 'PATCH',
           headers: { Prefer: 'return=representation' },
-          body: JSON.stringify({ role: memberRole, status: 'active', is_active: true }),
+          // Staff sit under no agent. The join door places every new member
+          // under the club owner (20261026031314), so the admin promotion
+          // clears that placement; a spectator player keeps it.
+          body: JSON.stringify(
+            memberRole === 'admin'
+              ? { role: memberRole, status: 'active', is_active: true, agent_id: null }
+              : { role: memberRole, status: 'active', is_active: true }
+          ),
         },
         fetchImpl
       ),

@@ -214,7 +214,9 @@ describe('stale deployment chunk recovery', () => {
       uninstall();
     });
 
-    it('recovers after the grace period when the navigation never completed', async () => {
+    // Behaviour moved deliberately (2026-10-26): an unreadable live build no
+    // longer recovers at the grace, it is asked again until the patience ends.
+    it('recovers once the patience ends when the navigation never completed', async () => {
       vi.useFakeTimers();
       const { browser, replace, recovery } = await freshDocument();
       const uninstall = recovery.installVitePreloadErrorRecovery();
@@ -227,6 +229,11 @@ describe('stale deployment chunk recovery', () => {
       await flush();
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+      await flush();
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(
+        recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS
+      );
       await flush();
       // Still on this page, so the failure was real: one recovery, not two.
       expect(replace).toHaveBeenCalledTimes(1);
@@ -241,6 +248,12 @@ describe('stale deployment chunk recovery', () => {
       await recovery.hardReload();
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+      await flush();
+      // The live build cannot be read here, so it keeps waiting.
+      expect(replace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(
+        recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS
+      );
       await flush();
       expect(replace).toHaveBeenCalledTimes(1);
     });
@@ -303,13 +316,33 @@ describe('stale deployment chunk recovery', () => {
         uninstall();
       });
 
-      it('recovers at the grace when the live build cannot be read', async () => {
+      /* Production run 40260290873 (WebKit): a pending navigation refuses
+         the departing page's new fetches, so the live build reads as
+         unknown. That is a departure, not a stale page. */
+      it('keeps waiting while the live build cannot be read, then recovers at the patience', async () => {
         const { replace, recovery, uninstall } = await departedOnBuild(
           new TypeError('Load failed')
         );
-        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS * 3);
+        await flush();
+        expect(replace).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
         await flush();
         expect(replace).toHaveBeenCalledTimes(1);
+        uninstall();
+      });
+
+      it('confirms a failure that arrives after the grace instead of reloading at once', async () => {
+        const { browser, replace, recovery, uninstall } = await departedOnBuild(BUILD);
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 500);
+        await flush();
+        const late = cancelledLoad();
+        browser.dispatchEvent(late);
+        void recovery.recoverFromStaleChunk(late.payload);
+        await flush();
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS * 2);
+        await flush();
+        expect(replace).not.toHaveBeenCalled();
         uninstall();
       });
     });

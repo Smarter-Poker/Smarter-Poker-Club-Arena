@@ -8,6 +8,7 @@ import {
   isPremiumMadeHand,
   type HoldemPremiumDecision,
 } from './HorseHoldemPremiumAggression.js';
+import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
 import type { Card, SeatPlayer } from '../types.js';
 
 const suits: Record<string, Card['suit']> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
@@ -170,6 +171,25 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
   it('the recorded KQo horse folds to the huge 3-bet instead of cold-calling it', () => {
     for (const seed of SEEDS) expect(decide(coldCallSpot(), seed).action).toBe('fold');
     for (const style of STYLES) expect(decide(coldCallSpot(), 3, style).action).toBe('fold');
+  });
+
+  it('every rule decision is signed by the policy graph, so the live worker accepts it', () => {
+    // 2026-10-26: a rule applied after graph.finish leaves a graph whose final
+    // action is the brain's, and the engine refuses the decision as an
+    // "invalid policy receipt" (it did, 495 times, for the PLO paired-board
+    // fold). Both rules now run last inside the graph's wager_rules node.
+    for (const [spot, want] of [
+      [coldCallSpot(), ['fold']],
+      [aceSpot(), ['bet', 'all_in']],
+      [aceSpot({ board: '9h 5s 3s 9s 6c' }), ['bet', 'all_in']],
+    ] as const) {
+      for (const seed of SEEDS) {
+        const d = decide(spot, seed);
+        expect(want).toContain(d.action);
+        expect(d.policyGraph?.finalAction.action).toBe(d.action);
+        expect(horseDecisionReceiptIsValid(d, 'nlh')).toBe(true);
+      }
+    }
   });
 
   it('KJo, QJo, AJo and AQo cold-callers fold too; AKo and pairs are not touched by the fold rule', () => {

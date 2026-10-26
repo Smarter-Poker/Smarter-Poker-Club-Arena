@@ -153,6 +153,11 @@ export default function FindPlayerModal({
         return;
       }
       searchAbortRef.current?.abort();
+      // A suggestion lookup still waiting on its debounce would reopen the
+      // dropdown over the results the player just asked for (2026-10-25).
+      if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+      suggestionTimerRef.current = null;
+      suggestionAbortRef.current?.abort();
       const controller = new AbortController();
       searchAbortRef.current = controller;
       if (append) setIsLoadingMore(true);
@@ -537,11 +542,17 @@ export default function FindPlayerModal({
 
             <div className={styles.results} aria-live="polite" aria-busy={isSearching}>
               {error && <p className={`sc-copy sc-ink--red ${styles.copy}`}>{titleCase(error)}</p>}
-              {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
-                <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
-                  No Matching Players Were Found.
-                </p>
-              )}
+              {/* Only for the words in the field now: an empty answer to an
+                  earlier search never sits under a new one (2026-10-25). */}
+              {!error &&
+                !isSearching &&
+                lastCompletedQueryRef.current &&
+                lastCompletedQueryRef.current === searchQuery.trim() &&
+                results.length === 0 && (
+                  <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
+                    No Matching Players Were Found.
+                  </p>
+                )}
               {results.length > 0 && (
                 <div className={styles.resultList}>
                   {results.map((player) => (

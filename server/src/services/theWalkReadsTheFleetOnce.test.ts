@@ -115,6 +115,7 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
     tableEngines: new Map(),
     tournamentOwnedTables: new Set(),
     tournamentTopUpsInFlight: new Map(),
+    emptyEventCancelsInFlight: new Map(),
     tournamentManagerAdmissionOperations: new Map(),
     tournamentManagerAdmissionRetryTimers: new Map(),
     discoveryJobs: new Set(),
@@ -133,6 +134,9 @@ function discoveryHarness(boards: ReturnType<typeof boardRow>[][]) {
     lastNoHandResultCheckAt: DISCOVERY_NOW,
     lastSpinExpireAt: DISCOVERY_NOW,
     readSeatFirstPaidSeats: vi.fn(async () => new Map()),
+    // The durable empty-top-up count (2026-10-26): none unless a test writes one.
+    readDurableEmptyTopUps: vi.fn(async () => new Map<string, number>()),
+    recordPastStartTopUpOutcome: vi.fn(async () => {}),
     // The start gate reads each row's roster (2026-09-24); these rows carry
     // their field in current_players, so the roster is that number.
     readEntrantRosterCounts: vi.fn(
@@ -383,19 +387,28 @@ describe('the REGISTERING walk', () => {
     // Keep the existing empty-funding backoff, not a new retry clock.
     expect(walk).toContain('MTT_PRESTART_TICK_MS * 2 ** Math.min(misses, 4)');
     expect(walk).toContain('PAST_START_TOP_UP_MAX_INTERVAL_MS');
-    expect(walk).toContain('misses: added > 0 ? 0 : held ? misses : misses + 1');
+    expect(walk).toContain('const settledMisses = added > 0 ? 0 : held ? misses : misses + 1;');
+    expect(walk).toContain(
+      'this.pastStartTopUpClock.set(tournament.id, { at: now, misses: settledMisses });'
+    );
   });
 
   it('launches both funding callbacks under ownership without awaiting them in the walk', () => {
     /* Two funding callbacks (the ramp and the past-start top-up) and, since
        2026-10-15, the cancellation of an event nobody entered
-       (tournament/emptyPastStartEvent.ts). That one funds nothing; it is
-       launched through the same owner so it never races a top-up or an
-       admission of the same event and is drained with them on stop. */
-    expect((walk.match(/this\.launchDiscoveryTopUp\(/g) || []).length).toBe(3);
+       (tournament/emptyPastStartEvent.ts). That one funds nothing; since
+       2026-10-26 it has its own single-flight lane (launchEmptyEventCancel)
+       so it never queues behind the four horse top-up slots, while still
+       refusing to run beside a top-up or an admission of the same event and
+       draining with them on stop (both lanes are discovery jobs). */
+    expect((walk.match(/this\.launchDiscoveryTopUp\(/g) || []).length).toBe(2);
+    expect((walk.match(/this\.launchEmptyEventCancel\(/g) || []).length).toBe(1);
     expect((walk.match(/\{ pass: topUpPass(?:, redeemTickets)? \}/g) || []).length).toBe(2);
-    expect(walk).toContain("'GameServer.empty_past_start_event_cancel_failed'");
+    const cancelLane = sliceMethod(GAME_SERVER, 'private launchEmptyEventCancel(');
+    expect(cancelLane).toContain("'GameServer.empty_past_start_event_cancel_failed'");
+    expect(cancelLane).toContain('this.launchDiscoveryJob(tracked,');
     expect(blankNonCode(walk)).not.toContain('await this.launchDiscoveryTopUp(');
+    expect(blankNonCode(walk)).not.toContain('await this.launchEmptyEventCancel(');
   });
 
   it.each(['ramp', 'past-start'] as const)(
@@ -774,10 +787,66 @@ describe('the top-ups beside the walk are bounded', () => {
         misses: 1,
         cancelAskedAt: DISCOVERY_NOW,
       });
+      // The cancel clears the durable count it no longer needs.
+      expect(h.server.recordPastStartTopUpOutcome).toHaveBeenCalledWith('empty', null);
       await h.advance(1);
       expect(cancels()).toHaveLength(1);
       expect(h.server.tournamentRecurring.topUpWithHorses).not.toHaveBeenCalled();
       expect(reportError).not.toHaveBeenCalled();
+    } finally {
+      await h.close();
+    }
+  });
+
+  /* THE EMPTY COUNT SURVIVES A RESTART (2026-10-26). A fresh process (empty
+     pastStartTopUpClock) finds the previous process's empty top-up written
+     down and cancels on its first pass, without asking the horse pool again:
+     "Daily 25 Chip Freezeout" 501008e1 on 2026-10-25, restarted at its 19:30
+     due time, waited until 19:52 for exactly that second ask. */
+  it('cancels on the first pass after a restart from the durable empty-top-up count', async () => {
+    const row = boardRow('empty', {
+      current_players: 0,
+      start_time: new Date(DISCOVERY_NOW - 2 * 60 * 60 * 1000).toISOString(),
+    });
+    const h = discoveryHarness([[row], [row]]);
+    h.server.readDurableEmptyTopUps.mockResolvedValue(new Map([['empty', 1]]));
+    const cancels = () =>
+      h.eligibilityRead.mock.calls.filter((c: unknown[]) => c[0] === 'atomic_cancel_tournament');
+    try {
+      h.start();
+      await flushDiscovery();
+      expect(h.server.readDurableEmptyTopUps).toHaveBeenCalledWith(['empty']);
+      expect(cancels()).toEqual([
+        ['atomic_cancel_tournament', { p_tournament_id: 'empty', p_admin_id: null }],
+      ]);
+      expect(h.server.tournamentRecurring.topUpWithHorses).not.toHaveBeenCalled();
+      expect(h.server.recordPastStartTopUpOutcome).toHaveBeenCalledWith('empty', null);
+      expect(reportError).not.toHaveBeenCalled();
+    } finally {
+      await h.close();
+    }
+  });
+
+  /* A cancel never waits behind the horse top-up slots (2026-10-26): with all
+     four slots held by other events' top-ups, the empty event is still
+     cancelled on this pass. */
+  it('cancels an empty event while every top-up slot is held by other events', async () => {
+    const row = boardRow('empty', {
+      current_players: 0,
+      start_time: new Date(DISCOVERY_NOW - 2 * 60 * 60 * 1000).toISOString(),
+    });
+    const h = discoveryHarness([[row], [row]]);
+    h.server.pastStartTopUpClock.set('empty', { at: DISCOVERY_NOW - 11 * 60_000, misses: 1 });
+    for (const id of ['x1', 'x2', 'x3', 'x4']) {
+      h.server.tournamentTopUpsInFlight.set(id, new Promise<void>(() => {}));
+    }
+    const cancels = () =>
+      h.eligibilityRead.mock.calls.filter((c: unknown[]) => c[0] === 'atomic_cancel_tournament');
+    try {
+      h.start();
+      await flushDiscovery();
+      expect(cancels()).toHaveLength(1);
+      expect(h.server.emptyEventCancelsInFlight.size).toBe(0);
     } finally {
       await h.close();
     }

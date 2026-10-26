@@ -1,20 +1,22 @@
 /**
- * PLO5 / PLO6 PAIRED-BOARD FOLD (Dan 2026-10-25, BINDING).
+ * PLO4 / PLO5 / PLO6 PAIRED-BOARD FOLD (Dan 2026-10-25, BINDING).
  *
  * Dan, verbatim, on a PLO5 1/2 Madness hand where a horse held Q-Q-T-7-6 on
  * 6h 7c Jd, the Jack paired the board on the turn, a human shoved and the
  * horse called off 190 chips with two pair:
  *   "HE CALLED THE ALL IN ON THE TURN WHEN THE JACK PAIRED THE BOARD..."
  *   "ITS A FOLD 100% OF THE TIME"
- * and earlier the same day, for PLO6:
+ * earlier the same day, for PLO6:
  *   "IN PLO6 IF ITS NOT THE NUTS, ITS PROBABLY NOT GOOD"
+ * and that evening, widening it:
+ *   "ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE"
  *
  * Why the brain called: every equity cap for this class (V40 'board2p', a
  * pocket pair over the board's pair) prices it at about 30-34% on the turn,
  * and the shove only asked for 25%. A cap is a number the next tweak moves.
- * This is a rule: on a paired turn or river in PLO5/PLO6, a horse that does
- * not hold a full house or better never puts a committing amount of chips
- * into a bet. It folds.
+ * This is a rule: on a paired flop, turn or river in PLO4/PLO5/PLO6, a horse
+ * that does not hold a full house or better never puts a committing amount of
+ * chips into a bet. It folds.
  *
  * "Committing" is any of: the bettor is all in, the call is at least a
  * quarter of the horse's stack, or the call would leave the horse all in.
@@ -26,7 +28,7 @@
 import type { Card, SeatPlayer } from '../types.js';
 import { scoreOmahaHiPartial } from './HorseEval.js';
 
-export const PLO_PAIRED_BOARD_VARIANTS: ReadonlySet<string> = new Set(['plo5', 'plo6']);
+export const PLO_PAIRED_BOARD_VARIANTS: ReadonlySet<string> = new Set(['plo4', 'plo5', 'plo6']);
 const FULL_HOUSE = 7;
 const COMMIT_STACK_SHARE = 0.25;
 const TOKEN_CALL_REQUIRED_EQUITY = 0.15;
@@ -52,7 +54,7 @@ export function ploPairedBoardMustFold(i: PairedBoardFoldInput): boolean {
   const variant = String(i.gameVariant ?? '').toLowerCase();
   if (!PLO_PAIRED_BOARD_VARIANTS.has(variant)) return false;
   if (i.hiLo || i.multiBoard) return false;
-  if (!Array.isArray(i.board) || i.board.length < 4) return false; // turn and river
+  if (!Array.isArray(i.board) || i.board.length < 3) return false; // flop, turn and river
   if (!boardIsPaired(i.board)) return false;
   const hole = i.hero.cards;
   if (!Array.isArray(hole) || hole.length < 4) return false;

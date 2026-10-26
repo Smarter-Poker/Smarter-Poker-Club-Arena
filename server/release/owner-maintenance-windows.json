@@ -11,6 +11,14 @@
       "migrations": []
     },
     {
+      "id": "2026-10-26-plo-paired-board-fold-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, after the PLO5/PLO6 paired-board fold (#8088, merge acb5e84e9) was reported as going live at the 04:00 release: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing #8088 and its PLO4/flop widening, merged with this entry. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving.",
+      "contains": "acb5e84e9a6c7aebf94b33304cb6d0751225c35e",
+      "notBefore": "2026-10-26T00:32:40Z",
+      "notAfter": "2026-10-26T06:22:40Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-bust-door-fix-tonight",
       "ownerOrder": "Dan, 2026-10-25 18:48 Chicago, Claude chat (claude.ai/code/session_01G1J5sfS2nZCBxr6ETNsY98): \"INSTALL THE BUST FIX TONIGHT AS AN EMERGENCY ENGINE RELEASE\", in direct response to the choice between the routine 04:00 Chicago activation and an off-cycle install before the two 20:00 Chicago chests-only Sunday Funday Mystery events. One immediate certified off-cycle engine activation of protected main containing PR #8090, merge 1efd9504e0916918f70e8e98ccdcea296ccec48a: every bounty_blocked answer from the knockout door is a recorded bust, so the elimination batch no longer stops after one bust per sweep. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "1efd9504e0916918f70e8e98ccdcea296ccec48a",

@@ -138,6 +138,50 @@ def read_metadata(raw):
     }
 
 
+def worker_receipt_errors(raw):
+    """Only the original reporter's table context and named refusal leave here.
+
+    The Error currently carries no request/hand coordinate. Do not borrow one
+    from a nearby gameplay line, error property, stack or another table.
+    """
+    result = {'matchingRecords': 0, 'events': [], 'eventsTruncated': False,
+              'handCoordinateAvailable': False}
+    expression = re.compile(
+        r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z)\s+'
+        r'\[ServerTableEngine\.([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-'
+        r'[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'
+        r'\.horse_decision_worker_failed\] Error: '
+        r'horse decision worker returned invalid policy receipt: reference_shape\s*$')
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        match = expression.fullmatch(line)
+        if not match:
+            continue
+        try:
+            datetime.datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+        except ValueError:
+            continue
+        result['matchingRecords'] += 1
+        event = {'timestamp': match.group(1), 'code': 'reference_shape',
+                 'tableId': match.group(2).lower()}
+        # Retain the newest bounded witnesses in input order. Coverage remains
+        # the existing bounded stream/tail, never an all-errors claim.
+        if len(result['events']) == 128:
+            result['events'].pop(0)
+            result['eventsTruncated'] = True
+        result['events'].append(event)
+    return result
+
+
+def merge_worker_receipt_errors(target, addition):
+    target['matchingRecords'] += addition['matchingRecords']
+    combined = target['events'] + addition['events']
+    target['eventsTruncated'] = (target['eventsTruncated'] or
+                                addition['eventsTruncated'] or len(combined) > 128)
+    target['events'] = combined[-128:]
+
+
 def bounded_command(args):
     process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     selector = selectors.DefaultSelector()
@@ -319,6 +363,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     selector.register(process.stdout, selectors.EVENT_READ)
     deadline = time.monotonic() + seconds
     signals = {}
+    worker_errors = worker_receipt_errors('')
     block = []
     pending = b''
     dropping = False
@@ -331,13 +376,19 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                '[GameServer] graceful shutdown', '[GameServer] GameServer.shutdown_failed', '[leadership]', '[Leadership.',
                '[Tournament.abandoned_generation_refused]', 'FATAL ERROR:', *PROCESS_SIGNALS.values())
 
+    def flush_block():
+        nonlocal block
+        text = '\n'.join(block)
+        merge_signals(signals, process_signals(text))
+        merge_worker_receipt_errors(worker_errors, worker_receipt_errors(text))
+        block = []
+
     def record(raw):
         nonlocal records, block, oldest, newest
         records += 1
         if len(raw) > 4096:
             if block:
-                merge_signals(signals, process_signals('\n'.join(block)))
-                block = []
+                flush_block()
             return
         line = raw.decode('utf-8', errors='replace')
         stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
@@ -348,15 +399,15 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 newest = max(newest, stamp.group(1)) if newest else stamp.group(1)
             except ValueError:
                 pass
-        if any(marker in line for marker in markers):
+        if any(marker in line for marker in markers) or (
+                '[ServerTableEngine.' in line and '.horse_decision_worker_failed]' in line):
             if block:
-                merge_signals(signals, process_signals('\n'.join(block)))
+                flush_block()
             block = [line]
         elif block:
             block.append(line)
             if len(block) >= 13:
-                merge_signals(signals, process_signals('\n'.join(block)))
-                block = []
+                flush_block()
 
     try:
         while True:
@@ -388,8 +439,9 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 pending = b''
                 dropping = True
         if block:
-            merge_signals(signals, process_signals('\n'.join(block)))
-        return {'signals': signals, 'coverage': {'status': outcome,
+            flush_block()
+        return {'signals': signals, 'workerReceiptErrors': worker_errors,
+                'coverage': {'status': outcome,
                 'bytesRead': total, 'recordsRead': records,
                 'oldestTimestamp': oldest + 'Z' if oldest else None,
                 'newestTimestamp': newest + 'Z' if newest else None,
@@ -541,7 +593,7 @@ def main(expected):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

@@ -356,12 +356,13 @@
   min-width: 0;
 }
 /* Static reserve: 49px tab bar plus the 1px wrapper border; on phones
-   53px plus 1px. Tracker visibility never resizes the felt. */
+   44px with no separator border. Tracker visibility never resizes the felt. */
 .multi-table-page {
   --sp-tabbar-h: calc(50px + var(--sp-tabbar-safe-top));
 }
 @media (max-width: 480px) {
   .multi-table-page__tab-bar-wrapper {
+    border-bottom: 0;
     --mtp-profit-width: 52px;
     --mtp-profit-font: 0.8125rem;
     --mtp-profit-height: 44px;
@@ -371,7 +372,7 @@
     padding-inline: 1px;
   }
   .multi-table-page {
-    --sp-tabbar-h: calc(54px + var(--sp-tabbar-safe-top));
+    --sp-tabbar-h: calc(44px + var(--sp-tabbar-safe-top));
   }
 }
 
@@ -1483,6 +1484,6 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 
 @media (max-width: 480px) {
   body[data-ca-pinned-bar='1'] {
-    --ca-pinned-bar-offset: calc(54px + var(--mtt-ticker-h, 0px));
+    --ca-pinned-bar-offset: calc(44px + var(--mtt-ticker-h, 0px));
   }
 }

@@ -95,7 +95,7 @@ export function registerMobileActionStripCases() {
         });
         expect(
           (await page.getByRole('button', { name: 'Menu', exact: true }).boundingBox())!.y
-        ).toBe(104);
+        ).toBe(100);
       });
     }
   }

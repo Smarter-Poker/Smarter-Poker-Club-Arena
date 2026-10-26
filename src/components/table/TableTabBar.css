@@ -487,23 +487,24 @@
 @media (max-width: 480px) {
   .table-tab-bar {
     /* Horizontal padding here is width the four pills do not get. */
-    padding: 4px;
+    padding: 0 4px;
     /* SAME RULE AS THE BASE, AND IT HAS TO BE. 2026-08-30 audit: the base rule
        was moved to `var(--sp-tabbar-inset, env(...))` so the notch is paid once
        by whichever strip touches y=0 - and THIS override was left on the raw
        env(), so the double-inset it fixed survived below 480px. 375px is the
        design width, so the fix applied everywhere except the screens that have
        a notch in the first place. */
-    padding-top: calc(4px + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
+    padding-top: calc(0px + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
     gap: 4px;
-    /* 44px pill + 4px padding top and bottom. */
-    min-height: 52px;
+    /* Spend the former padding on the 44px controls, keeping the table canvas stable. */
+    min-height: 44px;
+    border-bottom: 0;
   }
 
-  /* The published contract at this breakpoint. 44px pill + 4px top pad + 4px
-     bottom pad + 1px border. See the base rule for why TablePage.css needs it. */
+  /* The 44px controls fill this band. The two black separator borders and
+     vertical padding are absent on phones, so the table keeps its prior reserve. */
   :root {
-    --sp-tabbar-h: calc(53px + var(--sp-tabbar-safe-top));
+    --sp-tabbar-h: calc(44px + var(--sp-tabbar-safe-top));
   }
 
   .table-tab-bar__tabs {
@@ -1057,7 +1058,7 @@
 
 /* Installed iOS can report a zero or undersized inset under its status bar.
    Reserve that band once, at the topmost strip. Landscape uses the real inset. */
-@media (display-mode: standalone) and (orientation: portrait) {
+@media (max-width: 480px) and (display-mode: standalone) and (orientation: portrait) {
   :root {
     --sp-tabbar-safe-top: max(60px, env(safe-area-inset-top, 0px));
   }

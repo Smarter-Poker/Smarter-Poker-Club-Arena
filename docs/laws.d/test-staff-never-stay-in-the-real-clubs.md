@@ -1,0 +1,3 @@
+# tests/test-staff-never-stay-in-the-real-clubs.law.test.ts
+
+Dan, 2026-10-26: "REMOVE ANY AND ALL 'STAFF MEMBERS' I HAVEN'T CREATED ANY, ITS ONLY ME FOR KINGS CLUB". Every staff member in KINGS CLUB, Deep Stack Society and Midway Union was a post-deploy verification identity whose cleanup had been refused. The test admin is now promoted with no agent, the cleanup door reads an upline that is the club owner as no authority while still refusing a real or parent agent, and the identities already left behind leave through that door or the lifecycle departure write, never a hand-written delete or a money write.

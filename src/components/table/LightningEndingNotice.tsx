@@ -32,7 +32,7 @@ export default function LightningEndingNotice({ clusterId }: { clusterId: string
   const status = useLightningClusterStatus(clusterId);
   if (status !== 'ending') return null;
   return (
-    <p className="lightning-next-hand" data-testid="lightning-ending" role="status">
+    <p className="lightning-ending" data-testid="lightning-ending" role="status">
       {LIGHTNING_ENDING_TEXT}
     </p>
   );

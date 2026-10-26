@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
 import { clusterModeDisplay, isLightningEligible } from './lightningLobby';
 import { markLightningRoom } from './lightningDeviceReport';
+import { clearLightningClusterStatus } from './lightningDecisionQueue';
 
 /** fn_lightning_my_session, as the client reads it. */
 export interface LightningMySession {
@@ -292,7 +293,10 @@ function emit(): void {
   for (const l of listeners) l();
 }
 
-export function registerLightningPoolSession(entry: LightningPoolEntry): void {
+export function registerLightningPoolSession(
+  entry: LightningPoolEntry,
+  opts: { keepClusterStatus?: boolean } = {}
+): void {
   if (!isUUID(entry.poolSessionId) || !isUUID(entry.clusterId)) return;
   hydrate();
   markLightningRoom(entry.poolSessionId);
@@ -310,6 +314,13 @@ export function registerLightningPoolSession(entry: LightningPoolEntry): void {
     return;
   }
   registry.set(entry.poolSessionId, next);
+  /* A NEW room for this Cluster: whatever an earlier room of it was told about
+     the Cluster's hold no longer stands (Lightning transition, phase 1). The
+     engine re-sends a hold that is still on when this room connects, so every
+     caller that registers BEFORE connecting may clear. A room learned from its
+     own snapshot is already connected (its resync frame may have landed), and
+     keeps what it was told. */
+  if (!prev && !opts.keepClusterStatus) clearLightningClusterStatus(next.clusterId);
   persist();
   emit();
 }

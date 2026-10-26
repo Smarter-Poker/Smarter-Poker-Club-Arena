@@ -5,6 +5,7 @@ import * as Ev from './HorseEvEngine.js';
 import { HorseMind } from './HorseMind.js';
 import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
 import { horseCallDeductionFraction } from './HorseCallDeductions.js';
+import { snapshotDiamondCashFees } from '../domain/diamondCashFeeSnapshot.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import type { SeatPlayer } from '../types.js';
 function seat(n: number, invested: number, stack = 100): SeatPlayer {
@@ -72,6 +73,28 @@ describe('call pricing subtracts actual capped deductions', () => {
       horseCallDeductionFraction(hero, { ...gs, stateSchemaVersion: undefined }, 10)
     ).toBeNull();
     expect(horseCallDeductionFraction(hero, { ...gs, pot: 300 }, 10)).toBeNull();
+  });
+  it('uses the frozen whole-Diamond schedule rather than zero chip-rake columns', () => {
+    const { hero, gs } = spot();
+    gs.asset = 'diamonds';
+    gs.chipUnit = 1;
+    const exact = (n: bigint) => ({ units: n, scale: 0 });
+    const schedule = snapshotDiamondCashFees({
+      enabled: true,
+      bigBlind: 2,
+      noFlopNoDrop: true,
+      rounding: 'down',
+      minPot: exact(0n),
+      percent: { _heads_up: exact(5n), _three_handed: exact(10n), '': exact(10n) },
+      cap: { _heads_up: exact(1n), _three_handed: exact(3n), '': exact(5n) },
+    });
+    gs.rakeConfig = {
+      percent: 0,
+      cap: 0,
+      noFlopNoDrop: true,
+      diamondCashFees: { schedule, variant: 'nlh', doubleBoard: false },
+    };
+    expect(horseCallDeductionFraction(hero, gs, 10)).toBe(1 / 40);
   });
   it('does not mutate the live contribution snapshot', () => {
     const { hero, gs } = spot();

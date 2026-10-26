@@ -29,8 +29,6 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the projected call award deduction fraction, including capped rake, BBJ fees, side pots and returned unmatched contributions',
     'src/engine/multiway/JointPotDistribution.ts':
       'the settlement contribution and uncalled-return arithmetic used to project a canonical call before pricing deductions',
-    'src/engine/multiway/DealtSeatCensus.ts':
-      'the validated dealt population used to select call deduction cap tiers',
     'src/domain/diamondCashFeeSnapshot.ts':
       'the hand-frozen Diamond fee schedule used for projected call award deductions',
     'src/domain/diamondCashRakeSchedule.ts':

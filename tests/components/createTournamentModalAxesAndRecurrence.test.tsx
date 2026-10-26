@@ -411,9 +411,10 @@ describe('the add-on rule says what the engine does', () => {
     mount('mtt_rebuy');
     expect(screen.getByText('One 60-Second Period When The Rebuy Period Closes')).toBeVisible();
     expect(screen.getByText(/Play Pauses After The Current Hand/)).toHaveTextContent('No Rake');
-    // triggerAddOnPeriod is deferred while a break is running (pendingAddOnPeriod).
+    // An add-on due during the :55 break opens inside it and lasts until the
+    // break ends (coincidingSynchronizedBreakEndMs), never a second break after.
     expect(screen.getByText(/Play Pauses After The Current Hand/)).toHaveTextContent(
-      'Or When A Break Already Running Then Ends'
+      'If The :55 Break Is Already Running, It Opens Inside That Break And Lasts Until The Break Ends'
     );
     expect(screen.queryByText('1 Minute After Rebuy Period')).toBeNull();
   });

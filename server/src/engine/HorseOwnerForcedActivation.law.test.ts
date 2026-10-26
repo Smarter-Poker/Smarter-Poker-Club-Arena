@@ -277,7 +277,7 @@ async function playCash(variant: string, hands: number) {
       }
     }
   }
-  await worker.stop?.();
+  await worker.drain();
   return seen;
 }
 

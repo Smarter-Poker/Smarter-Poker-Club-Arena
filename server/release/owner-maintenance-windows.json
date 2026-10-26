@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-premium-set-keeps-betting-now",
+      "ownerOrder": "Dan, 2026-10-25 21:09 Chicago, in this chat, on a horse checking AA down on 9h 5s 3s 9s 6c: \"HORSES CAN NOT EVER BE PLAYING PASSIVELY WITH PREMIUM HANDS ... NEVER CHECKING IT DOWN!! MAKE THESE FIXES NOW FOR THE HORSE BRAIN AND UPDATE ALL 1000 HORSES\"; 23:12 Chicago: \"finish it up now, and push and publish now, not at 4am. finish up any and all unfinished work\". One off-cycle engine activation of protected main containing PR #8166, merge c2a5cd44bae19d689bd22e7959f272bcf0ee201a: the hold'em premium rule (live since #8122/#8138) did not count a premium pocket pair that made a set under a higher board card (QQ on a K-high board with a third queen) as a made hand, so that horse could still check its set down; #8166 counts the set, so it keeps betting. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "c2a5cd44bae19d689bd22e7959f272bcf0ee201a",
+      "notBefore": "2026-10-26T12:40:00Z",
+      "notAfter": "2026-10-26T18:30:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-paired-board-receipt-fix-now",
       "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, on the PLO paired-board fold: \"MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\"; 23:10 Chicago: \"I NEED YOU TO INSURE THAT ANY AND ALL UPDATES TO THE HORSES BRAIN ... ARE 100% ACTIVATED\". One immediate certified off-cycle engine activation of protected main containing PR #8138, merge 26dab2bacc13319b063f53023730b089ddac8501: the live paired-board fold was applied after the policy graph was sealed, so the engine refused every such decision as an invalid policy receipt (495 refused decisions on 2026-10-26 against 9 the day before) and the horse snap-folded through the zero-think-time fallback; the same merge moves the not-yet-serving hold'em premium rule (#8122) into the graph before it can do the same. The 04:00 window was taken by the older queued release 63a25f18, which does not contain this merge. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
       "contains": "26dab2bacc13319b063f53023730b089ddac8501",

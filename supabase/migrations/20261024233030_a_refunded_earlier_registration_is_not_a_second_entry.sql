@@ -1,3 +1,9 @@
+-- SUPERSEDED BY 20261024232734
+-- Never installed under this version, and must never run. Production ran this
+-- change's first body as 20261024233424 (recorded byte-exact beside this file),
+-- was returned to the pre-image for #7974 (20261024232734), and has since been
+-- amended again (20261025052637), so the post-image this file asserts is no
+-- longer production's. Kept for the history below.
 -- 20261024233030_a_refunded_earlier_registration_is_not_a_second_entry.sql
 --
 -- SUPERSEDED BY 20261024232734_a_refunded_earlier_entry_is_not_a_second_entry

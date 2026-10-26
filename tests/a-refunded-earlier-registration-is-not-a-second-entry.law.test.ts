@@ -2,11 +2,14 @@
  * A REFUNDED EARLIER REGISTRATION IS NOT A SECOND ENTRY (2026-10-24)
  *
  * 20261024233030 was installed to release Happy Hour Bounty (NLH) Table 20,
- * then superseded by the stricter 20261024232734 (#7974), which production
- * now holds. This law pins that 20261024233030 is assert-only: it runs after
- * #7974 in version order, changes nothing, and refuses unless the never-dealt
- * proof holds exactly #7974's post-image.
+ * then superseded by the stricter 20261024232734 (#7974). This law pins that
+ * 20261024233030 is assert-only and changes nothing, and (2026-10-26) that it
+ * is marked SUPERSEDED BY 20261024232734 so no applier ever sends it:
+ * production was amended again afterwards (20261025052637), so the post-image
+ * it asserts is no longer production's. What actually ran is recorded
+ * byte-exact as the recorded 20261024233424 file.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -16,6 +19,10 @@ const FILE = '20261024233030_a_refunded_earlier_registration_is_not_a_second_ent
 const SUPERSEDED_BY = '20261024232734_a_refunded_earlier_entry_is_not_a_second_entry.sql';
 const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
 const WINNER = readFileSync(join(MIGRATIONS, SUPERSEDED_BY), 'utf8');
+const APPLIED = readFileSync(
+  join(MIGRATIONS, '20261024233424_a_refunded_earlier_registration_is_not_a_second_entry.sql'),
+  'utf8'
+);
 
 describe('a refunded earlier registration is not a second entry', () => {
   it('runs after the migration that supersedes it', () => {
@@ -33,5 +40,18 @@ describe('a refunded earlier registration is not a second entry', () => {
     expect(SQL).not.toMatch(/\b(INSERT|UPDATE|DELETE)\s+(INTO|FROM|public\.|smarter_private\.)/i);
     expect(SQL.match(/^BEGIN;$/gm)?.length).toBe(1);
     expect(SQL.match(/^COMMIT;$/gm)?.length).toBe(1);
+  });
+
+  it('is marked superseded, so no applier ever sends it', () => {
+    expect(SQL.slice(0, 400)).toMatch(/^--\s*SUPERSEDED BY 20261024232734\b/m);
+  });
+
+  it('what production ran is recorded byte-exact under its applied version', () => {
+    // A verified recording (scripts/ci/recorded-migrations.manifest.json): the
+    // file is exactly supabase_migrations.schema_migrations.statements for
+    // 20261024233424, whose md5 production reports as below.
+    expect(createHash('md5').update(APPLIED).digest('hex')).toBe(
+      '7c6506dcc60068f55cff10b9c3878ad1'
+    );
   });
 });

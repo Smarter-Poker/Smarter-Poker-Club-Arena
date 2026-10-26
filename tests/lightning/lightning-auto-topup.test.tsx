@@ -56,6 +56,9 @@ describe('Lightning opt-in top-up at its committed receipt', () => {
     expect(source).toContain('useLightningAutoTopUp({');
     expect(source).toMatch(/event: engineLastEvent/);
     expect(source).toMatch(/!lightningRoomRef.current\s*&&\s*isAutoRebuyEnabled/);
+    expect(source).toMatch(
+      /isAutoRebuyEnabled\s*&&\s*!isLightningMode\(tableGameLightningState\?\.clusterMode\)/
+    );
     expect(source).toContain(
       "handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent, isScopeCurrent })"
     );

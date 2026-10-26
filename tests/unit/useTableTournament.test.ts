@@ -32,3 +32,16 @@ describe('useTableTournament', () => {
     expect(typeof useTableTournament).toBe('function');
   });
 });
+
+describe('the shared t-break channel (2026-10-24)', () => {
+  it('unmounting does not close the break channel other holders share', async () => {
+    const { renderHook } = await import('@testing-library/react');
+    const shared = { unsubscribe: vi.fn(), state: 'joined' };
+    const { result, unmount } = renderHook(() => useTableTournament());
+    result.current.breakChannelRef.current = shared;
+    unmount();
+    // The registry's refcounted release (TablePage) is the only owner of this.
+    expect(shared.unsubscribe).not.toHaveBeenCalled();
+    expect(result.current.breakChannelRef.current).toBe(shared);
+  });
+});

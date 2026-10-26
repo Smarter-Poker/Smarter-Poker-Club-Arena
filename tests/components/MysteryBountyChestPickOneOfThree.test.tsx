@@ -112,6 +112,55 @@ describe('pick 1 of 3', () => {
     expect(onBroadcastOpen).toHaveBeenCalledWith(slot, true);
   });
 
+  it('never restarts the five-second clock when the offer arrives late (2026-10-26)', () => {
+    const onRequestReveal = vi.fn();
+    const single = { ...offered, offerSlots: 1 };
+    const { rerender } = render(view(single, 'winner', { onRequestReveal }));
+    act(() => vi.advanceTimersByTime(700));
+    act(() => vi.advanceTimersByTime(2_000));
+    // The offer lands two seconds into the window: three chests now.
+    rerender(view(offered, 'winner', { onRequestReveal }));
+    act(() => vi.advanceTimersByTime(PICK_WINDOW_MS - 2_000 + 50));
+    expect(onRequestReveal).toHaveBeenCalledTimes(1);
+    expect([1, 2, 3]).toContain(onRequestReveal.mock.calls[0][0]);
+  });
+
+  it('never tells the player who tapped that time ran out', () => {
+    const { container, rerender } = render(view({ ...offered, offerSlots: 1 }, 'winner'));
+    act(() => vi.advanceTimersByTime(700));
+    fireEvent.click(container.querySelector('button.mbc__chest')!);
+    // A late offer says nobody chose, because the single-chest tap sent no slot.
+    rerender(
+      view(
+        {
+          ...offered,
+          amount: 50,
+          amountPending: false,
+          pickedSlot: 2,
+          chosen: false,
+          choices: [
+            { slot: 1, amount: 12, picked: false },
+            { slot: 2, amount: 50, picked: true },
+            { slot: 3, amount: 400, picked: false },
+          ],
+        },
+        'winner'
+      )
+    );
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(container.textContent).not.toContain('Time Ran Out');
+    // The mode is fixed once it opened: the tapped chest is not swapped out.
+    expect(container.querySelectorAll('button.mbc__pick')).toHaveLength(0);
+  });
+
+  it('shows no 0 when the prize never reaches this seat', () => {
+    const { container } = render(view(offered, 'spectator', { remoteOpened: true }));
+    act(() => vi.advanceTimersByTime(700));
+    act(() => vi.advanceTimersByTime(12_000));
+    expect(container.querySelector('.mbc__amount')?.textContent).toBe('Prize Revealed');
+    expect(container.textContent).not.toMatch(/\b0\b(?! Of)/);
+  });
+
   it('draws the random chest evenly, not always the first one', () => {
     const seen = new Set<number>();
     for (let i = 0; i < 300; i += 1) seen.add(randomPickSlot(3));

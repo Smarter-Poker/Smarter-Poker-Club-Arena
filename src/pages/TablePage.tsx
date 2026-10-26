@@ -1570,7 +1570,20 @@ function LiveTablePage({
    * chest the instant it landed, before its revealer had picked anything.
    * Keyed by award, it can only open the chest it was sent for.
    */
-  const [chestRemoteOpenedAward, setChestRemoteOpenedAward] = useState<string | null>(null);
+  const [chestRemoteOpenedAwards, setChestRemoteOpenedAwards] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  /* One set, several awards (a reconnect can restore a whole burst at once). */
+  const markChestOpened = useCallback((awardKey: string) => {
+    setChestRemoteOpenedAwards((prev) => {
+      if (prev.has(awardKey)) return prev;
+      const next = new Set(prev);
+      next.add(awardKey);
+      // Bounded: only the chests of this table's recent bursts matter.
+      if (next.size > 40) next.delete(next.values().next().value as string);
+      return next;
+    });
+  }, []);
   /** Award ids whose chest has started opening on THIS client. */
   const [chestOpenedLocally, setChestOpenedLocally] = useState<string | null>(null);
 
@@ -1729,9 +1742,12 @@ function LiveTablePage({
       if (!offer) return;
       // A slow read from before the reveal must never replace the revealed
       // answer that already arrived (it would wipe what the chests held).
-      setChestOffers((prev) =>
-        prev[awardId]?.revealed && !offer.revealed ? prev : { ...prev, [awardId]: offer }
-      );
+      setChestOffers((prev) => {
+        if (prev[awardId]?.revealed && !offer.revealed) return prev;
+        // Unchanged answers do not re-render the table (2026-10-26 audit).
+        if (JSON.stringify(prev[awardId]) === JSON.stringify(offer)) return prev;
+        return { ...prev, [awardId]: offer };
+      });
     } catch (err) {
       reportError(err, 'TablePage.loadChestOffer');
     }
@@ -1819,7 +1835,7 @@ function LiveTablePage({
   const currentChestOpened =
     !!currentChestId &&
     (chestOpenedLocally === currentChestId ||
-      chestRemoteOpenedAward === currentChestId ||
+      chestRemoteOpenedAwards.has(currentChestId) ||
       !!chestReveals[currentChestId]);
   const currentOfferComplete = !!currentOffer?.revealed && !!currentOffer?.choices;
   const currentOfferMissing = !currentOffer;
@@ -2044,6 +2060,9 @@ function LiveTablePage({
               }))
             : [];
           if (cents !== null) {
+            // Opened before this client arrived (2026-10-26 audit): it must not
+            // sit on "Is Picking" with the clock on 0.
+            markChestOpened(awardKey);
             // Already revealed before this client arrived. Seed the amount so
             // the chest opens onto the real figure rather than asking for it
             // again — which would be harmless (the RPC is idempotent) but is
@@ -2103,7 +2122,7 @@ function LiveTablePage({
       const awardId = typeof p.awardId === 'string' ? p.awardId : '';
       // Only the chest it was sent for. An older sender with no award id opens
       // only a chest that has none either (the legacy one-shot path).
-      setChestRemoteOpenedAward(awardId || MYSTERY_CHEST_LEGACY_KEY);
+      markChestOpened(awardId || MYSTERY_CHEST_LEGACY_KEY);
       if (!awardId) return;
       const slot = Math.floor(Number(p.slot));
       if (slot >= 1 && slot <= 3) {
@@ -15591,7 +15610,7 @@ function LiveTablePage({
                        one who never picked), the server's reveal is the open:
                        every seat opens the chest now instead of staring at a
                        locked one until its own failsafe. */
-                    setChestRemoteOpenedAward(String(b.awardId));
+                    markChestOpened(String(b.awardId));
                     // Keyed by award: a duplicate broadcast (section 80/33)
                     // overwrites the same entry instead of queueing a second
                     // chest or crediting anything twice.
@@ -25326,7 +25345,7 @@ function LiveTablePage({
         viewerUserId={userId}
         remoteOpened={
           !!queuedChest &&
-          chestRemoteOpenedAward === (queuedChest.awardId || MYSTERY_CHEST_LEGACY_KEY)
+          chestRemoteOpenedAwards.has(queuedChest.awardId || MYSTERY_CHEST_LEGACY_KEY)
         }
         onBroadcastOpen={broadcastChestOpen}
         onOpened={() => setChestOpenedLocally(queuedChest?.awardId ?? null)}
@@ -25340,6 +25359,14 @@ function LiveTablePage({
         queuedBehind={chestQueue.pending}
         onDone={() => {
           chestQueue.complete();
+          /* The legacy key is shared by every award-less chest, so it is
+             cleared when one finishes; award keys never need it. */
+          setChestRemoteOpenedAwards((prev) => {
+            if (!prev.has(MYSTERY_CHEST_LEGACY_KEY)) return prev;
+            const next = new Set(prev);
+            next.delete(MYSTERY_CHEST_LEGACY_KEY);
+            return next;
+          });
         }}
         playSounds={ambientSoundsAllowed}
       />

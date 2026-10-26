@@ -1499,10 +1499,10 @@
 
 /* PICK 1 OF 3: which chest held the prize, and each other chest's number. */
 .mbc__picked-slot {
+  /* First Letter Capitalized (the house rule), not shouted in capitals. */
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: rgba(255, 255, 255, 0.78);
   margin-bottom: 4px;
 }
@@ -1522,7 +1522,8 @@
    plate with what it held - the prize, and the two that could have been. */
 
 .mbc__picks--opened {
-  margin-bottom: 40px;
+  /* Room for a plate of two lines (a long Diamond figure wraps). */
+  margin-bottom: 64px;
 }
 
 .mbc__picks--opened .mbc__pick {
@@ -1531,6 +1532,30 @@
 
 .mbc__pick--picked .mbc__pick-img {
   transform: translateY(-6px) scale(1.06);
+}
+
+/* THE PICKED CHEST IS THE ONE THAT BURSTS (2026-10-26 audit): with three on
+   offer there is no big chest, so the chosen one swells and flares while the
+   coin shower plays. Reduced motion keeps the glow, not the movement. */
+.mbc--opening .mbc__pick--picked .mbc__pick-img,
+.mbc--explosion .mbc__pick--picked .mbc__pick-img {
+  animation: mbcPickBurst 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  filter: drop-shadow(0 0 22px rgba(111, 220, 255, 0.95));
+}
+
+@keyframes mbcPickBurst {
+  0% {
+    transform: translateY(-6px) scale(1.06);
+  }
+  45% {
+    transform: translateY(-14px) scale(1.32) rotate(-3deg);
+  }
+  70% {
+    transform: translateY(-10px) scale(1.22) rotate(2deg);
+  }
+  100% {
+    transform: translateY(-8px) scale(1.16);
+  }
 }
 
 .mbc__pick--other .mbc__pick-img {
@@ -1547,29 +1572,35 @@
 }
 
 .mbc__pick-plate {
+  /* Spans its own chest's column, so it is centred under that chest by
+     construction and can never run past the row (2026-10-26 audit: a
+     translateX(-50%) centring was overwritten by the entry animation's
+     transform, and the third plate ran off a 375px screen). */
   position: absolute;
-  left: 50%;
+  left: -6px;
+  right: -6px;
   top: calc(100% + 6px);
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  white-space: nowrap;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
   animation: mbcOtherIn 0.45s ease-out both;
   animation-delay: calc(0.25s + var(--mbc-p, 0) * 0.12s);
 }
 
 .mbc__pick-plate-label {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.62);
 }
 
 .mbc__pick-plate-amount {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 17px;
+  font-size: clamp(12px, 3.8vw, 17px);
+  line-height: 1.15;
   font-weight: 900;
   color: var(--mbc-tier, #6fdcff);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
@@ -1594,5 +1625,9 @@
 @media (prefers-reduced-motion: reduce) {
   .mbc__pick-plate {
     animation-duration: 0.01ms !important;
+  }
+  .mbc--opening .mbc__pick--picked .mbc__pick-img,
+  .mbc--explosion .mbc__pick--picked .mbc__pick-img {
+    animation: none;
   }
 }

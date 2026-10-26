@@ -28,7 +28,7 @@ describe('the pick is five seconds, then random', () => {
   });
 
   it('draws the chest at random when the window runs out, and records it', () => {
-    expect(CHEST).toContain('const slot = choosing ? randomPickSlot(offerSlots) : undefined;');
+    expect(CHEST).toContain('const slot = slots > 1 ? randomPickSlot(slots) : undefined;');
     expect(CHEST).toContain('runOpen(slot);');
     expect(CHEST).toContain('crypto.getRandomValues');
   });
@@ -64,8 +64,10 @@ describe('no seat ever counts up to zero', () => {
 
   it('opens only the chest a "chest opened" was sent for, and opens on the server reveal', () => {
     expect(TABLE).not.toContain('setChestRemoteOpened(true)');
-    expect(TABLE).toContain('setChestRemoteOpenedAward(awardId || MYSTERY_CHEST_LEGACY_KEY);');
-    expect(TABLE).toContain('setChestRemoteOpenedAward(String(b.awardId));');
+    expect(TABLE).toContain('markChestOpened(awardId || MYSTERY_CHEST_LEGACY_KEY);');
+    expect(TABLE).toContain('markChestOpened(String(b.awardId));');
+    // A chest already opened before this seat arrived is restored as opened.
+    expect(TABLE).toMatch(/if \(cents !== null\) \{[\s\S]*?markChestOpened\(awardKey\);/);
   });
 
   it("opens a horse's award when it picks, as a person's tap does (10.5)", () => {

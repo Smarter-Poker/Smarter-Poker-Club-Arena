@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isHorseOwnerForcedAuthority } from './HorseOwnerForcedActivation.js';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -269,12 +270,13 @@ describe('P11.3 maniac pressure (2026-10-22) requires a fresh qualification of e
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('each live main-scheduler gate is usable exactly when its pack is selected', () => {
+  it('each live main-scheduler gate is usable: its selection, or the owner order when unselected (Dan 2026-10-26)', () => {
     for (const variant of HORSE_PHASE11_VARIANTS) {
       const gate = liveHorsePhase11Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe(
-        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null ? 'unselected' : 'usable'
+      expect(gate.mainState(), variant).toBe('usable');
+      expect(isHorseOwnerForcedAuthority(gate.mainAuthority()), variant).toBe(
+        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null
       );
     }
   });

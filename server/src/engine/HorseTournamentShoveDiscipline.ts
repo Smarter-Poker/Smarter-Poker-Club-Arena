@@ -19,7 +19,9 @@
  * depth where shoving is the real strategy. Deeper than that, the same
  * aggression is a sized raise.
  *
- *  first in (open)          shove only at <= 20bb effective
+ *  first in (open)          shove only at <= 12bb effective from UTG through
+ *                           the hijack, <= 15bb from the cutoff, <= 20bb from
+ *                           the button and small blind (and heads-up)
  *  facing one raise (3-bet) shove only at <= 25bb effective
  *  facing a 3-bet (4-bet)   shove only at <= 40bb effective
  *  facing a 4-bet or more   unchanged (a 5-bet is all-in by nature)
@@ -41,8 +43,16 @@
 import type { HorseDecision, SeatPlayer } from '../types.js';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 
-/** Deepest effective stack (in big blinds) that may shove first in. */
+/** Deepest effective stack (in big blinds) that may shove first in, from the
+ *  button or the small blind (Dan 2026-10-25: "SINCE WHEN IS IT GTO TO OPEN
+ *  RIP 20BB FROM UTG?!"). The seat sets the line: */
 export const TOURNAMENT_OPEN_SHOVE_MAX_BB = 20;
+/** ... the cutoff ... */
+export const TOURNAMENT_CUTOFF_OPEN_SHOVE_MAX_BB = 15;
+/** ... and every earlier seat (UTG through the hijack). */
+export const TOURNAMENT_EARLY_OPEN_SHOVE_MAX_BB = 12;
+/** Heads-up the button is the small blind, and every hand is a steal. */
+export const TOURNAMENT_HEADS_UP_OPEN_SHOVE_MAX_BB = 20;
 /** Deepest effective stack that may shove over a single raise. */
 export const TOURNAMENT_THREE_BET_SHOVE_MAX_BB = 25;
 /** Deepest effective stack that may shove over a 3-bet. */
@@ -59,6 +69,13 @@ export interface ShoveDisciplineRead {
   coverTo: number;
   /** Callers of the current bet (limpers when unopened). */
   callers: number;
+  /** Dealt seats left to act after hero up to and including the button
+   *  (0 = hero is the button), or null when the button is unknown. */
+  seatsToButton: number | null;
+  /** Hero is the small blind. */
+  smallBlind: boolean;
+  /** Dealt players in the hand. */
+  dealt: number;
 }
 
 const EPS = 0.000001;
@@ -114,11 +131,32 @@ export function readShoveSpot(hero: SeatPlayer, gs: HorseGameStateV2): ShoveDisc
     if (total > coverTo) coverTo = total;
   }
   const heroTotal = hero.stack + hero.bet;
+  // Clockwise from the seat after the button: SB, BB, UTG ... button.
+  const dealtSeats = gs.players
+    .filter((p) => !p.is_sitting_out || p.is_all_in)
+    .map((p) => p.seat)
+    .sort((a, b) => a - b);
+  let seatsToButton: number | null = null;
+  let smallBlind = false;
+  const dealer = gs.dealerSeat;
+  if (typeof dealer === 'number' && dealtSeats.includes(hero.seat)) {
+    const after = (s: number) => (s - dealer + 10) % 10 || 10;
+    const order = [...dealtSeats].sort((a, b) => after(a) - after(b));
+    const idx = order.indexOf(hero.seat);
+    seatsToButton = order.length - 1 - idx;
+    smallBlind =
+      gs.blindSeats != null
+        ? gs.blindSeats.smallBlind === hero.seat
+        : order.length > 2 && idx === 0;
+  }
   return {
     level: raises,
     effectiveBB: Math.min(heroTotal, coverTo) / bb,
     coverTo,
     callers,
+    seatsToButton,
+    smallBlind,
+    dealt: dealtSeats.length,
   };
 }
 
@@ -182,7 +220,7 @@ export function tournamentShoveDiscipline(
   const effChips = eff * bb;
   const cap =
     spot.level <= 0
-      ? TOURNAMENT_OPEN_SHOVE_MAX_BB
+      ? openShoveCap(spot)
       : spot.level === 1
         ? TOURNAMENT_THREE_BET_SHOVE_MAX_BB
         : spot.level === 2
@@ -208,6 +246,14 @@ export function tournamentShoveDiscipline(
     return legalRaise(decision, hero, gs, to) ?? coverOnly(decision, hero, gs, spot);
   }
   return coverOnly(decision, hero, gs, spot);
+}
+
+/** The first-in shove line by seat. An unknown button reads as early. */
+export function openShoveCap(spot: ShoveDisciplineRead): number {
+  if (spot.dealt <= 2) return TOURNAMENT_HEADS_UP_OPEN_SHOVE_MAX_BB;
+  if (spot.smallBlind || spot.seatsToButton === 0) return TOURNAMENT_OPEN_SHOVE_MAX_BB;
+  if (spot.seatsToButton === 1) return TOURNAMENT_CUTOFF_OPEN_SHOVE_MAX_BB;
+  return TOURNAMENT_EARLY_OPEN_SHOVE_MAX_BB;
 }
 
 /** Within the shove line: a stack that covers the field raises to exactly

@@ -683,6 +683,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V56'
   ),
   flag(
+    'v57TournamentAggression',
+    'Dan 2026-10-25 NLH tournament aggression: wider opens, 3-bets and big blind defence against the opener width, a shade wider 3-bet defence to 60bb, and more planned turn barrels; explicit off arm retained for the historical neutrality corpus',
+    'V57'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'

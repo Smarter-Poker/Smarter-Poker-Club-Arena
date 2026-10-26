@@ -39,7 +39,9 @@ test('report refuses invalid, injected, reversed and unbounded windows before co
     ['2026-04-31T00:00:00Z', '2026-05-03T00:00:00Z'],
   ]) {
     assert.throws(() => scoreboardSQL(a, b));
-    assert.equal(runScoreboard(['--run', a, b]).code, 3);
+    const invalid = runScoreboard(['--run', a, b]);
+    assert.equal(invalid.code, 3);
+    assert.equal(JSON.parse(invalid.output).reason, 'invalid_input');
   }
   assert.equal(runScoreboard([]).code, 64);
   assert.throws(() => scoreboardSQL(since, through, "x'; SELECT 1;--"));
@@ -274,6 +276,21 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     assert.deepEqual(capped.coverage, []);
     assert.deepEqual(capped.scores, []);
     assert.equal(psql('SELECT count(*) FROM ca_hand_facts;').trim(), '50018');
+    psql('ALTER TABLE ca_hand_facts RENAME TO unavailable_private_relation;');
+    const unavailable = spawnSync(
+      process.execPath,
+      [resolve('scripts/horse-human-scoreboard.mjs'), '--run', since, through],
+      { env: { ...env, PATH: bin ? bin + ':' + env.PATH : env.PATH }, encoding: 'utf8' }
+    );
+    assert.equal(unavailable.status, 3);
+    assert.deepEqual(JSON.parse(unavailable.stdout), {
+      status: 'unavailable',
+      reason: 'query_failed',
+      sqlstate: '42P01',
+      partition: 1,
+      completed_partitions: 0,
+    });
+    assert.doesNotMatch(unavailable.stdout, /unavailable_private_relation|SELECT|postgresql:\/\//);
   } finally {
     if (started || existsSync(join(data, 'postmaster.pid')))
       run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop']);

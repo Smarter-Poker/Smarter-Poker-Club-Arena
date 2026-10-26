@@ -330,11 +330,11 @@ begin
           when feature ~ '^decide(_|$)'
             or feature ~ '^phase[0-9]+_(variant|format|objective)_'
             or feature ~ '^phase13_board_[23]$'
-            or feature ~ '_seen$'
             or feature ~ '^vpip_floor_'
             or feature ~ '^phase[0-9]+_context_issue_'
             or feature ~ '^phase[0-9]+_([a-z0-9]+_)*execution_(not_executed|coerced|retired_.*)$'
-            or feature = 'phase15_plan_retirement_unconfirmed' then null
+            or feature = 'phase15_plan_retirement_unconfirmed'
+            or feature ~ '_seen$' then null
           -- 2026-10-05: REASON counters are a breakdown of a lane's outcomes,
           -- not layers. Every phaseN decision notes exactly one *_reason_*,
           -- the V44 second look notes one v44_declined_* per refusal, and

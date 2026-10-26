@@ -32,3 +32,11 @@ The existing accounting CI shard 4 runs the fixture through the maintained
 native runner. This change does not by itself certify the separate engine
 main-thread CPU cause or whole-system latency; production installation and
 natural-run evidence are recorded in the owning task checkpoint.
+
+The accounting workflow gains one shard-4 fixture step. Its six current input
+bindings are refreshed to that reviewed workflow identity only; all financial
+source pins, assertions, historical receipts and qualification states remain.
+The normal push hook first refused an unqualified singleton cursor reset and
+then stale workflow bindings. The reset now explicitly targets its singleton,
+and the bindings name the actual candidate workflow. These failures remain in
+the task evidence; successful hosted qualification is still required.

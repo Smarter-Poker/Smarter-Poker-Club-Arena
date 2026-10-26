@@ -48,7 +48,8 @@ describe('the tab strip implements the tablist pattern it declares', () => {
   });
 
   it('has exactly one tabbable tab - roving focus, not seven tab stops', () => {
-    expect(PAGE).toContain('tabIndex={activeTab === tab.id ? 0 : -1}');
+    // `shownTab` (2026-10-26): a bounties link on a non-mystery event shows Rewards.
+    expect(PAGE).toContain('tabIndex={shownTab === tab.id ? 0 : -1}');
   });
 
   it('moves with Left and Right and WRAPS at both ends', () => {
@@ -82,11 +83,11 @@ describe('the tab strip implements the tablist pattern it declares', () => {
     expect(PAGE).toContain('id="tl-tabpanel"');
     // The panel names itself after whichever tab is selected, so it announces
     // "Ranking, tab panel" rather than an anonymous "tab panel".
-    expect(PAGE).toContain('aria-labelledby={`tl-tab-${activeTab}`}');
+    expect(PAGE).toContain('aria-labelledby={`tl-tab-${shownTab}`}');
   });
 
   it('marks the selected tab', () => {
-    expect(PAGE).toContain('aria-selected={activeTab === tab.id}');
+    expect(PAGE).toContain('aria-selected={shownTab === tab.id}');
   });
 });
 

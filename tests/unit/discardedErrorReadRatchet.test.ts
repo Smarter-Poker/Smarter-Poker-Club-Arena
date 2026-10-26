@@ -222,7 +222,6 @@ const BASELINE = new Map<string, number>([
   ['src/hooks/useEffectiveRake.ts', 0],
   ['src/components/waitlist/WaitlistManager.tsx', 1],
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
-  ['src/components/tournament/MysteryBountyPanel.tsx', 1],
   ['src/components/tournament/MysteryBountyCelebration.tsx', 1],
   // 1 -> 0 on 2026-10-01: presence comes from the presence door, which throws.
   ['src/components/social/PresenceIndicator.tsx', 0],

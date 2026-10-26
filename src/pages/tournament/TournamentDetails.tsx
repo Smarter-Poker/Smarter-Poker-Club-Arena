@@ -37,7 +37,7 @@ import {
  *   the union sentence                       -> UnionsTab
  *   the table card grid                      -> TablesTab
  *   the payout table + bounty pool           -> RewardsTab
- *   the mystery bounty ladder                -> RewardsTab (MysteryBountyPanel)
+ *   the mystery bounty ladder                -> BountiesTab (MysteryBountyPanel)
  *
  * THE SHELL DOES NOT SCROLL. Dan 2026-08-25: the Detail tab shows everything on
  * one overview with no scrolling. `.tournament-details` is a fixed-height flex
@@ -48,7 +48,7 @@ import {
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useParams, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Link } from 'react-router-dom';
 /* Dan 2026-08-28: this page renders BOTH as the /tournaments/:id route and
    inside a MultiTablePage lobby tab (tournamentIdOverride). In the tab, a hop
    to another tournament must stay in the tab. Its /table/:id navigations are
@@ -168,7 +168,6 @@ export default function TournamentDetails({
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
-  const [searchParams] = useSearchParams();
   const tournamentId = tournamentIdOverride || routeTournamentId;
   const navigate = useAppNavigate();
   const location = useLocation();
@@ -188,7 +187,12 @@ export default function TournamentDetails({
    * the app persists a tab id today; the normaliser is what makes it safe for
    * anything to start.
    */
-  const [activeTab, setActiveTab] = useState<TabId>(() => normaliseTabId(searchParams.get('tab')));
+  /* Read from `search`, which honours `searchOverride`: inside the in-table
+     lobby tab the router's own query string is the table's, not this lobby's
+     (2026-10-26 audit). */
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    normaliseTabId(new URLSearchParams(search).get('tab'))
+  );
   /** One element per tab, so the roving-focus arrow keys can move focus. */
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   /* The strip is one row that scrolls sideways (it used to wrap onto a second
@@ -250,7 +254,7 @@ export default function TournamentDetails({
    * MYSTERY BOUNTY (sections 10, 31 to 36, 67, 68, 73).
    *
    * One hook for the whole page: DetailOverviewTab advertises the top chest and
-   * the activation status off it, and RewardsTab renders the full ladder from
+   * the activation status off it, and BountiesTab renders the full ladder from
    * the same fetch. `enabled` is false for every other format, so a freezeout
    * makes no RPC calls at all.
    */
@@ -258,6 +262,13 @@ export default function TournamentDetails({
     (tournament as unknown as { is_mystery_bounty?: boolean } | null)?.is_mystery_bounty
   );
   const mysteryBounty = useMysteryBounty(tournamentId ?? null, isMysteryBountyEvent);
+  /**
+   * THE TAB THAT IS ACTUALLY SHOWN (2026-10-26 audit). Bounties exists only on
+   * a mystery event; a `?tab=bounties` (or the old `?tab=mystery`) link to any
+   * other event shows Rewards, and the strip, the roving focus and the panel's
+   * label must all agree that Rewards is what is selected.
+   */
+  const shownTab: TabId = activeTab === 'bounties' && !isMysteryBountyEvent ? 'rewards' : activeTab;
 
   /**
    * MEASURE THE SPACE, DO NOT GUESS IT.
@@ -2130,13 +2141,13 @@ export default function TournamentDetails({
               id={`tl-tab-${tab.id}`}
               type="button"
               role="tab"
-              aria-selected={activeTab === tab.id}
+              aria-selected={shownTab === tab.id}
               aria-controls="tl-tabpanel"
-              tabIndex={activeTab === tab.id ? 0 : -1}
+              tabIndex={shownTab === tab.id ? 0 : -1}
               ref={(el) => {
                 tabRefs.current[i] = el;
               }}
-              className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+              className={`tab ${shownTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
               onKeyDown={(e) => {
                 const last = visibleTabs.length - 1;
@@ -2166,7 +2177,7 @@ export default function TournamentDetails({
           /* Named by whichever tab is selected, so the panel announces what it
              is instead of "tab panel". Focusable at -1 so the arrow-key move
              above has somewhere to send focus next. */
-          aria-labelledby={`tl-tab-${activeTab}`}
+          aria-labelledby={`tl-tab-${shownTab}`}
           tabIndex={-1}
           ref={contentRef}
         >
@@ -2176,13 +2187,11 @@ export default function TournamentDetails({
           {activeTab === 'entries' && <EntriesTab {...tabProps} />}
           {activeTab === 'unions' && <UnionsTab {...tabProps} />}
           {activeTab === 'tables' && <TablesTab {...tabProps} />}
-          {(activeTab === 'rewards' || (activeTab === 'bounties' && !isMysteryBountyEvent)) && (
-            <RewardsTab {...tabProps} />
-          )}
+          {shownTab === 'rewards' && <RewardsTab {...tabProps} />}
           {/* BOUNTIES (Dan 2026-10-25): its own tab for every mystery bounty
               event, beside Rewards. A `?tab=bounties` link to any other event
               lands on Rewards rather than a blank page. */}
-          {activeTab === 'bounties' && isMysteryBountyEvent && <BountiesTab {...tabProps} />}
+          {shownTab === 'bounties' && <BountiesTab {...tabProps} />}
           {activeTab === 'satellites' && <SatellitesTab {...tabProps} />}
         </div>
 

@@ -397,7 +397,16 @@ export const AWARDS_PAGE_SIZE = 200;
 export const AWARDS_MAX_ROWS = 1000;
 
 export const MysteryBountyService = {
-  async getInventory(tournamentId: string): Promise<MysteryBountyInventory | null> {
+  /*
+   * `strict` (2026-10-26 audit): a failed read THROWS instead of returning an
+   * empty answer, so the live hook keeps the ladder it already has rather than
+   * blanking it to "Loading" and "Nobody Has Won A Mystery Bounty Yet" on one
+   * dropped request. One-shot callers keep the forgiving default.
+   */
+  async getInventory(
+    tournamentId: string,
+    opts?: { strict?: boolean }
+  ): Promise<MysteryBountyInventory | null> {
     if (!tournamentId) return null;
     try {
       const { data, error } = await supabase.rpc('fn_mystery_bounty_inventory', {
@@ -407,12 +416,18 @@ export const MysteryBountyService = {
       if (!data) return null;
       return parseInventory(data);
     } catch (err) {
+      if (opts?.strict) throw err;
       reportError(err, 'MysteryBountyService.getInventory');
       return null;
     }
   },
 
-  async getAwards(tournamentId: string, limit = 50, offset = 0): Promise<MysteryBountyAwards> {
+  async getAwards(
+    tournamentId: string,
+    limit = 50,
+    offset = 0,
+    opts?: { strict?: boolean }
+  ): Promise<MysteryBountyAwards> {
     if (!tournamentId) return { total: 0, rows: [] };
     try {
       const { data, error } = await supabase.rpc('fn_mystery_bounty_awards', {
@@ -423,6 +438,7 @@ export const MysteryBountyService = {
       if (error) throw error;
       return parseAwards(data);
     } catch (err) {
+      if (opts?.strict) throw err;
       reportError(err, 'MysteryBountyService.getAwards');
       return { total: 0, rows: [] };
     }
@@ -436,16 +452,20 @@ export const MysteryBountyService = {
    * Bounded by AWARDS_MAX_ROWS so a pathological event cannot make a lobby page
    * loop forever.
    */
-  async getAllAwards(tournamentId: string): Promise<MysteryBountyAwards> {
+  async getAllAwards(
+    tournamentId: string,
+    opts?: { strict?: boolean }
+  ): Promise<MysteryBountyAwards> {
     if (!tournamentId) return { total: 0, rows: [] };
-    const first = await MysteryBountyService.getAwards(tournamentId, AWARDS_PAGE_SIZE, 0);
+    const first = await MysteryBountyService.getAwards(tournamentId, AWARDS_PAGE_SIZE, 0, opts);
     const rows = [...first.rows];
     const wanted = Math.min(first.total, AWARDS_MAX_ROWS);
     while (rows.length < wanted && rows.length > 0) {
       const page = await MysteryBountyService.getAwards(
         tournamentId,
         AWARDS_PAGE_SIZE,
-        rows.length
+        rows.length,
+        opts
       );
       if (page.rows.length === 0) break;
       rows.push(...page.rows);
@@ -453,7 +473,10 @@ export const MysteryBountyService = {
     return { total: first.total, rows };
   },
 
-  async getLeaderboard(tournamentId: string): Promise<MysteryBountyLeaderboardRow[]> {
+  async getLeaderboard(
+    tournamentId: string,
+    opts?: { strict?: boolean }
+  ): Promise<MysteryBountyLeaderboardRow[]> {
     if (!tournamentId) return [];
     try {
       const { data, error } = await supabase.rpc('fn_mystery_bounty_leaderboard', {
@@ -462,6 +485,7 @@ export const MysteryBountyService = {
       if (error) throw error;
       return parseLeaderboard(data);
     } catch (err) {
+      if (opts?.strict) throw err;
       reportError(err, 'MysteryBountyService.getLeaderboard');
       return [];
     }

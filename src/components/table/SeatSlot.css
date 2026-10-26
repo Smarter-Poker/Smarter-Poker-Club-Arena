@@ -4847,10 +4847,10 @@
   padding-block: 3px;
 }
 
-/* Keep rail bets fixed when the top pod clears the actual jackpot frame. */
-.seat-wrapper--top .seat__bet-chips {
-  translate: 0 calc(-1 * var(--sp-top-seat-shift, 0px));
-}
+/* A top pod that drops below the jackpot frame takes its bet with it
+   (Dan 2026-10-25: a bet is always in front of the player who made it). The
+   bet used to be held back at the rail, and the dropped plate and its tag then
+   printed over it. */
 /* A top player's action stays with its plate, below the jackpot banner.
    Dan 2026-10-21: every top-cap chair, tournaments included (whose full-size
    top pods carry no `--top` tag), so a tag above a top player's head can

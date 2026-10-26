@@ -2216,8 +2216,14 @@ jobs:
       - publication-gate
       - post-deploy-verdict
       - club-channel-lifecycle-e2e
+    # `!cancelled()`, never `always()` (2026-10-26). GitHub does not stop an
+    # `always()` job when its run is cancelled, so on main runs 40268560267 and
+    # 40269218566 this step's own cancel was accepted, the run was marked
+    # cancelled, and the step then sat out its 300 s guard and reported
+    # failure. `!cancelled()` still lets the job evaluate past skipped needs,
+    # and its own cancellation stops it, as ci.yml's heavy jobs do.
     if: >-
-      always() &&
+      !cancelled() &&
       github.event_name == 'workflow_run' &&
       needs.publication-gate.result == 'success' &&
       needs.publication-gate.outputs.should_run != 'true' &&

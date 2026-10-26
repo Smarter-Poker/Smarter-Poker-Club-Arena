@@ -167,6 +167,11 @@ export async function liveBuildIsThisDocument(): Promise<boolean> {
   return (await readLiveBuild()) === 'this';
 }
 
+/** True from a departure until afterNavigationGrace decides its outcome. */
+function departureUndecided(now = Date.now()): boolean {
+  return now - leavingAt < CURRENT_BUILD_PATIENCE_MS;
+}
+
 /** Run `recover` once the current navigation has had its chance to finish. */
 function afterNavigationGrace(recover: () => void): void {
   if (deferredRecovery !== null) return;
@@ -176,14 +181,19 @@ function afterNavigationGrace(recover: () => void): void {
       void (async () => {
         if (
           Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS &&
-          (await liveBuildIsThisDocument())
+          (await readLiveBuild()) !== 'other'
         ) {
-          // Still current, so a reload cannot help and would cancel the
-          // navigation if it is merely slow. Keep the single deferral armed.
+          // Current, or unreadable because the browser is mid-navigation
+          // (WebKit refuses a leaving page's new fetches): a reload cannot
+          // help and would cancel the navigation if it is merely slow. Keep
+          // the single deferral armed.
           schedule(NAVIGATION_GRACE_MS);
           return;
         }
         deferredRecovery = null;
+        // The departure is decided: it never completed, or the build is
+        // stale. Recovery from here replaces this document directly.
+        leavingAt = Number.NEGATIVE_INFINITY;
         recover();
       })();
     }, wait);
@@ -362,8 +372,11 @@ export function reportExhaustedChunkLoad(error: unknown, surface: string): void 
 export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
   if (!canOwnChunkRecovery(error)) return false;
   if (recoveryStarted) return true;
-  // A cancelled load during navigation spends no reload budget.
-  if (documentIsNavigatingAway()) {
+  // A cancelled load during navigation spends no reload budget. A failure
+  // that arrives after the grace while the departure is still undecided
+  // (a lazy retry's backoff can outlast it) is confirmed the same way rather
+  // than replacing the document on the spot.
+  if (documentIsNavigatingAway() || departureUndecided()) {
     afterNavigationGrace(() => void recoverFromStaleChunk(error));
     return true;
   }
@@ -575,7 +588,8 @@ export function lazyWithRetry<T extends ComponentType<any>>(
         // undefined. If recovery or navigation already owns that failure,
         // keep React suspended instead of passing it an invalid module.
         if (module == null || module.default == null) {
-          if (recoveryStarted || documentIsNavigatingAway()) return new Promise<never>(() => {});
+          if (recoveryStarted || documentIsNavigatingAway() || departureUndecided())
+            return new Promise<never>(() => {});
           throw new Error('Lazy route module has no default export');
         }
         // Another lazy module succeeding does not prove the failed route

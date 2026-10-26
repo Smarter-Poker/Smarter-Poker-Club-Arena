@@ -413,6 +413,7 @@ import {
   lightningFastFoldFlag,
   lightningFoldFlags,
   lightningFoldAvailability,
+  isLightningIdleSnapshot,
   lightningSnapshotClearsBoard,
   lightningHandOnFelt,
   lightningHandId,
@@ -422,6 +423,14 @@ import {
   preActionBelongsToHand,
   type LightningSnapshotFields,
 } from '../lightning/lightningHand';
+import {
+  lightningEarlyHeroCardsReady,
+  lightningExitHoldMs,
+  lightningHeroSeatFromRoster,
+  lightningHoldsHeroDealSound,
+  lightningParkedDealerSeat,
+  type LightningEarlyHeroCards,
+} from '../lightning/lightningTransitionMotion';
 import {
   detectLightningPlatform,
   lightningCapabilities,
@@ -2655,6 +2664,20 @@ function LiveTablePage({
 
   // A roster arriving during restoration supplies a placeholder, not a top-up.
   const sessionBuyInSeedRef = useRef(0);
+  /* LIGHTNING TRANSITION, PHASE 3: THE FOLDED HAND LEAVES THE FELT, IT DOES
+     NOT VANISH. The engine answers a Lightning fold with the fold, the table,
+     then the idle snapshot one macrotask later. Applied verbatim, that took
+     the hero's cards off the felt one frame into their 435 ms flight to the
+     muck and every opponent and the board in the same frame. In a Lightning
+     room the idle snapshot now waits one fold window (500 ms x Animation
+     Speed) while the felt is marked as leaving, so the muck lands and the
+     opponents and board fade out (LightningFoldBar.css). A snapshot that
+     carries a hand ends the wait at once: a fast next deal is never held.
+     `until` is the deadline of the wait in progress; `tick` re-runs the
+     apply when it passes. */
+  const lightningExitHoldRef = useRef<{ until: number } | null>(null);
+  const [lightningExitTick, setLightningExitTick] = useState(0);
+  const [lightningExitMs, setLightningExitMs] = useState(0);
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
   // the feature flag is on. This one effect replaces the entire Supabase-
   // Realtime-as-game-state path (which PR-5 deletes). The mapping is pure
@@ -2662,6 +2685,41 @@ function LiveTablePage({
   useEffect(() => {
     if (!USE_ENGINE_WS) return;
     if (!engineSnapshot) return;
+    {
+      const idle =
+        !!lightningRoomRef.current &&
+        isLightningIdleSnapshot(engineSnapshot as LightningSnapshotFields);
+      if (!idle) {
+        if (lightningExitHoldRef.current) {
+          lightningExitHoldRef.current = null;
+          setLightningExitMs(0);
+        }
+      } else {
+        if (!lightningExitHoldRef.current) {
+          const ms = lightningExitHoldMs({
+            lightningRoom: true,
+            observer: lightningObserver,
+            snapshotIdle: true,
+            feltPlayers: tableStateRef.current.players.filter((p) => !!p).length,
+            speed: getAnimationSpeed(),
+          });
+          if (ms > 0) {
+            lightningExitHoldRef.current = { until: Date.now() + ms };
+            setLightningExitMs(ms);
+          }
+        }
+        const hold = lightningExitHoldRef.current;
+        const wait = hold ? hold.until - Date.now() : 0;
+        if (hold && wait > 0) {
+          const timer = setTimeout(() => setLightningExitTick((n) => n + 1), wait);
+          return () => clearTimeout(timer);
+        }
+        if (hold) {
+          lightningExitHoldRef.current = null;
+          setLightningExitMs(0);
+        }
+      }
+    }
     /* THE FLOOR IS READ FROM THE REF, NOT THE DEP (2026-09-09). With
        `tableState.maxPlayers` in this effect's dependency list, any commit
        that changed it RE-APPLIED THE LAST SNAPSHOT IN FULL - forty fields.
@@ -2936,6 +2994,24 @@ function LiveTablePage({
       );
       heroActedFenceRef.current = fenceVerdict.fence;
       const nextCurrentSeat = fenceVerdict.currentPlayerSeat;
+      /* LIGHTNING TRANSITION, PHASE 3: THE HERO'S CHAIR MOVES WITH THE ROSTER.
+         The chair layout follows heroSeat, and the seat invariant below only
+         adopted a new chair after the new roster had painted, so for one
+         frame an opponent sat in the hero's spot with hero styling and the
+         dealer button set off across the table. In a Lightning room the
+         chair is adopted in this same update. Classic is unchanged. */
+      const lightningHeroSeat = lightningHeroSeatFromRoster({
+        lightningRoom: !!lightningRoomRef.current,
+        observer: lightningObserver,
+        leaving: leftSeatPendingRef.current,
+        userId,
+        players: nextPlayers,
+      });
+      if (lightningHeroSeat > 0 && lightningHeroSeat !== prev.heroSeat) {
+        const row = nextPlayers[lightningHeroSeat - 1];
+        if (row && !row.isHero) nextPlayers[lightningHeroSeat - 1] = { ...row, isHero: true };
+        heroSeatRef.current = lightningHeroSeat;
+      }
 
       return {
         ...prev,
@@ -2958,6 +3034,9 @@ function LiveTablePage({
            itself already clamped never to fall below an occupied seat, so this
            still cannot erase a seated player. */
         ...(lightningObserver ? { heroSeat: 0 } : {}),
+        ...(lightningHeroSeat > 0 && lightningHeroSeat !== prev.heroSeat
+          ? { heroSeat: lightningHeroSeat }
+          : {}),
         maxPlayers: mapped.maxSeats || prev.maxPlayers,
         pot: mapped.pot,
         communityCards: nextCards,
@@ -2974,7 +3053,15 @@ function LiveTablePage({
         handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
-        dealerSeat: mapped.dealerSeat,
+        /* LIGHTNING TRANSITION, PHASE 3: the idle snapshot's dealer seat 0 hid
+           the button for the whole wait, so the next hand's button beat had
+           nothing to move. It stays parked; the next hand glides it. */
+        dealerSeat: lightningParkedDealerSeat({
+          lightningRoom: !!lightningRoomRef.current,
+          snapshotIdle: lightningIdleBoard,
+          incoming: mapped.dealerSeat,
+          previous: prev.dealerSeat,
+        }),
         currentPlayerSeat: nextCurrentSeat,
         // AUDIT FIX 2026-07-19: the authoritative WS merge dropped handNumber, so
         // the on-table hand number never advanced (froze at the connect-time
@@ -3025,8 +3112,10 @@ function LiveTablePage({
     });
     // tableState.maxPlayers is read through tableStateRef above, deliberately:
     // see the note there. Adding it back re-applies a stale snapshot.
+    // `lightningExitTick` changes only when a Lightning exit hold ends, and
+    // re-applies the LATEST snapshot, which is the one the hold was keeping.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineSnapshot, USE_ENGINE_WS, userId]);
+  }, [engineSnapshot, USE_ENGINE_WS, userId, lightningExitTick]);
 
   /* AN ACTION WHOSE ANSWER WAS LOST IS CHECKED BEFORE THE BAR COMES BACK
      (2026-10-05). submitAction gives up with ACTION_NOT_DELIVERED when no
@@ -3394,6 +3483,21 @@ function LiveTablePage({
    */
   const [dealInFlight, setDealInFlight] = useState(false);
   const dealHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* LIGHTNING TRANSITION, PHASE 3: CARDS ARRIVE BY THE DEAL, NOT BEFORE IT.
+     The hero's hole cards reach a Lightning room before the 700 ms button
+     beat ends. They painted face up at once with the card-slide cue, then
+     the deal restarted them from invisible and flew cards onto seats that
+     already showed them, and the cues ran slide, shuffle, chime, deal. In a
+     Lightning room the seats' cards stay hidden through the button beat
+     (`lightningDealPending`), and the slide cue waits for the deal to land
+     (`settleHeroDealSound`). Nothing is dropped. */
+  const [lightningDealPending, setLightningDealPending] = useState(false);
+  const lightningDealPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The last hand whose deal animation landed (or whose hold expired). */
+  const dealSettledHandRef = useRef(0);
+  /** A hand whose card-slide cue is waiting for its deal to land. */
+  const heldHeroDealSoundRef = useRef(0);
+  const settleHeroDealSoundRef = useRef<((hand: number) => void) | null>(null);
 
   const endDealHold = useCallback(() => {
     if (dealHoldTimerRef.current) {
@@ -3412,12 +3516,15 @@ function LiveTablePage({
     dealHoldTimerRef.current = setTimeout(() => {
       dealHoldTimerRef.current = null;
       setDealInFlight(false);
+      // An interrupted deal still owes the held cue.
+      settleHeroDealSoundRef.current?.(heldHeroDealSoundRef.current);
     }, 2600);
   }, []);
 
   useEffect(
     () => () => {
       if (dealHoldTimerRef.current) clearTimeout(dealHoldTimerRef.current);
+      if (lightningDealPendingTimerRef.current) clearTimeout(lightningDealPendingTimerRef.current);
     },
     []
   );
@@ -7786,35 +7893,53 @@ function LiveTablePage({
       beginDealHold();
       if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
       const heardHere = dealSoundsAllowedRef.current;
+      const beatMs = Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed());
+      if (lightningRoomRef.current) {
+        setLightningDealPending(true);
+        if (lightningDealPendingTimerRef.current)
+          clearTimeout(lightningDealPendingTimerRef.current);
+        // Hard ceiling: the cards can never stay hidden past the beat.
+        lightningDealPendingTimerRef.current = setTimeout(() => {
+          lightningDealPendingTimerRef.current = null;
+          setLightningDealPending(false);
+        }, beatMs + 400);
+      }
       observeDealPresentationTiming({
         handNumber,
         phase: 'scheduled',
         speed: getAnimationSpeed(),
         buttonDelayMs: Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed()),
       });
-      dealStartTimerRef.current = setTimeout(
-        () => {
-          dealStartTimerRef.current = null;
-          dealPresentationHandRef.current = handNumber;
-          observeDealPresentationTiming({ handNumber, phase: 'timer-fired' });
-          setDealAnimationKey((k) => k + 1);
-          setIsSeatDealing(true);
-          if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
-          seatDealTimerRef.current = setTimeout(() => {
-            seatDealTimerRef.current = null;
-            setIsSeatDealing(false);
-          }, 700 * getAnimationSpeed());
-          if (soundService.isEnabled() && heardHere) {
-            soundService.playShuffle();
-            setTimeout(() => soundService.playNewHand(), 260);
-          }
-        },
-        Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
-      );
+      dealStartTimerRef.current = setTimeout(() => {
+        dealStartTimerRef.current = null;
+        dealPresentationHandRef.current = handNumber;
+        observeDealPresentationTiming({ handNumber, phase: 'timer-fired' });
+        setDealAnimationKey((k) => k + 1);
+        setIsSeatDealing(true);
+        setLightningDealPending(false);
+        if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+        seatDealTimerRef.current = setTimeout(() => {
+          seatDealTimerRef.current = null;
+          setIsSeatDealing(false);
+        }, 700 * getAnimationSpeed());
+        if (soundService.isEnabled() && heardHere) {
+          soundService.playShuffle();
+          setTimeout(() => soundService.playNewHand(), 260);
+        }
+      }, beatMs);
       return true;
     },
     [beginDealHold]
   );
+  /** The deal of `hand` has landed: the hero's held card-slide cue plays now. */
+  const settleHeroDealSound = useCallback((hand: number) => {
+    if (!(hand > 0)) return;
+    dealSettledHandRef.current = hand;
+    if (heldHeroDealSoundRef.current !== hand) return;
+    heldHeroDealSoundRef.current = 0;
+    if (soundService.isEnabled() && dealSoundsAllowedRef.current) soundService.playDeal();
+  }, []);
+  settleHeroDealSoundRef.current = settleHeroDealSound;
   // CA-20 BUG FIX: handRevealTimerRef tracks the 6s setShowHandRevealModal(false) timer.
   const handRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // AUDIT FIX 2026-07-19: hand-aware hero hole-card fetch. heroHandRef tracks the
@@ -11471,6 +11596,7 @@ function LiveTablePage({
   // Subscribes directly to Postgres RLS-protected table to bypass public WebSocket leak
 
   // Callback for handling new hole cards
+  const lightningEarlyHeroCardsRef = useRef<LightningEarlyHeroCards | null>(null);
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
       if (isLightningObserverSnapshot(engineSnapshotRef.current)) return;
@@ -11548,6 +11674,18 @@ function LiveTablePage({
         const dealtHandNumber = Number(row.hand_number) || heroHandRef.current || 0;
         if (
           heroDealSoundHandRef.current !== dealtHandNumber &&
+          lightningHoldsHeroDealSound({
+            lightningRoom: !!lightningRoomRef.current,
+            hand: dealtHandNumber,
+            presentedHand: lastDealPresentationHandRef.current,
+            settledHand: dealSettledHandRef.current,
+          })
+        ) {
+          // LIGHTNING TRANSITION, PHASE 3: owed once, played when the deal lands.
+          heroDealSoundHandRef.current = dealtHandNumber;
+          heldHeroDealSoundRef.current = dealtHandNumber;
+        } else if (
+          heroDealSoundHandRef.current !== dealtHandNumber &&
           soundService.isEnabled() &&
           ambientSoundsAllowed
         ) {
@@ -11596,6 +11734,13 @@ function LiveTablePage({
             };
             // Hero was dealt into this hand → counts toward hands-played achievements.
             if (formattedCards.length >= 2) heroHandOutcomeRef.current.dealtIn = true;
+          } else if (lightningRoomRef.current) {
+            /* LIGHTNING TRANSITION, PHASE 3: cards that reach a Lightning room a
+               moment before the hero's roster row were dropped here, and the
+               recovery poll is off in Lightning, so nothing fetched them
+               again. They are kept and applied, through this same handler and
+               every guard on it, when the row arrives. */
+            lightningEarlyHeroCardsRef.current = { hand: dealtHandNumber, row };
           }
           return { ...prev, players: updatedPlayers };
         });
@@ -11603,6 +11748,19 @@ function LiveTablePage({
     },
     [userId, tableId, ambientSoundsAllowed]
   );
+  useEffect(() => {
+    const decision = lightningEarlyHeroCardsReady({
+      early: lightningEarlyHeroCardsRef.current,
+      handNumber: tableState.handNumber ?? 0,
+      heroInRoster: tableState.players.some((p) => !!p && p.id === userId),
+    });
+    if (decision === 'wait') return;
+    const early = lightningEarlyHeroCardsRef.current;
+    lightningEarlyHeroCardsRef.current = null;
+    if (decision === 'apply' && early && lightningRoomRef.current) {
+      handleHoleCardPayload({ new: early.row });
+    }
+  }, [tableState.players, tableState.handNumber, userId, handleHoleCardPayload]);
 
   /* ═══ THE ENGINE SOCKET CARRIES THE PLAYER'S OWN FACTS (2026-09-04) ═════════
      Disconnect audit items 11 and 12. Two things a seat cannot play without
@@ -24848,25 +25006,48 @@ function LiveTablePage({
       lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
+      /* LIGHTNING TRANSITION, PHASE 3: LIGHTNING FOLD ANSWERS THE PRESS, NOT
+         THE ROUND TRIP. The cue and the cards' flight to the muck waited for
+         the engine's reply, so the ordinary Fold button felt quicker than the
+         fast one. Both now start on the press, exactly as the panel's Fold
+         does (applyOptimisticHeroAction), and a refusal puts the hand back
+         and says so.
+         LIGHTNING PHASE 12 (spec SOUND SYSTEM): the fold cue goes through the
+         priority gate, on the table in front only, so a multi-table session
+         never stacks them. */
+      const pressAnswered = !!lightningFoldHandId;
+      if (
+        pressAnswered &&
+        lightningCaps.sound &&
+        soundService.isEnabled() &&
+        (isActive || !isMultiTable)
+      ) {
+        soundService.playFold();
+      }
+      const revert = pressAnswered ? applyOptimisticHeroAction('fold') : () => {};
       try {
         const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
+          revert();
           toast.warning(result.error || 'That Action Could Not Be Confirmed');
-        } else if (
-          /* LIGHTNING PHASE 12 (spec SOUND SYSTEM): LIGHTNING FOLD accepted and
-             FOLD & WATCH get the fold cue, through the priority gate, on the
-             table in front only, so a multi-table session never stacks them. */
-          lightningCaps.sound &&
-          soundService.isEnabled() &&
-          (isActive || !isMultiTable)
-        ) {
-          soundService.playFold();
         }
+      } catch (err) {
+        revert();
+        throw err;
       } finally {
         lightningFoldBusyRef.current = false;
       }
     },
-    [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
+    [
+      tableId,
+      userId,
+      toast,
+      isMultiTable,
+      isActive,
+      lightningCaps,
+      lightningFoldHandId,
+      applyOptimisticHeroAction,
+    ]
   );
   // Keyboard and button share the preflop queue and postflop release rules.
   lightningHotkeysRef.current = lightningCaps.hotkeys
@@ -25337,6 +25518,10 @@ function LiveTablePage({
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
       data-hero={heroAtTable ? 'true' : 'false'}
+      /* LIGHTNING TRANSITION, PHASE 3: the folded hand is leaving the felt;
+         LightningFoldBar.css fades the opponents and the board out over the
+         hold (one fold window x Animation Speed). Lightning rooms only. */
+      data-lightning-exit={lightningRoom && lightningExitMs > 0 ? 'true' : undefined}
       /* THE TOURNAMENT INFO DOCK (Dan 2026-10-04). Present only on a
          tournament table; TournamentHUD.css reads it to reserve the dock's
          height under the felt and to stand the bottom bars on top of it.
@@ -27025,6 +27210,7 @@ function LiveTablePage({
               onComplete={() => {
                 setDealAnimationKey(0);
                 endDealHold();
+                settleHeroDealSound(dealPresentationHandRef.current);
               }}
               playSounds={ambientSoundsAllowed}
             />
@@ -27846,6 +28032,7 @@ function LiveTablePage({
                     }
                   }}
                   isDealing={isSeatDealing}
+                  dealPending={!!lightningRoom && lightningDealPending}
                   isMucking={muckingSeats[idx] || false}
                   /* CARD SLIDE (Dan 2026-09-04): the corner peel — hero only.
                      Force-reveal conditions (showdown stage) are folded in
@@ -29611,7 +29798,9 @@ function LiveTablePage({
         onCancelBustRebuy={cancelBustRebuy}
         onRetryBustBalance={retryBustBalance}
         onConfirmBustRebuy={confirmBustRebuy}
-        bustRebuyMaxBuyIn={lightningRoom && lightningBustMax !== null ? lightningBustMax : undefined}
+        bustRebuyMaxBuyIn={
+          lightningRoom && lightningBustMax !== null ? lightningBustMax : undefined
+        }
         onLeaveBustRebuy={
           lightningRoom
             ? () => {

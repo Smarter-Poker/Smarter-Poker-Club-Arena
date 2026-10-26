@@ -491,6 +491,14 @@ export interface SeatSlotProps {
    */
   isDealing?: boolean;
   /**
+   * LIGHTNING TRANSITION, PHASE 3: true in a Lightning room from the moment a
+   * new hand's deal is scheduled until its 700 ms button beat ends and the
+   * deal begins. The seat's cards are hidden for that beat, so they arrive
+   * with the deal instead of showing first and then blinking out when the
+   * deal restarts them from invisible. Only a Lightning room passes it.
+   */
+  dealPending?: boolean;
+  /**
    * ANIMATION AUDIT 2026-08-19 — true when this seat LOST a showdown and its
    * revealed cards should fly to the muck (cardFoldOut) before the table
    * resets. Set by the parent late in the winner-display window.
@@ -944,6 +952,7 @@ export const SeatSlot = memo(
       gesturesEnabled = true,
       isCollectingChips = false,
       isDealing = false,
+      dealPending = false,
       isMucking = false,
       winningHoleCardIndexes,
       winnerDisplayActive = false,
@@ -1169,6 +1178,28 @@ export const SeatSlot = memo(
             }
           )
         );
+      /* LIGHTNING TRANSITION, PHASE 3: the portrait fades in painted. A new
+         opponent's avatar was still downloading when its fade began, so the
+         player watched an empty circle fade in and the face pop in after it.
+         The fade waits, held at its first frame, until the image has decoded,
+         for at most 300 ms x Animation Speed; it then plays in full. */
+      const img = seatRef.current?.querySelector<HTMLImageElement>('img.seat__avatar-img');
+      if (img && !img.complete && typeof img.decode === 'function' && animations.length) {
+        let released = false;
+        const release = () => {
+          if (released) return;
+          released = true;
+          animations.forEach((animation) => animation.play?.());
+        };
+        animations.forEach((animation) => animation.pause?.());
+        img.decode().then(release, release);
+        const cap = setTimeout(release, 300 * getAnimationSpeed());
+        return () => {
+          released = true;
+          clearTimeout(cap);
+          animations.forEach((animation) => animation.cancel());
+        };
+      }
       return () => animations.forEach((animation) => animation.cancel());
     }, [props.arrival, player?.id, player?.isHero, isActive]);
 
@@ -3065,7 +3096,7 @@ export const SeatSlot = memo(
             isFolding ||
             isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}${dealPending && !isDealing ? ' seat__cards--deal-pending' : ''}`}
               data-card-count={opponentCardCount}
               style={
                 {
@@ -3323,7 +3354,10 @@ export const SeatSlot = memo(
                    keeps up to four tables mounted with the inactive ones
                    display:none, and lazy is what stops 27 off-screen avatars
                    from being fetched before the player has opened those tabs. */
-                loading={player.isHero ? 'eager' : 'lazy'}
+                /* An arriving Lightning opponent (`arrival`) is on the felt
+                   in front of the player right now, so it loads at once: its
+                   fade waits for this image (the arrival effect above). */
+                loading={player.isHero || props.arrival ? 'eager' : 'lazy'}
                 decoding="async"
                 fetchPriority={player.isHero ? 'high' : 'auto'}
                 onError={() => setFailedAvatarUrl(avatarUrl)}
@@ -3560,6 +3594,7 @@ export const SeatSlot = memo(
                  still face down in the squeeze - there is nothing to show. */
               (heroHandIsTabled && !squeezeDown ? ' seat__cards--revealed' : '') +
               (isDealing ? ' seat__cards--dealing' : '') +
+              (dealPending && !isDealing ? ' seat__cards--deal-pending' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
               (isPeeking ? ' seat__cards--peeking' : '') +
@@ -4059,6 +4094,7 @@ export const SeatSlot = memo(
     if (prev.showAvatar !== next.showAvatar) return false;
     if (prev.showBadges !== next.showBadges) return false;
     if (prev.isDealing !== next.isDealing) return false;
+    if (prev.dealPending !== next.dealPending) return false;
     // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
     if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
     if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;

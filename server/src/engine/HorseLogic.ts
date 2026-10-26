@@ -2044,6 +2044,12 @@ export interface HorseDecideOpts {
    *  the price is tiny), and one beaten 5%+ calls instead of raising. Disable to ablate (default: enabled; league
    *  matchup plo6_v58_river_nuts). */
   v58Plo6RiverNuts?: boolean;
+  /** V59 (2026-10-25): the same PLO6 river discipline on a board with no
+   *  pair, where straights and flushes are the nut hands. Facing a river
+   *  bet, a hand one random hand beats 30%+ of the time folds (unless the
+   *  price is tiny), and one beaten 15%+ calls instead of raising. Disable to
+   *  ablate (default: enabled; league matchup plo6_v59_river_unpaired). */
+  v59Plo6RiverUnpaired?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -2993,6 +2999,17 @@ export const PLO6_RIVER_FOLD_BEAT_PROB = 0.15;
 export const PLO6_RIVER_RAISE_BEAT_PROB = 0.05;
 /** A call priced below this share of the final pot is cheap enough to keep. */
 export const PLO6_RIVER_CHEAP_PRICE = 0.1;
+// V59: a board with no pair. Measured on production 2026-10-25 (SELECT only,
+// 373 PLO6 cash river calls and raises facing a bet over two hours, every
+// player's dealt cards from ca_hand_facts): on unpaired boards a call beaten
+// by a random hand 30%+ of the time won 9-19% of spots for -927 bb over 77;
+// one beaten 15-30% won 56% without a flush on board (+297 bb over 39), so
+// the fold line sits higher than on a paired board. Raises beaten 15%+ never
+// won (0 of 13, -484 bb).
+/** Unpaired board, beaten this often by one random hand: fold to a river bet. */
+export const PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB = 0.3;
+/** Unpaired board, beaten this often: call at most, never raise. */
+export const PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB = 0.15;
 function plo6RiverNutDiscipline(
   decision: HorseDecision,
   player: SeatPlayer,
@@ -3000,7 +3017,6 @@ function plo6RiverNutDiscipline(
   opts: HorseDecideOpts
 ): HorseDecision {
   try {
-    if ((opts.v58Plo6RiverNuts ?? true) === false) return decision;
     if (String(gs.gameVariant ?? '').toLowerCase() !== 'plo6' || gs.stage !== 'river')
       return decision;
     if (decision.action !== 'call' && decision.action !== 'raise' && decision.action !== 'all_in')
@@ -3009,7 +3025,15 @@ function plo6RiverNutDiscipline(
     if (board.length !== 5 || (gs.boardCount ?? 1) > 1) return decision;
     const ranks = new Map<string, number>();
     for (const c of board) ranks.set(c.rank, (ranks.get(c.rank) ?? 0) + 1);
-    if (![...ranks.values()].some((n) => n >= 2)) return decision;
+    const paired = [...ranks.values()].some((n) => n >= 2);
+    if (paired ? opts.v58Plo6RiverNuts === false : opts.v59Plo6RiverUnpaired === false)
+      return decision;
+    const foldAt = paired ? PLO6_RIVER_FOLD_BEAT_PROB : PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB;
+    const flatAt = paired ? PLO6_RIVER_RAISE_BEAT_PROB : PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB;
+    const noteFold = () =>
+      noteFire(paired ? 'v58_plo6_river_fold' : 'v59_plo6_river_unpaired_fold');
+    const noteFlat = () =>
+      noteFire(paired ? 'v58_plo6_river_raise_to_call' : 'v59_plo6_river_unpaired_raise_to_call');
     const stack = Number.isFinite(player.stack) ? Math.max(0, player.stack) : 0;
     const toCall = Number.isFinite(gs.toCall)
       ? Math.max(0, gs.toCall as number)
@@ -3026,17 +3050,17 @@ function plo6RiverNutDiscipline(
     // A shove for no more than the call is a call, not a raise.
     const isRaise =
       decision.action === 'raise' || (decision.action === 'all_in' && stack > toCall + 0.005);
-    if (beaten >= PLO6_RIVER_FOLD_BEAT_PROB) {
+    if (beaten >= foldAt) {
       if (price <= PLO6_RIVER_CHEAP_PRICE) {
         if (!isRaise) return decision;
-        noteFire('v58_plo6_river_raise_to_call');
+        noteFlat();
         return callFor();
       }
-      noteFire('v58_plo6_river_fold');
+      noteFold();
       return { ...decision, action: 'fold', amount: undefined };
     }
-    if (isRaise && beaten >= PLO6_RIVER_RAISE_BEAT_PROB) {
-      noteFire('v58_plo6_river_raise_to_call');
+    if (isRaise && beaten >= flatAt) {
+      noteFlat();
       return callFor();
     }
     return decision;

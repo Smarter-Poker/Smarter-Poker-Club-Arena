@@ -716,6 +716,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V58'
   ),
   flag(
+    'v59Plo6RiverUnpaired',
+    'PLO6 unpaired-board river discipline: facing a bet, fold a hand a random six-card hand beats 30% of the time unless the price is tiny, and call instead of raising one beaten 15% of the time (league plo6_v59_river_unpaired)',
+    'V59'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -1629,6 +1634,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V58 PLO6 river nuts)',
     'a PLO6 river raise on a paired board became a call because a better hand was possible',
     'V58'
+  ),
+  receipt(
+    'v59_plo6_river_unpaired_fold',
+    'HorseLogic (V59 PLO6 river, unpaired board)',
+    'a PLO6 river bet on a board with no pair was folded because a random hand beats the hand 30% of the time or more',
+    'V59'
+  ),
+  receipt(
+    'v59_plo6_river_unpaired_raise_to_call',
+    'HorseLogic (V59 PLO6 river, unpaired board)',
+    'a PLO6 river raise on a board with no pair became a call because a random hand beats it 15% of the time or more',
+    'V59'
   ),
   receipt(
     'opponent_exploit_corroborated',

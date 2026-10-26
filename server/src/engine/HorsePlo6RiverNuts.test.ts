@@ -13,6 +13,8 @@ import {
   HorseLogic,
   PLO6_RIVER_FOLD_BEAT_PROB,
   PLO6_RIVER_RAISE_BEAT_PROB,
+  PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB,
+  PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB,
   type HorseGameStateV2,
 } from './HorseLogic.js';
 import {
@@ -213,18 +215,134 @@ describe('V58 PLO6 paired-board river nut discipline', () => {
     }
   });
 
-  it('an unpaired board is left alone', () => {
+  it('an unpaired board is left to V59', () => {
     const board = parse('Kd9c4h2sJd');
-    const hole = parse('KhKc7c8d2hJs');
+    const hole = parse('KhJc7c8d3h5s');
     for (const seed of SEEDS.slice(0, 20)) {
-      const on = facingRiverBet(hole, board, 'plo6', seed);
-      const off = facingRiverBet(hole, board, 'plo6', seed, { v58Plo6RiverNuts: false });
+      const on = facingRiverBet(hole, board, 'plo6', seed, { v59Plo6RiverUnpaired: false });
+      const off = facingRiverBet(hole, board, 'plo6', seed, {
+        v58Plo6RiverNuts: false,
+        v59Plo6RiverUnpaired: false,
+      });
       expect(on.action).toBe(off.action);
     }
   });
 
   it('the policy graph binds the disciplined action', () => {
     const d = facingRiverBet(JACKS_FULL, DEUCES, 'plo6', SEEDS[0]);
+    expect(d.action).toBe('fold');
+    if (d.policyGraph) expect(d.policyGraph.finalAction.action).toBe(d.action);
+  });
+});
+
+// V59: the board has no pair, so straights and flushes are the nut hands.
+const KING_HIGH = parse('Kd9c4h2sJd');
+const TOP_TWO = parse('KhJc7c8d3h5s'); // beaten by sets and the Q-T straight, ~38%
+const TOP_SET = parse('KhKc7c8d2hJs'); // beaten only by the straight, ~21%
+const NUT_STRAIGHT = parse('QhTc7c8d3h5s'); // the nuts
+const HEARTS = parse('Kh9h4h2sJd');
+const LOW_FLUSH = parse('6h5h7c8d3c5s'); // a six-high flush, ~33%
+const QUEEN_FLUSH = parse('QhTh7c8d3c5s'); // second-nut flush, ~10%
+const NUT_FLUSH = parse('AhQhTc8d3c5s');
+
+describe('V59 PLO6 unpaired-board river discipline', () => {
+  it('reads the example hands where the thresholds put them', () => {
+    const p = (h: Card[], b: Card[]) => omahaRiverBeatProbability(h, b, 6)!;
+    expect(p(TOP_TWO, KING_HIGH)).toBeGreaterThanOrEqual(PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB);
+    expect(p(TOP_SET, KING_HIGH)).toBeGreaterThanOrEqual(PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB);
+    expect(p(TOP_SET, KING_HIGH)).toBeLessThan(PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB);
+    expect(p(NUT_STRAIGHT, KING_HIGH)).toBe(0);
+    expect(p(LOW_FLUSH, HEARTS)).toBeGreaterThanOrEqual(PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB);
+    expect(p(QUEEN_FLUSH, HEARTS)).toBeLessThan(PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB);
+    expect(p(NUT_FLUSH, HEARTS)).toBe(0);
+  });
+
+  it('folds top two pair and a low flush to a real river bet', () => {
+    for (const seed of SEEDS) {
+      expect(facingRiverBet(TOP_TWO, KING_HIGH, 'plo6', seed).action).toBe('fold');
+      expect(facingRiverBet(LOW_FLUSH, HEARTS, 'plo6', seed).action).toBe('fold');
+    }
+  });
+
+  it('top set may call but never raises; folding it is not this rule', () => {
+    for (const seed of SEEDS) {
+      const on = facingRiverBet(TOP_SET, KING_HIGH, 'plo6', seed);
+      // All in for 400 against a 113 bet would be a raise.
+      expect(['call', 'fold']).toContain(on.action);
+      if (on.action === 'fold')
+        expect(
+          facingRiverBet(TOP_SET, KING_HIGH, 'plo6', seed, { v59Plo6RiverUnpaired: false }).action
+        ).toBe('fold');
+    }
+  });
+
+  it('a jack-high flush the brain raises becomes a call', () => {
+    const jackFlush = parse('JhTh7c6d3c5s'); // beaten ~17%: higher flushes
+    expect(omahaRiverBeatProbability(jackFlush, HEARTS, 6)!).toBeGreaterThanOrEqual(
+      PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB
+    );
+    let raisedOff = 0;
+    for (const seed of SEEDS) {
+      const off = facingRiverBet(
+        jackFlush,
+        HEARTS,
+        'plo6',
+        seed,
+        { v59Plo6RiverUnpaired: false },
+        40
+      );
+      const on = facingRiverBet(jackFlush, HEARTS, 'plo6', seed, {}, 40);
+      if (off.action === 'raise' || off.action === 'all_in') {
+        raisedOff++;
+        expect(on.action).toBe('call');
+      } else expect(on.action).toBe(off.action);
+    }
+    expect(raisedOff).toBeGreaterThan(0);
+  });
+
+  it('leaves the nut straight and the nut flush free to raise', () => {
+    for (const [hole, board] of [
+      [NUT_STRAIGHT, KING_HIGH],
+      [NUT_FLUSH, HEARTS],
+    ] as const) {
+      const actions = new Set(SEEDS.map((s) => facingRiverBet(hole, board, 'plo6', s).action));
+      expect(actions.has('fold')).toBe(false);
+      expect([...actions].some((a) => a === 'raise' || a === 'all_in')).toBe(true);
+    }
+  });
+
+  it('does not touch a hand stronger than its lines', () => {
+    for (const seed of SEEDS.slice(0, 20)) {
+      const on = facingRiverBet(QUEEN_FLUSH, HEARTS, 'plo6', seed);
+      const off = facingRiverBet(QUEEN_FLUSH, HEARTS, 'plo6', seed, {
+        v59Plo6RiverUnpaired: false,
+      });
+      expect(on.action).toBe(off.action);
+    }
+  });
+
+  it('keeps a cheap call and is switchable', () => {
+    for (const seed of SEEDS.slice(0, 10)) {
+      expect(['call', 'fold']).toContain(
+        facingRiverBet(TOP_TWO, KING_HIGH, 'plo6', seed, {}, 2, 400).action
+      );
+      const off = facingRiverBet(TOP_TWO, KING_HIGH, 'plo6', seed, { v59Plo6RiverUnpaired: false });
+      const offAgain = facingRiverBet(TOP_TWO, KING_HIGH, 'plo6', seed, {
+        v59Plo6RiverUnpaired: false,
+      });
+      expect(off.action).toBe(offAgain.action);
+    }
+  });
+
+  it('switching V59 off leaves paired boards to V58', () => {
+    for (const seed of SEEDS.slice(0, 10))
+      expect(
+        facingRiverBet(JACKS_FULL, DEUCES, 'plo6', seed, { v59Plo6RiverUnpaired: false }).action
+      ).toBe('fold');
+  });
+
+  it('the policy graph binds the disciplined action', () => {
+    const d = facingRiverBet(TOP_TWO, KING_HIGH, 'plo6', SEEDS[0]);
     expect(d.action).toBe('fold');
     if (d.policyGraph) expect(d.policyGraph.finalAction.action).toBe(d.action);
   });

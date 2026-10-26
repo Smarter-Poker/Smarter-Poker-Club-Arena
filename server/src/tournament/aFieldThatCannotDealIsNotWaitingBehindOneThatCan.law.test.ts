@@ -382,6 +382,17 @@ describe('the balance stage declares the lane', () => {
     expect(manager.requestEliminationSweep).toHaveBeenCalled();
   });
 
+  it('an acknowledged park continuation keeps the balance cursor even before its budget is spent', async () => {
+    const setConsolidating = vi
+      .spyOn(tournamentEliminationScheduler, 'setConsolidating')
+      .mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const manager = balanceManager(async () => ({ kind: 'park-continuation' }));
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(setConsolidating).toHaveBeenLastCalledWith(tournamentId, true);
+  });
+
   it('a completed slow board advances instead of occupying the consolidation lane forever', async () => {
     const setConsolidating = vi
       .spyOn(tournamentEliminationScheduler, 'setConsolidating')

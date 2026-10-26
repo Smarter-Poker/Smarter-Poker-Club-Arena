@@ -207,6 +207,52 @@ describe('one balance preparation can finish before it yields', () => {
     expect(m.balancePreparationOpen).toBe(false);
   });
 
+  it('replays an unknown park before a slow fresh board can starve its original identity', async () => {
+    const board = [table(0, 1), table(1, 1)];
+    const m = slowPreparation(board);
+    const pending = { breakId: id(6000), lifecycle: '1', boundaryId: id(6001) };
+    m.pendingTournamentParkRequests.set(board[0].tableId, pending);
+    delete m.requestTournamentBreakPark;
+    const tableState = vi.fn(() => {
+      throw new Error('an unknown request must retain its original lifecycle');
+    });
+    const requestPark = vi.fn(async () => {
+      vi.setSystemTime(Date.now() + 6000);
+      return {
+        ok: true,
+        reason: null,
+        break_id: pending.breakId,
+        tournament_id: EVENT,
+        source_table_id: board[0].tableId,
+        lifecycle: pending.lifecycle,
+        state: 'park_requested',
+        revision: '0',
+        custody_id: null,
+        custody_generation: null,
+        terminal_handoff_required: false,
+        members: [],
+      };
+    });
+    m.tableBreakRpc = () => ({ tableState, requestPark });
+    requestPark.mockRejectedValueOnce(new Error('fixture reply lost'));
+    await expect(m.checkTableBalance()).rejects.toThrow('fixture reply lost');
+    expect(m.pendingTournamentParkRequests.get(board[0].tableId)).toBe(pending);
+    m.eliminationSweepDeadlineAt = Date.now() + 5000;
+    await m.checkTableBalance();
+    expect(requestPark).toHaveBeenCalledTimes(2);
+    for (const call of requestPark.mock.calls)
+      expect(call).toEqual([
+        pending.breakId,
+        board[0].tableId,
+        pending.lifecycle,
+        pending.boundaryId,
+      ]);
+    expect(tableState).not.toHaveBeenCalled();
+    expect(m.liveTournamentTableIdsWithPlayers).not.toHaveBeenCalled();
+    expect(m.pendingTournamentParkRequests.size).toBe(0);
+    expect(m.eliminationWorkBudgetExpired()).toBe(true);
+  });
+
   it('stops after the first refused intent when the preparation spent the admission', async () => {
     const m = slowPreparation([table(0, 1), table(1, 1), table(2, 1)]);
     m.requestTournamentBreakPark.mockResolvedValue(null);

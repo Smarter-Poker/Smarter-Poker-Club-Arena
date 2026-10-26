@@ -76,7 +76,8 @@ import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from '.
 /** Distinguish a receipted retirement, completed planning and an unfinished pass. */
 export type TournamentBalanceProgress =
   | { kind: 'table-retired'; tableId: string }
-  | { kind: 'planning-complete' };
+  | { kind: 'planning-complete' }
+  | { kind: 'park-continuation' };
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -1900,7 +1901,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired() && progress?.kind !== 'planning-complete') {
+            if (
+              progress?.kind === 'park-continuation' ||
+              (this.eliminationWorkBudgetExpired() && progress?.kind !== 'planning-complete')
+            ) {
               this.declareConsolidationOutstanding(true);
               return;
             }

@@ -3857,6 +3857,16 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       return;
     }
+    // A lost park reply still owns its original UUID/lifecycle/boundary.
+    // Resume that exact request before rereading a fresh board, whose slow
+    // prefix could otherwise prevent this acknowledgement from ever landing.
+    const pendingParkSource = this.pendingTournamentParkRequests.keys().next().value;
+    if (pendingParkSource && !originalRecoveryUnproven) {
+      if (!this.eliminationMutationAllowed()) return;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      await this.requestTournamentBreakPark(pendingParkSource);
+      return { kind: 'park-continuation' };
+    }
     let visitedBreak = false;
     if (
       !(await this.visitTournamentBreakPage(async (state) => {

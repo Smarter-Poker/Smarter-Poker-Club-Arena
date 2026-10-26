@@ -1719,6 +1719,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        nothing else mutates their elements after HAND_COMPLETE. */
     const snap = {
       handNumber: this.handCount,
+      allInRunoutWitness: this.handController?.getAllInRunoutWitness?.() ?? null,
       variant: this.currentHandVariant,
       potSize: this.currentHandPotSize,
       rake: this.currentHandRake,
@@ -2604,6 +2605,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               return roster;
             })(),
             actions: snap.actions,
+            allInRunoutWitness: snap.allInRunoutWitness,
             // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
             // discard. Rationale in services/supabase/handFacts.ts.
             clubId: tableInfo.club_id,

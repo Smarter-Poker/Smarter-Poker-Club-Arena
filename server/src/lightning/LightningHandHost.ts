@@ -2825,6 +2825,7 @@ export class LightningHandHost {
         holeCards: this.holeCards,
         players: state.players,
         stacksBefore: new Map(participants.map((p) => [p.playerId, p.stackBefore])),
+        allInRunoutWitness: this.hc?.getAllInRunoutWitness() ?? null,
         winners: this.winners,
         actions: this.actions,
         participants,

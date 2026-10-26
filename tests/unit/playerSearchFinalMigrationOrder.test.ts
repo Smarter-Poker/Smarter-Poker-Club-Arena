@@ -30,24 +30,30 @@ describe('fn_search_players final migration-order contract', () => {
   const final = finalDefinition();
 
   it('is restored by a forward migration after every older replacement', () => {
-    expect(final.name).toBe(
-      '20261024193818_agent_downline_watch_functions_before_window_policy.sql'
-    );
+    expect(final.name).toBe('20261026011835_player_search_lists_only_real_players.sql');
     expect(final.lastTouch).toBe(final.name);
   });
 
-  it('matches the queued daily-window file that re-installs it later in production', () => {
-    // 20261024020328 is older by version but installs after 20261024193818 in
-    // production (it waits for a frozen break). Identical bodies mean that
-    // later install cannot change the final definition.
+  it('cannot be overwritten later by the superseded daily-window file', () => {
+    // 20261024020328 carries an older body, and it is older by version. It is
+    // marked SUPERSEDED on its first line, so the daily window never installs it
+    // and it cannot replace the final definition.
     const queued = migrationCorpus().find(
       ({ name }) => name === '20261024020328_agents_can_watch_every_live_downline_table.sql'
     );
     expect(queued).toBeDefined();
-    const queuedBody = queued!.sql.match(
-      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_search_players\s*\([\s\S]*?AS\s+\$fn\$([\s\S]*?)\$fn\$;/i
-    )?.[1];
-    expect(queuedBody).toBe(final.body);
+    expect(queued!.sql.split('\n')[0]).toBe('-- SUPERSEDED BY 20261024193818');
+  });
+
+  it('lists only real, live players and never hides a horse (Dan 2026-10-25)', () => {
+    // "YOU NEED TO REMOVE ALL OF THE DELETED AND TEST ACCOUNT COMPLETLY".
+    expect(final.body).toContain('JOIN auth.users au ON au.id = p.id');
+    expect(final.body).toContain("p.status IS DISTINCT FROM 'deleted'");
+    expect(final.body).toContain('au.deleted_at IS NULL');
+    expect(final.body).toContain('NOT coalesce(au.banned_until > now(), false)');
+    expect(final.body).toMatch(
+      /coalesce\(p\.is_horse, false\)\s*OR NOT \(public\.is_system_user\(au\.email\)/
+    );
   });
 
   it('keeps indexed trigram matching and tells the client when fuzzy matching ran', () => {

@@ -346,10 +346,19 @@ describe('the offer is the existing release, not a second publisher', () => {
   it('exactly one workflow sends the engine release event, and exactly one receives it', () => {
     const senders = workflows.filter((f) => /event_type=deploy-club-arena-engine/.test(code(f)));
     expect(senders).toEqual(['stage-engine-release.yml']);
-    const receivers = workflows.filter((f) =>
-      /types: \[deploy-club-arena-engine, withdraw-club-arena-engine\]/.test(code(f))
+    const receivers = workflows.filter(
+      (f) =>
+        parse(code(f)).on?.repository_dispatch?.types?.includes('deploy-club-arena-engine') === true
     );
     expect(receivers).toEqual(['auto-deploy-hetzner.yml']);
+    expect(parse(code(receivers[0]!)).on.repository_dispatch.types).toEqual([
+      'deploy-club-arena-engine',
+      'withdraw-club-arena-engine',
+      'observe-club-arena-horse-fleet',
+    ]);
+    expect(code(receivers[0]!)).toContain(
+      "if: github.event.action == 'observe-club-arena-horse-fleet'"
+    );
     expect(code('auto-deploy-hetzner.yml')).toContain(
       "if: github.event.action == 'deploy-club-arena-engine'"
     );

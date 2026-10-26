@@ -319,3 +319,36 @@ for (const lateRead of ['view', 'filters'] as const) {
     expect(screen.queryByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeNull();
   });
 }
+
+it('applies saved view held for an open card when it closes, and a later tap saves the newer row', async () => {
+  h.setupReads = [DONE];
+  h.tables = [
+    ordinaryTable('anchor', 'nlh', 'Holdem Chosen'),
+    ordinaryTable('omaha', 'plo5', 'Omaha Other'),
+  ];
+  const late = deferred<any>();
+  h.remoteView.mockReturnValue(late.promise);
+  await mountLobby(false);
+  fireEvent.click(document.querySelector('.lt-row[data-id="anchor"]')!);
+  await flush();
+  expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
+  // Another device saved PLO with Favorites on. It lands while the card is open.
+  await act(async () => late.resolve({ tab: 'OMAHA', sortByTab: {}, favoritesOnly: true }));
+  await settle();
+  // The open card is left alone...
+  expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
+  expect(h.pushView).not.toHaveBeenCalled();
+  // ...and the held view applies once the player closes it.
+  fireEvent.click(screen.getByRole('button', { name: 'Close Game Lobby', exact: true }));
+  await settle();
+  expect(screen.getByRole('tab', { name: 'PLO', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  // A later tap merges into the newer row: Favorites stays on in what is saved.
+  h.pushView.mockClear();
+  fireEvent.click(screen.getByRole('tab', { name: 'NLH', exact: true }));
+  await settle();
+  expect(h.pushView).toHaveBeenCalled();
+  expect(h.pushView.mock.calls.at(-1)?.[1]).toMatchObject({ tab: 'HOLDEM', favoritesOnly: true });
+});

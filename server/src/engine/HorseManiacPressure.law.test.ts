@@ -193,10 +193,13 @@ describe('a player who limps and then pots every street', () => {
 
 describe('a short tournament stack never raise-folds into a maniac', () => {
   for (const kind of ['jammer', 'potter'] as const) {
-    it(`at 20 big blinds against a ${kind} behind, the open is the shove`, () => {
+    // Dan 2026-10-25: "SINCE WHEN IS IT GTO TO OPEN RIP 20BB FROM UTG?!" At
+    // 20bb the button and small blind still shove into a maniac behind; the
+    // earlier seats open small (HorseTournamentShoveDiscipline). What this law
+    // keeps is the claim it was written for: neither line ever raise-folds.
+    it(`at 20 big blinds against a ${kind} behind, the open never raise-folds`, () => {
       const t = playManiacPressure('nlh', 'tournament', kind, HANDS, 11, 15, { stackBB: 20 });
-      expect(t.firstInVsManiac.jam).toBeGreaterThan(10);
-      expect(t.firstInVsManiac.raise).toBe(0);
+      expect(t.firstInVsManiac.jam).toBeGreaterThan(5);
       expect(t.rtfByStreet['preflop->preflop'] ?? 0).toBe(0);
     });
   }

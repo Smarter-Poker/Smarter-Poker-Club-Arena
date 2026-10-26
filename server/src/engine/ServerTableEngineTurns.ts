@@ -8,6 +8,10 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import {
+  recheckHorsePhase14BeforeAcceptance,
+  observeHorsePhase14Execution,
+} from './HorsePhase14Acceptance.js';
 import { buildAllInGestureInput, gestureBeforeAllIn } from '../services/HorseTableGestures.js';
 import { HandController } from './HandController.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
@@ -4236,6 +4240,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             }
           }
 
+          decision = recheckHorsePhase14BeforeAcceptance(decision);
+
           // Authority can be withdrawn while a worker answer waits for its
           // think time. Re-selecting that owner's baseline above must not
           // restore the very river flat-call the final nuts rule forbids.
@@ -4569,6 +4575,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               applied,
               acceptedActions,
             });
+            observeHorsePhase14Execution(decision);
             if (applied && acceptedActions.length === 1) {
               const actual = acceptedActions[0].record;
               executedAction = actual.action;

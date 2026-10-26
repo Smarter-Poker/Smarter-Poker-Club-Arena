@@ -656,7 +656,7 @@ const COL_NAME: ColumnDef = {
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
-            {cashTemplateKey(e.game?.template ?? '') === 'madness' ? (
+            {cashTemplateKey(e.game?.template ?? '') === 'madness' && !e.game?.noLightning ? (
               <LightningGamesIcon />
             ) : e.live ? (
               <i className="lt-live" aria-hidden="true" title="Live" />

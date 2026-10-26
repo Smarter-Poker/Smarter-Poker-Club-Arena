@@ -2,11 +2,20 @@
   "version": 1,
   "windows": [
     {
-      "id": "2026-10-26-plo-paired-board-fold-now",
-      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat, after the PLO5/PLO6 paired-board fold (#8088, merge acb5e84e9) was reported as going live at the 04:00 release: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing #8088 and its PLO4/flop widening, merged with this entry. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving.",
-      "contains": "acb5e84e9a6c7aebf94b33304cb6d0751225c35e",
-      "notBefore": "2026-10-26T00:32:40Z",
-      "notAfter": "2026-10-26T06:22:40Z",
+      "id": "2026-10-25-late-reg-tables-and-add-ons-now",
+      "ownerOrder": "Dan, 2026-10-25 18:05 Chicago, in this chat, after Sunday Funday Happy Hour table 14 sat dealt-out for 16 minutes: \"Approved - attach the Club Arena repo with push access and ship the late-registration table fix live now.\" 18:16: \"YOU NEED TO FIX THIS AT ITS ROOT CAUSE AND PREVENT THIS FROM HAPPENING EVER AGAIN!\" 18:18, on 0 of 135 horses adding on: \"70% OF HORSES ARE SUPPOSED TO ADD ON! NOT ZERO EVER!!\" One off-cycle engine activation at the next hourly :55 Chicago break (later :55 breaks as fallback) of protected main containing PR #8093 (late-registration tables and add-on windows served before a bust can rewind the sweep). Preserve the existing last-hand lead, drain, certified freeze, rollback reserve and thaw. This exception ends once the containing engine is serving.",
+      "contains": "e81a9e7dbde08d8439afd66c093bade4b55f8a24",
+      "notBefore": "2026-10-26T01:28:53Z",
+      "notAfter": "2026-10-26T07:18:53Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-plo-paired-board-fold-widening-now",
+      "ownerOrder": "Dan, 2026-10-25 19:10 Chicago, in this chat: \"ADD PLO4 AND PLO5 AND THE FLOP TO THE PAIRED BOARD FOLD RULE. MAKE IT GO LIVE WHEN ITS READY, NOT AT 4AM\". One immediate certified off-cycle engine activation of protected main containing PR #8104, merge afea03a164ceb5397700d594917888b382091bce (the PLO4 and paired-flop widening). The earlier anchor acb5e84e9 (#8088) is already serving in fdd0a7efd through the bust-door release and granted nothing. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving.",
+      "contains": "afea03a164ceb5397700d594917888b382091bce",
+      "notBefore": "2026-10-26T01:50:00Z",
+      "notAfter": "2026-10-26T07:40:00Z",
       "migrations": []
     },
     {

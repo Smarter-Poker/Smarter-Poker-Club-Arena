@@ -375,6 +375,7 @@ import {
   portraitBoardWidthOfFeltPct,
   boardCardWidthPx,
   tabledCardWidthPx,
+  PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningNextHand from '../components/table/LightningNextHand';
@@ -27197,6 +27198,10 @@ function LiveTablePage({
             const markerSize = {
               ...scalerSize,
               railBets: seatViewportWidth <= 480 && scalerSize.h > scalerSize.w,
+              portraitTags:
+                seatViewportWidth <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
+                typeof window !== 'undefined' &&
+                window.innerHeight > window.innerWidth,
               portraitTaper: tablePerspectiveTaper,
             };
             const betOffset = betChipOffsetPx(pos, markerSize, seatPod);

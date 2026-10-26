@@ -53,9 +53,11 @@
  *
  * So this tab keeps what the panel does NOT carry - the funded pool, what has
  * been claimed out of it, and what is still available, which is exactly what
- * Dan asked Rewards for - and renders the panel underneath for the ladder
- * itself. One fetch feeds both, because the page passes the hook result in
- * through `mysteryBounty` on the tab contract.
+ * Dan asked Rewards for. The ladder itself is on the Bounties tab beside this
+ * one (Dan 2026-10-25: "CREATE ANOTHER TAB, FOR 'BOUNTIES' ... INSTEAD OF
+ * PLACING IT AT THE BOTTOM OF REWARDS"), see BountiesTab. One fetch feeds
+ * both, because the page passes the hook result in through `mysteryBounty` on
+ * the tab contract.
  *
  * ── THE TOTAL PRIZE POOL IS EVERYTHING THE FIELD PUT IN ────────────────────
  *
@@ -107,7 +109,6 @@ import {
   CHIP_UNIT_CENTS,
   normalizeUnitCents,
 } from '../../../../server/src/tournament/tournamentUnit';
-import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
 import './RewardsTab.css';
 
@@ -273,12 +274,7 @@ interface RewardColumns {
    (2026-08-26 audit). */
 const isStillIn = isPlayerLive;
 
-export default function RewardsTab({
-  tournament,
-  entries,
-  currentUserId,
-  mysteryBounty,
-}: TournamentTabProps) {
+export default function RewardsTab({ tournament, entries, currentUserId }: TournamentTabProps) {
   const t = (tournament || {}) as unknown as RewardColumns;
   const tournamentId = tournament?.id;
 
@@ -1120,7 +1116,7 @@ export default function RewardsTab({
                     ? 'No Bounties Are Paid Before The Money. Once The Tournament Reaches The Money, Every Knockout Picks 1 Of 3 Sealed Chests. '
                     : ''}
                   Every Chest Is Sealed Until It Is Pulled. The Full Ladder, And Who Has Pulled
-                  What, Is Below.
+                  What, Is On The Bounties Tab.
                 </p>
               )}
             </>
@@ -1128,26 +1124,8 @@ export default function RewardsTab({
         </section>
       )}
 
-      {/* ── THE MYSTERY LADDER ────────────────────────────────────────────
-          Dan 2026-08-25 asked Rewards for "the total bounty pool and whats
-          left or 'still available' in the mystery bounty pool". The pool
-          figures are the section above; the ladder is this panel.
-
-          It is `MysteryBountyPanel`, fed by the page's single
-          `useMysteryBounty` fetch (`mysteryBounty` in the tab contract), so
-          the top chest the Detail tab advertises and the ladder here read the
-          same three RPC calls and cannot disagree. It renders null for any
-          event that is not a mystery bounty. */}
-      {isMystery && mysteryBounty && tournamentId && (
-        <MysteryBountyPanel
-          tournamentId={tournamentId}
-          isMysteryBounty
-          data={mysteryBounty}
-          currentUserId={currentUserId ?? null}
-          isCompleted={String(t.status || '').toUpperCase() === 'COMPLETED'}
-          unitCents={unitCents}
-        />
-      )}
+      {/* THE MYSTERY LADDER moved to its own Bounties tab (Dan 2026-10-25):
+          see BountiesTab. Rewards keeps the pool totals above. */}
     </div>
   );
 }

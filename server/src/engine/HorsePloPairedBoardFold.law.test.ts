@@ -3,6 +3,7 @@ import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
 import { seedFastRandom } from './HorseEval.js';
 import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
+import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
 import type { Card, SeatPlayer } from '../types.js';
 
 const suits: Record<string, Card['suit']> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
@@ -92,6 +93,28 @@ describe('PLO4/PLO5/PLO6: no full house on a paired board folds to a committing 
     for (const seed of [1, 7, 42, 99, 2026]) {
       seedFastRandom(seed);
       expect(HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { mind: false }).action).toBe('fold');
+    }
+  });
+
+  it('the fold is signed by the policy graph, so the live worker accepts it', () => {
+    // 2026-10-26: applied after graph.finish, the fold left a graph whose
+    // final action was the call, and the engine refused 149 decisions as an
+    // "invalid policy receipt". It is now the last wager rule.
+    for (const [variant, hole, board] of [
+      ['plo5', 'Th Qd 6d Qc 7d', '6h 7c Jd Js'],
+      ['plo4', 'Jh Ah Kd 2c', '6h Jc Jd'],
+      ['plo6', 'Th Qd 6d Qc 7d 2s', '6h 7c Jd Js Kc'],
+    ] as const) {
+      const s = recorded({ variant, hole, board });
+      seedFastRandom(5);
+      const d = HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { mind: false });
+      expect(d.action).toBe('fold');
+      expect(d.policyGraph?.finalAction).toEqual({ action: 'fold', amount: null });
+      const wager = d.policyGraph?.transitions.find((t) => t.node === 'wager_rules');
+      expect(wager?.after.action).toBe('fold');
+      expect(horseDecisionReceiptIsValid(d, variant)).toBe(true);
+      // The games without an owner fold rule never admit a wager-rule fold.
+      expect(horseDecisionReceiptIsValid(d, 'short_deck')).toBe(wager?.changed ? false : true);
     }
   });
 

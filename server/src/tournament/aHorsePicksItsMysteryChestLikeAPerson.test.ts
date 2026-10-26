@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { MYSTERY_BOUNTY_REVEAL_DELAY_MS } from '../config/mysteryBountySpec.js';
+import { CHEST_LANDING_MS, CHEST_PICK_WINDOW_MS } from '../config/mysteryChestSpec.js';
 
 const src = readFileSync(resolve(__dirname, 'TournamentManagerEliminations.ts'), 'utf8');
 const method = src.slice(
@@ -27,9 +28,11 @@ describe('a horse picks its mystery chest like a person', () => {
 
   it('acts only for a horse revealer, inside the window a person has', () => {
     expect(method).toContain(".select('is_horse')");
-    expect(method).toContain('const waitMs = 1800 + nodeCrypto.randomInt(0, 4200);');
-    // The latest tap lands well before the engine's own deadline reveal.
-    expect(1800 + 4200).toBeLessThan(MYSTERY_BOUNTY_REVEAL_DELAY_MS - 1000);
+    expect(method).toContain('const waitMs = 1500 + nodeCrypto.randomInt(0, 3500);');
+    // The latest tap lands inside a person's five-second window, and well
+    // before the engine's own deadline reveal.
+    expect(1500 + 3500).toBeLessThanOrEqual(CHEST_LANDING_MS + CHEST_PICK_WINDOW_MS);
+    expect(1500 + 3500).toBeLessThan(MYSTERY_BOUNTY_REVEAL_DELAY_MS - 1000);
   });
 
   it('picks through the same door and broadcasts what a browser broadcasts', () => {
@@ -39,5 +42,14 @@ describe('a horse picks its mystery chest like a person', () => {
     // It never settles or pays: the deadline reveal does that, as for a person.
     expect(method).not.toContain('fn_mystery_bounty_reveal');
     expect(method).not.toContain('fn_mystery_bounty_pay');
+  });
+
+  it('picks at random for a revealer who never answered, before the deadline reveal', () => {
+    const settle = src.slice(src.indexOf('protected async settleMysteryBountyAward('));
+    const pick = settle.indexOf("supabase.rpc('fn_mystery_bounty_pick'");
+    const reveal = settle.indexOf("supabase.rpc('fn_mystery_bounty_reveal'");
+    expect(pick).toBeGreaterThan(-1);
+    expect(pick).toBeLessThan(reveal);
+    expect(settle).toContain('p_slot: 1 + nodeCrypto.randomInt(0, slots),');
   });
 });

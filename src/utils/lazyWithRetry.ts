@@ -319,6 +319,76 @@ export function dropFailedStylesheet(error: unknown): boolean {
   return removed;
 }
 
+/**
+ * A CANCELLED STYLESHEET IS NOT A STALE BUILD (2026-10-25, production
+ * post-deploy run 40242809027: "Navigation to /hub/club-arena/ is interrupted
+ * by another navigation to /clubs/kings-club?_cb=..."). The club lobby warms
+ * other routes' chunks in the background. When the player starts a navigation
+ * the browser aborts every one of those in-flight loads, and the aborted CSS
+ * preloads (PlayerAvatar, ProfilePage, ClubDashboard...) reach this handler as
+ * "Unable to preload CSS". The navigation guard above cannot see that
+ * navigation - a browser-initiated one does not always fire beforeunload
+ * first - so a stylesheet that was never stale reloaded the page being left
+ * and sent the player back to it.
+ *
+ * So the server is asked before the document is replaced. The origin answers
+ * a retired hashed asset with 404 and a current one with 200 text/css:
+ *
+ * - 'present': the build is current and the load was cancelled or blipped.
+ *   The stylesheet is put back exactly as Vite would have inserted it, so the
+ *   route never renders unstyled (the 2026-10-14 iPad bug), and no reload or
+ *   reload budget is spent.
+ * - 'gone': the asset is retired; guarded document recovery runs as before.
+ * - 'unknown': the probe itself could not answer (offline, aborted, 5xx).
+ *   Recovery waits out the navigation grace period and then runs, so a page
+ *   that really is leaving is gone before it fires.
+ */
+export type StylesheetProbe = 'present' | 'gone' | 'unknown';
+
+export async function probeStylesheet(href: string): Promise<StylesheetProbe> {
+  if (typeof fetch !== 'function') return 'unknown';
+  try {
+    const base = typeof document !== 'undefined' ? document.baseURI : undefined;
+    const url = new URL(href, base).toString();
+    const res = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+    if (res.status === 404 || res.status === 410) return 'gone';
+    if (!res.ok) return 'unknown';
+    const type = res.headers?.get?.('content-type') ?? '';
+    // An HTML fallback answering 200 for a missing asset is not a stylesheet.
+    return type === '' || /css/i.test(type) ? 'present' : 'gone';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function reinstateStylesheet(href: string, onError: () => void): void {
+  if (typeof document === 'undefined') {
+    onError();
+    return;
+  }
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.setAttribute('href', href);
+  link.addEventListener('error', () => {
+    link.remove();
+    onError();
+  });
+  document.head.appendChild(link);
+}
+
+export async function recoverFailedStylesheet(href: string, error: unknown): Promise<void> {
+  const verdict = await probeStylesheet(href);
+  if (verdict === 'present') {
+    reinstateStylesheet(href, () => void recoverFromStaleChunk(error));
+    return;
+  }
+  if (verdict === 'gone') {
+    void recoverFromStaleChunk(error);
+    return;
+  }
+  setTimeout(() => void recoverFromStaleChunk(error), NAVIGATION_GRACE_MS);
+}
+
 export function installVitePreloadErrorRecovery(): () => void {
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
@@ -330,9 +400,9 @@ export function installVitePreloadErrorRecovery(): () => void {
     // CSS is different: Vite marks dependencies seen before fetching, so a
     // retry in this document can silently skip the failed stylesheet. Preserve
     // guarded recovery for CSS, without cancelling its original rejection.
-    const failedCss = failedStylesheetHref(payload) !== undefined;
+    const href = failedStylesheetHref(payload);
     dropFailedStylesheet(payload);
-    if (failedCss) void recoverFromStaleChunk(payload);
+    if (href !== undefined) void recoverFailedStylesheet(href, payload);
   };
   window.addEventListener('vite:preloadError', onPreloadError);
   return () => window.removeEventListener('vite:preloadError', onPreloadError);

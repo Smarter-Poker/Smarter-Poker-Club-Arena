@@ -4,7 +4,7 @@
  * "BIGGER STACKS SHOULD NOT BE OPEN RIPPING 35+ BIGS UTG OR PERIOD!"
  *
  * A tournament horse shoves preflop only at a depth where shoving is the
- * real strategy: <=20bb first in, <=25bb over one raise, <=40bb over a
+ * real strategy: first in <=12bb from UTG to the hijack, <=15bb from the cutoff, <=20bb from the button and small blind, <=25bb over one raise, <=40bb over a
  * 3-bet. Deeper, the same aggression is a sized raise. A stack that covers
  * everyone never shoves more than the biggest live opponent can call.
  * See HorseTournamentShoveDiscipline.ts for the production measurements.
@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import {
   tournamentShoveDiscipline,
   TOURNAMENT_OPEN_SHOVE_MAX_BB,
+  TOURNAMENT_EARLY_OPEN_SHOVE_MAX_BB,
   TOURNAMENT_THREE_BET_SHOVE_MAX_BB,
   TOURNAMENT_FOUR_BET_SHOVE_MAX_BB,
 } from './HorseTournamentShoveDiscipline.js';
@@ -114,7 +115,7 @@ const open = (seat: number, to: number): Partial<ActionRecord> => ({
   isFullRaise: true,
 });
 
-describe('first in: no tournament open-shove deeper than 20bb', () => {
+describe('first in: no deep tournament open-shove', () => {
   it('a 35bb UTG stack opens for a size, never all-in', () => {
     const { hero, gs } = table({ heroStack: 35 * BB, oppStack: 35 * BB });
     const d = tournamentShoveDiscipline(SHOVE, hero, gs);
@@ -144,11 +145,36 @@ describe('first in: no tournament open-shove deeper than 20bb', () => {
     expect(d.amount).toBe(220);
   });
 
-  it(`a genuine short stack (<= ${TOURNAMENT_OPEN_SHOVE_MAX_BB}bb) still shoves`, () => {
-    for (const depth of [5, 10, 15, 20]) {
+  it(`a genuine short stack still shoves: UTG <= ${TOURNAMENT_EARLY_OPEN_SHOVE_MAX_BB}bb, button <= ${TOURNAMENT_OPEN_SHOVE_MAX_BB}bb`, () => {
+    for (const depth of [5, 10, 12]) {
       const { hero, gs } = table({ heroStack: depth * BB, oppStack: 60 * BB });
       expect(tournamentShoveDiscipline(SHOVE, hero, gs)).toBe(SHOVE);
     }
+    for (const depth of [5, 15, 20]) {
+      const { hero, gs } = table({ heroStack: depth * BB, oppStack: 60 * BB, heroSeat: 6 });
+      expect(tournamentShoveDiscipline(SHOVE, hero, gs)).toBe(SHOVE);
+    }
+  });
+
+  // Dan 2026-10-25, with a screenshot of a 20bb UTG+1 open-shove: "SINCE WHEN
+  // IS IT GTO TO OPEN RIP 20BB FROM UTG?!"
+  it('the seat sets the line: UTG and the hijack raise from 13bb, the cutoff from 16bb', () => {
+    for (const heroSeat of [3, 4]) {
+      for (const depth of [13, 15, 20]) {
+        const { hero, gs } = table({ heroStack: depth * BB, oppStack: 60 * BB, heroSeat });
+        const d = tournamentShoveDiscipline(SHOVE, hero, gs);
+        expect(d.action, `seat ${heroSeat} ${depth}bb`).toBe('raise');
+        expect(d.amount, `seat ${heroSeat} ${depth}bb`).toBe(220);
+      }
+    }
+    const cutoff = (depth: number) =>
+      table({ heroStack: depth * BB, oppStack: 60 * BB, heroSeat: 5 });
+    const c15 = cutoff(15);
+    expect(tournamentShoveDiscipline(SHOVE, c15.hero, c15.gs)).toBe(SHOVE);
+    const c16 = cutoff(16);
+    expect(tournamentShoveDiscipline(SHOVE, c16.hero, c16.gs).action).toBe('raise');
+    const sb = table({ heroStack: 20 * BB, oppStack: 60 * BB, heroSeat: 1 });
+    expect(tournamentShoveDiscipline(SHOVE, sb.hero, sb.gs)).toBe(SHOVE);
   });
 
   it('depth is EFFECTIVE: a 60bb stack against 10bb stacks raises to exactly what they hold', () => {

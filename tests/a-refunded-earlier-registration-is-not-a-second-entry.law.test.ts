@@ -43,7 +43,8 @@ describe('a refunded earlier registration is not a second entry', () => {
   });
 
   it('is marked superseded, so no applier ever sends it', () => {
-    expect(SQL.slice(0, 400)).toMatch(/^--\s*SUPERSEDED BY 20261024232734\b/m);
+    // The marker is the file's first line, where every applier reads it.
+    expect(SQL.split('\n')[0]).toBe('-- SUPERSEDED BY 20261024232734');
   });
 
   it('what production ran is recorded byte-exact under its applied version', () => {

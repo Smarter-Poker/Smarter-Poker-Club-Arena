@@ -127,9 +127,23 @@ export async function main(expected) {
   return {schemaVersion:1,expectedSha:expected,before,after,inspectorClosed:true,...sample};
 }
 
+// Only fixed refusal codes may leave the CLI; exception payloads may contain URLs.
+const refusalCodes = new Set([
+  'expected_sha_refused', 'engine_process_refused', 'health_unavailable',
+  'engine_identity_refused', 'inspector_already_active', 'inspector_open_unknown_no_retry',
+  'profile_target_refused', 'profile_pid_mismatch', 'inspector_connect_failed',
+  'inspector_connect_timeout', 'inspector_disconnected', 'inspector_command_refused',
+  'inspector_command_timeout', 'inspector_cleanup_timeout', 'inspector_cleanup_not_confirmed',
+  'inspector_discovery_refused', 'inspector_target_count', 'engine_changed_during_profile',
+  'profile_samples_missing', 'profile_sample_invalid', 'profile_duration_missing',
+]);
+export function failureReason(error) {
+  return refusalCodes.has(error?.message) ? error.message : 'unclassified_failure';
+}
+
 if ((process.argv[1] === '-' && /\/\[eval\d*\]$/.test(import.meta.url)) || (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)) {
-  main(process.argv[2]).then(result=>console.log(JSON.stringify(result))).catch(()=>{
+  main(process.argv[2]).then(result=>console.log(JSON.stringify(result))).catch((error)=>{
     // Fail closed without leaking URLs, source, environment, values or error payloads.
-    console.error('CPU profile failed; inspect owning run and inspector state before any retry.');process.exitCode=1;
+    console.error('CPU profile failed; inspect owning run and inspector state before any retry. reason=' + failureReason(error));process.exitCode=1;
   });
 }

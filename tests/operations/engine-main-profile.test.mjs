@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { once } from 'node:events';
-import { summarize, profileTarget } from '../../scripts/ci/profile-engine-main-thread.mjs';
+import { summarize, profileTarget, failureReason } from '../../scripts/ci/profile-engine-main-thread.mjs';
 
 async function target(t) {
   // Keep the fixture witness out of the timers' optimized/inlined frames.
@@ -65,10 +65,18 @@ test('the exact stdin entry refuses invalid identity before touching a target',(
   const r=spawnSync(process.execPath,['--input-type=module','-','invalid-sha'],{input:source,encoding:'utf8',timeout:3000});
   assert.equal(r.status,1);assert.equal(r.stdout,'');
   assert.match(r.stderr,/^CPU profile failed; inspect owning run and inspector state before any retry\./);
+  assert.match(r.stderr,/reason=expected_sha_refused/);
 });
 
 test('importing the helper from a stdin module never invokes the production entry',()=>{
   const url=new URL('../../scripts/ci/profile-engine-main-thread.mjs',import.meta.url).href;
   const r=spawnSync(process.execPath,['--input-type=module','-'],{input:'await import('+JSON.stringify(url)+'); console.log(\"imported\");',encoding:'utf8',timeout:3000});
   assert.equal(r.status,0);assert.equal(r.stderr,'');assert.equal(r.stdout.trim(),'imported');
+});
+
+
+test('CLI refusals name the gate without exporting arbitrary error payloads',()=>{
+  assert.equal(failureReason(new Error('inspector_already_active')),'inspector_already_active');
+  assert.equal(failureReason(new Error('private URL https://example.invalid/secret')),'unclassified_failure');
+  assert.equal(failureReason(null),'unclassified_failure');
 });

@@ -9,6 +9,7 @@ import {
   runScoreboard,
   scoreboardWindows,
   mergeScoreboards,
+  scoreboardConnectionEnvironment,
 } from '../horse-human-scoreboard.mjs';
 
 test('report and native regression changes trigger their PostgreSQL check', () => {
@@ -211,7 +212,7 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
           ...env,
           PATH: bin ? bin + ':' + env.PATH : env.PATH,
           PGHOST: join(root, 'unreachable'),
-          PGDATABASE: `postgresql:///postgres?host=${encodeURIComponent(socket)}&port=5432&user=${encodeURIComponent(env.PGUSER)}`,
+          PGDATABASE: `postgresql://${encodeURIComponent(env.PGUSER)}@${encodeURIComponent(socket)}:5432/postgres`,
         },
         encoding: 'utf8',
         timeout: 10000,
@@ -283,4 +284,31 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     );
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('provider URL becomes private libpq environment without changing identity or logging it', () => {
+  const base = {
+    PGDATABASE:
+      'postgresql://service%2Erole:fake%40password@db.example:6543/postgres?sslmode=require&channel_binding=require',
+    PGHOST: 'wrong',
+    PGSERVICE: 'wrong',
+    PGSERVICEFILE: 'wrong',
+  };
+  const result = scoreboardConnectionEnvironment(base);
+  assert.equal(result.PGHOST, 'db.example');
+  assert.equal(result.PGPORT, '6543');
+  assert.equal(result.PGUSER, 'service.role');
+  assert.equal(result.PGPASSWORD, 'fake@password');
+  assert.equal(result.PGDATABASE, 'postgres');
+  assert.equal(result.PGSSLMODE, 'require');
+  assert.equal(result.PGCHANNELBINDING, 'require');
+  assert.equal(result.PGSERVICE, undefined);
+  assert.equal(result.PGSERVICEFILE, undefined);
+  assert.equal(base.PGHOST, 'wrong');
+  assert.equal(scoreboardConnectionEnvironment({ PGDATABASE: 'postgres' }).PGDATABASE, 'postgres');
+  assert.throws(() =>
+    scoreboardConnectionEnvironment({
+      PGDATABASE: 'postgresql://user@db.example/postgres?unknown=x',
+    })
+  );
 });

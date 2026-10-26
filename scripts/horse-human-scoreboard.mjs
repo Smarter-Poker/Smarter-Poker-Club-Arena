@@ -224,6 +224,48 @@ export function mergeScoreboards(reports, since, through, userId) {
   };
 }
 
+/** Same environment-only libpq handoff used by horse-fleet-packet.py.
+ * The configured URL never becomes a process argument or report output. */
+export function scoreboardConnectionEnvironment(environment) {
+  const configured = environment.PGDATABASE;
+  if (!configured || !/^postgres(?:ql)?:\/\//.test(configured)) return environment;
+  const url = new URL(configured);
+  if (
+    !['postgres:', 'postgresql:'].includes(url.protocol) ||
+    !url.hostname ||
+    !url.username ||
+    url.pathname.length < 2 ||
+    url.hash
+  )
+    throw Error('Invalid database configuration');
+  const out = { ...environment };
+  delete out.PGSERVICE;
+  delete out.PGSERVICEFILE;
+  Object.assign(out, {
+    PGHOST: decodeURIComponent(url.hostname).replace(/^\[(.*)\]$/, '$1'),
+    PGPORT: url.port || '5432',
+    PGUSER: decodeURIComponent(url.username),
+    PGPASSWORD: decodeURIComponent(url.password),
+    PGDATABASE: decodeURIComponent(url.pathname.slice(1)),
+    PGCONNECT_TIMEOUT: '5',
+    PGAPPNAME: 'horse-human-scoreboard',
+  });
+  const options = {
+    sslmode: 'PGSSLMODE',
+    sslrootcert: 'PGSSLROOTCERT',
+    sslcert: 'PGSSLCERT',
+    sslkey: 'PGSSLKEY',
+    channel_binding: 'PGCHANNELBINDING',
+    gssencmode: 'PGGSSENCMODE',
+    options: 'PGOPTIONS',
+  };
+  for (const [key, value] of url.searchParams) {
+    if (!Object.hasOwn(options, key)) throw Error('Unsupported database option');
+    out[options[key]] = value;
+  }
+  return out;
+}
+
 export function runScoreboard(args) {
   if (![3, 4].includes(args.length) || !['--sql', '--sql-windows', '--run'].includes(args[0]))
     return {
@@ -244,15 +286,12 @@ export function runScoreboard(args) {
       };
     const reports = [],
       deadline = Date.now() + 90000;
+    const connectionEnvironment = scoreboardConnectionEnvironment(process.env);
     for (const w of windows) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw Error('Report deadline exceeded');
-      // libpq does not expand a connection URI inherited only through
-      // PGDATABASE. Pass the configured database explicitly so the workflow's
-      // DATABASE_URL reaches the intended host; never print the argument.
-      const psqlArgs = ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'];
-      if (process.env.PGDATABASE) psqlArgs.push('--dbname', process.env.PGDATABASE);
-      const result = spawnSync('psql', psqlArgs, {
+      const result = spawnSync('psql', ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], {
+        env: connectionEnvironment,
         input: scoreboardSQL(w.since, w.through, args[3]),
         encoding: 'utf8',
         timeout: Math.min(10000, remaining),

@@ -92,3 +92,19 @@ describe('an unpaid Lightning earning follows its original funding witness', () 
     );
   });
 });
+
+it('the historical correction reporter keeps exact native parity and runs in CI', () => {
+  const source = read(
+    'supabase/migrations/20261026212454_historical_club_corrections_rebuild_daily_reporting_once.sql'
+  );
+  expect(source).toContain('affected daily reporting keys as one set');
+  expect(source).toContain('SUM(round(ra.rake_amount*100))::bigint');
+  expect(source).toContain('EXCEPTION WHEN OTHERS');
+  expect(source).not.toMatch(/DISABLE TRIGGER|chip_balance|agent_wallet_balance|cron.schedule/);
+  expect(read('scripts/ci/test-daily-reporting-attribution-change-postgres.py')).toContain(
+    'json.loads(actual)==json.loads(expected)'
+  );
+  expect(read('.github/workflows/unpaid-lightning-funding-contracts.yml')).toContain(
+    'python3 -B scripts/ci/test-daily-reporting-attribution-change-postgres.py'
+  );
+});

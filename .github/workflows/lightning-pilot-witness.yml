@@ -88,6 +88,7 @@ jobs:
           npx playwright install chromium
           if ! node -e "require('playwright').chromium.launch({headless:true}).then(b=>b.close()).catch(()=>process.exit(1))"; then
             echo "Chromium could not launch; installing its system libraries."
+            sudo python3 scripts/ci/ubuntu-apt-mirror.py
             npx playwright install-deps chromium
           fi
       - name: Collect The Explicit Witness

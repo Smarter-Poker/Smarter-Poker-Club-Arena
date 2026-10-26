@@ -17,6 +17,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'tests/sql/fixtures/horse-daily-counts'
 MIGRATION = ROOT / 'supabase/migrations/20261025185247_horse_daily_counts_share_the_accepted_hand_receipt.sql'
+SEAT_MIGRATION = ROOT / 'supabase/migrations/20261026142110_accepted_horse_hand_projection_updates_its_physical_seat_clo.sql'
 PG = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 BASE = Path(os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or tempfile.gettempdir())
 if sys.platform == 'darwin' and not str(BASE).startswith('/Volumes/SmarterWork/agent-work/'):
@@ -103,12 +104,17 @@ def main():
             check('baseline leaves both daily counts outside accepted projection',counts()==[0,0,1])
             run('TRUNCATE ca_hand_facts,ca_hand_transfers,ca_hand_fact_projection_receipts,hand_atomic_commits;')
             run(MIGRATION.read_text())
+            run("CREATE TABLE ca_horse_fleet_state(horse_id uuid PRIMARY KEY,table_id uuid,last_action_at timestamptz,updated_at timestamptz); INSERT INTO ca_horse_fleet_state VALUES ('"+uid('horse')+"','"+uid('table')+"',NULL,now());")
+            run(SEAT_MIGRATION.read_text())
             accept('once',payload('once')); project('once'); project('once')
             check('lost ACK / duplicate projection counts once',counts()==[1,1,1])
+            check('accepted hand advances physical seat clock',run("SELECT last_action_at='2026-10-24T23:59:59.125Z'::timestamptz FROM ca_horse_fleet_state;")=='t')
+            run("UPDATE ca_horse_fleet_state SET last_action_at='2026-10-25T01:00:00Z';")
             accept('race',payload('race'))
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 list(executor.map(lambda _:project('race'),range(8)))
             check('eight concurrent projections count once',counts()==[2,2,2])
+            check('older accepted hand never regresses the seat clock',run("SELECT last_action_at='2026-10-25T01:00:00Z'::timestamptz FROM ca_horse_fleet_state;")=='t')
             d=payload('legacy'); d.pop('horse_rollups'); accept('legacy',d); project('legacy')
             check('legacy receipt never adds new daily counts',counts()==[2,2,3])
             # Fault after the nets update. The original transaction must undo
@@ -137,10 +143,13 @@ def main():
             run('UPDATE hand_atomic_commits SET post_commit_payload='+literal(dict(accepted_hand_facts=dict(stats_facts=changed)))+" WHERE hand_id='"+uid('once')+"';")
             check('changed original source is refused','source_hash_conflict' in project('once',False))
             check('source conflict cannot recount',counts()==[3,3,4])
+            run("UPDATE ca_horse_fleet_state SET table_id='"+uid('moved-table')+"',last_action_at=NULL;")
             midnight=payload('midnight');midnight['facts'][0]['played_at']='2026-10-24T00:00:00.001Z'
             accept('midnight',midnight)
             run("SET TIME ZONE 'America/Chicago'; SELECT ca_project_hand_stats_facts('"+uid('midnight')+"');")
             check('UTC day survives a different database session timezone',counts()==[4,4,5])
+            check('delayed hand cannot touch a different physical seat',run("SELECT last_action_at IS NULL FROM ca_horse_fleet_state;")=='t')
+            run("UPDATE ca_horse_fleet_state SET table_id='"+uid('table')+"';")
             lightning=payload('lightning')
             for arm in ['nets','play']:lightning['horse_rollups'][arm][0]['format']='lightning_2bb'
             kept=json.loads(run("SELECT fn_lightning_hand_stats_facts("+literal({'_accepted_post_commit_facts':{'stats_facts':lightning}})+",'"+uid('lightning')+"','"+uid('table')+"','"+uid('club')+"');"))
@@ -148,6 +157,15 @@ def main():
             run("INSERT INTO lightning_hand VALUES ('"+uid('lightning')+"','"+uid('table')+"');")
             accept('lightning',lightning);project('lightning');project('lightning')
             check('durable Lightning identity preserves its separate paired bucket',counts()==[5,5,6])
+            check('Lightning host hand never touches the physical seat clock',run("SELECT last_action_at IS NULL FROM ca_horse_fleet_state;")=='t')
+            run("CREATE FUNCTION fixture_fail_seat() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected_seat_failure'; END $$; CREATE TRIGGER injected_seat_failure BEFORE UPDATE ON ca_horse_fleet_state FOR EACH ROW EXECUTE FUNCTION fixture_fail_seat();")
+            accept('seat-failure',payload('seat-failure'))
+            check('seat failure is observable', 'injected_seat_failure' in project('seat-failure',False))
+            check('seat failure rolls back counts and projection receipt',counts()==[5,5,6])
+            run('DROP TRIGGER injected_seat_failure ON ca_horse_fleet_state;')
+            project('seat-failure');project('seat-failure')
+            check('original hand recovers atomically once',counts()==[6,6,7])
+            check('recovery advances the physical clock',run("SELECT last_action_at='2026-10-24T23:59:59.125Z'::timestamptz FROM ca_horse_fleet_state;")=='t')
             forged=payload('forged-lightning')
             for arm in ['nets','play']:forged['horse_rollups'][arm][0]['format']='lightning_2bb'
             accept('forged-lightning',forged)

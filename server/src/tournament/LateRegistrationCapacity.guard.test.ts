@@ -384,16 +384,40 @@ describe('late-registration capacity authority', () => {
     // Production 2026-10-25: busts rewound the sweep to stage 0 so often that
     // the expansion stage (6) ran only at the :55 break, and capacity tables
     // sat seated with no dealer for a median of 12 minutes (max 53.8).
-    const wakeBranchStart = ELIMINATIONS.indexOf(
-      "!(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))"
+    // Production 2026-10-26: behind the seating read and fenced by the work
+    // budget (which the add-on offer loop spends first), admission was reached
+    // with the budget gone on every pass of four busy events; seven tables sat
+    // seated with no dealer for up to 27 minutes. It now runs straight after
+    // the entry-window reconcile (which adopts an external terminal outcome
+    // first) and before the seating read.
+    const reconcileStep = ELIMINATIONS.indexOf(
+      "this.noteEliminationSweepStep('reconcileTournamentEntryWindow')"
+    );
+    const admissionStep = ELIMINATIONS.indexOf(
+      "this.noteEliminationSweepStep('admitCommittedCapacityTables')"
+    );
+    const seatingStep = ELIMINATIONS.indexOf(
+      "this.noteEliminationSweepStep('seatAcceptedEntrantsAwaitingChairs')"
     );
     const recoveryStage = ELIMINATIONS.indexOf('recoveryStage: {');
-    expect(wakeBranchStart).toBeGreaterThan(-1);
-    expect(recoveryStage).toBeGreaterThan(wakeBranchStart);
-    const wakeBranch = ELIMINATIONS.slice(wakeBranchStart, recoveryStage);
+    expect(reconcileStep).toBeGreaterThan(-1);
+    expect(admissionStep).toBeGreaterThan(reconcileStep);
+    expect(seatingStep).toBeGreaterThan(admissionStep);
+    expect(recoveryStage).toBeGreaterThan(seatingStep);
+    expect(
+      ELIMINATIONS.match(/noteEliminationSweepStep\('admitCommittedCapacityTables'\)/g)?.length
+    ).toBe(1);
+    const wakeBranch = ELIMINATIONS.slice(reconcileStep, recoveryStage);
     expect(wakeBranch).toMatch(
-      /\.some\(\(reason\) => reason === 'late_registration'\) &&\s*!isMaintenanceFrozen\(\)\s*\) \{\s*this\.noteEliminationSweepStep\('admitCommittedCapacityTables'\);\s*await this\.admitCommittedCapacityTables\(\);/
+      /\n {6}if \(lateRegistrationWake && !isMaintenanceFrozen\(\)\) \{\s*this\.noteEliminationSweepStep\('admitCommittedCapacityTables'\);\s*await this\.admitCommittedCapacityTables\(\);/
     );
+    // The gate is the captured wake alone: no budget check sits in front of it.
+    const admissionGate = ELIMINATIONS.slice(
+      ELIMINATIONS.lastIndexOf('\n', ELIMINATIONS.lastIndexOf('if (', admissionStep)),
+      admissionStep
+    );
+    expect(admissionGate).not.toContain('eliminationMutationAllowed');
+    expect(admissionGate).not.toContain('eliminationWorkBudgetExpired');
     // The early step only admits: creation and the post-expansion rebalance
     // stay in the expansion stage after balancing (theFreezeIsTotal law).
     expect(wakeBranch).not.toContain('checkDynamicTableExpansion()');
@@ -401,7 +425,13 @@ describe('late-registration capacity authority', () => {
       MANAGER.indexOf('protected async admitCommittedCapacityTables(): Promise<void>'),
       MANAGER.indexOf('protected async checkDynamicTableExpansion(): Promise<boolean>')
     );
-    expect(admit).toContain("if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;");
+    // Fenced by stop, abort and the freeze only - never by the work budget.
+    expect(admit).toContain('(this.running && !this.eliminationSweepSignal?.aborted)');
+    expect(admit).toContain('if (isMaintenanceFrozen() || !admissionAllowed()) return;');
+    expect(admit).not.toMatch(/if \(!this\.eliminationMutationAllowed\(\)\) return;/);
+    expect(admit).not.toContain('|| !this.eliminationMutationAllowed()) return;');
+    // A finished event never starts a dealer for a leftover receipt.
+    expect(admit).toContain('if (this.tournamentFinished || this.finalTableDealHandled) return;');
     expect(admit).toContain(".from('tournament_capacity_table_receipts')");
     expect(admit).toContain(".is('manager_admitted_at', null)");
     expect(admit).toContain("'fn_ack_tournament_capacity_tables'");
@@ -417,7 +447,7 @@ describe('late-registration capacity authority', () => {
     expect(MANAGER.match(/this\.createManagedTableEngine\(tableId\)/g)?.length).toBe(1);
     // The ordinary expansion stage still runs as before.
     expect(ELIMINATIONS.slice(recoveryStage)).toContain(
-      "if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;"
+      'if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;'
     );
   });
 

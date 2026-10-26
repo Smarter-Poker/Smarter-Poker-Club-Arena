@@ -1793,7 +1793,8 @@ export class LiveHorseDecisionWorkerClient {
       }
       const receiptRefusal = horseDecisionReceiptRefusal(
         message.decision,
-        active.request.gameState.gameVariant
+        active.request.gameState.gameVariant,
+        { player: active.request.player, gameState: active.request.gameState }
       );
       if (receiptRefusal !== null) {
         this.refuseDecision(

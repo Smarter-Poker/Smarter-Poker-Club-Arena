@@ -150,10 +150,27 @@ export function ChatBubble({
       const right = Math.min(window.innerWidth, bounds.right) - 4;
       if (!(scale > 0) || right <= left) return;
       bubble.style.setProperty('--chat-bubble-available', `${(right - left) / scale}px`);
+      const top = Math.max(0, bounds.top) + 4;
+      const bottom = Math.min(window.innerHeight, bounds.bottom) - 4;
+      if (bottom <= top) return;
+      // Measure from the seat again on every resize. Long text may use the
+      // pane's width before it moves vertically; no line is ever discarded.
+      bubble.style.setProperty('--chat-bubble-shift-y', '0px');
+      bubble.style.removeProperty('--chat-bubble-max-width');
+      if (bubble.offsetHeight * scale > bottom - top) {
+        bubble.style.setProperty('--chat-bubble-max-width', `${(right - left) / scale}px`);
+      }
       const width = bubble.offsetWidth * scale;
       const center = anchor.left + anchor.width / 2;
       const target = Math.max(left + width / 2, Math.min(right - width / 2, center));
       bubble.style.setProperty('--chat-bubble-shift', `${(target - center) / scale}px`);
+      // Offset geometry excludes the pop animation's scale, so the fit is
+      // correct for the full-sized text from the first frame onward.
+      const height = bubble.offsetHeight * scale;
+      const printedTop =
+        placement === 'below' ? anchor.bottom + 10 * scale : anchor.top - height - 10 * scale;
+      const targetTop = Math.max(top, Math.min(bottom - height, printedTop));
+      bubble.style.setProperty('--chat-bubble-shift-y', `${(targetTop - printedTop) / scale}px`);
     };
     fit();
     const observer = new ResizeObserver(fit);

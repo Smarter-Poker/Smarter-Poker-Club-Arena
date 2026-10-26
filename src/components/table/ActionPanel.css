@@ -379,13 +379,10 @@
   font-size: 0.75rem;
   line-height: 1.25;
   color: rgba(255, 255, 255, 0.62);
-  /* One line, always. The longest of the three strings is "Spectating, Tap An
-     Open Seat To Join" at 33 characters, which fits 375px at this size with
-     room to spare; the ellipsis is insurance for a future string, not a
-     wrapping strategy. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* The full spectator instruction wraps on narrow tables. */
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
   /* There is no band behind the text any more, so it is reading against the
      page background and whatever the felt's lower edge is doing. */
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);

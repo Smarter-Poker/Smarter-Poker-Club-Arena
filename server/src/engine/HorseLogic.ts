@@ -146,6 +146,10 @@ import {
 } from './HorsePreflop.js';
 import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import {
+  pairedBoardFoldYieldsToShortAllIn,
+  shortAllInCallFloor,
+} from './HorseShortAllInCallFloor.js';
+import {
   classifyTournamentPreflopBranch,
   tournamentMZone,
   tournamentNextLevelProjectionApplies,
@@ -2665,6 +2669,44 @@ let phase7EquityEvidence: Phase7EquityEvidence | null = null;
 let phase10EquityEvidence: Plo4EquityEvidence | null = null;
 let phase11DecisionEquityCeiling: number | null = null;
 let phase12DecisionEquityCeiling: number | null = null;
+/** Samples for the short all-in floor's drawing-dead check. */
+const SHORT_ALL_IN_DEAD_CHECK_ITERATIONS = 400;
+
+/**
+ * The short all-in floor's "drawing dead" witness (Dan 2026-10-26): the
+ * hand's raw equity HEADS UP against one unknown hand, on the cards alone.
+ * Not the brain's decision equity, which is measured against every live
+ * opponent and weighted by range and board reads: a multiway pot or a tight
+ * read can price a hand with real equity against the short stack under 5%,
+ * and that must not fold this spot. Postflop only, and only asked when the
+ * brain has folded in the spot. null when it cannot be measured, and then the
+ * floor calls.
+ */
+function shortAllInDeadCheckEquity(
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  vi: VariantInfo
+): number | null {
+  if (gs.stage === 'preflop' || !player.cards?.length) return null;
+  try {
+    const equity = simulateEquity(
+      player.cards,
+      gs.communityCards ?? [],
+      1,
+      vi,
+      SHORT_ALL_IN_DEAD_CHECK_ITERATIONS,
+      undefined,
+      false,
+      vi.isHiLo ? { hi: 0, lo: 0, scoop: 0, quarter: 0 } : undefined,
+      undefined,
+      undefined,
+      player.knownDeadCards ?? []
+    );
+    return Number.isFinite(equity) ? clamp01(equity) : null;
+  } catch {
+    return null;
+  }
+}
 
 function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string> {
   if (gs.dealerSeat === undefined) return new Set<string>();
@@ -2962,7 +3004,7 @@ function rakeDrag(
  * and table commitment caps. When intent cannot be represented legally, this
  * degrades without committing extra chips: check first, otherwise fold.
  */
-function enforceAuthoritativeDecision(
+export function enforceAuthoritativeDecision(
   decision: HorseDecision,
   player: SeatPlayer,
   gs: HorseGameStateV2
@@ -2987,7 +3029,15 @@ function enforceAuthoritativeDecision(
     return { action: 'fold', thinkTime: 0 };
   };
   const call = (): HorseDecision => {
-    if (!legal.has('call')) return safe();
+    if (!legal.has('call')) {
+      // ALL-IN-OR-FOLD (2026-10-26): the menu is fold/all-in, so calling an
+      // owed bet IS the all-in (the controller settles it as the call). The
+      // V27 big-blind-vs-jam chart and the priced-in guard propose `call`;
+      // degrading that to safe() folded every hand the brain chose to call.
+      if (gs.allInOrFold === true && legal.has('all_in') && toCall > 0.005)
+        return { action: 'all_in', thinkTime: 0 };
+      return safe();
+    }
     if (toCall >= stack - 0.005 && legal.has('all_in')) {
       return { action: 'all_in', thinkTime: 0 };
     }
@@ -3162,6 +3212,11 @@ function pairedBoardFold(
     pot: gs.pot,
   });
   if (!mustFold) return decision;
+  // Dan 2026-10-26: a short all in (under 3 big blinds) against a 20+ big
+  // blind horse in a tournament is not a stack-off, so this fold stands aside
+  // and the call the short all-in floor made stands. A real stack-off (a
+  // quarter of the horse's remaining stack, or all of it) still folds.
+  if (pairedBoardFoldYieldsToShortAllIn(player, gs)) return decision;
   if (telemetryOn(opts)) noteFire('plo_paired_board_fold');
   if (Array.isArray(gs.legalActions) && !gs.legalActions.includes('fold')) return decision;
   // Inside the graph the timing node then prices the fold's own think time;
@@ -3241,6 +3296,17 @@ function holdemPremiumAggressionOutsideGraph(
     : decision;
 }
 
+/** The outer safety net for the short all-in floor: only an unsigned decision. */
+function shortAllInCallFloorOutsideGraph(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2
+): HorseDecision {
+  return decision.policyGraph === undefined
+    ? shortAllInCallFloor(decision, player, gs, undefined)
+    : decision;
+}
+
 /** The outer safety net: only a decision the policy graph never signed. */
 function pairedBoardFoldOutsideGraph(
   decision: HorseDecision,
@@ -3316,31 +3382,39 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return holdemPremiumAggressionOutsideGraph(
-            pairedBoardFoldOutsideGraph(
-              this.decideInternal(player, gameState, style, mods, opts),
+          return shortAllInCallFloorOutsideGraph(
+            holdemPremiumAggressionOutsideGraph(
+              pairedBoardFoldOutsideGraph(
+                this.decideInternal(player, gameState, style, mods, opts),
+                player,
+                gameState,
+                opts
+              ),
               player,
               gameState,
               opts
             ),
             player,
-            gameState,
-            opts
+            gameState
           );
         } finally {
           setEquityDepth(1);
         }
       }
-      return holdemPremiumAggressionOutsideGraph(
-        pairedBoardFoldOutsideGraph(
-          this.decideInternal(player, gameState, style, mods, opts),
+      return shortAllInCallFloorOutsideGraph(
+        holdemPremiumAggressionOutsideGraph(
+          pairedBoardFoldOutsideGraph(
+            this.decideInternal(player, gameState, style, mods, opts),
+            player,
+            gameState,
+            opts
+          ),
           player,
           gameState,
           opts
         ),
         player,
-        gameState,
-        opts
+        gameState
       );
     } catch (err) {
       // Absolute safety net: never let a horse hang the table.
@@ -4267,33 +4341,34 @@ export class HorseLogic {
       }
       return { decision };
     }).decision;
-    // The two 2026-10-25 owner rules run last, inside the graph, so the
-    // signed graph and its timing node see the action they choose: the PLO
-    // paired-board fold, then the hold'em premium rule (#8122), the same order
-    // they had when they ran after decide().
-    decision = graph.run('wager_rules', decision, () => ({
-      decision: holdemPremiumAggression(
-        pairedBoardFold(
-          fullPotNearPotWager(
-            // V58/V59: PLO6 river nut discipline, after every strategy owner.
-            plo6RiverNutDiscipline(
-              riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
-              player,
-              gs,
-              opts
-            ),
-            player,
-            gs
-          ),
+    // The owner rules run last, inside the graph, so the signed graph and its
+    // timing node see the action they choose: the PLO paired-board fold, then
+    // the hold'em premium rule (#8122, #8138), then - LAST, so nothing can
+    // fold that spot again - the short all-in call floor (Dan 2026-10-26).
+    decision = graph.run('wager_rules', decision, () => {
+      const wagered = fullPotNearPotWager(
+        // V58/V59: PLO6 river nut discipline, after every strategy owner.
+        plo6RiverNutDiscipline(
+          riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
           player,
           gs,
           opts
         ),
         player,
+        gs
+      );
+      const ruled = holdemPremiumAggression(
+        pairedBoardFold(wagered, player, gs, opts),
+        player,
         gs,
         opts
-      ),
-    })).decision;
+      );
+      const floored = shortAllInCallFloor(ruled, player, gs, () =>
+        shortAllInDeadCheckEquity(player, gs, vi)
+      );
+      if (floored !== ruled && tele) noteFire('short_all_in_call_floor');
+      return { decision: floored };
+    }).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(
         decision,
@@ -6658,17 +6733,26 @@ export class HorseLogic {
     }
     // ═══ RIVER CALL READ (2026-10-25) ═══ every river call that ends a
     // player's river is now shown, so the table sees what they call with.
-    // Against a player whose shown river calls are one pair or worse at least
-    // half the time, a river bluff earns less (they call it) and a thinner
-    // value bet earns more (they pay it). Bounded: bluff volume x0.85 at a
-    // 0.5 read down to x0.70 at 0.75 or more; the thin-value bar drops 2 to
+    // Against a player whose shown weak-call rate exceeds their family baseline
+    // with a twelve-call minimum and one-sided confidence, a river bluff earns
+    // less (they call it) and a thinner
+    // value bet earns more (they pay it). Bounded: bluff volume x0.85 down
+    // to x0.70 as excess weak-call frequency increases; the thin-value bar drops 2 to
     // 4 equity points. Heads-up rivers only, read identically for every
-    // opponent, human or horse; null under five shown calls does nothing.
-    if ((opts.v23Reads ?? true) !== false && useMind && isRiver && oppCount === 1) {
+    // opponent, human or horse. Split/multi-board high names are incomplete.
+    if (
+      (opts.v23Reads ?? true) !== false &&
+      useMind &&
+      isRiver &&
+      oppCount === 1 &&
+      !vi.isHiLo &&
+      !multiBoard36
+    ) {
       try {
-        const light = HorseMind.riverCallLightTendency(opponents[0].user_id);
-        if (light !== null && light >= 0.5) {
-          const k = Math.min(1, (light - 0.5) / 0.25);
+        const baseline = vi.isOmaha || vi.isShortDeck ? 0.04 : 0.4;
+        const light = HorseMind.riverCallLightTendency(opponents[0].user_id, baseline);
+        if (light !== null) {
+          const k = Math.max(0, Math.min(1, (light - baseline) / (1 - baseline)));
           bluffScale *= 0.85 - 0.15 * k;
           thinAdj23 -= 0.02 + 0.02 * k;
           if (tele15) noteFire('river_call_light_read');

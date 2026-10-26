@@ -669,53 +669,64 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Crucially, a pending receipt returns false until the database proves
       // every early finisher was repriced, so the captured wake cannot be
       // acknowledged after a lost response or process crash.
-      if (
-        this.tournamentEntryRepricePending ||
-        [...durableWakes.values()].some((reason) => reason === 'late_registration')
-      ) {
+      const lateRegistrationWake = [...durableWakes.values()].some(
+        (reason) => reason === 'late_registration'
+      );
+      if (this.tournamentEntryRepricePending || lateRegistrationWake) {
         this.noteEliminationSweepStep('reconcileTournamentEntryWindow');
         if (!(await this.reconcileTournamentEntryWindow('engine.manager_wake'))) return;
         if (sweepStopped()) return;
-        // The same wake carries entries accepted after a launch cohort was
-        // captured. Keep it pending until every one of them holds a chair.
-        this.noteEliminationSweepStep('seatAcceptedEntrantsAwaitingChairs');
-        if (
-          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
-          !(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))
-        ) {
-          return;
-        }
+      }
+
+      /*
+       * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT,
+       * AND THE SWEEP BUDGET NEVER DECIDES IT (2026-10-25, hardened
+       * 2026-10-26).
+       *
+       * Every capacity table is committed together with a `late_registration`
+       * wake, but its dealer was only started by the expansion stage (6). Each
+       * new bust rewinds the cursor to stage 0, so on a busy field stage 6 was
+       * reached only when busting stopped: at the :55 break. Production
+       * 2026-10-25: 99 of 132 capacity tables waited over a minute (median
+       * 12.0, max 53.8) seated with no dealer.
+       *
+       * The 2026-10-25 fix moved admission ahead of the stages, but behind the
+       * seating read, only on a pass that had captured the wake, and inside
+       * the 5 s work budget that the add-on offer loop above spends first. On
+       * 2026-10-26 13:28-13:55 UTC (engine 4dfd07ef) every pass of four busy
+       * events reached it with the budget gone: seven tables (Sunrise Bounty
+       * table 22 among them) sat seated with no dealer for up to 27 minutes,
+       * then were all admitted at 13:55:41 when the break stopped the busting.
+       *
+       * So, two rules, each closing one way a seated table can wait:
+       *   1. It runs after the entry-window reconcile (which adopts an
+       *      external terminal outcome first and is not budget-fenced) and
+       *      before the seating read, which can end the pass.
+       *   2. admitCommittedCapacityTables is fenced only by stop, abort, the
+       *      freeze and a finished event - never by the work budget.
+       * The wake that carries it is durable: it stays pending until a whole
+       * sweep completes, so every pass until then admits, and a lost Realtime
+       * frame is re-read by the wake drain on reconnect and at boot.
+       *
+       * Only ADMISSION happens here: it starts dealers for receipts already
+       * committed with seated entrants and acknowledges them. It creates no
+       * table, moves no seat and runs no rebalance; creation and the
+       * post-expansion rebalance stay in stage 6, after balancing, as the
+       * freeze law requires. The engine preparation arms every break /
+       * hand-for-hand hold before the dealer starts.
+       */
+      if (lateRegistrationWake && !isMaintenanceFrozen()) {
+        this.noteEliminationSweepStep('admitCommittedCapacityTables');
+        await this.admitCommittedCapacityTables();
         if (sweepStopped()) return;
-        /*
-         * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
-         * (2026-10-25).
-         *
-         * Every capacity table is committed together with this
-         * `late_registration` wake, but its dealer was only started by the
-         * expansion stage (6). Each new bust rewinds the cursor to stage 0, so
-         * on a busy field the sweep spent its budget on stages 0-5 and stage 6
-         * was reached only when busting stopped: at the :55 break. Production
-         * 2026-10-25: 13:00-23:00 UTC, 99 of 132 capacity tables waited over a
-         * minute (median 12.0, max 53.8) with players seated and no dealer
-         * (through 2026-10-24 the median was ~4 seconds), e.g. Sunday
-         * Funday Happy Hour table 14 opened 22:39:28 with nine late entrants
-         * and was admitted at 22:55:08, the moment the break began.
-         *
-         * Only ADMISSION moves here (admitCommittedCapacityTables): it starts
-         * dealers for receipts already committed with seated entrants and
-         * acknowledges them. It creates no table, moves no seat and runs no
-         * rebalance; creation and the post-expansion rebalance stay in stage 6,
-         * after balancing, as the freeze law requires. The engine preparation
-         * arms every break / hand-for-hand hold before the dealer starts.
-         */
-        if (
-          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
-          !isMaintenanceFrozen()
-        ) {
-          this.noteEliminationSweepStep('admitCommittedCapacityTables');
-          await this.admitCommittedCapacityTables();
-          if (sweepStopped()) return;
-        }
+      }
+
+      // The same wake carries entries accepted after a launch cohort was
+      // captured. Keep it pending until every one of them holds a chair.
+      if (lateRegistrationWake) {
+        this.noteEliminationSweepStep('seatAcceptedEntrantsAwaitingChairs');
+        if (!(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))) return;
+        if (sweepStopped()) return;
       }
 
       recoveryStage: {
@@ -1043,7 +1054,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // These busts have been resolved, so their old wait cannot
               // trigger a successor. Any untouched batch keeps a fresh clock.
               recordBustProgress();
-              return; // everyone bought back in; nobody is eliminated this pass
+              // Everyone bought back in; nobody is eliminated this pass. The
+              // pass goes on to its later stages - balancing above all - and
+              // never returns from the sweep here (see A REBUY WINDOW DOES NOT
+              // STARVE THE BALANCER below).
+              break bustStage;
             }
           }
 
@@ -1138,7 +1153,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
                 recordBustProgress();
               }
-              return;
+              /* A REBUY WINDOW DOES NOT STARVE THE BALANCER (Dan, 2026-10-26:
+                 "TABLES NEED TO ALWAYS BE BALANCED 100% OF THE TIME NO MATTER
+                 WHAT"). This was `return`: the whole sweep ended here, the
+                 cursor stayed at the bust stage, and balanceStage - the only
+                 caller of checkTableBalance - never ran. In a rebuy or Free Buy
+                 event busts arrive every few seconds and each one holds a
+                 30-second rebuy window, so almost every sweep found nothing but
+                 open windows and stopped here. Production 2026-10-26: Diamond
+                 Arena Sunrise Bounty a5741141 sat 3-4 players apart for half an
+                 hour (13:00-13:28 UTC), the Midway twin 3675640e was unbalanced
+                 in 98% of 10-second samples, and only 9 balance moves were made
+                 platform wide in 75 minutes. The open windows stay open (the
+                 delayed wake above re-reads them when they close); the pass goes
+                 on to its later stages, exactly as it already did when some of
+                 the batch was recorded and the rest was still deciding. Players
+                 deciding a rebuy still count as playing, so the finish stage
+                 cannot end the event on them. Same class of defect as the
+                 2026-09-12 backlog return below. */
+              break bustStage;
             }
           }
 

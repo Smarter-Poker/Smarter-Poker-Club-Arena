@@ -765,18 +765,6 @@ const VILLAIN_FAN: Record<number, { step: number; rot: number }> = {
  * deferred by the browser's lazy heuristic at the exact moment the player is
  * trying to read them. See CardImage's `loading` prop.
  */
-/**
- * Dan 2026-08-30 (binding): seat names never ellipsize. If the full name does
- * not fit the plate, it is CUT AT A CHARACTER BUDGET with no "..." appended -
- * "Clara Hell..." reads worse than "Clara Hell". 11 characters is the widest
- * string that always fits the .seat__name 76px cap at --font-xs; the CSS
- * keeps overflow:hidden as a belt, but with text-overflow: clip so the
- * ellipsis can never come back through styling alone.
- */
-function limitSeatName(name: string | undefined | null): string {
-  const n = (name ?? '').trim();
-  return n.length > 11 ? n.slice(0, 11).trimEnd() : n;
-}
 
 function HoleCard({
   card,
@@ -3496,11 +3484,8 @@ export const SeatSlot = memo(
               <span className="seat__timer-ring-arc" />
             </span>
           )}
-          {/* Dan 2026-08-30: "NAMES SHOULD NEVER BE CUT OFF... PUT A
-              CHARACTER LIMIT ON THEM IF YOU CAN'T FIT THEM ALL IN WITHOUT
-              USING A ... AFTER THEM." A hard budget instead of an ellipsis:
-              what renders is what fits, whole characters, no dots. */}
-          <span className="seat__name">{limitSeatName(player.name)}</span>
+          {/* Full names wrap within the seat plate (owner 2026-10-26). */}
+          <span className="seat__name">{player.name?.trim()}</span>
           <span
             className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${player.stackPending ? '' : getStackDepthClass(player.stack, bigBlind)}`}
             aria-busy={!!player.stackPending}

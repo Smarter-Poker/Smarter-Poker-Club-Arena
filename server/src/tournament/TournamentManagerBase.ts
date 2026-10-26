@@ -3191,6 +3191,90 @@ export abstract class TournamentManagerBase {
     return Number.isFinite(endMs) && nowMs < endMs;
   }
 
+  /** Purchases in flight at once while the add-on break holds the field. */
+  static readonly ADD_ON_BREAK_CONCURRENCY = 8;
+  /** One held-field pass ends here and the next admission continues it, well
+   *  inside ELIMINATION_SWEEP_STUCK_MS, so a scheduler slot is never held long. */
+  static readonly ADD_ON_BREAK_PASS_MS = 20_000;
+
+  /**
+   * True while the add-on offer is open AND a break holds every table: the
+   * add-on break itself, or the :55 break it opened inside. No hand is dealt,
+   * so nothing else in this tournament is waiting on the sweep's budget.
+   */
+  protected addOnBreakHoldsTheField(nowMs: number): boolean {
+    return (this.addOnBreakActive || this.onBreak) && this.addOnOfferWindowOpen(nowMs);
+  }
+
+  /**
+   * Offer the add-on to every listed horse through a pool of
+   * ADD_ON_BREAK_CONCURRENCY requests, until the list is done or the
+   * persisted offer closes or ADD_ON_BREAK_PASS_MS has passed (the next
+   * admission continues from the cursor). Same RPC, same receipts, same retained identity on
+   * an ambiguous reply as the ordinary batch; only the pacing differs. The
+   * mutation batch keeps the sweep's work budget from cutting the field short;
+   * manager stop, the sweep's abort signal and the freeze still end it.
+   */
+  protected async offerAddOnsWhileTheFieldIsHeld(
+    horseRows: Array<{ id: string }>
+  ): Promise<{ taken: number; completed: number; declined: Map<string, number> }> {
+    const declined = new Map<string, number>();
+    let taken = 0;
+    let completed = 0;
+    let nextIndex = 0;
+    const passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    const batchWasOpen = this.eliminationMutationBatchIsOpen();
+    if (!batchWasOpen) this.openEliminationMutationBatch();
+    const mayContinue = () =>
+      Date.now() < passEndsAt &&
+      !isMaintenanceFrozen() &&
+      this.eliminationMutationAllowed() &&
+      this.addOnBreakHoldsTheField(Date.now());
+    const worker = async () => {
+      while (nextIndex < horseRows.length && mayContinue()) {
+        const h = horseRows[nextIndex++];
+        let message: string | null = null;
+        let data: unknown = null;
+        try {
+          const reply = await supabase.rpc('process_tournament_rebuy', {
+            p_tournament_id: this.tournamentId,
+            p_user_id: h.id,
+            p_rebuy_type: 'addon',
+            p_cost: null,
+            p_chips: null,
+            p_current_level: this.currentLevel,
+          });
+          if (reply.error) message = reply.error.message;
+          else data = reply.data;
+        } catch (error) {
+          message = String(error);
+        }
+        if (!this.running || this.eliminationSweepSignal?.aborted) return;
+        this.addOnBatchCursor = h.id;
+        if (message !== null) {
+          // A lost response may follow a committed receipt. Retain this
+          // identity for the same idempotent RPC on its next admission.
+          declined.set(message, (declined.get(message) || 0) + 1);
+          continue;
+        }
+        this.addOnAttemptedHorseIds.add(h.id);
+        completed++;
+        if ((data as { success?: boolean } | null)?.success === true) taken++;
+      }
+    };
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(TournamentManagerBase.ADD_ON_BREAK_CONCURRENCY, horseRows.length) },
+          () => worker()
+        )
+      );
+    } finally {
+      if (!batchWasOpen) this.closeEliminationMutationBatch();
+    }
+    return { taken, completed, declined };
+  }
+
   /** Keep one add-on retry due while its persisted offer window is open. */
   protected scheduleAddOnRetry(): void {
     if (!this.running || !this.addOnPeriodTriggered || this.prizePoolFinalized) return;
@@ -11617,6 +11701,31 @@ export abstract class TournamentManagerBase {
         ? pendingHorseRows.findIndex((horse) => horse.id > this.addOnBatchCursor!)
         : 0;
       const start = Math.max(0, next);
+      /* THE ADD-ON BREAK SERVES THE WHOLE FIELD (2026-10-26). Measured on the
+         first 60-second break after every funded horse was told to add on:
+         Sunrise Bounty, 104 of 186 seated horses bought before the deadline,
+         every reply a success. Purchases went out twelve at a time, four in
+         flight, then waited ~4.5 s for the next admission's four snapshot
+         reads - 1.7 purchases a second against a field that needs three.
+         While the break holds every table there is no hand, bust or seat move
+         for the work budget to protect, so the whole remaining field is
+         offered in this one pass through a bounded pool, until the persisted
+         deadline. The canonical RPC still refuses anything it should. */
+      if (this.addOnBreakHoldsTheField(Date.now())) {
+        const rotated = pendingHorseRows.slice(start).concat(pendingHorseRows.slice(0, start));
+        if (rotated.length === 0) return;
+        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated);
+        completedOffers += served.completed;
+        if (served.taken > 0 || served.declined.size > 0) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON BREAK: ${served.taken} taken of ${rotated.length}` +
+              (served.declined.size > 0
+                ? ` - declined: ${[...served.declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
+                : '')
+          );
+        }
+        return;
+      }
       const horseRows = pendingHorseRows.slice(
         start,
         start + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE

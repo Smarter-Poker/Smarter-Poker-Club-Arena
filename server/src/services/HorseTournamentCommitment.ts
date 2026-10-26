@@ -12,10 +12,9 @@
  *
  * That opens one gap, and this module closes it. A horse may now sit at four
  * cash tables while its tournament is two hours out. When the tournament
- * starts, `fn_enforce_four_table_limit` still refuses a fifth LIVE seat - the
- * client shows four tabs, and that invariant does not move - so the horse
- * would miss the atomic launch admission while a cash session kept the fourth
- * slot occupied. A person does not do that. A person with a
+ * starts, the paid tournament entry is honored. The horse must finish an
+ * excess cash session before that commitment adds a live game; a bought
+ * pre-start chair retains its timing without being counted twice. A person with a
  * tournament in an hour finishes the cash session they have been in longest,
  * gets up in good time, and is in their seat when the cards go in the air.
  *
@@ -60,6 +59,9 @@ export interface ImminentBooking {
   tournamentId: string;
   /** Epoch ms of the start; null is seat-first and starts when it fills. */
   startMs: number | null;
+  /** The pre-start chair is already included in liveSeatsTotal. Keep its
+   * start time for session planning without counting the same game twice. */
+  seatAlreadyCounted?: boolean;
 }
 
 export interface TournamentCommitment {
@@ -68,8 +70,8 @@ export interface TournamentCommitment {
   /** EVERY live seat the horse holds, cash and tournament, the way clause (1)
    *  of `fn_concurrent_game_load` counts them. Never below cashSeats.length. */
   liveSeatsTotal: number;
-  /** Bookings that count as a game right now (inside the window, and not for
-   *  a tournament the horse already holds a seat in). */
+  /** Pre-start commitments inside the planning window. A bought chair keeps
+   *  its timing here, with seatAlreadyCounted preventing a duplicate game. */
   imminentBookings: readonly ImminentBooking[];
   nowMs: number;
   /** The rotator's cycle, so the hazard is per cycle. */
@@ -105,7 +107,8 @@ export function tournamentCommitmentVerdict(s: TournamentCommitment): Commitment
     return { excess: 0, minutesToStart: Infinity, leaveNow: [], reason: 'no_commitment' };
   }
   const liveSeats = Math.max(s.liveSeatsTotal, s.cashSeats.length);
-  const excess = Math.max(0, liveSeats + imminent.length - CONCURRENT_GAME_LIMIT);
+  const unseatedBookings = imminent.filter((b) => b.seatAlreadyCounted !== true).length;
+  const excess = Math.max(0, liveSeats + unseatedBookings - CONCURRENT_GAME_LIMIT);
   const earliest = Math.min(...imminent.map((b) => (b.startMs === null ? s.nowMs : b.startMs)));
   const msToStart = Math.max(0, earliest - s.nowMs);
   const minutesToStart = msToStart / 60_000;

@@ -203,6 +203,8 @@ export interface PreflopCtx {
   /** Effective stack in big blinds against the deepest live opponent
    *  (2026-10-25 shove discipline). Undefined on legacy/offline callers. */
   effectiveStackBB?: number;
+  /** Dan 2026-10-25 NLH tournament aggression; undefined = on. */
+  tournamentAggression?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -616,7 +618,8 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // calibrations. The ICM premium (riskAdd) is untouched, so the bubble
   // still tightens exactly as before - this moves the baseline, not the
   // survival pressure.
-  const tAggro = isTourney && !ctx.isOmaha && ctx.allInOrFold !== true;
+  const tAggro =
+    ctx.tournamentAggression !== false && isTourney && !ctx.isOmaha && ctx.allInOrFold !== true;
   // True heads-up: exactly one live opponent and hero is in a blind. HU is a
   // different game — the SB/BTN opens ~75-85% and the BB defends the wide
   // majority of hands against it.

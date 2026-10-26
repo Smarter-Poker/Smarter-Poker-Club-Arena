@@ -1998,6 +1998,9 @@ export interface HorseDecideOpts {
    * after fixed-clock/full-precision400bb cash qualification; explicit false
    * retains the off arm. Tournament behavior remains unchanged. */
   v56OmahaPressureRange?: boolean;
+  /** Dan 2026-10-25 NLH tournament aggression (wider opens/3-bets/defence,
+   *  more turn barrels). Default on; false is the historical arm. */
+  v57TournamentAggression?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -4920,6 +4923,7 @@ export class HorseLogic {
           : undefined,
       omahaSuitedPremium: suitedPremium,
       holdemPremiumPair,
+      tournamentAggression: (opts.v57TournamentAggression ?? true) !== false,
       effectiveStackBB: (() => {
         let cover = 0;
         for (const p of gs.players) {
@@ -6372,7 +6376,11 @@ export class HorseLogic {
     // tournaments plan more multi-street lines, continue them more often and
     // give up less. Cash keeps the duplicate-deal-tuned numbers below; the
     // ICM survival premium still scales every bluff through bluffScale.
-    const tourneyAggro = isTournamentMode(gs) && !vi.isOmaha && gs.allInOrFold !== true;
+    const tourneyAggro =
+      (opts.v57TournamentAggression ?? true) !== false &&
+      isTournamentMode(gs) &&
+      !vi.isOmaha &&
+      gs.allInOrFold !== true;
     const planBarrel = (equityNow: number): void => {
       if (!useBarrels || isRiver) return;
       // Only bluffs/semi-bluffs need a plan — value hands bet themselves.

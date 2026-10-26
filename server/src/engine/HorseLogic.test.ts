@@ -2466,9 +2466,10 @@ describe('HorseLogic V11 - game modes + leak fixes', () => {
 
   it('antes widen tournament opens', () => {
     const open = v7ctx({
-      // V34: the hijack bar moved 0.54 -> 0.48; 0.46 sits just under it and
+      // V34: the hijack bar moved 0.54 -> 0.48, and tournament aggression
+      // (2026-10-25) opens it 0.02 wider to 0.46; 0.44 sits just under it and
       // the 0.05 ante widen carries it over.
-      strength: 0.46,
+      strength: 0.44,
       position: 'middle',
       mode: 'tournament',
       toCall: 2,

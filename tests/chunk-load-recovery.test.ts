@@ -162,6 +162,13 @@ describe('stale deployment chunk recovery', () => {
       vi.stubGlobal('window', browser);
       vi.stubGlobal('navigator', {});
       vi.stubGlobal('caches', undefined);
+      // No production to ask here: an unreadable live build recovers as before.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new TypeError('Load failed');
+        })
+      );
       sessionStorage.clear();
       const recovery = await import('../src/utils/lazyWithRetry');
       return { browser, replace, recovery };
@@ -236,6 +243,73 @@ describe('stale deployment chunk recovery', () => {
       await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
       await flush();
       expect(replace).toHaveBeenCalledTimes(1);
+    });
+
+    /* 2026-10-25, production post-deploy (WebKit): the lobby document took
+       longer than the grace right after a publish, and the deferred recovery
+       hijacked the still-loading navigation on a page that was already on
+       the live build. */
+    describe('when the grace ends with the page still here', () => {
+      // The module's own build id in this suite (no VITE_APP_VERSION is set).
+      const BUILD = 'dev';
+      async function departedOnBuild(liveSha: string | Error) {
+        vi.useFakeTimers();
+        const fetchBuildInfo = vi.fn(async () => {
+          if (liveSha instanceof Error) throw liveSha;
+          return new Response(JSON.stringify({ ca_sha: liveSha }), { status: 200 });
+        });
+        const doc = await freshDocument();
+        vi.stubGlobal('fetch', fetchBuildInfo);
+        const uninstall = doc.recovery.installVitePreloadErrorRecovery();
+        doc.browser.dispatchEvent(new Event('beforeunload'));
+        const event = cancelledLoad();
+        doc.browser.dispatchEvent(event);
+        void doc.recovery.recoverFromStaleChunk(event.payload);
+        await flush();
+        return { ...doc, fetchBuildInfo, uninstall };
+      }
+      it('does not cancel a slow navigation from a page already on the live build', async () => {
+        const { replace, recovery, fetchBuildInfo, uninstall } = await departedOnBuild(BUILD);
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+        await flush();
+        expect(fetchBuildInfo).toHaveBeenCalled();
+        expect(String(fetchBuildInfo.mock.calls[0][0])).toMatch(/build-info\.json$/);
+        expect(replace).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS * 3);
+        await flush();
+        expect(replace).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
+        uninstall();
+      });
+
+      it('still restores a cancelled navigation once its bounded patience runs out', async () => {
+        const { replace, recovery, uninstall } = await departedOnBuild(BUILD);
+        await vi.advanceTimersByTimeAsync(
+          recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS + 1
+        );
+        await flush();
+        expect(replace).toHaveBeenCalledTimes(1);
+        expect(String(replace.mock.calls[0][0])).toContain('_cb=');
+        uninstall();
+      });
+
+      it('recovers at the grace when production serves a newer build', async () => {
+        const { replace, recovery, uninstall } = await departedOnBuild(
+          'ne0000000000000000000000000000000000000002'
+        );
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+        await flush();
+        expect(replace).toHaveBeenCalledTimes(1);
+        uninstall();
+      });
+
+      it('recovers at the grace when the live build cannot be read', async () => {
+        const { replace, recovery, uninstall } = await departedOnBuild(new TypeError('Load failed'));
+        await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS + 1);
+        await flush();
+        expect(replace).toHaveBeenCalledTimes(1);
+        uninstall();
+      });
     });
 
     it('keeps a lazy route suspended instead of erroring while the page leaves', async () => {

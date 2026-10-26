@@ -238,6 +238,10 @@ export interface CompletedHandObservation extends HorseDecisionFence {
    *  (HorseWinnerRead). Absent on legacy callers and replay. */
   results?: Array<{ user_id: string; net: number }>;
   scope?: ReadScope | null;
+  /** 2026-10-26: false when the hand's showdown names cannot describe a river
+   *  call (a hi-lo game, or more than one board); HorseMind then takes no
+   *  river-call sample from it. Absent = sample, as before. */
+  riverCallSample?: boolean;
   /**
    * P14.2: the private accepted actor roster the settlement transaction built
    * on first acceptance (or returned unchanged on replay), copied from the

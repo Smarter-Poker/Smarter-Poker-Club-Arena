@@ -718,7 +718,16 @@ export function playHand(
         } finally {
           HorseMind.setDecisionScope(previousScope);
         }
-        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope);
+        // A hi-lo showdown name is the high half only: no river-call sample.
+        HorseMind.observeHandComplete(
+          `league:${ts}`,
+          history,
+          BB,
+          showdown,
+          handScope,
+          false,
+          !variantInfo(gameVariant).isHiLo
+        );
       });
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */
@@ -1314,6 +1323,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // they ship scenario-tested with telemetry, the way V16 real ICM did.
   { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
   { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
+  // 2026-10-26: the river call read, measured on its own (it used to ride
+  // v23Reads). League showdowns carry hand names, so the counters fill.
+  { name: 'river_call_read', pairs: 6000, a: {}, b: { riverCallRead: false } },
   // 2026-10-16: the short-deck half of V23 resolved NEGATIVE (-0.36 +/- 0.14
   // over 44 nightly runs) and is default OFF behind v23ShortDeck; the plo8
   // low-draw half wins (+1.63 +/- 0.18) and stays on under v23Variants. Same
@@ -1425,6 +1437,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v23Endgame: false,
       v23Plan: false,
       v23Reads: false,
+      riverCallRead: false,
       v23Variants: false,
       v23ShortDeck: false,
       v23Spin: false,

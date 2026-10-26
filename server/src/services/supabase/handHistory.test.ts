@@ -513,6 +513,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       actions: input.actions,
       bigBlind: input.bigBlind,
       showdown: showdownReveal,
+      riverCallSample: true,
       scope: 'holdem:hu',
     });
   });
@@ -670,6 +671,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
       actions: input.actions,
       bigBlind: input.bigBlind,
       showdown: null,
+      riverCallSample: true,
       scope: 'holdem:hu',
     });
     const emitted = mockObserveCompletedHand.mock.calls[0]![0];

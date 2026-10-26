@@ -249,6 +249,28 @@ const STRONG_HAND_NAMES = new Set([
  *  'one pair' is accepted for any evaluator that spells it out. */
 const WEAK_HAND_NAMES = new Set(['high card', 'pair', 'one pair']);
 
+/**
+ * RIVER CALL READ CALIBRATION (2026-10-26). How often an ORDINARY river call
+ * shows one pair or worse, per card family, measured on production
+ * hand_history: every heads-up showdown whose loser's last river action was a
+ * call, the shown calls by their recorded hand name and the mucked ones by
+ * evaluating the caller's own hole cards against the board (the engine tables
+ * all of them from 2026-10-27, so this is what the counters will see).
+ *   holdem  (nlh, flh; ~640 calls)       one pair or worse 0.40
+ *   sixplus (short deck; ~220 calls)     0.11
+ *   omaha   (plo4/5/6, hi only; ~1,160)  0.04
+ * The first cut (a fixed 0.5 over five samples) fired against roughly a third
+ * of ordinary hold'em callers by chance alone. The read now fires only when a
+ * player's own rate clears their family's base by RIVER_CALL_READ_MARGIN over
+ * at least RIVER_CALL_READ_MIN shown calls; at p = 0.40, n = 12 that is about
+ * one ordinary caller in eighteen.
+ */
+export const RIVER_CALL_WEAK_BASE = { holdem: 0.4, sixplus: 0.11, omaha: 0.04 } as const;
+export const RIVER_CALL_READ_MIN = 12;
+export const RIVER_CALL_READ_MARGIN = 0.25;
+/** The rate above base + margin at which the read reaches full strength. */
+const RIVER_CALL_READ_SPAN = 0.2;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BOARD TEXTURE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2387,7 +2409,12 @@ export class HorseMind {
     /** V45: the hand's scope (variant family x dealt count), so the deep
      *  reads land in the scoped bucket too. Absent = pooled only. */
     scope?: ReadScope | null,
-    durableExploit = false
+    durableExploit = false,
+    /** 2026-10-26: false for a hi-lo hand (the recorded hand name is the
+     *  high half only, so a nut-low call reads as "one pair") or a hand dealt
+     *  on more than one board (the name is board one's). Such a hand teaches
+     *  nothing about river calls. Absent = sample, as before. */
+    riverCallSample = true
   ): void {
     // V45: settlement runs outside any decision; the scope travels with the
     // hand and is cleared on the way out.
@@ -2551,7 +2578,7 @@ export class HorseMind {
           if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
             riverLevel = Math.max(riverLevel, amt);
         }
-        for (const [id, called] of lastRiver) {
+        for (const [id, called] of riverCallSample ? lastRiver : []) {
           if (!called) continue;
           const sd = shown.get(id);
           if (!sd || sd.mucked !== false) continue;
@@ -2635,10 +2662,34 @@ export class HorseMind {
    *  identically for every player, human or horse. A row decoded from a frame
    *  that predates the counters reads as no sample. */
   static riverCallLightTendency(id: string): number | null {
-    const s = this.readStats(id);
+    // In a decision scope the read is that game's own bucket ONLY: a
+    // hold'em one-pair call is ordinary and an Omaha one is not, so a pooled
+    // rate would judge one family's calls by another's base.
+    const s = this.decisionScope
+      ? this.scoped.get(`${this.decisionScope}|${id}`)
+      : this.stats.get(id);
     const n = s?.riverCallSD ?? 0;
-    if (!s || !(n >= 5)) return null;
+    if (!s || !(n >= RIVER_CALL_READ_MIN)) return null;
     return (s.riverCallSDWeak ?? 0) / n;
+  }
+
+  /**
+   * How far a player's light-call rate sits above their family's ordinary
+   * rate, as a strength in (0, 1]; null when it does not clear the margin or
+   * the sample is short. See RIVER_CALL_WEAK_BASE for the measurement.
+   */
+  static riverCallLightRead(id: string): number | null {
+    const rate = this.riverCallLightTendency(id);
+    if (rate === null) return null;
+    const family = (this.decisionScope ?? 'holdem:full').split(':')[0] as
+      | keyof typeof RIVER_CALL_WEAK_BASE
+      | string;
+    const base =
+      RIVER_CALL_WEAK_BASE[family as keyof typeof RIVER_CALL_WEAK_BASE] ??
+      RIVER_CALL_WEAK_BASE.holdem;
+    const over = rate - base - RIVER_CALL_READ_MARGIN;
+    if (over < 0) return null;
+    return Math.min(1, Math.max(0.0001, over / RIVER_CALL_READ_SPAN));
   }
 
   static tableExploit(

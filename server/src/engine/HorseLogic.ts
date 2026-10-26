@@ -1876,6 +1876,10 @@ export interface HorseDecideOpts {
    *  scales river bluffs up against folders and thin value down against
    *  stations (default: enabled; rides the mind layer) */
   v23Reads?: boolean;
+  /** disable the river call read alone (HorseMind.riverCallLightRead): bluff
+   *  less into, and value-bet thinner against, a player whose shown river
+   *  calls are light for their game (default: enabled; rides the mind layer) */
+  riverCallRead?: boolean;
   /** disable the V23 variant polish: plo8 low-only draw discipline
    *  (default: enabled; plo8_v23_lowdraw +1.63 +/- 0.18 bb/100). Its
    *  short-deck half is v23ShortDeck, default OFF. */
@@ -6664,19 +6668,28 @@ export class HorseLogic {
         /* reads are best-effort */
       }
     }
-    // ═══ RIVER CALL READ (2026-10-25) ═══ every river call that ends a
-    // player's river is now shown, so the table sees what they call with.
-    // Against a player whose shown river calls are one pair or worse at least
-    // half the time, a river bluff earns less (they call it) and a thinner
-    // value bet earns more (they pay it). Bounded: bluff volume x0.85 at a
-    // 0.5 read down to x0.70 at 0.75 or more; the thin-value bar drops 2 to
-    // 4 equity points. Heads-up rivers only, read identically for every
-    // opponent, human or horse; null under five shown calls does nothing.
-    if ((opts.v23Reads ?? true) !== false && useMind && isRiver && oppCount === 1) {
+    // ═══ RIVER CALL READ (2026-10-25, calibrated 2026-10-26) ═══ every river
+    // call that ends a player's river is now shown, so the table sees what
+    // they call with. Against a player whose shown river calls are one pair or
+    // worse well above their card family's ordinary rate (HorseMind
+    // RIVER_CALL_WEAK_BASE + margin, over 12+ calls in this game's own
+    // bucket), a river bluff earns less (they call it) and a thinner value bet
+    // earns more (they pay it). Bounded: bluff volume x0.85 at the bar down to
+    // x0.70 at full strength; the thin-value bar drops 2 to 4 equity points.
+    // Heads-up, single-board, hi-only rivers (a hi-lo or multi-board hand name
+    // describes half the hand), read identically for every opponent, human or
+    // horse. `riverCallRead: false` switches this read alone off.
+    if (
+      (opts.riverCallRead ?? true) !== false &&
+      useMind &&
+      isRiver &&
+      oppCount === 1 &&
+      !vi.isHiLo &&
+      !multiBoard36
+    ) {
       try {
-        const light = HorseMind.riverCallLightTendency(opponents[0].user_id);
-        if (light !== null && light >= 0.5) {
-          const k = Math.min(1, (light - 0.5) / 0.25);
+        const k = HorseMind.riverCallLightRead(opponents[0].user_id);
+        if (k !== null) {
           bluffScale *= 0.85 - 0.15 * k;
           thinAdj23 -= 0.02 + 0.02 * k;
           if (tele15) noteFire('river_call_light_read');

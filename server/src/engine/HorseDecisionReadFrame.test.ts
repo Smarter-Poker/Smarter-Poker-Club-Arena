@@ -349,9 +349,9 @@ describe('river-call counters in private read frames (2026-10-25)', () => {
   });
 
   it('carries non-zero counters in a v6 frame and restores them for the worker read', () => {
-    HorseMind.importStats([{ user_id: 'villain', hands: 40, riverCallSD: 6, riverCallSDWeak: 4 }]);
+    HorseMind.importStats([{ user_id: 'villain', hands: 40, riverCallSD: 16, riverCallSDWeak: 4 }]);
     HorseMind.importScoped([
-      { user_id: 'villain', scope: 'holdem:hu', hands: 30, riverCallSD: 5, riverCallSDWeak: 5 },
+      { user_id: 'villain', scope: 'holdem:hu', hands: 30, riverCallSD: 13, riverCallSDWeak: 13 },
     ]);
     const view = HorseMind.snapshotDecisionReads(players, null);
     const frame = encodeHorseDecisionReads(view, players, null);
@@ -360,7 +360,41 @@ describe('river-call counters in private read frames (2026-10-25)', () => {
     expect(restored).toEqual(view);
     HorseMind.reset();
     HorseMind.runInSandbox(restored, () => {
-      expect(HorseMind.riverCallLightTendency('villain')).toBeCloseTo(4 / 6, 5);
+      // Pooled outside a decision; the scoped bucket inside one.
+      expect(HorseMind.riverCallLightTendency('villain')).toBeCloseTo(4 / 16, 5);
+      HorseMind.setDecisionScope('holdem:hu');
+      expect(HorseMind.riverCallLightTendency('villain')).toBe(1);
+      expect(HorseMind.riverCallLightRead('villain')).toBe(1);
+      HorseMind.setDecisionScope(null);
+    });
+  });
+
+  it('admits an allocated v6 capture to the decision journal exactly like v3-v5', () => {
+    const request = {
+      type: 'DECIDE_FAST',
+      requestId: 1,
+      generation: 1,
+      fence: 'unallocated-fixture',
+      decisionKey: `phase5-v1:${'b'.repeat(64)}`,
+      player: { seat: 1, user_id: 'hero' },
+      gameState: { stage: 'river' },
+    } as const;
+    const planContext = horsePlanContextFromDecision(request);
+    HorseMind.importStats([{ user_id: 'villain', hands: 40, riverCallSD: 6, riverCallSDWeak: 4 }]);
+    const view = HorseMind.snapshotDecisionReads(players, null);
+    const readFrame = encodeHorseDecisionReads(view, players, null, planContext);
+    expect(readFrame.version).toBe('horse-decision-reads-v6');
+    const capture = {
+      planContext,
+      planBinding: horsePlanBatchBindingFromRequest(request),
+      readFrame,
+    };
+    expect(horseRetainedPlanContext(capture, request as never)).toEqual({
+      kind: 'current',
+      context: planContext,
+    });
+    expect(horseRetainedPlanContext({ readFrame }, request as never)).toEqual({
+      kind: 'invalid',
     });
   });
 

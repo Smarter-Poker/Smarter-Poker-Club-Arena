@@ -239,6 +239,10 @@ import {
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
 import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
+import {
+  holdemPremiumAggressionVerdict,
+  type HoldemPremiumVerdict,
+} from './HorseHoldemPremiumAggression.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
@@ -1981,6 +1985,14 @@ export interface HorseDecideOpts {
    *  paired flop, turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
    *  false exists only so an ablation can measure an older layer alone. */
   ploPairedBoardFold?: boolean;
+  /** Dan 2026-10-25: hold'em premiums are never played passively and dominated
+   *  offsuit hands fold to a big 3-bet (HorseHoldemPremiumAggression.ts). Live
+   *  always runs it; false exists only so an ablation can measure an older
+   *  layer alone. */
+  holdemPremiumAggression?: boolean;
+  /** Internal: false skips the dominated-hand fold, for the commit-time
+   *  recheck, which has no opponent reads to honour the maniac law with. */
+  holdemDominatedFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
@@ -3005,6 +3017,64 @@ function pairedBoardFold(
   return folded;
 }
 
+/**
+ * Dan 2026-10-25: in no-limit hold'em a premium (QQ+, AK) is never played
+ * passively, and a dominated offsuit hand folds to a big 3-bet. See
+ * HorseHoldemPremiumAggression.ts. Applied after every other layer, and the
+ * tournament shove discipline runs again on anything it raises, so a premium
+ * re-raise still obeys the deep-shove rule.
+ */
+export function holdemPremiumAggression(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts = {}
+): HorseDecision {
+  if (opts.holdemPremiumAggression === false) return decision;
+  let verdict: HoldemPremiumVerdict<HorseDecision> | null;
+  try {
+    verdict = holdemPremiumAggressionVerdict(decision, {
+      gameVariant: gs.gameVariant,
+      bettingStructure: gs.bettingStructure,
+      multiBoard: !!(gs.communityCards2?.length || gs.communityCards3?.length),
+      bombPot: gs.bombPot === true,
+      stage: gs.stage,
+      board: gs.communityCards ?? [],
+      hero: player,
+      players: gs.players ?? [],
+      pot: gs.pot,
+      currentBet: gs.currentBet,
+      bigBlind: gs.bigBlind,
+      toCall: gs.toCall,
+      legalActions: gs.legalActions,
+      minRaiseTo: gs.minRaiseTo,
+      maxRaiseTo: gs.maxRaiseTo,
+      actionHistory: gs.actionHistory,
+      chipUnit: gs.chipUnit ?? (isTournamentMode(gs) ? 1 : 0.01),
+      dominatedFold: opts.holdemDominatedFold !== false,
+      raiserIsManiac: (seatNo) => {
+        const raiser = (gs.players ?? []).find((p) => p.seat === seatNo);
+        if (!raiser) return false;
+        const read = HorseMind.opponentRead(raiser.user_id);
+        return maniacRaiseWidth(read) !== null || isPostflopManiac(read);
+      },
+    });
+  } catch {
+    return decision;
+  }
+  if (!verdict) return decision;
+  if (telemetryOn(opts)) {
+    if (verdict.rule === 'dominated_3bet_fold') noteFire('holdem_dominated_3bet_fold');
+    else if (verdict.rule === 'premium_preflop_raise') noteFire('holdem_premium_preflop_raise');
+    else noteFire('holdem_premium_postflop_bet');
+  }
+  const next = verdict.decision;
+  if (next.action === 'raise' || next.action === 'bet' || next.action === 'all_in') {
+    return tournamentShoveDiscipline(next, player, gs);
+  }
+  return next;
+}
+
 export class HorseLogic {
   /** Original post-observation boundary, shared with the admitted worker path.
    * The caller owns scope cleanup when it captures before decide(). */
@@ -3065,8 +3135,13 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return pairedBoardFold(
-            this.decideInternal(player, gameState, style, mods, opts),
+          return holdemPremiumAggression(
+            pairedBoardFold(
+              this.decideInternal(player, gameState, style, mods, opts),
+              player,
+              gameState,
+              opts
+            ),
             player,
             gameState,
             opts
@@ -3075,8 +3150,13 @@ export class HorseLogic {
           setEquityDepth(1);
         }
       }
-      return pairedBoardFold(
-        this.decideInternal(player, gameState, style, mods, opts),
+      return holdemPremiumAggression(
+        pairedBoardFold(
+          this.decideInternal(player, gameState, style, mods, opts),
+          player,
+          gameState,
+          opts
+        ),
         player,
         gameState,
         opts

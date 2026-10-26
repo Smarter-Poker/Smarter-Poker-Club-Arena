@@ -33,6 +33,8 @@ export class TournamentSweepWorkCursor {
   private rewindRequested: number | null = null;
   /** The stage the last applied rewind interrupted, until it is reached again. */
   private interrupted: number | null = null;
+  /** Where the previous admission started while a rewind's guard was held. */
+  private guardedAdmissionStart: number | null = null;
 
   get nextStage(): number {
     return this.next;
@@ -46,7 +48,10 @@ export class TournamentSweepWorkCursor {
   advanceTo(nextStage: number): void {
     if (!Number.isSafeInteger(nextStage) || nextStage < this.next) return;
     this.next = nextStage;
-    if (this.interrupted !== null && this.next > this.interrupted) this.interrupted = null;
+    if (this.interrupted !== null && this.next > this.interrupted) {
+      this.interrupted = null;
+      this.guardedAdmissionStart = null;
+    }
   }
 
   /**
@@ -64,7 +69,26 @@ export class TournamentSweepWorkCursor {
     if (this.interrupted !== null) {
       // The interrupted stage gets this whole admission before any further
       // rewind; a request stays recorded for the admission after it.
-      if (this.next >= this.interrupted) this.interrupted = null;
+      //
+      // A STALLED STAGE STANDS IN FOR THE ONE THE REWIND INTERRUPTED
+      // (2026-10-26). The rewound pass can stop short of the interrupted
+      // stage at a stage of its own that yields on the budget without
+      // advancing - a contended table break, the balancer parking sources
+      // whose busts are unrecorded. While it holds the continuation the
+      // interrupted stage cannot be reached, so the guard never cleared and
+      // every bust's rewind was held until the break gave up: Sunday Funday
+      // Mystery d5d373cb, 2026-10-26 02:40-02:44 UTC, no bust read for 3m57s.
+      // A stage that starts two admissions in a row has had a whole fresh
+      // admission of its own, which is all the guard promises the
+      // interrupted stage, so it releases the guard exactly as reaching the
+      // interrupted stage does. A pass that is still advancing is unchanged.
+      const stalled = this.guardedAdmissionStart === this.next;
+      if (this.next >= this.interrupted || stalled) {
+        this.interrupted = null;
+        this.guardedAdmissionStart = null;
+      } else {
+        this.guardedAdmissionStart = this.next;
+      }
       return;
     }
     const target = this.rewindRequested;
@@ -73,11 +97,13 @@ export class TournamentSweepWorkCursor {
     if (target >= this.next) return;
     this.interrupted = this.next;
     this.next = target;
+    this.guardedAdmissionStart = target;
   }
 
   reset(): void {
     this.next = 0;
     this.rewindRequested = null;
     this.interrupted = null;
+    this.guardedAdmissionStart = null;
   }
 }

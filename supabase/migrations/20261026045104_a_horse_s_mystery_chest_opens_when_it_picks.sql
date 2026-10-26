@@ -45,6 +45,7 @@ DECLARE
   v_offer public.tournament_bounty_award_offers%ROWTYPE;
   v_slots integer;
   v_engine boolean := COALESCE(auth.role(), '') = 'service_role' OR auth.uid() IS NULL;
+  v_status text;
   v_chest uuid;
 BEGIN
   IF p_award_id IS NULL THEN
@@ -55,17 +56,35 @@ BEGIN
      WHERE r.award_id = p_award_id AND r.user_id = auth.uid() AND r.is_designated_revealer) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'not_the_revealer');
   END IF;
+  -- LOCK ORDER (2026-10-26 audit): the award first, then the offer, then the
+  -- chest - the same order fn_mystery_bounty_reveal and the settle take them
+  -- (award, chest, then the offer through zz_refresh_mystery_award_companions).
+  -- Locking the award also closes the gap in which a reveal could commit
+  -- between an unlocked status read and the pick, and the pick then move the
+  -- slot after the reveal (forbidden since 20261022223610).
+  SELECT aw.status, aw.chest_id INTO v_status, v_chest
+    FROM public.tournament_bounty_awards aw
+   WHERE aw.id = p_award_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'award_not_found');
+  END IF;
   -- The pick is made BEFORE the chest opens. Once the award is revealed the
   -- slot it stands in is already fixed (the pick, or the award id when the
   -- chest opened itself), and a later call may not move it. A void award has
   -- no chest to pick.
-  IF EXISTS (SELECT 1 FROM public.tournament_bounty_awards aw
-              WHERE aw.id = p_award_id AND aw.status IN ('revealed', 'paid', 'completed', 'void')) THEN
+  IF v_status IN ('revealed', 'paid', 'completed', 'void') THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'already_revealed');
   END IF;
   SELECT * INTO v_offer FROM public.tournament_bounty_award_offers o
    WHERE o.award_id = p_award_id FOR UPDATE;
   IF NOT FOUND THEN
+    -- A single chest. The horse's tap still opens it, as a person's does.
+    IF v_engine AND v_status = 'reserved' THEN
+      UPDATE public.tournament_bounty_awards
+         SET status = 'revealed', revealed_at = now()
+       WHERE id = p_award_id AND status = 'reserved';
+      UPDATE public.tournament_bounty_chests SET status = 'revealed' WHERE id = v_chest;
+    END IF;
     RETURN jsonb_build_object('ok', true, 'slots', 1, 'picked_slot', 1);
   END IF;
   v_slots := 1 + jsonb_array_length(v_offer.companions);
@@ -84,14 +103,11 @@ BEGIN
   -- reveals; the engine is the horse's browser, so its pick reveals too, the
   -- same way fn_mystery_bounty_reveal does. Every seat can then read the
   -- prize the moment the chest opens instead of counting up to zero.
-  IF v_engine THEN
+  IF v_engine AND v_status = 'reserved' THEN
     UPDATE public.tournament_bounty_awards
        SET status = 'revealed', revealed_at = now()
-     WHERE id = p_award_id AND status = 'reserved'
-    RETURNING chest_id INTO v_chest;
-    IF v_chest IS NOT NULL THEN
-      UPDATE public.tournament_bounty_chests SET status = 'revealed' WHERE id = v_chest;
-    END IF;
+     WHERE id = p_award_id AND status = 'reserved';
+    UPDATE public.tournament_bounty_chests SET status = 'revealed' WHERE id = v_chest;
   END IF;
 
   RETURN jsonb_build_object('ok', true, 'slots', v_slots, 'picked_slot', p_slot);

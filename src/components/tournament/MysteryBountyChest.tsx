@@ -260,10 +260,19 @@ export const PICK_WINDOW_MS = 5000;
  * revealer's window always closes this far inside it, so a pick made on the
  * last second is recorded before the server opens the chest itself.
  */
-const ENGINE_PICK_DEADLINE_MS = 9000;
+// Mirrors mysteryBountySpec once the five-second engine is serving: landing
+// 700 + CHEST_AUTO_OPEN_MS 6500 = 7200 from the pending broadcast (the engine
+// before it waited 9700, which this is safely inside). The window starts after
+// the landing, which Animation Speed stretches.
+const ENGINE_REVEAL_DEADLINE_MS = 7200;
+const CHEST_LANDING_MS = 700;
 const SERVER_DEADLINE_MARGIN_MS = 800;
-export function winnerAutoOpenMs(_speed?: number): number {
-  return Math.min(PICK_WINDOW_MS, ENGINE_PICK_DEADLINE_MS - SERVER_DEADLINE_MARGIN_MS);
+export function winnerAutoOpenMs(speed?: number): number {
+  const sp = Number.isFinite(speed) && (speed as number) > 0 ? (speed as number) : 1;
+  return Math.min(
+    PICK_WINDOW_MS,
+    ENGINE_REVEAL_DEADLINE_MS - CHEST_LANDING_MS * sp - SERVER_DEADLINE_MARGIN_MS
+  );
 }
 
 /**
@@ -271,7 +280,7 @@ export function winnerAutoOpenMs(_speed?: number): number {
  * the pick window runs out: the chest is chosen FOR the player, at random,
  * never "the first one".
  */
-export function randomPickSlot(slots: number): number {
+export function randomPickSlot(slots: number): number | undefined {
   const n = Math.max(1, Math.floor(slots));
   try {
     const buf = new Uint32Array(1);
@@ -282,7 +291,9 @@ export function randomPickSlot(slots: number): number {
     } while (buf[0] >= limit);
     return 1 + (buf[0] % n);
   } catch {
-    return 1 + Math.floor(Math.random() * n);
+    /* No secure generator: send no slot, and the server places the prize at
+       random itself. Never a guessed number from a weak generator. */
+    return undefined;
   }
 }
 /** Spectator failsafe: only used if no broadcast ever lands. */
@@ -837,7 +848,7 @@ export default function MysteryBountyChest({
           /* ignore */
         }
         runOpen(slot);
-      }, winnerAutoOpenMs());
+      }, winnerAutoOpenMs(getAnimationSpeed()));
       timersRef.current.push(t);
       return () => clearTimeout(t);
     }
@@ -855,7 +866,7 @@ export default function MysteryBountyChest({
   useEffect(() => {
     if (!chestKey || phase !== 'locked') return;
     const started = Date.now();
-    const windowMs = winnerAutoOpenMs();
+    const windowMs = winnerAutoOpenMs(getAnimationSpeed());
     setSecondsLeft(Math.ceil(windowMs / 1000));
     const id = setInterval(() => {
       setSecondsLeft(Math.max(0, Math.ceil((windowMs - (Date.now() - started)) / 1000)));

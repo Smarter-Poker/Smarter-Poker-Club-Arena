@@ -231,10 +231,14 @@ describe('the chest is honest about who chose', () => {
     );
   });
 
-  it('is five real seconds at every animation speed, inside the engine deadline', () => {
-    for (const speed of [0.5, 1, 1.5, 2, 3]) {
+  it('is five real seconds at the speeds players can choose, inside the engine deadline', () => {
+    // The engine reveals 7.2 s after the pending broadcast; the window starts
+    // after the landing (700 ms x speed) and closes 800 ms inside the deadline.
+    for (const speed of [0.5, 1, 1.5, 2]) {
       expect(winnerAutoOpenMs(speed)).toBe(5000);
-      expect(winnerAutoOpenMs(speed)).toBeLessThanOrEqual(8200);
+    }
+    for (const speed of [0.5, 1, 1.5, 2, 3]) {
+      expect(700 * speed + winnerAutoOpenMs(speed)).toBeLessThanOrEqual(7200 - 800);
     }
   });
 

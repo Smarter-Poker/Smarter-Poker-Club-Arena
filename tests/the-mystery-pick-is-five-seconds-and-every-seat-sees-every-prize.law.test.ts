@@ -77,7 +77,12 @@ describe('no seat ever counts up to zero', () => {
     const sql = readFileSync(resolve(dir, file!), 'utf8');
     expect(sql).toContain("A HORSE'S TAP OPENS ITS CHEST");
     expect(sql).toMatch(
-      /IF v_engine THEN\s+UPDATE public\.tournament_bounty_awards\s+SET status = 'revealed'/
+      /IF v_engine AND v_status = 'reserved' THEN\s+UPDATE public\.tournament_bounty_awards\s+SET status = 'revealed'/
+    );
+    // Single chest too, and the award is locked before the offer.
+    expect(sql.match(/IF v_engine AND v_status = 'reserved' THEN/g)?.length).toBe(2);
+    expect(sql.indexOf('WHERE aw.id = p_award_id FOR UPDATE')).toBeLessThan(
+      sql.indexOf('WHERE o.award_id = p_award_id FOR UPDATE')
     );
     // It uncovers; it never pays.
     expect(sql).not.toContain('fn_mystery_bounty_pay');

@@ -137,6 +137,7 @@ describe('the final brain receives projected call deductions', () => {
     ];
     const pricing = vi.spyOn(CallDeductions, 'horseCallDeductionFraction');
     const ev = vi.spyOn(Ev, 'riverCallVerdict');
+    gs.players = gs.players.map((p) => ({ ...p, cards: [] }));
     const simulate = Eval.simulateEquity;
     vi.spyOn(Eval, 'simulateEquity').mockImplementation((...args) => {
       simulate(...args);
@@ -180,6 +181,7 @@ describe('the final brain receives projected call deductions', () => {
       ],
     });
     gs.rakeConfig!.cap = 1;
+    gs.players = gs.players.map((p) => ({ ...p, cards: [] }));
     const ev = vi.spyOn(Ev, 'evaluateSpot');
     Eval.seedFastRandom(2601026);
     HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false, telemetry: false });
@@ -245,6 +247,16 @@ describe('exact call deductions are distinct from marginal bet rake', () => {
     });
     expect(result.call).toBe(false);
     expect(result.evCall).toBe(-4);
+    expect(
+      Ev.riverCallVerdict({
+        equity: 1,
+        pot: 10,
+        toCall: 0,
+        stack: 4,
+        callDeductionFraction: 1,
+        rand: () => 0,
+      })
+    ).toEqual({ call: true, required: 0, evCall: 0 });
   });
   it('recognizes the actual BBJ collection consuming a tiny matched award', () => {
     const hero = seat(1, 0, 0.01);

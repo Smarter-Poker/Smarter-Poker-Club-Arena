@@ -31,7 +31,7 @@ function spot(extra: Partial<SeatPlayer> = {}) {
     asset: 'chips',
     chipUnit: 0.01,
     players: [
-      hero,
+      { ...hero, cards: [] },
       seat(2, { stack: 0, bet: 200, totalInvested: 200, is_all_in: true }),
       seat(3, extra),
     ],

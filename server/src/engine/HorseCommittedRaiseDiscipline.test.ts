@@ -181,7 +181,7 @@ describe('committed calls preserve the existing raised-hand discipline', () => {
       format: 'cash',
       asset: 'chips',
       chipUnit: 0.01,
-      players,
+      players: players.map((p) => ({ ...p, cards: [] })),
       heroSeat: 1,
       currentPlayerSeat: 1,
       communityCards: [

@@ -203,6 +203,23 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     );
     assert.equal(cli.status, 0, cli.stderr);
     assert.deepEqual(JSON.parse(cli.stdout), { ...report, windows: 1 });
+    const uri = spawnSync(
+      process.execPath,
+      [resolve('scripts/horse-human-scoreboard.mjs'), '--run', since, through],
+      {
+        env: {
+          ...env,
+          PATH: bin ? bin + ':' + env.PATH : env.PATH,
+          PGHOST: join(root, 'unreachable'),
+          PGDATABASE: `postgresql:///postgres?host=${encodeURIComponent(socket)}&port=5432&user=${encodeURIComponent(env.PGUSER)}`,
+        },
+        encoding: 'utf8',
+        timeout: 10000,
+      }
+    );
+    assert.equal(uri.status, 0, uri.stderr || uri.stdout);
+    assert.deepEqual(JSON.parse(uri.stdout), { ...report, windows: 1 });
+
     const multi = spawnSync(
       process.execPath,
       [

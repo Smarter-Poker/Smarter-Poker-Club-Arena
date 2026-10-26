@@ -247,7 +247,12 @@ export function runScoreboard(args) {
     for (const w of windows) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw Error('Report deadline exceeded');
-      const result = spawnSync('psql', ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], {
+      // libpq does not expand a connection URI inherited only through
+      // PGDATABASE. Pass the configured database explicitly so the workflow's
+      // DATABASE_URL reaches the intended host; never print the argument.
+      const psqlArgs = ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'];
+      if (process.env.PGDATABASE) psqlArgs.push('--dbname', process.env.PGDATABASE);
+      const result = spawnSync('psql', psqlArgs, {
         input: scoreboardSQL(w.since, w.through, args[3]),
         encoding: 'utf8',
         timeout: Math.min(10000, remaining),

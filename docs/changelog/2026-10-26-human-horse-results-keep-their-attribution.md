@@ -86,3 +86,5 @@ The timer registry records this one weekly business report; unrelated timers
 and financial qualification source pins remain unchanged.
 
 Player UUIDs are canonicalized before querying and comparing receipts, so an uppercase spelling cannot select a player successfully and then falsely fail aggregation. The retained regression fails before this correction and passes afterward.
+
+The provider connection is qualified with a real credential-free PostgreSQL URI and a deliberately wrong ambient host. The initial CLI inherited the URI through PGDATABASE, which libpq did not expand, and the regression failed. The maintained CLI now passes the configured database explicitly to psql without printing it; both URI and ordinary database-name connections run the exact read-only report in the native fixture.

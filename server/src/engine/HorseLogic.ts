@@ -93,6 +93,7 @@ import {
  * budgeted to stay under ~15ms even for 6-card PLO.
  */
 
+import { horseCallDeductionFraction } from './HorseCallDeductions.js';
 import type {
   Card,
   SeatPlayer,
@@ -2066,6 +2067,11 @@ export interface HorseDecideOpts {
    *  price is tiny), and one beaten 15%+ calls instead of raising. Disable to
    *  ablate (default: enabled; league matchup plo6_v59_river_unpaired). */
   v59Plo6RiverUnpaired?: boolean;
+  /** NLH barrel outlook excludes shared board improvements and dirty outs.
+   * False retains the previous algorithm for paired offline measurement. */
+  drawOutlookQuality?: boolean;
+  /** Project actual net award deductions at the call; false is offline ablation. */
+  callDeductionPricing?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -2459,7 +2465,9 @@ function maniacCallDown(
       : Math.max(0, gs.pot);
     const rake =
       (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
-        ? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
+        ? ((opts.callDeductionPricing !== false
+            ? horseCallDeductionFraction(player, gs, call)
+            : null) ?? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
         : 0;
     const risk = icmRisk(
       gs,
@@ -4964,7 +4972,10 @@ export class HorseLogic {
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
             (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
-              ? rakeDrag(pot38, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
+              ? ((opts.callDeductionPricing !== false
+                  ? horseCallDeductionFraction(player, gs, effCall38)
+                  : null) ??
+                rakeDrag(pot38, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
               : 0;
           // Omaha's range read narrows by score percentile, which cannot see
           // domination (four napkins keep 44% against the sampled "3-bet
@@ -5188,6 +5199,10 @@ export class HorseLogic {
       toCall,
       currentBet: gs.currentBet,
       contestablePot,
+      callDeductionFraction:
+        opts.callDeductionPricing !== false && !isTournamentMode(gs)
+          ? (horseCallDeductionFraction(player, gs, effectiveCall) ?? undefined)
+          : undefined,
       pot: gs.pot,
       bigBlind: bb,
       stack: player.stack,
@@ -6822,7 +6837,7 @@ export class HorseLogic {
         HorseMind.notePlan(handKey, player.user_id, fastRandom() < (tourneyAggro ? 0.5 : 0.35));
         // V39: and what the next card would mean, decided now.
         try {
-          const o = nextCardOutlook(player.cards, board, vi);
+          const o = nextCardOutlook(player.cards, board, vi, opts.drawOutlookQuality !== false);
           HorseMind.noteOutlook(handKey, player.user_id, street, o.good, o.scare);
           if (tele15) noteFire('v39_outlook_recorded');
         } catch {
@@ -6846,15 +6861,18 @@ export class HorseLogic {
           : 'foldToRaise';
 
     const useV11 = opts.v11 !== false;
-    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
-    // marginal calls against the raked pot, not the raw one. Above the cap
-    // (large pots) the drag is zero and this reduces to honest pot odds.
+    // Price canonical calls against the net award, including the reached cap
+    // and BBJ collection. Marginal rake can be zero while the award still
+    // loses a capped fee. Legacy fixtures retain their previous approximation.
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     // V34: computed here, above the solver consult, so V32 prices the same
     // raked pot the heuristic call line does.
     const rakeMarg =
       useRake10 && !isTournamentMode(gs)
-        ? rakeDrag(pot, gs.bigBlind, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
+        ? ((opts.callDeductionPricing !== false
+            ? horseCallDeductionFraction(player, gs, toCall)
+            : null) ??
+          rakeDrag(pot, gs.bigBlind, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
         : 0;
 
     // V31 CERTIFIED DIRECT POLICY. Node role, response semantics, both seats,

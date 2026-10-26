@@ -527,7 +527,12 @@ export interface NextCardOutlook {
   madeNow: number;
 }
 
-export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): NextCardOutlook {
+export function nextCardOutlook(
+  hole: Card[],
+  board: Card[],
+  vi: VariantInfo,
+  quality = true
+): NextCardOutlook {
   const out: NextCardOutlook = { good: [], scare: [], madeNow: 0 };
   if (!hole || hole.length < 2 || !board || board.length < 3 || board.length >= 5) return out;
   const known = new Set<string>();
@@ -562,16 +567,41 @@ export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): N
     if (known.has(k)) continue;
     next[board.length] = c;
     const after = cat(next);
-    if (after > out.madeNow) {
+    const suitAfter = (suitN.get(c.suit) || 0) + 1;
+    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
+    // NLH plans must not promote a dirty straight out to clean value merely
+    // because its category improved. The range/equity owner still prices the
+    // hand; this records which continuation cards genuinely helped the plan.
+    const holdem = quality && !vi.isOmaha && !vi.isShortDeck && hole.length === 2;
+    if (holdem && suitAfter >= 3 && !holdsSuit && after < CAT_FLUSH) {
+      out.scare.push(k);
+      continue;
+    }
+    const sharedPair =
+      holdem && after <= 3 && !hole.some((h) => h.rank === c.rank) && (rankN.get(c.rank) || 0) > 0;
+    if (after > out.madeNow && !sharedPair) {
       out.good.push(k);
       continue;
     }
     // a third (or fourth) of a suit hero holds none of, when hero has no flush
-    const suitAfter = (suitN.get(c.suit) || 0) + 1;
-    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
     if (suitAfter >= 3 && !holdsSuit && out.madeNow < CAT_FLUSH) {
       out.scare.push(k);
       continue;
+    }
+    // The documented four-straight scare was missing from the implementation.
+    if (holdem && after < CAT_STRAIGHT) {
+      const ranks = new Set(next.map((card) => RANK_VALUES[card.rank]));
+      if (ranks.has(14)) ranks.add(1);
+      let connected = false;
+      for (let low = 1; low <= 10 && !connected; low++) {
+        let count = 0;
+        for (let rank = low; rank < low + 5; rank++) if (ranks.has(rank)) count++;
+        connected = count >= 4;
+      }
+      if (connected) {
+        out.scare.push(k);
+        continue;
+      }
     }
     // the board pairs under hero's straight or flush: boats are live
     if ((rankN.get(c.rank) || 0) >= 1 && out.madeNow >= CAT_STRAIGHT && out.madeNow <= CAT_FLUSH) {

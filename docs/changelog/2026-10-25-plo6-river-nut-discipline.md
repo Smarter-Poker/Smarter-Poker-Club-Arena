@@ -1,4 +1,4 @@
-# PLO6 river nut discipline on paired boards (V56, 2026-10-25)
+# PLO6 river nut discipline on paired boards (V58, 2026-10-25)
 
 Dan, verbatim: "YOU HAVE TO INSURE THAT HORSES ARE NOT CALLING OFF THERE
 STACKS ON PAIRED BOARDS IN PLO6 WTF DID I JUST WATCH JORDAN CALLED OFF ON THE
@@ -49,15 +49,15 @@ On hand 45872846's 2-2-2 river: jacks full (beaten ~41%) folds, tens full
 (~15%, only the last deuce) calls without raising, quads raises.
 `omahaRiverBeatProbability` samples 20,000 six-card hands from a private
 stream seeded by the cards, so a spot always answers the same and the shared
-horse random stream is never touched. Switch `v56Plo6RiverNuts`, default on;
-nightly league matchup `plo6_v56_river_nuts`. Telemetry
-`v56_plo6_river_fold`, `v56_plo6_river_raise_to_call`.
+horse random stream is never touched. Switch `v58Plo6RiverNuts`, default on;
+nightly league matchup `plo6_v58_river_nuts`. Telemetry
+`v58_plo6_river_fold`, `v58_plo6_river_raise_to_call`.
 
 Tests updated by this owner ruling: the PLO6 cases of
 `HorsePloTripBoardIncident.test.ts` (PLO4, PLO5 and PLO8 keep the original
 "flat, do not raise" ruling), the V40 aces-up comparison (its V40-off arm now
-isolates V40 from V56), and the historical opponent-exploit neutrality replay
-(V56 is independent of reads and switched off there, as earlier independent
+isolates V40 from V58), and the historical opponent-exploit neutrality replay
+(V58 is independent of reads and switched off there, as earlier independent
 rules are).
 
 The existing `v15Boats` rule stays off by default; it measured +0.11 bb/100

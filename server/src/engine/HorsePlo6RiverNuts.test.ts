@@ -1,5 +1,5 @@
 /**
- * V56 PLO6 RIVER NUT DISCIPLINE (2026-10-25). Dan: "YOU HAVE TO INSURE THAT
+ * V58 PLO6 RIVER NUT DISCIPLINE (2026-10-25). Dan: "YOU HAVE TO INSURE THAT
  * HORSES ARE NOT CALLING OFF THERE STACKS ON PAIRED BOARDS IN PLO6" and "IN
  * PLO6 IF ITS NOT THE NUTS, ITS PROBABLY NOT GOOD".
  *
@@ -170,7 +170,7 @@ function facingRiverBet(
   return HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false, ...opts });
 }
 
-describe('V56 PLO6 paired-board river nut discipline', () => {
+describe('V58 PLO6 paired-board river nut discipline', () => {
   it('folds an under-full to a real river bet', () => {
     for (const seed of SEEDS)
       expect(facingRiverBet(JACKS_FULL, DEUCES, 'plo6', seed).action).toBe('fold');
@@ -201,14 +201,14 @@ describe('V56 PLO6 paired-board river nut discipline', () => {
 
   it("is PLO6 only and switchable: other games and the ablation keep today's brain", () => {
     for (const seed of SEEDS.slice(0, 20)) {
-      const off = facingRiverBet(JACKS_FULL, DEUCES, 'plo6', seed, { v56Plo6RiverNuts: false });
+      const off = facingRiverBet(JACKS_FULL, DEUCES, 'plo6', seed, { v58Plo6RiverNuts: false });
       const offAgain = facingRiverBet(JACKS_FULL, DEUCES, 'plo6', seed, {
-        v56Plo6RiverNuts: false,
+        v58Plo6RiverNuts: false,
       });
       expect(off.action).toBe(offAgain.action);
       const plo5Hole = JACKS_FULL.slice(0, 5);
       const on5 = facingRiverBet(plo5Hole, DEUCES, 'plo5', seed);
-      const off5 = facingRiverBet(plo5Hole, DEUCES, 'plo5', seed, { v56Plo6RiverNuts: false });
+      const off5 = facingRiverBet(plo5Hole, DEUCES, 'plo5', seed, { v58Plo6RiverNuts: false });
       expect(on5.action).toBe(off5.action);
     }
   });
@@ -218,7 +218,7 @@ describe('V56 PLO6 paired-board river nut discipline', () => {
     const hole = parse('KhKc7c8d2hJs');
     for (const seed of SEEDS.slice(0, 20)) {
       const on = facingRiverBet(hole, board, 'plo6', seed);
-      const off = facingRiverBet(hole, board, 'plo6', seed, { v56Plo6RiverNuts: false });
+      const off = facingRiverBet(hole, board, 'plo6', seed, { v58Plo6RiverNuts: false });
       expect(on.action).toBe(off.action);
     }
   });

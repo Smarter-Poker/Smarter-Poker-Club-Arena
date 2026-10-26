@@ -14,7 +14,7 @@
  */
 
 /** The Terms of Service page and the acceptance modal that summarises them. */
-export const TERMS_LAST_UPDATED = 'September 8, 2026';
+export const TERMS_LAST_UPDATED = 'October 25, 2026';
 
 /** The Privacy Policy page. */
 export const PRIVACY_LAST_UPDATED = 'September 16, 2026';

@@ -66,13 +66,31 @@ describe('horseJournalArchiveDirectoryNames', () => {
     ]);
   });
 
-  it('stops at the first missing later shard rather than skipping a gap', () => {
+  it('includes retained shards after a missing numeric shard', () => {
     const dir = directory();
     mkdirSync(join(dir, 'archive'));
     mkdirSync(join(dir, 'archive-shard-1'));
     // archive-shard-2 intentionally absent
     mkdirSync(join(dir, 'archive-shard-3'));
-    expect(horseJournalArchiveDirectoryNames(dir)).toEqual(['archive', 'archive-shard-1']);
+    expect(horseJournalArchiveDirectoryNames(dir)).toEqual([
+      'archive',
+      'archive-shard-1',
+      'archive-shard-3',
+    ]);
+  });
+
+  it('sorts canonical shard numbers numerically and ignores lookalikes', () => {
+    const dir = directory();
+    for (const name of [
+      'archive-shard-10',
+      'archive-shard-2',
+      'archive-shard-01',
+      'archive-shard-0',
+      'archive-shard-2-backup',
+      'archive-shard-9007199254740992',
+    ])
+      mkdirSync(join(dir, name));
+    expect(horseJournalArchiveDirectoryNames(dir)).toEqual(['archive-shard-2', 'archive-shard-10']);
   });
 
   it('lists a later shard even when shard 0 has never been written', () => {

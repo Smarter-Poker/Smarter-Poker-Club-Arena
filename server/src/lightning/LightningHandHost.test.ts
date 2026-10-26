@@ -820,6 +820,38 @@ describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actio
     }
   });
 
+  it('a queued priced check/fold stays in the hand until its turn, then releases normally', async () => {
+    const formed = formedHand(4, 3190);
+    const t = buildHost(formed, [100, 100, 100, 100]);
+    await t.host.start();
+    await flush();
+    const before = t.host.peekState()!;
+    const waiting = before.players.find(
+      (p) => p.seat !== before.currentPlayerSeat && before.currentBet - p.bet > 0
+    )!;
+    expect(
+      t.host.setPreAction(waiting.user_id, 'auto_check_fold', undefined, formed.handId)
+    ).toEqual({ success: true });
+    await flush();
+    expect(t.host.peekState()!.players.find((p) => p.user_id === waiting.user_id)!.is_folded).toBe(
+      false
+    );
+    expect(t.calls.fastFold).toEqual([]);
+    expect(t.released).toEqual([]);
+    expect(t.host.isWatching(waiting.user_id)).toBe(true);
+    await playOut(t.host, mulberry32(3190), (userId, legal) => {
+      // The queued player must be folded by onTurn, never by this driver.
+      expect(userId).not.toBe(waiting.user_id);
+      return legal.includes('check') ? 'check' : 'call';
+    });
+    await flush();
+    expect(t.calls.fastFold.filter((f) => f.playerId === waiting.user_id)).toEqual([
+      expect.objectContaining({ foldType: 'normal' }),
+    ]);
+    expect(t.host.isWatching(waiting.user_id)).toBe(false);
+    expect(t.released).toContainEqual(expect.objectContaining({ playerId: waiting.user_id }));
+  });
+
   it('an explicit fold pre-action requires its own hand and releases immediately', async () => {
     const formed = formedHand(3, 3200);
     const t = buildHost(formed, [100, 100, 100]);

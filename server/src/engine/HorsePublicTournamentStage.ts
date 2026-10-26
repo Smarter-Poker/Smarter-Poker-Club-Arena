@@ -113,8 +113,8 @@ export function captureHorsePublicTournamentStage(
   if (![c.entrants, c.playersLeft, c.spotsPaid, c.currentLevel, c.satelliteSeats].every(count))
     return invalid('counts');
   if (c.playersLeft < 2) return invalid('players_left');
-  if (c.entrants < c.playersLeft || c.spotsPaid > c.entrants || c.currentLevel < 1)
-    return invalid('counts');
+  // TournamentBrainContext and the persisted blind clock use zero-based levels.
+  if (c.entrants < c.playersLeft || c.spotsPaid > c.entrants) return invalid('counts');
   if (!Number.isInteger(c.seatsPerTable) || c.seatsPerTable < 2 || c.seatsPerTable > 10)
     return invalid('capacity');
   if (
@@ -138,12 +138,26 @@ export function captureHorsePublicTournamentStage(
     return invalid('flags');
   if (!['none', 'pending', 'active', 'complete'].includes(c.mysteryBountyStage))
     return invalid('mystery_stage');
-  // A newer cached level cannot relabel a hand still using the prior blinds.
+  // A hand retains its dealt stakes when the clock advances during play. The
+  // decision projection already recognizes this exact previous-level case;
+  // retain that hand's level here too, without inventing a missing snapshot.
+  const sameHandStakes = (smallBlind: number, bigBlind: number, ante: number) =>
+    smallBlind === config.smallBlind && bigBlind === config.bigBlind && ante === (config.ante ?? 0);
+  const currentLevelMatches = sameHandStakes(c.currentSmallBlind, c.currentBigBlind, c.currentAnte);
+  const previous = c.previousLevel;
+  const previousLevelMatches =
+    !currentLevelMatches &&
+    previous != null &&
+    Number.isSafeInteger(previous.level) &&
+    previous.level >= 0 &&
+    previous.level < c.currentLevel &&
+    typeof previous.durationMin === 'number' &&
+    Number.isFinite(previous.durationMin) &&
+    previous.durationMin > 0 &&
+    sameHandStakes(previous.smallBlind, previous.bigBlind, previous.ante);
   if (
-    c.currentSmallBlind !== config.smallBlind ||
-    c.currentBigBlind !== config.bigBlind ||
-    c.currentAnte !== (config.ante ?? 0) ||
-    (c.currentAnte > 0 && c.anteType !== (config.bigBlindAnte ? 'big_blind' : 'per_player'))
+    (!currentLevelMatches && !previousLevelMatches) ||
+    ((config.ante ?? 0) > 0 && c.anteType !== (config.bigBlindAnte ? 'big_blind' : 'per_player'))
   )
     return unavailable('hand_level_mismatch');
   return Object.freeze({
@@ -156,7 +170,7 @@ export function captureHorsePublicTournamentStage(
     playersLeft: c.playersLeft,
     spotsPaid: c.spotsPaid,
     seatsPerTable: c.seatsPerTable,
-    currentLevel: c.currentLevel,
+    currentLevel: previousLevelMatches ? previous!.level : c.currentLevel,
     inMoney: c.inMoney,
     nearBubble: c.nearBubble,
     finalTable: c.finalTable,

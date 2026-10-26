@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, statfsSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, statfsSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
 /** A closed window of capture time whose published segments the ring never
@@ -190,11 +190,19 @@ function archiveDirectoryName(index: number): string {
  * later shards' that exist, lowest index first. Empty when neither exists
  * yet (a fresh or disabled journal) - never a guess at a layout nobody wrote. */
 export function horseJournalArchiveDirectoryNames(directory: string): string[] {
-  const names: string[] = [];
-  if (existsSync(join(directory, 'archive'))) names.push('archive');
-  for (let i = 1; existsSync(join(directory, `archive-shard-${i}`)); i++)
-    names.push(`archive-shard-${i}`);
-  return names;
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter(
+      (name) =>
+        name === 'archive' ||
+        (/^archive-shard-[1-9][0-9]*$/.test(name) &&
+          Number.isSafeInteger(Number(name.slice('archive-shard-'.length))))
+    )
+    .sort((a, b) => {
+      const index = (name: string) =>
+        name === 'archive' ? 0 : Number(name.slice('archive-shard-'.length));
+      return index(a) - index(b);
+    });
 }
 
 /** This runs in the existing journal owner before its dedicated writer starts.

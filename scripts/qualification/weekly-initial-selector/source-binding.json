@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 235366,
-      "sha256": "1f8023e28bdf15c0f17136859886399b0e633611c1c866616745f795312f9a0b"
+      "bytes": 235835,
+      "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -264,6 +264,42 @@
     "current_workflow": {
       "bytes": 235095,
       "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+    }
+  },
+  "horseDailyCountsNative20261025": {
+    "reason": "Add isolated PG17 accepted-hand paired horse counts qualification to existing accounting shard4. Refresh only current workflow identity; preserve historical pins, financial inputs, assertions and qualification verdicts. Not production execution evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235317,
+      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
+    }
+  },
+  "horseDailyCountsProtectedMainIntegration20261025": {
+    "reason": "Retain protected-main messenger native proof and the accepted-hand daily-count native proof together on their existing accounting shards1 and4. Refresh only current workflow identity. Preserve every historical pin, qualification state and financial assertion. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    }
+  },
+  "horseMultiboardPopulationFollowup20261025": {
+    "reason": "Use existing native audit fixture to qualify exact multi-board decision populations for direct descendants. Current workflow identity only; preserve all historical pins, financial assertions and qualification states. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235596,
+      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+    }
+  },
+  "horseOwnPublicHistoryNative20261025": {
+    "reason": "Add isolated PG17 original-observer public-history qualification in existing required Accounting4. Refresh only current workflow input identity; preserve historical pins, financial assertions and qualification verdicts. This is source binding, not financial or production execution evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 235596,
+          "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+        },
+        "current": {
+          "bytes": 235835,
+          "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
+        }
+      }
     }
   }
 }

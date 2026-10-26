@@ -1215,6 +1215,9 @@ export interface OppPostflopRead {
   lastFrac?: number;
   /** V40: this opponent RAISED on the newest street (over a bet). */
   raised?: boolean;
+  /** V56 qualification arm: sample the declared made-hand stratum directly
+   * instead of treating a bounded rejection miss as a value hand. */
+  strictPressureRange?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2169,6 +2172,98 @@ export function placeOmahaBandCombo(
   return false;
 }
 
+type OmahaPressurePool = { reservoir: OmahaReservoir; indices: number[] };
+const omahaPressurePools = new Map<string, OmahaPressurePool>();
+
+/** Draw uniformly from the existing percentile reservoir intersected with the
+ * public made/draw requirement and the physically available cards. The pool
+ * knows only the current public board, never a sampled future runout. A
+ * bounded fast path has an exact finite scan fallback, so four missed draws
+ * cannot silently turn the declared value range back into air. */
+export function placeOmahaPressureCombo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  band: [number, number] | null,
+  holeCount: number,
+  board: Card[],
+  minCat: number,
+  drawMinCat: number
+): boolean {
+  if (
+    ![4, 5, 6].includes(holeCount) ||
+    windowStart < 0 ||
+    n > deck.length ||
+    n - windowStart < holeCount
+  )
+    return false;
+  const key = `${holeCount}`;
+  let reservoir = omahaReservoirs.get(key);
+  if (!reservoir) {
+    reservoir = buildOmahaReservoir(holeCount, false);
+    omahaReservoirs.set(key, reservoir);
+  }
+  const size = reservoir.combos.length;
+  const range = band ?? [0, 1];
+  if (!range.every(Number.isFinite) || range[1] <= range[0] || range[0] >= 1 || range[1] <= 0)
+    return false;
+  const lo = Math.max(0, Math.min(size - 1, Math.floor(clamp01(range[0]) * size)));
+  const hi = Math.max(lo + 1, Math.min(size, Math.ceil(clamp01(range[1]) * size)));
+  const publicKey = board.map(cardKey).sort().join('|');
+  const poolKey = `${key}:${lo}:${hi}:${minCat}:${drawMinCat}:${publicKey}`;
+  let pool = omahaPressurePools.get(poolKey);
+  if (!pool) {
+    const publicCards = new Set(board.map(cardId));
+    const indices: number[] = [];
+    for (let i = lo; i < hi; i++) {
+      const combo = reservoir.combos[i];
+      if (combo.some((c) => publicCards.has(cardId(c)))) continue;
+      const category = omahaQuickCategory(combo, board);
+      if (category >= minCat || (category >= drawMinCat && omahaStrongDrawShape(combo, board)))
+        indices.push(i);
+    }
+    pool = { reservoir, indices };
+    omahaPressurePools.set(poolKey, pool);
+    if (omahaPressurePools.size > 32)
+      omahaPressurePools.delete(omahaPressurePools.keys().next().value!);
+  }
+  if (pool.indices.length === 0) return false;
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+  const available = (index: number): boolean =>
+    pool!.reservoir.combos[index].every((c) => cardAvail[cardId(c)] === 1);
+  let selected = -1;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const index = pool.indices[Math.floor(fastRandom() * pool.indices.length)];
+    if (available(index)) {
+      selected = index;
+      break;
+    }
+  }
+  if (selected < 0) {
+    // Uniform reservoir sampling across every remaining supported combo;
+    // never choose the first surviving combo or accept an unsupported one.
+    let seen = 0;
+    for (const index of pool.indices)
+      if (available(index) && fastRandom() < 1 / ++seen) selected = index;
+  }
+  if (selected < 0) return false;
+  const combo = pool.reservoir.combos[selected];
+  for (let k = 0; k < combo.length; k++) {
+    const want = cardId(combo[k]);
+    const slot = windowStart + k;
+    if (cardId(deck[slot]) === want) continue;
+    for (let j = slot + 1; j < n; j++) {
+      if (cardId(deck[j]) !== want) continue;
+      const previous = deck[slot];
+      deck[slot] = deck[j];
+      deck[j] = previous;
+      break;
+    }
+  }
+  return true;
+}
+
 /**
  * ═══ V44 SECOND LOOK (2026-09-05) ═══ the equity depth multiplier.
  *
@@ -2586,26 +2681,44 @@ export function simulateEquity(
         const tier40 = read.streets != null ? omahaAggressorTier(read) : 0;
         if (tier40 >= 1 && omahaTierShape != null) {
           const req = omahaTierRequirement(tier40, boardCards.length, omahaTierShape);
-          const tries = tier40 >= 3 ? 4 : 3;
-          for (let t = 0; t < tries; t++) {
-            const c40 = omahaQuickCategory(oppCards, boardCards);
-            if (c40 >= req.minCat) break;
-            if (c40 >= req.drawMinCat && omahaStrongDrawShape(oppCards, boardCards)) break;
-            if (t === 0 && fastRandom() >= req.pStrong) break; // the bluff share
-            const placed =
-              band != null
-                ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
-                : false;
-            if (!placed) {
-              for (let i = 0; i < oppHole; i++) {
-                const slot = windowStart + i;
-                const j = slot + Math.floor(fastRandom() * (n - slot));
-                const tmp = deck[slot];
-                deck[slot] = deck[j];
-                deck[j] = tmp;
-              }
+          if (read.strictPressureRange === true && !vi.isHiLo) {
+            if (
+              fastRandom() < req.pStrong &&
+              placeOmahaPressureCombo(
+                deck,
+                windowStart,
+                n,
+                band,
+                oppHole,
+                boardCards,
+                req.minCat,
+                req.drawMinCat
+              )
+            ) {
+              for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
             }
-            for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
+          } else {
+            const tries = tier40 >= 3 ? 4 : 3;
+            for (let t = 0; t < tries; t++) {
+              const c40 = omahaQuickCategory(oppCards, boardCards);
+              if (c40 >= req.minCat) break;
+              if (c40 >= req.drawMinCat && omahaStrongDrawShape(oppCards, boardCards)) break;
+              if (t === 0 && fastRandom() >= req.pStrong) break; // the bluff share
+              const placed =
+                band != null
+                  ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+                  : false;
+              if (!placed) {
+                for (let i = 0; i < oppHole; i++) {
+                  const slot = windowStart + i;
+                  const j = slot + Math.floor(fastRandom() * (n - slot));
+                  const tmp = deck[slot];
+                  deck[slot] = deck[j];
+                  deck[j] = tmp;
+                }
+              }
+              for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
+            }
           }
         } else if (bandWidth >= 0.45 && read.aggrW > 0) {
           const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);

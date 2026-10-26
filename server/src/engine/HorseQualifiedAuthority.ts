@@ -19,6 +19,10 @@
  * generation: it proves what THIS process admitted, not that every other
  * process has stopped. No instantaneous global withdrawal is claimed.
  */
+import {
+  horsePhase8SourceBoundDigest,
+  runningPhase8PolicySourceReader,
+} from './HorsePhase8PolicyDigest.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
@@ -202,11 +206,12 @@ export function canonical(value: unknown): unknown {
 export const sha256 = (text: string | Buffer): string =>
   createHash('sha256').update(text).digest('hex');
 
-/** Digest of the running continuation's declared boundaries. A boundary edit
- * without a version bump still changes this, so old evidence cannot cover it. */
-export function horsePhase8PolicyDigest(): string {
-  return sha256(
-    JSON.stringify(canonical({ phase8: PHASE8_POLICY, continuation: CONTINUATION_POLICY }))
+/** Bind the declared continuation and the actual reference/read source bytes.
+ * A constants-only digest cannot qualify a changed individual read path. */
+export function horsePhase8PolicyDigest(read = runningPhase8PolicySourceReader): string {
+  return horsePhase8SourceBoundDigest(
+    JSON.stringify(canonical({ phase8: PHASE8_POLICY, continuation: CONTINUATION_POLICY })),
+    read
   );
 }
 

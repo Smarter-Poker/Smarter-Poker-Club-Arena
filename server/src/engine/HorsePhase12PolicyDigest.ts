@@ -29,7 +29,7 @@ import {
 import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-digest-v2';
+export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-digest-v4';
 
 /**
  * The code that determines Phase 12 candidate behaviour, as server-relative
@@ -116,14 +116,6 @@ export const HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string
       'the physical deck shuffle of a live hand (PokerEngine.Deck); no policy or sampler call reads it, the sampler uses the HorseEval fast random stream',
     'src/engine/HorseTournamentContinuation.ts':
       'imported by HorseEval for the Phase 8 tournament continuation capture (captureContinuation), which no Phase 12 policy or sampler call requests',
-    'src/engine/HorseDecisionEffects.ts':
-      'HorseMind decision-effect bookkeeping; it holds no value a Phase 12 decision reads',
-    'src/engine/HorseMindHandIdentity.ts':
-      'HorseMind hand-identity binding; it holds no value a Phase 12 decision reads',
-    'src/engine/HorsePlanHandIdentity.ts':
-      'HorseMind plan hand-identity binding; it holds no value a Phase 12 decision reads',
-    'src/engine/HorseDecisionHandBinding.ts':
-      'hand-binding records under the identities above; it holds no value a Phase 12 decision reads',
   });
 
 /** Reads a server-relative source path. Throws on failure. */

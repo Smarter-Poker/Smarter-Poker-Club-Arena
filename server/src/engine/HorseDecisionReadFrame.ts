@@ -1,4 +1,5 @@
 import { MEMORY_VARIANTS, opponentMemoryKey } from './HorseOpponentMemory.js';
+import { type HorseWinnerReadRow } from './HorseWinnerRead.js';
 import {
   horsePlanContextIsValid,
   horsePlanContextKey,
@@ -26,7 +27,8 @@ export interface HorseDecisionReadFrame {
     | 'horse-decision-reads-v1'
     | 'horse-decision-reads-v2'
     | 'horse-decision-reads-v3'
-    | 'horse-decision-reads-v4';
+    | 'horse-decision-reads-v4'
+    | 'horse-decision-reads-v5';
   readonly bytes: number;
   readonly sha256: string;
   readonly json: string;
@@ -38,7 +40,9 @@ const WINDOW_VERSION = 'horse-decision-reads-v3';
 /** 2026-10-16: v3 plus the decayed opponent-exploit counters. Written only
  * when the view carries any, so every earlier frame keeps its exact bytes. */
 const EXPLOIT_VERSION = 'horse-decision-reads-v4';
-const windowed = (version: unknown) => version === WINDOW_VERSION || version === EXPLOIT_VERSION;
+const WINNER_VERSION = 'horse-decision-reads-v5';
+const exploited = (version: unknown) => version === EXPLOIT_VERSION || version === WINNER_VERSION;
+const windowed = (version: unknown) => version === WINDOW_VERSION || exploited(version);
 const FIELDS = [
   'hands',
   'vpip',
@@ -85,7 +89,9 @@ type Body = {
     | typeof VERSION
     | typeof ALLOCATED_VERSION
     | typeof WINDOW_VERSION
-    | typeof EXPLOIT_VERSION;
+    | typeof EXPLOIT_VERSION
+    | typeof WINNER_VERSION;
+  winnerReads?: Rows<HorseWinnerReadRow>;
   statsWindows?: Rows<HorseObservationWindow>;
   scopedWindows?: Rows<HorseObservationWindow>;
   exploit?: Rows<number[]>;
@@ -185,7 +191,8 @@ function validateBody(
     !exact(value, [
       'version',
       ...(windowed(value.version) ? ['statsWindows', 'scopedWindows'] : []),
-      ...(value.version === EXPLOIT_VERSION ? ['exploit'] : []),
+      ...(exploited(value.version) ? ['exploit'] : []),
+      ...(value.version === WINNER_VERSION ? ['winnerReads'] : []),
       ...(planContext === undefined ? [] : ['planContext']),
       'actors',
       'handKey',
@@ -219,8 +226,21 @@ function validateBody(
       b.streets,
       (v) => object(v) && exact(v, ['good', 'scare']) && cards(v.good) && cards(v.scare)
     ) ||
-    (value.version === EXPLOIT_VERSION &&
-      !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length)))
+    (exploited(value.version) &&
+      !validRows(value.exploit, b.exploit, (v) => numbers(v, EXPLOIT_COUNTER_FIELDS.length))) ||
+    (value.version === WINNER_VERSION &&
+      !validRows(
+        value.winnerReads,
+        b.stats,
+        (v) =>
+          object(v) &&
+          exact(v, ['w', 'w2', 's', 'q']) &&
+          finite(v.w) &&
+          finite(v.w2) &&
+          finite(v.q) &&
+          typeof v.s === 'number' &&
+          Number.isFinite(v.s)
+      ))
   )
     return fail();
   if (windowed(value.version)) {
@@ -279,7 +299,11 @@ export function encodeHorseDecisionReads(
     }
   );
   const hasExploit = exploitRows.length > 0;
+  const hasWinner = view.winnerReads !== undefined;
+  if (hasWinner && (!(view.winnerReads!.seen instanceof Set) || view.winnerReads!.seen.size !== 0))
+    return fail();
   const hasWindows =
+    hasWinner ||
     hasExploit ||
     [boundedStats, boundedScoped].some((rows) =>
       rows.some(([, row]) => object(row) && Object.hasOwn(row, 'sourceWindow'))
@@ -287,17 +311,20 @@ export function encodeHorseDecisionReads(
   const windows = (map: Map<string, OpponentStats>): Rows<HorseObservationWindow> =>
     [...map].map(([id, row]) => [id, normalizeHorseObservationWindow(row.sourceWindow)]);
   const body: Body = {
-    version: hasExploit
-      ? EXPLOIT_VERSION
-      : hasWindows
-        ? WINDOW_VERSION
-        : planContext === undefined
-          ? VERSION
-          : ALLOCATED_VERSION,
+    version: hasWinner
+      ? WINNER_VERSION
+      : hasExploit
+        ? EXPLOIT_VERSION
+        : hasWindows
+          ? WINDOW_VERSION
+          : planContext === undefined
+            ? VERSION
+            : ALLOCATED_VERSION,
     ...(hasWindows
       ? { statsWindows: windows(view.stats), scopedWindows: windows(view.scoped) }
       : {}),
-    ...(hasExploit ? { exploit: exploitRows } : {}),
+    ...(hasWinner || hasExploit ? { exploit: exploitRows } : {}),
+    ...(hasWinner ? { winnerReads: bounded(view.winnerReads!.rows, b.stats.size) } : {}),
     ...(planContext === undefined ? {} : { planContext }),
     actors: b.actors,
     handKey,
@@ -389,5 +416,7 @@ export function decodeHorseDecisionReads(
       ) as unknown as ExploitCounters,
     ])
   );
+  if (body.version === WINNER_VERSION)
+    view.winnerReads = { rows: new Map(body.winnerReads), seen: new Set() };
   return view;
 }

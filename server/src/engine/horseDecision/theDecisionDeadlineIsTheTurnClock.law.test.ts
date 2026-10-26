@@ -330,9 +330,9 @@ describe('the decision deadline is the turn clock: the client', () => {
   });
 });
 
-describe('opponent restoration shares the caller deadline', () => {
+describe('independent reads do not wait for pooled opponent restoration', () => {
   it.each([undefined, Number.NaN, 0, -1])(
-    'cancels a stalled schema before enqueue with default budget (%s)',
+    'never fetches a stalled pooled schema and keeps the default job budget (%s)',
     async (deadlineMs) => {
       const worker = new FakeWorker();
       const client = new LiveHorseDecisionWorkerClient({
@@ -344,10 +344,10 @@ describe('opponent restoration shares the caller deadline', () => {
       await expect(
         client.decideFast(snapshot('schema-deadline'), undefined, { deadlineMs })
       ).rejects.toThrow();
-      expect(worker.sent.some((m) => (m as { type?: string }).type === 'DECIDE_FAST')).toBe(false);
+      expect(worker.sent.some((m) => (m as { type?: string }).type === 'DECIDE_FAST')).toBe(true);
     }
   );
-  it('subtracts restoration time from the remaining default compute window', async () => {
+  it('preserves the full compute budget without waiting for an unrelated pooled reader', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({
@@ -361,7 +361,7 @@ describe('opponent restoration shares the caller deadline', () => {
     try {
       worker.emitMessage(ready);
       const pending = client.decideFast(snapshot('memory-budget'));
-      const rejection = expect(pending).rejects.toThrow(/expired after 500ms/);
+      const rejection = expect(pending).rejects.toThrow(/expired after 1000ms/);
       await vi.advanceTimersByTimeAsync(1000);
       await rejection;
     } finally {

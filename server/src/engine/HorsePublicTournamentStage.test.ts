@@ -103,6 +103,60 @@ describe('accepted public tournament stage', () => {
     expect(capture(h.config, h.read)).toMatchObject({ status: 'captured', format });
   });
 
+  it('captures the canonical zero-based first blind level and refuses negative levels', () => {
+    const h = fixture();
+    h.context.currentLevel = 0;
+    expect(capture(h.config, h.read)).toMatchObject({ status: 'captured', currentLevel: 0 });
+    h.context.currentLevel = -1;
+    expect(capture(h.config, h.read)).toMatchObject({
+      status: 'unavailable',
+      reason: 'invalid_public_context',
+      detail: 'counts',
+    });
+  });
+
+  it('keeps the dealt level when the cache advances to the immediately following level', () => {
+    const h = fixture();
+    h.context.previousLevel = {
+      level: 4,
+      smallBlind: 10,
+      bigBlind: 20,
+      ante: 2,
+      durationMin: 10,
+    };
+    h.context.currentSmallBlind = 20;
+    h.context.currentBigBlind = 40;
+    h.context.currentAnte = 4;
+    expect(capture(h.config, h.read)).toMatchObject({ status: 'captured', currentLevel: 4 });
+    // Neither a nearby price nor a mismatched ante is this hand's exact level.
+    h.context.previousLevel.bigBlind = 20.005;
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    h.context.previousLevel.bigBlind = 20;
+    h.context.previousLevel.ante = 3;
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    h.context.previousLevel.ante = 2;
+    h.context.previousLevel.smallBlind = 10.005;
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    h.context.previousLevel.smallBlind = 10;
+    h.context.previousLevel.durationMin = null;
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    for (const duration of [undefined, NaN, 0, -1]) {
+      h.context.previousLevel.durationMin = duration as number;
+      expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    }
+    h.context.previousLevel.durationMin = 10;
+    h.context.previousLevel.level = -1;
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    h.context.previousLevel.level = h.context.currentLevel;
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    h.context.previousLevel.level = 4;
+    h.context.anteType = 'big_blind';
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
+    h.context.anteType = 'per_player';
+    h.context.contextIssues = ['missing_field'];
+    expect(capture(h.config, h.read)).toMatchObject({ reason: 'context_incomplete' });
+  });
+
   it('does not read tournament cache for cash or treat a missing tournament as cash', () => {
     const h = fixture();
     expect(capture({ ...h.config, isTournament: false }, h.read)).toEqual({

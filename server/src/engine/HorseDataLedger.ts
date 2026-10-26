@@ -192,6 +192,14 @@ const PHASE13_TELEMETRY_PREFIXES = [
 ] as const;
 
 export const RETIRED_RECEIPTS: LedgerEntry[] = [
+  ...['horse_winner_read_hand', 'horse_winner_read_refused'].map((key) =>
+    retiredReceipt(
+      key,
+      'source',
+      'the floor-wide winner telemetry was replaced by individual original-participant completion receipts under horse_observer_*; the winner policy remains active inside each private observer sandbox',
+      'V53'
+    )
+  ),
   ...PHASE12_TELEMETRY_PREFIXES.flatMap((prefix) =>
     RETIRED_PHASE12_REASONS.map((reason) =>
       retiredReceipt(
@@ -653,6 +661,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40'
   ),
   flag(
+    'ploPairedBoardFold',
+    'PLO5/PLO6 no full house on a paired turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
+    'PLO paired-board fold'
+  ),
+  flag(
     'deepEquity',
     'V44 second look: every Monte Carlo read at this multiple of its sample; set only by the engine replay inside the think time',
     'V44'
@@ -678,6 +691,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V55'
   ),
   flag(
+    'v56OmahaPressureRange',
+    'river vulnerable set/trips versus tier-three pressure on one Omaha-high cash board; qualified fixed400bb cash card, explicit off arm retained',
+    'V56'
+  ),
+  flag(
+    'v57TournamentAggression',
+    'Dan 2026-10-25 NLH tournament aggression: wider opens, 3-bets and big blind defence against the opener width, a shade wider 3-bet defence to 60bb, and more planned turn barrels; explicit off arm retained for the historical neutrality corpus',
+    'V57'
+  ),
+  flag(
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
@@ -688,9 +711,9 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V53'
   ),
   flag(
-    'v56Plo6RiverNuts',
-    'PLO6 paired-board river nut discipline: facing a bet, fold a hand a random six-card hand beats 15% of the time unless the price is tiny, and call instead of raising one beaten 5% of the time (league plo6_v56_river_nuts)',
-    'V56'
+    'v58Plo6RiverNuts',
+    'PLO6 paired-board river nut discipline: facing a bet, fold a hand a random six-card hand beats 15% of the time unless the price is tiny, and call instead of raising one beaten 5% of the time (league plo6_v58_river_nuts)',
+    'V58'
   ),
   flag(
     'phase7Utility',
@@ -1596,16 +1619,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
-    'v56_plo6_river_fold',
-    'HorseLogic (V56 PLO6 river nuts)',
+    'v58_plo6_river_fold',
+    'HorseLogic (V58 PLO6 river nuts)',
     "a PLO6 river bet on a paired board was folded because a random hand beats the hand 15% of the time or more (Dan: 'IF ITS NOT THE NUTS, ITS PROBABLY NOT GOOD')",
-    'V56'
+    'V58'
   ),
   receipt(
-    'v56_plo6_river_raise_to_call',
-    'HorseLogic (V56 PLO6 river nuts)',
+    'v58_plo6_river_raise_to_call',
+    'HorseLogic (V58 PLO6 river nuts)',
     'a PLO6 river raise on a paired board became a call because a better hand was possible',
-    'V56'
+    'V58'
   ),
   receipt(
     'opponent_exploit_corroborated',
@@ -1882,6 +1905,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40',
     'decide_omaha',
     0.05
+  ),
+  receipt(
+    'plo_paired_board_fold',
+    'HorseLogic.decide (HorsePloPairedBoardFold)',
+    'PLO5/PLO6 call, raise or jam without a full house on a paired turn or river turned into a fold',
+    'PLO paired-board fold'
   ),
   receipt(
     'v40_omaha_pressure_cap',
@@ -2925,21 +2954,21 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V50'
   ),
   receipt(
+    'horse_observer_*',
+    'HorseDecisionWorkerRuntime',
+    'individual public-read admission, original-participant completion learning, unscoped-profile refusal and explicit missing-context/cutoff/capacity gaps; counters alone never prove independent fleet coverage or strategy qualification',
+    'V45'
+  ),
+  receipt(
     'horse_opponent_memory_*',
     'HorseDecisionWorkerRuntime durable profile import',
     'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
     'V50'
   ),
   receipt(
-    'horse_winner_read_*',
-    'HorseDecisionWorkerRuntime.executeObservation (HorseWinnerRead)',
-    'a completed hand whose per-player nets reached the proven-winner read (hand) or were refused as unusable (refused); no player identifiers or cards leave the worker',
-    'V53'
-  ),
-  receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
-    'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',
+    'a bounded cross-shard completion delivery was shed or unavailable; a delivered mirror learns only for the original individual participants registered on that worker and never authorizes pooled reads',
     'V50'
   ),
   receipt(
@@ -2961,6 +2990,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic committed and ordinary raise branches',
     'opt-in river Omaha weak set/trips flatted after clearing the unchanged call bar',
     'V55'
+  ),
+  receipt(
+    'v56_omaha_pressure_range',
+    'HorseLogic to HorseEval pressure-conditioned Omaha reservoir',
+    'a tier-three public river aggressor range used the direct value stratum for a vulnerable set/trips on one Omaha-high cash board',
+    'V56'
   ),
   receipt(
     'v51_river_flat',

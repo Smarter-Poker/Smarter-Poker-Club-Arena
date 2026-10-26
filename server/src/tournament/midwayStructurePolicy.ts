@@ -138,6 +138,9 @@ export function withMidwayStructure<T extends Record<string, unknown>>(
     addon_from_start: addon && free ? row.addon_from_start === true : false,
     addon_chips: addon ? (free ? 10000 : Math.max(Number(row.addon_chips) || 0, stack * 2)) : null,
     addon_levels: addon ? 1 : null,
-    addon_break_minutes: addon ? 5 : row.addon_break_minutes,
+    // Dan 2026-10-25: "ADD ON BREAK SHOULD ONLY BE 60 SECONDS, UNLESS IT HAPPENS TO
+    // BE AT THE SAME TIME AS THE :55 BREAK, THEN ITS 5 MINUTES, THEY ARE NOT THE
+    // SAME BREAK". The :55 break is its own pause authority; this is the add-on's.
+    addon_break_minutes: addon ? 1 : row.addon_break_minutes,
   };
 }

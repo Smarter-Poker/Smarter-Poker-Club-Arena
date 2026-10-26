@@ -37,7 +37,7 @@ import { isJointVariant, type JointVariant } from './multiway/JointInputBinding.
 import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-digest-v2';
+export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-digest-v4';
 
 /**
  * The code that determines a Phase 13 joint proposal, as server-relative
@@ -151,6 +151,8 @@ export const HORSE_PHASE13_POLICY_SOURCE_FILES: readonly string[] = Object.freez
  * change a Phase 13 proposal, its legal form, or whether it may act. */
 export const HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/BrainTelemetry.ts':
+      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
     'src/engine/horseDecision/protocol.ts':
       'boundary: buildHorseDecisionKey only names the decision state (the receipt stateKey and the acquisition binding); it seeds nothing, and the worker has already refused a non-canonical request before any decision; the rest of the file is the worker transport',
     'src/engine/remainingVariants/RemainingVariantActionEconomics.ts':
@@ -159,24 +161,10 @@ export const HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string
       'the Phase 11 and 12 equity summaries; neither choosePineappleFlopPair nor remainingVariantChipUnit calls it',
     'src/engine/omaha/OmahaCardFacts.ts':
       'the Phase 10 card facts the PLO4 policy reads; plo4BlindSeatsStatus and plo4ButtonOffset read nothing from it',
-    'src/engine/HorseObservationWindow.ts':
-      'observation windows of the Phase 10 policy and the Phase 7 evidence; no joint call reads them',
-    'src/engine/HorseMind.ts':
-      'the reads the reference path consumes; the joint proposal is computed against the baseline it is given and calls nothing in it',
     'src/engine/CryptoRandom.ts':
       'the physical deck shuffle of a live hand (PokerEngine.Deck); the sampler uses the HorseEval fast random stream',
     'src/engine/HorseTournamentContinuation.ts':
       'imported by HorseEval for the Phase 8 tournament continuation capture, which no joint call requests',
-    'src/engine/HorseDecisionEffects.ts':
-      'HorseMind decision-effect bookkeeping; it holds no value a joint proposal reads',
-    'src/engine/BrainTelemetry.ts':
-      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
-    'src/engine/HorseMindHandIdentity.ts':
-      'HorseMind hand-identity binding; it holds no value a joint proposal reads',
-    'src/engine/HorsePlanHandIdentity.ts':
-      'HorseMind plan hand-identity binding; it holds no value a joint proposal reads',
-    'src/engine/HorseDecisionHandBinding.ts':
-      'hand-binding records under the identities above; it holds no value a joint proposal reads',
   });
 
 /** Reads a server-relative source path. Throws on failure. */

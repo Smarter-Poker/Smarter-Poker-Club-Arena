@@ -1115,11 +1115,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // V56 (2026-10-25): PLO6 paired-board river nut discipline. a is today's
   // brain with it (default ON), b is the brain without it.
   {
-    name: 'plo6_v56_river_nuts',
+    name: 'plo6_v58_river_nuts',
     variant: 'plo6',
     pairs: 6000,
     a: {},
-    b: { v56Plo6RiverNuts: false },
+    b: { v58Plo6RiverNuts: false },
   },
   /*
    * LEAGUE-GATED SELF-TUNER (Dan 2026-10-19: "League-gated nudges"). The
@@ -1168,6 +1168,14 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
   // V55 is opt-in. Freeze the deep cash domain before examining results:
   // the audit's leaking river re-shoves occurred above 100bb.
+  ...(['plo4', 'plo5', 'plo6'] as const).map((variant) => ({
+    name: `${variant}_v56_pressure_range`,
+    variant,
+    stackBB: 400,
+    pairs: 6000,
+    a: { v56OmahaPressureRange: true },
+    b: { v56OmahaPressureRange: false },
+  })),
   {
     name: 'plo4_v55_river_trips_flat',
     variant: 'plo4',

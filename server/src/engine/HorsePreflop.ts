@@ -200,6 +200,11 @@ export interface PreflopCtx {
   omahaSuitedPremium?: 'aces' | 'kings';
   /** Exact Hold’em AA/KK, so score jitter cannot demote a value squeeze. */
   holdemPremiumPair?: boolean;
+  /** Effective stack in big blinds against the deepest live opponent
+   *  (2026-10-25 shove discipline). Undefined on legacy/offline callers. */
+  effectiveStackBB?: number;
+  /** Dan 2026-10-25 NLH tournament aggression; undefined = on. */
+  tournamentAggression?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
   /**
@@ -602,6 +607,19 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // tier shares; the payout ladder above 10x arrives instead through
   // `ctx.riskAdd`, which tightens `t()` and shrinks `bluffBudget` above.
   const anteWiden = (ctx.anteInPlay ? 0.05 : 0) + (ctx.format === 'spin' ? 0.05 : 0);
+  // ═══ TOURNAMENT AGGRESSION (Dan 2026-10-25) ═══════════════════════════
+  // Real players called the tournament horses "the most passive scared
+  // players they have ever played with". Measured over 48 hours of
+  // human-seated NLH tournament hands: horses folded to a single open 82%
+  // of the time (humans 52%), 3-bet 5.5% (humans 11.5%), folded to a 3-bet
+  // 62%, the small blind folded 88-91% to an open and a <=25bb big blind
+  // folded 53%. Every one of those is a stop sign for anyone who raises.
+  // NLH tournaments only; Omaha and all-in-or-fold tables have their own
+  // calibrations. The ICM premium (riskAdd) is untouched, so the bubble
+  // still tightens exactly as before - this moves the baseline, not the
+  // survival pressure.
+  const tAggro =
+    ctx.tournamentAggression !== false && isTourney && !ctx.isOmaha && ctx.allInOrFold !== true;
   // True heads-up: exactly one live opponent and hero is in a blind. HU is a
   // different game — the SB/BTN opens ~75-85% and the BB defends the wide
   // majority of hands against it.
@@ -1044,6 +1062,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     let openThresh = t(baseOpen + fullRingEarly) + Math.min(limpers, 3) * 0.03;
     openThresh += depthTighten - depthLoosen - anteWiden + vs35.open;
     openThresh += phase6Shift('open');
+    // TOURNAMENT AGGRESSION: every seat opens a little wider, the cutoff and
+    // button wider still, and the small blind (one player left to beat, an
+    // ante in the pot) far wider.
+    if (tAggro) openThresh -= position === 'sb' ? 0.08 : position === 'late' ? 0.03 : 0.02;
     // V37: the captain steals wider near the bubble — the field cannot call.
     openThresh -= 0.06 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0));
     // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
@@ -1241,6 +1263,31 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         t(pressureIp ? pressure.ipThreeBetBar : pressure.oopThreeBetBar)
       );
     }
+    // TOURNAMENT AGGRESSION: re-raise ranges stated as hand shares (the
+    // holdemPreflopScore scale: 0.5 = top 19.8%, 0.62 ~ 11.5%, 0.65 = 10.9%),
+    // against the opener's real width. A steal is re-stolen hard from the
+    // small blind, widely from the button and big blind; early opens a
+    // little wider than before. t() still carries the ICM premium.
+    if (tAggro) {
+      const steal = vs === 'late' || vs === 'sb';
+      const aggroBar =
+        position === 'sb'
+          ? steal
+            ? 0.5
+            : 0.66
+          : position === 'bb'
+            ? steal
+              ? 0.62
+              : 0.7
+            : position === 'late'
+              ? steal
+                ? 0.65
+                : 0.72
+              : null;
+      if (aggroBar !== null) threeBetThresh = Math.min(threeBetThresh, t(aggroBar));
+      else threeBetThresh -= 0.03;
+      if (position === 'late' && stackBB >= 25) callThresh -= 0.03;
+    }
     threeBetThresh = phase6CapBar(threeBetThresh);
     callThresh = phase6CapBar(callThresh);
     const bbDiscount = position === 'bb' ? 0.06 : 0;
@@ -1340,7 +1387,9 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       f3bScale *
       blockerMult *
       // V37: a covered raiser near the bubble folds to the 3-bet far more.
-      (1 + 0.5 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0)));
+      (1 + 0.5 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0))) *
+      // TOURNAMENT AGGRESSION: more re-steals.
+      (tAggro ? 1.3 : 1);
     if (
       callers === 0 &&
       strength >= t(bluffFloor) &&
@@ -1425,7 +1474,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     if (position === 'bb' && toCall <= bb * 2.5) {
       const steal = vs === 'late';
       const bbFloor = phase6CapBar(
-        (steal ? 0.22 : 0.3) - (ctx.anteInPlay ? 0.03 : 0) + vs35.bbDefend + phase6Shift('call')
+        (steal ? 0.22 : 0.3) -
+          (ctx.anteInPlay ? 0.03 : 0) -
+          // TOURNAMENT AGGRESSION: the big blind is getting its best price
+          // of the orbit (production: a <=25bb big blind folded 53%).
+          (tAggro ? (stackBB <= 25 ? 0.06 : 0.04) : 0) +
+          vs35.bbDefend +
+          phase6Shift('call')
       );
       if (strength >= bbFloor) return { a: 'call' };
     }
@@ -1476,6 +1531,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     );
     // 2026-10-16 OPPONENT EXPLOIT: a credible over-re-raiser's 3-bets and
     // 4-bets are 4-bet and called from the top of THEIR re-raising range.
+    // TOURNAMENT AGGRESSION: production folded 62% to a 3-bet, which hands
+    // every re-raiser a profit with any two cards. Up to 60bb effective,
+    // defend a shade wider and 4-bet a shade wider; deeper, the V21 deep
+    // discipline still rules. (A larger cut was measured and rejected: at
+    // 0.62 the early opener called 3-bets with 90% of its range.)
+    const aggro3 = tAggro && (ctx.effectiveStackBB ?? stackBB) <= 60;
+    if (aggro3) {
+      callThresh = phase6CapBar(callThresh - 0.02);
+      fourBetThresh = phase6CapBar(fourBetThresh - 0.015);
+    }
     const vsReRaiser = ctx.exploitReRaiser;
     if (vsReRaiser) {
       fourBetThresh = phase6CapBar(Math.min(fourBetThresh, t(vsReRaiser.fourBetBar)));
@@ -1531,7 +1596,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength >= t(0.72) &&
       strength < fourBetThresh &&
       currentBet * 2.3 < stack * 0.35 &&
-      rand() < bluffBudget * 0.22 * blockerMult
+      rand() < bluffBudget * 0.22 * blockerMult * (aggro3 ? 1.5 : 1)
     ) {
       const mult = 2.2 + rand() * 0.2;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
@@ -1542,6 +1607,22 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // 250bb is QQ+/AK at best, and QQ is already a coin flip against the
     // range that builds it.
     if (raises >= 3) {
+      // ═══ DEEP 5-BET DISCIPLINE (Dan 2026-10-25) ═══════════════════════
+      // Facing a 4-bet with 60bb+ effective in a tournament, only AA and KK
+      // put the stack in. Measured over 30 hours before this: 70 tournament
+      // 5-bet shoves at 100bb+ effective, QQ/JJ/TT/AK among them, averaging
+      // -18bb each; the range that 4-bets that deep is AA/KK-heavy, and QQ
+      // is a coin flip against it at best.
+      if (
+        isTourney &&
+        !ctx.isOmaha &&
+        (ctx.effectiveStackBB ?? 0) > 60 &&
+        ctx.holdemPremiumPair !== true
+      ) {
+        if (strength >= t(0.9) && toCall <= stack * 0.25) return { a: 'call' };
+        if (toCall === 0) return { a: 'check' };
+        return { a: 'fold' };
+      }
       if (strength >= t(Math.min(0.98, 0.95 + deepT))) return { a: 'jam' };
       if (strength >= t(0.88 + deepT) && toCall <= stack * 0.3) return { a: 'call' };
       if (toCall === 0) return { a: 'check' };

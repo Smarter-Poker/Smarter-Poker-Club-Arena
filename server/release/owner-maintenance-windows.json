@@ -2,6 +2,22 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-25-bust-door-fix-tonight",
+      "ownerOrder": "Dan, 2026-10-25 18:48 Chicago, Claude chat (claude.ai/code/session_01G1J5sfS2nZCBxr6ETNsY98): \"INSTALL THE BUST FIX TONIGHT AS AN EMERGENCY ENGINE RELEASE\", in direct response to the choice between the routine 04:00 Chicago activation and an off-cycle install before the two 20:00 Chicago chests-only Sunday Funday Mystery events. One immediate certified off-cycle engine activation of protected main containing PR #8090, merge 1efd9504e0916918f70e8e98ccdcea296ccec48a: every bounty_blocked answer from the knockout door is a recorded bust, so the elimination batch no longer stops after one bust per sweep. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw, and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
+      "contains": "1efd9504e0916918f70e8e98ccdcea296ccec48a",
+      "notBefore": "2026-10-25T23:59:00Z",
+      "notAfter": "2026-10-26T04:59:00Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-25-mtt-restart-root-now",
+      "ownerOrder": "Dan, 2026-10-25 22:38 UTC, Codex chat 01a17361-fb77-7a81-88b6-de859e678164: \"Activate off-cycle now\", in direct response to the choice between a certified immediate cutover of the merged MTT restart fix and October 26 04:00 Chicago. One immediate certified off-cycle engine activation of protected main containing PR #8074, merge 753aecbc5ce0dc65bf35ddfcb96eaa6939be56da, which retires settled knockout wait clocks and preserves newly pending work. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve and thaw. This order ends once the containing engine is serving; exact stable-client and engine live-table verification remains required. No Cashier source changes or unrelated repair is authorized by this entry.",
+      "contains": "753aecbc5ce0dc65bf35ddfcb96eaa6939be56da",
+      "notBefore": "2026-10-25T22:38:00Z",
+      "notAfter": "2026-10-26T04:28:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-25-separable-reliability-01a17363",
       "ownerOrder": "Dan, Codex chat 01a17363-a51f-7b43-bb2a-0404a781840a, 2026-10-25: \"UPDATE IT AT THE NEXT HOURLY BREAK, DO NOT WAIT UNTIL 4AM\"; later \"GO AHEAD AND FINISH ALL THE SEPARABLE RELIABILITY AND CORRECTNESS WORK. Fully wire it in, test it, push and publish it, then verify it live.\" Applies to PR #8021 rebuy-decline persistence and the extracted strategy-neutral boot sequencing/diagnostic repairs, plus the connected decline-order and cutover-deadline follow-up. Activate at the next eligible :55 Chicago break, later :55 only if checks/build/certificate miss the earlier boundary. Preserve existing drain, freeze, proof and rollback safeguards; no strategy/chat concealment features are authorized by this entry. The anchor is protected final correctness merge 98547198 (#8051). The earlier first-batch anchor 662b8e1a is now served inside c3ed86482 and grants no additional activation. This remaining order applies to the unserved per-decision decline ordering fix. Verify containing protected source and serving ancestry before claiming completion. Carries forward the already protected #8046 named entry-big-blind constraint dependency through the same installer and its installed-history checks; never replay an installed migration or create a second installer.",
       "contains": "98547198d5daccf29015fbea9b5d6260fa43327a",

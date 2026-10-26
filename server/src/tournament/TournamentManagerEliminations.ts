@@ -209,6 +209,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
   /** A queued continuation can finish later stages without revisiting these busts. */
   private unresolvedBustsInSweepCycle = false;
+  /** A hand arriving during a bust read/assignment is outside that snapshot. */
+  private bustObservationInFlight: { firstNewBustAt: number | null } | null = null;
 
   /**
    * A BUST IS RECORDED BEFORE THE BREAK IT BLOCKS IS RETRIED (2026-09-29).
@@ -222,6 +224,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * TournamentSweepWorkCursor), so the balance stage keeps its turn too.
    */
   protected override bustAwaitsItsStage(): void {
+    const observation = this.bustObservationInFlight;
+    if (observation && observation.firstNewBustAt === null) {
+      observation.firstNewBustAt = Date.now();
+    }
     this.eliminationSweepCursor.rewindTo(0);
   }
   /** Latest level-triggered generation observed for each durable wake identity. */
@@ -617,6 +623,71 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           return;
         }
         if (sweepStopped()) return;
+        /*
+         * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
+         * (2026-10-25).
+         *
+         * Every capacity table is committed together with this
+         * `late_registration` wake, but its dealer was only started by the
+         * expansion stage (6). Each new bust rewinds the cursor to stage 0, so
+         * on a busy field the sweep spent its budget on stages 0-5 and stage 6
+         * was reached only when busting stopped: at the :55 break. Production
+         * 2026-10-25: 13:00-23:00 UTC, 99 of 132 capacity tables waited over a
+         * minute (median 12.0, max 53.8) with players seated and no dealer
+         * (through 2026-10-24 the median was ~4 seconds), e.g. Sunday
+         * Funday Happy Hour table 14 opened 22:39:28 with nine late entrants
+         * and was admitted at 22:55:08, the moment the break began.
+         *
+         * Only ADMISSION moves here (admitCommittedCapacityTables): it starts
+         * dealers for receipts already committed with seated entrants and
+         * acknowledges them. It creates no table, moves no seat and runs no
+         * rebalance; creation and the post-expansion rebalance stay in stage 6,
+         * after balancing, as the freeze law requires. The engine preparation
+         * arms every break / hand-for-hand hold before the dealer starts.
+         */
+        if (
+          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
+          !isMaintenanceFrozen()
+        ) {
+          this.noteEliminationSweepStep('admitCommittedCapacityTables');
+          await this.admitCommittedCapacityTables();
+          if (sweepStopped()) return;
+        }
+      }
+
+      /*
+       * AN OPEN ADD-ON WINDOW IS SERVED BEFORE THE STAGES A BUST REWINDS
+       * (2026-10-25).
+       *
+       * The add-on window is a deadline: when it closes, a horse that was never
+       * offered has lost its add-on for good. The offer lived only in stage 4,
+       * and every bust rewinds the cursor to stage 0. On 2026-10-25 83% of
+       * sweep admissions (14,182 of 17,047) overran the 5-second work budget,
+       * so on a busy field stage 4 was effectively never reached inside the
+       * window: Sunday Funday Happy Hour (Midway Union) 0 of 135 horses added
+       * on, Bounty Builder 0 of 192, PLO Classic 0 of 132, PLO PKO 4 of 201,
+       * while quiet satellites reached 89-92%. Dan: 70% of horses add on,
+       * "NOT ZERO EVER".
+       *
+       * Serving it here is safe by construction (see the stage-4 comment): the
+       * RPC is idempotent per player, refuses a player with no live seat, and
+       * tryTournamentAddOns offers only players holding chips. The same 20 s
+       * cadence applies, so the stage-4 call below never doubles an offer.
+       *
+       * Only OFFERS move here. Closing the window (the persisted deadline has
+       * passed, or a Free Buy closing drain is pending) finalizes the prize
+       * pool, and that must still follow the bust stage so a bust recorded in
+       * this pass keeps its rebuy. Those branches stay in stage 4.
+       */
+      const addOnNowMs = Date.now();
+      if (this.addOnOfferWindowOpen(addOnNowMs) && !isMaintenanceFrozen()) {
+        if (addOnNowMs - this.lastAddOnOfferAt >= TournamentManagerBase.ADD_ON_RETRY_MS) {
+          this.lastAddOnOfferAt = addOnNowMs;
+          this.noteEliminationSweepStep('tryTournamentAddOns');
+          await this.tryTournamentAddOns();
+          if (sweepStopped()) return;
+        }
+        this.scheduleAddOnRetry();
       }
 
       recoveryStage: {
@@ -653,6 +724,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       bustStage: {
         if (this.eliminationSweepCursor.nextStage > 1) break bustStage;
+        const bustObservation = { firstNewBustAt: null as number | null };
+        this.bustObservationInFlight = bustObservation;
         // Find ALL busted players (0 chips) in a single query
         this.noteEliminationSweepStep('db:tournament_players');
         // eslint-disable-next-line prefer-const
@@ -669,16 +742,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // error was discarded, so a failed read looked exactly like "nobody
         // busted" — and the sweep then fell straight through to the finish
         // check below and could complete the tournament on the strength of it.
-        if (bustedErr) {
+        if (bustedErr || !Array.isArray(busted)) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr.message}) - skipping this sweep entirely`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr?.message ?? 'authoritative rows missing'}) - skipping this sweep entirely`
             ),
             'Tournament.busted_list_unavailable'
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
           return; // the finally block clears isProcessingEliminations
         }
+
+        // Consume only authoritative receipts from this captured roster. The
+        // input array still contains players after eliminatePlayer succeeds;
+        // its length is not a pending-bust count. A newer hand observed while
+        // awaiting I/O keeps the exact first new hand's observation time.
+        const pendingBustIds = new Set(busted.map((player) => player.user_id));
+        const recordBustProgress = (): void => {
+          this.bustAwaitingSinceMs =
+            pendingBustIds.size > 0 ? Date.now() : (bustObservation.firstNewBustAt ?? 0);
+        };
 
         this.unresolvedBustsInSweepCycle = (busted?.length ?? 0) > 0;
 
@@ -923,11 +1006,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
           if (sweepStopped()) return;
           if (rebought.size > 0) {
+            for (const userId of rebought) pendingBustIds.delete(userId);
             busted = busted.filter((b) => !rebought.has(b.user_id));
             if (busted.length === 0) {
               // The rebuy transaction owns its exact playable chair and stack.
               // This process consumes only the success receipt; it never scans
               // for a seatless roster or performs a later compensating write.
+              // These busts have been resolved, so their old wait cannot
+              // trigger a successor. Any untouched batch keeps a fresh clock.
+              recordBustProgress();
               return; // everyone bought back in; nobody is eliminated this pass
             }
           }
@@ -998,6 +1085,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                when the deadline it was given has passed. */
             const openUntilMs = rebuyDecisionDeadlines(decisionsRaw);
             const nowMs = Date.now();
+            for (const player of busted) {
+              if (!decisions.has(player.user_id)) pendingBustIds.delete(player.user_id);
+            }
             busted = busted.filter((b) => {
               // Omitted means the locked row was no longer a playing zero -
               // most commonly a concurrent rebuy. Never eliminate from the
@@ -1011,7 +1101,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 Math.min(...nextDeadline) - nowMs + REBUY_DEADLINE_MARGIN_MS
               );
             }
-            if (busted.length === 0) return;
+            if (busted.length === 0) {
+              // A locked decision read proved either an open rebuy window or
+              // a concurrent rebuy. Neither is an elimination stalled since
+              // the original bust. Keep the clock only for still-pending work;
+              // unreadable/refused decisions above retain the original age.
+              const openDecisions = [...decisions].filter(([, open]) => open);
+              if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
+                recordBustProgress();
+              }
+              return;
+            }
           }
 
           /**
@@ -1378,6 +1478,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 continue;
               }
               this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+              pendingBustIds.delete(bustedOrdered[i].user_id);
+              recordBustProgress();
               committedThisPass++;
               takenPositions.add(place);
               nextPosition = Math.min(nextPosition, place) - 1;
@@ -1421,9 +1523,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
-        // The bust stage ran to its end: restart the wait clock from now for
-        // any bust still inside its rebuy decision grace, or stop it.
-        this.bustAwaitingSinceMs = (busted?.length ?? 0) > 0 ? Date.now() : 0;
+        // Later cursor stages must not carry a wait for already-settled busts.
+        recordBustProgress();
         if (completedStage(2)) return;
       }
 
@@ -2037,6 +2138,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
       }
       if (this.eliminationSweepSignal === signal) this.eliminationSweepSignal = null;
+      this.bustObservationInFlight = null;
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;
       this.eliminationSweepStartedAt = 0;
@@ -2978,6 +3080,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let bountyMode: string | null = null;
     let durableBountyKnocker: string | null = null;
     let durableBountyClaimants: Array<{ userId: string; weight: number }> = [];
+    /** The door recorded this bust and, by design, wrote no bounty obligation. */
+    let doorWroteNoBountyObligation = false;
     if (hasBounty) {
       if (!this.eliminationMutationAllowed()) return false;
       const attribution = bountyEvidence!.attribution;
@@ -3105,6 +3209,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         bountyMode = String(claim.mode || '');
         durableBountyKnocker = null;
         durableBountyClaimants = [];
+        /* EVERY BOUNTY_BLOCKED IS A RECORDED BUST, NOT A FAILED ONE
+           (2026-10-25). The collection block below was skipped only for an
+           unattributable knocker. The door has other reasons to place a bust
+           and write no obligation - since 2026-10-22 the commonest is
+           `mystery_bounties_start_in_the_money`, every pre-money bust of a
+           chests-only mystery event - and for those the engine went on to
+           collect anyway, found no settled obligation (there is none to
+           find), and returned false for a bust that had already committed.
+           The assignment pass reads false as a refusal and ends, so each
+           admission recorded ONE bust and waited five seconds: the two
+           Sunday Funday PLO5 Mystery events (0fed81b3, 11b1db64) recorded
+           one bust every 10-35 s while their fields busted faster, fell 24
+           minutes behind, and tripped fn_ca_absent_tournament_players. */
+        doorWroteNoBountyObligation = true;
       } else {
         bountyMode = String(row!.mode || '');
         durableBountyKnocker = String(row!.knocker_user_id || '');
@@ -3204,7 +3322,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        knocker to pay and no obligation to settle, and processBountyCollection
        requires both. The place is already recorded; the head stays in the pool
        for fn_finalize_bounty_pool to resolve as residual. */
-    if (bountyEvidence && bountyEvidence.attributionUnavailable !== true) {
+    if (
+      bountyEvidence &&
+      bountyEvidence.attributionUnavailable !== true &&
+      !doorWroteNoBountyObligation
+    ) {
       try {
         const { attribution } = bountyEvidence;
         if (attribution.basis === 'largest_winner') {
@@ -6394,4 +6516,5 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     winnerId: string
   ): Promise<VerifiedSatelliteSettlementReceipt>;
   protected abstract checkDynamicTableExpansion(): Promise<boolean>;
+  protected abstract admitCommittedCapacityTables(): Promise<void>;
 }

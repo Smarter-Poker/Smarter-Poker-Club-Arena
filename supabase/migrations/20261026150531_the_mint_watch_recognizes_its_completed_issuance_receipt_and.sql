@@ -269,6 +269,9 @@ END$needle$, $replacement$  -- A successful explicit incident action is an inves
   RETURN jsonb_build_object('ok', true);
 END$replacement$);
 END $patch$;
+-- CREATE OR REPLACE preserves this live ACL; declare it explicitly for source guards.
+REVOKE ALL ON FUNCTION public.fn_ca_mint_velocity_watch() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_mint_velocity_watch() TO service_role;
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_mint_velocity_watch', 'migration completed_mint_receipt_and_incident_investigation');
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_incident_action', 'migration completed_mint_receipt_and_incident_investigation');
 

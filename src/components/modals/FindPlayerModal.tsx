@@ -47,6 +47,7 @@ import haptic from '../../services/HapticService';
 import {
   EMPTY_AFFILIATIONS,
   FUZZY_MIN_CHARS,
+  QUERY_MAX_CHARS,
   PlayerSearchService,
   type PlayerClubAffiliation,
   type PlayerPresenceFilter,
@@ -146,12 +147,17 @@ export default function FindPlayerModal({
 
   const runSearch = useCallback(
     async (query: string, offset = 0, append = false) => {
-      const normalized = query.trim();
+      const normalized = query.trim().slice(0, QUERY_MAX_CHARS).trim();
       if (normalized.length < 2) {
         setError('Enter at least two characters.');
         return;
       }
       searchAbortRef.current?.abort();
+      // A suggestion lookup still waiting on its debounce would reopen the
+      // dropdown over the results the player just asked for (2026-10-25).
+      if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+      suggestionTimerRef.current = null;
+      suggestionAbortRef.current?.abort();
       const controller = new AbortController();
       searchAbortRef.current = controller;
       if (append) setIsLoadingMore(true);
@@ -237,7 +243,10 @@ export default function FindPlayerModal({
     [presence, scope]
   );
 
-  const handleInputChange = (value: string) => {
+  const handleInputChange = (raw: string) => {
+    // maxLength already stops typing and pasting past the limit; this also covers
+    // autofill and anything else that sets the value without going through it.
+    const value = raw.slice(0, QUERY_MAX_CHARS);
     setSearchQuery(value);
     setError(null);
     if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
@@ -432,6 +441,7 @@ export default function FindPlayerModal({
                 type="search"
                 className={styles.input}
                 placeholder="Name, Alias Or Player Number"
+                maxLength={QUERY_MAX_CHARS}
                 value={searchQuery}
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={(event) => {
@@ -532,11 +542,17 @@ export default function FindPlayerModal({
 
             <div className={styles.results} aria-live="polite" aria-busy={isSearching}>
               {error && <p className={`sc-copy sc-ink--red ${styles.copy}`}>{titleCase(error)}</p>}
-              {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
-                <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
-                  No Matching Players Were Found.
-                </p>
-              )}
+              {/* Only for the words in the field now: an empty answer to an
+                  earlier search never sits under a new one (2026-10-25). */}
+              {!error &&
+                !isSearching &&
+                lastCompletedQueryRef.current &&
+                lastCompletedQueryRef.current === searchQuery.trim() &&
+                results.length === 0 && (
+                  <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
+                    No Matching Players Were Found.
+                  </p>
+                )}
               {results.length > 0 && (
                 <div className={styles.resultList}>
                   {results.map((player) => (

@@ -86,7 +86,7 @@ const ON = { lightning_shadow_matcher: true, integrity_telemetry: true, shadow_w
 function scenario(
   seed: number,
   shadowCfg: Record<string, unknown> | null,
-  opts: { missing?: Set<string>; t0?: number } = {}
+  opts: { missing?: Set<string>; t0?: number; entryPoster?: boolean } = {}
 ) {
   const rnd = mulberry32(seed);
   const calls: Call[] = [];
@@ -111,6 +111,7 @@ function scenario(
           hand_id: uid(5000 + handNo),
           instance_id: uid(7000 + handNo),
           bb: players[0],
+          entry_bb: opts.entryPoster ? players.slice(1, 2) : [],
           sb: players[1],
           btn: players[players.length - 1],
           players,
@@ -691,6 +692,33 @@ describe('integrity signals: timing only, never a matcher input, horses as human
 // ─── 6. Scoring and config ─────────────────────────────────────────────────
 
 describe('scoring and config', () => {
+  it('a formed entry post reaches the shadow history through the live worker', async () => {
+    const s = scenario(14, ON, { entryPoster: true });
+    for (let i = 0; i < 20 && s.started.length === 0; i++) await s.worker.pass();
+    expect(s.started.length).toBeGreaterThan(0);
+    const hand = s.started[0] as { players: string[]; bb: string };
+    const entry = hand.players[1];
+    s.runner.idle(hand.bb, s.now() + 1_000);
+    s.runner.idle(entry, s.now() + 1_000);
+    const snap = s.runner.buildSnapshot({
+      nowMs: s.now() + 2_000,
+      presence: { connected: POP, disconnected: [] },
+      kind: 'match',
+      ok: true,
+      matcherVersion: 'm1',
+      groups: [],
+    });
+    for (const id of [hand.bb, entry]) {
+      expect(snap.players.find((p) => p.playerId === id)).toMatchObject({
+        lastBbAtMs: s.now(),
+        handsSinceBb: 0,
+        newcomer: false,
+      });
+    }
+    s.worker.stop();
+    s.runner.stop();
+  });
+
   it('scores a decision against the snapshot both sides saw', () => {
     const now = 100_000;
     const players = POP.slice(0, 4).map((id, i) => ({
@@ -714,6 +742,13 @@ describe('scoring and config', () => {
     expect(score.seated).toBe(4);
     expect(score.waits.sort((a, b) => a - b)).toEqual([1000, 2000, 3000, 4000]);
     expect(score.bbGaps).toEqual([3]);
+    const withEntry = scoreLightningDecision(
+      { nowMs: now, players, recentHands: [] },
+      LIGHTNING_MATCHER_PARAM_DEFAULTS,
+      [{ players: POP.slice(0, 4), bb: POP[3], entryBb: [POP[0], POP[0]] }]
+    );
+    expect(withEntry.bbGaps).toEqual([3, 0]);
+    expect(withEntry.bbOrderViolations).toBe(1);
     expect(score.bbOrderViolations).toBe(1); // P2 would have chosen POP[0]
     expect(score.btnCounts).toEqual([2]);
     expect(score.pairs).toBe(6);

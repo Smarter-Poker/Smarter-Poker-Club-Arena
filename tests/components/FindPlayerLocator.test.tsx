@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FindPlayerModal from '../../src/components/modals/FindPlayerModal';
 import {
   FUZZY_MIN_CHARS,
+  QUERY_MAX_CHARS,
   PlayerSearchService,
   type PlayerSearchPage,
   type PlayerSearchResult,
@@ -155,6 +156,63 @@ describe('Find A Player locator', () => {
       expect(vi.mocked(PlayerSearchService.search).mock.calls[0][0]).toMatchObject({
         query: 'sha',
       });
+    });
+  });
+
+  describe('a pasted paragraph never breaks the search (2026-10-25)', () => {
+    // Dan's searches all failed with "Could Not Search Right Now" because a long
+    // pasted message was sitting in the field; the server refuses anything over
+    // 64 characters. The field now holds at most 64 and the request never carries more.
+    const paragraph =
+      'VERIFY YOUR WORK AND CODE AND RUN THE TESTS BEFORE YOU SAY IT IS DONE '.repeat(12);
+
+    it(`caps the field at ${QUERY_MAX_CHARS} characters`, () => {
+      renderLocator();
+      expect(screen.getByRole('searchbox')).toHaveAttribute('maxLength', String(QUERY_MAX_CHARS));
+    });
+
+    it('searches with at most the limit when a long value lands in the field', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+      const box = screen.getByRole('searchbox');
+      await user.click(box);
+      await user.paste(paragraph);
+      expect((box as HTMLInputElement).value.length).toBeLessThanOrEqual(QUERY_MAX_CHARS);
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+      await waitFor(() => expect(PlayerSearchService.search).toHaveBeenCalled());
+      for (const [call] of vi.mocked(PlayerSearchService.search).mock.calls) {
+        expect(call.query.length).toBeLessThanOrEqual(QUERY_MAX_CHARS);
+      }
+      expect(screen.queryByText(/Could Not Search Right Now/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the result area always answers the words in the field (2026-10-25)', () => {
+    it('drops an earlier empty answer as soon as a new name is typed', async () => {
+      vi.mocked(PlayerSearchService.search).mockImplementation(async (options) =>
+        page(options.query === 'nobody' ? [] : [locatedPlayer])
+      );
+      const user = userEvent.setup();
+      renderLocator();
+      const box = screen.getByRole('searchbox');
+      await user.type(box, 'nobody');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+      expect(await screen.findByText('No Matching Players Were Found.')).toBeInTheDocument();
+
+      await user.clear(box);
+      await user.type(box, '333');
+      expect(screen.queryByText('No Matching Players Were Found.')).not.toBeInTheDocument();
+    });
+
+    it('does not reopen the suggestion list over the results the player asked for', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+      await user.type(screen.getByRole('searchbox'), 'shark');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+      await screen.findByRole('button', { name: /Midnight Cash/ });
+      // Long enough for a stranded debounce to have fired if it were still armed.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     });
   });
 

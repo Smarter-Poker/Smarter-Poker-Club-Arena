@@ -110,9 +110,13 @@ export function classifyPreActionReply(reply: PreActionReply | null | undefined)
 }
 
 /** The engine's name for what the bar armed. */
-export function serverPreActionFor(choice: PreActionChoice, canCheck: boolean): string {
+export function serverPreActionFor(
+  choice: PreActionChoice,
+  canCheck: boolean,
+  foldOnTurn = false
+): string {
   return choice === 'fold'
-    ? canCheck
+    ? canCheck || foldOnTurn
       ? 'auto_check_fold'
       : 'auto_fold'
     : choice === 'check'
@@ -134,6 +138,8 @@ export interface PreActionSyncRefs {
   lastArmedPreActionRef: Ref<PreActionChoice | null>;
   /** What the bar was offering when the player armed Fold (Check/Fold or Fold). */
   preActionCanCheckRef: Ref<boolean>;
+  /** A priced Lightning preflop Fold waits for its turn in this exact hand. */
+  preActionFoldOnTurnHandRef: Ref<string | null>;
   /** The price on the Call button when it was armed; then the engine's own. */
   preActionCallAmountRef: Ref<number>;
   /**
@@ -201,7 +207,23 @@ export function syncPreActionToEngine(input: PreActionSyncInput): void {
 
   if (tableId) {
     if (preAction) {
-      const serverAction = serverPreActionFor(preAction, preActionCanCheckRef.current);
+      const foldOnTurnHand =
+        preAction === 'fold' && lightningRoomRef.current
+          ? input.refs.preActionFoldOnTurnHandRef.current
+          : null;
+      const lightningArmHand = input.lightningArmHandId();
+      // A delayed effect must never turn an old queued fold into an immediate
+      // fold in the next hand. Keep the original hand identity through retries.
+      if (foldOnTurnHand && foldOnTurnHand !== lightningArmHand) {
+        hadPreActionRef.current = false;
+        setPreAction(null);
+        return;
+      }
+      const serverAction = serverPreActionFor(
+        preAction,
+        preActionCanCheckRef.current,
+        foldOnTurnHand !== null
+      );
       // Tell server about pre-action so it can auto-execute on player's turn
       hadPreActionRef.current = true;
       lastArmedPreActionRef.current = preAction;
@@ -245,6 +267,7 @@ export function syncPreActionToEngine(input: PreActionSyncInput): void {
           if (superseded() || input.handNumber() !== armHand) return null;
           /* LIGHTNING PHASE 6: in a Lightning room the arm names its hand. */
           const lightningArmHandId = input.lightningArmHandId();
+          if (foldOnTurnHand && lightningArmHandId !== foldOnTurnHand) return null;
           const res = lightningArmHandId
             ? await serverSetPreAction(tableId, serverAction, armCap, lightningArmHandId)
             : await serverSetPreAction(tableId, serverAction, armCap);

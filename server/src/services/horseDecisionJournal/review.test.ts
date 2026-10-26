@@ -1,3 +1,4 @@
+import { HorseObserverReads } from '../../engine/horseDecision/observerReads.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -77,7 +78,8 @@ function fixture(
   phase10 = false,
   phase11 = false,
   phase12 = false,
-  phase13 = false
+  phase13 = false,
+  independent = false
 ) {
   const raw = jointPolicyFixture(variant, 1, phase7 ? 'tournament' : 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
@@ -98,6 +100,10 @@ function fixture(
         player.stack + player.totalInvested,
       ])
     );
+  }
+  if (independent) {
+    state.format = phase7 ? 'mtt' : 'cash';
+    state.dealtSeatIds = state.players.map((p: { seat: number }) => p.seat);
   }
   const snapshot: FastHorseDecisionRequest = {
     type: 'DECIDE_FAST',
@@ -234,7 +240,10 @@ function fixture(
     }
     if (!decision.jointPolicy?.inputs) throw Error('Phase 13 fixture did not bind its inputs');
   }
+  const observerBank = independent ? new HorseObserverReads() : null;
+  observerBank?.run(snapshot, () => undefined);
   const d = {
+    observerReads: observerBank?.receipt(snapshot),
     snapshot,
     readFrame: encodeHorseDecisionReads(
       HorseMind.createSandbox(),
@@ -335,6 +344,33 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  it('certifies individual read provenance only for exact bound accepted actions', () => {
+    const f = fixture('nlh', [], false, false, false, false, false, true);
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadsVerified: true,
+      independentReadActions: 1,
+      activationAllowed: false,
+      completePopulation: false,
+    });
+    const receipt = structuredClone(f.d.observerReads)!;
+    f.d.observerReads = { ...receipt, context: { ...receipt.context!, observerId: table } };
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadsVerified: false,
+      independentReadActions: 0,
+      activationAllowed: false,
+    });
+  });
+  it('does not relabel a legacy reconciled hand as independent', () => {
+    const f = fixture();
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadsVerified: false,
+      independentReadActions: 0,
+    });
+  });
+
   it('reconciles actual Phase 7 utility evidence and its original read frame to acceptance', () => {
     const f = fixture('nlh', [], true);
     expect(
@@ -2028,7 +2064,7 @@ describe('private retained-hand journal consumer', () => {
 });
 
 describe('readHorseJournalHandRecords shard fan-out', () => {
-  // A hand's records live in exactly one decision-shard's catalog. These
+  // Retained records may span more than one archive. These
   // records are deliberately minimal (a bare 'decision' record) - the
   // fan-out under test only cares which shard directory holds a given
   // handKey, not whether a full hand reconciles.
@@ -2050,6 +2086,100 @@ describe('readHorseJournalHandRecords shard fan-out', () => {
     new HorseDecisionJournalStore(dir, {
       archive: runtimeHorseJournalArchiveOptions(dir, {}, { index }),
     });
+
+  it('joins a retained hand across archives instead of accepting the first fragment', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:fragmented-hand');
+    for (const [index, sequence] of [
+      [0, 2],
+      [1, 1],
+    ] as const) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([record(key, sequence)]);
+      } finally {
+        store.close();
+      }
+    }
+    expect(readHorseJournalHandRecords(dir, key)).toEqual([record(key, 1), record(key, 2)]);
+  });
+
+  it('counts an identical retained event only once across archives', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:duplicate-event');
+    for (const index of [0, 1]) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([record(key, 1)]);
+      } finally {
+        store.close();
+      }
+    }
+    expect(readHorseJournalHandRecords(dir, key)).toEqual([record(key, 1)]);
+  });
+
+  it('refuses conflicting bytes for the same event in different archives', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:conflicting-event');
+    const a = record(key, 1);
+    const b = makeHorseJournalRecord(
+      {
+        producerId: a.producerId,
+        sequence: a.sequence,
+        atMs: a.atMs,
+        sourceRelease: a.sourceRelease,
+        kind: a.kind,
+        handKey: a.handKey,
+        turnKey: a.turnKey,
+      },
+      { conflicting: true }
+    );
+    for (const [index, row] of [
+      [0, a],
+      [1, b],
+    ] as const) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([row]);
+      } finally {
+        store.close();
+      }
+    }
+    expect(() => readHorseJournalHandRecords(dir, key)).toThrow();
+  });
+
+  it('refuses a partial answer if another listed archive cannot be read', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:unreadable-fragment');
+    for (const index of [0, 1]) {
+      const store = openArchive(dir, index);
+      try {
+        store.appendBatch([record(key, index + 1)]);
+      } finally {
+        store.close();
+      }
+    }
+    rmSync(join(dir, 'archive-shard-1', 'horse-journal-archive.sqlite'));
+    expect(() => readHorseJournalHandRecords(dir, key)).toThrow();
+  });
+
+  it('preserves the hand record limit across archives', () => {
+    const dir = directory(),
+      key = journalHash('shard-fanout:combined-bound');
+    for (const index of [0, 1]) {
+      const store = openArchive(dir, index);
+      try {
+        const rows = Array.from({ length: index === 0 ? 128 : 129 }, (_, n) =>
+          record(key, index * 128 + n + 1)
+        );
+        for (let offset = 0; offset < rows.length; offset += 16)
+          store.appendBatch(rows.slice(offset, offset + 16)); // window-ok: archive record batch, not a source-code window
+      } finally {
+        store.close();
+      }
+    }
+    expect(() => readHorseJournalHandRecords(dir, key)).toThrow('exceeds bounds');
+  });
 
   it('finds a hand whose records live in a later shard, not shard 0', () => {
     const dir = directory();

@@ -1168,7 +1168,10 @@ describe('required CI owns native fixture verification', () => {
       '${{ github.event.pull_request.head.sha }}'
     );
     expect(ci.jobs.fixture_native.if).toContain("needs.changes.outputs.fixture != 'false'");
-    expect(ci.jobs.fixture_native.if).toContain('always()');
+    // `!cancelled()`, not `always()`: still evaluated when the classifier did
+    // not succeed, but a run cancelled because its head was replaced stops
+    // here. TypeScript Check keeps `always()` and reports that run as no verdict.
+    expect(ci.jobs.fixture_native.if).toMatch(/^!cancelled\(\) && /);
     expect(ci.jobs.fixture_native.if).not.toContain('draft');
     expect(native.jobs['native-smoke'].if).not.toContain('draft');
     expect(Object.keys(native.on)).toEqual(['workflow_call']);

@@ -31,7 +31,7 @@ import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import { bindToProcessRoot } from './supabase/dataActorContext.js';
 import { allocateWeightedShareCents } from './rakeAllocation.js';
-import { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlayStats.js';
+import { accumulatePlayStats, freshPlay, type HandRow, type PlayStats } from './HorsePlayStats.js';
 import {
   variantInfo,
   omahaNutStatus,
@@ -116,6 +116,8 @@ export interface HorseReviewInput {
   /** Touch the fleet seat for this table (default true). A Lightning host
    *  table is not where the horse is seated, so Lightning passes false. */
   seatTouch?: boolean;
+  /** Both daily counts are owned by the immutable accepted-hand projection. */
+  rollupsInAcceptedFacts?: boolean;
 }
 
 /** The Lightning results bucket for one stake, e.g. `lightning_2bb` or `lightning_0.5bb`. */
@@ -1077,12 +1079,14 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
     // or - when the caller supplied no deal - having put chips in or taken
     // chips out. A seated player who was not dealt still does not count.
     const dealt = input.holeCardsAll;
+    const dealtHorseIds = new Set<string>();
     for (const p of input.roster) {
       if (!p.isHorse || !p.userId) continue;
       const invested = input.contributions.get(p.userId) ?? 0;
       const returned = returnedBy.get(p.userId) ?? 0;
       const dealtIn = dealt.size > 0 ? dealt.has(p.userId) : invested !== 0 || returned !== 0;
       if (!dealtIn) continue;
+      dealtHorseIds.add(p.userId);
       const key = `${p.userId}|${day}|${input.gameVariant}|${format}`;
       const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0, bbjBB: 0 };
       acc.hands += 1;
@@ -1091,7 +1095,7 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
       acc.bbjBB += (bbjShares.get(p.userId) ?? 0) / bb;
       netAcc.set(key, acc);
     }
-    accumulateHorsePlay(input, day, format, Number(input.vpipFloor ?? 0) > 0);
+    accumulateHorsePlay(input, day, format, Number(input.vpipFloor ?? 0) > 0, dealtHorseIds);
     touchHorseSeats(input);
     if (netAcc.size > NET_ACC_MAX_KEYS) {
       // An outage has backed us up far beyond a realistic key space
@@ -1204,12 +1208,15 @@ function accumulateHorsePlay(
   input: HorseReviewInput,
   day: string,
   format: string,
-  floored: boolean
+  floored: boolean,
+  dealtHorseIds: ReadonlySet<string>
 ): void {
   try {
     if (!playEnabled()) return;
-    const tracked = new Set<string>();
-    for (const p of input.roster) if (p.isHorse && p.userId) tracked.add(p.userId);
+    // The same settled-hand population as nets. HorsePlayStats also reads
+    // public action actors; that cannot admit an undealt roster member or
+    // broaden the no-deal chip-movement fallback into every seated horse.
+    const tracked = new Set(dealtHorseIds);
     if (tracked.size === 0) return;
     const players: HandRow['players'] = [];
     for (const [userId, seat] of input.holeCardsAll) players.push({ userId, seat: seat.seat });
@@ -1229,6 +1236,11 @@ function accumulateHorsePlay(
       button_seat: typeof input.buttonSeat === 'number' ? input.buttonSeat : null,
     };
     const delta = accumulatePlayStats([row], tracked, new Map());
+    // A forced-only hand can end without an ActionRecord. Its dealt seats
+    // still owe one denominator entry, exactly as the net accumulator does.
+    for (const horse of tracked) {
+      if (!delta.has(horse)) delta.set(horse, { ...freshPlay(), hands: 1 });
+    }
     for (const [horse, d] of delta) {
       if (d.hands === 0) continue;
       const key = `${horse}|${day}|${format}|${floored ? 'f' : 'n'}`;
@@ -1417,7 +1429,8 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
   try {
     // V16: the real-nets aggregate sees EVERY hand, not just the 20bb flags,
     // and has its own kill switch (HORSE_NET_ROLLUP_ENABLED).
-    accumulateHorseNets(input);
+    if (!input.rollupsInAcceptedFacts) accumulateHorseNets(input);
+    else touchHorseSeats(input);
     if (!enabled() || !input.handId) return;
     const rows = buildReviewRows(input);
     if (rows.length === 0) return;

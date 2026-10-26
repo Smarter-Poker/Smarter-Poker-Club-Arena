@@ -63,6 +63,25 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+/* tests/setup.ts mocks MasterBus with no-ops; these tests need its delivery. */
+const bus = vi.hoisted(() => {
+  const handlers = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  return {
+    handlers,
+    masterBus: {
+      subscribe: (type: string, handler: (event: { payload: unknown }) => void) => {
+        if (!handlers.has(type)) handlers.set(type, new Set());
+        handlers.get(type)!.add(handler);
+        return () => handlers.get(type)?.delete(handler);
+      },
+      emit: (type: string, payload: unknown) => {
+        handlers.get(type)?.forEach((handler) => handler({ payload }));
+      },
+      reset: () => handlers.clear(),
+    },
+  };
+});
+vi.mock('../../src/core/MasterBus', () => ({ masterBus: bus.masterBus }));
 const notifyLeave = vi.fn();
 vi.mock('../../src/services/GameServerAPI', () => ({
   notifyServerLeaveOccupancy: (...a: unknown[]) => notifyLeave(...a),
@@ -99,7 +118,7 @@ import {
   lightningHandOnFelt,
 } from '../../src/lightning/lightningHand';
 import { lightningCapabilities } from '../../src/lightning/lightningCapabilities';
-import { LIGHTNING_LOBBY_REFRESH_MS } from '../../src/lightning/lightningLobbyFeed';
+import { masterBus } from '../../src/core/MasterBus';
 import {
   clusterModeDisplay,
   lightningLobbyBadge,
@@ -115,6 +134,17 @@ import LightningNextHand from '../../src/components/table/LightningNextHand';
 const ROOT = resolve(__dirname, '../..');
 const PAGE = readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8');
 
+/* The conversion commit's private signal, as ProfileAccountSync relays it
+   (20261025025154). */
+async function roomOpened(
+  payload: { userId: string; clusterId?: string } = { userId: USER, clusterId: CLUSTER }
+) {
+  await act(async () => {
+    masterBus.emit('LIGHTNING_ROOM_OPENED', payload);
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+}
+
 const SESSION_WITH_ANCHOR = {
   pool_session_id: POOL,
   state: 'active',
@@ -128,6 +158,7 @@ const SESSION_WITH_ANCHOR = {
 };
 
 beforeEach(() => {
+  masterBus.reset();
   sessionStorage.clear();
   localStorage.clear();
   resetLightningRegistryForTests();
@@ -460,8 +491,9 @@ describe('conversion of an already seated player', () => {
     expect(getLightningPoolSession(POOL)?.clusterId).toBe(CLUSTER);
     expect(follow).toHaveBeenCalledWith(POOL);
     unmount();
-    /* 2026-10-24: no realtime channel at all. `cash_games` is not published
-       (19.5M updates on 266 rows), so the old one could never fire. */
+    /* No realtime channel of its own. `cash_games` is not published (19.7M
+       updates on 266 rows), so a row subscription could never fire; the room
+       signal arrives on the account carrier ProfileAccountSync already holds. */
     expect(channelOpened).not.toHaveBeenCalled();
     expect(removeChannel).not.toHaveBeenCalled();
   });
@@ -490,19 +522,15 @@ describe('conversion of an already seated player', () => {
       data: { ...SESSION_WITH_ANCHOR, anchor_table_id: OTHER_CLUSTER },
       error: null,
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(LIGHTNING_LOBBY_REFRESH_MS);
-    });
+    await roomOpened();
     expect(result.current.readyPoolSessionId).toBeNull();
     rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(LIGHTNING_LOBBY_REFRESH_MS);
-    });
+    await roomOpened();
     expect(result.current.readyPoolSessionId).toBe(POOL);
     expect(follow).not.toHaveBeenCalled();
   });
 
-  it('reads nothing while the tab is hidden, and reads the moment it is shown', async () => {
+  it('reads nothing while the tab is hidden, and reads a signal it missed the moment it is shown', async () => {
     vi.useFakeTimers();
     rpc.mockResolvedValue({
       data: { pool_session_id: null, cluster_mode: 'pending_on' },
@@ -523,11 +551,9 @@ describe('conversion of an already seated player', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     const afterMount = rpc.mock.calls.length;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * LIGHTNING_LOBBY_REFRESH_MS);
-    });
-    expect(rpc.mock.calls.length).toBe(afterMount);
     rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
+    await roomOpened();
+    expect(rpc.mock.calls.length).toBe(afterMount);
     visibility.mockReturnValue('visible');
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));
@@ -555,8 +581,9 @@ describe('conversion of an already seated player', () => {
     });
     expect(result.current.readyPoolSessionId).toBe(POOL);
     const reads = rpc.mock.calls.length;
+    await roomOpened();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10 * LIGHTNING_LOBBY_REFRESH_MS);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
     });
     expect(rpc.mock.calls.length).toBe(reads);
   });
@@ -612,9 +639,7 @@ describe('conversion of an already seated player', () => {
       })
     );
     rpc.mockResolvedValue({ data: SESSION_WITH_ANCHOR, error: null });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(LIGHTNING_LOBBY_REFRESH_MS);
-    });
+    await roomOpened();
     expect(result.current.readyPoolSessionId).toBe(POOL);
     await act(async () => oldRead({ data: { pool_session_id: null }, error: null }));
     expect(result.current.readyPoolSessionId).toBe(POOL);
@@ -623,7 +648,7 @@ describe('conversion of an already seated player', () => {
     expect(PAGE).toMatch(/lightningRoom\s*\? 'Lightning Games '/);
     expect(PAGE).toContain('t.id === cashTemplateKey(template)');
   });
-  it('Lightning preselected Fold uses the immediate fast-fold door before arming a normal pre-action', () => {
+  it('Lightning preselected Fold uses the shared handler, which queues preflop before releasing', () => {
     expect(PAGE).toMatch(
       /onPreActionChange=\{\(next\) => \{[\s\S]*?if \(lightningRoom && next === 'fold' && !heroOwesNothing\) \{\s*void handleLightningFold\('fast_fold'\);\s*return;/
     );
@@ -633,6 +658,8 @@ describe('conversion of an already seated player', () => {
       /const heroOwesNothing =\s+\(tableState\.currentBet \|\| 0\) <=\s+\(tableState\.lastBetAmounts\?\.\[tableState\.heroSeat - 1\] \|\| 0\);/
     );
     expect(PAGE).toContain('if (lightningFoldBusyRef.current) return;');
+    expect(PAGE).toContain('lightningFoldOnTurn(engineSnapshotRef.current, userId, kind)');
+    expect(PAGE).toContain('preActionFoldOnTurnHandRef.current = queued.handId;');
   });
 });
 

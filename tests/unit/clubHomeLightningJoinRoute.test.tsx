@@ -19,6 +19,10 @@ const h = vi.hoisted(() => ({
   tournaments: [] as any[],
   tables: [] as any[],
   register: vi.fn(),
+  remoteView: vi.fn(),
+  remoteFilters: vi.fn(),
+  pushView: vi.fn(),
+  pushFilters: vi.fn(),
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -87,7 +91,13 @@ vi.mock('../../src/components/common/Toast', () => ({
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/components/lobby/lobbyViewPrefs', async (original) => ({
   ...(await original<any>()),
-  fetchRemoteViewPrefs: async () => null,
+  fetchRemoteViewPrefs: h.remoteView,
+  pushRemoteViewPrefs: h.pushView,
+}));
+vi.mock('../../src/components/lobby/AdvancedFilters', async (original) => ({
+  ...(await original<any>()),
+  fetchRemoteFilters: h.remoteFilters,
+  pushRemoteFilters: h.pushFilters,
 }));
 /* The wizard itself is proven elsewhere; here only its close matters. */
 vi.mock('../../src/components/club/ClubOpeningWizard', () => ({
@@ -101,6 +111,7 @@ vi.mock('../../src/components/club/ClubOpeningWizard', () => ({
 }));
 
 import ClubHomePage from '../../src/pages/ClubHomePage';
+import { emptyFilterValue, FILTER_SPECS } from '../../src/components/lobby/advancedFilterSpec';
 
 const deferred = <T = any,>(): Deferred<T> => {
   let resolve!: (value: T) => void;
@@ -149,6 +160,8 @@ beforeEach(() => {
   h.tagline = null;
   h.tournaments = [];
   h.tables = [];
+  h.remoteView.mockResolvedValue(null);
+  h.remoteFilters.mockResolvedValue(null);
   h.rpc.mockImplementation((name: string) => {
     if (name === 'fn_club_opening_checklist_state') {
       return Promise.resolve({
@@ -193,10 +206,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function mountLobby() {
+async function mountLobby(deepLink = true) {
   const read = h.clubReads.length;
   render(
-    <MemoryRouter initialEntries={['/clubs/club-a?game=anchor']}>
+    <MemoryRouter initialEntries={[deepLink ? '/clubs/club-a?game=anchor' : '/clubs/club-a']}>
       <Routes>
         <Route path="/clubs/:clubId" element={<ClubHomePage />} />
         <Route
@@ -250,4 +263,92 @@ it('keeps Join Lightning navigation after selected-panel URL effects settle, wit
   expect(
     h.rpc.mock.calls.some(([name]) => name === 'fn_cash_game_join' || name === 'atomic_table_buyin')
   ).toBe(false);
+});
+
+const ordinaryTable = (id: string, variant: string, name: string) => ({
+  id,
+  club_id: 'club-a',
+  name,
+  game_variant: variant,
+  game_type: 'cash',
+  status: 'running',
+  lifecycle: 'live',
+  max_players: 6,
+  current_players: 3,
+  small_blind: 1,
+  big_blind: 2,
+  min_buy_in: 100,
+  max_buy_in: 400,
+});
+
+for (const lateRead of ['view', 'filters'] as const) {
+  it(`keeps an explicitly selected card when saved ${lateRead} arrive late, without saving a preference`, async () => {
+    h.setupReads = [DONE];
+    h.tables = [
+      ordinaryTable('anchor', 'nlh', 'Holdem Chosen'),
+      ordinaryTable('omaha', 'plo5', 'Omaha Other'),
+      ordinaryTable('pineapple', 'pineapple', 'Pineapple Other'),
+    ];
+    const late = deferred<any>();
+    if (lateRead === 'view') h.remoteView.mockReturnValue(late.promise);
+    else h.remoteFilters.mockReturnValue(late.promise);
+    await mountLobby(false);
+    if (lateRead === 'filters') {
+      fireEvent.click(screen.getByRole('tab', { name: 'NLH', exact: true }));
+      await settle();
+    }
+    h.pushView.mockClear();
+    h.pushFilters.mockClear();
+    fireEvent.click(document.querySelector('.lt-row[data-id="anchor"]')!);
+    await flush();
+    expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
+    await act(async () =>
+      late.resolve(
+        lateRead === 'view'
+          ? { tab: 'OMAHA', sortByTab: {}, favoritesOnly: false }
+          : { HOLDEM: { ...emptyFilterValue(FILTER_SPECS.HOLDEM), games: ['pineapple'] } }
+      )
+    );
+    await settle();
+    expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
+    expect(h.pushView).not.toHaveBeenCalled();
+    expect(h.pushFilters).not.toHaveBeenCalled();
+    // An explicit tab change still filters the chosen game out and closes it.
+    fireEvent.click(screen.getByRole('tab', { name: 'PLO', exact: true }));
+    await flush();
+    expect(screen.queryByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeNull();
+  });
+}
+
+it('applies saved view held for an open card when it closes, and a later tap saves the newer row', async () => {
+  h.setupReads = [DONE];
+  h.tables = [
+    ordinaryTable('anchor', 'nlh', 'Holdem Chosen'),
+    ordinaryTable('omaha', 'plo5', 'Omaha Other'),
+  ];
+  const late = deferred<any>();
+  h.remoteView.mockReturnValue(late.promise);
+  await mountLobby(false);
+  fireEvent.click(document.querySelector('.lt-row[data-id="anchor"]')!);
+  await flush();
+  expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
+  // Another device saved PLO with Favorites on. It lands while the card is open.
+  await act(async () => late.resolve({ tab: 'OMAHA', sortByTab: {}, favoritesOnly: true }));
+  await settle();
+  // The open card is left alone...
+  expect(screen.getByRole('dialog', { name: 'Holdem Chosen Lobby' })).toBeTruthy();
+  expect(h.pushView).not.toHaveBeenCalled();
+  // ...and the held view applies once the player closes it.
+  fireEvent.click(screen.getByRole('button', { name: 'Close Game Lobby', exact: true }));
+  await settle();
+  expect(screen.getByRole('tab', { name: 'PLO', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  // A later tap merges into the newer row: Favorites stays on in what is saved.
+  h.pushView.mockClear();
+  fireEvent.click(screen.getByRole('tab', { name: 'NLH', exact: true }));
+  await settle();
+  expect(h.pushView).toHaveBeenCalled();
+  expect(h.pushView.mock.calls.at(-1)?.[1]).toMatchObject({ tab: 'HOLDEM', favoritesOnly: true });
 });

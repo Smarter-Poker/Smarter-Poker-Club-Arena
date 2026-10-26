@@ -61,6 +61,8 @@ const decomment = (s: string) =>
     .replace(/\/\/[^\n]*/g, (m) => m.replace(/[^\n]/g, ' '));
 
 describe('no test bounds a source pin with a magic number', () => {
+  // Exhaustive SSD source scan measured 5.3-6.2s during concurrent local checks.
+  // Keep every input/assertion and a finite budget with room for I/O contention.
   it('every window is bounded by a structure, via tests/helpers/sourceWindow', () => {
     const offenders: string[] = [];
 
@@ -86,7 +88,7 @@ describe('no test bounds a source pin with a magic number', () => {
         'See tests/helpers/sourceWindow.ts for the extractor that fits.\n' +
         offenders.join('\n')
     ).toEqual([]);
-  });
+  }, 30_000);
 });
 
 /**

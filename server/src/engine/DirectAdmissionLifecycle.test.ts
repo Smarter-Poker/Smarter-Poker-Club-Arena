@@ -3,6 +3,7 @@ import { GameServer } from '../GameServer.js';
 import * as freezeState from '../maintenance/freezeState.js';
 import * as errorReporter from '../services/errorReporter.js';
 import { BoundedLeaseRenewalScope } from '../services/BoundedLeaseRenewalScope.js';
+import { BootPhaseTimeline } from './bootPhases.js';
 
 type Admission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
 
@@ -13,6 +14,7 @@ function bareServer(): any {
   server.leaderBootComplete = true;
   server.dealerPrerequisitesReady = true;
   server.dealerPrerequisiteGate = null;
+  server.bootTimeline = new BootPhaseTimeline(Date.now, Date.now(), () => {});
   server.startOperation = null;
   server.teardownPromise = null;
   server.tournamentEngines = new Map();

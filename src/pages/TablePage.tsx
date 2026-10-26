@@ -319,8 +319,14 @@ import {
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
-import { lightningSessionStackFor, lightningWaitingHero } from '../lightning/lightningWaitingHero';
+import {
+  lightningIdleBalanceFor,
+  type LightningIdleBalanceSnapshot,
+  lightningSessionStackFor,
+  lightningWaitingHero,
+} from '../lightning/lightningWaitingHero';
 import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
+import { useLightningTopUpReceipts } from '../lightning/useLightningTopUpReceipts';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
@@ -329,6 +335,7 @@ import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal
 import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy, seatUnits } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
+import { playPlayerActionSound } from '../lib/playerActionSound';
 import { soundService, haptic } from '../services/SoundService';
 import {
   ChipAnimationManager,
@@ -376,7 +383,12 @@ import LightningJoining from '../components/table/LightningJoining';
 import LightningEndedNotice from '../components/table/LightningEndedNotice';
 import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import { lightningSessionEndText, useLightningSessionEnd } from '../lightning/lightningReconnect';
-import { isClassicLobbyState, isLightningMode, lightningRoute } from '../lightning/lightningLobby';
+import {
+  isClassicLobbyState,
+  isLightningMode,
+  lightningJoinRoute,
+  lightningRoute,
+} from '../lightning/lightningLobby';
 import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
@@ -409,7 +421,11 @@ import {
   lightningCapabilities,
   readLightningPlatformSignals,
 } from '../lightning/lightningCapabilities';
-import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
+import {
+  sendLightningFold,
+  lightningFoldOnTurn,
+  type LightningFoldKind,
+} from '../lightning/lightningActions';
 import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
 import { openLightningSessionSummary } from '../lightning/lightningSummaryStore';
 import { readLightningPrefs } from '../lightning/lightningPrefs';
@@ -517,6 +533,7 @@ import { useTableArt } from '../hooks/useTableArt';
 import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
+  isTimeBankTurnGone,
   submitAction,
   respondToRIT,
   respondToInsurance,
@@ -583,7 +600,7 @@ import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage'
 import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
+import { bestFive, cardKey } from '../utils/handEvaluator';
 import { ritAwardHighlights } from '../utils/ritAwardHighlights';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
@@ -599,45 +616,14 @@ import {
 import {
   buildAwardGroups,
   boardLabelFromAwards,
+  isAllInShowdown,
   pendingStackHold,
+  showdownHandNamesFrom,
+  showdownWinnerLine,
 } from '../lib/showdownPresentation';
 
-/** Rank ordering for the preflop label. Ace high; T/J/Q/K above the numbers. */
-const RANK_ORDER = (r: string): number =>
-  ({
-    '2': 2,
-    '3': 3,
-    '4': 4,
-    '5': 5,
-    '6': 6,
-    '7': 7,
-    '8': 8,
-    '9': 9,
-    T: 10,
-    J: 11,
-    Q: 12,
-    K: 13,
-    A: 14,
-  })[String(r).toUpperCase()] ?? 0;
-
-/** "A" -> "Ace", "T" -> "Ten", so the preflop label reads like a poker room. */
-const RANK_WORD = (r: string): string =>
-  ({
-    '2': 'Two',
-    '3': 'Three',
-    '4': 'Four',
-    '5': 'Five',
-    '6': 'Six',
-    '7': 'Seven',
-    '8': 'Eight',
-    '9': 'Nine',
-    T: 'Ten',
-    J: 'Jack',
-    Q: 'Queen',
-    K: 'King',
-    A: 'Ace',
-  })[String(r).toUpperCase()] ?? String(r).toUpperCase();
-import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+import { canonicalCards, normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+import { heroHandLabel } from '../lib/heroHandLabel';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 // The unit a printed amount is named in: Chips, or Diamonds at a Diamond seat.
@@ -927,7 +913,6 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 // to sit inline in this file; the seat rings in particular carry measured rail
 // positions that must not be casually rewritten. See those files for why.
 import {
-  ENGINE_SUIT_MAP,
   sortCardsByRank,
   heroDisplayHoleCards,
   getGameVariantLabel,
@@ -2268,6 +2253,7 @@ function LiveTablePage({
 
   const {
     snapshot: rawEngineSnapshot,
+    lightningOriginalTopUpReady,
     status: engineWsStatus,
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
@@ -3203,9 +3189,13 @@ function LiveTablePage({
    * so client and engine agree on when the hand is actually over.
    * Set in the SHOWDOWN handler, reset at HAND_STARTED.
    */
-  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number }>({
+  /* allIn (Dan 2026-10-24): two or more hands reached showdown and one is an
+     all-in player's. Adds ALL_IN_SHOWDOWN_EXTRA_MS to the hold, exactly as
+     the engine does, and holds the beaten hands' muck back by the same. */
+  const handShowdownRef = useRef<{ wentToShowdown: boolean; hands: number; allIn: boolean }>({
     wentToShowdown: false,
     hands: 2,
+    allIn: false,
   });
   /**
    * Dan 2026-08-21 (bug list item 1): the Fold toggle in the pre-action bar
@@ -3215,6 +3205,7 @@ function LiveTablePage({
    * offering at the moment the player armed it, and map accordingly.
    */
   const preActionCanCheckRef = useRef(false);
+  const preActionFoldOnTurnHandRef = useRef<string | null>(null);
   /**
    * Dan 2026-08-28 (CRITICAL): the price on the Call button at the moment the
    * player armed it. Sent to the engine as auto_call's maxCallAmount so a
@@ -3665,6 +3656,7 @@ function LiveTablePage({
         hadPreActionRef,
         lastArmedPreActionRef,
         preActionCanCheckRef,
+        preActionFoldOnTurnHandRef,
         preActionCallAmountRef,
         preActionHeldByEngineRef,
         preActionSendSeqRef,
@@ -4504,8 +4496,10 @@ function LiveTablePage({
   });
   /* LIGHTNING: THE HERO BETWEEN HANDS (Dan 2026-10-24). "IT SHOUDN'T SAY
      SITTING OUT... IT SHOULD NEVER SAY 0.00". A fold answers with an idle room
-     (no players), so the hero's chair is drawn from these two facts instead
-     of the cash seat-row placeholder. See lightning/lightningWaitingHero.ts. */
+     (no players), so the hero's chair is drawn from these facts instead of
+     the cash seat-row placeholder: the engine's own `player_balance` on that
+     idle room, then the last roster, then the pool session read. See
+     lightning/lightningWaitingHero.ts. */
   const lightningHeroInRoster = lightningRoom
     ? (tableState.players.find((p) => !!p && !!userId && p.id === userId) ?? null)
     : null;
@@ -4515,9 +4509,13 @@ function LiveTablePage({
     lightningLastSeenStackRef.current = lightningHeroInRoster.stack;
   }
   const [lightningSessionStack, setLightningSessionStack] = useState<number | null>(null);
+  /* The idle snapshot whose engine balance chips added since have made stale. */
+  const lightningEngineStackSupersededRef = useRef<unknown>(null);
   /* Chips added between hands (a manual add-on or the auto top-up) make the
      last roster stack stale: it is dropped and the pool balance read again. */
   const [lightningBalanceVersion, setLightningBalanceVersion] = useState(0);
+  // Retry requests a read; only an actual chip addition supersedes an idle balance.
+  const [lightningBalanceReadVersion, setLightningBalanceReadVersion] = useState(0);
   const lightningBalanceVersionAppliedRef = useRef(0);
   /* The database confirms this room is the caller's own open pool session. */
   const [lightningSessionHoldsRoom, setLightningSessionHoldsRoom] = useState(false);
@@ -4540,6 +4538,7 @@ function LiveTablePage({
         if (askedAtVersion > lightningBalanceVersionAppliedRef.current) {
           lightningBalanceVersionAppliedRef.current = askedAtVersion;
           lightningLastSeenStackRef.current = null;
+          lightningEngineStackSupersededRef.current = engineSnapshotRef.current;
         }
         setLightningSessionStack(lightningSessionStackFor(tableId, session));
         setLightningSessionHoldsRoom(
@@ -4555,10 +4554,29 @@ function LiveTablePage({
     return () => {
       cancelled = true;
     };
-  }, [lightningHeroWaiting, lightningRoomClusterId, tableId, lightningBalanceVersion]);
+  }, [
+    lightningHeroWaiting,
+    lightningRoomClusterId,
+    tableId,
+    lightningBalanceVersion,
+    lightningBalanceReadVersion,
+  ]);
+  /* The engine's own figure for this room's player, on the idle snapshot it
+     sends after a fold or an abandon. Absent on an engine that predates it. */
+  const lightningEngineIdleStack =
+    lightningRoom &&
+    !lightningHeroInRoster &&
+    engineSnapshot !== lightningEngineStackSupersededRef.current
+      ? lightningIdleBalanceFor(
+          tableId,
+          userId,
+          engineSnapshot as unknown as LightningIdleBalanceSnapshot | null
+        )
+      : null;
   const lightningWaitingSeat = lightningRoom
     ? lightningWaitingHero({
         sittingOut: lightningSitOut.sittingOut,
+        engineStack: lightningEngineIdleStack,
         lastSeenStack: lightningLastSeenStackRef.current,
         sessionStack: lightningSessionStack,
       })
@@ -7534,6 +7552,10 @@ function LiveTablePage({
   // flags — never inferred client-side. Cleared at HAND_STARTED and at the
   // hand-complete table reset.
   const [muckedLabelSeats, setMuckedLabelSeats] = useState<boolean[]>(() => Array(9).fill(false));
+  /* Dan 2026-10-24: every tabled hand's name at showdown, by player id. Set
+     from the engine's showdown event, cleared at the next deal and at the
+     hand-complete reset alongside the MUCKED labels. */
+  const [showdownHandNames, setShowdownHandNames] = useState<Record<string, string>>({});
   // SHOWDOWN SYSTEM 2026-08-25 (spec section 3): seat -> reveal order index
   // from the showdown event (0 = final-street last aggressor, then
   // clockwise). Drives a small per-seat stagger on the card flip so the
@@ -8401,10 +8423,32 @@ function LiveTablePage({
      such writer (prize escrow is a later phase and the custody door refuses a
      tournament table), so it is not offered a control that cannot work. */
   const canTopUpSeat = seatCanAddFunds(tableState.arenaAsset, tableState.isTournament);
+  const lightningAddChipsScope = `${userId}/${tableId ?? ''}/${lightningRoom?.poolSessionId ?? ''}/${lightningRoom?.clusterId ?? ''}`;
+  const lightningAddChipsOwnerRef = useRef({
+    key: lightningAddChipsScope,
+    generation: 0,
+    mounted: false,
+  });
+  if (lightningAddChipsOwnerRef.current.key !== lightningAddChipsScope) {
+    lightningAddChipsOwnerRef.current.key = lightningAddChipsScope;
+    lightningAddChipsOwnerRef.current.generation++;
+  }
+  useEffect(() => {
+    lightningAddChipsOwnerRef.current.mounted = true;
+    return () => {
+      lightningAddChipsOwnerRef.current.mounted = false;
+      lightningAddChipsOwnerRef.current.generation++;
+    };
+  }, []);
   const handleAddChips = async (
     amount: number,
     opId?: string,
-    opts?: { source?: 'manual' | 'auto'; isCurrent?: () => boolean; isScopeCurrent?: () => boolean }
+    opts?: {
+      source?: 'manual' | 'auto';
+      isCurrent?: () => boolean;
+      isScopeCurrent?: () => boolean;
+      onTerminalRefusal?: () => void;
+    }
   ): Promise<boolean> => {
     if (opts?.isCurrent && !opts.isCurrent()) return false;
     /* A Diamond seat tops up too, through the same engine call. What differs is
@@ -8436,8 +8480,15 @@ function LiveTablePage({
          room id answered "Player not seated"). Read fresh, never cached. */
       let addOnTableId: string = tableId;
       const addOnRoom = lightningRoomRef.current;
+      const scopeKey = `${userId}/${tableId ?? ''}/${addOnRoom?.poolSessionId ?? ''}/${addOnRoom?.clusterId ?? ''}`;
+      const scopeGeneration = lightningAddChipsOwnerRef.current.generation;
+      const ownLightningScope = () =>
+        lightningAddChipsOwnerRef.current.mounted &&
+        lightningAddChipsOwnerRef.current.key === scopeKey &&
+        lightningAddChipsOwnerRef.current.generation === scopeGeneration;
+      let anchor: LightningAnchorSeat | null = null;
       if (addOnRoom) {
-        let anchor: LightningAnchorSeat | null = null;
+        if (!ownLightningScope()) return false;
         try {
           anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId, addOnRoom.poolSessionId);
         } catch (anchorErr) {
@@ -8445,6 +8496,7 @@ function LiveTablePage({
             clusterId: addOnRoom.clusterId,
           });
         }
+        if (!ownLightningScope()) return false;
         if (!anchor) {
           toast.error(`Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
           return false;
@@ -8453,16 +8505,49 @@ function LiveTablePage({
       }
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
+      if (addOnRoom) {
+        if (!ownLightningScope()) return false;
+        // This is one bounded custody read for the original request, never a
+        // retry. A reseat must not apply an old response to a new cashier.
+        let currentAnchor: LightningAnchorSeat | null;
+        try {
+          currentAnchor = await fetchLightningAnchorSeat(
+            addOnRoom.clusterId,
+            addOnRoom.poolSessionId
+          );
+        } catch (error) {
+          reportError(error, 'TablePage.lightning_addon_receipt_anchor_read_failed');
+          return false;
+        }
+        if (
+          !ownLightningScope() ||
+          !anchor ||
+          !currentAnchor ||
+          currentAnchor.anchorTableId !== anchor.anchorTableId ||
+          currentAnchor.seatNumber !== anchor.seatNumber ||
+          currentAnchor.occupancyId !== anchor.occupancyId
+        )
+          return false;
+      }
       // Opting out prevents the next debit; an already committed response still
       // updates this same player/pool's ordinary balance and session records.
       if (opts?.isScopeCurrent && !opts.isScopeCurrent()) return false;
       if (!res.success) {
+        if (
+          addOnRoom &&
+          res.code === 'LIGHTNING_TOP_UP_TERMINAL_REFUSAL' &&
+          res.request_id === opId
+        )
+          opts?.onTerminalRefusal?.();
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
            (the engine caps on stack + pending). "Already at the maximum" is
            then the ordinary answer, not an incident: no toast, no report,
            the next snapshot re-evaluates. A manual request still hears it. */
-        if (opts?.source === 'auto' && /maximum buy-in/i.test(String(res.error || ''))) {
+        if (
+          opts?.source === 'auto' &&
+          /maximum buy-in|top up is already pending/i.test(String(res.error || ''))
+        ) {
           lastAddChipsResultRef.current = { applied: 0, queued: false };
           // And do not ask again this hand: the effect below re-runs on every
           // snapshot (`tableState.players` is a new array each time), and
@@ -8490,6 +8575,25 @@ function LiveTablePage({
           }
         }
         return false;
+      }
+      // A Lightning queue is a durable UNCHARGED request. Only the own
+      // terminal receipt updates funding/accounting, including after reconnect.
+      if (addOnRoom && res.charged !== undefined) {
+        if (
+          res.pool_session_id !== addOnRoom.poolSessionId ||
+          res.occupancy_id !== anchor?.occupancyId
+        ) {
+          // A completed original purchase from an earlier seat is not a new
+          // purchase here. Only a known terminal key may be released.
+          if (res.charged && res.request_id === opId && res.requested === amount)
+            opts?.onTerminalRefusal?.();
+          return false;
+        }
+        lastAddChipsResultRef.current = { applied: res.applied ?? 0, queued: res.queued === true };
+        setLightningBalanceVersion((v) => v + 1);
+        if (res.queued)
+          toast.info('Your Lightning Top Up Is Queued. Your Wallet Has Not Been Charged.');
+        return true;
       }
       /* Cashier audit 2026-08-27 (P0-2): the engine caps the top-up to the
          seat's headroom and reports what actually moved as `applied`. The
@@ -8892,21 +8996,8 @@ function LiveTablePage({
         return { success: false, error: result.error };
       }
 
-      // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
-      const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-        hearts: 'h',
-        diamonds: 'd',
-        clubs: 'c',
-        spades: 's',
-        h: 'h',
-        d: 'd',
-        c: 'c',
-        s: 's',
-      };
-      const parsedCards = result.cards.map((c) => ({
-        rank: String(c.rank) as any,
-        suit: suitMap[String(c.suit)] || 'h',
-      }));
+      // Server card format -> the one client spelling (2026-10-25).
+      const parsedCards = canonicalCards(result.cards) as Card[];
       // Explicit hand requests belong to the replayer, which renders its own
       // result. A replayer purchase must never replace the live felt.
       if (handNumber === undefined) {
@@ -9764,6 +9855,7 @@ function LiveTablePage({
    *  debit issued meanwhile is not undone by the answer. */
   const retryAccountBalance = useCallback(() => {
     if (!userId || !tableId) return;
+    if (lightningRoomRef.current) setLightningBalanceReadVersion((v) => v + 1);
     const revision = readBalanceRevision();
     void readBustBalance(userId, tableId).then((b) => {
       if (b !== null) setBalanceIfCurrent(revision, b);
@@ -11294,10 +11386,9 @@ function LiveTablePage({
               rawCards = row.cards as any;
             }
 
-            let formattedCards = (rawCards || []).map((c: any) => ({
-              rank: c.rank,
-              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
-            }));
+            /* One spelling for every card (2026-10-25): canonicalCards folds
+               'clubs'/'c' and '10'/'T' so this row and the board agree. */
+            let formattedCards = canonicalCards(rawCards || []) as Card[];
             /* ═══ THE ENGINE'S OWN CARD ORDER, KEPT SEPARATELY (2026-08-31) ═══
                `submitDiscard` takes an INDEX into the engine's `player.cards`
                array. Two lines below, cards_pre_sort re-orders this array for
@@ -11600,10 +11691,8 @@ function LiveTablePage({
             } catch (e) {
               rawCards = data.cards as any;
             }
-            let parsedCards = (rawCards || []).map((c: any) => ({
-              rank: c.rank,
-              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
-            }));
+            /* Same door as the realtime path above (2026-10-25). */
+            let parsedCards = canonicalCards(rawCards || []) as Card[];
             /* The same record the realtime path keeps, for the same reason: a
                Crazy Pineapple discard is an INDEX into the engine's order, and
                cards_pre_sort is about to reorder this array. Without it, a hero
@@ -16088,7 +16177,13 @@ function LiveTablePage({
     }
     if (!payload.userId || payload.userId === userId) {
       if (payload.balance !== undefined) {
+        // The newer authoritative wallet event invalidates older awaited
+        // reads, including a Lightning funding receipt issued before it.
+        balanceRevisionRef.current += 1;
         setAccountBalance(payload.balance);
+        // If that event invalidated the only terminal receipt read, replace
+        // it once so a paused/waiting hero still learns its funding and stack.
+        if (lightningRoomRef.current) setLightningBalanceVersion((v) => v + 1);
       } else {
         /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
            collapses failures wrote a 0 into the on-screen balance whenever a
@@ -16640,7 +16735,15 @@ function LiveTablePage({
     [userId]
   );
 
-  const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
+  /* A Lightning pool session has no `tables` row, so the private
+     table-appearance topic is refused by RLS for it and nothing is ever sent
+     to it (2026-10-24). The authoritative read still runs. */
+  const seatedProfileSync = useSeatedProfileSync(
+    tableId,
+    seatedUserIds,
+    handleSeatedProfileChange,
+    { appearanceSignal: !lightningRoom }
+  );
 
   /* WAITLIST HORSE YIELD - REMOVED (2026-10-05). Every seated client polled
      the waitlist every 15s and asked HydraService to stand a horse up for a
@@ -17185,7 +17288,7 @@ function LiveTablePage({
                   sp.user_id === userId
                     ? sp.cards?.length
                       ? heroDisplayHoleCards(
-                          sp.cards,
+                          canonicalCards(sp.cards) as Card[],
                           existing?.holeCards,
                           !!cardsPreSortRef.current
                         )
@@ -17412,19 +17515,7 @@ function LiveTablePage({
         // immediate.
         const isHeroEcho = actionSeat > 0 && actionSeat === resolveHeroSeat();
         if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho) {
-          if (action === 'all_in' || action === 'allin') soundService.playAllIn();
-          else if (action === 'bet' || action === 'raise' || action === 'call')
-            soundService.playChips();
-          else if (action === 'check') soundService.playCheck();
-          else if (action === 'fold') soundService.playFold();
-          /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was
-             SILENT for every opponent - human and horse alike. The hero half
-             of the split fires in handlePineappleDiscard the instant they
-             click; this is the other half, and the isHeroEcho guard above is
-             what keeps the hero from hearing their own discard twice. */ else if (
-            action === 'discard'
-          )
-            soundService.playDiscard();
+          playPlayerActionSound(action, actionAmount, safeBB(tableStateRef.current.blinds, 1));
         }
 
         /* PHASE 3 2026-08-31: this seat is now holding one card fewer, and
@@ -17531,7 +17622,9 @@ function LiveTablePage({
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         // Items 11 + 16: a fresh hand has not reached showdown yet.
-        handShowdownRef.current = { wentToShowdown: false, hands: 2 };
+        handShowdownRef.current = { wentToShowdown: false, hands: 2, allIn: false };
+        // Dan 2026-10-24: the tabled hands' names belong to the hand that tabled them.
+        setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
            Both of these shrink a card row, so carrying either into the next
            hand would deal a seat a hand that is visibly one card short. */
@@ -17625,6 +17718,7 @@ function LiveTablePage({
         // SHOWDOWN SYSTEM 2026-08-25 (spec section 39): clear the previous
         // hand's MUCKED labels and reveal stagger before the new deal.
         setMuckedLabelSeats(Array(9).fill(false));
+        setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         showdownRevealOrderRef.current = {};
         if (ritResultTimerRef.current) {
           clearTimeout(ritResultTimerRef.current);
@@ -18500,7 +18594,12 @@ function LiveTablePage({
                cannot judge three boards against a hand that has left the
                felt. The muck waits for the reveal to finish, like the reset
                hold two blocks down already does. */
-            const muckBase = 2400 * getAnimationSpeed();
+            /* Dan 2026-10-24: on an all-in showdown the beaten hands stay face
+               up for the same two extra seconds the hold gives the winner. */
+            const muckBase =
+              (2400 +
+                (handShowdownRef.current.allIn ? HAND_COMPLETION.ALL_IN_SHOWDOWN_EXTRA_MS : 0)) *
+              getAnimationSpeed();
             const revealEnd = ritRevealEndsAtRef.current;
             const muckDelay =
               revealEnd > Date.now() ? Math.max(muckBase, revealEnd - Date.now() + 200) : muckBase;
@@ -18556,6 +18655,8 @@ function LiveTablePage({
           // board, pot and winner were wiped roughly a second into the Bad Beat
           // Jackpot celebration that the spec says is never rushed.
           bbjHit: !!bbjHitDataRef.current,
+          // Dan 2026-10-24: the all-in showdown's two extra seconds, as the engine holds them.
+          allInShowdown: handShowdownRef.current.allIn,
         });
         // The player's animation-speed preference scales this, but only within
         // bounds. The SERVER holds `holdBaseMs` flat, so scaling below 1x used to
@@ -18685,6 +18786,7 @@ function LiveTablePage({
           // SHOWDOWN SYSTEM 2026-08-25 cleanup (spec section 39): no showdown
           // artifact may leak into the next hand.
           setMuckedLabelSeats(Array(9).fill(false));
+          setShowdownHandNames((prev) => (Object.keys(prev).length === 0 ? prev : {}));
           // SHOWDOWN AUDIT 2026-08-25 (spec 21 backstop): a client that
           // joined or reconnected AFTER pot_win never schedules the release
           // timer, so without this the winner's stack would sit reduced until
@@ -18756,11 +18858,29 @@ function LiveTablePage({
            and the winner 350-800ms before the engine did - a truncated
            announcement, which 10.6 forbids. The event carries the count; it
            is destructured a few lines below for the reveal order. */
-        const sdResultsForCount = ((evt.data as any).results as Array<{ mucked?: boolean }>) || [];
+        const sdResultsForCount =
+          ((evt.data as any).results as Array<{
+            user_id?: string;
+            hand_name?: string;
+            mucked?: boolean;
+          }>) || [];
         handShowdownRef.current = {
           wentToShowdown: true,
           hands: Math.max(2, sdResultsForCount.length),
+          /* Dan 2026-10-24: "WHEN PLAYERS ARE ALL IN, ON THE RIVER, KEEP THE
+             CARDS SHOWN FOR 2 MORE SECONDS". Read from the live seats now,
+             while they still carry this hand's all-in status. */
+          allIn: isAllInShowdown(
+            sdResultsForCount
+              .map((r) => r.user_id)
+              .filter((id): id is string => typeof id === 'string'),
+            tableStateRef.current.players
+          ),
         };
+        /* Dan 2026-10-24: "PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS
+           BETTER". Every tabled hand is named at its seat, not only the
+           winner's; the engine already sends each name on this event. */
+        setShowdownHandNames(showdownHandNamesFrom(sdResultsForCount));
         // SHOWDOWN SYSTEM 2026-08-25: the showdown event now carries the
         // engine-decided reveal sequence and muck ruling per player —
         // { user_id, seat, reveal_order, mucked }. Record the order for the
@@ -21068,56 +21188,38 @@ function LiveTablePage({
     () => (tableState.communityCards || []).filter((c): c is Card => !!c),
     [tableState.communityCards]
   );
+  /* Every board in play (2026-10-25): a double- or triple-board bomb pot deals
+     full independent boards, and the label names the hand on each one. */
+  const heroBoard2Cards = useMemo(
+    () => (tableState.communityCards2 || []).filter((c): c is Card => !!c),
+    [tableState.communityCards2]
+  );
+  const heroBoard3Cards = useMemo(
+    () => (tableState.communityCards3 || []).filter((c): c is Card => !!c),
+    [tableState.communityCards3]
+  );
   /** Identity-independent keys: the memo below re-runs only on real changes. */
   const heroHoleKey = heroHoleCards.map(cardKey).join(',');
-  const heroBoardKey = heroBoardCards.map(cardKey).join(',');
+  const heroBoardKey = [heroBoardCards, heroBoard2Cards, heroBoard3Cards]
+    .map((b) => b.map(cardKey).join(','))
+    .join('|');
   const heroHandVariant = tableState.handVariant || tableState.gameType;
-  const heroCardsRef = useRef({ hole: heroHoleCards, board: heroBoardCards });
-  heroCardsRef.current = { hole: heroHoleCards, board: heroBoardCards };
+  const heroCardsRef = useRef({
+    hole: heroHoleCards,
+    boards: [heroBoardCards, heroBoard2Cards, heroBoard3Cards],
+  });
+  heroCardsRef.current = {
+    hole: heroHoleCards,
+    boards: [heroBoardCards, heroBoard2Cards, heroBoard3Cards],
+  };
 
+  /* The rules - a pair at most before the flop, both halves in hi-lo, every
+     board in a multi-board pot - live in src/lib/heroHandLabel.ts, pinned by
+     tests/unit/heroHandLabel.test.ts (Dan 2026-10-25: "IT MUST 100% OF THE
+     TIME DISPLAY THE BEST CURRENT HAND THAT THE USER HAS"). */
   const heroHandStrengthLive = useMemo<string | null>(() => {
-    const hole = heroCardsRef.current.hole;
-    if (hole.length < 2) return null;
-    const board = heroCardsRef.current.board;
-
-    let strength: string | null = null;
-    if (board.length === 0) {
-      const ranks = hole.map((c) => String(c.rank).toUpperCase());
-      const counts = new Map<string, number>();
-      for (const r of ranks) counts.set(r, (counts.get(r) || 0) + 1);
-      let best = null;
-      for (const [rank, n] of counts) {
-        if (!best || n > best.n || (n === best.n && RANK_ORDER(rank) > RANK_ORDER(best.rank))) {
-          best = { rank, n };
-        }
-      }
-      if (best) {
-        /* PINEAPPLE 2026-09-01: three in the hand, two of them survive the
-           discard, so trips preflop is a hand that cannot be played and must
-           not be named. Capped rather than special-cased so the rest of this
-           branch - the high-card wording below included - is untouched. See
-           isPineappleVariant in handEvaluator.ts for the same rule on the
-           flop. */
-        const holdable = isPineappleVariant(heroHandVariant) ? Math.min(best.n, 2) : best.n;
-        if (holdable >= 4) strength = 'Four of a Kind';
-        else if (holdable === 3) strength = 'Three of a Kind';
-        else if (holdable === 2) strength = 'Pair';
-        else {
-          const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
-          strength = `${RANK_WORD(high)} High`;
-        }
-      }
-    } else {
-      try {
-        const best = bestFive(hole, board, heroHandVariant);
-        strength = best?.name ?? null;
-      } catch {
-        strength = null;
-      }
-    }
-    return strength;
-
-    // are read through heroCardsRef; these keys change exactly when they do.
+    return heroHandLabel(heroCardsRef.current.hole, heroCardsRef.current.boards, heroHandVariant);
+    // The cards are read through heroCardsRef; these keys change exactly when they do.
   }, [heroHoleKey, heroBoardKey, heroHandVariant]);
 
   /* Once the hand is over, hold the last known strength rather than letting
@@ -21177,6 +21279,14 @@ function LiveTablePage({
       return;
     }
     deferredSeatTapRef.current = null;
+    /* A LIGHTNING SEAT IS NEVER PICKED (Dan 2026-10-24: "YOU DON'T SELECT YOUR
+       SEAT ... YOU AUTO ASSIGN THEM TO A SEAT AND TABLE"). A chair tapped on a
+       physical table of a Lightning game opens the game's own Join Lightning
+       door, which asks only the amount. */
+    if (anchorLightningClusterId && heroSeatRef.current <= 0 && tableState.heroSeat <= 0) {
+      openLightningAnchorEntry();
+      return;
+    }
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
@@ -21397,7 +21507,7 @@ function LiveTablePage({
      player itself; nobody picks a chair on this felt. */
   const openLightningAnchorEntry = () => {
     if (!anchorLightningClusterId) return;
-    navigate(`${lightningRoute(anchorLightningClusterId)}?join=1`);
+    navigate(lightningJoinRoute(anchorLightningClusterId));
   };
 
   /**
@@ -23188,6 +23298,11 @@ function LiveTablePage({
     const result = await GameServerAPI.activateTimeBank(tableId, userId, request.decision);
     if (!request.isCurrent()) return;
     if (!result?.success) {
+      /* The press crossed the turn (2026-10-24): the engine had already
+         moved the action, ended the hand or closed the Lightning decision.
+         Nothing was spent and there is nothing to do, so it is not an error
+         to show. Every other refusal still says why. */
+      if (isTimeBankTurnGone(result?.error)) return;
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }
@@ -24484,7 +24599,6 @@ function LiveTablePage({
     },
     lightningCaps
   );
-  const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
   const lightningFoldBusyRef = useRef(false);
   const lightningFoldHandId =
     lightningRoom && lightningHandLive
@@ -24494,10 +24608,28 @@ function LiveTablePage({
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
       if (lightningFoldBusyRef.current) return;
+      const queued = lightningFoldOnTurn(engineSnapshotRef.current, userId, kind);
+      if (queued) {
+        if ('error' in queued) {
+          toast.warning(queued.error);
+          return;
+        }
+        // Snapshot intent before React's effect or the betting street moves.
+        // The existing host queues auto_check_fold and executes it on turn;
+        // The free keyboard shortcut follows the visible Check/Fold rule.
+        preActionFoldOnTurnHandRef.current = queued.handId;
+        preActionCanCheckRef.current = queued.toCall === 0;
+        preActionCallAmountRef.current = queued.toCall;
+        preActionPriorHeroActionAtRef.current = latestHeroActionTimestamp(
+          engineSnapshotRef.current?.action_history,
+          tableStateRef.current.heroSeat
+        );
+        setPreAction('fold');
+        return;
+      }
       lightningFoldBusyRef.current = true;
       // The fold supersedes any armed pre-action for this hand.
       setPreAction(null);
-      setLightningFoldBusy(true);
       try {
         const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
@@ -24514,12 +24646,11 @@ function LiveTablePage({
         }
       } finally {
         lightningFoldBusyRef.current = false;
-        setLightningFoldBusy(false);
       }
     },
     [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
-  // There is one fold behavior in Lightning: release the hand immediately.
+  // Keyboard and button share the preflop queue and postflop release rules.
   lightningHotkeysRef.current = lightningCaps.hotkeys
     ? {
         fold: lightningFold.fastFold ? () => void handleLightningFold('fast_fold') : null,
@@ -24595,12 +24726,46 @@ function LiveTablePage({
     // see heroPromptedToAct.
     !suppressPanelForPreAction;
 
+  const lightningTopUpCountRef = useRef({ pool: null as string | null, count: 0 });
+  useLightningTopUpReceipts({
+    ready: lightningOriginalTopUpReady,
+    pool: lightningRoom?.poolSessionId ?? null,
+    user: userId,
+    event: engineLastEvent,
+    version: lightningBalanceVersion,
+    connection: engineWsStatus,
+    revision: readBalanceRevision,
+    apply: (funding, revision) => {
+      if (revision !== readBalanceRevision()) return;
+      setBalanceIfCurrent(revision, funding.balance);
+      totalBuyInRef.current = funding.baseline;
+      const count = lightningTopUpCountRef.current;
+      if (count.pool !== funding.pool_session_id) {
+        count.pool = funding.pool_session_id;
+        count.count = 0;
+      }
+      if (funding.applied_count > count.count) {
+        totalRebuysRef.current += funding.applied_count - count.count;
+        count.count = funding.applied_count;
+        // This committed purchase also supersedes ordinary balance reads
+        // issued before it; new Lightning requests have no optimistic debit.
+        balanceRevisionRef.current += 1;
+        // A queued purchase did not change the idle hero's stack. Its first
+        // canonical completion (including reconnect) invalidates that cached
+        // stack once; the count guard makes the follow-up read idempotent.
+        setLightningBalanceVersion((v) => v + 1);
+      }
+      if (tableId) sessionStatsService.restoreFunding(tableId, funding.baseline);
+    },
+  });
+
   // A Lightning idle room intentionally has no hand seat. Its normal opt-in
   // top-up is triggered by the committed receipt, including after an early fold.
   useLightningAutoTopUp({
     room: lightningRoom,
     userId,
     enabled: isAutoRebuyEnabled,
+    originalIntentReady: lightningOriginalTopUpReady,
     balance: accountBalance,
     event: engineLastEvent,
     add: (amount, opId, isCurrent, isScopeCurrent) =>
@@ -25555,28 +25720,31 @@ function LiveTablePage({
                 CORNER, IT SHOULD BE ON THE LEFT SIDE." The box still mounts in
                 this slot, but its dock is pinned to the left edge at the same
                 height (.hud-seat-change-dock, TableHUD.css). */}
-            {!tableState.isTournament && tableState.clusterId && (
-              <div className="hud-seat-change-dock">
-                <CashClusterHUD
-                  gameId={tableState.clusterId}
-                  refreshKey={clusterRefreshKey}
-                  onOpenLobby={() => setShowMustMoveLobby(true)}
-                  onSeatChange={() => setShowMustMoveLobby(true)}
-                  onGoToTable={(dest) => {
-                    if (dest === tableId) {
-                      autoBuyInFiredRef.current = false;
-                      setAcceptedChair((count) => count + 1);
-                      return;
-                    }
-                    if (embeddedTableId) {
-                      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
-                      return;
-                    }
-                    navigate(`/table/${dest}?buyin=1`);
-                  }}
-                />
-              </div>
-            )}
+            {!tableState.isTournament &&
+              tableState.clusterId &&
+              !anchorLightningClusterId &&
+              !lightningRoom && (
+                <div className="hud-seat-change-dock">
+                  <CashClusterHUD
+                    gameId={tableState.clusterId}
+                    refreshKey={clusterRefreshKey}
+                    onOpenLobby={() => setShowMustMoveLobby(true)}
+                    onSeatChange={() => setShowMustMoveLobby(true)}
+                    onGoToTable={(dest) => {
+                      if (dest === tableId) {
+                        autoBuyInFiredRef.current = false;
+                        setAcceptedChair((count) => count + 1);
+                        return;
+                      }
+                      if (embeddedTableId) {
+                        onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+                        return;
+                      }
+                      navigate(`/table/${dest}?buyin=1`);
+                    }}
+                  />
+                </div>
+              )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
                 REMOVED (Dan 2026-08-30): the level bar itself opens the
                 tournament lobby, so a second button here was a duplicate. */}
@@ -25780,7 +25948,10 @@ function LiveTablePage({
                 seatViewportWidth <= 480 &&
                   scalerSize.h > scalerSize.w &&
                   tablePerspectiveTaper !== 0,
-                tableState.maxPlayers
+                tableState.maxPlayers,
+                /* Portrait viewports to 768px reserve the same dense-ring
+                   PLO5/PLO6 lane as a phone (useProtectedCardLayout). */
+                typeof window !== 'undefined' && window.innerHeight > window.innerWidth
               )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
@@ -26303,6 +26474,21 @@ function LiveTablePage({
                            per-board names AND a low winner, and suppressing
                            the label hid a real winner's credit line. */
                         lowWinnerLabel={winnerBandActive ? winnerInfo.lowWinnerLabel : ''}
+                        /* Dan 2026-10-24: the band names WHO won a contested
+                           single-board showdown. A fold-around win already
+                           reads "Wins The Pot" on the winner's seat, and a
+                           per-board label carries its own names. */
+                        winningPlayerLabel={
+                          winnerBandActive &&
+                          !winnerInfo.boardHandNames &&
+                          tableState.boardStage === 'showdown'
+                            ? showdownWinnerLine(
+                                winnerInfo.playerIds.map(
+                                  (id) => tableState.players.find((p) => p?.id === id)?.name || ''
+                                )
+                              )
+                            : undefined
+                        }
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}
@@ -26852,6 +27038,7 @@ function LiveTablePage({
                 // including zero. The buy-in is only a pre-row placeholder.
                 stack:
                   lightningWaitingSeat?.stack ?? heroRowStack ?? pendingSeatStackRef.current ?? 0,
+                stackPending: lightningWaitingSeat?.stack === null,
                 /* A Lightning player between hands is in the pool, not sitting
                    out, unless they asked to be (Dan 2026-10-24). */
                 status: lightningWaitingSeat ? lightningWaitingSeat.status : 'sitting_out',
@@ -27195,6 +27382,18 @@ function LiveTablePage({
                       ? winnerInfo.boardHandNamesByPlayer?.[ritRevealedRuns - 1]?.[player.id] ||
                         winnerInfo.handNames[player.id] ||
                         winnerInfo.handName
+                      : undefined
+                  }
+                  /* Dan 2026-10-24: every tabled hand names itself at its seat.
+                     Single board only: on a run-it-multiple hand or a double
+                     board the engine's name is board 1's, which would label a
+                     seat with a hand it did not make on the board in view. */
+                  shownHandName={
+                    player &&
+                    ritRunsThisHand <= 1 &&
+                    !ritResult &&
+                    tableState.communityCards2.length === 0
+                      ? showdownHandNames[player.id]
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 15): light
@@ -28484,8 +28683,8 @@ function LiveTablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={(next) => {
-                    // Lightning Fold is an immediate request to release this
-                    // hand and join the next table, including out of turn.
+                    // The shared handler queues a priced preflop Fold until
+                    // its turn; postflop Lightning Fold releases immediately.
                     // CHECK/FOLD NEVER FOLDS A FREE CHECK (2026-10-24): while
                     // the hero owes nothing the button is Check/Fold, and it
                     // arms the ordinary auto check/fold; if that ends in a
@@ -28497,6 +28696,9 @@ function LiveTablePage({
                       void handleLightningFold('fast_fold');
                       return;
                     }
+                    // An undelivered clear may restore the held choice. Keep
+                    // its hand-bound mode until another explicit choice replaces it.
+                    if (next !== null) preActionFoldOnTurnHandRef.current = null;
                     preActionPriorHeroActionAtRef.current = next
                       ? latestHeroActionTimestamp(
                           engineSnapshotRef.current?.action_history,
@@ -28901,6 +29103,9 @@ function LiveTablePage({
         maxPlayers={tableState.maxPlayers}
         players={tableState.players}
         heroStack={heroDisplayStack}
+        heroStackPending={
+          !!lightningRoom && !lightningHeroInRoster && lightningWaitingSeat?.stack === null
+        }
         rakePercent={displayRakeConfig.rakePercent}
         rakeCap={displayRakeConfig.rakeCap}
         runItTwice={tableState.runItTwice}
@@ -29099,7 +29304,9 @@ function LiveTablePage({
         cashoutMinBuyIn={cashoutMinBuyIn}
         buyInProcessingRef={buyInProcessingRef}
         onCloseCashier={() => setShowCashier(false)}
-        onAddChips={handleAddChips}
+        onAddChips={(amount, opId, onTerminalRefusal) =>
+          handleAddChips(amount, opId, { source: 'manual', onTerminalRefusal })
+        }
         // Bust Rebuy
         bustRebuyOpen={bustRebuyOpen}
         bustWalletBalance={bustWalletBalance}
@@ -29241,8 +29448,9 @@ function LiveTablePage({
                 setShowBuyInModal(false);
                 if (anchorLightningClusterId) {
                   /* Lightning never queues (Dan 2026-10-24): the join door
-                     holds a fresh chair, on a new table if it has to. */
-                  navigate(lightningRoute(anchorLightningClusterId));
+                     holds a fresh chair, on a new table if it has to, with the
+                     amount question already open. */
+                  openLightningAnchorEntry();
                   return false;
                 }
                 toast.info('This Seat Is Reserved. Join The List To Get Your Next Available Seat.');
@@ -29676,6 +29884,7 @@ function LiveTablePage({
           }
         }}
         // Tournament Break
+        tableAnchorRef={tableScalerRef}
         tournamentBreak={tournamentBreak as any}
         // Announcement
         announcement={announcement}

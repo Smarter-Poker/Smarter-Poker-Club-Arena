@@ -152,7 +152,11 @@ describe('Phase 6D declaration enforcement', () => {
       links: {},
     };
     for (let i = 0; i < loaded.declaration.population.targetPerCell + 2; i++)
-      admitChain(population, chain);
+      admitChain(population, {
+        ...chain,
+        decisionId: createHash('sha256').update(`event-${i}`).digest('hex'),
+        decisionRecordDigest: createHash('sha256').update(`record-${i}`).digest('hex'),
+      });
     const stored = population.cells.get(cellKey(cell))!;
     expect(stored.observed).toBe(loaded.declaration.population.targetPerCell);
     expect(stored.overflow).toBe(2);
@@ -166,6 +170,48 @@ describe('Phase 6D declaration enforcement', () => {
       admitted: 3,
       complete: 0,
     });
+  });
+
+  it('cannot fill a qualification cell with copies of one decision', () => {
+    const population = createPopulation(loaded);
+    const chain = {
+      cell: { format: 'mtt', branch: 'unopened', size: 9, anteMode: 'per_player', path: 'normal' },
+      sourceRelease: loaded.declaration.servingRelease.sha,
+      complete: true,
+      decisionId: 'a'.repeat(64),
+      decisionRecordDigest: 'b'.repeat(64),
+    };
+    expect(admitChain(population, chain).admitted).toBe(true);
+    expect(admitChain(population, { ...chain, shard: 'another' })).toMatchObject({
+      admitted: false,
+      reason: 'duplicate_decision',
+    });
+    expect(population.cells.get(cellKey(chain.cell)).observed).toBe(1);
+    expect(population.chains).toHaveLength(1);
+    expect(() =>
+      admitChain(population, { ...chain, decisionRecordDigest: 'c'.repeat(64) })
+    ).toThrow('conflicting decision identity');
+  });
+
+  it('does not count a chain without a valid retained decision identity', () => {
+    const population = createPopulation(loaded);
+    for (const decisionId of ['not-an-event', null, undefined, ['a'.repeat(64)], 1])
+      expect(
+        admitChain(population, {
+          cell: {
+            format: 'mtt',
+            branch: 'unopened',
+            size: 9,
+            anteMode: 'per_player',
+            path: 'normal',
+          },
+          sourceRelease: loaded.declaration.servingRelease.sha,
+          complete: true,
+          decisionId,
+          decisionRecordDigest: 'b'.repeat(64),
+        })
+      ).toMatchObject({ admitted: false, reason: 'decision_identity' });
+    expect(population.chains).toHaveLength(0);
   });
 
   it('classifies by the declared rules and rejects what the declaration does not cover', () => {
@@ -402,6 +448,8 @@ const snapshot = {
   },
 };
 const deps = {
+  observerReadsWereIndependent: (value: unknown) =>
+    (value as { fixture?: unknown })?.fixture === 'independent',
   lifecycleRequestDigest: () => 'digest-1',
   samplingStateIsValid: () => true,
   computeMetadataIsValid: () => true,
@@ -415,7 +463,15 @@ const fullRecords = (decisionBody: Record<string, unknown>) => [
   record('request_lifecycle', { phase: 'requested', requestDigest: 'digest-1' }, 1),
   record(
     'decision',
-    { snapshot, rngBefore: 1, rngAfter: 2, computeMs: 3, governorScale: 1, ...decisionBody },
+    {
+      snapshot,
+      observerReads: { fixture: 'independent' },
+      rngBefore: 1,
+      rngAfter: 2,
+      computeMs: 3,
+      governorScale: 1,
+      ...decisionBody,
+    },
     2
   ),
   record(
@@ -452,6 +508,7 @@ describe('Phase 6D chain assembly', () => {
     expect(chain.links).toEqual({
       request: 'present',
       calculation: 'present',
+      independentReads: 'present',
       reference: 'missing:reference',
       acceptedAction: 'present',
       completedHand: 'present',
@@ -462,13 +519,36 @@ describe('Phase 6D chain assembly', () => {
     expect(CHAIN_LINKS).toEqual([
       'request',
       'calculation',
+      'independentReads',
       'reference',
       'acceptedAction',
       'completedHand',
     ]);
   });
 
-  it('is complete only when all five links are present, and names each absent link', () => {
+  it('refuses a complete-looking legacy chain without individual read provenance', () => {
+    const rows = fullRecords({
+      observerReads: undefined,
+      decision: {
+        action: 'raise',
+        amount: 300,
+        tournamentPreflopAttribution: {
+          version: 'horse-phase6-attribution-v2',
+          status: 'bypassed',
+        },
+      },
+    });
+    const chain = assembleChain({
+      records: rows,
+      decisionRecord: rows[1],
+      handKey: HAND_KEY,
+      deps,
+    });
+    expect(chain.links.independentReads).toBe('missing:independent_observer_reads');
+    expect(chain.complete).toBe(false);
+  });
+
+  it('is complete only when all six links are present, and names each absent link', () => {
     const attributed = {
       decision: {
         action: 'raise',

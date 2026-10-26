@@ -24,6 +24,11 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useEffect, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { subscribeRealtime } from '../lib/subscribeRealtime';
+import {
+  isRealtimeTransportLoss,
+  noteRealtimeTransportLoss,
+  noteRealtimeTransportRecovered,
+} from '../lib/realtimeTransportLoss';
 import { reportError } from '../utils/errorReporter';
 
 export type PostgresChangeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*';
@@ -200,6 +205,7 @@ export function useMasterBusChannel({
         channel,
         (status: string, err?: Error) => {
           if (!alive || generation !== subscriptionGeneration) return;
+          if (status === 'SUBSCRIBED') noteRealtimeTransportRecovered();
           try {
             statusCallbackRef.current?.(status);
           } catch (cbErr) {
@@ -213,10 +219,18 @@ export function useMasterBusChannel({
             // there is a metric/log, and forward to the consumer so it can flip
             // a degraded-connection state and/or force a recovery fetch. The
             // registered factory + health monitor will also attempt re-subscribe.
-            reportError(
-              err ?? new Error(`Realtime ${status} on ${channelName}`),
-              `useMasterBusChannel.${status}.${table}`
-            );
+            // A dropped shared socket fails every channel at once with no
+            // reason; that is one transport report per outage, not one per
+            // channel (src/lib/realtimeTransportLoss.ts). The consumer
+            // callback below still runs either way.
+            if (isRealtimeTransportLoss(status, err)) {
+              noteRealtimeTransportLoss(channelName, `useMasterBusChannel.${table}`, err);
+            } else {
+              reportError(
+                err ?? new Error(`Realtime ${status} on ${channelName}`),
+                `useMasterBusChannel.${status}.${table}`
+              );
+            }
             try {
               errorCallbackRef.current?.(status, err);
             } catch (cbErr) {

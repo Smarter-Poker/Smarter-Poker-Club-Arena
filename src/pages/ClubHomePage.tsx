@@ -96,6 +96,7 @@ import {
 import {
   isLightningMode,
   lightningClusterIdsOf,
+  lightningJoinRoute,
   lightningRoute,
   withLightningState,
   type LightningLobbyState,
@@ -991,6 +992,17 @@ function ClubHomePageContent({
      they were loaded for this club. A late database reply must never undo a
      chip tapped during the round trip, the same rule as viewPrefsTouched. */
   const advFiltersTouched = useRef(false);
+  /* A GAME CARD THAT IS OPEN RIGHT NOW (2026-10-25). Late saved tabs and
+     filters must not remove the game the player is looking at, so while a
+     card is open they are HELD and applied when it closes. This used to key
+     on browseJourney.selected, an analytics flag that stays true for the
+     whole visit: once any card had opened, another device's newer saved
+     tabs and filters were thrown away, and the next chip or tab tap then
+     pushed this browser's stale copy over them. Set in the same handler
+     that opens the card, so a reply landing before the commit still waits. */
+  const cardOpenRef = useRef(false);
+  const heldViewApply = useRef<(() => void) | null>(null);
+  const heldFilters = useRef<FilterStore | null>(null);
   /** Every lobby-side filter change goes through here: this browser's cache
    *  and the player's row together, so a quick chip follows them to every
    *  device exactly like the sheet does. */
@@ -2126,12 +2138,14 @@ function ClubHomePageContent({
      must never silently apply to another club's lobby. */
   useEffect(() => {
     advFiltersTouched.current = false;
+    heldFilters.current = null;
     if (!resolvedClubId) {
       setAdvFilters({});
       return;
     }
     const cached = loadFilters(resolvedClubId, currentUser?.id ?? null);
-    setAdvFilters(cached);
+    if (cardOpenRef.current) heldFilters.current = cached;
+    else setAdvFilters(cached);
 
     /* THEN THE PLAYER'S ROW (2026-10-16). Until now only the open filter
        sheet ever read it, so a phone opened the lobby with the laptop's
@@ -2146,8 +2160,13 @@ function ClubHomePageContent({
     let cancelled = false;
     void fetchRemoteFilters(resolvedClubId).then((remote) => {
       if (cancelled || !remote || advFiltersTouched.current) return;
-      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
+      // The cache always moves forward; only the screen waits for the card.
       saveFilters(resolvedClubId, remote, currentUser?.id ?? null);
+      if (cardOpenRef.current) {
+        heldFilters.current = remote;
+        return;
+      }
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
     });
     return () => {
       cancelled = true;
@@ -2190,7 +2209,11 @@ function ClubHomePageContent({
       setFavoritesOnly(p.favoritesOnly);
     };
 
-    if (!viewPrefsTouched.current) applyView(saved);
+    heldViewApply.current = null;
+    if (cardOpenRef.current) {
+      // Held for the open card; the close effect applies it.
+      if (!viewPrefsTouched.current) heldViewApply.current = () => applyView(saved);
+    } else if (!viewPrefsTouched.current) applyView(saved);
 
     /* The initial view is applied (or the player already chose their own):
        either way the landing request is spent. Reported once per mount. */
@@ -2231,11 +2254,15 @@ function ClubHomePageContent({
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
       if (viewPrefsTouched.current) return;
+      // The prefs in hand and this browser's cache always move forward, so a
+      // later tap merges into (and pushes) the newer row, never a stale one.
       setViewPrefs(remote);
-      applyView(remote);
       // Bring this browser's cache forward so the next cold open is already
       // right, instead of flashing the stale tab on every visit.
       saveViewPrefs(resolvedClubId, remote, currentUser?.id);
+      // Only the visible tab, sort and Favorites wait for an open card.
+      if (cardOpenRef.current) heldViewApply.current = () => applyView(remote);
+      else applyView(remote);
     });
     return () => {
       cancelled = true;
@@ -3960,6 +3987,19 @@ function ClubHomePageContent({
   const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  /* The card closed: apply what was held for it, unless the player has since
+     chosen their own tab or filters (a tap always outranks a late reply). */
+  useLayoutEffect(() => {
+    cardOpenRef.current = panelOpen;
+    if (panelOpen) return;
+    const view = heldViewApply.current;
+    const filters = heldFilters.current;
+    heldViewApply.current = null;
+    heldFilters.current = null;
+    if (view && !viewPrefsTouched.current) view();
+    if (filters && !advFiltersTouched.current)
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(filters) ? prev : filters));
+  }, [panelOpen]);
 
   /* ── Selected game in the URL (?game=<id>) ──────────────────────────────
      A refresh or a shared link reopens the same game lobby. replace:true
@@ -4105,6 +4145,7 @@ function ClubHomePageContent({
     const unsubs = [
       masterBus.subscribeDebounced('TABLE_SEATED', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TABLE_LEFT', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('SEAT_CASHED_OUT', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadMyGameStates, 300),
     ];
@@ -4181,7 +4222,11 @@ function ClubHomePageContent({
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
       haptic.selection();
+      // Opening a card is browsing intent too. Late saved tabs or filters
+      // must not remove that chosen game and close its card. Keep this
+      // separate from the preference-write flags: a row tap saves nothing.
       browseJourney.current.selected = true;
+      cardOpenRef.current = true;
       capture('lobby_game_details_opened', {
         kind: entry.kind,
         duration_ms: Math.max(0, Date.now() - browseJourney.current.start),
@@ -4260,7 +4305,7 @@ function ClubHomePageContent({
       if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
         // Leaving unmounts the panel. Closing it first also schedules the
         // lobby's query-string sync, which can overwrite this navigation.
-        navigate(`/lightning/${row.cluster_id}`);
+        navigate(lightningJoinRoute(row.cluster_id));
         return;
       }
       setPanelOpen(false);
@@ -4624,6 +4669,8 @@ function ClubHomePageContent({
     pendingGameRef.current = null;
     const entry = lobbyEntries.find((e) => e.id === id);
     if (entry) {
+      browseJourney.current.selected = true;
+      cardOpenRef.current = true;
       setSelectedId(id);
       setPanelOpen(true);
     }

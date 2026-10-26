@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -29,6 +30,26 @@ const HCODE = HARNESS.split('\n')
   .join('\n');
 
 describe('the parity harness', () => {
+  it('qualifies the exact already-installed top-up predecessor before entry blinds', () => {
+    const source = read('scripts', 'dev', 'fixtures', 'lightning-entry-top-up-predecessor.sql');
+    expect(createHash('md5').update(source).digest('hex')).toBe('4db48e1284bab7718d0ac32ae24b5179');
+    const before = HCODE.indexOf('-f "$F/lightning-entry-top-up-preimages.sql"');
+    const topup = HCODE.indexOf('-f "$F/lightning-entry-top-up-predecessor.sql"');
+    const entry = HCODE.indexOf(
+      '-f "$M/20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql"'
+    );
+    expect(before).toBeGreaterThan(0);
+    expect(topup).toBeGreaterThan(before);
+    expect(entry).toBeGreaterThan(topup);
+    const migration = read(
+      'supabase',
+      'migrations',
+      '20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql'
+    );
+    expect(migration).toContain('7b61caed8bde5127d965292c73e57915');
+    expect(migration).toContain('8b237f0f6891ff1bd1abb6008b343498');
+  });
+
   it('builds the real chain through 20261009151825 on the proven grounds, on its own port', () => {
     expect(HCODE).toContain('port=${LIGHTNING_PARITY_PORT:-55563}');
     for (const f of [
@@ -122,7 +143,13 @@ describe('the parity harness', () => {
     // New players are always the big blind first (20261024195059): today's
     // port is compared with today's SQL rule, installed on the same preimages.
     expect(firstEntry).toBeGreaterThan(policy);
-    expect(current).toBeGreaterThan(firstEntry);
+    // A seat the conversion made is not a newcomer (20261024213844), after it.
+    const conversionSeat = HCODE.indexOf(
+      '-f "$M/20261024213844_lightning_conversion_seats_are_not_newcomers_and_a_newcomer_.sql"'
+    );
+    expect(conversionSeat).toBeGreaterThan(firstEntry);
+    expect(current).toBeGreaterThan(conversionSeat);
+    expect(HCODE).toContain('grep \'^  ok  13\' "$fixture/current-policy.out"');
     expect(comparison).toBeGreaterThan(current);
     const fixture = read('scripts', 'dev', 'fixtures', 'lightning-current-policy-parity.sql');
     expect(fixture).toContain('FOR f IN SELECT * FROM pp.out ORDER BY n LOOP');
@@ -132,6 +159,61 @@ describe('the parity harness', () => {
     expect(fixture).toContain('public.fn_lightning_match(g,to_timestamp');
     expect(fixture).toContain("jsonb_array_length(members->'players') NOT BETWEEN 5 AND 6");
     expect(fixture).not.toMatch(/UPDATE\s+(?:public\.)?lightning_matcher_shadow_comparison/i);
+    // The port reads the database's `newcomer`, so every fixture's flag is the
+    // real snapshot's, and a fresh conversion is captured as its own fixture.
+    expect(fixture).toContain('PERFORM pp.refresh_newcomer(f.n);');
+    expect(fixture).toContain('public.fn_lightning_matcher_snapshot(g, to_timestamp(');
+    expect(fixture).toContain(
+      "lc.build('parity', 'CONVERSION', 6, 24, 1, 'nlh', '{}'::jsonb, false)"
+    );
+  });
+
+  it('compares the entry big blind with the gate open, after its migrations, on real formations (20261025050528)', () => {
+    const firstEntry = HCODE.indexOf(
+      '-f "$M/20261024195059_lightning_new_players_are_always_the_big_blind_first.sql"'
+    );
+    const voided = HCODE.indexOf(
+      '-f "$M/20261024231549_lightning_voided_hand_returns_its_blind_stamps.sql"'
+    );
+    const entry = HCODE.indexOf(
+      '-f "$M/20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql"'
+    );
+    const window = HCODE.indexOf(
+      '-f "$M/20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"'
+    );
+    const header = HCODE.indexOf(
+      `-c "SET request.headers = '{\\"x-smarter-lightning-entry-bb\\":\\"1\\"}'"`
+    );
+    const current = HCODE.indexOf('-f "$F/lightning-current-policy-parity.sql"');
+    const fixtureAt = HCODE.indexOf('-f "$F/lightning-entry-big-blind-parity.sql"');
+    // The voided-hand stamps first (the entry migration md5-guards them), then
+    // the plan/barrier, the constraint, the engine's header, then every plan.
+    expect(voided).toBeGreaterThan(firstEntry);
+    expect(entry).toBeGreaterThan(voided);
+    expect(window).toBeGreaterThan(entry);
+    expect(header).toBeGreaterThan(window);
+    expect(current).toBeGreaterThan(header);
+    expect(fixtureAt).toBeGreaterThan(current);
+    expect(HCODE).toContain("grep -c '^  ok  13[ABCDE] ENTRY BIG BLIND'");
+    const fixture = read('scripts', 'dev', 'fixtures', 'lightning-entry-big-blind-parity.sql');
+    for (const s of [
+      '13A ENTRY BIG BLIND',
+      '13B ENTRY BIG BLIND',
+      '13C ENTRY BIG BLIND',
+      '13D ENTRY BIG BLIND',
+      '13E ENTRY BIG BLIND',
+    ])
+      expect(fixture).toContain(`\\echo '  ok  ${s}`);
+    expect(fixture).toContain(
+      'public.fn_lightning_match_and_form(v_g, clock_timestamp(), NULL, NULL'
+    );
+    expect(fixture).toContain(
+      "public.fn_lightning_instance_abandon(v_inst, 'fixture_void_before_deal'"
+    );
+    expect(fixture).toContain('PERFORM pp.finish(');
+    expect(fixture).toContain("PERFORM set_config('request.headers', '', true);");
+    // The TypeScript check compares every group's entry big blinds too.
+    expect(CHECK).toContain('group ${j + 1} entry_bb ts=');
   });
 
   it('never reads a horse marker (Law 10.5)', () => {

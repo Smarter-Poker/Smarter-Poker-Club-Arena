@@ -1,3 +1,7 @@
+import { validHorseTournamentPayoutTerms } from '../HorseTournamentPayoutTerms.js';
+import { ownPublicHistoryIsValid } from './ownPublicHistory.js';
+import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
+import { HorseObserverReads, type HorseObserverReadReceipt } from './observerReads.js';
 import { horseOpponentMemorySchema } from '../../services/HorseOpponentMemory.js';
 import { decodeDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../HorseTournamentContextProvenance.js';
@@ -56,7 +60,7 @@ import {
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
 import { completedHandActionsForMind } from './completedHandActions.js';
-import { HorseMindMirror, type HorseMindMirrorOutcome } from './mindMirror.js';
+import { type HorseMindMirrorOutcome } from './mindMirror.js';
 import { readReturnedRosterTransport } from '../../services/horseAcceptedRoster/schema.js';
 import {
   horseMindHandFromDecision,
@@ -210,11 +214,12 @@ export interface HorseDecisionWorkerDependencies {
   stopServices(): Promise<void>;
   decide: typeof HorseLogic.decide;
   decideDiscard: typeof HorseLogic.decideDiscard;
+  runDecisionReadView?<T>(request: FastHorseDecisionRequest, fn: () => T): T;
   captureDecisionEffects<T>(fn: () => T): CapturedHorseMindDecision<T>;
   applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void;
   /**
    * The mind view the FAST read frame is encoded from, after the decision.
-   * Absent: the worker's own HorseMind. A replay passes the sandbox it decided
+   * Absent: the selected individual HorseMind view. A replay passes the view it decided
    * in, so the frame it re-encodes is the original's and not its own process's.
    */
   snapshotDecisionReads?: typeof HorseMind.snapshotDecisionReads;
@@ -238,8 +243,8 @@ export interface HorseDecisionWorkerDependencies {
    * exactly as before 2026-10-16 (one worker, or an injected test runtime).
    */
   ownsCompletedHand?(request: ObserveCompletedHandRequest): boolean;
-  /** Learn a completed hand another shard owns (mindMirror.ts). Absent: the
-   * runtime's own HorseMindMirror over `observeCompletedHand`. */
+  /** Legacy diagnostic injection, retained for caller compatibility. Live
+   * independent observations never invoke a pooled mirror learner. */
   learnMirroredHand?(request: ObserveCompletedHandRequest): HorseMindMirrorOutcome;
   noteDecision(scope: string, ms: number): void;
   noteFeature(feature: string): void;
@@ -282,6 +287,38 @@ function horseSolverStoreIdentity() {
 }
 
 /**
+ * One line per worker boot step, so the container log shows which read held
+ * READY (2026-10-24, engine boot time). Timing only: each operation's result
+ * and rejection pass through unchanged.
+ */
+function bootStepTimer(
+  shardIndex: number
+): (<T>(name: string, operation: () => Promise<T>) => Promise<T>) & { ready(): void } {
+  const startedAt = Date.now();
+  const step = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+    const stepStartedAt = Date.now();
+    let outcome = 'failed';
+    try {
+      const value = await operation();
+      outcome = 'ok';
+      return value;
+    } finally {
+      const now = Date.now();
+      console.log(
+        `[HorseDecisionWorker] shard ${shardIndex} boot step ${name} ${outcome} in ` +
+          `${now - stepStartedAt}ms (${now - startedAt}ms since worker services began)`
+      );
+    }
+  };
+  return Object.assign(step, {
+    ready: () =>
+      console.log(
+        `[HorseDecisionWorker] shard ${shardIndex} services ready ${Date.now() - startedAt}ms after they began`
+      ),
+  });
+}
+
+/**
  * Start every mutable service consumed by HorseLogic inside the worker that
  * owns HorseLogic. READY is withheld until the durable mind and all solver
  * stores have completed their initial hydration. `shard` names this worker's
@@ -312,7 +349,8 @@ export async function startOwnedServices(shard?: {
     // is not the brain the packs qualified with (client.ts,
     // horseDecisionWorkerEnv). Refuse readiness rather than decide with it.
     assertDecisionWorkerRunsFullSample();
-    const opponentSchema = await horseOpponentMemorySchema();
+    const step = bootStepTimer(shard?.index ?? 0);
+    const opponentSchema = await step('opponent_memory_schema', () => horseOpponentMemorySchema());
     noteFire(`horse_opponent_memory_schema_${opponentSchema}`);
     // Persistence starts before hydration, matching the production invariant:
     // a slow read may never prevent newly learned rows from becoming flushable.
@@ -323,20 +361,39 @@ export async function startOwnedServices(shard?: {
     startSolverPolicyArtifactLoader();
 
     if (opponentSchema === 'installed') HorseMind.enableDurableOpponentMemory();
-    const lastFlush = await hydrateHorseMindFromDb();
-    await Promise.all([
-      hydrateHorseMind(lastFlush),
+    /* THE MIND'S OWN CHAIN NO LONGER HOLDS THE OTHER LOADS (2026-10-24).
+       The durable mind read (pairs, scoped, stats) used to be awaited on its
+       own before anything else started, and its pair read alone is twenty
+       serial PostgREST pages (156 ms mean each in pg_stat_statements). Only
+       the replay depends on it - it needs the last flush mark, and it must
+       follow the import so it never double-counts - so that ordering is kept
+       as one chain. The exploit replay, the chart, open-node and V31 stores
+       touch none of the stats/pairs/scoped maps (the exploit replay writes
+       only the exploit counters, through mergeSandboxExploit), so they start
+       at the same instant instead of after it. READY is still withheld until
+       every one of them has finished, exactly as before. */
+    const bootLoads = await Promise.allSettled([
+      step('horse_mind_db', () => hydrateHorseMindFromDb()).then((lastFlush) =>
+        step('horse_mind_replay', () => hydrateHorseMind(lastFlush))
+      ),
       // 2026-10-22: the maniac read survives the daily reset - replay the
       // recent human hands into the decayed exploit counters before READY.
-      hydrateHorseExploitReads(),
-      loadGtoCharts(),
-      loadGtoPostflop(),
-      loadGtoPostflopV31(),
+      step('exploit_reads', () => hydrateHorseExploitReads()),
+      step('gto_charts', () => loadGtoCharts()),
+      step('gto_postflop', () => loadGtoPostflop()),
+      step('gto_postflop_v31', () => loadGtoPostflopV31()),
     ]);
+    // A failed load must not drain writers while another load can still
+    // hydrate or replay into them. Join every started operation before the
+    // catch below owns teardown; never publish READY for a partial boot.
+    for (const result of bootLoads) {
+      if (result.status === 'rejected') throw result.reason;
+    }
 
     // The fixed rollout population belongs to this worker. Prepare its card
     // facts before READY so the first eligible decisions pay no scoring cost.
-    prepareTournamentFutureHandFacts();
+    await step('tournament_future_hand_facts', async () => prepareTournamentFutureHandFacts());
+    step.ready();
 
     // Periodic refresh begins only after the first authoritative load. The
     // loader start functions are idempotent and own unref'd timers.
@@ -505,7 +562,11 @@ export class HorseDecisionWorkerRuntime {
    */
   private readonly secondLookReads = new Map<
     string,
-    { at: number; frame: HorseDecisionReadFrame | null }
+    {
+      at: number;
+      frame: HorseDecisionReadFrame | null;
+      observerReads?: HorseObserverReadReceipt | null;
+    }
   >();
   private static readonly MAX_SECOND_LOOK_READS = 128;
   private static readonly SECOND_LOOK_READ_TTL_MS = 60_000;
@@ -619,8 +680,8 @@ export class HorseDecisionWorkerRuntime {
   private phase12AuthorityAdmitted = false;
   private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>>;
   private phase13AuthorityAdmitted = false;
-  /** Completed hands of other shards' tables, learned once each (mindMirror.ts). */
-  private readonly mindMirror = new HorseMindMirror();
+  /** Each observer's own public history; no floor-wide read inheritance. */
+  private readonly observerReads = new HorseObserverReads();
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -823,7 +884,10 @@ export class HorseDecisionWorkerRuntime {
       }
 
       let outcome: HorseLifecycleOutcome = 'success';
-      if (request.type === 'DECIDE_FAST') outcome = this.executeFast(request);
+      if (request.type === 'DECIDE_FAST')
+        outcome = (
+          this.deps.runDecisionReadView ?? this.observerReads.run.bind(this.observerReads)
+        )(request, () => this.executeFast(request));
       else if (request.type === 'DECIDE_DEEP') outcome = this.executeDeep(request);
       else if (request.type === 'OBSERVE_REQUEST_RETIREMENT') {
         // Canonical shape and attribution are checked without executing a
@@ -1406,6 +1470,21 @@ export class HorseDecisionWorkerRuntime {
       }
       this.assertPhase6TournamentSnapshot(request);
     }
+    if (request.type === 'DECIDE_FAST') {
+      if (
+        request.ownPublicHistoryState !== undefined &&
+        !['pending', 'available', 'unavailable'].includes(request.ownPublicHistoryState)
+      )
+        throw Error('Invalid individual history state');
+      if (request.ownPublicHistory !== undefined) {
+        const context = horseObserverReadContextFromRequest(request);
+        if (
+          !context ||
+          !ownPublicHistoryIsValid(request.ownPublicHistory, context, request.decisionTimeMs)
+        )
+          throw Error('Individual public history does not bind original observer and cutoff');
+      }
+    }
     if (request.decisionKey !== buildHorseDecisionKey(request)) {
       throw new Error('decisionKey does not bind the canonical decision snapshot');
     }
@@ -1424,6 +1503,9 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('Phase 6 tournament provenance does not bind the current hand snapshot');
     }
     const status = tournament.contextStatus;
+    if (!validHorseTournamentPayoutTerms(tournament)) {
+      throw new Error('Phase 6 tournament payout capture is invalid');
+    }
     if (!(TOURNAMENT_CONTEXT_STATUSES as readonly string[]).includes(status ?? '')) {
       throw new Error('Phase 6 tournament context status is invalid');
     }
@@ -2030,14 +2112,20 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
-    if (request.durableOpponentProfiles !== undefined) {
-      try {
-        if (HorseMind.importDurableOpponentProfiles(request.durableOpponentProfiles) > 0)
-          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
-      } catch {
-        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
-      }
-    }
+    if (
+      request.durableOpponentDonorProfiles !== undefined ||
+      request.durableOpponentProfiles !== undefined
+    )
+      this.deps.noteFeature('horse_observer_unscoped_profiles_refused');
+    const observerReceipt = this.observerReads.receipt(request);
+    if (request.ownPublicHistory)
+      this.deps.noteFeature(
+        observerReceipt?.version === 2
+          ? 'horse_observer_history_loaded'
+          : 'horse_observer_history_refused'
+      );
+    if (observerReceipt)
+      this.deps.noteFeature(`horse_observer_reads_${observerReceipt.disposition}`);
     const planBinding = horsePlanBatchBindingFromRequest(request);
     const planContext = planBinding.planContext;
     const canonicalRng = this.deps.saveRng();
@@ -2174,13 +2262,18 @@ export class HorseDecisionWorkerRuntime {
     while (this.secondLookReads.size >= HorseDecisionWorkerRuntime.MAX_SECOND_LOOK_READS) {
       this.secondLookReads.delete(this.secondLookReads.keys().next().value!);
     }
-    this.secondLookReads.set(readKey, { at, frame: ambiguous ? null : readFrame });
+    this.secondLookReads.set(readKey, {
+      at,
+      frame: ambiguous ? null : readFrame,
+      observerReads: this.observerReads.receipt(request),
+    });
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
     try {
       if (this.deps.journalEnabled?.() ?? true)
         this.deps.journalDecision?.(request, {
           snapshot: request,
+          observerReads: this.observerReads.receipt(request),
           readFrame,
           planContext,
           planBinding,
@@ -2210,6 +2303,7 @@ export class HorseDecisionWorkerRuntime {
     try {
       this.send({
         type: 'FAST_RESULT',
+        observerHistoryAckDigest: this.observerReads.historyAcknowledgement(request),
         requestId: request.requestId,
         planBinding,
         planIssueDisposition,
@@ -2361,6 +2455,7 @@ export class HorseDecisionWorkerRuntime {
         this.deps.journalDecision?.(request, {
           snapshot: request,
           readFrame: retained.frame,
+          observerReads: retained.observerReads ?? null,
           planContext,
           decision,
           rngBefore: request.rngBefore,
@@ -2393,36 +2488,6 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
-    if (received.durableOpponentProfiles !== undefined) {
-      try {
-        if (HorseMind.importDurableOpponentProfiles(received.durableOpponentProfiles) > 0)
-          this.deps.noteFeature('horse_opponent_memory_snapshot_applied');
-      } catch {
-        this.deps.noteFeature('horse_opponent_memory_snapshot_refused');
-      }
-    }
-    // ONE FLOOR, ONE READ (2026-10-16): a hand another shard owns is only
-    // learned. Its owner journals it, binds its roster and settles its plans;
-    // here it touches nothing but this worker's opponent memory.
-    if (this.deps.ownsCompletedHand && !this.deps.ownsCompletedHand(received)) {
-      let outcome: HorseMindMirrorOutcome | 'refused';
-      try {
-        outcome = this.deps.learnMirroredHand
-          ? this.deps.learnMirroredHand(received)
-          : this.mindMirror.learn(received, (request) => this.deps.observeCompletedHand(request));
-      } catch {
-        outcome = 'refused';
-      }
-      this.deps.noteFeature(`horse_mind_mirror_${outcome}`);
-      this.send({
-        type: 'ACK',
-        requestId: received.requestId,
-        generation: received.generation,
-        fence: received.fence,
-        operation: 'OBSERVE_COMPLETED_HAND',
-      });
-      return;
-    }
     // P14.2: an accepted roster crosses the worker boundary only when it is the
     // exact private transport for THIS hand. Anything else is dropped (the
     // explicit unknown) and counted; the hand is still observed and journaled.
@@ -2435,12 +2500,27 @@ export class HorseDecisionWorkerRuntime {
         this.deps.noteFeature('phase14_accepted_roster_refused');
       }
     }
+    const learned = this.observerReads.complete(request, (hand) =>
+      this.deps.observeCompletedHand(hand)
+    );
+    this.deps.noteFeature(
+      learned ? 'horse_observer_completion_learned' : 'horse_observer_completion_unavailable'
+    );
+    if (this.deps.ownsCompletedHand && !this.deps.ownsCompletedHand(request)) {
+      this.send({
+        type: 'ACK',
+        requestId: request.requestId,
+        generation: request.generation,
+        fence: request.fence,
+        operation: 'OBSERVE_COMPLETED_HAND',
+      });
+      return;
+    }
     try {
       this.deps.journalAcceptedHand?.(request);
     } catch {
       this.deps.noteFeature('phase15_journal_capture_unavailable');
     }
-    this.deps.observeCompletedHand(request);
     this.send({
       type: 'ACK',
       requestId: request.requestId,
@@ -2476,7 +2556,9 @@ export class HorseDecisionWorkerRuntime {
     if (issued.state !== 'applied') {
       try {
         // Apply the detached issued records, not the later caller's object.
-        this.deps.applyDecisionEffects(issued.effects);
+        this.observerReads.runIssued(issued.request, () =>
+          this.deps.applyDecisionEffects(issued.effects)
+        );
         issued.state = 'applied';
         issued.at = this.deps.now();
       } catch (error) {
@@ -2573,6 +2655,7 @@ export class HorseDecisionWorkerRuntime {
     const recovery = reconstructHorsePlanEffects(receipts, {
       live,
       policyUsable: (authority) => this.planPolicyUsable(authority),
+      observerContextRequired: true,
     });
     for (const outcome of recovery.outcomes)
       this.deps.noteFeature(`phase15_plan_recovery_${outcome}`);
@@ -2590,7 +2673,9 @@ export class HorseDecisionWorkerRuntime {
       return;
     }
     const effects = deepFreeze(structuredClone(receipt.effects)) as HorseMindDecisionEffect[];
-    this.deps.applyDecisionEffects(effects);
+    this.observerReads.runContext(receipt.binding.observerReadContext!, () =>
+      this.deps.applyDecisionEffects(effects)
+    );
     if (this.issuedPlanBatches.size >= HorseDecisionWorkerRuntime.MAX_ISSUED_PLAN_BATCHES) {
       const terminal = [...this.issuedPlanBatches].find(([, entry]) => entry.state !== 'issued');
       if (!terminal) return;
@@ -2785,6 +2870,7 @@ export class HorseDecisionWorkerRuntime {
   private async shutdown(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
+    this.observerReads.clear();
     this.secondLookReads.clear();
     this.issuedPlanBatches.clear();
     // Await boot first so a partially initialized writer is never abandoned.

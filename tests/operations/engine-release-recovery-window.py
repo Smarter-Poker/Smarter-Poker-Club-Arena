@@ -458,6 +458,12 @@ class OwnerOrderedWindow(unittest.TestCase):
         self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
         self.assertIn('reason: owner-ordered 2027-01-15-fixture', result.stdout)
 
+    def test_an_immediate_owner_order_without_minute_restrictions_keeps_the_certified_path(self):
+        result, events = self.healthy(minute=17, owner_windows=owner_doc(minutes=None))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
+        self.assertIn('reason: owner-ordered 2027-01-15-fixture', result.stdout)
+
     def test_it_waits_for_the_named_chicago_minute(self):
         for minute in (30, 52, 55):
             with self.subTest(minute=minute):

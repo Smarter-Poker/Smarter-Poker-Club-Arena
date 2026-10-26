@@ -138,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 34 tests');
+  expect(result.stderr).toContain('Ran 35 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {
@@ -2184,6 +2184,100 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(supervisor).toContain('restoring exact sealed desired release');
     expect(supervisor).toContain('docker update --restart always "$CONTAINER"');
     expect(supervisor).toContain('prove_exact_desired_recovery');
+  });
+
+  it('independent proof keeps its immutable generation when the active control advances', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'control-proof-race-'));
+    try {
+      const repo = join(dir, 'repo');
+      const parent = join(dir, 'control');
+      mkdirSync(repo);
+      mkdirSync(parent);
+      const env = fixtureGitEnvironment(join(dir, 'gitconfig'));
+      writeFileSync(env.GIT_CONFIG_GLOBAL!, '');
+      const git = (...args: string[]) => {
+        const result = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+        return result.stdout.trim();
+      };
+      git('init', '-q');
+      git('config', 'user.email', 'fixture@example.invalid');
+      git('config', 'user.name', 'Fixture');
+      mkdirSync(join(repo, 'server/scripts'), { recursive: true });
+      const commit = (body: string) => {
+        writeFileSync(join(repo, 'server/scripts/engine-release-transaction.sh'), body);
+        git('add', '.');
+        git('commit', '-qm', 'fixture');
+        return git('rev-parse', 'HEAD');
+      };
+      const expected = commit('expected generation');
+      const newer = commit('newer generation');
+      git('update-ref', 'refs/remotes/origin/main', newer);
+      const generations = join(parent, 'engine-control-generations');
+      mkdirSync(generations);
+      const generation = (sha: string, body: string) => {
+        const path = join(generations, sha);
+        mkdirSync(path);
+        writeFileSync(join(path, 'control-sha'), sha + '\n');
+        writeFileSync(join(path, 'engine-release-transaction.sh'), body);
+        return path;
+      };
+      const expectedPath = generation(expected, 'expected generation');
+      const newerPath = generation(newer, 'newer generation');
+      const active = join(parent, 'engine-control');
+      symlinkSync(newerPath, active);
+      const start = workflow.indexOf('          CONTROL=/usr/local/lib/club-arena/engine-control');
+      const end = workflow.indexOf(
+        '          python3 - "$CONTROL/engine-release-transaction.sh"',
+        start
+      );
+      expect(start).toBeGreaterThan(0);
+      expect(workflow.slice(end)).toContain('"$ACTIVE_CONTROL/engine-release-transaction.sh"');
+      expect(workflow.slice(end)).toContain('for gate_path in dict.fromkeys(sys.argv[1:]):');
+      const code = workflow
+        .slice(start, end)
+        .replace(/^ {10}/gm, '')
+        .replaceAll('/usr/local/lib/club-arena', parent)
+        .replaceAll('/opt/club-arena', repo);
+      const prove = (sha = expected) =>
+        spawnSync('bash', ['-c', 'set -euo pipefail\n' + code + '\necho "$CONTROL"'], {
+          env: { ...env, EXPECTED_CONTROL_SHA: sha },
+          encoding: 'utf8',
+        });
+      const advanced = prove();
+      expect(advanced.status, advanced.stderr).toBe(0);
+      expect(advanced.stdout.trim()).toBe(expectedPath);
+      writeFileSync(join(expectedPath, 'engine-release-transaction.sh'), 'tampered');
+      expect(prove().status).not.toBe(0);
+      writeFileSync(join(expectedPath, 'engine-release-transaction.sh'), 'expected generation');
+      writeFileSync(join(newerPath, 'engine-release-transaction.sh'), 'tampered');
+      expect(prove().status).not.toBe(0);
+      writeFileSync(join(newerPath, 'engine-release-transaction.sh'), 'newer generation');
+      rmSync(active);
+      symlinkSync(expectedPath, active);
+      expect(prove().status).toBe(0);
+      expect(prove(newer).status).not.toBe(0); // active control may never be older
+      git('checkout', '-q', '--detach', expected);
+      const divergent = commit('divergent generation');
+      const divergentPath = generation(divergent, 'divergent generation');
+      rmSync(active);
+      symlinkSync(divergentPath, active);
+      expect(prove().status).not.toBe(0); // not in protected main
+      const merged = git(
+        'commit-tree',
+        git('rev-parse', `${expected}^{tree}`),
+        '-p',
+        newer,
+        '-p',
+        divergent,
+        '-m',
+        'fixture merge'
+      );
+      git('update-ref', 'refs/remotes/origin/main', merged);
+      expect(prove(newer).status).not.toBe(0); // protected, but not a descendant of expected
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('commits the seal only after HTTP, proxy, and strict database proof', () => {

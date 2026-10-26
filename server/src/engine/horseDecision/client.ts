@@ -1,4 +1,9 @@
-import { createDecisionOpponentProfileReader } from '../../services/HorseOpponentMemory.js';
+import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
+import {
+  horseObserverReadContextFromRequest,
+  type HorseObserverReadContext,
+} from '../HorseObserverReadContext.js';
+import type { DecisionOpponentProfilePacket } from '../../services/HorseOpponentMemory.js';
 import {
   horsePlanBatchBindingIsValid,
   horsePlanBatchBindingMatchesRequest,
@@ -94,8 +99,17 @@ export interface HorseDecisionJobOptions {
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
+  ownPublicHistory?: (context: HorseObserverReadContext) => Promise<unknown>;
   workerFactory?: () => WorkerLike;
-  opponentProfiles?: ReturnType<typeof createDecisionOpponentProfileReader>;
+  /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
+  opponentProfiles?: (
+    snapshot: LiveHorseDecisionSnapshot,
+    signal?: AbortSignal
+  ) => Promise<
+    | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
+    | DecisionOpponentProfilePacket
+    | undefined
+  >;
   /** This client's position among its decision-lane peers (LiveHorseDecisionWorkerPool
    * passes it); reaches the spawned worker so its journal writer opens its own
    * archive instead of sharing one with every other shard. Absent is shard 0,
@@ -504,7 +518,6 @@ export class LiveHorseDecisionWorkerClient {
   private static readonly DEFAULT_MAX_IN_FLIGHT = 32;
   private static readonly STATUS_INTERVAL_MS = 1_000;
   private readonly worker: WorkerLike;
-  private readonly opponentProfiles?: ReturnType<typeof createDecisionOpponentProfileReader>;
   private readonly onFatal?: (error: Error) => void;
   private readonly jobTimeoutMs: number;
   private readonly observationDeadlineMs: number;
@@ -560,6 +573,7 @@ export class LiveHorseDecisionWorkerClient {
   private startupCancellationInProgress = false;
   private fatalNotified = false;
   private terminationPromise: Promise<void> | null = null;
+  private readonly ownPublicHistory: HorseOwnPublicHistoryCache | null;
   private readonly readyTimer: ReturnType<typeof setTimeout>;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -576,9 +590,9 @@ export class LiveHorseDecisionWorkerClient {
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
-    this.opponentProfiles =
-      options.opponentProfiles ??
-      (options.workerFactory ? undefined : createDecisionOpponentProfileReader());
+    this.ownPublicHistory = options.ownPublicHistory
+      ? new HorseOwnPublicHistoryCache(options.ownPublicHistory)
+      : null;
     // A lane start (re)admits the main scheduler's copy of the committed
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
@@ -716,41 +730,38 @@ export class LiveHorseDecisionWorkerClient {
     signal?: AbortSignal,
     options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
-    const captured = this.opponentProfiles ? structuredClone(snapshot) : snapshot;
     const startedAt = Date.now();
+    const captured = structuredClone(snapshot);
+    const context = horseObserverReadContextFromRequest(captured);
     const callerBudget =
       typeof options?.deadlineMs === 'number' &&
       Number.isFinite(options.deadlineMs) &&
       options.deadlineMs > 0
         ? options.deadlineMs
         : this.jobTimeoutMs;
-    const memorySignal =
-      callerBudget && Number.isFinite(callerBudget) && callerBudget > 0
-        ? signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(Math.ceil(callerBudget))])
-          : AbortSignal.timeout(Math.ceil(callerBudget))
-        : signal;
-    const enqueue = (profiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[]) => {
-      const request: FastHorseDecisionRequest = {
-        ...captured,
-        ...(profiles !== undefined ? { durableOpponentProfiles: profiles } : {}),
-        type: 'DECIDE_FAST',
-        requestId: this.nextRequestId++,
-      };
-      return this.enqueue<FastHorseDecisionResult>(
-        request,
-        'FAST_RESULT',
-        signal,
-        false,
-        Math.max(1, callerBudget - (Date.now() - startedAt))
-      );
+    // The individual worker owns its public reads. A pooled service result
+    // cannot establish which horse observed it or its original public cutoff.
+    const request: FastHorseDecisionRequest = {
+      ...captured,
+      type: 'DECIDE_FAST',
+      requestId: this.nextRequestId++,
+      // Never accept a caller-authored history packet through the snapshot.
+      ownPublicHistory: context
+        ? this.ownPublicHistory?.forSnapshot(context, captured.decisionTimeMs)
+        : undefined,
+      ownPublicHistoryState: context ? this.ownPublicHistory?.state(context) : undefined,
     };
-    return this.opponentProfiles
-      ? this.opponentProfiles(captured, memorySignal).then((profiles) => {
-          memorySignal?.throwIfAborted();
-          return enqueue(profiles);
-        })
-      : enqueue();
+    return this.enqueue<FastHorseDecisionResult>(
+      request,
+      'FAST_RESULT',
+      signal,
+      false,
+      Math.max(1, callerBudget - (Date.now() - startedAt))
+    ).then((result) => {
+      if (context)
+        this.ownPublicHistory?.acknowledge(context, result.observerHistoryAckDigest ?? null);
+      return result;
+    });
   }
 
   decideDeep(

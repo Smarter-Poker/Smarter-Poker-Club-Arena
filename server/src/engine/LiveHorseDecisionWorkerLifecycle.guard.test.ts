@@ -11,13 +11,25 @@ const workerSource = readFileSync(
 );
 
 describe('live HorseLogic has one lifecycle owner', () => {
-  it('starts the sole worker only after leadership and before cleanup can admit a table', () => {
+  /**
+   * 2026-10-24: the lane no longer finishes BEFORE the stale-data cleanup; it
+   * starts before it and is joined after it, so hydration and cleanup overlap
+   * (engine boot time, docs/changelog/2026-10-24-the-engine-boot-overlaps-its-lanes.md).
+   * The invariant this pin protects is unchanged and asserted on what it
+   * actually means: leadership is decided first, no table can be admitted
+   * before the worker is READY (the join precedes break adoption, every
+   * discovery loop and the dealer gate), and a lane failure is still fatal.
+   */
+  it('starts the sole worker only after leadership and joins it before any table can be admitted', () => {
     const start = sliceMethod(gameServerSource, 'private async performStart(');
     const code = blankNonCode(start);
     const finalStandbyBranch = start.lastIndexOf("if (role === 'standby')");
     const standbyReturn = code.indexOf('return;', finalStandbyBranch);
-    const workerStart = code.indexOf('await startLiveHorseDecisionWorker(');
-    const cleanup = code.indexOf('await this.cleanupStaleData(');
+    const workerStart = code.indexOf('const horseLane = startLiveHorseDecisionWorker(');
+    const cleanup = code.indexOf('this.cleanupStaleData(');
+    const join = code.indexOf('const [horseOutcome, equityOutcome] = await lanesSettled;');
+    const breakAdoption = code.indexOf('this.maintenanceBreak.start()');
+    const discovery = code.indexOf('this.discoverCashTables()');
     const dealerReady = code.indexOf('this.publishDealerPrerequisitesReady(generation)');
     const bootComplete = code.indexOf('this.leaderBootComplete = true');
 
@@ -25,16 +37,21 @@ describe('live HorseLogic has one lifecycle owner', () => {
     expect(standbyReturn).toBeGreaterThan(finalStandbyBranch);
     expect(workerStart).toBeGreaterThan(standbyReturn);
     expect(cleanup).toBeGreaterThan(workerStart);
-    expect(dealerReady).toBeGreaterThan(cleanup);
+    expect(join).toBeGreaterThan(cleanup);
+    expect(breakAdoption).toBeGreaterThan(join);
+    expect(discovery).toBeGreaterThan(join);
+    expect(dealerReady).toBeGreaterThan(join);
     expect(bootComplete).toBeGreaterThan(dealerReady);
+    // The lane promise is observed at admission (no unhandled rejection while
+    // the cleanup is awaited) and its verdict is read right after the join.
     expect(code.slice(workerStart, cleanup)).toContain('onFatal: (error) =>');
     expect(code.slice(workerStart, cleanup)).toContain('throw error;');
-    expect(code.slice(workerStart, cleanup)).toContain(
-      'error instanceof HorseDecisionAbortedError &&'
-    );
-    expect(code.slice(workerStart, cleanup)).toContain(
-      'if (!this.directAdmissionIsCurrent(generation)) return;'
-    );
+    expect(code.slice(workerStart, cleanup)).toContain('Promise.allSettled([');
+    const verdict = code.slice(join, breakAdoption);
+    expect(verdict).toContain('if (horseOutcome.status === ');
+    expect(verdict).toContain('const error = horseOutcome.reason;');
+    expect(verdict).toContain('error instanceof HorseDecisionAbortedError &&');
+    expect(verdict).toContain('if (!this.directAdmissionIsCurrent(generation)) return;');
   });
 
   it('drains the worker after every dealer and before distributed release', () => {

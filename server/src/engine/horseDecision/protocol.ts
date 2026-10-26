@@ -51,6 +51,9 @@ export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {
   /** Private accepted-history prefix captured beside the live turn. Diagnostic
    * binding only; excluded from strategy sampling, included in input validation. */
   handJournalContext?: import('../HorseDecisionHandBinding.js').HorseHandJournalContext | null;
+  handJournalCoordinate?:
+    | import('../HorseDecisionHandBinding.js').HorseHandJournalCoordinate
+    | null;
   /** Epoch captured while this turn snapshot was authoritative, before FIFO wait. */
   decisionTimeMs: number;
   /** Full input digest, including diagnostic evidence, validated by the worker. */
@@ -72,6 +75,7 @@ type HorseDecisionKeyInput = Pick<
   | 'mods'
   | 'opts'
   | 'handJournalContext'
+  | 'handJournalCoordinate'
 >;
 
 /** JSON-compatible canonicalizer with sorted object keys and finite numbers. */
@@ -108,6 +112,9 @@ function canonicalDecisionValue(value: unknown, path = '$'): unknown {
  */
 export function buildHorseDecisionKey(input: HorseDecisionKeyInput): string {
   const material = canonicalDecisionValue({
+    ...(input.handJournalCoordinate !== undefined
+      ? { handJournalCoordinate: input.handJournalCoordinate }
+      : {}),
     schemaVersion: 1,
     fence: input.fence,
     decisionHour: Math.floor(input.decisionTimeMs / 3_600_000),
@@ -151,19 +158,41 @@ export function validatedHorsePolicySamplingKey(
   // Legacy v41Leaks now controls diagnostic telemetry only.
   const opts = project(input.opts, ['v41Leaks']);
   const tournament = input.gameState.tournament;
+  const captureKeys = [
+    'contextProvenance',
+    'payoutTermsVersion',
+    'prizePoolFinalized',
+    'bubbleProtection',
+    'prizeUnitCents',
+    'finalizedPrizeLadder',
+  ];
   const gameState =
-    tournament?.contextProvenance === undefined
+    !tournament ||
+    !captureKeys.some((key) => (tournament as Record<string, unknown>)[key] !== undefined)
       ? input.gameState
-      : { ...input.gameState, tournament: project(tournament, ['contextProvenance']) };
+      : { ...input.gameState, tournament: project(tournament, captureKeys) };
   return mods === input.mods &&
     opts === input.opts &&
     gameState === input.gameState &&
-    input.handJournalContext === undefined
+    input.handJournalContext === undefined &&
+    input.handJournalCoordinate === undefined
     ? input.decisionKey
-    : buildHorseDecisionKey({ ...input, gameState, mods, opts, handJournalContext: undefined });
+    : buildHorseDecisionKey({
+        ...input,
+        gameState,
+        mods,
+        opts,
+        handJournalContext: undefined,
+        handJournalCoordinate: undefined,
+      });
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
+  /** Private individual read hydration, not a caller policy control or action authority. */
+  ownPublicHistory?: import('./ownPublicHistory.js').HorseOwnPublicHistoryPacket;
+  ownPublicHistoryState?: 'pending' | 'available' | 'unavailable';
+  /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
+  durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   type: 'DECIDE_FAST';
   requestId: number;
@@ -179,7 +208,10 @@ export interface DeepHorseDecisionRequest extends LiveHorseDecisionSnapshot {
 }
 
 export interface CompletedHandObservation extends HorseDecisionFence {
-  /** Complete initialized public-action profiles from the accepted hand path.
+  /** Pool-owned original observer routing; separate from the accepted Phase 14 roster. */
+  observerParticipants?: import('./observerParticipants.js').HorseObserverParticipants;
+  /** Validated public-action profiles from the accepted hand path, back-filled or not
+   * (HorseOpponentMemory.opponentProfileVersion).
    * Empty means unavailable; presence suppresses non-durable family pooling. */
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   /** UUID returned by the accepted hand transaction; absent on legacy replay. */
@@ -202,6 +234,9 @@ export interface CompletedHandObservation extends HorseDecisionFence {
     | undefined;
   bigBlind: number;
   showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null;
+  /** Every dealt player's net (chips out less chips in), for the winner read
+   *  (HorseWinnerRead). Absent on legacy callers and replay. */
+  results?: Array<{ user_id: string; net: number }>;
   scope?: ReadScope | null;
   /**
    * P14.2: the private accepted actor roster the settlement transaction built
@@ -381,6 +416,8 @@ export type HorseDecisionWorkerReadiness = Omit<HorseDecisionWorkerReady, 'type'
 
 export interface FastHorseDecisionResult extends HorseDecisionFence {
   type: 'FAST_RESULT';
+  /** A payload acknowledgement only; the journal read receipt says whether it loaded. */
+  observerHistoryAckDigest?: string | null;
   requestId: number;
   planBinding: HorsePlanBatchBinding;
   planIssueDisposition: HorsePlanIssueDisposition;

@@ -506,6 +506,31 @@ export class LightningRegistry {
     this.pruneRoom(roomId);
   }
 
+  /**
+   * THE ENGINE'S HEARTBEAT IS A HORSE'S RETURNING SOCKET (2026-10-24).
+   *
+   * The anchor engine is the input device of a horse it drives (CLAUDE.md
+   * 10.5 item 2). When its heartbeat for the seat is live and the horse's open
+   * pool session (`roomId`) carries a disconnect stamp, the engine reports it
+   * here, and the stamp is cleared through the SAME transition a returning
+   * room socket reports (`connect` above): the presence reporter's
+   * `reconnected`, then fn_lightning_presence_report. Before this the stamp
+   * could only be cleared by a room socket, so the reaper exited four
+   * heartbeating horses on 2026-10-24 (stamped 15:49:46, exited 15:52:50
+   * 'disconnect_expired').
+   *
+   * Refused (false) for a seat the account's own client controls: that
+   * client's room is the witness, and its own socket reports for it. The
+   * engine calls this only for a horse it is heartbeating; a person is
+   * cleared only by their own socket.
+   */
+  engineInputDeviceLive(clusterId: string, playerId: string, roomId: string): boolean {
+    if (!isUuid(clusterId) || !isUuid(playerId) || !isUuid(roomId)) return false;
+    if (this.isClientControlling(playerId, roomId)) return false;
+    this.reportPresence('reconnected', clusterId, playerId);
+    return true;
+  }
+
   /** An anchor engine here reports this player CONNECTED in this Cluster. */
   private connectedAtAnchor(clusterId: string, userId: string): boolean {
     if (!this.anchorPresence) return false;

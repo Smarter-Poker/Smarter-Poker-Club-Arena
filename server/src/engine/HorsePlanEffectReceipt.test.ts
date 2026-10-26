@@ -1,3 +1,5 @@
+import { captureLightningHorseJournalCoordinate } from './HorseDecisionHandBinding.js';
+import { buildHorseDecisionKey } from './horseDecision/protocol.js';
 import { describe, expect, it } from 'vitest';
 import {
   createHorsePlanEffectReceipt,
@@ -13,9 +15,24 @@ import type { HorseMindDecisionEffect } from './HorseMind.js';
 import { requestAt, tableId, lease, heroId } from '../testing/horseRegression/plan/fixture.js';
 
 const epoch = '99999999-9999-4999-8999-999999999999';
-function receiptAt(hand = 1000100, disposition: 'applied' | 'failed' = 'applied') {
+function receiptAt(
+  hand = 1000100,
+  disposition: 'applied' | 'failed' = 'applied',
+  independent = true,
+  lightning = false
+) {
   const request = requestAt(1, tableId, hand);
-  const binding = horsePlanBatchBindingFromRequest(request);
+  if (lightning) {
+    request.fence = `${tableId}:${hand}:${request.player.seat}:${request.generation}`;
+    request.handJournalCoordinate = captureLightningHorseJournalCoordinate({
+      tableId,
+      handNumber: hand,
+      leaseGeneration: lease,
+    });
+    request.decisionKey = buildHorseDecisionKey(request);
+  }
+  const binding = { ...horsePlanBatchBindingFromRequest(request) };
+  if (!independent) delete binding.observerReadContext;
   const handKey = horsePlanContextKey(binding.planContext)!;
   const effects: HorseMindDecisionEffect[] = [
     { type: 'plan', handKey, userId: heroId, barrelIntent: true },
@@ -117,5 +134,28 @@ describe('HorsePlanEffectReceipt', () => {
       policyUsable: () => true,
     });
     expect(throwing.outcomes).toEqual(['hand_not_live', 'hand_not_live']);
+  });
+  it('worker recovery refuses legacy receipts without an original observer context', () => {
+    const old = receiptAt(1000100, 'applied', false);
+    expect(horsePlanEffectReceiptIsValid(old)).toBe(true);
+    const refused = reconstructHorsePlanEffects([old], {
+      ...sameLive(),
+      observerContextRequired: true,
+    });
+    expect(refused.replaced).toEqual([]);
+    expect(refused.outcomes).toEqual(['observer_context_unavailable']);
+    expect(
+      reconstructHorsePlanEffects([receiptAt()], { ...sameLive(), observerContextRequired: true })
+        .replaced
+    ).toHaveLength(1);
+  });
+  it('recovers Lightning intent with its original private lease, never its transport turn counter', () => {
+    const receipt = receiptAt(1000100, 'applied', true, true);
+    expect(receipt.binding.fence.split(':')).toHaveLength(4);
+    expect(horsePlanEffectReceiptIsValid(receipt)).toBe(true);
+    expect(
+      reconstructHorsePlanEffects([receipt], { ...sameLive(), observerContextRequired: true })
+        .outcomes
+    ).toEqual(['replaced']);
   });
 });

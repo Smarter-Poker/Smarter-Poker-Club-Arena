@@ -50,6 +50,7 @@ import { getArenaSectionNavigation } from '../../src/config/arenaSectionNavigati
 import { getClubOperationItems } from '../../src/config/clubOperationsNavigation';
 import { getClubIntegrityNavigation } from '../../src/config/clubIntegrityNavigation';
 import { topUpCashierPath } from '../../src/utils/topUpCashierPath';
+import { lightningJoinRoute, lightningRoute } from '../../src/lightning/lightningLobby';
 
 const ROOT = resolve(__dirname, '../../');
 const APP = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8');
@@ -212,6 +213,12 @@ function reachableTargets(): Set<string> {
      above, because the destination is composed and no scan can read it. */
   targets.add(topUpCashierPath('C'));
   targets.add(topUpCashierPath(null));
+  /* A Lightning card in the club lobby, PLAY AGAIN on the session summary and
+     the Lightning table footer all open the game's door through these
+     builders (Join Lightning as one tap opens `?join=1`, 2026-10-24). Called
+     for the same reason: the destination is composed, so no scan can read it. */
+  targets.add(lightningRoute('C'));
+  targets.add(lightningJoinRoute('C'));
 
   for (const f of walk(join(ROOT, 'src')).filter((f) => !f.endsWith('App.tsx'))) {
     const s = readFileSync(f, 'utf8');

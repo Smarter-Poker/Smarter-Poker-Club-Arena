@@ -3,6 +3,10 @@ import { reportError } from './errorReporter.js';
 import { noteFire } from '../engine/BrainTelemetry.js';
 import {
   memoryVariant,
+  opponentMemoryDonors,
+  OPPONENT_MEMORY_THIN_HANDS,
+  validOpponentDonorProfiles,
+  opponentProfileVersion,
   validOpponentProfile,
   type DurableOpponentProfile,
   type MemoryMode,
@@ -76,10 +80,10 @@ export function createOpponentMemoryProfileCache() {
   return {
     remember(rows: DurableOpponentProfile[]) {
       for (const row of rows) {
-        if (!validOpponentProfile(row) || !row.initialized) continue;
+        if (!validOpponentProfile(row)) continue;
         const k = key(row.user_id, row.variant, row.mode, row.size);
         const previous = profiles.get(k);
-        if (previous && previous.observed_hands > row.observed_hands) continue;
+        if (previous && opponentProfileVersion(previous) > opponentProfileVersion(row)) continue;
         profiles.delete(k);
         profiles.set(k, structuredClone(row));
       }
@@ -164,8 +168,8 @@ export async function readHorseOpponentProfiles(
       new Set(data.map((p) => p.user_id)).size !== data.length
     )
       throw new Error('opponent memory receipt incomplete');
-    // Cold actors remain explicitly uninitialized until their own complete
-    // legacy horizon commits. Preserve every already initialized actor.
+    // Every validated row is evidence, back-filled or not (engine
+    // HorseOpponentMemory.opponentProfileVersion); the newest version wins.
     validatedOpponentProfiles.remember(data as DurableOpponentProfile[]);
     noteFire('horse_opponent_memory_read_ok');
     noteFire(opponentMemoryLatencyBucket(Date.now() - startedAt));
@@ -218,7 +222,7 @@ export function createDecisionOpponentProfileReader(schema = horseOpponentMemory
       const merged = new Map(profiles.map((profile) => [profile.user_id, profile]));
       for (const profile of validatedOpponentProfiles.read(ids, variant, mode, size)) {
         const previous = merged.get(profile.user_id);
-        if (!previous || profile.observed_hands >= previous.observed_hands)
+        if (!previous || opponentProfileVersion(profile) >= opponentProfileVersion(previous))
           merged.set(profile.user_id, profile);
       }
       return ids.flatMap((id) => {
@@ -236,5 +240,95 @@ export function createDecisionOpponentProfileReader(schema = horseOpponentMemory
     pending.set(key, read);
     while (pending.size > 2000) pending.delete(pending.keys().next().value!);
     return awaitOpponentMemory(read, signal).then(latestKnown);
+  };
+}
+
+/** Exact and donor receipts keep their independent ten-player validation caps. */
+export interface DecisionOpponentProfilePacket {
+  profiles: DurableOpponentProfile[];
+  donorProfiles: DurableOpponentProfile[];
+}
+
+/** Load only already saved donor evidence, never initialize another history. */
+export async function readExistingHorseOpponentDonors(
+  ids: string[],
+  variant: string,
+  mode: MemoryMode,
+  size: MemorySize,
+  signal?: AbortSignal
+): Promise<DurableOpponentProfile[]> {
+  const donorSize = opponentMemoryDonors(mode, size)[0]?.[1];
+  if (!donorSize || !memoryVariant(variant)) return [];
+  if (!ids.length || ids.length > 10 || new Set(ids).size !== ids.length)
+    throw new Error('invalid opponent memory donor roster');
+  signal?.throwIfAborted();
+  return admitOpponentMemoryRead(async () => {
+    const { data, error } = await supabase
+      .from('horse_exploit_profiles')
+      .select('user_id,variant,mode,size,counters,observed_hands,initialized')
+      .in('user_id', ids)
+      .eq('variant', variant)
+      .eq('mode', mode)
+      .eq('size', donorSize)
+      .limit(10)
+      .abortSignal(
+        signal ? AbortSignal.any([signal, AbortSignal.timeout(1500)]) : AbortSignal.timeout(1500)
+      );
+    if (error) throw new Error(`opponent memory donor unavailable: ${error.code ?? 'query'}`);
+    if (!validOpponentDonorProfiles(data, ids, variant, mode, size))
+      throw new Error('opponent memory donor receipt incomplete');
+    validatedOpponentProfiles.remember(data);
+    noteFire('horse_opponent_memory_donor_read_ok');
+    return validatedOpponentProfiles.read(ids, variant, mode, donorSize);
+  }).catch((error) => {
+    noteFire('horse_opponent_memory_donor_read_failed');
+    reportError(error, 'HorseOpponentMemory.donorRead');
+    return validatedOpponentProfiles.read(ids, variant, mode, donorSize);
+  });
+}
+
+/** Production first-decision reader. Donors are coalesced within the original
+ * hand request; there is no timer, cold donor initializer or shared FIFO IO. */
+export function createDecisionOpponentProfilePacketReader(schema = horseOpponentMemorySchema) {
+  const exact = createDecisionOpponentProfileReader(schema);
+  const pending = new Map<string, Promise<DurableOpponentProfile[]>>();
+  return async (
+    request: import('../engine/horseDecision/protocol.js').LiveHorseDecisionSnapshot,
+    signal?: AbortSignal
+  ): Promise<DecisionOpponentProfilePacket | undefined> => {
+    const profiles = await exact(request, signal);
+    signal?.throwIfAborted();
+    if (profiles === undefined) return undefined;
+    const gs = request.gameState,
+      variant = memoryVariant(gs.gameVariant);
+    const count = gs.dealtSeatIds?.length ?? gs.players.length;
+    const size: MemorySize = count <= 2 ? 'hu' : count <= 5 ? 'short' : 'full';
+    const mode = gs.gameMode === 'tournament' || gs.tournament ? 'tournament' : 'cash';
+    const ids = gs.players.map((p) => p.user_id).sort();
+    if (!variant || size === 'hu') return { profiles, donorProfiles: [] };
+    const thinIds = ids.filter(
+      (id) =>
+        !profiles.some(
+          (profile) =>
+            profile.user_id === id && profile.counters.hands >= OPPONENT_MEMORY_THIN_HANDS
+        )
+    );
+    if (!thinIds.length) return { profiles, donorProfiles: [] };
+    const key = JSON.stringify([request.fence.split(':').slice(0, 2), variant, mode, size, ids]);
+    let donors = pending.get(key);
+    if (!donors) {
+      donors = readExistingHorseOpponentDonors(thinIds, variant, mode, size, signal);
+      pending.set(key, donors);
+      while (pending.size > 2000) pending.delete(pending.keys().next().value!);
+    }
+    await awaitOpponentMemory(donors, signal);
+    signal?.throwIfAborted();
+    const donorSize = opponentMemoryDonors(mode, size)[0]![1];
+    // Another accepted hand can refresh the validated cache without repeating
+    // this hand's donor query. Never return an older in-flight receipt.
+    return {
+      profiles,
+      donorProfiles: validatedOpponentProfiles.read(thinIds, variant, mode, donorSize),
+    };
   };
 }

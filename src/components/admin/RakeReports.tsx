@@ -13,7 +13,7 @@ import { downloadCsv, toCsv } from '../../utils/downloadCsv';
 import { compactChips, pct } from '../../utils/format';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUIDStrict } from '../../utils/strictClubIdResolver';
-import { titleCase } from '../../utils/titleCase';
+import { titleCase, enumToTitleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { useToast } from '../common/Toast';
 import './RakeReports.css';
@@ -832,11 +832,11 @@ export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
               <li className="rr__row" key={game.table_id}>
                 <span className="rr__rank sc-ink--gold">{index + 1}</span>
                 <span className="rr__row-copy">
-                  <strong className="sc-ink--silver">{titleCase(game.name)}</strong>
+                  <strong className="sc-ink--silver">{enumToTitleCase(game.name)}</strong>
                   <small className="sc-ink--muted">
                     {[game.variant, game.stakes]
                       .filter((value): value is string => Boolean(value))
-                      .map((value) => titleCase(value))
+                      .map((value) => enumToTitleCase(value))
                       .join(' ')}
                   </small>
                 </span>
@@ -878,7 +878,7 @@ export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
                 hand.global_hand_id === null
                   ? 'Recorded Hand'
                   : `Hand ${compactChips(hand.global_hand_id)}`;
-              const label = `${titleCase(hand.table_name)}, ${handNumber}, ${recentHandTimeLabel(hand.created_at)}`;
+              const label = `${enumToTitleCase(hand.table_name)}, ${handNumber}, ${recentHandTimeLabel(hand.created_at)}`;
               return (
                 <li key={hand.id}>
                   <button
@@ -889,7 +889,7 @@ export const RakeReports = ({ clubId, initialSnapshot }: RakeReportsProps) => {
                     disabled={lookupBusy}
                     onClick={() => void lookupHand(hand.hand_id)}
                   >
-                    <strong className="sc-ink--silver">{titleCase(hand.table_name)}</strong>
+                    <strong className="sc-ink--silver">{enumToTitleCase(hand.table_name)}</strong>
                     <small className="sc-ink--muted">
                       {handNumber} - {recentHandTimeLabel(hand.created_at)}
                     </small>

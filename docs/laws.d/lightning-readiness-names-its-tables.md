@@ -1,3 +1,3 @@
 # tests/lightning/lightning-readiness-names-its-tables.law.test.ts
 
-The Lightning rollout readiness invariant `seven_tables` compares the exact set of lightning\_\* tables service_role reads directly (now eight, with lightning_horse_fill) instead of a count, still false on any anon, authenticated or PUBLIC grant; the law pins the eight names to tables the migrations create, so a new directly-read table is named on purpose.
+The Lightning rollout readiness invariant `seven_tables` compares the exact set of lightning\_\* tables service_role reads directly (now eight, with lightning_horse_fill) instead of a count, still false on any anon, authenticated or PUBLIC grant; the law pins the eight names to tables the migrations create, and (since 2026-10-25) replays every migration's GRANT/REVOKE to require that the tables service_role is left able to read are exactly that named list, so a ninth directly-read table fails CI instead of turning readiness NO_GO in production.

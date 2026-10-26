@@ -36,15 +36,19 @@ describe('cashier navigation and ledger controls stay operational', () => {
   });
 
   it('loads ledger pages with a truthful sentinel row', () => {
-    expect(PAGE).toContain("supabase.rpc('fn_cashier_history_page'");
-    expect(PAGE).toContain('p_limit: recordsLimit + 1');
-    expect(PAGE).toContain('setRecordsHasMore((data || []).length > recordsLimit)');
-    expect(PAGE).toContain('setRecordsLimit((limit) => Math.min(limit + 50, 250))');
+    expect(PAGE).toContain("supabase.rpc('fn_cashier_history_feed'");
+    expect(PAGE).toContain('p_limit: HISTORY_PAGE + 1');
+    expect(PAGE).toContain('setRecordsHasMore(rows.length > HISTORY_PAGE)');
+    // Older pages are read by cursor from the last row on screen.
+    expect(PAGE).toContain('p_before_at: last.createdAt,');
+    expect(PAGE).toContain('p_before_id: last.id,');
   });
 
-  it('provides local search and direction filters without widening the money path', () => {
+  it('searches on the server and filters direction locally without widening the money path', () => {
     expect(PAGE).toContain("useState<'all' | 'in' | 'out' | 'managed'>('all')");
-    expect(PAGE).toContain('row.counterparty.toLowerCase().includes(q)');
+    // The search reaches the whole history on the server (a name or an invoice number).
+    expect(PAGE).toContain('p_search: historySearch || null,');
+    expect(PAGE).toContain("recordDirection === 'all' || row.direction === recordDirection");
     expect(PAGE).toContain("supabase.rpc('fn_cashier_batch_transfer'");
   });
 });

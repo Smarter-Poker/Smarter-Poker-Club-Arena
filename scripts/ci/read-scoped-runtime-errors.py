@@ -7,6 +7,7 @@ import math
 import os
 import re
 import selectors
+import stat
 import shutil
 import subprocess
 import sys
@@ -34,7 +35,20 @@ ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_k
 ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
 # Successor admission is owned by GameServer, before or while a new manager
 # recovers its originals. Keep this an exact call-site list, never GameServer.*.
-ADMISSION_CONTEXT = re.compile(r'^\[(GameServer\.(?:Tournament_resume_failed_for_t|tournament_admission_retry_failed|mixed_original_recovery_retained|retained_hand_refusal_holds_table|retained_hand_refused_cleanup_unconfirmed|direct_table_recovery_admission_threw|discovery_table_admission_threw))\]')
+ADMISSION_CONTEXT = re.compile(r'^\[(GameServer\.(?:Tournament_resume_failed_for_t|tournament_admission_retry_failed|mixed_original_recovery_retained|retained_hand_refusal_holds_table|retained_hand_refused_cleanup_unconfirmed|direct_table_recovery_admission_threw|discovery_table_admission_threw|stalled_elimination_successor_drain_requested|stuck_tournament_successor_drain_requested))\]')
+# These are the existing successor caller's fixed message and literal sweep
+# phases. Preserve elapsed counts, never its arbitrary error/metadata payload.
+SUCCESSOR_STALL = re.compile(r'\bTournament ([0-9a-f-]{36}) bust stage stalled \(sweep in flight ([0-9]{1,10})s, oldest bust waiting ([0-9]{1,10})s, stage (-?[0-9]{1,3})(?:, stuck in ([A-Za-z0-9_:]{1,100}) for ([0-9]{1,10})s)?\)')
+SWEEP_STEPS = frozenset({
+    'admitted', 'broadcast', 'checkDynamicTableExpansion', 'checkFinalTableDeal',
+    'checkSatelliteQualifierCompletion', 'checkTableBalance',
+    'db:fn_get_tournament_satellite_entitlement_depth',
+    'db:fn_open_tournament_rebuy_decisions', 'db:tournament_players',
+    'eliminatePlayer', 'finishTournament', 'maybeActivateMysteryBounty',
+    'reconcileTournamentEntryWindow', 'recoverPendingBountyObligations',
+    'refreshChipCapInputs', 'resumeCommittedTerminalCleanup',
+    'seatAcceptedEntrantsAwaitingChairs', 'tryTournamentAddOns', 'tryTournamentRebuys',
+})
 POSTCOMMIT_CONTEXT = re.compile(r'^\[(ServerTableEngine\.post_commit_obligations_pending)\]')
 HEADER = re.compile(r'^\[[^\]\r\n]{1,160}\]')
 MAX_BYTES = 8 * 1024 * 1024
@@ -255,6 +269,16 @@ def extract(raw, scopes):
                       'symbolicErrors': sorted(set(ERROR.findall(text))),
                       'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
                       if context == 'ServerTableEngine.watchdog_kill' else []}
+            if context == 'GameServer.stalled_elimination_successor_drain_requested':
+                stall = SUCCESSOR_STALL.search(text)
+                if stall and stall.group(1) in allowed:
+                    record['successorStall'] = {
+                        'sweepInFlightSeconds': int(stall.group(2)),
+                        'bustWaitingSeconds': int(stall.group(3)),
+                        'stage': int(stall.group(4)),
+                        'step': stall.group(5) if stall.group(5) in SWEEP_STEPS else None,
+                        'stepSeconds': int(stall.group(6)) if stall.group(6) else None,
+                    }
             nested_states = sorted(set(POSTCOMMIT_SQLSTATE.findall(text)))
             if nested_states:
                 record['originalPostcommitSqlstates'] = nested_states
@@ -317,6 +341,162 @@ def capture(command=COMMAND):
         process.stdout.close()
 
 
+ARCHIVE_DIRECTORY = Path('/var/log/club-arena-engine')
+ARCHIVE_NAME = re.compile(r'engine-(\d{8}T\d{6}Z)-started(\d{8}T\d{6})-([0-9a-f]{12})-([0-9a-f]{8})\.log\.gz')
+MAX_PHYSICAL_LINES = 20000
+MAX_ARCHIVE_EXPANSION = 256 * 1024 * 1024
+
+
+def archived_window(window, current, seconds=10):
+    """Bounded scan of the run-spec's existing outgoing logs, never caller paths.
+
+    Prefixes come from the archive name, not today's host health. Neither an
+    archive nor an empty scan proves full coverage or a full engine revision.
+    """
+    metadata = {'status': 'notRequested', 'archives': [], 'truncated': False,
+                'fullWindowCoverageProven': False,
+                'absenceMeans': 'unknown; archives or bounded reads may omit the incident'}
+    if window is None:
+        return [], metadata
+    metadata['status'] = 'observed'
+    deadline = time.monotonic()+max(0, min(seconds, 10))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00'))
+    until = datetime.datetime.fromisoformat(window['until'].replace('Z', '+00:00'))
+    if start < now-datetime.timedelta(hours=24) or until > now or until-start != datetime.timedelta(minutes=15):
+        raise ValueError('Invalid archive observation window')
+    sources, candidates = [], []
+    size, lines = len(current), len(current.splitlines())
+    seen = set(current.splitlines())
+    expanded = 0
+    try:
+        # Refuse the directory itself and individual entries if symlinked.
+        # O_NOFOLLOW and fstat repeat this check at open to close rename races.
+        directory_fd = os.open(ARCHIVE_DIRECTORY, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        metadata['status'] = 'unavailable'
+        return [], metadata
+    try:
+        with os.scandir(directory_fd) as entries:
+            for index, entry in enumerate(entries):
+                if index >= 4096 or time.monotonic() >= deadline:
+                    metadata['truncated'] = True
+                    break
+                match = ARCHIVE_NAME.fullmatch(entry.name)
+                if not match or not entry.is_file(follow_symlinks=False):
+                    continue
+                try:
+                    ended = datetime.datetime.strptime(match[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=datetime.timezone.utc)
+                    started = datetime.datetime.strptime(match[2], '%Y%m%dT%H%M%S').replace(tzinfo=datetime.timezone.utc)
+                    if not (now-datetime.timedelta(hours=24) <= ended <= now and started <= ended
+                            and started < until and ended >= start):
+                        continue
+                    candidates.append((ended, entry.name, match[3], match[4]))
+                except ValueError:
+                    continue
+        if len(candidates) > 2:
+            metadata['truncated'] = True
+        for ended, name, container, image in sorted(candidates, reverse=True)[:2]:
+            identity = {'source': 'outgoingArchive', 'containerIdPrefix': container,
+                        'imageIdPrefix': image, 'fullEngineRevision': 'unproven; archive filename prefix only'}
+            item = {**identity, 'status': 'observed', 'retainedBytes': 0, 'retainedPhysicalLines': 0}
+            metadata['archives'].append(item)
+            output, pending = [], b''
+            process, stream = None, None
+            try:
+                if time.monotonic() >= deadline:
+                    item['status'] = 'timeBound'; metadata['truncated'] = True
+                    break
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+                with os.fdopen(fd, 'rb') as source:
+                    if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                        raise OSError('Not a regular archive')
+                    process = subprocess.Popen(['gzip', '-cd'], stdin=source,
+                                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                    stream = selectors.DefaultSelector()
+                    stream.register(process.stdout, selectors.EVENT_READ)
+                    while True:
+                        remaining = deadline-time.monotonic()
+                        if remaining <= 0:
+                            item['status'] = 'timeBound'; metadata['truncated'] = True
+                            break
+                        if not stream.select(min(remaining, .1)):
+                            continue
+                        chunk = os.read(process.stdout.fileno(), 65536)
+                        if not chunk:
+                            if pending:
+                                chunk = b'\n'
+                            else:
+                                if process.wait(timeout=max(.01, remaining)) != 0:
+                                    item['status'] = 'unavailable'
+                                break
+                        expanded += len(chunk)
+                        if expanded > MAX_ARCHIVE_EXPANSION:
+                            item['status'] = 'expansionBound'; metadata['truncated'] = True
+                            break
+                        pending += chunk
+                        parts = pending.split(b'\n')
+                        pending = parts.pop()
+                        if len(pending) > MAX_BYTES:
+                            item['status'] = 'lineBound'; metadata['truncated'] = True
+                            break
+                        stop = False
+                        for line in parts:
+                            match = STAMP.match(line.decode('utf-8', errors='replace'))
+                            if not match:
+                                continue
+                            try:
+                                timestamp = datetime.datetime.fromisoformat(match[1].replace('Z', '+00:00'))
+                            except ValueError:
+                                continue
+                            if not start <= timestamp < until or line in seen:
+                                continue
+                            if size+len(line)+1 > MAX_BYTES or lines >= MAX_PHYSICAL_LINES:
+                                item['status'] = 'inputBound'; metadata['truncated'] = True
+                                stop = True
+                                break
+                            seen.add(line); output.append(line+b'\n')
+                            size += len(line)+1; lines += 1
+                        if stop:
+                            break
+                raw = b''.join(output)
+                item.update(retainedBytes=len(raw), retainedPhysicalLines=len(output))
+                sources.append((raw, identity))
+            except (OSError, subprocess.SubprocessError):
+                item['status'] = 'unavailable'
+            finally:
+                if stream is not None:
+                    stream.close()
+                if process is not None:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=1)
+                    process.stdout.close()
+        if any(a['status'] != 'observed' for a in metadata['archives']):
+            metadata['status'] = 'incomplete'
+        if not metadata['archives']:
+            metadata['status'] = 'unavailable'
+        return sources, metadata
+    finally:
+        os.close(directory_fd)
+
+
+def extract_sources(raw, archives, scopes):
+    result = extract(raw, scopes)
+    for record in result['records']:
+        record['engineIdentity'] = {'source': 'currentContainer', 'fullEngineRevision': 'unproven; host health is observation identity only'}
+    for source, identity in archives:
+        extracted = extract(source, scopes)
+        for record in extracted['records']:
+            record['engineIdentity'] = identity
+        result['records'].extend(extracted['records'])
+        result['matchingRecords'] += extracted['matchingRecords']
+        result['oversizedRecords'] += extracted['oversizedRecords']
+    result['records'] = sorted(result['records'], key=lambda r: r.get('timestamp') or '')[-200:]
+    result['omittedRecords'] = max(0, result['matchingRecords']-len(result['records']))
+    return result
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise RuntimeError('Health redirect refused')
@@ -348,7 +528,16 @@ def main():
         else:
             raise ValueError('Invalid observation request')
         before = health('http://127.0.0.1:8080')
+        capture_started = time.monotonic()
         raw = capture(log_command(window))
+        # Docker's --tail bounds current physical lines. Enforce the same
+        # shared ceiling even if a source violates that contract.
+        if len(raw.splitlines()) > MAX_PHYSICAL_LINES:
+            raise RuntimeError('Log read exceeded bounded physical lines')
+        archives, archive_metadata = archived_window(
+            window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)))
+        current_raw = raw
+        raw += b''.join(source for source, _identity in archives)
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
@@ -359,7 +548,8 @@ def main():
                           'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
                           'perRecordEngineIdentity': 'unproven; the retained window may include an earlier process',
-                          'inputBytes': len(raw), **extract(raw, scopes), **extra}))
+                          'inputBytes': len(raw), 'archiveRead': archive_metadata,
+                          **extract_sources(current_raw, archives, scopes), **extra}))
         return
     if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
         raise RuntimeError('Explicit observation dispatch required')

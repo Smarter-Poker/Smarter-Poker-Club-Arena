@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 232055,
-      "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+      "bytes": 235835,
+      "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41375,
-      "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+      "bytes": 41867,
+      "sha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114286,
-      "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+      "bytes": 114533,
+      "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
     }
   },
   "nativePgCron": {
@@ -3658,5 +3658,114 @@
   "migrationAuditIntegration20261024": {
     "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
     "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+  },
+  "supersededCiStopsAtThePush20261025": {
+    "reason": "Restamped for the CI load change only (docs/changelog/2026-10-25-superseded-ci-stops-at-the-push.md): ci.yml gates its heavy jobs on !cancelled() instead of always() and documents ci-supersede.yml; the two CI routing tests follow that prefix. No suite, step, shard, financial source, fixture, assertion, deadline or qualification status changed. Matching source hashes are not production or financial execution proof; fresh hosted qualification is still required.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 232055,
+          "sha256": "be9e0f31244fe8002a77ba0617f3ee87bf8040d656046ab347e519126b3f91a1"
+        },
+        "current": {
+          "bytes": 234392,
+          "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 114286,
+          "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+        },
+        "current": {
+          "bytes": 114533,
+          "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
+        }
+      }
+    }
+  },
+  "routePerformanceGateInputs20261025": {
+    "reason": "The route-performance scripts select the required production build. Active classifier identity only; cash SQL, native scheduler, assertions and qualification state unchanged. Required native accounting still runs.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 41375,
+          "sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335"
+        },
+        "current": {
+          "bytes": 41844,
+          "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+        }
+      }
+    }
+  },
+  "horseAuditNativeQualification20261025": {
+    "reason": "Adds source-bound native horse-audit population/cohort regression in existing required PostgreSQL shard2. Only current workflow identity changes. Financial sources, assertions, historical execution receipts and qualification statuses remain unchanged; this is not a financial or production certificate.",
+    "previousWorkflowInput": {
+      "bytes": 234392,
+      "sha256": "35ad9faa11a0fc245a0cf29c93dc80a930c8a2d450c8712730d12909312a8222"
+    },
+    "currentWorkflowInput": {
+      "bytes": 234833,
+      "sha256": "e1eb68a8626f8c866a90f7c7864844c3a20d2ba8fb87da2c285ae44cf7550666"
+    }
+  },
+  "_horse_audit_main_integration_20261025": {
+    "reason": "Preserve main digest qualification and horse audit native qualification; refresh only current integrated workflow identity. Historical evidence, financial source inputs and verdicts retained.",
+    "current_workflow": {
+      "bytes": 235095,
+      "sha256": "253a7bc9507429c83826855bc584be5a66720c81bb08338be934a0d0abe6b481"
+    }
+  },
+  "horseDailyCountsNative20261025": {
+    "reason": "Add isolated PG17 accepted-hand paired horse counts qualification to existing accounting shard4. Refresh only current workflow identity; preserve historical pins, financial inputs, assertions and qualification verdicts. Not production execution evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235317,
+      "sha256": "b9eaad2591179b816b2b0e21e65575b76c4f607b87c05c519455da3717fc9ac5"
+    }
+  },
+  "horseDailyCountsProtectedMainIntegration20261025": {
+    "reason": "Retain protected-main messenger native proof and the accepted-hand daily-count native proof together on their existing accounting shards1 and4. Refresh only current workflow identity. Preserve every historical pin, qualification state and financial assertion. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235588,
+      "sha256": "ab358f7c564c9ec71db6a52caa0955031164e8a2734a0204be88bb636920d392"
+    }
+  },
+  "horseMultiboardPopulationFollowup20261025": {
+    "reason": "Use existing native audit fixture to qualify exact multi-board decision populations for direct descendants. Current workflow identity only; preserve all historical pins, financial assertions and qualification states. Not production evidence.",
+    "currentWorkflowPin": {
+      "bytes": 235596,
+      "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+    }
+  },
+  "horseOwnPublicHistoryNative20261025": {
+    "reason": "Add isolated PG17 original-observer public-history qualification in existing required Accounting4. Refresh only current workflow input identity; preserve historical pins, financial assertions and qualification verdicts. This is source binding, not financial or production execution evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 235596,
+          "sha256": "fe8249617be97f2e2e54849b3b2f7b9c2a44e73203da1a091e4636a205e68032"
+        },
+        "current": {
+          "bytes": 235835,
+          "sha256": "b18d20d83158038dd8b93a06a76c26ce44b1737778162f4d34a164fc5d4446d9"
+        }
+      }
+    }
+  },
+  "horseOwnPublicHistoryInputRouting20261025": {
+    "reason": "Ensure an individual public-history native runner edit alone selects the existing required accounting job and routing contracts. Only current classifier input identity changes; all historical pins, financial assertions and qualification verdicts preserved. Source identity is not execution evidence.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 41844,
+          "sha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+        },
+        "current": {
+          "bytes": 41867,
+          "sha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
+        }
+      }
+    }
   }
 }

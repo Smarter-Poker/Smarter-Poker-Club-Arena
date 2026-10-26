@@ -49,4 +49,4 @@ converter; what each protects is unchanged.
   evaluator its own word suits and the seat label the table's mixed spellings,
   and requires the two to name the same hand every time. Against the evaluator
   as it was before today's flush fix it fails (a club flush named "High Card").
-  Short deck is covered by its own suite.
+  Short Deck joined on 2026-10-26 (`2026-10-26-hero-label-follow-ups.md`).

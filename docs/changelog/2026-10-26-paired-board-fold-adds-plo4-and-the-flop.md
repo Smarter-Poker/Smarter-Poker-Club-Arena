@@ -33,3 +33,12 @@ once the containing engine serves.
 - The V56 Omaha pressure test's "with V56 off it called" control ablates the
   paired-board rule too, as the V40 control already does, so it keeps
   measuring V56 alone.
+
+## The window was re-anchored
+
+The first window named the #8088 merge, but the owner-ordered bust-door
+release (#8096) had already put #8088 into the serving engine (fdd0a7efd)
+before this change merged, so the window was spent and the widening queued for
+04:00. The entry now names the widening's own protected merge (#8104,
+afea03a16) and nothing else changes: same order, same certified route, same
+expiry rules, still spent once the containing engine serves.

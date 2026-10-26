@@ -46,7 +46,7 @@
  *     discipline still runs after this rule.
  *
  *  3. PREMIUMS KEEP BETTING POSTFLOP. When a horse with an overpair (QQ+
- *     above every board card) or AK with top pair or better is checked to,
+ *     above every board card), a set of QQ+ or AK with top pair or better is checked to,
  *     or is first to act, it bets instead of checking: half pot on the flop
  *     (two-thirds on a wet flop), two-thirds on the turn and river, all in
  *     once the bet would be 60% of its stack. Facing a bet, the brain still
@@ -181,14 +181,16 @@ export function isDominatedVersus3Bet(h: HoleShape, coldCaller: boolean): boolea
 }
 
 /**
- * Overpair QQ+ (above every board card), or AK holding top pair or better
+ * Overpair QQ+ (above every board card), a set or better made with QQ+
+ * (2026-10-26: QQ on Qh 9s 3d checked the river down live - a set is never
+ * slow-played to the end), or AK holding top pair or better
  * (an ace on board, or a king as the board's highest card).
  */
 export function isPremiumMadeHand(cards: Card[] | undefined, board: Card[]): boolean {
   const h = holeShape(cards);
   if (!h || !isPremium(h) || board.length < 3) return false;
   const boardTop = Math.max(...board.map(rv));
-  if (h.pair) return h.hi > boardTop;
+  if (h.pair) return h.hi > boardTop || board.some((c) => rv(c) === h.hi);
   return board.some((c) => c.rank === 'A') || boardTop === 13;
 }
 

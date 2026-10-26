@@ -4,10 +4,8 @@ import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 import { createClient } from '@supabase/supabase-js';
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), fire: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: h }));
-/* Partial mock: the reporter's pure helpers (isOpponentMemoryBusyRefusal,
-   reportThrottled, added in #8112) stay real; only the network side is
-   silenced. A whole-module stub that names one export breaks every caller of
-   the next helper anyone adds. */
+// Partial mock: HorseOpponentMemory also imports isOpponentMemoryBusyRefusal and
+// reportThrottled (#8112). A factory that returns only reportError fails at import.
 vi.mock('./errorReporter.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./errorReporter.js')>()),
   reportError: vi.fn(),

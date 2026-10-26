@@ -2304,6 +2304,9 @@ export function vpipFloorCallDown(
  * bet the hands that connect). Anything else is returned untouched: a
  * non-maniac aggressor, no read, a check, a call, a raise.
  */
+/** A tournament stack at or under this many big blinds is a push/fold stack
+ *  (the HorsePreflop jam-or-fold gate): facing a raise it jams or folds. */
+export const SHORT_STACK_NO_FLAT_BB = 12;
 const MANIAC_REALISATION: Readonly<Record<string, number>> = {
   preflop: 0.03,
   flop: 0.05,
@@ -2448,6 +2451,37 @@ function maniacCallDown(
       player.user_id
     );
     const allInCall = call >= player.stack;
+    // ═══ V58 A SHORT TOURNAMENT STACK DOES NOT FLAT (Dan 2026-10-25) ═══════
+    // "a short stack calling a pre flop raise with 92o out of position!! ON
+    // THE FUCKING MONEY BUBBLE". Tournament hand 48403158, 13 left and 12
+    // paid, hand-for-hand: a 7.2bb small blind was about to fold 9-2 offsuit
+    // to a big stack's min-raise, and this recovery turned the fold into a
+    // flat call because the opener's read was wide. A push/fold stack has no
+    // flat: the call commits a quarter of it and then plays the hand out of
+    // position for the rest. So at push/fold depth the only recovery is the
+    // JAM, priced as the jam it is - the whole stack against the opener's
+    // full call (no fold equity is credited), the survival premium on the
+    // whole stack, and another range to clear for every live seat behind.
+    if (
+      street === 'preflop' &&
+      isTournamentMode(gs) &&
+      !vi.isOmaha &&
+      (player.stack + (player.bet || 0)) / bb <= SHORT_STACK_NO_FLAT_BB &&
+      !allInCall
+    ) {
+      const opener = gs.players.find((p) => p.user_id === aggressorId);
+      const openerTotal = opener ? opener.stack + (opener.bet || 0) : Infinity;
+      const jamRisk = Math.max(0, Math.min(player.stack, openerTotal - (player.bet || 0)));
+      const finalPot = pot + jamRisk + Math.max(0, jamRisk - toCall);
+      const jamRequired =
+        (finalPot > 0 ? jamRisk / finalPot : 1) +
+        Math.max(0, risk) +
+        Math.max(0, live.length - 1) * 0.03;
+      if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_no_flat');
+      if (!(jamRisk > 0) || !(eq >= jamRequired)) return decision;
+      if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
+      return { ...decision, action: 'all_in', amount: undefined };
+    }
     const required = Math.min(
       0.99,
       call / ((pot + call) * (1 - rake)) +
@@ -4885,6 +4919,34 @@ export class HorseLogic {
             return { action: 'raise', amount: Math.round(target53 * 100) / 100, thinkTime: 0 };
           }
           if (v53ThreeBet && telemetryOn(opts)) noteFire('v53_pressure_three_bet_priced');
+          // V58 A SHORT TOURNAMENT STACK DOES NOT FLAT (see maniacCallDown):
+          // at push/fold depth a raise that leaves chips behind is answered by
+          // the jam or the fold, never by a flat out of position. The jam is
+          // priced as the whole stack against the raiser's full call - no fold
+          // equity credited - with the survival premium on the whole stack.
+          if (
+            isTournamentMode(gs) &&
+            vi.holeCount === 2 &&
+            !vi.isOmaha &&
+            !raiserAllIn38 &&
+            effCall38 < player.stack &&
+            (player.stack + (player.bet || 0)) / bb <= SHORT_STACK_NO_FLAT_BB
+          ) {
+            const raiserTotal58 = raiser38.stack + (raiser38.bet || 0);
+            const jamRisk58 = Math.max(
+              0,
+              Math.min(player.stack, raiserTotal58 - (player.bet || 0))
+            );
+            const finalPot58 = pot38 + jamRisk58 + Math.max(0, jamRisk58 - effCall38);
+            const jamRequired58 =
+              jamRisk58 / Math.max(0.01, finalPot58) +
+              riskAdd38 +
+              (otherLiveResponder38 ? 0.03 : 0);
+            if (telemetryOn(opts)) noteFire('v58_short_stack_no_flat');
+            notePhase6Route('variant_fallback', 'variant_price');
+            if (jamRisk58 > 0 && eq38 >= jamRequired58) return { action: 'all_in', thinkTime: 0 };
+            return { action: 'fold', thinkTime: 0 };
+          }
           const callIt = Math.abs(gap38) <= 0.015 ? fastRandom() < 0.5 + gap38 / 0.03 : gap38 > 0;
           if (callIt) {
             // Clearly ahead of the price with chips behind and others still
@@ -7192,6 +7254,44 @@ export class HorseLogic {
           return { action: 'bet', amount: remainder.best.amount, thinkTime: 0 };
         }
       }
+      // ═══ V58 LOW-SPR STACK-OFF (Dan 2026-10-25) ═══════════════════════════
+      // "ON THE LITERAL FUCKING MONEY BUBBLE THIS TRASH ASS PLAY AND JUST
+      // CHECKS TOP PAIR TWICE". Hand 48403158: 50,036 behind into a 63,752
+      // pot (SPR 0.78), top pair on the flop (61% against the raiser's range)
+      // and top pair plus a flush draw on the turn (69%), and the horse
+      // checked both - the donk-lead gate waits for an initiative a caller
+      // never has. With less than a pot behind there is no later street to
+      // play: a checked strong hand gives a free card or a cheap bluff, and
+      // the jam it will make anyway is worth more now, while the raiser can
+      // still fold. A tournament hold'em stack with at most one pot behind
+      // and the equity to want it all in puts it in.
+      if (
+        isTournamentMode(gs) &&
+        (street === 'flop' || street === 'turn') &&
+        vi.holeCount === 2 &&
+        !vi.isOmaha &&
+        !vi.isFixedLimit &&
+        !vi.isPotLimit &&
+        gs.allInOrFold !== true &&
+        gs.bombPot !== true &&
+        !multiBoard36 &&
+        cat >= 1 &&
+        stack > 0 &&
+        pot > 0 &&
+        (opts.v57TournamentAggression ?? true) !== false
+      ) {
+        let deepestOpp = 0;
+        for (const o of opponents) {
+          if (o.is_all_in) continue;
+          const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+          if (os > deepestOpp) deepestOpp = os;
+        }
+        const effBehind = Math.min(stack, deepestOpp);
+        if (deepestOpp > 0 && effBehind <= pot && equity >= 0.45 + Math.max(0, mw) * 0.5) {
+          if (tele15) noteFire('v58_low_spr_stack_off');
+          return { action: 'all_in', thinkTime: 0 };
+        }
+      }
       // ═══ V36 FREEROLL BET ═══ a locked board and an unlocked one: every
       // chip that goes in comes back at least 1/N, and a bet folds out the
       // hands that were beating hero on the other board(s). Bet, and bet
@@ -7276,16 +7376,34 @@ export class HorseLogic {
 
         // The open-node consult reads the same warehouse and the same depth
         // buckets, so the ceiling applies to it identically.
-        const advice29 = tooDeep29
-          ? null
-          : gtoStreetAdvice({
-              street,
-              family: family29,
-              position: chartPos29,
-              stackBB: stackBB29,
-              board: gs.communityCards,
-              hand: hand29,
-            });
+        //
+        // ═══ V57 THE TURN CELL IS NOT THE BARREL NODE (2026-10-25) ═══════════
+        // The compact turn cells are keyed by street, family, seat, depth and
+        // texture - never by who bet the flop. Every tournament turn cell
+        // averages a 16% bet frequency, identical for the button and the big
+        // blind, so a horse that c-bet the flop and was called read the same
+        // check-heavy mix as a player who never had the lead. Production,
+        // heads-up NLH tournaments: the flop bettor fired the turn 24.5% of
+        // the time when checked to (humans 47%; solved single-raised pots
+        // barrel about half). With the initiative, the turn belongs to the
+        // barrel plan, the value ladder and the continuation below.
+        const initiativeTurn57 =
+          street === 'turn' &&
+          initiative === 'hero' &&
+          tourneyAggro &&
+          (opts.v57TournamentAggression ?? true) !== false;
+        if (initiativeTurn57 && telemetryOn(opts)) noteFire('v57_turn_cell_initiative_skip');
+        const advice29 =
+          tooDeep29 || initiativeTurn57
+            ? null
+            : gtoStreetAdvice({
+                street,
+                family: family29,
+                position: chartPos29,
+                stackBB: stackBB29,
+                board: gs.communityCards,
+                hand: hand29,
+              });
         if (advice29) {
           if (telemetryOn(opts) && !cellDepthIsPrimary(advice29.cell, stackBB29)) {
             noteFire('gto_depth_fallback');
@@ -7302,6 +7420,10 @@ export class HorseLogic {
               );
             }
             if (pick === 'check') return { action: 'check', thinkTime: 0 };
+            // V57: a solver flop bet is a line too. Record its barrel plan
+            // the way every heuristic bet does, so the turn knows whether this
+            // was a one-and-done or the start of a story.
+            if (street === 'flop' && tourneyAggro && pick !== 'check') planBarrel(equity);
             if (pick === 'bet_small') {
               // Flop cells derive bet_small from ~third-pot c-bets; the
               // turn/river root vocabulary is the 16%-pot block/probe, so
@@ -8382,6 +8504,36 @@ export class HorseLogic {
           bounty23 = Math.min(0.08, (trustedTournament?.bountyFactor ?? 0) * 0.12 * scale37);
           if (tele15) noteFire('v23_bounty_call');
           if (tele15 && scale37 !== 1) noteFire('v37_bounty_call_scaled');
+        }
+      }
+      // ═══ V58 A ONE-CARD LOW FLUSH DOES NOT CALL OFF A TOURNAMENT LIFE ═════
+      // (Dan 2026-10-25) Hand 48403158 on the money bubble: 9-2 with the 2 of
+      // diamonds on 9-8-6-3-7 with four diamonds, facing a river bet bigger
+      // than its stack after the bettor had checked flop and turn. Every
+      // diamond above the deuce beats it - eight live ranks - and it called
+      // off its tournament. The equity estimate prices the bettor's range by
+      // its preflop line and board contact, not by "bet when the fourth
+      // diamond came", so a one-card low flush read as a coin flip. With four
+      // of the suit on the board and three or more live flush ranks above
+      // hero's card, the flush is a bluff-catcher that every value bet beats:
+      // in a tournament it does not call off the stack (a cheap call keeps
+      // its price; cash keeps its own pricing).
+      if (
+        isTournamentMode(gs) &&
+        !vi.isOmaha &&
+        cat === 6 &&
+        ns21 != null &&
+        ns21.higherFlushRanks >= 3 &&
+        Math.min(toCall, stack) >= stack * 0.5 &&
+        (opts.v57TournamentAggression ?? true) !== false
+      ) {
+        const suitCount = new Map<string, number>();
+        for (const c of board) suitCount.set(c.suit, (suitCount.get(c.suit) ?? 0) + 1);
+        let boardFour: string | null = null;
+        for (const [suit, n] of suitCount) if (n >= 4) boardFour = suit;
+        if (boardFour !== null && player.cards.filter((c) => c.suit === boardFour).length === 1) {
+          if (tele15) noteFire('v58_one_card_low_flush_fold');
+          return { action: 'fold', thinkTime: 0, continuationGuard: 'dominated_commitment_floor' };
         }
       }
       const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;

@@ -676,6 +676,44 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.noteEliminationSweepStep('reconcileTournamentEntryWindow');
         if (!(await this.reconcileTournamentEntryWindow('engine.manager_wake'))) return;
         if (sweepStopped()) return;
+        /*
+         * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
+         * (2026-10-25), AND THE SWEEP BUDGET NEVER DECIDES IT (2026-10-26).
+         *
+         * Every capacity table is committed together with this
+         * `late_registration` wake, but its dealer was only started by the
+         * expansion stage (6). Each new bust rewinds the cursor to stage 0, so
+         * on a busy field stage 6 was reached only when busting stopped: at
+         * the :55 break. Production 2026-10-25: 99 of 132 capacity tables
+         * waited over a minute (median 12.0, max 53.8) seated with no dealer.
+         *
+         * The 2026-10-25 fix moved admission here but behind the seating read
+         * and inside the 5 s work budget, and the add-on offer loop above runs
+         * until that budget is spent. On 2026-10-26 13:28-13:55 UTC (engine
+         * 4dfd07ef) every pass of four busy events reached it with the budget
+         * gone: seven tables (Sunrise Bounty table 22 among them) sat seated
+         * with no dealer for up to 27 minutes, then were all admitted at
+         * 13:55:41 when the break stopped the busting. So admission now runs
+         * straight after the entry-window reconcile (which adopts an external
+         * terminal outcome first and is not budget-fenced) and before the
+         * seating read, and admitCommittedCapacityTables is fenced only by
+         * stop, abort and the freeze.
+         *
+         * Only ADMISSION happens here: it starts dealers for receipts already
+         * committed with seated entrants and acknowledges them. It creates no
+         * table, moves no seat and runs no rebalance; creation and the
+         * post-expansion rebalance stay in stage 6, after balancing, as the
+         * freeze law requires. The engine preparation arms every break /
+         * hand-for-hand hold before the dealer starts.
+         */
+        if (
+          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
+          !isMaintenanceFrozen()
+        ) {
+          this.noteEliminationSweepStep('admitCommittedCapacityTables');
+          await this.admitCommittedCapacityTables();
+          if (sweepStopped()) return;
+        }
         // The same wake carries entries accepted after a launch cohort was
         // captured. Keep it pending until every one of them holds a chair.
         this.noteEliminationSweepStep('seatAcceptedEntrantsAwaitingChairs');
@@ -686,36 +724,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           return;
         }
         if (sweepStopped()) return;
-        /*
-         * A LATE-REGISTRATION TABLE STARTS DEALING ON THE WAKE THAT OPENED IT
-         * (2026-10-25).
-         *
-         * Every capacity table is committed together with this
-         * `late_registration` wake, but its dealer was only started by the
-         * expansion stage (6). Each new bust rewinds the cursor to stage 0, so
-         * on a busy field the sweep spent its budget on stages 0-5 and stage 6
-         * was reached only when busting stopped: at the :55 break. Production
-         * 2026-10-25: 13:00-23:00 UTC, 99 of 132 capacity tables waited over a
-         * minute (median 12.0, max 53.8) with players seated and no dealer
-         * (through 2026-10-24 the median was ~4 seconds), e.g. Sunday
-         * Funday Happy Hour table 14 opened 22:39:28 with nine late entrants
-         * and was admitted at 22:55:08, the moment the break began.
-         *
-         * Only ADMISSION moves here (admitCommittedCapacityTables): it starts
-         * dealers for receipts already committed with seated entrants and
-         * acknowledges them. It creates no table, moves no seat and runs no
-         * rebalance; creation and the post-expansion rebalance stay in stage 6,
-         * after balancing, as the freeze law requires. The engine preparation
-         * arms every break / hand-for-hand hold before the dealer starts.
-         */
-        if (
-          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
-          !isMaintenanceFrozen()
-        ) {
-          this.noteEliminationSweepStep('admitCommittedCapacityTables');
-          await this.admitCommittedCapacityTables();
-          if (sweepStopped()) return;
-        }
       }
 
       recoveryStage: {

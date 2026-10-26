@@ -217,7 +217,8 @@ import {
   liveHorsePhase8Authority,
 } from './HorseQualifiedAuthority.js';
 import { qualifiedTestAdmission } from './HorseQualifiedAuthority.test-support.js';
-import type { HandConfig, SeatPlayer } from '../types.js';
+import type { Card, HandConfig, SeatPlayer } from '../types.js';
+import { Deck } from './PokerEngine.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
@@ -481,6 +482,23 @@ describe('authoritative horse action effect commit', () => {
       enginePlayer.user_id = player.user_id;
       engine.getEngineLeaseAuthority = () => ({ verified: true, generation: '9' });
       engine.broadcastCurrentState = vi.fn();
+      // The executor reapplies the hold'em premium law at commit
+      // (ServerTableEngineTurns, holdemPremiumAggression): a horse holding
+      // QQ+ or AK never flat-calls preflop, so on those deals the table
+      // correctly records a raise. This case pins the call PRICE, not the
+      // premium law, so the horse is dealt a fixed non-premium hand instead
+      // of whatever the crypto shuffle produced (about 1 deal in 39 is
+      // QQ+ or AK: 34 of 1,326 starting hands, which made this case fail
+      // intermittently).
+      const hole: Card[] = [
+        { rank: '7', suit: 'clubs' },
+        { rank: '2', suit: 'diamonds' },
+      ];
+      vi.spyOn(Deck.prototype, 'shuffle').mockImplementation(function (this: Deck) {
+        const deck = (this as unknown as { cards: Card[] }).cards;
+        const rest = deck.filter((c) => !hole.some((h) => h.rank === c.rank && h.suit === c.suit));
+        deck.splice(0, deck.length, ...hole, ...rest);
+      });
       const hc = new HandController(
         {
           tableId: TABLE,
@@ -535,6 +553,7 @@ describe('authoritative horse action effect commit', () => {
       });
       const state = hc.getState();
       expect(state.currentPlayerSeat).toBe(1);
+      expect(state.players.find((p) => p.seat === 1)!.cards).toEqual(hole);
       const perform = vi.spyOn(hc, 'performAction');
       engine.scheduleHorseAction(player, 1, state.players.find((p) => p.seat === 1)!, state);
       await vi.advanceTimersByTimeAsync(300);

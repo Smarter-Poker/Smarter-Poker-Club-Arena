@@ -674,10 +674,15 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
       previous !== null &&
       ['call', 'raise', 'all_in'].includes(previous.action) &&
       (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
+    // The short all-in call floor (Dan 2026-10-26, HorseShortAllInCallFloor)
+    // turns a fold into a call; its all-in form is already a wager action.
+    const shortAllInCall =
+      transition.after.action === 'call' && previous !== null && previous.action === 'fold';
     if (
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
+      !shortAllInCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;

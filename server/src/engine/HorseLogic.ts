@@ -146,6 +146,10 @@ import {
 } from './HorsePreflop.js';
 import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import {
+  pairedBoardFoldYieldsToShortAllIn,
+  shortAllInCallFloor,
+} from './HorseShortAllInCallFloor.js';
+import {
   classifyTournamentPreflopBranch,
   tournamentMZone,
   tournamentNextLevelProjectionApplies,
@@ -2609,6 +2613,13 @@ let phase7EquityEvidence: Phase7EquityEvidence | null = null;
 let phase10EquityEvidence: Plo4EquityEvidence | null = null;
 let phase11DecisionEquityCeiling: number | null = null;
 let phase12DecisionEquityCeiling: number | null = null;
+/**
+ * The brain's own postflop Monte Carlo equity for the decision in progress,
+ * read by shortAllInCallFloor (Dan 2026-10-26) to tell a hand drawing dead
+ * from "almost anything". Cleared before and after every decision, like the
+ * evidence above.
+ */
+let shortAllInEquity: number | null = null;
 
 function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string> {
   if (gs.dealerSeat === undefined) return new Set<string>();
@@ -3012,6 +3023,11 @@ function pairedBoardFold(
     pot: gs.pot,
   });
   if (!mustFold) return decision;
+  // Dan 2026-10-26: a short all in (under 3 big blinds) against a 20+ big
+  // blind horse in a tournament is not a stack-off, so this fold stands aside
+  // and the call the short all-in floor made stands. A real stack-off (a
+  // quarter of the horse's remaining stack, or all of it) still folds.
+  if (pairedBoardFoldYieldsToShortAllIn(player, gs)) return decision;
   if (telemetryOn(opts)) noteFire('plo_paired_board_fold');
   if (Array.isArray(gs.legalActions) && !gs.legalActions.includes('fold')) return decision;
   // Inside the graph the timing node then prices the fold's own think time;
@@ -3091,6 +3107,17 @@ function holdemPremiumAggressionOutsideGraph(
     : decision;
 }
 
+/** The outer safety net for the short all-in floor: only an unsigned decision. */
+function shortAllInCallFloorOutsideGraph(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2
+): HorseDecision {
+  return decision.policyGraph === undefined
+    ? shortAllInCallFloor(decision, player, gs, undefined)
+    : decision;
+}
+
 /** The outer safety net: only a decision the policy graph never signed. */
 function pairedBoardFoldOutsideGraph(
   decision: HorseDecision,
@@ -3163,31 +3190,39 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return holdemPremiumAggressionOutsideGraph(
-            pairedBoardFoldOutsideGraph(
-              this.decideInternal(player, gameState, style, mods, opts),
+          return shortAllInCallFloorOutsideGraph(
+            holdemPremiumAggressionOutsideGraph(
+              pairedBoardFoldOutsideGraph(
+                this.decideInternal(player, gameState, style, mods, opts),
+                player,
+                gameState,
+                opts
+              ),
               player,
               gameState,
               opts
             ),
             player,
-            gameState,
-            opts
+            gameState
           );
         } finally {
           setEquityDepth(1);
         }
       }
-      return holdemPremiumAggressionOutsideGraph(
-        pairedBoardFoldOutsideGraph(
-          this.decideInternal(player, gameState, style, mods, opts),
+      return shortAllInCallFloorOutsideGraph(
+        holdemPremiumAggressionOutsideGraph(
+          pairedBoardFoldOutsideGraph(
+            this.decideInternal(player, gameState, style, mods, opts),
+            player,
+            gameState,
+            opts
+          ),
           player,
           gameState,
           opts
         ),
         player,
-        gameState,
-        opts
+        gameState
       );
     } catch (err) {
       // Absolute safety net: never let a horse hang the table.
@@ -3208,6 +3243,7 @@ export class HorseLogic {
       phase10EquityEvidence = null;
       phase11DecisionEquityCeiling = null;
       phase12DecisionEquityCeiling = null;
+      shortAllInEquity = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       if (telemetryOn(opts)) noteFire('phase15_brain_exception');
       return toCall === 0
@@ -3218,6 +3254,7 @@ export class HorseLogic {
       phase10EquityEvidence = null;
       phase11DecisionEquityCeiling = null;
       phase12DecisionEquityCeiling = null;
+      shortAllInEquity = null;
       HorseMind.setDecisionScope(null);
     }
   }
@@ -3233,6 +3270,7 @@ export class HorseLogic {
     phase10EquityEvidence = null;
     phase11DecisionEquityCeiling = null;
     phase12DecisionEquityCeiling = null;
+    shortAllInEquity = null;
     // Authored JSON and older direct callers can supply arbitrary strings.
     // Inherited object keys are not styles; keep every downstream style
     // branch on the same valid fallback as the numerical parameters.
@@ -4114,27 +4152,26 @@ export class HorseLogic {
       }
       return { decision };
     }).decision;
-    // The two 2026-10-25 owner rules run last, inside the graph, so the
-    // signed graph and its timing node see the action they choose: the PLO
-    // paired-board fold, then the hold'em premium rule (#8122), the same order
-    // they had when they ran after decide().
-    decision = graph.run('wager_rules', decision, () => ({
-      decision: holdemPremiumAggression(
-        pairedBoardFold(
-          fullPotNearPotWager(
-            riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
-            player,
-            gs
-          ),
-          player,
-          gs,
-          opts
-        ),
+    // The owner rules run last, inside the graph, so the signed graph and its
+    // timing node see the action they choose: the PLO paired-board fold, then
+    // the hold'em premium rule (#8122, #8138), then - LAST, so nothing can
+    // fold that spot again - the short all-in call floor (Dan 2026-10-26).
+    decision = graph.run('wager_rules', decision, () => {
+      const wagered = fullPotNearPotWager(
+        riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+        player,
+        gs
+      );
+      const ruled = holdemPremiumAggression(
+        pairedBoardFold(wagered, player, gs, opts),
         player,
         gs,
         opts
-      ),
-    })).decision;
+      );
+      const floored = shortAllInCallFloor(ruled, player, gs, shortAllInEquity);
+      if (floored !== ruled && tele) noteFire('short_all_in_call_floor');
+      return { decision: floored };
+    }).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(
         decision,
@@ -5886,6 +5923,9 @@ export class HorseLogic {
         hiLoSplit.quarter = loAcc.quarter / boards.length;
       }
     }
+    // The raw sample, before any structural cap: "drawing dead" is a fact
+    // about the cards, not about a read (shortAllInCallFloor).
+    shortAllInEquity = Number.isFinite(equity) ? clamp01(equity) : null;
 
     if (captureOutcomes7) {
       // Adaptive MC can return at its first 40% checkpoint. Record that

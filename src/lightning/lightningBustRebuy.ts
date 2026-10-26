@@ -16,8 +16,8 @@
  * that runs the room's own leave and opens the session summary. Nothing here
  * moves the player anywhere (CLAUDE.md 10.6) and nothing here charges anyone.
  *
- * WHEN: between hands only (no live hand on the felt, the hero not in the
- * roster), the room not closed, the player not sitting out, and a zero stack
+ * WHEN: after the hand's presentation finishes (the final roster may still
+ * be on the felt), the room not closed, the player not sitting out, and a zero stack
  * shown. The zero the client sees is a CANDIDATE, never the verdict: an
  * all-in hero reads 0 behind until the pot is paid. The verdict is the
  * database's own answer (readLightningTopUp: not in a hand, the pool session
@@ -45,7 +45,7 @@ export function lightningBustCandidate(input: {
   rosterStack: number | null | undefined;
   /** The waiting chair's stack between hands (lightningWaitingHero). */
   waitingStack: number | null | undefined;
-  /** A hand is live on this room's felt. */
+  /** A hand is playing or its result presentation has not finished yet. */
   handLive: boolean;
   /** The room is gone (MUST MOVE reversion or session ended). */
   roomClosed: boolean;
@@ -55,8 +55,7 @@ export function lightningBustCandidate(input: {
   if (!input.room) return 'unknown';
   const shown = input.heroInRoster ? input.rosterStack : input.waitingStack;
   if (typeof shown === 'number' && Number.isFinite(shown) && shown > 0) return 'funded';
-  if (input.heroInRoster || input.handLive || input.roomClosed || input.sittingOut)
-    return 'unknown';
+  if (input.handLive || input.roomClosed || input.sittingOut) return 'unknown';
   return shown === 0 ? 'bust' : 'unknown';
 }
 
@@ -94,9 +93,8 @@ export function useLightningBustRebuy(input: {
     room && userId && userId !== 'guest'
       ? `${room.poolSessionId}/${room.clusterId}/${userId}`
       : null;
-  const firedRef = useRef<{ key: string | null; fired: boolean }>({ key, fired: false });
-  if (firedRef.current.key !== key) firedRef.current = { key, fired: false };
-  const readsRef = useRef(0);
+  const firedRef = useRef({ key, fired: false, reads: 0 });
+  if (firedRef.current.key !== key) firedRef.current = { key, fired: false, reads: 0 };
   const [tick, setTick] = useState(0);
   const onPromptRef = useRef(input.onPrompt);
   onPromptRef.current = input.onPrompt;
@@ -104,22 +102,22 @@ export function useLightningBustRebuy(input: {
   // A positive stack re-arms the prompt for the next bust.
   useEffect(() => {
     if (candidate === 'funded') firedRef.current.fired = false;
-    if (candidate !== 'bust') readsRef.current = 0;
+    if (candidate !== 'bust') firedRef.current.reads = 0;
   }, [candidate]);
 
   useEffect(() => {
     if (!key || !room || !userId || candidate !== 'bust' || blocked) return;
-    if (firedRef.current.fired || readsRef.current >= LIGHTNING_BUST_MAX_READS) return;
+    if (firedRef.current.fired || firedRef.current.reads >= LIGHTNING_BUST_MAX_READS) return;
     const owner = firedRef.current;
     let cancelled = false;
-    const first = readsRef.current === 0;
+    const first = owner.reads === 0;
     const wait = first
       ? autoTopUpEnabled
         ? LIGHTNING_BUST_AUTO_TOP_UP_GRACE_MS
         : 0
       : LIGHTNING_BUST_RECHECK_MS;
     const timer = setTimeout(() => {
-      readsRef.current += 1;
+      owner.reads += 1;
       void read(room.clusterId, room.poolSessionId, userId)
         .then((answer) => {
           if (cancelled || firedRef.current !== owner || owner.fired) return;

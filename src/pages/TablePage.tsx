@@ -25236,7 +25236,7 @@ function LiveTablePage({
 
   /* LIGHTNING TRANSITION PHASE 2: A BUSTED PLAYER IS ASKED, ONCE PER BUST.
      The same rebuy sheet as the cash table, funded through this room's own
-     top-up (confirmBustRebuy's Lightning branch), opened only between hands
+     top-up (confirmBustRebuy's Lightning branch), opened only after the presentation
      on a zero the database confirms. LEAVE runs the room's own leave, which
      opens the Lightning session summary. Nothing here moves the player. */
   const lightningBust = lightningBustCandidate({
@@ -25244,7 +25244,10 @@ function LiveTablePage({
     heroInRoster: !!lightningHeroInRoster,
     rosterStack: lightningHeroInRoster?.stack,
     waitingStack: lightningWaitingSeat?.stack,
-    handLive: lightningHandLive,
+    // A settled Lightning hand can retain its roster and hand id indefinitely.
+    // The existing presentation reset names the finished hand; an in-flight
+    // hand or a result still animating never qualifies. The DB confirms zero.
+    handLive: lightningHandLive && !tableHandIsOver,
     roomClosed: lightningRoomClosed,
     sittingOut: lightningSitOut.sittingOut,
   });

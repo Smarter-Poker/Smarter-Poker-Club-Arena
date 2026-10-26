@@ -672,7 +672,7 @@ function policyGraphIsValid(
       return false;
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
-    // Wager rules only add aggression, with one exception: two owner rules of
+    // Wager rules add aggression or apply a named owner discipline. Two rules of
     // 2026-10-25 turn a call, raise or jam into a fold. The PLO4/5/6
     // paired-board fold (HorsePloPairedBoardFold) and the no-limit hold'em
     // dominated-hand fold to a big 3-bet (HorseHoldemPremiumAggression). A
@@ -685,6 +685,16 @@ function policyGraphIsValid(
       previous !== null &&
       ['call', 'raise', 'all_in'].includes(previous.action) &&
       (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
+    // V58/V59 river nut discipline can downsize a PLO6 raise to a call.
+    // This is produced inside the same graph, not a transport mutation.
+    const plo6RaiseToCall =
+      variant === 'plo6' &&
+      previous !== null &&
+      ['raise', 'all_in'].includes(previous.action) &&
+      transition.after.action === 'call' &&
+      transition.after.amount !== null &&
+      transition.after.amount > 0 &&
+      (previous.amount === null || transition.after.amount <= previous.amount);
     // The short all-in call floor (Dan 2026-10-26, HorseShortAllInCallFloor)
     // turns a fold into a call; its all-in form is already a wager action.
     // When the request is known, only in the spot that rule covers.
@@ -697,6 +707,7 @@ function policyGraphIsValid(
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
+      !plo6RaiseToCall &&
       !shortAllInCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )

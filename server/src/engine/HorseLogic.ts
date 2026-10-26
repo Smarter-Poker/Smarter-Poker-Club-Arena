@@ -93,6 +93,7 @@ import {
  * budgeted to stay under ~15ms even for 6-card PLO.
  */
 
+import { horseCallDeductionFraction } from './HorseCallDeductions.js';
 import type {
   Card,
   SeatPlayer,
@@ -2070,6 +2071,13 @@ export interface HorseDecideOpts {
    *  price is tiny), and one beaten 15%+ calls instead of raising. Disable to
    *  ablate (default: enabled; league matchup plo6_v59_river_unpaired). */
   v59Plo6RiverUnpaired?: boolean;
+  /** NLH barrel outlook excludes shared board improvements and dirty outs.
+   * False retains the previous algorithm for paired offline measurement. */
+  drawOutlookQuality?: boolean;
+  /** Project actual net award deductions at the call; false is offline ablation. */
+  callDeductionPricing?: boolean;
+  /** Apply the existing raised-hand call-only rule before committed-stack shoves. */
+  committedRaiseDiscipline?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -2410,9 +2418,18 @@ function maniacCallDown(
     // do is a preflop maniac only; its postflop bets keep their meaning.
     if (street !== 'preflop' && betRate < 0.55) return decision;
 
-    const live = gs.players.filter(
+    const allLive = gs.players.filter(
       (p) => p.seat !== player.seat && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
     );
+    // Match the direct preflop price consumer: a seat that has not answered
+    // the raise is not already a caller. Its hypothetical cards must not
+    // dilute equity against players actually committed to the current price.
+    const live =
+      street === 'preflop'
+        ? allLive.filter(
+            (p) => p.is_all_in || (Number.isFinite(p.bet) && p.bet >= gs.currentBet - 0.005)
+          )
+        : allLive;
     const opponentCards = vi.isOmaha ? vi.holeCount : player.cards.length;
     const deck =
       (vi.isShortDeck ? 36 : 52) - player.cards.length - (gs.communityCards?.length ?? 0);
@@ -2461,10 +2478,14 @@ function maniacCallDown(
     const pot = Number.isFinite(gs.contestablePot)
       ? Math.max(0, gs.contestablePot as number)
       : Math.max(0, gs.pot);
-    const rake =
-      (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
-        ? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
-        : 0;
+    const useCallRake = (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs);
+    const exactRake =
+      useCallRake && opts.callDeductionPricing !== false
+        ? horseCallDeductionFraction(player, gs, call)
+        : null;
+    const rake = useCallRake
+      ? (exactRake ?? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
+      : 0;
     const risk = icmRisk(
       gs,
       player.stack / bb,
@@ -2502,18 +2523,17 @@ function maniacCallDown(
       const jamRequired =
         (finalPot > 0 ? jamRisk / finalPot : 1) +
         Math.max(0, risk) +
-        Math.max(0, live.length - 1) * 0.03;
+        Math.max(0, allLive.length - 1) * 0.03;
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_no_flat');
       if (!(jamRisk > 0) || !(eq >= jamRequired)) return decision;
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
       return { ...decision, action: 'all_in', amount: undefined };
     }
-    const required = Math.min(
-      0.99,
+    const rawRequired =
       call / ((pot + call) * (1 - rake)) +
-        Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
-        (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0))
-    );
+      Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
+      (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0));
+    const required = exactRake === null ? Math.min(0.99, rawRequired) : rawRequired;
     // A 240-deal estimate close to the price can reject a profitable call
     // through sampling noise (retained PLO4 potter hand 74 after full-pot
     // sizing). Refine that boundary once, with a fixed bounded sample; do
@@ -2521,12 +2541,11 @@ function maniacCallDown(
     const rawRecoveryMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
     const uncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRecoveryMean * (1 - rawRecoveryMean)) / recoverySamples);
-    if (
-      street !== 'preflop' &&
-      live.length === 1 &&
-      eq < required &&
-      required - eq <= uncertainty
-    ) {
+    // A heads-up preflop all-in also realizes its sampled equity in full.
+    // Its close rejection needs the same bounded confirmation as postflop;
+    // ordinary preflop flats retain their separate realization policy.
+    const canRefineRecovery = live.length === 1 && (street !== 'preflop' || allInCall);
+    if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =
         simulateEquity(
@@ -2558,8 +2577,7 @@ function maniacCallDown(
     const remainingUncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRefinedMean * (1 - rawRefinedMean)) / recoverySamples);
     if (
-      street !== 'preflop' &&
-      live.length === 1 &&
+      canRefineRecovery &&
       recoverySamples < boundarySamples &&
       eq < required &&
       required - eq <= remainingUncertainty
@@ -5037,10 +5055,15 @@ export class HorseLogic {
           );
           if (telemetryOn(opts) && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
-          const rake38 =
-            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
-              ? rakeDrag(pot38, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
-              : 0;
+          const useCallRake38 = (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs);
+          const exactRake38 =
+            useCallRake38 && opts.callDeductionPricing !== false
+              ? horseCallDeductionFraction(player, gs, effCall38)
+              : null;
+          const rake38 = useCallRake38
+            ? (exactRake38 ??
+              rakeDrag(pot38, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat)))
+            : 0;
           // Omaha's range read narrows by score percentile, which cannot see
           // domination (four napkins keep 44% against the sampled "3-bet
           // range" in PLO6; against the real one it is nearer 35%). The price
@@ -5094,13 +5117,12 @@ export class HorseLogic {
               : 0,
             v53Realization
           );
-          const required38 = Math.min(
-            0.99,
+          const rawRequired38 =
             effCall38 / ((pot38 + effCall38) * (1 - rake38)) +
-              riskAdd38 * Math.sqrt(share38) +
-              dominationMargin38 +
-              realization38
-          );
+            riskAdd38 * Math.sqrt(share38) +
+            dominationMargin38 +
+            realization38;
+          const required38 = exactRake38 === null ? Math.min(0.99, rawRequired38) : rawRequired38;
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
           if (
@@ -5263,6 +5285,10 @@ export class HorseLogic {
       toCall,
       currentBet: gs.currentBet,
       contestablePot,
+      callDeductionFraction:
+        opts.callDeductionPricing !== false && !isTournamentMode(gs)
+          ? (horseCallDeductionFraction(player, gs, effectiveCall) ?? undefined)
+          : undefined,
       pot: gs.pot,
       bigBlind: bb,
       stack: player.stack,
@@ -6480,6 +6506,14 @@ export class HorseLogic {
         }
       }
     }
+    // Share the same raise discipline with the earlier committed branch.
+    // Being nearly committed does not make weak trips a value re-raise.
+    const set21 =
+      cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
+    const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
+    const raisedWeakMade21 =
+      useV21 && !vi.isOmaha && raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21)));
+    const committedRaisedWeakMade21 = raisedWeakMade21 && opts.committedRaiseDiscipline !== false;
     // ═══ V20 MULTIWAY PRESSURE READ (2026-08-27) ═══
     // raisedAfterAggr only fires when HERO bet and got raised. The hand Dan
     // watched (T8o, 779 flop, 8 turn) was the other shape: hero CALLED, then
@@ -6906,7 +6940,7 @@ export class HorseLogic {
         HorseMind.notePlan(handKey, player.user_id, fastRandom() < (tourneyAggro ? 0.5 : 0.35));
         // V39: and what the next card would mean, decided now.
         try {
-          const o = nextCardOutlook(player.cards, board, vi);
+          const o = nextCardOutlook(player.cards, board, vi, opts.drawOutlookQuality !== false);
           HorseMind.noteOutlook(handKey, player.user_id, street, o.good, o.scare);
           if (tele15) noteFire('v39_outlook_recorded');
         } catch {
@@ -6930,9 +6964,9 @@ export class HorseLogic {
           : 'foldToRaise';
 
     const useV11 = opts.v11 !== false;
-    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
-    // marginal calls against the raked pot, not the raw one. Above the cap
-    // (large pots) the drag is zero and this reduces to honest pot odds.
+    // Price canonical calls against the net award, including the reached cap
+    // and BBJ collection. Marginal rake can be zero while the award still
+    // loses a capped fee. Legacy fixtures retain their previous approximation.
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     // V34: computed here, above the solver consult, so V32 prices the same
     // raked pot the heuristic call line does.
@@ -6940,6 +6974,10 @@ export class HorseLogic {
       useRake10 && !isTournamentMode(gs)
         ? rakeDrag(pot, gs.bigBlind, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
         : 0;
+    const callDeductionFraction =
+      useRake10 && !isTournamentMode(gs) && opts.callDeductionPricing !== false
+        ? (horseCallDeductionFraction(player, gs, toCall) ?? undefined)
+        : undefined;
 
     // V31 CERTIFIED DIRECT POLICY. Node role, response semantics, both seats,
     // objective, stack depth, board texture and holding are all part of the
@@ -7385,6 +7423,7 @@ export class HorseLogic {
             rand: fastRandom,
             realization: realization32,
             rakeMarg,
+            callDeductionFraction,
             // Tournament: the survival premium, scaled by the share of the
             // stack this call risks (V24's rule: ICM prices a bust, and a
             // call worth 3% of a stack cannot bust anybody).
@@ -8278,7 +8317,7 @@ export class HorseLogic {
     // size — horses called marginally too wide in small raked cash pots, the
     // opposite of the layer's stated intent. (gs.pot already includes the
     // outstanding bet; `pot` here is that minus any uncallable excess.)
-    const potOdds = toCall / ((pot + toCall) * (1 - rakeMarg));
+    const potOdds = toCall / ((pot + toCall) * (1 - (callDeductionFraction ?? rakeMarg)));
     // ═══ THE BET-RATIO SCALE, STATED ONCE AND FOR ALL (2026-08-27) ═══
     // `gs.pot` INCLUDES the bet hero is facing (HandController adds to
     // state.pot the moment the wager is posted). So `toCall / pot` is
@@ -8802,6 +8841,7 @@ export class HorseLogic {
           tripBoardDominatedBoat15 ||
           (useV21 && dominated21) ||
           planCallOnly23 ||
+          committedRaisedWeakMade21 ||
           riverTripsFlat55;
         // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
         // earlier line: it denies equity and can fold out a draw. On the
@@ -8817,6 +8857,7 @@ export class HorseLogic {
           cat > 0 &&
           (cat <= 2 || (cat === 3 && pairedBoard));
         if (toCall >= stack || preferFlat15) {
+          if (tele15 && committedRaisedWeakMade21) noteFire('v21_war_gate');
           if (tele15 && riverTripsFlat55) noteFire('v55_omaha_river_trips_flat');
           if (tele15 && tripBoardDominatedBoat15)
             noteFire('horse_continuation_trip_board_boat_flat');
@@ -8941,15 +8982,7 @@ export class HorseLogic {
       // A pocket set on a board with no possible flush or straight stays a
       // raising hand; everything below it — and a set on a board where
       // bigger hands are live — does not.
-      const set21 =
-        cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
-      const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
-      if (
-        planCallOnly23 ||
-        (useV21 &&
-          !vi.isOmaha &&
-          (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21))))))
-      ) {
+      if (planCallOnly23 || raisedWeakMade21 || (useV21 && !vi.isOmaha && dominated21)) {
         if (planCallOnly23 || isRiver || raisedAfterAggr || pressure20 >= 2) {
           if (tele15) noteFire('v21_war_gate');
           return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -9349,6 +9382,7 @@ export class HorseLogic {
           toCall,
           stack,
           rakeMarg,
+          callDeductionFraction,
           riskPremium: risk38,
           rand: fastRandom,
         });
@@ -9381,6 +9415,7 @@ export class HorseLogic {
         realization: realization38,
         continuation: continuation38,
         rakeMarg,
+        callDeductionFraction,
         riskPremium: risk38,
         minBet: Math.max(gs.minRaise || 0, 0.01),
         maxBet: 0, // fold/call only here: the raise gates above already rolled

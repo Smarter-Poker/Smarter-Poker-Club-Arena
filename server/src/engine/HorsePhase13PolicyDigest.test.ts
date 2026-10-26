@@ -74,8 +74,12 @@ function runtimeClosure(roots: string[]): string[] {
   }
   return [...seen].sort();
 }
-/** The reference sources Phase 13 v1 already hashed (of its 36 files). */
-const HORSE_P13_V1 = [
+/** Reference sources already covered by the maintained 36-file joint base. */
+const HORSE_P13_BASE_REFERENCE_OVERLAP = [
+  'src/engine/multiway/JointPotDistribution.ts',
+  'src/domain/diamondCashFeeSnapshot.ts',
+  'src/domain/diamondCashRakeSchedule.ts',
+  'src/domain/diamondCashJackpotSchedule.ts',
   'src/engine/BettingStructure.ts',
   'src/engine/VariantRules.ts',
   'src/engine/HorseTournamentUtility.ts',
@@ -118,7 +122,10 @@ describe('P13.3 Phase 13 policy digest', () => {
       ].sort()
     );
     expect(hashed.size).toBe(
-      36 + HORSE_REFERENCE_DECISION_SOURCE_FILES.filter((f) => !HORSE_P13_V1.includes(f)).length
+      36 +
+        HORSE_REFERENCE_DECISION_SOURCE_FILES.filter(
+          (f) => !HORSE_P13_BASE_REFERENCE_OVERLAP.includes(f)
+        ).length
     );
   });
 

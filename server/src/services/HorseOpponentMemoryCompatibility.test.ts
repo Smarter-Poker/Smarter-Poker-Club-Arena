@@ -4,7 +4,15 @@ import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 import { createClient } from '@supabase/supabase-js';
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), fire: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: h }));
-vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
+/* Partial mock: the reporter's pure helpers (isOpponentMemoryBusyRefusal,
+   reportThrottled, added in #8112) stay real; only the network side is
+   silenced. A whole-module stub that names one export breaks every caller of
+   the next helper anyone adds. */
+vi.mock('./errorReporter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./errorReporter.js')>()),
+  reportError: vi.fn(),
+  reportThrottled: vi.fn(),
+}));
 vi.mock('../engine/BrainTelemetry.js', () => ({ noteFire: h.fire }));
 const uid = '94000000-0000-4000-8000-000000000001';
 const request = (variant: string, hand = 1) =>

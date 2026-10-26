@@ -4,7 +4,10 @@ import type { LiveHorseDecisionSnapshot } from '../engine/horseDecision/protocol
 import type { DurableOpponentProfile } from '../engine/HorseOpponentMemory.js';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), report: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }));
-vi.mock('./errorReporter.js', () => ({ reportError: mocks.report }));
+vi.mock('./errorReporter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./errorReporter.js')>()),
+  reportError: mocks.report,
+}));
 import { createDecisionOpponentProfilePacketReader } from './HorseOpponentMemory.js';
 const uid = '91000000-0000-4000-8000-000000000001';
 const row = (

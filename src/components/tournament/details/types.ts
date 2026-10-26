@@ -42,10 +42,9 @@ export type { PayoutPlace, PayoutSubject } from '../../../lib/payoutStructure';
  * `chips` tab is the one that survived, under the name Ranking; the old
  * `ranking` tab (a TournamentStandings wrapper) is gone.
  *
- * The mystery bounty ladder is NOT an eighth tab. Dan asked Rewards to show
- * "the total bounty pool and whats left or 'still available' in the mystery
- * bounty pool", which is the same question, so the ladder renders inside
- * Rewards. See RewardsTab.
+ * A mystery bounty event adds an eighth tab, Bounties, right after Rewards
+ * (Dan 2026-10-25), holding the ladder that used to sit at the bottom of
+ * Rewards. Rewards keeps the pool totals. See `tabsFor` below.
  */
 export type TabId =
   | 'detail'
@@ -55,6 +54,7 @@ export type TabId =
   | 'unions'
   | 'tables'
   | 'rewards'
+  | 'bounties'
   | 'satellites';
 
 export const TAB_IDS: readonly TabId[] = [
@@ -65,6 +65,7 @@ export const TAB_IDS: readonly TabId[] = [
   'unions',
   'tables',
   'rewards',
+  'bounties',
   'satellites',
 ];
 
@@ -86,6 +87,24 @@ export const TABS: readonly { id: TabId; label: string }[] = [
 ];
 
 /**
+ * BOUNTIES IS ITS OWN TAB (Dan 2026-10-25, verbatim): "CREATE ANOTHER TAB,
+ * FOR 'BOUNTIES' FOR ALL MYSTERY BOUNTY TOURNAMENTS NEXT TO REWARDS, INSTEAD
+ * OF PLACING IT AT THE BOTTOM OF REWARDS, WHERE ALL THE BOUNTY PRIZES AND
+ * AWARDS ARE LOCATED."
+ *
+ * Every mystery bounty event shows a Bounties tab immediately after Rewards,
+ * holding the whole mystery ladder (the prizes and who pulled what). Rewards
+ * keeps the pool totals. Any other event shows the seven tabs above.
+ */
+export const BOUNTIES_TAB: { id: TabId; label: string } = { id: 'bounties', label: 'Bounties' };
+
+export function tabsFor(isMysteryBounty: boolean): readonly { id: TabId; label: string }[] {
+  if (!isMysteryBounty) return TABS;
+  const at = TABS.findIndex((t) => t.id === 'rewards') + 1;
+  return [...TABS.slice(0, at), BOUNTIES_TAB, ...TABS.slice(at)];
+}
+
+/**
  * Ids that used to exist and can still be asked for - from a bookmark, a shared
  * link, or anything that stored a tab id before the rename. `chips` IS Ranking
  * now, so it must land there rather than on a blank page; `payouts` was in the
@@ -96,7 +115,7 @@ export const TABS: readonly { id: TabId; label: string }[] = [
 const LEGACY_TAB_IDS: Record<string, TabId> = {
   chips: 'ranking',
   payouts: 'rewards',
-  mystery: 'rewards',
+  mystery: 'bounties',
 };
 
 /** The only way a tab id enters the lobby. Never throws, never returns junk. */

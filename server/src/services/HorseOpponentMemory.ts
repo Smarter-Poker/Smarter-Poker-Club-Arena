@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { reportError } from './errorReporter.js';
+import { isOpponentMemoryBusyRefusal, reportError, reportThrottled } from './errorReporter.js';
 import { noteFire } from '../engine/BrainTelemetry.js';
 import {
   memoryVariant,
@@ -116,6 +116,27 @@ export function createOpponentMemoryReadAdmission(now = () => Date.now()) {
   };
 }
 const admitOpponentMemoryRead = createOpponentMemoryReadAdmission();
+/**
+ * Donor reads (the sibling table size's saved row) are admitted on their own.
+ * Measured 2026-10-25 over six production hours: 36,244 donor reads were
+ * turned away as busy and 156 reached the database, because one slow or
+ * canceled exact read closes the shared gate for 1.5 seconds. The donor read
+ * is a plain indexed select of saved rows (pg_stat_statements: 0.1 ms mean),
+ * never the cold initializer, so its own gate keeps the same bound without
+ * inheriting the exact read's lockout.
+ */
+const admitOpponentDonorRead = createOpponentMemoryReadAdmission();
+
+/** A busy admission refusal is counted (noteFire) and logged as one throttled
+ * line; any other failure keeps its full report. See errorReporter.reportThrottled. */
+function reportOpponentMemoryFailure(error: unknown, context: string): void {
+  if (isOpponentMemoryBusyRefusal(error))
+    reportThrottled(
+      context,
+      'opponent memory unavailable: busy - read refused at admission, answered from known profiles where any exist'
+    );
+  else reportError(error, context);
+}
 
 /** Bounded last-validated snapshots survive transient load, never cross a
  * game context, and never let an older in-flight receipt regress knowledge. */
@@ -243,7 +264,7 @@ export async function readHorseOpponentProfiles(
     const known = validatedOpponentProfiles.read(ids, v, mode, size);
     if (!known.length) throw error;
     noteFire('horse_opponent_memory_read_cache_fallback');
-    reportError(error, 'HorseOpponentMemory.decisionRead');
+    reportOpponentMemoryFailure(error, 'HorseOpponentMemory.decisionRead');
     return known;
   });
 }
@@ -305,7 +326,7 @@ export function createDecisionOpponentProfileReader(schema = horseOpponentMemory
     const read = readHorseOpponentProfiles(ids, variant, mode, size, signal).catch((error) => {
       // A failed hand is retained too: later streets must not repeatedly
       // launch the same cold initializer. A new hand may try after admission.
-      reportError(error, 'HorseOpponentMemory.decisionRead');
+      reportOpponentMemoryFailure(error, 'HorseOpponentMemory.decisionRead');
       return validatedOpponentProfiles.read(ids, variant, mode, size);
     });
     pending.set(key, read);
@@ -333,7 +354,7 @@ export async function readExistingHorseOpponentDonors(
   if (!ids.length || ids.length > 10 || new Set(ids).size !== ids.length)
     throw new Error('invalid opponent memory donor roster');
   signal?.throwIfAborted();
-  return admitOpponentMemoryRead(async () => {
+  return admitOpponentDonorRead(async () => {
     const { data, error } = await supabase
       .from('horse_exploit_profiles')
       .select('user_id,variant,mode,size,counters,observed_hands,initialized')
@@ -353,7 +374,7 @@ export async function readExistingHorseOpponentDonors(
     return validatedOpponentProfiles.read(ids, variant, mode, donorSize);
   }).catch((error) => {
     noteFire('horse_opponent_memory_donor_read_failed');
-    reportError(error, 'HorseOpponentMemory.donorRead');
+    reportOpponentMemoryFailure(error, 'HorseOpponentMemory.donorRead');
     return validatedOpponentProfiles.read(ids, variant, mode, donorSize);
   });
 }

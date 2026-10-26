@@ -39,7 +39,12 @@ import type {
   ActionRecord,
 } from '../types.js';
 
-import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
+import {
+  HorseLogic,
+  holdemPremiumAggression,
+  resolveHorseStyle,
+  type HorseGameStateV2,
+} from './HorseLogic.js';
 import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
@@ -2747,9 +2752,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // restores normal time-bank behaviour.
     this.timeBankSuppressedThisTurn = false;
 
-    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running
+    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running.
+    // A designed reset, not a recovery: `reset` says nothing (StateMachine.reset).
     if (this.turnFSM.state !== 'waiting') {
-      this.turnFSM.forceState('waiting');
+      this.turnFSM.reset('waiting');
     }
 
     // Step 1: Check for queued pre-action before starting timer (applies to ALL players)
@@ -4276,7 +4282,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
             const guarded = fullPotNearPotWager(
               riverNutsRaise(
-                tournamentShoveDiscipline(decision, privateHero, commitState),
+                tournamentShoveDiscipline(
+                  holdemPremiumAggression(decision, privateHero, commitState, {
+                    holdemDominatedFold: false,
+                  }),
+                  privateHero,
+                  commitState
+                ),
                 privateHero,
                 commitState
               ),

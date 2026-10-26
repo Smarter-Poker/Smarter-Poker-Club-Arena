@@ -1,3 +1,6 @@
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_sp_daily_metrics_compute(date)'::regprocedure)) = 'b3e73a2b6a93d2bde0d18b4aea540a7e')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_sp_digest_attention(date,jsonb)'::regprocedure)) = 'e9858fa93a233234cfedff0b3a726413')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_sp_daily_digest(date,boolean)'::regprocedure)) = 'd41812a96c7b68a01b666e4d4f222173')
 -- Daily digest: count original alerts and compare rake against current sources.
 -- Six refusals plus six resolution updates are six incidents, not twelve.
 -- The Oct 24 snapshot kept rollup zero after the rollup caught up to343158.54.
@@ -96,6 +99,3 @@ BEGIN
  END LOOP;
 END $digest_original_alerts$;
 COMMIT;
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_sp_daily_metrics_compute(date)'::regprocedure)) = 'b3e73a2b6a93d2bde0d18b4aea540a7e')
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_sp_digest_attention(date,jsonb)'::regprocedure)) = 'e9858fa93a233234cfedff0b3a726413')
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_sp_daily_digest(date,boolean)'::regprocedure)) = 'd41812a96c7b68a01b666e4d4f222173')

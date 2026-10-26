@@ -391,6 +391,12 @@ export interface ReplayShowdownRow {
    * in a "Mucked" row is not read as a reveal.
    */
   holePrivate: boolean;
+  /**
+   * Dan 2026-10-25: this hand was MUCKED at the table, and its cards are on
+   * record because it CALLED the river (fn_ca_called_river_mucked_cards).
+   * The surface tags it so it is not read as a hand the player chose to show.
+   */
+  calledMuck?: boolean;
   /** Which board this row is for; 0 unless the hand ran more than once. */
   boardIndex: number;
   boardLabel: string | null;
@@ -1220,6 +1226,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
          whichever is drawn, so the viewer sees what their muck was worth. */
       const hole = publicHole || privateHole;
       const holePrivate = !publicHole && !!privateHole;
+      const calledMuck = !!publicHole && muckedByUser.get(p.userId) === true;
       const made = hole ? bestFive(hole, b, input.gameVariant) : null;
       const won = wonByUser.get(p.userId) || 0;
       const inv = invested.get(Number(p.seat)) || 0;
@@ -1243,6 +1250,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         position: positions[Number(p.seat)] || '',
         hole,
         holePrivate,
+        calledMuck,
         made: made?.cards || [],
         playing: (made?.cards || []).map(cardKey),
         handName: titleCase(boardName),
@@ -1295,6 +1303,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
             position: positions[Number(p.seat)] || '',
             hole,
             holePrivate,
+            calledMuck,
             made: low?.cards || [],
             playing: (low?.cards || []).map(cardKey),
             handName: lowOnThisBoard?.handName || low?.name || 'Low',

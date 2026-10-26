@@ -240,6 +240,10 @@ import {
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
 import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
+import {
+  holdemPremiumAggressionVerdict,
+  type HoldemPremiumVerdict,
+} from './HorseHoldemPremiumAggression.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
@@ -1988,6 +1992,14 @@ export interface HorseDecideOpts {
    *  paired flop, turn or river (HorsePloPairedBoardFold.ts). Live always runs it;
    *  false exists only so an ablation can measure an older layer alone. */
   ploPairedBoardFold?: boolean;
+  /** Dan 2026-10-25: hold'em premiums are never played passively and dominated
+   *  offsuit hands fold to a big 3-bet (HorseHoldemPremiumAggression.ts). Live
+   *  always runs it; false exists only so an ablation can measure an older
+   *  layer alone. */
+  holdemPremiumAggression?: boolean;
+  /** Internal: false skips the dominated-hand fold, for the commit-time
+   *  recheck, which has no opponent reads to honour the maniac law with. */
+  holdemDominatedFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
@@ -3080,8 +3092,12 @@ function plo6RiverNutDiscipline(
 /**
  * Dan 2026-10-25: in PLO4/PLO5/PLO6 a horse without a full house never calls or
  * raises a committing bet on a paired flop, turn or river. See
- * HorsePloPairedBoardFold.ts. Applied after every other layer so no later
- * tweak to an equity cap can reopen the call.
+ * HorsePloPairedBoardFold.ts. It runs as the last rule of the policy graph's
+ * `wager_rules` node, after every owner and the river-nuts rule, so no equity
+ * cap or variant pack can reopen the call, and the signed graph records the
+ * change (applying it after `graph.finish` made every such decision an
+ * "invalid policy receipt" the worker refused). The outer call in `decide`
+ * only covers a decision that never entered the graph.
  */
 function pairedBoardFold(
   decision: HorseDecision,
@@ -3110,11 +3126,93 @@ function pairedBoardFold(
   if (!mustFold) return decision;
   if (telemetryOn(opts)) noteFire('plo_paired_board_fold');
   if (Array.isArray(gs.legalActions) && !gs.legalActions.includes('fold')) return decision;
-  // Keep the brain's own think time: a fold that snaps faster than the call
-  // it replaced would be a tell.
+  // Inside the graph the timing node then prices the fold's own think time;
+  // outside it the brain's think time is kept, so the fold never snaps.
   const folded: HorseDecision = { ...decision, action: 'fold' };
   delete folded.amount;
   return folded;
+}
+
+/**
+ * Dan 2026-10-25: in no-limit hold'em a premium (QQ+, AK) is never played
+ * passively, and a dominated offsuit hand folds to a big 3-bet. See
+ * HorseHoldemPremiumAggression.ts. Applied after every other layer, and the
+ * tournament shove discipline runs again on anything it raises, so a premium
+ * re-raise still obeys the deep-shove rule.
+ */
+export function holdemPremiumAggression(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts = {}
+): HorseDecision {
+  if (opts.holdemPremiumAggression === false) return decision;
+  let verdict: HoldemPremiumVerdict<HorseDecision> | null;
+  try {
+    verdict = holdemPremiumAggressionVerdict(decision, {
+      gameVariant: gs.gameVariant,
+      bettingStructure: gs.bettingStructure,
+      multiBoard: !!(gs.communityCards2?.length || gs.communityCards3?.length),
+      bombPot: gs.bombPot === true,
+      stage: gs.stage,
+      board: gs.communityCards ?? [],
+      hero: player,
+      players: gs.players ?? [],
+      pot: gs.pot,
+      currentBet: gs.currentBet,
+      bigBlind: gs.bigBlind,
+      toCall: gs.toCall,
+      legalActions: gs.legalActions,
+      minRaiseTo: gs.minRaiseTo,
+      maxRaiseTo: gs.maxRaiseTo,
+      actionHistory: gs.actionHistory,
+      chipUnit: gs.chipUnit ?? (isTournamentMode(gs) ? 1 : 0.01),
+      dominatedFold: opts.holdemDominatedFold !== false,
+      raiserIsManiac: (seatNo) => {
+        const raiser = (gs.players ?? []).find((p) => p.seat === seatNo);
+        if (!raiser) return false;
+        const read = HorseMind.opponentRead(raiser.user_id);
+        return maniacRaiseWidth(read) !== null || isPostflopManiac(read);
+      },
+    });
+  } catch {
+    return decision;
+  }
+  if (!verdict) return decision;
+  if (telemetryOn(opts)) {
+    if (verdict.rule === 'dominated_3bet_fold') noteFire('holdem_dominated_3bet_fold');
+    else if (verdict.rule === 'premium_preflop_raise') noteFire('holdem_premium_preflop_raise');
+    else noteFire('holdem_premium_postflop_bet');
+  }
+  const next = verdict.decision;
+  if (next.action === 'raise' || next.action === 'bet' || next.action === 'all_in') {
+    return tournamentShoveDiscipline(next, player, gs);
+  }
+  return next;
+}
+
+/** The outer safety net for the hold'em premium rule (#8122), as below. */
+function holdemPremiumAggressionOutsideGraph(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  return decision.policyGraph === undefined
+    ? holdemPremiumAggression(decision, player, gs, opts)
+    : decision;
+}
+
+/** The outer safety net: only a decision the policy graph never signed. */
+function pairedBoardFoldOutsideGraph(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  return decision.policyGraph === undefined
+    ? pairedBoardFold(decision, player, gs, opts)
+    : decision;
 }
 
 export class HorseLogic {
@@ -3180,8 +3278,13 @@ export class HorseLogic {
       if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
         setEquityDepth(opts.deepEquity);
         try {
-          return pairedBoardFold(
-            this.decideInternal(player, gameState, style, mods, opts),
+          return holdemPremiumAggressionOutsideGraph(
+            pairedBoardFoldOutsideGraph(
+              this.decideInternal(player, gameState, style, mods, opts),
+              player,
+              gameState,
+              opts
+            ),
             player,
             gameState,
             opts
@@ -3190,8 +3293,13 @@ export class HorseLogic {
           setEquityDepth(1);
         }
       }
-      return pairedBoardFold(
-        this.decideInternal(player, gameState, style, mods, opts),
+      return holdemPremiumAggressionOutsideGraph(
+        pairedBoardFoldOutsideGraph(
+          this.decideInternal(player, gameState, style, mods, opts),
+          player,
+          gameState,
+          opts
+        ),
         player,
         gameState,
         opts
@@ -4121,17 +4229,31 @@ export class HorseLogic {
       }
       return { decision };
     }).decision;
+    // The two 2026-10-25 owner rules run last, inside the graph, so the
+    // signed graph and its timing node see the action they choose: the PLO
+    // paired-board fold, then the hold'em premium rule (#8122), the same order
+    // they had when they ran after decide().
     decision = graph.run('wager_rules', decision, () => ({
-      decision: fullPotNearPotWager(
-        // V58: PLO6 paired-board river nut discipline, after every owner.
-        plo6RiverNutDiscipline(
-          riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+      decision: holdemPremiumAggression(
+        pairedBoardFold(
+          fullPotNearPotWager(
+            // V58/V59: PLO6 river nut discipline, after every strategy owner.
+            plo6RiverNutDiscipline(
+              riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
+              player,
+              gs,
+              opts
+            ),
+            player,
+            gs
+          ),
           player,
           gs,
           opts
         ),
         player,
-        gs
+        gs,
+        opts
       ),
     })).decision;
     decision = graph.run('timing', decision, () => {

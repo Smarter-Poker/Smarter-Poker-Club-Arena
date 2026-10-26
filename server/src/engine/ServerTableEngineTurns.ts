@@ -47,6 +47,7 @@ import {
 } from './HorseLogic.js';
 import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
 import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
+import { shortAllInCallFloor } from './HorseShortAllInCallFloor.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import {
   buildTournamentMState,
@@ -4077,6 +4078,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             markPendingUtilityNotExecuted();
             return;
           }
+          // Read before any withdrawal below can re-select a pack's baseline.
+          // A FOLD the brain itself returned has already been through the
+          // short all-in call floor with its own equity (drawing dead, or a
+          // real paired-board stack-off) and stands. A liveness fold (worker
+          // fallback, caught brain exception) is not a poker decision and gets
+          // the floor here.
+          const brainChoseFold =
+            decision.action === 'fold' &&
+            !safeWorkerFallback &&
+            decision.policyFallback !== 'brain_exception';
           // The action is now authoritative. Cancel a queued/running deep read
           // before it can race the mutation below; this also retires the local
           // turn token so no later continuation can become current again.
@@ -4280,7 +4291,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               commitmentCapRemaining: nutsActions.commitmentCapRemaining,
             };
             const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
-            const guarded = fullPotNearPotWager(
+            const wagerGuarded = fullPotNearPotWager(
               riverNutsRaise(
                 tournamentShoveDiscipline(
                   holdemPremiumAggression(decision, privateHero, commitState, {
@@ -4295,8 +4306,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               privateHero,
               commitState
             );
+            // Dan 2026-10-26: a short all in is called by a big stack in a
+            // tournament. Last at the door too, on the controller's fresh
+            // state, so no withdrawal above and no liveness fallback can fold
+            // that spot. No equity is measured here, so it calls.
+            const guarded = brainChoseFold
+              ? wagerGuarded
+              : shortAllInCallFloor(wagerGuarded, privateHero, commitState, null);
+            if (guarded !== wagerGuarded) noteFire('short_all_in_call_floor_commit');
             if (guarded !== decision) {
               decision = { ...decision, ...guarded };
+              if (guarded !== wagerGuarded && guarded.amount === undefined) delete decision.amount;
               noteFire('wager_rules_commit_correction');
             }
           }

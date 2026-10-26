@@ -14,8 +14,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: engine-main-thread-profile
-  cancel-in-progress: false
+  group: engine-main-thread-profile-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'manual' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   verify:
     runs-on: ubuntu-latest

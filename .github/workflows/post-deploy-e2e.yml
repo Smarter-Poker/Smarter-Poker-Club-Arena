@@ -2189,3 +2189,65 @@ jobs:
           fi
           export UNOWED_LANES
           node scripts/ci/record-post-deploy-verdict.mjs
+
+  # A RUN THAT TESTED NOTHING DOES NOT SAY SUCCESS (2026-10-26).
+  #
+  # When the publisher this run listens to was replaced before it reached the
+  # origin, the gate above stands down: it succeeds, leaves should_run empty,
+  # every lane skips, and the verdict recorder correctly records nothing. But
+  # GitHub then concluded the whole run `success` - "Post-Deploy E2E <sha>"
+  # green for a release no browser ever looked at. check-main-is-green.mjs
+  # steps over `cancelled` and `skipped` runs precisely because they carry no
+  # verdict (tests/a-skipped-run-is-not-a-green-run.test.ts), and it believed
+  # these. Measured 2026-10-25: failed verification 40242809027 was followed by
+  # stand-down 40243837996 concluding `success`, which the detector would read
+  # as main recovering.
+  #
+  # So once the recorder has confirmed the stand-down, this job cancels its
+  # own run. `cancelled` is the conclusion the estate already reserves for
+  # "superseded by a newer publish" (CLAUDE.md 10.83), so nothing pages and
+  # nothing mistakes it for a pass. It runs last, after the recorder, so the
+  # recorder never sees a cancelled gate (which it rightly treats as a fault).
+  # If the cancellation cannot be made, the run fails out loud rather than
+  # falling back to a silent `success`.
+  stood-down-is-not-green:
+    name: A stood-down run is marked superseded, not passed
+    needs:
+      - publication-gate
+      - post-deploy-verdict
+      - club-channel-lifecycle-e2e
+    if: >-
+      always() &&
+      github.event_name == 'workflow_run' &&
+      needs.publication-gate.result == 'success' &&
+      needs.publication-gate.outputs.should_run != 'true' &&
+      needs.post-deploy-verdict.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      actions: write
+    steps:
+      - name: Retire this run as superseded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -uo pipefail
+          {
+            echo '### Superseded, not verified'
+            echo
+            echo "Publisher run $SOURCE_RUN_ID was replaced before it reached the origin, so nothing was published and no browser ran. This run is cancelled so it can never read as a passed verification; the newer publisher's own run carries the verdict."
+          } >> "$GITHUB_STEP_SUMMARY"
+          for attempt in 1 2 3; do
+            if gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" > /dev/null; then
+              echo "Cancellation accepted for run $RUN_ID; the runner stops this step when it lands."
+              sleep 300
+              echo "::error::Run $RUN_ID was still running 300 s after its cancellation was accepted, so it could not be marked superseded."
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::GitHub refused to cancel run $RUN_ID three times, so a stood-down run could not be marked superseded."
+          exit 1

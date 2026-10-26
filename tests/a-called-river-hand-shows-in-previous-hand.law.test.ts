@@ -335,6 +335,13 @@ describe('a river caller the engine tabled is still tagged Called', () => {
     expect(hand.replay.showdown.find((r) => r.userId === CALLER)!.calledRiver).toBe(false);
   });
 
+  it('a shared hand link keeps the tag on a tabled river call', async () => {
+    const hand = await tabledHand();
+    const back = replayFromShareable(shareableFromModel(hand.replay, { id: HAND, tableName: 'T' }));
+    expect(back.showdown.find((r) => r.seat === 6)!.calledRiver).toBe(true);
+    expect(back.showdown.find((r) => r.seat === 4)!.calledRiver).toBe(false);
+  });
+
   it('every surface that tags a called muck tags a tabled river call too', () => {
     const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf8');
     expect(read('src/components/table/HandDetailModal.tsx')).toMatch(

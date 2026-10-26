@@ -69,13 +69,17 @@ for (const width of [393, 1440]) {
     // the first panel that offers an enabled Join Lightning is the door.
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     if (await allGames.count()) await allGames.click();
-    const rows = page
-      .locator(
-        // Both layouts are in the document; only the one this width shows counts
-        // (run 40132784246 picked the hidden phone row at 1440px).
-        '[data-testid="lobby-game-row"][data-kind="cash"]:visible, .club-home__games .lt-row[data-kind="cash"]:visible'
-      )
-      .filter({ hasText: /lightning/i });
+    // A row is chosen by its live mode, not its name (post-deploy run
+    // 40292901952): games named "Lightning" that are not running Lightning -
+    // the variants Dan took off Lightning on 2026-10-25, nine-handed pilots,
+    // games below the switch-on count - offer Join Game, and eight of them
+    // filled every try. data-lightning is set only while the game is in
+    // Lightning mode with Join Lightning on offer.
+    const rows = page.locator(
+      // Both layouts are in the document; only the one this width shows counts
+      // (run 40132784246 picked the hidden phone row at 1440px).
+      '[data-testid="lobby-game-row"][data-kind="cash"][data-lightning="on"]:visible, .club-home__games .lt-row[data-kind="cash"][data-lightning="on"]:visible'
+    );
     await expect(rows.first(), 'the member lobby lists a Lightning game').toBeVisible({
       timeout: 45_000,
     });

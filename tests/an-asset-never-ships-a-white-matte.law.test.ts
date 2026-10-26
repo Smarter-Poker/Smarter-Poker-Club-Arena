@@ -166,6 +166,7 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
       'public/assets/club-buttons/club/club-identity-icon-club-v1.png',
       'public/assets/club-buttons/club/club-identity-icon-player-v1.png',
       'public/assets/club-buttons/console/spade-console-v1/mid.png',
+      'public/assets/club-buttons/console/spade-console-v2/mid.png',
       'public/assets/club-buttons/game-cards/plo/shark-four-bay-v1/live-dot.png',
       'public/assets/club-buttons/tournament-info-dock-v1/bottom.webp',
       'public/assets/club-buttons/tournament-info-dock-v1/middle.webp',

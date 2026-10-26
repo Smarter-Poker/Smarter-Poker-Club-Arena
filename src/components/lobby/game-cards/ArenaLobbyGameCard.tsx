@@ -36,7 +36,7 @@ export function arenaGameCardActionsForEntry(
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
-    if (entry.status === 'full' || entry.status === 'waitlist') {
+    if (!entry.game?.lightning && (entry.status === 'full' || entry.status === 'waitlist')) {
       const joined = mine === 'waitlisted';
       return {
         primaryLabel: joined ? 'Leave Waitlist' : 'Join Waitlist',
@@ -59,6 +59,18 @@ export function arenaGameCardActionsForEntry(
         primaryTone: 'neutral',
         primaryDisabled: true,
         secondaryLabel: game ? 'View Game' : 'View Table',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
+    /* LIGHTNING TRANSITION PHASE 5: a game switching modes (Lightning
+       Starting, Lightning Ending) has its tables halted until the switch
+       commits. The door is shown, and not offered; watching still is. */
+    if (entry.game?.switching) {
+      return {
+        primaryLabel: 'Join Game',
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: 'View Game',
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }

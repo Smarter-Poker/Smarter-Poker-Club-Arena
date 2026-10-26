@@ -115,9 +115,11 @@ export async function reconcileLightningPresence(
       for (const { clusterId } of sessions) {
         if (connectedByCluster.has(clusterId)) continue;
         const snap = presence.snapshot(clusterId);
-        connectedByCluster.set(clusterId, new Set(snap.connected));
+        // The presence door's view, not matching's: connected ANYWHERE here
+        // is never stamped away (LightningPresence, 2026-10-26).
+        connectedByCluster.set(clusterId, new Set(snap.connectedAnywhere));
         // Seen by this Cluster's own anchor or room AND not connected anywhere.
-        absentByCluster.set(clusterId, new Set(snap.disconnected));
+        absentByCluster.set(clusterId, new Set(snap.disconnectedAnywhere));
       }
     } catch (err) {
       deps.logger?.warn(

@@ -12,39 +12,38 @@ const decisionWorker = vi.hoisted(() => {
     fence: authority.fence,
     operation: 'COMMIT_DECISION_EFFECTS' as const,
   }));
-  const decideFast = vi.fn(
-    async (
-      snapshot: import('./horseDecision/protocol.js').LiveHorseDecisionSnapshot
-    ): Promise<FastHorseDecisionResult> => ({
-      type: 'FAST_RESULT' as const,
-      planIssueDisposition: 'issued' as const,
-      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
-      requestId: 1,
-      generation: snapshot.generation,
-      fence: snapshot.fence,
-      decision: { action: 'bet' as const, amount: 20, thinkTime: 1 },
-      rngBefore: 11,
-      rngAfter: 22,
-      computeMs: 2,
-      governorScale: 1,
-      effects: [
-        {
-          type: 'raise_plan' as const,
-          handKey: 'table:hand',
-          userId: 'horse-1',
-          street: 'flop',
-          plan: 'foldToRaise' as const,
-        },
-      ],
-    })
-  );
+  const defaultDecideFast = async (
+    snapshot: import('./horseDecision/protocol.js').LiveHorseDecisionSnapshot
+  ): Promise<FastHorseDecisionResult> => ({
+    type: 'FAST_RESULT' as const,
+    planIssueDisposition: 'issued' as const,
+    planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
+    requestId: 1,
+    generation: snapshot.generation,
+    fence: snapshot.fence,
+    decision: { action: 'bet' as const, amount: 20, thinkTime: 1 },
+    rngBefore: 11,
+    rngAfter: 22,
+    computeMs: 2,
+    governorScale: 1,
+    effects: [
+      {
+        type: 'raise_plan' as const,
+        handKey: 'table:hand',
+        userId: 'horse-1',
+        street: 'flop',
+        plan: 'foldToRaise' as const,
+      },
+    ],
+  });
+  const decideFast = vi.fn(defaultDecideFast);
   const worker = {
     decideFast,
     decideDeep: vi.fn(),
     commitDecisionEffects,
     runWithDispatchBarrier: vi.fn(<T>(fn: () => T): T => fn()),
   };
-  return { worker, decideFast, commitDecisionEffects };
+  return { worker, decideFast, defaultDecideFast, commitDecisionEffects };
 });
 
 vi.mock('./horseDecision/index.js', async () => {
@@ -197,6 +196,7 @@ vi.mock('./HorsePhase13Authority.js', async (importOriginal) => {
 });
 
 import { HandController } from './HandController.js';
+import { Deck, RANKS } from './PokerEngine.js';
 import {
   horsePhase13ContinuationVersion,
   liveHorsePhase13Authorities,
@@ -345,7 +345,17 @@ function harness(intendedActionAccepted: boolean) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  decisionWorker.decideFast.mockClear();
+  // RESET, not clear (2026-10-26). mockClear() keeps every queued
+  // mockImplementationOnce, so a test whose scheduled horse action had not yet
+  // consumed its queued decision when it ended handed that decision to the
+  // NEXT test's first decideFast call. On loaded CI runners the passive
+  // wager-sizing cases ran out their timer window first, and the
+  // "reconciles the actual call price" cases then executed the leftover
+  // raise (seat 1 raise 6) instead of their own call, failing Server Engine
+  // shard 1/4 on #8158, #8161 and #8163. Every test now starts with an empty
+  // queue and the default decision.
+  decisionWorker.decideFast.mockReset();
+  decisionWorker.decideFast.mockImplementation(decisionWorker.defaultDecideFast);
   decisionWorker.commitDecisionEffects.mockClear();
   decisionWorker.worker.runWithDispatchBarrier.mockClear();
   decisionWorker.worker.decideDeep.mockReset();
@@ -481,6 +491,15 @@ describe('authoritative horse action effect commit', () => {
       enginePlayer.user_id = player.user_id;
       engine.getEngineLeaseAuthority = () => ({ verified: true, generation: '9' });
       engine.broadcastCurrentState = vi.fn();
+      // The hole cards are fixed low (only 2s and 3s reach the four seats).
+      // This case asserts the selected CALL is executed; a shuffled deal
+      // occasionally handed seat 1 QQ+/AK, and holdemPremiumAggression
+      // (#8122) then correctly turns that call into a raise, failing the
+      // case about 1 run in 40 (seen on #8139, 2026-10-26).
+      vi.spyOn(Deck.prototype, 'shuffle').mockImplementation(function (this: Deck) {
+        const cards = (this as unknown as { cards: { rank: string }[] }).cards;
+        cards.sort((a, b) => RANKS.indexOf(a.rank as never) - RANKS.indexOf(b.rank as never));
+      });
       const hc = new HandController(
         {
           tableId: TABLE,
@@ -1249,6 +1268,75 @@ describe('authoritative horse action effect commit', () => {
     expect(performAction).toHaveBeenCalledTimes(1);
     expect(performAction).toHaveBeenCalledWith(1, 'check', undefined, 'horse_fallback');
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+
+  describe('a short all in is called by a big stack at the commit door (Dan 2026-10-26)', () => {
+    const shortAllInSpot = (h: ReturnType<typeof harness>, legal: string[]) => {
+      // Tournament, preflop, big blind 2: the human is all in for 4 (2 BB),
+      // the horse has 100 (50 BB) and must add 4.
+      h.engine.isTournamentTable = () => true;
+      h.engine.tableFormat = () => 'tournament';
+      h.engine.handController.getBlindSnapshot = () => ({
+        smallBlind: 1,
+        bigBlind: 2,
+        ante: 0,
+        bigBlindAnte: false,
+      });
+      Object.assign(h.state, { stage: 'preflop', communityCards: [], currentBet: 4, pot: 7 });
+      Object.assign(h.state.players[1], { bet: 4, stack: 0, totalInvested: 4, is_all_in: true });
+      h.engine.handController.getAuthoritativeActionState = () => ({
+        schemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        canAct: true,
+        legalActions: legal,
+        toCall: 4,
+        minRaiseTo: 8,
+        maxRaiseTo: 100,
+        structure: 'no_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+      });
+    };
+
+    it('a worker failure folds nothing: the liveness fold becomes the call', async () => {
+      const h = harness(true);
+      shortAllInSpot(h, ['fold', 'call', 'raise', 'all_in']);
+      decisionWorker.decideFast.mockRejectedValueOnce(new Error('worker crashed'));
+
+      h.engine.scheduleHorseAction(h.player, 1, h.enginePlayer, h.state);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.performAction).toHaveBeenCalledTimes(1);
+      expect(h.performAction.mock.calls[0][1]).toBe('call');
+      expect(h.performAction.mock.calls[0][2]).toBe(4);
+    });
+
+    it('on an all-in-or-fold table the call is the all in', async () => {
+      const h = harness(true);
+      shortAllInSpot(h, ['fold', 'all_in']);
+      decisionWorker.decideFast.mockRejectedValueOnce(new Error('worker crashed'));
+
+      h.engine.scheduleHorseAction(h.player, 1, h.enginePlayer, h.state);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.performAction).toHaveBeenCalledTimes(1);
+      expect(h.performAction.mock.calls[0][1]).toBe('all_in');
+    });
+
+    it('a cash table is never touched: the liveness fold stands', async () => {
+      const h = harness(true);
+      shortAllInSpot(h, ['fold', 'call', 'raise', 'all_in']);
+      h.engine.isTournamentTable = () => false;
+      h.engine.tableFormat = () => 'cash';
+      decisionWorker.decideFast.mockRejectedValueOnce(new Error('worker crashed'));
+
+      h.engine.scheduleHorseAction(h.player, 1, h.enginePlayer, h.state);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.performAction).toHaveBeenCalledTimes(1);
+      expect(h.performAction.mock.calls[0][1]).toBe('fold');
+    });
   });
 
   it('does not act after a genuine authority abort', async () => {

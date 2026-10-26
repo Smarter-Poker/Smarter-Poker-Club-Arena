@@ -125,7 +125,10 @@ describe('against a seat that pots every street', () => {
   it('calls its postflop bets down by equity: no heads-up fold well over the price', () => {
     for (const t of [nlh, plo]) {
       expect(t.postflopCalls).toBeGreaterThan(20);
-      const bad = t.postflopFolds.filter((f) => f.equity > f.price + 0.12);
+      // Dan 2026-10-25 overrides equity on one board class: in PLO4/5/6 no
+      // full house on a paired board folds to a committing bet, "100% OF THE
+      // TIME" (HorsePloPairedBoardFold). Those folds are his, not a leak.
+      const bad = t.postflopFolds.filter((f) => !f.pairedBoardRule && f.equity > f.price + 0.12);
       expect(bad).toEqual([]);
     }
   });
@@ -149,14 +152,25 @@ const firstFrom = (a: boolean[], from: number, v: boolean) => {
 };
 
 describe('a style change is seen in a handful of hands, both ways', () => {
+  // These pins time the READ, measured on the hand stream they were written
+  // on. The 2026-10-25 paired-board fold changes which PLO4 hands reach later
+  // streets, so it is ablated here; its own law is HorsePloPairedBoardFold.
   for (const v of ['nlh', 'plo4']) {
     it(`${v}: a maniac who calms down stops being read as one within 25 hands`, () => {
-      const t = playManiacPressure(v, 'cash', 'potter', 100, 11, 15, { switchAt: 60, then: 'nit' });
+      const t = playManiacPressure(v, 'cash', 'potter', 100, 11, 15, {
+        switchAt: 60,
+        then: 'nit',
+        pairedBoardFold: false,
+      });
       expect(firstFrom(t.maniacReadByHand, 0, true)).toBeLessThanOrEqual(8);
       expect(firstFrom(t.maniacReadByHand, 60, false)).toBeLessThanOrEqual(25);
     });
     it(`${v}: a nit who turns into a maniac is read within 12 hands`, () => {
-      const t = playManiacPressure(v, 'cash', 'nit', 90, 11, 15, { switchAt: 60, then: 'potter' });
+      const t = playManiacPressure(v, 'cash', 'nit', 90, 11, 15, {
+        switchAt: 60,
+        then: 'potter',
+        pairedBoardFold: false,
+      });
       expect(t.maniacReadByHand.slice(0, 60).some(Boolean)).toBe(false);
       expect(firstFrom(t.maniacReadByHand, 60, true)).toBeLessThanOrEqual(12);
     });
@@ -169,17 +183,23 @@ describe('a player who limps and then pots every street', () => {
       const t = playManiacPressure(v, 'cash', 'limppotter', HANDS);
       expect(firstFrom(t.postflopManiacByHand, 0, true)).toBeLessThanOrEqual(10);
       expect(t.postflopCalls).toBeGreaterThan(t.postflopFolds.length * 2);
-      expect(t.postflopFolds.filter((f) => f.equity > f.price + 0.12)).toEqual([]);
+      // The 2026-10-25 paired-board folds are Dan's ruling, not a leak.
+      expect(
+        t.postflopFolds.filter((f) => !f.pairedBoardRule && f.equity > f.price + 0.12)
+      ).toEqual([]);
     });
   }
 });
 
 describe('a short tournament stack never raise-folds into a maniac', () => {
   for (const kind of ['jammer', 'potter'] as const) {
-    it(`at 20 big blinds against a ${kind} behind, the open is the shove`, () => {
+    // Dan 2026-10-25: "SINCE WHEN IS IT GTO TO OPEN RIP 20BB FROM UTG?!" At
+    // 20bb the button and small blind still shove into a maniac behind; the
+    // earlier seats open small (HorseTournamentShoveDiscipline). What this law
+    // keeps is the claim it was written for: neither line ever raise-folds.
+    it(`at 20 big blinds against a ${kind} behind, the open never raise-folds`, () => {
       const t = playManiacPressure('nlh', 'tournament', kind, HANDS, 11, 15, { stackBB: 20 });
-      expect(t.firstInVsManiac.jam).toBeGreaterThan(10);
-      expect(t.firstInVsManiac.raise).toBe(0);
+      expect(t.firstInVsManiac.jam).toBeGreaterThan(5);
       expect(t.rtfByStreet['preflop->preflop'] ?? 0).toBe(0);
     });
   }

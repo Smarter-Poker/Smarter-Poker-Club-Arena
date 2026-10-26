@@ -135,8 +135,8 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     const attempt = client.slice(attemptStart, client.indexOf('const RETRYABLE =', attemptStart));
     expect(attemptStart).toBeGreaterThan(-1);
     expect(client).toContain("import { dataActorHeaders } from './dataActorContext.js'");
-    // Viewer-only private ACL reads are the sole unmarked path. Every ordinary
-    // service/manager request still stamps its authority inside each attempt.
+    // Private ACL reads and the fixed original-player join input device are
+    // unmarked. Ordinary service/manager traffic still stamps each attempt.
     expect(attempt).toMatch(
       /}\s*else\s*{\s*authoritativeHeaders = dataActorHeaders\(headers\);\s*}/
     );
@@ -147,6 +147,10 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     expect(attempt).toContain("(init.method || 'GET').toUpperCase() !== 'POST'");
     expect(attempt).toContain("throw new Error('private_record_acl_request_boundary')");
     expect(attempt).toContain('headers: authoritativeHeaders');
+    expect(attempt).toContain('else if (replacementSubject)');
+    expect(attempt).toContain('POST /rest/v1/rpc/fn_join_club_atomic');
+    expect(attempt).toContain("url.searchParams.get('scope') !== 'local'");
+    expect(attempt).toContain("throw new Error('original_subject_request_boundary')");
     expect(actorContext).toContain('new AsyncLocalStorage<TournamentManagerActorContext>()');
     expect(actorContext).toContain('Promise.resolve(result as unknown as PromiseLike<unknown>)');
     expect(actorContext).toContain('bindTournamentDataAuthorityMethods');
@@ -166,13 +170,15 @@ describe('Stage-A tournament-manager Data API request fence', () => {
      arguments. The lease session may run exactly those two functions. The separate
      original-fold exception below reinstates the same actor fence in its fixed
      private wrapper and preserves synchronous commit before acknowledgement. */
-  it('admits only the exact heartbeat, outbox and fenced original-fold raw sessions', () => {
+  it('admits only the exact heartbeat, outbox, fenced original-fold and two offline qualification raw sessions', () => {
     const src = join(process.cwd(), 'src');
     const rawSessions = runtimeTypescriptFiles(src)
       .filter((path) => /\bnew pg\.(?:Client|Pool)\s*\(/.test(readFileSync(path, 'utf8')))
       .map((path) => path.slice(src.length + 1))
       .sort();
     expect(rawSessions).toEqual([
+      'services/horseCorrectiveReview/riverAcceptedOracle.ts',
+      'services/horseCorrectiveReview/riverAcceptedWindow.ts',
       'services/leaseHeartbeatSession.ts',
       'services/lightningFoldSession.ts',
       'services/supabase/handOutboxListener.ts',
@@ -195,6 +201,83 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     ]);
     expect(leaseSession).toContain(
       'SET statement_timeout = ${LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS}'
+    );
+  });
+
+  it('keeps both named offline qualification exceptions bounded, verified-TLS and transaction read-only', () => {
+    const src = join(process.cwd(), 'src');
+    for (const [module, factory, ingress] of [
+      ['riverAcceptedOracle.ts', 'createRiverAcceptedOracleReader', 'horseRiverAcceptedOracle.ts'],
+      ['riverAcceptedWindow.ts', 'createRiverAcceptedWindowReader', 'horseAcceptedWindow.ts'],
+    ]) {
+      const source = readFileSync(join(src, 'services', 'horseCorrectiveReview', module), 'utf8');
+      expect(source).toContain(`export function ${factory}(`);
+      // The fixed reader is not a general actor-fence bypass or query API.
+      expect(source).not.toMatch(/export (?:async )?function (?:query|execute|connect)\s*\(/);
+      expect(source).not.toMatch(/client\.query\(\s*(?:args\.|text\b)/);
+      expect(source).toContain('environment.DATABASE_URL');
+      expect(source).not.toMatch(/import\s+.*dotenv|dotenv\.config|readFileSync/);
+      expect(source).toContain('rejectUnauthorized: true');
+      expect(source).toContain('ca: [...tls.rootCertificates, SUPABASE_ROOT_2021_CA]');
+      expect(source).toContain('connectionTimeoutMillis: 5000');
+      expect(source).toContain('statement_timeout: 2000');
+      expect(source).toContain('lock_timeout: 250');
+      expect(source).toContain('query_timeout: 3000');
+      expect(source).toContain('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      expect(source).toContain("client.query('COMMIT')");
+      expect(source).toContain("client.query('ROLLBACK')");
+      expect(source.indexOf('new pg.Client(')).toBeGreaterThan(source.indexOf('return async'));
+      expect(source.indexOf('await client.connect()')).toBeGreaterThan(
+        source.indexOf('return async')
+      );
+      expect(source).not.toMatch(
+        /client\.query\(\s*['"`](?:INSERT|UPDATE|DELETE|CALL|DO|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b/i
+      );
+
+      const cli = readFileSync(join(src, 'scripts', ingress), 'utf8');
+      expect(cli).toContain('args.length !== 2');
+      expect(cli).toContain('!isAbsolute(args[0]!)');
+      expect(cli).toContain('!isAbsolute(args[1]!)');
+      expect(cli).toContain('readPrivateCorrectiveJson');
+      expect(cli).toContain('writePrivateCorrectiveResult');
+      expect(cli).toContain('Object.freeze({ DATABASE_URL: environment.DATABASE_URL })');
+      expect(cli).toContain('import.meta.url === pathToFileURL(process.argv[1]).href');
+    }
+
+    const oracle = readFileSync(
+      join(src, 'services', 'horseCorrectiveReview', 'riverAcceptedOracle.ts'),
+      'utf8'
+    );
+    const acceptedSource = readFileSync(
+      join(src, 'services', 'horseAcceptedRoster', 'exporter.ts'),
+      'utf8'
+    );
+    expect(oracle).toContain('ACCEPTED_SOURCE_SELECT.replace(');
+    expect(oracle).toContain(
+      'client.query(QUERY, [hand.committedHandId, tableId, Number(handNumber)])'
+    );
+    expect(acceptedSource).toContain(
+      'WHERE h.id = $1::uuid AND h.table_id = $2::uuid AND h.hand_number = $3::bigint'
+    );
+    expect(acceptedSource).toContain('LIMIT 2');
+    const window = readFileSync(
+      join(src, 'services', 'horseCorrectiveReview', 'riverAcceptedWindow.ts'),
+      'utf8'
+    );
+    expect(window).toContain(
+      'WHERE c.committed_at >= $1::timestamptz AND c.committed_at < $2::timestamptz'
+    );
+    expect(window).toContain('(c.committed_at,c.hand_id)>($3::timestamptz,$4::uuid)');
+    expect(window).toContain('ORDER BY c.committed_at,c.hand_id LIMIT 129');
+    expect(window).toContain('client.query(FENCE, [captured.endsAt])');
+    expect(window).toContain('client.query(INDEX)');
+    const query = window.slice(
+      window.indexOf('const QUERY = `'),
+      window.indexOf('export interface AcceptedWindowCursor')
+    );
+    expect(query).toMatch(/^const QUERY = `SELECT /);
+    expect(query).not.toMatch(
+      /\b(?:INSERT|UPDATE|DELETE|CALL|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b/i
     );
   });
 

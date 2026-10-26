@@ -235,6 +235,10 @@ describe('V36 a lock on one board is a freeroll', () => {
     let raises = 0;
     let folds = 0;
     for (let i = 0; i < 40; i++) {
+      // Each trial is the same independent decision, not forty speculative
+      // plans carried between otherwise identical synthetic hands.
+      HorseMind.reset();
+      seedFastRandom(0x5eed36 + i);
       const s = bombState({
         hero: 'AhKh9c8d',
         board1: 'Qh7h2h',

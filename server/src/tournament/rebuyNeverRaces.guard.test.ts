@@ -132,7 +132,7 @@ describe('a busted player holds an open decision window, and the felt rolls on',
   it('consumes the atomic rebuy result without a later manager reseat', () => {
     const block = sliceBetween(
       ELIM,
-      'const { rebought } = await this.tryTournamentRebuys(',
+      'const { rebought, deferredUntil } = await this.tryTournamentRebuys(',
       'THE REBUY DECISION WINDOW'
     );
     expect(block).toContain('The rebuy transaction owns its exact playable chair and stack.');
@@ -143,8 +143,12 @@ describe('a busted player holds an open decision window, and the felt rolls on',
 
   it('re-drives an unresolved bust every five seconds until acceptance or expiry', () => {
     const wakeAt = ELIM.indexOf('TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS');
-    const emptyReturnAt = ELIM.indexOf('if (busted.length === 0) return', wakeAt);
+    const decisionWindowAt = ELIM.indexOf('const nextDeadline =', wakeAt);
+    const emptyBlockAt = ELIM.indexOf('if (busted.length === 0) {', decisionWindowAt);
+    const emptyReturnAt = ELIM.indexOf('return;', emptyBlockAt);
     expect(wakeAt).toBeGreaterThan(-1);
+    expect(decisionWindowAt).toBeGreaterThan(wakeAt);
+    expect(emptyBlockAt).toBeGreaterThan(decisionWindowAt);
     expect(emptyReturnAt).toBeGreaterThan(wakeAt);
   });
 

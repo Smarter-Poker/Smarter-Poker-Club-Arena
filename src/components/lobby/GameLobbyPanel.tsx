@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
@@ -36,7 +36,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatBuyIn } from '../../utils/buyIn';
 import { withClubContext } from '../../utils/clubScopedPath';
 import { reportError } from '../../utils/errorReporter';
-import { useInTabLobby } from '../../context/InTabLobbyContext';
+import { useAppNavigate, useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
 import {
   effectivePlaceLadderPool,
@@ -164,7 +164,7 @@ const lvlNum = (
 ) => Number(l[snake] ?? l[camel] ?? 0);
 
 export default function GameLobbyPanel(props: GameLobbyPanelProps) {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const {
     entry,
     clubId,
@@ -198,6 +198,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const isEmbedded = useInTabLobby() !== null || Boolean(embedded);
 
   const isCash = entry.kind === 'cash';
+  const isLightning = isCash && Boolean(entry.game?.lightning);
   /* The drawer declared role=dialog aria-modal=true and trapped nothing:
      focus stayed on the lobby row behind it, Tab walked the page underneath,
      and a screen-reader user was never taken into the dialog they had just
@@ -292,7 +293,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   // after it settles, and remember completed reads so a refused action keeps
   // the verified queue without another request.
   useEffect(() => {
-    if (!isCash || busy) return;
+    if (!isCash || isLightning || busy) return;
     const previous = waitlistSnapshotRef.current;
     if (previous?.tableId === entry.id && previous.waitlisted === waitlisted) return;
     let cancelled = false;
@@ -321,7 +322,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [entry.id, isCash, busy, waitlisted]);
+  }, [entry.id, isCash, isLightning, busy, waitlisted]);
 
   // ── Seat map (cash only; table_seats is public-read). Keyed on
   //    entry.players so a realtime seat change refreshes the map without
@@ -430,7 +431,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           kind: 'disabled' as const,
         };
       if (status === 'paused') return { label: 'Game Paused', kind: 'disabled' as const };
-      const full = entry.capacity > 0 && entry.players >= entry.capacity;
+      const full = !isLightning && entry.capacity > 0 && entry.players >= entry.capacity;
       if (full && waitlisted)
         return {
           label: 'Leave Waitlist',
@@ -463,11 +464,14 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           run: () => onWaitlistToggle(entry.id, true),
           needsAuth: true,
         };
+      /* LIGHTNING TRANSITION PHASE 5: the game is switching modes and its
+         tables are halted until the switch commits. Shown, not offered. */
+      if (entry.game?.switching) return { label: 'Join Game', kind: 'disabled' as const };
       /* LIGHTNING PHASE 6: no table, no seat; the page opens the Lightning route. */
       if (entry.game?.lightning)
         return {
           label: 'Join Lightning',
-          kind: 'primary' as const,
+          kind: entry.game.lightning.joinsClosed ? ('disabled' as const) : ('primary' as const),
           run: () => onJoinTable(entry.id),
           note: 'Buy In Once And Play One Stream Of Hands',
         };
@@ -501,7 +505,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         return { label: 'Return To Game', kind: 'gold' as const, run: () => onSpinJoin(t, 'spin') };
       if (st === 'completed' || st === 'closed')
         return { label: 'Game Over', kind: 'disabled' as const };
-      const full = entry.capacity > 0 && entry.players >= entry.capacity;
+      const full = !isLightning && entry.capacity > 0 && entry.players >= entry.capacity;
       /* Capacity blocks buying a seat while filling. Once running, the
          action is Watch, which never needs an empty seat. */
       if (full && !hasStarted) return { label: 'Game Full', kind: 'disabled' as const };
@@ -577,7 +581,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         kind: 'disabled' as const,
         note: 'Tournaments Are Listed So You Can Read Them. Registration Opens Later.',
       };
-    const full = entry.capacity > 0 && entry.players >= entry.capacity;
+    const full = !isLightning && entry.capacity > 0 && entry.players >= entry.capacity;
     if (full) return { label: 'Tournament Full', kind: 'disabled' as const };
     if (st === 'late_reg')
       return {
@@ -598,6 +602,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     registrationClosedLabel,
     entry,
     isCash,
+    isLightning,
     seated,
     waitlisted,
     registered,
@@ -878,10 +883,12 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       <dd className="glp__mono">{formatTableChips(avgPot)}</dd>
                     </div>
                   )}
-                  <div>
-                    <dt>Waiting</dt>
-                    <dd className="glp__mono">{waitlistError ? '-' : waitlist.length}</dd>
-                  </div>
+                  {!isLightning && (
+                    <div>
+                      <dt>Waiting</dt>
+                      <dd className="glp__mono">{waitlistError ? '-' : waitlist.length}</dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Status</dt>
                     <dd>{entry.statusLabel}</dd>
@@ -937,7 +944,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 </section>
               )}
 
-              {waitlist.length > 0 && (
+              {!isLightning && waitlist.length > 0 && (
                 <section className="glp__section">
                   <h3 className="glp__h">Waiting List</h3>
                   {/* Dan 2026-08-26: real names, real times. Every non-hero row
@@ -1254,10 +1261,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   title attribute needs a hover this panel's traffic does not
                   have. It renders under all three tabs, as the plaque does. */}
               {entry.rules.length > 0 && (
-                <PanelSection
-                  title="Format"
-                  pill={entry.gameLabel}
-                >
+                <PanelSection title="Format" pill={entry.gameLabel}>
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
                       <RuleLine key={r.key} r={titleCaseRule(r)} lit />

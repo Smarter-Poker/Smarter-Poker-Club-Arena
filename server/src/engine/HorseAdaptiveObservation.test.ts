@@ -485,6 +485,13 @@ describe('qualified adaptive observations', () => {
       rejected: { unavailable_scope: 1 },
     });
   });
+  it('retains canonical first-level tournament observations and refuses negative levels', () => {
+    const h = clone(hand({ isTournament: true }));
+    (first(h).publicNode as any).tournamentStage.currentLevel = 0;
+    expect(qualifyAdaptiveHand(h, NOW).observations.length).toBeGreaterThan(0);
+    (first(h).publicNode as any).tournamentStage.currentLevel = -1;
+    expect(qualifyAdaptiveHand(h, NOW).observations).toEqual([]);
+  });
   it.each([
     'nlh',
     'flh',

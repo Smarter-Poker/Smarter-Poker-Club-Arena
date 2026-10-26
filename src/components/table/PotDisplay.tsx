@@ -42,7 +42,7 @@ import {
   CHIP_DENOMINATIONS,
   type ChipDenomination,
 } from '../../lib/chipDenominations';
-import { formatTableChips } from '../../utils/format';
+import { formatBigBlinds, formatTableChips } from '../../utils/format';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -133,14 +133,9 @@ function formatAmount(amount: number, bigBlind: number = 0): string {
 }
 
 // Format amount in Big Blinds
+// One shape for every BB figure on the felt: formatBigBlinds in utils/format.
 function formatBB(amount: number, bigBlind: number): string {
-  if (bigBlind <= 0) return formatAmount(amount, bigBlind);
-  const bbs = amount / bigBlind;
-  // Show 1 decimal for fractional BBs, whole number for clean amounts
-  if (bbs === Math.floor(bbs)) {
-    return `${bbs} BB`;
-  }
-  return `${bbs.toFixed(1)} BB`;
+  return formatBigBlinds(amount, bigBlind) ?? formatAmount(amount, bigBlind);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -430,7 +425,7 @@ function PotDisplayComponent({
       }
       role="status"
       aria-live="polite"
-      aria-label={`Pot: ${formatAmount(displayPot, bigBlind)}${streetBets > 0 ? `, ${formatAmount(streetBets, bigBlind)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+      aria-label={`Pot: ${fmt(displayPot)}${streetBets > 0 ? `, ${fmt(streetBets)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
       {/* Main Pot pill — click to toggle chips/BB display */}
       <div

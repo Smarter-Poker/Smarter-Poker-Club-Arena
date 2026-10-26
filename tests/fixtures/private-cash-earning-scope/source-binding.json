@@ -14,7 +14,7 @@
   "reviewed_dependencies": {
     "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql": "cfad133fe5581148709f26ae22dd9430f205fb459b9bc0f9f86eafd3ef86f768",
     "supabase/accounting/weekly-v3/components/20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql": "dd50f34cbf18e3a5fb52b6b3873ef74fceb360a2c815212c52de08d183521cfb",
-    "server/src/services/RakebackSettlerService.ts": "087e5466c7f0ef0bad1cc764c7cbb151c45b7005a6da57418c23f571c7f5a756",
+    "server/src/services/RakebackSettlerService.ts": "c7b8d37a701c2776657464706dc7790f7a0d7714da57eb86cc4bb712da366bb4",
     "tests/fixtures/full-weekly-accounting/tables.json": "0f986db3950d8416e5f2e968972ca03bfdb984bf8aa43267d60b2fce37cf0428",
     "tests/fixtures/full-weekly-accounting/triggers-round-3.json": "383cf9b43093ba5f945a68c9f4f8d1389472e8ce6b1d16f4b18d547a86a0249e"
   },
@@ -212,5 +212,18 @@
       }
     ],
     "reason": "This change sets how soon a halted settler page is tried again and when a deferral resubmission halts it; nothing else in this pinned file changed. The diff is: a new exported haltedPageRetryDelayMs(consecutiveStalls) (60 s for the first halt, doubling for each further halt in a row with no acknowledged page, capped at the 30-minute interval); the field stalledPageRetryAvailable is replaced by consecutiveStalls; runSettlement re-arms the catch-up after every 'halted' result instead of only after progress or the one retry right after a productive cycle, and resets the count when a page is acknowledged or the range is empty; scheduleCatchUp arms its timer with haltedPageRetryDelayMs(this.consecutiveStalls) instead of the fixed CATCH_UP_DELAY_MS; the deferral resubmission loop counts fruitlessResubmissions (resubmissions in a row that returned no receipt) against CASH_DEFERRAL_RESUBMITS instead of every submission; and the durable-refusal retry moves into a new drainCashSourceRetries() that calls fn_retry_cash_accounting_sources with the unchanged p_limit CASH_RETRY_LIMIT again while each call comes back full and settled something, for up to the new exported CASH_RETRY_DRAIN_BUDGET_MS (30 s) a run, stopping at the freeze or service stop, throwing on the first call's failure exactly as before and ending the drain on a later one; with comment blocks. WHY. On 2026-10-19 at 17:02 UTC one fn_credit_agent_commissions_batch call ran 16.1 s (two items each waited the engine role's 8 s lock_timeout on a profiles row another transaction held), past the engine's 15 s client budget; the first page of the cycle halted and the settler waited its full 30-minute interval (cursor 16:23:59 until 17:29:59). Migration 20261019190103 bounds the call to 8 s and defers the items it has no time for, which arrive with progress and must not count as a stuck key. And from 19:48 to 20:36 UTC 12,135 due Midway refusals were retried at one call of 5 per inner run, about 40 an hour (roughly 300 hours to drain), because only a page of new rake started an inner run. WHAT THIS DOES NOT TOUCH. No rate, commission, statistic, payout, attribution, earning club, FETCH_LIMIT, CREDIT_BATCH_SIZE, CASH_RETRY_LIMIT, lane split, read horizon, period recompute, closed-week rule, receipt check or cursor arithmetic changes; the cursor is still saved only after every lane of a page finished; fn_cash_earning_club and the recorded-seat-scope attribution this qualification reviews are not referenced by the diff. REVIEWED AGAINST. The pinned bytes this replaces (d8438ad1...) are origin/main at d78b7aae4 (after #7466). Regression protection lands with it in server/src/services/rakebackWatermark.test.ts ('the catch-up re-arms while backlog remains', 'keeps resubmitting while each call settles something', 'the retry drains a backlog inside one run') and tests/a-cash-source-call-fits-the-engines-patience.law.test.ts."
+  },
+  "digest_settler_throughput_rebinding_20261025": {
+    "base_commit": "21062fe3ac66d9e19faa5f8378e38a3bfe3c8cde",
+    "source_pull_request": 8018,
+    "source_commit": "761271aaf0d0dbfe061bff579f95f9d9df82fd28",
+    "changed_repository_bindings": [
+      {
+        "path": "server/src/services/RakebackSettlerService.ts",
+        "previous_sha256": "087e5466c7f0ef0bad1cc764c7cbb151c45b7005a6da57418c23f571c7f5a756",
+        "sha256": "c7b8d37a701c2776657464706dc7790f7a0d7714da57eb86cc4bb712da366bb4"
+      }
+    ],
+    "reason": "Reviewed the full settler diff while integrating the Oct24 digest repairs: refusal readbacks are batched by their exact receipt/work identities, two disjoint chunk workers share each host-club lane, the cursor waits for all workers and verified receipts, fruitless retry drains rest, and the bounded page drain stops for maintenance. Per-source accounting RPCs, recorded seat-scope attribution, monetary SQL, commission destinations and fn_cash_earning_club are unchanged. Focused receipt/cursor/throughput tests pass; the complete related server selection passed12354 assertions with166 existing skips. This renews only the reviewed dependency identity. SOURCE_CHANGED_UNRUN_PENDING_QUALIFICATION and execution_performed=false are retained; protected native accounting qualification remains required."
   }
 }

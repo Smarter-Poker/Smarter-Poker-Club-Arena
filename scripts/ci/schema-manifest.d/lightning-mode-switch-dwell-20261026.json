@@ -1,0 +1,7 @@
+{
+  "_owner": "lightning-phase5",
+  "_comment": "Declared by migration 20261026110858 (Lightning transition phase 5 of 5: a game stays in its mode long enough to play it). It declares @install-window: daily-maintenance, so it is queued for the 04:00 Chicago maintenance install, not evidence of installation. The migration creates no function and no table; every body change is an md5-guarded anchor substitution into fn_cash_cluster_lightning_drive, fn_cash_cluster_begin_pending_off and fn_lightning_config. The one new object is cash_games.lightning_on_condition_since, the nullable first sighting of the Lightning ON condition.",
+  "tables": [],
+  "functions": [],
+  "columns": { "cash_games": ["lightning_on_condition_since"] }
+}

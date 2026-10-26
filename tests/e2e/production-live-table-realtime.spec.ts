@@ -26,6 +26,7 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import { captureEngineFailureHealth } from './support/liveTableFailureHealth';
 import {
   refreshPreNavigationSelection,
   nextHandAdvanced,
@@ -384,12 +385,25 @@ async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCan
 }
 
 interface OccupiedCashTable {
+  tabName: string;
   candidate: RunningTableCandidate;
   table: EngineTableLiveness;
 }
 
+async function selectCashLobbyTab(page: Page, tabName: string): Promise<void> {
+  const tab = page.getByRole('tab', { name: tabName, exact: true });
+  await expect(tab, `${tabName} cash-game tab is missing`).toBeVisible({ timeout: 8_000 });
+  await tab.click();
+  await expect(tab, `${tabName} cash-game tab did not become active`).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  // Yield the same lobby paint for discovery and for the chosen witness's View action.
+  await page.waitForTimeout(100);
+}
+
 /**
- * Every occupied, running cash table the first productive lobby tab exposes
+ * Occupied, running cash tables across the cash-game lobby tabs
  * (at most CASH_PROGRESS_CANDIDATES), each with the liveness it had when it
  * was chosen. A cash hand is not short: measured 2026-09-29 over 20,488 hands
  * in three hours, p50 30s, p90 87s, p99 149s, max 300s. One table chosen alone
@@ -417,35 +431,40 @@ async function selectOccupiedRunningCashTables(
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 });
 
-  const tabs: Array<string | null> = [null, 'NLH', 'PLO', 'LIMIT'];
+  // Explicit tabs preserve each witness's navigation owner. The initial active
+  // tab can vary, and an unlabelled default witness cannot be restored safely.
+  const tabs = ['NLH', 'PLO', 'LIMIT'];
+  const tables: OccupiedCashTable[] = [];
+  const seen = new Set<string>();
   for (const tabName of tabs) {
-    if (tabName) {
-      const tab = page.getByRole('tab', { name: tabName, exact: true });
-      await expect(tab, `${tabName} cash-game tab is missing`).toBeVisible({ timeout: 8_000 });
-      await tab.click();
-      await expect(tab, `${tabName} cash-game tab did not become active`).toHaveAttribute(
-        'aria-selected',
-        'true'
-      );
-      /* The lobby already holds every table in memory; this only yields one
-         paint for React to replace the filtered rows after the tab click. */
-      await page.waitForTimeout(100);
-    }
-    const candidates = await visibleRunningCashCandidates(page);
+    await selectCashLobbyTab(page, tabName);
+    const candidates = (await visibleRunningCashCandidates(page)).filter((c) => !seen.has(c.id));
     if (candidates.length === 0) continue;
-    const tables: OccupiedCashTable[] = [];
-    let lastHealth: EngineHealth | null = null;
     for (let offset = 0; offset < candidates.length; offset += 32) {
       const batch = candidates.slice(offset, offset + 32);
       const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
-      lastHealth = health;
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-        if (table && tables.length < CASH_PROGRESS_CANDIDATES) tables.push({ candidate, table });
+        if (table && !seen.has(candidate.id) && tables.length < CASH_PROGRESS_CANDIDATES) {
+          seen.add(candidate.id);
+          tables.push({ candidate, table, tabName });
+        }
       }
       if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
     }
-    if (tables.length > 0 && lastHealth) return { tables, health: lastHealth };
+    if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
+  }
+  if (tables.length > 0) {
+    // Tab scanning takes time. Start every contender from the same fresh
+    // health observation, removing tables that departed during discovery.
+    const health = await readEngineHealth(request, {
+      tableIds: tables.map(({ candidate }) => candidate.id),
+    });
+    const fresh = tables.flatMap(({ candidate, tabName }) => {
+      const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
+      return table ? [{ candidate, table, tabName }] : [];
+    });
+    if (fresh.length > 0) return { tables: fresh, health };
   }
 
   throw new Error(
@@ -1694,6 +1713,23 @@ async function observeTournamentBoard(
     }
   } catch (error) {
     if (error instanceof PreHudCandidateAttrition) throw error;
+    if (gameFormat === 'mtt') {
+      // Capture the blocked step before closeout reads can outlast the stall.
+      // This evidence never changes the original assertion or its classification.
+      const failureHealth = await captureEngineFailureHealth(
+        request.get.bind(request),
+        ENGINE_HEALTH_URL,
+        candidate.id
+      );
+      try {
+        await testInfo.attach(`${tag}-engine-at-failure`, {
+          body: Buffer.from(JSON.stringify(failureHealth, null, 2)),
+          contentType: 'application/json',
+        });
+      } catch {
+        console.warn('[MTT continuity] Engine failure evidence could not be attached');
+      }
+    }
     /* Say WHY the case failed, from evidence, before the failure leaves this
        function. Nothing here turns a failure into a pass: a proven natural
        ending routes to another running board (bounded, inside the same case
@@ -1979,6 +2015,9 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     // The engine-progress wait above can outlast the optional invitation's
     // arrival. Own its dismissal before the unchanged View visibility check.
     await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    // Discovery races witnesses from every cash tab and leaves the last tab
+    // active. Restore the winner's tab before looking for its read-only action.
+    await selectCashLobbyTab(page, engineBeforeNavigation.selected.tabName);
     const row = page.locator(`[data-testid="lobby-game-row"][data-id="${candidate.id}"]`);
     if (await row.isVisible()) {
       await row.getByRole('button', { name: /^Details:/ }).click();

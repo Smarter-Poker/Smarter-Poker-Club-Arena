@@ -13,7 +13,9 @@
  * NOTE: "Horses" — NEVER call them anything else.
  */
 
+import { horseSitsWithAutoTopUp } from './HorseTopUpStyle.js';
 import { tableHeldByRetainedHand } from '../engine/retainedHandHolds.js';
+import { compareCashPopulation, isHoldemOrPlo } from './CashHorseAllocation.js';
 import { supabase, seedingSupabase } from './supabase.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -138,13 +140,21 @@ import {
   type FleetPolicy,
 } from './HorseFleetPolicy.js';
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
-import { DEALABLE_MINIMUM, refusesLoneSeat, seatsToDealable } from './HorseLoneTable.js';
+import {
+  DEALABLE_MINIMUM,
+  fillFirstRank,
+  refusesLoneSeat,
+  seatsToDealable,
+} from './HorseLoneTable.js';
 import {
   cashRosterAllows,
   isPloVariant,
   ploRosterAllows,
   refreshPloRoster,
+  getPloPerformance,
+  rosterExemptClub,
 } from './HorsePloRoster.js';
+import { orderMadnessCandidates } from './HorseMadnessSelection.js';
 
 /**
  * Everything `resolveSeatClub` needs to answer "which wallet pays for this
@@ -543,6 +553,44 @@ const SEED_CYCLE_SEATING_BUDGET_MS = Number(
 );
 
 export class HorseFleetManager {
+  /**
+   * Lightning Clusters (cash_games.lightning_enabled), read at most once a
+   * minute, for the PLO5 Auto Top Up seat flag only: a Lightning Cluster
+   * refills through its own pooled auto-rebuy, so a horse never sits there
+   * with the Classic flag on. Null = unread, and an unread set writes no flag.
+   */
+  private lightningClusterRead: { at: number; ids: Set<string> | null } = { at: 0, ids: null };
+
+  private async lightningClusterIds(): Promise<Set<string> | null> {
+    const now = Date.now();
+    if (this.lightningClusterRead.ids && now - this.lightningClusterRead.at < 60_000) {
+      return this.lightningClusterRead.ids;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('cash_games')
+        .select('id')
+        .eq('lightning_enabled', true);
+      if (error) return null;
+      const ids = new Set<string>(((data ?? []) as Array<{ id: string }>).map((r) => String(r.id)));
+      this.lightningClusterRead = { at: now, ids };
+      return ids;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Does this horse sit at this table with Auto Top Up on? (HorseTopUpStyle) */
+  private async sitsWithAutoTopUp(
+    horseId: string,
+    table: { game_variant?: unknown; cluster_id?: string | null }
+  ): Promise<boolean> {
+    if (!horseSitsWithAutoTopUp(horseId, table.game_variant)) return false;
+    if (!table.cluster_id) return true;
+    const lightning = await this.lightningClusterIds();
+    return lightning !== null && !lightning.has(table.cluster_id);
+  }
+
   private isRunning = false;
   private seedInterval: ReturnType<typeof setInterval> | null = null;
   /**
@@ -1103,12 +1151,16 @@ export class HorseFleetManager {
         role?: string | null;
         main_index?: number | null;
         arena?: unknown;
+        bomb_pot_enabled?: boolean | null;
+        big_blind_ante_enabled?: boolean | null;
+        nit_game?: boolean | null;
+        maintain_percent_min?: number | null;
       }>(
         (cursor, want) => {
           let q = supabase
             .from('tables')
             .select(
-              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index'
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index, bomb_pot_enabled, big_blind_ante_enabled, nit_game, maintain_percent_min'
             )
             .is('tournament_id', null)
             .in('status', ['waiting', 'running'])
@@ -2358,11 +2410,26 @@ export class HorseFleetManager {
          read): the walk is the only place a seat is decided, and the order
          below already puts a short-handed human's table first whatever its
          currency. Empty while the arena is closed. */
+      /* A FULLER TABLE FILLS FIRST (Dan 2026-10-23, PLO). Within the same
+         rank the walk used to go by table id, so a scarce pool (the PLO
+         winners) landed two horses on every table and the lobby showed many
+         thin games instead of a few full ones: measured 15:00 CDT, 71 players
+         on 22 of 36 PLO tables. Ranking the table that already has the most
+         players ahead of an emptier one means the pool tops up games people
+         can see are running before it starts another. Same rank only: a
+         short-handed human, an opening feeder and the main order still come
+         first. See fillFirstRank (HorseLoneTable.ts). */
+      const seatedAt = (t: { id: string }) => (seatsByTable.get(t.id) ?? []).length;
       const orderedTables = [...tables, ...diamondTables].sort(
         (a, b) =>
           Number(humanShort(b)) - Number(humanShort(a)) ||
           Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
           clusterRank(a) - clusterRank(b) ||
+          compareCashPopulation(
+            { ...a, occupied: seatsByTable.get(a.id)?.length ?? 0 },
+            { ...b, occupied: seatsByTable.get(b.id)?.length ?? 0 }
+          ) ||
+          fillFirstRank(seatedAt(a), seatedAt(b)) ||
           String(a.id).localeCompare(String(b.id))
       );
 
@@ -2629,6 +2696,7 @@ export class HorseFleetManager {
          are the cycle's live maps, so a seat bought this cycle is visible to
          the next verdict, exactly as before. See HorseSitVerdict. */
       const sitCtx: SitVerdictContext = {
+        bankrollOnlyCashHorse: (id) => cashRosterAllows(id) === true,
         resolveSeatClub: (t, id) => this.resolveSeatClub(membership, t, id),
         sizeBuyIn: (t, id, club, floor) => {
           const telemetry: BankrollEvent[] = [];
@@ -2944,6 +3012,9 @@ export class HorseFleetManager {
           );
           const { fill } = target;
           let { seatTarget } = target;
+          // With fifty cash horses, fill playable Holdem/PLO games instead
+          // of deliberately retaining sparse persona occupancy targets.
+          if (isHoldemOrPlo(table.game_variant)) seatTarget = table.max_players;
           // Activity floor (see fleetBoost above). A full table is already at
           // max and cannot be lifted; this only ever helps a sparse one.
           if (fleetBoost) {
@@ -3030,7 +3101,7 @@ export class HorseFleetManager {
              to be full are filled now and the pacing stays where it still
              reads as human: the sparse quarter, and a human's rescue. */
           const humanNeedsRescue = humanAtTable && currentCount < 4;
-          if (fill !== 'full' && !humanNeedsRescue) {
+          if (fill !== 'full' && !humanNeedsRescue && !isHoldemOrPlo(table.game_variant)) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
           }
           /* ...except the two that make a cluster table dealable (see
@@ -3073,6 +3144,10 @@ export class HorseFleetManager {
              stake gate and the seat's idempotency key below; nothing else. */
           const arenaTable = diamondTableIds.has(String(table.id));
           const candidateHorses = validHorses.filter((h) => {
+            // Supersedes variant, stake and activity persona gates below.
+            // The roster still bounds the pool; bankroll and normal player
+            // admission rules still decide whether each seat is affordable.
+            const bankrollOnly = cashRosterAllows(h.id) === true;
             /* THE DATABASE ALREADY SAID THIS HORSE IS FULL (2026-09-11). It
                refused a buy-in for it at an earlier table in THIS cycle with
                the platform game limit, and nothing here lowers that count.
@@ -3099,7 +3174,7 @@ export class HorseFleetManager {
             /* AN ASSIGNED PILOT HORSE SEATS ONLY IN THE PILOT (2026-10-22).
                New seats only; nothing it already holds is touched. See
                LightningPilotSeatScope. */
-            if (pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
+            if (!bankrollOnly && pilotSeatVerdict(h.id, seatClub) === 'elsewhere') {
               pilotElsewhereDropped++;
               return false;
             }
@@ -3152,11 +3227,12 @@ export class HorseFleetManager {
             // Dan 2026-08-26 game lanes: a third of the stable plays events
             // only (tournaments / spins / heads-up) and never sits at cash.
             const cashOk = arenaTable ? tagAllowsCash(laneTag) : tagAllowsCash(tag);
-            if (cashOk === false) {
+            if (!bankrollOnly && cashOk === false) {
               tagDropped++;
               return false;
             }
-            if (cashOk === undefined && gameLaneFor(h.id) === 'events') return false;
+            if (!bankrollOnly && cashOk === undefined && gameLaneFor(h.id) === 'events')
+              return false;
 
             /* THE VARIANT. Nothing before this restricted it at all, so one
                horse played Omaha-8, short deck and pineapple interchangeably.
@@ -3165,7 +3241,7 @@ export class HorseFleetManager {
                the thinnest limit variant, against 20 NLH tables and a limit
                board trimmed to two. */
             const variantOk = tagAllowsVariant(laneTag, String(table.game_variant ?? ''));
-            if (variantOk === false && !humanNeedsRescue) {
+            if (!bankrollOnly && variantOk === false && !humanNeedsRescue) {
               tagDropped++;
               return false;
             }
@@ -3178,6 +3254,7 @@ export class HorseFleetManager {
                low stakes, 0.50 big blind and under, are open to every horse
                (Dan 2026-10-23 12:59), so the gate reads the table's blind. */
             if (
+              !rosterExemptClub(table.club_id) &&
               isPloVariant(table.game_variant) &&
               ploRosterAllows(h.id, table.game_variant, table.big_blind) !== true
             ) {
@@ -3189,7 +3266,7 @@ export class HorseFleetManager {
                JUST NOT CASH GAMES"). Only the 45-horse active roster sits at
                cash. Their tags already say so; this is the belt, and the
                database seat door is the braces. */
-            if (cashRosterAllows(h.id) === false) {
+            if (!rosterExemptClub(table.club_id) && cashRosterAllows(h.id) === false) {
               tagDropped++;
               return false;
             }
@@ -3199,7 +3276,7 @@ export class HorseFleetManager {
                this, blinds were read solely to size a buy-in, and 64 of 210
                horses sat across multiple stakes in 48 hours, one at 0.10/0.20
                and 25.00/50.00 both. */
-            let stakeOk = tagAllowsStake(tag, Number(table.big_blind));
+            let stakeOk = bankrollOnly ? true : tagAllowsStake(tag, Number(table.big_blind));
             /* A TAG WITH NO GAME LEFT IN IT FALLS THROUGH TO THE BAND
                (2026-09-06). `tagAllowsStake` is exact, and a tag drawn into a
                band whose every rung the operator has closed refuses every
@@ -3348,6 +3425,7 @@ export class HorseFleetManager {
                not once the host is at its curve. Bypassed entirely when a
                human at this table needs the game rescued. */
             if (
+              !bankrollOnly &&
               !hostAllowsNewBody({
                 hostId: String((table as any).club_id ?? ''),
                 horseId: h.id,
@@ -3376,7 +3454,9 @@ export class HorseFleetManager {
             const gameLoad = {
               seats: tablesForHorse?.size ?? 0,
               bookings: bookingLoad.get(h.id) ?? 0,
-              ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),
+              ownCashCeiling: bankrollOnly
+                ? MAX_TABLES_PER_HORSE
+                : tagMaxTables(tag, MAX_TABLES_PER_HORSE),
               /* The tag ceiling is a CASH rule (HorseGameLoad). `seats` above
                  is every open seat on the platform, tournaments included, and
                  subtracting those from a cash ceiling refused 837 tagged
@@ -3582,13 +3662,18 @@ export class HorseFleetManager {
              which is what keeps the fleet's whole roster in play instead of
              the same four hundred names. MAX_TABLES_PER_HORSE still excludes
              anyone at four; this only orders the rest. */
-          const weighted = pool
-            .map((h) => {
+          // All admission/schedule/bankroll gates above still own eligibility.
+          // Madness prefers supported PLO results among that eligible pool;
+          // ordinary tables and unknown evidence keep the existing draw.
+          const weighted = orderMadnessCandidates(
+            pool.map((h) => {
               const at = horseTables.get(h.id)?.size || 0;
               const towardFour = at > 0 && at < MAX_TABLES_PER_HORSE ? 4 : 1;
               return { h, w: Math.random() * towardFour };
-            })
-            .sort((a, b) => b.w - a.w);
+            }),
+            table,
+            getPloPerformance()
+          );
           const selectedHorses = weighted.slice(0, emptySeats.length).map((x) => x.h);
           if (diag) diag.selected = selectedHorses.length;
 
@@ -3726,7 +3811,10 @@ export class HorseFleetManager {
                   cappedThisCycle.add(horse.id);
                 }
               },
-              { diamond: arenaTable }
+              {
+                diamond: arenaTable,
+                autoTopUp: await this.sitsWithAutoTopUp(horse.id, table),
+              }
             );
             if (!success) return false;
             seated++;
@@ -4804,7 +4892,11 @@ export class HorseFleetManager {
         if (seatClub === null) continue;
         /* An assigned pilot horse answers no seat call outside the pilot; the
            offer passes to the next player by its own sweep. */
-        if (pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere') continue;
+        if (
+          cashRosterAllows(offer.user_id) !== true &&
+          pilotSeatVerdict(offer.user_id, seatClub) === 'elsewhere'
+        )
+          continue;
         /* The same door rules as the seeding loop: a horse barred from this
            game does not answer its seat call, and one holding a rejoin floor
            answers with the floor. */
@@ -4826,7 +4918,9 @@ export class HorseFleetManager {
           seatNumber,
           buyIn,
           table.name,
-          seatClub ?? null
+          seatClub ?? null,
+          undefined,
+          { autoTopUp: await this.sitsWithAutoTopUp(offer.user_id, table) }
         );
         if (!ok) continue;
 
@@ -4953,7 +5047,10 @@ export class HorseFleetManager {
        row and the seat into one receipt, so a lost response can be replayed
        instead of paid twice. One fresh key per ATTEMPT, exactly as the
        browser's buy-in mints one per click. Chip seats send nothing new. */
-    opts?: { diamond?: boolean }
+    /* THE SEAT'S AUTO TOP UP FLAG (Dan 2026-10-24). 30% of PLO5 horses sit
+       with Auto Top Up on and 70% add on by hand (HorseTopUpStyle); the flag
+       is written by the same buy-in door a human's switch is. */
+    opts?: { diamond?: boolean; autoTopUp?: boolean }
   ): Promise<boolean> {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): a cycle that began before :53 stops at
     // the first seat after it (a cycle has run for 47 minutes before).
@@ -4980,7 +5077,7 @@ export class HorseFleetManager {
         p_table_id: tableId,
         p_seat_number: seatNumber,
         p_amount: buyIn,
-        p_auto_rebuy: false,
+        p_auto_rebuy: opts?.autoTopUp === true,
         p_club_id: clubId,
         ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
       });
@@ -5002,7 +5099,7 @@ export class HorseFleetManager {
             p_table_id: tableId,
             p_seat_number: seatNumber,
             p_amount: opts?.diamond ? Math.ceil(required) : required,
-            p_auto_rebuy: false,
+            p_auto_rebuy: opts?.autoTopUp === true,
             p_club_id: clubId,
             ...(opts?.diamond ? { p_idempotency_key: randomUUID() } : {}),
           }));

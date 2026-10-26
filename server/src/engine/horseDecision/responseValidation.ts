@@ -1,3 +1,4 @@
+import { correctiveKernelReceiptIsValid } from '../../services/horseCorrectiveReview/kernelReceipt.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
@@ -22,6 +23,8 @@ import {
 import { isJointVariant } from '../multiway/JointInputBinding.js';
 import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
 import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
+import { PLO_PAIRED_BOARD_VARIANTS } from '../HorsePloPairedBoardFold.js';
+import { shortAllInSpot } from '../HorseShortAllInCallFloor.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -627,7 +630,17 @@ function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'am
   return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
 }
 
-function policyGraphIsValid(value: RecordValue): boolean {
+/** The decision's own request, when the caller has it. */
+export interface HorseDecisionReceiptContext {
+  player: SeatPlayer;
+  gameState: HorseGameStateV2;
+}
+
+function policyGraphIsValid(
+  value: RecordValue,
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
+): boolean {
   if (value.policyGraph === undefined) return true;
   const graph = value.policyGraph;
   const order = record(graph) ? horsePolicyOrderForVersion(graph.version) : null;
@@ -659,9 +672,32 @@ function policyGraphIsValid(value: RecordValue): boolean {
       return false;
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
+    // Wager rules only add aggression, with one exception: two owner rules of
+    // 2026-10-25 turn a call, raise or jam into a fold. The PLO4/5/6
+    // paired-board fold (HorsePloPairedBoardFold) and the no-limit hold'em
+    // dominated-hand fold to a big 3-bet (HorseHoldemPremiumAggression). A
+    // fold is the one action that can never put a chip in, and it is
+    // admitted only in those games.
+    const variant = String(expectedVariant ?? '').toLowerCase();
+    const pairedBoardFold =
+      transition.after.action === 'fold' &&
+      // `previous` is the validated predecessor, equal to transition.before.
+      previous !== null &&
+      ['call', 'raise', 'all_in'].includes(previous.action) &&
+      (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
+    // The short all-in call floor (Dan 2026-10-26, HorseShortAllInCallFloor)
+    // turns a fold into a call; its all-in form is already a wager action.
+    // When the request is known, only in the spot that rule covers.
+    const shortAllInCall =
+      transition.after.action === 'call' &&
+      previous !== null &&
+      previous.action === 'fold' &&
+      (context === undefined || shortAllInSpot(context.player, context.gameState) !== null);
     if (
       transition.node === 'wager_rules' &&
       changed &&
+      !pairedBoardFold &&
+      !shortAllInCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;
@@ -679,7 +715,8 @@ function policyGraphIsValid(value: RecordValue): boolean {
 
 export function horseDecisionReceiptIsValid(
   value: unknown,
-  expectedVariant?: string
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
 ): value is HorseDecision {
   if (
     !record(value) ||
@@ -700,12 +737,15 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtilityRefusal !== undefined)
   )
     return false;
-  if (!policyGraphIsValid(value)) return false;
+  if (!policyGraphIsValid(value, expectedVariant, context)) return false;
+  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input
   // to the final rule; the graph itself still binds the executed output.
   const graph = value.policyGraph as HorseDecision['policyGraph'];
-  const beforeNuts = graph?.transitions.find((t) => t.node === 'wager_rules')?.before;
+  const beforeNuts =
+    graph?.transitions.find((t) => t.node === 'corrective_policy')?.before ??
+    graph?.transitions.find((t) => t.node === 'wager_rules')?.before;
   const selected: RecordValue = beforeNuts
     ? { ...value, action: beforeNuts.action, amount: beforeNuts.amount ?? undefined }
     : value;

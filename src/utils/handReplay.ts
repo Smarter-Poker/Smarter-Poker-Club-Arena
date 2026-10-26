@@ -391,6 +391,20 @@ export interface ReplayShowdownRow {
    * in a "Mucked" row is not read as a reveal.
    */
   holePrivate: boolean;
+  /**
+   * Dan 2026-10-25: this hand was MUCKED at the table, and its cards are on
+   * record because it CALLED the river (fn_ca_called_river_mucked_cards).
+   * The surface tags it so it is not read as a hand the player chose to show.
+   */
+  calledMuck?: boolean;
+  /**
+   * Dan 2026-10-25: this hand's LAST river decision was a call (a call, or an
+   * all-in for no more than the level it faced) and it won nothing. Since
+   * 2026-10-26 the engine tables such a hand at the table instead of letting
+   * it muck, so it is on record as shown; the surface tags it "Called" exactly
+   * as it tags a calledMuck row from before that change.
+   */
+  calledRiver?: boolean;
   /** Which board this row is for; 0 unless the hand ran more than once. */
   boardIndex: number;
   boardLabel: string | null;
@@ -557,6 +571,16 @@ const VERB_LABEL: Record<ReplayVerb, string> = {
  * level to the pot on top of what that seat already had in.
  */
 const TO_LEVEL_VERBS = new Set(['bet', 'raise', 'all_in', 'allin']);
+
+/** A seat's own river decision: what records whether it last CALLED there. */
+const RIVER_DECISION_VERBS = new Set<ReplayVerb>([
+  'fold',
+  'check',
+  'call',
+  'bet',
+  'raise',
+  'all_in',
+]);
 
 /**
  * The forced-money verbs that ARE a blind.
@@ -812,6 +836,13 @@ export function buildReplay(input: ReplayInput): ReplayModel {
    * and `pot_size` decides which one was real. See the reconciliation below.
    */
   const inferredReturns: Array<{ key: string; seat: number; amount: number }> = [];
+  /**
+   * Per seat, whether its LAST river decision was a call: a plain call, or an
+   * all-in that put in no more than the level it faced. The engine tables
+   * every such hand (Dan 2026-10-25: "show the hand at call down"), and the
+   * showdown rows tag the ones that lost "Called" (ReplayShowdownRow.calledRiver).
+   */
+  const riverCallBySeat = new Map<number, boolean>();
 
   const settleStreet = () => {
     if (logHasReturns) return;
@@ -892,6 +923,12 @@ export function buildReplay(input: ReplayInput): ReplayModel {
        * carried the flag, and for any importer that does not set it.
        */
       if (!isDead) committed.set(seat, money((committed.get(seat) || 0) + increment));
+    }
+    if (stage === 'river' && verb && RIVER_DECISION_VERBS.has(verb) && !isDead) {
+      const level = committed.get(seat) || 0;
+      let facing = 0;
+      for (const [s, v] of committed) if (s !== seat && v > facing) facing = v;
+      riverCallBySeat.set(seat, verb === 'call' || (verb === 'all_in' && level <= facing + 0.005));
     }
 
     rows.push({
@@ -1220,8 +1257,10 @@ export function buildReplay(input: ReplayInput): ReplayModel {
          whichever is drawn, so the viewer sees what their muck was worth. */
       const hole = publicHole || privateHole;
       const holePrivate = !publicHole && !!privateHole;
+      const calledMuck = !!publicHole && muckedByUser.get(p.userId) === true;
       const made = hole ? bestFive(hole, b, input.gameVariant) : null;
       const won = wonByUser.get(p.userId) || 0;
+      const calledRiver = !!publicHole && won <= 0 && riverCallBySeat.get(Number(p.seat)) === true;
       const inv = invested.get(Number(p.seat)) || 0;
       const onThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}|hi`);
       const lowOnThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}|lo`);
@@ -1243,6 +1282,8 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         position: positions[Number(p.seat)] || '',
         hole,
         holePrivate,
+        calledMuck,
+        calledRiver,
         made: made?.cards || [],
         playing: (made?.cards || []).map(cardKey),
         handName: titleCase(boardName),
@@ -1295,6 +1336,8 @@ export function buildReplay(input: ReplayInput): ReplayModel {
             position: positions[Number(p.seat)] || '',
             hole,
             holePrivate,
+            calledMuck,
+            calledRiver,
             made: low?.cards || [],
             playing: (low?.cards || []).map(cardKey),
             handName: lowOnThisBoard?.handName || low?.name || 'Low',

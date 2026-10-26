@@ -155,14 +155,14 @@
   content: none;
 }
 
-/* Chat artwork occupies x25..230 and y23..223 of its 256px canvas.
-   Match that painted footprint while retaining the same 66px hit area. */
+/* The other gameplay tools normalize their painted frames to the full Lobby
+   footprint. This seat master already fills its canvas, so it needs no inset. */
 .cch-seat-change__face {
   position: absolute;
-  left: 9.765625%;
-  top: 8.984375%;
-  width: 80.078125%;
-  height: 78.125%;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
   container-type: inline-size;
   pointer-events: none;
 }

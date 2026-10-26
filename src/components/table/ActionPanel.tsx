@@ -10,7 +10,7 @@ import { haptic } from '../../services/SoundService';
 import { TapHaptic } from '../haptics/TapHaptic';
 import '../../styles/table-design-tokens.css';
 import './ActionPanel.css';
-import { formatTableChips } from '../../utils/format';
+import { formatBigBlinds, formatTableChips } from '../../utils/format';
 
 interface ActionPanelProps {
   canFold: boolean;
@@ -161,6 +161,15 @@ interface ActionPanelProps {
    * hook read so this component stays presentational and unit-testable.
    */
   showStackInBB?: boolean;
+  /**
+   * The big blind the felt PRINTS against: the same figure as the seats and
+   * the pot, 0 while the table's blinds are not yet known (Dan 2026-10-24).
+   * `bigBlind` above keeps driving the slider grid and raise sizing, which
+   * need a working number; this one only decides what a BB label says, so
+   * the Call button never reads "15 BB" against a guessed blind while the
+   * seats beside it are still in chips. Defaults to `bigBlind`.
+   */
+  displayBigBlind?: number;
 }
 
 // Dan 2026-08-28: bet/raise amounts are never abbreviated — see
@@ -555,7 +564,17 @@ export default function ActionPanel({
   verticalSlider: _verticalSliderDeprecated,
   // Chips is the default and the rule — see the prop's docstring.
   showStackInBB = false,
+  displayBigBlind,
 }: ActionPanelProps) {
+  /* An amount in big blinds when the player reads the table in BB and the
+     felt knows its big blind; null otherwise, and the caller prints chips. */
+  const asBB = (n: number): string | null =>
+    showStackInBB ? formatBigBlinds(n, displayBigBlind ?? bigBlind) : null;
+  /* Every wager figure the player reads - the confirm button, presets, All
+     In, the fixed-limit amount and the slider ticks - goes through the same
+     gate as Call (2026-10-24), so one setting never prints two units. The
+     typed amount field stays in chips: it is what the keyboard edits. */
+  const wagerAmount = (n: number): string => asBB(n) ?? formatChips(n);
   /**
    * The table's indivisible amount: a cent for chips, a whole Diamond at a
    * Diamond table. See the `unit` prop for why the distinction is load-bearing
@@ -1212,7 +1231,7 @@ export default function ActionPanel({
         aria-valuemin={minRaise}
         aria-valuemax={maxRaise}
         aria-valuenow={raiseAmount}
-        aria-valuetext={`${wagerVerb} ${formatChips(raiseAmount)}`}
+        aria-valuetext={`${wagerVerb} ${wagerAmount(raiseAmount)}`}
       />
     );
 
@@ -1274,8 +1293,8 @@ export default function ActionPanel({
               )}
               {/* Big blinds only when the player asked for them — chips are
                   the default everywhere (Dan 2026-08-25). */}
-              {showStackInBB && bigBlind > 0 && !amountTyping && (
-                <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
+              {!amountTyping && asBB(raiseAmount) && (
+                <span className="raise-value__bb">{asBB(raiseAmount)}</span>
               )}
             </div>
             <button
@@ -1309,8 +1328,8 @@ export default function ActionPanel({
                        greyed out every preset a short stack could still shove
                        into. Over-stack now snaps to all-in, per spec 5.2. */
                   disabled={minRaise > maxRaise}
-                  title={`${wagerVerb} ${formatChips(p.value)}`}
-                  aria-label={`${p.label} - ${wagerVerb} ${formatChips(p.value)}`}
+                  title={`${wagerVerb} ${wagerAmount(p.value)}`}
+                  aria-label={`${p.label} - ${wagerVerb} ${wagerAmount(p.value)}`}
                 >
                   {p.label}
                   <TapHaptic disabled={minRaise > maxRaise} radius="10px" />
@@ -1323,8 +1342,8 @@ export default function ActionPanel({
                 // server would reject it, but a button that produces an
                 // error toast is a broken button.
                 disabled={!canAllIn}
-                title={`All In For ${formatChips(allInThreshold)}`}
-                aria-label={`Bet All In For ${formatChips(allInThreshold)}`}
+                title={`All In For ${wagerAmount(allInThreshold)}`}
+                aria-label={`Bet All In For ${wagerAmount(allInThreshold)}`}
               >
                 ALL IN
                 <TapHaptic disabled={!canAllIn} radius="10px" />
@@ -1353,11 +1372,11 @@ export default function ActionPanel({
               onClick={handleConfirmRaise}
               aria-label={
                 raiseAmount >= allInThreshold
-                  ? `All In For ${formatChips(raiseAmount)}`
-                  : `${wagerVerb} ${formatChips(raiseAmount)}`
+                  ? `All In For ${wagerAmount(raiseAmount)}`
+                  : `${wagerVerb} ${wagerAmount(raiseAmount)}`
               }
             >
-              {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
+              {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {wagerAmount(raiseAmount)}
               <TapHaptic radius="14px" />
             </button>
           </div>
@@ -1397,7 +1416,7 @@ export default function ActionPanel({
                     style={{ bottom: `${pct}%` }}
                   >
                     <span className="raise-slider-vertical__tick-label">
-                      {isTop ? 'ALL IN' : formatChips(val)}
+                      {isTop ? 'ALL IN' : (asBB(val)?.replace(' BB', 'BB') ?? formatChips(val))}
                     </span>
                   </div>
                 );
@@ -1415,9 +1434,7 @@ export default function ActionPanel({
                 every other number on the felt already did. */}
           <div className="raise-slider-vertical__caps" aria-hidden="true">
             <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-              {showStackInBB && bigBlind > 0
-                ? `${Math.round(minRaise / bigBlind)}BB`
-                : formatChips(minRaise)}
+              {asBB(minRaise)?.replace(' BB', 'BB') ?? formatChips(minRaise)}
             </span>
           </div>
         </div>
@@ -1508,10 +1525,12 @@ export default function ActionPanel({
               onAction('call');
             }}
             title={isDesktop ? 'Check/Call (C Or W)' : undefined}
-            aria-label={`Call ${formatChips(callAmount)}`}
+            aria-label={`Call ${asBB(callAmount) ?? formatChips(callAmount)}`}
           >
             <span className="action-btn__label">Call</span>
-            <span className="action-btn__amount">{formatChips(callAmount)}</span>
+            <span className="action-btn__amount">
+              {asBB(callAmount) ?? formatChips(callAmount)}
+            </span>
             {showPotOdds && pot > 0 && callAmount > 0 && (
               <span
                 className="action-btn__odds"
@@ -1546,7 +1565,7 @@ export default function ActionPanel({
                 dispatch allInThreshold in August with the note that "sending
                 an amount that contradicts the action is a trap"; the LABEL
                 kept the trap, and the label is the part the player reads. */}
-            <span className="action-btn__amount">{formatChips(allInThreshold)}</span>
+            <span className="action-btn__amount">{wagerAmount(allInThreshold)}</span>
             {isDesktop && <span className="action-btn__shortcut">R</span>}
             <TapHaptic radius="10px" />
           </button>
@@ -1573,7 +1592,7 @@ export default function ActionPanel({
                 is about to make in a sizing panel — it is the only legal wager
                 on this street. Hiding it (correct for no-limit, per the spec
                 note above) would mean tapping blind, so print it. */}
-            {isFixedLimit && <span className="action-btn__amount">{formatChips(minRaise)}</span>}
+            {isFixedLimit && <span className="action-btn__amount">{wagerAmount(minRaise)}</span>}
             {isDesktop && <span className="action-btn__shortcut">R</span>}
             <TapHaptic disabled={!canRaise} radius="10px" />
           </button>

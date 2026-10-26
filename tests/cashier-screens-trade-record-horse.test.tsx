@@ -74,7 +74,7 @@ function mockClub(rows: Array<Record<string, unknown>>) {
   vi.mocked(supabase.rpc).mockImplementation(
     (name: string) =>
       Promise.resolve(
-        name === 'fn_club_trade_ledger' ? { data: rows, error: null } : { data: [], error: null }
+        name === 'fn_cashier_history_feed' ? { data: rows, error: null } : { data: [], error: null }
       ) as never
   );
 }
@@ -114,7 +114,7 @@ async function openRecord() {
   );
   await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', { name: /^Advanced/ }));
-  fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Transaction History' }));
 }
 
 describe('the Trade record prints a treasury-funded seat as a Club Bank send', () => {

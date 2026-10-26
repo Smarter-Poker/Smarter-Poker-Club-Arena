@@ -1,3 +1,32 @@
+import {
+  MEMORY_VARIANTS,
+  memoryVariant,
+  opponentMemoryKey,
+  validOpponentProfile,
+  type DurableOpponentProfile,
+  blendOpponentMemory,
+  opponentMemoryDonors,
+  opponentProfileVersion,
+  type MemoryMode,
+  type MemorySize,
+} from './HorseOpponentMemory.js';
+import {
+  respectWinner,
+  createWinnerReadState,
+  snapshotWinnerReads,
+  runWithWinnerReadState,
+  resetWinnerReads,
+  type HorseWinnerReadState,
+} from './HorseWinnerRead.js';
+import { noteFire } from './BrainTelemetry.js';
+import {
+  riverCallCategoryIsUsable,
+  riverCallConfidenceAboveBaseline,
+  type RiverCallContext,
+  type RiverCallSample,
+  shownRiverCallSamples,
+  finalRiverCallers,
+} from './HorseRiverCallEvidence.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -48,12 +77,14 @@ import {
   barrelNarrowingScale,
   callDownRespectShift,
   exploitHandIncrements,
+  freshExploitCounters,
   looseCallerWidth,
   maniacRaiseWidth,
   mergeExploitRows,
   observeExploitRow,
   openerRangeWidth,
   opponentExploitRead,
+  presumedAggressorRead,
   postflopBluffMod,
   reRaiseLineWidth,
   reRaiseWidth,
@@ -148,6 +179,14 @@ export interface OpponentStats {
   tankBetSD: number;
   /** ... where the shown hand was two pair or better */
   tankBetSDStrong: number;
+  // ── RIVER CALL READS (2026-10-25). Dan ruled that a hand whose last river
+  // decision was a call is shown at showdown, so every player at the table
+  // now sees what an opponent called the river with. Horses learn it too
+  // (CLAUDE.md 10.5): the caller-side mirror of bigBetSD.
+  /** showdowns where their LAST river action was a call and the hand was shown */
+  riverCallSD: number;
+  /** ... where the shown hand was one pair or worse (a light call) */
+  riverCallSDWeak: number;
 }
 
 /** V43: a bet within this many ms of the previous action is a snap. */
@@ -185,6 +224,8 @@ const freshStats = (): OpponentStats => ({
   snapBetSDStrong: 0,
   tankBetSD: 0,
   tankBetSDStrong: 0,
+  riverCallSD: 0,
+  riverCallSDWeak: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -262,6 +303,8 @@ function evictOldest<K>(store: Map<K, unknown> | Set<K>, cap: number): K[] {
 /** A spare, isolated set of HorseMind's state containers (V12.2). Opaque to
  *  callers — create with HorseMind.createSandbox(), use via runInSandbox(). */
 export interface HorseMindSandbox {
+  /** Absent only on predecessor snapshots; never falls through to live reads. */
+  winnerReads?: HorseWinnerReadState;
   stats: Map<string, OpponentStats>;
   seenActions: Set<string>;
   handFlags: Set<string>;
@@ -381,6 +424,8 @@ const SCOPED_FIELDS = [
   'snapBetSDStrong',
   'tankBetSD',
   'tankBetSDStrong',
+  'riverCallSD',
+  'riverCallSDWeak',
 ] as const;
 
 const COUNTER_FIELDS = [
@@ -421,7 +466,12 @@ export class HorseMind {
   private static exploitCounters = new Map<string, ExploitCounters>();
   /** 2026-10-16: the game variant of the decision in flight; it picks the
    *  population envelope the exploit read is judged against. */
+  private static decisionMode: MemoryMode = 'cash';
+  private static durableOpponentMemory = false;
+  private static durableOpponentVersions = new Map<string, number>();
   private static decisionVariant: string | null = null;
+  /** PLO PRESUMPTION: the people at the decision's table; null outside one. */
+  private static decisionHumans: ReadonlySet<string> | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
@@ -753,14 +803,106 @@ export class HorseMind {
    * envelope. Null is the neutrality contract: callers run their exact
    * pre-existing code. Pure: no random draws, no writes.
    */
+  static enableDurableOpponentMemory(): void {
+    this.durableOpponentMemory = true;
+  }
+
+  static hasDurableOpponentProfile(
+    userId: string,
+    variant: string,
+    mode: MemoryMode,
+    size: MemorySize
+  ): boolean {
+    const v = memoryVariant(variant);
+    return !!v && this.exploitCounters.has(opponentMemoryKey(userId, v, mode, size));
+  }
+
+  static importDurableOpponentProfiles(rows: readonly DurableOpponentProfile[]): number {
+    if (this.sandboxDepth > 0 || this.decisionEffectSink)
+      throw new Error('durable profile import outside live boundary');
+    if (!Array.isArray(rows) || rows.length > 10 || rows.some((p) => !validOpponentProfile(p)))
+      throw new Error('invalid durable opponent profile');
+    // A later validated request can activate a worker whose startup probe
+    // preceded installation or the PostgREST cache reload.
+    if (rows.length > 0) this.enableDurableOpponentMemory();
+    let applied = 0;
+    for (const p of rows) {
+      const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
+      const known = this.durableOpponentVersions.get(key);
+      const version = opponentProfileVersion(p);
+      if (this.exploitCounters.has(key) && known !== undefined && known >= version) continue;
+      this.exploitCounters.delete(key);
+      this.exploitCounters.set(key, { ...p.counters });
+      this.durableOpponentVersions.set(key, version);
+      applied++;
+    }
+    while (this.exploitCounters.size > EXPLOIT_ROW_CAP) {
+      const key = this.exploitCounters.keys().next().value!;
+      this.exploitCounters.delete(key);
+      this.durableOpponentVersions.delete(key);
+    }
+    if (this.durableOpponentVersions.size > EXPLOIT_ROW_CAP)
+      for (const key of this.durableOpponentVersions.keys()) {
+        if (!this.exploitCounters.has(key)) this.durableOpponentVersions.delete(key);
+        if (this.durableOpponentVersions.size <= EXPLOIT_ROW_CAP) break;
+      }
+    return applied;
+  }
+
   static opponentRead(userId: string): OpponentExploitRead | null {
     const scope = this.decisionScope;
     if (!scope) return null;
-    return opponentExploitRead(
-      this.exploitCounters.get(`${scope}|${userId}`),
+    const variant = memoryVariant(this.decisionVariant);
+    const size = scope.split(':')[1] as MemorySize;
+    // A NEW TABLE IS NOT A NEW PLAYER (2026-10-24): a thin or missing exact
+    // context borrows the nearest one this worker knows (blendOpponentMemory).
+    const durable = variant
+      ? blendOpponentMemory(
+          this.exploitCounters.get(opponentMemoryKey(userId, variant, this.decisionMode, size)),
+          opponentMemoryDonors(this.decisionMode, size).map(([mode, donorSize]) =>
+            this.exploitCounters.get(opponentMemoryKey(userId, variant, mode, donorSize))
+          )
+        )
+      : undefined;
+    // A KNOWN MANIAC IS A MANIAC AT EVERY TABLE SIZE (2026-10-25): the same
+    // game's sibling table size, read against ITS own envelope, may
+    // corroborate a statistic this size already places past every horse.
+    const family = scope.split(':')[0];
+    const siblings =
+      durable && variant
+        ? opponentMemoryDonors(this.decisionMode, size).map(([mode, donorSize]) =>
+            opponentExploitRead(
+              this.exploitCounters.get(opponentMemoryKey(userId, variant, mode, donorSize)),
+              `${family}:${donorSize}` as ReadScope,
+              this.decisionVariant
+            )
+          )
+        : [];
+    const read = opponentExploitRead(
+      durable ??
+        (this.durableOpponentMemory && variant
+          ? undefined
+          : this.exploitCounters.get(`${scope}|${userId}`)),
       scope,
-      this.decisionVariant
+      this.decisionVariant,
+      siblings
     );
+    if (read?.corroborated) noteFire('opponent_exploit_corroborated');
+    // PLO PRESUMPTION (Dan 2026-10-25): "TAG THEM ALL FROM THE START, UNLESS
+    // OTHERWISE PROVEN DIFFERENTLY" - every person at an Omaha table is read
+    // as an aggressive raiser until their own hands prove otherwise.
+    if (family === 'omaha' && this.decisionHumans?.has(userId)) {
+      const presumed = presumedAggressorRead(
+        read,
+        durable ?? this.exploitCounters.get(`${scope}|${userId}`),
+        scope,
+        this.decisionVariant
+      );
+      if (presumed.outcome === 'presumed') noteFire('plo_human_presumed_aggressive');
+      else if (presumed.outcome === 'disproved') noteFire('plo_human_presumption_disproved');
+      return presumed.read;
+    }
+    return read;
   }
 
   static targetingOf(heroId: string, oppId: string): number {
@@ -804,9 +946,16 @@ export class HorseMind {
   // ── V45 SCOPED READS ────────────────────────────────────────────────────
 
   /** Set by HorseLogic.decide for the decision in flight; null outside one. */
-  static setDecisionScope(scope: ReadScope | null, variant: string | null = null): void {
+  static setDecisionScope(
+    scope: ReadScope | null,
+    variant: string | null = null,
+    mode: MemoryMode = 'cash',
+    humans: readonly string[] | null = null
+  ): void {
+    this.decisionMode = mode;
     this.decisionScope = scope;
     this.decisionVariant = scope ? variant : null;
+    this.decisionHumans = scope && humans ? new Set(humans) : null;
   }
 
   static currentScope(): ReadScope | null {
@@ -921,6 +1070,7 @@ export class HorseMind {
 
   /** Test hook: wipe all memory. */
   static reset(): void {
+    resetWinnerReads();
     this.stats.clear();
     this.seenActions.clear();
     this.handFlags.clear();
@@ -933,6 +1083,9 @@ export class HorseMind {
     this.scoped.clear();
     this.dirtyScoped.clear();
     this.exploitCounters.clear();
+    this.durableOpponentVersions.clear();
+    this.durableOpponentMemory = false;
+    this.decisionMode = 'cash';
     this.decisionScope = null;
     this.decisionVariant = null;
   }
@@ -1016,6 +1169,10 @@ export class HorseMind {
         snapBetSDStrong: keep(existing?.snapBetSDStrong, num(r.snapBetSDStrong)),
         tankBetSD: keep(existing?.tankBetSD, num(r.tankBetSD)),
         tankBetSDStrong: keep(existing?.tankBetSDStrong, num(r.tankBetSDStrong)),
+        // 2026-10-25: persisted from the river-call migration on; a snapshot
+        // older than it reads 0, so keep the larger like the V43 reads.
+        riverCallSD: keep(existing?.riverCallSD, num(r.riverCallSD)),
+        riverCallSDWeak: keep(existing?.riverCallSDWeak, num(r.riverCallSDWeak)),
       });
       applied++;
     }
@@ -1202,7 +1359,8 @@ export class HorseMind {
    */
   static snapshotDecisionReads(
     players: readonly SeatPlayer[],
-    handKey: string | null
+    handKey: string | null,
+    memoryContext?: { variant: string; mode: MemoryMode; size: MemorySize }
   ): HorseMindSandbox {
     const ids = players.map((player) => player.user_id);
     if (
@@ -1215,6 +1373,7 @@ export class HorseMind {
     )
       throw new Error('HorseMind.snapshotDecisionReads: invalid boundary');
     const view = this.createSandbox();
+    view.winnerReads = snapshotWinnerReads(ids);
     for (const id of ids) {
       const stats = this.stats.get(id);
       if (stats) view.stats.set(id, { ...stats });
@@ -1227,6 +1386,30 @@ export class HorseMind {
           if (exploit) view.exploit.set(key, { ...exploit });
         }
       }
+      const game = memoryContext ? memoryVariant(memoryContext.variant) : null;
+      const variants = memoryContext ? (game ? [game] : []) : MEMORY_VARIANTS;
+      const modes: readonly MemoryMode[] = memoryContext
+        ? [memoryContext.mode]
+        : ['cash', 'tournament'];
+      const sizes: readonly MemorySize[] = memoryContext
+        ? [memoryContext.size]
+        : ['hu', 'short', 'full'];
+      for (const variant of variants)
+        for (const mode of modes)
+          for (const size of sizes) {
+            const key = opponentMemoryKey(id, variant, mode, size);
+            const row = this.exploitCounters.get(key);
+            if (row) view.exploit.set(key, { ...row });
+            else if (this.durableOpponentMemory) view.exploit.set(key, freshExploitCounters());
+            // The second look reads exactly what the first did, so the donor
+            // contexts opponentRead may borrow travel with the exact one.
+            if (!memoryContext) continue;
+            for (const [donorMode, donorSize] of opponentMemoryDonors(mode, size)) {
+              const donorKey = opponentMemoryKey(id, variant, donorMode, donorSize);
+              const donor = this.exploitCounters.get(donorKey);
+              if (donor) view.exploit.set(donorKey, { ...donor });
+            }
+          }
       for (const other of ids) {
         const key = `${id}|${other}`;
         const pair = this.pairs.get(key);
@@ -1261,6 +1444,9 @@ export class HorseMind {
     }
     const liveScope = this.decisionScope;
     const liveVariant = this.decisionVariant;
+    const liveMode = this.decisionMode;
+    const liveDurable = this.durableOpponentMemory;
+    this.durableOpponentMemory = false;
     const live = {
       stats: this.stats,
       seenActions: this.seenActions,
@@ -1293,7 +1479,7 @@ export class HorseMind {
     this.decisionScope = null;
     this.decisionVariant = null;
     try {
-      return fn();
+      return runWithWinnerReadState((sandbox.winnerReads ??= createWinnerReadState()), fn);
     } finally {
       this.stats = live.stats;
       this.seenActions = live.seenActions;
@@ -1310,6 +1496,8 @@ export class HorseMind {
       this.sandboxDepth = 0;
       this.decisionScope = liveScope;
       this.decisionVariant = liveVariant;
+      this.decisionMode = liveMode;
+      this.durableOpponentMemory = liveDurable;
     }
   }
 
@@ -1330,7 +1518,10 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: postflop aggression weight + checked-street count for
      *  board-contact conditioning (see HorseEval.simulateEquity). */
-    readOut?: OppPostflopRead
+    readOut?: OppPostflopRead,
+    /** Exact initial forced-money state for live controller histories, which
+     * omit FORCED_BETS_POSTED from actionHistory. Never contains hole cards. */
+    initialPublicMoney?: { pot: number; streetBets: ReadonlyArray<readonly [string, number]> }
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
     const postStagesActed = new Set<string>();
@@ -1355,23 +1546,69 @@ export class HorseMind {
     let lastAggrStage: string | null = null;
     let lastAggrFrac = 0;
     let lastAggrRaised = false;
-    // Pot replay state: recorded call amounts are increments; bet/raise/all_in
-    // amounts are street totals, so increment = amount - actor's street bet.
-    let pot = bigBlind > 0 ? bigBlind * 1.5 : 3; // SB+BB approximation
+    // Live controller history omits forced posts; persisted public history
+    // includes explicit blind/ante records. Prefer captured public nodes when
+    // present, otherwise replay call/post deltas and wager street totals;
+    // never double-count forced money.
+    const forced = history.some((a) =>
+      ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(a.action as string)
+    );
+    const initial =
+      !forced &&
+      initialPublicMoney &&
+      Number.isFinite(initialPublicMoney.pot) &&
+      initialPublicMoney.pot >= 0 &&
+      initialPublicMoney.streetBets.every(
+        ([id, amount]) => typeof id === 'string' && Number.isFinite(amount) && amount >= 0
+      )
+        ? initialPublicMoney
+        : undefined;
+    let pot = forced ? 0 : (initial?.pot ?? (bigBlind > 0 ? bigBlind * 1.5 : 3));
     let curStreet: string = 'preflop';
-    let streetBets = new Map<string, number>();
+    let streetBets = new Map<string, number>(initial?.streetBets);
+    let price = Math.max(bigBlind > 0 ? bigBlind : 0, ...streetBets.values());
+    const userBySeat = new Map(history.map((entry) => [entry.seat, entry.userId]));
     for (const a of history) {
-      const isAggr = isMindAggression(a);
-      const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
       if (a.stage === 'preflop') sawPreflop = true;
       if (a.stage !== curStreet) {
         curStreet = a.stage;
         streetBets = new Map();
+        price = 0;
       }
+      const node = a.publicNode;
+      if (node?.status === 'captured' && node.street === a.stage) {
+        pot = node.pot;
+        price = node.currentBet;
+        for (const [seat, , bet] of node.seats) {
+          const uid = userBySeat.get(seat);
+          if (uid) streetBets.set(uid, bet);
+        }
+      }
+      const kind = a.action as string;
+      const forcedPost = ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(
+        kind
+      );
+      const anyChips = forcedPost || ['bet', 'raise', 'call', 'all_in'].includes(kind);
       const prevBet = streetBets.get(a.userId) || 0;
-      let increment = 0;
-      if (a.action === 'call') increment = a.amount;
-      else if (anyChips) increment = Math.max(0, a.amount - prevBet);
+      if (anyChips && (!Number.isFinite(a.amount) || a.amount < 0)) return null;
+      // Controller calls/posts are paid deltas; bets, raises and all-ins are
+      // absolute street totals (including chips this actor already paid).
+      const targetWager = ['bet', 'raise', 'all_in'].includes(kind);
+      const increment = anyChips ? (targetWager ? a.amount - prevBet : a.amount) : 0;
+      if (increment < -1e-8) return null;
+      const total = prevBet + increment;
+      const isAggr =
+        kind === 'bet' || kind === 'raise' || (kind === 'all_in' && total > price + 1e-8);
+      // Dead forced posts contribute to pot but never raise the live price.
+      const dead = kind === 'ante' || (a as ActionRecord & { dead?: boolean }).dead === true;
+      const priceBefore = price;
+      const liveTotal = dead ? prevBet : total;
+      price = Math.max(price, liveTotal);
+      if (forcedPost) {
+        pot += increment;
+        if (!dead) streetBets.set(a.userId, liveTotal);
+        continue;
+      }
 
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
@@ -1386,14 +1623,14 @@ export class HorseMind {
           // top of their range, driving thin value and river bluffs into a
           // range that is calling. A CHECK is capped; a CALL is not.
           if (a.action === 'check') postStagesActed.add(a.stage);
+          else if (a.action === 'call' || anyChips) postStagesActed.delete(a.stage);
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
             if (a.stage !== lastAggrStage) {
               lastAggrStage = a.stage;
               lastAggrFrac = frac;
-              lastAggrRaised =
-                a.action === 'raise' || (a.action === 'all_in' && streetBets.size > 0);
+              lastAggrRaised = a.action === 'raise' || (a.action === 'all_in' && priceBefore > 0);
             } else {
               lastAggrFrac = Math.max(lastAggrFrac, frac);
               lastAggrRaised = true;
@@ -1637,6 +1874,12 @@ export class HorseMind {
   // ───────────────────────────────────────────────────────────────────────
 
   static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
+    // A PROVEN WINNER IS RESPECTED (2026-10-24, HorseWinnerRead): fewer
+    // bluffs and no thin value against a credible winner; reads unchanged.
+    return respectWinner(this.readExploit(userId, recencyBlend), userId);
+  }
+
+  private static readExploit(userId: string, recencyBlend: boolean): ExploitProfile {
     const legacy = this.legacyExploit(userId, recencyBlend);
     // 2026-10-16 OPPONENT EXPLOIT: a credible read replaces the lifetime
     // profile on the statistics it covers. The bluff read is POSTFLOP-ONLY
@@ -1981,6 +2224,112 @@ export class HorseMind {
    * Build the per-opponent band list for an equity simulation: live (unfolded,
    * not-hero) opponents in table order, each mapped through bandFor().
    */
+  /** Recover the exact initial public posts from the first accepted action's
+   * immutable pre-action node, then replay the controller's mixed amount ABI.
+   * Missing nodes or an incomplete/inconsistent money ledger are unknown;
+   * a blind raiser's initial post cannot be inferred from its final target. */
+  static initialPublicMoney(
+    players: SeatPlayer[],
+    history: ActionRecord[] | undefined,
+    pot: number
+  ): { pot: number; streetBets: Array<[string, number]> } | null {
+    if (!history?.length || !players.length || !Number.isFinite(pot) || pot < 0) return null;
+    if (
+      history.some((a) =>
+        ['sb', 'bb', 'blind', 'ante', 'straddle', 'post', 'kill_blind'].includes(a.action as string)
+      )
+    )
+      return null; // Explicit posting histories replay themselves in bandFor.
+    const cents = (v: number) =>
+      Number.isFinite(v) && v >= 0 && Math.abs(v * 100 - Math.round(v * 100)) < 1e-5
+        ? Math.round(v * 100)
+        : null;
+    const first = history[0].publicNode;
+    if (
+      first?.status !== 'captured' ||
+      first.street !== history[0].stage ||
+      first.actorSeat !== history[0].seat ||
+      first.seats.length !== players.length
+    )
+      return null;
+    if (first.street !== 'preflop' && !(first.street === 'flop' && first.bombPot)) return null;
+    const ids = new Map(players.map((p) => [p.seat, p.user_id]));
+    if (ids.size !== players.length || new Set(ids.values()).size !== players.length) return null;
+    const initialPot = cents(first.pot);
+    if (initialPot === null) return null;
+    const invested = new Map<string, number>(),
+      deadMoney = new Map<string, number>();
+    let bets = new Map<string, number>();
+    const initialBets: Array<[string, number]> = [];
+    for (const [seat, , bet, total, dead] of first.seats) {
+      const uid = ids.get(seat),
+        b = cents(bet),
+        t = cents(total),
+        d = cents(dead);
+      if (!uid || invested.has(uid) || b === null || t === null || d === null || t < b + d)
+        return null;
+      invested.set(uid, t);
+      deadMoney.set(uid, d);
+      bets.set(uid, b);
+      initialBets.push([uid, b / 100]);
+    }
+    if ([...invested.values()].reduce((a, b) => a + b, 0) !== initialPot) return null;
+    let runningPot = initialPot;
+    let street: ActionRecord['stage'] = first.street;
+    for (const action of history) {
+      if (!invested.has(action.userId) || ids.get(action.seat) !== action.userId) return null;
+      if (action.stage !== street) {
+        street = action.stage;
+        bets = new Map();
+      }
+      const node = action.publicNode;
+      if (node?.status === 'captured') {
+        if (
+          node.street !== street ||
+          node.actorSeat !== action.seat ||
+          cents(node.pot) !== runningPot ||
+          node.seats.length !== players.length
+        )
+          return null;
+        const seen = new Set<number>();
+        for (const [seat, , bet, total, dead] of node.seats) {
+          const uid = ids.get(seat);
+          if (
+            !uid ||
+            seen.has(seat) ||
+            cents(bet) !== (bets.get(uid) ?? 0) ||
+            cents(total) !== invested.get(uid) ||
+            cents(dead) !== deadMoney.get(uid)
+          )
+            return null;
+          seen.add(seat);
+        }
+      }
+      if (!['call', 'bet', 'raise', 'all_in'].includes(action.action)) {
+        if (!['check', 'fold', 'discard', 'show', 'muck'].includes(action.action)) return null;
+        continue;
+      }
+      const amount = cents(action.amount),
+        before = bets.get(action.userId) ?? 0;
+      if (amount === null) return null;
+      const delta = action.action === 'call' ? amount : amount - before;
+      if (delta < 0) return null;
+      bets.set(action.userId, before + delta);
+      invested.set(action.userId, invested.get(action.userId)! + delta);
+      runningPot += delta;
+    }
+    if (cents(pot) !== runningPot) return null;
+    for (const player of players) {
+      if (
+        cents(player.returnedUncalled ?? 0) !== 0 ||
+        cents(player.totalInvested) !== invested.get(player.user_id) ||
+        cents(player.deadInvested ?? 0) !== deadMoney.get(player.user_id)
+      )
+        return null;
+    }
+    return { pot: initialPot / 100, streetBets: initialBets };
+  }
+
   static bandsForOpponents(
     heroSeat: number,
     players: SeatPlayer[],
@@ -1990,13 +2339,16 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: parallel per-opponent postflop reads (same order as
      *  the returned bands) for board-contact conditioning. */
-    readsOut?: Array<OppPostflopRead | null>
+    readsOut?: Array<OppPostflopRead | null>,
+    initialPublicMoney?: { pot: number; streetBets: ReadonlyArray<readonly [string, number]> }
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || (p.is_sitting_out && !p.is_all_in)) continue;
       const readOut: OppPostflopRead | undefined = readsOut ? { aggrW: 0, checked: 0 } : undefined;
-      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
+      bands.push(
+        this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut, initialPublicMoney)
+      );
       if (readsOut)
         readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);
     }
@@ -2037,7 +2389,10 @@ export class HorseMind {
     showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null,
     /** V45: the hand's scope (variant family x dealt count), so the deep
      *  reads land in the scoped bucket too. Absent = pooled only. */
-    scope?: ReadScope | null
+    scope?: ReadScope | null,
+    durableExploit = false,
+    riverCallContext?: RiverCallContext,
+    retainedRiverCalls?: readonly RiverCallSample[]
   ): void {
     // V45: settlement runs outside any decision; the scope travels with the
     // hand and is cleared on the way out.
@@ -2181,11 +2536,31 @@ export class HorseMind {
           }
         }
       }
+      // Live public categories and retained per-hand evidence share one
+      // idempotent completion boundary and the same last-river-call rule.
+      if (riverCallCategoryIsUsable(riverCallContext)) {
+        const callers = finalRiverCallers(actions);
+        const samples =
+          retainedRiverCalls ?? shownRiverCallSamples(actions, showdown, riverCallContext!);
+        const counted = new Set<string>();
+        for (const sample of samples) {
+          if (
+            !callers.has(sample.userId) ||
+            counted.has(sample.userId) ||
+            typeof sample.weak !== 'boolean'
+          )
+            continue;
+          counted.add(sample.userId);
+          const s = touch(sample.userId);
+          s.riverCallSD++;
+          if (sample.weak) s.riverCallSDWeak++;
+        }
+      }
       mirror();
       // 2026-10-16 OPPONENT EXPLOIT: one completed hand decays and feeds the
       // per-(scope, player) counters the exploit read is built from. Scoped
       // hands only: a read is always for the game it was learned in.
-      if (scope) this.observeExploitHand(actions, scope);
+      if (scope && !durableExploit) this.observeExploitHand(actions, scope);
     } catch {
       /* full-hand observation is best-effort by contract */
     } finally {
@@ -2248,6 +2623,35 @@ export class HorseMind {
     const s = this.readStats(id);
     if (!s || s.bigBetSD < 5) return null;
     return s.bigBetSDStrong / s.bigBetSD;
+  }
+
+  /** 2026-10-25 RIVER CALL READ: of this player's shown river calls, the
+   *  fraction that were one pair or worse. Null below twelve shown calls. High =
+   *  they call rivers light (bluff them less, value-bet them thinner). Read
+   *  identically for every player, human or horse. A row decoded from a frame
+   *  that predates the counters reads as no sample. */
+  static riverCallLightTendency(id: string, baseline = 0): number | null {
+    // These categories differ greatly by family. Never fall back to pooled
+    // hold'em/Omaha counters while a decision has an explicit scope.
+    const s = this.decisionScope
+      ? this.scoped.get(`${this.decisionScope}|${id}`)
+      : this.stats.get(id);
+    const n = s?.riverCallSD ?? 0;
+    const weak = s?.riverCallSDWeak ?? 0;
+    if (
+      !Number.isFinite(n) ||
+      !Number.isFinite(weak) ||
+      n < 12 ||
+      weak < 0 ||
+      weak > n ||
+      !Number.isFinite(baseline) ||
+      baseline < 0 ||
+      baseline >= 1
+    )
+      return null;
+    // The default is a raw frequency read, including strong-only samples.
+    if (baseline > 0 && !riverCallConfidenceAboveBaseline(n, weak, baseline)) return null;
+    return weak / n;
   }
 
   static tableExploit(

@@ -235,8 +235,8 @@ describe('6. a tag whose every stake names a closed game falls through to the me
 
   it('the fallthrough happens only when NO tagged stake has a game, and only to undefined', () => {
     const gate = SEED.slice(
-      SEED.indexOf('let stakeOk = tagAllowsStake('),
-      SEED.indexOf('if (stakeOk === undefined && !stakeBandAllows(')
+      SEED.indexOf('let stakeOk = bankrollOnly ? true : tagAllowsStake('),
+      SEED.indexOf('const st = book?.states.get(h.id);')
     );
     expect(gate).toMatch(
       /!tag\.preferredStakes\.some\(\(s\) =>\s*stakesWithAGame\s*\.get\(String\(\(table as \{ club_id\?: string \| null \}\)\.club_id \?\? ''\)\)\s*\?\.has\(Number\(s\)\.toFixed\(2\)\)\s*\)/

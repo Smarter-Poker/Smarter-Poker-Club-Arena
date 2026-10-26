@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migration.mjs';
 /**
  * ===========================================================================
  *  APPLY ONE MERGED-BUT-UNAPPLIED MIGRATION, FROM ITS OWN BYTES
@@ -45,22 +46,24 @@
  * Usage:
  *   DATABASE_URL=postgres://... node scripts/ci/apply-recorded-migration.mjs \
  *     --migration 20260922143541_club_and_union_diamond_commerce.sql [--dry-run]
+ * For the exact 20261022223439 journal cover only, --serial-journal-index
+ * requires a supported session-pool connection and verifies worker limit zero
+ * on the owning backend before CREATE INDEX. No global setting is changed.
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { validateSerialJournalIndex, serialJournalConnection, bindSerialJournalIndex } from './serial-journal-index.mjs';
 import { join } from 'node:path';
 import { supersededBy } from './check-migrations-are-live.mjs';
-import {
-  splitConcurrentPreamble,
-  minutesBeforeBreakWindow,
-} from './migration-concurrent-preamble.mjs';
+import { minutesBeforeBreakWindow } from './migration-concurrent-preamble.mjs';
+import { migrationTransactionShape } from './migration-transaction-shape.mjs';
 
 import {
   recoveryRequest,
+  recoveryCatalog,
   cleanupStatement,
   RECOVERY_TRANSIENT_CATALOG,
   validateRecoveryPair,
   recoveryStatement,
-  RECOVERY_CATALOG,
   RECOVERY_SNAPSHOTS,
   validateRecoveryCatalog,
   validateRecoverySnapshots,
@@ -192,22 +195,35 @@ try {
 // because this sends the whole file as a single simple query and an unwrapped
 // file would autocommit statement by statement - up to one ~28s PostgREST
 // schema reload each, and a partial schema if one of them fails.
-if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
-  refused(
-    `${file} does not open with BEGIN; and close with COMMIT; - refusing to apply it outside one transaction`
-  );
-}
 // The one sanctioned exception (migration-concurrent-preamble.mjs): CREATE
 // INDEX CONCURRENTLY statements before BEGIN;, which cannot run inside any
 // transaction block. Each is sent on its own; everything else must still be
-// inside the one transaction.
-const shape = splitConcurrentPreamble(sql);
-if (!shape.ok) refused(`${file}: ${shape.reason}`);
+// inside the one transaction. The rule lives in migration-transaction-shape.mjs,
+// which the merge-time check tests/unit/aMergedMigrationIsInstallable.test.ts
+// shares, so a file the applier would refuse cannot merge.
+const shape = migrationTransactionShape(file, sql);
+if (!shape.ok) refused(shape.reason);
 const preamble = shape.indexes;
+let serialJournalIndex;
+try {
+  serialJournalIndex = validateSerialJournalIndex({
+    enabled: args.includes('--serial-journal-index'), file, sql, preamble,
+    otherModes: Boolean(recovery || batches || SETTLEMENT_LANE || MAINTENANCE_THAW_REPAIR || MAINTENANCE_WINDOW || rakeHistory),
+  });
+} catch (e) { refused(e.message); }
 
 // A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
 // (2026-10-22). A file that declares "-- @install-window: daily-maintenance"
 // is installed only by the window route, and only after these static rules.
+let ownerWindow = null;
+if (args.includes('--owner-window')) {
+  if (!MAINTENANCE_WINDOW) refused('owner window requires the maintained window route');
+  try {
+    ownerWindow = readOwnerMigrationWindow(argValue('--owner-window'), file);
+  } catch (e) {
+    refused(e.message);
+  }
+}
 let windowMigration = false;
 try {
   windowMigration = windowDeclaration(sql) === 'daily-maintenance';
@@ -288,6 +304,9 @@ try {
 }
 if (!['postgres:', 'postgresql:'].includes(connectionURL.protocol))
   refused('database connection protocol is invalid');
+if (serialJournalIndex) {
+  try { connectionURL = serialJournalConnection(connectionURL); } catch (e) { refused(e.message); }
+}
 if (connectionURL.searchParams.has('sslcert') || connectionURL.searchParams.has('sslkey'))
   refused('client-certificate transport requires its maintained qualified route');
 const sslRoot =
@@ -318,6 +337,10 @@ client.on('error', () =>
 
 try {
   await client.connect();
+  await client.query("SET application_name = 'apply-recorded-migration'");
+  const identity = await client.query("SELECT current_setting('application_name') AS name");
+  if (identity.rows[0]?.name !== 'apply-recorded-migration')
+    throw new Error('Installer backend identity did not bind');
 } catch (e) {
   unknown(`could not connect: ${e.message}`);
 }
@@ -401,6 +424,34 @@ console.log(
 // or its thaw refuses DDL outside the fixed :50-:03 minutes too
 // (fn_ca_break_window_refuses_migrations). Read it before sending anything, so
 // a refusal is a sentence here and not an aborted build there.
+// The bounded wait for a refusal that releases on its own. The applier job's
+// timeout (apply-merged-migration.yml) carries this budget plus the queue
+// wait above; tests/unit/aMergedMigrationIsInstallable.test.ts pins both.
+const DDL_ADMISSION_WAIT_MS = shorterOrDefault('APPLY_DDL_ADMISSION_WAIT_MS', 12 * 60_000);
+const DDL_ADMISSION_POLL_MS = shorterOrDefault('APPLY_DDL_ADMISSION_POLL_MS', 15_000);
+// The native installer fixture shortens both so a refusal test does not sit
+// out twelve minutes. An override may only SHORTEN them; nothing in a
+// workflow sets either variable, so production always gets the defaults.
+function shorterOrDefault(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 && value <= fallback ? value : fallback;
+}
+async function waitForDdlAdmission(first) {
+  const deadline = Date.now() + DDL_ADMISSION_WAIT_MS;
+  let last = first;
+  console.log(`[apply]   the database refuses DDL now: ${first}. Waiting up to ${Math.round(DDL_ADMISSION_WAIT_MS / 1000)} s for it to admit the file; nothing is sent meanwhile.`);
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, DDL_ADMISSION_POLL_MS));
+    last = await refusalNow();
+    if (!last) {
+      console.log('[apply]   the database now admits DDL.');
+      return null;
+    }
+  }
+  return last;
+}
 async function refusalNow() {
   try {
     const { rows } = await client.query(
@@ -417,7 +468,9 @@ async function refusalNow() {
   if (MAINTENANCE_WINDOW) {
     let state;
     try {
-      state = (await client.query(WINDOW_STATE_QUERY)).rows[0];
+      state = (
+        await client.query(ownerWindow ? ownerWindowState(ownerWindow, 150) : WINDOW_STATE_QUERY)
+      ).rows[0];
     } catch (e) {
       await client.end().catch(() => {});
       unknown(`could not read the maintenance window state: ${e.message}`);
@@ -438,8 +491,23 @@ async function refusalNow() {
       refused('maintenance thaw repair requires an expired coherent owned freeze');
     }
   } else if (refusal) {
-    await client.end().catch(() => {});
-    refused(`the database would refuse DDL now: ${refusal}. Nothing was sent. Do not loop.`);
+    // A REFUSAL THAT ENDS IN MINUTES IS WAITED OUT, ONCE (2026-10-26). An
+    // announced engine maintenance window or its thaw refuses DDL for a few
+    // minutes, and a merged file dispatched into it was refused and then owned
+    // by nobody: 20261025233013_registered_add_on_breaks_are_sixty_seconds
+    // (run 40252376234) stayed uninstalled. So before sending anything this
+    // re-reads the database's own answer on a fixed cadence for a bounded
+    // time. Nothing is sent until the database admits the file, nothing is
+    // ever sent twice, and a check-only run never waits.
+    const still = DRY_RUN ? refusal : await waitForDdlAdmission(refusal);
+    if (still) {
+      await client.end().catch(() => {});
+      refused(
+        DRY_RUN
+          ? `the database would refuse DDL now: ${still}. Nothing was sent. Do not loop.`
+          : `the database would refuse DDL now, after waiting ${Math.round(DDL_ADMISSION_WAIT_MS / 1000)} s for it: ${still}. Nothing was sent. Dispatch again once it is released; do not loop.`
+      );
+    }
   }
 }
 if (preamble.length > 0 && minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED) {
@@ -463,7 +531,7 @@ if (recovery) {
     const deadline = performance.now() + 600000;
     async function freshAdmission(withTransient) {
       await client.query("SET statement_timeout = '3s'");
-      const original = (await client.query(RECOVERY_CATALOG)).rows;
+      const original = (await client.query(recoveryCatalog(recovery))).rows;
       if (withTransient)
         validateRecoveryPair(
           original,
@@ -503,7 +571,7 @@ if (recovery) {
       await client.query("SET statement_timeout = '3s'");
       if ((await client.query(RECOVERY_TRANSIENT_CATALOG)).rows.length !== 0)
         throw new Error('transient cleanup not proven');
-      validateRecoveryCatalog((await client.query(RECOVERY_CATALOG)).rows, recovery);
+      validateRecoveryCatalog((await client.query(recoveryCatalog(recovery))).rows, recovery);
       console.log(
         `[apply] exact interrupted transient OID ${recovery.transientOid} removed; original OID ${recovery.oid} unchanged`
       );
@@ -512,7 +580,7 @@ if (recovery) {
     await sendOnce(recoveryStatement(recovery));
     await client.query("SET statement_timeout = '3s'");
     const replacement = validateRecoveryCatalog(
-      (await client.query(RECOVERY_CATALOG)).rows,
+      (await client.query(recoveryCatalog(recovery))).rows,
       recovery,
       true
     );
@@ -542,6 +610,15 @@ for (const ix of preamble) {
   try {
     // Session-level and outside any transaction block: CONCURRENTLY requires it.
     await client.query("SET statement_timeout = '600s'");
+    if (serialJournalIndex) {
+      try {
+        await bindSerialJournalIndex(client);
+        console.log('[apply] serial journal backend verified; parallel maintenance workers=0');
+      } catch {
+        await client.end().catch(() => {});
+        refused('serial journal session identity or worker bound unproven. No index was sent.');
+      }
+    }
     await client.query(ix.statement);
     await client.query('RESET statement_timeout');
   } catch (e) {
@@ -613,7 +690,7 @@ try {
     : accountingAdmissionSQL(file, sql, atomicSQL);
   // A window file is never an accounting-admission file (validated above), so
   // the line before returned atomicSQL unchanged; wrap it in the window.
-  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);
+  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL, ownerWindow);
   transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});

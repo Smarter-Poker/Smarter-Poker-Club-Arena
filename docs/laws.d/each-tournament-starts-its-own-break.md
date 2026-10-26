@@ -1,0 +1,3 @@
+# tests/each-tournament-starts-its-own-break.law.test.ts
+
+Dan, 2026-10-25: the five-minute tournament break does not start for a tournament until every hand of THAT tournament is complete, so every tournament starts and stops its own break at its own time. The law pins that the :55 trigger hands each tournament to its own break (its own table drain, its own countdown, its own resume timer, never a shared drain or a sweep of every engine), and that the table's break clock is given the phase and the server's real end time so it reads "Last Hand" until that tournament's countdown actually starts.

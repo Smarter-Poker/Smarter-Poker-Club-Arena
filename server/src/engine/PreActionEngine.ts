@@ -402,10 +402,11 @@ export class PreActionEngine {
         this.queuedActions.delete(key);
       }
     }
-    // Reset all player FSMs for this table back to idle
+    // Reset all player FSMs for this table back to idle. A designed reset at
+    // the hand boundary, not a recovery: `reset` says nothing (StateMachine.reset).
     for (const [key, fsm] of this.playerFSMs) {
       if (key.startsWith(`${tableId}:`)) {
-        fsm.forceState('idle');
+        fsm.reset('idle');
       }
     }
   }

@@ -22,6 +22,18 @@ BEGIN
   EXECUTE replace(v_def,v_old,v_new);
  END IF;
 END $request_audience$;
+-- Dan 2026-10-24 (migration 20261024220301): when an owner, co-owner or admin
+-- accepts or cancels a cash out, the agent it was assigned to is told too.
+DO $decision_audience$ DECLARE v_def text;
+ v_old constant text:=E'unnest(CASE WHEN kind=''hold'' THEN ARRAY[r.player_id] ELSE ARRAY[club.owner_id,r.player_id] END||ARRAY[\n   CASE WHEN kind IN(''approval'',''decline'') THEN actor ELSE assigned END]) x;';
+ v_new constant text:=E'unnest(CASE WHEN kind=''hold'' THEN ARRAY[r.player_id] ELSE ARRAY[club.owner_id,r.player_id] END||ARRAY[\n   CASE WHEN kind IN(''approval'',''decline'') THEN actor ELSE assigned END]\n   ||CASE WHEN kind IN(''approval'',''decline'') AND assigned IS NOT NULL\n        AND EXISTS(SELECT 1 FROM public.profiles ap WHERE ap.id=assigned)\n      THEN ARRAY[assigned] ELSE ARRAY[]::uuid[] END) x;';
+BEGIN
+ SELECT pg_get_functiondef('public.fn_cashier_cashout_transition(text,uuid,uuid,numeric,uuid,uuid,text)'::regprocedure) INTO v_def;
+ IF position(v_new IN v_def)=0 THEN
+  IF position(v_old IN v_def)=0 THEN RAISE EXCEPTION 'cashier fixture failed: decision audience line not found';END IF;
+  EXECUTE replace(v_def,v_old,v_new);
+ END IF;
+END $decision_audience$;
 CREATE FUNCTION pg_temp.cashier_check(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN
  IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'cashier fixture failed: %',label;END IF;
  RAISE NOTICE 'cashier fixture passed: %',label;
@@ -179,6 +191,11 @@ SELECT pg_temp.cashier_check((SELECT agent_wallet_balance=10.25 AND role='super_
  WHERE club_id='e6470000-0000-4000-8000-000000000101' AND user_id='e6470000-0000-4000-8000-000000000004')
  AND (SELECT receipt->>'actor_role'='admin' AND receipt->>'assigned_agent_id'='e6470000-0000-4000-8000-000000000003' FROM cashier_receipts WHERE label='approval'),
  'actual admin actor is distinct from assigned agent and helper-created stored wallet role');
+-- Dan 2026-10-24: the assigned agent is told when somebody else accepts.
+SELECT pg_temp.cashier_check((SELECT array_agg(DISTINCT d.recipient_id ORDER BY d.recipient_id) FROM public.accounting_invoice_deliveries d
+ WHERE d.invoice_id=(SELECT (receipt->>'invoice_id')::uuid FROM cashier_receipts WHERE label='approval'))
+ =ARRAY['e6470000-0000-4000-8000-000000000001','e6470000-0000-4000-8000-000000000002','e6470000-0000-4000-8000-000000000003','e6470000-0000-4000-8000-000000000004']::uuid[],
+ 'an admin acceptance reaches owner, player, accepter and the assigned agent');
 SET CONSTRAINTS ALL IMMEDIATE;
 SET CONSTRAINTS ALL DEFERRED;
 SELECT pg_temp.cashier_actor('e6470000-0000-4000-8000-000000000002');
@@ -202,6 +219,10 @@ INSERT INTO cashier_receipts SELECT 'decline',public.fn_cashout_release_v2((rece
 SELECT pg_temp.cashier_receipt_check(receipt,'decline') FROM cashier_receipts WHERE label='decline';
 SELECT pg_temp.cashier_check((SELECT receipt->'actor_wallet_after'='null'::jsonb FROM cashier_receipts WHERE label='decline'),'declining cashier receives no counterparty balance');
 RESET ROLE;
+SELECT pg_temp.cashier_check(EXISTS(SELECT 1 FROM public.accounting_invoice_deliveries d
+ WHERE d.recipient_id='e6470000-0000-4000-8000-000000000003'
+ AND d.invoice_id=(SELECT (receipt->>'invoice_id')::uuid FROM cashier_receipts WHERE label='decline')),
+ 'an admin cancellation reaches the assigned agent');
 SET CONSTRAINTS ALL IMMEDIATE;
 SET CONSTRAINTS ALL DEFERRED;
 

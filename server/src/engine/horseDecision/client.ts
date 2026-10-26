@@ -1,3 +1,22 @@
+import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
+import {
+  CORRECTIVE_DOMAINS,
+  correctiveDomainKey,
+} from '../../services/horseCorrectiveReview/domain.js';
+import {
+  evidenceDigest,
+  sha256 as correctiveSha256,
+} from '../../services/horseCorrectiveReview/authority.js';
+import {
+  HORSE_PHASE14_DOMAINS,
+  liveHorsePhase14Authorities,
+  horsePhase14AuthorityVerdict,
+} from '../HorsePhase14Authority.js';
+import {
+  horseObserverReadContextFromRequest,
+  type HorseObserverReadContext,
+} from '../HorseObserverReadContext.js';
+import type { DecisionOpponentProfilePacket } from '../../services/HorseOpponentMemory.js';
 import {
   horsePlanBatchBindingIsValid,
   horsePlanBatchBindingMatchesRequest,
@@ -30,7 +49,10 @@ import {
   retireHorseExecutionWitness,
   onHorseExecutionFinalized,
 } from '../HorseExecutionWitness.js';
-import { liveHorsePhase8Authority } from '../HorseQualifiedAuthority.js';
+import {
+  liveHorsePhase8Authority,
+  horseAuthorityReceiptIsWellFormed,
+} from '../HorseQualifiedAuthority.js';
 import { liveHorsePhase10Authority } from '../HorsePhase10Authority.js';
 import { HORSE_PHASE11_VARIANTS, liveHorsePhase11Authorities } from '../HorsePhase11Authority.js';
 import { isOmahaPolicyVariant } from '../omaha/OmahaVariantPolicyPack.js';
@@ -93,7 +115,17 @@ export interface HorseDecisionJobOptions {
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
+  ownPublicHistory?: (context: HorseObserverReadContext) => Promise<unknown>;
   workerFactory?: () => WorkerLike;
+  /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
+  opponentProfiles?: (
+    snapshot: LiveHorseDecisionSnapshot,
+    signal?: AbortSignal
+  ) => Promise<
+    | import('../HorseOpponentMemory.js').DurableOpponentProfile[]
+    | DecisionOpponentProfilePacket
+    | undefined
+  >;
   /** This client's position among its decision-lane peers (LiveHorseDecisionWorkerPool
    * passes it); reaches the spawned worker so its journal writer opens its own
    * archive instead of sharing one with every other shard. Absent is shard 0,
@@ -557,6 +589,7 @@ export class LiveHorseDecisionWorkerClient {
   private startupCancellationInProgress = false;
   private fatalNotified = false;
   private terminationPromise: Promise<void> | null = null;
+  private readonly ownPublicHistory: HorseOwnPublicHistoryCache | null;
   private readonly readyTimer: ReturnType<typeof setTimeout>;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -570,9 +603,17 @@ export class LiveHorseDecisionWorkerClient {
   private phase12WorkerEpoch: string | null = null;
   /** P13.3: epoch of this client's worker Phase 13 holders (one per worker). */
   private phase13WorkerEpoch: string | null = null;
+  private phase14WorkerEpoch: string | null = null;
+  private readonly phase14FastBindings = new Map<
+    string,
+    { inputDigest: string; readFrameDigest: string }
+  >();
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
+    this.ownPublicHistory = options.ownPublicHistory
+      ? new HorseOwnPublicHistoryCache(options.ownPublicHistory)
+      : null;
     // A lane start (re)admits the main scheduler's copy of the committed
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
@@ -581,6 +622,7 @@ export class LiveHorseDecisionWorkerClient {
     for (const variant of HORSE_PHASE11_VARIANTS) liveHorsePhase11Authorities[variant].refresh();
     for (const variant of HORSE_PHASE12_VARIANTS) liveHorsePhase12Authorities[variant].refresh();
     for (const variant of HORSE_PHASE13_VARIANTS) liveHorsePhase13Authorities[variant].refresh();
+    for (const domain of HORSE_PHASE14_DOMAINS) liveHorsePhase14Authorities[domain].refresh();
     this.jobTimeoutMs = Math.max(
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
@@ -710,18 +752,38 @@ export class LiveHorseDecisionWorkerClient {
     signal?: AbortSignal,
     options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
+    const startedAt = Date.now();
+    const captured = structuredClone(snapshot);
+    const context = horseObserverReadContextFromRequest(captured);
+    const callerBudget =
+      typeof options?.deadlineMs === 'number' &&
+      Number.isFinite(options.deadlineMs) &&
+      options.deadlineMs > 0
+        ? options.deadlineMs
+        : this.jobTimeoutMs;
+    // The individual worker owns its public reads. A pooled service result
+    // cannot establish which horse observed it or its original public cutoff.
     const request: FastHorseDecisionRequest = {
-      ...snapshot,
+      ...captured,
       type: 'DECIDE_FAST',
       requestId: this.nextRequestId++,
+      // Never accept a caller-authored history packet through the snapshot.
+      ownPublicHistory: context
+        ? this.ownPublicHistory?.forSnapshot(context, captured.decisionTimeMs)
+        : undefined,
+      ownPublicHistoryState: context ? this.ownPublicHistory?.state(context) : undefined,
     };
     return this.enqueue<FastHorseDecisionResult>(
       request,
       'FAST_RESULT',
       signal,
       false,
-      options?.deadlineMs
-    );
+      Math.max(1, callerBudget - (Date.now() - startedAt))
+    ).then((result) => {
+      if (context)
+        this.ownPublicHistory?.acknowledge(context, result.observerHistoryAckDigest ?? null);
+      return result;
+    });
   }
 
   decideDeep(
@@ -894,6 +956,17 @@ export class LiveHorseDecisionWorkerClient {
         this.retireDecisionEffects(result, 'decision_finalized');
         return Promise.reject(
           new Error(`Horse plan commit refused: Phase 13 authority ${verdict}`)
+        );
+      }
+    }
+    const phase14 = result.decision.correctivePolicy;
+    if (phase14?.applied) {
+      const verdict = horsePhase14AuthorityVerdict(phase14);
+      if (verdict !== 'usable') {
+        noteFire(`phase14_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 14 authority ${verdict}`)
         );
       }
     }
@@ -1248,6 +1321,14 @@ export class LiveHorseDecisionWorkerClient {
     message: HorseDecisionWorkerResponse,
     error: Error
   ): void {
+    if (active.request.type === 'DECIDE_FAST' || active.request.type === 'DECIDE_DEEP')
+      this.phase14FastBindings.delete(
+        JSON.stringify([
+          active.request.generation,
+          active.request.fence,
+          active.request.decisionKey,
+        ])
+      );
     this.retireHead(active);
     this.lastCompletedAt = Date.now();
     this.recoverableRequestErrors += 1;
@@ -1513,7 +1594,11 @@ export class LiveHorseDecisionWorkerClient {
         (message.effects.length > 0 &&
           (!message.decision || !horseReferenceWagerWasRetained(message.decision))))
     ) {
-      this.refuseDecision(active, message, new Error('horse decision worker returned invalid decision effects'));
+      this.refuseDecision(
+        active,
+        message,
+        new Error('horse decision worker returned invalid decision effects')
+      );
       return;
     }
 
@@ -1522,7 +1607,11 @@ export class LiveHorseDecisionWorkerClient {
       active.request.type === 'DECIDE_DEEP' &&
       !horsePlanContextMatchesRequest(message.planContext, active.request)
     ) {
-      this.refuseDecision(active, message, new Error('horse decision worker returned invalid plan context'));
+      this.refuseDecision(
+        active,
+        message,
+        new Error('horse decision worker returned invalid plan context')
+      );
       return;
     }
 
@@ -1537,7 +1626,89 @@ export class LiveHorseDecisionWorkerClient {
         (message.decision.policyFallback !== undefined &&
           message.decision.policyFallback !== 'brain_exception')
       ) {
-        this.refuseDecision(active, message, new Error('horse decision worker returned invalid fallback provenance'));
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse decision worker returned invalid fallback provenance')
+        );
+        return;
+      }
+      const mirroredCorrective = message.phase14Authority;
+      if (
+        mirroredCorrective !== undefined &&
+        (!mirroredCorrective ||
+          typeof mirroredCorrective !== 'object' ||
+          Array.isArray(mirroredCorrective) ||
+          Object.keys(mirroredCorrective).length > 1 ||
+          Object.entries(mirroredCorrective).some(
+            ([domain, receipt]) =>
+              !HORSE_PHASE14_DOMAINS.includes(domain) || !horseAuthorityReceiptIsWellFormed(receipt)
+          ))
+      ) {
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse corrective worker authority mirror invalid')
+        );
+        return;
+      }
+      const claimedCorrective = message.decision.correctivePolicy;
+      if (
+        claimedCorrective &&
+        (!mirroredCorrective?.[claimedCorrective.domain] ||
+          horseJournalJson(mirroredCorrective[claimedCorrective.domain]) !==
+            horseJournalJson(claimedCorrective.authority))
+      ) {
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse corrective authority was not mirrored by its worker')
+        );
+        return;
+      }
+      const correctiveBindingKey = JSON.stringify([
+        active.request.generation,
+        active.request.fence,
+        active.request.decisionKey,
+      ]);
+      let originalCorrectiveBinding = this.phase14FastBindings.get(correctiveBindingKey);
+      if (message.type === 'FAST_RESULT') {
+        this.phase14FastBindings.delete(correctiveBindingKey);
+        const binding = message.phase14OriginalBinding;
+        if (binding !== undefined) {
+          if (
+            !binding ||
+            typeof binding !== 'object' ||
+            Object.keys(binding).sort().join(',') !== 'inputDigest,readFrameDigest' ||
+            !correctiveSha256(binding.inputDigest) ||
+            !correctiveSha256(binding.readFrameDigest) ||
+            binding.inputDigest !== evidenceDigest(active.request)
+          ) {
+            this.refuseDecision(
+              active,
+              message,
+              new Error('horse corrective original input binding invalid')
+            );
+            return;
+          }
+          originalCorrectiveBinding = { ...binding };
+          while (this.phase14FastBindings.size >= 128)
+            this.phase14FastBindings.delete(this.phase14FastBindings.keys().next().value!);
+          this.phase14FastBindings.set(correctiveBindingKey, originalCorrectiveBinding);
+        }
+      } else this.phase14FastBindings.delete(correctiveBindingKey);
+      const corrective = message.decision.correctivePolicy;
+      if (
+        corrective &&
+        (!originalCorrectiveBinding ||
+          corrective.inputDigest !== originalCorrectiveBinding.inputDigest ||
+          corrective.readFrameDigest !== originalCorrectiveBinding.readFrameDigest)
+      ) {
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse corrective decision did not use the FAST original input and reads')
+        );
         return;
       }
       // P10 audit F8: a shadow-only PLO4 receipt (shadow mode, not applied,
@@ -1620,8 +1791,17 @@ export class LiveHorseDecisionWorkerClient {
         delete message.decision.jointPolicy;
         noteFire('phase13_shadow_receipt_binding_dropped');
       }
-      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
-        this.refuseDecision(active, message, new Error('horse decision worker returned invalid policy receipt'));
+      if (
+        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant, {
+          player: active.request.player,
+          gameState: active.request.gameState,
+        })
+      ) {
+        this.refuseDecision(
+          active,
+          message,
+          new Error('horse decision worker returned invalid policy receipt')
+        );
         return;
       }
       // A Phase 6 receipt whose declared coordinate disagrees with the
@@ -1706,6 +1886,86 @@ export class LiveHorseDecisionWorkerClient {
       if (jointReceipt?.authority && isJointVariant(jointReceipt.variant))
         jointReceipt.authority = liveHorsePhase13Authorities[jointReceipt.variant].stamp(
           jointReceipt.authority
+        );
+      if (message.phase14Authority) {
+        for (const [domain, receipt] of Object.entries(message.phase14Authority)) {
+          if (!HORSE_PHASE14_DOMAINS.includes(domain)) continue;
+          this.phase14WorkerEpoch = receipt.epoch;
+          liveHorsePhase14Authorities[domain].observeWorker(receipt);
+        }
+      }
+      const correctiveReceipt = message.decision.correctivePolicy;
+      if (correctiveReceipt?.baselineAuthorities) {
+        const correctiveDomain = CORRECTIVE_DOMAINS.find(
+          (d) => correctiveDomainKey(d) === correctiveReceipt.domain
+        );
+        if (!correctiveDomain) {
+          this.refuseDecision(
+            active,
+            message,
+            new Error('horse corrective baseline domain invalid')
+          );
+          return;
+        }
+        const variant = correctiveDomain.variant;
+        const mirrors = {
+          phase8: message.phase8Authority,
+          phase10: message.phase10Authority,
+          phase11:
+            message.phase11Authority?.[
+              variant as keyof NonNullable<typeof message.phase11Authority>
+            ],
+          phase12:
+            message.phase12Authority?.[
+              variant as keyof NonNullable<typeof message.phase12Authority>
+            ],
+          phase13:
+            message.phase13Authority?.[
+              variant as keyof NonNullable<typeof message.phase13Authority>
+            ],
+        };
+        for (const [owner, proof] of Object.entries(correctiveReceipt.baselineAuthorities)) {
+          if (
+            horseJournalJson(proof) !== horseJournalJson(mirrors[owner as keyof typeof mirrors])
+          ) {
+            this.refuseDecision(
+              active,
+              message,
+              new Error('horse corrective baseline authority was not mirrored')
+            );
+            return;
+          }
+          const gate =
+            owner === 'phase8'
+              ? liveHorsePhase8Authority
+              : owner === 'phase10'
+                ? liveHorsePhase10Authority
+                : owner === 'phase11'
+                  ? liveHorsePhase11Authorities[variant as keyof typeof liveHorsePhase11Authorities]
+                  : owner === 'phase12'
+                    ? liveHorsePhase12Authorities[
+                        variant as keyof typeof liveHorsePhase12Authorities
+                      ]
+                    : liveHorsePhase13Authorities[
+                        variant as keyof typeof liveHorsePhase13Authorities
+                      ];
+          if (!gate) {
+            this.refuseDecision(
+              active,
+              message,
+              new Error('horse corrective baseline domain invalid')
+            );
+            return;
+          }
+          correctiveReceipt.baselineAuthorities[
+            owner as keyof typeof correctiveReceipt.baselineAuthorities
+          ] = gate.stamp(proof);
+        }
+      }
+
+      if (correctiveReceipt?.authority && HORSE_PHASE14_DOMAINS.includes(correctiveReceipt.domain))
+        correctiveReceipt.authority = liveHorsePhase14Authorities[correctiveReceipt.domain].stamp(
+          correctiveReceipt.authority
         );
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
@@ -1804,6 +2064,9 @@ export class LiveHorseDecisionWorkerClient {
       liveHorsePhase12Authorities[variant].forgetWorker(this.phase12WorkerEpoch);
     for (const variant of HORSE_PHASE13_VARIANTS)
       liveHorsePhase13Authorities[variant].forgetWorker(this.phase13WorkerEpoch);
+    for (const domain of HORSE_PHASE14_DOMAINS)
+      liveHorsePhase14Authorities[domain].forgetWorker(this.phase14WorkerEpoch);
+    this.phase14FastBindings.clear();
     this.lastError = errorMessage(error);
     this.phase = 'failed';
     clearTimeout(this.readyTimer);
@@ -1957,6 +2220,9 @@ export class LiveHorseDecisionWorkerClient {
       liveHorsePhase12Authorities[variant].forgetWorker(this.phase12WorkerEpoch);
     for (const variant of HORSE_PHASE13_VARIANTS)
       liveHorsePhase13Authorities[variant].forgetWorker(this.phase13WorkerEpoch);
+    for (const domain of HORSE_PHASE14_DOMAINS)
+      liveHorsePhase14Authorities[domain].forgetWorker(this.phase14WorkerEpoch);
+    this.phase14FastBindings.clear();
     if (!this.terminationPromise) {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }

@@ -57,11 +57,12 @@ jobs:
     outputs:
       should_run: ${{ steps.origin.outputs.should_run }}
       engine_trigger_sha: ${{ steps.origin.outputs.engine_trigger_sha }}
+      client_navigation: ${{ steps.origin.outputs.client_navigation }}
       client_target_sha: ${{ steps.client-target.outputs.sha }}
       verification_sha: ${{ steps.client-target.outputs.verification_sha }}
     steps:
       - name: Checkout trusted publication verification
-        if: github.event_name == 'workflow_run'
+        if: github.event_name == 'workflow_run' || (github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.client_navigation) != 'null')
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -81,9 +82,20 @@ jobs:
           ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
           MOBILE_MULTIRUN_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun) }}
           MOBILE_MULTIRUN_TARGET_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun_target) }}
+          CLIENT_NAVIGATION_JSON: ${{ toJSON(github.event.client_payload.client_navigation) }}
+          CLIENT_NAVIGATION_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = repository_dispatch ]; then
+            if node -e 'const p=JSON.parse(process.env.CLIENT_NAVIGATION_PAYLOAD || "null"); process.exit(p && Object.hasOwn(p,"client_navigation") ? 0 : 1)'; then
+              [ "${CLIENT_NAVIGATION_JSON-null}" = true ] \
+                || { echo '::error::client_navigation must be literal true.'; exit 1; }
+              node scripts/ci/client-navigation-certificate.mjs admit
+              echo 'client_navigation=true' >> "$GITHUB_OUTPUT"
+              echo 'engine_trigger_sha=' >> "$GITHUB_OUTPUT"
+              echo 'should_run=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             if [ "${MOBILE_MULTIRUN_TARGET_JSON-null}" != null ]; then
               { [ "$MOBILE_MULTIRUN_TARGET_JSON" = 3 ] && [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ]; } \
                 || { echo '::error::A targeted natural proof requires numeric target 3, literal mobile true and no engine pin.'; exit 1; }
@@ -383,6 +395,7 @@ jobs:
         run: node scripts/ci/check-club-fk-indexes.mjs
 
       - name: Audit the remaining live schema from trusted code
+        if: needs.publication-gate.outputs.client_navigation != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -392,8 +405,13 @@ jobs:
           node scripts/ci/check-phantom-columns.mjs
           node scripts/ci/check-embed-relationships.mjs
 
+      # The Azure Ubuntu mirror stalled this install for 59 minutes on
+      # 2026-10-26 (97 MB at 27 kB/s) and timed the whole job out; the
+      # primary HTTPS mirror is the shared fix (scripts/ci/ubuntu-apt-mirror.py).
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium webkit --with-deps
 
       # Production must be reachable and serving one exact repository commit
       # before any browser assertion can carry a verdict.
@@ -445,6 +463,13 @@ jobs:
       # specs from that ancestor too. Unknown and divergent provenance fail
       # closed because a mismatched assertion set cannot produce a verdict.
       # ───────────────────────────────────────────────────────────────────
+      # A tooling-only merge can retain an older qualified runtime. Preserve
+      # only this trusted report validator before aligning specs to that runtime.
+      - name: Preserve the closed navigation report validator
+        id: navigation_validator
+        if: needs.publication-gate.outputs.client_navigation == 'true'
+        run: cp scripts/ci/client-navigation-certificate.mjs "$RUNNER_TEMP/client-navigation-certificate.mjs"
+
       - name: Take the specs from the commit production is actually serving
         if: steps.live.outputs.ready == 'true'
         id: align
@@ -573,7 +598,7 @@ jobs:
 
       - name: Verify agent bank and private-data boundaries with the isolated identity
         id: agent_boundary
-        if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -585,6 +610,7 @@ jobs:
       # The standalone template builder requires independent club authority.
       # Reuse the reserved zero-balance identity; save no template or game.
       - name: Prepare isolated standalone template access
+        id: template_access
         if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -596,7 +622,7 @@ jobs:
       # Lightning membership is independent of standalone template topology.
       # A union member club still hosts its authorized operator dashboard.
       - name: Prepare isolated Lightning operator access
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -604,7 +630,7 @@ jobs:
         run: node scripts/ci/production-e2e-account.mjs prepare-lightning-staff
 
       - name: Certify the live cashier database contract
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         # `pg` is a pinned repository dependency. This stays deterministic on
@@ -618,7 +644,7 @@ jobs:
       # the existing disposable zero-balance staff identity and makes no writes.
       - name: Certify the authenticated production notification inbox
         id: notification_inbox
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -631,7 +657,7 @@ jobs:
           --project=chromium --reporter=line,json --workers=1 --retries=0
 
       - name: Preserve the notification verdict before the broader page sweep
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-notification-report
@@ -650,7 +676,7 @@ jobs:
       # profile, never joins a club, and is hard-deleted below.
       - name: Provision an isolated first-run account
         id: first_run_account
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -658,7 +684,7 @@ jobs:
 
       - name: Certify a new iPhone player gets through Complete Your Profile
         id: first_run
-        if: always() && steps.live.outputs.ready == 'true' && steps.first_run_account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.first_run_account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -669,7 +695,7 @@ jobs:
           --project=webkit-first-run --reporter=line,json --workers=1 --retries=0
 
       - name: Hard-delete the isolated first-run account
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -694,7 +720,7 @@ jobs:
       # from an older deployed commit cannot re-introduce the bare comparison.
       - name: Certify the authenticated Lightning operator cold loads
         id: lightning_operator
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -711,7 +737,10 @@ jobs:
               || : > "$1"
           }
           read_release release-bracket/lightning-before.json
+          # Read-only Join Lightning from the member lobby (#7879) rides the same
+          # authenticated account and the same release bracket.
           npx playwright test tests/e2e/production-lightning-operator.spec.ts \
+            tests/e2e/production-lightning-lobby-join.spec.ts \
             --project=chromium --reporter=line,json --workers=1 --retries=0
           rc=$?
           read_release release-bracket/lightning-after.json
@@ -719,7 +748,7 @@ jobs:
 
       - name: Classify the release the Lightning operator certificate ran against
         id: lightning_release
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
         run: |
@@ -763,7 +792,7 @@ jobs:
           esac
 
       - name: Certify the authenticated production Cashier
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena
@@ -785,7 +814,7 @@ jobs:
       # fn_cashier_statement_page on the wire and asserts whichever verdict the
       # server returns; it never clicks Export, so no export job is started.
       - name: Certify the authenticated production Cashier Statements
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena
@@ -806,7 +835,7 @@ jobs:
       # independence and delivered it in one direction only. Run 33394046555:
       # Cashier failed, and thirteen spec files plus tests/e2e/routes never ran.
       - name: Run the specs that need a deployed page
-        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena
@@ -1000,6 +1029,34 @@ jobs:
           echo "stats exit=$stats_rc  financial admin exit=$financial_admin_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  gameplay customization exit=$gameplay_customization_runtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
           exit $rc
 
+      # A closed recovery mode reuses this lane's provenance, fresh identity,
+      # standalone staff fixture and always-cleanup, without the unrelated sweep.
+      - name: Verify only the two client navigation repairs
+        if: needs.publication-gate.outputs.client_navigation == 'true' && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success' && steps.template_access.outcome == 'success'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+        run: |
+          set +e
+          mkdir -p e2e-report
+          PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/navigation-table.json npx playwright test \
+            tests/e2e/production-table-management.spec.ts \
+            --grep '^.*no surface scrolls sideways on a phone$' \
+            --project=chromium --reporter=line,json --workers=1 --retries=0 \
+            --trace=retain-on-failure --output=test-results/navigation-table
+          table_rc=$?
+          PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/navigation-lobby.json npx playwright test \
+            tests/e2e/production-mobile-lobby-chrome.spec.ts \
+            --grep '^.*compact rows open details and filters stay at their original position$' \
+            --project=chromium --project=webkit-footer --reporter=line,json --workers=1 --retries=0 \
+            --trace=retain-on-failure --output=test-results/navigation-lobby
+          lobby_rc=$?
+          node "$RUNNER_TEMP/client-navigation-certificate.mjs" reports e2e-report/navigation-table.json e2e-report/navigation-lobby.json
+          proof_rc=$?
+          [ "$table_rc" -eq 0 ] && [ "$lobby_rc" -eq 0 ] && [ "$proof_rc" -eq 0 ]
+
       # THE RUN MUST NOT PASS BY NOT RUNNING.
       #
       # Everything above can succeed while verifying nothing: Playwright exits 0
@@ -1009,7 +1066,7 @@ jobs:
       # second fact is the one nobody was being told.
       # Keep this small, scoped receipt even when all browser assertions pass.
       - name: Name every skipped mobile check and its exact reason
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         run: >-
           node scripts/ci/report-mobile-e2e-skips.mjs
           e2e-report/mobile-skips.json
@@ -1019,7 +1076,7 @@ jobs:
           e2e-report/sweep.json
 
       - name: Retain named mobile skips on every outcome
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-mobile-skips
@@ -1033,7 +1090,7 @@ jobs:
       # log and the uploaded report, both behind blob storage. Report-only:
       # it never changes the verdict.
       - name: Name every failed test as an annotation
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         run: >-
           node scripts/ci/annotate-e2e-failures.mjs
           e2e-report/notifications.json
@@ -1054,7 +1111,7 @@ jobs:
           e2e-report/sweep.json
 
       - name: Did the suite actually verify production?
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         run: >-
           node scripts/ci/assert-e2e-actually-ran.mjs
           e2e-report/notifications.json
@@ -1081,7 +1138,7 @@ jobs:
       # defect cannot either impersonate or erase the Phase 1 evidence.
       - name: Did every Phase 1 customization journey pass exactly?
         id: phase1_coverage
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         run: >-
           node scripts/ci/phase1-customization-certificate-coverage.mjs
           e2e-report/customization-realtime.json
@@ -1089,7 +1146,7 @@ jobs:
           e2e-report/customization-commerce.json
 
       - name: Retire interrupted assignment qualification fixtures
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -1189,12 +1246,21 @@ jobs:
               ;;
           esac
 
+      - name: Require exact client navigation release and fixture cleanup
+        if: always() && needs.publication-gate.outputs.client_navigation == 'true'
+        env:
+          RELEASE_CERTIFIED: ${{ steps.release_window.outputs.certified }}
+          CLEANUP_OUTCOME: ${{ steps.account_cleanup.outcome }}
+        run: |
+          test "$RELEASE_CERTIFIED" = true
+          test "$CLEANUP_OUTCOME" = success
+
       # The seal's client evidence is the bracket around the three Phase 1
       # journeys (opened and closed in the sweep step above), not the whole
       # job's window: see classifyBracket in production-e2e-provenance.mjs.
       - name: Classify the release the Phase 1 journeys ran against
         id: phase1_release
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
         run: |
@@ -1229,7 +1295,7 @@ jobs:
 
       - name: Classify the Phase 1 customization certificate
         id: phase1_verdict
-        if: always()
+        if: always() && needs.publication-gate.outputs.client_navigation != 'true'
         env:
           PHASE1_RELEASE_CERTIFIED: ${{ steps.phase1_release.outputs.certified }}
           PHASE1_RELEASE_OUTCOME: ${{ steps.phase1_release.outcome }}
@@ -1293,7 +1359,7 @@ jobs:
   # publication, and exact immutable engine certification after engine cutover.
   live-table-e2e:
     needs: publication-gate
-    if: needs.publication-gate.outputs.should_run == 'true'
+    if: needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
     # Preserve the existing prerequisite, maintenance-wait and cleanup margin.
@@ -1442,7 +1508,9 @@ jobs:
 
       - name: Install Chromium and WebKit
         if: steps.engine_gate.outputs.current == 'true'
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install chromium webkit --with-deps
 
       - name: Confirm production is serving, and record what we are testing
         if: steps.engine_gate.outputs.current == 'true'
@@ -1846,9 +1914,11 @@ jobs:
   club-channel-lifecycle-e2e:
     name: Exact engine club channel lifecycle
     needs: publication-gate
-    if: "needs.publication-gate.outputs.should_run == 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
+    if: "needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Up to 15m schedule lead + 12m thaw prerequisite + 15m case/fixture
+    # allowance + setup and reserved-account cleanup, all bounded below.
+    timeout-minutes: 60
     concurrency:
       group: post-deploy-club-channel-lifecycle-production
       cancel-in-progress: false
@@ -1863,7 +1933,13 @@ jobs:
       - name: Install locked verifier dependencies
         run: npm ci --ignore-scripts
       - name: Install maintained Chromium verifier
-        run: npx playwright install --with-deps chromium
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
+      - name: Wait for the exact engine to finish thaw before channel certification
+        env:
+          EXPECTED_ENGINE_SHA: ${{ github.event.client_payload.engine_sha }}
+        run: node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"
       - name: Provision isolated lifecycle staff account
         id: account
         env:
@@ -2048,7 +2124,7 @@ jobs:
       - production-e2e
       - live-table-e2e
       - phase1-customization-cutover-seal
-    if: ${{ always() && needs.publication-gate.result != 'skipped' }}
+    if: ${{ always() && needs.publication-gate.result != 'skipped' && needs.publication-gate.outputs.client_navigation != 'true' }}
     name: This verification admits its own verdict to the operational inbox
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -2122,3 +2198,71 @@ jobs:
           fi
           export UNOWED_LANES
           node scripts/ci/record-post-deploy-verdict.mjs
+
+  # A RUN THAT TESTED NOTHING DOES NOT SAY SUCCESS (2026-10-26).
+  #
+  # When the publisher this run listens to was replaced before it reached the
+  # origin, the gate above stands down: it succeeds, leaves should_run empty,
+  # every lane skips, and the verdict recorder correctly records nothing. But
+  # GitHub then concluded the whole run `success` - "Post-Deploy E2E <sha>"
+  # green for a release no browser ever looked at. check-main-is-green.mjs
+  # steps over `cancelled` and `skipped` runs precisely because they carry no
+  # verdict (tests/a-skipped-run-is-not-a-green-run.test.ts), and it believed
+  # these. Measured 2026-10-25: failed verification 40242809027 was followed by
+  # stand-down 40243837996 concluding `success`, which the detector would read
+  # as main recovering.
+  #
+  # So once the recorder has confirmed the stand-down, this job cancels its
+  # own run. `cancelled` is the conclusion the estate already reserves for
+  # "superseded by a newer publish" (CLAUDE.md 10.83), so nothing pages and
+  # nothing mistakes it for a pass. It runs last, after the recorder, so the
+  # recorder never sees a cancelled gate (which it rightly treats as a fault).
+  # If the cancellation cannot be made, the run fails out loud rather than
+  # falling back to a silent `success`.
+  stood-down-is-not-green:
+    name: A stood-down run is marked superseded, not passed
+    needs:
+      - publication-gate
+      - post-deploy-verdict
+      - club-channel-lifecycle-e2e
+    # `!cancelled()`, never `always()` (2026-10-26). GitHub does not stop an
+    # `always()` job when its run is cancelled, so on main runs 40268560267 and
+    # 40269218566 this step's own cancel was accepted, the run was marked
+    # cancelled, and the step then sat out its 300 s guard and reported
+    # failure. `!cancelled()` still lets the job evaluate past skipped needs,
+    # and its own cancellation stops it, as ci.yml's heavy jobs do.
+    if: >-
+      !cancelled() &&
+      github.event_name == 'workflow_run' &&
+      needs.publication-gate.result == 'success' &&
+      needs.publication-gate.outputs.should_run != 'true' &&
+      needs.post-deploy-verdict.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      actions: write
+    steps:
+      - name: Retire this run as superseded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -uo pipefail
+          {
+            echo '### Superseded, not verified'
+            echo
+            echo "Publisher run $SOURCE_RUN_ID was replaced before it reached the origin, so nothing was published and no browser ran. This run is cancelled so it can never read as a passed verification; the newer publisher's own run carries the verdict."
+          } >> "$GITHUB_STEP_SUMMARY"
+          for attempt in 1 2 3; do
+            if gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/cancel" > /dev/null; then
+              echo "Cancellation accepted for run $RUN_ID; the runner stops this step when it lands."
+              sleep 300
+              echo "::error::Run $RUN_ID was still running 300 s after its cancellation was accepted, so it could not be marked superseded."
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::GitHub refused to cancel run $RUN_ID three times, so a stood-down run could not be marked superseded."
+          exit 1

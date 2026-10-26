@@ -166,16 +166,19 @@ const SHELL_FRESH_RACE_MS = 300;
 // Cache storage is optional. Bound open + match together with the existing
 // freshness allowance so unavailable storage cannot hold a real request forever.
 async function lookupCachedResponse(cacheName, request) {
+  // Retain this one read's answer even when its admission budget expires.
+  // A slow cache may finish while the genuine network request is in flight.
+  const result = {};
   let timer;
   try {
     return await Promise.race([
       Promise.resolve().then(async () => {
-        const cache = await caches.open(cacheName);
-        const cached = await cache.match(request);
-        return { cache, cached };
-      }).catch(() => ({})),
+        result.cache = await caches.open(cacheName);
+        result.cached = await result.cache.match(request);
+        return result;
+      }).catch(() => result),
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve({}), SHELL_FRESH_RACE_MS);
+        timer = setTimeout(() => resolve(result), SHELL_FRESH_RACE_MS);
       }),
     ]);
   } finally {
@@ -198,7 +201,8 @@ function cacheAssetResponse(event, cache, response, cacheName, maxEntries) {
 }
 
 async function shellFromCache(event) {
-  const { cache, cached } = await lookupCachedResponse(CACHE_NAME, SHELL_KEY);
+  const lookup = await lookupCachedResponse(CACHE_NAME, SHELL_KEY);
+  const { cache, cached } = lookup;
 
   const revalidate = fetch(event.request, { cache: 'no-cache' })
     .then((response) => {
@@ -249,7 +253,11 @@ async function shellFromCache(event) {
   // the only path that waits on the network, and it is once per device.
   const fresh = await revalidate;
   if (fresh && fresh.ok) return fresh;
+  // Do not discard a genuine shell that the original cache read delivered
+  // after admission timed out. No second read, request, or extra delay.
+  if (lookup.cached) return lookup.cached;
   const { cached: offline } = await lookupCachedResponse(CACHE_NAME, '/hub/club-arena/offline.html');
+  if (lookup.cached) return lookup.cached;
   if (offline) return offline;
   return fresh || fetch(event.request);
 }

@@ -77,7 +77,7 @@ describe('the two numbers, and nothing between them', () => {
       path.join(root, 'src/components/table/VpipRequirementBadge.tsx'),
       'utf8'
     );
-    expect(badge).toMatch(/ALLOWED_VPIP_REQUIREMENTS[^=]*=\s*\[30, 50\]/);
+    expect(badge).toMatch(/ALLOWED_VPIP_REQUIREMENTS[^=]*=\s*\[30, 40, 50\]/);
   });
 
   it('the create flow no longer offers a floor the server would overwrite', () => {

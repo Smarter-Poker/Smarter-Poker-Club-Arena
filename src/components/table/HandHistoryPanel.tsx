@@ -295,10 +295,14 @@ function handToText(hand: HandRecord): string {
   for (const r of m.showdown) {
     if (winnerIds.has(r.userId) || said.has(r.userId)) continue;
     said.add(r.userId);
+    /* Dan 2026-10-25: a hand that called the river and was mucked is on
+       record with its cards, and still says it mucked. */
     lines.push(
-      r.hole
-        ? `${r.name} showed ${r.handName}${r.holePrivate ? ' (yours, not shown)' : ''}`
-        : `${r.name} mucked`
+      r.calledMuck
+        ? `${r.name} mucked ${r.handName} (called the river)`
+        : r.hole
+          ? `${r.name} showed ${r.handName}${r.holePrivate ? ' (yours, not shown)' : ''}${r.calledRiver ? ' (called the river)' : ''}`
+          : `${r.name} mucked`
     );
   }
   const hero = m.players.find((p) => p.userId === hand.heroId);

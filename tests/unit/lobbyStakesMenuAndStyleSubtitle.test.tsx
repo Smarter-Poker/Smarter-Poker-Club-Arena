@@ -111,7 +111,7 @@ describe('the Game Style filter', () => {
   });
 
   it('is offered on every cash tab, in the vocabulary order, and on no tournament tab', () => {
-    expect(CASH_STYLES.map((s) => s.key)).toEqual(['classic', 'action', 'madness']);
+    expect(CASH_STYLES.map((s) => s.key)).toEqual(['classic', 'madness', 'straight_madness']);
     for (const tab of ['HOLDEM', 'OMAHA', 'LIMIT'] as const) {
       expect(FILTER_SPECS[tab].styles).toBe(CASH_STYLES);
     }
@@ -142,11 +142,15 @@ describe('the Game Style filter', () => {
       HOLDEM: { ...emptyFilterValue(spec), styles: ['madness', 'turbo'] },
     });
     expect(junk.HOLDEM?.styles).toEqual(['madness']);
+    const old = sanitizeStore({
+      HOLDEM: { ...emptyFilterValue(spec), styles: ['action', 'madness'] },
+    });
+    expect(old.HOLDEM?.styles).toEqual(['madness']);
   });
 
   it('the club home hands the row its template and the sheet has a Game Style section', () => {
     const page = read('src/pages/ClubHomePage.tsx');
-    expect(page).toMatch(/style: table\.cluster_template \?\? null,/);
+    expect(page).toMatch(/style: cashStyleKeyOf\(table as unknown as LobbyTableRow\),/);
     expect(page).toMatch(/styleChoices: sSpec\.styles,/);
     expect(page).toMatch(
       /gameType === 'HOLDEM' \|\| gameType === 'OMAHA' \|\| gameType === 'LIMIT'/
@@ -169,10 +173,18 @@ function renderLobby(selected: string[] = [], onStylesChange = vi.fn()) {
     <MemoryRouter>
       <LobbyTable
         entries={[
-          cashEntry(table({ id: 'a', name: 'NLH 1/2 Classic', cluster_template: 'classic' })),
+          cashEntry(
+            table({
+              id: 'a',
+              cluster_id: 'g1',
+              name: 'NLH 1/2 Classic',
+              cluster_template: 'classic',
+            })
+          ),
           cashEntry(
             table({
               id: 'b',
+              cluster_id: 'g2',
               name: 'NLH 2/5 Action',
               small_blind: 2,
               big_blind: 5,
@@ -199,6 +211,19 @@ function renderLobby(selected: string[] = [], onStylesChange = vi.fn()) {
   return { ...utils, bar, chip, menu, onStylesChange };
 }
 
+describe('Lightning Games lobby identity', () => {
+  it('replaces the dot with the painted bolt only for Lightning rows, including legacy aliases', () => {
+    renderLobby();
+    const icon = screen.getByRole('img', { name: 'Lightning Games' });
+    expect(icon.getAttribute('src')).toContain('lightning_bolt-192-242cf8769546.webp');
+    expect(icon.closest('tr')?.getAttribute('data-cash-format')).toBe('madness');
+    expect(document.querySelector('tr[data-cash-format="classic"] .lt-lightning-icon')).toBeNull();
+    expect(read('src/components/lobby/ClubLobbyCommandTop.css')).toContain(
+      "tr[data-cash-format='madness'] td.lt-col-name::before"
+    );
+  });
+});
+
 describe('the Stakes heading on the phone sort bar', () => {
   it('is a menu trigger, closed until pressed', () => {
     const { chip, menu } = renderLobby();
@@ -207,7 +232,7 @@ describe('the Stakes heading on the phone sort bar', () => {
     expect(menu()).toBeNull();
   });
 
-  it('opens to All, the three styles in order, then High To Low and Low To High', () => {
+  it('opens to All, the two styles in order, then High To Low and Low To High', () => {
     const { chip, menu } = renderLobby();
     fireEvent.click(chip);
     const m = menu();
@@ -215,15 +240,22 @@ describe('the Stakes heading on the phone sort bar', () => {
     const items = within(m!)
       .getAllByRole('button')
       .map((b) => b.textContent?.trim());
-    expect(items).toEqual(['All', 'Classic', 'Action', 'Madness', 'High To Low', 'Low To High']);
+    expect(items).toEqual([
+      'All',
+      'Classic',
+      'Lightning Games',
+      'Madness',
+      'High To Low',
+      'Low To High',
+    ]);
     expect(within(m!).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('a style toggles into the saved selection; All clears it and closes', () => {
     const { chip, menu, onStylesChange } = renderLobby(['classic']);
     fireEvent.click(chip);
-    fireEvent.click(within(menu()!).getByRole('button', { name: 'Action' }));
-    expect(onStylesChange).toHaveBeenLastCalledWith(['classic', 'action']);
+    fireEvent.click(within(menu()!).getByRole('button', { name: 'Lightning Games' }));
+    expect(onStylesChange).toHaveBeenLastCalledWith(['classic', 'madness']);
     fireEvent.click(within(menu()!).getByRole('button', { name: 'Classic' }));
     expect(onStylesChange).toHaveBeenLastCalledWith([]);
     expect(menu()).not.toBeNull();
@@ -288,14 +320,14 @@ describe('the Stakes heading on the phone sort bar', () => {
     fireEvent.click(chip);
     expect(menu()).not.toBeNull();
 
-    const action = within(menu()!).getByRole('button', { name: 'Action' });
+    const action = within(menu()!).getByRole('button', { name: 'Lightning Games' });
     fireEvent.pointerDown(action);
     expect(
       menu(),
       'the menu must survive the pointerdown that precedes its own click'
     ).not.toBeNull();
     fireEvent.click(action);
-    expect(onStylesChange).toHaveBeenLastCalledWith(['action']);
+    expect(onStylesChange).toHaveBeenLastCalledWith(['madness']);
   });
 
   it('without style choices the Stakes chip is a plain sort toggle, as before', () => {
@@ -324,8 +356,10 @@ describe('the desktop Stakes heading carries the same menu', () => {
     expect(th).toMatch(/col\.key === 'stakes' && hasStakesMenu && stakesMenuOpen/);
     expect(th).toMatch(/onSort=\{\(dir\) => applySort\(COL_STAKES, dir\)\}/);
     expect(src).toMatch(/const applySort = \(col: ColumnDef, dir: SortDir\)/);
+    // Persisted with the same write, then reported so the filter sheet's chip
+    // follows the heading (lobbySortBridge, 2026-10-24).
     expect(src).toMatch(
-      /writeSort\(clubId, category, next\);\s*\};\s*\n\s*const handleHeaderClick/
+      /writeSort\(clubId, category, next\);\s*onHeadingSort\?\.\(next\.key, next\.dir\);\s*\};\s*\n\s*const handleHeaderClick/
     );
   });
 });

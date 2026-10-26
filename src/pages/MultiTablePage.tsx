@@ -100,7 +100,6 @@ import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 import { openInBrowser } from '../lib/openExternal';
 import { isNativePlatform } from '../lib/appBase';
 import { parseTileRaiseBounds, tileAllInTo, tilePotRaiseTo } from '../utils/tileRaiseSizing';
-import LightningDecisionQueue from '../components/lightning/LightningDecisionQueue';
 import {
   lightningUrgencyByRoom,
   lightningDecisions as readLightningDecisions,
@@ -114,7 +113,8 @@ import {
   lightningCapabilities,
 } from '../lightning/lightningCapabilities';
 import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
-import { getLightningPoolSession, lightningRoomPath } from '../lightning/lightningSession';
+import { getLightningPoolSession } from '../lightning/lightningSession';
+import { anchorsShownByOpenRooms } from '../lightning/lightningAnchorTabs';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -1089,7 +1089,7 @@ export default function MultiTablePage() {
                 // Dan 2026-08-21: game_type + max_players come along so a restored
                 // tab wears its game code on the FIRST paint, not a second later.
                 .select(
-                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
+                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id, cluster_id'
                 )
                 .in('id', ids)
             : { data: [], error: null };
@@ -1102,7 +1102,8 @@ export default function MultiTablePage() {
         const retainedReportTabs = await reportRemovedTournamentSeats(
           previousSeatedIds.filter((id) => !ids.includes(id)),
           user.id,
-          isCurrent
+          isCurrent,
+          new Set(tblRows.map((row) => row.tournament_id).filter((id): id is string => !!id))
         );
         if (!isCurrent()) return;
         reconciliationQueued = true;
@@ -1112,7 +1113,14 @@ export default function MultiTablePage() {
           const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
           const known = new Set(survivors.map((t) => t.id));
           const room = Math.max(0, MAX_TABLES - survivors.length);
-          const candidates = ids.filter((id) => !known.has(id));
+          /* Lightning: an anchor seat whose room tab is open is already shown
+             (see lightning/lightningAnchorTabs.ts). */
+          const anchorsShown = anchorsShownByOpenRooms(
+            tblRows ?? [],
+            survivors.map((t) => t.id),
+            (tabId) => getLightningPoolSession(tabId)?.clusterId
+          );
+          const candidates = ids.filter((id) => !known.has(id) && !anchorsShown.has(id));
           /**
            * Dan 2026-08-20 (audit): this used to `.slice(0, room)` straight off
            * the raw query order — effectively an arbitrary four when a player had
@@ -1829,6 +1837,12 @@ export default function MultiTablePage() {
       setActiveIndex(slot.index);
     }
   );
+
+  // A leave queued behind its hand has now closed the seat: recount the cap.
+  useMasterBusSubscription('SEAT_CASHED_OUT', () => {
+    if (!user?.id || seatReadScopeRef.current.userId !== user.id) return;
+    requestSeatResync();
+  });
 
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
@@ -4878,27 +4892,12 @@ export default function MultiTablePage() {
     [navigate]
   );
 
-  /* LIGHTNING PHASE 8: THE DECISION QUEUE. Every Lightning room where the
-     player owes a decision, from the engine's own announcements. The strip
-     and the urgency outline only SIGNAL; the view moves from the player's tap
-     on a queue entry (handleLightningFocus), which is a tab select like any
-     other (CLAUDE.md 10.6). */
+  // Existing table tabs retain urgency without a duplicate decision strip.
   const lightningDecisions = useLightningDecisions();
   const lightningUrgency = useMemo(
     () => lightningUrgencyByRoom(lightningDecisions, serverNow()),
     [lightningDecisions]
   );
-  const handleLightningFocus = useCallback(
-    (roomId: string) => {
-      if (tablesRef.current.some((t) => t.id === roomId)) {
-        handleTabSelect(roomId);
-        return;
-      }
-      navigate(lightningRoomPath(roomId, getLightningPoolSession(roomId)?.meta ?? null));
-    },
-    [handleTabSelect, navigate]
-  );
-
   // ─── Render ──────────────────────────────────────────────────────────
   if (tables.length === 0) {
     // Hidden with nothing mounted: render nothing at all.
@@ -5368,15 +5367,6 @@ export default function MultiTablePage() {
             </div>
           </>
         )}
-
-        {/* LIGHTNING PHASE 8: rooms owing a decision, most urgent first; a tap
-            focuses one. Renders nothing while nothing is owed elsewhere. */}
-        {!hidden ? (
-          <LightningDecisionQueue
-            activeRoomId={tables[activeIndex]?.id ?? null}
-            onFocus={handleLightningFocus}
-          />
-        ) : null}
 
         {/* Tile View Grid or Swipe Container */}
         {isTileView && tables.length > 1 ? (

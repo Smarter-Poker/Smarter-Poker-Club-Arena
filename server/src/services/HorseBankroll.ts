@@ -315,7 +315,10 @@ export function topUpAllowance(args: {
 
   // A reload under one big-blind-ish sliver is not a reload.
   if (allowed < Math.max(1, minBuyIn * 0.1)) return 0;
-  return Math.floor(allowed * 100) / 100;
+  // Remove only binary representation error at a cent boundary. A genuine
+  // fractional-cent cap (8.039, for example) still floors to 8.03.
+  const cents = allowed * 100;
+  return Math.floor(cents + Number.EPSILON * Math.max(1, Math.abs(cents))) / 100;
 }
 
 /**

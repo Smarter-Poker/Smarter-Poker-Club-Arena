@@ -412,7 +412,7 @@ describe('the lobby', () => {
     mocks.rpc.mockResolvedValue({ data: lobby(), error: null });
     render(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('NLH 0.10/0.25 Action')).toBeTruthy());
-    expect(screen.getByText('ACTION')).toBeTruthy();
+    expect(screen.getByText('LIGHTNING GAMES')).toBeTruthy();
     expect(screen.getByText('Main 1')).toBeTruthy();
     expect(screen.getAllByText('Main 2').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Feeder').length).toBeGreaterThan(0);
@@ -587,6 +587,50 @@ describe('the lobby', () => {
   });
 });
 
+/* Dan 2026-10-24: "PLAYERS SHOULD NOT BE MOVING ON CLASSIC GAMES PERIOD."
+   The database refuses every automatic move on a Classic game and says so
+   as game.never_moves_players; the lobby then promises no move. */
+describe('a Classic game lobby never promises a move', () => {
+  const classic = (): CashGameLobby => {
+    const l = lobby();
+    return {
+      ...l,
+      game: {
+        ...l.game,
+        name: 'NLH 0.25/0.50 Classic',
+        template_name: 'classic',
+        never_moves_players: true,
+      },
+    };
+  };
+
+  it('shows no Must Move List, no place on it and no Must Move figure', async () => {
+    mocks.rpc.mockResolvedValue({ data: classic(), error: null });
+    render(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('NLH 0.25/0.50 Classic')).toBeTruthy());
+    expect(screen.getByText('Game Lobby')).toBeTruthy();
+    expect(screen.queryByText('Must Move Lobby')).toBeNull();
+    expect(screen.queryByText('Must Move List')).toBeNull();
+    expect(screen.queryByText('Must Move')).toBeNull();
+    expect(screen.queryByText(/On The Must Move List/)).toBeNull();
+    expect(screen.queryByText(/Takes The Next Seat In The Main Game/)).toBeNull();
+    // The tables and the player's own seat change stay.
+    expect(screen.getByText('Bravo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Request Any Table' })).toBeTruthy();
+  });
+
+  it('a game that does move players keeps its list', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { ...lobby(), game: { ...lobby().game, never_moves_players: false } },
+      error: null,
+    });
+    render(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Must Move List')).toBeTruthy());
+    expect(screen.getByText('Must Move Lobby')).toBeTruthy();
+    expect(screen.getByText('You Are Number 2 On The Must Move List.')).toBeTruthy();
+  });
+});
+
 describe('the tab follows the chair', () => {
   const TABLE_PAGE = readFileSync(resolve(__dirname, '../src/pages/TablePage.tsx'), 'utf8');
   const MULTI = readFileSync(resolve(__dirname, '../src/pages/MultiTablePage.tsx'), 'utf8');
@@ -626,8 +670,12 @@ describe('the tab follows the chair', () => {
   });
 
   it('the corner box and the lobby are wired on every cluster table, and only there', () => {
+    /* A Lightning table (an anchor of a Lightning game, or a pool room) has no
+       waiting list and no seat picking: the game's own door assigns the chair
+       (2026-10-24, one-tap Join Lightning), so the must-move box is withheld
+       there and nowhere else. */
     expect(TABLE_PAGE).toMatch(
-      /\{!tableState\.isTournament && tableState\.clusterId && \(\s*<div className="hud-seat-change-dock">\s*<CashClusterHUD/
+      /\{!tableState\.isTournament &&\s*tableState\.clusterId &&\s*!anchorLightningClusterId &&\s*!lightningRoom && \(\s*<div className="hud-seat-change-dock">\s*<CashClusterHUD/
     );
     expect(TABLE_PAGE).toMatch(
       /<MustMoveLobbyModal\s+isOpen=\{showMustMoveLobby\}\s+gameId=\{tableState\.clusterId\}/

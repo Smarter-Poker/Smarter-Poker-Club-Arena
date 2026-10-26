@@ -17,8 +17,8 @@
  * Sounds:
  * - playDeal()              Card slide/flip
  * - playCheck()             Double table tap
- * - playChips()             Chip clink (bet/call)
- * - playRaise()             Triple chip cascade
+ * - playChips()             Chip clink (call, blinds)
+ * - playRaise()             Stack push + chip run + rising flick (bet/raise)
  * - playFold()              Card swoosh to muck
  * - playDiscard()           ONE card swept to the muck (Crazy Pineapple)
  * - playAllIn()             Dramatic bass thud + chip push
@@ -169,8 +169,8 @@ export const haptic = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SOUND PRIORITY SYSTEM — Bible V8 5.14
 // ═══════════════════════════════════════════════════════════════════════════════
-// When multiple sounds fire within the same frame (e.g., all-in + fold),
-// only the highest-priority sound plays. Prevents audio cacophony.
+// Non-action cues share a short priority window to limit overlapping effects.
+// Accepted player actions retain individual cues even when transport batches them.
 //
 // Priority stack (highest first):
 //   all_in > big_win > win > showdown > raise > bet > call > check > fold > deal > community_card > ui
@@ -235,6 +235,16 @@ const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
   turn_alert: 72,
   ui: 10,
 };
+
+const PLAYER_ACTION_PRIORITIES = new Set<SoundPriority>([
+  'all_in',
+  'raise',
+  'bet',
+  'call',
+  'check',
+  'discard',
+  'fold',
+]);
 
 /** The continuous voices of the Diamond games. See driveMotor. */
 export type MotorName = 'crash' | 'car';
@@ -437,36 +447,47 @@ class SoundService {
   // ─── Context Management ──────────────────────────────────────────────
 
   private unlockInstalled = false;
+  private removeUnlockListeners: (() => void) | null = null;
 
   private installUnlockListeners(): void {
     if (this.unlockInstalled || typeof window === 'undefined') return;
     this.unlockInstalled = true;
     const unlock = () => {
-      if (this.ctx && this.ctx.state === 'suspended') {
+      if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') {
         this.ctx.resume().catch(() => {
           /* resume can only succeed inside a gesture — retry on the next one */
         });
       }
-      if (this.ctx && this.ctx.state === 'running') {
-        window.removeEventListener('pointerdown', unlock);
-        window.removeEventListener('touchstart', unlock);
-        window.removeEventListener('keydown', unlock);
-      }
+      // Keep these listeners for a later iOS interruption. A running context
+      // makes the handler a no-op; removing it after the first tap stranded
+      // Safari after a call or a failed foreground resume.
     };
     window.addEventListener('pointerdown', unlock, { passive: true });
     window.addEventListener('touchstart', unlock, { passive: true });
     window.addEventListener('keydown', unlock);
-    document.addEventListener('visibilitychange', () => {
+    const visibility = () => {
       // A continuous voice (the Crash engine, the car coming to a street) is
       // driven from a frame loop that stops while the tab is hidden, so the
       // voice must stop with it rather than drone on under another app.
       if (document.hidden) this.stopAllMotors(0.05);
-      if (!document.hidden && this.ctx && this.ctx.state === 'suspended') {
+      if (
+        !document.hidden &&
+        this.ctx &&
+        this.ctx.state !== 'running' &&
+        this.ctx.state !== 'closed'
+      ) {
         this.ctx.resume().catch(() => {
           /* best-effort — the gesture listeners above are the fallback */
         });
       }
-    });
+    };
+    document.addEventListener('visibilitychange', visibility);
+    this.removeUnlockListeners = () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+      document.removeEventListener('visibilitychange', visibility);
+    };
   }
 
   /**
@@ -513,7 +534,7 @@ class SoundService {
     // A context that is already allowed to run should just run, rather than
     // waiting for a gesture that may never come (desktop, or a tab restored
     // with an existing audio permission).
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') {
       this.ctx.resume().catch(() => {
         /* expected before the first gesture - the listeners handle it */
       });
@@ -521,14 +542,14 @@ class SoundService {
   }
 
   private ensureContext(): boolean {
-    if (!this.ctx || !this.masterGain) return false;
+    if (!this.ctx || !this.masterGain || this.ctx.state === 'closed') return false;
     // Every play path reaches here only after the Sounds gate said yes, so
     // this is the moment the game first makes a sound: only now is the Safari
     // session made "playback" (heard with the silent switch on). Doing it at
     // import made the first TAP anywhere (which resumes the context) pause the
     // player's music. See utils/audioSession.ts.
     applyAudioSession(true);
-    if (this.ctx.state === 'suspended') {
+    if (this.ctx.state !== 'running') {
       // Kick it, then let this sound through anyway. Returning false here
       // would be more honest about the one tone that gets dropped while
       // resume() settles, and much worse in practice: on a context that never
@@ -643,7 +664,11 @@ class SoundService {
     if (!this.enabled || !isSoundAllowed()) return false;
     // No category gate (2026-08-28): sound is one switch. `category` is kept
     // in the signature because it names what the cue IS at 50 call sites.
-    void category;
+    // Each accepted player action owes its own cue. Consecutive server events
+    // can arrive within 50ms after transport batching; a previous raise must
+    // not eat a call or another raise. Keep priority arbitration for the other
+    // simultaneous UI/deal/celebration sounds.
+    if (category === 'action' && PLAYER_ACTION_PRIORITIES.has(priority)) return true;
     const rank = SOUND_PRIORITY_RANK[priority] ?? 0;
     if (rank <= this.currentFramePriority) return false;
     this.currentFramePriority = rank;
@@ -1088,45 +1113,77 @@ class SoundService {
   }
 
   /**
-   * Raise — triple chip cascade (larger bet sound)
-   * Bible V8 §5.3: "chip stack sound (louder for larger amounts)"
-   * @param betAmount optional bet amount — larger amounts produce louder, more dramatic sound
+   * Raise — a stack pushed forward, a run of chips landing, and a rising flick.
+   *
+   * Dan 2026-10-24: "A RAISE SHOULD HAVE A DIFFERENT SOUND EFFECT THEN A CALL."
+   *
+   * Two things made them the same sound at the table:
+   *
+   * 1. Every OPPONENT raise and bet played `playChips()` — the call clink — in
+   *    TablePage's action echo. Only the hero's own raise ever reached this
+   *    method, so most raises anyone heard were literally the call sound.
+   * 2. Even where it did play, the old raise was the call clink three times:
+   *    the same pitched oscillator click swept down to 100Hz, just at 1.8,
+   *    2.2 and 2.8kHz instead of 2.2 and 2.6. Same timbre, one more hit; the
+   *    ear files that as "the chip sound, a bit longer", not as a raise.
+   *
+   * So the raise is now built from pieces the call does not have:
+   *   - a stack PUSHED across the felt: noise through a bandpass sweeping UP
+   *     (every other swept cue at the table — deal, fold — sweeps down, so an
+   *     upward sweep is unmistakably "forward"),
+   *   - a wooden knock under it as the stack lands (the call has no body),
+   *   - a run of 4-6 glassy chips on the audio clock, more for a bigger raise,
+   *   - and a short rising two-note flick at the end, the raise's signature:
+   *     nothing else in the action set ends on an upward interval.
+   * It stays well clear of the all-in, which owns the deep sub thud.
+   *
+   * Everything is scheduled on the AudioContext clock (see scheduleTone):
+   * setTimeout spacing wobbles with the frame rate and smears a cascade.
+   *
+   * Bible V8 §5.3: "chip stack sound (louder for larger amounts)".
+   * @param betAmount optional bet amount — larger amounts are louder and longer
    * @param bigBlind optional BB for scaling reference
    */
   playRaise(betAmount?: number, bigBlind?: number) {
     if (!this.shouldPlay('raise', 'action') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
 
     // Scale volume based on bet size relative to BB (Bible V8 §5.3: louder for larger amounts)
     let volumeScale = 1.0;
-    if (betAmount != null && bigBlind && bigBlind > 0) {
-      const bbMultiple = betAmount / bigBlind;
+    let chips = 4;
+    if (
+      Number.isFinite(betAmount) &&
+      betAmount! > 0 &&
+      Number.isFinite(bigBlind) &&
+      bigBlind! > 0
+    ) {
+      const bbMultiple = betAmount! / bigBlind!;
       // 2-3 BB = normal (1.0), 10 BB = louder (1.3), 50+ BB = max (1.6)
       volumeScale = Math.min(1.6, 0.8 + Math.log2(Math.max(1, bbMultiple)) * 0.15);
+      chips = bbMultiple >= 25 ? 6 : bbMultiple >= 8 ? 5 : 4;
     }
 
-    // Three staggered chip clinks with increasing pitch
-    const freqs = [1800, 2200, 2800];
-    freqs.forEach((freq, i) => {
-      setTimeout(() => {
-        if (!this.ctx) return;
-        const t = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.frequency.setValueAtTime(freq, t);
-        osc.frequency.exponentialRampToValueAtTime(100, t + 0.06);
-        gain.gain.setValueAtTime(0.22 * volumeScale, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-        osc.connect(gain);
-        gain.connect(this.out);
-        osc.start(t);
-        osc.stop(t + 0.07);
-      }, i * 45);
-    });
+    // 1. The push: the stack slid forward across the felt (rising band).
+    this.createSweptNoiseBurst(t, 0.13, 0.1 * volumeScale, 650, 2600, 1.1);
 
-    // Subtle bass thud on final chip — also scaled
-    setTimeout(() => {
-      this.playTone(80, 0.1 * volumeScale, 0.15, 'sine');
-    }, 100);
+    // 2. The stack lands: a short wooden knock, two partials a fifth apart.
+    const land = t + 0.1;
+    this.scheduleTone(land, 196, 0.12, 0.14 * volumeScale, 'sine');
+    this.scheduleTone(land, 294, 0.07, 0.05 * volumeScale, 'sine');
+
+    // 3. The chips: glassy, ringing hits rather than the call's dry clicks.
+    const pitches = [3150, 2750, 3450, 2950, 3300, 2850];
+    for (let i = 0; i < chips; i++) {
+      const at = land + 0.012 + i * 0.034;
+      const level = (0.13 - i * 0.012) * volumeScale;
+      this.scheduleTone(at, pitches[i], 0.075, level, 'triangle');
+      this.scheduleTone(at, pitches[i] * 1.5, 0.035, level * 0.45, 'sine');
+    }
+
+    // 4. The flick: a rising fourth (E5 -> A5) — the raise's signature.
+    const flick = land + 0.012 + chips * 0.034 + 0.01;
+    this.scheduleTone(flick, 659, 0.07, 0.06 * volumeScale, 'triangle');
+    this.scheduleTone(flick + 0.06, 880, 0.11, 0.07 * volumeScale, 'triangle');
 
     haptic.medium();
   }
@@ -3510,6 +3567,10 @@ class SoundService {
   // ─── Cleanup ─────────────────────────────────────────────────────────
 
   destroy() {
+    this.removeUnlockListeners?.();
+    this.removeUnlockListeners = null;
+    this.unlockInstalled = false;
+    if (this.priorityResetTimer) clearTimeout(this.priorityResetTimer);
     this.stopAllMotors(0.02);
     this.stopTimerWarning();
     if (this.ctx && this.ctx.state !== 'closed') {

@@ -138,7 +138,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 34 tests');
+  expect(result.stderr).toContain('Ran 35 tests');
 });
 
 it('recovers only genuinely orphaned finalization through the current completion event', () => {
@@ -437,12 +437,13 @@ if [ "$1" = image ] && [ "$2" = inspect ]; then
   exit 0
 fi
 if [ "$1" = container ] && [ "$2" = inspect ]; then exit 0; fi
+if [ "$1" = container ] && [ "$2" = ls ]; then exit 0; fi
 case "$1" in
-  stop|rm|run) printf '%s\\n' "$1" >> "$FAKE_DOCKER_MUTATION_LOG" ;;
+  stop|rm|create|start) printf '%s\\n' "$1" >> "$FAKE_DOCKER_MUTATION_LOG" ;;
 esac
-if [ "$1" = stop ] || [ "$1" = rm ]; then exit 0; fi
+if [ "$1" = stop ] || [ "$1" = rm ] || [ "$1" = start ] || [ "$1" = rename ]; then exit 0; fi
 if [ "$1" = logs ]; then printf 'synthetic outgoing engine log\\n'; exit 0; fi
-if [ "$1" = run ]; then
+if [ "$1" = create ]; then
   shift
   printf '%s\\n' "$*" >> "$FAKE_DOCKER_RUN_LOG"
   printf '%s\\n' '${'1'.repeat(64)}'
@@ -493,7 +494,13 @@ exit 1
       );
       expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
       expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
-      expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+      // Creation overlaps the outgoing stop; removal of the old name and the
+      // start of the replacement follow both.
+      {
+        const mutations = readFileSync(mutationLog, 'utf8').trim().split('\n');
+        expect([...mutations.slice(0, 2)].sort()).toEqual(['create', 'stop']);
+        expect(mutations.slice(2)).toEqual(['rm', 'start']);
+      }
       expect(statSync(horseDirectory).mode & 0o777).toBe(0o700);
       expect(readdirSync(horseDirectory)).toEqual([]);
 
@@ -513,7 +520,13 @@ exit 1
       );
       expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
       expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
-      expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+      // Creation overlaps the outgoing stop; removal of the old name and the
+      // start of the replacement follow both.
+      {
+        const mutations = readFileSync(mutationLog, 'utf8').trim().split('\n');
+        expect([...mutations.slice(0, 2)].sort()).toEqual(['create', 'stop']);
+        expect(mutations.slice(2)).toEqual(['rm', 'start']);
+      }
       expect(readFileSync(retainedPath)).toEqual(retainedBytes);
       expect(readdirSync(horseDirectory)).toEqual(['horse-decisions.sqlite']);
 
@@ -580,14 +593,23 @@ exit 1
   it('keeps one journal writer by holding the canonical lock through old process exit and replacement', () => {
     const source = readFileSync(resolve(ROOT, 'server/scripts/engine-up.sh'), 'utf8');
     const lock = source.indexOf('flock -w 180 9');
-    const stop = source.indexOf('  docker stop -t 45 "$CONTAINER"');
-    const remove = source.indexOf('  docker rm "$CONTAINER"');
-    const start = source.indexOf('docker run -d');
+    const stop = source.indexOf('docker stop -t 45 "$CONTAINER"');
+    // Creation may overlap the outgoing grace; it runs no process and binds no
+    // port. The old process must have exited before the replacement STARTS.
+    const create = source.indexOf('docker create', stop);
+    const exited = source.indexOf('wait "$STOP_OPERATION_PID"', create);
+    const remove = source.indexOf('  docker rm "$CONTAINER"', exited);
+    const publish = source.indexOf('docker rename "$INCOMING_CONTAINER" "$CONTAINER"', remove);
+    const start = source.indexOf('docker start "$CONTAINER"', publish);
     expect(lock).toBeGreaterThan(-1);
     expect(stop).toBeGreaterThan(lock);
-    expect(remove).toBeGreaterThan(stop);
-    expect(start).toBeGreaterThan(remove);
-    expect(source).toContain('--name "$CONTAINER"');
+    expect(create).toBeGreaterThan(stop);
+    expect(exited).toBeGreaterThan(create);
+    expect(remove).toBeGreaterThan(exited);
+    expect(publish).toBeGreaterThan(remove);
+    expect(start).toBeGreaterThan(publish);
+    expect(source).not.toContain('docker run -d');
+    expect(source).toContain('--name "$INCOMING_CONTAINER"');
     expect(source).not.toContain('flock -u');
     // Docker itself refuses the replacement name if both stop/remove attempts
     // fail; a second writer cannot be started over a still-existing process.
@@ -1771,7 +1793,7 @@ describe('every host mutation path obeys the durable release authority', () => {
   it('runs the authorized image ID, so retagging the requested name after authorization is inert', () => {
     const authorize = engineUp.indexOf('AUTHORIZATION="$("$RELEASE_SEAL"');
     const immutable = engineUp.indexOf('AUTHORIZED_IMAGE_ID', authorize);
-    const run = engineUp.indexOf('docker run -d');
+    const run = engineUp.indexOf('docker create');
     const runBlock = engineUp.slice(run, engineUp.indexOf('\n\nlog "started', run));
     expect(authorize).toBeGreaterThan(0);
     expect(immutable).toBeGreaterThan(authorize);
@@ -1786,8 +1808,8 @@ describe('every host mutation path obeys the durable release authority', () => {
       engineUp.indexOf('[[ "$AUTHORIZED_SHA"', engineUp.indexOf('case "$AUTHORIZED_CLASS" in'))
     );
     const run = engineUp.slice(
-      engineUp.indexOf('docker run -d'),
-      engineUp.indexOf('\n\nlog "started', engineUp.indexOf('docker run -d'))
+      engineUp.indexOf('docker create'),
+      engineUp.indexOf('\n\nlog "started', engineUp.indexOf('docker create'))
     );
     expect(classBranch).toContain('desired) RESTART_POLICY=always');
     expect(classBranch).toContain('pending)');
@@ -2096,6 +2118,16 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(intake).toContain('"$CANONICAL_GENERATION/launch-engine-release.sh"');
   });
 
+  it('activates a newer canonical control generation without downgrading or replacing the same SHA', () => {
+    const result = spawnSync('python3', ['-B', 'tests/operations/engine-control-activation.py'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stderr).toContain('Ran 1 test');
+  });
+
   it('activates one complete control-plane generation atomically under the engine lock', () => {
     const lock = installer.indexOf('flock -w 600 9');
     const sourceLock = installer.indexOf('flock -w 90 8', lock);
@@ -2152,6 +2184,103 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(supervisor).toContain('restoring exact sealed desired release');
     expect(supervisor).toContain('docker update --restart always "$CONTAINER"');
     expect(supervisor).toContain('prove_exact_desired_recovery');
+  });
+
+  it('independent proof keeps its immutable generation when the active control advances', () => {
+    // realpath: on macOS tmpdir() is /var/folders/..., a symlink into /private,
+    // and the workflow resolves the active control with `readlink -e`, so an
+    // unresolved fixture root never prefix-matches its own generation root.
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'control-proof-race-')));
+    try {
+      const repo = join(dir, 'repo');
+      const parent = join(dir, 'control');
+      mkdirSync(repo);
+      mkdirSync(parent);
+      const env = fixtureGitEnvironment(join(dir, 'gitconfig'));
+      writeFileSync(env.GIT_CONFIG_GLOBAL!, '');
+      const git = (...args: string[]) => {
+        const result = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+        return result.stdout.trim();
+      };
+      git('init', '-q');
+      git('config', 'user.email', 'fixture@example.invalid');
+      git('config', 'user.name', 'Fixture');
+      mkdirSync(join(repo, 'server/scripts'), { recursive: true });
+      const commit = (body: string) => {
+        writeFileSync(join(repo, 'server/scripts/engine-release-transaction.sh'), body);
+        git('add', '.');
+        git('commit', '-qm', 'fixture');
+        return git('rev-parse', 'HEAD');
+      };
+      const expected = commit('expected generation');
+      const newer = commit('newer generation');
+      git('update-ref', 'refs/remotes/origin/main', newer);
+      const generations = join(parent, 'engine-control-generations');
+      mkdirSync(generations);
+      const generation = (sha: string, body: string) => {
+        const path = join(generations, sha);
+        mkdirSync(path);
+        writeFileSync(join(path, 'control-sha'), sha + '\n');
+        writeFileSync(join(path, 'engine-release-transaction.sh'), body);
+        return path;
+      };
+      const expectedPath = generation(expected, 'expected generation');
+      const newerPath = generation(newer, 'newer generation');
+      const active = join(parent, 'engine-control');
+      symlinkSync(newerPath, active);
+      const start = workflow.indexOf('          CONTROL=/usr/local/lib/club-arena/engine-control');
+      const end = workflow.indexOf(
+        '          python3 - "$CONTROL/engine-release-transaction.sh"',
+        start
+      );
+      expect(start).toBeGreaterThan(0);
+      expect(workflow.slice(end)).toContain('"$ACTIVE_CONTROL/engine-release-transaction.sh"');
+      expect(workflow.slice(end)).toContain('for gate_path in dict.fromkeys(sys.argv[1:]):');
+      const code = workflow
+        .slice(start, end)
+        .replace(/^ {10}/gm, '')
+        .replaceAll('/usr/local/lib/club-arena', parent)
+        .replaceAll('/opt/club-arena', repo);
+      const prove = (sha = expected) =>
+        spawnSync('bash', ['-c', 'set -euo pipefail\n' + code + '\necho "$CONTROL"'], {
+          env: { ...env, EXPECTED_CONTROL_SHA: sha },
+          encoding: 'utf8',
+        });
+      const advanced = prove();
+      expect(advanced.status, advanced.stderr).toBe(0);
+      expect(advanced.stdout.trim()).toBe(expectedPath);
+      writeFileSync(join(expectedPath, 'engine-release-transaction.sh'), 'tampered');
+      expect(prove().status).not.toBe(0);
+      writeFileSync(join(expectedPath, 'engine-release-transaction.sh'), 'expected generation');
+      writeFileSync(join(newerPath, 'engine-release-transaction.sh'), 'tampered');
+      expect(prove().status).not.toBe(0);
+      writeFileSync(join(newerPath, 'engine-release-transaction.sh'), 'newer generation');
+      rmSync(active);
+      symlinkSync(expectedPath, active);
+      expect(prove().status).toBe(0);
+      expect(prove(newer).status).not.toBe(0); // active control may never be older
+      git('checkout', '-q', '--detach', expected);
+      const divergent = commit('divergent generation');
+      const divergentPath = generation(divergent, 'divergent generation');
+      rmSync(active);
+      symlinkSync(divergentPath, active);
+      expect(prove().status).not.toBe(0); // not in protected main
+      const merged = git(
+        'commit-tree',
+        git('rev-parse', `${expected}^{tree}`),
+        '-p',
+        newer,
+        '-p',
+        divergent,
+        '-m',
+        'fixture merge'
+      );
+      git('update-ref', 'refs/remotes/origin/main', merged);
+      expect(prove(newer).status).not.toBe(0); // protected, but not a descendant of expected
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('commits the seal only after HTTP, proxy, and strict database proof', () => {

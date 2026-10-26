@@ -387,7 +387,12 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
     expect(freeze).toBeGreaterThanOrEqual(0);
     expect(profileRead).toBeGreaterThan(freeze);
     expect(rpc).toBeGreaterThan(freeze);
-    expect(rebuys.slice(freeze, rpc)).toMatch(/return \{ rebought, answered \};/);
+    // 2026-10-24: the pass also reports the ids it identified as horses, for the
+    // horse rebuy input device; the freeze still returns before any purchase.
+    // 2026-10-24: and the willing horses not yet due (deferredUntil).
+    expect(rebuys.slice(freeze, rpc)).toMatch(
+      /return \{ rebought, answered, horses, deferredUntil \};/
+    );
     expect(rebuys).not.toMatch(/rebuyDecisionGraceUntil|\.setTimeout\(|setTimeout\(/);
   });
 

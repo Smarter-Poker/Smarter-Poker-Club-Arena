@@ -106,6 +106,10 @@ BEGIN
 END $reapply$;
 \\echo 'PASS: Madness zero-payer real settlement, positive-only promo, conservation, replay, conflict, ACL and reapply'
 """
+refund_files = list(M.glob('*_lightning_folded_players_keep_their_uncalled_blind_refund.sql'))
+assert len(refund_files) == 1, refund_files
+setup += f"\n\\set refund_migration {refund_files[0]}\n\\i {ROOT / 'scripts/ci/fixtures/lightning-folded-uncalled-refund.sql'}\n"
+
 with tempfile.TemporaryDirectory(prefix='lp6-zero-') as work:
     followup = pathlib.Path(work) / 'followup.sql'
     followup.write_text(setup)

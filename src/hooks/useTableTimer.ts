@@ -66,13 +66,14 @@ import { ActionClockStore } from './actionClockStore';
  * (see ./actionClockStore.ts) and the three leaves that genuinely need it —
  * the acting seat, the control-strip numeral, the warning window — subscribe to
  * it themselves with `useSyncExternalStore`. TablePage renders ZERO times for
- * the countdown. Everything else about the clock is unchanged: same evaluation
- * loop, same drivers, same deadline, same publication instants, same values.
+ * the countdown. The store and server deadline remain the source of the
+ * displayed reading; the driver below now wakes only for meaningful boundaries.
  *
- * TWO DRIVERS. requestAnimationFrame while the tab is visible — it is free, it
- * is aligned to paint, and it keeps the last-second transition crisp — plus a
- * plain interval that keeps evaluating when RAF is asleep. Both call the same
- * `tick`, and the fired-once latch below makes a double call harmless.
+ * ONE DEADLINE-ALIGNED DRIVER (2026-10-23). A whole-second display needs a
+ * callback only at its next boundary, not on every display frame. One bounded
+ * timeout per table derives the answer from serverNow(), including after a
+ * delayed/background callback. Visibility restoration rechecks immediately.
+ * At zero the driver sleeps until the turn, reset or extension changes.
  */
 
 export interface UseTableTimerProps {
@@ -132,20 +133,6 @@ export interface UseTableTimerReturn {
 const DEFAULT_INITIAL_TIME = 15;
 const DEFAULT_URGENCY_THRESHOLD = 5;
 
-/**
- * How often the deadline is re-read. A countdown that publishes whole seconds
- * needs nothing finer than this, and on a 120Hz phone it cuts the arithmetic by
- * six without changing a single rendered value.
- */
-const EVAL_INTERVAL_MS = 50;
-
-/**
- * The background-safe driver. requestAnimationFrame stops in a hidden tab;
- * setInterval keeps running (throttled to about once a second, which is exactly
- * the resolution this clock publishes at anyway).
- */
-const WATCHDOG_INTERVAL_MS = 500;
-
 export function useTableTimer({
   isActiveTurn,
   isHeroTurn,
@@ -194,7 +181,7 @@ export function useTableTimer({
   urgencyThresholdRef.current = urgencyThreshold;
 
   /**
-   * The RAF loop below subscribes ONCE (empty dep array) and must therefore read
+   * The deadline driver below must read
    * every changing value through a ref. `turnDeadlineMs` was once read as a prop
    * from inside that closure, which froze it at its MOUNT value - and the
    * initial table state has no `actionTimerDeadline`, so the frozen value is
@@ -275,6 +262,8 @@ export function useTableTimer({
     publish(true);
   }, [isHeroTurn, urgencyThreshold, publish]);
 
+  const rescheduleRef = useRef<() => void>(() => {});
+
   const resetTimer = useCallback(
     (newTime?: number) => {
       const t = Math.max(0, newTime ?? initialTime);
@@ -286,6 +275,7 @@ export function useTableTimer({
       deadlineRef.current = serverNow() + t * 1000;
       totalTimeRef.current = t;
       publish(true);
+      rescheduleRef.current();
     },
     [initialTime, publish]
   );
@@ -295,6 +285,7 @@ export function useTableTimer({
       deadlineRef.current += extraSeconds * 1000;
       totalTimeRef.current += extraSeconds;
       publish(true);
+      rescheduleRef.current();
     },
     [publish]
   );
@@ -306,67 +297,24 @@ export function useTableTimer({
     heroFiredRef.current = null;
   }, [turnDeadlineMs, activeSeatKey]);
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════
-   * PERF 2026-08-28 — THE LOOP RAN FOR TABLES WITH NOBODY ON THE CLOCK.
-   * ═══════════════════════════════════════════════════════════════════════
-   *
-   * The driver below is deliberately mounted once for the hook's lifetime and
-   * deliberately never torn down at zero (see the note at the end of `tick`)
-   * — both correct. But `deps: []` also meant it ran whenever the hook was
-   * MOUNTED, and up to four TablePages are mounted at once inside the
-   * persistent table layer. Four permanent rAF loops plus four 500ms
-   * watchdogs, three of them for tables where no clock is running at all.
-   *
-   * A deadline is the only thing this loop can ever act on, so it now starts
-   * when one exists and stops when it does not. That is the same gate
-   * MultiTablePage puts on its shared 1s clock (`anyTurnLive`), and it does
-   * not weaken the "hold at zero" rule: holding at zero happens WHILE a
-   * deadline is set, and the next deadline change restarts the driver.
-   */
   const hasDeadline = Boolean(turnDeadlineMs);
 
   useEffect(() => {
     if (!hasDeadline) {
-      /* No deadline means no countdown to run — but the ring must not be left
-         frozen on whatever second the last turn ended at. One forced publish
-         settles it, then nothing ticks until a deadline exists again. */
       publish(true);
       return;
     }
 
-    let rafId = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let cancelled = false;
-    let lastEvalAt = -Infinity;
-
-    const tick = (now: number) => {
+    const wake = () => {
       if (cancelled) return;
-      /* `now` is whatever the caller had to hand — a RAF DOMHighResTimeStamp
-         from one driver, nothing at all from the other. It is deliberately not
-         used for timing: the two drivers do not share a time origin, and mixing
-         a performance timestamp with an epoch one into the same throttle is how
-         you get a loop that gates itself off permanently. The countdown is
-         derived from an absolute deadline anyway, so the only job of the
-         throttle is to stop a 120Hz display doing the arithmetic six times more
-         often than it can possibly matter — and ONE clock does that for both
-         drivers. */
-      void now;
-      const at = Date.now();
-      // Two drivers call this; whichever gets here first inside the window wins
-      // and the other does nothing.
-      if (at - lastEvalAt < EVAL_INTERVAL_MS) return;
-      lastEvalAt = at;
-
+      clearTimeout(timer);
+      timer = undefined;
       const remaining = publish();
-      if (remaining > 0) return;
-
-      // Read through the ref, not the frozen prop. `?? 0` on BOTH sides so the
-      // value compared is the value stored - the old code compared against
-      // `undefined` and stored `0`, which can never be equal.
       const deadlineNow = turnDeadlineRef.current ?? 0;
-      // isActiveTurn finally does something: a stale deadline from a finished
-      // hand must not spend a time bank between hands.
       if (
+        remaining <= 0 &&
         isActiveTurnRef.current &&
         isHeroTurnRef.current &&
         heroFiredRef.current !== deadlineNow
@@ -374,30 +322,31 @@ export function useTableTimer({
         heroFiredRef.current = deadlineNow;
         onTimeoutRef.current();
       }
-      // Hold at zero until the next reset — do NOT tear down either driver, so
-      // the very next deadline change re-starts the countdown.
+      // onTimeout may synchronously reset the clock for a time bank. Read
+      // again after it returns and replace any timer that reset scheduled.
+      clearTimeout(timer);
+      const leftMs = deadlineRef.current - serverNow();
+      if (leftMs > 0) {
+        const nextBoundaryMs = leftMs - (Math.ceil(leftMs / 1000) - 1) * 1000;
+        timer = setTimeout(wake, Math.max(1, Math.min(1000, nextBoundaryMs)));
+      }
     };
-
-    const frame = (now: number) => {
-      if (cancelled) return;
-      tick(now);
-      rafId = requestAnimationFrame(frame);
+    rescheduleRef.current = wake;
+    const resume = () => {
+      if (document.visibilityState !== 'hidden') wake();
     };
-
-    rafId = requestAnimationFrame(frame);
-    // RAF is suspended in a hidden tab. This is what keeps the clock honest —
-    // and keeps the time-bank request happening — while the phone is locked.
-    const watchdogId = setInterval(() => tick(0), WATCHDOG_INTERVAL_MS);
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('pageshow', resume);
+    wake();
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(rafId);
-      clearInterval(watchdogId);
+      rescheduleRef.current = () => {};
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('pageshow', resume);
     };
-    // Gated on the PRESENCE of a deadline, not its value: the value is read
-    // through turnDeadlineRef inside the loop, so a new deadline on a table
-    // that already has one does NOT restart the drivers.
-  }, [hasDeadline, publish]);
+  }, [hasDeadline, turnDeadlineMs, activeSeatKey, initialTime, isActiveTurn, isHeroTurn, publish]);
 
   // Timer warning sound.
   //

@@ -1,0 +1,3 @@
+# server/src/engine/HorseTournamentPreflopAggression.law.test.ts
+
+Dan, 2026-10-25: real players called the tournament horses "the most passive scared players they have ever played with" and "WE HAVE TO PUMP THE AGGRESSIVE NUMBERS UP". In NLH tournaments (not Omaha, not all-in-or-fold) the horses re-steal from the small blind with a top-20% hand, 3-bet the cutoff from the button with a top-11% hand, defend the big blind wider (widest at <=25bb), open the small blind wider and every seat a little wider, defend a shade wider against 3-bets up to 60bb, and keep multi-street bluff lines going more often on the turn. The same hands in a cash game play exactly as before; the ICM survival premium still tightens every bar near the bubble.

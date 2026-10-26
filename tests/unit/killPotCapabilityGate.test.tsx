@@ -17,9 +17,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { join, resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -74,17 +73,17 @@ const defaults = (template: string, variant: string) => ({
   variant,
   family: 'holdem',
   seats: template === 'classic' ? 9 : 6,
-  seats_locked: false,
-  seat_choices: template === 'classic' ? [9, 6] : [2, 3, 4, 5, 6, 7, 8, 9],
+  seats_locked: template !== 'classic',
+  seat_choices: template === 'classic' ? [9, 6] : [6],
   min_buyin_bb: 40,
   max_buyin_bb: 200,
-  regular_ante: template === 'classic' ? 'none' : 'sb',
-  vpip_floor: template === 'classic' ? 0 : 30,
+  regular_ante: template === 'classic' ? 'none' : 'bb',
+  vpip_floor: template === 'classic' ? 0 : 40,
   vpip_window: 10,
   bombs:
     template === 'classic'
       ? { enabled: false, trigger: null, ante_bb: null, boards: null }
-      : { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+      : { enabled: true, trigger: 'timed_10m', ante_bb: 3, boards: 2 },
   straddle: false,
   stay_clock_min: 10,
   rejoin_window_min: 120,
@@ -116,7 +115,11 @@ const walkToRules = async (template: RegExp, variant: string) => {
   render(<CashGameCreateFlow clubId="club-1" canBuildHere deniedMessage={null} />);
   fireEvent.click(screen.getByRole('button', { name: template }));
   fireEvent.click(screen.getByRole('button', { name: variant }));
-  fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: template.test('Lightning Games') ? /Lightning Pool/ : /Manual Individual Table/,
+    })
+  );
   fireEvent.click(await screen.findByRole('button', { name: 'Use The Usual Stakes' }));
   await waitFor(() =>
     expect((screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(
@@ -192,8 +195,11 @@ describe('the cash creation flow offers kills only while the capability is live'
     }
     expect(screen.getByRole('button', { name: '10 BB' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: '12 BB' }));
-    // The preview card's rule line says it too.
-    expect(document.querySelector('.cgc')?.textContent).toMatch(/Half Kill At 12 BB/i);
+    // The preview still describes the exact chosen kill alongside its game rules.
+    expect(document.querySelector('.cash-create__preview-card')?.textContent).toMatch(
+      /Half Kill At 12 BB/i
+    );
+    expect(screen.getByRole('button', { name: '12 BB' }).getAttribute('aria-pressed')).toBe('true');
     const overrides = await createOverrides();
     // Not in p_overrides: fn_cash_game_create would drop it without a word.
     for (const key of NO_KILL_KEY) expect(overrides).not.toHaveProperty(key);
@@ -239,7 +245,7 @@ describe('the cash creation flow offers kills only while the capability is live'
 
   it('a template that deals bomb pots cannot kill, and says so instead of offering it', async () => {
     capabilityAnswer = { data: registry('production_verified', true), error: null };
-    await walkToRules(/^Action/, 'FLH');
+    await walkToRules(/^Lightning Games/, 'FLH');
     const group = await screen.findByTestId('cash-create-kill');
     expect(group.textContent).toContain('Kill Pots Cannot Run On A Game With Bomb Pots');
     expect(group.querySelectorAll('button').length).toBe(0);
@@ -286,6 +292,12 @@ describe('the kill write goes through the door the database honours (20260924034
     'utf8'
   );
 
+  // Read immutable source fixtures once. Keep the global assertion inside the
+  // test without charging SSD I/O contention to its five-second assertion budget.
+  const migrationSql = readdirSync(MIGRATIONS)
+    .filter((name) => name.endsWith('.sql'))
+    .map((name) => ({ name, sql: readFileSync(join(MIGRATIONS, name), 'utf8') }));
+
   it("the client's call carries exactly the door's parameters, and the thresholds are the door's", async () => {
     const door =
       /CREATE FUNCTION public\.fn_set_cash_game_kill_settings\(([^)]*)\)\s*RETURNS jsonb/.exec(
@@ -331,24 +343,7 @@ describe('the kill write goes through the door the database honours (20260924034
     // No migration teaches fn_cash_game_create to read a kill override, so a
     // kill_mode in p_overrides would be dropped (20260921025523: no unknown-key
     // rejection, an unrecognised key is silently dropped).
-    // Every forbidden expression contains the literal 'kill'. Native Git
-    // scans all working files (including untracked SQL), then the exact
-    // existing multiline regex inspects every possible match. Avoid decoding
-    // and assertion-wrapping the entire migration history in JavaScript.
-    const candidates = spawnSync(
-      'git',
-      ['grep', '--no-index', '--no-exclude-standard', '-l', '-z', '-F', 'kill', '--', MIGRATIONS],
-      { encoding: 'utf8' }
-    );
-    if (candidates.error || ![0, 1].includes(candidates.status ?? -1))
-      throw candidates.error ?? new Error(candidates.stderr || 'Could Not Read Migration Inputs');
-    const names = candidates.stdout
-      .split('\0')
-      .filter((n) => n.endsWith('.sql'))
-      .map((n) => resolve(n));
-    expect(names).toContain(join(MIGRATIONS, '20260924034010_kill_pot_table_settings.sql'));
-    for (const name of names) {
-      const sql = readFileSync(name, 'utf8');
+    for (const { name, sql } of migrationSql) {
       expect(sql, name).not.toMatch(/v_oo?\s*(\?|->>?)\s*'{1,2}kill/);
     }
   });

@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { migrationNames, migrationText } from './helpers/migrationCorpus';
+import { migrationNames } from './helpers/migrationCorpus';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -101,7 +101,8 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
       .filter((n) => n.endsWith('_the_arena_stats_door_reads_its_own_hands.sql'))
       .at(-1);
     expect(name).toBeTruthy();
-    const sql = migrationText(name!);
+    // The exact file is known; avoid loading the whole migration corpus.
+    const sql = read(`supabase/migrations/${name!}`);
     for (const [fn, oldSig] of [
       ['ca_player_hands', 'ca_player_hands(uuid, text, integer)'],
       ['ca_player_hands_v2', 'ca_player_hands_v2(uuid, text, integer)'],

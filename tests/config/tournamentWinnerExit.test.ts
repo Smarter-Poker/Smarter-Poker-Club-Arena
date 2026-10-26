@@ -59,6 +59,7 @@ import {
   awaitTournamentResultEnrichment,
   TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS,
 } from '../../src/utils/tournamentResultEnrichment';
+import { TOURNAMENT_CHAMPION_DISPLAY_MS } from '../../src/utils/tournamentChampion';
 import type { TournamentResult } from '../../src/services/pendingSessionSummary';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -151,12 +152,11 @@ describe("The champion's exit", () => {
     expect(tablePage).toMatch(/data\?\.type === 'tournament_winner'/);
     const at = tablePage.indexOf("data?.type === 'tournament_winner'");
     const branch = sliceEnclosingBlock(tablePage, "data?.type === 'tournament_winner'");
-    // Only the local player leaves. Everyone else at the table is a spectator
-    // of someone else's result.
-    expect(branch).toMatch(/winData\.userId === userId/);
-    // The celebration overlay, then the same exit every other finisher takes.
-    expect(branch).toMatch(/setTournamentWinner\(/);
-    expect(branch).toMatch(/goToLobbyWithResult\(1,/);
+    // Every viewer uses the same durable terminal authority.
+    expect(branch).toContain('void exitFromDurableCompletion()');
+    const celebration = sliceMethod(tablePage, 'async function announceSpectatorChampion');
+    expect(celebration).toContain('setTournamentWinner(');
+    expect(celebration).toMatch(/goToLobbyWithResult\(\s*participant.position/);
   });
 
   it('recovers the result from durable COMPLETED rows when every broadcast attempt fails', () => {
@@ -166,10 +166,10 @@ describe("The champion's exit", () => {
     expect(end).toBeGreaterThan(start);
     const fallback = tablePage.slice(start, end);
     expect(fallback).toMatch(
-      /\.from\('tournament_players'\)[\s\S]*?\.select\('status, position, prize'\)/
+      /\.from\('tournament_players'\)[\s\S]*?\.select\('status, position, prize, username'\)/
     );
     expect(fallback).toMatch(/\['winner', 'eliminated'\]\.includes/);
-    expect(fallback).toMatch(/goToLobbyWithResult\(position, prize/);
+    expect(fallback).toContain('await announceSpectatorChampion({ position, prize })');
     expect(fallback).toMatch(/scheduleDurableCompletionRetry\(\)/);
     expect(tablePage).toMatch(
       /table: 'tournaments'[\s\S]*?payload\.new\?\.status === 'COMPLETED'[\s\S]*?exitFromDurableCompletion\(\)/
@@ -237,10 +237,8 @@ describe("The champion's exit", () => {
 
   it('bounds optional result enrichment before publishing and closing the table', () => {
     const fn = exitFnBody();
-    expect(fn).toMatch(
-      /await awaitTournamentResultEnrichment\(fetchTournamentResult\(tid, userId\)\)/
-    );
-    expect(fn.indexOf('await awaitTournamentResultEnrichment(')).toBeLessThan(
+    expect(fn).toMatch(/awaitTournamentResultEnrichment\(fetchTournamentResult\(tid, userId\)\)/);
+    expect(fn.indexOf('awaitTournamentResultEnrichment(')).toBeLessThan(
       fn.indexOf('publishSessionSummary(')
     );
     expect(fn.indexOf('publishSessionSummary(')).toBeLessThan(fn.indexOf("emit('TABLE_LEFT'"));
@@ -399,7 +397,7 @@ describe('The exit actually leaves the table', () => {
   });
 
   it('cancels a pending exit when the subscription is torn down', () => {
-    // The winner's beat is 7s. A player moved off this tab inside it used to be
+    // The winner's beat is 20s. A player moved off this tab inside it used to be
     // force-navigated out of wherever they had gone.
     expect(exitFnBody()).toMatch(/tournamentExitTimerRef\.current = setTimeout\(/);
     expect(tablePage).toMatch(/clearTimeout\(tournamentExitTimerRef\.current\)/);
@@ -520,10 +518,14 @@ describe('The actual TablePage qualifier completion caller', () => {
       'reportError',
       `let isMounted=true, durableCompletionLookupInFlight=false, durableCompletionHandled=false;
        let durableCompletionFailureReported=false, durableCompletionRetryTimer=null;
-       let committedSatelliteQualification=null;
+       let committedSatelliteQualification=null, exitStarted=false, terminalCompletionWitnessed=true,terminalCelebrationStarted=false;
+       const tournamentExitTimerRef={current:null};
        let durableParticipantWitnessed=${Boolean(options.known)};
        const durableTournamentId=${JSON.stringify(tid)}, userId=${JSON.stringify(uid)};
        const durableTournamentName='Native Satellite', formatGameTitle=(s)=>s;
+       const TOURNAMENT_CHAMPION_DISPLAY_MS=20000;
+       const announceSpectatorChampion=async(participant)=>{durableCompletionHandled=true;
+         if(participant) goToLobbyWithResult(participant.position,participant.prize,TOURNAMENT_CHAMPION_DISPLAY_MS);};
        ${compiled}
        return { run:exitFromDurableCompletion, dispose:()=>{isMounted=false},
          qualification:()=>committedSatelliteQualification };`
@@ -606,7 +608,7 @@ describe('The actual TablePage qualifier completion caller', () => {
       'fn_get_my_satellite_qualifier_result',
       { p_tournament_id: tid }
     );
-    expect(c.exit).toHaveBeenCalledExactlyOnceWith(0, 50, 2500);
+    expect(c.exit).toHaveBeenCalledExactlyOnceWith(0, 50, 20000);
     expect(c.qualification()).toEqual({
       qualified: true,
       targetId,
@@ -656,8 +658,10 @@ describe('The actual TablePage qualifier completion caller', () => {
     const c = actualCaller({ status: 'winner', position: 1, prize: 100 });
     await c.run();
     expect(receiptTransport.rpc).not.toHaveBeenCalled();
-    expect(c.champion).toHaveBeenCalledWith({ prize: 100, name: 'Native Satellite' });
-    expect(c.exit).toHaveBeenCalledWith(1, 100, 7000);
+    // Shared announcement owns the champion; this caller retains only this
+    // entrant's result, independently protected by the executable closeout law.
+    expect(c.champion).not.toHaveBeenCalled();
+    expect(c.exit).toHaveBeenCalledWith(1, 100, TOURNAMENT_CHAMPION_DISPLAY_MS);
   });
   it('connects the named event and initial/reconnect recovery to this same receipt reader', () => {
     const branch = sliceBetween(

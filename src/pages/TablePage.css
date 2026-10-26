@@ -282,34 +282,46 @@
   z-index: 1;
 }
 
-/* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
-.table-page--hero-turn {
+/* The same breathing glows, painted once on their own layer. Animating the
+   page's blur/box-shadow repaints the full phone surface every frame. Opacity
+   keeps the two-second cue while the compositor reuses its static pixels. */
+.table-page--hero-turn::before,
+.table-page--allin-mode::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.table-page--hero-turn::before {
+  box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
   animation: heroTurnPulse 2s ease-in-out infinite;
 }
 
 @keyframes heroTurnPulse {
   0%,
   100% {
-    box-shadow: inset 0 0 0 0 transparent;
+    opacity: 0;
   }
   50% {
-    box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
+    opacity: 1;
   }
 }
 
-/* ─── All-In Dramatic Mode — darken non-essential UI ─── */
-.table-page--allin-mode {
-  /* Tension border glow */
+.table-page--allin-mode::before {
+  box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
   animation: allInTensionGlow 2s ease-in-out infinite;
 }
 
 @keyframes allInTensionGlow {
   0%,
   100% {
-    box-shadow: inset 0 0 0 0 transparent;
+    opacity: 0;
   }
   50% {
-    box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
+    opacity: 1;
   }
 }
 
@@ -493,9 +505,9 @@
   font-weight: 600;
   color: #94a3b8;
   max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
@@ -533,9 +545,9 @@
   font-weight: 600;
   color: #a78bfa;
   max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .header-hand-number {
@@ -1378,45 +1390,8 @@
   filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.7));
 }
 
-/* Dan 2026-08-26: "the button should be moved up some in that position so it
-   doesn't overlap the date."
-
-   The button was where it belongs. THE DATE WAS NOT: it was hanging 23px out
-   of this box on each side, into the lane the left-middle and right-middle
-   seats' dealer pucks stand in.
-
-   The two declarations below are the whole fix, and they are here rather than
-   on `.table-brand__line` because the line was never the problem. That rule
-   already carries `white-space: nowrap`, `overflow: hidden`,
-   `text-overflow: ellipsis` and `max-width: 100%`, and the note on it (Dan
-   2026-08-24, "the line was bleeding past the rail. It ellipsizes at the
-   masthead's edge instead") describes exactly what was wanted. It just did not
-   happen, because of what THIS element resolves to:
-
-     `.table-brand` is `flex-direction: column; align-items: center`, so this
-     box is a flex item whose cross size is not stretched. That makes its width
-     `fit-content`, which is
-         min(max-content, max(min-content, available))
-     and for a `white-space: nowrap` child min-content EQUALS max-content. So
-     whenever the text is wider than the 62% box, that expression returns the
-     TEXT's width, not the box's - and the child's `max-width: 100%` then
-     resolves against a parent that is already as wide as the child, clamping
-     nothing at all. The ellipsis could never fire.
-
-   `width: 100%` makes this box the masthead's width instead of the text's, and
-   `min-width: 0` stops the flex layout re-growing it back to min-content (a
-   flex item's automatic minimum size is its content, and a nowrap line's
-   content minimum is the whole line - the other half of the same trap).
-
-   WHAT IT COSTS: on a 393px phone the box is 175px, and a date + club + union
-   line longer than about 31 characters now ends in an ellipsis rather than
-   crossing the felt. That is the trade the 2026-08-24 rule already declared;
-   it simply was not being collected.
-
-   Two things read the resulting extent and have to move with it: the
-   `.table-brand` width above, and FELT_TEXT_BAND in
-   src/components/table/tableGeometry.ts, which keeps the dealer button off
-   this printing by construction. Change one, change both. */
+/* Keep every felt caption inside the masthead width and let its height grow.
+   Owner 2026-10-26: full wording always; use additional lines, never ellipses. */
 .table-brand__meta {
   display: flex;
   flex-direction: column;
@@ -1452,12 +1427,12 @@
   text-transform: uppercase;
   color: rgba(198, 210, 228, 0.42);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-  white-space: nowrap;
-  /* Dan 2026-08-24: the line was bleeding past the rail. It ellipsizes at the
-     masthead's edge instead — the masthead itself is capped below. */
+  white-space: normal;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  line-height: 1.3;
 }
 
 /* Dan 2026-08-15 — felt masthead, two centered lines.
@@ -1507,11 +1482,10 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 
-/* Dan 2026-08-26 mobile pass, item 5: the hand number can NEVER be cut off.
-   Line 2 is a flex row: the game label is the flexible part that ellipsizes,
-   the hand-number span refuses to shrink. */
+/* Every part of the game row stays visible and wraps within its width. */
 .table-brand__line--level {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: center;
   gap: 3px;
@@ -1520,9 +1494,12 @@
 
 .table-brand__game {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  /* Existing cash font fitting stays available; wrapping always preserves
+     the complete wording, including before measurement. */
   /* THE LINE FITS ITS BOX (audit 2026-09-09). The row's clamp above was
      measured for "NLH 0.10/0.25" alone; "MADNESS NLH 1/2 + BB Ante" is twice
      that and ellipsized to "MADNESS NLH 1/..." on a 375px phone - the stakes
@@ -1546,37 +1523,23 @@
   line-height: 1.15;
 }
 
-.table-brand__hand {
-  flex-shrink: 0;
-  white-space: nowrap;
+.table-page--tournament .table-brand__line--level {
+  flex-direction: column;
+  align-items: center;
 }
 
-/* ── LINE 1 OPTS OUT OF THE ELLIPSIS (Dan 2026-09-07, 7A) ──────────────────
-   "NEVER ABBREVIATE ANY NAME, THEY NEED TO BE FULLY SPELT OUT ON DESK TOP AND
-   MOBILE (NEVER USE ... IT CAN EXCEED THE LENGTH OF SMARTER.POKER)"
+.table-page--tournament .table-brand__hand {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
 
-   Every other masthead row keeps `.table-brand__line`'s nowrap + ellipsis,
-   and should: a clipped hand number or a clipped stake is still readable as
-   what it is. A clipped NAME is not. "MIDWAY U..." is not a shorter way of
-   writing Midway Union, it is a different word, printed on a felt a club pays
-   to have its name on.
+.table-brand__hand {
+  flex-shrink: 0;
+  white-space: normal;
+}
 
-   So this row WRAPS instead of truncating. A name too long for one line takes
-   two; nothing is ever lost, which is what makes "never abbreviate" literally
-   true rather than true-up-to-a-point.
-
-   IT DOES NOT GET WIDER, AND THAT WAS MEASURED. Dan's "IT CAN EXCEED THE
-   LENGTH OF SMARTER.POKER" is permission, not a requirement, and taking it
-   costs more than it buys: the masthead's extent IS the dealer button's
-   keep-out (FELT_TEXT_BAND in components/table/tableGeometry.ts), so a wider
-   box walks every puck further from its own chair to clear it. Tried at 145%
-   and reverted — tests/unit/chipRail caught the puck at 0.44 of its seat's run
-   to the middle against a 0.40 ceiling, which is item 10's complaint made
-   worse in the act of fixing item 7A. Two lines inside the existing box shows
-   the whole name and moves nothing.
-
-   `lines: 3` in FELT_TEXT_BAND is the half that still has to change: the block
-   really can be a row taller now, and the puck must clear it at its tallest. */
+/* Club and union names retain the same full-wording rule as every caption. */
 .table-brand__line--identity {
   white-space: normal;
   overflow: visible;
@@ -1602,7 +1565,7 @@
 }
 
 .table-brand__vpip {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* THE BOMB POT CLOCK, UNDER THE BLINDS (Dan 2026-09-05): "THE 'DOUBLE BOARD
@@ -1622,7 +1585,7 @@
   font-size: 0.5rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.1em;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .table-brand__bomb {
@@ -1690,7 +1653,7 @@
   color: rgba(198, 210, 228, 0.4);
   font-weight: 600;
   letter-spacing: 0.02em;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* Union name after the club on masthead line 1. Dan 2026-09-07, item 8: the
@@ -1701,14 +1664,9 @@
   color: rgba(214, 226, 244, 0.5);
 }
 
-/* THE CLUB'S NAME NEVER BREAKS INSIDE ITSELF (Dan 2026-09-23). The identity
-   row is allowed to wrap (7A, above) so that no name is ever ellipsized, but
-   the union span is nowrap and used to carry the " · " separator, which left
-   the space inside "Shark Club" as the row's only break opportunity: the felt
-   read "SHARK" over "CLUB · MIDWAY UNION". Both names are now unbreakable
-   units and the single breakable space on the row is the one between them. */
+/* Prefer normal word boundaries; an unusually long name may use more lines. */
 .table-brand__club-name {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 @media (max-width: 380px) {
@@ -2023,9 +1981,9 @@
   font-weight: 700;
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
   text-align: center;
   flex: 1 1 auto;
 }
@@ -3229,9 +3187,10 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-align: center;
   animation: insuranceWaitingPulse 1.6s ease-in-out infinite;
 }
 @keyframes insuranceWaitingPulse {
@@ -3737,6 +3696,9 @@
    BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+.table-page--backgrounded,
+.table-page--backgrounded::before,
+.table-page--backgrounded::after,
 .table-page--backgrounded *,
 .table-page--backgrounded *::before,
 .table-page--backgrounded *::after {
@@ -4194,7 +4156,7 @@ button.post-bb-overlay-button {
 .table-brand__union {
   opacity: 0.72;
   font-weight: 500;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -5155,7 +5117,7 @@ button.post-bb-overlay-button {
   }
   .table-page .table-brand__line--identity {
     font-size: 7px;
-    white-space: nowrap;
+    white-space: normal;
     line-height: 1.15;
     letter-spacing: 0.04em;
   }

@@ -14,6 +14,8 @@ import './NlhPremiumCard.css';
 interface NlhPremiumCardProps {
   data: ArenaGameCardData;
   actions: ArenaGameCardActions;
+  primaryTestId?: string;
+  gameTypeLabel?: string;
 }
 
 /* The title's stylesheet stretch (scaleX) - useFitText must account for it
@@ -108,7 +110,12 @@ function NlhActionLabel({ text }: { text: string }) {
   );
 }
 
-export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
+export function NlhPremiumCard({
+  data,
+  actions,
+  primaryTestId,
+  gameTypeLabel,
+}: NlhPremiumCardProps) {
   const titleRef = useFitText<HTMLElement>(data.title, TITLE_SCALE_X);
   const titleZone =
     data.subtitle || data.styleNote ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
@@ -166,7 +173,17 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         </div>
       )}
 
-      <ArtLayer src={NLH_PREMIUM_ASSETS.gameTypeNlh} zone="gameType" />
+      {!gameTypeLabel || gameTypeLabel.toUpperCase() === 'NLH' ? (
+        <ArtLayer src={NLH_PREMIUM_ASSETS.gameTypeNlh} zone="gameType" />
+      ) : (
+        <div
+          className="agc-nlh-premium__zone agc-nlh-premium__game-type"
+          data-zone="gameType"
+          style={premiumZoneStyle(NLH_PREMIUM_ZONES.gameType)}
+        >
+          <ArenaPremiumValueText>{gameTypeLabel.toUpperCase()}</ArenaPremiumValueText>
+        </div>
+      )}
 
       <div
         className="agc-nlh-premium__zone agc-nlh-premium__value agc-nlh-premium__value--stakes"
@@ -225,6 +242,7 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
             : 'white'
         }`}
         data-zone="primaryAction"
+        data-testid={primaryTestId}
         aria-label={actions.primaryLabel}
         disabled={actions.primaryDisabled || actions.busy}
         style={premiumZoneStyle(NLH_PREMIUM_ZONES.primaryAction)}

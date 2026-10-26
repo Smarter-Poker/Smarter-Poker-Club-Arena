@@ -200,6 +200,28 @@ describe('horseDecisionWorkerCount', () => {
   });
 });
 
+describe('the boot journal walk may be skipped only when it cannot change the count (2026-10-24)', () => {
+  it('gives the same worker count for any capacity at or above the maximum', () => {
+    for (let cores = 1; cores <= 64; cores++) {
+      for (const canYield of [true, false]) {
+        for (const requested of [undefined, '2', '6', '12']) {
+          const atMax = horseDecisionWorkerCount({
+            requested,
+            cores,
+            canYield,
+            journalShards: MAX_HORSE_DECISION_WORKERS,
+          });
+          for (const measured of [MAX_HORSE_DECISION_WORKERS + 1, 20, 25, 200]) {
+            expect(
+              horseDecisionWorkerCount({ requested, cores, canYield, journalShards: measured })
+            ).toBe(atMax);
+          }
+        }
+      }
+    }
+  });
+});
+
 describe('horseDecisionShard', () => {
   it('keys on the table id in front of the first colon', () => {
     const table = '3c00d4d0-5d98-44de-ad36-cd683001d32a';

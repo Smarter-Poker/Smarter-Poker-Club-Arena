@@ -2021,7 +2021,7 @@ export default function CreateTournamentModal({
                         <span className={styles.helperText}>
                           {isFreeBuy
                             ? 'Play Pauses After The Current Hand For The Final 60 Seconds. The Full Add-On Cost Goes To The Prize Pool With No Rake.'
-                            : 'It Opens Once, When Late Registration, Rebuys And Re-Entries Close, Or When A Break Already Running Then Ends. Play Pauses After The Current Hand. The Full Add-On Cost Goes To The Prize Pool With No Rake.'}
+                            : 'It Opens Once, When Late Registration, Rebuys And Re-Entries Close. Play Pauses After The Current Hand. If The :55 Break Is Already Running, It Opens Inside That Break And Lasts Until The Break Ends. The Full Add-On Cost Goes To The Prize Pool With No Rake.'}
                         </span>
                       </div>
                     </div>

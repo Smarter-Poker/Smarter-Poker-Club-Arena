@@ -5,6 +5,7 @@ import ClubRosterService, {
 } from '../../services/ClubRosterService';
 import { reportError } from '../../utils/errorReporter';
 import { winLossChips } from '../../utils/format';
+import { useChicagoStatsDay } from '../../hooks/useChicagoStatsDay';
 // The record's own sheet: the card is drawn from its stat rows and inks.
 import '../../pages/MemberManagementPage.css';
 
@@ -19,8 +20,9 @@ import '../../pages/MemberManagementPage.css';
  * Overall. Each prints the net in the record's own up / down ink, with the
  * cash and tournament halves beneath it. Cash is signed hand results after
  * rake; tournaments are money (prizes and bounties minus buy-ins, rebuys and
- * add-ons), never tournament chips. Days are UTC, matching the record's own
- * date ranges.
+ * add-ons), never tournament chips. Every window resets at 12 AM Chicago
+ * time (Dan 2026-10-25): Today at midnight, This Week on Monday and This
+ * Month on the 1st.
  *
  * Rendered only where the record already shows financials, and the RPC applies
  * the same access rule again, so a viewer who may not see wallets gets nothing.
@@ -59,7 +61,8 @@ export default function MemberWinLossCard({
   userId: string;
   refreshKey?: number;
 }) {
-  const scope = `${clubId}:${userId}`;
+  const day = useChicagoStatsDay();
+  const scope = `${clubId}:${userId}:${day}`;
   type Result = {
     scope: string;
     state: 'loading' | 'ready' | 'error' | 'hidden';
@@ -129,7 +132,9 @@ export default function MemberWinLossCard({
               Could Not Refresh Win And Loss. Showing The Previous Successful Read.
             </p>
           )}
-          <p className="mm-winloss__note">Club Chips. Days Run Midnight To Midnight UTC.</p>
+          <p className="mm-winloss__note">
+            Club Chips. Today, Week And Month Reset At 12 AM Chicago Time.
+          </p>
         </>
       )}
     </section>

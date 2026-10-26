@@ -237,6 +237,7 @@ describe('Horse Phase 4 changes admit their PostgreSQL parent job', () => {
 describe('Horse commitment audit remains in the existing accounting PostgreSQL gate', () => {
   it.each([
     'scripts/ci/test-horse-commitment-audit.py',
+    'scripts/ci/test-horse-own-public-history.py',
     'scripts/ci/probes/horse-commitment-audit/bootstrap.sql',
     'scripts/ci/probes/horse-commitment-audit/setup.sql',
     'scripts/ci/probes/horse-commitment-audit/original-r1-function.sql',
@@ -318,4 +319,15 @@ it('runs the real-Git report regressions for a detector-only edit', () => {
     phase4: false,
     fixture: false,
   });
+});
+
+it('enforces individual public history in required PG17 accounting shard four', () => {
+  const steps = ci.jobs.accounting_postgres.steps.filter((s: { run?: string }) =>
+    s.run?.includes('python3 -B scripts/ci/test-horse-own-public-history.py')
+  );
+  expect(steps).toHaveLength(1);
+  expect(steps[0].if).toBe('matrix.shard == 4');
+  expect(steps[0]['continue-on-error']).toBeUndefined();
+  expect(steps[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+  expect(ci.jobs.server.needs).toContain('accounting_postgres');
 });

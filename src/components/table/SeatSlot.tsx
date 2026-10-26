@@ -18,6 +18,7 @@
  */
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
+import type { SeatArrival } from './seatArrival';
 import { serverNow } from '../../utils/serverClock';
 import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
@@ -39,6 +40,7 @@ import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
+import { formatPopupText } from '../../utils/popupStyle';
 /**
  * Suit glyphs for the peel index (text symbols, U+2660-2667, with the text
  * variation selector so no platform swaps in an emoji). Same characters
@@ -71,6 +73,7 @@ import './avatarChoreography.css';
 import {
   formatPrizeAtUnit,
   formatStackChips,
+  formatBigBlinds,
   formatTableChips,
   moneyWordAtUnit,
 } from '../../utils/format';
@@ -218,6 +221,8 @@ export interface SeatPlayer {
   /** Equipped avatar aura token (`aura-fire`, ...), from `profiles.equipped_aura`. */
   aura?: string;
   stack: number;
+  /** True while no authoritative balance is available; known zero stays zero. */
+  stackPending?: boolean;
   status: PlayerStatus;
   /**
    * Dan 2026-08-18: a slot may be null. When a player reveals only SOME of
@@ -238,6 +243,7 @@ export interface SeatPlayer {
 }
 
 export interface SeatSlotProps {
+  arrival?: SeatArrival;
   /**
    * `table_seats.sit_out_at` in epoch ms, and ONLY when a deadline applies.
    *
@@ -255,6 +261,8 @@ export interface SeatSlotProps {
   sitOutAt?: number | null;
   seatNumber: number;
   player: SeatPlayer | null;
+  /** Confirmed by this hand's engine roster, never by a queued pre-action. */
+  foldCommitted?: boolean;
   position: PositionBadge;
   /**
    * KILL POTS (rule manifest kill-v1): the marker on the killer's seat for the
@@ -318,6 +326,15 @@ export interface SeatSlotProps {
    */
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * Dan 2026-10-24 ("PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS BETTER"):
+   * the name of the hand THIS seat tabled at showdown, from the engine's
+   * showdown event. Printed under a beaten hand that is still face up, muted
+   * beside the winner's gold label, so every hand on the felt says what it
+   * is. Never rendered for the winner (the winner label is that seat's
+   * line), for a mucked hand, or while the hero's own live read is showing.
+   */
+  shownHandName?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (spec section 15): indices of THIS winner's
    * own hole cards that participate in the winning five-card hand, from the
@@ -439,6 +456,16 @@ export interface SeatSlotProps {
    */
   canSit?: boolean;
   /**
+   * LIGHTNING TRANSITION, PHASE 1: an empty chair in a Lightning room draws
+   * nothing at all. Nobody can sit in a Lightning room (Join Lightning assigns
+   * the chair), and the pool deals a new set of opponents every hand, so an
+   * "EMPTY" coin at every open chair for the whole wait between hands was
+   * furniture describing nothing. Only a Lightning room passes it: Classic
+   * tables keep EMPTY on their empty seats (Dan's rule), and Lightning never
+   * changes a Classic table. Default false.
+   */
+  hideEmptyChair?: boolean;
+  /**
    * Dan 2026-08-18: true for the hero's OWN reserved seat while they wait to
    * be dealt in. Every other open seat reads EMPTY; this one reads YOUR SEAT
    * so the player can see where they'll appear.
@@ -463,6 +490,14 @@ export interface SeatSlotProps {
    * applies `seat__cards--dealing` class for card slide-in animation at each seat.
    */
   isDealing?: boolean;
+  /**
+   * LIGHTNING TRANSITION, PHASE 3: true in a Lightning room from the moment a
+   * new hand's deal is scheduled until its 700 ms button beat ends and the
+   * deal begins. The seat's cards are hidden for that beat, so they arrive
+   * with the deal instead of showing first and then blinking out when the
+   * deal restarts them from invisible. Only a Lightning room passes it.
+   */
+  dealPending?: boolean;
   /**
    * ANIMATION AUDIT 2026-08-19 — true when this seat LOST a showdown and its
    * revealed cards should fly to the muck (cardFoldOut) before the table
@@ -563,11 +598,11 @@ function formatStack(amount: number): string {
 // which is the abbreviation complaint wearing a different unit. Deep counts
 // stay whole and separated; shallow ones keep the one decimal that decides
 // whether you are shoving.
+/* The stack in big blinds, in the one BB shape the pot and every bet use
+   (formatBigBlinds). With no big blind known yet it prints the chip stack, so
+   the seat never shows a "0 BB" or a count against a guessed blind. */
 function formatStackAsBB(stack: number, bigBlind: number): string {
-  if (bigBlind <= 0) return '0 BB';
-  const bb = stack / bigBlind;
-  if (bb >= 100) return `${Math.round(bb).toLocaleString('en-US')} BB`;
-  return `${bb.toFixed(1)} BB`;
+  return formatBigBlinds(stack, bigBlind) ?? formatStack(stack);
 }
 
 /**
@@ -636,18 +671,36 @@ function formatWager(amount: number): string {
   return formatTableChips(amount);
 }
 
-function getActionLabel(action: LastAction, amount?: number): string {
+/**
+ * A wager printed the way the player chose to read the table (Dan
+ * 2026-10-24): "WHEN YOU CHANGE YOUR STACK FROM A TOTAL TO BB IT SHOW THE
+ * TOTAL POT AMOUNT IN THE POT AS TOTAL CHIPS INSTEAD OF BB'S." The pot was the
+ * one he saw; the bet chips in front of each seat, the Call / Bet / Raise
+ * label and the won amount had the same split - the stack switched to BB and
+ * they stayed in chips. Every figure a seat prints follows the one setting,
+ * through the same big blind the stack uses. No big blind to divide by keeps
+ * the chip figure rather than printing a "0 BB" that is not true.
+ */
+function formatSeatWager(amount: number, inBB: boolean, bigBlind: number): string {
+  return (inBB && formatBigBlinds(amount, bigBlind)) || formatWager(amount);
+}
+
+function getActionLabel(
+  action: LastAction,
+  amount?: number,
+  fmt: (n: number) => string = formatWager
+): string {
   switch (action) {
     case 'fold':
       return 'Fold';
     case 'check':
       return 'Check';
     case 'call':
-      return amount ? `Call ${formatWager(amount)}` : 'Call';
+      return amount ? `Call ${fmt(amount)}` : 'Call';
     case 'bet':
-      return amount ? `Bet ${formatWager(amount)}` : 'Bet';
+      return amount ? `Bet ${fmt(amount)}` : 'Bet';
     case 'raise':
-      return amount ? `Raise ${formatWager(amount)}` : 'Raise';
+      return amount ? `Raise ${fmt(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
     case 'discard':
@@ -712,18 +765,6 @@ const VILLAIN_FAN: Record<number, { step: number; rot: number }> = {
  * deferred by the browser's lazy heuristic at the exact moment the player is
  * trying to read them. See CardImage's `loading` prop.
  */
-/**
- * Dan 2026-08-30 (binding): seat names never ellipsize. If the full name does
- * not fit the plate, it is CUT AT A CHARACTER BUDGET with no "..." appended -
- * "Clara Hell..." reads worse than "Clara Hell". 11 characters is the widest
- * string that always fits the .seat__name 76px cap at --font-xs; the CSS
- * keeps overflow:hidden as a belt, but with text-overflow: clip so the
- * ellipsis can never come back through styling alone.
- */
-function limitSeatName(name: string | undefined | null): string {
-  const n = (name ?? '').trim();
-  return n.length > 11 ? n.slice(0, 11).trimEnd() : n;
-}
 
 function HoleCard({
   card,
@@ -852,6 +893,7 @@ export const SeatSlot = memo(
     const {
       seatNumber,
       player,
+      foldCommitted = false,
       position,
       killMarker = null,
       isActive,
@@ -875,6 +917,7 @@ export const SeatSlot = memo(
       netWinAmount,
       bbjCreditAmount,
       winningHandName,
+      shownHandName,
       handStrength,
       hudStats,
       showHUD = false,
@@ -888,6 +931,7 @@ export const SeatSlot = memo(
       showStackInBB = false,
       onSit,
       canSit = true,
+      hideEmptyChair = false,
       isHeroReservedSeat = false,
       onAction,
       onAvatarClick,
@@ -896,6 +940,7 @@ export const SeatSlot = memo(
       gesturesEnabled = true,
       isCollectingChips = false,
       isDealing = false,
+      dealPending = false,
       isMucking = false,
       winningHoleCardIndexes,
       winnerDisplayActive = false,
@@ -911,6 +956,7 @@ export const SeatSlot = memo(
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
+    const wagerFmt = (n: number) => formatSeatWager(n, showStackInBB, bigBlind);
 
     /**
      * THE CALLBACKS, ALWAYS THE LATEST ONES (audit 2026-08-25).
@@ -1087,6 +1133,64 @@ export const SeatSlot = memo(
      * on the default side before correcting itself.
      */
     const seatRef = useRef<HTMLDivElement | null>(null);
+    const playedArrivalRef = useRef<string | null>(null);
+    useLayoutEffect(() => {
+      const arrival = props.arrival;
+      if (
+        !arrival ||
+        !player ||
+        arrival.playerId !== player.id ||
+        playedArrivalRef.current === arrival.key
+      )
+        return;
+      playedArrivalRef.current = arrival.key;
+      if (player.isHero || isActive) return;
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      // Only existing portrait/nameplate art arrives. Cards, timers, actions,
+      // and the authoritative roster are already present and never delayed.
+      const animations = [
+        ...(seatRef.current?.querySelectorAll<HTMLElement>('.seat__avatar, .seat__info') ?? []),
+      ]
+        .filter((node) => typeof node.animate === 'function')
+        .map((node) =>
+          node.animate(
+            [
+              { opacity: 0, transform: reduced ? 'none' : 'scale(0.94)' },
+              { opacity: 1, transform: 'none' },
+            ],
+            {
+              duration: 180 * getAnimationSpeed(),
+              delay: arrival.delayMs,
+              fill: 'backwards',
+              easing: 'ease-out',
+            }
+          )
+        );
+      /* LIGHTNING TRANSITION, PHASE 3: the portrait fades in painted. A new
+         opponent's avatar was still downloading when its fade began, so the
+         player watched an empty circle fade in and the face pop in after it.
+         The fade waits, held at its first frame, until the image has decoded,
+         for at most 300 ms x Animation Speed; it then plays in full. */
+      const img = seatRef.current?.querySelector<HTMLImageElement>('img.seat__avatar-img');
+      if (img && !img.complete && typeof img.decode === 'function' && animations.length) {
+        let released = false;
+        const release = () => {
+          if (released) return;
+          released = true;
+          animations.forEach((animation) => animation.play?.());
+        };
+        animations.forEach((animation) => animation.pause?.());
+        img.decode().then(release, release);
+        const cap = setTimeout(release, 300 * getAnimationSpeed());
+        return () => {
+          released = true;
+          clearTimeout(cap);
+          animations.forEach((animation) => animation.cancel());
+        };
+      }
+      return () => animations.forEach((animation) => animation.cancel());
+    }, [props.arrival, player?.id, player?.isHero, isActive]);
+
     const [cardSide, setCardSide] = useState<CardSide>('right');
     const hasPlayer = !!player;
     useLayoutEffect(() => {
@@ -1229,8 +1333,9 @@ export const SeatSlot = memo(
     const seatedIdRef = React.useRef<string | null>(player?.id ?? null);
     const playerId = player?.id ?? null;
     useEffect(() => {
-      if (!player) {
-        seatedIdRef.current = null; // Player left — reset for next occupant
+      if (!player || player.stackPending) {
+        seatedIdRef.current = null; // Unknown balance or a new occupant starts fresh.
+        setStackDelta(0);
         return;
       }
       const sameOccupant = seatedIdRef.current === player.id;
@@ -1260,7 +1365,7 @@ export const SeatSlot = memo(
       // A contribution or new occupant clears any previous gain. The effect
       // cleanup cancelled its timer, so do not leave stale animation state.
       setStackDelta(0);
-    }, [player?.stack, playerId]);
+    }, [player?.stack, player?.stackPending, playerId]);
 
     /**
      * Which avatar URL (if any) failed to load, so the monogram can take over.
@@ -1348,6 +1453,9 @@ export const SeatSlot = memo(
     const [isFolding, setIsFolding] = useState(false);
     const prevActionRef = React.useRef<LastAction>(null);
     useEffect(() => {
+      // A new hand can arrive before the previous fold timer completes.
+      // Its cleanup cancels that timer; the new action must release the old pose.
+      if (lastAction !== 'fold') setIsFolding(false);
       // IMPROVEMENT PASS 2026-08-19: every class-removal window scales with
       // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
@@ -2272,8 +2380,9 @@ export const SeatSlot = memo(
     const prevStackForGlowRef = React.useRef<number>(player?.stack ?? 0);
     const glowOccupantRef = React.useRef<string | null>(player?.id ?? null);
     useEffect(() => {
-      if (!player) {
+      if (!player || player.stackPending) {
         glowOccupantRef.current = null;
+        setStackGlow(false);
         return;
       }
       const prev = prevStackForGlowRef.current;
@@ -2288,7 +2397,7 @@ export const SeatSlot = memo(
           return () => clearTimeout(timer);
         }
       }
-    }, [player?.stack, playerId]);
+    }, [player?.stack, player?.stackPending, playerId]);
 
     const containerClasses = useMemo(() => {
       const cls = ['seat'];
@@ -2377,6 +2486,18 @@ export const SeatSlot = memo(
       // a passive "EMPTY" marker. No onClick, no role="button", no tabIndex:
       // the seat is removed from the interaction model entirely rather than
       // accepting the click and rejecting it downstream.
+      if (!canSit && hideEmptyChair && !isHeroReservedSeat) {
+        /* A Lightning room's open chair: the slot keeps its seat number (the
+           ring and the throwable scopes address seats by it) and draws
+           nothing. The hero's own reserved chair is never hidden. */
+        return (
+          <div
+            className={`${containerClasses} seat--empty-locked seat--empty-hidden`}
+            data-seat-num={seatNumber}
+            aria-hidden="true"
+          />
+        );
+      }
       if (!canSit) {
         return (
           <div
@@ -2868,6 +2989,12 @@ export const SeatSlot = memo(
     const shownAction: LastAction =
       player.status === 'all_in' || lastAction === 'all_in' ? null : lastAction;
 
+    const foldIdentityHidden =
+      foldCommitted &&
+      !isFolding &&
+      avatarGesture !== 'fold' &&
+      !(lastAction === 'fold' && prevActionRef.current !== 'fold');
+
     return (
       <div
         ref={seatRef}
@@ -2875,15 +3002,17 @@ export const SeatSlot = memo(
            outboard at the top cap, inboard everywhere else, see `seatCardSide`.
            It rides on the seat rather than on the card row so the CSS can key
            both the hero row and the opponent row off one class. */
-        className={`${containerClasses} seat--cards-${cardSide}`}
-        onClick={() => callbacksRef.current.onAction?.()}
+        className={`${containerClasses} seat--cards-${cardSide}${foldIdentityHidden ? ' seat--fold-hidden' : ''}`}
+        onClick={() => {
+          if (!foldIdentityHidden) callbacksRef.current.onAction?.();
+        }}
         data-seat-num={seatNumber}
         data-player-id={player.id}
         role="region"
         /* isActingNow: a screen reader must not keep announcing a folded seat
            as "acting now" for the round trip it takes the snapshot to move the
            turn along - the same stale-turn window the countdown ring had. */
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stackPending ? 'Unavailable' : player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Ordinary actions stay above the avatar. ALL IN is printed only on
@@ -2892,9 +3021,9 @@ export const SeatSlot = memo(
           <div
             className={`seat__action seat__action--${shownAction}`}
             role="status"
-            aria-label={`${player.name}: ${getActionLabel(shownAction, lastBetAmount)}`}
+            aria-label={`${player.name}: ${getActionLabel(shownAction, lastBetAmount, wagerFmt)}`}
           >
-            {getActionLabel(shownAction, lastBetAmount)}
+            {getActionLabel(shownAction, lastBetAmount, wagerFmt)}
           </div>
         )}
 
@@ -2917,6 +3046,7 @@ export const SeatSlot = memo(
             <div className="seat__bet-chips">
               <ChipPhysics
                 amount={lastBetAmount}
+                formatAmount={wagerFmt}
                 animate={
                   isCollectingChips
                     ? 'collect'
@@ -2954,7 +3084,7 @@ export const SeatSlot = memo(
             isFolding ||
             isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}${dealPending && !isDealing ? ' seat__cards--deal-pending' : ''}`}
               data-card-count={opponentCardCount}
               style={
                 {
@@ -3058,6 +3188,8 @@ export const SeatSlot = memo(
         {/* showHolo: eligible art AND on the clock - see holoOnClockDelayMs. */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
+          inert={foldIdentityHidden}
+          aria-hidden={foldIdentityHidden || undefined}
           /* `--rigged` hands ALL motion to the rig. Without it a rigged avatar
              plays its own Push animation while this wrap ALSO leans through
              spAvatarPush, and keeps breathing on top of the rig's own idle —
@@ -3210,7 +3342,10 @@ export const SeatSlot = memo(
                    keeps up to four tables mounted with the inactive ones
                    display:none, and lazy is what stops 27 off-screen avatars
                    from being fetched before the player has opened those tabs. */
-                loading={player.isHero ? 'eager' : 'lazy'}
+                /* An arriving Lightning opponent (`arrival`) is on the felt
+                   in front of the player right now, so it loads at once: its
+                   fade waits for this image (the arrival effect above). */
+                loading={player.isHero || props.arrival ? 'eager' : 'lazy'}
                 decoding="async"
                 fetchPriority={player.isHero ? 'high' : 'auto'}
                 onError={() => setFailedAvatarUrl(avatarUrl)}
@@ -3330,7 +3465,14 @@ export const SeatSlot = memo(
             instantly on every turn for reduced-motion players — the exact case
             the escape hatch was built for. The ring is informational, not
             vestibular motion (it shrinks in place). */}
-        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
+        <div
+          className="seat__info"
+          style={timerStyle}
+          key={`info-${timerKey}`}
+          data-motion="keep"
+          inert={foldIdentityHidden}
+          aria-hidden={foldIdentityHidden || undefined}
+        >
           {/* The neon countdown ring. A real element (it was `.seat__info::before`
               until 2026-10-04) because it has to be a size container: the
               sweep is converted from "fraction of the BORDER spent" to a conic
@@ -3342,15 +3484,17 @@ export const SeatSlot = memo(
               <span className="seat__timer-ring-arc" />
             </span>
           )}
-          {/* Dan 2026-08-30: "NAMES SHOULD NEVER BE CUT OFF... PUT A
-              CHARACTER LIMIT ON THEM IF YOU CAN'T FIT THEM ALL IN WITHOUT
-              USING A ... AFTER THEM." A hard budget instead of an ellipsis:
-              what renders is what fits, whole characters, no dots. */}
-          <span className="seat__name">{limitSeatName(player.name)}</span>
+          {/* Full names wrap within the seat plate (owner 2026-10-26). */}
+          <span className="seat__name">{player.name?.trim()}</span>
           <span
-            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
+            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${player.stackPending ? '' : getStackDepthClass(player.stack, bigBlind)}`}
+            aria-busy={!!player.stackPending}
           >
-            {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
+            {player.stackPending
+              ? '...'
+              : showStackInBB
+                ? formatStackAsBB(player.stack, bigBlind)
+                : formatStack(player.stack)}
           </span>
 
           {/* Armed time bank — the seat-level replacement for the toast that
@@ -3390,7 +3534,7 @@ export const SeatSlot = memo(
           {stackDelta > 0 && (
             <span className="seat__stack-delta seat__stack-delta--win">
               +{/* A stack gain uses wager precision (Dan 2026-09-23, item 9). */}
-              {showStackInBB ? formatStackAsBB(stackDelta, bigBlind) : formatWager(stackDelta)}
+              {wagerFmt(stackDelta)}
             </span>
           )}
         </div>
@@ -3435,6 +3579,7 @@ export const SeatSlot = memo(
                  still face down in the squeeze - there is nothing to show. */
               (heroHandIsTabled && !squeezeDown ? ' seat__cards--revealed' : '') +
               (isDealing ? ' seat__cards--dealing' : '') +
+              (dealPending && !isDealing ? ' seat__cards--deal-pending' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
               (isPeeking ? ' seat__cards--peeking' : '') +
@@ -3640,7 +3785,21 @@ export const SeatSlot = memo(
         )}
 
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
-        {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+        {isWinner && winningHandName && (
+          <div className="seat__hand-name seat__hand-name--winner">
+            {formatPopupText(winningHandName)}
+          </div>
+        )}
+        {/* Dan 2026-10-24: a beaten hand that is still face up names itself. */}
+        {!isWinner &&
+          shownHandName &&
+          !isMuckedShowdown &&
+          !isMucking &&
+          !(player.isHero && handStrength && !squeezeDown) && (
+            <div className="seat__hand-name seat__hand-name--shown">
+              {formatPopupText(shownHandName)}
+            </div>
+          )}
 
         {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this
             hand muckable — its cards were never revealed. The label is the
@@ -3691,7 +3850,7 @@ export const SeatSlot = memo(
             {/* A win is a wager's kind of number, not a stack's: +12, not
                 +12.00, beside a stack delta that already reads +12
                 (2026-09-24, the one float item 9 missed). */}
-            {formatWager(Math.abs(netWinAmount))}
+            {wagerFmt(Math.abs(netWinAmount))}
           </div>
         )}
 
@@ -3798,7 +3957,9 @@ export const SeatSlot = memo(
        travel through props any more. */
     if (prev.actionClock !== next.actionClock) return false;
     if (prev.isActive !== next.isActive) return false;
+    if (prev.arrival?.key !== next.arrival?.key) return false;
     if (prev.canSit !== next.canSit) return false;
+    if (prev.hideEmptyChair !== next.hideEmptyChair) return false;
     /**
      * AUDIT 2026-08-25 — two props that were passed, read, and then blocked.
      *
@@ -3833,6 +3994,7 @@ export const SeatSlot = memo(
     if (prev.position !== next.position) return false;
     if (prev.killMarker !== next.killMarker) return false;
     if (prev.isTournament !== next.isTournament) return false;
+    if (prev.foldCommitted !== next.foldCommitted) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
     if (prev.bountyIsMystery !== next.bountyIsMystery) return false;
@@ -3842,6 +4004,7 @@ export const SeatSlot = memo(
     if (prev.bountyUnitCents !== next.bountyUnitCents) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
+    if (prev.shownHandName !== next.shownHandName) return false;
     if (prev.handStrength !== next.handStrength) return false;
     if (prev.netWinAmount !== next.netWinAmount) return false;
     if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;
@@ -3916,6 +4079,7 @@ export const SeatSlot = memo(
     if (prev.showAvatar !== next.showAvatar) return false;
     if (prev.showBadges !== next.showBadges) return false;
     if (prev.isDealing !== next.isDealing) return false;
+    if (prev.dealPending !== next.dealPending) return false;
     // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
     if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
     if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;
@@ -3947,6 +4111,7 @@ export const SeatSlot = memo(
     if (pp.id !== np.id) return false;
     if (pp.name !== np.name) return false;
     if (pp.stack !== np.stack) return false;
+    if (pp.stackPending !== np.stackPending) return false;
     if (pp.status !== np.status) return false;
     if (pp.isHero !== np.isHero) return false;
     if (pp.showCards !== np.showCards) return false;

@@ -1,5 +1,22 @@
 {
   "status": "source_changed_unrun_pending_qualification",
+  "routePerformanceGateInputs20261025": {
+    "reason": "Route-performance gate inputs (PR #7985): classify-ci-changes.mjs now routes the four route-performance gate scripts to the Production Build job so a change to the gate is executed before it merges. Current source identity only; historical audits, financial pins/assertions and qualification states unchanged. No financial certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335",
+        "current": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "8d1f21a95a74424d5c244fb627ef0ded931b3fa22b5415aabfbec676b8cc4101",
+        "current": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "f5ae154b3da17b4449989bb247e8e7ac0027e55d08ba980a254a66655367a746",
+        "current": "a60e85bc07af4ac52c5505b0ef9f1f3885e44ec59bac10a77e669027a24654f6"
+      }
+    }
+  },
   "diamondLaunchMainInputMerge20261013": {
     "reason": "Preserve latest protected-main0152591fbeb scoped reset/recovery qualification and unchanged Lightning reallocation with Diamond bounded budget. Current source identity only; historical audits/financial pins/assertions and qualification states unchanged.",
     "changes": {
@@ -181,7 +198,7 @@
     "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
-    "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
+    "tests/components/agent-cashout-scope.test.tsx": "1741188412170b7dc2d283c217dfe7895dc888b2880c6b9c9f41f313dd3cb13a",
     "tests/unit/CashoutService.test.ts": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449",
     "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
     "tests/cashout-escrow-flow.test.ts": "08c3b2ed491fad0fb4673779f5ff863452e2a9bd6cf617955a3d4d36f2c534c6",
@@ -189,11 +206,11 @@
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
     "tests/components/cashout-scope.test.tsx": "db239afb7ad44fa60b810c75cdc95dfb1a794d90747d8ff650f02dacfe1b0ecd",
-    "tests/fixtures/cashier-document-authority/regression.sql": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
+    "tests/fixtures/cashier-document-authority/regression.sql": "77f954697140fd4cb0d04076da422a7a99ec70a47a20e938571bf4ceab565517",
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
-    "tests/unit/CashoutRequestModal.test.tsx": "49072c272d04e3ddbfd7220c8b7e92a463872550538004f21ddc92226281f1c5",
+    "tests/unit/CashoutRequestModal.test.tsx": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea",
@@ -224,10 +241,10 @@
     "tests/components/WeeklyAccountingWorkspace.test.tsx": "3fa2ec057866093383ec05539ac3a60de8cec52abfee780d2491ead8894f5be7",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "8863dfb7e552fdf23d4e8e00eefce37b16f3cfbf1eb1858f9db9274b1f987d80",
-    "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
+    "tests/components/cashier-cashout-generations.test.tsx": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "227203c3742bcfe42dd6b6b72eb82cc2c9f80512627c2c96db027f625312db08",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -465,10 +482,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "cbbde3a94ef9e91d57547eebc8c0bb0ef704dea7933a68e1c022f8a6431684b9",
+    "scripts/ci/classify-ci-changes.mjs": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "3566e880847285d36976c3f881f0ae679197a2d517e9bfdb178cd64ce2fcc9e3",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "a705cfffedd0343b9a7ef8d1626cb24e05494eb8eae57bcc1f2cee20ae722fd9",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -482,12 +499,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894",
+    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "3c2f66444d8edcaaae03a4c0ee0c95b7f23106dade4cfe127d89ecba7c40f45a",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "95f09fe2904d40416631847b624b4c80048dd6c596b5080d55f69f51c66a38b5",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -527,7 +544,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "0e0638ff497ab12c6cc5451553b65936b8936df547b855c88482f5567482c771",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -2940,6 +2957,13 @@
       "from": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
       "to": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
       "why": "Reviewed Dan 2026-10-23 owner rule: a cash out REQUEST (hold) document reaches the player and their assigned agent only; the club owner is no longer notified (migration 20261023161137). The fixture installs the same one-line audience change (it runs on a component-built catalog), the hold delivery assertion changes from three participants to two, and a check that the owner receives no notification is added. No other assertion, financial input, captured row or qualification status changed. Matching source hashes are not production or financial execution proof."
+    },
+    {
+      "on": "2026-10-24",
+      "file": "tests/fixtures/cashier-document-authority/regression.sql",
+      "from": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
+      "to": "77f954697140fd4cb0d04076da422a7a99ec70a47a20e938571bf4ceab565517",
+      "why": "Reviewed Dan 2026-10-24 owner rule: when an owner, co-owner or admin accepts or cancels a cash out, the agent it was assigned to receives the decision document too (migration 20261024220301). The fixture installs the same one-line audience change after the 2026-10-23 one, and adds two checks: an admin acceptance is delivered to exactly owner, player, accepter and assigned agent, and an admin cancellation reaches the assigned agent. No other assertion, financial input, captured row or qualification status changed. Matching source hashes are not production or financial execution proof."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -5238,6 +5262,154 @@
         "previous_sha256": "8e2e923904906d57440bdf89738d4a91026b774c354e4f4485ac286b34f80d40",
         "current_sha256": "49072c272d04e3ddbfd7220c8b7e92a463872550538004f21ddc92226281f1c5",
         "reason": "Two preset-selection tests become one test that asserts no Quick Amounts group or preset button exists and that a typed cent amount is sent exactly; min, step, inputmode, retry identity and refusal tests are unchanged."
+      }
+    }
+  },
+  "cashoutSettlementIndependence20261023": {
+    "reason": "Reviewed cashout tests suspend at authoritative receipt recovery instead of the removed browser settlement gate, preserve account/club/input and duplicate-action refusals, and assert funded requests plus approval/rejection proceed despite settlement. Preserve the concurrent main change removing suggested cashout amounts. Current test identity only; historical evidence, financial SQL, invariants and qualification states unchanged. Five settlement regressions failed before the repair; required exact-candidate hosted qualification remains mandatory. This is not a financial certification restamp.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/components/agent-cashout-scope.test.tsx",
+        "previous": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
+        "current": "1741188412170b7dc2d283c217dfe7895dc888b2880c6b9c9f41f313dd3cb13a"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/components/cashier-cashout-generations.test.tsx",
+        "previous": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
+        "current": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/unit/CashoutRequestModal.test.tsx",
+        "previous": "49072c272d04e3ddbfd7220c8b7e92a463872550538004f21ddc92226281f1c5",
+        "current": "1b7d7953511424b486ddf4106102051ab63a0c4db191e527a3470ca6b975d486"
+      }
+    ]
+  },
+  "serialJournalIndexCiInput20261023": {
+    "reason": "Add the source-bound serial journal index module to the existing required contract-index recovery CI selector. Refresh only the current classifier input identity; preserve all historical financial certificates, qualification states, assertions and source inventories. This is not financial execution or installation evidence.",
+    "source_revision": "f133610656b1cf6ee94757629efe9214a67671a1",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6",
+    "current_sha256": "843281f8506b206eb0702c03a32e13298ed76a923c58a1df8544b725d00277a5",
+    "nested_current_bindings": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous_sha256": "124b457cf57abc1ddfe8892643a3c463d354b0728a1ee08f1768e3de0eaa11eb",
+        "current_sha256": "d28b35e1fc0de590f4dad6c55133a7395183a8af7cf151c48cac28a4347048e3"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous_sha256": "96f06f96ce0a5dbb75617ec5c27d33c5b6fb0b2009c0a8ef71fea255cd1a03c7",
+        "current_sha256": "715c7d546065c7d88063b30863629ed61373132246cfe9d05b2e1c59b560bebc"
+      }
+    }
+  },
+  "migrationAuditIntegration20261024": {
+    "reason": "Preserve both parents historical evidence and financial assertions; refresh only current classifier and nested binding identities for the integrated serial installer route. No financial certificate restamp.",
+    "classifier_sha256": "e356ef6b4fb99de45d8762eaa1bbc827951b0e7ee436c198ff5539eb4f5f3335",
+    "nested_binding_changes": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "3566e880847285d36976c3f881f0ae679197a2d517e9bfdb178cd64ce2fcc9e3",
+        "current": "8d1f21a95a74424d5c244fb627ef0ded931b3fa22b5415aabfbec676b8cc4101"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "3c2f66444d8edcaaae03a4c0ee0c95b7f23106dade4cfe127d89ecba7c40f45a",
+        "current": "f5ae154b3da17b4449989bb247e8e7ac0027e55d08ba980a254a66655367a746"
+      }
+    }
+  },
+  "supersededCiStopsAtThePush20261025": {
+    "reason": "Restamped for the CI load change only (docs/changelog/2026-10-25-superseded-ci-stops-at-the-push.md): ci.yml gates its heavy jobs on !cancelled() instead of always() and documents ci-supersede.yml; the two CI routing tests follow that prefix. No suite, step, shard, financial source, fixture, assertion, deadline or qualification status changed. Matching source hashes are not production or financial execution proof; fresh hosted qualification is still required.",
+    "changes": {
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": {
+          "bytes": 98589,
+          "sha256": "f5ae154b3da17b4449989bb247e8e7ac0027e55d08ba980a254a66655367a746"
+        },
+        "current": {
+          "bytes": 99486,
+          "sha256": "ae6af1a638cd9f726baf4f46f248c57f041562b19eac26cde8818fdc794aadf8"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 114286,
+          "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
+        },
+        "current": {
+          "bytes": 114533,
+          "sha256": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c"
+        }
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "previous": {
+          "bytes": 32150,
+          "sha256": "0e0638ff497ab12c6cc5451553b65936b8936df547b855c88482f5567482c771"
+        },
+        "current": {
+          "bytes": 33047,
+          "sha256": "026a00420b274a2e38654545a1b8569add55450cd83359b103b0db3b9903bead"
+        }
+      }
+    }
+  },
+  "routePerformanceMainIntegration20261025": {
+    "reason": "Preserve both route-performance gate classification and current protected-main changes. Refresh active source identity only; historical audits, financial bodies, assertions and qualification states unchanged. Not a financial certificate.",
+    "changes": {
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "a60e85bc07af4ac52c5505b0ef9f1f3885e44ec59bac10a77e669027a24654f6",
+        "current": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f"
+      }
+    }
+  },
+  "typecheckSummarySparseCheckout20261025": {
+    "reason": "Add six assertions for the required summary checkout sparse standalone gate, preserving all native and financial assertions. Current test-source identity only; no new financial execution or activation certificate.",
+    "previous": {
+      "tests/unit/fixtureNativeCi.test.ts": "634fc8314df73a8668a63929edc7fff6bf50a65c68dffe629004b424d9ba318c",
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": "026a00420b274a2e38654545a1b8569add55450cd83359b103b0db3b9903bead",
+      "tests/fixtures/sep8-spin-custody/source-binding.json": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f"
+    },
+    "current": {
+      "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
+      "tests/fixtures/sep8-spin-custody/source-binding.json": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5"
+    }
+  },
+  "acceptedWindowNativeInputIdentity20261025": {
+    "reason": "Admit only the exact accepted-horse-window native PG17 harness and its source contract into the existing required index-recovery accounting path. Refresh current classifier and dependent binding identities only. Historical financial evidence, assertions, source inventories and qualification states are unchanged; no financial or production certificate is restamped.",
+    "sourceRevision": "dd0a798995cb4c20ae9eb568bdc2fadcfd1e4203",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+        "current": "3af37c70b69cfafa038a0a5944f8b624bdc61a1551dd016904dd7bce7fd2cc3e"
+      },
+      {
+        "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9",
+        "current": "00ef978f495b95509aa764d0f1f84ca3259e82e4dbd29d560f18dfb9a161fde4"
+      },
+      {
+        "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "cca983cd34e473a30b4b5ec7b00bae2425c915143b41355f47c9ac62c4a56df5",
+        "current": "b3be7e105db2df95867c07898f4751069088885d85521cea8bd75b02a6e89a70"
+      }
+    ]
+  },
+  "horseOwnPublicHistoryRouting20261025": {
+    "reason": "The reviewed classifier diff adds only scripts/ci/test-horse-own-public-history.py to existing mandatory accounting admission. Update current classifier input identity; retain all financial source pins, assertions, historical receipts and qualification statuses. This binding is not native or production execution evidence.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previousSha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
+    "currentSha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e",
+    "nestedBindingUpdates": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previousSha256": "2831c21379a2f324a4ed000e9b4fb6bb1800b529d06671a33d54fb137867e7f9",
+        "currentSha256": "6c2f17a53fb3468d7138daaac124ea6a9463f69f9791c58963f76a49472afae4"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previousSha256": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f",
+        "currentSha256": "fa61a9a0453a485d990d8e55d207af70125f214070343f9ba16d3dd9c702e305"
       }
     }
   }

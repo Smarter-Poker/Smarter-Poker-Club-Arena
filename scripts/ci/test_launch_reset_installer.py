@@ -54,9 +54,10 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
  clock=work/'fixture-clock.cjs';clock.write_text("Date.prototype.getUTCMinutes=function(){return Number(process.env.FIXTURE_MINUTE)};\n")
  drop=work/'fixture-drop.cjs';drop.write_text("const pg=require('pg');const old=pg.Client.prototype.query;pg.Client.prototype.query=function(...args){const answer=old.apply(this,args);if(typeof args[0]==='string'&&args[0].includes('DO $ca_atomic_history_guard$'))return answer.then(r=>{this.connection.stream.destroy();return r});return answer};\n")
  child=dict(os.environ,DATABASE_URL=f'postgresql://postgres@localhost:{port}/postgres?sslmode=require',FIXTURE_MINUTE='20')
- def apply(name,minute='20',disconnect=False,ca=cert,lane=False):
+ def apply(name,minute='20',disconnect=False,ca=cert,lane=False,wait_ms=None):
   options=['--require',clock]+(['--require',drop] if disconnect else [])
-  return cmd([a.node,*options,installer,'--migration',name,'--ssl-root-cert',ca,*(['--settlement-lane'] if lane else [])],env=dict(child,FIXTURE_MINUTE=minute),cwd=work,expect=None)
+  extra={} if wait_ms is None else {'APPLY_DDL_ADMISSION_WAIT_MS':str(wait_ms),'APPLY_DDL_ADMISSION_POLL_MS':'200'}
+  return cmd([a.node,*options,installer,'--migration',name,'--ssl-root-cert',ca,*(['--settlement-lane'] if lane else [])],env=dict(child,FIXTURE_MINUTE=minute,**extra),cwd=work,expect=None)
  def migration(version,table):
   name=version+'_'+table+'.sql';text=f"BEGIN;\nCREATE TABLE public.{table}(id integer PRIMARY KEY);\nDO $$ BEGIN PERFORM 'Dollar $$ and apostrophe '' remain exact'; END $$;\nCOMMIT;\n"
   # Nested same dollar delimiter would be invalid SQL; exercise independent
@@ -76,8 +77,23 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
   name,_=migration('20261012010102','history_failure');r=apply(name);assert r.returncode==1,(r.stdout,r.stderr);assert sql("SELECT to_regclass('public.history_failure') IS NULL AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261012010102');")=='t'
   name,_=migration('20261012010103','window_refusal');r=apply(name,minute='50');assert r.returncode==1 and 'break window' in r.stderr;assert sql("SELECT to_regclass('public.window_refusal') IS NULL AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261012010103');")=='t'
   sql('UPDATE fixture_migration_readiness SET frozen=true;')
-  name,_=migration('20261012010106','readiness_refusal');r=apply(name);assert r.returncode==1 and 'database would refuse DDL' in r.stderr;assert sql("SELECT to_regclass('public.readiness_refusal') IS NULL AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261012010106');")=='t'
-  sql('UPDATE fixture_migration_readiness SET frozen=false;')
+  # A refusal is waited out for a bounded time (production: 12 min); the
+  # fixture shortens it. Still refused at the end: nothing sent, exit 1.
+  name,_=migration('20261012010106','readiness_refusal');r=apply(name,wait_ms=1500);assert r.returncode==1 and 'database would refuse DDL' in r.stderr,(r.stdout,r.stderr);assert 'after waiting' in r.stderr;assert sql("SELECT to_regclass('public.readiness_refusal') IS NULL AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261012010106');")=='t'
+  # Released during the wait: the same run installs it, once.
+  name,text=migration('20261012010108','readiness_released')
+  waiting=subprocess.Popen([str(x) for x in [a.node,'--require',clock,installer,'--migration',name,'--ssl-root-cert',cert]],env=dict(child,FIXTURE_MINUTE='20',APPLY_DDL_ADMISSION_WAIT_MS='20000',APPLY_DDL_ADMISSION_POLL_MS='200'),cwd=work,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+  try:
+   time.sleep(1.5)
+   assert waiting.poll() is None,'The installer did not wait while the database refused DDL'
+   assert sql("SELECT to_regclass('public.readiness_released') IS NULL;")=='t','DDL was sent while refused'
+   sql('UPDATE fixture_migration_readiness SET frozen=false;')
+   out,err=waiting.communicate(timeout=30)
+  finally:
+   if waiting.poll() is None:waiting.kill()
+  assert waiting.returncode==0 and 'now admits DDL' in out,(out,err)
+  assert sql("SELECT to_regclass('public.readiness_released') IS NOT NULL;")=='t'
+  assert json.loads(sql("SELECT json_build_object('name',name,'statements',statements) FROM supabase_migrations.schema_migrations WHERE version='20261012010108';"))=={'name':'readiness_released','statements':[text]}
   name,text=migration('20261012010104','acknowledgment_unknown');r=apply(name,disconnect=True);assert r.returncode==3 and 'UNKNOWN' in r.stderr,(r.stdout,r.stderr);assert sql("SELECT to_regclass('public.acknowledgment_unknown') IS NOT NULL;")=='t';row=json.loads(sql("SELECT json_build_object('name',name,'statements',statements) FROM supabase_migrations.schema_migrations WHERE version='20261012010104';"));assert row=={'name':'acknowledgment_unknown','statements':[text]}
   sql("CREATE OR REPLACE FUNCTION supabase_migrations.fixture_reject_history() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.name='history_failure' THEN RAISE EXCEPTION 'fixture history failure' USING ERRCODE='23514'; ELSIF NEW.name='precommit_unknown' THEN PERFORM pg_terminate_backend(pg_backend_pid());END IF;RETURN NEW;END$$;")
   name,_=migration('20261012010107','precommit_unknown');r=apply(name);assert r.returncode==3 and 'UNKNOWN' in r.stderr,(r.stdout,r.stderr);assert sql("SELECT to_regclass('public.precommit_unknown') IS NULL AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261012010107');")=='t'

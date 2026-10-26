@@ -120,6 +120,7 @@ function harness(horse = true) {
   );
   engine.handController = {
     getState: () => state,
+    getDecisionActionCount: () => state.actionHistory.length,
     performAction,
     getAuthoritativeActionState: () => ({
       schemaVersion: 1,

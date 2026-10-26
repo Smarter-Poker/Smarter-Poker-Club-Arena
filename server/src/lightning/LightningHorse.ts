@@ -25,7 +25,10 @@
  */
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
-import { captureHorseHandJournalContext } from '../engine/HorseDecisionHandBinding.js';
+import {
+  captureHorseHandJournalContext,
+  type HorseHandJournalCoordinate,
+} from '../engine/HorseDecisionHandBinding.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -58,10 +61,21 @@ export interface LightningHorseTurn {
   actionTimeSeconds: number | null | undefined;
   /** Prior accepted actions of this hand (the hand journal binding). */
   actions: readonly unknown[];
+  handJournalCoordinate?: HorseHandJournalCoordinate | null;
   generation: number;
   fence: string;
   turnStartMs: number;
   now: number;
+  /**
+   * The early look (Dan 2026-10-24, "HORSES SHOULD FOLD RIGHT AWAY IF THEY
+   * WERE ALREADY FOLDING"): the horse is not on the turn yet, and asks its
+   * own policy what it does with the table exactly as it stands now, as a
+   * person decides whether to press Lightning Fold. Read-only: the menu is
+   * the one the seat would hold (HandController asIfToAct).
+   */
+  earlyLook?: boolean;
+  /** PLO PRESUMPTION (2026-10-25): the participants a person plays. */
+  humanUserIds?: readonly string[];
 }
 
 export interface LightningHorseDecision {
@@ -80,7 +94,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
   const hc = turn.hc;
   const state = hc.getState();
   const me = state.players.find((p) => p.seat === turn.seat);
-  const auth = hc.getAuthoritativeActionState(turn.userId);
+  const auth = hc.getAuthoritativeActionState(turn.userId, { asIfToAct: turn.earlyLook === true });
   if (!me || !auth || !auth.canAct)
     throw new Error('horse seat has no authoritative decision state');
   const contestablePot = hc.getContestablePotForCall(turn.userId);
@@ -106,6 +120,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
   });
   const gameState = {
     stateSchemaVersion: 1,
+    ...(turn.humanUserIds ? { humanUserIds: [...turn.humanUserIds] } : {}),
     dealtSeatIds: state.players
       .filter((c) => c.cards.length > 0)
       .map((c) => c.seat)
@@ -153,6 +168,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
   } as unknown as HorseGameStateV2;
   const snapshot: LiveHorseDecisionSnapshot = {
     handJournalContext: captureHorseHandJournalContext(turn.actions),
+    ...(turn.handJournalCoordinate ? { handJournalCoordinate: turn.handJournalCoordinate } : {}),
     generation: turn.generation,
     fence: turn.fence,
     decisionKey: '',
@@ -176,7 +192,9 @@ export async function decideLightningHorse(
   lane: () => LiveHorseDecisionLane = getLiveHorseDecisionWorker,
   onWorkerFailure?: (err: unknown) => void
 ): Promise<LightningHorseDecision> {
-  const toCall = turn.hc.getAuthoritativeActionState(turn.userId)?.toCall ?? 0;
+  const toCall =
+    turn.hc.getAuthoritativeActionState(turn.userId, { asIfToAct: turn.earlyLook === true })
+      ?.toCall ?? 0;
   try {
     const snapshot = buildLightningHorseSnapshot(turn);
     const fast = await lane().decideFast(snapshot, signal, {
@@ -294,4 +312,161 @@ export function shapeLightningHorseAction(
     amount = action === 'call' ? toCall : undefined;
   }
   return { action: action as ActionType, amount };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  "ALREADY FOLDING" (Dan 2026-10-24, verbatim: "YES, HORSES SHOULD FOLD
+ *  RIGHT AWAY IF THEY WERE ALREADY FOLDING.")
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Measured 2026-10-24: a Lightning horse folded only on its own turn (UTG
+ * p50 6.3 s after the deal, the button 15.6 s), so its seat freed last and the
+ * pool waited for it. A person in the same seat presses Lightning Fold the
+ * moment they look at a hand they will not play.
+ *
+ * A horse is ALREADY FOLDING on a street when, at its FIRST look at that
+ * street with a price to pay - the first moment the fast fold is open to it
+ * with chips owed (preflop: the deal; a later street: the first bet it
+ * faces), or its own turn if the action reaches it first - its own policy,
+ * asked through the same live decision lane with its own style and mods,
+ * answers FOLD, and every one of these holds:
+ *
+ *   1. it owes chips (toCall > 0) and its menu has no check. A free check is
+ *      NEVER fast folded: the big blind in an unraised pot, any seat checked
+ *      to on a later street. This is the human Check/Fold rule, and the door
+ *      re-checks it at the moment of the fold;
+ *   2. the answer is the policy's own (`workerFallback` false and no
+ *      `policyFallback`): a worker failure or a brain exception folds a bet
+ *      only to keep the table alive, and is not a decision to fold;
+ *   3. it is the street's FIRST priced look. A horse whose first answer was
+ *      anything else waits for its turn and decides afresh on everything that
+ *      happened in between, on its ordinary clock, exactly as before. So a
+ *      fold to a later raise is never rushed: only the fold it had already
+ *      decided on before any of that action is.
+ *
+ * WHY NOT "FOLDS WHATEVER THE OTHERS DO". The policy is stochastic (a
+ * strength jitter, an hourly mood, solver mixing) and deliberately not
+ * monotone: the maniac call-down (HorseLogic.maniacCallDown) turns a fold
+ * into a call against a seat read as a maniac, and the VPIP floor call-down
+ * calls small raises on a floored table. No proof that one sampled fold stays
+ * a fold under every continuation exists in that code, so none is claimed.
+ * What is proven instead is the human's own contract: the fold is the
+ * player's decision on the information it has at the moment the button is
+ * open, it is final, and it is never a free check. (The VPIP floor
+ * call-down cannot fire here at all: the Lightning snapshot carries no
+ * `vpipFloor`, see buildLightningHorseSnapshot.)
+ */
+export function lightningHorseIsAlreadyFolding(input: {
+  decision: Pick<LightningHorseDecision, 'action' | 'workerFallback'> & {
+    fast?: { decision?: { policyFallback?: unknown } } | null;
+  };
+  /** The seat's menu and price right now (asIfToAct when off the turn). */
+  legalActions: readonly string[];
+  toCall: number;
+}): boolean {
+  const { decision } = input;
+  if (decision.workerFallback) return false;
+  if (decision.fast?.decision?.policyFallback) return false;
+  if (String(decision.action).toLowerCase() !== 'fold') return false;
+  if (!(input.toCall > 0.005)) return false;
+  if (input.legalActions.includes('check')) return false;
+  return input.legalActions.includes('fold');
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  AN ALREADY-FOLDING HORSE FOLDS AT A PERSON'S SPEED (Dan 2026-10-24,
+ *  approving the fix: "GO AHEAD AND FULLY BUILD, FIX AND ENHANCE ALL OF THESE")
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * CLAUDE.md 10.5, "TIMING IS PART OF THE TREATMENT". #7958 made a horse that
+ * is already folding fold through the Lightning Fold door with no delay but
+ * the decision lane's compute time: every horse's seat emptied tens of
+ * milliseconds after the deal, hand after hand, while a person's empties when
+ * they have looked at their cards and pressed the button. That rhythm tells a
+ * watching player which seats are horses.
+ *
+ * So the fold lands after a person's reaction time: a fresh draw for every
+ * fold, from a SHIFTED LOGNORMAL - the standard model of human choice
+ * reaction times (a fixed perceptual/motor floor plus a right-skewed decision
+ * component). It is still "right away" in Dan's sense: a quick look-and-press,
+ * never the ordinary think time (which is seconds, up to the turn clock).
+ *
+ *   delay = FLOOR + exp(ln(median * tempo) + SIGMA * z),  z ~ N(0, 1)
+ *   FLOOR 450 ms, median 600 ms, SIGMA 0.5, tempo per horse in [0.8, 1.25]
+ *   population: p05 ~0.71 s, p50 ~1.07 s, p95 ~1.9 s, p99 ~2.4 s
+ *   bounded to [450 ms, 3000 ms] (a draw past the cap is redrawn; the cap
+ *   itself is reached with probability well under 0.1%)
+ *
+ * WHY THESE NUMBERS, AND NOT A MEASUREMENT. Measured read-only on production
+ * 2026-10-24: only 11 human Lightning fast folds exist, from 3 players, all on
+ * one day, and folded_at - formed_at mixes in the formation-to-deal gap (about
+ * 1.8 s: the horses' own fast folds start at p05 1.9 s from formed_at) and
+ * later-street folds; humans read p05 4.0 s, p50 11.8 s on that clock. That
+ * is not a reaction-time sample. The distribution above is built from the
+ * human-factors floor instead: a simple visual reaction is about 250 ms, card
+ * recognition and a fold/no-fold choice add a few hundred more, and the
+ * press itself about 100-200 ms, so no person reliably folds a hand they
+ * have to read in under ~0.5 s, and a practised fast-folder's typical press
+ * lands around one second with a long slow tail. Re-measure when human
+ * fast-fold volume exists (fold_type 'fast', non-horse, preflop, from the
+ * deal frame rather than formed_at) and move the median and SIGMA to it.
+ *
+ * THE TEMPO. People differ: some are quick, some deliberate, and each is
+ * consistent with themself. A horse's tempo is a stable factor derived from
+ * its own id, so the population is a spread of individuals rather than one
+ * curve every seat shares.
+ */
+export const LIGHTNING_HORSE_FAST_FOLD_FLOOR_MS = 450;
+export const LIGHTNING_HORSE_FAST_FOLD_MEDIAN_MS = 600;
+export const LIGHTNING_HORSE_FAST_FOLD_SIGMA = 0.5;
+export const LIGHTNING_HORSE_FAST_FOLD_MAX_MS = 3000;
+export const LIGHTNING_HORSE_FAST_FOLD_TEMPO_MIN = 0.8;
+export const LIGHTNING_HORSE_FAST_FOLD_TEMPO_MAX = 1.25;
+
+/** A horse's own, stable look-and-press tempo (FNV-1a of its id). */
+export function lightningHorseFastFoldTempo(userId: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < userId.length; i++) {
+    h ^= userId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  const unit = h / 0xffffffff;
+  return (
+    LIGHTNING_HORSE_FAST_FOLD_TEMPO_MIN +
+    unit * (LIGHTNING_HORSE_FAST_FOLD_TEMPO_MAX - LIGHTNING_HORSE_FAST_FOLD_TEMPO_MIN)
+  );
+}
+
+/**
+ * The look-and-press time (ms) of one already-folding fold, measured from the
+ * moment the horse first looked at the street. Deterministic for an injected
+ * `random`; always inside [FLOOR, MAX].
+ */
+export function lightningHorseFastFoldReactionMs(input: {
+  userId: string;
+  random?: () => number;
+}): number {
+  const random = input.random ?? Math.random;
+  const median = LIGHTNING_HORSE_FAST_FOLD_MEDIAN_MS * lightningHorseFastFoldTempo(input.userId);
+  const span = LIGHTNING_HORSE_FAST_FOLD_MAX_MS - LIGHTNING_HORSE_FAST_FOLD_FLOOR_MS;
+  let draw = span;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    // Box-Muller: one standard normal from two uniforms.
+    const u1 = Math.max(1e-9, 1 - random());
+    const u2 = random();
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const candidate = median * Math.exp(LIGHTNING_HORSE_FAST_FOLD_SIGMA * z);
+    if (Number.isFinite(candidate) && candidate <= span) {
+      draw = candidate;
+      break;
+    }
+  }
+  return Math.round(
+    Math.min(
+      LIGHTNING_HORSE_FAST_FOLD_MAX_MS,
+      Math.max(LIGHTNING_HORSE_FAST_FOLD_FLOOR_MS, LIGHTNING_HORSE_FAST_FOLD_FLOOR_MS + draw)
+    )
+  );
 }

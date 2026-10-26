@@ -20,7 +20,10 @@
 #                           periodic mutator is allowed to reverse one.
 #   --log-opt max-size      Unbounded json-file logs fill the disk, and a full
 #                           disk wedges the engine in exactly the way this whole
-#                           workstream exists to prevent.
+#                           workstream exists to prevent. The window is sized so
+#                           a whole day of play is still readable (see
+#                           LOG_WINDOW_* below), never so small that an incident
+#                           has rotated out before anyone asks about it.
 #
 # Callers: the frozen engine release transaction and its synchronous one-shot
 # recovery. Both must go through here so their run-spec cannot drift apart.
@@ -66,6 +69,9 @@ HEALTH_START_PERIOD="${HEALTH_START_PERIOD:-300s}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-3}"
 
 log() { echo "[engine-up] $*"; }
+# Phase-only receipts survive a bounded cutover refusal without exposing the
+# run arguments, environment, tokens, or player data.
+phase() { printf '[engine-up] phase=%s epoch=%s\n' "$1" "$(date +%s)" >&2; }
 
 # Where outgoing engine logs are kept. Read by nothing automated; read by the
 # next agent asking "what did the engine do before it died at 16:52".
@@ -73,8 +79,28 @@ LOG_DIR="${LOG_DIR:-/var/log/club-arena-engine}"
 LOG_KEEP_DAYS="${LOG_KEEP_DAYS:-14}"
 LOG_KEEP_MB="${LOG_KEEP_MB:-6144}"
 
+# THE ENGINE LOG OUTLIVES THE INCIDENT (2026-10-25).
+# The json-file window used to be 5 x 50 MB. Measured on engine-01 on
+# 2026-10-25 the engine wrote 94-140 MB an hour, so the window held under two
+# hours, and the 13:27:10 UTC kill storm's log had rotated out of the daemon
+# long before the alert was read. The dump below can only save what the daemon
+# still has, so the window is the real retention: 24 x 100 MB (2.4 GB, of 241 GB
+# free on engine-01) holds a day at the old rate and a week once the two
+# routine emitters that made up 85% of it are counted instead of printed
+# (server/src/services/errorReporter.ts reportThrottled, StateMachine.reset).
+# A larger window takes longer to dump: a 2.4 GB log gzips in about a minute,
+# so the background retirement gets a ten-minute budget and only the in-line
+# fallback (which sits inside the cutover) keeps the short one.
+LOG_WINDOW_FILE_SIZE="${LOG_WINDOW_FILE_SIZE:-100m}"
+LOG_WINDOW_FILES="${LOG_WINDOW_FILES:-24}"
+LOG_DUMP_BUDGET_INLINE="${LOG_DUMP_BUDGET_INLINE:-20s}"
+LOG_DUMP_BUDGET_BACKGROUND="${LOG_DUMP_BUDGET_BACKGROUND:-600s}"
+
 save_outgoing_log() {
-  local c="$1" id img started stamp out
+  # $2: how long the dump may take (default: the in-line budget, because the
+  # in-line caller sits inside the cutover). The background retirement passes
+  # LOG_DUMP_BUDGET_BACKGROUND; nothing waits on it.
+  local c="$1" budget="${2:-$LOG_DUMP_BUDGET_INLINE}" id img started stamp out
   mkdir -p "$LOG_DIR" || return 1
   id="$(docker inspect -f '{{.Id}}' "$c" 2>/dev/null | cut -c1-12)" || return 1
   img="$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null | sed 's#.*[:/]##' | cut -c1-8 | tr -c 'A-Za-z0-9._\n-' '_')"
@@ -83,7 +109,7 @@ save_outgoing_log() {
   out="$LOG_DIR/engine-${stamp}-started${started:-unknown}-${id:-unknown}-${img:-unknown}.log.gz"
   # -t: every line carries the daemon's timestamp, so the file is usable
   # without the process's own clock.
-  if timeout --signal=TERM --kill-after=5s 20s \
+  if timeout --signal=TERM --kill-after=5s "$budget" \
     bash -c 'set -o pipefail; docker logs -t "$1" 2>&1 | gzip -6 > "$2"' \
     _ "$c" "$out"; then
     log "saved the outgoing log to $out ($(du -h "$out" | cut -f1))"
@@ -125,7 +151,8 @@ OUTGOING_PREFIX="${CONTAINER:-club-arena-engine}-outgoing-"
 
 retire_outgoing_container() {
   local c="$1"
-  save_outgoing_log "$c" || log "WARN: could not save the outgoing log of $c (continuing)"
+  save_outgoing_log "$c" "$LOG_DUMP_BUDGET_BACKGROUND" \
+    || log "WARN: could not save the outgoing log of $c (continuing)"
   docker rm "$c" >/dev/null 2>&1 || docker rm -f "$c" >/dev/null 2>&1 \
     || log "WARN: could not remove the retired container $c"
 }
@@ -282,6 +309,45 @@ finally:
     signal.alarm(0)
 HORSE_JOURNAL_PREFLIGHT
 
+# A create that was interrupted (or whose owner was killed before it could
+# publish the name) leaves a never-started container in a dedicated, labelled
+# namespace. Retire only those CREATED containers before touching the engine.
+# This is best effort by design: a stale prepared container runs nothing, binds
+# nothing and has a unique per-attempt name, so an unreadable listing or an
+# unexpected name is reported and left alone, never a reason to refuse
+# recovery of the serving engine.
+INCOMING_PREFIX="${CONTAINER}-incoming-"
+INCOMING_CONTAINER=''
+STOP_OPERATION_PID=''
+ABANDONED_PREPARED="$(docker container ls -a \
+  --filter "name=^/${INCOMING_PREFIX}" --filter status=created \
+  --filter label=sp.engine-up.prepared=1 --format '{{.Names}}' 2>/dev/null)" \
+  || { log 'WARN: prepared container listing is unreadable; none retired'; ABANDONED_PREPARED=''; }
+while IFS= read -r abandoned; do
+  [ -n "$abandoned" ] || continue
+  suffix="${abandoned#"$INCOMING_PREFIX"}"
+  if [[ "$abandoned" != "$INCOMING_PREFIX"* || ! "$suffix" =~ ^[0-9a-f]{12}-[1-9][0-9]*$ ]]; then
+    log "WARN: prepared container owner is ambiguous; leaving $abandoned untouched"
+    continue
+  fi
+  timeout --signal=TERM --kill-after=1s 5s docker rm "$abandoned" >/dev/null 2>&1 \
+    || log "WARN: abandoned prepared container $abandoned could not be retired"
+done <<< "$ABANDONED_PREPARED"
+cleanup_prepared_container() {
+  local result=$?
+  trap - EXIT INT TERM
+  if [ -n "$STOP_OPERATION_PID" ]; then wait "$STOP_OPERATION_PID" || true; fi
+  if [ -n "$INCOMING_CONTAINER" ]; then
+    # No force: an unexpected running process is for the original recovery,
+    # never a speculative cleanup. This name is cleared before canonical start.
+    timeout --signal=TERM --kill-after=1s 5s docker rm "$INCOMING_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  return "$result"
+}
+trap cleanup_prepared_container EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
@@ -298,34 +364,37 @@ done < <(docker container ls -a --filter "name=^/${OUTGOING_PREFIX}" \
 retire_outgoing_in_background ${LEFTOVER_OUTGOING[@]+"${LEFTOVER_OUTGOING[@]}"}
 
 OUTGOING_CONTAINER=''
+HAD_OUTGOING_CONTAINER=0
 if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+  HAD_OUTGOING_CONTAINER=1
   log "stopping $CONTAINER (SIGTERM, 45s grace for snapshot flush)"
-  docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
-  # THE OUTGOING ENGINE'S LOG SURVIVES IT (2026-09-07). `docker rm` deletes the
-  # json-file log with the container, and the container is replaced every
-  # hour, so the log of whatever went wrong in the previous hour was gone the
-  # moment anyone could look: on 2026-09-07 the engine was unreachable for a
-  # minute at 16:52 and resurfaced inside an off-schedule break, and there was
-  # nothing left to read. Dump the whole retained log (json-file keeps up to
-  # 5 x 50 MB) to disk, compressed, named by stop time + short id + image, and
-  # keep fourteen days or 6 GB, whichever is hit first. Never fatal: a failed
-  # dump must not stop the deploy.
-  #
-  # 2026-10-19: the dump now runs after the replacement is started (see
-  # retire_outgoing_container). Only if the stopped container cannot be
-  # renamed out of the way is it dumped here, in line, as before.
-  outgoing_id="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null | cut -c1-12 || true)"
-  outgoing_state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
-  if [[ "$outgoing_id" =~ ^[0-9a-f]{12}$ ]] \
-    && { [ "$outgoing_state" = exited ] || [ "$outgoing_state" = created ]; } \
-    && docker update --restart no "$CONTAINER" >/dev/null 2>&1 \
-    && docker rename "$CONTAINER" "${OUTGOING_PREFIX}${outgoing_id}" >/dev/null 2>&1; then
-    OUTGOING_CONTAINER="${OUTGOING_PREFIX}${outgoing_id}"
-  else
-    save_outgoing_log "$CONTAINER" || log "WARN: could not save the outgoing log (continuing)"
-    docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  fi
+  phase stop-start
+  ( docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
+    phase stop-returned
+  ) &
+  STOP_OPERATION_PID=$!
 fi
+
+# THE REPLACEMENT IS CREATED DURING THE OUTGOING GRACE (2026-10-24).
+# The replacement used to be run only after `docker stop` returned, so the old
+# engine's shutdown and the new container's creation were paid in series
+# inside the release transaction's 75-second cutover budget. Measured on
+# engine-01 (Docker 29.7.2, containerd snapshotter):
+#   release 735e, 04:54 UTC: stop 17 s, then create ~19 s; launch never
+#     returned before the budget expired.
+#   release f16e, 06:17 UTC: stop 50 s (the outgoing engine reached its own
+#     40 s shutdown deadline and Docker used the force at 45 s), then create
+#     22 s and start 4 s - 76 s, one second over.
+# The candidate filesystem warm-up had read every application file in 1 s, so
+# file reads were not the cost. Container creation builds the container's
+# filesystem and configuration only: it starts no process, opens no journal
+# and binds no published port (Docker allocates ports at start). It now runs
+# while the outgoing engine is still inside its unchanged 45 s SIGTERM grace,
+# so the budget pays max(stop, create) + start instead of their sum. The
+# replacement is STARTED only after the old process has exited and been
+# renamed away, under the same canonical lock, so there is never more than one
+# journal writer or port owner. The 45 s grace, the 75 s cutover and the 285 s
+# rollback budgets are unchanged.
 
 # 2026-08-23: OVERRIDE THE IMAGE'S HEALTHCHECK ADDRESS.
 #
@@ -343,20 +412,23 @@ fi
 # stays because THIS FILE IS THE RUN-SPEC (design note 4): the deploy and the
 # host supervisor must start the container identically, and this is the one
 # place both of them read.
-STARTED_CONTAINER_ID="$(docker run -d \
-  --name "$CONTAINER" \
+INCOMING_CONTAINER="${INCOMING_PREFIX}${AUTHORIZED_SHA:0:12}-$$"
+phase create-start
+STARTED_CONTAINER_ID="$(docker create \
+  --name "$INCOMING_CONTAINER" \
   --restart "$RESTART_POLICY" \
   --health-interval="$HEALTH_INTERVAL" \
   --health-timeout="$HEALTH_TIMEOUT" \
   --health-start-period="$HEALTH_START_PERIOD" \
   --health-retries="$HEALTH_RETRIES" \
   --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\"" \
+  --label sp.engine-up.prepared=1 \
   --label autoheal=true \
   --label sp.role=engine \
   --label "sp.release.sha=$AUTHORIZED_SHA" \
   --log-driver json-file \
-  --log-opt max-size=50m \
-  --log-opt max-file=5 \
+  --log-opt "max-size=$LOG_WINDOW_FILE_SIZE" \
+  --log-opt "max-file=$LOG_WINDOW_FILES" \
   -p "${PORT}:8080" \
   --env-file "$ENV_FILE" \
   --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
@@ -364,6 +436,55 @@ STARTED_CONTAINER_ID="$(docker run -d \
   --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
   --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
   "$AUTHORIZED_IMAGE_ID")"
+phase create-returned
+[[ "$STARTED_CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] \
+  || { log 'FATAL: Docker did not return an exact prepared container ID'; exit 1; }
+if [ -n "$STOP_OPERATION_PID" ]; then
+  wait "$STOP_OPERATION_PID" || true
+  STOP_OPERATION_PID=''
+fi
+
+if [ "$HAD_OUTGOING_CONTAINER" = 1 ]; then
+  # THE OUTGOING ENGINE'S LOG SURVIVES IT (2026-09-07). `docker rm` deletes the
+  # json-file log with the container, and the container is replaced every
+  # hour, so the log of whatever went wrong in the previous hour was gone the
+  # moment anyone could look: on 2026-09-07 the engine was unreachable for a
+  # minute at 16:52 and resurfaced inside an off-schedule break, and there was
+  # nothing left to read. Dump the whole retained log (json-file keeps up to
+  # LOG_WINDOW_FILES x LOG_WINDOW_FILE_SIZE, 24 x 100 MB since 2026-10-25) to
+  # disk, compressed, named by stop time + short id + image, and
+  # keep fourteen days or 6 GB, whichever is hit first. Never fatal: a failed
+  # dump must not stop the deploy.
+  #
+  # 2026-10-19: the dump now runs after the replacement is started (see
+  # retire_outgoing_container). Only if the stopped container cannot be
+  # renamed out of the way is it dumped here, in line, as before.
+  phase outgoing-inspect-start
+  outgoing_id="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null | cut -c1-12 || true)"
+  outgoing_state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+  phase outgoing-inspect-returned
+  phase outgoing-rename-start
+  if [[ "$outgoing_id" =~ ^[0-9a-f]{12}$ ]] \
+    && { [ "$outgoing_state" = exited ] || [ "$outgoing_state" = created ]; } \
+    && docker update --restart no "$CONTAINER" >/dev/null 2>&1 \
+    && docker rename "$CONTAINER" "${OUTGOING_PREFIX}${outgoing_id}" >/dev/null 2>&1; then
+    OUTGOING_CONTAINER="${OUTGOING_PREFIX}${outgoing_id}"
+    phase outgoing-rename-returned
+  else
+    save_outgoing_log "$CONTAINER" || log "WARN: could not save the outgoing log (continuing)"
+    docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  fi
+fi
+
+# Only the original lock owner can publish the prepared container's name.
+# Creation did not run the application; old process exit precedes this start.
+phase incoming-rename-start
+docker rename "$INCOMING_CONTAINER" "$CONTAINER"
+INCOMING_CONTAINER=''
+phase incoming-rename-returned
+phase launch-start
+docker start "$CONTAINER" >/dev/null
+phase launch-returned
 printf '%s\n' "$STARTED_CONTAINER_ID"
 
 # Docker already returned the newly created container's ID. A second daemon

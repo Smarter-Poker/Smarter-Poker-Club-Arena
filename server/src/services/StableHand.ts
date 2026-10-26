@@ -1276,6 +1276,8 @@ export type SitRejection =
   | 'killed';
 
 export interface SitRequest {
+  /** Owner October 23: the cash roster has bankroll-only eligibility. */
+  bankrollOnly?: boolean;
   activeClubId: string | null;
   activeHostId: string | null;
   activeSeatCount: number;
@@ -1336,7 +1338,7 @@ export function evaluateSit(r: SitRequest): SitRejection {
   if (!sitIsLegalForHost(r.clubId, r.tableHostId)) return 'other_host';
   if (r.activeClubId && r.activeClubId !== r.clubId) return 'other_club';
   if (r.activeHostId && r.activeHostId !== r.tableHostId) return 'other_host';
-  if (r.activeSeatCount >= Math.min(4, r.maxTables)) return 'seat_cap';
+  if (r.activeSeatCount >= (r.bankrollOnly ? 4 : Math.min(4, r.maxTables))) return 'seat_cap';
   /* THE ONLY STAKE CEILING LEFT (2026-09-05). This used to be the invented
      `PHASE_MAX_BB = 2` clamp, which refused 2/5 to a wallet that covered it
      and left every game above 1/2 on the platform empty. What remains is the
@@ -1344,8 +1346,10 @@ export function evaluateSit(r: SitRequest): SitRejection {
      deals. The bankroll decides everything below it, three lines down. */
   if (!stakeIsWithinLadder(r.bb)) return 'stake_above_ladder_top';
   if (r.isRestDay) return 'rest_day';
-  if (r.inTwoHourWindow) return 'two_hour_window';
-  if (!maySitOnKey(r.persona, r.sitsOnKeyToday)) return 'sit_cap';
+  if (!r.bankrollOnly) {
+    if (r.inTwoHourWindow) return 'two_hour_window';
+    if (!maySitOnKey(r.persona, r.sitsOnKeyToday)) return 'sit_cap';
+  }
   /* THE MONEY, LAST, AND ONLY WHEN IT WAS READ. `atomic_table_buyin` still
      refuses a seat the wallet cannot cover, so an unread roll is safe for the
      wallet; what it must not do is refuse on a number nobody measured. */

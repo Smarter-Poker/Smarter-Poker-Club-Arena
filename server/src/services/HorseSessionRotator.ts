@@ -67,13 +67,19 @@ import {
 } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { LONE_TABLE_MINUTES, loneStandVerdict } from './HorseLoneTable.js';
+import { buildDisabledGameIds, horsesLeaveSwitchedOffGame } from './HorseDisabledGames.js';
 import {
   LEAVE_FOR_TOURNAMENT_FROM_MS,
   tournamentCommitmentVerdict,
   type CommittedCashSeat,
   type ImminentBooking,
 } from './HorseTournamentCommitment.js';
-import { cashRosterAllows, ploRosterAllows, refreshPloRoster } from './HorsePloRoster.js';
+import {
+  cashRosterAllows,
+  ploRosterAllows,
+  refreshPloRoster,
+  rosterExemptClub,
+} from './HorsePloRoster.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -248,6 +254,35 @@ export class HorseSessionRotator {
 
   /** Every leave goes through here after the door answers, so a refusal that
    *  names its own duration is remembered for exactly that long. */
+  /**
+   * The switched-off games among the ones these seats sit in, read once per
+   * pass. Fails OPEN: an error or an unreadable answer returns an empty set,
+   * and an empty set walks nobody out (isTableOfDisabledGame).
+   */
+  private async readDisabledGameIds(
+    byTable: ReadonlyMap<string, ReadonlyArray<unknown>>
+  ): Promise<Set<string>> {
+    const clusterIds = new Set<string>();
+    for (const tableSeats of byTable.values()) {
+      const cid = (tableSeats[0] as { tables?: { cluster_id?: string | null } } | undefined)?.tables
+        ?.cluster_id;
+      if (cid) clusterIds.add(String(cid));
+    }
+    if (clusterIds.size === 0) return new Set();
+    try {
+      const read = await selectInChunks<{ id: string }>(
+        [...clusterIds],
+        (batch) => supabase.from('cash_games').select('id').in('id', batch).eq('enabled', false),
+        'HorseSessionRotator.disabledGames'
+      );
+      if (!read.complete) return new Set();
+      return buildDisabledGameIds(read.rows);
+    } catch (err) {
+      reportError(err, 'HorseSessionRotator.disabledGamesRead');
+      return new Set();
+    }
+  }
+
   private noteLeaveResult(tableId: string, userId: string, result: RotatorLeaveResult): void {
     const key = HorseSessionRotator.breakKey(tableId, userId);
     if (result.success) {
@@ -385,7 +420,7 @@ export class HorseSessionRotator {
           // table's own limits, which price the reload, the swing and the
           // session P&L - `bb * 100` is not the buy-in at a 0.50 game whose
           // minimum is 200.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, auto_rebuy, tables!table_seats_table_id_fkey!inner(id, big_blind, game_variant, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -930,19 +965,38 @@ export class HorseSessionRotator {
      * roster walks nobody out of PLO (undefined is not false).
      */
     await refreshPloRoster();
+    /* A SWITCHED-OFF GAME EMPTIES OF HORSES (Dan 2026-10-23, the PLO board
+       trimmed to one game per stake). `cash_games.enabled = false` already
+       stops the fleet seating there and closes the game's tables once they
+       are empty, but a horse already sitting kept its chair for hours, so a
+       "Closed" game stayed on the board with players in it. A horse at a
+       disabled game's table now stands up at the end of the hand through the
+       same leaveTable() door - unless a person is seated at that table, who
+       is never left alone by this pass. An unread set walks nobody out
+       (fails open, as the fleet's own read does). */
+    const disabledGameIds = await this.readDisabledGameIds(byTable);
+    if (!this.lifecycleIsCurrent(generation)) return;
     let rosterLeaves = 0;
     for (const [tableId, tableSeats] of byTable) {
       if (!this.lifecycleIsCurrent(generation)) return;
       const t = (tableSeats[0] as any)?.tables;
       const engine = this.getEngine(tableId);
       if (!engine) continue;
+      const offGame = horsesLeaveSwitchedOffGame(
+        t?.cluster_id ?? null,
+        tableSeats.map((x) => String(x.user_id ?? '')),
+        horseIds,
+        disabledGameIds
+      );
       for (const seat of tableSeats) {
         const uid = String(seat.user_id ?? '');
         if (!uid || !horseIds.has(uid)) continue;
         if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, uid)) continue;
-        const benched = benchedIds.has(uid) || cashRosterAllows(uid) === false;
-        const offPlo = ploRosterAllows(uid, t?.game_variant, t?.big_blind) === false;
-        if (!benched && !offPlo) continue;
+        /* The Lightning pilot club is outside both roster rules (Dan 2026-10-23). */
+        const exempt = rosterExemptClub((seat as { club_id?: unknown }).club_id);
+        const benched = benchedIds.has(uid) || (!exempt && cashRosterAllows(uid) === false);
+        const offPlo = !exempt && ploRosterAllows(uid, t?.game_variant, t?.big_blind) === false;
+        if (!benched && !offPlo && !offGame) continue;
         try {
           const result = await engine.leaveTable(uid);
           if (!this.lifecycleIsCurrent(generation)) return;
@@ -958,7 +1012,7 @@ export class HorseSessionRotator {
     }
     if (rosterLeaves > 0) {
       console.log(
-        `[SessionRotator] ${rosterLeaves} horse(s) leaving cash seats - off the cash roster or off the PLO roster`
+        `[SessionRotator] ${rosterLeaves} horse(s) leaving cash seats - off the cash roster, off the PLO roster or at a switched-off game`
       );
     }
 
@@ -1008,7 +1062,7 @@ export class HorseSessionRotator {
      * A booking counts as one of the four games only inside the hour before
      * it starts (migration 20260906144448, HorseGameLoad.ts). A horse can
      * therefore hold four cash seats with a tournament two hours out, and
-     * the fifth LIVE seat is still refused at the start. A person with a
+     * its paid tournament entry is honored at the start. A person with a
      * tournament in an hour finishes the session they have been in longest
      * and gets up in good time; this is the horse doing the same. Outside
      * the realism cap for the same reason the lone stand is: a commitment,
@@ -1067,6 +1121,10 @@ export class HorseSessionRotator {
         if (!horseIds.has(seat.user_id)) continue;
         if (HorseSessionRotator.isLeaving(seat) || seat.is_sitting_out === true) continue;
         if (this.breaks.has(HorseSessionRotator.breakKey(tableId, seat.user_id))) continue;
+        // A seat on Auto Top Up (the PLO5 30%, HorseTopUpStyle) is refilled by
+        // the engine between hands; like a person on Auto Top Up, it does not
+        // also press Add Chips. Every other seat adds on here as before.
+        if ((seat as { auto_rebuy?: boolean }).auto_rebuy === true) continue;
         const minutes = (Date.now() - new Date(seat.joined_at).getTime()) / 60000;
         const stackNow = Number(seat.stack) || 0;
         if (
@@ -1604,13 +1662,18 @@ export class HorseSessionRotator {
       const tid = String(row.tournament_id ?? '');
       if (!tid || seen.has(`${uid}|${tid}`)) continue;
       seen.add(`${uid}|${tid}`);
-      if (seatedTournaments.get(uid)?.has(tid)) continue;
+      // A pre-start chair is already part of liveSeatsTotal, but its booking
+      // still supplies the start time for finishing an excess cash session.
+      // Dropping the whole row loses that timing as soon as a chair is sold.
+      const seatAlreadyCounted = seatedTournaments.get(uid)?.has(tid) === true;
       const t = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
       const start = t?.start_time ? Date.parse(t.start_time) : NaN;
       if (!bookingsByHorse.has(uid)) bookingsByHorse.set(uid, []);
-      bookingsByHorse
-        .get(uid)!
-        .push({ tournamentId: tid, startMs: Number.isFinite(start) ? start : null });
+      bookingsByHorse.get(uid)!.push({
+        tournamentId: tid,
+        startMs: Number.isFinite(start) ? start : null,
+        seatAlreadyCounted,
+      });
     }
     if (bookingsByHorse.size === 0) return 0;
 

@@ -10,6 +10,7 @@ import {
   projectPortraitTable,
   unprojectPortraitTable,
   chipRadiusWidthPct,
+  PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX,
 } from '../components/table/tableGeometry';
 
 /** Layout belongs to the table that paints it; no global selectors or game-state writes. */
@@ -370,7 +371,15 @@ export function useProtectedCardLayout(
         const box = element.getBoundingClientRect();
         return box.width > 0 && box.height > 0 ? box : null;
       };
-      const phoneMarkers = window.innerWidth <= 480 && window.innerHeight > window.innerWidth;
+      // 2026-10-24: every portrait viewport up to 768px, not only phones up to
+      // 480. Above 480 the desktop order placed the shown hands AFTER the
+      // wagers and the button, and a board-sized PLO5/PLO6 row that could not
+      // stand at its owner fell through to the unowned fallback: parked under
+      // the hero or in front of another player. Here the hands are placed
+      // first, at their own players, and the markers are placed round them.
+      const phoneMarkers =
+        window.innerWidth <= PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX &&
+        window.innerHeight > window.innerWidth;
       if (phoneMarkers) {
         // Dan 2026-10-22: a tabled hand is the SAME SIZE AS THE BOARD's cards,
         // overlapped but never covered. The board is drawn through the felt's
@@ -379,7 +388,11 @@ export function useProtectedCardLayout(
         // into every shown hand's dimensions during the runout.
         placeRows(false);
         const canvas = scaler.getBoundingClientRect();
-        const portraitTaper = page.getAttribute('data-hero') === 'false' ? 0 : undefined;
+        // The painted chassis is tapered on a portrait phone only (TablePage.css,
+        // 480px); a wider portrait felt is drawn flat, and the marker grid must
+        // follow the felt actually painted.
+        const portraitTaper =
+          page.getAttribute('data-hero') === 'false' || window.innerWidth > 480 ? 0 : undefined;
         const size = { w: canvas.width, h: canvas.height, portraitTaper };
         const inset = (chipRadiusWidthPct(size) * canvas.width) / 100 + 3;
         const radius = (FELT_WINDOW.width * canvas.width) / 200 - inset;
@@ -480,14 +493,34 @@ export function useProtectedCardLayout(
            is crowded, and then the wager reads as the neighbour's. A wager may
            only stand where its OWN player is the nearest player (avatar
            centres), on every pool but the last-resort one. */
+        /* Dan 2026-10-25, with two phone screenshots: "CHIPS ARE STILL
+           DISPLAYING IN THE WRONG LOCATIONS INSTEAD OF ALWAYS 100% OF THE TIME
+           BEING IN FRONT OF THE USER WHO BET THE CHIPS ... MAKE THE MOBILE
+           LAYOUT AND CHIP POSITIONS THE SAME AS DESKTOP AND IPAD." Three
+           things let a wager leave its owner here, all closed:
+             1. an EMPTY chair counted as nobody, so a raise could settle in an
+                empty chair's lane (his screenshot: CactusDenim's raise beside
+                the empty seat on the far rail). Every chair counts now;
+             2. the search was centred on the owner's AVATAR, so the best spot
+                could be anywhere around the player, behind or beside them. It
+                is centred on the wager's own rest point now: the desktop's
+                spot in front of the player, moved only as far as it must;
+             3. the last fallback tiers dropped the ownership rule. Every tier
+                keeps it, and a wager with no clear spot of its own stays at
+                its rest point in front of its player.
+           Pinned by tests/a-bet-sits-in-front-of-its-own-player.law.test.ts. */
         const playerCentres = Array.from(page.querySelectorAll('.seat-wrapper'))
-          .map((wrapper) => wrapper.querySelector('.seat:not(.seat--empty) .seat__avatar-img'))
-          .filter((img): img is Element => img !== null)
-          .map((img) => {
-            const r = img.getBoundingClientRect();
-            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          .map(
+            (wrapper) =>
+              wrapper.querySelector('.seat:not(.seat--empty) .seat__avatar-img') ??
+              wrapper.querySelector('.seat') ??
+              wrapper
+          )
+          .map((element) => {
+            const r = element.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width };
           })
-          .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
+          .filter((c) => c.w > 0 && Number.isFinite(c.x) && Number.isFinite(c.y));
         const entries = wagers()
           .flatMap((bet) => {
             const box = visibleBox(bet);
@@ -497,36 +530,60 @@ export function useProtectedCardLayout(
               ?.getBoundingClientRect();
             if (!box || !owner) return [];
             const desired = { x: owner.left + owner.width / 2, y: owner.top + owner.height / 2 };
+            // The wager's own rest point, where the seat geometry puts it in
+            // front of its player (desktop's spot): the live box less any
+            // nudge an earlier pass wrote on the element itself.
+            const own = getComputedStyle(bet);
+            const inherited = getComputedStyle(bet.parentElement ?? bet);
+            const nudge = (axis: 'x' | 'y') =>
+              ((parseFloat(own.getPropertyValue(`--bet-offset-${axis}`)) || 0) -
+                (parseFloat(inherited.getPropertyValue(`--bet-offset-${axis}`)) || 0)) *
+              scale;
+            const anchor = {
+              x: box.left + box.width / 2 - nudge('x'),
+              y: box.top + box.height / 2 - nudge('y'),
+            };
             const hasAllInMarker = Boolean(bet.querySelector('.seat__allin-puck'));
-            const placed = points.map((point) => ({
-              left: point.x - box.width / 2,
-              top: point.y - box.height / 2,
-              width: box.width,
-              height: box.height,
-              depth: point.depth,
-            }));
-            // Short-phone PLO cap lanes can be narrower than a sampled oval band.
-            // Include exact obstacle-edge intersections so a clear 23px slot
-            // between two plates is not missed by the radial sampling grid.
-            if (
-              window.innerWidth <= 375 &&
-              page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(5)')
-            ) {
-              const xs = new Set([desired.x - box.width / 2]);
-              const ys = new Set([desired.y - box.height / 2]);
+            const placed = [
+              {
+                left: anchor.x - box.width / 2,
+                top: anchor.y - box.height / 2,
+                width: box.width,
+                height: box.height,
+                depth: 0,
+              },
+              ...points.map((point) => ({
+                left: point.x - box.width / 2,
+                top: point.y - box.height / 2,
+                width: box.width,
+                height: box.height,
+                depth: point.depth,
+              })),
+            ];
+            // Full captions can narrow any short-phone lane, including Holdem.
+            // Sample exact obstacle edges as well as the oval, so a clear slot
+            // beside a label is found before the overlapping last-resort tier.
+            // Wider portrait side pods need the same exact slots.
+            if (window.innerWidth > 480 || window.innerWidth <= 375) {
+              const xs = new Set([anchor.x - box.width / 2]);
+              const ys = new Set([anchor.y - box.height / 2]);
               for (const obstacle of hardObstacles) {
                 xs.add(obstacle.left - box.width - 3);
                 xs.add(obstacle.left + obstacle.width + 3);
                 ys.add(obstacle.top - box.height - 3);
                 ys.add(obstacle.top + obstacle.height + 3);
               }
+              // A wider portrait page has bare screen beyond the table; a wager
+              // stays on the table's own canvas there, never out in the margin.
+              const minLeft = window.innerWidth > 480 ? canvas.left : pageBox.left;
+              const maxRight = window.innerWidth > 480 ? canvas.right : pageBox.right;
               for (const left of xs)
                 for (const top of ys) {
                   const candidate = { left, top, width: box.width, height: box.height, depth: 20 };
                   if (
-                    left >= pageBox.left &&
+                    left >= minLeft &&
                     top >= chromeBottom &&
-                    left + box.width <= pageBox.right &&
+                    left + box.width <= maxRight &&
                     top + box.height <= canvas.bottom
                   )
                     placed.push(candidate);
@@ -547,11 +604,10 @@ export function useProtectedCardLayout(
             // small, crowded phone they may not, and then the nearest spots that
             // still clear every player, the board, the pot and each other are
             // used, rail band included, rather than leaving a wager on a player.
+            // Nearest the wager's own rest point: it moves as little as it can.
             const byCost = (a: (typeof clearOfTable)[number], b: (typeof clearOfTable)[number]) =>
-              Math.hypot(a.left + a.width / 2 - desired.x, a.top + a.height / 2 - desired.y) +
-              2 * a.depth -
-              (Math.hypot(b.left + b.width / 2 - desired.x, b.top + b.height / 2 - desired.y) +
-                2 * b.depth);
+              Math.hypot(a.left + a.width / 2 - anchor.x, a.top + a.height / 2 - anchor.y) -
+              Math.hypot(b.left + b.width / 2 - anchor.x, b.top + b.height / 2 - anchor.y);
             const distinct = (list: typeof clearOfTable, cap: number): CardBox[] => {
               const kept: CardBox[] = [];
               for (const candidate of list) {
@@ -597,7 +653,7 @@ export function useProtectedCardLayout(
                   96
                 ),
                 wide: distinct(owned, 160),
-                any: distinct(hasAllInMarker ? nearest.filter(ownedBy) : nearest, 160),
+                any: distinct(nearest.filter(ownedBy), 160),
                 printing: distinct(overPrinting, 160),
                 // Last resort on the smallest felts: this player's own spots, the
                 // least covered first, so two players' wagers never share one.
@@ -664,7 +720,13 @@ export function useProtectedCardLayout(
         for (let i = 0; i < entries.length; i++) {
           const { bet, box } = entries[i];
           const next = placements?.[i];
-          if (!next) continue;
+          if (!next) {
+            // No clear spot of its own: it stays at its rest point in front of
+            // its player, never in front of somebody else.
+            for (const name of ['--bet-offset-x', '--bet-offset-y', '--collect-dx', '--collect-dy'])
+              bet.style.removeProperty(name);
+            continue;
+          }
           const dx = (next.left - box.left) / scale;
           const dy = (next.top - box.top) / scale;
           const style = getComputedStyle(bet);

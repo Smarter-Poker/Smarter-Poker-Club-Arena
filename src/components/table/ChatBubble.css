@@ -12,11 +12,9 @@
 
 .chat-bubble {
   position: absolute;
-  left: 50%;
-  /* translateX only: the wrapper already carries a translate(-50%, -50%), and
-     nesting a second transform here would compound it. Vertical placement is
-     done with top/bottom below so the two never fight. */
-  transform: translateX(-50%);
+  left: calc(50% + var(--chat-bubble-shift, 0px));
+  /* Start beside the sender; measured offsets keep full text in the pane. */
+  transform: translate(-50%, var(--chat-bubble-shift-y, 0px));
   z-index: 22;
 
   display: flex;
@@ -28,7 +26,8 @@
      wider than the seat because a 200-character message inside 110px would be
      a twelve-line tower, but capped so two adjacent seats cannot overlap. */
   min-width: 72px;
-  max-width: 168px;
+  width: max-content;
+  max-width: min(var(--chat-bubble-max-width, 168px), var(--chat-bubble-available, 100vw));
   padding: 5px 9px 6px;
   box-sizing: border-box;
 
@@ -63,9 +62,9 @@
   text-transform: uppercase;
   color: rgba(16, 21, 31, 0.55);
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .chat-bubble__text {
@@ -77,19 +76,15 @@
      a keyboard mash) must break rather than blow the max-width out. */
   overflow-wrap: anywhere;
   word-break: break-word;
-  /* Four lines then ellipsis: beyond that it stops being a glance and starts
-     covering the neighbouring seat. The full text is still in the chat panel. */
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  /* Every word is printed, including long add-on notices and chat messages. */
+  display: block;
+  overflow: visible;
 }
 
 /* The little pointer at the bottom, aimed at the avatar. */
 .chat-bubble__tail {
   position: absolute;
-  left: 50%;
+  left: clamp(12px, calc(50% - var(--chat-bubble-shift, 0px)), calc(100% - 12px));
   width: 10px;
   height: 10px;
   background: rgba(226, 231, 240, 0.98);
@@ -198,12 +193,13 @@
 }
 
 .chat-bubble--notice .chat-bubble__text {
-  white-space: nowrap;
+  /* Keep every cent readable instead of clipping a long amount on one line. */
+  display: block;
+  max-width: 100%;
+  white-space: normal;
   text-align: center;
   font-weight: 700;
   letter-spacing: 0.01em;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
 }
 
 .chat-bubble--notice .chat-bubble__name {
@@ -235,11 +231,11 @@
 @keyframes chatBubblePop {
   0% {
     opacity: 0;
-    transform: translateX(-50%) translateY(6px) scale(0.88);
+    transform: translate(-50%, calc(var(--chat-bubble-shift-y, 0px) + 6px)) scale(0.88);
   }
   100% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translate(-50%, var(--chat-bubble-shift-y, 0px)) scale(1);
   }
 }
 
@@ -247,14 +243,12 @@
    closer together, so the bubble narrows to keep two neighbours apart. */
 @media (max-width: 480px) {
   .chat-bubble {
-    max-width: 132px;
+    max-width: min(var(--chat-bubble-max-width, 132px), var(--chat-bubble-available, 100vw));
     padding: 4px 7px 5px;
   }
 
   .chat-bubble__text {
     font-size: 0.6875rem;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
   }
 }
 

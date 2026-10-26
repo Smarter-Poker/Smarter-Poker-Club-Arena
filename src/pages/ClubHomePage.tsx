@@ -80,6 +80,7 @@ import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
   countStylesOnBoard,
+  cashStyleKeyOf,
   isCensusTable,
   isClusterFront,
   isHiddenClusterMember,
@@ -95,6 +96,7 @@ import {
 import {
   isLightningMode,
   lightningClusterIdsOf,
+  lightningJoinRoute,
   lightningRoute,
   withLightningState,
   type LightningLobbyState,
@@ -177,9 +179,10 @@ import {
   emptyFilterValue,
   rowPassesFilter,
   isFilterActive,
-  variantKey,
   type FilterGameType,
 } from '../components/lobby/advancedFilterSpec';
+import { cashBoardComparator } from '../components/lobby/cashBoardOrder';
+import { orderForHeading } from '../components/lobby/lobbySortBridge';
 import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
@@ -199,21 +202,9 @@ import { usePageTitle } from '../hooks/usePageTitle';
    also carry. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/kings-club-logo.png`;
 
-/**
- * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
- * first because it is the game most players mean by "PLO", then five, six, and
- * hi-lo last because it is a different game rather than a deeper one.
- *
- * A variant with no entry sorts after all of them rather than to the top: an
- * unrecognised game should be visible at the end of the list, never presented
- * as the headline.
- */
-const VARIANT_GROUP_ORDER: Record<string, number> = {
-  plo4: 0,
-  plo5: 1,
-  plo6: 2,
-  plo8: 3,
-};
+/* The Omaha tab's variant order (Dan 2026-08-25: PLO, PLO5, PLO6, then hi-lo,
+   unrecognised games last) now comes from the one canonical table in
+   components/lobby/variantRank.ts, through cashBoardComparator. */
 
 // SWR cache helpers for instant club data display.
 //
@@ -345,6 +336,7 @@ interface TableData {
   settings?: string;
   /** The must-move game's template (classic / action / madness), from get_club_home. */
   cluster_template?: string | null;
+  cluster_rules_profile?: string | null;
   /** The must-move game this table belongs to (Operation Table Stakes), or null. */
   cluster_id?: string | null;
   cluster_must_move?: boolean | null;
@@ -984,6 +976,29 @@ function ClubHomePageContent({
      land on the requested list for this visit. A club switch drops it. */
   const landingGameTypeRef = useRef<EmbeddedLobbyList | undefined>(initialGameType);
   const landingReportedRef = useRef(false);
+  /* ── A SHARED ?game=<id> LINK (2026-10-25) ─────────────────────────────
+     Declared here, beside the landing, because the board's filters below read
+     it. The link opens that game's card even when the player's saved tab,
+     Advanced Filters or Favorites would hide it:
+       - `linkedGameTypeRef` is the game's OWN tab, set only when the game is
+         not on the visible list. It is the landing mechanism applied to a
+         link: it outranks the saved tab for this mount and saves nothing, so
+         a late saved view (applyView) cannot move the board off the linked
+         game, and the next visit opens on the player's own tab.
+       - `linkedGameId` exempts that one game from the player's Advanced
+         Filters and Favorites while the link is pending and while its card is
+         open (see the effect that clears it). Exempting the one row is the
+         smallest change that opens it: clearing or bypassing the filters
+         would rewrite or ignore a saved preference for every other row, and
+         the brief is that a link changes nothing the player saved. The tab
+         itself still applies, so an explicit tab change filters the linked
+         game out and closes its card exactly as it does any other (#8072). */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSyncEnabled = !clubIdOverride;
+  const [linkedGameId, setLinkedGameId] = useState<string | null>(() =>
+    urlSyncEnabled ? searchParams.get('game') : null
+  );
+  const linkedGameTypeRef = useRef<GameType | undefined>(undefined);
   const onInitialGameTypeConsumedRef = useRef(onInitialGameTypeConsumed);
   onInitialGameTypeConsumedRef.current = onInitialGameTypeConsumed;
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
@@ -1000,6 +1015,17 @@ function ClubHomePageContent({
      they were loaded for this club. A late database reply must never undo a
      chip tapped during the round trip, the same rule as viewPrefsTouched. */
   const advFiltersTouched = useRef(false);
+  /* A GAME CARD THAT IS OPEN RIGHT NOW (2026-10-25). Late saved tabs and
+     filters must not remove the game the player is looking at, so while a
+     card is open they are HELD and applied when it closes. This used to key
+     on browseJourney.selected, an analytics flag that stays true for the
+     whole visit: once any card had opened, another device's newer saved
+     tabs and filters were thrown away, and the next chip or tab tap then
+     pushed this browser's stale copy over them. Set in the same handler
+     that opens the card, so a reply landing before the commit still waits. */
+  const cardOpenRef = useRef(false);
+  const heldViewApply = useRef<(() => void) | null>(null);
+  const heldFilters = useRef<FilterStore | null>(null);
   /** Every lobby-side filter change goes through here: this browser's cache
    *  and the player's row together, so a quick chip follows them to every
    *  device exactly like the sheet does. */
@@ -1049,6 +1075,11 @@ function ClubHomePageContent({
   // already cached (see the bootCache note above). hasDataRef is seeded to
   // match so the watchdog and the reset guard agree with what is on screen.
   const [loading, setLoading] = useState(!bootCache?.club);
+  /* True once the authoritative read has returned BOTH the cash tables and
+     the tournaments for this club. `loading` cannot say this: a cached boot
+     clears it at once, and the boot cache holds tables only. A shared
+     ?game=<id> link is judged dead against this, never against a half list. */
+  const [gameListsLoaded, setGameListsLoaded] = useState(false);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [quickStartInvite, setQuickStartInvite] = useState(false);
@@ -1370,6 +1401,7 @@ function ClubHomePageContent({
     reloadPendingRef.current = false;
     hasDataRef.current = false;
     listsPaintedRef.current = false;
+    setGameListsLoaded(false);
   }, [clubId]);
 
   // ── Watchdog: a hung fetch must never strand the skeleton forever ──
@@ -2135,12 +2167,14 @@ function ClubHomePageContent({
      must never silently apply to another club's lobby. */
   useEffect(() => {
     advFiltersTouched.current = false;
+    heldFilters.current = null;
     if (!resolvedClubId) {
       setAdvFilters({});
       return;
     }
     const cached = loadFilters(resolvedClubId, currentUser?.id ?? null);
-    setAdvFilters(cached);
+    if (cardOpenRef.current) heldFilters.current = cached;
+    else setAdvFilters(cached);
 
     /* THEN THE PLAYER'S ROW (2026-10-16). Until now only the open filter
        sheet ever read it, so a phone opened the lobby with the laptop's
@@ -2155,8 +2189,13 @@ function ClubHomePageContent({
     let cancelled = false;
     void fetchRemoteFilters(resolvedClubId).then((remote) => {
       if (cancelled || !remote || advFiltersTouched.current) return;
-      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
+      // The cache always moves forward; only the screen waits for the card.
       saveFilters(resolvedClubId, remote, currentUser?.id ?? null);
+      if (cardOpenRef.current) {
+        heldFilters.current = remote;
+        return;
+      }
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
     });
     return () => {
       cancelled = true;
@@ -2186,6 +2225,7 @@ function ClubHomePageContent({
     if (switchingAccounts) viewPrefsTouched.current = false;
     // The landing was a request about the club it was made in.
     if (switchingClubs) landingGameTypeRef.current = undefined;
+    if (switchingClubs) linkedGameTypeRef.current = undefined;
 
     const saved = loadViewPrefs(resolvedClubId, currentUser?.id);
     setViewPrefs(saved);
@@ -2194,12 +2234,19 @@ function ClubHomePageContent({
       /* A requested landing list outranks the saved tab for this mount only
          (see `initialGameType`); the saved sort and Favorites still apply. */
       const tab = landingGameTypeRef.current ?? p.tab ?? 'ALL';
-      setGameType(tab);
-      setSortKey(sortForTab(p, tab));
+      /* A shared link's own tab outranks both the same way, for this mount
+         only (see `linkedGameTypeRef`). Undefined on every other visit. */
+      const shown = linkedGameTypeRef.current ?? tab;
+      setGameType(shown);
+      setSortKey(sortForTab(p, shown));
       setFavoritesOnly(p.favoritesOnly);
     };
 
-    if (!viewPrefsTouched.current) applyView(saved);
+    heldViewApply.current = null;
+    if (cardOpenRef.current) {
+      // Held for the open card; the close effect applies it.
+      if (!viewPrefsTouched.current) heldViewApply.current = () => applyView(saved);
+    } else if (!viewPrefsTouched.current) applyView(saved);
 
     /* The initial view is applied (or the player already chose their own):
        either way the landing request is spent. Reported once per mount. */
@@ -2240,11 +2287,15 @@ function ClubHomePageContent({
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
       if (viewPrefsTouched.current) return;
+      // The prefs in hand and this browser's cache always move forward, so a
+      // later tap merges into (and pushes) the newer row, never a stale one.
       setViewPrefs(remote);
-      applyView(remote);
       // Bring this browser's cache forward so the next cold open is already
       // right, instead of flashing the stale tab on every visit.
       saveViewPrefs(resolvedClubId, remote, currentUser?.id);
+      // Only the visible tab, sort and Favorites wait for an open card.
+      if (cardOpenRef.current) heldViewApply.current = () => applyView(remote);
+      else applyView(remote);
     });
     return () => {
       cancelled = true;
@@ -2319,13 +2370,30 @@ function ClubHomePageContent({
     [viewPrefs, updateViewPrefs]
   );
 
+  /* ONE ORDER, TWO CONTROLS (2026-10-24, lobbySortBridge): a chip pressed in
+     the sheet is handed to the board as a request, so the board's heading
+     sort follows it instead of silently outranking it. */
+  const [requestedOrder, setRequestedOrder] = useState<{ key: SortKey; seq: number } | null>(null);
+
   /** Pick a sort: it belongs to the tab it was chosen on. */
   const selectSortKey = useCallback(
     (key: SortKey) => {
       setSortKey(key);
+      setRequestedOrder((prev) => ({ key, seq: (prev?.seq ?? 0) + 1 }));
       updateViewPrefs({ sortByTab: { [gameType]: key } });
     },
     [gameType, updateViewPrefs]
+  );
+
+  /** A heading the player chose lights the sheet chip that means the same. */
+  const followHeadingSort = useCallback(
+    (key: string, dir: 'asc' | 'desc') => {
+      const chip = orderForHeading(gameType, key, dir) as SortKey | null;
+      if (!chip || chip === sortKey) return;
+      setSortKey(chip);
+      updateViewPrefs({ sortByTab: { [gameType]: chip } });
+    },
+    [gameType, sortKey, updateViewPrefs]
   );
 
   /** Toggle Favorites: remembered like everything else on this bar. */
@@ -3173,7 +3241,7 @@ function ClubHomePageContent({
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode, handedness)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode, handedness, rules_profile:ruleset_snapshot->>rules_profile)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -3319,6 +3387,8 @@ function ClubHomePageContent({
       lobbyPainted = true;
 
       const tableData = tableResult.data;
+      const tablesRead = !tableResult.error && Array.isArray(tableData);
+      let tournamentsRead = false;
       /* The chain's rows with the game embed flattened (below); what the
          board and the boot cache both receive. */
       let flattenedTables: TableData[] = [];
@@ -3358,6 +3428,7 @@ function ClubHomePageContent({
               state?: string | null;
               enabled?: boolean | null;
               cluster_mode?: string | null;
+              rules_profile?: string | null;
             } | null;
           } & Record<string, unknown>;
           if (!game || typeof game !== 'object') return rest;
@@ -3371,6 +3442,9 @@ function ClubHomePageContent({
             /* LIGHTNING PHASE 6: the Cluster's mode, so a Lightning game's
                card says LIGHTNING LIVE and its door is the Lightning route. */
             cluster_mode: game.cluster_mode ?? null,
+            /* A Classic game never moves its players (Dan 2026-10-24); the
+               profile keeps the Madness stand-in's MUST MOVE card. */
+            cluster_rules_profile: game.rules_profile ?? null,
           };
         });
         flattenedTables = flattened as unknown as TableData[];
@@ -3408,6 +3482,7 @@ function ClubHomePageContent({
         listsPaintedRef.current = true;
         if (allTournaments.length > 0) {
           setTournaments(allTournaments);
+          tournamentsRead = true;
         } else if (!tournamentScopeConfirmed) {
           reportError(
             new Error(
@@ -3421,8 +3496,11 @@ function ClubHomePageContent({
           reloadPendingRef.current = true;
         } else {
           setTournaments(allTournaments);
+          tournamentsRead = true;
         }
       }
+      // A failed or unconfirmed half is not a loaded list; the next load retries.
+      if (tablesRead && tournamentsRead) setGameListsLoaded(true);
       /* Each list against ITS OWN cap: the tournament query stops at
          MODERATE (500), not LIST (200), so comparing it to LIST printed "+"
          beside counts that had not been cut short at all. */
@@ -3578,7 +3656,8 @@ function ClubHomePageContent({
         }
       }
 
-      if (advSpec && advValue) {
+      // A shared link's game is exempt from the saved filters (linkedGameId).
+      if (advSpec && advValue && table.id !== linkedGameId) {
         /* ONE decision function for both halves of the lobby - see
            rowPassesFilter. Applying the fields inline here is what let games,
            format and statuses drift into being collected-but-ignored. */
@@ -3604,7 +3683,7 @@ function ClubHomePageContent({
               : Number(table.current_players) || 0,
             game: isClusterFront(table as unknown as LobbyTableRow),
             name: table.name,
-            style: table.cluster_template ?? null,
+            style: cashStyleKeyOf(table as unknown as LobbyTableRow),
             row: table as unknown as Record<string, unknown>,
             settings,
           })
@@ -3616,52 +3695,11 @@ function ClubHomePageContent({
       return true;
     });
 
-    const bb = (t: TableData) => Number(t.big_blind) || 0;
-    const cmpStakes = (a: TableData, b: TableData) => bb(b) - bb(a);
-    const cmpStakesLow = (a: TableData, b: TableData) => bb(a) - bb(b);
-    const cmpPlayers = (a: TableData, b: TableData) =>
-      (b.current_players || 0) - (a.current_players || 0);
-    const cmpName = (a: TableData, b: TableData) => (a.name || '').localeCompare(b.name || '');
-    /* Dan 2026-08-25: "GAMES NEED TO BE ORGANIZED BY TYPE ... SHOW ALL PLO 4
-       CARDS GAMES AND STAKES, THEN BELOW IT PLO5, THEN PLO6 THEN PLO8."
-
-       The tab was one undifferentiated list: a PLO6 5/10 sat between a PLO4
-       2/4 and a PLO4 10/25, so a player who only plays four-card had to read
-       every row to find their game. Variant leads every comparator now, and
-       the chosen sort orders the stakes WITHIN each variant — which is what
-       "and stakes" asks for. Keyed off the same variantKey the Omaha filter
-       chips use, so the group a table lands in and the chip that hides it can
-       never disagree.
-
-       Only Omaha is grouped: the other tabs are a single variant, where a
-       leading variant term is a comparator that always returns 0. */
-    const cmpVariant = (a: TableData, b: TableData) =>
-      gameType === 'OMAHA'
-        ? (VARIANT_GROUP_ORDER[variantKey(a.game_variant)] ?? 99) -
-          (VARIANT_GROUP_ORDER[variantKey(b.game_variant)] ?? 99)
-        : 0;
-
-    switch (sortKey) {
-      case 'stakes_high':
-        return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
-      case 'stakes_low':
-        return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakesLow(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
-      case 'players':
-      case 'starting_soon':
-        return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpPlayers(a, b) || cmpStakes(a, b) || cmpName(a, b)
-        );
-      case 'recommended':
-      default:
-        return rows.sort(
-          (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
-        );
-    }
-  }, [boardTables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
+    /* One pure comparator (cashBoardOrder.ts): a stakes sort breaks every
+       price tie in canonical variant order on EVERY tab, ALL included (Dan
+       2026-10-23); the other sorts keep the Omaha tab's variant groups. */
+    return rows.sort(cashBoardComparator(sortKey, gameType));
+  }, [boardTables, gameType, showsCash, sortKey, advFilters, allStatusFilter, linkedGameId]);
 
   /**
    * Is the lobby showing less than everything, and why.
@@ -3807,7 +3845,8 @@ function ClubHomePageContent({
         return false;
       }
 
-      if (advSpec && advValue) {
+      // A shared link's game is exempt from the saved filters (linkedGameId).
+      if (advSpec && advValue && t.id !== linkedGameId) {
         // The tournament price is the TOTAL a player pays, not the prize half.
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
         if (
@@ -3873,7 +3912,7 @@ function ClubHomePageContent({
             cmpNameTourn(a, b)
         );
     }
-  }, [tournaments, gameType, showsTournaments, sortKey, advFilters, allStatusFilter]);
+  }, [tournaments, gameType, showsTournaments, sortKey, advFilters, allStatusFilter, linkedGameId]);
 
   /**
    * Tables this player already holds an active place in the queue for.
@@ -3989,13 +4028,25 @@ function ClubHomePageContent({
   const [favoriteTableIds, setFavoriteTableIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  /* The card closed: apply what was held for it, unless the player has since
+     chosen their own tab or filters (a tap always outranks a late reply). */
+  useLayoutEffect(() => {
+    cardOpenRef.current = panelOpen;
+    if (panelOpen) return;
+    const view = heldViewApply.current;
+    const filters = heldFilters.current;
+    heldViewApply.current = null;
+    heldFilters.current = null;
+    if (view && !viewPrefsTouched.current) view();
+    if (filters && !advFiltersTouched.current)
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(filters) ? prev : filters));
+  }, [panelOpen]);
 
   /* ── Selected game in the URL (?game=<id>) ──────────────────────────────
      A refresh or a shared link reopens the same game lobby. replace:true
      keeps history clean, so the back button still leaves the page rather
      than stepping through every row the player looked at. The MultiTablePage
      embed passes clubIdOverride and must never rewrite its host URL. */
-  const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     if (
       clubIdOverride ||
@@ -4012,7 +4063,6 @@ function ClubHomePageContent({
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, club, clubId, clubIdOverride, isOwner]);
 
-  const urlSyncEnabled = !clubIdOverride;
   // Captured at first render, before the sync effect below can strip it.
   const pendingGameRef = useRef<string | null>(searchParams.get('game'));
 
@@ -4134,6 +4184,7 @@ function ClubHomePageContent({
     const unsubs = [
       masterBus.subscribeDebounced('TABLE_SEATED', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TABLE_LEFT', loadMyGameStates, 300),
+      masterBus.subscribeDebounced('SEAT_CASHED_OUT', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', loadMyGameStates, 300),
       masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadMyGameStates, 300),
     ];
@@ -4210,7 +4261,16 @@ function ClubHomePageContent({
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
       haptic.selection();
+      // Opening a card is browsing intent too. Late saved tabs or filters
+      // must not remove that chosen game and close its card. Keep this
+      // separate from the preference-write flags: a row tap saves nothing.
       browseJourney.current.selected = true;
+      cardOpenRef.current = true;
+      /* The player chose a game: a shared link still waiting for its lists
+         must not open over it later, and its filter exemption ends unless
+         this is the linked game itself. */
+      pendingGameRef.current = null;
+      setLinkedGameId((linked) => (linked === entry.id ? linked : null));
       capture('lobby_game_details_opened', {
         kind: entry.kind,
         duration_ms: Math.max(0, Date.now() - browseJourney.current.start),
@@ -4274,7 +4334,6 @@ function ClubHomePageContent({
   const handleJoinTable = useCallback(
     (tableId: string) => {
       haptic.medium();
-      setPanelOpen(false);
       /* JOIN GAME (Gate 4, 2026-09-05). A must-move game is one row on the
          board (R10) and its row is Main 1 - but JOIN must never simply open
          Main 1, which is full whenever the game is busy. The game door,
@@ -4288,9 +4347,12 @@ function ClubHomePageContent({
          seat to choose. Its one door is the Lightning route, which opens the
          player's pool session or takes them through the Cluster's join. */
       if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
-        navigate(`/lightning/${row.cluster_id}`);
+        // Leaving unmounts the panel. Closing it first also schedules the
+        // lobby's query-string sync, which can overwrite this navigation.
+        navigate(lightningJoinRoute(row.cluster_id));
         return;
       }
+      setPanelOpen(false);
       if (row?.cluster_id && row.cluster_must_move !== false) {
         if (!gameEntryScope.active || gameEntryScope.busy) return;
         gameEntryScope.busy = true;
@@ -4531,7 +4593,8 @@ function ClubHomePageContent({
        render - so leaving the filter applied there stripped the board to two
        tables with no control anywhere on screen to undo it, and only a reload
        cleared it. A filter with no switch is not a filter, it is a fault. */
-    if (favoritesOnly && gameType !== 'ALL') cash = cash.filter((e) => favoriteTableIds.has(e.id));
+    if (favoritesOnly && gameType !== 'ALL')
+      cash = cash.filter((e) => favoriteTableIds.has(e.id) || e.id === linkedGameId);
 
     /* ── WHAT "ALL" MEANS (Dan, 2026-08-25) ────────────────────────────────
        "WE DON'T HAVE MIXED CASH GAMES, AND THE CAP IS 10 FOR MTT ONLY.
@@ -4585,6 +4648,7 @@ function ClubHomePageContent({
     waitlistCounts,
     club?.id,
     clubNames,
+    linkedGameId,
   ]);
 
   /* The auto-recovery declared above, placed here because it needs the two
@@ -4641,20 +4705,80 @@ function ClubHomePageContent({
     if (panelOpen && selectedId && !selectedEntry) setPanelOpen(false);
   }, [panelOpen, selectedId, selectedEntry]);
 
-  // Reopen the game a ?game=<id> URL points at, once the list contains it.
-  // A dead id (deleted game, another club's game) is dropped on the first
-  // loaded list instead of lying in wait forever.
+  // Reopen the game a ?game=<id> URL points at.
+  //
+  // SHARED LINKS OPEN OFF-TAB GAMES (2026-10-25). This used to give up on the
+  // first non-empty list and open the card only if the game was on it. That
+  // list is the VISIBLE board - the saved tab, its Advanced Filters,
+  // Favorites and the ALL tab's rules (no Spins or Heads Up, MTTs capped) -
+  // and on a cached boot it is the cached tables alone, before any tournament
+  // has loaded. So a player saved on NLH who opened a shared PLO table, Spin
+  // or running MTT got the lobby with no card and ?game stripped.
+  //
+  // Now: on the visible list, open it. In the club's loaded data but not on
+  // the list, move the board to the game's own tab (for this visit, saving
+  // nothing; see `linkedGameTypeRef`), where `linkedGameId` keeps the saved
+  // filters and Favorites from hiding it. Dropped only when the club's tables
+  // AND tournaments have both loaded and the game still cannot be shown: in
+  // neither list (deleted, another club's), or already on its own tab and
+  // still absent (a hidden must-move member, an event outside the lobby's
+  // window, an unclassified format that no tab lists). A player who has
+  // picked their own tab meanwhile keeps it: the link never moves a tab the
+  // player chose.
   useEffect(() => {
-    if (!urlSyncEnabled || !pendingGameRef.current) return;
-    if (lobbyEntries.length === 0) return;
     const id = pendingGameRef.current;
-    pendingGameRef.current = null;
-    const entry = lobbyEntries.find((e) => e.id === id);
-    if (entry) {
+    if (!urlSyncEnabled || !id) return;
+    if (lobbyEntries.some((e) => e.id === id)) {
+      pendingGameRef.current = null;
+      browseJourney.current.selected = true;
+      cardOpenRef.current = true;
       setSelectedId(id);
       setPanelOpen(true);
+      return;
     }
-  }, [urlSyncEnabled, lobbyEntries]);
+    /* The game's own tab, from the same rules the board filters by: cashKind
+       for a table (an unrecognised variant has no tab and is listed on ALL),
+       and for a tournament the tab whose variant matcher filteredTournaments
+       applies accepts it. Undefined: not loaded, or on no tab at all. */
+    const table = tables.find((t) => t.id === id);
+    const tournament = table ? undefined : tournaments.find((t) => t.id === id);
+    let home: GameType | undefined;
+    if (table) {
+      const kind = cashKind(table);
+      home = kind === 'MIXED' ? 'ALL' : kind;
+    } else if (tournament) {
+      home = TOURNAMENT_TYPES.find((tab) => {
+        const variant = TOURN_VARIANT_FOR[tab];
+        return variant !== undefined && matchesVariant(tournament, variant);
+      });
+    }
+    if (home !== undefined && home !== gameType && !viewPrefsTouched.current) {
+      linkedGameTypeRef.current = home;
+      setGameType(home);
+      setSortKey(sortForTab(viewPrefs, home));
+      return;
+    }
+    if (!gameListsLoaded) return;
+    pendingGameRef.current = null;
+    setLinkedGameId(null);
+  }, [urlSyncEnabled, lobbyEntries, tables, tournaments, gameType, gameListsLoaded, viewPrefs]);
+
+  /* The link's filter exemption lasts while it is pending and while its own
+     card is open. Once that card closes (here), or the player opens another
+     game (openEntry), the saved filters and Favorites govern the board again.
+     Keyed on the card's open-to-closed transition, not on "the card is not
+     open": on a mount where the game is already listed, the open above and
+     this effect run in the same commit, before panelOpen has turned true. */
+  const linkedCardWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (panelOpen) {
+      linkedCardWasOpenRef.current = true;
+      return;
+    }
+    if (!linkedCardWasOpenRef.current) return;
+    linkedCardWasOpenRef.current = false;
+    if (!pendingGameRef.current) setLinkedGameId(null);
+  }, [panelOpen]);
 
   /** How many rows the lobby is about to render. */
   /* ONE ctx IDENTITY PER RENDER THAT ACTUALLY CHANGES IT.
@@ -5956,14 +6080,25 @@ function ClubHomePageContent({
               onActivate={openEntry}
               loading={loading}
               ctx={lobbyCtx}
+              /* A Sort By the player chose for this tab is obeyed over the
+                 featured pin wherever it is the board's order (ALL). */
+              requestedOrder={requestedOrder}
+              orderLabel={SORT_OPTIONS.find((o) => o.key === sortKey)?.label}
+              onHeadingSort={followHeadingSort}
+              orderChosen={
+                viewPrefs.sortByTab[gameType as keyof typeof viewPrefs.sortByTab] != null
+              }
               /* THE VARIANT SELECTOR (Dan 2026-09-03): the Variant heading
                  opens the tab's games - No Limit / Pineapple / Short Deck,
                  PLO / PLO5 / PLO6 / PLO8o - with an All option. It reads and
                  writes the SAME saved `games` filter the Advanced Filters
-                 sheet does, so the two can never disagree. */
+                 sheet does, so the two can never disagree. LIMIT has the
+                 same menu (2026-10-24): its spec has carried FLH / FLO8 chips
+                 since the limit games shipped, so the heading on that tab was
+                 the one cash Variant heading with no way to pick a game. */
               {...(() => {
                 const vSpec =
-                  gameType === 'HOLDEM' || gameType === 'OMAHA'
+                  gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
                     ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
                     : null;
                 if (!vSpec) return {};

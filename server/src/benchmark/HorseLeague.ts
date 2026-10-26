@@ -66,6 +66,22 @@ const CAT_NAMES = [
   'Royal Flush',
 ];
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
+import {
+  HUMAN_CALIBRATED_POPULATION_ID,
+  humanCalibratedDecide,
+  type HumanCalibratedSpot,
+} from './HumanCalibratedPopulation.js';
+import {
+  HUMAN_FIELD_COMPONENT_SCENARIOS,
+  HUMAN_FIELD_NAME_PREFIX,
+  HUMAN_FIELD_VARIANTS,
+} from './HorseLeagueHumanField.js';
+
+export {
+  HUMAN_FIELD_COMPONENT_SCENARIOS,
+  HUMAN_FIELD_NAME_PREFIX,
+  HUMAN_FIELD_VARIANTS,
+} from './HorseLeagueHumanField.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import {
@@ -108,6 +124,15 @@ export interface LeagueResult {
    *  audit read it as a resolved zero. An inert matchup is a harness defect and is reported as
    *  one; it is never a measurement. */
   inert?: boolean;
+  /** HUMAN FIELD (2026-10-24): present only on a result whose opponents were
+   *  the human-calibrated population (LeagueMatchup.opponentPopulation). Then
+   *  bb100/stderr are the hero horse's per-hand edge of arm A over arm B
+   *  against that field, and benchmarkComponents carries each arm's own
+   *  absolute bb/100 against it. Absent: the mirror (horse vs horse) card. */
+  opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
+  /** Human-field results only: the calibrated opponents' responses per
+   *  decision node, both arms, counts only. Proof the field actually played. */
+  humanResponses?: Record<string, Record<string, number>>;
 }
 
 export interface LeagueBenchmarkComponent {
@@ -155,6 +180,50 @@ export interface LeagueMatchup {
    *  every hand in progress on every live table. Kept only so an existing
    *  config object still type-checks. */
   mind?: 'sandbox';
+  /**
+   * HUMAN FIELD (2026-10-24). Absent: the MIRROR card every matchup has
+   * always been - every seat a horse, half the seats on config A and half on
+   * B, swapped between the two passes of a duplicate pair. A mirror measures
+   * what a layer is worth against OTHER HORSES, and live data says the fleet
+   * is roughly break-even against humans before rake, so horse-vs-horse value
+   * is not the number that pays.
+   *
+   * Set to HUMAN_CALIBRATED_POPULATION_ID: ONE seat is the hero horse and
+   * every other seat plays the human-calibrated population
+   * (HumanCalibratedPopulation.ts), seated as a human (`is_horse: false`).
+   * Pass 1 of each duplicate pair seats arm A as the hero, pass 2 replays the
+   * SAME deal, dealer and hero seat with arm B, against the same field. The
+   * arms differ only in the flag under test, card luck cancels in the
+   * difference, and bb100 is the hero's per-hand edge of A over B against
+   * that field. Only variants in HUMAN_FIELD_VARIANTS are accepted.
+   */
+  opponentPopulation?: typeof HUMAN_CALIBRATED_POPULATION_ID;
+}
+
+/** The human field inside one dealt hand (see LeagueMatchup.opponentPopulation). */
+export interface LeagueHumanField {
+  population: typeof HUMAN_CALIBRATED_POPULATION_ID;
+  /** True for every seat index dealt to the human-calibrated population. */
+  isHuman: (seatIdx: number) => boolean;
+  /** Accumulates the population's responses per decision node. */
+  responses?: Record<string, Record<string, number>>;
+}
+
+/**
+ * What the nightly runner stores in config_a / config_b for a matchup. A
+ * mirror card stores its arm unchanged (every row ever written keeps its
+ * meaning). A human-field card adds `opponentPopulation`, so a row can say
+ * which field it was measured against without a schema change; the name
+ * (`human_*`) says it too.
+ */
+export function leagueResultConfig(
+  matchup: Pick<LeagueMatchup, 'a' | 'b' | 'opponentPopulation'>,
+  arm: 'a' | 'b'
+): Record<string, unknown> {
+  const opts = matchup[arm] as Record<string, unknown>;
+  return matchup.opponentPopulation
+    ? { ...opts, opponentPopulation: matchup.opponentPopulation }
+    : opts;
 }
 
 export interface LeagueGameContext {
@@ -227,9 +296,18 @@ export function playHand(
   /** Phase 4: exact cash/tournament utility family. */
   gameContext: LeagueGameContext = CASH_LEAGUE_CONTEXT,
   /** 2026-10-19: per-seat profile dials; absent = {} (the pre-existing path). */
-  modsOf?: (seatIdx: number) => HorseProfileMods
+  modsOf?: (seatIdx: number) => HorseProfileMods,
+  /** 2026-10-24: seats dealt to the human-calibrated population, seated as
+   *  humans. Absent: every seat is a horse (the pre-existing path). */
+  humanField?: LeagueHumanField
 ): number[] {
   const SEATS = numSeats;
+  if (humanField && !HUMAN_FIELD_VARIANTS.includes(gameVariant)) {
+    throw new Error(
+      `A human-field hand cannot deal ${gameVariant}: the human-calibrated population is ` +
+        `qualified for ${HUMAN_FIELD_VARIANTS.join(', ')} only`
+    );
+  }
   const START_STACK = stackBB * BB;
   const vi = variantInfo(gameVariant);
   const holeCount = vi.holeCount;
@@ -247,17 +325,19 @@ export function playHand(
 
   const seats: Seat[] = [];
   for (let s = 0; s < SEATS; s++) {
+    const human = humanField?.isHuman(s) === true;
     seats.push({
       contributed: 0,
       // Without a sandbox, league hands are memory-free (mind:false) — they
       // must never write synthetic reads into the live opponent memory. With
       // one, the mind runs for real against the sandbox's isolated state.
-      opts: sandbox ? { ...configOf(s) } : { ...configOf(s), mind: false },
-      mods: modsOf ? { ...modsOf(s) } : {},
+      // A human-field seat never reaches HorseLogic, so its opts are unused.
+      opts: human ? {} : sandbox ? { ...configOf(s) } : { ...configOf(s), mind: false },
+      mods: !human && modsOf ? { ...modsOf(s) } : {},
       player: {
         seat: s + 1,
-        user_id: `league-${s + 1}`,
-        username: `League${s + 1}`,
+        user_id: human ? `league-human-${s + 1}` : `league-${s + 1}`,
+        username: human ? `Human${s + 1}` : `League${s + 1}`,
         stack: START_STACK,
         bet: 0,
         totalInvested: 0,
@@ -265,7 +345,7 @@ export function playHand(
         is_folded: false,
         is_all_in: false,
         is_sitting_out: false,
-        is_horse: true,
+        is_horse: !human,
       } as SeatPlayer,
     });
   }
@@ -356,12 +436,28 @@ export function playHand(
         ...(gameContext.tournament ? { tournament: structuredClone(gameContext.tournament) } : {}),
       } as HorseGameStateV2;
 
-      const d = sandbox
-        ? HorseMind.runInSandbox(sandbox, () =>
-            HorseLogic.decide(p, gs, 'balanced', seat.mods, seat.opts)
-          )
-        : HorseLogic.decide(p, gs, 'balanced', seat.mods, seat.opts);
       const toCall = Math.max(0, currentBet - p.bet);
+      const d: { action: string; amount?: number } =
+        // Routed by the field's own seat assignment (the same predicate that
+        // seated this player), so a seat's input device is chosen where the
+        // seat was dealt, never re-derived from a flag on the player.
+        humanField?.isHuman(i) === true
+          ? humanFieldDecision(humanField, p, stage, boardCards, gameVariant, {
+              pot,
+              currentBet,
+              lastRaise,
+              toCall,
+              aggressionThisStreet: history.some(
+                (a) =>
+                  a.stage === stage &&
+                  (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+              ),
+            })
+          : sandbox
+            ? HorseMind.runInSandbox(sandbox, () =>
+                HorseLogic.decide(p, gs, 'balanced', seat.mods, seat.opts)
+              )
+            : HorseLogic.decide(p, gs, 'balanced', seat.mods, seat.opts);
 
       // Validate against the engine's own rules; downgrade an illegal action
       // to the safe fallback and count it (the conservation test asserts 0).
@@ -622,7 +718,10 @@ export function playHand(
         } finally {
           HorseMind.setDecisionScope(previousScope);
         }
-        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope);
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope, false, {
+          variant: gameVariant,
+          boardCount: 1,
+        });
       });
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */
@@ -630,6 +729,60 @@ export function playHand(
   }
 
   return seats.map((s, i) => winnings[i] - s.contributed);
+}
+
+/**
+ * A human-calibrated seat's decision, read from the same public state and the
+ * same no-limit legal menu the simulator enforces on every horse decision
+ * (calculateBettingState / validateAction below it in runStreet). The answer
+ * still goes through that validation, so a human seat can never take an
+ * action the horses could not.
+ */
+function humanFieldDecision(
+  field: LeagueHumanField,
+  p: SeatPlayer,
+  stage: HandStage,
+  board: Card[],
+  gameVariant: string,
+  table: {
+    pot: number;
+    currentBet: number;
+    lastRaise: number;
+    toCall: number;
+    aggressionThisStreet: boolean;
+  }
+): { action: string; amount?: number } {
+  const { pot, currentBet, lastRaise, toCall } = table;
+  const legalActions: string[] = [];
+  if (toCall > 0) legalActions.push('fold');
+  else legalActions.push('check');
+  if (toCall > 0 && p.stack > toCall) legalActions.push('call');
+  const maxTo = p.bet + p.stack;
+  const minTo = currentBet > 0 ? currentBet + Math.max(BB, lastRaise) : BB;
+  const wager = currentBet > 0 ? 'raise' : 'bet';
+  const canWager = maxTo > currentBet && maxTo >= minTo;
+  if (canWager) legalActions.push(wager);
+  if (p.stack > 0) legalActions.push('all_in');
+  const spot: HumanCalibratedSpot = {
+    variant: gameVariant,
+    stage,
+    cards: p.cards,
+    board,
+    pot,
+    toCall,
+    currentBet,
+    aggressionThisStreet: table.aggressionThisStreet,
+    legalActions,
+    minRaiseTo: canWager ? minTo : null,
+    maxRaiseTo: canWager ? maxTo : null,
+    wholeChips: false,
+  };
+  const d = humanCalibratedDecide(spot);
+  if (field.responses) {
+    const tally = (field.responses[d.node] ??= {});
+    tally[d.action] = (tally[d.action] ?? 0) + 1;
+  }
+  return d.amount !== undefined ? { action: d.action, amount: d.amount } : { action: d.action };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -647,6 +800,9 @@ export async function runMatchup(
   runSeed: number,
   shouldContinue: () => boolean = () => true
 ): Promise<LeagueResult> {
+  if (matchup.opponentPopulation !== undefined) {
+    return runHumanFieldMatchup(matchup, pairs, runSeed, shouldContinue);
+  }
   const SEATS = matchup.seats ?? DEFAULT_SEATS;
   const t0 = Date.now();
   const counters = { illegal: 0, truncated: 0 };
@@ -773,6 +929,166 @@ export async function runMatchup(
   };
 }
 
+/** Seat index the hero horse takes on a human-field card. The dealer button
+ *  rotates every pair, so the hero plays every position once per SEATS pairs. */
+export const HUMAN_FIELD_HERO_SEAT = 0;
+
+/**
+ * HUMAN-FIELD DUPLICATE DEALS (2026-10-24). See LeagueMatchup.opponentPopulation.
+ *
+ * Everything that makes the mirror card trustworthy is kept, unchanged in
+ * kind: the same per-pair deal seed and dealer rotation, the save/restore
+ * bracket around the shared strategy RNG, one HorseMind sandbox PER PASS for
+ * the whole matchup (pass 1 always arm A, pass 2 always arm B, so each arm's
+ * memory of the field is its own and identical arms evolve identical
+ * memories), the same street engine, validation and settlement, and the same
+ * divergence count, so a flag that changes no decision is reported INERT.
+ *
+ * What changes is who sits around the hero. Each pass seats the arm under
+ * test at HUMAN_FIELD_HERO_SEAT and the human-calibrated population in every
+ * other seat; the two passes replay the same seed, so the hero holds the
+ * same cards in the same position against the same opponents' cards. The
+ * pair difference is (arm A's net) - (arm B's net) on one deal, which is
+ * where card luck cancels. bb100 is that difference per 100 hero hands:
+ * positive means the layer earns against the field. Each arm's own
+ * absolute bb/100 against the field rides along as a benchmark component.
+ */
+async function runHumanFieldMatchup(
+  matchup: LeagueMatchup,
+  pairs: number,
+  runSeed: number,
+  shouldContinue: () => boolean
+): Promise<LeagueResult> {
+  const population = matchup.opponentPopulation;
+  if (population !== HUMAN_CALIBRATED_POPULATION_ID) {
+    throw new Error(`Unknown league opponent population: ${String(population)}`);
+  }
+  const variant = matchup.variant ?? 'nlh';
+  if (!HUMAN_FIELD_VARIANTS.includes(variant)) {
+    throw new Error(
+      `${matchup.name}: a human-field card cannot deal ${variant}; the human-calibrated ` +
+        `population is qualified for ${HUMAN_FIELD_VARIANTS.join(', ')} only`
+    );
+  }
+  const SEATS = matchup.seats ?? DEFAULT_SEATS;
+  const HERO = HUMAN_FIELD_HERO_SEAT;
+  const t0 = Date.now();
+  const counters = { illegal: 0, truncated: 0 };
+  let candidatePolicyHits = 0;
+  let candidateExecutionMismatches = 0;
+  const candidateNodeRoles = new Set<string>();
+  const perPairDiff: number[] = [];
+  const netA: number[] = [];
+  const netB: number[] = [];
+  let divergentPairs = 0;
+  const responses: Record<string, Record<string, number>> = {};
+  const field: LeagueHumanField = {
+    population,
+    isHuman: (s) => s !== HERO,
+    responses,
+  };
+  const rngBefore = saveFastRandom();
+  const sb1 = HorseMind.createSandbox();
+  const sb2 = HorseMind.createSandbox();
+  const withEvidence = (opts: HorseDecideOpts): HorseDecideOpts => {
+    if (!opts.gtoV31DatasetChecksum && !opts.onGtoV31Decision) return opts;
+    return {
+      ...opts,
+      onGtoV31Decision: (receipt) => {
+        if (opts.gtoV31DatasetChecksum) {
+          if (receipt.executedAsIntended) {
+            candidatePolicyHits++;
+            candidateNodeRoles.add(receipt.nodeRole);
+          } else {
+            candidateExecutionMismatches++;
+          }
+        }
+        opts.onGtoV31Decision?.(receipt);
+      },
+    };
+  };
+  const optsA = withEvidence(matchup.a);
+  const optsB = withEvidence(matchup.b);
+  const modsA = matchup.modsA ?? {};
+  const modsB = matchup.modsB ?? {};
+
+  try {
+    for (let p = 0; p < pairs; p++) {
+      if (!shouldContinue()) break;
+      if (p > 0 && (p & 0x0f) === 0) await new Promise((res) => setImmediate(res));
+      const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
+      const dealerSeat = (p % SEATS) + 1;
+      const play = (opts: HorseDecideOpts, mods: HorseProfileMods, sb: HorseMindSandbox) =>
+        playHand(
+          handSeed,
+          dealerSeat,
+          () => opts,
+          counters,
+          sb,
+          variant,
+          SEATS,
+          matchup.stackBB ?? 100,
+          matchup.context ?? CASH_LEAGUE_CONTEXT,
+          () => mods,
+          field
+        );
+      const a = play(optsA, modsA, sb1)[HERO];
+      const b = play(optsB, modsB, sb2)[HERO];
+      netA.push(a / BB);
+      netB.push(b / BB);
+      perPairDiff.push((a - b) / BB);
+      if (a !== b) divergentPairs++;
+    }
+  } finally {
+    restoreFastRandom(rngBefore);
+  }
+
+  const n = perPairDiff.length;
+  const meanSe = (xs: number[]): { mean: number; se: number } => {
+    const m = xs.reduce((s, x) => s + x, 0) / Math.max(1, xs.length);
+    const v = xs.reduce((s, x) => s + (x - m) * (x - m), 0) / Math.max(1, xs.length - 1);
+    return { mean: m, se: Math.sqrt(v) / Math.sqrt(Math.max(1, xs.length)) };
+  };
+  const diff = meanSe(perPairDiff);
+  const durationMs = Date.now() - t0;
+  const stderr = diff.se * 100;
+  const component = (scenario: string, xs: number[]): LeagueBenchmarkComponent => {
+    const s = meanSe(xs);
+    return {
+      scenario,
+      hands: xs.length,
+      bb100: s.mean * 100,
+      stderr: s.se * 100,
+      durationMs,
+      illegalActions: counters.illegal,
+      truncatedStreets: counters.truncated,
+      candidatePolicyHits,
+      candidateExecutionMismatches,
+      candidateNodeRoles: [...candidateNodeRoles].sort(),
+    };
+  };
+  return {
+    matchup: matchup.name,
+    hands: n * 2,
+    bb100: diff.mean * 100,
+    stderr,
+    durationMs,
+    illegalActions: counters.illegal,
+    truncatedStreets: counters.truncated,
+    candidatePolicyHits,
+    candidateExecutionMismatches,
+    candidateNodeRoles: [...candidateNodeRoles].sort(),
+    benchmarkComponents: [
+      component(HUMAN_FIELD_COMPONENT_SCENARIOS[0], netA),
+      component(HUMAN_FIELD_COMPONENT_SCENARIOS[1], netB),
+    ],
+    divergentPairs,
+    inert: n > 0 && (divergentPairs === 0 || stderr === 0),
+    opponentPopulation: population,
+    humanResponses: responses,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Nightly league
 // ─────────────────────────────────────────────────────────────────────────────
@@ -799,6 +1115,23 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // V15 BOATS (2026-09-28): default OFF. a turns it on, b is today's brain.
   // Ship it default ON only after this resolves significant positive.
   { name: 'plo5_v15_boats', variant: 'plo5', pairs: 6000, a: { v15Boats: true }, b: {} },
+  // V58 (2026-10-25): PLO6 paired-board river nut discipline. a is today's
+  // brain with it (default ON), b is the brain without it.
+  {
+    name: 'plo6_v58_river_nuts',
+    variant: 'plo6',
+    pairs: 6000,
+    a: {},
+    b: { v58Plo6RiverNuts: false },
+  },
+  // V59 (2026-10-25): the same discipline on a PLO6 board with no pair.
+  {
+    name: 'plo6_v59_river_unpaired',
+    variant: 'plo6',
+    pairs: 6000,
+    a: {},
+    b: { v59Plo6RiverUnpaired: false },
+  },
   /*
    * LEAGUE-GATED SELF-TUNER (Dan 2026-10-19: "League-gated nudges"). The
    * nightly tuner proposes +/-0.02 moves on three dials. A move reaches a live
@@ -844,6 +1177,35 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
    * 0 of 6,000 pairs diverged at seeds 4242 and 20260921. INERT; still off.
    */
   // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  // V55 is opt-in. Freeze the deep cash domain before examining results:
+  // the audit's leaking river re-shoves occurred above 100bb.
+  ...(['plo4', 'plo5', 'plo6'] as const).map((variant) => ({
+    name: `${variant}_v56_pressure_range`,
+    variant,
+    stackBB: 400,
+    pairs: 6000,
+    a: { v56OmahaPressureRange: true },
+    b: { v56OmahaPressureRange: false },
+  })),
+  {
+    name: 'plo4_v55_river_trips_flat',
+    variant: 'plo4',
+    stackBB: 400,
+    pairs: 6000,
+    a: { v55OmahaRiverTripsFlat: true },
+    b: {},
+  },
+  {
+    name: 'plo5_v55_river_trips_flat',
+    variant: 'plo5',
+    stackBB: 400,
+    pairs: 6000,
+    a: { v55OmahaRiverTripsFlat: true },
+    b: {},
+  },
+  // PLO6 is not on the standing card: the declared 6000-pair probe at
+  // seed20261024 had zero divergent pairs. It remains scenario-tested and
+  // opt-in, with no measured edge or promotion claim.
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
   { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
   // Measurable because playHand's sandbox settlement now feeds
@@ -990,6 +1352,40 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // jamming. Measured on the standard NLH card, where the committed river
   // spot arises from ordinary 100bb raise wars.
   { name: 'v51_river_flat', pairs: 6000, a: {}, b: { v51RiverFlat: false } },
+  // V52 (2026-10-24): the public-range advantage read behind the continuation
+  // work. Same-hour live reviews showed NLH big-bet-then-fold rising 9.5% ->
+  // 13.3% after it shipped; outcome tags cannot say whether the extra
+  // initiative earns, so each variant where it fires is measured on/off.
+  // Arm A is "range advantage on" (production default).
+  { name: 'v52_range_advantage', pairs: 6000, a: {}, b: { v52RangeAdvantage: false } },
+  {
+    name: 'plo4_v52_range_advantage',
+    variant: 'plo4',
+    pairs: 6000,
+    a: {},
+    b: { v52RangeAdvantage: false },
+  },
+  {
+    name: 'plo5_v52_range_advantage',
+    variant: 'plo5',
+    pairs: 6000,
+    a: {},
+    b: { v52RangeAdvantage: false },
+  },
+  {
+    name: 'plo6_v52_range_advantage',
+    variant: 'plo6',
+    pairs: 6000,
+    a: {},
+    b: { v52RangeAdvantage: false },
+  },
+  // V53 (2026-10-24): pressure on a credibly aggressive human. Read-gated,
+  // so a horse-only league arm engages it only where a horse's own play reads
+  // outside the envelope; arm A is production (on).
+  { name: 'v53_pressure', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  { name: 'plo4_v53_pressure', variant: 'plo4', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  { name: 'plo5_v53_pressure', variant: 'plo5', pairs: 6000, a: {}, b: { v53Pressure: false } },
+  { name: 'plo6_v53_pressure', variant: 'plo6', pairs: 6000, a: {}, b: { v53Pressure: false } },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
@@ -1044,12 +1440,83 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v46Charts: false,
       v46ShortDeck: false,
       v51RiverFlat: false,
+      v55OmahaRiverTripsFlat: false,
+      v52RangeAdvantage: false,
+      v53Pressure: false,
       mind: false,
       streetIQ: false,
       handReading: false,
     },
   },
 ];
+
+/**
+ * HUMAN-FIELD TWINS (2026-10-24). Every card above is a mirror: it says what a
+ * layer is worth against other horses. Each name below gets a twin card,
+ * `human_<name>`, with the SAME two arms, dealt to one hero horse against the
+ * human-calibrated field (LeagueMatchup.opponentPopulation). The twin is
+ * derived from the mirror card, so its arms cannot drift from it.
+ *
+ * Chosen by a divergence probe against the field (3,000 pairs, seed 20261024,
+ * 2026-10-24; pairs whose two passes settled differently): full_vs_v2_legacy
+ * 500, mind_layer 283, v7_preflop 282, v12_ranges_river 185, v11_leak_fixes 50,
+ * v10_strategy 47, v20_multiway 8. Left off, because against this field the
+ * flag almost never changes a hand and a nightly row would be noise or INERT:
+ * v19_size_reads 11, v21_river_endgame 10, v16_sizecond 9, v51_river_flat 4,
+ * v16_deep_reads 3, v52_range_advantage 2, v23_raise_plans 1, and 0 for
+ * v23_river_reads, v18_squeeze_response and v18_exploit_size (the calibrated
+ * field folds rivers inside the middle band, so the exploit read stays
+ * neutral - the same reason the mirror cannot measure it). The mirror cards
+ * for all of those stay on the card; re-probe before adding a twin.
+ *
+ * COST. A human-field pair asks HorseLogic for one seat instead of six:
+ * measured at ~6 ms against ~19 ms for a mirror pair on the same box. At
+ * HUMAN_FIELD_PAIRS = 12,000 a twin therefore costs about what one default
+ * 4,000-pair mirror matchup does (~9 minutes in production), and its stderr is
+ * ~1/sqrt(4) of the 3,000-pair probe's. The seven twins add roughly an hour of
+ * worker time to a full rotation of a card that already spans more than one
+ * day; nightly cost itself is unchanged, because it is bounded by the run
+ * windows and MAX_RUN_MS, not by the card's length. The staleness-first order
+ * runs the never-measured twins first, then they rotate like every other card.
+ */
+export const HUMAN_FIELD_PAIRS = 12_000;
+export const HUMAN_FIELD_TWINS: readonly string[] = Object.freeze([
+  'mind_layer',
+  'v12_ranges_river',
+  'v7_preflop',
+  'v11_leak_fixes',
+  'v10_strategy',
+  'v20_multiway',
+  'full_vs_v2_legacy',
+]);
+
+/** The human-field twin of a mirror card: same arms and dials, NLH six-max,
+ *  one hero horse against the human-calibrated field. */
+export function humanFieldTwin(mirror: LeagueMatchup): LeagueMatchup {
+  if (mirror.opponentPopulation !== undefined) {
+    throw new Error(`${mirror.name} is already a human-field card`);
+  }
+  if ((mirror.variant ?? 'nlh') !== 'nlh' || (mirror.seats ?? DEFAULT_SEATS) !== DEFAULT_SEATS) {
+    throw new Error(`${mirror.name}: human-field twins are NLH six-max only`);
+  }
+  return {
+    name: `${HUMAN_FIELD_NAME_PREFIX}${mirror.name}`,
+    ...(mirror.stackBB !== undefined ? { stackBB: mirror.stackBB } : {}),
+    ...(mirror.context !== undefined ? { context: mirror.context } : {}),
+    pairs: HUMAN_FIELD_PAIRS,
+    a: { ...mirror.a },
+    b: { ...mirror.b },
+    ...(mirror.modsA !== undefined ? { modsA: { ...mirror.modsA } } : {}),
+    ...(mirror.modsB !== undefined ? { modsB: { ...mirror.modsB } } : {}),
+    opponentPopulation: HUMAN_CALIBRATED_POPULATION_ID,
+  };
+}
+
+for (const name of HUMAN_FIELD_TWINS) {
+  const mirror = LEAGUE_MATCHUPS.find((m) => m.name === name);
+  if (!mirror) throw new Error(`HUMAN_FIELD_TWINS names ${name}, which is not on the card`);
+  LEAGUE_MATCHUPS.push(humanFieldTwin(mirror));
+}
 
 // V12.3: the old comment here claimed hour 4 was "the quietest hour on the
 // engine host". Measured over 24h of hand_history it is the SECOND BUSIEST
@@ -2006,8 +2473,10 @@ export async function runLeague(
             hands: r.hands,
             bb100: round2(r.bb100),
             stderr: round2(r.stderr),
-            config_a: m.a as never,
-            config_b: m.b as never,
+            // A human-field card records its field here (leagueResultConfig);
+            // a mirror card's configs are written exactly as before.
+            config_a: leagueResultConfig(m, 'a') as never,
+            config_b: leagueResultConfig(m, 'b') as never,
             duration_ms: r.durationMs,
             illegal_actions: r.illegalActions + r.truncatedStreets,
             truncated_streets: r.truncatedStreets,
@@ -2035,7 +2504,12 @@ export async function runLeague(
               `0.00 +/- 0.00 is not a measurement.`
           ),
           'HorseLeague.inert',
-          { matchup: r.matchup, hands: r.hands, config_a: m.a, config_b: m.b }
+          {
+            matchup: r.matchup,
+            hands: r.hands,
+            config_a: leagueResultConfig(m, 'a'),
+            config_b: leagueResultConfig(m, 'b'),
+          }
         );
       }
       console.log(

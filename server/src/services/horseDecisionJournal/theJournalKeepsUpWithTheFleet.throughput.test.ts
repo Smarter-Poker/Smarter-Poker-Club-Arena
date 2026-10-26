@@ -46,6 +46,7 @@ import { Worker } from 'node:worker_threads';
 import { HorseDecisionJournalPublisher, type HorseJournalWorker } from '../HorseDecisionJournal.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
 import { HorseDecisionJournalStore } from './store.js';
+import { waitFor } from '../../testing/waitBudget.js';
 
 const dirs: string[] = [];
 const workers: Worker[] = [];
@@ -131,47 +132,53 @@ function fireDecisions(publisher: HorseDecisionJournalPublisher, tag: string, co
 }
 
 describe('the journal keeps up with the fleet', () => {
-  it(
-    'sheds ~0 decisions at queue_capacity, with 0 lock retries, once each shard owns its own catalog',
-    async () => {
-      const dir = directory();
-      // Match the already-warm production host: the legacy database and
-      // shard 0's archive already exist before a second shard ever starts.
-      const bootstrap = new HorseDecisionJournalStore(dir, {
-        archive: runtimeHorseJournalArchiveOptions(dir, {}, { index: 0 }),
-      });
-      bootstrap.close();
+  it('sheds ~0 decisions at queue_capacity, with 0 lock retries, once each shard owns its own catalog', async () => {
+    const dir = directory();
+    // Match the already-warm production host: the legacy database and
+    // shard 0's archive already exist before a second shard ever starts.
+    const bootstrap = new HorseDecisionJournalStore(dir, {
+      archive: runtimeHorseJournalArchiveOptions(dir, {}, { index: 0 }),
+    });
+    bootstrap.close();
 
-      const a = spawnShardWriter(dir, 0);
-      const b = spawnShardWriter(dir, 1);
+    const a = spawnShardWriter(dir, 0);
+    const b = spawnShardWriter(dir, 1);
 
-      fireDecisions(a.publisher, 'shard-a', RECORDS_PER_SHARD);
-      fireDecisions(b.publisher, 'shard-b', RECORDS_PER_SHARD);
+    // This is a warm-writer throughput test. Under the full suite the TS
+    // worker bootstrap can consume most of stop()'s real five-second drain
+    // budget before either writer has said READY. Measure the burst only
+    // after both real workers have opened their separate catalogs. Keep
+    // the production shutdown deadline and every drain/drop assertion.
+    await waitFor(
+      () => [a, b].every(({ publisher }) => publisher.health().mode === 'ready'),
+      'both real journal shards to open their private catalogs',
+      10_000
+    );
 
-      // stop() drains whatever remains queued (each ACK re-dispatches the
-      // next batch) before it actually asks the writer to stop, so this both
-      // waits out the whole burst and gives a definite end to wait for.
-      await Promise.all([a.publisher.stop(), b.publisher.stop()]);
+    fireDecisions(a.publisher, 'shard-a', RECORDS_PER_SHARD);
+    fireDecisions(b.publisher, 'shard-b', RECORDS_PER_SHARD);
 
-      const count = (notes: string[], key: string) => notes.filter((n) => n === key).length;
-      for (const [name, { publisher, notes }] of [
-        ['shard-a', a],
-        ['shard-b', b],
-      ] as const) {
-        expect(count(notes, 'phase15_journal_enqueued'), `${name} enqueued`).toBe(
-          RECORDS_PER_SHARD
-        );
-        expect(count(notes, 'phase15_journal_queue_capacity'), `${name} queue_capacity drops`).toBe(
-          0
-        );
-        expect(count(notes, 'phase15_journal_lock_retry'), `${name} lock retries`).toBe(0);
-        expect(count(notes, 'phase15_journal_capture_unavailable'), `${name} capture_unavailable`).toBe(
-          0
-        );
-        expect(publisher.health().mode, `${name} final mode`).toBe('stopped');
-        expect(publisher.health().queued, `${name} left queued at stop`).toBe(0);
-      }
-    },
-    30000
-  );
+    // stop() drains whatever remains queued (each ACK re-dispatches the
+    // next batch) before it actually asks the writer to stop, so this both
+    // waits out the whole burst and gives a definite end to wait for.
+    await Promise.all([a.publisher.stop(), b.publisher.stop()]);
+
+    const count = (notes: string[], key: string) => notes.filter((n) => n === key).length;
+    for (const [name, { publisher, notes }] of [
+      ['shard-a', a],
+      ['shard-b', b],
+    ] as const) {
+      expect(count(notes, 'phase15_journal_enqueued'), `${name} enqueued`).toBe(RECORDS_PER_SHARD);
+      expect(count(notes, 'phase15_journal_queue_capacity'), `${name} queue_capacity drops`).toBe(
+        0
+      );
+      expect(count(notes, 'phase15_journal_lock_retry'), `${name} lock retries`).toBe(0);
+      expect(
+        count(notes, 'phase15_journal_capture_unavailable'),
+        `${name} capture_unavailable`
+      ).toBe(0);
+      expect(publisher.health().mode, `${name} final mode`).toBe('stopped');
+      expect(publisher.health().queued, `${name} left queued at stop`).toBe(0);
+    }
+  }, 30000);
 });

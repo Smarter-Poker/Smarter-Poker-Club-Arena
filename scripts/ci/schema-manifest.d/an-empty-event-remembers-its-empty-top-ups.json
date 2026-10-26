@@ -1,0 +1,13 @@
+{
+  "_owner": "fix/the-kill-storm-page-names-its-tournament. PROMISED, not yet observed: migration 20261026051041_an_empty_event_remembers_its_empty_top_ups_across_a_restart is installed through apply-merged-migration.yml after the protected merge, never from a branch (CLAUDE.md production DDL policy 11). One engine-owned table: how many past-start horse top-ups of a REGISTERING event came back empty, so the empty-event cancellation survives an engine restart.",
+  "tables": ["tournament_past_start_top_ups"],
+  "functions": [],
+  "columns": {
+    "tournament_past_start_top_ups": [
+      "tournament_id",
+      "empty_top_ups",
+      "last_asked_at",
+      "updated_at"
+    ]
+  }
+}

@@ -102,7 +102,9 @@ describe('the client asks for the final table instead of inferring it', () => {
   it('a mounted client follows the durable event even if the owner crashes before broadcast', () => {
     expect(C).toMatch(/table: 'tournament_final_table_events'/);
     expect(C).toMatch(/applyDurableFinalTableState\(/);
-    expect(C).toMatch(/select\('status, format_contract, final_table_triggered'\)/);
+    expect(C).toMatch(
+      /select\(\s*'status, format_contract, final_table_triggered, satellite_target_id, satellite_target'\s*\)/
+    );
     expect(FINAL_TABLE_PREREQUISITE).toMatch(
       /ALTER PUBLICATION supabase_realtime[\s\S]*?ADD TABLE public\.tournament_final_table_events/
     );

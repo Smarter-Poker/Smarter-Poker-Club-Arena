@@ -162,6 +162,9 @@ describe('a late entry seated after the proven hand is movement evidence', () =>
     expect(later).toEqual([
       '20261003163015_a_busted_chair_taken_by_a_late_entry_is_movement_evidence.sql',
       '20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql',
+      '20261024211825_a_rebuy_seated_from_another_table_is_movement_evidence.sql',
+      '20261025030421_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
+      '20261025082356_a_busted_rebuy_into_another_chair_and_a_never_dealt_add_on_a.sql',
     ]);
     expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`

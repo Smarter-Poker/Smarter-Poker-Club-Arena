@@ -31,10 +31,12 @@ const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   reportError: vi.fn(),
+  watchedClubs: [] as string[],
 }));
 
 vi.mock('../../src/lightning/lightningOperatorEvents', () => ({
   watchLightningOperator: (_club: string, _cluster: string, onChange: () => void) => {
+    state.watchedClubs.push(_club);
     state.changed = onChange;
     return () => {
       if (state.changed === onChange) state.changed = null;
@@ -93,6 +95,8 @@ type Door = (args: Record<string, unknown>) => { data: unknown; error: unknown }
 function doors(map: Record<string, Door>) {
   state.rpc.mockImplementation(async (fn: string, args: Record<string, unknown>) => {
     const door = map[fn];
+    if (!door && fn === 'fn_club_union_context')
+      return { data: [{ own_union_id: null, member_union_id: null }], error: null };
     if (!door) return { data: null, error: { ...MISSING_FUNCTION_ERROR } };
     return door(args);
   });
@@ -134,6 +138,7 @@ const SOURCES = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.watchedClubs = [];
 });
 
 afterEach(() => {
@@ -141,6 +146,33 @@ afterEach(() => {
 });
 
 describe('the operator doors are parsed from the shapes the database produces', () => {
+  it('reads a member club’s actual union game owner and keeps its club return route', async () => {
+    const union = 'fade0000-0000-0000-0000-000000000001';
+    doors({
+      fn_club_union_context: ok([{ own_union_id: null, member_union_id: union }]),
+      fn_lightning_operator_cluster: ok(clusterAnswer()),
+      fn_lightning_operator_overview: (args) => ({
+        data: args.p_club_id === union ? overviewAnswer() : { ...overviewAnswer(), clusters: [] },
+        error: null,
+      }),
+    });
+    renderPage();
+    await waitFor(() =>
+      expect(state.rpc).toHaveBeenCalledWith('fn_lightning_operator_overview', { p_club_id: union })
+    );
+    expect(screen.getByTestId('where').textContent).toContain(`/clubs/${CLUB_ID}/lightning`);
+    fireEvent.click((await screen.findAllByText('Open Cluster'))[0]);
+    await screen.findByText('Stack Reconcile');
+    expect(state.watchedClubs.at(-1)).toBe(union);
+  });
+  it('does not read an assumed owner when union scope cannot be verified', async () => {
+    doors({ fn_club_union_context: () => ({ data: null, error: { message: 'Unavailable' } }) });
+    renderPage();
+    await waitFor(() => expect(state.reportError).toHaveBeenCalled());
+    expect(state.rpc.mock.calls.some(([name]) => name === 'fn_lightning_operator_overview')).toBe(
+      false
+    );
+  });
   it('reads the persisted calibration window and preserves unknown on older contracts', () => {
     const raw = overviewAnswer();
     expect(parseOverview(raw)?.clusters[0].shadowWindowMs).toBeNull();

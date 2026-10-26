@@ -182,6 +182,57 @@ describe('the continuation cursor gives an earlier stage its turn back, never tw
     expect(cursor.nextStage).toBe(5);
   });
 
+  /**
+   * A STALLED STAGE STANDS IN FOR THE STAGE A REWIND INTERRUPTED (2026-10-26).
+   *
+   * Production 2026-10-26 02:40-02:44 UTC, Sunday Funday Mystery d5d373cb: a
+   * rewind applied at 02:40:09 interrupted a stage AFTER the balancer, the
+   * rewound pass climbed back to the balance stage and parked three tables
+   * whose own busts were unrecorded, and every admission then yielded inside
+   * that stage without advancing. The stage the rewind had interrupted could
+   * not be reached while the balancer held the continuation, so the guard
+   * never cleared and six busts' rewinds were held: the bust read did not run
+   * once for 3m57s (edge logs, `status=eq.playing&chips=lte.0`), and 61 of the
+   * night's 3,215 eliminations waited over a minute, 55 of them behind a break.
+   */
+  it('a stage that holds the continuation for a whole admission lets the next rewind apply', () => {
+    const cursor = new TournamentSweepWorkCursor();
+    cursor.advanceTo(7); // a tail stage holds the continuation
+    cursor.rewindTo(0);
+    cursor.beginAdmission(); // the bust stage's turn
+    expect(cursor.nextStage).toBe(0);
+    expect(cursor.interruptedStage).toBe(7);
+    for (const stage of [1, 2, 3, 4, 5]) cursor.advanceTo(stage); // reaches the balancer, yields
+    cursor.rewindTo(0); // a new bust while the balancer works its break
+    cursor.beginAdmission(); // the balancer's fresh turn
+    expect(cursor.nextStage).toBe(5);
+    cursor.beginAdmission(); // it yielded again without advancing: it has had a whole admission
+    expect(cursor.nextStage).toBe(5);
+    cursor.beginAdmission(); // so the bust stage is served next, not after the break finishes
+    expect(cursor.nextStage).toBe(0);
+  });
+
+  it('a pass that keeps advancing still reaches the interrupted stage before another rewind', () => {
+    const cursor = new TournamentSweepWorkCursor();
+    cursor.advanceTo(5);
+    cursor.rewindTo(0);
+    cursor.beginAdmission();
+    cursor.advanceTo(2); // the rewound pass yields at stage 2
+    cursor.rewindTo(0); // busts keep arriving
+    for (const stage of [3, 4]) {
+      cursor.beginAdmission(); // progress since the last admission: no stand-in
+      expect(cursor.nextStage).toBe(stage - 1);
+      cursor.advanceTo(stage);
+    }
+    cursor.beginAdmission();
+    expect(cursor.nextStage).toBe(4);
+    cursor.advanceTo(5); // the interrupted balancer is reached
+    cursor.beginAdmission(); // and gets its admission
+    expect(cursor.nextStage).toBe(5);
+    cursor.beginAdmission(); // only then does the bust stage go again
+    expect(cursor.nextStage).toBe(0);
+  });
+
   it('refuses a nonsense stage', () => {
     const cursor = new TournamentSweepWorkCursor();
     cursor.advanceTo(4);

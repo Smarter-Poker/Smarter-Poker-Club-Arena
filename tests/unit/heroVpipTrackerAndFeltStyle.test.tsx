@@ -300,7 +300,7 @@ describe('the regular ante reaches the felt', () => {
 
     // 7B: ONE line carries style, game and stakes - "ACTION PLO4 2/5".
     expect(brand).toMatch(
-      /\{tableState\.gameStyle \? `\$\{tableState\.gameStyle\} ` : ''\}\s*\n?\s*\{gameShort\} \{tableState\.blinds \|\| '1\/2'\}/
+      /\{lightningRoom\s*\? 'Lightning Games '\s*:\s*tableState\.gameStyle\s*\? `\$\{tableState\.gameStyle\} `\s*: ''\}\s*\{gameShort\} \{tableState\.blinds \|\| '1\/2'\}/
     );
     // ...with the ante appended to the STAKES, not given a row of its own.
     expect(brand).toMatch(/anteMode === 'big_blind' \? ' \+ BB Ante' : ' \+ Ante'/);
@@ -401,9 +401,11 @@ describe('the regular ante reaches the felt', () => {
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(/bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game/);
     expect(page).toMatch(
-      /\.from\('cash_games'\)\s*\.select\('template_name'\)\s*\.eq\('id', table\.cluster_id\)/
+      /\.from\('cash_games'\)\s*\.select\('template_name, rules_profile:ruleset_snapshot->>rules_profile'\)\s*\.eq\('id', table\.cluster_id\)/
     );
-    expect(page).toMatch(/CASH_TEMPLATES\.find\(\(t\) => t\.id === template\)\?\.label/);
+    expect(page).toMatch(
+      /CASH_TEMPLATES\.find\(\(t\) => t\.id === cashTemplateKey\(template\)\)\?\.label/
+    );
   });
 
   it("the tracker is mounted beside the seats, at the hero seat's point, cash only", () => {

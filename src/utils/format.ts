@@ -77,6 +77,30 @@ export const formatStackChips = (n: number | null | undefined): string => {
   return formatTableChips(Math.round(v));
 };
 
+/**
+ * A table figure in big blinds: ONE shape for every BB number on the felt
+ * (Dan 2026-10-24). The pot printed "50 BB" while the seat beside it printed
+ * "50.0 BB" and a bet "6.0 BB" - three formatters for one setting. The rest of
+ * the platform (tournament structure cards, the cash panel) already reads
+ * "50 BB" / "87.5 BB", so that is the shape:
+ *   - 100 BB and deeper: whole, grouped ("1,250 BB");
+ *   - a whole number of big blinds: no decimal ("50 BB");
+ *   - otherwise one decimal ("37.5 BB"), never a third digit of noise.
+ * Returns null when there is no big blind to divide by, so the caller prints
+ * the chip figure instead of a "0 BB" that is not true.
+ */
+export const formatBigBlinds = (
+  amount: number | null | undefined,
+  bigBlind: number | null | undefined
+): string | null => {
+  const bb = Number(bigBlind);
+  if (!Number.isFinite(bb) || bb <= 0) return null;
+  const n = Number(amount || 0) / bb;
+  if (Math.abs(n) >= 100) return `${Math.round(n).toLocaleString('en-US')} BB`;
+  const tenths = Math.round(n * 10) / 10;
+  return Number.isInteger(tenths) ? `${tenths} BB` : `${tenths.toFixed(1)} BB`;
+};
+
 export const formatTableChips = (n: number | null | undefined): string => {
   const v = Number(n ?? 0);
   if (!Number.isFinite(v)) return '0';

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { transpileModule } from 'typescript';
 import {
   eligibleHudClock,
   hudCandidateTableIdBatches,
@@ -247,5 +248,149 @@ describe('the certificate spec applies that selection and a cash budget sized fr
     expect(prove).toContain('continuouslyActive(');
     expect(prove).toContain('current.handCount > contender.table.handCount');
     expect(prove).toContain('remainingObservationMs(deadline)');
+  });
+});
+
+describe('the actual cash selector scans across lobby tabs', () => {
+  const source = readFileSync(
+    join(__dirname, '../e2e/production-live-table-realtime.spec.ts'),
+    'utf8'
+  );
+  const body = source.slice(
+    source.indexOf('async function selectCashLobbyTab('),
+    source.indexOf('async function proveTableProgressedBeforeNavigation(')
+  );
+  async function select(rows: Record<string, string[]>, removed: string[] = []) {
+    let active = 'default';
+    const navigation = source.slice(
+      source.indexOf('    // The engine-progress wait above can outlast'),
+      source.indexOf('    const navigationStartedAt = Date.now();')
+    );
+    const visited: string[] = [];
+    const reads: string[][] = [];
+    const page = {
+      goto: async () => {},
+      url: () => 'https://example.invalid/clubs/fixture',
+      locator: (selector: string) => ({
+        first: () => ({ waitFor: async () => {} }),
+        // Exercise the real card branch; a hidden off-tab row is not visible.
+        isVisible: async () => false,
+        getByRole: () => ({
+          viewId: /data-id="([^"]+)"/.exec(selector)?.[1],
+        }),
+      }),
+      getByRole: (_: string, { name }: { name: string }) => ({
+        click: async () => {
+          active = name;
+        },
+      }),
+      waitForTimeout: async () => {},
+    };
+    const selector = new Function(
+      'CLUB_LOBBY',
+      'CASH_PROGRESS_CANDIDATES',
+      'expect',
+      'prepareCashLobbyActions',
+      'visibleRunningCashCandidates',
+      'readEngineHealth',
+      'healthyRunningTable',
+      'CASH_SPECTATOR_ACTION',
+      transpileModule(body, {}).outputText +
+        transpileModule(
+          `async function openWinner(page, selected) {
+          const engineBeforeNavigation = { selected };
+          const { candidate } = selected;
+          ${navigation}
+          return view;
+        }`,
+          {}
+        ).outputText +
+        '\nreturn { select: selectOccupiedRunningCashTables, open: openWinner };'
+    )(
+      'https://example.invalid/clubs/fixture',
+      8,
+      (locator: { viewId?: string }) => ({
+        toBeVisible: async () => {
+          if (locator.viewId && !(rows[active] ?? []).includes(locator.viewId))
+            throw new Error(`View ${locator.viewId} is hidden on ${active}`);
+        },
+        toHaveAttribute: async () => {},
+      }),
+      async () => {},
+      async () => {
+        visited.push(active);
+        return (rows[active] ?? []).map((id) => ({ id, gameFormat: 'cash' }));
+      },
+      async (_: unknown, { tableIds }: { tableIds: string[] }) => {
+        reads.push(tableIds);
+        return { sequence: reads.length, tableIds };
+      },
+      (health: { sequence: number; tableIds: string[] }, id: string) =>
+        health.tableIds.includes(id) && !(health.tableIds.length > 1 && removed.includes(id))
+          ? { tableId: id, handCount: health.sequence }
+          : null,
+      /View|Watch/
+    );
+    return {
+      result: await selector.select(page, {}),
+      visited,
+      reads,
+      open: (selected: unknown) => selector.open(page, selected),
+      active: () => active,
+    };
+  }
+
+  it('keeps the first NLH table and discovers PLO and LIMIT witnesses without duplicates', async () => {
+    const { result, visited, reads } = await select({
+      default: ['nlh'],
+      NLH: ['nlh'],
+      PLO: ['plo'],
+      LIMIT: ['limit'],
+    });
+    expect(visited).toEqual(['NLH', 'PLO', 'LIMIT']);
+    expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['nlh', 'plo', 'limit']);
+    expect(reads.at(-1)).toEqual(['nlh', 'plo', 'limit']);
+    expect(result.tables.every((row: any) => row.table.handCount === result.health.sequence)).toBe(
+      true
+    );
+  });
+
+  it('caps the race at eight and refreshes all baselines together', async () => {
+    const { result, visited, reads } = await select({
+      default: ['one'],
+      NLH: ['one'],
+      PLO: Array.from({ length: 12 }, (_, i) => `plo${i}`),
+    });
+    expect(result.tables).toHaveLength(8);
+    expect(new Set(result.tables.map((row: any) => row.candidate.id)).size).toBe(8);
+    expect(visited).not.toContain('LIMIT');
+    expect(reads.at(-1)).toHaveLength(8);
+  });
+
+  it('removes a witness that is no longer healthy at the shared baseline read', async () => {
+    const { result } = await select({ NLH: ['departed'], PLO: ['live'] }, ['departed']);
+    expect(result.tables.map((row: any) => row.candidate.id)).toEqual(['live']);
+  });
+
+  it.each(['NLH', 'PLO'])(
+    'restores the selected %s witness after the scan leaves LIMIT active',
+    async (winnerTab) => {
+      const fixture = await select({
+        default: ['nlh'],
+        NLH: ['nlh'],
+        PLO: ['plo'],
+        LIMIT: ['limit'],
+      });
+      expect(fixture.active()).toBe('LIMIT');
+      const id = winnerTab === 'NLH' ? 'nlh' : 'plo';
+      const winner = fixture.result.tables.find((entry: any) => entry.candidate.id === id);
+      await expect(fixture.open(winner)).resolves.toMatchObject({ viewId: id });
+      expect(fixture.active()).toBe(winnerTab);
+      expect(winner.tabName).toBe(winnerTab);
+    }
+  );
+
+  it('refuses a lobby without any healthy occupied witness', async () => {
+    await expect(select({})).rejects.toThrow('no occupied');
   });
 });

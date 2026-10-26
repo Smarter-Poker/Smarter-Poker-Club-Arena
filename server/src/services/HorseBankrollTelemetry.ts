@@ -59,6 +59,8 @@ export type BankrollEvent =
   | 'buyin_capped'
   /** Declined a reload that would otherwise have been paid. */
   | 'topup_refused'
+  /** An Auto Top Up horse was topped up between hands (HorseTopUpStyle). */
+  | 'topup_funded'
   /** Left the table up its stop-win. */
   | 'session_book_win'
   /** Left the table down its stop-loss. */

@@ -1,3 +1,5 @@
+import { readHorseJournalFleet } from '../services/horseDecisionJournal/fleet.js';
+import { statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { isAbsolute } from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -15,6 +17,29 @@ import {
 /** Explicit private local inspection only. Arguments never select a remote
  * service, create a spool, update a review or activate a policy. */
 export function runHorseJournalReview(args: readonly string[]): { code: number; output: string } {
+  if (args[0] === '--fleet') {
+    if (args.length !== 3 || !isAbsolute(args[1]!) || !isAbsolute(args[2]!))
+      return {
+        code: 64,
+        output:
+          'Usage: horseJournalReview --fleet <absolute-private-journal> <absolute-private-roster.json>\n',
+      };
+    try {
+      if (statSync(args[2]!).size > 1024 * 1024) throw Error();
+      const result = readHorseJournalFleet(args[1]!, JSON.parse(readFileSync(args[2]!, 'utf8')));
+      return { code: result.completeHorseCoverage ? 0 : 2, output: JSON.stringify(result) + '\n' };
+    } catch {
+      return {
+        code: 3,
+        output:
+          JSON.stringify({
+            status: 'unavailable',
+            gaps: ['fleet_packet_or_storage_unavailable'],
+            completePopulation: false,
+          }) + '\n',
+      };
+    }
+  }
   if (args[0] === '--storage-status') {
     if (args.length !== 2 || !isAbsolute(args[1]!))
       return {

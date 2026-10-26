@@ -13,6 +13,7 @@ import path from 'node:path';
 import { HelpPopover } from '../../src/components/common/HelpPopover';
 import {
   CASH_TEMPLATES,
+  cashTemplateBlurb,
   templatePromiseLines,
   type CashRulesetSnapshot,
   type CashTemplate,
@@ -145,10 +146,22 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
 
     // The template card a host picks from says the same thing, in the same words.
     const blurb = Object.fromEntries(CASH_TEMPLATES.map((t) => [t.id, t.blurb]));
-    expect(blurb.action).toContain('Every 20 Minutes');
-    expect(blurb.madness).toContain('Every 10 Minutes');
+    expect(blurb.action).toBeUndefined();
+    expect(blurb.madness).toContain('40% Minimum VPIP');
+    expect(blurb.madness).toContain('Three Seconds For The Sixth');
     expect(blurb.classic).toContain('No Bombs');
     for (const t of CASH_TEMPLATES) expect(t.blurb).not.toMatch(/\bN\b/);
+
+    // A Classic PLO5 or PLO6 game plays a big blind ante and a 50% floor
+    // (20261024213131), so its card never promises "No Antes".
+    for (const v of ['plo5', 'plo6']) {
+      expect(cashTemplateBlurb('classic', v)).toContain('Big Blind Ante');
+      expect(cashTemplateBlurb('classic', v)).toContain('50% Minimum VPIP');
+      expect(cashTemplateBlurb('classic', v)).not.toContain('No Antes');
+    }
+    for (const v of ['nlh', 'plo4', null])
+      expect(cashTemplateBlurb('classic', v)).toBe(blurb.classic);
+    expect(cashTemplateBlurb('madness', 'plo5')).toBe(blurb.madness);
   });
 
   it('Leaves No Passive Tooltip Spans On The Create-Table Page', () => {

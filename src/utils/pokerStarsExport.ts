@@ -452,8 +452,17 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
    * the summary says `mucked` rather than claiming a showdown nobody can see.
    */
   const revealed = new Map<number, { hole: DeckCard[]; handName: string }>();
+  /* Dan 2026-10-25: a hand mucked at the table whose cards are on record
+     because it called the river. PokerStars grammar for that is "mucks hand"
+     at the showdown and "mucked [cards]" in the summary, which is exactly how
+     trackers record a called hand they were allowed to see. */
+  const calledMuck = new Map<number, DeckCard[]>();
   for (const row of model.showdown) {
     if (row.boardIndex !== 0 || row.low) continue;
+    if (row.calledMuck && row.hole?.length) {
+      if (!calledMuck.has(row.seat)) calledMuck.set(row.seat, row.hole);
+      continue;
+    }
     if (row.hole?.length && !revealed.has(row.seat)) {
       revealed.set(row.seat, { hole: row.hole, handName: row.handName });
     }
@@ -463,7 +472,9 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
     lines.push('*** SHOW DOWN ***');
     /* One "shows" line per seat that turned cards over, on board one. */
     for (const row of model.showdown.filter((r) => r.boardIndex === 0 && !r.low)) {
-      if (row.hole?.length) {
+      if (row.calledMuck && row.hole?.length) {
+        lines.push(`${row.name}: mucks hand`);
+      } else if (row.hole?.length) {
         lines.push(`${row.name}: shows [${cards(row.hole)}] (${handWords(row.handName)})`);
       }
     }
@@ -542,6 +553,8 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
       lines.push(
         `${who} showed [${cards(reveal.hole)}] and lost with ${handWords(reveal.handName)}`
       );
+    } else if (calledMuck.has(p.seat)) {
+      lines.push(`${who} mucked [${cards(calledMuck.get(p.seat)!)}]`);
     } else {
       /* No cards on record IS the muck: nothing was turned over. */
       lines.push(`${who} mucked`);

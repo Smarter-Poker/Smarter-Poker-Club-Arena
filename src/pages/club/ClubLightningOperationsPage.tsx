@@ -42,6 +42,7 @@ import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { formatStakes } from '../../lib/utils';
 import { reportError } from '../../utils/errorReporter';
+import { supabase } from '../../lib/supabase';
 import {
   agoLabel,
   enumLabel,
@@ -247,16 +248,27 @@ export default function ClubLightningOperationsPage() {
   const [resolution, setResolution] = useState<Resolution>({ key: clubId, status: 'resolving' });
   useEffect(() => {
     let live = true;
-    if (UUID.test(clubId)) {
-      setResolution({ key: clubId, status: 'ok', uuid: clubId });
-      return undefined;
-    }
     setResolution({ key: clubId, status: 'resolving' });
     (async () => {
       try {
         const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
-        const uuid = await resolveClubUUIDStrict(clubId);
-        if (live) setResolution({ key: clubId, status: 'ok', uuid });
+        const uuid = UUID.test(clubId) ? clubId : await resolveClubUUIDStrict(clubId);
+        // Member clubs display their union's games. Resolve the same owning
+        // scope here; the operator RPC still authorizes that actual owner.
+        const { data, error } = await supabase.rpc('fn_club_union_context', { p_club_id: uuid });
+        if (error) throw error;
+        const context = Array.isArray(data) ? data[0] : data;
+        if (
+          !context ||
+          typeof context !== 'object' ||
+          !('own_union_id' in context) ||
+          !('member_union_id' in context)
+        )
+          throw new Error('Game Owner Unavailable');
+        const owner = context.own_union_id ?? context.member_union_id ?? uuid;
+        if (typeof owner !== 'string' || !UUID.test(owner))
+          throw new Error('Game Owner Unavailable');
+        if (live) setResolution({ key: clubId, status: 'ok', uuid: owner });
       } catch (e) {
         if (!live) return;
         if ((e as { name?: string } | null)?.name === 'ClubNotFoundError') {

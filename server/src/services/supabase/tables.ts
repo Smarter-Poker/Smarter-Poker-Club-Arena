@@ -58,7 +58,7 @@ export async function loadTable(tableId: string, closureOperationId?: string) {
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
       // tableInfo.bbj_percent, but this select never fetched it, so the gate
       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
-      'id, club_id, union_id, status, is_deleted, is_template, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle, dealing_halted_at, dealing_halted_reason'
+      'id, club_id, union_id, status, is_deleted, is_template, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id, default_rake_percent, rake_cap), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle, dealing_halted_at, dealing_halted_reason'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -105,7 +105,34 @@ export async function loadTable(tableId: string, closureOperationId?: string) {
   }
   const kill = await killSettings;
   if (!kill) throw new Error(`Table ${tableId} not found`);
-  return { ...data, arena, ...kill };
+  return { ...data, arena, club_rake_defaults: clubRakeDefaultsFromArena(data.arena), ...kill };
+}
+
+/** The club's rake defaults (clubs.default_rake_percent / rake_cap / union_id), as one row says them. */
+export interface ClubRakeDefaults {
+  rakePercent: number | null;
+  rakeCapBB: number | null;
+  unionId?: string | null;
+}
+
+/**
+ * THE CLUB'S RAKE DEFAULTS RIDE THE ROW READ (2026-10-26). loadTable already
+ * embeds the table's club (`arena:clubs!fk_tables_club_id`) for its arena
+ * identity; the same embed carries the two default columns, so a caller that
+ * needs them (the Lightning host's rules) no longer asks `clubs` a second
+ * time. The values are exactly what a separate read of those three club
+ * columns returns, shaped as the physical engine's refreshRakeConfig shapes
+ * them. A table with no club (a union-only table) has none, as before.
+ */
+export function clubRakeDefaultsFromArena(raw: unknown): ClubRakeDefaults | null {
+  const club = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | null | undefined;
+  if (!club || typeof club !== 'object') return null;
+  const num = (v: unknown): number | null => (v === null || v === undefined ? null : (v as number));
+  return {
+    rakePercent: num(club.default_rake_percent),
+    rakeCapBB: num(club.rake_cap),
+    unionId: (club.union_id as string | null | undefined) ?? null,
+  };
 }
 
 /** tables.kill_mode / kill_threshold_bb as read, or `off` where they do not exist yet. */

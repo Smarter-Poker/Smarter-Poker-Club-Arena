@@ -34,6 +34,7 @@ import {
   type GameFilterSpec,
   type GameFilterValue,
 } from './advancedFilterSpec';
+import { cashTemplateKey } from '../../config/cashGames';
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
@@ -135,12 +136,27 @@ export function sanitizeStore(parsed: FilterStore | null | undefined): FilterSto
         const n = Number(x);
         return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
       };
+      const styles = [...new Set(list(value.styles).map(cashTemplateKey))].filter((g) =>
+        styleKeys.has(g)
+      );
+      // Before ordinary Madness became its own style, Classic + Lightning
+      // was the entire catalog. Preserve that old all-style choice across the
+      // split. A versioned choice can deliberately exclude Madness.
+      if (
+        !(Number(value.stylesVersion) >= 1) &&
+        styles.length === 2 &&
+        styles.includes('classic') &&
+        styles.includes('madness') &&
+        styleKeys.has('straight_madness')
+      )
+        styles.push('straight_madness');
       clean[type as FilterGameType] = {
         ...empty,
         ...value,
         // Drop keys a previous build wrote that this one no longer defines.
         games: list(value.games).filter((g) => gameKeys.has(g)),
-        styles: list(value.styles).filter((g) => styleKeys.has(g)),
+        styles,
+        stylesVersion: 1,
         statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
         mustHave: list(value.mustHave).filter((k) => known.has(k)),
         hide: list(value.hide).filter((k) => known.has(k)),
@@ -287,17 +303,15 @@ export function pushRemoteFilters(clubId: string, store: FilterStore): void {
   markUnsynced(unsyncedKey(clubId, userId), true);
   const write = async (): Promise<boolean> => {
     try {
-      const { error } = await supabase
-        .from('user_lobby_filters')
-        .upsert(
-          {
-            user_id: userId,
-            club_id: clubId,
-            filters: store,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,club_id' }
-        );
+      const { error } = await supabase.from('user_lobby_filters').upsert(
+        {
+          user_id: userId,
+          club_id: clubId,
+          filters: store,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,club_id' }
+      );
       if (error) {
         if (!isAbortedRequest(error)) {
           reportError(error, 'AdvancedFilters.pushRemoteFilters', { clubId });

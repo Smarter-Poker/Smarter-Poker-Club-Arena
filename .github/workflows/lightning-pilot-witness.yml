@@ -52,8 +52,10 @@ on:
         default: '100'
 permissions:
   contents: read
+# One witness at a time PER PLAYER: a player's runs (financial included) never
+# overlap, while different witness players run side by side. Replay reads only.
 concurrency:
-  group: lightning-pilot-witness
+  group: lightning-pilot-witness-${{ inputs.player_id || 'replay' }}
   cancel-in-progress: false
 jobs:
   witness:
@@ -86,6 +88,7 @@ jobs:
           npx playwright install chromium
           if ! node -e "require('playwright').chromium.launch({headless:true}).then(b=>b.close()).catch(()=>process.exit(1))"; then
             echo "Chromium could not launch; installing its system libraries."
+            sudo python3 scripts/ci/ubuntu-apt-mirror.py
             npx playwright install-deps chromium
           fi
       - name: Collect The Explicit Witness

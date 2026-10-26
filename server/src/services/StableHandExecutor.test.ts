@@ -379,6 +379,13 @@ describe('the per-host wind-down ceiling', () => {
 });
 
 describe('standOrdersFor splits the plan into its two urgencies', () => {
+  it('does not wind down the cash fifty for activity texture, and still yields to waiting players', () => {
+    const snap = overCapSnapshot();
+    expect(standOrdersFor(snap, () => true).windDowns).toHaveLength(0);
+    snap.hosts[0].tables[0].humansWaiting = 1;
+    snap.hosts[0].tables[0].waitlistOldestJoinedAtMs = NOW - 10 * 60_000;
+    expect(standOrdersFor(snap, () => true).yields.length).toBeGreaterThan(0);
+  });
   it('a host above its curve at 3am produces wind-downs and no yields', () => {
     const o = standOrdersFor(overCapSnapshot());
     expect(o.windDowns.length).toBeGreaterThan(0);

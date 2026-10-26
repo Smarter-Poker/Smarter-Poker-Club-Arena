@@ -92,8 +92,14 @@ describe('P13.3 Phase 13 policy digest', () => {
     const hashed = new Set(HORSE_PHASE13_POLICY_SOURCE_FILES);
     for (const owner of MULTIWAY_OWNERS) expect(hashed.has(owner), owner).toBe(true);
     const closure = runtimeClosure(MULTIWAY_OWNERS);
-    // 47 since 2026-10-16: HorseMind (named, traversed) reads HorseOpponentExploit.
-    expect(closure).toHaveLength(47);
+    // 48 since 2026-10-23: HorseMind also reads HorseOpponentMemory.
+    // 50: independent plan ownership now validates HorseObserverReadContext.
+    // 51 since 2026-10-25: HorseMind notes read telemetry (BrainTelemetry).
+    // 52: river-call category and confidence evidence is its own hashed owner.
+    expect(closure).toHaveLength(52);
+    expect(HORSE_PHASE13_POLICY_SOURCE_FILES).toContain('src/engine/HorseRiverCallEvidence.ts');
+    expect(closure).toContain('src/engine/HorseOpponentMemory.ts');
+    expect(HORSE_PHASE13_POLICY_SOURCE_FILES).toContain('src/engine/HorseContinuation.ts');
     const excluded = new Set(Object.keys(HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES));
     for (const file of closure)
       expect(hashed.has(file) !== excluded.has(file), `${file} hashed xor excluded`).toBe(true);
@@ -171,7 +177,7 @@ describe('P13.3 Phase 13 policy digest', () => {
     }
     for (const reason of Object.values(HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES))
       expect(reason.length).toBeGreaterThan(20);
-    expect(HORSE_PHASE13_POLICY_DIGEST_DEFINITION).toBe('horse-phase13-policy-digest-v2');
+    expect(HORSE_PHASE13_POLICY_DIGEST_DEFINITION).toBe('horse-phase13-policy-digest-v4');
   });
 
   it('gives each of the nine variants its own digest, moves with any hashed byte, and fails closed', () => {
@@ -201,7 +207,7 @@ describe('P13.3 Phase 13 policy digest', () => {
     expect(horsePhase13PolicyDigestOf('nlh', edited('src/engine/HandController.ts'))).toBe(
       horsePhase13PolicyDigest('nlh')
     );
-    expect(horsePhase13PolicyDigestOf('nlh', edited('src/engine/HorseMind.ts'))).toBe(
+    expect(horsePhase13PolicyDigestOf('nlh', edited('src/engine/HorseMind.ts'))).not.toBe(
       horsePhase13PolicyDigest('nlh')
     );
     expect(

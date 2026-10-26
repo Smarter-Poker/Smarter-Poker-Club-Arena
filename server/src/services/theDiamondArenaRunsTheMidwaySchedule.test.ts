@@ -32,7 +32,7 @@ import {
   readDiamondSpawnAnswer,
 } from './diamondScheduledSpawn.js';
 import { MIDWAY_UNION_ID, overlayHostsFrom } from './HorseOverlayGuard.js';
-import { gameLaneFor } from './HorseBehavior.js';
+import { gameLaneFor, isActiveNow } from './HorseBehavior.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
 import { withMysteryBountyTerms } from '../tournament/mysteryBountyTerms.js';
@@ -195,7 +195,10 @@ async function built(cfg: Record<string, unknown>, start: Date, clubId = ARENA) 
 const START = new Date(Date.now() + 26 * 60 * 60 * 1000); // outside the horse-seed window
 
 beforeEach(() => vi.mocked(reportError).mockClear());
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('the arena is recognised by its identity, not by its id', () => {
   it('reads the arena contract (diamonds, platform, no union)', () => {
@@ -459,7 +462,13 @@ describe('the Diamond bankroll gate reads Diamonds', () => {
   };
 
   it('a horse whose Diamonds cannot carry the entry is not registered; one that can is', async () => {
+    // Isolate Diamonds admission from the real daily activity-window boundary.
+    // Both fixture horses are awake at 18:00 UTC; the rich one sleeps at 02:00.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-23T18:00:00.000Z'));
     const [rich, broke] = eventLaneIds('dss-horse', 2);
+    expect(isActiveNow(rich, 18)).toBe(true);
+    expect(isActiveNow(broke, 18)).toBe(true);
     const tables: string[] = [];
     const memberWalletReads: unknown[] = [];
     const target = {

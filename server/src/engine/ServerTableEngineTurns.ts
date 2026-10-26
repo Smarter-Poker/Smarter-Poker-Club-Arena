@@ -8,6 +8,10 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import {
+  recheckHorsePhase14BeforeAcceptance,
+  observeHorsePhase14Execution,
+} from './HorsePhase14Acceptance.js';
 import { buildAllInGestureInput, gestureBeforeAllIn } from '../services/HorseTableGestures.js';
 import { HandController } from './HandController.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
@@ -35,8 +39,15 @@ import type {
   ActionRecord,
 } from '../types.js';
 
-import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
+import {
+  HorseLogic,
+  holdemPremiumAggression,
+  resolveHorseStyle,
+  type HorseGameStateV2,
+} from './HorseLogic.js';
 import { riverNutsRaise, fullPotNearPotWager } from './HorseRiverNuts.js';
+import { tournamentShoveDiscipline } from './HorseTournamentShoveDiscipline.js';
+import { shortAllInCallFloor } from './HorseShortAllInCallFloor.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import {
   buildTournamentMState,
@@ -2742,9 +2753,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // restores normal time-bank behaviour.
     this.timeBankSuppressedThisTurn = false;
 
-    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running
+    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running.
+    // A designed reset, not a recovery: `reset` says nothing (StateMachine.reset).
     if (this.turnFSM.state !== 'waiting') {
-      this.turnFSM.forceState('waiting');
+      this.turnFSM.reset('waiting');
     }
 
     // Step 1: Check for queued pre-action before starting timer (applies to ALL players)
@@ -3178,6 +3190,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         mysteryTopLive: tctx?.mysteryTopLive ?? false,
         meanBountyCents: tctx?.meanBountyCents ?? 0,
         prizePoolCents: tctx?.prizePoolCents ?? 0,
+        ...(tctx?.payoutTermsVersion === 1
+          ? {
+              payoutTermsVersion: 1 as const,
+              prizePoolFinalized: tctx.prizePoolFinalized,
+              bubbleProtection: tctx.bubbleProtection,
+              prizeUnitCents: tctx.prizeUnitCents,
+              finalizedPrizeLadder: tctx.finalizedPrizeLadder
+                ? {
+                    ...tctx.finalizedPrizeLadder,
+                    prizesCents: tctx.finalizedPrizeLadder.prizesCents.slice(),
+                  }
+                : undefined,
+            }
+          : {}),
         bountyPoolCents: tctx?.bountyPoolCents ?? 0,
         buyInCents: tctx?.buyInCents ?? null,
         startingStackChips: tctx?.startingStackChips ?? null,
@@ -3544,6 +3570,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     });
     const gameState: HorseGameStateV2 = {
       stateSchemaVersion: 1,
+      // PLO PRESUMPTION (2026-10-25): who at this table is a person. The
+      // decision worker is server-side; this never reaches a client payload.
+      humanUserIds: this.seatedPlayers
+        .filter((seated) => seated.is_horse === false)
+        .map((seated) => seated.user_id),
       dealtSeatIds: state.players
         .filter((candidate) => candidate.cards.length > 0)
         .map((candidate) => candidate.seat)
@@ -4047,6 +4078,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             markPendingUtilityNotExecuted();
             return;
           }
+          // Read before any withdrawal below can re-select a pack's baseline.
+          // A FOLD the brain itself returned has already been through the
+          // short all-in call floor with its own equity (drawing dead, or a
+          // real paired-board stack-off) and stands. A liveness fold (worker
+          // fallback, caught brain exception) is not a poker decision and gets
+          // the floor here.
+          const brainChoseFold =
+            decision.action === 'fold' &&
+            !safeWorkerFallback &&
+            decision.policyFallback !== 'brain_exception';
           // The action is now authoritative. Cancel a queued/running deep read
           // before it can race the mutation below; this also retires the local
           // turn token so no later continuation can become current again.
@@ -4216,6 +4257,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             }
           }
 
+          decision = recheckHorsePhase14BeforeAcceptance(decision);
+
           // Authority can be withdrawn while a worker answer waits for its
           // think time. Re-selecting that owner's baseline above must not
           // restore the very river flat-call the final nuts rule forbids.
@@ -4248,13 +4291,32 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               commitmentCapRemaining: nutsActions.commitmentCapRemaining,
             };
             const privateHero = { ...commitHero, knownDeadCards: decisionPlayer.knownDeadCards };
-            const guarded = fullPotNearPotWager(
-              riverNutsRaise(decision, privateHero, commitState),
+            const wagerGuarded = fullPotNearPotWager(
+              riverNutsRaise(
+                tournamentShoveDiscipline(
+                  holdemPremiumAggression(decision, privateHero, commitState, {
+                    holdemDominatedFold: false,
+                  }),
+                  privateHero,
+                  commitState
+                ),
+                privateHero,
+                commitState
+              ),
               privateHero,
               commitState
             );
+            // Dan 2026-10-26: a short all in is called by a big stack in a
+            // tournament. Last at the door too, on the controller's fresh
+            // state, so no withdrawal above and no liveness fallback can fold
+            // that spot. No equity is measured here, so it calls.
+            const guarded = brainChoseFold
+              ? wagerGuarded
+              : shortAllInCallFloor(wagerGuarded, privateHero, commitState, null);
+            if (guarded !== wagerGuarded) noteFire('short_all_in_call_floor_commit');
             if (guarded !== decision) {
               decision = { ...decision, ...guarded };
+              if (guarded !== wagerGuarded && guarded.amount === undefined) delete decision.amount;
               noteFire('wager_rules_commit_correction');
             }
           }
@@ -4545,6 +4607,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               applied,
               acceptedActions,
             });
+            observeHorsePhase14Execution(decision);
             if (applied && acceptedActions.length === 1) {
               const actual = acceptedActions[0].record;
               executedAction = actual.action;

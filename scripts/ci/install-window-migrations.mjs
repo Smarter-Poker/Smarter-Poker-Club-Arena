@@ -35,6 +35,7 @@
  * summary names each file and its outcome; a red run on main is read by the
  * red-main detector in production-integrity-audit.yml (CLAUDE.md 10.83).
  */
+import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migration.mjs';
 import { readdirSync, readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -47,6 +48,7 @@ import {
   START_RESERVE_SECONDS,
 } from './maintenance-window-migrations.mjs';
 import { splitConcurrentPreamble } from './migration-concurrent-preamble.mjs';
+import { supersededBy } from './check-migrations-are-live.mjs';
 
 const DIR = 'supabase/migrations';
 const APPLIER = fileURLToPath(new URL('./apply-recorded-migration.mjs', import.meta.url));
@@ -73,10 +75,29 @@ function finish(code, verdict) {
   process.exit(code);
 }
 
-const declared = readdirSync(DIR)
+let ownerWindow = null;
+if (args.includes('--owner-window')) {
+  try {
+    ownerWindow = readOwnerMigrationWindow(argValue('--owner-window'));
+  } catch (e) {
+    finish(1, `REFUSED - ${e.message}`);
+  }
+}
+// A file marked "-- SUPERSEDED BY <version>" (naming a file in this tree) is
+// never queued: the applier refuses it anyway, and queuing it would only wait
+// for the break, fail red and hold every later file. Same parser as the applier.
+const dirFiles = readdirSync(DIR);
+const declared = dirFiles
   .filter((f) => /^\d{14}_[a-z0-9_]+\.sql$/.test(f))
   .sort()
-  .filter((f) => declaresMaintenanceWindow(readFileSync(join(DIR, f), 'utf8')));
+  .filter((f) => {
+    const sql = readFileSync(join(DIR, f), 'utf8');
+    if (!declaresMaintenanceWindow(sql)) return false;
+    const by = supersededBy(sql, dirFiles);
+    if (by) say(`skipped \`${f}\`: SUPERSEDED BY ${by}, never installed`);
+    return !by;
+  })
+  .filter((f) => !ownerWindow || ownerWindow.migrations.includes(f));
 if (declared.length === 0) finish(0, 'NOTHING QUEUED (no migration declares the window)');
 
 const CONN = process.env.DATABASE_URL;
@@ -150,7 +171,12 @@ for (const f of queued) {
   }
 }
 
-const window = windowToServe(Date.now());
+const window = ownerWindow
+  ? {
+      startsAt: Date.now(),
+      endsAt: Math.min(Date.parse(ownerWindow.notAfter), Date.now() + 70 * 60_000),
+    }
+  : windowToServe(Date.now());
 if (!window)
   finish(
     1,
@@ -173,7 +199,9 @@ let unreadable = 0;
 let lastState = null;
 while (Date.now() < lastAdmit) {
   try {
-    const [state] = await read(WINDOW_STATE_QUERY);
+    const [state] = await read(
+      ownerWindow ? ownerWindowState(ownerWindow, START_RESERVE_SECONDS) : WINDOW_STATE_QUERY
+    );
     unreadable = 0;
     lastState = state;
     if (state?.open === true) {
@@ -201,7 +229,14 @@ for (const f of queued) {
   const started = Date.now();
   const run = spawnSync(
     process.execPath,
-    [APPLIER, '--migration', f, '--maintenance-window', ...passthrough],
+    [
+      APPLIER,
+      '--migration',
+      f,
+      '--maintenance-window',
+      ...(ownerWindow ? ['--owner-window', ownerWindow.id] : []),
+      ...passthrough,
+    ],
     { stdio: 'inherit', env: process.env, timeout: 60_000 }
   );
   const ms = Date.now() - started;

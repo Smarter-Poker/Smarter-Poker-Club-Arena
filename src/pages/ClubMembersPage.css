@@ -583,10 +583,11 @@
 .member-identity {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   grid-column: 1;
   grid-row: 1;
   align-items: center;
-  gap: 7px;
+  gap: 2px 7px;
 }
 .member-alias {
   max-width: 100%;
@@ -633,20 +634,27 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
 }
-.member-club,
-.member-upline {
+.member-club {
   min-width: 0;
   overflow: hidden;
   border-left: 1px solid var(--members-gunmetal);
   padding-left: 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.member-club {
   text-transform: none;
 }
+/* The upline agent sits on its own line directly under the name
+   (Dan, 2026-10-25), in Simple and Advanced mode alike. */
 .member-upline {
-  max-width: 18ch;
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--members-text-dim);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .member-seated,
 .member-online,
@@ -1157,9 +1165,14 @@
 /* The role stays visible in Simple mode: "Group By Role" orders the list by
    it, and a grouping nobody can see is not a grouping (2026-10-14). */
 .members-simple .member-username,
-.members-simple .member-club,
-.members-simple .member-upline {
+.members-simple .member-club {
   display: none;
+}
+.members-simple .member-upline {
+  color: #9aa5b3;
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0;
 }
 .members-simple .member-subline {
   flex-wrap: wrap;
@@ -1298,5 +1311,127 @@ body:has([data-players-mode='simple']) nav[aria-label='Club Operations Sections'
   }
   .members-simple .members-sort:not(.members-winloss-period) {
     grid-column: 2;
+  }
+}
+
+/* ── The players list fits a phone (Dan, 2026-10-25) ────────────────────────
+   "PLAYER MANAGEMENT ON MOBILE NEEDS TO BE OPTIMIZED FOR MOBILE. DATA IS CUT
+   OFF, FONTS ARE TOO LARGE ITS A MESS." On a phone (an iPhone with Display
+   Zoom reports 320px) the 16px type and the figures column left the name,
+   upline, PlayerID and last-seen about 90px, so every one of them was clipped
+   mid-word and the last line fell out of the bottom of the row. Phone widths
+   only: tablet and desktop rows are untouched, and the row keeps its fixed
+   height (the virtual list counts on it).
+
+   Four short lines, each with the room to print in full: the name, the upline
+   under it, the PlayerID, then the role and online or last-seen status. The
+   name and upline stay on one line each and only an unusually long one ends
+   in an ellipsis; nothing breaks mid-word. The figures column takes only the
+   width its numbers need. */
+@media (max-width: 480px) {
+  .members-simple .member-row__open {
+    grid-template-columns: 38px minmax(0, 1fr) 10px;
+    gap: 8px;
+    padding: 8px 6px 8px 10px;
+  }
+  .members-simple .member-avatar {
+    width: 38px;
+    height: 38px;
+    font-size: 1rem;
+  }
+  .members-simple .member-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: center;
+    gap: 3px 8px;
+  }
+  .members-simple .member-identity {
+    flex-wrap: wrap;
+    gap: 1px 6px;
+  }
+  .members-simple .member-alias {
+    font-size: 15px;
+    line-height: 1.15;
+  }
+  .members-simple .member-upline {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .members-simple .member-subline {
+    flex-wrap: wrap;
+    gap: 0 6px;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  /* The PlayerID reads on its own line; the role and the online or last-seen
+     status share the line beneath it. */
+  .members-simple .member-number {
+    order: -1;
+    flex: 0 0 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .members-simple .member-role,
+  .members-simple .member-seated,
+  .members-simple .member-online,
+  .members-simple .member-seen {
+    white-space: nowrap;
+  }
+  .members-simple .member-chevron {
+    font-size: 1.2rem;
+  }
+  .members-simple .member-simple-balance {
+    max-width: 76px;
+    gap: 2px;
+  }
+  .members-simple .member-simple-balance strong,
+  .members-simple .member-simple-balance > .member-simple-balance__winloss {
+    font-size: 14px;
+    line-height: 1.15;
+  }
+  .members-simple .member-simple-balance > span {
+    font-size: 10px;
+    line-height: 1.15;
+  }
+  .members-simple .member-simple-balance > .member-simple-balance__downline {
+    white-space: normal;
+  }
+}
+/* The narrowest phones (320-360px): a little smaller still, and the figures
+   label may take two short lines so the name keeps its width. */
+@media (max-width: 360px) {
+  .members-simple .member-row__open {
+    grid-template-columns: 34px minmax(0, 1fr) 8px;
+    gap: 7px;
+    padding-left: 8px;
+  }
+  .members-simple .member-avatar {
+    width: 34px;
+    height: 34px;
+  }
+  .members-simple .member-alias {
+    font-size: 14px;
+  }
+  .members-simple .member-subline {
+    font-size: 12px;
+  }
+  /* "Upline:" and the agent's name may take a line each here; the row has
+     the room, and a word is only ever split if it alone is wider than the
+     line. */
+  .members-simple .member-upline {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .members-simple .member-simple-balance {
+    max-width: 58px;
+  }
+  .members-simple .member-simple-balance > span {
+    white-space: normal;
   }
 }

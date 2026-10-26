@@ -212,7 +212,8 @@ class SessionStatsServiceClass {
     });
   }
 
-  /** The Diamond custody recap owns cumulative buy-ins, including queued landings. */
+  /** Canonical cumulative funding, reused from PR7835's receipt accounting.
+   * Restores funding without adding the same receipt to a snapshot stack. */
   restoreFunding(tableId: string, total: number): void {
     const session = this.sessions.get(tableId);
     if (!session || !Number.isFinite(total) || total <= 0) return;

@@ -1,0 +1,279 @@
+{
+  "status": "Predeclared narrow river candidate passed all three variant gates",
+  "scope": "Three fixed 24000-pair seeds per variant,400bb starting cash stacks,frozen clock/full equity precision,solver not hydrated. No all-depth,tournament,solver or live certification claim.",
+  "runs": [
+    {
+      "variant": "plo4",
+      "pooledBB100": 1.7572337962962965,
+      "pooledStderr": 0.37854754518922124,
+      "lowerTwoSE": 1.0001387059178541,
+      "passes": true,
+      "evidence": {
+        "plan": {
+          "pairs": 24000,
+          "seeds": [2026102521, 2026102522, 2026102523],
+          "variants": ["plo4", "plo5", "plo6"],
+          "stackBB": 400,
+          "solverHydrated": false,
+          "candidate": "river-only vulnerable set/trips vs tier-three pressure",
+          "clockIso": "2026-10-24T00:00:00.000Z",
+          "governorScale": 1,
+          "common": {
+            "telemetry": false,
+            "decisionTimeMs": 1792800000000,
+            "phase10EvidenceMode": true,
+            "phase11EvidenceMode": true,
+            "phase12EvidenceMode": true,
+            "phase13EvidenceMode": true
+          },
+          "acceptance": "per-variant fixed pooled bb100 >2stderr; no seed negative beyond2stderr; nonzero divergence; zero illegal/truncated. No automatic promotion.",
+          "source": {
+            "engine/HorseEval.ts": "44d83dcb49dbf0b78828e637a655041082c39166e0dbedc65fb628e05dc61edd",
+            "engine/HorseLogic.ts": "b5d75ca7dc7bee61ad50656cc349df6e6702b616ed7c4f8df716b12b624a053e",
+            "engine/HorseMind.ts": "bbd0f118f15e47ea083c5d29aa0aef5b3146501db67ae7c2b674d8d186e36cb8",
+            "engine/HorseOpponentMemory.ts": "577fd437e67c676ba77649328fcafbcfcf2a634f312b53621698265587c683e8",
+            "engine/HorseWinnerRead.ts": "ff9c7cf6fe551e44ff319ce645b653d8d9702e07c55170c805c2f1f5b46360b5",
+            "engine/EquityLoadGovernor.ts": "68cc050279019fa595778f8972677ba01bc3afed75ba96fb049aad65f0a355d7",
+            "benchmark/HorseLeague.ts": "54272fc62e34ea63dac7899ad1f3d40c2639f8d861659fc871c431ed6d9b845b"
+          }
+        },
+        "variant": "plo4",
+        "results": [
+          {
+            "seed": 2026102521,
+            "matchup": "plo4_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 1.5552083333333335,
+            "stderr": 0.5486940266472012,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 77,
+            "inert": false,
+            "wallDurationMs": 755975.6781659999
+          },
+          {
+            "seed": 2026102522,
+            "matchup": "plo4_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 2.7901041666666666,
+            "stderr": 0.7183910489359835,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 79,
+            "inert": false,
+            "wallDurationMs": 753942.352709
+          },
+          {
+            "seed": 2026102523,
+            "matchup": "plo4_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 0.9263888888888889,
+            "stderr": 0.6874106208441991,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 78,
+            "inert": false,
+            "wallDurationMs": 740949.314583
+          }
+        ]
+      }
+    },
+    {
+      "variant": "plo5",
+      "pooledBB100": 2.0229166666666667,
+      "pooledStderr": 0.341199215060493,
+      "lowerTwoSE": 1.3405182365456807,
+      "passes": true,
+      "evidence": {
+        "plan": {
+          "pairs": 24000,
+          "seeds": [2026102521, 2026102522, 2026102523],
+          "variants": ["plo4", "plo5", "plo6"],
+          "stackBB": 400,
+          "solverHydrated": false,
+          "candidate": "river-only vulnerable set/trips vs tier-three pressure",
+          "clockIso": "2026-10-24T00:00:00.000Z",
+          "governorScale": 1,
+          "common": {
+            "telemetry": false,
+            "decisionTimeMs": 1792800000000,
+            "phase10EvidenceMode": true,
+            "phase11EvidenceMode": true,
+            "phase12EvidenceMode": true,
+            "phase13EvidenceMode": true
+          },
+          "acceptance": "per-variant fixed pooled bb100 >2stderr; no seed negative beyond2stderr; nonzero divergence; zero illegal/truncated. No automatic promotion.",
+          "source": {
+            "engine/HorseEval.ts": "44d83dcb49dbf0b78828e637a655041082c39166e0dbedc65fb628e05dc61edd",
+            "engine/HorseLogic.ts": "b5d75ca7dc7bee61ad50656cc349df6e6702b616ed7c4f8df716b12b624a053e",
+            "engine/HorseMind.ts": "bbd0f118f15e47ea083c5d29aa0aef5b3146501db67ae7c2b674d8d186e36cb8",
+            "engine/HorseOpponentMemory.ts": "577fd437e67c676ba77649328fcafbcfcf2a634f312b53621698265587c683e8",
+            "engine/HorseWinnerRead.ts": "ff9c7cf6fe551e44ff319ce645b653d8d9702e07c55170c805c2f1f5b46360b5",
+            "engine/EquityLoadGovernor.ts": "68cc050279019fa595778f8972677ba01bc3afed75ba96fb049aad65f0a355d7",
+            "benchmark/HorseLeague.ts": "54272fc62e34ea63dac7899ad1f3d40c2639f8d861659fc871c431ed6d9b845b"
+          }
+        },
+        "variant": "plo5",
+        "results": [
+          {
+            "seed": 2026102521,
+            "matchup": "plo5_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 2.182638888888889,
+            "stderr": 0.7010709842679975,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 86,
+            "inert": false,
+            "wallDurationMs": 982097.294875
+          },
+          {
+            "seed": 2026102522,
+            "matchup": "plo5_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 1.855902777777778,
+            "stderr": 0.5729589713137542,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 65,
+            "inert": false,
+            "wallDurationMs": 957378.6031249999
+          },
+          {
+            "seed": 2026102523,
+            "matchup": "plo5_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 2.0302083333333334,
+            "stderr": 0.4774616544076131,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 68,
+            "inert": false,
+            "wallDurationMs": 984761.1651659999
+          }
+        ]
+      }
+    },
+    {
+      "variant": "plo6",
+      "pooledBB100": 0.6501157407407407,
+      "pooledStderr": 0.30057641714255506,
+      "lowerTwoSE": 0.04896290645563062,
+      "passes": true,
+      "evidence": {
+        "plan": {
+          "pairs": 24000,
+          "seeds": [2026102521, 2026102522, 2026102523],
+          "variants": ["plo4", "plo5", "plo6"],
+          "stackBB": 400,
+          "solverHydrated": false,
+          "candidate": "river-only vulnerable set/trips vs tier-three pressure",
+          "clockIso": "2026-10-24T00:00:00.000Z",
+          "governorScale": 1,
+          "common": {
+            "telemetry": false,
+            "decisionTimeMs": 1792800000000,
+            "phase10EvidenceMode": true,
+            "phase11EvidenceMode": true,
+            "phase12EvidenceMode": true,
+            "phase13EvidenceMode": true
+          },
+          "acceptance": "per-variant fixed pooled bb100 >2stderr; no seed negative beyond2stderr; nonzero divergence; zero illegal/truncated. No automatic promotion.",
+          "source": {
+            "engine/HorseEval.ts": "44d83dcb49dbf0b78828e637a655041082c39166e0dbedc65fb628e05dc61edd",
+            "engine/HorseLogic.ts": "b5d75ca7dc7bee61ad50656cc349df6e6702b616ed7c4f8df716b12b624a053e",
+            "engine/HorseMind.ts": "bbd0f118f15e47ea083c5d29aa0aef5b3146501db67ae7c2b674d8d186e36cb8",
+            "engine/HorseOpponentMemory.ts": "577fd437e67c676ba77649328fcafbcfcf2a634f312b53621698265587c683e8",
+            "engine/HorseWinnerRead.ts": "ff9c7cf6fe551e44ff319ce645b653d8d9702e07c55170c805c2f1f5b46360b5",
+            "engine/EquityLoadGovernor.ts": "68cc050279019fa595778f8972677ba01bc3afed75ba96fb049aad65f0a355d7",
+            "benchmark/HorseLeague.ts": "54272fc62e34ea63dac7899ad1f3d40c2639f8d861659fc871c431ed6d9b845b"
+          }
+        },
+        "variant": "plo6",
+        "results": [
+          {
+            "seed": 2026102521,
+            "matchup": "plo6_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 1.3343749999999999,
+            "stderr": 0.5621025725598439,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 46,
+            "inert": false,
+            "wallDurationMs": 1091786.3468330002
+          },
+          {
+            "seed": 2026102522,
+            "matchup": "plo6_v56_pressure_range",
+            "hands": 48000,
+            "bb100": 0.6621527777777778,
+            "stderr": 0.4223816873475407,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 43,
+            "inert": false,
+            "wallDurationMs": 1093756.388917
+          },
+          {
+            "seed": 2026102523,
+            "matchup": "plo6_v56_pressure_range",
+            "hands": 48000,
+            "bb100": -0.04618055555555556,
+            "stderr": 0.5645795346940475,
+            "durationMs": 0,
+            "illegalActions": 0,
+            "truncatedStreets": 0,
+            "candidatePolicyHits": 0,
+            "candidateExecutionMismatches": 0,
+            "candidateNodeRoles": [],
+            "benchmarkComponents": [],
+            "divergentPairs": 44,
+            "inert": false,
+            "wallDurationMs": 1103859.9214579999
+          }
+        ]
+      }
+    }
+  ]
+}

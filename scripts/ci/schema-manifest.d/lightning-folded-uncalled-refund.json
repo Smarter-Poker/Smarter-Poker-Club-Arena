@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/lightning-uncalled-fold-refund",
+  "_comment": "Function-only repair: reconcile a recorded fold commitment with its declared uncalled refund, final contribution and zero winnings. Preserve atomic physical settlement and service-only execution.",
+  "functions": ["fn_lightning_settle_hand"]
+}

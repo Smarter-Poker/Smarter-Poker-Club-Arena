@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_lightning_anchor_is_live_eligible(uuid,uuid,uuid)",
+    "md5": "a121611dd69437875e82a06832715981",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_lightning_anchor_is_live_eligible(p_seat_id uuid, p_cluster_id uuid, p_player_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1\n      FROM public.table_seats ts\n      JOIN public.tables tb ON tb.id = ts.table_id\n     WHERE ts.id = p_seat_id\n       AND tb.cluster_id = p_cluster_id AND coalesce(tb.is_deleted, false) = false\n       AND coalesce(tb.lifecycle, '') <> 'closed'\n       AND ts.left_at IS NULL\n       AND ts.user_id IS NOT NULL\n       AND (p_player_id IS NULL OR ts.user_id = p_player_id)\n       AND coalesce(ts.is_sitting_out, false) = false\n       AND coalesce(ts.leave_pending, false) = false\n       AND coalesce(ts.stack, 0) > 0);\n$function$\n"
+  }
+]

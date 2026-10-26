@@ -1,0 +1,9 @@
+# The fee redemption reaches the reports
+
+WooWoo traded half of the then-current 644.66 generated-rake counter for lifetime VIP. The original operation reduced only `player_stats.total_rake` to 322.33. Member Cash Fees and Statistics instead read `ca_club_member_fee_totals`, while Player Statistics rake summaries read hand facts, so they continued to display the full 695.39 after more hands.
+
+Retain that original fixed 322.33 redemption as one private, uniquely keyed reporting event, effective October 23. The member fee reader and both player rake summary readers apply the same event. Newly generated rake accumulates in full; the code never halves a moving total or reduces `player_stats` again. Date ranges include the redemption on its effective day. Tournament fees, all hand facts, raw big-blind hand evidence, winnings, wallets, attributions, accounting accruals, commission and rakeback are unchanged. Player rake responses retain gross rake and identify the redeemed amount.
+
+The migration asserts the installed reader anchors before patching and preserves their existing access checks and grants. The event table is private, has RLS enabled, and is unavailable to anonymous and authenticated direct readers/writers. The owning migration installer provides single-transaction installation and durable migration identity; the operation key prevents a duplicated redemption record.
+
+Native PostgreSQL 17 regression uses the captured production reader definitions: the adjusted member-total assertion fails before the migration, then member/player totals, date bounds, other-player/club/asset isolation, tournament fees, source immutability, duplicate protection, repeated reads and full future fee accumulation pass afterward. The existing required accounting PostgreSQL shard runs it. This is a reporting/database change, requiring no engine replacement.

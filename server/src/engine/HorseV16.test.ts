@@ -68,6 +68,24 @@ describe('V16 real ICM', () => {
     expect(prem).toBeGreaterThanOrEqual(0);
     expect(prem).toBeLessThanOrEqual(0.12);
   });
+
+  it.each([undefined, {}, { schemaVersion: 1, contextStatus: 'incomplete', spotsPaid: 1 }])(
+    'an unknown Spin payout does not claim winner-take-all chip EV (%j)',
+    (tournament) => {
+      const gs = { ...baseGs([], []), format: 'spin', tournament } as HorseGameStateV2;
+      expect(icmRisk(gs, 30, true)).toBeGreaterThan(0);
+    }
+  );
+
+  it('a confirmed one-place Spin retains zero survival premium', () => {
+    const gs = { ...baseGs([5000, 5000, 5000], [100]), format: 'spin' } as HorseGameStateV2;
+    expect(icmRisk(gs, 50, true)).toBe(0);
+  });
+
+  it('a confirmed multi-place Spin retains genuine ICM pressure', () => {
+    const gs = { ...baseGs([5000, 5000, 5000], [80, 20]), format: 'spin' } as HorseGameStateV2;
+    expect(icmRisk(gs, 50, true)).toBeGreaterThan(0);
+  });
 });
 
 describe('V16 PLO 3-bet polarity', () => {

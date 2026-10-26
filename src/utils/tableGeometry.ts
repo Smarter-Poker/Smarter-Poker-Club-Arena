@@ -23,25 +23,41 @@
  * CardImage's safety guard renders unknown cards as the Ace of Spades — so
  * the whole board flashed/stuck as five aces on every street until the next
  * full snapshot repaired it. These parsers accept every wire format:
- *   { rank: 'A', suit: 'spades' }   (snapshot format — passthrough)
+ *   { rank: 'A', suit: 'spades' }   (snapshot format -> { rank: 'A', suit: 's' })
  *   "Aspades" / "10hearts" / "Th"   (engine string formats)
  *   "As" / "9c" / "10d"             (short codes)
  */
 
+/**
+ * ONE CARD, ONE SPELLING (Dan 2026-10-25).
+ *
+ * Every card that enters the table is written the same way: rank '2'-'9',
+ * 'T', 'J', 'Q', 'K', 'A' and suit 'h' | 'd' | 'c' | 's'. The engine speaks
+ * words ('clubs'), table_hole_cards and realtime speak letters ('c'), and some
+ * paths send '10'. When both spellings lived side by side in the hero's row
+ * and the board, every "is this the same card?" check that compared them
+ * letter by letter quietly failed - the worst of it was a flush made with a
+ * hole card being named as the next best hand under the hero's seat.
+ * Converting at the door means nothing downstream ever has to care.
+ */
 export interface NormalizedCard {
   rank: '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'T' | 'J' | 'Q' | 'K' | 'A';
-  suit: 'h' | 'd' | 'c' | 's' | 'hearts' | 'diamonds' | 'clubs' | 'spades';
+  suit: 'h' | 'd' | 'c' | 's';
 }
 
-const SUIT_NORMALIZE: Record<string, 'hearts' | 'diamonds' | 'clubs' | 'spades'> = {
-  h: 'hearts',
-  d: 'diamonds',
-  c: 'clubs',
-  s: 'spades',
-  hearts: 'hearts',
-  diamonds: 'diamonds',
-  clubs: 'clubs',
-  spades: 'spades',
+const SUIT_NORMALIZE: Record<string, NormalizedCard['suit']> = {
+  h: 'h',
+  d: 'd',
+  c: 'c',
+  s: 's',
+  hearts: 'h',
+  diamonds: 'd',
+  clubs: 'c',
+  spades: 's',
+  heart: 'h',
+  diamond: 'd',
+  club: 'c',
+  spade: 's',
 };
 
 const RANK_NORMALIZE: Record<string, NormalizedCard['rank']> = {
@@ -98,6 +114,18 @@ export function normalizeCard(raw: unknown): NormalizedCard | null {
   }
 
   return null;
+}
+
+/**
+ * Rewrite every readable card in one spelling and leave everything else
+ * EXACTLY where it was. Unlike normalizeCards this never drops an entry: a
+ * face-down placeholder or a null slot keeps its index, so a seat's card count
+ * and any index-keyed flag on it are unchanged. For state paths that must not
+ * lose a slot; normalizeCards stays the choice where dropping junk is right.
+ */
+export function canonicalCards<T>(raw: readonly T[] | null | undefined): T[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((c) => (normalizeCard(c) as unknown as T) ?? c);
 }
 
 /** Normalize an array of cards, dropping anything unparseable. */

@@ -715,7 +715,7 @@
      "PLO cards are overlapping the hero's box" report. Capping at 100% ties the
      box to the seat width at every breakpoint, which makes the card row's
      anchor correct by construction instead of by hand-tuned luck. The name
-     already has overflow:hidden + text-overflow:ellipsis, so it just truncates. */
+     now wraps within the plate, preserving the complete player name. */
   max-width: 100%;
   z-index: 3;
   backdrop-filter: blur(8px);
@@ -729,11 +729,9 @@
      theme (see the light-mode note in design-tokens.css), so its text must
      not flip dark when the chrome does. */
   color: var(--seat-text, #f3f4f6);
-  white-space: nowrap;
-  overflow: hidden;
-  /* Dan 2026-08-30: never "..." - the TSX cuts names at a character budget
-     (limitSeatName), so anything that still overflows clips silently. */
-  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
   max-width: 100%;
   text-align: center;
   line-height: 1.3;
@@ -2714,9 +2712,28 @@
   color: rgba(233, 233, 238, 0.92);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
   letter-spacing: 0.04em;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   z-index: 25;
   animation: handNameAppear 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+/* Dan 2026-10-24 ("PROPERLY DISPLAY AND ANNOUCE THE WINNING HANDS BETTER"):
+   the winner's line reads gold, the colour of the board's winning-hand band,
+   so the seat that took the pot is the one the eye lands on. Text colour and
+   glow only; the label is not a control and gets no frame. */
+.seat__hand-name--winner {
+  color: #ffe097;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 10px rgba(240, 170, 50, 0.55);
+}
+
+/* ...and a beaten hand that is still face up names itself, muted, so every
+   hand on the felt says what it was without competing with the winner. */
+.seat__hand-name--shown {
+  color: rgba(226, 232, 240, 0.7);
+  font-weight: 600;
 }
 
 /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this hand
@@ -3017,7 +3034,10 @@
   border-radius: 4px;
   font-size: 0.55rem;
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
   z-index: 5;
   letter-spacing: 0.3px;
   animation: styleBadgeFadeIn 0.4s ease-out;
@@ -3048,6 +3068,14 @@
      80% — Almost at rest
      100%— At rest, normal size + rotation
    ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* LIGHTNING TRANSITION, PHASE 3: through a Lightning hand's 700 ms button
+   beat the seats' cards wait for the deal (SeatSlot `dealPending`), so they
+   arrive with it instead of showing first and blinking out. The beat is held
+   to its own length by TablePage, never longer. */
+.seat__cards--deal-pending .seat__card {
+  opacity: 0;
+}
 
 .seat__cards--dealing .seat__card {
   animation: cardDealIn calc(0.35s * var(--animation-speed, 1))
@@ -3587,16 +3615,16 @@
     font-size: 0.6875rem;
     padding: 2px 10px;
     max-width: 80px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
-  /* Hide verbose style badge label on mobile — show icon only */
+  /* Keep the selected style badge's full wording on narrow seats. */
   .seat__style-badge {
-    max-width: 22px;
-    overflow: hidden;
+    max-width: 100%;
+    overflow: visible;
     padding: 1px 3px;
-    text-overflow: clip;
   }
 }
 
@@ -3708,13 +3736,9 @@
     font-size: 0.5625rem;
     padding: 1px 6px;
     max-width: 70px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Hide style badge entirely on very small screens */
-  .seat__style-badge {
-    display: none;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -3973,34 +3997,44 @@
      Uniform in, uniform out. */
 }
 
-/* ── THE SHORT CANVAS KEEPS THE COMPACT CAP (Dan 2026-09-05) ────────────────
-   Rings of 6 or fewer draw on a 960-unit canvas (TablePage.css) and put their
-   only top seat at y 5 rather than y 6, so the crown starts nearer the banner
-   twice over. Measured at 720px wide: cap 56 clears by 2.2px, cap 76 is 8.1px
-   INSIDE the banner. The full-canvas rings (7, 8, 9) keep the 76px above.
+/* ── THE SHORT RINGS' TOP SEAT IS FULL SIZE (Dan 2026-10-24) ────────────────
+   Dan, with a 6-max PLO5 screenshot: "IN 6 HANDED GAMES, THE AVATAR OR VILLIAN
+   IN THE 'DONKQUEEN' POSITION CAN BE FULL SCREEN NOW THAT THE BBJ IS REMOVED
+   FROM ABOVE THEM... MAKE THAT CHANGE GLOBALLY".
 
-   :where() ON THE RING, AND THE WHOLE RULE DEPENDS ON IT (corrected 2026-09-05).
+   Rings of 6 or fewer have exactly one top seat, centred at y 5 on the
+   960-unit canvas. From 2026-09-05 it was capped at 56px (with the bust art
+   at 1.05x) because the BBJ banner sat directly above it and a full-size
+   crown measured 8.1px inside that banner. Since #7832/#7843 (2026-10-23) the
+   jackpot plates live in the LEFT corner under the menu, so nothing is above
+   the top-centre seat but open page: the art may rise past the canvas top.
 
-   This shipped as five selectors of the form
-   `.table-page[data-seats='3'] .seat-wrapper--top .seat`, and the comment here
-   claimed they were 0-3-0. They are 0-4-0 - a class AND an attribute on the
-   same compound - and that beat BOTH rules below instead of neither:
+   So this rule now does the opposite of what it did: the top seat of every
+   2-6 ring gets the SAME slot as every other villain at the table, at every
+   width (the phone block further down that compacts the top pod is lifted for
+   these rings too), and the same 1.45x bust everywhere but a portrait phone
+   (see THE BUST ON A PORTRAIT PHONE just below). The celebration hop stays at -5px
+   (avatarChoreography.css): on a phone the corner jackpot plate still reaches
+   over this seat's shoulder, and useProtectedCardLayout parks the art 8px
+   under it.
 
-     .table-page--tournament .seat-wrapper--top .seat   0-3-0
-     .seat-wrapper--top .seat.seat--empty               0-3-0
-
-   TablePage puts `table-page--tournament` and `data-seats` on the SAME
-   element, and a Spin is a tournament with three seats, so the 56px cap
-   applied to every Spin - undoing the exact thing this session was asked to
-   fix ("THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK OR SQUISHED DOWN"). It
-   capped empty SIT plates on small rings too, against Dan 2026-08-31.
-
-   `:where()` contributes ZERO specificity, so the selector is
-   `.table-page` (0-1-0) + `.seat-wrapper--top .seat` (0-2-0) = 0-3-0, which is
-   what the comment always claimed. It still beats the 0-2-0 pair above, and it
-   now TIES the two exemptions - which they win on source order, because they
-   are written after it. Specificity, not source order, is what a text pin
-   cannot see: tests/unit/topRailCapCascade.test.ts computes it. */
+   :where() ON THE RING keeps this 0-3-0 for the slot and 0-2-0 for the
+   wrapper, which beats `.seat-wrapper--top .seat` (0-2-0, the 76px rule) and
+   `.seat-wrapper--top` (0-1-0, the 1.05x bust). The tournament and empty-seat
+   rules below already ask for the full slot, so they agree with it.
+   tests/unit/topRailCapCascade.test.ts does the arithmetic; the e2e harness
+   tests/e2e/top-rail-seat.spec.ts measures it. 7-9 max keep their two
+   top-cap seats at 76px - this ruling is the six-handed seat. */
+.table-page:where(
+    [data-seats='2'],
+    [data-seats='3'],
+    [data-seats='4'],
+    [data-seats='5'],
+    [data-seats='6']
+  )
+  .seat-wrapper--top {
+  --sp-bust-scale: 1.45;
+}
 .table-page:where(
     [data-seats='2'],
     [data-seats='3'],
@@ -4010,7 +4044,41 @@
   )
   .seat-wrapper--top
   .seat {
-  --seat-avatar-base: min(var(--seat-avatar-full), 56px);
+  --seat-avatar-base: var(--seat-avatar-full);
+}
+/* THE BUST ON A PORTRAIT PHONE (measured 2026-10-24). The slot above is full
+   at every width. The bust overhang is not, on a phone only: with six PLO6
+   hands tabled at once, a 1.45x top bust is wide enough that the protected
+   card layout pushes BOTH neighbouring shown hands off their own players
+   (tests/e2e/table-proportions.spec.ts, "occupied portrait rings", 375 and
+   480 wide) and parks the top player's bet beside the next chair. 1.3x passes
+   every occupied state at 375, 393, 430 and 480 - nine-tenths of the side
+   villains' art. The first-generation SE (<=620px tall), where every villain
+   is already a 40px pod, keeps 1.05x: 1.3x there put the dealer button on the
+   board. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page:where(
+      [data-seats='2'],
+      [data-seats='3'],
+      [data-seats='4'],
+      [data-seats='5'],
+      [data-seats='6']
+    )
+    .seat-wrapper--top {
+    --sp-bust-scale: 1.3;
+  }
+}
+@media (max-width: 480px) and (max-height: 620px) and (orientation: portrait) {
+  .table-page:where(
+      [data-seats='2'],
+      [data-seats='3'],
+      [data-seats='4'],
+      [data-seats='5'],
+      [data-seats='6']
+    )
+    .seat-wrapper--top {
+    --sp-bust-scale: 1.05;
+  }
 }
 
 /* Tournaments have no BBJ banner — top avatars stay standard full size.
@@ -4785,10 +4853,10 @@
   padding-block: 3px;
 }
 
-/* Keep rail bets fixed when the top pod clears the actual jackpot frame. */
-.seat-wrapper--top .seat__bet-chips {
-  translate: 0 calc(-1 * var(--sp-top-seat-shift, 0px));
-}
+/* A top pod that drops below the jackpot frame takes its bet with it
+   (Dan 2026-10-25: a bet is always in front of the player who made it). The
+   bet used to be held back at the rail, and the dropped plate and its tag then
+   printed over it. */
 /* A top player's action stays with its plate, below the jackpot banner.
    Dan 2026-10-21: every top-cap chair, tournaments included (whose full-size
    top pods carry no `--top` tag), so a tag above a top player's head can
@@ -4835,22 +4903,65 @@
 }
 
 /* The upper player uses a compact rail pod instead of consuming a full
-   avatar lane above the phone table. Cards and stack remain upright. */
+   avatar lane above the phone table. Cards and stack remain upright.
+   7-9 max only since Dan 2026-10-24: a 2-6 ring's single top-centre seat is
+   full size on a phone too (see "THE SHORT RINGS' TOP SEAT IS FULL SIZE").
+   :not(:where()) adds no specificity, so these stay 0-3-0. */
 @media (max-width: 480px) and (orientation: portrait) {
-  .table-page .seat-wrapper--top .seat {
+  .table-page:not(
+      :where(
+        [data-seats='2'],
+        [data-seats='3'],
+        [data-seats='4'],
+        [data-seats='5'],
+        [data-seats='6']
+      )
+    )
+    .seat-wrapper--top
+    .seat {
     --seat-avatar-base: 36px;
     --seat-avatar-full: 36px;
     --seat-plate-min-width: 58px;
     width: 58px;
   }
-  .table-page .seat-wrapper--top .seat__info {
+  .table-page:not(
+      :where(
+        [data-seats='2'],
+        [data-seats='3'],
+        [data-seats='4'],
+        [data-seats='5'],
+        [data-seats='6']
+      )
+    )
+    .seat-wrapper--top
+    .seat__info {
     min-height: 30px;
     padding: 2px 3px;
   }
-  .table-page .seat-wrapper--top .seat__name {
+  .table-page:not(
+      :where(
+        [data-seats='2'],
+        [data-seats='3'],
+        [data-seats='4'],
+        [data-seats='5'],
+        [data-seats='6']
+      )
+    )
+    .seat-wrapper--top
+    .seat__name {
     font-size: 10px;
   }
-  .table-page .seat-wrapper--top .seat__stack {
+  .table-page:not(
+      :where(
+        [data-seats='2'],
+        [data-seats='3'],
+        [data-seats='4'],
+        [data-seats='5'],
+        [data-seats='6']
+      )
+    )
+    .seat-wrapper--top
+    .seat__stack {
     font-size: 12px;
   }
 }
@@ -4991,12 +5102,28 @@
   }
 }
 
-/* Phones place the puck and chips independently in the same owner's lane.
-   Roomier layouts keep their original side-by-side wager assembly. */
+/* Portrait viewports from 481 to 768px share the phone's top-pod lane
+   (useProtectedCardLayout pulls the pod under the jackpot plate up to 768px),
+   so the same rule holds there: the jackpot plate is above a top player's
+   head, and the action tag hangs below the plate instead. Measured
+   2026-10-24 at 540x900 and 600x960, 9-max: an above-the-head CALL tag
+   printed over the Mini BBJ plate. Pod sizes and the bounty are untouched. */
+@media (min-width: 481px) and (max-width: 768px) and (orientation: portrait) {
+  .seat-wrapper--top .seat__action,
+  .seat-wrapper--cap .seat__action {
+    top: calc(100% + 2px);
+    bottom: auto;
+  }
+}
+
+/* Portrait viewports up to 768px (PORTRAIT_CARD_LANE_MAX_VIEWPORT_PX, the
+   bound useProtectedCardLayout places markers at) place the puck and chips
+   independently in the same owner's lane. Wider and landscape layouts keep
+   their original side-by-side wager assembly. */
 .seat__wager-group {
   display: contents;
 }
-@media (min-width: 481px), (orientation: landscape) {
+@media (min-width: 769px), (orientation: landscape) {
   .seat__wager-group:has(.seat__allin-puck) {
     position: absolute;
     left: 50%;
@@ -5046,4 +5173,14 @@
     box-shadow 0.3s ease,
     filter 0.3s ease;
   transform: none;
+}
+
+/* Confirmed folds hide identity after its motion. Keep the occupied seat,
+   private muck view and committed chips until their existing owners clear them. */
+.seat--fold-hidden > .seat__avatar-wrap,
+.seat--fold-hidden > .seat__info,
+.seat--fold-hidden > .seat__action,
+.seat--fold-hidden > .seat__bounty {
+  visibility: hidden;
+  pointer-events: none;
 }

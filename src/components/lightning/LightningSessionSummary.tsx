@@ -25,7 +25,7 @@ import {
   closeLightningSessionSummary,
   useLightningSummaryRequest,
 } from '../../lightning/lightningSummaryStore';
-import { lightningRoute } from '../../lightning/lightningLobby';
+import { lightningJoinRoute } from '../../lightning/lightningLobby';
 import { writeLightningPrefs } from '../../lightning/lightningPrefs';
 import { reportError } from '../../utils/errorReporter';
 import LightningStatsGrid from './LightningStatsGrid';
@@ -170,7 +170,7 @@ export function LightningSessionSummaryHost() {
               onClick: () => {
                 writeLightningPrefs({ lastClusterId: req.clusterId, lastClusterName: req.name });
                 closeLightningSessionSummary();
-                navigate(lightningRoute(req.clusterId));
+                navigate(lightningJoinRoute(req.clusterId));
               },
               ink: 'white',
             },

@@ -18,6 +18,7 @@ import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { compactChips } from '../../utils/format';
 import {
   cashTitleLines,
+  cashStyleNote,
   formatClock,
   lateRegEndMs,
   levelSpeedLabel,
@@ -32,7 +33,8 @@ import {
   stackFormatRank,
   styleCountsLine,
 } from './lobbyEntries';
-import { cashTemplateNote } from '../../config/cashGames';
+import LightningGamesIcon from './LightningGamesIcon';
+import { cashTemplateKey } from '../../config/cashGames';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
@@ -44,6 +46,8 @@ import {
 } from './lobbyCardContext';
 export type { LobbyRowContext } from './lobbyCardContext';
 import { featuredNow } from '../../lib/featuredOnItsDay';
+import { variantRank, UNLISTED_VARIANT_RANK } from './variantRank';
+import { headingForOrder } from './lobbySortBridge';
 import './LobbyTable.css';
 import './LobbySortBar.css';
 import './CompactLobbyRows.css';
@@ -587,7 +591,10 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.featured && (
         <span
           className="lt-flag lt-flag--featured"
-          title="Pinned To The Top Of The Board By The Host"
+          /* The pin decorates the default order only: once the player picks a
+             heading or a Sort By, the game takes its place in that order
+             (2026-10-23 / 2026-10-24), so the tooltip says exactly that. */
+          title="Featured By The Host. Pinned To The Top Unless You Choose A Sort"
         >
           FEATURED
         </span>
@@ -645,11 +652,15 @@ const COL_NAME: ColumnDef = {
       const { headline, subtitle } = cashTitleLines(e);
       /* Action and Madness say what they change, next to the style word
          (Dan 2026-10-15). Classic and untemplated tables print nothing. */
-      const styleNote = cashTemplateNote(e.game?.template);
+      const styleNote = cashStyleNote(e);
       return (
         <span className="lt-name lt-name--cash" title={e.name}>
           <span className="lt-name__line1">
-            {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
+            {cashTemplateKey(e.game?.template ?? '') === 'madness' && !e.game?.noLightning ? (
+              <LightningGamesIcon />
+            ) : e.live ? (
+              <i className="lt-live" aria-hidden="true" title="Live" />
+            ) : null}
             {headline}
           </span>
           {subtitle && (
@@ -686,28 +697,9 @@ const COL_STAKES: ColumnDef = {
   sortValue: (e) => e.stakesValue,
   render: (e) => (e.stakesLabel ? <span className="lt-mono">{e.stakesLabel}</span> : null),
 };
-/**
- * THE ORDER OF THE GAMES (Dan 2026-09-03): "NLH SHOULD BE NO LIMIT, PINEAPPLE
- * AND SHORT DECK, PLO SHOULD BE PLO, PLO5, PLO6, PLO8o ... game variations are
- * never to be mixed together." This is the canonical rank by the lobby's
- * short game label; anything unlisted sorts after the known ones, by name.
- */
-export const VARIANT_RANK: Readonly<Record<string, number>> = {
-  NLH: 0,
-  PNPL: 1,
-  '6+': 2,
-  PLO: 10,
-  PLO5: 11,
-  PLO6: 12,
-  PLO8: 13,
-  FLH: 20,
-  FLO: 21,
-  FLO8: 22,
-};
-
-export function variantRank(e: Pick<LobbyEntry, 'gameLabel'>): number {
-  return VARIANT_RANK[String(e.gameLabel || '').toUpperCase()] ?? 40;
-}
+/* THE ORDER OF THE GAMES lives in ./variantRank (one table for this board and
+   the page-level Sort By comparator); re-exported here for existing callers. */
+export { VARIANT_RANK, variantRank, UNLISTED_VARIANT_RANK } from './variantRank';
 
 /** The menu wording for a variant chip: "No Limit", "Pineapple", "Short Deck",
     "PLO", "PLO5", "PLO6", "PLO8o". */
@@ -719,6 +711,8 @@ export const VARIANT_MENU_LABELS: Readonly<Record<string, string>> = {
   plo5: 'PLO5',
   plo6: 'PLO6',
   plo8: 'PLO8o',
+  flh: 'FLH',
+  flo8: 'FLO8',
 };
 
 const COL_VARIANT: ColumnDef = {
@@ -1051,13 +1045,18 @@ const COL_ACTIONS: ColumnDef = {
       /* A seat the player already holds beats every other consideration: a
          full table is still THEIR table, and Return To Table has to win over
          the waitlist offer. */
-      const full = !seated && e.capacity > 0 && e.players >= e.capacity;
-      const waiting = ctx.waitlistedIds.has(e.id);
+      const full = !e.game?.lightning && !seated && e.capacity > 0 && e.players >= e.capacity;
+      const waiting = !e.game?.lightning && ctx.waitlistedIds.has(e.id);
       /* A disabled game (or a paused table) is not taking players: its door
          refuses, so the button says so instead of offering a Join that can
          only fail. A seat the player already holds still wins - they finish
          their hand through Return To Game. */
       const closed = !seated && e.status === 'closed';
+      /* LIGHTNING TRANSITION PHASE 5: a game switching modes (Lightning
+         Starting, Lightning Ending) has its tables halted until the switch
+         commits, so Join Game is shown and not offered. A seated player still
+         returns to their own seat. */
+      const switching = !seated && Boolean(e.game?.switching);
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
@@ -1112,7 +1111,9 @@ const COL_ACTIONS: ColumnDef = {
               type="button"
               className="lt-act lt-act--primary"
               data-act="join"
-              onClick={run}
+              onClick={switching ? undefined : run}
+              disabled={switching}
+              aria-disabled={switching ? 'true' : undefined}
               aria-label={`${seated ? 'Return To' : headsUp ? 'Sit Down At' : 'Join'} ${e.name}`}
             >
               {seated
@@ -1316,6 +1317,12 @@ const LobbyRow = memo(function LobbyRow({
       data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
       className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
+      data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
+      data-cash-format={
+        entry.kind === 'cash' && entry.game?.template
+          ? cashTemplateKey(entry.game.template)
+          : undefined
+      }
       role="row"
       aria-selected={selected}
       id={`lt-row-${entry.id}`}
@@ -1680,6 +1687,27 @@ interface LobbyTableProps {
   onStylesChange?: (keys: string[]) => void;
   /** Games per style on this tab (countStylesOnBoard), shown inside the Stakes menu. */
   styleCounts?: Readonly<Record<string, number>>;
+  /**
+   * The player chose the page's Sort By order for this tab (2026-10-24). On a
+   * tab with no heading sort (ALL) that order IS the board, so - like a chosen
+   * heading - it decides the whole list and the featured pin stands down.
+   * Without it, a featured 50 buy-in sat above the 100s under "Stakes: High To
+   * Low". Ignored once a heading is sorted, because the heading then decides.
+   */
+  orderChosen?: boolean;
+  /**
+   * ONE ORDER, TWO CONTROLS (2026-10-24; see lobbySortBridge). A Sort The
+   * Board chip the player pressed in the filter sheet, stamped with a
+   * sequence number so the same chip pressed twice still applies. The board
+   * adopts the matching heading sort (or its default order), so the sheet is
+   * no longer silently outranked by a heading.
+   */
+  requestedOrder?: { key: string; seq: number } | null;
+  /** A heading the player chose, reported so the sheet can light its chip. */
+  onHeadingSort?: (key: string, dir: SortDir) => void;
+  /** The chosen Sort By's own words ("Stakes: High To Low"), announced when it,
+      not a heading, is ordering the board. */
+  orderLabel?: string;
 }
 
 export default function LobbyTable({
@@ -1695,10 +1723,15 @@ export default function LobbyTable({
   selectedVariants,
   onVariantsChange,
   styleChoices,
-  selectedStyles,
+  selectedStyles: savedStyles,
   onStylesChange,
   styleCounts,
+  orderChosen = false,
+  requestedOrder = null,
+  onHeadingSort,
+  orderLabel,
 }: LobbyTableProps) {
+  const selectedStyles = savedStyles?.map(cashTemplateKey);
   /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
      weekly flagship (Sunday 200) keeps its pin all week. Rows that lose the pin
      lose the FEATURED chip too, since the chip says "Pinned To The Top Of The
@@ -1853,6 +1886,26 @@ export default function LobbyTable({
    * header the player had clicked in between. The tab is the only thing that
    * changes the column set, and the column set is the only reason to re-read.
    */
+  /* A sheet chip applies once per press (the seq), never on mount and never
+     when the tab changes - the tab's own remembered heading wins there. */
+  const lastOrderSeqRef = useRef(requestedOrder?.seq ?? 0);
+  useEffect(() => {
+    if (!requestedOrder || requestedOrder.seq === lastOrderSeqRef.current) return;
+    lastOrderSeqRef.current = requestedOrder.seq;
+    const target = headingForOrder(category, requestedOrder.key);
+    const col =
+      target === 'reset' ? undefined : columns.find((c) => c.key === target.key && c.sortable);
+    if (target === 'reset' || !col) {
+      setSort(defaultSortFor(category));
+      setSortChosen(false);
+      writeSort(clubId, category, null);
+      return;
+    }
+    setSort(target);
+    setSortChosen(true);
+    writeSort(clubId, category, target);
+  }, [requestedOrder, category, clubId, columns]);
+
   const lastCategoryRef = useRef(category);
   useEffect(() => {
     if (lastCategoryRef.current === category) return;
@@ -1867,64 +1920,93 @@ export default function LobbyTable({
      seats or status should ever float a game nobody can enter back up between
      two they can. Array.prototype.sort is stable in every engine we ship to,
      so the chosen order survives inside each partition. */
-  const sink = useCallback((rows: LobbyEntry[]) => {
-    /* ONE pass. The previous version called seatFirstJoinable once per row for
+  const sink = useCallback(
+    (rows: LobbyEntry[]) => {
+      /* ONE pass. The previous version called seatFirstJoinable once per row for
        `.some` and then ~2 n log n more times inside a comparator, on an array
        that had just been copied — and copied it again. Partitioning is O(n),
        preserves the incoming order inside each half (which is what the stable
        sort was there for), and evaluates the predicate exactly once per row.
        The identical array reference is returned when nothing needs to sink, so
        the memo below still sees no change. */
-    const pinned: LobbyEntry[] = [];
-    const open: LobbyEntry[] = [];
-    /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
+      /* A chosen heading, or the page's chosen Sort By order on a board with
+         no heading sort, decides the whole list; the pin decorates only the
+         default order. */
+      const orderObeyed = sortChosen || (sort == null && orderChosen);
+      const pinned: LobbyEntry[] = [];
+      const open: LobbyEntry[] = [];
+      /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
        cash table with nobody seated sinks below every table with a game on,
        whatever the chosen sort - and, because the sink runs per variant group
        (see `sorted`), below the tables of ITS OWN game, never into another's. */
-    const empty: LobbyEntry[] = [];
-    const gone: LobbyEntry[] = [];
-    for (const r of rows) {
-      /* FEATURED floats and a dead seat-first game sinks, in one pass.
+      const empty: LobbyEntry[] = [];
+      const gone: LobbyEntry[] = [];
+      for (const r of rows) {
+        /* FEATURED floats and a dead seat-first game sinks, in one pass.
 
          A featured game nobody can enter does NOT float. The host meant "look
          at this game", not "look at this result", and a full table pinned above
          forty joinable ones is worse than not pinning it at all. seatFirstJoinable
          alone is not that test - it returns true for every cash row by design,
          so the status has to be checked here too. */
-      const enterable =
-        seatFirstJoinable(r) &&
-        r.status !== 'full' &&
-        r.status !== 'closed' &&
-        r.status !== 'completed';
-      if (!seatFirstJoinable(r)) gone.push(r);
-      else if (r.featured && enterable && !sortChosen) pinned.push(r);
-      else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
-      else open.push(r);
-    }
-    if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
-    return pinned.concat(open, empty, gone);
-  }, [sortChosen]);
+        const enterable =
+          seatFirstJoinable(r) &&
+          r.status !== 'full' &&
+          r.status !== 'closed' &&
+          r.status !== 'completed';
+        if (!seatFirstJoinable(r)) gone.push(r);
+        else if (r.featured && enterable && !orderObeyed) pinned.push(r);
+        else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
+        else open.push(r);
+      }
+      if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
+      return pinned.concat(open, empty, gone);
+    },
+    [sortChosen, sort, orderChosen]
+  );
 
   const sorted = useMemo(() => {
-    /* GAMES ARE NEVER MIXED (Dan 2026-09-03). On the cash tabs every ordering
-       - the default, or whichever heading the player chose - runs INSIDE the
-       canonical variant groups: all the No Limit tables in stake order, then
-       all the Pineapple, then Short Deck; PLO, then PLO5, PLO6, PLO8o. The
-       group order is fixed; the player's sort and its direction decide the
-       order within each group, and the empty-table sink runs per group. */
+    /* Stakes sorting leads with the selected price direction across variants
+       (Dan 2026-10-23). Canonical variant order breaks ties at each stake;
+       other headings retain their variant groups. */
     const grouped = groupsByVariant(category);
     const col = sort ? columns.find((c) => c.key === sort.key) : undefined;
     const sv = col?.sortValue;
     const dir = sort?.dir === 'desc' ? -1 : 1;
+    const stakesFirst = grouped && col?.key === 'stakes';
+    /* Numeric stakes in the chosen direction; a row with no price goes last
+       both ways. Shared by the stakes-led order and the Sort By Variant
+       order, which lists each variant's stakes the same way. */
+    const byStakes = (a: LobbyEntry, b: LobbyEntry): number => {
+      const aBad = !Number.isFinite(a.stakesValue);
+      const bBad = !Number.isFinite(b.stakesValue);
+      if (aBad !== bBad) return aBad ? 1 : -1;
+      if (!aBad && a.stakesValue !== b.stakesValue) return (a.stakesValue - b.stakesValue) * dir;
+      return 0;
+    };
+    const byCanonicalVariant = (a: LobbyEntry, b: LobbyEntry): number => {
+      const ra = variantRank(a);
+      const rb = variantRank(b);
+      if (ra !== rb) return ra - rb;
+      return ra === UNLISTED_VARIANT_RANK
+        ? String(a.gameLabel).localeCompare(String(b.gameLabel))
+        : 0;
+    };
     const compare = (a: LobbyEntry, b: LobbyEntry): number => {
+      if (stakesFirst) {
+        const s = byStakes(a, b);
+        if (s !== 0) return s;
+      }
       if (grouped) {
-        const ra = variantRank(a);
-        const rb = variantRank(b);
-        if (ra !== rb) return ra - rb;
-        if (ra === 40) {
-          const byName = String(a.gameLabel).localeCompare(String(b.gameLabel));
-          if (byName !== 0) return byName;
-        }
+        const v = byCanonicalVariant(a, b);
+        if (v !== 0) return v;
+        /* SORT BY VARIANT LISTS EACH GAME'S STAKES (2026-10-24). Inside a
+           variant every row ranked equal, so the board kept whatever order the
+           rows arrived in - stakes scattered by player count - and the second
+           tap flipped a direction nothing read. The variant order stays
+           canonical; the stakes inside it follow the chosen direction, Low To
+           High first ("STAKES SHOULD ALWAYS BE ORGANIZED LOW TO HIGH"). */
+        if (col?.key === 'variant') return byStakes(a, b);
       }
       if (!sv) return 0;
       const va = sv(a);
@@ -1939,6 +2021,14 @@ export default function LobbyTable({
         const bBad = !Number.isFinite(vb);
         if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
         if (va !== vb) return (va - vb) * dir;
+        /* THE ALL TAB'S STAKES HEADING (2026-10-24). Two cash games at one
+           price are the same rule as on the cash tabs: "game variations are
+           never to be mixed together", so they meet in canonical variant
+           order instead of the order the rows arrived in. */
+        if (col?.key === 'cost' && a.kind === 'cash' && b.kind === 'cash') {
+          const v = byCanonicalVariant(a, b);
+          if (v !== 0) return v;
+        }
         /* Equal status: the sooner start leads, then the busier game, so a
            Status tap always produces a deliberate order rather than leaving
            ties in whatever order the rows arrived. */
@@ -1956,22 +2046,29 @@ export default function LobbyTable({
       if (!sv) return sink(entries);
       return sink([...entries].sort(compare));
     }
-    /* Sort the whole list, then sink within each variant run so an empty
-       No Limit table never drops below a running Pineapple one. */
+    /* Sink only inside a variant run, also bounded by stake when stakes
+       leads. An empty game must not cross either selected grouping. */
     const ordered = [...entries].sort(compare);
     const out: LobbyEntry[] = [];
     let run: LobbyEntry[] = [];
     let runRank: number | null = null;
     let runLabel = '';
+    let runStakes: number | null = null;
     for (const e of ordered) {
       const rank = variantRank(e);
       const label = String(e.gameLabel);
-      if (runRank !== null && (rank !== runRank || (rank === 40 && label !== runLabel))) {
+      if (
+        runRank !== null &&
+        (rank !== runRank ||
+          (rank === UNLISTED_VARIANT_RANK && label !== runLabel) ||
+          (stakesFirst && !Object.is(e.stakesValue, runStakes)))
+      ) {
         out.push(...sink(run));
         run = [];
       }
       runRank = rank;
       runLabel = label;
+      runStakes = e.stakesValue;
       run.push(e);
     }
     if (run.length) out.push(...sink(run));
@@ -1987,6 +2084,7 @@ export default function LobbyTable({
     setSort(next);
     setSortChosen(true);
     writeSort(clubId, category, next);
+    onHeadingSort?.(next.key, next.dir);
   };
 
   const handleHeaderClick = (col: ColumnDef) => {
@@ -2023,6 +2121,7 @@ export default function LobbyTable({
       setSort(next);
       setSortChosen(true);
       writeSort(clubId, category, next);
+      onHeadingSort?.(next.key, next.dir);
     }
   };
 
@@ -2108,7 +2207,9 @@ export default function LobbyTable({
         <span className="sr-only" role="status" aria-live="polite">
           {sort
             ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${sort.dir === 'asc' ? 'Ascending' : 'Descending'}`
-            : 'Default Order'}
+            : orderChosen && orderLabel
+              ? `Sorted By ${orderLabel}`
+              : 'Default Order'}
         </span>
         <table className="compact-lobby" aria-label="Games">
           <thead>
@@ -2198,6 +2299,12 @@ export default function LobbyTable({
                 data-testid="lobby-game-row"
                 data-id={entry.id}
                 data-kind={entry.kind}
+                data-lightning={entry.kind === 'cash' && entry.game?.lightning ? 'on' : undefined}
+                data-cash-format={
+                  entry.kind === 'cash' && entry.game?.template
+                    ? cashTemplateKey(entry.game.template)
+                    : undefined
+                }
                 data-status={entry.status}
                 data-live={entry.live ? 'true' : 'false'}
                 data-players={entry.players}
@@ -2227,9 +2334,7 @@ export default function LobbyTable({
                       {entry.kind === 'cash' ? (
                         <>
                           {cashTitleLines(entry).subtitle}
-                          {cashTemplateNote(entry.game?.template) && (
-                            <> | {cashTemplateNote(entry.game?.template)}</>
-                          )}
+                          {cashStyleNote(entry) && <> | {cashStyleNote(entry)}</>}
                         </>
                       ) : (
                         entry.variantLabel
@@ -2283,7 +2388,9 @@ export default function LobbyTable({
             ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
                 sort.dir === 'asc' ? 'Ascending' : 'Descending'
               }`
-            : 'Default Order'}
+            : orderChosen && orderLabel
+              ? `Sorted By ${orderLabel}`
+              : 'Default Order'}
         </span>
         {/* The category is on the table so the stylesheet can shed columns per
           BOARD rather than per page width. The wide breakpoints were written

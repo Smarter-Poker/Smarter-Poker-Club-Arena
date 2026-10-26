@@ -208,6 +208,86 @@ try:
     """)
     assert watch_acl == 't', watch_acl
 
+    downline_setup, downline_assertions = (FIXTURE / 'downline-watch.sql').read_text().split('-- BEGIN DOWNLINE ASSERTIONS')
+    query(downline_setup)
+    baseline_access = json.loads(as_viewer("SELECT public.fn_get_table_watch_access('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002');"))
+    assert baseline_access['can_watch'] is False, baseline_access
+    print('baseline-confirmed-active-recursive-agent-refused')
+    # Production order: the function-only migration installs first through the
+    # ordinary route; the queued daily-window file later adds the tables policy.
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024193818_agent_downline_watch_functions_before_window_policy.sql').read_text())
+    functions_only = json.loads(as_viewer("SELECT public.fn_get_table_watch_access('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000002');"))
+    assert functions_only['can_watch'] is True and functions_only['action'] == 'watch', functions_only
+    assert as_viewer("SELECT public.fn_agent_can_watch_table('30000000-0000-0000-0000-000000000004');") == 't'
+    assert as_viewer("SELECT public.fn_agent_can_watch_table('30000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000003');") == 'f'
+    assert query("SELECT count(*) FROM pg_policies WHERE tablename='tables' AND policyname='agent_downline_table_observation';") == '0'
+    print('agent-downline-watch-functions-only-passed')
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024020328_agents_can_watch_every_live_downline_table.sql').read_text())
+    query(downline_assertions)
+    print('agent-downline-watch-native-acceptance-passed')
+    # TablePage bootstrap for a downline table the restrictive arena policy hides.
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261024200812_agent_downline_watch_reads_table_metadata.sql').read_text())
+    query("""
+      CREATE POLICY fixture_restrictive_arena_access ON public.tables AS RESTRICTIVE
+        FOR SELECT TO authenticated USING (false);
+    """)
+    assert as_viewer("SELECT count(*) FROM public.tables WHERE id='30000000-0000-0000-0000-000000000004';") == '0'
+    meta = json.loads(as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000004');"))
+    assert meta['id'] == '30000000-0000-0000-0000-000000000004' and meta['arena']['id'] == meta['club_id'] and meta['tournament_id'] is not None, meta
+    assert as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000005') IS NULL;") == 't'
+    assert as_viewer("SELECT public.fn_agent_watch_table_metadata('30000000-0000-0000-0000-000000000006') IS NULL;") == 't'
+    assert query("SELECT has_function_privilege('anon','public.fn_agent_watch_table_metadata(uuid)','EXECUTE');") == 'f'
+    print('agent-downline-watch-table-metadata-passed')
+
+    # Dan 2026-10-25: "REMOVE ALL OF THE DELETED AND TEST ACCOUNT COMPLETLY".
+    # The search lists real, live players only - and every live horse.
+    query("""
+      SET ROLE postgres;
+      ALTER TABLE public.profiles ADD COLUMN status text, ADD COLUMN is_horse boolean;
+      CREATE TABLE auth.users (
+        id uuid PRIMARY KEY, email text, deleted_at timestamptz, banned_until timestamptz
+      );
+      CREATE FUNCTION public.is_system_user(email text) RETURNS boolean
+        LANGUAGE sql IMMUTABLE AS $is_system$
+        SELECT email IS NULL
+            OR email LIKE '%@hydra.bot'
+            OR email LIKE '%@probe.smarter.poker'
+            OR email LIKE '%@probe.smarter.local'
+            OR email LIKE '%.invalid'
+            OR email LIKE '%@example.com'
+            OR email LIKE '%@example.org'
+            OR email LIKE '%@example.net'
+            OR email LIKE '%@test.local'
+            OR email LIKE 'horse_%@%'
+            OR email LIKE 'samson-%@%';
+      $is_system$;
+      INSERT INTO auth.users (id, email)
+        SELECT id, 'fixture-' || id || '@gmail.com' FROM public.profiles;
+      INSERT INTO public.profiles (id, username, status, is_horse) VALUES
+        ('70000000-0000-0000-0000-000000000001', 'zebrareal', 'active', false),
+        ('70000000-0000-0000-0000-000000000002', 'zebrahorse', 'active', true),
+        ('70000000-0000-0000-0000-000000000003', 'deleted-zebra1', 'deleted', false),
+        ('70000000-0000-0000-0000-000000000004', 'zebragone', 'active', false),
+        ('70000000-0000-0000-0000-000000000005', 'zebrabanned', 'active', false),
+        ('70000000-0000-0000-0000-000000000006', 'zebracert', 'active', false),
+        ('70000000-0000-0000-0000-000000000007', 'zebraqa', 'active', false),
+        ('70000000-0000-0000-0000-000000000008', 'zebraoldhorse', 'deleted', true);
+      INSERT INTO auth.users (id, email, deleted_at, banned_until) VALUES
+        ('70000000-0000-0000-0000-000000000001', 'zebra@gmail.com', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000002', 'horse_zebra@smarter.poker', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000003', 'gone@gmail.com', now(), NULL),
+        ('70000000-0000-0000-0000-000000000004', 'zebragone@gmail.com', now(), NULL),
+        ('70000000-0000-0000-0000-000000000005', 'zebrabanned@gmail.com', NULL, now() + interval '30 days'),
+        ('70000000-0000-0000-0000-000000000006', 'crest-cert@example.invalid', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000007', 'reels-qa@smarter.poker', NULL, NULL),
+        ('70000000-0000-0000-0000-000000000008', 'horse_old@smarter.poker', NULL, NULL);
+    """)
+    query("SET ROLE postgres; " + (ROOT / 'supabase/migrations/20261026011835_player_search_lists_only_real_players.sql').read_text())
+    listed = json.loads(as_viewer("SELECT public.fn_search_players('zebra');"))
+    names = sorted(item['username'] for item in listed['items'])
+    assert names == ['zebrahorse', 'zebrareal'], names
+    assert listed['total'] == 2, listed
+    print('player-search-lists-only-real-players-passed')
     print('player-search-privacy-native-acceptance-passed')
 finally:
     if STARTED and (DATA / 'postmaster.pid').exists():

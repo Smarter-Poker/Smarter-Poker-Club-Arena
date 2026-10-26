@@ -66,6 +66,7 @@ export async function startAssignmentBrowserProof({
   playerId,
   playerAlias,
   evidenceDir,
+  initialAssignment,
 }) {
   validateAssignmentBrowserIdentity(account, session, clubId);
   assert.ok(
@@ -116,7 +117,83 @@ export async function startAssignmentBrowserProof({
     contexts.push(context);
     return { context, page: await context.newPage() };
   }
+  async function saveFromPlayerRecord(actor, actorSession, destinationId, beforeWrite) {
+    assert.match(destinationId, /^[a-f0-9-]{36}$/);
+    const { page: actorPage } = await open(actor, actorSession);
+    await actorPage.goto(new URL(`clubs/${clubId}/members/${playerId}`, base).toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await ensureAcceptedTerms(actorPage);
+    await ensurePlayableProfile(actorPage);
+    const control = actorPage.getByLabel('Assign To Agent', { exact: true });
+    const select = control.getByLabel('Destination Agent', { exact: true });
+    await select.selectOption(destinationId, { timeout: 60_000 });
+    assert.equal(await control.getByRole('button', { name: /Review|Confirm Move/ }).count(), 0);
+    await actorPage.screenshot({
+      path: join(evidenceDir, `player-agent-save-${destinationId}-before.png`),
+      fullPage: true,
+    });
+    let applied;
+    // Record the actual UI-owned request before forwarding it. Never replace
+    // the operation id or manufacture the response returned by production.
+    await actorPage.route('**/rest/v1/rpc/fn_apply_reviewed_club_assignment', async (route) => {
+      const body = route.request().postDataJSON();
+      assert.equal(body.p_club_id, clubId);
+      assert.deepEqual(body.p_member_user_ids, [playerId]);
+      assert.equal(body.p_agent_user_id, destinationId);
+      assert.match(body.p_op_id, /^[a-f0-9-]{36}$/);
+      assert.match(body.p_review_token, /^[a-f0-9]{32}$/);
+      assert.equal(applied, undefined, 'Save issued more than one assignment write');
+      applied = body;
+      await beforeWrite(body);
+      await route.continue();
+    });
+    const response = actorPage.waitForResponse(
+      (response) =>
+        response.url().endsWith('/rpc/fn_apply_reviewed_club_assignment') &&
+        response.request().method() === 'POST',
+      { timeout: 45_000 }
+    );
+    // A missing button must still let the owning fixture cleanup finish.
+    response.catch(() => {});
+    await control.getByRole('button', { name: 'Save', exact: true }).click();
+    const result = await response;
+    assert.ok(result.ok(), `Save refused (${result.status()})`);
+    const receipt = await result.json();
+    assert.equal(receipt.success, true);
+    assert.equal(receipt.operation_id, applied.p_op_id);
+    assert.equal(receipt.moved, 1);
+    // The saved agent disappears from destinations once the upline re-reads.
+    await actorPage.waitForFunction(
+      (id) => {
+        const select = document.querySelector('#mm-assign-target');
+        return (
+          select &&
+          !select.disabled &&
+          select.value === '' &&
+          !select.querySelector(`option[value="${id}"]`)
+        );
+      },
+      destinationId,
+      { timeout: 30_000 }
+    );
+    await actorPage.screenshot({
+      path: join(evidenceDir, `player-agent-save-${destinationId}-after.png`),
+      fullPage: true,
+    });
+    return applied;
+  }
   try {
+    // Exercise the owner fallback before any agent has this player as downline.
+    if (initialAssignment) {
+      await saveFromPlayerRecord(
+        initialAssignment.actor,
+        initialAssignment.session,
+        account.id,
+        initialAssignment.beforeWrite
+      );
+    }
     const { page } = await open(account, session);
     let joined = deferred();
     const scopeChanged = deferred(),
@@ -187,73 +264,7 @@ export async function startAssignmentBrowserProof({
     });
     armed = true;
     return {
-      async saveFromPlayerRecord(actor, actorSession, destinationId, beforeWrite) {
-        assert.match(destinationId, /^[a-f0-9-]{36}$/);
-        const { page: actorPage } = await open(actor, actorSession);
-        await actorPage.goto(new URL(`clubs/${clubId}/members/${playerId}`, base).toString(), {
-          waitUntil: 'domcontentloaded',
-          timeout: 60_000,
-        });
-        await ensureAcceptedTerms(actorPage);
-        await ensurePlayableProfile(actorPage);
-        const control = actorPage.getByLabel('Assign To Agent', { exact: true });
-        const select = control.getByLabel('Destination Agent', { exact: true });
-        await select.selectOption(destinationId, { timeout: 60_000 });
-        assert.equal(await control.getByRole('button', { name: /Review|Confirm Move/ }).count(), 0);
-        await actorPage.screenshot({
-          path: join(evidenceDir, 'player-agent-save-before.png'),
-          fullPage: true,
-        });
-        let applied;
-        // Record the actual UI-owned request before forwarding it. Never replace
-        // the operation id or manufacture the response returned by production.
-        await actorPage.route('**/rest/v1/rpc/fn_apply_reviewed_club_assignment', async (route) => {
-          const body = route.request().postDataJSON();
-          assert.equal(body.p_club_id, clubId);
-          assert.deepEqual(body.p_member_user_ids, [playerId]);
-          assert.equal(body.p_agent_user_id, destinationId);
-          assert.match(body.p_op_id, /^[a-f0-9-]{36}$/);
-          assert.match(body.p_review_token, /^[a-f0-9]{32}$/);
-          assert.equal(applied, undefined, 'Save issued more than one assignment write');
-          applied = body;
-          await beforeWrite(body);
-          await route.continue();
-        });
-        const response = actorPage.waitForResponse(
-          (response) =>
-            response.url().endsWith('/rpc/fn_apply_reviewed_club_assignment') &&
-            response.request().method() === 'POST',
-          { timeout: 45_000 }
-        );
-        // A missing button must still let the owning fixture cleanup finish.
-        response.catch(() => {});
-        await control.getByRole('button', { name: 'Save', exact: true }).click();
-        const result = await response;
-        assert.ok(result.ok(), `Save refused (${result.status()})`);
-        const receipt = await result.json();
-        assert.equal(receipt.success, true);
-        assert.equal(receipt.operation_id, applied.p_op_id);
-        assert.equal(receipt.moved, 1);
-        // The saved agent disappears from destinations once the upline re-reads.
-        await actorPage.waitForFunction(
-          (id) => {
-            const select = document.querySelector('#mm-assign-target');
-            return (
-              select &&
-              !select.disabled &&
-              select.value === '' &&
-              !select.querySelector(`option[value="${id}"]`)
-            );
-          },
-          destinationId,
-          { timeout: 30_000 }
-        );
-        await actorPage.screenshot({
-          path: join(evidenceDir, 'player-agent-save-after.png'),
-          fullPage: true,
-        });
-        return applied;
-      },
+      saveFromPlayerRecord,
       async verifyAfterTransfer() {
         await bounded(
           scopeChanged.promise,

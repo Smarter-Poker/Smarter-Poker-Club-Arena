@@ -16,9 +16,11 @@ vi.mock('../../src/lib/subscribeRealtime', () => ({ subscribeRealtime: f.subscri
 vi.mock('../../src/core/MasterBus', () => ({ masterBus: f }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: f.reportError }));
 import { useMasterBusChannel } from '../../src/hooks/useMasterBusChannel';
+import { __resetRealtimeTransportLossForTests } from '../../src/lib/realtimeTransportLoss';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  __resetRealtimeTransportLossForTests();
   f.admissions = [];
   f.subscribeRealtime.mockImplementation((channel, status, signal) => {
     f.admissions.push({ signal, status });
@@ -167,4 +169,47 @@ it('a pending recovery admission is cancelled before its replacement owns callba
   expect(onSubscriptionStatus.mock.calls).toEqual([['SUBSCRIBED']]);
   unmount();
   expect(f.admissions[1].signal.aborted).toBe(true);
+});
+
+it('reports a reasonless socket drop once for every row channel it fans out to (2026-10-24)', () => {
+  const errors = [vi.fn(), vi.fn()];
+  ['club-members-kings-club', 'club-agents-kings-club'].forEach((channelName, i) =>
+    renderHook(() =>
+      useMasterBusChannel({
+        channelName,
+        table: i ? 'agents' : 'club_members',
+        filter: 'club_id=eq.test',
+        event: '*',
+        onPayload: vi.fn(),
+        onSubscriptionError: errors[i],
+      })
+    )
+  );
+  act(() => f.statuses.forEach((status) => status('CHANNEL_ERROR')));
+  expect(f.reportError.mock.calls.map(([, source]) => source)).toEqual(['Realtime.transport_lost']);
+  for (const error of errors)
+    expect(error).toHaveBeenCalledExactlyOnceWith('CHANNEL_ERROR', undefined);
+
+  // The socket comes back; the next drop is a new outage and is counted.
+  act(() => f.statuses.forEach((status) => status('SUBSCRIBED')));
+  act(() => f.statuses[0]('CHANNEL_ERROR'));
+  expect(f.reportError).toHaveBeenCalledTimes(2);
+});
+
+it('still files a row channel the server refused with a reason', () => {
+  renderHook(() =>
+    useMasterBusChannel({
+      channelName: 'club-data:test',
+      table: 'tables',
+      filter: 'club_id=eq.test',
+      event: '*',
+      onPayload: vi.fn(),
+    })
+  );
+  const mismatch = new Error('mismatch between server and client bindings for postgres changes');
+  act(() => f.statuses[0]('CHANNEL_ERROR', mismatch as never));
+  expect(f.reportError).toHaveBeenCalledExactlyOnceWith(
+    mismatch,
+    'useMasterBusChannel.CHANNEL_ERROR.tables'
+  );
 });

@@ -138,8 +138,8 @@ describe('public action nodes belong to the accepted action, before its mutation
       ...expected.seats,
     ])
       expect(Object.isFrozen(value)).toBe(true);
-    expect(h.controller.getState().actionHistory.every((a) => a.publicNode === undefined)).toBe(
-      true
+    expect(h.controller.getState().actionHistory.map((a) => a.publicNode)).toEqual(
+      h.events.map((event) => event.publicNode)
     );
   });
 
@@ -221,7 +221,7 @@ describe('public action nodes belong to the accepted action, before its mutation
       status: 'unavailable',
       reason: 'invalid_public_state',
     });
-    expect(h.controller.getState().actionHistory[0]).not.toHaveProperty('publicNode');
+    expect(h.controller.getState().actionHistory[0].publicNode).toBe(h.events[0].publicNode);
     spy.mockRestore();
   });
 

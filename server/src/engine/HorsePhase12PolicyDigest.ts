@@ -29,7 +29,7 @@ import {
 import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-digest-v2';
+export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-digest-v4';
 
 /**
  * The code that determines Phase 12 candidate behaviour, as server-relative
@@ -108,20 +108,14 @@ export const HORSE_PHASE12_POLICY_SOURCE_FILES: readonly string[] = Object.freez
  * change a Phase 12 candidate decision or its legal form. */
 export const HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/BrainTelemetry.ts':
+      'write-only feature counters HorseMind notes when a read is corroborated or presumed; it returns nothing any decision reads',
     'src/engine/omaha/OmahaVariantPolicyPack.ts':
       'imported by OmahaVariantEquity only for isOmahaPolicyVariant, which gates the Phase 11 entry (omahaVariantEquity); the Phase 12 sampler calls variantEquityFromShowdowns directly, and the registry reads only Phase 11 pack versions from it',
     'src/engine/CryptoRandom.ts':
       'the physical deck shuffle of a live hand (PokerEngine.Deck); no policy or sampler call reads it, the sampler uses the HorseEval fast random stream',
     'src/engine/HorseTournamentContinuation.ts':
       'imported by HorseEval for the Phase 8 tournament continuation capture (captureContinuation), which no Phase 12 policy or sampler call requests',
-    'src/engine/HorseDecisionEffects.ts':
-      'HorseMind decision-effect bookkeeping; it holds no value a Phase 12 decision reads',
-    'src/engine/HorseMindHandIdentity.ts':
-      'HorseMind hand-identity binding; it holds no value a Phase 12 decision reads',
-    'src/engine/HorsePlanHandIdentity.ts':
-      'HorseMind plan hand-identity binding; it holds no value a Phase 12 decision reads',
-    'src/engine/HorseDecisionHandBinding.ts':
-      'hand-binding records under the identities above; it holds no value a Phase 12 decision reads',
   });
 
 /** Reads a server-relative source path. Throws on failure. */

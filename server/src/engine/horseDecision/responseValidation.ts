@@ -670,8 +670,9 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
     const variant = String(expectedVariant ?? '').toLowerCase();
     const pairedBoardFold =
       transition.after.action === 'fold' &&
-      !!transition.before &&
-      ['call', 'raise', 'all_in'].includes(transition.before.action) &&
+      // `previous` is the validated predecessor, equal to transition.before.
+      previous !== null &&
+      ['call', 'raise', 'all_in'].includes(previous.action) &&
       (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
     if (
       transition.node === 'wager_rules' &&

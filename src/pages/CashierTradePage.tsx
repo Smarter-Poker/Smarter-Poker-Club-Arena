@@ -1809,7 +1809,13 @@ function CashierTradeWorkspace() {
 
   /** Download the filtered book as a CSV, every page the server will give. */
   const exportHistory = useCallback(async () => {
-    if (!user?.id || !clubUuid || historyExporting) return;
+    if (!user?.id || !clubUuid || !roleResolved || historyExporting) return;
+    const owningView = transferView.current;
+    const authorityEpoch = transferAuthorityEpoch.current;
+    const isCurrentExport = () =>
+      isMounted.current &&
+      transferView.current === owningView &&
+      transferAuthorityEpoch.current === authorityEpoch;
     const viewer = user.id;
     const club = clubUuid;
     setHistoryExporting(true);
@@ -1820,6 +1826,7 @@ function CashierTradeWorkspace() {
       let truncated = false;
       let before: { at: string; id: string } | null = null;
       while (rows.length < HISTORY_EXPORT_CAP) {
+        if (!isCurrentExport()) return;
         const { data, error } = await supabase.rpc('fn_cashier_history_feed', {
           p_club_id: club,
           p_scope: historyBook,
@@ -1832,6 +1839,7 @@ function CashierTradeWorkspace() {
           p_before_id: before?.id ?? null,
           p_limit: pageSize + 1,
         });
+        if (!isCurrentExport()) return;
         if (error) throw error;
         const page = (data || []) as HistoryFeedRow[];
         for (const raw of page.slice(0, pageSize)) {
@@ -1856,7 +1864,7 @@ function CashierTradeWorkspace() {
         before = { at: last.created_at, id: last.id };
         if (rows.length >= HISTORY_EXPORT_CAP) truncated = true;
       }
-      if (!isMounted.current) return;
+      if (!isCurrentExport()) return;
       const csv = toCsv(
         [
           'Date',
@@ -1879,13 +1887,15 @@ function CashierTradeWorkspace() {
       const saved = await downloadCsv(
         `transaction-history-${book}-${historyKind}-${historyRange}-${stamp}.csv`,
         csv,
-        () => isMounted.current
+        isCurrentExport
       );
+      if (!isCurrentExport()) return;
       if (!saved) toast?.error?.('This Device Could Not Save The File');
       else if (truncated)
         toast?.success?.(`Downloaded The Newest ${HISTORY_EXPORT_CAP.toLocaleString()} Entries`);
       else toast?.success?.(`Downloaded ${rows.length.toLocaleString()} Entries`);
     } catch (e) {
+      if (!isCurrentExport()) return;
       reportError(e, 'CashierTradePage.historyExport');
       if (isMounted.current) toast?.error?.('The Transaction History Could Not Be Downloaded');
     } finally {
@@ -1894,6 +1904,7 @@ function CashierTradeWorkspace() {
   }, [
     user?.id,
     clubUuid,
+    roleResolved,
     historyExporting,
     historyBook,
     historyKind,
@@ -5149,7 +5160,7 @@ function CashierTradeWorkspace() {
                 <button
                   type="button"
                   className={styles.classicLink}
-                  disabled={historyExporting || !isOnline}
+                  disabled={historyExporting || !roleResolved || !isOnline}
                   aria-busy={historyExporting}
                   onClick={() => void exportHistory()}
                 >

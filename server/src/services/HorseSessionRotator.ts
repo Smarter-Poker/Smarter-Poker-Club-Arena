@@ -1062,7 +1062,7 @@ export class HorseSessionRotator {
      * A booking counts as one of the four games only inside the hour before
      * it starts (migration 20260906144448, HorseGameLoad.ts). A horse can
      * therefore hold four cash seats with a tournament two hours out, and
-     * the fifth LIVE seat is still refused at the start. A person with a
+     * its paid tournament entry is honored at the start. A person with a
      * tournament in an hour finishes the session they have been in longest
      * and gets up in good time; this is the horse doing the same. Outside
      * the realism cap for the same reason the lone stand is: a commitment,
@@ -1662,13 +1662,18 @@ export class HorseSessionRotator {
       const tid = String(row.tournament_id ?? '');
       if (!tid || seen.has(`${uid}|${tid}`)) continue;
       seen.add(`${uid}|${tid}`);
-      if (seatedTournaments.get(uid)?.has(tid)) continue;
+      // A pre-start chair is already part of liveSeatsTotal, but its booking
+      // still supplies the start time for finishing an excess cash session.
+      // Dropping the whole row loses that timing as soon as a chair is sold.
+      const seatAlreadyCounted = seatedTournaments.get(uid)?.has(tid) === true;
       const t = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
       const start = t?.start_time ? Date.parse(t.start_time) : NaN;
       if (!bookingsByHorse.has(uid)) bookingsByHorse.set(uid, []);
-      bookingsByHorse
-        .get(uid)!
-        .push({ tournamentId: tid, startMs: Number.isFinite(start) ? start : null });
+      bookingsByHorse.get(uid)!.push({
+        tournamentId: tid,
+        startMs: Number.isFinite(start) ? start : null,
+        seatAlreadyCounted,
+      });
     }
     if (bookingsByHorse.size === 0) return 0;
 

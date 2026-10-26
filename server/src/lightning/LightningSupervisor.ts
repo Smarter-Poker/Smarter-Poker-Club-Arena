@@ -636,7 +636,10 @@ export class LightningSupervisor {
         ? {
             startHand: (hand) => {
               hosting.startHand(
-                hand,
+                // The front table the forming pass just checked the lease on:
+                // the host reads its rules alongside begin_dealing (a hint the
+                // bind confirms or overrules).
+                { ...hand, hostTableHint: hand.hostTableHint ?? this.cachedFrontTable(clusterId) },
                 worker.currentConfig,
                 (playerId) => {
                   worker.wake(playerId);
@@ -662,6 +665,13 @@ export class LightningSupervisor {
         : {}),
     });
     return worker;
+  }
+
+  /** The cached front table, if still fresh; never reads. */
+  private cachedFrontTable(clusterId: string): string | null {
+    const nowMs = (this.deps.now?.() ?? new Date()).getTime();
+    const cached = this.frontTables.get(clusterId);
+    return cached && nowMs - cached.at < FRONT_TABLE_TTL_MS ? cached.tableId : null;
   }
 
   /** The Cluster's front table, cached briefly (the host table every hand binds to). */

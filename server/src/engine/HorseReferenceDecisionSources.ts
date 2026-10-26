@@ -46,6 +46,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the NLH premium-aggression and dominated-hand 3-bet fold rules applied to the final decision after every other layer (Dan 2026-10-25)',
     'src/engine/HorsePloPairedBoardFold.ts':
       'the PLO4/PLO5/PLO6 paired-board fold applied to the final decision after every other layer (Dan 2026-10-25)',
+    'src/engine/HorseShortAllInCallFloor.ts':
+      'the tournament short all-in call floor (under 3BB shove, 20BB+ horse calls), the last action rule after every other layer (Dan 2026-10-26)',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
     'src/engine/HorseContinuation.ts':
@@ -83,6 +85,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the original public observation time windows that qualify individual read history and cutoff coverage',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
+    'src/engine/HorseRiverCallEvidence.ts':
+      'the public river-call category eligibility and confidence boundary used by the reference opponent read',
     'src/engine/HorseObserverReadContext.ts':
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
     'src/engine/horseDecision/ownPublicHistory.ts':

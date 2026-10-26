@@ -8,6 +8,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HorseMind } from './HorseMind.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
+import {
+  riverCallCategoryIsUsable,
+  riverCallConfidenceAboveBaseline,
+} from './HorseRiverCallEvidence.js';
 import { seedFastRandom } from './HorseEval.js';
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 
@@ -23,7 +27,15 @@ type Shown = { user_id: string; mucked: boolean; hand_name?: string };
 let handSeq = 0;
 const feed = (actions: Act[], showdown: Shown[] | null, times = 1) => {
   for (let i = 0; i < times; i++)
-    HorseMind.observeHandComplete(`rc:${++handSeq}`, actions as never, 2, showdown);
+    HorseMind.observeHandComplete(
+      `rc:${++handSeq}`,
+      actions as never,
+      2,
+      showdown,
+      'holdem:hu',
+      false,
+      { variant: 'nlh', boardCount: 1 }
+    );
 };
 /** bettor bets the river, caller calls, both shown. */
 const calledRiver = (caller: string, callerHand: string, mucked = false) =>
@@ -41,20 +53,72 @@ const calledRiver = (caller: string, callerHand: string, mucked = false) =>
 beforeEach(() => HorseMind.reset());
 
 describe('river call read: observation', () => {
+  it.each([
+    undefined,
+    { variant: 'plo8', boardCount: 1 },
+    { variant: 'flo8', boardCount: 1 },
+    { variant: 'nlh', boardCount: 2 },
+    { variant: 'plo5', boardCount: 3 },
+    { variant: 'unknown', boardCount: 1 },
+  ])('does not infer weak high-only calls from incomplete categories: %j', (context) => {
+    const [a, s] = calledRiver('cc', 'Pair');
+    HorseMind.observeHandComplete(
+      `excluded:${++handSeq}`,
+      a as never,
+      2,
+      s,
+      'omaha:hu',
+      false,
+      context
+    );
+    expect(HorseMind.getStats('cc')?.riverCallSD ?? 0).toBe(0);
+    expect(riverCallCategoryIsUsable(context)).toBe(false);
+  });
+
+  it('keeps unknown categories out of the denominator', () => {
+    feed(...calledRiver('cc', ''));
+    feed(...calledRiver('cc', 'unrecognised'));
+    expect(HorseMind.getStats('cc')?.riverCallSD ?? 0).toBe(0);
+  });
+
+  it('requires sufficient evidence above the appropriate family baseline', () => {
+    expect(riverCallConfidenceAboveBaseline(11, 11, 0.4)).toBe(false);
+    expect(riverCallConfidenceAboveBaseline(12, 6, 0.4)).toBe(false);
+    expect(riverCallConfidenceAboveBaseline(12, 8, 0.4)).toBe(true);
+    expect(riverCallConfidenceAboveBaseline(12, 1, 0.04)).toBe(false);
+    expect(riverCallConfidenceAboveBaseline(12, 3, 0.04)).toBe(true);
+    for (const [n, w] of [
+      [NaN, 1],
+      [Infinity, 1],
+      [12, -1],
+      [12, 13],
+    ])
+      expect(riverCallConfidenceAboveBaseline(n, w, 0.4)).toBe(false);
+  });
+
+  it("does not borrow hold'em calls for an Omaha decision with no scoped sample", () => {
+    feed(...calledRiver('cc', 'Pair'), 12);
+    expect(HorseMind.riverCallLightTendency('cc', 0.4)).toBe(1);
+    HorseMind.setDecisionScope('omaha:hu', 'plo5');
+    expect(HorseMind.riverCallLightTendency('cc', 0.04)).toBeNull();
+    HorseMind.setDecisionScope('holdem:hu', 'nlh');
+    expect(HorseMind.riverCallLightTendency('cc', 0.4)).toBe(1);
+  });
+
   it('counts a shown river call once, and a one-pair-or-worse hand as light', () => {
     for (const name of ['Pair', 'High Card', 'One Pair']) feed(...calledRiver('cc', name));
     for (const name of ['Two Pair', 'Flush']) feed(...calledRiver('cc', name));
     const s = HorseMind.getStats('cc')!;
     expect(s.riverCallSD).toBe(5);
     expect(s.riverCallSDWeak).toBe(3);
-    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(3 / 5, 5);
+    expect(HorseMind.riverCallLightTendency('cc')).toBeNull();
     // The bettor's own line is the V16 read, never a river call.
     expect(HorseMind.getStats('bettor')?.riverCallSD ?? 0).toBe(0);
   });
 
-  it('is null under five shown calls', () => {
-    feed(...calledRiver('cc', 'Pair'), 4);
-    expect(HorseMind.getStats('cc')!.riverCallSD).toBe(4);
+  it('is null under twelve shown calls', () => {
+    feed(...calledRiver('cc', 'Pair'), 11);
+    expect(HorseMind.getStats('cc')!.riverCallSD).toBe(11);
     expect(HorseMind.riverCallLightTendency('cc')).toBeNull();
     feed(...calledRiver('cc', 'Pair'));
     expect(HorseMind.riverCallLightTendency('cc')).toBe(1);
@@ -167,22 +231,31 @@ describe('river call read: observation', () => {
 
   it('is idempotent per hand key', () => {
     const [a, s] = calledRiver('cc', 'Pair');
-    HorseMind.observeHandComplete('dupe:rc', a as never, 2, s);
-    HorseMind.observeHandComplete('dupe:rc', a as never, 2, s);
+    HorseMind.observeHandComplete('dupe:rc', a as never, 2, s, 'holdem:hu', false, {
+      variant: 'nlh',
+      boardCount: 1,
+    });
+    HorseMind.observeHandComplete('dupe:rc', a as never, 2, s, 'holdem:hu', false, {
+      variant: 'nlh',
+      boardCount: 1,
+    });
     expect(HorseMind.getStats('cc')!.riverCallSD).toBe(1);
   });
 
   it('lands in the scoped bucket too, and survives the import path', () => {
     const [a, s] = calledRiver('cc', 'Pair');
     for (let i = 0; i < 5; i++)
-      HorseMind.observeHandComplete(`scoped:${i}`, a as never, 2, s, 'holdem:hu');
+      HorseMind.observeHandComplete(`scoped:${i}`, a as never, 2, s, 'holdem:hu', false, {
+        variant: 'nlh',
+        boardCount: 1,
+      });
     expect(HorseMind.getScopedStats('cc', 'holdem:hu')).toMatchObject({
       riverCallSD: 5,
       riverCallSDWeak: 5,
     });
     HorseMind.reset();
-    HorseMind.importStats([{ user_id: 'cc', hands: 9, riverCallSD: 7, riverCallSDWeak: 4 }]);
-    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(4 / 7, 5);
+    HorseMind.importStats([{ user_id: 'cc', hands: 9, riverCallSD: 14, riverCallSDWeak: 8 }]);
+    expect(HorseMind.riverCallLightTendency('cc')).toBeCloseTo(8 / 14, 5);
   });
 });
 
@@ -258,10 +331,10 @@ describe('river call read: decision', () => {
     }
     return bets / trials;
   }
-  /** Five shown river calls each: one light caller, one who only calls strong. */
+  /** Twelve shown river calls each: one light caller, one who only calls strong. */
   function seedReads() {
-    feed(...calledRiver('light-caller', 'Pair'), 5);
-    feed(...calledRiver('strong-caller', 'Two Pair'), 5);
+    feed(...calledRiver('light-caller', 'Pair'), 12);
+    feed(...calledRiver('strong-caller', 'Two Pair'), 12);
     expect(HorseMind.riverCallLightTendency('light-caller')).toBe(1);
     expect(HorseMind.riverCallLightTendency('strong-caller')).toBe(0);
   }

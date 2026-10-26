@@ -611,7 +611,11 @@ describe('PLO6 final river discipline receipt', () => {
         decision: node === 'wager_rules' ? { ...decision, action: to, amount } : decision,
       })).decision;
     }
-    return horseDecisionReceiptIsValid(graph.finish(decision), variant);
+    const { hero, state } = jointPolicyFixture('plo6', 1, 'cash', 'river');
+    return horseDecisionReceiptIsValid(graph.finish(decision), variant, {
+      player: hero,
+      gameState: state,
+    });
   }
   it('admits PLO6 raise and shove reductions to a priced call', () => {
     expect(reduction('plo6', 'raise', 'call', 40)).toBe(true);

@@ -1097,9 +1097,9 @@
 
   .pot-display__amount {
     font-size: 0.78rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
   }
 
   .pot-display__side-pots {
@@ -1113,9 +1113,9 @@
   }
 
   .pot-display__side-pot-amount {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
   }
 }
 

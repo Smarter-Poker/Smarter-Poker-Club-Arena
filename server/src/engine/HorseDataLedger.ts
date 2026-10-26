@@ -2037,6 +2037,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Hold em premium aggression'
   ),
   receipt(
+    'short_all_in_call_floor',
+    'HorseLogic.decide (HorseShortAllInCallFloor)',
+    'Tournament fold facing an all in under 3 big blinds with 20+ big blinds behind turned into a call',
+    'Short all-in call floor'
+  ),
+  receipt(
+    'short_all_in_call_floor_commit',
+    'ServerTableEngineTurns.scheduleHorseAction (HorseShortAllInCallFloor)',
+    'The same floor at the commit door, after an authority withdrawal or a liveness fallback produced the fold',
+    'Short all-in call floor'
+  ),
+  receipt(
     'plo_paired_board_fold',
     'HorseLogic.decide (HorsePloPairedBoardFold)',
     'PLO4/PLO5/PLO6 call, raise or jam without a full house on a paired flop, turn or river turned into a fold',

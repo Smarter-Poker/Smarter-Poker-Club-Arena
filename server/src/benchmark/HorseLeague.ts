@@ -718,7 +718,10 @@ export function playHand(
         } finally {
           HorseMind.setDecisionScope(previousScope);
         }
-        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope);
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope, false, {
+          variant: gameVariant,
+          boardCount: 1,
+        });
       });
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */

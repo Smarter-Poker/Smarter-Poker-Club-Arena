@@ -1791,7 +1791,12 @@ export class LiveHorseDecisionWorkerClient {
         delete message.decision.jointPolicy;
         noteFire('phase13_shadow_receipt_binding_dropped');
       }
-      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
+      if (
+        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant, {
+          player: active.request.player,
+          gameState: active.request.gameState,
+        })
+      ) {
         this.refuseDecision(
           active,
           message,

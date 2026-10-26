@@ -235,6 +235,7 @@ describe('CashierTradePage club load ordering', () => {
     rejectRecovery = false;
     slugLookup.gate = null;
     channelOptions.length = 0;
+    downloads.calls.length = 0;
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
@@ -952,6 +953,78 @@ describe('CashierTradePage club load ordering', () => {
       expect(within(panel).getAllByRole('button', { name: /^Open Receipt For/ })).toHaveLength(1)
     );
   });
+
+  it.each(['role change', 'unreadable authority'] as const)(
+    'retires a pending history export after %s and allows a verified retry',
+    async (invalidation) => {
+      let failAuthority = false;
+      installHistoryTables(
+        () =>
+          (failAuthority
+            ? Promise.resolve({ data: null, error: new Error('authority unavailable') })
+            : Promise.resolve({ data: { role: 'owner', chip_balance: 250 }, error: null })) as never
+      );
+      const exporting = deferred<{ data: ReturnType<typeof historyEntry>[]; error: null }>();
+      let exportReads = 0;
+      installRpc((name, args) => {
+        if (name === 'fn_cashier_history_summary')
+          return Promise.resolve({ data: clubHistoryTotals, error: null });
+        if (name === 'fn_cashier_history_feed') {
+          if (args.p_limit === 251) {
+            exportReads++;
+            return exportReads === 1
+              ? exporting.promise
+              : Promise.resolve({ data: [historyEntry()], error: null });
+          }
+          return Promise.resolve({ data: [historyEntry()], error: null });
+        }
+        return Promise.resolve({ data: [], error: null });
+      });
+      const panel = await openHistory();
+      fireEvent.click(within(panel).getByRole('button', { name: 'Download These Transactions' }));
+      await waitFor(() => expect(exportReads).toBe(1));
+      await act(async () => {
+        if (invalidation === 'role change') {
+          const handlers = vi
+            .mocked(masterBus.subscribe)
+            .mock.calls.filter(([event]) => event === 'MEMBER_ROLE_CHANGED')
+            .map(([, handler]) => handler as (payload: unknown) => void);
+          for (const handler of handlers)
+            handler({ clubId: CLUB_ID, userId: USER_ID, newRole: 'player' });
+        } else {
+          failAuthority = true;
+          channelOptions
+            .filter((options) => options.channelName?.startsWith('cashier-member-authority:'))
+            .at(-1)!.onSubscriptionStatus!('SUBSCRIBED');
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      });
+      await within(panel).findByRole('alert');
+      await act(async () => {
+        // A full page would start another request unless invalidation retires
+        // the export before consuming this response.
+        exporting.resolve({
+          data: Array.from({ length: 251 }, (_, index) => historyEntry(index)),
+          error: null,
+        });
+        await exporting.promise;
+      });
+      expect(exportReads).toBe(1);
+      expect(downloads.calls).toHaveLength(0);
+      expect(toastMocks.success).not.toHaveBeenCalledWith(expect.stringMatching(/Downloaded/));
+      expect(
+        within(panel).getByRole('button', { name: 'Download These Transactions' })
+      ).toBeDisabled();
+      failAuthority = false;
+      fireEvent.click(within(panel).getByRole('button', { name: 'Retry', exact: true }));
+      await screen.findByText('Balances Synchronized');
+      const download = within(panel).getByRole('button', { name: 'Download These Transactions' });
+      await waitFor(() => expect(download).toBeEnabled());
+      fireEvent.click(download);
+      await waitFor(() => expect(downloads.calls).toHaveLength(1));
+      expect(exportReads).toBe(2);
+    }
+  );
 
   it('offers Retry when the live authority check cannot be read', async () => {
     let failAuthority = false;

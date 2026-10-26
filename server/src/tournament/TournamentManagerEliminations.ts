@@ -1054,7 +1054,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // These busts have been resolved, so their old wait cannot
               // trigger a successor. Any untouched batch keeps a fresh clock.
               recordBustProgress();
-              return; // everyone bought back in; nobody is eliminated this pass
+              // Everyone bought back in; nobody is eliminated this pass. The
+              // pass goes on to its later stages - balancing above all - and
+              // never returns from the sweep here (see A REBUY WINDOW DOES NOT
+              // STARVE THE BALANCER below).
+              break bustStage;
             }
           }
 
@@ -1149,7 +1153,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
                 recordBustProgress();
               }
-              return;
+              /* A REBUY WINDOW DOES NOT STARVE THE BALANCER (Dan, 2026-10-26:
+                 "TABLES NEED TO ALWAYS BE BALANCED 100% OF THE TIME NO MATTER
+                 WHAT"). This was `return`: the whole sweep ended here, the
+                 cursor stayed at the bust stage, and balanceStage - the only
+                 caller of checkTableBalance - never ran. In a rebuy or Free Buy
+                 event busts arrive every few seconds and each one holds a
+                 30-second rebuy window, so almost every sweep found nothing but
+                 open windows and stopped here. Production 2026-10-26: Diamond
+                 Arena Sunrise Bounty a5741141 sat 3-4 players apart for half an
+                 hour (13:00-13:28 UTC), the Midway twin 3675640e was unbalanced
+                 in 98% of 10-second samples, and only 9 balance moves were made
+                 platform wide in 75 minutes. The open windows stay open (the
+                 delayed wake above re-reads them when they close); the pass goes
+                 on to its later stages, exactly as it already did when some of
+                 the batch was recorded and the rest was still deciding. Players
+                 deciding a rebuy still count as playing, so the finish stage
+                 cannot end the event on them. Same class of defect as the
+                 2026-09-12 backlog return below. */
+              break bustStage;
             }
           }
 

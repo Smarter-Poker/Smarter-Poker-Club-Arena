@@ -483,7 +483,44 @@ export class LightningRegistry {
       } catch {
         /* a listener must never take the registry down */
       }
+    } else if (info.sockets === 1 && !info.clusterId) {
+      this.learnRoomCluster(roomId, info);
     }
+  }
+
+  /**
+   * A ROOM WITH A SOCKET ALWAYS LEARNS ITS CLUSTER (2026-10-26). Matching now
+   * counts a player present only through their room (LightningPresence:
+   * "present in the room"), and a room reports presence only once its Cluster
+   * is known. `authorize` learns it from the owner row; when that one read
+   * failed, the room used to learn it from its first hand - which a player
+   * withheld for want of presence would never be dealt. So a socket arriving
+   * in such a room asks again, once per socket session, and the arrival is
+   * then reported exactly as a socket arriving in a known room is.
+   */
+  private learnRoomCluster(roomId: string, info: RoomInfo): void {
+    const session = info.socketSession;
+    let owner: Promise<{ playerId: string; clusterId: string } | null>;
+    try {
+      owner = this.roomOwner(roomId);
+    } catch {
+      return;
+    }
+    void owner
+      .then((o) => {
+        if (this.rooms.get(roomId) !== info || info.clusterId || info.socketSession !== session)
+          return;
+        if (!o || o.playerId !== info.userId || !isUuid(o.clusterId)) return;
+        info.clusterId = o.clusterId;
+        if (info.sockets === 0) return;
+        this.reportPresence('reconnected', o.clusterId, info.userId);
+        try {
+          this.arrivalListener?.(o.clusterId);
+        } catch {
+          /* a listener must never take the registry down */
+        }
+      })
+      .catch(() => undefined /* still unknown: the next socket session asks again */);
   }
 
   disconnect(roomId: string, userId: string): void {
@@ -535,7 +572,8 @@ export class LightningRegistry {
   private connectedAtAnchor(clusterId: string, userId: string): boolean {
     if (!this.anchorPresence) return false;
     try {
-      return this.anchorPresence.snapshot(clusterId).connected.includes(userId);
+      // The presence door's view (connected anywhere), not matching's.
+      return this.anchorPresence.snapshot(clusterId).connectedAnywhere.includes(userId);
     } catch {
       // A presence read that fails vouches for nobody: the room's absence stands.
       return false;
@@ -745,11 +783,19 @@ export class LightningRegistry {
     }
   }
 
+  /**
+   * RESYNC ALWAYS SAYS WHERE THE CLUSTER STANDS (2026-10-26). The status is
+   * re-sent on every (re)connect and RESYNC, INCLUDING null. A hold's end is
+   * told by a single `status: null` frame (setClusterStatus); this used to
+   * return early when there was no status, so a tab that missed that one frame
+   * (asleep, reconnecting, a second device) kept showing "Lightning Is Ending"
+   * for a Cluster that was forming again. Every room is told alike.
+   */
   private rePushClusterStatus(roomId: string, userId: string): void {
     const info = this.rooms.get(roomId);
     if (!info || info.userId !== userId) return;
     const cluster = info.clusterId ?? this.hostByRoom.get(roomId)?.clusterId ?? null;
-    if (!cluster || !this.clusterStatuses.has(cluster)) return;
+    if (!cluster) return;
     this.sendUserEvent(roomId, userId, this.clusterStatusFrame(cluster));
   }
 
@@ -1000,11 +1046,15 @@ export class LightningHosting {
           config: config.autoRebuy,
           ...settled,
         }),
+      // SETTLED IS FREE (2026-10-26): the Cluster runs its next pass the
+      // moment the settlement commits and the hand's players are released,
+      // not after the post-commit drain and the receipt (onFinished). Only a
+      // committed settlement wakes; an abandon never does.
+      onSettled: () => wake(),
       onFinished: (h) => {
         this.deps.observers?.finished(h);
         registry.unregister(h);
         this.noteOutcome(h.clusterId, h.lifecycle);
-        if (h.lifecycle === 'complete') wake();
       },
       ...this.deps.hostOptions,
     });

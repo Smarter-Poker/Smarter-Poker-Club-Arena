@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBetween } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 
@@ -35,9 +36,12 @@ describe('a migration reaches production only from protected main', () => {
 
   it('the merged-but-not-live remedy names the applier, not the MCP', () => {
     const src = read('scripts/ci/check-migrations-are-live.mjs');
-    const at = src.indexOf('These are in the repository and not in the database.');
-    expect(at).toBeGreaterThan(-1);
-    const remedy = src.slice(at, at + 600);
+    // The remedy paragraph, bounded by its own first and last sentences.
+    const remedy = sliceBetween(
+      src,
+      'These are in the repository and not in the database.',
+      'History is never deleted.'
+    );
     expect(remedy).toContain('apply-merged-migration');
     expect(remedy).not.toMatch(/Apply each one with the[\s\S]{0,40}Supabase MCP apply_migration/);
   });

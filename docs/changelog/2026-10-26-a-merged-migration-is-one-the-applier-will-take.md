@@ -52,3 +52,24 @@ closed grandfather list, the strict comment rule, the CONCURRENTLY preamble,
 the applier's use of the shared rule, the bounded wait, the queue and job
 budgets). All 28 test files that read the applier, its workflow or the
 preamble rule pass (1,236 tests), plus `contract-index-recovery.test.mjs`.
+
+## Follow-up: the native installer fixtures
+
+Accounting shard 1 on the first push failed `test_launch_reset_installer.py`.
+Its readiness-refusal case expects the installer to refuse a frozen database
+and exit, and the new wait held it for 12 minutes past the fixture's 40 s
+command budget. Both wait values may now be shortened, and only shortened,
+through `APPLY_DDL_ADMISSION_WAIT_MS` / `APPLY_DDL_ADMISSION_POLL_MS`. No
+workflow sets either, which the unit test asserts.
+
+- `test_launch_reset_installer.py`: the refusal case uses a 1.5 s wait and
+  still asserts nothing sent and exit 1. A new case releases the freeze
+  during a 20 s wait and asserts that the same run installs the file once,
+  with exact history.
+- `maintenance-thaw-repair/qualify.py` has the same immediate-refusal
+  expectation and gets the same shortened wait.
+
+Run locally on native PostgreSQL 16, as an unprivileged user: the installer
+fixture passed through both refusal cases and both new cases, then stopped at
+its PostgreSQL 17-only pruner sub-check (CI runs 17). The thaw-repair fixture
+qualified completely.

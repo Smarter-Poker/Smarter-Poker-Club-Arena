@@ -427,12 +427,21 @@ console.log(
 // The bounded wait for a refusal that releases on its own. The applier job's
 // timeout (apply-merged-migration.yml) carries this budget plus the queue
 // wait above; tests/unit/aMergedMigrationIsInstallable.test.ts pins both.
-const DDL_ADMISSION_WAIT_MS = 12 * 60_000;
-const DDL_ADMISSION_POLL_MS = 15_000;
+const DDL_ADMISSION_WAIT_MS = shorterOrDefault('APPLY_DDL_ADMISSION_WAIT_MS', 12 * 60_000);
+const DDL_ADMISSION_POLL_MS = shorterOrDefault('APPLY_DDL_ADMISSION_POLL_MS', 15_000);
+// The native installer fixture shortens both so a refusal test does not sit
+// out twelve minutes. An override may only SHORTEN them; nothing in a
+// workflow sets either variable, so production always gets the defaults.
+function shorterOrDefault(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 && value <= fallback ? value : fallback;
+}
 async function waitForDdlAdmission(first) {
   const deadline = Date.now() + DDL_ADMISSION_WAIT_MS;
   let last = first;
-  console.log(`[apply]   the database refuses DDL now: ${first}. Waiting up to ${DDL_ADMISSION_WAIT_MS / 60_000} minutes for it to admit the file; nothing is sent meanwhile.`);
+  console.log(`[apply]   the database refuses DDL now: ${first}. Waiting up to ${Math.round(DDL_ADMISSION_WAIT_MS / 1000)} s for it to admit the file; nothing is sent meanwhile.`);
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, DDL_ADMISSION_POLL_MS));
     last = await refusalNow();
@@ -496,7 +505,7 @@ async function refusalNow() {
       refused(
         DRY_RUN
           ? `the database would refuse DDL now: ${still}. Nothing was sent. Do not loop.`
-          : `the database still refused DDL after waiting ${DDL_ADMISSION_WAIT_MS / 60_000} minutes: ${still}. Nothing was sent. Dispatch again once it is released; do not loop.`
+          : `the database would refuse DDL now, after waiting ${Math.round(DDL_ADMISSION_WAIT_MS / 1000)} s for it: ${still}. Nothing was sent. Dispatch again once it is released; do not loop.`
       );
     }
   }

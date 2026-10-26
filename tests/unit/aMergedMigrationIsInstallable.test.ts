@@ -134,8 +134,18 @@ describe('the applier uses that rule and waits out a refusal that releases', () 
   });
 
   it('waits a bounded time on the database answer and sends nothing meanwhile', () => {
-    expect(applier).toMatch(/const DDL_ADMISSION_WAIT_MS = 12 \* 60_000;/);
-    expect(applier).toMatch(/const DDL_ADMISSION_POLL_MS = 15_000;/);
+    expect(applier).toContain(
+      "const DDL_ADMISSION_WAIT_MS = shorterOrDefault('APPLY_DDL_ADMISSION_WAIT_MS', 12 * 60_000);"
+    );
+    expect(applier).toContain(
+      "const DDL_ADMISSION_POLL_MS = shorterOrDefault('APPLY_DDL_ADMISSION_POLL_MS', 15_000);"
+    );
+    // An override may only shorten the wait, and no workflow sets one.
+    expect(applier).toContain('value <= fallback ? value : fallback');
+    const workflows = readdirSync(join(ROOT, '.github/workflows'))
+      .map((f) => readFileSync(join(ROOT, '.github/workflows', f), 'utf8'))
+      .join('\n');
+    expect(workflows).not.toContain('APPLY_DDL_ADMISSION_');
     expect(applier).toContain('last = await refusalNow();');
     // A check-only run never waits.
     expect(applier).toContain('DRY_RUN ? refusal : await waitForDdlAdmission(refusal)');

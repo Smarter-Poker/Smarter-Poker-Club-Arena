@@ -3042,6 +3042,7 @@ export function holdemPremiumAggression(
       minRaiseTo: gs.minRaiseTo,
       maxRaiseTo: gs.maxRaiseTo,
       actionHistory: gs.actionHistory,
+      chipUnit: gs.chipUnit ?? (isTournamentMode(gs) ? 1 : 0.01),
       dominatedFold: opts.holdemDominatedFold !== false,
       raiserIsManiac: (seatNo) => {
         const raiser = (gs.players ?? []).find((p) => p.seat === seatNo);

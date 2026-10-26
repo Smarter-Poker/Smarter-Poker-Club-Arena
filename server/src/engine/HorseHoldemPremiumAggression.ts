@@ -125,6 +125,11 @@ export interface HoldemPremiumInput {
    * keeps that spot, so the dominated-hand fold stands aside.
    */
   raiserIsManiac?: (seat: number) => boolean;
+  /**
+   * The table's settlement unit: 1 for tournament chips and whole Diamonds,
+   * 0.01 for cash. A wager is rounded to it, or the table refuses it.
+   */
+  chipUnit?: number;
   /** False skips rule 1 (the commit-time recheck has no opponent reads). */
   dominatedFold?: boolean;
 }
@@ -294,9 +299,10 @@ function wager(
   const maxTo = Number.isFinite(i.maxRaiseTo)
     ? (i.maxRaiseTo as number)
     : finite(i.hero.stack) + finite(i.hero.bet);
-  const cents = (v: number): number => Math.round(v * 100) / 100;
+  const unit = i.chipUnit === 1 ? 1 : 0.01;
+  const toUnit = (v: number): number => (unit === 1 ? Math.round(v) : Math.round(v * 100) / 100);
   if (legal.has(kind) && minTo !== null && maxTo >= minTo - 0.005) {
-    const amount = cents(Math.max(minTo, Math.min(maxTo, to)));
+    const amount = Math.max(minTo, Math.min(maxTo, toUnit(to)));
     if (amount >= maxTo - 0.005 && legal.has('all_in')) return { action: 'all_in' };
     return { action: kind, amount };
   }

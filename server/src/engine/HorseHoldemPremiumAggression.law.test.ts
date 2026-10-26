@@ -225,6 +225,15 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
     expect(verdictFor(aceSpot({ hole: 'As Ad', board: '9h 5h 3h 2h' }), 'check')).toBeNull();
   });
 
+  it('a premium raise is in whole chips at a tournament table (the table refuses 402.5)', () => {
+    for (const hole of ['Qs Qh', 'Kc Kd', 'Ac Kd']) {
+      for (const seed of SEEDS) {
+        const d = decide(coldCallSpot({ hole, threeBet: 1301 }), seed);
+        if (d.action === 'raise') expect(Number.isInteger(d.amount)).toBe(true);
+      }
+    }
+  });
+
   it('KK and QQ facing a 3-bet re-raise instead of flatting it', () => {
     for (const hole of ['Kc Kd', 'Qc Qd', 'Ac Kd']) {
       const v = verdictFor(coldCallSpot({ hole }), 'call');

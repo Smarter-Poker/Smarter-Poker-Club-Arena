@@ -352,6 +352,37 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  it('counts authorized pooled notes separately and rejects future provenance', () => {
+    const f = fixture('nlh', [], false, false, false, false, false, true);
+    const original = structuredClone(f.d.observerReads)!;
+    f.d.observerReads = {
+      ...original,
+      version: 3,
+      individualVersion: original.version as 1 | 2,
+      disposition: 'pooled_public',
+      pooledPublicProfiles: {
+        version: 1,
+        source: 'accepted_hand_public_profiles',
+        availableAtMs: 100,
+        digest: 'a'.repeat(64),
+        profiles: 1,
+      },
+    };
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadActions: 0,
+      independentReadsVerified: false,
+      pooledPublicReadActions: 1,
+      publicReadProvenanceVerified: true,
+      activationAllowed: false,
+    });
+    f.d.observerReads.pooledPublicProfiles!.availableAtMs = f.d.snapshot.decisionTimeMs + 1;
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      pooledPublicReadActions: 0,
+      publicReadProvenanceVerified: false,
+    });
+  });
+
   it('certifies individual read provenance only for exact bound accepted actions', () => {
     const f = fixture('nlh', [], false, false, false, false, false, true);
     expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({

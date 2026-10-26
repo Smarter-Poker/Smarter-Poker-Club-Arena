@@ -121,3 +121,15 @@ it('an absent report cutoff never eagerly reads the whole hand heap', () => {
     '20261026213150_daily_reporting_reads_hand_time_only_for_a_cutoff.sql'
   );
 });
+
+it('daily report keys retain their per-player day bounds on transition rows', () => {
+  const source = read(
+    'supabase/migrations/20261026213708_daily_reporting_keeps_each_affected_key_bounded.sql'
+  );
+  expect(source).toContain('CROSS JOIN LATERAL');
+  expect(source).toContain('OFFSET 0');
+  expect(source).toContain('a.club_id=k.club_id AND a.player_id=k.user_id');
+  expect(read('scripts/ci/test-daily-reporting-attribution-change-postgres.py')).toContain(
+    '20261026213708_daily_reporting_keeps_each_affected_key_bounded.sql'
+  );
+});

@@ -74,3 +74,9 @@ the global mind. Historical packets without this optional evidence remain
 valid. Recovery retains the existing bounded 64-hand/eight-day history limits;
 it is not an unlimited lifetime history claim. No SQL definition, permissions,
 schedule, table or migration is changed by this recovery path.
+
+The Lightning strength harness forwards the same context and retained evidence
+as the production worker, so its fixed gameplay experiments exercise the new
+read instead of silently omitting it. All nine NLH/PLO5 strength and
+repeatability tests passed with that wiring; the existing winning floors and
+sample sizes remain unchanged.

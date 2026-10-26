@@ -1,8 +1,5 @@
-/** Cash roster reader. Owner October 23: cash horses are eligible for any
- * variant/stake their bankroll supports. The old PLO profitability list is
- * retained as historical data and never used as a seating restriction.
- * The historical cash roster is advisory. Scheduled horses are eligible across all games.
- */
+/** Owner October 26: only the top half of measured cash performers plays cash.
+ * PLO uses this same cash roster plus ordinary bankroll admission. */
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
@@ -139,21 +136,14 @@ export function ploRosterAllows(_horseId: string, _variant: unknown, _bigBlind?:
   return true;
 }
 
-/** Historical rankings are advisory. All active fleet horses may enter cash;
- * callers retain activity schedules, bankroll and normal player admission. */
-export function cashRosterAllows(_horseId: string): boolean | undefined {
-  // Owner October 23: the full scheduled fleet may play cash. Membership,
-  // bankroll, activity hours and ordinary player doors are checked by callers.
-  // A historical ranking or an unavailable ranking read cannot deny a seat.
-  return true;
+/** Unknown membership blocks new admission in callers but does not evict existing seats. */
+export function cashRosterAllows(horseId: string): boolean | undefined {
+  return cashRoster === null ? undefined : cashRoster.has(horseId);
 }
 
-/**
- * Is this club's cash floor outside the roster rules? The Lightning private
- * pilot is: any of its horses sits at its tables, PLO included.
- */
-export function rosterExemptClub(clubId: unknown): boolean {
-  return typeof clubId === 'string' && exemptClubs.has(clubId);
+/** Owner October 26 applies the cash selection to the entire cash floor. */
+export function rosterExemptClub(_clubId: unknown): boolean {
+  return false;
 }
 
 /** Test seam for the exempt clubs. */

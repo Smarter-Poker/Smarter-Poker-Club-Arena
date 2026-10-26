@@ -15,7 +15,7 @@ import { chipCents } from './eligibility.js';
 import { evidenceDigest, sha256 } from './authority.js';
 import type { FastHorseDecisionRequest } from '../../engine/horseDecision/protocol.js';
 import { correctiveDecisionDomain } from './domain.js';
-import { correctiveUtilityContextDigest, correctiveActionIsLegal } from './review.js';
+import { correctiveUtilityContextDigest, correctiveActionIsLegal } from './originalAction.js';
 import { calculateContestablePot } from '../../engine/PokerEngine.js';
 import { prepareJointPots, settleJointScores } from '../../engine/multiway/JointPotDistribution.js';
 import { applyJointDeductions } from '../../engine/multiway/JointDeductions.js';

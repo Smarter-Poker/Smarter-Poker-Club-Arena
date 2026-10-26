@@ -6,7 +6,7 @@ import { correctiveDecisionDomain } from './domain.js';
 import { correctiveRiverSnapshotRefusal } from './kernelEligibility.js';
 import { variantInfo } from '../../engine/HorseEval.js';
 import { evidenceDigest } from './authority.js';
-import { correctiveUtilityContextDigest } from './review.js';
+import { correctiveUtilityContextDigest } from './originalAction.js';
 import { horseJournalJson } from '../horseDecisionJournal/record.js';
 import { RIVER_DECISION_MODEL } from './kernelDefinition.js';
 export { RIVER_DECISION_MODEL } from './kernelDefinition.js';

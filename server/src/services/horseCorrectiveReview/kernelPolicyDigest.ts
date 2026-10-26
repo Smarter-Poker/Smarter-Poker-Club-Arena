@@ -88,6 +88,7 @@ export const CORRECTIVE_KERNEL_POLICY_SOURCE_FILES: readonly string[] = Object.f
       'src/services/horseCorrectiveReview/domain.ts',
       'src/services/horseCorrectiveReview/eligibility.ts',
       'src/services/horseCorrectiveReview/review.ts',
+      'src/services/horseCorrectiveReview/originalAction.ts',
       'src/services/horseCorrectiveReview/authority.ts',
       'src/services/horseDecisionJournal/record.ts',
       'src/types.ts',

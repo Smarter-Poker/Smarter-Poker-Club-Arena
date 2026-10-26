@@ -91,10 +91,10 @@ describe('finite Phase14 operator subprocess lifecycle', () => {
   });
   it('preserves the existing referenced hub interval when helpers are imported', () => {
     const code = `import assert from 'node:assert/strict';
-      const {channelHub}=await import('./src/hub/ChannelHub.ts');
+      const {channelHub}=await import(['.','src','hub','ChannelHub.ts'].join('/'));
       const before=Reflect.get(channelHub,'lobbyInterval');
       assert.ok(before?.hasRef());
-      for(const script of ${JSON.stringify(scripts)}) await import('./src/scripts/'+script+'.ts');
+      for(const script of ${JSON.stringify(scripts)}) await import(['.','src','scripts',script+'.ts'].join('/'));
       assert.equal(Reflect.get(channelHub,'lobbyInterval'),before);
       assert.equal(before.hasRef(),true);
       channelHub.close();

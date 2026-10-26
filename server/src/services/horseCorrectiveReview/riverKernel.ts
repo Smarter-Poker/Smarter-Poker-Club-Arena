@@ -5,7 +5,7 @@ import {
   type RiverDecisionInput,
 } from './riverReference.js';
 import { evidenceDigest } from './authority.js';
-import { correctiveActionIsLegal } from './review.js';
+import { correctiveActionIsLegal } from './originalAction.js';
 import { buildOriginalRiverDecision } from './riverDecisionModel.js';
 
 import { RIVER_CORRECTION_KERNEL } from './kernelDefinition.js';

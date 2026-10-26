@@ -78,3 +78,21 @@ stage, so a bust recorded in the same pass keeps its rebuy
 
 Missed add-ons are not reissued: each window is closed and its blind levels
 have been played; reopening one would change the event after the fact.
+
+## Part 3: Every seated, funded horse adds on
+
+Owner, 20:39 Chicago, after Sunday Funday Warm-Up (Midway Union) closed its
+add-on window with 0 of 90 horses added on: "EVERY HORSE, IF THEY ARE IN THE
+TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD 100% BE ADDING ON IN
+EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE SEAT!"
+
+`HORSE_ADDON_PARTICIPATION_RATE` is 1 (was 0.9 from 2026-10-22). The purchase
+RPC still refuses a seatless or unfunded entry; all 90 Warm-Up horses held at
+least the 50 add-on cost (median wallet about 6,886).
+
+The Warm-Up zero was not a rate. Its whole five-minute window was the parked
+add-on break, so no bust was rewinding the cursor; the offer still never ran
+because `tryTournamentAddOns` returns at once when the admission's 5-second
+work budget is spent (`eliminationMutationAllowed()`), and 83% of admissions
+spend it before stage 4. The head-of-admission offer from Part 2 runs while the
+budget is still available, which is what lets this rate be reached.

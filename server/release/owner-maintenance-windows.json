@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-plo-receipt-8220-now",
+      "ownerOrder": "Dan, October 26, 2026, in PLO horse chat: \"DO NOT WAIT UNTIL 4AM. PUT IT LIVE NOW.\" Later: \"Resume the PLO horse task from its checkpoint. Resolve the required-check runner blocker for PR #8220, complete protected merge and the approved engine release process, then verify the fixes are live.\" Reiterated complete the task in full and use multiple agents, without unnecessary tests or work outside scope. One immediate certified activation containing protected PR #8220 squash 7fdb2223b24acf54ce11440531347890fcd61897, including the PLO6 priced river-call receipt repair and connected Omaha corrections. Earlier owner anchors are already served and grant nothing for this merge. Ends once this merge is serving and expires within four hours. Preserve exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full 285-second cutover/rollback reserve, one-window-per-hour seal and thaw. No migrations, second publisher, watcher or direct restart.",
+      "contains": "7fdb2223b24acf54ce11440531347890fcd61897",
+      "notBefore": "2026-10-26T22:59:59Z",
+      "notAfter": "2026-10-27T02:59:59Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-diamond-balancing-8200-qualified-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" The owner subsequently ordered finishing all pending fixes and publication in this same chat. One certified activation containing the actual protected PR #8200 squash 8974a503cb13874e65c8b6f231bf4f3b47631bac. All applicable required source checks passed before that protected merge. The earlier fb048 anchor was consumed by serving a274417819f8331db77d3f3dfbbe47b3c0822164 before #8200 merged, so it cannot authorize installing this correction. This entry names only the qualified balancing merge, ends once it is serving, and expires within six hours. Preserve exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, rollback reserve, the existing one-window-per-hour seal and thaw. No migrations, second publisher, watcher or direct restart.",
       "contains": "8974a503cb13874e65c8b6f231bf4f3b47631bac",

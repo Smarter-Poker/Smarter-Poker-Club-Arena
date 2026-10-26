@@ -31,10 +31,7 @@
       "contains": "867f3ec94f7b6397e377a6b94dbf34003e7d1141",
       "notBefore": "2026-10-26T04:07:24Z",
       "notAfter": "2026-10-26T09:57:24Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
+      "announceAtChicagoMinutes": [53, 54],
       "migrations": []
     },
     {
@@ -43,10 +40,7 @@
       "contains": "e81a9e7dbde08d8439afd66c093bade4b55f8a24",
       "notBefore": "2026-10-26T01:28:53Z",
       "notAfter": "2026-10-26T07:18:53Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
+      "announceAtChicagoMinutes": [53, 54],
       "migrations": []
     },
     {
@@ -79,13 +73,8 @@
       "contains": "98547198d5daccf29015fbea9b5d6260fa43327a",
       "notBefore": "2026-10-25T18:18:56Z",
       "notAfter": "2026-10-26T00:18:56Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
-      "migrations": [
-        "20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"
-      ]
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
     },
     {
       "id": "2026-10-25-plo5-immediate-cutover",
@@ -101,9 +90,7 @@
       "contains": "80d1e6319afffa9141ca3dba86a97b9c2c4a4c18",
       "notBefore": "2026-10-25T17:42:21Z",
       "notAfter": "2026-10-25T23:32:21Z",
-      "migrations": [
-        "20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"
-      ]
+      "migrations": ["20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql"]
     },
     {
       "id": "2026-10-25-horse-v53-phase-two-asap",
@@ -111,10 +98,7 @@
       "contains": "1b64e000f7b52f456ca9c7e88afb9d4b721fba3a",
       "notBefore": "2026-10-25T03:24:14Z",
       "notAfter": "2026-10-25T09:14:14Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
+      "announceAtChicagoMinutes": [53, 54],
       "migrations": []
     },
     {
@@ -123,10 +107,7 @@
       "contains": "99f89c631a46ad79ef06c139fbde95025ab4865b",
       "notBefore": "2026-10-25T02:27:00Z",
       "notAfter": "2026-10-25T08:26:00Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
+      "announceAtChicagoMinutes": [53, 54],
       "migrations": []
     },
     {
@@ -135,10 +116,7 @@
       "contains": "6aba0e019a22243f65566608827a7252070a1b5e",
       "notBefore": "2026-10-24T22:56:00Z",
       "notAfter": "2026-10-25T02:58:00Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
+      "announceAtChicagoMinutes": [53, 54],
       "migrations": []
     },
     {
@@ -147,10 +125,7 @@
       "contains": "ebe9363ec3189b17c655f8c87954cae1010c21f4",
       "notBefore": "2026-10-24T19:34:22Z",
       "notAfter": "2026-10-24T21:58:00Z",
-      "announceAtChicagoMinutes": [
-        53,
-        54
-      ],
+      "announceAtChicagoMinutes": [53, 54],
       "migrations": []
     },
     {
@@ -191,9 +166,7 @@
       "contains": "f35c068daeefd3005f967af16844a336a53d2e6b",
       "notBefore": "2026-10-23T20:41:08Z",
       "notAfter": "2026-10-24T02:41:08Z",
-      "migrations": [
-        "20261023183513_durable_variant_scoped_horse_opponent_memory.sql"
-      ]
+      "migrations": ["20261023183513_durable_variant_scoped_horse_opponent_memory.sql"]
     },
     {
       "id": "2026-10-24-arena-dealing-incident",

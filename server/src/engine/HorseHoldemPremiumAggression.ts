@@ -33,7 +33,9 @@
  *     unpaired hand other than AKo folds instead of calling or raising.
  *     A horse that has not yet put money in voluntarily (a cold caller) also
  *     folds AQo. Short stacks (20bb effective or less) are push/fold and are
- *     left to the brain, as are token prices under 15% required equity.
+ *     left to the brain, as are token prices under 15% required equity, and
+ *     a 3-bet from a seat the brain reads as a maniac (Dan's maniac law:
+ *     against a player who re-raises every hand, KQo is a call-off).
  *
  *  2. PREMIUMS RAISE PREFLOP, NEVER FLAT. AA and KK never limp, never check
  *     the big-blind option and never flat a raise: they raise. QQ, AKs and
@@ -105,7 +107,9 @@ export interface HoldemPremiumInput {
   stage: string;
   board: Card[];
   hero: Pick<SeatPlayer, 'seat' | 'user_id' | 'cards' | 'stack' | 'bet'>;
-  players: Array<Pick<SeatPlayer, 'seat' | 'user_id' | 'is_folded' | 'is_all_in' | 'stack' | 'bet'>>;
+  players: Array<
+    Pick<SeatPlayer, 'seat' | 'user_id' | 'is_folded' | 'is_all_in' | 'stack' | 'bet'>
+  >;
   pot: number;
   currentBet: number;
   bigBlind: number;
@@ -114,6 +118,15 @@ export interface HoldemPremiumInput {
   minRaiseTo?: number | null;
   maxRaiseTo?: number | null;
   actionHistory?: readonly HoldemPremiumActionRecord[];
+  /**
+   * True when the brain reads the seat that made the last preflop raise as a
+   * maniac (HorseOpponentExploit). Against a player who 3-bets or shoves every
+   * hand, KQo is ahead of his range: Dan's maniac law ("call off lighter")
+   * keeps that spot, so the dominated-hand fold stands aside.
+   */
+  raiserIsManiac?: (seat: number) => boolean;
+  /** False skips rule 1 (the commit-time recheck has no opponent reads). */
+  dominatedFold?: boolean;
 }
 
 export interface HoldemPremiumVerdict<D extends HoldemPremiumDecision = HoldemPremiumDecision> {
@@ -263,8 +276,7 @@ function toCallOf(i: HoldemPremiumInput): number {
 function effectiveBB(i: HoldemPremiumInput, opponentSeat: number | null): number {
   const hero = finite(i.hero.stack) + finite(i.hero.bet);
   const live = i.players.filter((p) => p.seat !== i.hero.seat && !p.is_folded);
-  const target =
-    opponentSeat === null ? undefined : live.find((p) => p.seat === opponentSeat);
+  const target = opponentSeat === null ? undefined : live.find((p) => p.seat === opponentSeat);
   const villain = target
     ? finite(target.stack) + finite(target.bet)
     : Math.max(0, ...live.map((p) => finite(p.stack) + finite(p.bet)));
@@ -272,7 +284,11 @@ function effectiveBB(i: HoldemPremiumInput, opponentSeat: number | null): number
 }
 
 /** A legal wager of `to` (absolute street total), or null when none is legal. */
-function wager(i: HoldemPremiumInput, to: number, kind: 'bet' | 'raise'): HoldemPremiumDecision | null {
+function wager(
+  i: HoldemPremiumInput,
+  to: number,
+  kind: 'bet' | 'raise'
+): HoldemPremiumDecision | null {
   const legal = new Set(i.legalActions ?? []);
   const minTo = Number.isFinite(i.minRaiseTo) ? (i.minRaiseTo as number) : null;
   const maxTo = Number.isFinite(i.maxRaiseTo)
@@ -288,7 +304,10 @@ function wager(i: HoldemPremiumInput, to: number, kind: 'bet' | 'raise'): Holdem
   return null;
 }
 
-function keepThink(original: HoldemPremiumDecision, next: HoldemPremiumDecision): HoldemPremiumDecision {
+function keepThink(
+  original: HoldemPremiumDecision,
+  next: HoldemPremiumDecision
+): HoldemPremiumDecision {
   // Keep the brain's own think time: an override that snaps faster than the
   // action it replaced would be a tell.
   const out: HoldemPremiumDecision = { ...original, ...next };
@@ -307,7 +326,11 @@ function preflopVerdict(
   const bb = finite(i.bigBlind);
 
   // 1. Dominated hands fold to a big 3-bet.
+  const raiserManiac =
+    read.lastRaiserSeat !== null && i.raiserIsManiac?.(read.lastRaiserSeat) === true;
   if (
+    i.dominatedFold !== false &&
+    !raiserManiac &&
     read.raises >= 2 &&
     toCall > 0.005 &&
     (decision.action === 'call' || decision.action === 'raise' || decision.action === 'all_in') &&
@@ -350,20 +373,15 @@ function postflopVerdict(
   const cards = i.hero.cards;
   if (!isPremiumMadeHand(cards, i.board)) return null;
   if (boardHasPassedPremium(cards, i.board)) return null;
-  const opponents = i.players.filter(
-    (p) => p.seat !== i.hero.seat && !p.is_folded && !p.is_all_in
-  );
+  const opponents = i.players.filter((p) => p.seat !== i.hero.seat && !p.is_folded && !p.is_all_in);
   if (opponents.length === 0) return null;
   const pot = Math.max(0, finite(i.pot));
   if (pot <= 0) return null;
-  const share =
-    i.board.length === 3 ? (wetFlop(i.board) ? 2 / 3 : 1 / 2) : 2 / 3;
+  const share = i.board.length === 3 ? (wetFlop(i.board) ? 2 / 3 : 1 / 2) : 2 / 3;
   const stack = finite(i.hero.stack);
   const size = pot * share;
   const to =
-    size >= stack * POSTFLOP_JAM_STACK_SHARE
-      ? Number.POSITIVE_INFINITY
-      : finite(i.hero.bet) + size;
+    size >= stack * POSTFLOP_JAM_STACK_SHARE ? Number.POSITIVE_INFINITY : finite(i.hero.bet) + size;
   const next = wager(i, to, finite(i.currentBet) > 0 ? 'raise' : 'bet');
   if (!next) return null;
   return { rule: 'premium_postflop_bet', decision: keepThink(decision, next) };

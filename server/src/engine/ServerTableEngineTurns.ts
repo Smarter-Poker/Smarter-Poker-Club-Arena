@@ -4271,7 +4271,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             const guarded = fullPotNearPotWager(
               riverNutsRaise(
                 tournamentShoveDiscipline(
-                  holdemPremiumAggression(decision, privateHero, commitState),
+                  holdemPremiumAggression(decision, privateHero, commitState, {
+                    holdemDominatedFold: false,
+                  }),
                   privateHero,
                   commitState
                 ),

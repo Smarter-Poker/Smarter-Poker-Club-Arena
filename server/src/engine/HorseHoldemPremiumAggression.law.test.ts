@@ -6,6 +6,7 @@ import {
   boardHasPassedPremium,
   holdemPremiumAggressionVerdict,
   isPremiumMadeHand,
+  type HoldemPremiumDecision,
 } from './HorseHoldemPremiumAggression.js';
 import type { Card, SeatPlayer } from '../types.js';
 
@@ -51,7 +52,9 @@ const PREFLOP = [
  * 150/300 + 300 BB ante. A human opened 600 UTG, horse seat 3 3-bet AA to
  * 2,746, horse seat 5 cold-called with KQo (stack 20,601 before the call).
  */
-function coldCallSpot(over: { hole?: string; stack?: number; threeBet?: number; variant?: string } = {}) {
+function coldCallSpot(
+  over: { hole?: string; stack?: number; threeBet?: number; variant?: string } = {}
+) {
   const threeBet = over.threeBet ?? 2746;
   const stack = over.stack ?? 20601;
   const hero = seat(5, stack, 0, { hole: over.hole ?? 'Ks Qd' });
@@ -110,7 +113,9 @@ function aceSpot(
     pot: over.pot ?? 6842,
     currentBet: 0,
     minRaise: 300,
-    stage: over.stage ?? (cards(board).length === 3 ? 'flop' : cards(board).length === 4 ? 'turn' : 'river'),
+    stage:
+      over.stage ??
+      (cards(board).length === 3 ? 'flop' : cards(board).length === 4 ? 'turn' : 'river'),
     gameVariant: 'nlh',
     gameMode: 'tournament',
     bigBlind: 300,
@@ -129,33 +134,34 @@ function aceSpot(
   return { hero, gs };
 }
 
-function decide(s: { hero: SeatPlayer; gs: HorseGameStateV2 }, seed: number, style: (typeof STYLES)[number] = 'balanced') {
+function decide(
+  s: { hero: SeatPlayer; gs: HorseGameStateV2 },
+  seed: number,
+  style: (typeof STYLES)[number] = 'balanced'
+) {
   seedFastRandom(seed);
   return HorseLogic.decide(s.hero, s.gs, style, {}, { mind: false });
 }
 
 function verdictFor(s: { hero: SeatPlayer; gs: HorseGameStateV2 }, action: string) {
   const g = s.gs;
-  return holdemPremiumAggressionVerdict(
-    { action },
-    {
-      gameVariant: g.gameVariant,
-      bettingStructure: g.bettingStructure,
-      multiBoard: false,
-      stage: g.stage,
-      board: g.communityCards,
-      hero: s.hero,
-      players: g.players,
-      pot: g.pot,
-      currentBet: g.currentBet,
-      bigBlind: g.bigBlind,
-      toCall: g.toCall,
-      legalActions: g.legalActions,
-      minRaiseTo: g.minRaiseTo,
-      maxRaiseTo: g.maxRaiseTo,
-      actionHistory: g.actionHistory,
-    }
-  );
+  return holdemPremiumAggressionVerdict({ action } as HoldemPremiumDecision, {
+    gameVariant: g.gameVariant,
+    bettingStructure: g.bettingStructure,
+    multiBoard: false,
+    stage: g.stage,
+    board: g.communityCards,
+    hero: s.hero,
+    players: g.players,
+    pot: g.pot,
+    currentBet: g.currentBet,
+    bigBlind: g.bigBlind,
+    toCall: g.toCall,
+    legalActions: g.legalActions,
+    minRaiseTo: g.minRaiseTo,
+    maxRaiseTo: g.maxRaiseTo,
+    actionHistory: g.actionHistory,
+  });
 }
 
 afterEach(() => HorseMind.reset());
@@ -170,7 +176,9 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
     for (const hole of ['Kc Jd', 'Qc Jd', 'Ac Jd', 'Ac Qd']) {
       expect(verdictFor(coldCallSpot({ hole }), 'call')?.rule).toBe('dominated_3bet_fold');
     }
-    expect(verdictFor(coldCallSpot({ hole: 'Ac Kd' }), 'call')?.rule).not.toBe('dominated_3bet_fold');
+    expect(verdictFor(coldCallSpot({ hole: 'Ac Kd' }), 'call')?.rule).not.toBe(
+      'dominated_3bet_fold'
+    );
     expect(verdictFor(coldCallSpot({ hole: 'Tc Td' }), 'call')).toBeNull();
     expect(verdictFor(coldCallSpot({ hole: 'Kc Qc' }), 'call')).toBeNull(); // suited: brain decides
   });
@@ -187,7 +195,8 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
         expect(['bet', 'all_in']).toContain(d.action);
       }
     }
-    for (const style of STYLES) expect(['bet', 'all_in']).toContain(decide(aceSpot(), 5, style).action);
+    for (const style of STYLES)
+      expect(['bet', 'all_in']).toContain(decide(aceSpot(), 5, style).action);
   });
 
   it('the forced bet is a real size: half pot on a dry flop, two-thirds on a wet one, legal always', () => {
@@ -237,8 +246,13 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
   it('the switch exists only to ablate: off, the brain is left alone', () => {
     const s = coldCallSpot();
     seedFastRandom(1);
-    const off = HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { mind: false, holdemPremiumAggression: false });
+    const off = HorseLogic.decide(
+      s.hero,
+      s.gs,
+      'balanced',
+      {},
+      { mind: false, holdemPremiumAggression: false }
+    );
     expect(off.action).toBeDefined();
   });
-
 });

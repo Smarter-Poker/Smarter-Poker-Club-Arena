@@ -1986,6 +1986,9 @@ export interface HorseDecideOpts {
    *  always runs it; false exists only so an ablation can measure an older
    *  layer alone. */
   holdemPremiumAggression?: boolean;
+  /** Internal: false skips the dominated-hand fold, for the commit-time
+   *  recheck, which has no opponent reads to honour the maniac law with. */
+  holdemDominatedFold?: boolean;
   /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
@@ -3039,6 +3042,13 @@ export function holdemPremiumAggression(
       minRaiseTo: gs.minRaiseTo,
       maxRaiseTo: gs.maxRaiseTo,
       actionHistory: gs.actionHistory,
+      dominatedFold: opts.holdemDominatedFold !== false,
+      raiserIsManiac: (seatNo) => {
+        const raiser = (gs.players ?? []).find((p) => p.seat === seatNo);
+        if (!raiser) return false;
+        const read = HorseMind.opponentRead(raiser.user_id);
+        return maniacRaiseWidth(read) !== null || isPostflopManiac(read);
+      },
     });
   } catch {
     return decision;

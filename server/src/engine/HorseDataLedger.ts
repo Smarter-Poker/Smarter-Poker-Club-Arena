@@ -666,6 +666,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Hold em premium aggression'
   ),
   flag(
+    'holdemDominatedFold',
+    'internal: false skips the NLH dominated-hand 3-bet fold at the commit-time recheck, which has no opponent reads to honour the maniac law with',
+    'Hold em premium aggression'
+  ),
+  flag(
     'ploPairedBoardFold',
     'PLO4/PLO5/PLO6 no full house on a paired flop, turn or river folds to a committing bet (Dan 2026-10-25); false only to ablate an older layer',
     'PLO paired-board fold'

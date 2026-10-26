@@ -645,6 +645,11 @@ export function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6
     if (floorCall.action === 'call' && amount === floorCall.amount) return true;
   }
   if (action === 'all_in' && amount === null && v58ShortStackJamShape(snapshot)) return true;
+  // The reference's maniac call-down answers a call that is the whole stack
+  // with the unsized all-in (HorseLogic maniacCallDown, allInCall). That
+  // call-off is the call itself, on this route, in cash and deep alike.
+  if (r.route === 'variant_price' && action === 'all_in' && amount === null && toCall >= p.stack)
+    return true;
   if (r.route === 'chart_open_jam')
     return (
       amount === null &&

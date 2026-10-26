@@ -47,11 +47,12 @@ try:
  q(f"INSERT INTO profiles VALUES('{K}','kingfish','1',NULL),('{H}','horse','2',NULL); INSERT INTO clubs(id,club_id,name,owner_id,requires_approval) VALUES('{C}',12345,'DSS','{K}',false); INSERT INTO club_members(club_id,user_id,role,status) VALUES('{C}','{K}','owner','active'); INSERT INTO club_invite_links VALUES('{C}','{K}','original-kingfish');")
  fixtures=ROOT/'scripts/ci/fixtures/replacement-boarding'
  for name in ['fn_join_club_membership_impl','fn_join_club','fn_redeem_club_invite_code','fn_join_club_atomic']:q((fixtures/(name+'.sql')).read_text())
- pins={'fn_join_club':'ca1bdbb859127e65be013b2946fca2f1','fn_join_club_atomic':'9aacdb3a9a2e083d30141d7d56f0373d','fn_join_club_membership_impl':'dc9908bbe4447d2a455039efd2ff0137','fn_redeem_club_invite_code':'d078d9104c84ba04de15eea10e7b33c0'}
+ pins={'fn_join_club':'ca1bdbb859127e65be013b2946fca2f1','fn_join_club_atomic':'9aacdb3a9a2e083d30141d7d56f0373d','fn_join_club_membership_impl':'b31effd0156fd162f2420bdf7b4560a7','fn_redeem_club_invite_code':'16f8badbcc4ebf359bbfe478ab3bca83'}
  check('all-four-actual-function-definitions-match-live-catalog-pins',all(q(f"SELECT md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname='{name}'")==digest for name,digest in pins.items()))
  q('REVOKE ALL ON FUNCTION fn_join_club_atomic(text,uuid,text) FROM PUBLIC;GRANT EXECUTE ON FUNCTION fn_join_club_atomic(text,uuid,text) TO authenticated;')
+ check('owner-placement-needs-no-active-agent-row',q(f"SELECT count(*) FROM agents WHERE club_id='{C}' AND user_id='{K}' AND status='active'")=='0')
  r=call();m=r['membership']
- check('actual-normal-join-referral-is-active-owner-direct-zero-chip',r['success'] and m['status']=='active' and m['agent_id'] is None and m['invited_by']==K and m['chip_balance']==0)
+ check('actual-normal-join-referral-is-active-owner-direct-zero-chip',r['success'] and m['status']=='active' and m['agent_id']==K and m['invited_by']==K and m['chip_balance']==0)
  check('same-original-request-replays-exact-receipt',call()==r)
  check('replay-does-not-repeat-membership-notification',q(f"SELECT (SELECT count(*) FROM club_members WHERE user_id='{H}')=1 AND (SELECT count(*) FROM notifications)=1")=='t')
  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as p:replies=list(p.map(lambda _:call(),range(4)))
@@ -59,9 +60,18 @@ try:
  H4='8b27a10f-e57b-47d9-9af0-000000000007';R4='8b27a10f-e57b-47d9-9af0-000000000008';q(f"INSERT INTO profiles VALUES('{H4}','horse4','5',NULL)")
  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as p:firsts=list(p.map(lambda _:call(H4,R4),range(4)))
  check('concurrent-first-original-request-creates-one-membership-and-receipt',all(x==firsts[0] for x in firsts) and q(f"SELECT (SELECT count(*) FROM club_members WHERE user_id='{H4}')=1 AND (SELECT count(*) FROM club_join_idempotency WHERE user_id='{H4}')=1 AND (SELECT count(*) FROM club_invite_attributions WHERE user_id='{H4}')=1")=='t')
+ # The same inviter may legitimately be both the club owner and an active agent.
+ HA='8b27a10f-e57b-47d9-9af0-000000000009';RA='8b27a10f-e57b-47d9-9af0-000000000010'
+ q(f"INSERT INTO agents(id,user_id,club_id,status,total_players,active_player_count) VALUES(gen_random_uuid(),'{K}','{C}','active',0,0); INSERT INTO profiles VALUES('{HA}','horse-agent','6',NULL)")
+ ar=call(HA,RA);am=ar['membership']
+ check('actual-owner-with-active-agent-role-attributes-to-original-Kingfish',ar['success'] and am['agent_id']==K and am['invited_by']==K and am['role']=='player' and am['chip_balance']==0)
+ check('owner-agent-replay-preserves-original-receipt',call(HA,RA)==ar)
+ check('owner-agent-counters-reflect-three-original-players',q(f"SELECT total_players=3 AND active_player_count=3 FROM agents WHERE club_id='{C}' AND user_id='{K}'")=='t')
+ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as p:agent_replays=list(p.map(lambda _:call(HA,RA),range(4)))
+ check('concurrent-owner-agent-replays-retain-one-membership-attribution',all(x==ar for x in agent_replays) and q(f"SELECT count(*) FROM club_invite_attributions WHERE club_id='{C}' AND user_id='{HA}' AND inviter_id='{K}'")=='1')
  H2='8b27a10f-e57b-47d9-9af0-000000000003';q(f"INSERT INTO profiles VALUES('{H2}','horse2','3',NULL)")
  r2=call(H2,'8b27a10f-e57b-47d9-9af0-000000000004','NULL')
- check('null-referral-does-not-invent-agent-or-inviter',r2['membership']['agent_id'] is None and r2['membership']['invited_by'] is None)
+ check('null-referral-retains-normal-owner-placement-without-inventing-inviter',r2['membership']['agent_id']==K and r2['membership']['invited_by'] is None)
  H3='8b27a10f-e57b-47d9-9af0-000000000005';q(f"INSERT INTO profiles VALUES('{H3}','horse3','4',NULL)")
  bad=call(H3,'8b27a10f-e57b-47d9-9af0-000000000006',"'unknown-code'")
  check('invalid-referral-rolls-back-membership-and-retains-refusal',bad['code']=='invalid_invitation' and q(f"SELECT count(*) FROM club_members WHERE user_id='{H3}'")=='0')

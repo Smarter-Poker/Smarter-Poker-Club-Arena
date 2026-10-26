@@ -8,6 +8,7 @@ const BATCH = 'patterned-retirement-20261006';
 type Mapping = { retiredHorseId: string; horseId: string };
 export interface BoardingAdapter {
   plan(): Promise<any>;
+  referralAgent(): Promise<string | null>;
   verify(row: Mapping): Promise<void>;
   board(): Promise<{ count: number; maximum: number }>;
   member(id: string): Promise<any>;
@@ -24,7 +25,7 @@ export function boardingRequest(row: Mapping): string {
   const h = b.toString('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
-function memberScope(m: any, id: string) {
+function memberScope(m: any, id: string, agent: string | null) {
   if (
     !m ||
     m.user_id !== id ||
@@ -34,18 +35,18 @@ function memberScope(m: any, id: string) {
     m.is_active !== true ||
     m.membership_lifecycle_status !== 'active' ||
     m.invited_by !== REPLACEMENT_OWNER ||
-    m.agent_id !== null
+    m.agent_id !== agent
   )
     throw Error('Original DSS membership scope changed; no membership was overwritten');
 }
-function receiptScope(r: any, id: string) {
+function receiptScope(r: any, id: string, agent: string | null) {
   if (
     r?.success !== true ||
     r.club?.id !== REPLACEMENT_BOARD ||
     !['active', 'approved'].includes(r.status)
   )
     throw Error('Original join refused or receipt scope changed');
-  memberScope(r.membership, id);
+  memberScope(r.membership, id, agent);
 }
 /** One finite manual invocation. Unknown outcomes retain the same original request. */
 export async function boardReplacementHorses(execute: boolean, a: BoardingAdapter) {
@@ -84,6 +85,12 @@ export async function boardReplacementHorses(execute: boolean, a: BoardingAdapte
     )
   )
     throw Error('Replacement mapping identity changed');
+  const agent = await a.referralAgent();
+  if (agent !== REPLACEMENT_OWNER) throw Error('Original Kingfish referral authority unavailable');
+  const verifyAuthority = async () => {
+    if ((await a.referralAgent()) !== agent)
+      throw Error('Original Kingfish referral authority changed; accepted joins retained');
+  };
   // Validate the entire cohort before the first session or join operation.
   const missing: Mapping[] = [];
   let seventy = 0;
@@ -91,9 +98,9 @@ export async function boardReplacementHorses(execute: boolean, a: BoardingAdapte
     await a.verify(r);
     const m = await a.member(r.horseId);
     if (m) {
-      memberScope(m, r.horseId);
+      memberScope(m, r.horseId, agent);
       const receipt = await a.receipt(r.horseId, boardingRequest(r));
-      receiptScope(receipt, r.horseId);
+      receiptScope(receipt, r.horseId, agent);
       if (Number(m.player_rakeback_pct) === 0.7 && m.player_rakeback_explicit === true) seventy++;
     } else missing.push(r);
   }
@@ -114,6 +121,7 @@ export async function boardReplacementHorses(execute: boolean, a: BoardingAdapte
     };
   let added = 0;
   for (const r of missing) {
+    await verifyAuthority();
     await a.verify(r);
     const current = await a.board();
     if (
@@ -138,10 +146,11 @@ export async function boardReplacementHorses(execute: boolean, a: BoardingAdapte
           throw Error(`Join outcome unknown for ${r.horseId}; retain original request ${request}`);
       }
     }
-    receiptScope(receipt, r.horseId);
-    memberScope(await a.member(r.horseId), r.horseId);
+    receiptScope(receipt, r.horseId, agent);
+    memberScope(await a.member(r.horseId), r.horseId, agent);
     added++;
   }
+  await verifyAuthority();
   const final = await a.board();
   if (final.count !== initial.count + added || final.count > final.maximum)
     throw Error('DSS population changed after joins; actual membership requires inspection');
@@ -152,7 +161,7 @@ export async function boardReplacementHorses(execute: boolean, a: BoardingAdapte
   for (const r of rows) {
     await a.verify(r);
     const m = await a.member(r.horseId);
-    memberScope(m, r.horseId);
+    memberScope(m, r.horseId, agent);
     if (Number(m.player_rakeback_pct) === 0.7 && m.player_rakeback_explicit === true) seventy++;
   }
   // Rakeback is an existing staff agreement door, never a service-role raw write.
@@ -182,6 +191,40 @@ export function replacementBoardingAdapter(admin: SupabaseClient, url: string): 
       return value(
         await admin.rpc('fn_reserve_patterned_horse_replacements', { p_reserve: false })
       );
+    },
+    async referralAgent() {
+      // The normal join owner places a player directly under the club owner,
+      // including when that owner has no separate active agents row.
+      const club = value(
+        await admin.from('clubs').select('id,owner_id').eq('id', REPLACEMENT_BOARD).maybeSingle()
+      );
+      const profile = value(
+        await admin
+          .from('profiles')
+          .select('id,player_number')
+          .eq('id', REPLACEMENT_OWNER)
+          .maybeSingle()
+      );
+      const member = value(
+        await admin
+          .from('club_members')
+          .select('club_id,user_id,status,agent_id')
+          .eq('club_id', REPLACEMENT_BOARD)
+          .eq('user_id', REPLACEMENT_OWNER)
+          .maybeSingle()
+      );
+      if (
+        club?.id !== REPLACEMENT_BOARD ||
+        club.owner_id !== REPLACEMENT_OWNER ||
+        profile?.id !== REPLACEMENT_OWNER ||
+        String(profile.player_number) !== '1' ||
+        member?.club_id !== REPLACEMENT_BOARD ||
+        member.user_id !== REPLACEMENT_OWNER ||
+        !['active', 'approved', 'automatic'].includes(member.status) ||
+        member.agent_id !== null
+      )
+        throw Error('Original Kingfish referral authority unavailable');
+      return REPLACEMENT_OWNER;
     },
     async verify(r) {
       const u = value(await admin.auth.admin.getUserById(r.horseId)).user;

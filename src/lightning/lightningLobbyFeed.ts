@@ -43,6 +43,23 @@ export async function fetchLightningLobbyState(
 export const LIGHTNING_LOBBY_REFRESH_MS = 30_000;
 
 /**
+ * How often a TABLE re-reads its own game while that game could switch into
+ * Lightning (MUST MOVE with the Lightning switch on) or is switching
+ * (pending_on): 5 s, so "Lightning Is Starting" appears and clears within a
+ * few seconds of the switch instead of up to 30 s late. Every other state
+ * keeps the lobby's 30 s, and a Classic game is still asked once.
+ */
+export const LIGHTNING_SWITCH_WATCH_REFRESH_MS = 5_000;
+
+export function lightningTableRefreshMs(state: LightningLobbyState | null | undefined): number {
+  if (!state) return LIGHTNING_LOBBY_REFRESH_MS;
+  if (state.clusterMode === 'pending_on') return LIGHTNING_SWITCH_WATCH_REFRESH_MS;
+  if (state.clusterMode === 'must_move' && state.lightningEnabled === true)
+    return LIGHTNING_SWITCH_WATCH_REFRESH_MS;
+  return LIGHTNING_LOBBY_REFRESH_MS;
+}
+
+/**
  * The Lightning state of each listed Cluster, keyed by Cluster id. An empty
  * list reads nothing and returns an empty map.
  *
@@ -56,10 +73,14 @@ export const LIGHTNING_LOBBY_REFRESH_MS = 30_000;
  */
 export function useLightningLobbyStates(
   clusterIds: readonly string[],
-  options: { settleClassic?: boolean } = {}
+  options: { settleClassic?: boolean; refreshMs?: number } = {}
 ): Record<string, LightningLobbyState | null> {
   const key = useMemo(() => [...new Set(clusterIds)].sort().join(','), [clusterIds]);
   const settleClassic = options.settleClassic === true;
+  const refreshMs =
+    typeof options.refreshMs === 'number' && options.refreshMs >= 1_000
+      ? options.refreshMs
+      : LIGHTNING_LOBBY_REFRESH_MS;
   const [states, setStates] = useState<Record<string, LightningLobbyState | null>>({});
   useEffect(() => {
     const ids = key ? key.split(',') : [];
@@ -98,12 +119,12 @@ export function useLightningLobbyStates(
     timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       void readAll();
-    }, LIGHTNING_LOBBY_REFRESH_MS);
+    }, refreshMs);
     void readAll();
     return () => {
       live = false;
       if (timer !== null) clearInterval(timer);
     };
-  }, [key, settleClassic]);
+  }, [key, settleClassic, refreshMs]);
   return states;
 }

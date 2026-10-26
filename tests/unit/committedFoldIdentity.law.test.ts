@@ -138,8 +138,11 @@ describe('a Classic table never hides a folded player', () => {
     expect(capable).toContain('!isClassicLobbyState(tableGameLightningState)');
   });
   it('the table asks whether its game is Lightning once, and stops for a Classic game', () => {
+    // Lightning Is Starting (Dan approved 2026-10-26) added a refresh option:
+    // a game that can switch is re-read every 5 s. A Classic game is still
+    // asked once and never again (settleClassic), which is what this pins.
     expect(source).toMatch(
-      /useLightningLobbyStates\(anchorLightningClusterIds, \{ settleClassic: true, \}\)/
+      /useLightningLobbyStates\(anchorLightningClusterIds, \{\s*settleClassic: true,\s*refreshMs: anchorLightningRefreshMs,\s*\}\)/
     );
   });
 });

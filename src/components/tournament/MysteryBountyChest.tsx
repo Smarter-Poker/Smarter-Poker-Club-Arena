@@ -105,6 +105,12 @@ export interface MysteryChestData {
   /** The slot the revealer picked (1-based), once the server has it. */
   pickedSlot?: number | null;
   /**
+   * True when the 5-second pick window ran out and the slot was drawn at
+   * random for the revealer (Dan 2026-10-25). Carried on the revealer's open
+   * broadcast so every seat says the same thing.
+   */
+  autoPicked?: boolean;
+  /**
    * False when nobody picked and the chest opened by itself: the slot is then
    * the server's, not a choice. Absent on an older server answer.
    */
@@ -131,9 +137,7 @@ export interface MysteryChestChoice {
  * Read `fn_mystery_bounty_offer`. Null for anything that is not a well-formed
  * answer, so a caller never shows chests the server did not describe.
  */
-export function parseMysteryChestOffer(
-  raw: unknown
-): {
+export function parseMysteryChestOffer(raw: unknown): {
   slots: number;
   pickedSlot: number | null;
   chosen?: boolean;
@@ -190,7 +194,9 @@ export interface MysteryBountyChestProps {
    * which owns the realtime channel. Absent -> local-only (still works).
    * Carries the slot the revealer picked when the knockout chose from three.
    */
-  onBroadcastOpen?: (slot?: number) => void;
+  onBroadcastOpen?: (slot?: number, autoPicked?: boolean) => void;
+  /** The chest started opening on this client (tap, timeout or remote). */
+  onOpened?: () => void;
   /**
    * The designated revealer is opening the chest — go and get the amount.
    *
@@ -239,18 +245,45 @@ type Phase = 'idle' | 'landing' | 'locked' | 'opening' | 'explosion' | 'revealed
 const CHEST_IMG = mediaUrl('images/mystery-chest.webp');
 const CHEST_BURST_VIDEO = mediaUrl('videos/mystery-chest-burst.mp4');
 
-const AUTO_OPEN_MS = 9000;
 /**
- * The engine reveals the award on its own deadline (landing + AUTO_OPEN_MS
- * after it reserved the chest, mysteryBountySpec). A slower Animation Speed
- * used to stretch the winner's window past that deadline, so a late pick was
- * refused and the prize appeared in a chest the player had not tapped. The
- * winner's window now always closes this far inside the engine's.
+ * THE PICK WINDOW IS FIVE SECONDS (Dan 2026-10-25, verbatim): "THEY HAVE 5
+ * SECONDS TO PICK THERE BOX, AND IF THEY DON'T RANDOMLY CHOOSE IT. AND YOU
+ * MUST ALWAYS SHOW THE OTHER 2 PRIZES THAT 'COULD OF BEEN CHOOSEN'."
+ *
+ * Five real seconds from the moment the chests can be tapped. It is NOT
+ * stretched by Animation Speed: it is a decision clock, not an animation.
  */
+export const PICK_WINDOW_MS = 5000;
+/**
+ * The engine's own reveal deadline after the chests become tappable
+ * (mysteryBountySpec: landing + CHEST_AUTO_OPEN_MS from the reserve). The
+ * revealer's window always closes this far inside it, so a pick made on the
+ * last second is recorded before the server opens the chest itself.
+ */
+const ENGINE_PICK_DEADLINE_MS = 9000;
 const SERVER_DEADLINE_MARGIN_MS = 800;
-export function winnerAutoOpenMs(speed: number): number {
-  const s = Number.isFinite(speed) && speed > 0 ? speed : 1;
-  return Math.min(AUTO_OPEN_MS * s, AUTO_OPEN_MS - SERVER_DEADLINE_MARGIN_MS);
+export function winnerAutoOpenMs(_speed?: number): number {
+  return Math.min(PICK_WINDOW_MS, ENGINE_PICK_DEADLINE_MS - SERVER_DEADLINE_MARGIN_MS);
+}
+
+/**
+ * A uniformly random slot in 1..slots, from the browser's CSPRNG. Used when
+ * the pick window runs out: the chest is chosen FOR the player, at random,
+ * never "the first one".
+ */
+export function randomPickSlot(slots: number): number {
+  const n = Math.max(1, Math.floor(slots));
+  try {
+    const buf = new Uint32Array(1);
+    // Rejection sampling keeps the three slots exactly equally likely.
+    const limit = Math.floor(0x100000000 / n) * n;
+    do {
+      globalThis.crypto.getRandomValues(buf);
+    } while (buf[0] >= limit);
+    return 1 + (buf[0] % n);
+  } catch {
+    return 1 + Math.floor(Math.random() * n);
+  }
 }
 /** Spectator failsafe: only used if no broadcast ever lands. */
 const SPECTATOR_FAILSAFE_MS = 14000;
@@ -410,6 +443,7 @@ export default function MysteryBountyChest({
   viewerUserId,
   onDone,
   onBroadcastOpen,
+  onOpened,
   onRequestReveal,
   remoteOpened = false,
   queuedBehind = 0,
@@ -445,6 +479,12 @@ export default function MysteryBountyChest({
   const choosing = offerSlots > 1;
   /** The slot this client picked, so the chest it tapped is the one marked. */
   const [localPick, setLocalPick] = useState<number | null>(null);
+  /** True when this client's 5-second window ran out and drew the slot. */
+  const [localAutoPicked, setLocalAutoPicked] = useState(false);
+  /** Whole seconds left on the pick window, for the countdown. */
+  const [secondsLeft, setSecondsLeft] = useState(Math.ceil(PICK_WINDOW_MS / 1000));
+  const onOpenedRef = useRef(onOpened);
+  onOpenedRef.current = onOpened;
   /**
    * SECTION 50 — the tier is the SERVER'S when it sends one.
    *
@@ -503,24 +543,27 @@ export default function MysteryBountyChest({
      (2026-10-22). The latest callback is still the one called. */
   const onRequestRevealRef = useRef(onRequestReveal);
   onRequestRevealRef.current = onRequestReveal;
-  const requestReveal = useCallback((slot?: number) => {
-    if (!chestKey) return;
-    // SECTIONS 52/53: only the designated revealer opens the chest. Everyone
-    // else — the rest of the table and every spectator — watches, and their
-    // clients must not call the reveal RPC at all. `fn_mystery_bounty_reveal`
-    // refuses them ('not_the_revealer'), so this is noise control rather than
-    // security, but a table of ten firing a refused RPC each is nine refusals
-    // per knockout.
-    if (!isWinner) return;
-    if (revealRequestedRef.current === chestKey) return;
-    revealRequestedRef.current = chestKey;
-    try {
-      onRequestRevealRef.current?.(slot);
-    } catch {
-      // The engine reveals this award authoritatively on its own deadline, so
-      // a failed request costs the tapper their head start and nothing else.
-    }
-  }, [chestKey, isWinner]);
+  const requestReveal = useCallback(
+    (slot?: number) => {
+      if (!chestKey) return;
+      // SECTIONS 52/53: only the designated revealer opens the chest. Everyone
+      // else — the rest of the table and every spectator — watches, and their
+      // clients must not call the reveal RPC at all. `fn_mystery_bounty_reveal`
+      // refuses them ('not_the_revealer'), so this is noise control rather than
+      // security, but a table of ten firing a refused RPC each is nine refusals
+      // per knockout.
+      if (!isWinner) return;
+      if (revealRequestedRef.current === chestKey) return;
+      revealRequestedRef.current = chestKey;
+      try {
+        onRequestRevealRef.current?.(slot);
+      } catch {
+        // The engine reveals this award authoritatively on its own deadline, so
+        // a failed request costs the tapper their head start and nothing else.
+      }
+    },
+    [chestKey, isWinner]
+  );
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout);
@@ -541,122 +584,154 @@ export default function MysteryBountyChest({
   playSoundsRef.current = playSounds;
 
   /** Run the open -> explosion -> reveal sequence. Idempotent. */
-  const runOpen = useCallback((slot?: number) => {
-    if (openedRef.current || !chestKey) return;
-    openedRef.current = true;
-    // 2026-08-27: cancel the landing phase's pending `toLocked` — remote
-    // opens / the spectator failsafe can fire inside the 700ms landing
-    // window, and the stale timer then snapped the chest BACK to 'locked'
-    // mid-open before it jumped to explosion.
-    clearTimers();
-
-    // Ask the server for the number, if it has not been asked already. This is
-    // the TAP path and the AUTO-OPEN path in one line, which is what makes
-    // "manual tap plus timeout cannot double-reveal" (section 80/31) true by
-    // construction rather than by two guards that have to agree.
-    requestReveal(slot);
-
-    const speed = getAnimationSpeed();
-    const reduced = prefersReducedMotion();
-    setPhase('opening');
-
-    // Roll the burst film on the same tick the lid starts moving. Autoplay is
-    // permitted because the element is muted + playsInline, and this is inside
-    // a user gesture on the winner's client; a rejected promise simply means
-    // we keep the CSS/canvas path, which is why videoOk exists.
-    if (!reduced) {
-      const v = videoRef.current;
-      if (v) {
-        try {
-          v.currentTime = 0;
-          const pr = v.play();
-          if (pr && typeof pr.catch === 'function') pr.catch(() => setVideoOk(false));
-        } catch {
-          setVideoOk(false);
-        }
-      }
-    }
-
-    if (playSoundsRef.current) {
+  const runOpen = useCallback(
+    (slot?: number) => {
+      if (openedRef.current || !chestKey) return;
+      openedRef.current = true;
       try {
-        soundService.playMysteryChestOpen();
+        onOpenedRef.current?.();
       } catch {
-        /* best effort */
+        /* presentation hook only */
       }
-    }
-    fireVibration([20, 40, 30]);
+      // 2026-08-27: cancel the landing phase's pending `toLocked` — remote
+      // opens / the spectator failsafe can fire inside the 700ms landing
+      // window, and the stale timer then snapped the chest BACK to 'locked'
+      // mid-open before it jumped to explosion.
+      clearTimers();
 
-    const openMs = (reduced ? 250 : 900) * speed;
-    const boomMs = (reduced ? 150 : 600) * speed;
+      // Ask the server for the number, if it has not been asked already. This is
+      // the TAP path and the AUTO-OPEN path in one line, which is what makes
+      // "manual tap plus timeout cannot double-reveal" (section 80/31) true by
+      // construction rather than by two guards that have to agree.
+      requestReveal(slot);
 
-    const toExplosion = setTimeout(() => {
-      setPhase('explosion');
-      if (playSoundsRef.current) {
-        try {
-          soundService.playMysteryChestExplosion();
-        } catch {
-          /* best effort */
-        }
-      }
-      fireVibration([50, 30, 80]);
-    }, openMs);
+      const speed = getAnimationSpeed();
+      const reduced = prefersReducedMotion();
+      setPhase('opening');
 
-    const toRevealed = setTimeout(() => {
-      setPhase('revealed');
-      if (playSoundsRef.current) {
-        try {
-          soundService.playMysteryBountyReveal();
-        } catch {
-          /* best effort */
-        }
-      }
-      if (!reduced) fireConfetti(!!isJackpot);
-
-      // Count the number UP rather than printing it. The climb is the reward;
-      // a number that simply appears is a receipt.
-      //
-      // Read from the ref, not the closure: under the two-phase reveal the
-      // amount arrives from `fn_mystery_bounty_reveal` DURING the lid swing,
-      // after this timer was armed. The closure's copy would be the pre-reveal
-      // zero, so the chest would explode into "0".
-      if (reduced) {
-        setDisplayAmount(amountRef.current);
-      } else {
-        const started = performance.now();
-        const durationMs = 1100 * speed;
-        const step = (now: number) => {
-          // The reveal can also arrive DURING the climb. The amount effect
-          // defers to this loop while it runs, so each frame must read the
-          // latest prize rather than finish on the pre-reveal zero.
-          const target = amountRef.current;
-          const t = Math.min(1, (now - started) / durationMs);
-          // Ease-out cubic: fast at first, settling onto the true figure.
-          const eased = 1 - Math.pow(1 - t, 3);
-          setDisplayAmount(Math.round(target * eased));
-          if (t < 1) {
-            rafRef.current = requestAnimationFrame(step);
-          } else {
-            rafRef.current = null;
-            setDisplayAmount(target);
+      // Roll the burst film on the same tick the lid starts moving. Autoplay is
+      // permitted because the element is muted + playsInline, and this is inside
+      // a user gesture on the winner's client; a rejected promise simply means
+      // we keep the CSS/canvas path, which is why videoOk exists.
+      if (!reduced) {
+        const v = videoRef.current;
+        if (v) {
+          try {
+            v.currentTime = 0;
+            const pr = v.play();
+            if (pr && typeof pr.catch === 'function') pr.catch(() => setVideoOk(false));
+          } catch {
+            setVideoOk(false);
           }
-        };
-        rafRef.current = requestAnimationFrame(step);
+        }
       }
-    }, openMs + boomMs);
 
-    const toEnd = setTimeout(
-      () => {
-        setPhase('idle');
-        onDoneRef.current();
-      },
-      openMs + boomMs + (reduced ? 2200 : 5200) * speed
-    );
+      if (playSoundsRef.current) {
+        try {
+          soundService.playMysteryChestOpen();
+        } catch {
+          /* best effort */
+        }
+      }
+      fireVibration([20, 40, 30]);
 
-    timersRef.current.push(toExplosion, toRevealed, toEnd);
-    // Keyed on the chest, not the data object: the props change mid-sequence
-    // when the amount lands, and a new `runOpen` identity on that render would
-    // re-arm the failsafe effects below against a chest that is already open.
-  }, [chestKey, isJackpot, requestReveal]);
+      const openMs = (reduced ? 250 : 900) * speed;
+      const boomMs = (reduced ? 150 : 600) * speed;
+
+      const toExplosion = setTimeout(() => {
+        setPhase('explosion');
+        if (playSoundsRef.current) {
+          try {
+            soundService.playMysteryChestExplosion();
+          } catch {
+            /* best effort */
+          }
+        }
+        fireVibration([50, 30, 80]);
+      }, openMs);
+
+      /* NEVER COUNT UP TO ZERO (Dan 2026-10-25: "THE LAST TWO PLAYERS GET
+       ZERO APPEAR ON THE SCREEN INSTEAD OF THE PRIZE THEY GOT"). A seat that
+       opened on the revealer's tap can reach this beat before the amount has
+       reached it, and it used to climb to 0 and close before the real figure
+       arrived. The reveal now waits, glowing, for the amount; the full reveal
+       beat then runs from the moment the figure is known. Bounded, so a chest
+       whose amount never reaches this seat still finishes. */
+      const AMOUNT_POLL_MS = 150;
+      const AMOUNT_WAIT_MAX_MS = 15000;
+      let waitedMs = 0;
+      const awaitAmount = () => {
+        if (amountRef.current > 0 || waitedMs >= AMOUNT_WAIT_MAX_MS) {
+          revealNow();
+          return;
+        }
+        waitedMs += AMOUNT_POLL_MS;
+        timersRef.current.push(setTimeout(awaitAmount, AMOUNT_POLL_MS));
+      };
+
+      const revealNow = () => {
+        setPhase('revealed');
+        if (playSoundsRef.current) {
+          try {
+            soundService.playMysteryBountyReveal();
+          } catch {
+            /* best effort */
+          }
+        }
+        if (!reduced) fireConfetti(!!isJackpot);
+
+        // Count the number UP rather than printing it. The climb is the reward;
+        // a number that simply appears is a receipt.
+        //
+        // Read from the ref, not the closure: under the two-phase reveal the
+        // amount arrives from `fn_mystery_bounty_reveal` DURING the lid swing,
+        // after this timer was armed. The closure's copy would be the pre-reveal
+        // zero, so the chest would explode into "0".
+        if (reduced) {
+          setDisplayAmount(amountRef.current);
+        } else {
+          const started = performance.now();
+          const durationMs = 1100 * speed;
+          const step = (now: number) => {
+            // The reveal can also arrive DURING the climb. The amount effect
+            // defers to this loop while it runs, so each frame must read the
+            // latest prize rather than finish on the pre-reveal zero.
+            const target = amountRef.current;
+            const t = Math.min(1, (now - started) / durationMs);
+            // Ease-out cubic: fast at first, settling onto the true figure.
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplayAmount(Math.round(target * eased));
+            if (t < 1) {
+              rafRef.current = requestAnimationFrame(step);
+            } else {
+              rafRef.current = null;
+              setDisplayAmount(target);
+            }
+          };
+          rafRef.current = requestAnimationFrame(step);
+        }
+
+        // The full reveal beat runs from the moment the figure is on screen.
+        timersRef.current.push(
+          setTimeout(
+            () => {
+              setPhase('idle');
+              onDoneRef.current();
+            },
+            (reduced ? 2200 : 5200) * speed
+          )
+        );
+      };
+
+      const toRevealed = setTimeout(awaitAmount, openMs + boomMs);
+
+      timersRef.current.push(toExplosion, toRevealed);
+      // Keyed on the chest, not the data object: the props change mid-sequence
+      // when the amount lands, and a new `runOpen` identity on that render would
+      // re-arm the failsafe effects below against a chest that is already open.
+    },
+    [chestKey, isJackpot, requestReveal]
+  );
 
   /** The winner's tap. Opens locally at once, and tells everyone else. */
   const handleOpenClick = useCallback(() => {
@@ -698,6 +773,8 @@ export default function MysteryBountyChest({
     revealRequestedRef.current = null;
     setDisplayAmount(0);
     setLocalPick(null);
+    setLocalAutoPicked(false);
+    setSecondsLeft(Math.ceil(PICK_WINDOW_MS / 1000));
 
     if (!chestKey) {
       setPhase('idle');
@@ -745,13 +822,22 @@ export default function MysteryBountyChest({
     if (isWinner) {
       const t = setTimeout(() => {
         if (openedRef.current) return;
+        /* TIME RAN OUT (Dan 2026-10-25). With chests on offer the slot is
+           drawn at random for the player and recorded exactly as a tap would
+           be, so the prize opens in a real chest and the other two are shown
+           beside it. Never "no pick", never "the first one". */
+        const slot = choosing ? randomPickSlot(offerSlots) : undefined;
+        if (slot != null) {
+          setLocalPick(slot);
+          setLocalAutoPicked(true);
+        }
         try {
-          onBroadcastOpen?.();
+          onBroadcastOpen?.(slot, slot != null);
         } catch {
           /* ignore */
         }
-        runOpen();
-      }, winnerAutoOpenMs(getAnimationSpeed()));
+        runOpen(slot);
+      }, winnerAutoOpenMs());
       timersRef.current.push(t);
       return () => clearTimeout(t);
     }
@@ -763,7 +849,19 @@ export default function MysteryBountyChest({
     }, SPECTATOR_FAILSAFE_MS * getAnimationSpeed());
     timersRef.current.push(t);
     return () => clearTimeout(t);
-  }, [chestKey, phase, isWinner, runOpen, onBroadcastOpen]);
+  }, [chestKey, phase, isWinner, runOpen, onBroadcastOpen, choosing, offerSlots]);
+
+  // ── The pick countdown, shown to the revealer and the table alike ─────────
+  useEffect(() => {
+    if (!chestKey || phase !== 'locked') return;
+    const started = Date.now();
+    const windowMs = winnerAutoOpenMs();
+    setSecondsLeft(Math.ceil(windowMs / 1000));
+    const id = setInterval(() => {
+      setSecondsLeft(Math.max(0, Math.ceil((windowMs - (Date.now() - started)) / 1000)));
+    }, 250);
+    return () => clearInterval(id);
+  }, [chestKey, phase]);
 
   // ── Someone else opened it ────────────────────────────────────────────────
   useEffect(() => {
@@ -800,6 +898,13 @@ export default function MysteryBountyChest({
       `${formatPrizeAtUnit(n, unitCents)}${moneySuffixAtUnit(unitCents)}`
     );
   const canTap = isWinner && phase === 'locked';
+  /** The slot that holds this player's prize, as far as this seat knows. */
+  const pickedSlot =
+    data.choices?.find((c) => c.picked)?.slot ?? data.pickedSlot ?? localPick ?? null;
+  /** Nobody chose: the window ran out (here or on the revealer's screen), or
+   *  the server opened the chest itself. */
+  const randomlyPicked = localAutoPicked || data.autoPicked === true || data.chosen === false;
+  const opened = phase === 'opening' || phase === 'explosion' || phase === 'revealed';
   // Dan 2026-08-21: 'you should never have "50x the average bounty" — it's
   // just a random payout prize.' Mystery bounties are drawn from a prize
   // table; framing one as a multiple of the average implies the player earned
@@ -809,7 +914,7 @@ export default function MysteryBountyChest({
     <div
       className={`mbc mbc--${phase}${isJackpot ? ' mbc--jackpot' : ''}${
         pressed ? ' mbc--pressed' : ''
-      }${choosing && (phase === 'landing' || phase === 'locked') ? ' mbc--choosing' : ''}`}
+      }${choosing ? ' mbc--choosing' : ''}`}
       style={{ ['--mbc-tension' as string]: tension, ['--mbc-tier' as string]: tier.color }}
       role="dialog"
       aria-modal="true"
@@ -985,29 +1090,56 @@ export default function MysteryBountyChest({
         {/* ── PICK 1 OF 3 (Dan 2026-10-22) ── the sealed chests on offer. The
             revealer taps one; everyone else watches. The big chest above
             opens with the one that was picked. */}
-        {choosing && (phase === 'landing' || phase === 'locked') && (
-          <div className="mbc__picks" role="group" aria-label="Pick A Mystery Chest">
-            {Array.from({ length: offerSlots }, (_, i) => i + 1).map((slot) => (
-              <button
-                key={slot}
-                type="button"
-                className={`mbc__pick${canTap ? ' mbc__pick--tappable' : ''}${
-                  localPick === slot ? ' mbc__pick--picked' : ''
-                }`}
-                onClick={() => handlePick(slot)}
-                disabled={!canTap}
-                aria-label={canTap ? `Pick Chest ${slot}` : `Mystery Chest ${slot}`}
-                style={{ ['--mbc-p' as string]: slot - 1 }}
-              >
-                <span className="mbc__pick-glow" aria-hidden="true" />
-                {artOk ? (
-                  <img className="mbc__pick-img" src={CHEST_IMG} alt="" draggable={false} />
-                ) : (
-                  <span className="mbc__pick-css" aria-hidden="true" />
-                )}
-                <span className="mbc__pick-num">{slot}</span>
-              </button>
-            ))}
+        {choosing && (
+          <div
+            className={`mbc__picks${opened ? ' mbc__picks--opened' : ''}`}
+            role="group"
+            aria-label="Pick A Mystery Chest"
+          >
+            {Array.from({ length: offerSlots }, (_, i) => i + 1).map((slot) => {
+              /* EVERY CHEST STAYS ON SCREEN (Dan 2026-10-25). The picked one
+                 opens; once the award is revealed the other two open beside
+                 it and show what they held. Until the server's answer lands
+                 they stay sealed with a "?", never hidden. */
+              const isPicked = pickedSlot === slot;
+              const choice = data.choices?.find((c) => c.slot === slot);
+              const showValue = phase === 'revealed';
+              return (
+                <button
+                  key={slot}
+                  type="button"
+                  className={`mbc__pick${canTap ? ' mbc__pick--tappable' : ''}${
+                    isPicked ? ' mbc__pick--picked' : ''
+                  }${opened && !isPicked ? ' mbc__pick--other' : ''}${
+                    showValue && choice ? ' mbc__pick--shown' : ''
+                  }`}
+                  onClick={() => handlePick(slot)}
+                  disabled={!canTap}
+                  aria-label={canTap ? `Pick Chest ${slot}` : `Mystery Chest ${slot}`}
+                  style={{ ['--mbc-p' as string]: slot - 1 }}
+                >
+                  <span className="mbc__pick-glow" aria-hidden="true" />
+                  {artOk ? (
+                    <img className="mbc__pick-img" src={CHEST_IMG} alt="" draggable={false} />
+                  ) : (
+                    <span className="mbc__pick-css" aria-hidden="true" />
+                  )}
+                  <span className="mbc__pick-num">{slot}</span>
+                  {showValue && (
+                    <span className="mbc__pick-plate">
+                      <span className="mbc__pick-plate-label">
+                        {isPicked ? (isWinner ? 'Your Prize' : 'The Prize') : 'Could Have Been'}
+                      </span>
+                      <span
+                        className={`mbc__pick-plate-amount${isPicked ? '' : ' mbc__other-amount'}`}
+                      >
+                        {choice ? figure(choice.amount) : isPicked ? figure(displayAmount) : '?'}
+                      </span>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -1022,6 +1154,11 @@ export default function MysteryBountyChest({
                 <span className="mbc__prompt-sub">
                   {choosing ? 'Your Bounty Is Inside The One You Pick' : 'Your Bounty Is Inside'}
                 </span>
+                {choosing && (
+                  <span className="mbc__countdown" aria-live="polite">
+                    {secondsLeft}
+                  </span>
+                )}
               </>
             ) : (
               <>
@@ -1036,6 +1173,11 @@ export default function MysteryBountyChest({
                   </span>
                 </span>
                 <span className="mbc__prompt-sub">Watch The Reveal</span>
+                {choosing && (
+                  <span className="mbc__countdown" aria-hidden="true">
+                    {secondsLeft}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -1048,13 +1190,11 @@ export default function MysteryBountyChest({
                 (the slot picked, or the one the self-opened chest stood in) is
                 what every seat shows; the revealer's own tap fills the gap
                 until it arrives. */}
-            {choosing && (data.pickedSlot ?? localPick) != null && (
+            {choosing && pickedSlot != null && (
               <div className="mbc__picked-slot">
-                {data.chosen === false
-                  ? `Chest ${data.pickedSlot} Held The Prize`
-                  : `${isWinner ? 'You Picked' : `${data.knockerName} Picked`} Chest ${
-                      data.pickedSlot ?? localPick
-                    }`}
+                {randomlyPicked
+                  ? `Time Ran Out - Chest ${pickedSlot} Was Picked At Random`
+                  : `${isWinner ? 'You Picked' : `${data.knockerName} Picked`} Chest ${pickedSlot}`}
               </div>
             )}
             <div className="mbc__tier" style={{ color: tier.color }}>
@@ -1084,23 +1224,12 @@ export default function MysteryBountyChest({
                 Won By <strong>{data.knockerName}</strong>
               </div>
             )}
-            {/* PICK 1 OF 3: what the chests that were not picked held. Real
-                chests of this event; they stay in the pool for the knockouts
-                still to come, each of which gets its own fresh random three. */}
-            {data.choices && data.choices.length > 1 && (
+            {/* PICK 1 OF 3: the row of chests above now carries every amount,
+                the prize and the two that could have been. This heading is the
+                one line of words that points at them. */}
+            {choosing && !data.choices && (
               <div className="mbc__others">
-                <div className="mbc__others-head">The Other Chests Held</div>
-                <div className="mbc__others-row">
-                  {data.choices
-                    .filter((c) => !c.picked)
-                    .map((c) => (
-                      <span className="mbc__other" key={c.slot}>
-                        <span className="mbc__other-slot">Chest {c.slot}</span>
-                        <span className="mbc__other-amount">{figure(c.amount)}</span>
-                        {c.tierLabel && <span className="mbc__other-tier">{c.tierLabel}</span>}
-                      </span>
-                    ))}
-                </div>
+                <div className="mbc__others-head">Opening The Other Chests</div>
               </div>
             )}
           </div>

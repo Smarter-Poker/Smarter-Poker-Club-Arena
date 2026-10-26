@@ -1323,6 +1323,15 @@
   display: none;
 }
 
+/* CENTERED ON THE SCREEN (Dan 2026-10-25). The row was 420px wide inside a
+   340px stage, so it hung off the stage's right edge and the three chests sat
+   right of centre. With chests on offer the stage itself widens to hold the
+   row, and the row fills it exactly, so the middle chest is the centre of the
+   screen at every width. */
+.mbc--choosing .mbc__stage {
+  width: min(440px, 94vw);
+}
+
 .mbc__picks {
   position: relative;
   z-index: 8;
@@ -1330,8 +1339,9 @@
   justify-content: center;
   align-items: flex-end;
   gap: clamp(8px, 4vw, 22px);
-  width: min(92vw, 420px);
-  margin: 6px auto 4px;
+  width: 100%;
+  margin: 18px auto 4px;
+  box-sizing: border-box;
 }
 
 .mbc__pick {
@@ -1503,4 +1513,86 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── EVERY CHEST STAYS ON SCREEN (Dan 2026-10-25) ───────────────────────────
+   "YOU MUST ALWAYS SHOW THE OTHER 2 PRIZES THAT 'COULD OF BEEN CHOOSEN'."
+   The row of chests no longer leaves when one is picked. The picked chest
+   lifts and glows while the burst plays; on the reveal each chest carries a
+   plate with what it held - the prize, and the two that could have been. */
+
+.mbc__picks--opened {
+  margin-bottom: 40px;
+}
+
+.mbc__picks--opened .mbc__pick {
+  animation: none;
+}
+
+.mbc__pick--picked .mbc__pick-img {
+  transform: translateY(-6px) scale(1.06);
+}
+
+.mbc__pick--other .mbc__pick-img {
+  opacity: 0.55;
+  filter: grayscale(0.35);
+  transition:
+    opacity 0.35s ease,
+    filter 0.35s ease;
+}
+
+.mbc__pick--other.mbc__pick--shown .mbc__pick-img {
+  opacity: 0.8;
+  filter: none;
+}
+
+.mbc__pick-plate {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  white-space: nowrap;
+  animation: mbcOtherIn 0.45s ease-out both;
+  animation-delay: calc(0.25s + var(--mbc-p, 0) * 0.12s);
+}
+
+.mbc__pick-plate-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.mbc__pick-plate-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--mbc-tier, #6fdcff);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.mbc__pick--picked .mbc__pick-plate-label {
+  color: #e8eef7;
+}
+
+/* The pick clock: five real seconds, counting down where everyone can see. */
+.mbc__countdown {
+  display: block;
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: #e8eef7;
+  text-shadow: 0 0 12px rgba(111, 220, 255, 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mbc__pick-plate {
+    animation-duration: 0.01ms !important;
+  }
 }

@@ -1467,6 +1467,9 @@ function warmSeatsToPlayers(
   return players;
 }
 
+/** The remote-open key for a chest that carries no award id (legacy path). */
+const MYSTERY_CHEST_LEGACY_KEY = '__legacy_chest__';
+
 export default function TablePage(props: TablePageProps = {}) {
   return (
     <TableRouteBoundary embeddedTableId={props.embeddedTableId}>
@@ -1560,7 +1563,16 @@ function LiveTablePage({
   // `chestChannelRef` below.
   //
   const chestQueue = useAnimationQueue<MysteryChestData>();
-  const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+  /**
+   * WHICH chest the table has been told is open (2026-10-25). This was one
+   * boolean for the whole table, so a "chest opened" from an earlier chest at
+   * this table - a horse's late tap, a reconnect replay - could open the NEXT
+   * chest the instant it landed, before its revealer had picked anything.
+   * Keyed by award, it can only open the chest it was sent for.
+   */
+  const [chestRemoteOpenedAward, setChestRemoteOpenedAward] = useState<string | null>(null);
+  /** Award ids whose chest has started opening on THIS client. */
+  const [chestOpenedLocally, setChestOpenedLocally] = useState<string | null>(null);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -1702,7 +1714,9 @@ function LiveTablePage({
   >({});
   /* The slot the revealer's tap broadcast, per award: the rest of the table
      shows it until the server's offer (with every chest's amount) arrives. */
-  const [chestRemoteSlots, setChestRemoteSlots] = useState<Record<string, number>>({});
+  const [chestRemoteSlots, setChestRemoteSlots] = useState<
+    Record<string, { slot: number; auto: boolean }>
+  >({});
   const loadChestOfferRef = useRef<(awardId: string) => Promise<void>>(async () => {});
   const loadChestOffer = useCallback(async (awardId: string) => {
     if (!awardId) return;
@@ -1747,18 +1761,37 @@ function LiveTablePage({
   const mysteryChest = useMemo<MysteryChestData | null>(() => {
     if (!queuedChest) return null;
     const offer = queuedChest.awardId ? chestOffers[queuedChest.awardId] : undefined;
-    const remoteSlot = queuedChest.awardId ? chestRemoteSlots[queuedChest.awardId] : undefined;
+    const remote = queuedChest.awardId ? chestRemoteSlots[queuedChest.awardId] : undefined;
     const offered: MysteryChestData = offer
       ? {
           ...queuedChest,
           offerSlots: offer.slots,
-          pickedSlot: offer.pickedSlot ?? remoteSlot ?? null,
-          chosen: offer.revealed ? offer.chosen : remoteSlot != null ? true : undefined,
+          pickedSlot: offer.pickedSlot ?? remote?.slot ?? null,
+          autoPicked: remote?.auto === true,
+          chosen: offer.revealed ? offer.chosen : remote != null ? true : undefined,
           choices: offer.choices,
         }
-      : queuedChest;
+      : remote
+        ? { ...queuedChest, pickedSlot: remote.slot, autoPicked: remote.auto }
+        : queuedChest;
     const revealed = queuedChest.awardId ? chestReveals[queuedChest.awardId] : undefined;
-    if (!revealed) return offered;
+    if (!revealed) {
+      /* THE AMOUNT FROM THE OFFER (2026-10-25). A seat that is not the
+         revealer used to learn the prize only from the engine's deadline
+         broadcast, which can land after its reveal has closed: it showed 0.
+         Once the award is revealed, the offer names every chest's amount,
+         the picked one included, so that is the figure this seat shows. */
+      const won = offer?.revealed ? offer.choices?.find((c) => c.picked) : undefined;
+      if (!won || !(won.amount > 0)) return offered;
+      return {
+        ...offered,
+        amount: won.amount,
+        amountPending: false,
+        tier: won.tier ?? queuedChest.tier,
+        tierLabel: won.tierLabel ?? queuedChest.tierLabel,
+        isJackpot: won.tier === 'jackpot' || queuedChest.isJackpot,
+      };
+    }
     return {
       ...offered,
       amount: revealed.amount,
@@ -1769,6 +1802,41 @@ function LiveTablePage({
       recipients: revealed.recipients ?? queuedChest.recipients,
     };
   }, [queuedChest, chestReveals, chestOffers, chestRemoteSlots]);
+  /**
+   * EVERY CHEST'S AMOUNT REACHES EVERY SEAT (Dan 2026-10-25): "YOU MUST
+   * ALWAYS SHOW THE OTHER 2 PRIZES THAT 'COULD OF BEEN CHOOSEN'."
+   *
+   * The amounts come from `fn_mystery_bounty_offer`, and only once the award
+   * is revealed. The open broadcast reaches the table BEFORE the reveal lands,
+   * so a single read at that moment answers "not yet" and the other two chests
+   * were never shown. This reads the chest on screen until the server says it
+   * is revealed with every chest described - a bounded presentation read (twenty
+   * tries at most, one chest), never a write - and stops the moment it
+   * has the answer or the chest leaves the screen.
+   */
+  const currentChestId = queuedChest?.awardId ?? null;
+  const currentOffer = currentChestId ? chestOffers[currentChestId] : undefined;
+  const currentChestOpened =
+    !!currentChestId &&
+    (chestOpenedLocally === currentChestId ||
+      chestRemoteOpenedAward === currentChestId ||
+      !!chestReveals[currentChestId]);
+  const currentOfferComplete = !!currentOffer?.revealed && !!currentOffer?.choices;
+  const currentOfferMissing = !currentOffer;
+  useEffect(() => {
+    if (!currentChestId) return;
+    if (currentOfferComplete) return;
+    // Before the chest opens, only a MISSING offer is worth reading: it is
+    // what decides whether there are three chests to pick from at all.
+    if (!currentChestOpened && !currentOfferMissing) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      void loadChestOfferRef.current(currentChestId);
+      if (tries >= 20) clearInterval(id);
+    }, 700);
+    return () => clearInterval(id);
+  }, [currentChestId, currentChestOpened, currentOfferComplete, currentOfferMissing]);
   /* The chest on screen, for the tap broadcast (whose callback stays stable). */
   const currentChestAwardRef = useRef<string | null>(null);
   currentChestAwardRef.current = queuedChest?.awardId ?? null;
@@ -1831,7 +1899,7 @@ function LiveTablePage({
    * exists purely so the other seats open at the same moment.
    */
   const broadcastChestOpen = useCallback(
-    (slot?: number) => {
+    (slot?: number, autoPicked?: boolean) => {
       const awardId = currentChestAwardRef.current;
       const chan = chestChannelRef.current;
       if (!chan) return;
@@ -1839,7 +1907,7 @@ function LiveTablePage({
         chan.send({
           type: 'broadcast',
           event: 'mystery_chest_opened',
-          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId },
+          payload: { tableId, at: Date.now(), slot: slot ?? null, awardId, auto: !!autoPicked },
         });
       } catch (err) {
         // A failed broadcast degrades to each spectator's own failsafe timer.
@@ -2027,20 +2095,19 @@ function LiveTablePage({
     const chan = masterBus.getOrCreateChannel(`mystery-chest-${tableId}`);
     chestChannelRef.current = chan;
     chan.on('broadcast', { event: 'mystery_chest_opened' }, (msg: { payload?: unknown }) => {
-      setChestRemoteOpened(true);
-      /* PICK 1 OF 3: the tap carries the chest the revealer picked. Show it at
-         once, then read the offer as soon as the reveal can have landed, so
-         every seat sees what the other chests held before its overlay closes. */
-      const p = (msg?.payload ?? {}) as { awardId?: unknown; slot?: unknown };
+      /* PICK 1 OF 3: the tap carries the chest the revealer picked, and
+         whether the 5-second window ran out and drew it at random. Show it at
+         once; the offer (every chest's amount) is read by the effect below
+         until it lands. */
+      const p = (msg?.payload ?? {}) as { awardId?: unknown; slot?: unknown; auto?: unknown };
       const awardId = typeof p.awardId === 'string' ? p.awardId : '';
+      // Only the chest it was sent for. An older sender with no award id opens
+      // only a chest that has none either (the legacy one-shot path).
+      setChestRemoteOpenedAward(awardId || MYSTERY_CHEST_LEGACY_KEY);
       if (!awardId) return;
       const slot = Math.floor(Number(p.slot));
       if (slot >= 1 && slot <= 3) {
-        setChestRemoteSlots((prev) => ({ ...prev, [awardId]: slot }));
-      }
-      for (const wait of [1500, 4000]) {
-        const t = setTimeout(() => void loadChestOfferRef.current(awardId), wait);
-        (t as unknown as { unref?: () => void }).unref?.();
+        setChestRemoteSlots((prev) => ({ ...prev, [awardId]: { slot, auto: p.auto === true } }));
       }
     });
     if (chan.state !== 'joined') {
@@ -15435,7 +15502,6 @@ function LiveTablePage({
                   queueIndex: Number(p.queueIndex) || 1,
                   queueTotal: Number(p.queueTotal) || 1,
                 });
-                setChestRemoteOpened(false);
               } else if (data?.type === 'mystery_bounty_activated') {
                 /* THE CHESTS ARE LIVE (2026-10-05). Only the lobby listened to
                    this, so the table learned the phase had changed from its
@@ -15457,7 +15523,12 @@ function LiveTablePage({
                 // stops the page holding award ids nobody will ask about again.
                 const c = data.payload || {};
                 if (c.tableId && c.tableId !== tableId) return;
-                setChestReveals({});
+                /* Keep the chest still on screen: wiping its amount mid-reveal
+                   is how a seat that opened late counted up to zero. */
+                const onScreen = currentChestAwardRef.current;
+                setChestReveals((prev) =>
+                  onScreen && prev[onScreen] ? { [onScreen]: prev[onScreen] } : {}
+                );
               } else if (
                 data?.type === 'bounty_collected' ||
                 data?.type === 'mystery_bounty_revealed'
@@ -15515,6 +15586,12 @@ function LiveTablePage({
                     : [];
                   if (b.awardId) {
                     void loadChestOffer(String(b.awardId));
+                    /* THE SERVER OPENED IT (2026-10-25). If the revealer's own
+                       open never reached this seat (they dropped, or were the
+                       one who never picked), the server's reveal is the open:
+                       every seat opens the chest now instead of staring at a
+                       locked one until its own failsafe. */
+                    setChestRemoteOpenedAward(String(b.awardId));
                     // Keyed by award: a duplicate broadcast (section 80/33)
                     // overwrites the same entry instead of queueing a second
                     // chest or crediting anything twice.
@@ -15550,7 +15627,6 @@ function LiveTablePage({
                       queueTotal: Number(b.queueTotal) || undefined,
                       recipients: revealedRecipients.length > 1 ? revealedRecipients : undefined,
                     });
-                    setChestRemoteOpened(false);
                   }
                 } else {
                   /* ── THE KNOCKOUT (Dan 2026-08-28, PokerBros parity) ──────
@@ -25248,8 +25324,12 @@ function LiveTablePage({
            figure at all while this table's arena is still unread. */
         unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         viewerUserId={userId}
-        remoteOpened={chestRemoteOpened}
+        remoteOpened={
+          !!queuedChest &&
+          chestRemoteOpenedAward === (queuedChest.awardId || MYSTERY_CHEST_LEGACY_KEY)
+        }
         onBroadcastOpen={broadcastChestOpen}
+        onOpened={() => setChestOpenedLocally(queuedChest?.awardId ?? null)}
         /* THE TAP (section 19). Fired once per chest, by the designated
            revealer's client only, from the tap and the auto-open alike. */
         onRequestReveal={
@@ -25260,7 +25340,6 @@ function LiveTablePage({
         queuedBehind={chestQueue.pending}
         onDone={() => {
           chestQueue.complete();
-          setChestRemoteOpened(false);
         }}
         playSounds={ambientSoundsAllowed}
       />

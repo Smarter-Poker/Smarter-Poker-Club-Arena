@@ -7,6 +7,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MysteryBountyChest, {
   parseMysteryChestOffer,
+  PICK_WINDOW_MS,
+  randomPickSlot,
   winnerAutoOpenMs,
   type MysteryChestData,
 } from '../../src/components/tournament/MysteryBountyChest';
@@ -94,12 +96,47 @@ describe('pick 1 of 3', () => {
     expect(screen.getByText(/Winner Is Picking A Chest/)).toBeTruthy();
   });
 
-  it('opens by itself if the player never picks, leaving the slot to the server', () => {
+  it('gives the player five seconds, then picks a chest for them AT RANDOM (Dan 2026-10-25)', () => {
     const onRequestReveal = vi.fn();
-    render(view(offered, 'winner', { onRequestReveal }));
+    const onBroadcastOpen = vi.fn();
+    render(view(offered, 'winner', { onRequestReveal, onBroadcastOpen }));
     act(() => vi.advanceTimersByTime(700));
-    act(() => vi.advanceTimersByTime(9_000));
-    expect(onRequestReveal).toHaveBeenCalledWith(undefined);
+    expect(screen.getAllByText('5').length).toBeGreaterThan(0);
+    act(() => vi.advanceTimersByTime(PICK_WINDOW_MS - 50));
+    expect(onRequestReveal).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(100));
+    expect(onRequestReveal).toHaveBeenCalledTimes(1);
+    const slot = onRequestReveal.mock.calls[0][0];
+    // A real chest is picked and recorded, never "no pick".
+    expect([1, 2, 3]).toContain(slot);
+    expect(onBroadcastOpen).toHaveBeenCalledWith(slot, true);
+  });
+
+  it('draws the random chest evenly, not always the first one', () => {
+    const seen = new Set<number>();
+    for (let i = 0; i < 300; i += 1) seen.add(randomPickSlot(3));
+    expect([...seen].sort()).toEqual([1, 2, 3]);
+  });
+
+  it('keeps all three chests on screen through the open (Dan 2026-10-25)', () => {
+    const { container } = render(view(offered, 'winner'));
+    act(() => vi.advanceTimersByTime(700));
+    fireEvent.click(container.querySelectorAll('button.mbc__pick')[2]);
+    act(() => vi.advanceTimersByTime(900));
+    expect(container.querySelectorAll('button.mbc__pick')).toHaveLength(3);
+    expect(container.querySelector('.mbc__pick--picked .mbc__pick-num')?.textContent).toBe('3');
+  });
+
+  it('never counts up to zero: the reveal waits for the real amount', () => {
+    const { container, rerender } = render(view(offered, 'spectator', { remoteOpened: true }));
+    act(() => vi.advanceTimersByTime(700));
+    act(() => vi.advanceTimersByTime(4_000));
+    expect(container.querySelector('.mbc__amount')).toBeNull();
+    rerender(
+      view({ ...offered, amount: 79, amountPending: false }, 'spectator', { remoteOpened: true })
+    );
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(container.querySelector('.mbc__amount')?.textContent).toBe('79');
   });
 
   it('shows what the two chests that were not picked held', () => {
@@ -123,7 +160,6 @@ describe('pick 1 of 3', () => {
       )
     );
     act(() => vi.advanceTimersByTime(4_000));
-    expect(screen.getByText('The Other Chests Held')).toBeTruthy();
     const others = Array.from(container.querySelectorAll('.mbc__other-amount')).map(
       (n) => n.textContent
     );
@@ -132,8 +168,8 @@ describe('pick 1 of 3', () => {
     // Every seat can tell which chest held the prize and which held the rest.
     expect(container.querySelector('.mbc__picked-slot')?.textContent).toBe('You Picked Chest 1');
     expect(
-      Array.from(container.querySelectorAll('.mbc__other-slot')).map((n) => n.textContent)
-    ).toEqual(['Chest 2', 'Chest 3']);
+      Array.from(container.querySelectorAll('.mbc__pick-plate-label')).map((n) => n.textContent)
+    ).toEqual(['Your Prize', 'Could Have Been', 'Could Have Been']);
   });
 
   it('tells the rest of the table which chest the knockout picked', () => {
@@ -191,15 +227,15 @@ describe('the chest is honest about who chose', () => {
     act(() => vi.advanceTimersByTime(700));
     act(() => vi.advanceTimersByTime(5_000));
     expect(container.querySelector('.mbc__picked-slot')?.textContent).toBe(
-      'Chest 2 Held The Prize'
+      'Time Ran Out - Chest 2 Was Picked At Random'
     );
   });
 
-  it('closes the winner window inside the engine deadline at any animation speed', () => {
+  it('is five real seconds at every animation speed, inside the engine deadline', () => {
     for (const speed of [0.5, 1, 1.5, 2, 3]) {
+      expect(winnerAutoOpenMs(speed)).toBe(5000);
       expect(winnerAutoOpenMs(speed)).toBeLessThanOrEqual(8200);
     }
-    expect(winnerAutoOpenMs(0.5)).toBe(4500);
   });
 
   it('keeps one auto-open timer while the table re-renders', () => {
@@ -218,9 +254,11 @@ describe('the chest is honest about who chose', () => {
 
 describe('reading the offer', () => {
   it('hides the amounts until the server shows them, and maps them when it does', () => {
-    expect(parseMysteryChestOffer({ ok: true, slots: 3, picked_slot: null, choices: [] })).toEqual(
-      { slots: 3, pickedSlot: null, choices: undefined }
-    );
+    expect(parseMysteryChestOffer({ ok: true, slots: 3, picked_slot: null, choices: [] })).toEqual({
+      slots: 3,
+      pickedSlot: null,
+      choices: undefined,
+    });
     const revealed = parseMysteryChestOffer({
       ok: true,
       slots: 3,

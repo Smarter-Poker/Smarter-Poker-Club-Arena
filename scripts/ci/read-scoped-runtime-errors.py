@@ -32,6 +32,18 @@ EVENT_PREFIX = re.compile(r'^\[Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80}\] 
 # Fixed existing manager transitions, with bounded counts only. Never export
 # the rest of a console line, a generic message, or an arbitrary object.
 BALANCE_PROGRESS = re.compile(r'^\[Tournament:([0-9a-f]{8})\] (?:(consolidation outstanding - sweeps move to the consolidation lane|consolidation finished - sweeps return to the general lanes)|Resumed - ([0-9]{1,4}) tables, level ([0-9]{1,4}))$')
+BALANCE_REFUSAL = re.compile(r'^\[Tournament:([0-9a-f]{8})\] Break ([0-9a-f]{8}) (not begun|members not dispatched|not retired): ([a-z_]{1,64})(?::.{0,512})?$')
+BREAK_REFUSAL_REASONS = frozenset({
+    'source_engine_absent', 'source_retention_refused', 'source_park_probe_missed',
+    'source_engine_replaced', 'mutation_not_allowed', 'source_roster_unread',
+    'source_roster_empty', 'source_seat_unfunded_or_unbound',
+    'source_registrations_unread', 'source_roster_disagrees', 'destinations_unread',
+    'destinations_full', 'movement_unproven', 'begin_refused',
+    'seat_move_outcome_pending', 'source_boundary_unclaimed',
+    'terminal_handoff_required', 'original_owner_lifecycle_changed',
+    'members_unresolved', 'state_not_retirable', 'manager_authority_unavailable',
+    'reconcile_refused', 'amendment_refused',
+})
 # Keep the original deal refusals as well as their later watchdog consequence.
 # Only these emitted call sites, with an exactly selected table, are admitted.
 ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start)\]')
@@ -296,6 +308,20 @@ def extract(raw, scopes):
         body = line[ts.end():] if ts else line
         if HEADER.match(body):
             finish()
+            refusal = BALANCE_REFUSAL.fullmatch(body)
+            if refusal and refusal[4] in BREAK_REFUSAL_REASONS:
+                block, context, stamp = [], None, None
+                candidates = event_prefixes.get(refusal[1], [])
+                if len(candidates) == 1:
+                    records.append({'timestamp': ts.group(1) if ts else None,
+                                    'context': 'Tournament.break_refused', 'scopeIds': [],
+                                    'inferredScopeIds': candidates,
+                                    'scopeAttribution': 'canonical_event_prefix_inferred',
+                                    'symbolicErrors': sorted(set(ERROR.findall(body))),
+                                    'engineReasons': [],
+                                    'breakRefusal': {'breakIdPrefix': refusal[2],
+                                                     'stage': refusal[3], 'reason': refusal[4]}})
+                continue
             progress = BALANCE_PROGRESS.fullmatch(body)
             if progress:
                 block, context, stamp = [], None, None

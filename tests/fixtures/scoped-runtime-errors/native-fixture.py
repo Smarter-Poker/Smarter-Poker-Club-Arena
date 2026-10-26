@@ -21,6 +21,23 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_break_refusals_keep_only_named_guards_and_symbolic_codes(self):
+        prefix = '[Tournament:'+EVENT[:8]+'] Break abcdef12 '
+        lines = [prefix+'not begun: source_roster_unread:PRIVATE_SQL_PASSWORD',
+                 prefix+'members not dispatched: source_engine_absent',
+                 prefix+'not retired: members_unresolved:2_of_4',
+                 prefix+'not begun: movement_unproven:F06_MOVEMENT_WHOLE_ROSTER_REQUIRED',
+                 prefix+'not begun: PRIVATE_SECRET',
+                 prefix+'arbitrary: source_engine_absent',
+                 prefix+'not begun: source_engine_absent PRIVATE_SECRET']
+        result = reader.extract(('\n'.join(STAMP+x for x in lines)).encode(), SCOPES)
+        self.assertEqual(result['matchingRecords'], 4)
+        self.assertEqual(result['records'][0]['breakRefusal'],
+                         {'breakIdPrefix': 'abcdef12', 'stage': 'not begun', 'reason': 'source_roster_unread'})
+        self.assertEqual(result['records'][3]['symbolicErrors'], ['F06_MOVEMENT_WHOLE_ROSTER_REQUIRED'])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('2_of_4', json.dumps(result))
+
     def test_balance_progress_admits_only_three_fixed_selected_transitions(self):
         prefix = '[Tournament:'+EVENT[:8]+'] '
         valid = [prefix+'Resumed - 23 tables, level 7',

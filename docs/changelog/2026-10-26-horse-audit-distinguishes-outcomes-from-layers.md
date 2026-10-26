@@ -30,3 +30,10 @@ are limited to ten. Native cases cover late entries, duplicate representations,
 legacy precedence, unrelated ledger legs, missing funding, empty days, UTC
 boundaries, service-only grants, and more than ten events. No balances or
 original financial records change.
+
+The existing required horse daily-counts native runner now executes the
+source-bound audit fixture after stopping its accepted-hand fixture cluster.
+It preserves one JSON receipt, propagates audit failures, and retains all
+forty accepted-hand checks. CI workflow commands, matrices and shared workflow
+source-binding maps remain byte-identical to protected main; no extra workflow
+step or optional test path supplies this regression protection.

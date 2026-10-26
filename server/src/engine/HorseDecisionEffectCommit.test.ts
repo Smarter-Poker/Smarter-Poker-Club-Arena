@@ -1270,6 +1270,75 @@ describe('authoritative horse action effect commit', () => {
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
   });
 
+  describe('a short all in is called by a big stack at the commit door (Dan 2026-10-26)', () => {
+    const shortAllInSpot = (h: ReturnType<typeof harness>, legal: string[]) => {
+      // Tournament, preflop, big blind 2: the human is all in for 4 (2 BB),
+      // the horse has 100 (50 BB) and must add 4.
+      h.engine.isTournamentTable = () => true;
+      h.engine.tableFormat = () => 'tournament';
+      h.engine.handController.getBlindSnapshot = () => ({
+        smallBlind: 1,
+        bigBlind: 2,
+        ante: 0,
+        bigBlindAnte: false,
+      });
+      Object.assign(h.state, { stage: 'preflop', communityCards: [], currentBet: 4, pot: 7 });
+      Object.assign(h.state.players[1], { bet: 4, stack: 0, totalInvested: 4, is_all_in: true });
+      h.engine.handController.getAuthoritativeActionState = () => ({
+        schemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        canAct: true,
+        legalActions: legal,
+        toCall: 4,
+        minRaiseTo: 8,
+        maxRaiseTo: 100,
+        structure: 'no_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+      });
+    };
+
+    it('a worker failure folds nothing: the liveness fold becomes the call', async () => {
+      const h = harness(true);
+      shortAllInSpot(h, ['fold', 'call', 'raise', 'all_in']);
+      decisionWorker.decideFast.mockRejectedValueOnce(new Error('worker crashed'));
+
+      h.engine.scheduleHorseAction(h.player, 1, h.enginePlayer, h.state);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.performAction).toHaveBeenCalledTimes(1);
+      expect(h.performAction.mock.calls[0][1]).toBe('call');
+      expect(h.performAction.mock.calls[0][2]).toBe(4);
+    });
+
+    it('on an all-in-or-fold table the call is the all in', async () => {
+      const h = harness(true);
+      shortAllInSpot(h, ['fold', 'all_in']);
+      decisionWorker.decideFast.mockRejectedValueOnce(new Error('worker crashed'));
+
+      h.engine.scheduleHorseAction(h.player, 1, h.enginePlayer, h.state);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.performAction).toHaveBeenCalledTimes(1);
+      expect(h.performAction.mock.calls[0][1]).toBe('all_in');
+    });
+
+    it('a cash table is never touched: the liveness fold stands', async () => {
+      const h = harness(true);
+      shortAllInSpot(h, ['fold', 'call', 'raise', 'all_in']);
+      h.engine.isTournamentTable = () => false;
+      h.engine.tableFormat = () => 'cash';
+      decisionWorker.decideFast.mockRejectedValueOnce(new Error('worker crashed'));
+
+      h.engine.scheduleHorseAction(h.player, 1, h.enginePlayer, h.state);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(h.performAction).toHaveBeenCalledTimes(1);
+      expect(h.performAction.mock.calls[0][1]).toBe('fold');
+    });
+  });
+
   it('does not act after a genuine authority abort', async () => {
     const { engine, player, enginePlayer, state, performAction } = harness(true);
     decisionWorker.decideFast.mockRejectedValueOnce(new HorseDecisionAbortedError());

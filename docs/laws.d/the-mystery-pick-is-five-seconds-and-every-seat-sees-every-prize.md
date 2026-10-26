@@ -1,0 +1,3 @@
+# tests/the-mystery-pick-is-five-seconds-and-every-seat-sees-every-prize.law.test.ts
+
+Dan 2026-10-25: the knockout has five real seconds to pick one of the three mystery chests, and if they do not, one is chosen for them at random (never "no pick", never the first one); all three chests stay on screen, centred, and the two that were not picked always show what they "could have been". No seat may ever count up to zero: the reveal waits for the real amount, a non-revealing seat reads the prize from the revealed offer, a "chest opened" only opens the chest it was sent for, the server's reveal opens every seat, and a horse's pick opens its award exactly as a person's tap does.

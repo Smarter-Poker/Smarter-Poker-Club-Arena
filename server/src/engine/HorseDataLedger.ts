@@ -751,6 +751,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase12'
   ),
   flag(
+    'phase14',
+    'caller may disable the worker-owned corrective functional policy; never requests candidate authority',
+    'Phase14',
+    'horseDecision/workerRuntime.phase14Admission'
+  ),
+  flag(
+    'phase14Corrective',
+    'branded worker-local original-state corrective capability; refused from IPC and unavailable without qualified catalog and current S4 composition',
+    'Phase14',
+    'HorseLogic corrective_policy node'
+  ),
+  flag(
     'phase13Joint',
     "joint multiway and bomb policy; shadow by default; live candidate only from the worker's own P13.3 authority for the decision's variant (cash), never from a caller",
     'Phase13'
@@ -2444,6 +2456,30 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic -> ServerTableEngineTurns (P13.3)',
     "none, shadow change (never applied), authority-backed cash selection of the decision's variant, controller acceptance or withdrawal before acceptance; never a tournament objective selection, never on top of an applied Phase 10/11/12 candidate (the named refusals are phase13_selection_refused_*)",
     'Phase13'
+  ),
+  receipt(
+    'phase14_original_reads_unavailable',
+    'horseDecision/workerRuntime.executeFast',
+    'an admitted corrective path could not capture its original private read frame; baseline retained',
+    'Phase14'
+  ),
+  receipt(
+    'phase14_authority_*',
+    'HorsePhase14Authority -> worker/client/physical and Lightning acceptance',
+    'per-domain protected authority/composition admission, withdrawal and acceptance/effect verdicts',
+    'Phase14'
+  ),
+  receipt(
+    'phase14_selection_*',
+    'HorsePhase14Acceptance',
+    'selection withdrawn before acceptance or exact controller-accepted correction; never submission proof',
+    'Phase14'
+  ),
+  receipt(
+    'phase14_execution_*',
+    'HorsePhase14Acceptance after settleHorseExecutionWitness',
+    'actual controller witness outcome for an original-state correction',
+    'Phase14'
   ),
   receipt(
     'phase13_authority_*',

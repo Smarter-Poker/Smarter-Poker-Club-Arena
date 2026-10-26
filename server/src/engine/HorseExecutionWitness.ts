@@ -92,7 +92,8 @@ type QualifiedAuthorityKey =
   | 'phase10Authority'
   | 'phase11Authority'
   | 'phase12Authority'
-  | 'phase13Authority';
+  | 'phase13Authority'
+  | 'phase14Authority';
 
 export interface HorseAcceptedAction {
   readonly record: Readonly<
@@ -202,6 +203,16 @@ export interface HorseExecutionWitness {
   readonly phase12Authority?: HorseWitnessPhase12Authority | null;
   /** P13.3; absent on retained witnesses and decisions without a P13.3 joint receipt. */
   readonly phase13Authority?: HorseWitnessPhase13Authority | null;
+  readonly phase14Authority?: HorseWitnessPhase8Authority | null;
+  readonly phase14Inputs?: Readonly<{
+    domain: string;
+    catalogDigest: string;
+    policyDigest: string;
+    baselineSelectionsDigest: string;
+    inputDigest: string;
+    readFrameDigest: string;
+    samplingContractDigest: string;
+  }> | null;
   readonly computeMs: number;
   readonly governorScale: number;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed' | 'unverified';
@@ -360,6 +371,39 @@ export function recordHorsePhase11Verdict(
  * Bind the canonical request already validated by the worker, not a fresh live
  * table snapshot that may have changed while the decision was computing.
  */
+/** Phase 14's declared family is fold/call with explicit incremental amounts. */
+export function withdrawHorsePhase14Selection(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  const binding = witness?.phase14Authority;
+  if (!witness || witness.executionStatus !== 'pending' || binding?.selection !== 'selected')
+    return;
+  const reference = binding.reference;
+  if (
+    (reference.action !== 'fold' && reference.action !== 'call') ||
+    reference.amount === null ||
+    !Number.isFinite(reference.amount) ||
+    reference.amount < 0
+  )
+    return;
+  const mutable = witness as {
+    -readonly [K in 'selected' | 'expectedExecutionAmount']: HorseExecutionWitness[K];
+  };
+  mutable.selected = Object.freeze({ ...reference });
+  mutable.expectedExecutionAmount =
+    reference.action === 'fold' ? 0 : Math.round(reference.amount * 100) / 100;
+  binding.selection = 'withdrawn_before_acceptance';
+  binding.verdict = verdict;
+}
+export function recordHorsePhase14Verdict(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  if (witness?.executionStatus === 'pending' && witness.phase14Authority)
+    witness.phase14Authority.verdict = verdict;
+}
+
 export function createHorseExecutionWitness(
   snapshot: LiveHorseDecisionSnapshot,
   decision: HorseDecision,
@@ -561,6 +605,33 @@ export function createHorseExecutionWitness(
           },
         }
       : {}),
+    ...(decision.correctivePolicy
+      ? {
+          phase14Authority: {
+            continuationVersion:
+              decision.correctivePolicy.authority?.continuationVersion ?? 'unavailable',
+            mode: 'candidate' as const,
+            selection: decision.correctivePolicy.applied
+              ? ('selected' as const)
+              : ('none' as const),
+            authority: decision.correctivePolicy.authority
+              ? Object.freeze({ ...decision.correctivePolicy.authority })
+              : null,
+            verdict: null,
+            candidate: Object.freeze({ ...decision.correctivePolicy.proposed }),
+            reference: Object.freeze({ ...decision.correctivePolicy.baseline }),
+          },
+          phase14Inputs: Object.freeze({
+            domain: decision.correctivePolicy.domain,
+            catalogDigest: decision.correctivePolicy.catalogDigest,
+            policyDigest: decision.correctivePolicy.policyDigest,
+            baselineSelectionsDigest: decision.correctivePolicy.baselineSelectionsDigest,
+            inputDigest: decision.correctivePolicy.inputDigest,
+            readFrameDigest: decision.correctivePolicy.readFrameDigest,
+            samplingContractDigest: decision.correctivePolicy.samplingContractDigest,
+          }),
+        }
+      : {}),
     policyGraph: decision.policyGraph
       ? {
           version: decision.policyGraph.version,
@@ -711,6 +782,7 @@ export function settleHorseExecutionWitness(
     'phase11Authority',
     'phase12Authority',
     'phase13Authority',
+    'phase14Authority',
   ] as const) {
     const binding = witness[key];
     if (

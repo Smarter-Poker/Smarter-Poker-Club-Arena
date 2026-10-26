@@ -42,6 +42,14 @@ def execute(repo, image, output):
             for directory in ['dist','node_modules']:
                 shutil.copytree(repo/'server'/directory,source/'server'/directory,symlinks=False)
             shutil.copyfile(repo/'server/package.json',source/'server/package.json')
+            # The engine image keeps src/ beside dist/ (server/Dockerfile), and
+            # tsc does not emit tracked .mjs/.json runtime assets, so the
+            # compiled engine imports those from src/. Mirror only those files.
+            for relative in paths:
+                if relative.startswith('server/src/') and not relative.endswith('.ts'):
+                    target=source/relative
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    shutil.copyfile(repo/relative,target)
             args=['docker','run','--name',name,'--network','none','--read-only','--user','1000:1000','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','512','--memory','4g','--cpus','2','--tmpfs','/tmp:rw,nosuid,nodev,mode=1777','--tmpfs','/run:rw,nosuid,nodev,uid=1000,gid=1000,mode=0700','--tmpfs','/var/lib/postgresql:rw,nosuid,nodev,uid=1000,gid=1000,mode=0700','--mount',f'type=bind,src={source},dst=/ev,readonly','--entrypoint','node',image,'/ev/native.mjs']
             created=True
             try:

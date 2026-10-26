@@ -23,6 +23,8 @@ export type HorseObservationIdentity =
         | 'invalid_actor_identity'
         | 'missing_seat_generation'
         | 'invalid_seat_generation'
+        | 'missing_pool_session'
+        | 'invalid_pool_session'
         | 'non_voluntary_origin'
         | 'unavailable_public_node'
         | 'action_node_mismatch';
@@ -41,23 +43,14 @@ const uuid = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-/** Runs before the accepted hand's one atomic write, outside the action clock.
- * Retries and restarts reuse the durable identity; fences, workers, timestamps
- * and filtered action positions cannot create a second observation of it.
- * Missing lineage excludes new learning while leaving valid settlement intact.
- */
-export function bindHorseObservationIdentity(
+const unavailable = (
+  reason: Extract<HorseObservationIdentity, { status: 'unavailable' }>['reason']
+): HorseObservationIdentity => Object.freeze({ version: 1, status: 'unavailable', reason });
+function validateObservationAction(
   action: HorseIdentityAction,
   actionOrdinal: number,
-  context: {
-    handId?: string;
-    tableId: string;
-    seatGenerations?: ReadonlyMap<string, HandSeatGeneration>;
-  }
-): HorseObservationIdentity {
-  const unavailable = (
-    reason: Extract<HorseObservationIdentity, { status: 'unavailable' }>['reason']
-  ): HorseObservationIdentity => Object.freeze({ version: 1, status: 'unavailable', reason });
+  context: { handId?: string; tableId: string }
+): HorseObservationIdentity | null {
   if (!uuid(context.handId) || !Number.isSafeInteger(actionOrdinal) || actionOrdinal < 0)
     return unavailable('missing_hand_identity');
   if (!uuid(context.tableId) || !uuid(action.userId)) return unavailable('invalid_actor_identity');
@@ -75,7 +68,26 @@ export function bindHorseObservationIdentity(
     !node.legalActions.includes(action.action as (typeof node.legalActions)[number])
   )
     return unavailable('action_node_mismatch');
-  const generation = context.seatGenerations?.get(action.userId);
+  return null;
+}
+
+/** Runs before the accepted hand's one atomic write, outside the action clock.
+ * Retries and restarts reuse the durable identity; fences, workers, timestamps
+ * and filtered action positions cannot create a second observation of it.
+ * Missing lineage excludes new learning while leaving valid settlement intact.
+ */
+export function bindHorseObservationIdentity(
+  action: HorseIdentityAction,
+  actionOrdinal: number,
+  context: {
+    handId?: string;
+    tableId: string;
+    seatGenerations?: ReadonlyMap<string, HandSeatGeneration>;
+  }
+): HorseObservationIdentity {
+  const invalid = validateObservationAction(action, actionOrdinal, context);
+  if (invalid) return invalid;
+  const generation = context.seatGenerations?.get(action.userId!);
   if (!generation) return unavailable('missing_seat_generation');
   if (
     !uuid(generation.seat_id) ||
@@ -84,16 +96,48 @@ export function bindHorseObservationIdentity(
     !Number.isFinite(Date.parse(generation.seat_joined_at))
   )
     return unavailable('invalid_seat_generation');
-  const handId = context.handId.toLowerCase();
+  const handId = context.handId!.toLowerCase();
   const sessionKey = createHash('sha256')
     .update(
       JSON.stringify([
         'horse-observation-session-v1',
         context.tableId.toLowerCase(),
-        action.userId.toLowerCase(),
+        action.userId!.toLowerCase(),
         generation.seat_id.toLowerCase(),
         // Keep the original database precision. Date.parse is validation only.
         generation.seat_joined_at,
+      ])
+    )
+    .digest('hex');
+  return Object.freeze({
+    version: 1,
+    status: 'bound',
+    observationId: `${handId}:${actionOrdinal}`,
+    handId,
+    actionOrdinal,
+    sessionKey,
+  });
+}
+
+/** Lightning's formation pool session is its immutable original participation
+ * generation. It is not a physical chair or a later/current roster lookup. */
+export function bindLightningHorseObservationIdentity(
+  action: HorseIdentityAction,
+  actionOrdinal: number,
+  context: { handId?: string; tableId: string; poolSessionId?: string }
+): HorseObservationIdentity {
+  const invalid = validateObservationAction(action, actionOrdinal, context);
+  if (invalid) return invalid;
+  if (context.poolSessionId === undefined) return unavailable('missing_pool_session');
+  if (!uuid(context.poolSessionId)) return unavailable('invalid_pool_session');
+  const handId = context.handId!.toLowerCase();
+  const sessionKey = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'horse-lightning-observation-session-v1',
+        context.tableId.toLowerCase(),
+        action.userId!.toLowerCase(),
+        context.poolSessionId.toLowerCase(),
       ])
     )
     .digest('hex');

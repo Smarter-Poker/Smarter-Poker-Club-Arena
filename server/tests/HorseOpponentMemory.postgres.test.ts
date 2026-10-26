@@ -3,7 +3,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Client } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+const bridge = vi.hoisted(() => ({
+  query: null as null | ((args: any) => Promise<any>),
+  calls: 0,
+}));
+vi.mock('../src/services/supabase.js', () => ({
+  supabase: {
+    rpc: (_name: string, args: any) => ({
+      abortSignal: async () => {
+        bridge.calls++;
+        return bridge.query!(args);
+      },
+    }),
+  },
+}));
+vi.mock('../src/services/errorReporter.js', () => ({ reportError: () => {} }));
+import {
+  createDecisionOpponentProfileReader,
+  readHorseOpponentProfiles,
+} from '../src/services/HorseOpponentMemory.js';
 import {
   exploitHandIncrements,
   freshExploitCounters,
@@ -84,6 +103,7 @@ let contextTransaction: string;
 const addedVariants = ['flh', 'flo8', 'short_deck'] as const;
 const contextActor = 'c1000000-0000-4000-8000-000000000001';
 const contextBefore = new Map<string, string>();
+let compatibilityProof: Record<string, unknown>;
 const hand = (
   id: string,
   action = 'raise',
@@ -306,7 +326,73 @@ beforeAll(async () => {
   );
   if (!contexts) throw new Error('remaining opponent contexts migration missing');
   contextTransaction = readFileSync(join(path, contexts), 'utf8');
-  await client.query(contextTransaction);
+  // Exercise the actual installed five-variant reader through the service,
+  // then the exact new migration, without any production connection or probe.
+  bridge.query = async (args) => {
+    try {
+      const result = await client.query(
+        'select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)',
+        [args.p_user_ids, args.p_variant, args.p_mode, args.p_size]
+      );
+      return {
+        data: result.rows.map((row) => ({ ...row, observed_hands: Number(row.observed_hands) })),
+        error: null,
+      };
+    } catch (error) {
+      return { data: null, error };
+    }
+  };
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(Date.now());
+  try {
+    const read = createDecisionOpponentProfileReader(async () => 'installed');
+    const requests = addedVariants.map(
+      (variant) =>
+        ({
+          fence: `compat:${variant}:1:lease:turn`,
+          gameState: {
+            gameVariant: variant,
+            players: [{ user_id: contextActor }],
+            dealtSeatIds: [1, 2, 3],
+          },
+        }) as any
+    );
+    await client.query('set role service_role');
+    const absent = [];
+    for (const request of requests) absent.push(await read(request));
+    const oldFailureCalls = bridge.calls;
+    for (const variant of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8'])
+      await readHorseOpponentProfiles(
+        ['c9000000-0000-4000-8000-000000000001'],
+        variant,
+        'cash',
+        'hu'
+      );
+    const stableCalls = bridge.calls;
+    vi.advanceTimersByTime(59_999);
+    for (const request of requests) await read({ ...request, fence: `${request.fence}:other` });
+    const cachedCalls = bridge.calls;
+    await client.query('reset role');
+    await client.query(contextTransaction);
+    vi.advanceTimersByTime(1);
+    await client.query('set role service_role');
+    const restored = [];
+    for (const request of requests) restored.push(await read(request));
+    const recoveredCalls = bridge.calls;
+    for (const request of requests) await read(request);
+    compatibilityProof = {
+      absent,
+      oldFailureCalls,
+      stableCalls,
+      cachedCalls,
+      recoveredCalls,
+      sameHandCalls: bridge.calls,
+      restoredVariants: restored.map((rows) => rows?.[0]?.variant),
+    };
+  } finally {
+    await client.query('reset role');
+    vi.useRealTimers();
+  }
 }, 30000);
 
 afterAll(async () => {
@@ -825,6 +911,17 @@ describe('durable opponent memory with real PostgreSQL', () => {
 });
 
 describe('remaining saved opponent contexts with real PostgreSQL', () => {
+  it('contains the actual five-to-eight schema transition without a global cooldown or sticky failed hand', () => {
+    expect(compatibilityProof).toEqual({
+      absent: [[], [], []],
+      oldFailureCalls: 3,
+      stableCalls: 8,
+      cachedCalls: 8,
+      recoveredCalls: 11,
+      sameHandCalls: 11,
+      restoredVariants: [...addedVariants],
+    });
+  });
   it('changes only each exact allowlist and leaves the bounded reader contract intact', async () => {
     const oldList = "('nlh','plo4','plo5','plo6','plo8')";
     const nextList = "('nlh','plo4','plo5','plo6','plo8','flh','flo8','short_deck')";
@@ -956,11 +1053,6 @@ describe('remaining saved opponent contexts with real PostgreSQL', () => {
       )
     ).rows[0];
     expect(grants).toEqual({ service: true, anon: false, browser: false });
-    const liveProof = contextTransaction.match(/^-- @live-proof: (.+)$/m)?.[1];
-    expect(liveProof).toBeTruthy();
-    expect((await client.query(`select (${liveProof}) as installed`)).rows[0]).toEqual({
-      installed: true,
-    });
     await expect(client.query(contextTransaction)).rejects.toThrow(
       /variant constraint preimage differs/
     );

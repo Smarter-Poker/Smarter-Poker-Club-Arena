@@ -11,15 +11,18 @@ export const HORSE_POLICY_ORDER = Object.freeze([
   'tournament_continuation',
   'variant_utility_guard',
   'joint_policy',
+  'corrective_policy',
   'wager_rules',
   'timing',
 ] as const);
 export type HorsePolicyNode = (typeof HORSE_POLICY_ORDER)[number];
-export const HORSE_POLICY_GRAPH_VERSION = 'horse-policy-order-v2' as const;
-const LEGACY_POLICY_ORDER = Object.freeze(HORSE_POLICY_ORDER.filter((n) => n !== 'wager_rules'));
+export const HORSE_POLICY_GRAPH_VERSION = 'horse-policy-order-v3' as const;
+const V2_POLICY_ORDER = Object.freeze(HORSE_POLICY_ORDER.filter((n) => n !== 'corrective_policy'));
+const LEGACY_POLICY_ORDER = Object.freeze(V2_POLICY_ORDER.filter((n) => n !== 'wager_rules'));
 /** Keep retained journal records readable under their original order. */
 export function horsePolicyOrderForVersion(version: unknown): readonly HorsePolicyNode[] | null {
   if (version === HORSE_POLICY_GRAPH_VERSION) return HORSE_POLICY_ORDER;
+  if (version === 'horse-policy-order-v2') return V2_POLICY_ORDER;
   if (version === 'horse-policy-order-v1') return LEGACY_POLICY_ORDER;
   return null;
 }
@@ -35,7 +38,7 @@ export interface HorsePolicyTransition {
   elapsedMs: number;
 }
 export interface HorsePolicyGraphReceipt {
-  version: 'horse-policy-order-v1' | typeof HORSE_POLICY_GRAPH_VERSION;
+  version: 'horse-policy-order-v1' | 'horse-policy-order-v2' | typeof HORSE_POLICY_GRAPH_VERSION;
   transitions: HorsePolicyTransition[];
   finalAction: HorsePolicyAction;
 }

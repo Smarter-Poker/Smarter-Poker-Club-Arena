@@ -103,11 +103,19 @@ function preserveResponseMetadata(buffered: Response, original: Response): Respo
   return buffered;
 }
 
-function createBoundedServiceClient(timeoutMs: number, actorToken?: string): SupabaseClient {
-  const client = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
+function createBoundedServiceClient(
+  timeoutMs: number,
+  actorToken?: string,
+  replacementSubject = false
+): SupabaseClient {
+  const clientKey = replacementSubject
+    ? 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+    : EFFECTIVE_SERVICE_ROLE_KEY;
+  const client = createClient(SUPABASE_URL, clientKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
+      ...(replacementSubject ? { detectSessionInUrl: false } : {}),
     },
     global: {
       ...(actorToken ? { headers: { Authorization: `Bearer ${actorToken}` } } : {}),
@@ -184,6 +192,40 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
                 ])
                   authoritativeHeaders.delete(name);
                 authoritativeHeaders.set('Authorization', `Bearer ${actorToken}`);
+              } else if (replacementSubject) {
+                // This finite input device authenticates the original player,
+                // never a service/tournament actor. It may use only the normal
+                // join door and its own Auth session, with local cleanup only.
+                const url = new URL(
+                  typeof Request !== 'undefined' && attemptInput instanceof Request
+                    ? attemptInput.url
+                    : String(attemptInput)
+                );
+                const method = (
+                  init.method ??
+                  (typeof Request !== 'undefined' && attemptInput instanceof Request
+                    ? attemptInput.method
+                    : 'GET')
+                ).toUpperCase();
+                if (
+                  url.origin !== new URL(SUPABASE_URL).origin ||
+                  ![
+                    'POST /auth/v1/verify',
+                    'GET /auth/v1/user',
+                    'POST /auth/v1/logout',
+                    'POST /rest/v1/rpc/fn_join_club_atomic',
+                  ].includes(`${method} ${url.pathname}`) ||
+                  (url.pathname === '/auth/v1/logout' && url.searchParams.get('scope') !== 'local')
+                )
+                  throw new Error('original_subject_request_boundary');
+                authoritativeHeaders = new Headers(headers);
+                for (const name of [
+                  'x-smarter-data-actor',
+                  'x-smarter-data-protocol',
+                  'x-smarter-tournament-id',
+                  'x-smarter-tournament-lease-generation',
+                ])
+                  authoritativeHeaders.delete(name);
               } else {
                 authoritativeHeaders = dataActorHeaders(headers);
               }
@@ -230,7 +272,7 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
           // A fenced manager generation stands down at the boundary that saw
           // the fence (tournamentManagerFence.ts). The response itself is
           // still returned so the caller's own error handling runs once.
-          if (resp.status === 403) await observeFenceInResponse(resp);
+          if (resp.status === 403 && !replacementSubject) await observeFenceInResponse(resp);
           if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
           let code: unknown;
           try {
@@ -256,6 +298,14 @@ export const maintenanceSupabase: SupabaseClient =
 
 /* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
 export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);
+
+/** An isolated, ordinary player session for the original replacement join.
+ * Constructor and bounded transport remain owned here, using the public key
+ * without stamping service or tournament authority on player requests. */
+export function createReplacementSubjectClient(url: string): SupabaseClient {
+  if (url !== SUPABASE_URL) throw new Error('original_subject_configuration_mismatch');
+  return createBoundedServiceClient(DB_TIMEOUT_MS, undefined, true);
+}
 /* Exported so callers can DERIVE their batch sizes from the budget that
    actually binds them, instead of writing a literal that cannot notice
    when its own per-item cost changes. See cashAccountingBatchBudget.ts. */

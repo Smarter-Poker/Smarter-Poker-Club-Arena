@@ -21,10 +21,18 @@
  * It reads through the image's compiled HorseDecisionJournalStore and copies the
  * image's reconcileHorseJournalHand verdict beside every chain.
  */
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  statSync,
+  openSync,
+  closeSync,
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, isAbsolute } from 'node:path';
 
 export const CHAIN_LINKS = Object.freeze([
   'request',
@@ -947,13 +955,21 @@ export function serializePopulation(population) {
 // ---------------------------------------------------------------------------
 // run: one finite read-only observation on the engine host (Phase 6A pattern).
 // ---------------------------------------------------------------------------
-const REMOTE_OBSERVER = String.raw`import base64,json,re,subprocess,sys,time
+export const REMOTE_OBSERVER = String.raw`import base64,json,re,subprocess,sys,time
 p=json.load(sys.stdin)
 sha=p["release"]; name=p["name"]; deadline_s=int(p["deadline"])
-assert re.fullmatch(r"[0-9a-f]{40}",sha) and re.fullmatch(r"horse-phase6d-population-[0-9tz]+",name), "payload_identity"
-source=base64.b64decode(p["source"],validate=True)
-declaration=p["declaration"]
-assert len(source)<=262144 and re.fullmatch(r"[A-Za-z0-9+/=]+",declaration), "payload_bounds"
+fleet=p.get("mode")=="fleet"
+name_pattern=r"horse-phase6d-fleet-[0-9tz]+" if fleet else r"horse-phase6d-population-[0-9tz]+"
+assert re.fullmatch(r"[0-9a-f]{40}",sha) and re.fullmatch(name_pattern,name), "payload_identity"
+if fleet:
+ source=base64.b64decode(p["packet"],validate=True)
+ assert 0<len(source)<=1048576 and deadline_s==90, "fleet_payload_bounds"
+ packet=json.loads(source)
+ assert packet.get("sourceSha")==sha, "fleet_source"
+else:
+ source=base64.b64decode(p["source"],validate=True)
+ declaration=p["declaration"]
+ assert len(source)<=262144 and re.fullmatch(r"[A-Za-z0-9+/=]+",declaration), "payload_bounds"
 mount="/var/lib/club-arena/horse-decisions"
 deadline=time.monotonic()+deadline_s
 def command(args,**kw):
@@ -976,19 +992,20 @@ r=command(["docker","inspect","--format",'{{range .Config.Env}}{{if eq (index (s
 assert [l for l in r.stdout.decode().splitlines() if l]==["HORSE_DECISION_JOURNAL_DIR="+mount], "journal_env"
 result={"containerName":name,"release":sha,"imageId":image,"servingContainer":identity[0],"servingStartedAt":identity[4],"horseJournalMountVerified":True,"readOnly":True,"network":"none","memoryBytes":536870912,"cpus":0.5}
 try:
- r=command(["docker","create","--name",name,"-i","--network","none","--no-healthcheck","--read-only","--memory","512m","--memory-swap","512m","--cpus","0.5","--pids-limit","32","--mount","type=bind,src="+mount+",dst="+mount+",readonly","--env","HORSE_DECISION_JOURNAL_DIR="+mount,"--entrypoint","node",image,"--no-warnings","--input-type=module","-","observe",declaration])
+ args=["dist/scripts/horseJournalReview.js","--fleet",mount,"/dev/stdin"] if fleet else ["--no-warnings","--input-type=module","-","observe",declaration]
+ r=command(["docker","create","--name",name,"-i","--network","none","--no-healthcheck","--read-only","--memory","512m","--memory-swap","512m","--cpus","0.5","--pids-limit","32","--mount","type=bind,src="+mount+",dst="+mount+",readonly","--env","HORSE_DECISION_JOURNAL_DIR="+mount,"--entrypoint","node",image]+args)
  assert r.returncode==0, r.stderr.decode()[:200]
  r=command(["docker","start","-ai",name],input=source,timeout=deadline_s-20)
  result["exitCode"]=r.returncode
  result["stderrBytes"]=len(r.stderr)
- result["stderrTail"]=r.stderr.decode(errors="replace")[-400:]
+ if not fleet: result["stderrTail"]=r.stderr.decode(errors="replace")[-400:]
  assert len(r.stdout)<=16777216
  result["observation"]=json.loads(r.stdout)
  state=command(["docker","inspect","--format","{{json .State}}",name]); assert state.returncode==0
  state=json.loads(state.stdout);result["oomKilled"]=state["OOMKilled"];result["containerExitCode"]=state["ExitCode"]
  result["sameServingIdentityAfter"]=serving()==identity
 except Exception as error:
- result["executionStatus"]="unavailable";result["errorClass"]=type(error).__name__;result["errorText"]=str(error)[:300]
+ result["executionStatus"]="unavailable";result["errorClass"]=type(error).__name__;result["errorText"]="fleet_observer_unavailable" if fleet else str(error)[:300]
 finally:
  try:
   cleanup=command(["docker","rm","-f",name],cleanup=True,timeout=5)
@@ -1002,6 +1019,126 @@ finally:
   result["observerRemoved"]=False;result["absenceErrorClass"]=type(error).__name__
  print(json.dumps(result))
 `;
+
+/** Explicit private observation through the provider's ALREADY configured
+ * authenticated HSSH wrapper. No host, key, environment or release operation
+ * is selected here. Packet authority remains the original accepted-hand owner. */
+export function runFleetObservation({ packetPath, sshCommand, outputPath }) {
+  if (
+    ![packetPath, sshCommand, outputPath].every(isAbsolute) ||
+    statSync(packetPath).size > 1048576 ||
+    (statSync(packetPath).mode & 0o077) !== 0 ||
+    !statSync(sshCommand).isFile()
+  )
+    throw Error('fleet_private_paths');
+  const text = readFileSync(packetPath, 'utf8'),
+    packet = JSON.parse(text);
+  if (
+    packet.version !== 1 ||
+    !SHA40.test(packet.sourceSha ?? '') ||
+    !Array.isArray(packet.horseIds) ||
+    packet.horseIds.length !== 1000 ||
+    new Set(packet.horseIds).size !== 1000 ||
+    packet.horseIds.some(
+      (id) =>
+        typeof id !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)
+    ) ||
+    !Array.isArray(packet.handKeys) ||
+    packet.handKeys.length < 1 ||
+    packet.handKeys.length > 10000 ||
+    new Set(packet.handKeys).size !== packet.handKeys.length ||
+    packet.handKeys.some((key) => !SHA64.test(key))
+  )
+    throw Error('fleet_packet');
+  const start = Date.parse(packet.window?.startUtc),
+    end = Date.parse(packet.window?.endUtc);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 900000)
+    throw Error('fleet_window');
+  const canonical = (v) =>
+    Array.isArray(v)
+      ? v.map(canonical)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.keys(v)
+              .sort()
+              .map((k) => [k, canonical(v[k])])
+          )
+        : v;
+  const packetDigest = sha256(JSON.stringify(canonical(packet)));
+  // Reserve the private evidence destination BEFORE remote activity; never
+  // replace an older observation, and never print the private result to logs.
+  const fd = openSync(outputPath, 'wx', 0o600);
+  try {
+    const providerIdentity =
+      /^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ID ?? '') &&
+      /^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ATTEMPT ?? '')
+        ? `${process.env.GITHUB_RUN_ID}t${process.env.GITHUB_RUN_ATTEMPT}z`
+        : new Date().toISOString().replace(/[-:.]/g, '').toLowerCase() +
+          randomBytes(8).readBigUInt64BE().toString();
+    const payload = {
+      mode: 'fleet',
+      release: packet.sourceSha,
+      name: 'horse-phase6d-fleet-' + providerIdentity,
+      deadline: 90,
+      packet: Buffer.from(text).toString('base64'),
+    };
+    const run = spawnSync(sshCommand, ['python3 -c ' + shellQuote(REMOTE_OBSERVER)], {
+      input: JSON.stringify(payload),
+      maxBuffer: 2 * 1024 * 1024,
+      timeout: 105000,
+    });
+    let execution;
+    try {
+      if (run.status === 0) execution = JSON.parse(run.stdout.toString('utf8'));
+    } catch {
+      /* opaque unavailable */
+    }
+    const observation = execution?.observation;
+    const qualifiedExecution =
+      run.status === 0 &&
+      !execution?.executionStatus &&
+      [0, 2].includes(execution?.exitCode) &&
+      execution?.containerExitCode === execution?.exitCode &&
+      execution?.oomKilled === false &&
+      execution?.sameServingIdentityAfter === true &&
+      execution?.observerRemoved === true &&
+      execution?.cleanupExitCode === 0 &&
+      execution?.horseJournalMountVerified === true &&
+      observation?.packetDigest === packetDigest &&
+      observation?.sourceSha === packet.sourceSha &&
+      Number.isInteger(observation?.observedHorses) &&
+      observation.observedHorses >= 0 &&
+      observation.observedHorses <= 1000 &&
+      typeof observation?.completeHorseCoverage === 'boolean' &&
+      (!observation.completeHorseCoverage || observation.observedHorses === 1000);
+    const result = {
+      version: 1,
+      scope: 'private_selected_fleet_observation',
+      containerName: payload.name,
+      operationDigest: sha256(payload.name),
+      packetDigest,
+      sourceSha: packet.sourceSha,
+      qualifiedExecution,
+      sshExitCode: run.status,
+      execution: execution ?? null,
+      canonicalRosterVerified: false,
+      completePopulation: false,
+      allPhasesVerified: false,
+    };
+    writeFileSync(fd, JSON.stringify(result) + '\n');
+    return {
+      qualifiedExecution,
+      operationDigest: sha256(payload.name),
+      completeHorseCoverage: qualifiedExecution && observation.completeHorseCoverage === true,
+      observedHorses: qualifiedExecution ? observation.observedHorses : null,
+      canonicalRosterVerified: false,
+      allPhasesVerified: false,
+    };
+  } finally {
+    closeSync(fd);
+  }
+}
 
 function runObservation({ loaded, sshTarget, sshKey, outDir, date }) {
   const declarationText = readFileSync(loaded.path, 'utf8');
@@ -1449,8 +1586,25 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const mode = argv.find((a) => ['run', 'report', 'observe'].includes(a));
+  const mode = argv.find((a) => ['run', 'report', 'observe', 'fleet'].includes(a));
   const args = parseArgs(argv.filter((a) => a !== mode));
+  if (mode === 'fleet') {
+    try {
+      const result = runFleetObservation({
+        packetPath: args.packet,
+        sshCommand: args['ssh-command'],
+        outputPath: args.out,
+      });
+      process.stdout.write(JSON.stringify(result) + '\n');
+      process.exitCode = result.qualifiedExecution ? 0 : 2;
+    } catch {
+      process.stdout.write(
+        JSON.stringify({ qualifiedExecution: false, status: 'unavailable' }) + '\n'
+      );
+      process.exitCode = 3;
+    }
+    return;
+  }
   if (mode === 'observe') {
     try {
       await observe(args._[0]);

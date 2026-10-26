@@ -48,7 +48,8 @@ export class PooledPublicProfiles {
       !observerParticipantsBind(participants, hand) ||
       participants.status !== 'bound' ||
       !Array.isArray(hand.actions) ||
-      hand.actions.length > 4096
+      hand.actions.length > 4096 ||
+      hand.actions.some((a) => !a || typeof a !== 'object' || Array.isArray(a))
     )
       return 0;
     const context = participants.contexts[0]!;

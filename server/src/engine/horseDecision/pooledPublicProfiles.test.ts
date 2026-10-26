@@ -295,6 +295,7 @@ it('gives 1000 horse views the same public read while keeping private plans indi
 it('bounds profile capacity and refuses malformed action streams without throwing', () => {
   const pool = new PooledPublicProfiles(() => 100, 1);
   expect(pool.observe({ ...shared(), actions: {} as never })).toBe(0);
+  expect(pool.observe({ ...shared(), actions: [null] as never })).toBe(0);
   expect(pool.observe(shared())).toBe(1);
   const hand = shared();
   hand.generation = 1000002;

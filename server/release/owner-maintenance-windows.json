@@ -2,6 +2,15 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-whole-field-add-on-next-break",
+      "ownerOrder": "Dan, 2026-10-26, supplied Claude handoff: \"Approved — activate the add-on break fix at the next :55 break after its checks pass.\" Codex chat 01a17890-b026-7081-bb8f-525765221415 then explicitly assigned finishing, push and publication of the tournament freeze and horse add-on bug. This protected entry co-delivers the remaining freeze repair from PR #8205: committed capacity dealers keep their bounded admission turn, with external terminal adoption preserved. One off-cycle activation at the next eligible :55 Chicago break, later :55 breaks as fallback, of protected main containing PR #8194 (whole-field add-on offers through a bounded pool). Preserve last-hand lead, hand-boundary drain, database freeze, certificate, full proof/rollback reserve, thaw and the one-window-per-hour limit. Ends once its containing engine serves. No migrations or unrelated repair authorized.",
+      "contains": "15a2c64bcda15ecfa2df0ff5c174b611c9b2804b",
+      "notBefore": "2026-10-26T15:16:04Z",
+      "notAfter": "2026-10-26T21:06:04Z",
+      "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-premium-set-keeps-betting-now",
       "ownerOrder": "Dan, 2026-10-25 21:09 Chicago, in this chat, on a horse checking AA down on 9h 5s 3s 9s 6c: \"HORSES CAN NOT EVER BE PLAYING PASSIVELY WITH PREMIUM HANDS ... NEVER CHECKING IT DOWN!! MAKE THESE FIXES NOW FOR THE HORSE BRAIN AND UPDATE ALL 1000 HORSES\"; 23:12 Chicago: \"finish it up now, and push and publish now, not at 4am. finish up any and all unfinished work\". One off-cycle engine activation of protected main containing PR #8166, merge c2a5cd44bae19d689bd22e7959f272bcf0ee201a: the hold'em premium rule (live since #8122/#8138) did not count a premium pocket pair that made a set under a higher board card (QQ on a K-high board with a third queen) as a made hand, so that horse could still check its set down; #8166 counts the set, so it keeps betting. Preserve the existing last-hand notice, hand-boundary drain, database freeze, certificate, rollback reserve, thaw and the seal's one-window-per-hour limit. This order ends once the containing engine is serving. No migrations and no unrelated repair are authorized by this entry.",
       "contains": "c2a5cd44bae19d689bd22e7959f272bcf0ee201a",

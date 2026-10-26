@@ -29,3 +29,11 @@ repair cron, direct production mutation or second dealer path was added.
 
 This is an engine repair. Source qualification and protected publication are
 separate from activation and live proof of newly opened tables dealing.
+
+The owner-ordered activation entry co-delivers this repair and protected
+add-on throughput merge `15a2c64bcda15ecfa2df0ff5c174b611c9b2804b` (#8194).
+It permits announcements only at Chicago :53 or :54 for the next eligible
+:55 cutover, expires within six hours, names no migration, and retains the
+existing rolling-hour, drain, freeze, certificate, rollback and thaw guards.
+The containing engine must be verified live; this source entry is not proof
+of activation.

@@ -60,7 +60,10 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
  child=dict(os.environ,DATABASE_URL=f'postgresql://postgres@localhost:{port}/postgres?sslmode=require',FIXTURE_MINUTE='20')
  def apply(name,minute='20',disconnect=False,ca=cert,lane=False,repair=False,extra=[]):
   options=['--require',clock]+(['--require',drop] if disconnect else [])
-  return cmd([a.node,*options,installer,'--migration',name,'--ssl-root-cert',ca,*(['--settlement-lane'] if lane else []),*(['--maintenance-thaw-repair'] if repair else []),*extra],env=dict(child,FIXTURE_MINUTE=minute),cwd=work,expect=None)
+  return cmd([a.node,*options,installer,'--migration',name,'--ssl-root-cert',ca,*(['--settlement-lane'] if lane else []),*(['--maintenance-thaw-repair'] if repair else []),*extra],env=dict(child,FIXTURE_MINUTE=minute,APPLY_DDL_ADMISSION_WAIT_MS='1500',APPLY_DDL_ADMISSION_POLL_MS='200'),cwd=work,expect=None)
+ # The installer waits out a database DDL refusal (production: 12 min,
+ # apply-recorded-migration.mjs); this fixture shortens it so each expected
+ # refusal still ends, with nothing sent, inside the 40 s command budget.
  def migration(version,table):
   name=version+'_'+table+'.sql';text=f"BEGIN;\nCREATE TABLE public.{table}(id integer PRIMARY KEY);\nDO $$ BEGIN PERFORM 'Dollar $$ and apostrophe '' remain exact'; END $$;\nCOMMIT;\n"
   # Nested same dollar delimiter would be invalid SQL; exercise independent

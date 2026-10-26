@@ -297,9 +297,8 @@ function handToText(hand: HandRecord): string {
     said.add(r.userId);
     /* Dan 2026-10-25: a hand that called the river and was mucked is on
        record with its cards, and still says it mucked. */
-    const muckedAtTable = m.players.some((p) => p.userId === r.userId && p.mucked);
     lines.push(
-      r.hole && !r.holePrivate && muckedAtTable
+      r.calledMuck
         ? `${r.name} mucked ${r.handName} (called the river)`
         : r.hole
           ? `${r.name} showed ${r.handName}${r.holePrivate ? ' (yours, not shown)' : ''}`

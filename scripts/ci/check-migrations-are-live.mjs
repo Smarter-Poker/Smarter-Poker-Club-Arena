@@ -810,8 +810,11 @@ function main() {
       for (const b of m.bad) console.error(`      proof false: ${b}`);
     }
     console.error(
-      '\n  These are in the repository and not in the database. Apply each one with the\n' +
-        '  Supabase MCP apply_migration, or - if it was superseded - put\n' +
+      '\n  These are in the repository and not in the database. Install each one from main\n' +
+        '  by dispatching apply-merged-migration (repository_dispatch, client_payload\n' +
+        '  {"migration":"<file name>"}), which sends the merged bytes once in one\n' +
+        '  transaction - never the Supabase MCP apply_migration (PUBLISHING.md). Or, if it\n' +
+        '  was superseded, put\n' +
         '  "-- SUPERSEDED BY <version>" on its first line, naming the file that replaced it,\n' +
         '  in a pull request that says why. History is never deleted.\n'
     );

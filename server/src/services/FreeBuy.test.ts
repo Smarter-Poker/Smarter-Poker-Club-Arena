@@ -153,10 +153,10 @@ describe('90 percent of surviving funded horses add on', () => {
     expect(rate).toBeLessThan(HORSE_ADDON_IMMEDIATE_RATE + 0.04);
   });
 
-  it('selects a stable 90 percent cohort for the event', () => {
+  it('selects every horse for the event (owner ruling 2026-10-25: 100 percent)', () => {
+    expect(HORSE_ADDON_PARTICIPATION_RATE).toBe(1);
     const chosen = ids.filter((h) => horseTakesAddOn(h, 'evt-1'));
-    expect(chosen.length / ids.length).toBeGreaterThan(HORSE_ADDON_PARTICIPATION_RATE - 0.03);
-    expect(chosen.length / ids.length).toBeLessThan(HORSE_ADDON_PARTICIPATION_RATE + 0.03);
+    expect(chosen.length).toBe(ids.length);
     for (const id of ids) {
       expect(horseAddOnTiming(id, 'evt-1', true) !== 'declined').toBe(horseTakesAddOn(id, 'evt-1'));
       expect(horseTakesAddOn(id, 'evt-1')).toBe(horseTakesAddOn(id, 'evt-1'));

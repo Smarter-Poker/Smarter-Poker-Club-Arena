@@ -701,6 +701,9 @@ export abstract class TournamentManagerBase {
    * opened still gets theirs -- see tryTournamentAddOns.
    */
   protected lastAddOnOfferAt: number = 0;
+  /** What the last add-on offer pass did: offers answered, and whether horses
+   * remain unoffered. Read by the head-of-admission loop (2026-10-25). */
+  protected lastAddOnOfferPass: { offered: number; more: boolean } = { offered: 0, more: false };
   /** Preserve the pre-scheduler add-on retry cadence without per-manager timers. */
   static readonly ADD_ON_RETRY_MS = 20_000;
   /** Poll an enabled deal only after this manager has confirmed one final table. */
@@ -11474,6 +11477,7 @@ export abstract class TournamentManagerBase {
       reportError(err, 'Tournament.tournament_addon_threw');
     } finally {
       const more = pendingHorseIds.some((id) => !this.addOnAttemptedHorseIds.has(id));
+      this.lastAddOnOfferPass = { offered: completedOffers, more };
       if (more && this.running && !isMaintenanceFrozen() && !this.prizePoolFinalized) {
         // Twenty seconds is the retry cadence once the field has been served,
         // not a cooldown between pieces of its first offer. Yield each bounded

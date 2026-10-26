@@ -50,6 +50,21 @@ describe('a horse picks its mystery chest like a person', () => {
     const reveal = settle.indexOf("supabase.rpc('fn_mystery_bounty_reveal'");
     expect(pick).toBeGreaterThan(-1);
     expect(pick).toBeLessThan(reveal);
-    expect(settle).toContain('p_slot: 1 + nodeCrypto.randomInt(0, slots),');
+    expect(settle).toContain('const slot = 1 + nodeCrypto.randomInt(0, slots);');
+  });
+
+  it('always picks, even a single chest, so its tap opens the award (2026-10-26)', () => {
+    expect(method).not.toContain('if (slots > 1) {');
+    expect(method).toContain("'Tournament.mystery_horse_chest_pick_failed'");
+  });
+
+  it('tells the table a dropped revealer was picked for at random', () => {
+    const settle = src.slice(src.indexOf('protected async settleMysteryBountyAward('));
+    const pick = settle.indexOf("supabase.rpc('fn_mystery_bounty_pick'");
+    const reveal = settle.indexOf("supabase.rpc('fn_mystery_bounty_reveal'");
+    const announce = settle.indexOf("httpSend('mystery_chest_opened'");
+    expect(announce).toBeGreaterThan(pick);
+    expect(announce).toBeLessThan(reveal);
+    expect(settle.slice(announce, announce + 200)).toContain('auto: true');
   });
 });

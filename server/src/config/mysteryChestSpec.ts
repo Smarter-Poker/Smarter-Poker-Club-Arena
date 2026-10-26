@@ -52,7 +52,7 @@ export const CHEST_SETTLE_MS = 400;
 
 /**
  * Total time to hold dealing after a mystery bounty is revealed at a table.
- * ~16.8s at 1x animation speed.
+ * ~14.3s at 1x animation speed (16.8s before the five-second pick rule).
  */
 export function mysteryChestHoldMs(): number {
   return (

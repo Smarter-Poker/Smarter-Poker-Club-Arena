@@ -4281,9 +4281,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             Math.min(3, Math.floor(Number((offer as { slots?: unknown } | null)?.slots) || 1))
           );
           const slot = 1 + nodeCrypto.randomInt(0, slots);
-          if (slots > 1) {
-            await supabase.rpc('fn_mystery_bounty_pick', { p_award_id: awardId, p_slot: slot });
-          }
+          /* ALWAYS pick, even a single chest (2026-10-26 audit). The engine's
+             pick is the horse's tap, and it opens the award the way a person's
+             tap does (fn_mystery_bounty_pick, 20261026045104). Skipping it on
+             a single chest left every seat counting up to 0 on the last
+             knockouts of an event. */
+          const { error: pickErr } = await supabase.rpc('fn_mystery_bounty_pick', {
+            p_award_id: awardId,
+            p_slot: slot,
+          });
+          if (pickErr) reportError(pickErr, 'Tournament.mystery_horse_chest_pick_failed');
           let channel: ReturnType<typeof supabase.channel> | undefined;
           try {
             channel = supabase.channel(`mystery-chest-${tableId}`);
@@ -4424,10 +4431,38 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const o = (offer ?? {}) as { slots?: unknown; picked_slot?: unknown; revealed?: unknown };
         const slots = Math.max(1, Math.min(3, Math.floor(Number(o.slots) || 1)));
         if (slots > 1 && o.picked_slot == null && o.revealed !== true) {
-          await supabase.rpc('fn_mystery_bounty_pick', {
+          const slot = 1 + nodeCrypto.randomInt(0, slots);
+          const { data: picked, error: pickErr } = await supabase.rpc('fn_mystery_bounty_pick', {
             p_award_id: awardId,
-            p_slot: 1 + nodeCrypto.randomInt(0, slots),
+            p_slot: slot,
           });
+          if (pickErr) {
+            reportError(pickErr, 'Tournament.mystery_bounty_random_pick_failed');
+          } else if ((picked as { ok?: boolean } | null)?.ok === true && tableId) {
+            /* Tell the table the slot was drawn at random (2026-10-26 audit),
+               on the same channel and shape a browser's timeout uses, so every
+               seat says "Time Ran Out - Chest N Was Picked At Random" rather
+               than "<Name> Picked Chest N" for a player who never picked. */
+            let channel: ReturnType<typeof supabase.channel> | undefined;
+            try {
+              channel = supabase.channel(`mystery-chest-${tableId}`);
+              await channel.httpSend('mystery_chest_opened', {
+                tableId,
+                at: Date.now(),
+                slot,
+                awardId,
+                auto: true,
+              });
+            } finally {
+              if (channel) {
+                try {
+                  await supabase.removeChannel(channel);
+                } catch {
+                  /* never joined; nothing to release */
+                }
+              }
+            }
+          }
         }
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_random_pick_failed');

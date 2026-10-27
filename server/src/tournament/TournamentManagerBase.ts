@@ -2977,6 +2977,9 @@ export abstract class TournamentManagerBase {
     // An adopted cohort satellite holds its qualifier boundary before this
     // registration exists; the fresh entry starts in the general lanes.
     if (this.satelliteQualifierBoundaryPending) this.declareConsolidationOutstanding(true);
+    // A resumed field may already have one player per dealer. Its first
+    // balance admission must not wait for a blind level or the general queue.
+    this.askForConsolidationIfSpread();
   }
 
   /** Remove only this manager's scheduler entry; safe from lifecycle catches. */
@@ -3091,15 +3094,47 @@ export abstract class TournamentManagerBase {
    * balancer merges them. That is consolidation work, so this manager moves
    * to the lane and asks for one pass; the balance stage then keeps or clears
    * the mark on what it reads. Checked on the held level's own 15 s recheck,
-   * which already runs; it adds no timer and no query.
+   * which already runs; it adds no timer and no query. Also asked at manager
+   * registration and at the hand that removes the last playable pair, so the
+   * first balance pass need not wait for that later clock observation.
    */
-  protected askForConsolidationIfSpread(): void {
-    if (this.consolidationDeclared) return;
+  protected askForConsolidationIfSpread(completed?: {
+    engine: ServerTableEngine;
+    finalStacks: readonly { user_id: string; stack: number }[];
+  }): void {
+    if (this.consolidationDeclared || !this.tableEngines || this.tableEngines.size < 2) return;
+    // A late callback from a retired manager/dealer cannot promote the
+    // successor's scheduler registration. Unknown rosters remain ordinary.
+    if (completed) {
+      try {
+        const tableId = this.tableIdForManagedEngine(completed.engine);
+        if (
+          !tableId ||
+          !this.isRunning() ||
+          this.gameServer.getTableEngine(tableId) !== completed.engine
+        )
+          return;
+      } catch {
+        return; // A scheduling hint cannot prevent the original bust wake.
+      }
+    }
     let loneTables = 0;
     for (const engine of this.tableEngines.values()) {
       let seated: number;
       try {
         seated = engine.getOccupiedSeatNumbers().length;
+        if (completed?.engine === engine) {
+          // Zero-stack players still occupy chairs before elimination. The
+          // complete final stacks say how many opponents can actually deal.
+          const stacks = completed.finalStacks;
+          if (
+            stacks.length < seated ||
+            new Set(stacks.map((player) => player.user_id)).size !== stacks.length ||
+            stacks.some((player) => !Number.isFinite(player.stack) || player.stack < 0)
+          )
+            return;
+          seated = stacks.filter((player) => player.stack > 0).length;
+        }
       } catch {
         return;
       }
@@ -3108,7 +3143,9 @@ export abstract class TournamentManagerBase {
     }
     if (loneTables < 2) return;
     this.declareConsolidationOutstanding(true);
-    if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
+    // The hand callback already owes exactly one bust wake immediately below.
+    if (this.consolidationDeclared && !completed)
+      this.requestEliminationSweep('spread_field_cannot_deal');
   }
 
   /** What this manager last told the scheduler about its field being decided. */
@@ -3353,6 +3390,7 @@ export abstract class TournamentManagerBase {
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
         if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
+        this.askForConsolidationIfSpread({ engine, finalStacks });
         this.bustAwaitsItsStage();
         this.horseRebuyOfferMayHaveOpened();
         this.requestEliminationSweep();

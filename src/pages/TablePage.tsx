@@ -11141,6 +11141,7 @@ function LiveTablePage({
        are addressed to that seat (the room id answered 503). Between hands
        the felt shows no seat at all, so the anchor is what says whether
        there is anything to cash out. */
+    const lightningSummaryRoom = lightningRoomRef.current;
     const lightningLeave = await resolveLightningLeave();
     if (lightningLeave === 'unreadable') {
       goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
@@ -11301,12 +11302,14 @@ function LiveTablePage({
         /* LIGHTNING PHASE 8: leaving Lightning shows the Lightning session
            summary (the database's numbers for the whole pool session), not
            the table card, whose counters only saw this room's hands. */
-        const lightningSummaryRoom = lightningLeave ? lightningRoomRef.current : null;
-        if (lightningSummaryRoom && tableId) {
+        if (lightningLeave && lightningSummaryRoom && tableId) {
           openLightningSessionSummary({
             poolSessionId: tableId,
             clusterId: lightningSummaryRoom.clusterId,
             name: lightningSummaryRoom.meta?.name ?? null,
+            cashout: result.deferred
+              ? { tableId: leaveTableId, occupancyId: lightningLeave.occupancyId }
+              : undefined,
           });
         } else
           publishSessionSummary({
@@ -11428,6 +11431,7 @@ function LiveTablePage({
 
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
+    const forceSummaryRoom = lightningRoomRef.current;
     leaveNavigatedRef.current = false;
     if (!(await stopLightningForLeave())) {
       toast.warning('Could Not Confirm Your Stop Request. Please Try Again.');
@@ -11568,12 +11572,14 @@ function LiveTablePage({
           : undefined;
 
         /* LIGHTNING PHASE 8: the same Lightning summary from this door. */
-        const forceSummaryRoom = forceLightning ? lightningRoomRef.current : null;
-        if (forceSummaryRoom && tableId) {
+        if (forceLightning && forceSummaryRoom && tableId) {
           openLightningSessionSummary({
             poolSessionId: tableId,
             clusterId: forceSummaryRoom.clusterId,
             name: forceSummaryRoom.meta?.name ?? null,
+            cashout: forceDeferred
+              ? { tableId: forceTableId, occupancyId: forceLightning.occupancyId }
+              : undefined,
           });
         } else
           publishSessionSummary({
@@ -26599,6 +26605,7 @@ function LiveTablePage({
                   <div className="lightning-felt-notices" data-testid="lightning-felt-notices">
                     <LightningNextHand
                       handInProgress={lightningHandLive && tableState.isHandInProgress}
+                      handComplete={tableHandIsOver}
                     />
                     <LightningEndingNotice clusterId={lightningRoom.clusterId} />
                   </div>

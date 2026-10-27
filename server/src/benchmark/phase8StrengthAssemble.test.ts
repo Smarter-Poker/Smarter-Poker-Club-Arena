@@ -155,7 +155,7 @@ const PRETTIER_AVAILABLE = existsSync(path.resolve('..', 'node_modules', 'pretti
 const assemble = (...extra: string[]) => assembleRun(['--no-format', ...extra]);
 const assembleFormatted = (...extra: string[]) => assembleRun(extra);
 
-async function assembleRun(extra: string[]) {
+async function assembleRun(extra: string[], environment = process.env) {
   try {
     const { stdout } = await exec(
       process.execPath,
@@ -168,7 +168,7 @@ async function assembleRun(extra: string[]) {
         `--repo-root=${repo}`,
         ...extra,
       ],
-      { cwd: process.cwd(), timeout: RUN_TIMEOUT_MS }
+      { cwd: process.cwd(), timeout: RUN_TIMEOUT_MS, env: environment }
     );
     return { code: 0, stdout, reasons: [] as string[] };
   } catch (error) {
@@ -311,7 +311,15 @@ describe('phase8-strength-assemble', () => {
     async () => {
       for (const objective of TOURNAMENT_LEAGUE_OBJECTIVES)
         for (const seed of TOURNAMENT_PROMOTION_SEEDS) guardRun(`${objective}-${seed}`);
-      const outcome = await assemble(`--out=${outDir()}`, '--fixture');
+      // A linked-worktree hook exports GIT_DIR; cwd=server must not become repository root.
+      const gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      }).trim();
+      const outcome = await assembleRun(['--no-format', `--out=${outDir()}`, '--fixture'], {
+        ...process.env,
+        GIT_DIR: gitDir,
+      });
       expect(outcome.reasons).toEqual([]);
       const strength = readJson(path.join(outDir(), 'strength.json'));
       expect(strength.phase8PolicyFamily).toBe('catastrophe_guard_v1');

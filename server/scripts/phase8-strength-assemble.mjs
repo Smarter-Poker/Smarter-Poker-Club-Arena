@@ -48,7 +48,15 @@
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -62,10 +70,24 @@ process.env.EQUITY_GOVERNOR = 'off';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(here, '..');
-const sourceRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: serverRoot,
+// Hooks export repository-local Git variables. They must not rebase discovery
+// on cwd=server or redirect verification to a different worktree/repository.
+const sourceRepo = path.resolve(serverRoot, '..');
+const gitEnvironment = { ...process.env };
+const gitLocalNames = execFileSync('git', ['rev-parse', '--local-env-vars'], {
+  cwd: sourceRepo,
   encoding: 'utf8',
+})
+  .trim()
+  .split('\n');
+for (const name of gitLocalNames) delete gitEnvironment[name];
+const discoveredRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+  cwd: sourceRepo,
+  encoding: 'utf8',
+  env: gitEnvironment,
 }).trim();
+if (realpathSync(discoveredRepo) !== realpathSync(sourceRepo))
+  throw new Error('Assembler module must belong to the verified repository root');
 
 const league = await import('../src/benchmark/HorseTournamentLeague.ts');
 const { PHASE8_POLICY } = await import('../src/engine/HorseTournamentPostflop.ts');
@@ -394,20 +416,24 @@ export function inspectRuns({ runsDir, hosts, fixture, defective = {} }) {
     try {
       execFileSync('git', ['cat-file', '-e', `${head}^{commit}`], {
         cwd: sourceRepo,
+        env: gitEnvironment,
         stdio: 'ignore',
       });
       execFileSync('git', ['diff', '--quiet', head, 'HEAD', '--', ...policySourceFiles], {
         cwd: sourceRepo,
+        env: gitEnvironment,
         stdio: 'ignore',
       });
       if (family === 'catastrophe_guard_v1' && !fixture) {
         for (const file of policySourceFiles)
           execFileSync('git', ['cat-file', '-e', `${head}:${file}`], {
             cwd: sourceRepo,
+            env: gitEnvironment,
             stdio: 'ignore',
           });
         execFileSync('git', ['diff', '--quiet', head, '--', ...policySourceFiles], {
           cwd: sourceRepo,
+          env: gitEnvironment,
           stdio: 'ignore',
         });
       }

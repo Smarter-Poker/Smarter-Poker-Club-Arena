@@ -203,6 +203,23 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
     })) as SeatPlayer[];
     const controller = new HandController(config, players, 1 + (hand % seats));
     controller.start();
+    if (variant === 'nlh' && mode === 'tournament' && hand === 0) {
+      // The deck is crypto-random: seeding the brain does not ensure a free-play
+      // hand survives preflop. Reach one real flop through legal controller
+      // actions so Phase 8 coverage never depends on six random deals.
+      for (let setup = 0; setup < seats; setup++) {
+        const live = controller.getState();
+        if (live.stage !== 'preflop') break;
+        const actor = live.players.find((p) => p.seat === live.currentPlayerSeat)!;
+        const menu = controller.getAuthoritativeActionState(actor.user_id)!;
+        const action = menu.toCall > 0 ? 'call' : 'check';
+        expect(menu.canAct).toBe(true);
+        expect(menu.legalActions).toContain(action);
+        expect(controller.performAction(actor.seat, action)).toBe(true);
+      }
+      expect(controller.getState().stage).toBe('flop');
+      expect(controller.getState().players.every((p) => !p.is_folded && !p.is_all_in)).toBe(true);
+    }
     for (let step = 0; step < 80; step++) {
       const live = controller.getState();
       if (live.stage === 'pineapple_discard') {

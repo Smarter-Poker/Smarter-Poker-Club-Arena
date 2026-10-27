@@ -31,3 +31,12 @@ Fresh or empty intake is not called stalled. The exact retained production
 preimage reproduces both incorrect verdicts in isolated PostgreSQL; the actual
 replacement preserves the twelve-hour threshold and one-page-per-silence rule.
 Its preimage assertion refuses an unreviewed concurrent source change.
+
+Local ownership uses an exclusive SQLite connection, with committed submission
+state before the native side effect. Actual SIGKILL/restart testing preserves an
+uncertain operation, releases process ownership without a stale lock file, and
+refuses a second live owner or corrupt state. A failed journal write before queue
+submission can recover on the next explicit event without inventing a native
+receipt. These tests run in the existing required native-smoke gate; the database
+fixture also runs from the existing required owner-alert accounting entry. The
+classifier adds these specific input paths without narrowing any prior selector.

@@ -67,7 +67,12 @@ export function createIntake({ load, save, pending, queue, id = randomUUID }) {
     active = validateState({ operationId: id(), ids: result.pending, phase: 'submitting' });
     // Persist BEFORE native side effect. A crash or timeout never blindly queues
     // another copy; database intake acknowledgement alone clears active state.
-    await save(active);
+    try {
+      await save(active);
+    } catch (error) {
+      active = null;
+      throw error;
+    }
     try {
       const receipt = acceptedReceipt(await queue(queueArguments(active.ids, active.operationId)));
       active = { ...active, phase: 'queued', messageId: receipt };

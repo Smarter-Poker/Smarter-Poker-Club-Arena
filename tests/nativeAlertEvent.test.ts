@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { classifyChangedPaths } from '../scripts/ci/classify-ci-changes.mjs';
 import {
   createIntake,
   acceptedReceipt,
@@ -117,6 +118,51 @@ describe('committed operational alert wakes native intake', () => {
       'IF NOT public.fn_ca_native_alert_capability(p_channel) THEN RAISE EXCEPTION'
     );
     expect(migration).toContain('USING (public.fn_ca_native_alert_capability(realtime.topic()))');
+  });
+  it('runs the exact native process and database regressions through required gates', () => {
+    const path = 'tools/production-alerts-native-wakeup/state.mjs';
+    expect(classifyChangedPaths([path])).toMatchObject({
+      fixture: true,
+      tests: true,
+      src: false,
+      server: false,
+    });
+    expect(classifyChangedPaths(['scripts/ci/test-native-alert-event.py'])).toMatchObject({
+      server: true,
+      tests: true,
+    });
+    expect(classifyChangedPaths(['tools/production-alerts-native-wakeup/README.md']).fixture).toBe(
+      false
+    );
+    expect(readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8')).toContain(
+      'run: node --test tools/production-alerts-native-wakeup/state.test.mjs'
+    );
+    expect(readFileSync('scripts/ci/test-owner-alert-finding.py', 'utf8')).toContain(
+      "root/'scripts/ci/test-native-alert-event.py'"
+    );
+  });
+  it('retries an unsubmitted write failure only on a new explicit event', async () => {
+    let fails = true,
+      queued = 0;
+    const intake = createIntake({
+      load: async () => null,
+      save: async () => {
+        if (fails) {
+          fails = false;
+          throw Error('disk unavailable');
+        }
+      },
+      pending: async () => ({ version: 1, active_acknowledged: false, pending: [A] }),
+      id: () => B,
+      queue: async () => {
+        queued++;
+        return `Queued message ${A} for thread ${TARGET}.`;
+      },
+    });
+    await expect(intake.event()).rejects.toThrow('disk unavailable');
+    expect(queued).toBe(0);
+    await intake.event();
+    expect(queued).toBe(1);
   });
   it('keeps native database qualification on the existing alert qualification path', () => {
     expect(readFileSync('scripts/ci/test-alert-ledger-roots.py', 'utf8')).toContain(

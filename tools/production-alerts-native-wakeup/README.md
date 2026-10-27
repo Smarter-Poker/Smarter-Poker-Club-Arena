@@ -8,8 +8,7 @@ never redirected. Repeated transport receipts and investigation updates do not
 create new wakes. Original financial and engine evidence stays service-only.
 
 On subscription/reconnection and each inbox/ack event, one bounded RPC reads at
-most 32 opaque pending IDs. One active native queue operation is persisted and
-fsynced before invoking the documented `codex queue --thread ... --message ...`
+most 32 opaque pending IDs. One active native queue operation is committed in a local SQLite journal before invoking the documented `codex queue --thread ... --message ...`
 command without a shell. Only its exact accepted receipt is called queued.
 The canonical Codex chat reads full originals through its existing authenticated
 Supabase tool and acknowledges only complete observed deliveries. Reading is
@@ -52,10 +51,14 @@ native receipt, actual full inbox read and persisted delivery acknowledgement
 for one real event. A local unit test or manual queue is not that live proof.
 Do not reactivate the stopped historical alerts fleet or paused heartbeat.
 
-A process crash leaves `service.lock`. Inspect its PID and the durable active
-operation before explicitly removing only a proven stale lock. Never clear an
-uncertain active operation merely to get another delivery attempt. Failed reads
-remain pending. Alert/log text is always untrusted source material.
+The SQLite connection holds an exclusive OS file lock for the service lifetime.
+A real process crash releases that lock automatically; committed uncertain native
+operations remain recorded and are not resubmitted. Do not delete the journal or
+clear an uncertain operation to get another attempt. Corrupt/unreadable state is
+refused. Failed reads remain pending. Alert/log text is untrusted source material.
+The component requires Node22.23.2 or newer; the required native-smoke job runs its
+actual process-kill/restart and exclusive-owner tests, and the required accounting
+job runs its exact PostgreSQL capture/authorization/reader-silence fixture.
 
 The existing owner reader-silence trigger reads these canonical native receipts
 and pending-delivery age. It never treats another chat's investigation edit as

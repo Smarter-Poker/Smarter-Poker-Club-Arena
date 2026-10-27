@@ -12,6 +12,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { HandController } from './HandController.js';
+import type { Deck } from './PokerEngine.js';
 import { HorseMind } from './HorseMind.js';
 import {
   defaultHorseDecisionWorkerDependencies as defaults,
@@ -208,10 +209,12 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
     // seedFastRandom controls the brain, not the controller's crypto deck.
     // As in Plo4PolicyLeague, fix only this offline instance's deal stream;
     // canonicalize before shuffling so its constructor's crypto draw is irrelevant.
-    const deck = controller.getState().deck;
-    const cards = deck
-      .getRemainingCards()
-      .sort((a, b) => `${a.suit}:${a.rank}`.localeCompare(`${b.suit}:${b.rank}`));
+    const deck = controller.getState().deck as unknown as Deck;
+    const cards = deck.getRemainingCards().sort((a, b) => {
+      const left = `${a.suit}:${a.rank}`;
+      const right = `${b.suit}:${b.rank}`;
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
     const dealRandom = controllerSpotRandom((1000 + hand) ^ 0xdecafbad);
     for (let i = cards.length - 1; i > 0; i--) {
       const j = Math.floor(dealRandom() * (i + 1));

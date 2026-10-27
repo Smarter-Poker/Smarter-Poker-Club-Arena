@@ -40,7 +40,7 @@ try:
  q((fixture/'fn_cashier_operation_intent_guard.sql').read_text())
  q('CREATE TRIGGER cashier_operation_intent_guard BEFORE INSERT ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_cashier_operation_intent_guard();')
 
- sql=(ROOT/'supabase/migrations/20261027153132_cashier_claim_destination_and_movement_history.sql').read_text()
+ sql=(ROOT/'supabase/migrations/20261027160320_cashier_claim_destination_and_movement_history.sql').read_text()
  # Qualification loads the maintained function body itself; source preimages and
  # full migration are separately exercised below by the history fixture.
  claim=sql[sql.index('CREATE OR REPLACE FUNCTION public.fn_club_wallet_claim_back'):]

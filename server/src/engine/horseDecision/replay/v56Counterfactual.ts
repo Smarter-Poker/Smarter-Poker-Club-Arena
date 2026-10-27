@@ -25,7 +25,10 @@ import {
   validateHorseJournalRecord,
   type HorseJournalRecord,
 } from '../../../services/horseDecisionJournal/record.js';
-import { HORSE_OPTIONAL_OWNER_OPTIONS, isHorseDecisionReplayState } from '../replayState.js';
+import {
+  horseDecisionReplayAdmissionMismatch,
+  isHorseDecisionReplayState,
+} from '../replayState.js';
 import { reconstructHorseReplayInput } from './reconstruct.js';
 import { replayThroughWorkerRuntime } from './runtimeReplay.js';
 import {
@@ -275,7 +278,7 @@ async function verifyCase(
       return finish('off_arm_unavailable');
     out.offComputed = true;
     out.sameAdmissions =
-      HORSE_OPTIONAL_OWNER_OPTIONS.every((key) => off.admission?.[key] === state.admission[key]) &&
+      horseDecisionReplayAdmissionMismatch(off.admission, state.admission) === null &&
       (state.corrective
         ? horseJournalJson(off.corrective) === horseJournalJson(state.corrective)
         : off.corrective?.mode !== 'candidate');

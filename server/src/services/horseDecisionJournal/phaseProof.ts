@@ -53,6 +53,7 @@ const baselineDomains = Object.freeze({
 });
 const admissionKeys = new Set([
   'phase8',
+  'phase8_guard',
   'phase10',
   ...Object.entries(baselineDomains).flatMap(([owner, domains]) =>
     domains.map((domain) => `${owner}:${domain}`)
@@ -178,6 +179,10 @@ export class HorseFleetPhaseInterpreter {
       admitPhase8Authority: () =>
         once('phase8', qualifiedReplayAdmissions.admitPhase8Authority) as ReturnType<
           typeof qualifiedReplayAdmissions.admitPhase8Authority
+        >,
+      admitPhase8GuardAuthority: () =>
+        once('phase8_guard', qualifiedReplayAdmissions.admitPhase8GuardAuthority) as ReturnType<
+          typeof qualifiedReplayAdmissions.admitPhase8GuardAuthority
         >,
       admitPhase10Authority: () =>
         once('phase10', qualifiedReplayAdmissions.admitPhase10Authority) as ReturnType<
@@ -378,14 +383,26 @@ export class HorseFleetPhaseInterpreter {
     const tournamentCorrectiveFamily = tournament
       ? classifyTournamentRiverSnapshot(originalFast?.snapshot ?? c.snapshot)
       : null;
+    const guardMode = c.replayState?.admission?.phase8CatastropheGuard;
+    const guardPhase8 =
+      d.tournamentCatastropheGuard !== undefined ||
+      guardMode === 'candidate' ||
+      guardMode === 'shadow';
+    const guardDomain =
+      tournament &&
+      !preflop &&
+      variant === 'nlh' &&
+      (gs.boardCount ?? 1) === 1 &&
+      !gs.communityCards2?.length &&
+      !gs.communityCards3?.length;
     const policies = [
       [
         'phase8',
-        d.tournamentPostflop,
-        w.phase8Authority,
-        'phase8Postflop',
+        guardPhase8 ? d.tournamentCatastropheGuard : d.tournamentPostflop,
+        guardPhase8 ? w.phase8GuardAuthority : w.phase8Authority,
+        guardPhase8 ? 'phase8CatastropheGuard' : 'phase8Postflop',
         null,
-        tournament && !preflop,
+        guardPhase8 ? guardDomain : tournament && !preflop,
       ],
       ['phase10', d.plo4Policy, w.phase10Authority, 'phase10Plo4', null, variant === 'plo4'],
       [
@@ -536,7 +553,9 @@ export class HorseFleetPhaseInterpreter {
           throw Error();
         const admission: HorseAuthorityAdmission =
           owner === 'phase8'
-            ? this.replayAdmissions.admitPhase8Authority()
+            ? guardPhase8
+              ? this.replayAdmissions.admitPhase8GuardAuthority()
+              : this.replayAdmissions.admitPhase8Authority()
             : owner === 'phase10'
               ? this.replayAdmissions.admitPhase10Authority()
               : owner === 'phase11'
@@ -559,7 +578,9 @@ export class HorseFleetPhaseInterpreter {
             const authority = value as any;
             const h = restore(
               baseline as any,
-              baseline === 'phase8' || baseline === 'phase10' ? null : variant,
+              baseline === 'phase8' || baseline === 'phase8_guard' || baseline === 'phase10'
+                ? null
+                : variant,
               authority.continuationVersion,
               authority.epoch
             );

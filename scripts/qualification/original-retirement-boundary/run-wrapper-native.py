@@ -27,19 +27,24 @@ if os.environ.get('ORB_INVENTORY_STATE_READ_MIGRATION'):
  candidate=Path(os.environ['ORB_INVENTORY_STATE_READ_MIGRATION']).read_text().strip()
  assert candidate.endswith('COMMIT;')
  s+=candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')+'\n'
-if os.environ.get('ORB_WALLET_JACKPOT_FLOW_MIGRATION'):
+if os.environ.get('ORB_WALLET_JACKPOT_FLOW_MIGRATION') or os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION'):
  import runpy
  wallet=runpy.run_path(str(p/'wallet-jackpot/native-input.py'))
  s+=wallet['setup_sql']
- candidate=Path(os.environ['ORB_WALLET_JACKPOT_FLOW_MIGRATION']).read_text().strip()
+ candidate=Path(os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') or os.environ['ORB_WALLET_JACKPOT_FLOW_MIGRATION']).read_text().strip()
  assert candidate.endswith('COMMIT;')
  body=candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
  if not os.environ.get('NATIVE_GENERATE_ONLY'):
   s+=wallet['before_sql']
+ if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION'):
+  treasury=runpy.run_path(str(p/'treasury-gifts/native-input.py'))
+  s+=treasury['setup_sql']
  s+="DO $wallet_ddl_rollback$DECLARE hashes jsonb;after_hashes jsonb;BEGIN SELECT jsonb_object_agg(signature,md5(pg_get_functiondef(to_regprocedure(signature))))INTO hashes FROM wallet_jackpot_original_metadata;BEGIN EXECUTE $wallet_candidate_rollback$"+body+"$wallet_candidate_rollback$;RAISE EXCEPTION USING ERRCODE='ZX002',MESSAGE='rollback candidate DDL';EXCEPTION WHEN SQLSTATE 'ZX002' THEN NULL;END;SELECT jsonb_object_agg(signature,md5(pg_get_functiondef(to_regprocedure(signature))))INTO after_hashes FROM wallet_jackpot_original_metadata;IF after_hashes IS DISTINCT FROM hashes OR smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true THEN RAISE EXCEPTION 'wallet jackpot DDL rollback changed original owner';END IF;RAISE NOTICE 'PASS wallet jackpot exact candidate DDL rollback';END$wallet_ddl_rollback$;"
- s+=body+'\n'
+ s+=body+'\nSET LOCAL search_path=public;\n'
  if not os.environ.get('NATIVE_GENERATE_ONLY'):
-  s+=wallet['after_sql']
+  s+=treasury['admissions_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else ''
+  s+=treasury['wallet_after_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else wallet['after_sql']
+  if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION'):s+=treasury['after_sql']
   s+="DO $wallet_replay$BEGIN BEGIN EXECUTE $wallet_candidate_replay$"+body+"$wallet_candidate_replay$;RAISE EXCEPTION USING ERRCODE='ZX003',MESSAGE='candidate replay unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM NOT LIKE 'wallet_jackpot_original_flow_owner_changed:%' THEN RAISE;END IF;END;RAISE NOTICE 'PASS wallet jackpot exact candidate replay refused';END$wallet_replay$;"
 s+="DO $cert$DECLARE c record;started timestamptz:=clock_timestamp();BEGIN FOR c IN SELECT event_id FROM smarter_private.original_inventory_restoration_cases LOOP PERFORM smarter_private.certify_original_inventory_restoration(c.event_id,'2026-10-12 07:00:00Z');END LOOP;RAISE NOTICE 'QUALIFICATION finite245 certificate elapsed_ms=% count=%',(extract(epoch FROM(clock_timestamp()-started))*1000)::numeric(15,3),(SELECT count(*) FROM smarter_private.original_inventory_restoration_certificates);END$cert$;"
 s+=(p/'admitted-wrapper-proposal.sql').read_text()
@@ -64,6 +69,8 @@ import os
 if os.environ.get('NATIVE_GENERATE_ONLY'):
  Path(os.environ['NATIVE_GENERATE_ONLY']).write_text(s);raise SystemExit(0)
 log=socket/'finite245-raw-wrapper-native.log'
+sqlfile=socket/'finite245-raw-wrapper-native.sql'
+sqlfile.write_text(s)
 with log.open('w') as capture:
- r=subprocess.run(args+['-d','original_source_refs'],input=s,text=True,stdout=capture,stderr=subprocess.STDOUT)
+ r=subprocess.run(args+['-d','original_source_refs','-f',str(sqlfile)],text=True,stdout=capture,stderr=subprocess.STDOUT)
 print(r.returncode,log.read_text()[-2500:]);raise SystemExit(r.returncode)

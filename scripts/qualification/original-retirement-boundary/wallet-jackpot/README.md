@@ -22,3 +22,8 @@ or conflicting original receipts, preserve function authority and original money
 roll back its own DDL exactly, refuse replay and retain all 245 original issues,
 raw inventory, cache-generation, retention and current-seven regression checks.
 Production installation and whole-week readback remain the owning agent's work.
+
+The uninstalled03208 delivery migration is retained byte-exact as
+`qualified-bbj-03208.sql` for provenance. Production delivery is consolidated
+into31649 with original treasury-seat authority and financial readers, in one
+transaction from the live40-source base. No03208 installation/history is claimed.

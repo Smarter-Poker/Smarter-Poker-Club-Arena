@@ -1,0 +1,18 @@
+{
+  "_owner": "Promised31649 source declarations only. Original treasury witnesses preserve sponsor and beneficiary separately; source integration/installation/live book closure are distinct gates.",
+  "tables": [
+    "smarter_private.original_treasury_funding_witnesses",
+    "smarter_private.original_treasury_funding_cutover",
+    "smarter_private.original_treasury_historical_admissions"
+  ],
+  "functions": [
+    "smarter_private.original_treasury_witness_immutable",
+    "smarter_private.original_treasury_gift_evidence",
+    "smarter_private.admit_original_treasury_gift",
+    "smarter_private.original_treasury_return_evidence",
+    "smarter_private.admit_original_treasury_return",
+    "smarter_private.cash_initial_funding_receipt",
+    "smarter_private.original_treasury_participant_gift",
+    "smarter_private.original_treasury_cash_outcome_evidence"
+  ]
+}

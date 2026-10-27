@@ -150,6 +150,7 @@ describe('Horse Phase 4 changes admit their PostgreSQL parent job', () => {
     'supabase/migrations/20261007043848_v4_policy_schema_is_immutable_input_metadata.sql',
     'supabase/migrations/20261007043945_solver_v4_nodes_prove_complete_public_state.sql',
     'supabase/migrations/20261007051641_v4_consumers_bind_the_immutable_policy_schema.sql',
+    'supabase/migrations/20261027180942_v31_certification_checks_only_the_selected_dataset.sql',
     'scripts/ci/test-v4-policy-metadata.mjs',
     'server/src/scripts/gtoV31Evaluate.ts',
     'server/src/benchmark/GtoV31EvaluationConfig.ts',

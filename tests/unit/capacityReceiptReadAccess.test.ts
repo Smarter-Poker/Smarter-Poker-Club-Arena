@@ -9,14 +9,11 @@ const migration =
 describe('capacity receipt read qualification', () => {
   it('keeps the native role/consumer fixture enforced in the existing accounting gate', () => {
     const workflow = read('.github/workflows/ci.yml');
-    const start = workflow.indexOf(
-      '- name: Capacity dealer receipts retain service-only read access'
+    expect(workflow).toContain('python3 -B scripts/ci/test-late-registration-clock.py');
+    const runner = read('scripts/ci/test-late-registration-clock.py');
+    expect(runner).toContain(
+      "subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-capacity-receipt-read-postgres.py')], check=True)"
     );
-    expect(start).toBeGreaterThan(-1);
-    const step = workflow.slice(start, workflow.indexOf('\n      - name:', start + 1));
-    expect(step).toContain('matrix.shard == 4');
-    expect(step).toContain('PG_BIN: /usr/lib/postgresql/17/bin');
-    expect(step).toContain('python3 -B scripts/ci/test-capacity-receipt-read-postgres.py');
     const fixture = read('scripts/ci/test-capacity-receipt-read-postgres.py');
     expect(fixture).toContain(migration);
     expect(fixture).toContain('CANDIDATE.read_text()');

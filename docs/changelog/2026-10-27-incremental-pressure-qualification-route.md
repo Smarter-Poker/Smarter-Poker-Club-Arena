@@ -23,3 +23,15 @@ foreign flags, substituted artifacts and reserved tournament seeds in developmen
 are refused. Synthetic stress outcomes remain distinct from calibrated human
 profitability. No new seeds, production operations or qualification deals are
 introduced by this change.
+
+Component coverage now records exact accepted actions separately from selected
+telemetry. The signed original policy graph must retain each component's action
+and price through every subsequent owner and the actual controller callback;
+missing, rewritten, mismatched or duplicate acceptance cannot count.
+
+A separate empty CRN family registry must bind all intended target plans and
+their complete source/profile/range identities before first exposure. Complete
+bounded provider history refuses new-run replay, changed family membership or
+source, and unknown historical partitions. Original-operation recovery permits
+only cells whose earlier evaluation was affirmatively skipped without starting.
+The existing v1 recovery and evidence rules are unchanged.

@@ -51,7 +51,7 @@ describe('incremental development boundaries', () => {
           { seed: 1, pairs: 1, startPair: 0, planDigest: 'x', cellKey: 'x' },
           () => {}
         )
-      ).rejects.toThrow('no protected locked heldout plan');
+      ).rejects.toThrow('plan refused');
       for (const seed of INCREMENTAL_RESERVED_HOLDOUT_SEEDS)
         await expect(runFeatureAblationDevelopment(spec, { seed, pairs: 1 })).rejects.toThrow(
           'held-out'
@@ -201,7 +201,7 @@ describe('exact five-flag development composition', () => {
         { seed: 27401101, pairs: 1, startPair: 0, planDigest: 'x', cellKey: 'x' },
         () => {}
       )
-    ).rejects.toThrow('exactly one');
+    ).rejects.toThrow('plan refused');
     for (const seed of ADDITIONAL_RESERVED_HOLDOUT_SEEDS)
       await expect(runFeatureAblationDevelopment(spec, { seed, pairs: 1 })).rejects.toThrow(
         'held-out'

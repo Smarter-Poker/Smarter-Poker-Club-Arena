@@ -345,7 +345,7 @@ export async function runFeatureAblationContract(
   if (canonical(spec.profile) !== canonical(expected))
     throw new Error('Contract physical profile changed');
   assertProtectedFeatureAblationSource(plan);
-  await authenticateIncrementalPlan(plan);
+  await authenticateIncrementalPlan(plan, request.cellKey);
   if (typeof authorizedGuard !== 'function')
     throw new Error('Original provider authorization unavailable');
   await authorizedGuard();

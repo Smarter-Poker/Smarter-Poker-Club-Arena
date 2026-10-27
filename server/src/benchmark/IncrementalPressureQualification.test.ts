@@ -256,7 +256,7 @@ test('each applicable component needs its own registered positive counter, never
   const p = fixture('pressure_package');
   for (const profile of p.profiles) {
     const c = p.coverage.byProfile[profile.id].evaluationCounterMinimums;
-    assert.equal(Object.hasOwn(c, 'river_bluff_checkraise_selected'), profile.seats === 2);
+    assert.equal(Object.hasOwn(c, 'river_bluff_checkraise_accepted'), profile.seats === 2);
   }
   const profile = p.profiles[0];
   p.coverage.byProfile[profile.id].evaluationCounterMinimums = {};
@@ -299,3 +299,103 @@ test('actual CLI disables its governor before transitive imports and refuses abs
     outputExists: false,
   });
 }, 25000);
+
+test('joint family locks complete member plans and never reassigns exposed seeds to new source or dispatch', async () => {
+  const { validateIncrementalFamily, assertIncrementalFamilyRuns } =
+    await import('./IncrementalPressureQualification.js');
+  const a = fixture('combo_draw_pressure'),
+    b = fixture('targeted_river_bluff');
+  const registry = { combo_draw_pressure: a, targeted_river_bluff: b };
+  const families = {
+    '283': {
+      schema: 'horse-incremental-crn-family-v1',
+      runtimeSourceDigest: a.runtimeSourceDigest,
+      members: [
+        { target: a.target, planDigest: hash(a) },
+        { target: b.target, planDigest: hash(b) },
+      ],
+    },
+  };
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(
+        new URL('./IncrementalPressureQualificationFamilies.json', import.meta.url),
+        'utf8'
+      )
+    ),
+    {}
+  );
+  const family = validateIncrementalFamily(a, registry, families);
+  assert.throws(() => validateIncrementalFamily(a, registry, {}), /not locked/);
+  assert.throws(
+    () =>
+      validateIncrementalFamily(
+        a,
+        { ...registry, targeted_river_bluff: { ...b, matrix: [] } },
+        families
+      ),
+    /changed/
+  );
+  const source = 'b'.repeat(40);
+  const run = (id: number, target: string, sha = source) => ({
+    id,
+    path: '.github/workflows/horse-feature-ablation-qualification.yml',
+    event: 'workflow_dispatch',
+    head_branch: 'main',
+    head_sha: source,
+    created_at: id === 1 ? '2026-10-27T17:59:00Z' : '2026-10-27T18:00:00Z',
+    display_title: `Held-out ${target} at ${sha}`,
+    status: 'completed',
+    conclusion: 'failure',
+  });
+  const current = run(2, b.target),
+    previous = run(1, a.target);
+  assert.equal(
+    assertIncrementalFamilyRuns([current, previous], current, b.target, source, family).length,
+    1
+  );
+  for (const old of [
+    run(1, b.target),
+    run(1, a.target, 'c'.repeat(40)),
+    { ...previous, display_title: null },
+    { ...previous, created_at: current.created_at },
+    run(1, 'river_position_defense'),
+  ])
+    assert.throws(() =>
+      assertIncrementalFamilyRuns([current, old], current, b.target, source, family)
+    );
+  assert.throws(
+    () => assertIncrementalFamilyRuns([previous], current, b.target, source, family),
+    /incomplete/
+  );
+  assert.throws(
+    () => assertIncrementalFamilyRuns([current, current], current, b.target, source, family),
+    /incomplete/
+  );
+});
+test('only affirmatively unstarted original-operation cells may recover', async () => {
+  const { assertIncrementalUnconsumedRecovery } =
+    await import('./IncrementalPressureQualification.js');
+  const job = {
+    name: 'Cell a',
+    run_attempt: 1,
+    status: 'completed',
+    steps: [
+      {
+        name: 'Execute the one registered cell without retry',
+        status: 'completed',
+        conclusion: 'skipped',
+        started_at: null,
+      },
+    ],
+  };
+  assert.doesNotThrow(() => assertIncrementalUnconsumedRecovery([job], 2, 'a'));
+  for (const steps of [
+    [],
+    [{ ...job.steps[0], conclusion: 'failure', started_at: '2026-10-27T18:00:00Z' }],
+    [{ ...job.steps[0], conclusion: 'cancelled' }],
+  ])
+    assert.throws(() => assertIncrementalUnconsumedRecovery([{ ...job, steps }], 2, 'a'));
+  assert.throws(() => assertIncrementalUnconsumedRecovery([], 2, 'a'));
+  assert.throws(() => assertIncrementalUnconsumedRecovery([job], 2, 'b'));
+});

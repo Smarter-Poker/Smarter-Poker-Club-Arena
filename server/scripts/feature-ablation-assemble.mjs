@@ -818,7 +818,7 @@ function sourceAuthority(sourceSha) {
   git('merge-base', '--is-ancestor', sourceSha, 'origin/main');
   return server;
 }
-async function lockedContract(target, sourceSha) {
+async function lockedContract(target, sourceSha, cell, assembling = false) {
   if (
     ![
       'plo6_v24',
@@ -854,13 +854,14 @@ async function lockedContract(target, sourceSha) {
     Number(process.env.GITHUB_RUN_ATTEMPT) > plan.maxAttempts
   )
     throw new Error('contract_attempt_bound');
+  let familyCustody;
   if (plan.schema === 'horse-incremental-ablation-plan-v2') {
     const incremental = await import(
       pathToFileURL(path.join(server, 'src/benchmark/IncrementalPressureQualification.ts')).href
     );
-    await incremental.authenticateIncrementalPlan(plan);
+    familyCustody = await incremental.authenticateIncrementalPlan(plan, cell, assembling);
   }
-  return { contract, plan, planDigest };
+  return { contract, plan, planDigest, familyCustody };
 }
 async function main(argv) {
   const args = argumentsFor(argv),
@@ -877,11 +878,19 @@ async function main(argv) {
     return;
   }
   const sourceSha = args['source-sha'],
-    { contract, plan, planDigest } = await lockedContract(args.target, sourceSha);
+    { contract, plan, planDigest, familyCustody } = await lockedContract(
+      args.target,
+      sourceSha,
+      args.cell,
+      args.assemble === true
+    );
   const provider = await providerState(),
     authorizedOperations = providerOperations(provider.jobs, provider.run, plan.matrix);
   mkdirSync(out, { recursive: true });
-  writeJson(path.join(out, 'jobs.json'), provider);
+  writeJson(path.join(out, 'jobs.json'), {
+    ...provider,
+    ...(familyCustody ? { familyCustody } : {}),
+  });
   if (args.prepare) {
     const cell = plan.matrix.find((c) => c.key === args.cell);
     if (!cell) throw new Error('unknown_contract_cell');
@@ -984,6 +993,7 @@ async function main(argv) {
       attemptsThrough: provider.currentAttempt,
       inventorySha256: sha256(canonical(provider)),
       rawArtifactsRetained: true,
+      ...(familyCustody ? { familyCustody } : {}),
     },
   });
   if (assembly.reasons.length) process.exitCode = 2;

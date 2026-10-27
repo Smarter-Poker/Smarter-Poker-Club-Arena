@@ -60,7 +60,7 @@ try {
     planDigest = qualificationPlanDigest(plan),
     sourceSha = args.get('source-sha')!;
   const source = assertProtectedFeatureAblationSource(plan, sourceSha);
-  await authenticateIncrementalPlan(plan);
+  await authenticateIncrementalPlan(plan, args.get('cell'));
   const incremental = isIncrementalQualificationTarget(target)
     ? incrementalQualificationRules(target)
     : null;

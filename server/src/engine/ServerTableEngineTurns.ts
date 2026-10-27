@@ -1,3 +1,5 @@
+import { recheckHorsePhase8GuardBeforeAcceptance } from './HorsePhase8GuardAcceptance.js';
+import { liveHorsePhase8GuardAuthority } from './HorseTournamentCatastropheGuardAuthority.js';
 /**
  * ServerTableEngine, layer 3/8 — turn timers, time bank, heartbeat, player actions.
  *
@@ -3353,6 +3355,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     );
     let pendingUtilityLedger: HorseDecision['tournamentUtility'];
     let pendingPostflopLedger: HorseDecision['tournamentPostflop'];
+    let pendingGuardLedger: HorseDecision['tournamentCatastropheGuard'];
     let pendingPlo4Ledger: HorseDecision['plo4Policy'];
     let pendingOmahaLedger: HorseDecision['omahaVariantPolicy'];
     let pendingRemainingLedger: HorseDecision['remainingVariantPolicy'];
@@ -3404,6 +3407,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       retireHorseExecutionWitness(pendingExecutionWitness, 'turn_abandoned');
       retireUtility(pendingUtilityLedger);
       retirePostflop(pendingPostflopLedger);
+      if (pendingGuardLedger?.executionStatus === 'pending')
+        pendingGuardLedger.executionStatus = 'not_executed';
       retirePlo4(pendingPlo4Ledger);
       retireOmaha(pendingOmahaLedger);
       retireRemaining(pendingRemainingLedger);
@@ -3771,6 +3776,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         let decision = fastResult.decision;
         pendingUtilityLedger = decision.tournamentUtility;
         pendingPostflopLedger = decision.tournamentPostflop;
+        pendingGuardLedger = decision.tournamentCatastropheGuard;
         pendingPlo4Ledger = decision.plo4Policy;
         pendingOmahaLedger = decision.omahaVariantPolicy;
         pendingRemainingLedger = decision.remainingVariantPolicy;
@@ -4029,6 +4035,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   };
                   pendingUtilityLedger = decision.tournamentUtility;
                   pendingPostflopLedger = decision.tournamentPostflop;
+                  pendingGuardLedger = decision.tournamentCatastropheGuard;
                   pendingPlo4Ledger = decision.plo4Policy;
                   pendingOmahaLedger = decision.omahaVariantPolicy;
                   pendingRemainingLedger = decision.remainingVariantPolicy;
@@ -4063,6 +4070,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           decisionCommitted = true;
           const utilityLedger = decision.tournamentUtility;
           const postflopLedger = decision.tournamentPostflop;
+          const guardLedger = decision.tournamentCatastropheGuard;
           const plo4Ledger = decision.plo4Policy;
           const omahaLedger = decision.omahaVariantPolicy;
           const remainingLedger = decision.remainingVariantPolicy;
@@ -4072,6 +4080,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           pendingRemainingLedger = remainingLedger;
           pendingJointLedger = jointLedger;
           pendingPostflopLedger = postflopLedger;
+          pendingGuardLedger = guardLedger;
           pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent('commit')) return;
           if (!handControllerRef) {
@@ -4112,6 +4121,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // replaced it, is checked here; missing, stale, withdrawn, refused,
           // mismatched, expired or restarted authority executes the reference
           // decision the shadow path would have executed.
+          decision = recheckHorsePhase8GuardBeforeAcceptance(decision, decisionSnapshot);
           if (postflopLedger?.applied) {
             const verdict = liveHorsePhase8Authority.check(postflopLedger.authority);
             postflopLedger.authorityVerdict = verdict;
@@ -4776,6 +4786,37 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   );
                   noteFire('phase13_authority_controller_withdrawn');
                 }
+              }
+            }
+            if (guardLedger) {
+              guardLedger.executedAction = executedAction;
+              guardLedger.executedAmount = executedAmount;
+              const action = guardLedger.applied
+                ? guardLedger.candidateAction
+                : guardLedger.baselineAction;
+              const amount = guardLedger.applied
+                ? guardLedger.candidateAmount
+                : guardLedger.baselineAmount;
+              const matched =
+                executedAction === action &&
+                (!(action === 'bet' || action === 'raise') || executedAmount === amount);
+              guardLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              if (guardLedger.selection === 'selected') {
+                if (guardLedger.executionStatus === 'intended')
+                  guardLedger.selection = 'controller_accepted';
+                else if (
+                  guardLedger.executionStatus === 'fallback' ||
+                  guardLedger.executionStatus === 'coerced'
+                )
+                  liveHorsePhase8GuardAuthority.withdraw(
+                    `controller_${guardLedger.executionStatus}_candidate`
+                  );
               }
             }
             if (postflopLedger) {

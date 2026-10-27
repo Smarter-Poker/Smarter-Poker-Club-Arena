@@ -66,6 +66,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'loads the solver chart artifact the charts answer from',
     'src/gto/SolverPolicyContract.ts': 'the solver policy contract the artifact is read through',
     'src/gto/SolverStoreIdentity.ts': 'the solver store identity the charts and consults check',
+    'src/engine/HorseTournamentCatastropheGuard.ts':
+      'the genuinely qualified Phase 8 catastrophe guard invoked at the tournament continuation graph node; its action predicates alter the baseline consumed by later owners',
     'src/engine/HorseTournamentPostflop.ts':
       'boundary: the Phase 8 tournament continuation owner HorseLogic invokes and legalizes; its continuation models decide only in Phase 8 candidate mode',
     'src/engine/HorseTournamentUtility.ts':

@@ -131,6 +131,33 @@ function fixture(mode: 'shadow' | 'candidate' = 'candidate') {
   return { capture, witness, admission };
 }
 describe('private phase interpretation requires source-qualified accepted evidence', () => {
+  it('does not substitute qualified continuation evidence for a missing captured guard receipt', () => {
+    const f = fixture();
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase8Authority').mockReturnValue(f.admission);
+    f.capture.replayState = {
+      admission: { phase8Postflop: 'candidate', phase8CatastropheGuard: 'candidate' },
+    };
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase8
+    ).toMatchObject({ status: 'unknown', reason: 'owner_receipt_missing' });
+  });
+
+  it.each(['cash', 'omaha_tournament', 'multiple_boards'] as const)(
+    'keeps a captured guard admission outside its actual static domain: %s',
+    (domain) => {
+      const f = fixture();
+      delete f.capture.decision.tournamentPostflop;
+      delete (f.witness as { phase8Authority?: unknown }).phase8Authority;
+      f.capture.replayState = { admission: { phase8CatastropheGuard: 'candidate' } };
+      if (domain === 'cash') f.capture.snapshot.gameState.gameMode = 'cash';
+      else if (domain === 'omaha_tournament') f.capture.snapshot.gameState.gameVariant = 'plo4';
+      else f.capture.snapshot.gameState.boardCount = 2;
+      expect(
+        new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase8
+      ).toMatchObject({ status: 'outside-domain', application: 'not-applicable' });
+    }
+  );
+
   it.each([0, 0.99])(
     'joins actual corrective worker capture and accepted witness without confusing sampled application draw=%s',
     async (draw) => {
@@ -665,10 +692,11 @@ describe('supported Phase7 baseline activation and closed qualification domains'
       new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, witness, plans).phase7!.status
     ).toBe('refused');
   });
-  it('caches all eighteen baseline and forty-five canonical corrective admissions without a false bound', () => {
+  it('caches both Phase 8 families and all canonical baseline/corrective admissions without a false bound', () => {
     const refusal = { status: 'refused', reason: 'unselected', transient: false } as const;
     for (const name of [
       'admitPhase8Authority',
+      'admitPhase8GuardAuthority',
       'admitPhase10Authority',
       'admitPhase11Authority',
       'admitPhase12Authority',
@@ -683,6 +711,7 @@ describe('supported Phase7 baseline activation and closed qualification domains'
     expect(() => {
       for (let i = 0; i < 2; i++) {
         a.admitPhase8Authority();
+        a.admitPhase8GuardAuthority();
         a.admitPhase10Authority();
         for (const v of Object.keys(PHASE11_PROTECTED_RELEASE_SELECTIONS))
           a.admitPhase11Authority(v);
@@ -694,6 +723,7 @@ describe('supported Phase7 baseline activation and closed qualification domains'
       }
     }).not.toThrow();
     expect(corrective).toHaveBeenCalledTimes(45);
+    expect(qualifiedReplayAdmissions.admitPhase8GuardAuthority).toHaveBeenCalledTimes(1);
     expect(() => a.admitPhase14Attachment('nlh-untrusted-domain')).toThrow();
     expect(corrective).toHaveBeenCalledTimes(45);
   });

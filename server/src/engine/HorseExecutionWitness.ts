@@ -89,6 +89,7 @@ export type HorseWitnessPhase13Authority = HorseWitnessPhase8Authority;
 
 type QualifiedAuthorityKey =
   | 'phase8Authority'
+  | 'phase8GuardAuthority'
   | 'phase10Authority'
   | 'phase11Authority'
   | 'phase12Authority'
@@ -195,6 +196,8 @@ export interface HorseExecutionWitness {
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
   readonly phase8Authority?: HorseWitnessPhase8Authority | null;
+  /** Distinct qualified catastrophe-guard family; never a continuation receipt. */
+  readonly phase8GuardAuthority?: HorseWitnessPhase8Authority | null;
   /** P10.3; absent on retained witnesses and decisions without a P10.3 PLO4 receipt. */
   readonly phase10Authority?: HorseWitnessPhase10Authority | null;
   /** P11.3; absent on retained witnesses and decisions without a P11.3 Phase 11 receipt. */
@@ -264,6 +267,14 @@ export function withdrawHorsePhase8Selection(
   withdrawHorseQualifiedSelection(witness, snapshot, verdict, 'phase8Authority');
 }
 
+export function withdrawHorsePhase8GuardSelection(
+  witness: HorseExecutionWitness | undefined,
+  snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
+  verdict: HorseAuthorityVerdict
+): void {
+  withdrawHorseQualifiedSelection(witness, snapshot, verdict, 'phase8GuardAuthority');
+}
+
 /** P10.3: the same re-selection for a selected PLO4 candidate. */
 export function withdrawHorsePhase10Selection(
   witness: HorseExecutionWitness | undefined,
@@ -311,6 +322,14 @@ export function recordHorsePhase8Verdict(
 ): void {
   const phase8 = witness?.phase8Authority;
   if (witness?.executionStatus === 'pending' && phase8) phase8.verdict = verdict;
+}
+
+export function recordHorsePhase8GuardVerdict(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  const guard = witness?.phase8GuardAuthority;
+  if (witness?.executionStatus === 'pending' && guard) guard.verdict = verdict;
 }
 
 /** P10.3: record the usable Phase 10 verdict observed immediately before acceptance. */
@@ -416,6 +435,7 @@ export function createHorseExecutionWitness(
 ): HorseExecutionWitness {
   const expectedAmount = expectedHorseExecutionAmount(snapshot, decision);
   const phase8 = decision.tournamentPostflop;
+  const phase8Guard = decision.tournamentCatastropheGuard;
   const plo4 = decision.plo4Policy;
   const phase10 = plo4 && Object.hasOwn(plo4, 'selection') && plo4.selection ? plo4 : null;
   const omaha = decision.omahaVariantPolicy;
@@ -525,6 +545,25 @@ export function createHorseExecutionWitness(
             reference: Object.freeze({
               action: phase8.baselineAction,
               amount: phase8.baselineAmount,
+            }),
+          },
+        }
+      : {}),
+    ...(phase8Guard
+      ? {
+          phase8GuardAuthority: {
+            continuationVersion: phase8Guard.version,
+            mode: phase8Guard.mode,
+            selection: phase8Guard.selection,
+            authority: phase8Guard.authority ? Object.freeze({ ...phase8Guard.authority }) : null,
+            verdict: null,
+            candidate: Object.freeze({
+              action: phase8Guard.candidateAction,
+              amount: phase8Guard.candidateAmount,
+            }),
+            reference: Object.freeze({
+              action: phase8Guard.baselineAction,
+              amount: phase8Guard.baselineAmount,
             }),
           },
         }
@@ -778,6 +817,7 @@ export function settleHorseExecutionWitness(
         : 'coerced';
   for (const key of [
     'phase8Authority',
+    'phase8GuardAuthority',
     'phase10Authority',
     'phase11Authority',
     'phase12Authority',

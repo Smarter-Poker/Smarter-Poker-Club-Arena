@@ -523,7 +523,9 @@ export default function WalletCashierModal({
   const tabs = cashierTabs(walletType);
   // Every send honors the selected wallet. Eligibility is explained on each
   // roster row; the transaction validates it again before moving chips.
-  const destinations = cashierDestinations(spendWallet);
+  const destinations = cashierDestinations(spendWallet).filter(
+    (wallet) => !personalClaim || wallet !== 'player_wallet' || holdsPlayerWallet(viewerRole)
+  );
   const shownDestination =
     spendWallet === 'promo_wallet' && destination === 'agent_wallet' ? 'promo_wallet' : destination;
   const destinationLabel = (key: DestinationWallet) =>
@@ -1947,8 +1949,10 @@ export default function WalletCashierModal({
                       setAmount('');
                       setReason('');
                       setConfirming(false);
-                      setDestination('player_wallet');
-                      setClaimReturn('agent_wallet');
+                      setDestination(
+                        holdsPlayerWallet(viewerRole) ? 'player_wallet' : 'agent_wallet'
+                      );
+                      setClaimReturn(holdsPlayerWallet(viewerRole) ? 'agent_wallet' : 'club_bank');
                       setRecipient({
                         user_id: user!.id,
                         role: viewerRole,

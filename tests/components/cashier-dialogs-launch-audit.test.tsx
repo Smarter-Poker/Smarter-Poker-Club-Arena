@@ -395,6 +395,29 @@ describe('agents reclaim from their own wallets at any time', () => {
   );
 });
 
+it('starts an admin personal claim on its eligible agent wallet', async () => {
+  const original = fx.rpc.getMockImplementation()!;
+  fx.rpc.mockImplementation(async (name, args) =>
+    name === 'fn_cashier_recipient_wallet_balances'
+      ? {
+          data: [{ user_id: USER, player_wallet: null, agent_wallet: 0, promo_wallet: 0 }],
+          error: null,
+        }
+      : name === 'fn_agent_wallet_reversible'
+        ? { data: [], error: null }
+        : original(name, args)
+  );
+  await openCashier({ walletType: 'agent_wallet', role: 'admin' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Claim From My Wallets' }));
+  await waitFor(() =>
+    expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('0.00')
+  );
+  expect(screen.getByRole('combobox', { name: 'Claim From' })).toHaveValue('agent_wallet');
+  expect(screen.getByRole('combobox', { name: 'Claim Into' })).toHaveValue('club_bank');
+  expect(screen.getByRole('button', { name: 'Claim Chips', exact: true })).toBeDisabled();
+});
+
 describe('D-04: the holder figure follows the roster after a claim', () => {
   it('re-reads the chosen player from the refreshed members', async () => {
     let claimed = false;

@@ -3428,6 +3428,7 @@ function CashierTradeWorkspace() {
     claimOpen,
     managementClaims,
     managementClaimTarget?.userId,
+    myRole,
   ]);
   const claimWalletBalance =
     claimWalletRead?.key === claimWalletKey
@@ -3436,7 +3437,9 @@ function CashierTradeWorkspace() {
   const claimWalletError = claimWalletRead?.key === claimWalletKey ? claimWalletRead.error : null;
 
   useEffect(() => {
-    setMgmtClaimSource('player_wallet');
+    setMgmtClaimSource(
+      personalClaim && !holdsPlayerWallet(myRole) ? 'agent_wallet' : 'player_wallet'
+    );
     setMgmtClaimAmount('');
   }, [claimWalletKey]);
 
@@ -6296,7 +6299,10 @@ function CashierTradeWorkspace() {
                           {(['player_wallet', 'agent_wallet', 'promo_wallet'] as const)
                             .filter(
                               (wallet) =>
-                                !personalClaim || managementClaims || wallet !== 'promo_wallet'
+                                (!personalClaim || managementClaims || wallet !== 'promo_wallet') &&
+                                (!personalClaim ||
+                                  wallet !== 'player_wallet' ||
+                                  holdsPlayerWallet(myRole))
                             )
                             .map((wallet) => {
                               const balance =

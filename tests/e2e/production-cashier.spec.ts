@@ -1012,9 +1012,9 @@ test.describe('Production Cashier Certification', () => {
     await agentDialog.getByRole('button', { name: 'Claim From My Wallets', exact: true }).click();
     const personal = agentDialog.getByRole('region', { name: 'Selected Player' });
     await expect(personal).toContainText('My Account');
-    await expect(personal.getByRole('combobox', { name: 'Claim From' })).toHaveValue(
-      'player_wallet'
-    );
+    // The maintained zero-balance admin has an agent wallet, not a player wallet.
+    // All three agent tiers are qualified separately against PostgreSQL 17.
+    await personal.getByRole('combobox', { name: 'Claim From' }).selectOption('agent_wallet');
     await expect(personal.locator('strong').last()).toHaveText(/^\d[\d,]*\.\d{2}$/, {
       timeout: 30_000,
     });

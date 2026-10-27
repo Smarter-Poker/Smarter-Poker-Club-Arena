@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SESSION HISTORY PAGE — Past session analytics with P&L charts
@@ -74,7 +75,10 @@ export default function SessionHistoryPage() {
   });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [timeFilter, setTimeFilter] = useState<'7d' | '30d' | 'all'>('30d');
+  const [timeFilter, setTimeFilter] = usePlayerPreference<'7d' | '30d' | 'all'>(
+    'SessionHistoryPage:timeFilter',
+    '30d'
+  );
   const isMounted = useIsMounted();
   const hasDataRef = useRef(false);
   const scopeKey = `${user?.id ?? ''}:${timeFilter}`;

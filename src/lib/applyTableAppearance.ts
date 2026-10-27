@@ -1,3 +1,8 @@
+import {
+  rememberAppearanceIntent,
+  finishAppearanceIntent,
+  pendingAppearanceIntents,
+} from './appearanceIntentJournal';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  ONE WRITER FOR TABLE APPEARANCE
@@ -285,6 +290,8 @@ export async function applyTableAppearance(
     return { ok: false, error: new Error('not signed in'), reverted };
   }
 
+  rememberAppearanceIntent(opts.userId, { mutationId, gameType, patch: cleanPatch });
+
   /* Seed the durable baseline only at the start of a write chain. A later
      optimistic tap's `previous` may itself never persist; using it as a
      rollback target leaves phantom artwork behind when two requests fail.
@@ -308,6 +315,20 @@ export async function applyTableAppearance(
   const error = await task;
   if (writeTails.get(scope) === tail) writeTails.delete(scope);
 
+  if (error && retryableAppearanceWriteError(error)) {
+    // An unavailable network is not permission to undo the player's choice.
+    // Keep the original mutation id for an exact-intent replay on next open.
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'table-appearance',
+      scope,
+      mutationId,
+      state: 'save-failed',
+    });
+    pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
+    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, opts.userId);
+    return { ok: false, error };
+  }
+  finishAppearanceIntent(opts.userId, mutationId);
   if (error) {
     // 3. PUT BACK ONLY FIELDS THIS MUTATION STILL OWNS. If a later tap is
     // already visible, an older failed request must never erase it.
@@ -365,4 +386,31 @@ export async function applyTableAppearance(
 
   recordAppearanceResult('saved', startedAt, gameType, cleanPatch, opts.userId);
   return { ok: true };
+}
+
+/** Resume the original interrupted requests on an explicit account/theme open. */
+const resumptions = new Map<string, Promise<void>>();
+export function resumePendingAppearance(userId: string): Promise<void> {
+  const existing = resumptions.get(userId);
+  if (existing) return existing;
+  const task = (async () => {
+    for (const intent of pendingAppearanceIntents(userId)) {
+      const scope = `${userId}:${intent.gameType}`;
+      const previous = writeTails.get(scope) ?? Promise.resolve();
+      const attempt = previous.then(() =>
+        persistAppearancePatch(userId, intent.mutationId, intent.gameType, intent.patch)
+      );
+      const tail = attempt.then(() => undefined);
+      writeTails.set(scope, tail);
+      const error = await attempt;
+      if (writeTails.get(scope) === tail) writeTails.delete(scope);
+      if (error && retryableAppearanceWriteError(error)) break;
+      finishAppearanceIntent(userId, intent.mutationId);
+    }
+  })();
+  resumptions.set(userId, task);
+  void task.finally(() => {
+    if (resumptions.get(userId) === task) resumptions.delete(userId);
+  });
+  return task;
 }

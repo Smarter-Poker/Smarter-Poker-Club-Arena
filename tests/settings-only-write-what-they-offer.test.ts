@@ -37,7 +37,13 @@ function upsertBody(): string {
   expect(start, 'the notification preferences upsert has moved or gone').toBeGreaterThan(-1);
   // Anchored past `from(` on purpose: sliceCall binds the FIRST paren after the
   // anchor, and `from(` would hand back that call instead of the upsert.
-  return sliceCall(SETTINGS, "user_notification_preferences').upsert(");
+  const mappingStart = SETTINGS.indexOf('const notificationColumns:');
+  expect(mappingStart, 'only the visible notification fields may enter the patch').toBeGreaterThan(
+    -1
+  );
+  const mappingEnd = SETTINGS.indexOf('const notificationPatch', mappingStart);
+  const mapping = SETTINGS.slice(mappingStart, mappingEnd);
+  return mapping + sliceCall(SETTINGS, "user_notification_preferences').upsert(");
 }
 
 describe('the notifications section writes only its own switches', () => {

@@ -385,7 +385,7 @@ describe('the setting (R4, R5)', () => {
   });
   it('is loaded from the row with the default as fallback', () => {
     expect(read('src/hooks/useUserTableSettings.ts')).toContain(
-      'all_in_squeeze: data.all_in_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.all_in_squeeze'
+      'all_in_squeeze: row.all_in_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.all_in_squeeze'
     );
   });
   it('the migration adds the column NOT NULL DEFAULT true in one transaction, and is declared', () => {

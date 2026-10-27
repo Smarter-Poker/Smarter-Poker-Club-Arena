@@ -1,3 +1,8 @@
+import {
+  beginTableSettingIntent,
+  confirmTableSettingIntent,
+  readTableSettingIntent,
+} from '../lib/tableSettingIntents';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Settings Page
@@ -192,9 +197,12 @@ export default function SettingsPage() {
    */
   const [settings, setSettings] = useState<UserSettings>(() => {
     let initial = DEFAULT_SETTINGS;
-    const saved = readSettingsPageCache(initialSettingsOwnerId);
+    const pending = initialSettingsOwnerId
+      ? readTableSettingIntent(initialSettingsOwnerId, 'account-form')
+      : null;
+    const saved = pending?.value ?? readSettingsPageCache(initialSettingsOwnerId);
     if (saved) initial = validateSettings(saved);
-    return fromTableSettings(tableSettingsRef.current, initial);
+    return pending ? initial : fromTableSettings(tableSettingsRef.current, initial);
   });
   const [hasChanges, setHasChanges] = useState(false);
   const hasChangesRef = useRef(hasChanges);
@@ -212,6 +220,40 @@ export default function SettingsPage() {
     setHasChanges(false);
   }, [authUser?.id]);
   const [saving, setSaving] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
+  const saveTailRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingSaveCountRef = useRef(0);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveRef = useRef<(() => void) | null>(null);
+  const flushAutoSave = () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = null;
+    const save = autoSaveRef.current;
+    autoSaveRef.current = null;
+    save?.();
+  };
+  useEffect(() => {
+    window.addEventListener('pagehide', flushAutoSave);
+    return () => {
+      window.removeEventListener('pagehide', flushAutoSave);
+      flushAutoSave();
+    };
+  }, [authUser?.id]);
+  const applyTablePreferenceSnapshot = (next: UserSettings, keys: Array<keyof UserSettings>) => {
+    const actual = fromTableSettings(tableSettingsRef.current, next);
+    const baseline = { ...next };
+    for (const key of keys) Object.assign(baseline, { [key]: actual[key] });
+    const before = toTableSettings(baseline, tableSettingsRef.current);
+    const patch = Object.fromEntries(
+      Object.entries(toTableSettings(next, tableSettingsRef.current)).filter(
+        ([key, value]) => value !== before[key as keyof typeof before]
+      )
+    );
+    if (Object.keys(patch).length) {
+      tableSettingsRef.current = { ...tableSettingsRef.current, ...patch };
+      updateTableSettings(patch);
+    }
+  };
   const [userEmail, setUserEmail] = useState<string>('');
   const [showThemeSettings, setShowThemeSettings] = useState(false);
   const [isVip, setIsVip] = useState(false);
@@ -291,7 +333,8 @@ export default function SettingsPage() {
   useEffect(() => {
     let isMounted = true;
     retireLegacyGlobalSettingsPageCache();
-    const saved = readSettingsPageCache(authUser?.id);
+    const pending = authUser?.id ? readTableSettingIntent(authUser.id, 'account-form') : null;
+    const saved = pending?.value ?? readSettingsPageCache(authUser?.id);
     // The table's own store wins for the keys the two share: it is what the
     // table is actually using right now, and it can be changed from the
     // in-table settings panel while this page is closed. Opening this page must
@@ -304,7 +347,7 @@ export default function SettingsPage() {
         reportError(e, 'SettingsPage.Failed_to_load_settings');
       }
     }
-    setSettings(fromTableSettings(tableSettingsRef.current, initial));
+    setSettings(pending ? initial : fromTableSettings(tableSettingsRef.current, initial));
     setHasChanges(false);
     setUserEmail('');
     // Get current user email from auth session (avoid redundant getUser() call)
@@ -379,7 +422,7 @@ export default function SettingsPage() {
       if (!serverSettings && !prefs) return;
       // An authoritative read may not replace controls the player touched
       // while it was in flight.
-      if (hasChangesRef.current) return;
+      if (hasChangesRef.current || readTableSettingIntent(ownerId, 'account-form')) return;
       const base = serverSettings
         ? fromTableSettings(tableSettingsRef.current, serverSettings)
         : settingsRef.current;
@@ -440,6 +483,11 @@ export default function SettingsPage() {
 
   // Refresh data when user returns to tab
   useVisibilityRefresh(() => {
+    if (
+      hasChangesRef.current ||
+      (authUser?.id && readTableSettingIntent(authUser.id, 'account-form'))
+    )
+      return;
     const saved = readSettingsPageCache(authUser?.id);
     if (saved) {
       try {
@@ -683,8 +731,8 @@ export default function SettingsPage() {
          means going and finding it again.
 
          Everything else genuinely is a preference and resets. */
-      setSettings((current) => ({ ...DEFAULT_SETTINGS, cardBack: current.cardBack }));
-      markSettingsEdited();
+      const next = { ...DEFAULT_SETTINGS, cardBack: settingsRef.current.cardBack };
+      commitPreferenceSelection(next, Object.keys(DEFAULT_SETTINGS) as Array<keyof UserSettings>);
     }
   };
 
@@ -885,23 +933,94 @@ export default function SettingsPage() {
     setPushTesting(false);
   };
 
-  const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
+  const commitPreferenceSelection = (
+    next: UserSettings,
+    changedKeys: Array<keyof UserSettings>
+  ) => {
+    settingsRef.current = next;
+    setSettings(next);
     markSettingsEdited();
+    setSyncFailed(false);
+    const ownerId = authUser?.id;
+    if (ownerId) {
+      writeSettingsPageCache(ownerId, next as unknown as Record<string, unknown>);
+      const priorIntent = readTableSettingIntent(ownerId, 'account-form');
+      const priorKeys = (priorIntent?.value as { __changedKeys?: unknown })?.__changedKeys;
+      const keys = [
+        ...new Set([
+          ...(Array.isArray(priorKeys)
+            ? priorKeys.filter(
+                (key): key is keyof UserSettings =>
+                  typeof key === 'string' &&
+                  Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key)
+              )
+            : []),
+          ...changedKeys,
+        ]),
+      ];
+      const intentId = beginTableSettingIntent(ownerId, 'account-form', {
+        ...next,
+        __changedKeys: keys,
+      });
+      // Apply immediately, even if the network is offline or the player leaves.
+      applyTablePreferenceSnapshot(next, changedKeys);
+      const themeStore = useSettingsStore.getState();
+      if (changedKeys.includes('theme') && themeStore.interfaceThemeUserId === ownerId)
+        themeStore.setTheme(next.theme, ownerId);
+      autoSaveRef.current = () => {
+        void saveSettings(true, next, intentId, keys);
+      };
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(flushAutoSave, 500);
+    }
   };
 
-  const saveSettings = async () => {
+  const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
+    commitPreferenceSelection({ ...settingsRef.current, [key]: value }, [key]);
+  };
+
+  const saveSettings = async (
+    automatic = false,
+    snapshot?: UserSettings,
+    pendingId?: string,
+    changedKeys?: Array<keyof UserSettings>
+  ) => {
     const ownerId = authUser?.id;
     if (!ownerId) {
       toast.error('Your Session Expired. Sign In Again To Save These Settings.');
       return;
     }
-    const settingsToPersist = settingsRef.current;
+    const settingsToPersist = snapshot ?? settingsRef.current;
+    const intentId =
+      pendingId ??
+      beginTableSettingIntent(ownerId, 'account-form', {
+        ...settingsToPersist,
+        __changedKeys:
+          (readTableSettingIntent(ownerId, 'account-form')?.value as { __changedKeys?: unknown })
+            ?.__changedKeys ?? Object.keys(settingsToPersist),
+      });
+    const pendingKeys = (
+      readTableSettingIntent(ownerId, 'account-form')?.value as { __changedKeys?: unknown }
+    )?.__changedKeys;
+    const keys =
+      changedKeys ??
+      (Array.isArray(pendingKeys)
+        ? pendingKeys.filter(
+            (key): key is keyof UserSettings =>
+              typeof key === 'string' && Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key)
+          )
+        : (Object.keys(settingsToPersist) as Array<keyof UserSettings>));
+    const settingsPatch = Object.fromEntries(keys.map((key) => [key, settingsToPersist[key]]));
     const saveRevision = formEditRevisionRef.current;
     const requestedTheme = settingsToPersist.theme;
-    let previousTheme: UserSettings['theme'] | null = null;
-    let optimisticThemeApplied = false;
+    const prior = saveTailRef.current;
+    let release!: () => void;
+    saveTailRef.current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    pendingSaveCountRef.current += 1;
     setSaving(true);
+    await prior;
     try {
       // Resolve auth before touching device state. A form opened by A may not
       // become a save for B if the account switches while it is on screen.
@@ -928,11 +1047,6 @@ export default function SettingsPage() {
         toast.error('Your Session Expired. Sign In Again To Save These Settings.');
         return;
       }
-      previousTheme = useSettingsStore.getState().themePreference;
-      useSettingsStore.getState().setTheme(requestedTheme, ownerId);
-      optimisticThemeApplied =
-        useSettingsStore.getState().interfaceThemeUserId === ownerId &&
-        useSettingsStore.getState().themePreference === requestedTheme;
 
       {
         /* Merge only the controls this page owns. Replacing the whole JSON
@@ -940,8 +1054,9 @@ export default function SettingsPage() {
            newer build and raced Table Studio's atomic interface writer. */
         const profileSave = await persistAccountSettings(
           ownerId,
-          settingsToPersist as unknown as Record<string, unknown>,
-          effectiveInterfaceTheme(settingsToPersist.theme)
+          settingsPatch,
+          effectiveInterfaceTheme(requestedTheme),
+          intentId
         );
         if (!profileSave.ok) throw profileSave.error;
 
@@ -983,16 +1098,23 @@ export default function SettingsPage() {
            `handWonNotifications` itself still round-trips through
            profiles.settings with the rest of the bridge; nothing reads it yet,
            so it is inert rather than harmful. */
-        const { error: notifErr } = await supabase.from('user_notification_preferences').upsert(
-          {
-            user_id: ownerId,
-            tournament_reminders: settingsToPersist.tournamentReminders ?? true,
-            friend_activity: settingsToPersist.friendAlerts ?? true,
-            club_updates: settingsToPersist.clubActivity ?? true,
-          },
-          { onConflict: 'user_id' }
+        const notificationColumns: Partial<Record<keyof UserSettings, string>> = {
+          tournamentReminders: 'tournament_reminders',
+          friendAlerts: 'friend_activity',
+          clubActivity: 'club_updates',
+        };
+        const notificationPatch = Object.fromEntries(
+          keys
+            .filter((key) => notificationColumns[key])
+            .map((key) => [notificationColumns[key]!, settingsToPersist[key]])
         );
-        if (notifErr) reportError(notifErr, 'SettingsPage.notification_prefs_upsert');
+        if (Object.keys(notificationPatch).length) {
+          const { error: notifErr } = await supabase
+            .from('user_notification_preferences')
+            .upsert({ user_id: ownerId, ...notificationPatch }, { onConflict: 'user_id' });
+          if (notifErr) throw notifErr;
+        }
+        confirmTableSettingIntent(ownerId, 'account-form', intentId);
       }
 
       // The owner can move while either network write is in flight. A durable
@@ -1026,7 +1148,6 @@ export default function SettingsPage() {
 
       // Commit into the store the live table reads only after the account
       // merge succeeds. The table store emits every changed key immediately.
-      updateTableSettings(toTableSettings(settingsToPersist, tableSettingsRef.current));
       hasChangesRef.current = false;
       setHasChanges(false);
 
@@ -1036,30 +1157,36 @@ export default function SettingsPage() {
         userId: ownerId,
         source: 'settings-page',
       });
-      toast.success('Settings saved!');
+      if (!automatic) toast.success('Settings saved!');
     } catch (error) {
-      const themeState = useSettingsStore.getState();
-      if (
-        optimisticThemeApplied &&
-        previousTheme &&
-        themeState.interfaceThemeUserId === ownerId &&
-        themeState.themePreference === requestedTheme
-      ) {
-        themeState.setTheme(previousTheme, ownerId);
-      }
+      setSyncFailed(true);
       reportError(error, 'SettingsPage.Failed_to_sync_settings');
-      toast.error('Failed to save settings. Please try again.');
+      toast.error('Settings Saved On This Device Only. Could Not Sync To Your Account.');
     } finally {
-      setSaving(false);
+      pendingSaveCountRef.current -= 1;
+      setSaving(pendingSaveCountRef.current > 0);
+      release();
     }
   };
+
+  useEffect(() => {
+    if (!authUser?.id) return;
+    const pending = readTableSettingIntent(authUser.id, 'account-form');
+    if (!pending) return;
+    const next = validateSettings(pending.value);
+    settingsRef.current = next;
+    setSettings(next);
+    hasChangesRef.current = true;
+    setHasChanges(true);
+    void saveSettings(true, next, pending.id);
+  }, [authUser?.id]);
 
   const resetSettings = () => {
     setConfirmAction({
       type: 'reset-settings',
       title: 'Reset Settings',
       message:
-        'Reset every setting to its default? Your card back is left alone, because you may have paid for it. You will still need to save for this to take effect.',
+        'Reset every setting to its default? Your card back is left alone, because you may have paid for it. Your Choices Save Automatically.',
       variant: 'default',
     });
   };
@@ -1068,7 +1195,7 @@ export default function SettingsPage() {
     <StandardContentLayout className={styles.page}>
       <AccountSurfaceHeader
         title="Control Room"
-        description="Sound, Table Display, Alerts, Device Access, Identity Security And Account Data. Every Control Here Is Live On The Felt The Moment You Save."
+        description="Sound, Table Display, Alerts, Device Access, Identity Security And Account Data. Preferences Apply And Save Automatically When Selected."
         status={hasChanges ? 'Changes Pending' : 'Systems Synced'}
       />
 
@@ -1093,12 +1220,18 @@ export default function SettingsPage() {
 
       <div className={styles.headerActions} aria-live="polite">
         <span className={styles.changeState}>
-          {hasChanges ? 'Unsaved Controls Are Staged Locally.' : 'All Visible Controls Are Saved.'}
+          {hasChanges
+            ? 'Choices Are Saved On This Device. Account Sync Is Pending.'
+            : 'All Visible Controls Are Saved.'}
         </span>
         <div>
-          {hasChanges && (
-            <button className={styles.saveButton} onClick={saveSettings} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Changes'}
+          {hasChanges && syncFailed && (
+            <button
+              className={styles.saveButton}
+              onClick={() => void saveSettings()}
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : 'Retry Account Sync'}
             </button>
           )}
           <button className={styles.resetButton} onClick={resetSettings}>

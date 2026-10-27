@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  *  PLAYER STATS PAGE — Premium Glassmorphism Design
  *
@@ -177,8 +178,9 @@ export default function PlayerStatsPage() {
   const [comparisonLoadedKey, setComparisonLoadedKey] = useState<string | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [comparisonError, setComparisonError] = useState(false);
-  const [comparisonSort, setComparisonSort] = useState<ClubComparisonSort>(() =>
-    validClubSort(searchParams.get('clubSort'))
+  const [comparisonSort, setComparisonSort] = usePlayerPreference<ClubComparisonSort>(
+    'PlayerStatsPage:comparisonSort',
+    () => validClubSort(searchParams.get('clubSort'))
   );
   const [full, setFull] = useState<FullStats | null>(null);
   // Keep the payload scope explicit. A failed range request must never leave
@@ -188,7 +190,9 @@ export default function PlayerStatsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [servingCache, setServingCache] = useState(false);
-  const [rangeKey, setRangeKey] = useState<string>(() => validRangeKey(searchParams.get('range')));
+  const [rangeKey, setRangeKey] = usePlayerPreference<string>('PlayerStatsPage:rangeKey', () =>
+    validRangeKey(searchParams.get('range'))
+  );
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [statsDataSource, setStatsDataSource] = useState<'live' | 'memory cache' | 'saved cache'>(
     'live'
@@ -412,7 +416,7 @@ export default function PlayerStatsPage() {
   const searchKey = searchParams.toString();
   useEffect(() => {
     const current = new URLSearchParams(searchKey);
-    const nextRange = validRangeKey(current.get('range'));
+    const nextRange = current.has('range') ? validRangeKey(current.get('range')) : rangeKey;
     if (current.get('range') && nextRange === 'all') updateStatsUrl({ range: null }, true);
     if (current.get('tab') && validTab(current.get('tab')) === 'overview') {
       updateStatsUrl({ tab: null }, true);
@@ -433,7 +437,7 @@ export default function PlayerStatsPage() {
       setRangeKey(nextRange);
     }
     setCategory(validTab(current.get('tab')));
-    setComparisonSort(validClubSort(current.get('clubSort')));
+    if (current.has('clubSort')) setComparisonSort(validClubSort(current.get('clubSort')));
     if (!isOwnProfile) return;
     if (statsScope !== CHIP_STATS) {
       if (selectedClubId) setSelectedClubId(null);

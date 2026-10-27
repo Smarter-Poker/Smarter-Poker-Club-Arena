@@ -316,6 +316,7 @@ beforeEach(() => {
   rpcMock.mockReset();
   downloadMock.mockClear();
   sessionStorage.clear();
+  localStorage.clear();
   realtimeState.channels = [];
   realtimeState.busHandler = null;
   realtimeState.busEvents = [];

@@ -447,4 +447,61 @@ test.describe('the mobile lobby chrome on production', () => {
       )
       .toBeLessThan(1);
   });
+  test('player preferences save automatically and survive a reload', async ({ page }) => {
+    await page.goto('settings', { waitUntil: 'domcontentloaded' });
+    const volume = page.getByRole('slider', { name: 'Sound Volume', exact: true });
+    await expect(volume).toBeVisible({ timeout: 30_000 });
+    const original = await volume.inputValue();
+    const chosen = original === '23' ? '24' : '23';
+    const save = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rpc/fn_patch_account_settings') &&
+        response.ok() &&
+        response.request().postDataJSON()?.p_settings_patch?.soundVolume === Number(chosen)
+    );
+    await volume.evaluate((input: HTMLInputElement, value) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, chosen);
+    await save;
+    await expect(page.getByText('All Visible Controls Are Saved.', { exact: true })).toBeVisible();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(volume).toHaveValue(chosen, { timeout: 30_000 });
+    const restore = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rpc/fn_patch_account_settings') &&
+        response.ok() &&
+        response.request().postDataJSON()?.p_settings_patch?.soundVolume === Number(original)
+    );
+    await volume.evaluate((input: HTMLInputElement, value) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, original);
+    await restore;
+
+    await page.goto('notifications', { waitUntil: 'domcontentloaded' });
+    const unread = page
+      .getByRole('group', { name: 'Filter Notifications' })
+      .getByRole('button', { name: /^Unread/ });
+    await expect(unread).toBeVisible({ timeout: 30_000 });
+    const filterSaved = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_page_preferences') &&
+        response.request().method() === 'POST' &&
+        response.ok() &&
+        response.request().postDataJSON()?.value === 'unread'
+    );
+    await unread.click();
+    await filterSaved;
+    const readback = page.waitForResponse(
+      (response) =>
+        response.url().includes('/rest/v1/user_page_preferences') &&
+        response.request().method() === 'GET' &&
+        response.ok()
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const row = await (await readback).json();
+    expect(row?.value ?? row?.[0]?.value).toBe('unread');
+    await expect(unread).toHaveAttribute('aria-pressed', 'true');
+  });
 });

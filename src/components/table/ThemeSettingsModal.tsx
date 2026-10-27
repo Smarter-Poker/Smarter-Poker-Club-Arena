@@ -1,3 +1,4 @@
+import { pendingAppearancePatch } from '../../lib/appearanceIntentJournal';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THEME SETTINGS MODAL — Bible V8 §11.2
@@ -1459,6 +1460,7 @@ export function ThemeSettingsModal({
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
             faceDeckId: normalizeFaceDeckId(row?.face_deck_id),
+            ...pendingAppearancePatch(userId, gameType),
           });
           themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
@@ -1527,7 +1529,6 @@ export function ThemeSettingsModal({
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
       if (mode === uiPreference) return;
-      const previous = uiPreference;
       const revision = ++modeRevisionRef.current;
       setUiMode(mode, userId || undefined);
 
@@ -1536,8 +1537,7 @@ export function ThemeSettingsModal({
       setModeSaving(true);
       const result = await persistInterfaceTheme(userId, mode);
       if (!result.ok && modeRevisionRef.current === revision) {
-        setUiMode(previous, userId);
-        toast.error('Could Not Save Interface Mode. Please Try Again.');
+        toast.error('Interface Mode Saved On This Device Only. Could Not Sync To Your Account.');
         reportError(result.error, 'ThemeSettingsModal.Interface_mode_save_failed');
       }
       if (modeRevisionRef.current === revision) setModeSaving(false);

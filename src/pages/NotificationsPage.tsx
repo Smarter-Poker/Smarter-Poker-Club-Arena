@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * NOTIFICATIONS — Club Arena surface
  * ═══════════════════════════════════════════════════════════════════════
@@ -313,7 +314,10 @@ function NotificationFeed({ userId }: { userId: string | null }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState('Connecting');
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [filter, setFilter] = usePlayerPreference<'all' | 'unread'>(
+    'NotificationsPage:filter',
+    'all'
+  );
 
   const ownerRef = useRef<FeedOwner | null>(null);
   const rowsRef = useRef(notifications);

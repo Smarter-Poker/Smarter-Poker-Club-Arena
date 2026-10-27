@@ -31,6 +31,9 @@ class DatabaseReservation(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / 'repo'; self.repo.mkdir()
         self.git('init', '-q', '--initial-branch=main')
+        # Preserve protected main's isolation for ordinary disposable fixtures.
+        self.git('config', 'maintenance.auto', 'false')
+        self.git('config', 'gc.auto', '0')
         self.git('config', 'user.name', 'Native Fixture')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'core.hooksPath', str(self.root / 'no-hooks'))
@@ -77,22 +80,25 @@ class DatabaseReservation(unittest.TestCase):
         self.control = self.git('rev-parse', 'HEAD').strip()
         self.git('update-ref', 'refs/remotes/origin/main', self.control)
 
-    def test_commit_maintenance_finishes_before_fixture_cleanup(self):
-        trace = self.root / 'commit-trace.jsonl'
+    def test_fetch_maintenance_finishes_before_fixture_cleanup(self):
+        # The controller really fetches. Git 2.55 no longer runs maintenance
+        # from commit, while fetch still does; exercise that actual trigger.
+        trace = self.root / 'fetch-trace.jsonl'
         env = {**os.environ, 'GIT_TRACE2_EVENT': str(trace)}
-        subprocess.check_output(['git', '-C', str(self.repo), 'commit', '--allow-empty',
-                                 '-qm', 'foreground maintenance fixture'], env=env, stderr=subprocess.PIPE)
+        subprocess.check_output(['git', '-C', str(self.repo), '-c', 'maintenance.auto=true',
+                                 'fetch', '--no-tags',
+                                 str(self.repo), 'main'], env=env, stderr=subprocess.PIPE)
         events = [json.loads(line) for line in trace.read_text().splitlines()]
         maintenance = [event for event in events if event.get('event') == 'child_start'
                        and event.get('argv', [])[:3] == ['git', 'maintenance', 'run']]
-        self.assertTrue(maintenance, 'real commit must exercise automatic Git maintenance')
+        self.assertTrue(maintenance, 'real fetch must exercise automatic Git maintenance')
         for child in maintenance:
             self.assertNotIn('--detach', child['argv'])
             self.assertTrue(any(event.get('event') == 'child_exit'
                                 and event.get('sid') == child['sid']
                                 and event.get('child_id') == child['child_id']
                                 and event.get('code') == 0 for event in events),
-                            'commit must reap its maintenance child before returning')
+                            'fetch must reap its maintenance child before returning')
 
     def request(self, run='100-1'):
         return {'runId': run, 'controlSha': self.control, 'servingSha': self.serving, 'windowId': 'native-db'}
@@ -317,6 +323,15 @@ class ControllerLifecycle(unittest.TestCase):
         for k,v in self.saved.items():setattr(controller,k,v)
         os.environ.clear();os.environ.update(self.environment)
         DatabaseReservation.tearDown(self)
+
+    def test_fixture_fetch_does_not_launch_automatic_maintenance(self):
+        # Fetch is real in the controller. A detached Git child can outlive
+        # check_output and recreate .git entries during TemporaryDirectory cleanup.
+        environment = os.environ.copy()
+        environment['GIT_TRACE'] = '1'
+        result = subprocess.run(['git', '-C', str(self.repo), 'fetch', '--no-tags', 'origin', 'main'],
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        self.assertNotRegex(result.stderr.decode(), r'(?:maintenance run|gc --auto)')
 
     def test_complete_same_instance_and_terminal_receipt(self):
         controller.remote()

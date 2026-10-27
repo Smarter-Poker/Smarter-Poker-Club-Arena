@@ -25,3 +25,18 @@ Current-head CI reached a disposable Git fixture teardown error, `Directory not 
 ## Real journal component tests use the server runtime
 
 The seven synthetic tests that import the real journal reviewer now run under the maintained server suite and its Node 22 runtime. The client Node 20 suite cannot load the reviewer's native `node:sqlite` dependency. All seven assertions remain enforced by the existing server test discovery; the client-side metadata and wiring tests remain in the client suite. Only test import paths, strict fixture typing and suite placement changed. Runtime code and Node versions are unchanged.
+
+## Git maintenance trigger across supported versions
+
+The hosted Git 2.55 fixture regression failed because it required every commit
+to start automatic maintenance. That version no longer invokes maintenance
+from commit; fetch still invokes it and is the actual controller operation
+that originally raced fixture cleanup. Exercise a real local fetch instead,
+retaining the requirement that a maintenance child actually runs, receives no
+detach flag, and exits successfully before the command returns. No reservation,
+thaw, financial, source-binding, cleanup or assertion gate is removed.
+
+Source evidence: [Git 2.55 commit](https://github.com/git/git/blob/v2.55.0/builtin/commit.c)
+and [fetch](https://github.com/git/git/blob/v2.55.0/builtin/fetch.c).
+
+Ordinary fixtures retain protected main's disabled automatic-housekeeping defaults and its real-fetch no-maintenance assertion. Only the separate foreground-maintenance regression opts in for its one command.

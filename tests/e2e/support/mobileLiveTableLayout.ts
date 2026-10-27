@@ -179,7 +179,7 @@ export async function certifyMobileLiveTableLayout(
               : 12;
           if (
             table.getAttribute('data-seats') === '6' &&
-            box(table).width > 375 &&
+            box(table).width > 480 &&
             head &&
             visible(head)
           ) {

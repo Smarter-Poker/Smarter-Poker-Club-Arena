@@ -55,7 +55,7 @@ export function useProtectedCardLayout(
     const topPods = () =>
       Array.from(
         scaler.querySelectorAll<HTMLElement>(
-          page.getAttribute('data-seats') === '6' && page.getBoundingClientRect().width > 375
+          page.getAttribute('data-seats') === '6' && page.getBoundingClientRect().width > 480
             ? '.seat-wrapper--cap, .seat-wrapper--top'
             : '.seat-wrapper--top'
         )
@@ -198,7 +198,7 @@ export function useProtectedCardLayout(
         // before considering a more distant spot beside another chair.
         const sixMaxTop =
           page.getAttribute('data-seats') === '6' &&
-          page.getBoundingClientRect().width > 375 &&
+          page.getBoundingClientRect().width > 480 &&
           row.closest('.seat-wrapper--cap, .seat-wrapper--top');
         const place = (candidate: CardBox) =>
           placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
@@ -345,9 +345,9 @@ export function useProtectedCardLayout(
         ? Math.max(...chrome.map((box) => box.bottom))
         : pageBox.top + plateHeight;
       // Production uses the desktop-width viewport on phones. Preserve the
-      // legacy <=375px fallback for browsers that ignore that viewport:
+      // legacy <=480px fallback for browsers that ignore that viewport:
       // a full PLO hand and wager cannot share its cropped top-seat lane.
-      const sixMax = page.getAttribute('data-seats') === '6' && pageBox.width > 375;
+      const sixMax = page.getAttribute('data-seats') === '6' && pageBox.width > 480;
       if (sixMax || pageBox.width <= 768) {
         for (const pod of topPods()) {
           if (settled.current.pods.has(pod)) continue;

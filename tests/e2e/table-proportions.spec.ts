@@ -839,8 +839,8 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
 // another player. They are certified on the PLO5/PLO6 scenes this regime is
 // for; their seat pods keep the tablet ring (see `largePortrait` below).
-for (const width of [320, 375, 393, 430, 480, 600, 768])
-  for (const count of [6, 9])
+for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
+  for (const count of width === 1024 ? [6] : [6, 9])
     test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats`, async ({
       page,
     }, testInfo) => {
@@ -1004,7 +1004,9 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
                   ? 960
                   : width === 768
                     ? 1024
-                    : 852,
+                    : width === 1024
+                      ? 2048
+                      : 852,
         });
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
@@ -1127,7 +1129,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             path: testInfo.outputPath(`${width}px-${count}-seats-PLO${villainCards}-${state}.png`),
           });
         }
-        if (count === 6 && width > 375) {
+        if (count === 6 && width > 480) {
           const crown = await page.evaluate(() => {
             const table = document.querySelector('.table-page')!;
             const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
@@ -1141,6 +1143,12 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
           // two-pixel resting crop; only the crown may cross the bar.
           expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
           expect(crown.gap).toBeLessThan(2 * crown.scale);
+        }
+        // The added desktop-width case owns the crown target. The
+        // pre-existing marker certification below owns portrait <=768px.
+        if (width === 1024) {
+          await page.screenshot({ path: testInfo.outputPath(`desktop-sixmax-${state}.png`) });
+          continue;
         }
         const result = await page.evaluate(() => {
           const box = (e: Element) => e.getBoundingClientRect();

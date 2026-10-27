@@ -4,4 +4,4 @@ The top-centre opponent on six-player tables previously reserved a full band bel
 
 The existing protected layout pass owns the placement, stable hand position and bet compensation. Unit coverage checks width boundaries and runout stability; the maintained occupied-ring browser checks and live-layout certificate check the new crown band while retaining avatar animations and card/wager safeguards.
 
-Production phones use the desktop-width viewport. Legacy browsers ignoring that viewport at 375 CSS pixels or narrower retain the previous safe lane, because a cropped crown leaves no clear PLO hand/wager lane there.
+Production phones use the desktop-width viewport. Legacy browsers ignoring that viewport at 480 CSS pixels or narrower retain the previous safe lane, because a cropped crown leaves no clear PLO hand/wager lane there.

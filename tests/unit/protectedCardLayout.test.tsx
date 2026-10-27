@@ -192,7 +192,7 @@ it('a new hand at the same seat is placed afresh', async () => {
 });
 
 // The six-max crown meets the bar at all widths, independently of corner BBJ.
-it.each([393, 606, 1024])(
+it.each([481, 606, 1024])(
   'six-max top crown clips two canvas pixels at width %i',
   async (width) => {
     stubGeometry();
@@ -204,5 +204,14 @@ it.each([393, 606, 1024])(
     expect(pod.style.getPropertyValue('--sp-top-seat-shift')).toBe('-102px');
     await act(async () => h.rerender(<Fixture revealed seats={6} width={width} revision="flop" />));
     expect(h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect().top).toBe(-2);
+  }
+);
+
+it.each([320, 375, 393, 430, 480])(
+  'retains the safe legacy phone lane at %i CSS pixels',
+  (width) => {
+    stubGeometry();
+    const h = render(<Fixture revealed={false} seats={6} width={width} />);
+    expect(h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect().top).toBe(42);
   }
 );

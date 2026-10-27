@@ -1382,6 +1382,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8309",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original Round2 rejects burls recorded same-agent role promotion (113 agent sources62.39 plus68 super-agent sources18.99, independently matched181 original contracts81.38). Round1 club banks already credited but all agents and players remain unpaid. Exact53 native cases, original invoice/discharge/concurrency/fault guards, local TSC/law1177/normal hooks passed; required hosted checks queued. Qualified exact three-predicate correction preserves identity, original per-source roles, rates, amounts, parents, edges, fingerprints and all84 proof windows. Installed once through maintained applier under PUBLISHING active-outage exception; no payout or current-book completion is inferred. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Historical same-agent promotion changes no monetary source edges. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027171556",
+      "name": "zero_rakeback_receipts_need_no_player_wallet",
+      "file": "supabase/migrations/20261027171556_zero_rakeback_receipts_need_no_player_wallet.sql",
+      "md5": "01d82114dfe8cfc016f540020663a2bc",
+      "appliedToProductionAt": "2026-10-27T17:22:49.404Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained one-transaction installer; exact full-file history/R3 postimage/all metadata/ACL and unchanged original financial source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8341",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original guarded rollback reached R3 but its player wallet cohort included one certified zero-entitlement pending period without a current membership, blocking every positive payout. This migration changes only that original temporary wallet cohort SELECT to WHERE owed>0. Zero entitlement still closes through the original certificate/source and zero paid-receipt path, without a wallet or chips; positive wallet admission, funding, invoice, conservation, held-player discharge, atomicity and replay remain unchanged. Actual original whole R2/R3/discharge family46cases passed, including old-fails/new-passes regression, no zero wallet or financial leg, original positive monetary assertions and concurrent commits. All original pg_proc metadata/ACL preserved. No R2 reset, source-pin renewal, math/certificate/cache retag or data repair. Exact source installed through maintained active-outage route while hosted checks pending. This is the VERY NEXT source recording after exact verified installation; actual R3 payment/wallet no-double readback remain separate proof."
     }
   ]
 }

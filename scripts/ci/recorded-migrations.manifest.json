@@ -1384,6 +1384,18 @@
       "liveVerdict": "Active weekly rakeback production payout outage: original Round2 rejects burls recorded same-agent role promotion (113 agent sources62.39 plus68 super-agent sources18.99, independently matched181 original contracts81.38). Round1 club banks already credited but all agents and players remain unpaid. Exact53 native cases, original invoice/discharge/concurrency/fault guards, local TSC/law1177/normal hooks passed; required hosted checks queued. Qualified exact three-predicate correction preserves identity, original per-source roles, rates, amounts, parents, edges, fingerprints and all84 proof windows. Installed once through maintained applier under PUBLISHING active-outage exception; no payout or current-book completion is inferred. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Historical same-agent promotion changes no monetary source edges. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     },
     {
+      "version": "20261027165306",
+      "name": "privilege_changes_do_not_reload_the_schema",
+      "file": "supabase/migrations/20261027165306_privilege_changes_do_not_reload_the_schema.sql",
+      "md5": "0565e2622c9b9a35417d7e73bd303ace",
+      "appliedToProductionAt": "2026-10-27T17:16:14.322Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and guard owner postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8337",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback production payout outage: original R2 rolled back at16:50 because its unchanged private temporary payer-proof table REVOKE was mistaken for a schema migration. Native PG17 actual event and original reserve helper reproduced the failure and passed the exact command-tag correction while CREATE ALTER DROP and maintenance/audit authorities stayed intact. Installed once through maintained route outside the DDL window, with no override in any financial session. Exact guard function postimages/metadata/runtime ACLs and original source authority were read back. Only authoritative GRANT/REVOKE event tags classify as non-schema permission churn; all public DDL/advisory/audit branches and private TEMP ACLs remain unchanged. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
       "version": "20261027142050",
       "name": "deleted_reserves_reuse_unchanged_payer_proofs",
       "file": "supabase/migrations/20261027142050_deleted_reserves_reuse_unchanged_payer_proofs.sql",

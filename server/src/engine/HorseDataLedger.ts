@@ -721,6 +721,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Combo draw pressure'
   ),
   flag(
+    'riverBluffCheckRaise',
+    'candidate-only zero-showdown-equity priced 3x river check-raise using own-observer same-line fold responses; default off pending qualification',
+    'River check-raise'
+  ),
+  flag(
     'riverPositionDefense',
     'candidate-only priced HU cash river defense against a credible wide entrant whose own public conditional last-to-act betting rate is excessive; default off pending independent qualification',
     'River position defense'
@@ -973,6 +978,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'riverLastToActBets',
     'bets among those same last-to-act river opportunities, not a bluff count',
     'HorseMind.riverLastToActRead / candidate riverPositionDefense'
+  ),
+  mind(
+    'riverTripleCheckRaiseOpps',
+    'completed responses to exact 3x heads-up river check-raises in own public history',
+    'HorseMind.riverTripleCheckRaiseRead / candidate riverBluffCheckRaise'
+  ),
+  mind(
+    'riverTripleCheckRaiseFolds',
+    'folds among the same exact 3x river check-raise responses',
+    'HorseMind.riverTripleCheckRaiseRead / candidate riverBluffCheckRaise'
   ),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
@@ -1657,6 +1672,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (maniac pressure)',
     "a maniac raised or is still to act: its shoves and re-raises priced by equity, opens capped to what continues, no bluff raises (Dan: 'NOT RAISE A HAND WITH THE INTENTION OF FOLDING')",
     'OPPX'
+  ),
+  receipt(
+    'river_bluff_checkraise_evaluated',
+    'HorseLogic.riverBluffCheckRaise',
+    'priced candidate, not qualification or accepted action',
+    'River check-raise'
+  ),
+  receipt(
+    'river_bluff_checkraise_selected',
+    'HorseLogic.riverBluffCheckRaise',
+    'positive lower-bound bluff proposal; authoritative acceptance remains separate',
+    'River check-raise'
   ),
   receipt(
     'river_position_defense_evaluated',

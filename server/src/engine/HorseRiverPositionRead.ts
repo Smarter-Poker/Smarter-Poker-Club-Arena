@@ -68,3 +68,49 @@ export function riverPositionIncrements(
   }
   return out;
 }
+
+/** Exact heads-up check/bet/three-times-raise/response line. A response is
+ * counted only after it occurs; a pending raise is not a fold. Amounts use
+ * the public controller ABI: an opening bet and a raise are street totals.
+ * Keeping the size fixed avoids extrapolating ordinary bet folds or tiny
+ * raise folds to a large check-raise. All-in wagers are deliberately absent. */
+export function riverTripleCheckRaiseIncrements(
+  actions: readonly PublicAction[] | undefined,
+  dealtCount: unknown
+): Map<string, { opportunities: number; folds: number }> {
+  const out = new Map<string, { opportunities: number; folds: number }>();
+  const position = riverPositionIncrements(actions, dealtCount);
+  if (!position.size || !actions) return out;
+  const river = actions.filter((a) => a.stage === 'river' && voluntary.has(String(a.action)));
+  if (river.length < 4) return out;
+  const [check, bet, raise, response] = river;
+  if (
+    check.action !== 'check' ||
+    bet.action !== 'bet' ||
+    raise.action !== 'raise' ||
+    check.userId !== raise.userId ||
+    bet.userId !== response.userId ||
+    check.userId === bet.userId ||
+    !position.get(bet.userId as string)?.bets ||
+    !['fold', 'call', 'raise', 'all_in'].includes(String(response.action))
+  )
+    return out;
+  const b = bet.amount,
+    r = raise.amount,
+    answered = response.amount;
+  if (
+    typeof b !== 'number' ||
+    !Number.isFinite(b) ||
+    b <= 0 ||
+    typeof r !== 'number' ||
+    !Number.isFinite(r) ||
+    Math.abs(r - 3 * b) > 0.000001 ||
+    typeof answered !== 'number' ||
+    !Number.isFinite(answered) ||
+    (response.action === 'fold' ? answered !== 0 : answered <= 0) ||
+    (response.action === 'raise' && answered <= r)
+  )
+    return out;
+  out.set(bet.userId as string, { opportunities: 1, folds: response.action === 'fold' ? 1 : 0 });
+  return out;
+}

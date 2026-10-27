@@ -273,7 +273,7 @@ describe('original observation windows in private read frames', () => {
     expect(() => decodeHorseDecisionReads(bad, players, 'hand')).toThrow('invalid');
   });
 
-  it.each(['none', 'calls', 'position'])(
+  it.each(['none', 'calls', 'position', 'raise'])(
     'admits allocated journal reads (river counters: %s) without legacy downgrade',
     (riverCounters) => {
       const request = {
@@ -294,6 +294,10 @@ describe('original observation windows in private read frames', () => {
       if (riverCounters === 'position') {
         view.stats.get('villain')!.riverLastToActOpps = 12;
         view.stats.get('villain')!.riverLastToActBets = 11;
+      }
+      if (riverCounters === 'raise') {
+        view.stats.get('villain')!.riverTripleCheckRaiseOpps = 12;
+        view.stats.get('villain')!.riverTripleCheckRaiseFolds = 11;
       }
       view.plans.clear();
       view.raisePlans.clear();

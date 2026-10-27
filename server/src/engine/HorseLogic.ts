@@ -2083,6 +2083,9 @@ export interface HorseDecideOpts {
   /** Candidate-only conditional river defense; default off until paired
    * current-brain qualification and protected adoption. */
   riverPositionDefense?: boolean;
+  /** Candidate-only same-size river bluff check-raise. Default off until
+   * independent current-brain qualification; public own-observer reads only. */
+  riverBluffCheckRaise?: boolean;
   /** V58 (2026-10-25): PLO6 river nut discipline on a paired board. Facing a
    *  river bet, a hand one random hand beats 15%+ of the time folds (unless
    *  the price is tiny), and one beaten 5%+ calls instead of raising. Disable to ablate (default: enabled; league
@@ -3297,6 +3300,142 @@ function pairedBoardFold(
   const folded: HorseDecision = { ...decision, action: 'fold' };
   delete folded.amount;
   return folded;
+}
+
+/** Physical value-range blockers, not a conclusion that the bettor is bluffing.
+ * Omaha requires exactly two hole cards: a naked ace blocks the nut flush but
+ * is not itself a flush. Paired boards require a boat/quads blocker instead. */
+function riverBluffBlocker(hole: Card[], board: Card[], omaha: boolean): boolean {
+  if (board.length !== 5 || hole.length < 2) return false;
+  const category = Math.floor(
+    (omaha
+      ? scoreOmahaHiPartial(hole, board)
+      : scoreHoldem([...hole, ...board], hole.length + board.length, false)) / 0x100000
+  );
+  if (category >= 5) return false; // Keep made straights and better in their value/call owner.
+  const counts = new Map<string, number>();
+  for (const c of board) counts.set(c.rank, (counts.get(c.rank) ?? 0) + 1);
+  const pairs = [...counts].filter(([, n]) => n >= 2);
+  if (pairs.length) {
+    if (pairs.length !== 1 || pairs[0][1] >= 4) return false;
+    const [rank, count] = pairs[0];
+    return count === 2
+      ? hole.some((c) => c.rank === rank)
+      : hole.some((c) => c.rank === 'A' && rank !== 'A');
+  }
+  const suits = new Map<string, number>();
+  for (const c of board) suits.set(c.suit, (suits.get(c.suit) ?? 0) + 1);
+  for (const [suit, n] of suits) {
+    if (n >= 3)
+      return (
+        hole.some((c) => c.suit === suit && c.rank === 'A') &&
+        hole.filter((c) => c.suit === suit).length === 1
+      );
+  }
+  const rank = (r: string) => '23456789TJQKA'.indexOf(r) + 2;
+  const br = new Set(board.map((c) => rank(c.rank)));
+  for (let high = 14; high >= 5; high--) {
+    const window = Array.from({ length: 5 }, (_, i) => (high === 5 && i === 4 ? 14 : high - i));
+    const missing = window.filter((r) => !br.has(r));
+    if (missing.length > 2 || missing.length === 0) continue;
+    // Highest physically possible straight only; a lower straight blocker is not the nut blocker.
+    return missing.some((r) => hole.some((c) => rank(c.rank) === r));
+  }
+  return false;
+}
+
+/** Last signed owner for a narrowly priced bluff, after ordinary call-off
+ * protections have folded. It never reopens calls, all-in opponents, raise
+ * wars, unknown economics, or a continuation guard. No private cards/read
+ * data are attached to the returned decision. */
+function riverBluffCheckRaise(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  opts: HorseDecideOpts
+): HorseDecision {
+  if (
+    opts.riverBluffCheckRaise !== true ||
+    opts.mind === false ||
+    decision.action !== 'fold' ||
+    decision.continuationGuard ||
+    decision.policyFallback ||
+    gs.stage !== 'river' ||
+    gs.stateSchemaVersion !== 1 ||
+    isTournamentMode(gs) ||
+    gs.bombPot ||
+    gs.allInOrFold ||
+    gs.variantRules?.splitLow8OrBetter ||
+    gs.bettingStructure === 'fixed_limit' ||
+    !['nlh', 'plo4', 'plo5', 'plo6'].includes(gs.gameVariant) ||
+    (gs.boardCount ?? 1) !== 1 ||
+    gs.communityCards2?.length ||
+    gs.communityCards3?.length ||
+    !gs.legalActions?.includes('raise')
+  )
+    return decision;
+  const opponents = gs.players.filter(
+    (p) => p.user_id !== player.user_id && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+  );
+  if (opponents.length !== 1) return decision;
+  const opp = opponents[0];
+  if (opp.is_all_in || !(opp.stack > 0)) return decision;
+  const river = (gs.actionHistory ?? []).filter((a) => a.stage === 'river');
+  if (
+    river.length !== 2 ||
+    river[0].userId !== player.user_id ||
+    river[0].action !== 'check' ||
+    river[1].userId !== opp.user_id ||
+    river[1].action !== 'bet' ||
+    riverPositionIncrements(gs.actionHistory, gs.dealtSeatIds?.length).get(opp.user_id)?.bets !== 1
+  )
+    return decision;
+  const b = gs.currentBet,
+    target = 3 * b,
+    cost = target - player.bet;
+  const unit = gs.chipUnit ?? (gs.asset === 'diamonds' ? 1 : 0.01);
+  if (
+    ![b, target, cost, gs.pot, unit].every(Number.isFinite) ||
+    b <= 0 ||
+    gs.pot <= 0 ||
+    unit <= 0 ||
+    player.bet !== 0 ||
+    Math.abs(river[1].amount - b) > unit / 10 ||
+    !Number.isFinite(gs.minRaiseTo) ||
+    !Number.isFinite(gs.maxRaiseTo) ||
+    target < gs.minRaiseTo! ||
+    target > gs.maxRaiseTo! ||
+    cost >= player.stack ||
+    opp.stack <= target - b ||
+    Math.abs(target / unit - Math.round(target / unit)) > 1e-6
+  )
+    return decision;
+  const pressure = HorseMind.riverLastToActRead(opp.user_id);
+  const response = HorseMind.riverTripleCheckRaiseRead(opp.user_id);
+  if (
+    !pressure ||
+    pressure.lower99 < 0.65 ||
+    !response ||
+    HorseMind.opponentRead(opp.user_id)?.stats.vpip.engaged !== 'high' ||
+    !riverBluffBlocker(player.cards, gs.communityCards ?? [], gs.gameVariant !== 'nlh')
+  )
+    return decision;
+  const deduction = horseCallDeductionFraction(player, gs, cost);
+  if (deduction === null) return decision;
+  // Deduct the projected full award fee from the already-contested pot.
+  // Zero equity when called/raised is a conservative bluff payoff bound.
+  // The fold probability comes ONLY from responses to this same 3x line.
+  const netWin = Math.max(0, gs.pot - deduction * (gs.pot + cost));
+  const evLower = response.lower99 * netWin - (1 - response.lower99) * cost;
+  if (telemetryOn(opts)) noteFire('river_bluff_checkraise_evaluated');
+  if (!(evLower > unit)) return decision;
+  const proposed: HorseDecision = { ...decision, action: 'raise', amount: target };
+  const legal = fullPotNearPotWager(enforceAuthoritativeDecision(proposed, player, gs), player, gs);
+  // A different amount has no same-size response evidence. Retain the fold
+  // rather than bypassing the full-pot rounding rule or extrapolating the read.
+  if (legal.action !== 'raise' || legal.amount !== target) return decision;
+  if (telemetryOn(opts)) noteFire('river_bluff_checkraise_selected');
+  return { ...proposed, ...legal };
 }
 
 /**
@@ -4596,7 +4735,7 @@ export class HorseLogic {
         shortAllInDeadCheckEquity(player, gs, vi)
       );
       if (floored !== ruled && tele) noteFire('short_all_in_call_floor');
-      return { decision: floored };
+      return { decision: riverBluffCheckRaise(floored, player, gs, opts) };
     }).decision;
     decision = graph.run('timing', decision, () => {
       decision.thinkTime = this.computeThinkTime(
@@ -10527,6 +10666,8 @@ export class HorseLogic {
   /** Exposed for tests ONLY: internal fast evaluators for cross-validation. */
   static readonly __testables = {
     maniacCallDown,
+    riverBluffCheckRaise,
+    riverBluffBlocker,
     scoreHoldem,
     scoreOmahaHi,
     scoreOmahaLow,

@@ -1,4 +1,7 @@
-import { riverPositionIncrements } from './HorseRiverPositionRead.js';
+import {
+  riverPositionIncrements,
+  riverTripleCheckRaiseIncrements,
+} from './HorseRiverPositionRead.js';
 import {
   MEMORY_VARIANTS,
   memoryVariant,
@@ -154,6 +157,8 @@ export interface OpponentStats {
    * Rebuilt from the horse own accepted history, never a pooled donor. */
   riverLastToActOpps: number;
   riverLastToActBets: number;
+  riverTripleCheckRaiseOpps: number;
+  riverTripleCheckRaiseFolds: number;
   /** V7 recency window (exponentially decayed) — detects counter-adaptation */
   rHands: number;
   rFolds: number;
@@ -218,6 +223,8 @@ const freshStats = (): OpponentStats => ({
   riverBetFolds: 0,
   riverLastToActOpps: 0,
   riverLastToActBets: 0,
+  riverTripleCheckRaiseOpps: 0,
+  riverTripleCheckRaiseFolds: 0,
   rHands: 0,
   rFolds: 0,
   rFacedAggr: 0,
@@ -426,6 +433,8 @@ const SCOPED_FIELDS = [
   'riverBetFolds',
   'riverLastToActOpps',
   'riverLastToActBets',
+  'riverTripleCheckRaiseOpps',
+  'riverTripleCheckRaiseFolds',
   'checks',
   'postAggr',
   'postPassive',
@@ -774,6 +783,31 @@ export class HorseMind {
         }
         this.handFlags.add(riverKey);
       }
+    }
+    const raiseKey = identifiedHand ? `${identifiedHand}|river-triple-check-raise` : null;
+    if (raiseKey && !this.handFlags.has(raiseKey)) {
+      const increments = riverTripleCheckRaiseIncrements(history, originalDealtCount);
+      for (const [id, inc] of increments) {
+        const row = this.stats.get(id);
+        const action = history.filter((a) => a.stage === 'river' && a.userId === id).at(-1);
+        if (!row || !action) continue;
+        const before = { ...row };
+        row.riverTripleCheckRaiseOpps = (row.riverTripleCheckRaiseOpps ?? 0) + inc.opportunities;
+        row.riverTripleCheckRaiseFolds = (row.riverTripleCheckRaiseFolds ?? 0) + inc.folds;
+        row.sourceWindow = observeHorseObservationWindow(
+          before.sourceWindow,
+          action.timestamp,
+          hasContributions(before)
+        );
+        this.dirty.add(id);
+        this.applyScopedDelta(
+          id,
+          before,
+          row,
+          observeHorseObservationWindow(undefined, action.timestamp, false)
+        );
+      }
+      if (increments.size) this.handFlags.add(raiseKey);
     }
   }
 
@@ -1200,6 +1234,14 @@ export class HorseMind {
         riverBetFolds: keep(existing?.riverBetFolds, num(r.riverBetFolds)),
         riverLastToActOpps: keep(existing?.riverLastToActOpps, num(r.riverLastToActOpps)),
         riverLastToActBets: keep(existing?.riverLastToActBets, num(r.riverLastToActBets)),
+        riverTripleCheckRaiseOpps: keep(
+          existing?.riverTripleCheckRaiseOpps,
+          num(r.riverTripleCheckRaiseOpps)
+        ),
+        riverTripleCheckRaiseFolds: keep(
+          existing?.riverTripleCheckRaiseFolds,
+          num(r.riverTripleCheckRaiseFolds)
+        ),
         rHands: keep(existing?.rHands, num(r.rHands)),
         rFolds: keep(existing?.rFolds, num(r.rFolds)),
         rFacedAggr: keep(existing?.rFacedAggr, num(r.rFacedAggr)),
@@ -2166,6 +2208,28 @@ export class HorseMind {
       (rate + z2 / (2 * n) - z * Math.sqrt((rate * (1 - rate)) / n + z2 / (4 * n * n))) /
       (1 + z2 / n);
     return { opportunities: n, bets, rate, lower99: Math.max(0, lower99) };
+  }
+
+  /** Same-size check-raise responses, never ordinary river bet responses. */
+  static riverTripleCheckRaiseRead(
+    id: string
+  ): { opportunities: number; folds: number; lower99: number } | null {
+    const s = this.readStats(id),
+      n = s?.riverTripleCheckRaiseOpps ?? 0,
+      folds = s?.riverTripleCheckRaiseFolds ?? 0;
+    if (!Number.isSafeInteger(n) || n < 8 || !Number.isSafeInteger(folds) || folds < 0 || folds > n)
+      return null;
+    const p = folds / n,
+      z = 2.3263478740408408,
+      z2 = z * z;
+    return {
+      opportunities: n,
+      folds,
+      lower99: Math.max(
+        0,
+        (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n)
+      ),
+    };
   }
 
   static riverFoldRate(id: string): number | null {

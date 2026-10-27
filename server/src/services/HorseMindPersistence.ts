@@ -164,6 +164,8 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   // Legacy pooled persistence is not authority for an individual read.
   riverLastToActOpps: 0,
   riverLastToActBets: 0,
+  riverTripleCheckRaiseOpps: 0,
+  riverTripleCheckRaiseFolds: 0,
   snapBetSD: r.snap_bet_sd ?? 0,
   snapBetSDStrong: r.snap_bet_sd_strong ?? 0,
   tankBetSD: r.tank_bet_sd ?? 0,

@@ -3706,6 +3706,21 @@
   transition: none !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UNDER-MODAL ANIMATION SUSPENSION — Freeze felt & background loops when
+   a modal/overlay covers the table, eliminating GPU shader load & heat.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--modal-active .table-art,
+.table-page--modal-active .table-surface,
+.table-page--modal-active .table-brand,
+.table-page--modal-active .pot-area,
+.table-page--modal-active .pot-area *,
+.table-page--modal-active .dealer-button,
+.table-page--modal-active .table-page__stars {
+  animation-play-state: paused !important;
+}
+
 /* ══════════════════════════════════════════════════════════════
    PHASE 2: TOP & BOTTOM UI BUTTONS 
    ══════════════════════════════════════════════════════════════ */
@@ -5181,5 +5196,20 @@ button.post-bb-overlay-button {
   .table-page[data-seats='6'] .table-scaler {
     --sp-seat-h-scale: 0.96;
     margin-top: calc(var(--sp-table-h, 100svh) * 0.02);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREFERS-REDUCED-TRANSPARENCY — Low-power fallback for heavy glassmorphism blur
+   Replaces expensive 20px real-time backdrop blur filters with opaque dark glass
+   when requested by the OS, cutting GPU composition heat and conserving battery.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-transparency: reduce) {
+  .spectator-footer-bar,
+  .footer-action-bar,
+  .header-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(12, 15, 22, 0.98) !important;
   }
 }

@@ -25590,6 +25590,26 @@ function LiveTablePage({
     getPlayerAtSeat,
   ]);
 
+  const isModalActive = Boolean(
+    tournamentWinner ||
+    showMustMoveLobby ||
+    showSettings ||
+    showInsurance ||
+    showRIT ||
+    showBuyInModal ||
+    showHandHistory ||
+    showHandDetail ||
+    showHandReplay ||
+    showPlayerNotes ||
+    showWaitList ||
+    showCashier ||
+    showDiamondWallet ||
+    showLeaveConfirm ||
+    bustRebuyOpen ||
+    showRebuyModal ||
+    postOrWaitOpen
+  );
+
   const tablePage = (
     <div
       ref={pageRootRef}
@@ -25609,7 +25629,7 @@ function LiveTablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}${isModalActive ? ' table-page--modal-active' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */

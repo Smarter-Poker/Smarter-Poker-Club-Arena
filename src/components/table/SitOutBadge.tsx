@@ -61,6 +61,7 @@ function SitOutBadgeInner({ sitOutAt }: SitOutBadgeProps) {
     // No stamp means no deadline means no timer at all.
     if (read() === null) return;
     const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       const next = read();
       setMsRemaining(next);
       /* STOP AT ZERO. The seat is now the engine's to reclaim and the number
@@ -69,7 +70,20 @@ function SitOutBadgeInner({ sitOutAt }: SitOutBadgeProps) {
          sweep takes to land, on every sat-out seat at the table. */
       if (next !== null && next <= 0) clearInterval(id);
     }, 1000);
-    return () => clearInterval(id);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        const next = read();
+        setMsRemaining(next);
+        if (next !== null && next <= 0) clearInterval(id);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [sitOutAt]);
 
   const urgent = isSitOutUrgent(msRemaining);

@@ -1098,3 +1098,77 @@ it('discovers one positive calloff within an explicitly bound accepted hand with
   expect(result.status).toBe('observed');
   expect(result.cases[0].decisionRecordSha256).toMatch(/^[0-9a-f]{64}$/);
 });
+
+it('exports only exact bounded original tournament cash-yield events, including retained stream history', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); line='2026-10-27T01:54:54.957590Z [SessionRotator] horse=4ea2c47b leaving table=e5904da2 for a tournament in 1 min (certain, 1 over four games)'
+invalid=[line+' private-secret',line.replace('certain','other-private-reason'),line.replace('2026-10-27','2026-99-99'),line.replace('horse=4ea2c47b','horse=private-user'),line.replace(', 1 over',', 0 over')]
+parsed=m['tournament_yields']('\\n'.join([line,*invalid]))
+producer='print('+repr(line)+'); '+"[print('2026-10-27T02:00:00Z private-secret') for _ in range(12000)]"
+history=m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)
+print(json.dumps({'parsed':parsed,'history':history,'bounded':m['tournament_yields']('\\n'.join([line]*130))}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 7000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const result = JSON.parse(ran.stdout);
+  expect(result.parsed).toMatchObject({ matchingRecords: 1, eventsTruncated: false });
+  expect(result.parsed.events).toEqual([
+    {
+      timestamp: '2026-10-27T01:54:54.957590Z',
+      horseIdPrefix: '4ea2c47b',
+      tableIdPrefix: 'e5904da2',
+      minutesToStart: 1,
+      reason: 'certain',
+      excess: 1,
+    },
+  ]);
+  expect(result.bounded).toMatchObject({
+    matchingRecords: 130,
+    eventsTruncated: true,
+    cashoutCompletionProven: false,
+  });
+  expect(result.bounded.events).toHaveLength(128);
+  expect(result.history.tournamentYields).toEqual(result.parsed);
+  expect(result.history.coverage.status).toBe('complete');
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|Traceback/);
+});
+
+it('keeps only typed original booking-cap request context and never infers RUNNING status', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); prefix='2026-10-27T02:54:01.000000Z [TournamentRecurring] horse_entry_cap_refused '
+record={'version':1,'tournamentId':'bbbbbbbb-2222-4222-8222-222222222222','horseId':'aaaaaaaa-1111-4111-8111-111111111111','sqlstate':'23514','load':4,'attemptedAt':'2026-10-27T02:54:00.000Z'}
+line=prefix+json.dumps(record)
+invalid=[prefix+json.dumps(dict(record, private='secret')),prefix+json.dumps(dict(record, load=True)),prefix+json.dumps(dict(record, sqlstate='55000')),prefix+json.dumps(dict(record, horseId='private-user')),line+' private-secret',line.replace('02:54:01','02:54:00').replace('02:54:00.000Z','02:55:00.000Z'),prefix+json.dumps(record)[:-1]+',"load":5}']
+parse=m.get('booking_cap_refusals',lambda raw:{'matchingRecords':0,'events':[]})
+parsed=parse('\\n'.join([line,*invalid]))
+producer='print('+repr(line)+'); '+"[print('2026-10-27T02:55:00Z private-secret') for _ in range(12000)]"
+history=m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)
+print(json.dumps({'parsed':parsed,'history':history,'bounded':parse('\\n'.join([line]*130))}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 7000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const result = JSON.parse(ran.stdout);
+  expect(result.parsed).toMatchObject({ matchingRecords: 1, runningEntryProven: false });
+  expect(result.parsed.events).toEqual([
+    {
+      timestamp: '2026-10-27T02:54:01.000000Z',
+      attemptedAt: '2026-10-27T02:54:00.000Z',
+      horseIdPrefix: 'aaaaaaaa',
+      tournamentIdPrefix: 'bbbbbbbb',
+      sqlstate: '23514',
+      load: 4,
+    },
+  ]);
+  expect(result.bounded).toMatchObject({ matchingRecords: 130, eventsTruncated: true });
+  expect(result.bounded.events).toHaveLength(128);
+  expect(result.history.bookingCapRefusals).toEqual(result.parsed);
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|111111111111|222222222222|Traceback/);
+});

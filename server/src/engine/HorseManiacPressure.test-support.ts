@@ -165,7 +165,10 @@ export function playManiacPressure(
       HorseMind.setDecisionScope(readScopeOf(variant, seats), variant);
       const startRead = HorseMind.opponentRead(PRESSURE_MANIAC);
       HorseMind.setDecisionScope(null);
-      tally.maniacReadByHand.push(maniacRaiseWidth(startRead) !== null);
+      // Read-speed evidence counts observed engagement, not the common starting prior.
+      tally.maniacReadByHand.push(
+        startRead?.presumed !== true && maniacRaiseWidth(startRead) !== null
+      );
       tally.postflopManiacByHand.push(isPostflopManiac(startRead));
       for (let step = 0; step < 200; step++) {
         const live = c.getState();

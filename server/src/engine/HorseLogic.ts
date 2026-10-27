@@ -8331,7 +8331,14 @@ export class HorseLogic {
         return this.betSize(
           planHandKey,
           pot,
-          overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2,
+          // Preserve V40's weak-made-hand sizing limit in the bluff branch too.
+          // A changed range estimate must not turn two called barrels into pot-sized value.
+          Math.min(
+            useV40 && vi.isOmaha && isRiver && made40?.weak && calledBarrels40 >= 2
+              ? 0.5
+              : Infinity,
+            overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2
+          ),
           player,
           gs,
           vi,

@@ -62,13 +62,23 @@ describe('variant and session durable opponent reads', () => {
     const expected = HorseMind.opponentRead(uid);
     expect(expected?.stats.pfr.engaged).toBe('high');
     HorseMind.setDecisionScope('omaha:short', 'plo4');
-    expect(HorseMind.opponentRead(uid)).toBeNull();
+    const otherVariant = HorseMind.opponentRead(uid);
+    expect(otherVariant?.presumed).toBe(true);
+    expect(Object.values(otherVariant!.stats).every((stat) => stat.n === 0)).toBe(true);
     HorseMind.setDecisionScope('omaha:short', 'plo5', 'tournament');
-    expect(HorseMind.opponentRead(uid)).toBeNull();
+    const otherMode = HorseMind.opponentRead(uid);
+    expect(otherMode?.presumed).toBe(true);
+    expect(Object.values(otherMode!.stats).every((stat) => stat.n === 0)).toBe(true);
     HorseMind.setDecisionScope(null);
     const players = [{ user_id: uid }];
     const view = HorseMind.snapshotDecisionReads(players as never, null);
     expect(view.exploit.get(opponentMemoryKey(uid, 'plo5', 'cash', 'short'))).toEqual(aggressive());
+    expect(view.exploit.get(opponentMemoryKey(uid, 'plo4', 'cash', 'short'))).toEqual(
+      freshExploitCounters()
+    );
+    expect(view.exploit.get(opponentMemoryKey(uid, 'plo5', 'tournament', 'short'))).toEqual(
+      freshExploitCounters()
+    );
     const frame = encodeHorseDecisionReads(view, players as never, null);
     const restored = decodeHorseDecisionReads(frame, players as never, null);
     // The second look has no access to the live map.

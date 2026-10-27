@@ -4,8 +4,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 export function registerGameLobbyCardCases() {
-  // Each route/viewport is independent. Sharing one 60s budget across all eight
-  // let CI expire after the last Close, before its overflow assertion could run.
+  // Each route/viewport has its own budget for rendering, waitlist toggles,
+  // scrolling, ticker entry, keyboard focus and pointer navigation.
   for (const viewport of [
     { width: 375, height: 812 },
     { width: 812, height: 375 },
@@ -14,6 +14,9 @@ export function registerGameLobbyCardCases() {
       test(`selected ${kind} card survives overflowing details at ${viewport.width}px`, async ({
         page,
       }) => {
+        // Linux WebKit reached the final click after 30s in CI. Preserve every
+        // interaction and leave headroom for the complete journey.
+        test.setTimeout(60_000);
         const bundled = buildSync({
           entryPoints: ['tests/e2e/support/gameLobbyCardFixture.tsx'],
           jsx: 'automatic',

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "9b05678d6ac22e8b5fcf9abcec8b29db717393da1f330896fc4fa2b2292c413d",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -218,5 +218,12 @@
     "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
     "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
     "qualificationEvidence": "Existing Unpaid Lightning qualification run 40465468742 job 122059675777 passed the sealed inventory, original treasury gifts and old queued treasury entry steps; this pin correction does not claim production accounting closure."
+  },
+  "foreignCertificateCoverWorkflowQualificationAudit": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "currentSHA256": "9b05678d6ac22e8b5fcf9abcec8b29db717393da1f330896fc4fa2b2292c413d",
+    "reason": "Add only the maintained index-only foreign certificate native lane and its triggers. All previous qualification steps retained; no original financial function, source authority, certificate, cache, generation, fixture pin or production verdict retagged.",
+    "qualification": "Exact194250 concurrent installer, original zero/foreign monetary family, unchanged154b8 helper/views, natural covering projection, source bags, boundaries and MVCC. Native timing is not production runtime."
   }
 }

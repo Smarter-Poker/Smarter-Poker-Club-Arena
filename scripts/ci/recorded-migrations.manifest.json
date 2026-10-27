@@ -1454,6 +1454,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8331",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: original coordinator exhausted its statement before reaching current R2 because historical club discovery used incomplete tournament-source indexes and heap witness reads. Actual isolated source-field profile read roughly1.1GB and spent24.3seconds serially. Exact native original-owner before/after72cases,11installer/refusal cases, actual INVALID concurrent build and MVCC heap fallback passed; whole unchanged query naturally used the matching three-key covering index with zero heap fetches. No function, configuration, source pin, cache identity, financial rule, source row, receipt, journal or budget changed. Exact qualified bytes were installed through the maintained concurrent-preamble route under the PUBLISHING active-outage exception while hosted checks were pending. Root verified exact full-file history/index definition and unchanged original selector metadata/source authority. This is the very next source recording after installation. Actual post-install timing, current R2/R3 payment and no-double wallet verification remain separate proof; this recording does not certify them."
+    },
+    {
+      "version": "20261027164000",
+      "name": "cash_refusals_read_the_compact_scope_set_once",
+      "file": "supabase/migrations/20261027164000_cash_refusals_read_the_compact_scope_set_once.sql",
+      "md5": "811c72d73f2c7263f9f85a619ce5154a",
+      "appliedToProductionAt": "2026-10-27T16:47:25.094Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained one-transaction installer; exact full-file history and exact private refusal owner body/metadata/ACL and unchanged original source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8336",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: exact exclusive rollback profile measured182.276seconds inside the original refusal helper, whose37527blocked pointers selected receipt primary-key heap lookups despite an existing valid compact cover. Exact pointer-batch query completed bounded production read-only rollback proof in48385.115ms through that existing cover. Actual original whole-owner native parity and guarded installer frozen/ACL/preimage/rollback/replay cases passed; only lookup keys are deduplicated, then original pointer multiplicity and refusal details are restored. No new index, source pins, data, cache identity, permissions, financial rules or budget changed. Exact qualified source installed through maintained active-outage route while hosted checks were pending. This is the very next source recording after verified installation; actual financial proof, payment and wallet no-double readback remain separate."
     }
   ]
 }

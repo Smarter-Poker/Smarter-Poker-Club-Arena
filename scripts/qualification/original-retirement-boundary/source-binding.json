@@ -232,5 +232,20 @@
       "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d"
     ],
     "currentWorkflowPin": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d"
+  },
+  "cashRefusalIntegrationWorkflowAudit": {
+    "reviewed": "2026-10-27",
+    "reason": "Integrating current main adds only existing qualified player-week-index paths and native step to the unpaid funding workflow; original finite245 commands and financial source pins remain byte-identical. Original workflow diff reviewed against6cc1c1d376; matches separately reviewed cdcb2c162bac workflow correction. No financial function or fixture pin renewed."
+  },
+  "rakebackConsolidationCashRefusalWorkflowAudit20261027": {
+    "reason": "Normal same-task source consolidation preserves all original financial/native commands and all non-workflow source pins. Additive workflow changes reviewed; only exact resulting workflow identity is rebound. All distinct prior qualification audits retained.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "ours": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d",
+        "incoming": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+        "combined": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d"
+      }
+    ]
   }
 }

@@ -4324,6 +4324,8 @@ function ClubHomePageContent({
   }, [tables]);
 
   const gameEntryScope = useMemo(() => ({ active: false, busy: false }), [clubId, currentUserId]);
+  const [preparingCashScope, setPreparingCashScope] = useState<object | null>(null);
+  const preparingCashTable = preparingCashScope === gameEntryScope;
   useEffect(() => {
     gameEntryScope.active = true;
     return () => {
@@ -4335,7 +4337,7 @@ function ClubHomePageContent({
     async (tableId: string) => {
       if (!gameEntryScope.active || gameEntryScope.busy) return;
       gameEntryScope.busy = true;
-      setActionBusy(true);
+      setPreparingCashScope(gameEntryScope);
       try {
         // Signed-out visitors still reach the table route's existing AuthGuard.
         if (currentUserId) await prepareTableForEntry(tableId);
@@ -4347,7 +4349,7 @@ function ClubHomePageContent({
         }
       } finally {
         gameEntryScope.busy = false;
-        if (gameEntryScope.active) setActionBusy(false);
+        setPreparingCashScope((scope) => (scope === gameEntryScope ? null : scope));
       }
     },
     [currentUserId, gameEntryScope, navigate, toast]
@@ -4836,7 +4838,7 @@ function ClubHomePageContent({
         const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
         if (row) void handleUnregister(row);
       },
-      actionBusy: actionBusy || waitlistActionBusy,
+      actionBusy: actionBusy || preparingCashTable || waitlistActionBusy,
       /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
          Down opens the TABLE — the seat is bought there, by the tap that
          picks it. Same flow the game-lobby panel already runs; the card was
@@ -4921,6 +4923,7 @@ function ClubHomePageContent({
       openTournamentLobby,
       spinQuickJoin,
       actionBusy,
+      preparingCashTable,
       waitlistActionBusy,
     ]
   );
@@ -6340,7 +6343,13 @@ function ClubHomePageContent({
              used, so the Register CTA had no pending state of its own. Both
              feed the panel's busy flag now, which is the control that was
              built for exactly this. */
-          busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
+          busy={
+            actionBusy ||
+            preparingCashTable ||
+            waitlistActionBusy ||
+            isRegisteringMtt ||
+            deletingTableId !== null
+          }
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           onViewCashTable={handleViewCashTable}

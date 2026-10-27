@@ -123,6 +123,10 @@ describe('there is exactly one route to a tournament lobby', () => {
       src.indexOf('const handleJoinTable =')
     );
     expect(cashEntry).toContain('if (currentUserId) await prepareTableForEntry(tableId)');
+    expect(src).toContain('const preparingCashTable = preparingCashScope === gameEntryScope;');
+    expect(cashEntry).toContain('setPreparingCashScope(gameEntryScope)');
+    expect(cashEntry).toContain('scope === gameEntryScope ? null : scope');
+    expect(cashEntry).not.toContain('setActionBusy(');
     expect(cashEntry).toContain('navigate(`/table/${tableId}`)');
     expect(cashEntry.indexOf('await prepareTableForEntry(tableId)')).toBeLessThan(
       cashEntry.indexOf('navigate(`/table/${tableId}`)')

@@ -13,7 +13,8 @@
  * prefers-reduced-motion.
  */
 
-.hand-history-page {
+.hand-history-page,
+.replay-modal-overlay {
   --hha-void: #030609;
   --hha-black: #080d12;
   --hha-panel: #0c1118;
@@ -31,7 +32,9 @@
   --hha-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
   --hha-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   --hha-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
 
+.hand-history-page {
   min-height: 100vh;
   min-height: 100dvh;
   padding-bottom: calc(var(--bottom-nav-clearance, 96px) + env(safe-area-inset-bottom, 0px));
@@ -504,6 +507,7 @@
 
 .hand-card__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 2px 0;
@@ -634,7 +638,8 @@
 }
 
 /* ── Light mode: brushed silver, same hierarchy ─────────────────────────── */
-[data-theme='light'] .hand-history-page {
+[data-theme='light'] .hand-history-page,
+[data-theme='light'] .replay-modal-overlay {
   --hha-void: #d9e0e6;
   --hha-black: #e6ebef;
   --hha-panel: #f1f4f7;

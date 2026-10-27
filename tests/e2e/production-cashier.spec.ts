@@ -1006,5 +1006,21 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'live-promo-account-balances-393');
     await page.keyboard.press('Escape');
     await expect(promoDialog).toBeHidden();
+    await page.getByRole('button', { name: 'Open Agent Wallet', exact: true }).click();
+    const agentDialog = page.getByRole('dialog', { name: 'AGENT WALLET Cashier', exact: true });
+    await agentDialog.getByRole('tab', { name: 'Claim Back', exact: true }).click();
+    await agentDialog.getByRole('button', { name: 'Claim From My Wallets', exact: true }).click();
+    const personal = agentDialog.getByRole('region', { name: 'Selected Player' });
+    await expect(personal).toContainText('My Account');
+    await expect(personal.getByRole('combobox', { name: 'Claim From' })).toHaveValue(
+      'player_wallet'
+    );
+    await expect(personal.locator('strong').last()).toHaveText(/^\d[\d,]*\.\d{2}$/, {
+      timeout: 30_000,
+    });
+    await expect(agentDialog.getByRole('textbox', { name: 'Chips To Claim Back' })).toBeVisible();
+    await attachCashierScreenshot(page, testInfo, 'personal-wallet-claim-any-time-393');
+    await page.keyboard.press('Escape');
+    await expect(agentDialog).toBeHidden();
   });
 });

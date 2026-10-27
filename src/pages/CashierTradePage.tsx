@@ -3386,16 +3386,37 @@ function CashierTradeWorkspace() {
      message goes to the player's own agent only. */
   const pendingCashouts = useClubPendingCashouts(clubUuid, roleResolved && managementClaims);
   const [showCashoutQueue, setShowCashoutQueue] = useState(false);
-  /** The one player a management claim acts on: the dialog's, else the single selection. */
-  const managementClaimTarget: DownlineRow | null = !managementClaims
-    ? null
-    : claimRecipient
-      ? (rosterById.get(claimRecipient) ?? null)
-      : picked.length === 1
-        ? picked[0]
-        : null;
+  // Staff may reclaim from eligible members; every agent may reclaim their own
+  // personal chips without an original send or a ten-minute deadline.
+  const claimCandidate = claimRecipient
+    ? (rosterById.get(claimRecipient) ??
+      (claimRecipient === user?.id
+        ? {
+            userId: user.id,
+            name: 'My Account',
+            username: '',
+            avatarUrl: null,
+            role: myRole,
+            chipBalance: myBalance,
+            depth: 0,
+            isMine: false,
+            playerNumber: null,
+            isSelf: true,
+          }
+        : null))
+    : picked.length === 1
+      ? picked[0]
+      : null;
+  const managementClaimTarget: DownlineRow | null =
+    claimCandidate &&
+    (managementClaims || (claimCandidate.userId === user?.id && canHoldAgentWallet(myRole)))
+      ? claimCandidate
+      : null;
+  const personalClaim = managementClaimTarget?.userId === user?.id;
 
-  const claimDestinations = claimReturnWallets(mgmtClaimSource, myRole);
+  const claimDestinations = claimReturnWallets(mgmtClaimSource, myRole).filter(
+    (wallet) => !personalClaim || wallet !== mgmtClaimSource
+  );
   const claimDestination = claimDestinations.includes(mgmtClaimDestination)
     ? mgmtClaimDestination
     : claimDestinations[0];
@@ -3420,7 +3441,7 @@ function CashierTradeWorkspace() {
   }, [claimWalletKey]);
 
   useEffect(() => {
-    if (!claimOpen || !managementClaims || !managementClaimTarget || !clubUuid) return;
+    if (!claimOpen || !managementClaimTarget || !clubUuid) return;
     let live = true;
     setClaimWalletRead(null);
     void (async () => {
@@ -6211,9 +6232,19 @@ function CashierTradeWorkspace() {
               title="Claim Back"
               titleId="cashier-claim-title"
               pill={
-                claimingId || mgmtClaiming ? 'Working' : managementClaims ? 'Any Time' : 'Limited'
+                claimingId || mgmtClaiming
+                  ? 'Working'
+                  : managementClaimTarget || managementClaims
+                    ? 'Any Time'
+                    : 'Limited'
               }
-              pillInk={claimingId || mgmtClaiming ? 'blue' : managementClaims ? 'blue' : 'red'}
+              pillInk={
+                claimingId || mgmtClaiming
+                  ? 'blue'
+                  : managementClaimTarget || managementClaims
+                    ? 'blue'
+                    : 'red'
+              }
               foot={managementClaimTarget ? 'plates' : 'foot'}
               plates={
                 managementClaimTarget
@@ -6242,11 +6273,10 @@ function CashierTradeWorkspace() {
               className={styles.console}
             >
               <div className={styles.glass}>
-                {/* OWNERS, CO OWNERS AND ADMINS CLAIM BACK AT ANY POINT (Dan
-                    2026-10-15). Claim from the selected member wallet into the
-                    Club Bank, on fn_club_bank_claim_back. Every other role keeps
-                    the ten minute reversal below. */}
-                {managementClaims && managementClaimTarget && (
+                {/* Staff reclaim eligible member wallets at any time. Agents
+                    also reclaim their own personal wallets at any time; other
+                    member claims keep the original-send window below. */}
+                {managementClaimTarget && (
                   <>
                     <CashierPlayerCard
                       row={managementClaimTarget}
@@ -6263,8 +6293,12 @@ function CashierTradeWorkspace() {
                             setMgmtClaimAmount('');
                           }}
                         >
-                          {(['player_wallet', 'agent_wallet', 'promo_wallet'] as const).map(
-                            (wallet) => {
+                          {(['player_wallet', 'agent_wallet', 'promo_wallet'] as const)
+                            .filter(
+                              (wallet) =>
+                                !personalClaim || managementClaims || wallet !== 'promo_wallet'
+                            )
+                            .map((wallet) => {
                               const balance =
                                 claimWalletRead?.key === claimWalletKey
                                   ? claimWalletRead.balances[wallet]
@@ -6277,8 +6311,7 @@ function CashierTradeWorkspace() {
                                     : formatWalletChips(balance)}
                                 </option>
                               );
-                            }
-                          )}
+                            })}
                         </select>
                       }
                     />
@@ -6355,6 +6388,16 @@ function CashierTradeWorkspace() {
                         : formatWalletChips(claimWalletBalance)}
                     </button>
                   </>
+                )}
+                {!managementClaimTarget && canHoldAgentWallet(myRole) && user?.id && (
+                  <button
+                    type="button"
+                    className={styles.claimAll}
+                    disabled={mgmtClaiming || Boolean(claimingId)}
+                    onClick={() => setClaimRecipient(user.id)}
+                  >
+                    Claim From My Wallets
+                  </button>
                 )}
                 {managementClaims && !managementClaimTarget && (
                   <div className={styles.modalHint}>

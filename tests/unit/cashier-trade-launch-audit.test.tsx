@@ -2189,6 +2189,27 @@ it('reports a rolled-back maintenance refusal without retaining an uncertain tra
   expect(readCashierTransferRecovery(USER_ID, CLUB_A)).toBeNull();
 });
 
+it.each(['agent', 'super_agent', 'sub_agent'])(
+  'allows %s to claim their personal wallet without a recent send',
+  async (role) => {
+    state.myRole = role;
+    state.roster = [{ ...player(0, 250, 'My Account'), user_id: USER_ID, role }];
+    mountCashier();
+    await synchronized();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    const dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Claim From My Wallets' }));
+    await within(dialog).findByRole('button', { name: 'Claim All 250.00' });
+    expect(dialog).toHaveTextContent('Any Time');
+    const source = within(dialog).getByRole('combobox', { name: 'Claim From' });
+    expect(source).toHaveValue('player_wallet');
+    const destination = within(dialog).getByRole('combobox', { name: 'Claim Back To' });
+    expect(destination).toHaveValue('agent_wallet');
+    expect(within(destination).queryByRole('option', { name: 'My Player Wallet' })).toBeNull();
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(false);
+  }
+);
+
 describe('management claims from the selected member wallet', () => {
   async function openClaim() {
     mountCashier();

@@ -45,6 +45,8 @@ try:
  # full migration are separately exercised below by the history fixture.
  claim=sql[sql.index('CREATE OR REPLACE FUNCTION public.fn_club_wallet_claim_back'):]
  q(claim[:claim.index('-- Older open clients')])
+ personal_sql=(ROOT/'supabase/migrations/20261027164937_agents_reclaim_from_their_own_wallets_at_any_time.sql').read_text()
+ q(personal_sql)
  import uuid
  for source in ['agent_wallet','player_wallet','promo_wallet']:
   for dest in ['agent_wallet','player_wallet','promo_wallet','club_bank','club_promo_wallet']:
@@ -56,6 +58,23 @@ try:
    assert result['success']==allowed,(source,dest,result)
    assert int(q('select count(*) from journal;'))==count+int(allowed)
    assert q('select sum(v) from (select chip_balance v from club_members union all select agent_wallet_balance from agents union all select promo_wallet_balance from agents union all select chip_treasury from clubs union all select promo_balance from clubs)x;').strip()==before
+ # Every agent tier can reclaim personal player chips without any original send.
+ for role in ['super_agent','agent','sub_agent']:
+  q(f"update club_members set role='{role}' where user_id='{A}';")
+  before=q(f"select chip_balance+(select agent_wallet_balance from agents where user_id='{A}') from club_members where user_id='{A}';")
+  count=int(q('select count(*) from journal;'))
+  self_op=str(uuid.uuid4())
+  r=call('player_wallet','agent_wallet',actor=A,holder=A,op=self_op)
+  assert r['success'] and r['credit_repaid']==0,r
+  assert call('player_wallet','agent_wallet',actor=A,holder=A,op=self_op)['replayed']
+  assert int(q('select count(*) from journal;'))==count+1
+  assert q(f"select chip_balance+(select agent_wallet_balance from agents where user_id='{A}') from club_members where user_id='{A}';")==before
+  assert call('agent_wallet','player_wallet',actor=A,holder=A)['success']
+  assert not call('player_wallet','agent_wallet',actor=A,holder=P)['success']
+  assert not call('player_wallet','club_bank',actor=A,holder=A)['success']
+  assert not call('promo_wallet','agent_wallet',actor=A,holder=A)['success']
+  assert not call('agent_wallet','agent_wallet',actor=A,holder=A)['success']
+ q(f"update club_members set role='agent' where user_id='{A}';")
  # Retry destination changes never move a second chip.
  op=str(uuid.uuid4()); assert call('agent_wallet','player_wallet',op=op)['success']; assert call('agent_wallet','player_wallet',op=op)['replayed']; assert not call('agent_wallet','promo_wallet',op=op)['success']
  assert not call('agent_wallet','agent_wallet',actor=A,holder=P)['success']
@@ -105,6 +124,9 @@ try:
  q(sql)
  for proof in re.findall(r'^-- @live-proof: (.+)$',sql,re.M):
   assert q('SELECT '+proof+';').strip()=='t',proof
+ q(personal_sql)
+ for proof in re.findall(r'^-- @live-proof: (.+)$',personal_sql,re.M):
+  assert q('SELECT '+proof+';').strip()=='t',proof
  # Readbacks prove that older clients cannot convert promo back to cash either.
  q(f"select set_config('request.jwt.claim.sub','{O}',false); select set_config('app.ledger_autoskip_agents','1',false); update agents set promo_wallet_balance=1000;")
  bank_before=q(f"select chip_treasury from clubs where id='{C}';")
@@ -134,6 +156,7 @@ try:
  assert q("SELECT has_function_privilege('anon','fn_club_wallet_claim_back(uuid,uuid,numeric,text,text,text,uuid,uuid)','EXECUTE');").strip()=='f'
  print('QUALIFIED_FUNCTION_HASHES',q("select json_object_agg(proname,md5(pg_get_functiondef(oid))) from pg_proc where pronamespace='public'::regnamespace and proname in ('fn_club_wallet_claim_back','fn_cashier_history_feed','fn_cashier_history_summary','fn_club_bank_claim_core_20261004','fn_agent_wallet_claim_back_phase2_core_20260831');").strip())
  print('PASS: full migration/preimage guards; legacy promo returns; real feed, downline authorization and totals exclude game/buy-in rows')
+ print('PASS: unrestricted personal claims for all three agent roles; no original send, replay, conservation and denial of other-member/club/promo abuse')
  print('PASS: 15 source/destination combinations, conservation, single journal, destination-bound replay, authority, credit repayment, duplicate claim, rollback')
 finally:
  if (cluster/'data/postmaster.pid').exists():

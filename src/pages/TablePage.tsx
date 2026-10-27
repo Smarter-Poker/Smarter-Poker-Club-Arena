@@ -26431,6 +26431,7 @@ function LiveTablePage({
             )}
             <PreviousHandCard
               handNumber={prevHandResult?.handNumber ?? null}
+              canReviewHistory={Boolean(userId && userId !== 'guest')}
               result={prevHandResult?.result ?? 0}
               didWin={prevHandResult?.didWin ?? false}
               didFold={prevHandResult?.didFold ?? false}

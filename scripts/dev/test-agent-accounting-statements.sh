@@ -35,3 +35,7 @@ python3 -B "$root/scripts/ci/test-historical-agent-role-postgres.py" --pg-bin "$
 # Deleted-agent reserves reuse only unchanged original payer proofs per request.
 python3 -B "$root/scripts/ci/test-deleted-reserve-reuse-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# R3 uses the existing original close deadline and preserves completed batches.
+python3 -B "$root/scripts/ci/test-rakeback-original-deadline-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

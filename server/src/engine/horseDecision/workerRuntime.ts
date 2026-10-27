@@ -514,7 +514,11 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   journalPlanReceipt: journalHorsePlanReceipt,
   sourceRelease: () => resolveReleaseIdentity().releaseSha,
   startServices: startOwnedServices,
-  publicProfileBootstrap: () => publicProfileBootstrap,
+  publicProfileBootstrap: () => {
+    const saved = publicProfileBootstrap;
+    publicProfileBootstrap = null;
+    return saved;
+  },
   stopServices: stopOwnedServices,
   admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,

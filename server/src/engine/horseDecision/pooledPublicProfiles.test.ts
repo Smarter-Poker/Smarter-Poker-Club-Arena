@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { PooledPublicProfiles } from './pooledPublicProfiles.js';
+import { horseDecisionReceiptRefusal } from './responseValidation.js';
 import { HorseObserverReads } from './observerReads.js';
 import { freshExploitCounters } from '../HorseOpponentExploit.js';
 import { HorseMind } from '../HorseMind.js';
@@ -267,6 +268,13 @@ it('carries accepted public notes through the actual worker and HorseLogic read 
     const capture = h.captures.at(-1)!;
     expect(capture.observerReads).toMatchObject({ version: 3, disposition: 'pooled_public' });
     expect(horseObserverReadsUsedPublicPool(capture.observerReads, next)).toBe(true);
+    expect(horseObserverReadsWereIndependent(capture.observerReads, next)).toBe(false);
+    expect(
+      horseDecisionReceiptRefusal(result.decision, next.gameState.gameVariant, {
+        player: next.player,
+        gameState: next.gameState,
+      })
+    ).toBeNull();
   } finally {
     await h.close();
   }

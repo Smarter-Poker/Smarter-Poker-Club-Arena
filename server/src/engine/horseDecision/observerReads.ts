@@ -194,8 +194,20 @@ export class HorseObserverReads {
     // already-counted recent hand is reclassified as older data arriving last.
     const staged = structuredClone(entry.state);
     const ids = new Set<string>();
+    const pending = new Map(
+      (entry.pendingCompletions ?? []).map((hand) => [hand.committedHandId!.toLowerCase(), hand])
+    );
     for (const h of packet.hands) {
       ids.add(h.handId);
+      const live = pending.get(h.handId);
+      // The original bound live completion has public showdown evidence that
+      // the optional history category read may lack. Learn it once at this
+      // hand's chronological position, rather than marking incomplete history
+      // done and then discarding the richer live completion as a duplicate.
+      if (live?.handKey === `${h.tableId}:${h.handNumber}`) {
+        this.learnPublic(entry, staged, live);
+        continue;
+      }
       this.learnPublic(entry, staged, {
         type: 'OBSERVE_COMPLETED_HAND',
         requestId: 0,

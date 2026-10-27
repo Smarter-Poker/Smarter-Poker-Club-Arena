@@ -228,8 +228,22 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
   }
   return Buffer.byteLength(JSON.stringify(value)) <= MAX_BYTES;
 }
+/** Journal storage orders object keys; transport insertion order is not
+ * evidence. Preserve array order while binding every validated field. */
+function canonicalHistoryValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalHistoryValue);
+  if (object(value))
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalHistoryValue(value[key])])
+    );
+  return value;
+}
 const digestOf = (value: HorseOwnPublicHistoryWindow & { availableAtMs: number }) =>
-  createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  createHash('sha256')
+    .update(JSON.stringify(canonicalHistoryValue(value)))
+    .digest('hex');
 export function makeOwnPublicHistoryPacket(
   value: unknown,
   availableAtMs: number

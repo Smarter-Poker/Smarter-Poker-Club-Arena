@@ -184,6 +184,27 @@ describe('V53 tournament pressure on canonical spots', () => {
     }
   });
 
+  it('refuses sidepot spill and a third player with an unresolved all-in claim', () => {
+    const input = spot(2500, 2500, BUBBLE, remote);
+    expect(omahaTournamentPressure({ ...input, contestablePot: 100 })).toBeNull();
+    const third = {
+      userId: 'third',
+      stack: 0,
+      bet: 3000,
+      folded: false,
+      allIn: true,
+      sittingOut: false,
+      actsAfterHero: false,
+    };
+    expect(
+      omahaTournamentPressure({
+        ...input,
+        opponents: [...input.opponents, third],
+        fieldStackByUser: { ...input.fieldStackByUser, third: 3000 },
+      })
+    ).toBeNull();
+  });
+
   it('refuses unknown chip geometry instead of pricing it as zero', () => {
     const input = spot(2500, 2500, BUBBLE, remote);
     for (const key of [

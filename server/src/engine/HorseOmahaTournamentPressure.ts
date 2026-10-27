@@ -336,6 +336,15 @@ export function omahaTournamentPressure(input: OmahaPressureInput): OmahaPressur
       undefined
     );
   if (!opponent) return null;
+  // This candidate prices one two-way pot only. A third all-in still owns a
+  // live pot claim despite having no chips behind, and spill belongs to side
+  // pots whose settlement this model does not enumerate. Keep the baseline
+  // rather than invent an elimination or award those chips to the chosen pair.
+  if (
+    input.contestablePot !== input.pot ||
+    live.some((o) => o.userId !== opponent.userId && (o.allIn || o.stack === 0))
+  )
+    return null;
 
   const local = [
     { userId: input.heroUserId, stack: heroStack },

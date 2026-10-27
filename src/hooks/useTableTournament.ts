@@ -201,6 +201,26 @@ export function useTableTournament(options?: {
       owner.revision += 1;
     };
   }, [owner, refreshTournamentBreak]);
+  // One read at the announced boundary covers a lost end broadcast even
+  // while the socket stays connected. This never resumes a dealer.
+  useEffect(() => {
+    const end = tournamentBreak.breakEndsAtMs;
+    if (!tournamentBreak.active || tournamentBreak.phase !== 'counting_down' || !end) return;
+    const timer = setTimeout(() => void refreshTournamentBreak(), Math.max(0, end - serverNow()));
+    return () => clearTimeout(timer);
+  }, [
+    tournamentBreak.active,
+    tournamentBreak.phase,
+    tournamentBreak.breakEndsAtMs,
+    refreshTournamentBreak,
+  ]);
+  useEffect(() => {
+    const recover = () => {
+      if (document.visibilityState === 'visible') void refreshTournamentBreak();
+    };
+    document.addEventListener('visibilitychange', recover);
+    return () => document.removeEventListener('visibilitychange', recover);
+  }, [refreshTournamentBreak]);
   const previousEngineStatus = useRef(engineStatus);
   useEffect(() => {
     const previous = previousEngineStatus.current;

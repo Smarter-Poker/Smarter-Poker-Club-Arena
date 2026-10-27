@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   scoreboardSQL,
   runScoreboard,
   scoreboardWindows,
   mergeScoreboards,
   scoreboardConnectionEnvironment,
+  scoreboardReportSQL,
 } from '../horse-human-scoreboard.mjs';
 
 test('report and native regression changes trigger their PostgreSQL check', () => {
@@ -39,7 +40,9 @@ test('report refuses invalid, injected, reversed and unbounded windows before co
     ['2026-04-31T00:00:00Z', '2026-05-03T00:00:00Z'],
   ]) {
     assert.throws(() => scoreboardSQL(a, b));
-    assert.equal(runScoreboard(['--run', a, b]).code, 3);
+    const invalid = runScoreboard(['--run', a, b]);
+    assert.equal(invalid.code, 3);
+    assert.equal(JSON.parse(invalid.output).reason, 'invalid_input');
   }
   assert.equal(runScoreboard([]).code, 64);
   assert.throws(() => scoreboardSQL(since, through, "x'; SELECT 1;--"));
@@ -123,7 +126,7 @@ test('daily reports merge complete windows using hand-weighted results and rejec
   );
 });
 
-test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes and tournament chips', () => {
+test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes and tournament chips', async () => {
   // Never inherits remote PG settings or reads ~/.pgpass. TCP is disabled.
   const root = mkdtempSync(join(tmpdir(), 'horse-scoreboard-'));
   const data = join(root, 'pg'),
@@ -265,6 +268,63 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     assert.equal(scoped.coverage.find((r) => r.cohort === 'mixed_human').facts, 1);
     const empty = JSON.parse(psql(scoreboardSQL('2026-10-26T16:00:00Z', '2026-10-26T17:00:00Z')));
     assert.deepEqual(empty.scores, []);
+    // A real second session changes the roster between two actual partition
+    // SELECTs. READ COMMITTED reproduces the old refusal; the maintained batch
+    // must retain one snapshot without weakening the digest consistency check.
+    const snapshotEnd = '2026-10-27T02:00:00Z';
+    const exerciseSnapshot = async (repeatable, fixtureId) => {
+      const windows = scoreboardWindows(since, snapshotEnd);
+      assert.equal(windows.length, 2);
+      const second = scoreboardSQL(windows[1].since, windows[1].through)
+        .replace(/^BEGIN READ ONLY;\n/, '')
+        .replace(/\nCOMMIT;\n$/, '');
+      let batch = scoreboardReportSQL(since, snapshotEnd);
+      assert.ok(batch.includes(second));
+      batch = batch.replace(second, `SELECT pg_sleep(0.5);\n${second}`);
+      if (!repeatable)
+        batch = batch.replace(
+          'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;',
+          'BEGIN READ ONLY;'
+        );
+      const updater = spawn(
+        executable('psql'),
+        [
+          '-X',
+          '-q',
+          '-A',
+          '-t',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-c',
+          `SELECT pg_sleep(0.15); INSERT INTO profiles VALUES ('${fixtureId}',false);`,
+        ],
+        { env }
+      );
+      let errorText = '';
+      updater.stderr.on('data', (chunk) => {
+        errorText += chunk;
+      });
+      const finished = new Promise((resolve, reject) => {
+        updater.on('error', reject);
+        updater.on('exit', (code) => (code === 0 ? resolve() : reject(Error(errorText))));
+      });
+      const raw = psql(batch);
+      await finished;
+      return raw
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+    };
+    const drifting = await exerciseSnapshot(false, 'snapshot-old');
+    assert.notEqual(drifting[0].roster_digest, drifting[1].roster_digest);
+    assert.throws(
+      () => mergeScoreboards(drifting, since, snapshotEnd),
+      /Unqualified window receipt/
+    );
+    const stable = await exerciseSnapshot(true, 'snapshot-new');
+    assert.equal(stable[0].roster_digest, stable[1].roster_digest);
+    assert.equal(mergeScoreboards(stable, since, snapshotEnd).windows, 2);
     psql(
       `INSERT INTO ca_hand_facts SELECT 'bulk-'||g,'11111111-1111-4111-8111-111111111111','plo5',2,null,1,ARRAY['a'],2,'2026-10-26T14:20Z' FROM generate_series(1,50001) g;`
     );
@@ -274,6 +334,21 @@ test('native PostgreSQL report isolates exact cohorts, rake, variants, stakes an
     assert.deepEqual(capped.coverage, []);
     assert.deepEqual(capped.scores, []);
     assert.equal(psql('SELECT count(*) FROM ca_hand_facts;').trim(), '50018');
+    psql('ALTER TABLE ca_hand_facts RENAME TO unavailable_private_relation;');
+    const unavailable = spawnSync(
+      process.execPath,
+      [resolve('scripts/horse-human-scoreboard.mjs'), '--run', since, through],
+      { env: { ...env, PATH: bin ? bin + ':' + env.PATH : env.PATH }, encoding: 'utf8' }
+    );
+    assert.equal(unavailable.status, 3);
+    assert.deepEqual(JSON.parse(unavailable.stdout), {
+      status: 'unavailable',
+      reason: 'query_failed',
+      sqlstate: '42P01',
+      partition: 1,
+      completed_partitions: 0,
+    });
+    assert.doesNotMatch(unavailable.stdout, /unavailable_private_relation|SELECT|postgresql:\/\//);
   } finally {
     if (started || existsSync(join(data, 'postmaster.pid')))
       run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop']);

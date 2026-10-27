@@ -36,7 +36,9 @@ const {
 } = await import('../benchmark/PressureQualificationContract.js');
 const {
   isIncrementalTarget,
-  INCREMENTAL_DEVELOPMENT_DESIGN,
+  incrementalDevelopmentDesign,
+  incrementalHistoryVersion,
+  ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
   INCREMENTAL_DEVELOPMENT_SEEDS,
   INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
   INCREMENTAL_WARM_SEED,
@@ -85,7 +87,7 @@ try {
       : experiment === 'v53'
         ? V53_PRESSURE_DEVELOPMENT_SEEDS
         : isIncrementalTarget(experiment)
-          ? INCREMENTAL_DEVELOPMENT_SEEDS
+          ? incrementalDevelopmentDesign(experiment).developmentSeeds
           : [];
   if (!(allowed as readonly number[]).includes(seed))
     throw new Error('Only declared development seeds may be dealt');
@@ -146,14 +148,12 @@ try {
         : [];
   const history = {
     kind: isIncrementalTarget(experiment)
-      ? experiment === 'river_bluff_checkraise'
-        ? 'incremental_public_triple_checkraise_warm_v1'
-        : 'incremental_public_overstab_warm_v1'
+      ? incrementalHistoryVersion(experiment)
       : experiment === 'v53'
         ? 'fixed_public_warm_v1'
         : 'fresh_empty_public_v1',
     warmSeed: isIncrementalTarget(experiment)
-      ? INCREMENTAL_WARM_SEED
+      ? incrementalDevelopmentDesign(experiment).warmSeed
       : experiment === 'v53'
         ? V53_PRESSURE_WARM_SEED
         : null,
@@ -220,7 +220,7 @@ try {
     authority,
     authoritySha256: sha(JSON.stringify(authority)),
     design: isIncrementalTarget(experiment)
-      ? INCREMENTAL_DEVELOPMENT_DESIGN
+      ? incrementalDevelopmentDesign(experiment)
       : experiment === 'v24'
         ? PLO6_V24_DEVELOPMENT_DESIGN
         : V53_PRESSURE_DEVELOPMENT_DESIGN,
@@ -296,6 +296,7 @@ try {
             ...PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds,
             ...V53_PRESSURE_RESERVED_HOLDOUT_SEEDS,
             ...INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
+            ...ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
           ],
         },
         () => !interrupted,

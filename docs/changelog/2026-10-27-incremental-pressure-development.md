@@ -28,3 +28,5 @@ changes. Finite pilot sizing, independent held-out qualification, final combined
 configuration qualification and live fleet verification remain separate work.
 
 The check-raise target has its own versioned physical workload: an actual river check, bet, legal non-all-in three-times raise, and observed fold/call response. Both responses count. Its measured per-player response opportunities are reported separately; multiway profiles with insufficient same-line history remain uncovered.
+
+Fifth continuation and exact pressure_package development compare all five true against all five false only in the development runner. The protected single-flag validator and original locked plans remain unchanged. New development seeds27401101/27402203/27403307 and reserved28401109/28402231/28403347 are separate; warmseed27407777. No heldout deals or activation. Synthetic48hand warmup at100BB is not depth-specific or human-calibrated; report accepted action contrasts and sparse original-heads-up checkraise coverage honestly.

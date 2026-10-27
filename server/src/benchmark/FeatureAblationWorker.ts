@@ -46,6 +46,7 @@ export interface FeatureAblationWorkerReceipt {
     v54RiverBluff?: boolean;
     riverPositionDefense?: boolean;
     riverBluffCheckRaise?: boolean;
+    barrelContinuationOutlook?: boolean;
   };
   naturalSamplingKey: string;
   naturalRngBefore: number;
@@ -349,6 +350,9 @@ export function createFeatureAblationWorker(
           decisionKey: request.decisionKey,
           actorSeat: player.seat,
           inputFlags: {
+            ...(request.opts?.barrelContinuationOutlook === undefined
+              ? {}
+              : { barrelContinuationOutlook: request.opts.barrelContinuationOutlook }),
             v24PloDefense: request.opts?.v24PloDefense,
             v53Pressure: request.opts?.v53Pressure,
             ...(request.opts?.comboDrawPressure === undefined

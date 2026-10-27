@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   INCREMENTAL_FLAGS,
+  PRESSURE_PACKAGE_FLAGS,
+  ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
+  incrementalDevelopmentDesign,
   INCREMENTAL_CHECKRAISE_POPULATION,
   INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
   incrementalDevelopmentProfiles,
@@ -10,6 +13,7 @@ import {
 } from './IncrementalPressureDevelopment.js';
 import {
   assertAblationArms,
+  assertDevelopmentAblationArms,
   runFeatureAblationDevelopment,
   runFeatureAblationContract,
 } from './FeatureAblationLeague.js';
@@ -140,7 +144,7 @@ describe('incremental development boundaries', () => {
     expect(Object.values(response).reduce((n, r) => n + r.opportunities, 0)).toBeGreaterThan(0);
     expect(Object.values(response).every((r) => r.folds === 0)).toBe(true);
   });
-  it('the actual worker receives all four treatments and preserves default V53; paired controller accepts legal complete hands', async () => {
+  it('the actual worker receives all five individual treatments and preserves default V53; paired controller accepts legal complete hands', async () => {
     for (const target of Object.keys(INCREMENTAL_FLAGS) as (keyof typeof INCREMENTAL_FLAGS)[]) {
       const receipts: FeatureAblationWorkerReceipt[] = [];
       const records = buildIncrementalWarmRecords('nlh', 2, target);
@@ -180,4 +184,90 @@ describe('incremental development boundaries', () => {
       expect(result.promotionEligible).toBe(false);
     }
   }, 60000);
+});
+
+describe('exact five-flag development composition', () => {
+  const make = () => {
+    const p = incrementalDevelopmentProfiles('pressure_package', 'nlh')[0];
+    return incrementalDevelopmentSpec('pressure_package', 'nlh', p.id, noDeal);
+  };
+  it('admits only the named exact tuple in development, never the locked contract', async () => {
+    const spec = make();
+    expect(() => assertDevelopmentAblationArms(spec)).not.toThrow();
+    expect(() => assertAblationArms(spec)).toThrow('exactly one');
+    await expect(
+      runFeatureAblationContract(
+        spec,
+        { seed: 27401101, pairs: 1, startPair: 0, planDigest: 'x', cellKey: 'x' },
+        () => {}
+      )
+    ).rejects.toThrow('exactly one');
+    for (const seed of ADDITIONAL_RESERVED_HOLDOUT_SEEDS)
+      await expect(runFeatureAblationDevelopment(spec, { seed, pairs: 1 })).rejects.toThrow(
+        'held-out'
+      );
+    for (const flag of PRESSURE_PACKAGE_FLAGS) {
+      const candidate = { ...spec.candidate };
+      delete candidate[flag];
+      expect(() => assertDevelopmentAblationArms({ ...spec, candidate })).toThrow('exact');
+    }
+    expect(() =>
+      assertDevelopmentAblationArms({
+        ...spec,
+        candidate: { ...spec.candidate, v53Pressure: true },
+      })
+    ).toThrow('exact');
+    expect(() =>
+      assertDevelopmentAblationArms({
+        ...spec,
+        candidate: spec.reference,
+        reference: spec.candidate,
+      })
+    ).toThrow('exact');
+    expect(() => assertDevelopmentAblationArms({ ...spec, id: 'arbitrary' })).toThrow(
+      'exactly one'
+    );
+    expect(() => assertDevelopmentAblationArms({ ...spec, population: undefined })).toThrow(
+      'exact'
+    );
+    expect(incrementalDevelopmentDesign('pressure_package').developmentSeeds).toContain(27401101);
+    expect(incrementalDevelopmentDesign('combo_draw_pressure').population).toBe(
+      'incremental_public_overstab_stress_v1'
+    );
+    expect(incrementalDevelopmentDesign('barrel_continuation_outlook').population).toBe(
+      'barrel_continuation_overstab_stress_v1'
+    );
+  });
+  it('the actual worker and controller receive both complete package arms', async () => {
+    const receipts: FeatureAblationWorkerReceipt[] = [];
+    const records = buildIncrementalWarmRecords('nlh', 2, 'pressure_package');
+    const brain = createFeatureAblationWorker(
+      (r) => receipts.push(r),
+      () => {},
+      true,
+      (r) => {
+        const c = horseObserverReadContextFromRequest(r);
+        if (!c) throw Error('Missing context');
+        return makeFeatureAblationOwnHistory(c, r.player.seat, records);
+      }
+    );
+    const spec = { ...make(), brain };
+    const result = await runFeatureAblationDevelopment(spec, { seed: 27401101, pairs: 1 });
+    expect(result.complete, result.refusalReason ?? '').toBe(true);
+    expect(
+      result.illegalActions +
+        result.conservationErrors +
+        result.cardErrors +
+        result.protocolErrors +
+        result.brainExceptions +
+        result.settlementMismatches +
+        result.deductionMismatches +
+        result.pairedReplayMismatches +
+        result.truncatedHands
+    ).toBe(0);
+    for (const value of [true, false])
+      expect(
+        receipts.some((r) => PRESSURE_PACKAGE_FLAGS.every((flag) => r.inputFlags[flag] === value))
+      ).toBe(true);
+  });
 });

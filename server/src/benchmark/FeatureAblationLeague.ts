@@ -22,7 +22,12 @@ import { isRemainingVariantHoldoutSeed } from './RemainingVariantStrengthContrac
 import { isJointHoldoutSeed } from './JointStrengthContract.js';
 import { PLO6_V24_DEVELOPMENT_DESIGN } from './Plo6V24Qualification.js';
 import { V53_PRESSURE_RESERVED_HOLDOUT_SEEDS } from './PressureQualificationContract.js';
-import { INCREMENTAL_RESERVED_HOLDOUT_SEEDS } from './IncrementalPressureDevelopment.js';
+import {
+  INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
+  ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
+  PRESSURE_PACKAGE_FLAGS,
+  PRESSURE_PACKAGE_POPULATION,
+} from './IncrementalPressureDevelopment.js';
 
 export interface FeatureAblationSpec {
   id: string;
@@ -132,6 +137,7 @@ export function assertAblationArms(spec: FeatureAblationSpec): void {
       'v54RiverBluff',
       'riverPositionDefense',
       'riverBluffCheckRaise',
+      'barrelContinuationOutlook',
     ].includes(keys[0]) ||
     Object.values(spec.candidate).some((v) => typeof v !== 'boolean') ||
     Object.values(spec.reference).some((v) => typeof v !== 'boolean') ||
@@ -177,13 +183,33 @@ export function ablationPilotMoments(s: Plo4PowerSums) {
     kurtosis: m2 > 0 ? m4 / (m2 * m2) : null,
   };
 }
+/** Only this exact five-flag contrast is admitted in development. The
+ * protected contract path still calls the unchanged single-flag validator. */
+export function assertDevelopmentAblationArms(spec: FeatureAblationSpec): void {
+  if (spec.id !== 'pressure_package-development-v1') return assertAblationArms(spec);
+  const exact = (arm: Plo4AblationFlags, value: boolean) =>
+    Object.keys(arm).length === PRESSURE_PACKAGE_FLAGS.length &&
+    PRESSURE_PACKAGE_FLAGS.every((flag) => Object.hasOwn(arm, flag) && arm[flag] === value);
+  if (
+    !exact(spec.candidate, true) ||
+    !exact(spec.reference, false) ||
+    spec.population !== PRESSURE_PACKAGE_POPULATION ||
+    !spec.profile.id.startsWith('pressure_package-')
+  )
+    throw new Error('Only the exact declared five-flag development package is admitted');
+  assertAblationArms({
+    ...spec,
+    candidate: { comboDrawPressure: true },
+    reference: { comboDrawPressure: false },
+  });
+}
 export async function runFeatureAblationDevelopment(
   spec: FeatureAblationSpec,
   request: { seed: number; pairs: number; startPair?: number; reservedSeeds?: readonly number[] },
   shouldContinue = () => true,
   onPair?: (record: FeatureAblationPairRecord) => void | Promise<void>
 ): Promise<FeatureAblationResult> {
-  assertAblationArms(spec);
+  assertDevelopmentAblationArms(spec);
   const { seed, pairs } = request,
     startPair = request.startPair ?? 0;
   if (
@@ -197,6 +223,7 @@ export async function runFeatureAblationDevelopment(
     (PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds as readonly number[]).includes(seed) ||
     (V53_PRESSURE_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     (INCREMENTAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    (ADDITIONAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     request.reservedSeeds?.includes(seed)
   )
     throw new Error('Development never deals a held-out or invalid seed');

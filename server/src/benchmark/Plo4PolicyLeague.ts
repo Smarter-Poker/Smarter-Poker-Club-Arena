@@ -113,6 +113,7 @@ export type Plo4AblationFlags = Readonly<
     | 'v54RiverBluff'
     | 'riverPositionDefense'
     | 'riverBluffCheckRaise'
+    | 'barrelContinuationOutlook'
   >
 >;
 /** A maintained current-brain adapter owns admission. The physical league must

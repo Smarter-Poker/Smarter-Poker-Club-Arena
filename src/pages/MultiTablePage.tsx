@@ -2249,7 +2249,7 @@ export default function MultiTablePage() {
   const handleQuickAction = useCallback(
     async (
       tabId: string,
-      action: 'sitout' | 'back' | 'leave' | 'mute' | 'reload' | 'open-browser'
+      action: 'sitout' | 'back' | 'leave' | 'leave-next-hand' | 'mute' | 'reload' | 'open-browser'
     ) => {
       switch (action) {
         /* Hub tabs only (Dan 2026-09-05, browser-tab parity). RELOAD remounts
@@ -2275,6 +2275,10 @@ export default function MultiTablePage() {
             prev.includes(tabId) ? prev.filter((id) => id !== tabId) : [...prev, tabId]
           );
           break;
+        case 'leave-next-hand': {
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: tabId, action: 'LEAVE_TABLE_NEXT_HAND' });
+          break;
+        }
         case 'leave': {
           /* Dan 2026-09-04: "WHEN YOU RIGHT CLICK ON THE ACTION BAR AND 'LEAVE
              TABLE' THERE IS A LONG DELAY BEFORE YOU ACTUALLY LEAVE THE TABLE

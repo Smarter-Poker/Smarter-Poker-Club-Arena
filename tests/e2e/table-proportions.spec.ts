@@ -1127,6 +1127,21 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
             path: testInfo.outputPath(`${width}px-${count}-seats-PLO${villainCards}-${state}.png`),
           });
         }
+        if (count === 6 && width > 375) {
+          const crown = await page.evaluate(() => {
+            const table = document.querySelector('.table-page')!;
+            const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
+            const head = table.querySelector('.seat-wrapper--top .seat__avatar-img')!;
+            return {
+              gap: head.getBoundingClientRect().top - table.getBoundingClientRect().top,
+              scale: scaler.getBoundingClientRect().width / scaler.offsetWidth,
+            };
+          });
+          // Preserve breathing, tense and celebration poses around the
+          // two-pixel resting crop; only the crown may cross the bar.
+          expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
+          expect(crown.gap).toBeLessThan(2 * crown.scale);
+        }
         const result = await page.evaluate(() => {
           const box = (e: Element) => e.getBoundingClientRect();
           const overlaps = (a: DOMRect, b: DOMRect) =>
@@ -1788,7 +1803,7 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
       [430, 932, 59, 34],
     ];
     const cases = viewports.map((viewport) => [spectatorSeats, ...viewport]);
-    if (spectatorSeats >= 8)
+    if (spectatorSeats === 6 || spectatorSeats >= 8)
       cases.push([spectatorSeats, 393, 852, 47, 34, 1], [spectatorSeats, 430, 932, 59, 34, 1]);
     for (const [seats, width, height, insetTop = 0, insetBottom = 0, tournament = 0] of cases) {
       await page.setViewportSize({ width, height });

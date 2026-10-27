@@ -156,7 +156,11 @@ export async function certifyMobileLiveTableLayout(
                 violations.push(`Player Or Bet Covers Board: ${node.className}`);
           }
           const mini = table.querySelector('.bbj-mini-plate');
-          const head = table.querySelector('.seat-wrapper--top .seat__avatar-img');
+          const head = table.querySelector(
+            table.getAttribute('data-seats') === '6'
+              ? '.seat-wrapper--cap .seat__avatar-img'
+              : '.seat-wrapper--top .seat__avatar-img'
+          );
           const topGap = mini && head && visible(head) ? box(head).top - box(mini).bottom : null;
           // A PLO5/PLO6 hand reserves a full card-height lane above the
           // top plate; keep its player close beneath that lane and the BBJ.
@@ -173,7 +177,18 @@ export async function certifyMobileLiveTableLayout(
             largeHand && capPlate && head
               ? Math.max(12, (cardWidth * 92) / 64 + 10 - (box(capPlate).top - box(head).top))
               : 12;
-          if (topGap !== null && (topGap < -1 || topGap > gapLimit))
+          if (
+            table.getAttribute('data-seats') === '6' &&
+            box(table).width > 375 &&
+            head &&
+            visible(head)
+          ) {
+            const scaler = table.querySelector<HTMLElement>('.table-scaler')!;
+            const scale = box(scaler).width / scaler.offsetWidth || 1;
+            const gap = box(head).top - box(table).top;
+            if (gap < -12 * scale || gap > 2 * scale)
+              violations.push('Six-Max Crown Does Not Meet The Top Bar');
+          } else if (topGap !== null && (topGap < -1 || topGap > gapLimit))
             violations.push('Top Player Does Not Sit Immediately Below Mini BBJ');
           return {
             violations,

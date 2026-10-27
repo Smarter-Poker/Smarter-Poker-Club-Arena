@@ -52,7 +52,14 @@ export function useProtectedCardLayout(
       }
     };
     refreshGeometry();
-    const topPods = () => Array.from(scaler.querySelectorAll<HTMLElement>('.seat-wrapper--top'));
+    const topPods = () =>
+      Array.from(
+        scaler.querySelectorAll<HTMLElement>(
+          page.getAttribute('data-seats') === '6' && page.getBoundingClientRect().width > 375
+            ? '.seat-wrapper--cap, .seat-wrapper--top'
+            : '.seat-wrapper--top'
+        )
+      );
     const wagers = () => Array.from(scaler.querySelectorAll<HTMLElement>('.seat__bet-chips'));
     const resetWagers = () =>
       wagers().forEach((bet) => {
@@ -186,8 +193,16 @@ export function useProtectedCardLayout(
               ) < 1 || own + 4 < Math.hypot(x - c.x, y - c.y)
           );
         };
+        // Six-max puts the crown at the bar. A full PLO row uses the
+        // available lane above its own plate with one pixel of clear space,
+        // before considering a more distant spot beside another chair.
+        const sixMaxTop =
+          page.getAttribute('data-seats') === '6' &&
+          page.getBoundingClientRect().width > 375 &&
+          row.closest('.seat-wrapper--cap, .seat-wrapper--top');
         const place = (candidate: CardBox) =>
           placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
+          (sixMaxTop ? placeProtectedCardRow(candidate, others, bounds, 1, ownsIt) : null) ??
           placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
         let next = place(box);
@@ -329,7 +344,11 @@ export function useProtectedCardLayout(
       const chromeBottom = chrome.length
         ? Math.max(...chrome.map((box) => box.bottom))
         : pageBox.top + plateHeight;
-      if (pageBox.width <= 768) {
+      // Production uses the desktop-width viewport on phones. Preserve the
+      // legacy <=375px fallback for browsers that ignore that viewport:
+      // a full PLO hand and wager cannot share its cropped top-seat lane.
+      const sixMax = page.getAttribute('data-seats') === '6' && pageBox.width > 375;
+      if (sixMax || pageBox.width <= 768) {
         for (const pod of topPods()) {
           if (settled.current.pods.has(pod)) continue;
           const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
@@ -358,7 +377,12 @@ export function useProtectedCardLayout(
               largeHand && window.innerHeight > window.innerWidth
                 ? Math.max(8, cardHeight + 9 - (plateTop - highest))
                 : 8;
-            const shift = (chromeBottom + clearance * scale - highest) / scale;
+            // Dan 2026-10-26: the six-max top-centre villain rises to the
+            // tab/action bar, with only the crown clipped. Corner jackpot
+            // plates do not reserve a band across this centred seat. Anchor
+            // the actual art, not its transparent slot or position badge.
+            const target = sixMax ? pageBox.top - 2 * scale : chromeBottom + clearance * scale;
+            const shift = (target - (sixMax ? image.top : highest)) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.
@@ -564,14 +588,16 @@ export function useProtectedCardLayout(
             // Sample exact obstacle edges as well as the oval, so a clear slot
             // beside a label is found before the overlapping last-resort tier.
             // Wider portrait side pods need the same exact slots.
-            if (window.innerWidth > 480 || window.innerWidth <= 375) {
+            if (sixMax || window.innerWidth > 480 || window.innerWidth <= 375) {
               const xs = new Set([anchor.x - box.width / 2]);
               const ys = new Set([anchor.y - box.height / 2]);
               for (const obstacle of hardObstacles) {
-                xs.add(obstacle.left - box.width - 3);
-                xs.add(obstacle.left + obstacle.width + 3);
-                ys.add(obstacle.top - box.height - 3);
-                ys.add(obstacle.top + obstacle.height + 3);
+                for (const air of sixMax ? [3, 1] : [3]) {
+                  xs.add(obstacle.left - box.width - air);
+                  xs.add(obstacle.left + obstacle.width + air);
+                  ys.add(obstacle.top - box.height - air);
+                  ys.add(obstacle.top + obstacle.height + air);
+                }
               }
               // A wider portrait page has bare screen beyond the table; a wager
               // stays on the table's own canvas there, never out in the margin.

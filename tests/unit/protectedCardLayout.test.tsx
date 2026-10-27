@@ -9,17 +9,21 @@ function Fixture({
   potTop = 260,
   boardTop = 310,
   count = 6,
+  seats = 9,
+  width = 393,
 }: {
   revealed: boolean;
   revision?: string;
   potTop?: number;
   boardTop?: number;
   count?: number;
+  seats?: number;
+  width?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useProtectedCardLayout(ref, revision);
   return (
-    <div className="table-page" data-box="0,0,393,852">
+    <div className="table-page" data-seats={seats} data-box={`0,0,${width},852`}>
       <div className="bbj-mini-plate" data-box="130,20,140,14" />
       <div className="table-scaler" data-box="0,0,393,600" ref={ref}>
         <div className="community-area" data-box={`60,${boardTop},280,90`} />
@@ -186,3 +190,19 @@ it('a new hand at the same seat is placed afresh', async () => {
       card.bottom > board.top
   ).toBe(false);
 });
+
+// The six-max crown meets the bar at all widths, independently of corner BBJ.
+it.each([393, 606, 1024])(
+  'six-max top crown clips two canvas pixels at width %i',
+  async (width) => {
+    stubGeometry();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    const h = render(<Fixture revealed={false} seats={6} width={width} />);
+    const head = h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect();
+    expect(head.top).toBe(-2);
+    const pod = h.container.querySelector<HTMLElement>('.seat-wrapper--top')!;
+    expect(pod.style.getPropertyValue('--sp-top-seat-shift')).toBe('-102px');
+    await act(async () => h.rerender(<Fixture revealed seats={6} width={width} revision="flop" />));
+    expect(h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect().top).toBe(-2);
+  }
+);

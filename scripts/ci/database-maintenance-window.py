@@ -193,7 +193,7 @@ def runner():
         print('Named migration already installed; no maintenance requested.'); return
     require('PREFLIGHT QUEUED' in preflight.stdout, 'Migration queue outcome is unknown')
     source = Path(__file__).read_text()
-    request = {'runId': os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT'],
+    request = {'runId': os.environ['GITHUB_RUN_ID'],
                'controlSha': os.environ['GITHUB_SHA'], 'windowId': window_id}
     # Public identity is independently bound again under the host lock.
     with urllib.request.urlopen('https://engine.smarter.poker/health', timeout=10) as r:

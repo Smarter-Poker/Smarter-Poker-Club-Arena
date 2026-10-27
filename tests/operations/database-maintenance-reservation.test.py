@@ -22,7 +22,7 @@ class DatabaseReservation(unittest.TestCase):
         # Git hooks export GIT_DIR/INDEX/WORK_TREE. A native fixture must never
         # inherit them or address its caller's checkout/index.
         self.original_git_environment = os.environ.copy()
-        self.addCleanup(self.restore_environment)
+        self.addCleanup(DatabaseReservation.restore_environment, self)
         for key in list(os.environ):
             if key.startswith('GIT_'):
                 del os.environ[key]
@@ -62,7 +62,7 @@ class DatabaseReservation(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
-        self.restore_environment()
+        DatabaseReservation.restore_environment(self)
 
     def git(self, *args):
         return subprocess.check_output(['git', '-C', str(self.repo), *args], stderr=subprocess.PIPE).decode()
@@ -357,6 +357,37 @@ class RunnerPreflight(unittest.TestCase):
                 patch.object(controller.subprocess,'run',return_value=types.SimpleNamespace(returncode=3,stdout='UNKNOWN')), \
                 patch.object(controller.urllib.request,'urlopen',side_effect=AssertionError('network forbidden')):
             with self.assertRaises(ValueError):controller.runner()
+
+
+class HookEnvironmentIsolation(unittest.TestCase):
+    def test_valid_caller_repository_config_head_and_index_are_unchanged(self):
+        from unittest.mock import patch
+        safe = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+        safe.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
+        with tempfile.TemporaryDirectory(prefix='caller-git-sentinel-') as directory:
+            caller = Path(directory)
+            def git(*args):
+                return subprocess.check_output(['git', '-C', directory, *args], env=safe, stderr=subprocess.PIPE)
+            git('init', '-q', '--initial-branch=main')
+            git('config', 'user.name', 'Caller Sentinel')
+            git('config', 'user.email', 'sentinel@example.invalid')
+            (caller/'sentinel').write_text('unchanged caller source\n')
+            git('add', '.'); git('commit', '-qm', 'caller sentinel')
+            paths = [caller/'.git'/name for name in ('HEAD', 'config', 'index', 'refs/heads/main')]
+            before = {str(p): p.read_bytes() for p in paths}
+            poison = {'GIT_DIR':str(caller/'.git'), 'GIT_WORK_TREE':directory,
+                      'GIT_INDEX_FILE':str(caller/'.git/index'), 'GIT_CONFIG_COUNT':'1',
+                      'GIT_CONFIG_KEY_0':'core.bare', 'GIT_CONFIG_VALUE_0':'true'}
+            with patch.dict(os.environ, poison):
+                fixture = DatabaseReservation('test_real_protected_git_and_byte_exact_sql_journal')
+                try:
+                    fixture.setUp()
+                    fixture.test_real_protected_git_and_byte_exact_sql_journal()
+                finally:
+                    fixture.tearDown()
+                    fixture.doCleanups()
+                self.assertEqual(os.environ['GIT_DIR'], poison['GIT_DIR'])
+            self.assertEqual({str(p): p.read_bytes() for p in paths}, before)
 
 
 if __name__ == '__main__':

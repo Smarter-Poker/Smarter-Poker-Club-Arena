@@ -1,3 +1,4 @@
+import { admitHorseFeatureReleaseAuthority } from '../../HorseFeatureAuthority.js';
 import { admitHorsePhase8GuardAuthority } from '../../HorseTournamentCatastropheGuardAuthority.js';
 /** Offline replay admission uses the same protected selections and exact
  * qualification files as production. A record cannot turn a pack on. */
@@ -6,6 +7,7 @@ import type { HorseDecision } from '../../../types.js';
 import {
   admitHorsePhase8LiveAuthority,
   HorseQualifiedAuthorityHolder,
+  canonical,
   horseAuthorityReceiptIsWellFormed,
   type HorseAuthorityAdmission,
   type HorseAuthorityReceipt,
@@ -31,6 +33,7 @@ export class HorseReplayAuthorityRefusal extends Error {
 /** No mode override: the production runtime still derives each mode from
  * its own holder, original request/domain and ordinary qualified verdict. */
 export const qualifiedReplayAdmissions = {
+  admitFeatureAuthority: () => admitHorseFeatureReleaseAuthority(),
   admitPhase8GuardAuthority: () => admitHorsePhase8GuardAuthority(),
   admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
   admitPhase10Authority: () => admitHorsePhase10LiveAuthority(),
@@ -41,6 +44,7 @@ export const qualifiedReplayAdmissions = {
   admitPhase14Attachment: (domain: string) => admitHorsePhase14LiveAttachment(domain),
 } satisfies Pick<
   HorseDecisionWorkerDependencies,
+  | 'admitFeatureAuthority'
   | 'admitPhase8GuardAuthority'
   | 'admitPhase8Authority'
   | 'admitPhase10Authority'
@@ -63,6 +67,11 @@ export function qualifiedReplayAuthorityHolders(
 ): HorseDecisionWorkerAuthorityHolderFactory {
   const receipts = new Map<string, HorseAuthorityReceipt>();
   const policies = [
+    [
+      'features',
+      null,
+      original.featureAuthority ? { ...original.featureAuthority, applied: true } : undefined,
+    ],
     ['phase8', null, original.tournamentPostflop],
     ['phase8_guard', null, original.tournamentCatastropheGuard],
     ['phase10', null, original.plo4Policy],
@@ -104,19 +113,34 @@ export function qualifiedReplayAuthorityHolders(
     let admission: HorseAuthorityAdmission;
     try {
       admission =
-        owner === 'phase8_guard'
-          ? admissions.admitPhase8GuardAuthority()
-          : owner === 'phase8'
-            ? admissions.admitPhase8Authority()
-            : owner === 'phase10'
-              ? admissions.admitPhase10Authority()
-              : owner === 'phase11'
-                ? admissions.admitPhase11Authority(pack as OmahaPolicyVariant)
-                : owner === 'phase12'
-                  ? admissions.admitPhase12Authority(pack as RemainingPolicyVariant)
-                  : owner === 'phase13'
-                    ? admissions.admitPhase13Authority(pack as JointVariant)
-                    : admissions.admitPhase14Attachment(pack ?? '').admission;
+        owner === 'features'
+          ? admissions.admitFeatureAuthority()
+          : owner === 'phase8_guard'
+            ? admissions.admitPhase8GuardAuthority()
+            : owner === 'phase8'
+              ? admissions.admitPhase8Authority()
+              : owner === 'phase10'
+                ? admissions.admitPhase10Authority()
+                : owner === 'phase11'
+                  ? admissions.admitPhase11Authority(pack as OmahaPolicyVariant)
+                  : owner === 'phase12'
+                    ? admissions.admitPhase12Authority(pack as RemainingPolicyVariant)
+                    : owner === 'phase13'
+                      ? admissions.admitPhase13Authority(pack as JointVariant)
+                      : admissions.admitPhase14Attachment(pack ?? '').admission;
+      if (owner === 'features' && admission.status === 'admitted') {
+        const feature = original.featureAuthority,
+          authority = admission.authority;
+        if (
+          !feature ||
+          feature.compositionDigest !== authority.featureCompositionDigest ||
+          JSON.stringify(canonical(feature.flags)) !==
+            JSON.stringify(canonical(authority.featureFlags)) ||
+          JSON.stringify(canonical(feature.domain)) !==
+            JSON.stringify(canonical(authority.featureDomain))
+        )
+          throw new Error('feature_composition_mismatch');
+      }
       return HorseQualifiedAuthorityHolder.fromReplayReceipt(receipt, admission, runningVersion);
     } catch (error) {
       throw new HorseReplayAuthorityRefusal(

@@ -1,3 +1,4 @@
+import { riverPublicNode } from '../HorseMultiwayRiverRead.js';
 import { createHash } from 'node:crypto';
 import {
   horseObserverReadContextIsValid,
@@ -76,6 +77,7 @@ export interface HorseOwnPublicHand {
   results: Array<{ user_id: string; net: number }> | null;
   /** Per-hand public categories only. Absent means unavailable on older reads. */
   riverCalls?: RiverCallSample[];
+  riverNodeEvidence?: 'captured' | 'unavailable';
 }
 export interface HorseOwnPublicHistoryWindow {
   version: 1;
@@ -125,7 +127,7 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
           'actions',
           'results',
         ],
-        ['riverCalls']
+        ['riverCalls', 'riverNodeEvidence']
       ) ||
       typeof h.handId !== 'string' ||
       !UUID.test(h.handId) ||
@@ -160,7 +162,11 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
     for (const a of h.actions) {
       if (
         !object(a) ||
-        !keys(a, ['seat', 'userId', 'action', 'amount', 'stage', 'timestamp'], ['isFullRaise']) ||
+        !keys(
+          a,
+          ['seat', 'userId', 'action', 'amount', 'stage', 'timestamp'],
+          ['isFullRaise', 'publicNode']
+        ) ||
         !Number.isSafeInteger(a.seat) ||
         (a.seat as number) < 1 ||
         (a.seat as number) > 10 ||
@@ -172,6 +178,7 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
         a.amount < 0 ||
         !clock(a.timestamp) ||
         a.timestamp > h.playedAtMs ||
+        (a.publicNode !== undefined && (a.stage !== 'river' || !riverPublicNode(a.publicNode))) ||
         (a.isFullRaise !== undefined && typeof a.isFullRaise !== 'boolean')
       )
         return false;
@@ -185,6 +192,15 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
       if (a.userId === context.observerId && a.seat !== h.observerSeat) return false;
     }
     if (actorSeats.size > context.dealtCount) return false;
+    if (
+      h.riverNodeEvidence !== undefined &&
+      !['captured', 'unavailable'].includes(String(h.riverNodeEvidence))
+    )
+      return false;
+    const nodeCount = h.actions.filter((a) => a.publicNode !== undefined).length;
+    if (nodeCount && (h.riverNodeEvidence !== 'captured' || ![2, 4].includes(nodeCount)))
+      return false;
+    if (h.riverNodeEvidence === 'captured' && ![2, 4].includes(nodeCount)) return false;
     if (h.riverCalls !== undefined) {
       if (!Array.isArray(h.riverCalls) || h.riverCalls.length > context.dealtCount) return false;
       if (

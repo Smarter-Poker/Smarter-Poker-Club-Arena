@@ -1018,6 +1018,7 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  featureAuthority?: import('./engine/HorseFeatureAuthority.js').HorseFeatureDecisionReceipt;
   correctivePolicy?: import('./services/horseCorrectiveReview/liveKernel.js').CorrectiveLiveKernelReceipt;
   /** Private reference lookup/route evidence; not final causal or GTO proof. */
   tournamentPreflopAttribution?: import('./engine/HorsePhase6Attribution.js').HorsePhase6Attribution;

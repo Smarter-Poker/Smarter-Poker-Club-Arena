@@ -86,7 +86,10 @@ describe('P12.2 Phase 12 policy digest', () => {
     // 32 since 2026-10-25: HorseMind notes read telemetry (BrainTelemetry).
     // 33: river-call category and confidence evidence is a hashed owner.
     // 34: private river board contact is an independently hashed pure source.
-    expect(closure).toHaveLength(34);
+    // 35: conditional river position evidence is learned by HorseMind.
+    expect(closure).toHaveLength(35);
+    expect(closure).toContain('src/engine/HorseRiverPositionRead.ts');
+    expect(HORSE_PHASE12_POLICY_SOURCE_FILES).toContain('src/engine/HorseRiverPositionRead.ts');
     expect(closure).toContain('src/engine/HorseBoardContact.ts');
     expect(HORSE_PHASE12_POLICY_SOURCE_FILES).toContain('src/engine/HorseBoardContact.ts');
     expect(HORSE_PHASE12_POLICY_SOURCE_FILES).toContain('src/engine/HorseRiverCallEvidence.ts');

@@ -104,7 +104,18 @@ export interface Plo4AblationPopulation {
     profile: Readonly<Plo4LeagueProfile>
   ): void;
 }
-export type Plo4AblationFlags = Readonly<Pick<HorseDecideOpts, 'v24PloDefense' | 'v53Pressure'>>;
+export type Plo4AblationFlags = Readonly<
+  Pick<
+    HorseDecideOpts,
+    | 'v24PloDefense'
+    | 'v53Pressure'
+    | 'comboDrawPressure'
+    | 'v54RiverBluff'
+    | 'riverPositionDefense'
+    | 'riverBluffCheckRaise'
+    | 'barrelContinuationOutlook'
+  >
+>;
 /** A maintained current-brain adapter owns admission. The physical league must
  * never substitute the older phase-off/candidate league options for it. */
 export interface Plo4AblationBrain {

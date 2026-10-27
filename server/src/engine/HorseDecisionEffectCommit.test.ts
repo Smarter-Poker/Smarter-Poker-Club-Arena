@@ -3373,3 +3373,22 @@ describe('P13.3 acceptance-time Phase 13 authority recheck (the Phase 8 law, one
     ).toEqual([]);
   });
 });
+
+describe('feature authority at the classic action owner', () => {
+  it('refuses an unselected feature decision before action and effects', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    decisionWorker.decideFast.mockImplementationOnce(async (snapshot) => {
+      const result = await decisionWorker.defaultDecideFast(snapshot);
+      result.decision.featureAuthority = {
+        version: 'horse-feature-decision-v1',
+        authority: {},
+      } as never;
+      return result;
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(performAction).toHaveBeenCalledOnce();
+    expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['check', undefined, 'horse_fallback']);
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+});

@@ -34,6 +34,19 @@ const {
   pressureDevelopmentProfiles,
   V53_PRESSURE_WARM_SEED,
 } = await import('../benchmark/PressureQualificationContract.js');
+const {
+  isIncrementalTarget,
+  incrementalDevelopmentDesign,
+  incrementalHistoryVersion,
+  ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
+  INCREMENTAL_DEVELOPMENT_SEEDS,
+  INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
+  INCREMENTAL_WARM_SEED,
+  incrementalDevelopmentProfiles,
+  incrementalDevelopmentSpec,
+  buildIncrementalWarmRecords,
+  incrementalWarmCoverage,
+} = await import('../benchmark/IncrementalPressureDevelopment.js');
 const { buildPressureWarmRecords, makeFeatureAblationOwnHistory, featureAblationHistoryDigest } =
   await import('../benchmark/FeatureAblationHistory.js');
 const { horseObserverReadContextFromRequest } =
@@ -73,7 +86,9 @@ try {
       ? PLO6_V24_DEVELOPMENT_DESIGN.developmentSeeds
       : experiment === 'v53'
         ? V53_PRESSURE_DEVELOPMENT_SEEDS
-        : [];
+        : isIncrementalTarget(experiment)
+          ? incrementalDevelopmentDesign(experiment).developmentSeeds
+          : [];
   if (!(allowed as readonly number[]).includes(seed))
     throw new Error('Only declared development seeds may be dealt');
   if (experiment === 'v24' && args.get('variant') !== 'plo6')
@@ -112,9 +127,10 @@ try {
   const physicalProfile =
     experiment === 'v24'
       ? plo6V24DevelopmentProfile(args.get('profile')!)
-      : pressureDevelopmentProfiles(args.get('variant')! as 'plo6').find(
-          (p) => p.id === args.get('profile')
-        );
+      : (isIncrementalTarget(experiment)
+          ? incrementalDevelopmentProfiles(experiment, args.get('variant')! as 'plo6')
+          : pressureDevelopmentProfiles(args.get('variant')! as 'plo6')
+        ).find((p) => p.id === args.get('profile'));
   if (!physicalProfile) throw new Error('Unknown declared development profile');
   const warmRecords =
     experiment === 'v53' && args.get('inspect') !== 'true'
@@ -123,10 +139,27 @@ try {
           seats: physicalProfile.seats,
           seed: V53_PRESSURE_WARM_SEED,
         })
-      : [];
+      : isIncrementalTarget(experiment) && args.get('inspect') !== 'true'
+        ? buildIncrementalWarmRecords(
+            args.get('variant')! as 'plo6',
+            physicalProfile.seats,
+            experiment
+          )
+        : [];
   const history = {
-    kind: experiment === 'v53' ? 'fixed_public_warm_v1' : 'fresh_empty_public_v1',
-    warmSeed: experiment === 'v53' ? V53_PRESSURE_WARM_SEED : null,
+    kind: isIncrementalTarget(experiment)
+      ? incrementalHistoryVersion(experiment)
+      : experiment === 'v53'
+        ? 'fixed_public_warm_v1'
+        : 'fresh_empty_public_v1',
+    warmSeed: isIncrementalTarget(experiment)
+      ? incrementalDevelopmentDesign(experiment).warmSeed
+      : experiment === 'v53'
+        ? V53_PRESSURE_WARM_SEED
+        : null,
+    ...(isIncrementalTarget(experiment)
+      ? { conditionalCoverage: incrementalWarmCoverage(warmRecords) }
+      : {}),
     records: warmRecords.length,
     digest: featureAblationHistoryDigest(warmRecords),
     inspectionSkipped: args.get('inspect') === 'true',
@@ -164,9 +197,11 @@ try {
   const manifest = {
     schema: 'horse-feature-ablation-development-manifest-v1',
     mode: args.get('inspect') === 'true' ? 'baseline_inspection_no_deals' : 'development',
-    baselineKind: proposedOwnerHead
-      ? 'proposed_owner_patch_on_protected_reference'
-      : 'protected_reference_development',
+    baselineKind: isIncrementalTarget(experiment)
+      ? 'proposed_combined_candidate_development'
+      : proposedOwnerHead
+        ? 'proposed_owner_patch_on_protected_reference'
+        : 'protected_reference_development',
     proposedOwnerHead: proposedOwnerHead ?? null,
     dirtyCoreFiles,
     baselineObservation:
@@ -184,7 +219,11 @@ try {
     history,
     authority,
     authoritySha256: sha(JSON.stringify(authority)),
-    design: experiment === 'v24' ? PLO6_V24_DEVELOPMENT_DESIGN : V53_PRESSURE_DEVELOPMENT_DESIGN,
+    design: isIncrementalTarget(experiment)
+      ? incrementalDevelopmentDesign(experiment)
+      : experiment === 'v24'
+        ? PLO6_V24_DEVELOPMENT_DESIGN
+        : V53_PRESSURE_DEVELOPMENT_DESIGN,
     observation:
       'brain evaluations including corrective re-evaluations, not accepted final layer use',
     promotionEligible: false,
@@ -233,7 +272,14 @@ try {
     const spec =
       experiment === 'v24'
         ? plo6V24DevelopmentSpec(args.get('profile')!, brain)
-        : pressureDevelopmentSpec(args.get('variant')! as 'plo6', args.get('profile')!, brain);
+        : isIncrementalTarget(experiment)
+          ? incrementalDevelopmentSpec(
+              experiment,
+              args.get('variant')! as 'plo6',
+              args.get('profile')!,
+              brain
+            )
+          : pressureDevelopmentSpec(args.get('variant')! as 'plo6', args.get('profile')!, brain);
     await writeFile(resolve(out, 'warm-public-history.json'), JSON.stringify(warmRecords) + '\n', {
       flag: 'wx',
     });
@@ -249,6 +295,8 @@ try {
           reservedSeeds: [
             ...PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds,
             ...V53_PRESSURE_RESERVED_HOLDOUT_SEEDS,
+            ...INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
+            ...ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
           ],
         },
         () => !interrupted,
@@ -298,6 +346,14 @@ try {
         changedPairs: result.changedPairs,
         validity,
         refusalReason: result.refusalReason,
+        ...(isIncrementalTarget(experiment)
+          ? {
+              conditionalWarmCoverage: incrementalWarmCoverage(warmRecords),
+              candidateHeroEvaluationFires: result.candidateEvaluationFires.hero,
+              referenceHeroEvaluationFires: result.referenceEvaluationFires.hero,
+              acceptedHeroActionContrastPairs: result.candidateHeroActionContrastPairs,
+            }
+          : {}),
         candidateHeroPressureFires: Object.fromEntries(
           Object.entries(result.candidateEvaluationFires.hero).filter(([k]) =>
             k.startsWith('v53_pressure')

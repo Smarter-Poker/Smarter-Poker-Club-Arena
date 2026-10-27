@@ -167,11 +167,14 @@ export function validatedHorsePolicySamplingKey(
     'prizeUnitCents',
     'finalizedPrizeLadder',
   ];
-  const gameState =
+  const capturedState =
     !tournament ||
     !captureKeys.some((key) => (tournament as Record<string, unknown>)[key] !== undefined)
       ? input.gameState
       : { ...input.gameState, tournament: project(tournament, captureKeys) };
+  // Exact SB is admission/read context, newly captured without resampling the
+  // existing baseline strategy. The full request key still binds its bytes.
+  const gameState = project(capturedState, ['smallBlind'])!;
   return mods === input.mods &&
     opts === input.opts &&
     gameState === input.gameState &&
@@ -439,6 +442,7 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   /** P10.3: the worker's Phase 10 (PLO4) authority after this decision; the
    * same receipt shape and laws as Phase 8. Absent is never usable authority. */
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  featureAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   /** P11.3: the worker's authority receipt for each Phase 11 pack after this
    * decision (one holder per pack, the Phase 8 shape and laws). Absent is
    * never usable authority. */
@@ -491,6 +495,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase8GuardAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  featureAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase11Authority?: HorsePhase11AuthorityReceipts;
   phase12Authority?: HorsePhase12AuthorityReceipts;
   phase13Authority?: HorsePhase13AuthorityReceipts;

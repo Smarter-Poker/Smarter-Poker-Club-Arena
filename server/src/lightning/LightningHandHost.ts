@@ -1,3 +1,4 @@
+import { recheckHorseFeaturesBeforeAcceptance } from '../engine/HorseFeatureAuthority.js';
 import {
   recheckHorsePhase14BeforeAcceptance,
   observeHorsePhase14Execution,
@@ -2217,12 +2218,27 @@ export class LightningHandHost {
     lane: () => LiveHorseDecisionLane
   ): void {
     const hc = this.hc!;
+    let featureRefused = false;
     if (decision.fast) {
-      const checked = recheckHorsePhase14BeforeAcceptance(decision.fast.decision);
+      const beforeFeatureCheck = recheckHorsePhase14BeforeAcceptance(decision.fast.decision);
+      const checked = recheckHorseFeaturesBeforeAcceptance(
+        beforeFeatureCheck,
+        hc.getAuthoritativeActionState(userId)?.toCall ?? 0
+      );
+      featureRefused = checked !== beforeFeatureCheck && !!checked.featureAuthority;
       decision.fast.decision = checked;
-      decision = { ...decision, action: checked.action, amount: checked.amount };
+      decision = {
+        ...decision,
+        action: checked.action,
+        amount: checked.amount,
+        workerFallback: decision.workerFallback || featureRefused,
+      };
     }
-    const shaped = shapeLightningHorseAction(hc, userId, decision, allInOrFold);
+    // A rejected candidate has no qualified aggressive substitute. Do not let
+    // AoF shaping convert its free check into an all-in wager.
+    const shaped = featureRefused
+      ? { action: decision.action, amount: undefined }
+      : shapeLightningHorseAction(hc, userId, decision, allInOrFold);
     const fast = decision.fast;
     const acceptedActions: HorseAcceptedAction[] = [];
     let intended = true;

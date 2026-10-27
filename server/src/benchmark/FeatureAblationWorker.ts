@@ -39,7 +39,15 @@ export interface FeatureAblationWorkerReceipt {
   observerReads: HorseObserverReadReceipt | null;
   decisionKey: string;
   actorSeat: number;
-  inputFlags: { v24PloDefense?: boolean; v53Pressure?: boolean };
+  inputFlags: {
+    v24PloDefense?: boolean;
+    v53Pressure?: boolean;
+    comboDrawPressure?: boolean;
+    v54RiverBluff?: boolean;
+    riverPositionDefense?: boolean;
+    riverBluffCheckRaise?: boolean;
+    barrelContinuationOutlook?: boolean;
+  };
   naturalSamplingKey: string;
   naturalRngBefore: number;
   controlledRngBefore: number;
@@ -199,6 +207,7 @@ export function createFeatureAblationWorker(
         Date.now = () => observationClockMs;
         runtime = new HorseDecisionWorkerRuntime((m) => messages.push(m), {
           ...defaultHorseDecisionWorkerDependencies,
+          offlineFeatureFlags: true,
           startServices: async () => readiness,
           stopServices: async () => {},
           // Capture only the original worker's public read receipt in memory;
@@ -342,8 +351,23 @@ export function createFeatureAblationWorker(
           decisionKey: request.decisionKey,
           actorSeat: player.seat,
           inputFlags: {
+            ...(request.opts?.barrelContinuationOutlook === undefined
+              ? {}
+              : { barrelContinuationOutlook: request.opts.barrelContinuationOutlook }),
             v24PloDefense: request.opts?.v24PloDefense,
             v53Pressure: request.opts?.v53Pressure,
+            ...(request.opts?.comboDrawPressure === undefined
+              ? {}
+              : { comboDrawPressure: request.opts.comboDrawPressure }),
+            ...(request.opts?.v54RiverBluff === undefined
+              ? {}
+              : { v54RiverBluff: request.opts.v54RiverBluff }),
+            ...(request.opts?.riverBluffCheckRaise === undefined
+              ? {}
+              : { riverBluffCheckRaise: request.opts.riverBluffCheckRaise }),
+            ...(request.opts?.riverPositionDefense === undefined
+              ? {}
+              : { riverPositionDefense: request.opts.riverPositionDefense }),
           },
           naturalSamplingKey: validatedHorsePolicySamplingKey(request),
           naturalRngBefore: result.rngBefore,

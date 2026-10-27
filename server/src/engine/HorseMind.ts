@@ -1,4 +1,14 @@
 import {
+  multiwayRiverIncrements,
+  multiwayRiverPressure,
+  mergeMultiwayRiverStates,
+  type MultiwayRiverReadState,
+} from './HorseMultiwayRiverRead.js';
+import {
+  riverPositionIncrements,
+  riverTripleCheckRaiseIncrements,
+} from './HorseRiverPositionRead.js';
+import {
   MEMORY_VARIANTS,
   memoryVariant,
   opponentMemoryKey,
@@ -110,6 +120,8 @@ function isMindAggression(action: { action: string; isFullRaise?: boolean }): bo
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface OpponentStats {
+  /** Exact public cash/stake/original-population context, never legacy pooled hydration. */
+  riverHu?: MultiwayRiverReadState;
   /** Original contributing timestamps, not flush/read time. Absent on legacy rows. */
   sourceWindow?: HorseObservationWindow;
   /** distinct hands this player has been observed in */
@@ -149,6 +161,12 @@ export interface OpponentStats {
   riverBetOpps: number;
   /** ... and folded to it */
   riverBetFolds: number;
+  /** Public observer-window river opportunities when all remaining actors checked.
+   * Rebuilt from the horse own accepted history, never a pooled donor. */
+  riverLastToActOpps: number;
+  riverLastToActBets: number;
+  riverTripleCheckRaiseOpps: number;
+  riverTripleCheckRaiseFolds: number;
   /** V7 recency window (exponentially decayed) — detects counter-adaptation */
   rHands: number;
   rFolds: number;
@@ -211,6 +229,10 @@ const freshStats = (): OpponentStats => ({
   bigBetSDStrong: 0,
   riverBetOpps: 0,
   riverBetFolds: 0,
+  riverLastToActOpps: 0,
+  riverLastToActBets: 0,
+  riverTripleCheckRaiseOpps: 0,
+  riverTripleCheckRaiseFolds: 0,
   rHands: 0,
   rFolds: 0,
   rFacedAggr: 0,
@@ -417,6 +439,10 @@ const SCOPED_FIELDS = [
   'bigBetSDStrong',
   'riverBetOpps',
   'riverBetFolds',
+  'riverLastToActOpps',
+  'riverLastToActBets',
+  'riverTripleCheckRaiseOpps',
+  'riverTripleCheckRaiseFolds',
   'checks',
   'postAggr',
   'postPassive',
@@ -497,7 +523,8 @@ export class HorseMind {
   static observe(
     history: ActionRecord[] | undefined,
     _players: SeatPlayer[],
-    identity?: HorseMindHandIdentity | null
+    identity?: HorseMindHandIdentity | null,
+    originalDealtCount?: number
   ): void {
     if (!history || history.length === 0) return;
 
@@ -735,6 +762,98 @@ export class HorseMind {
       }
 
       if (preflop && isAggr) preflopRaises++;
+    }
+    // Separate original-hand dedupe: a legacy observer may already have seen
+    // the action prefix without the original participant-count metadata.
+    const riverKey = identifiedHand ? `${identifiedHand}|river-last-to-act` : null;
+    if (riverKey && !this.handFlags.has(riverKey)) {
+      const increments = riverPositionIncrements(history, originalDealtCount);
+      if (increments.size) {
+        for (const [id, inc] of increments) {
+          const row = this.stats.get(id);
+          const action = history.find((a) => a.stage === 'river' && a.userId === id);
+          if (!row || !action) continue;
+          const before = { ...row };
+          row.riverLastToActOpps = (row.riverLastToActOpps ?? 0) + inc.opportunities;
+          row.riverLastToActBets = (row.riverLastToActBets ?? 0) + inc.bets;
+          row.sourceWindow = observeHorseObservationWindow(
+            before.sourceWindow,
+            action.timestamp,
+            hasContributions(before)
+          );
+          this.dirty.add(id);
+          this.applyScopedDelta(
+            id,
+            before,
+            row,
+            observeHorseObservationWindow(undefined, action.timestamp, false)
+          );
+        }
+        this.handFlags.add(riverKey);
+      }
+    }
+    const pressureKey = identifiedHand ? `${identifiedHand}|multiway-hu-pressure-v1` : null;
+    if (pressureKey && !this.handFlags.has(pressureKey) && originalDealtCount !== undefined) {
+      const inc = multiwayRiverPressure(history, originalDealtCount);
+      const row = inc ? this.stats.get(inc.id) : undefined;
+      if (inc && row) {
+        const delta: MultiwayRiverReadState = {
+          entries: [[inc.context, 0, 0, inc.opportunities, inc.bets]],
+          overflow: false,
+        };
+        row.riverHu = mergeMultiwayRiverStates(row.riverHu, delta);
+        if (this.decisionScope) {
+          const scoped = this.scopedFor(inc.id, this.decisionScope);
+          scoped.riverHu = mergeMultiwayRiverStates(scoped.riverHu, delta);
+        }
+        this.dirty.add(inc.id);
+        this.handFlags.add(pressureKey);
+      }
+    }
+    const huKey = identifiedHand ? `${identifiedHand}|multiway-hu-river-v1` : null;
+    if (huKey && !this.handFlags.has(huKey) && originalDealtCount !== undefined) {
+      const inc = multiwayRiverIncrements(history, originalDealtCount);
+      if (inc) {
+        const row = this.stats.get(inc.id);
+        if (row) {
+          const delta: MultiwayRiverReadState = {
+            entries: [[inc.context, inc.opportunities, inc.folds, 0, 0]],
+            overflow: false,
+          };
+          row.riverHu = mergeMultiwayRiverStates(row.riverHu, delta);
+          if (this.decisionScope) {
+            const scoped = this.scopedFor(inc.id, this.decisionScope);
+            scoped.riverHu = mergeMultiwayRiverStates(scoped.riverHu, delta);
+          }
+          this.dirty.add(inc.id);
+          this.handFlags.add(huKey);
+        }
+      }
+    }
+    const raiseKey = identifiedHand ? `${identifiedHand}|river-triple-check-raise` : null;
+    if (raiseKey && !this.handFlags.has(raiseKey)) {
+      const increments = riverTripleCheckRaiseIncrements(history, originalDealtCount);
+      for (const [id, inc] of increments) {
+        const row = this.stats.get(id);
+        const action = history.filter((a) => a.stage === 'river' && a.userId === id).at(-1);
+        if (!row || !action) continue;
+        const before = { ...row };
+        row.riverTripleCheckRaiseOpps = (row.riverTripleCheckRaiseOpps ?? 0) + inc.opportunities;
+        row.riverTripleCheckRaiseFolds = (row.riverTripleCheckRaiseFolds ?? 0) + inc.folds;
+        row.sourceWindow = observeHorseObservationWindow(
+          before.sourceWindow,
+          action.timestamp,
+          hasContributions(before)
+        );
+        this.dirty.add(id);
+        this.applyScopedDelta(
+          id,
+          before,
+          row,
+          observeHorseObservationWindow(undefined, action.timestamp, false)
+        );
+      }
+      if (increments.size) this.handFlags.add(raiseKey);
     }
   }
 
@@ -1059,9 +1178,14 @@ export class HorseMind {
       if (this.scoped.size >= MAX_TRACKED_PLAYERS * 4 && !existing) continue;
       const next = freshStats();
       for (const f of SCOPED_FIELDS) {
-        next[f] = Math.max(existing ? existing[f] : 0, num((r as Record<string, unknown>)[f]));
+        next[f] = Math.max(
+          existing ? (existing[f] ?? 0) : 0,
+          num((r as Record<string, unknown>)[f])
+        );
       }
       next.sourceWindow = importedWindow(r, existing);
+      const hu = mergeMultiwayRiverStates(existing?.riverHu, r.riverHu, true);
+      if (hu) next.riverHu = hu;
       this.scoped.set(key, next);
       applied++;
     }
@@ -1140,6 +1264,9 @@ export class HorseMind {
         Math.max(existing ? (live ?? 0) : 0, incoming);
       this.stats.set(r.user_id, {
         sourceWindow: importedWindow(r, existing),
+        ...(mergeMultiwayRiverStates(existing?.riverHu, r.riverHu, true)
+          ? { riverHu: mergeMultiwayRiverStates(existing?.riverHu, r.riverHu, true) }
+          : {}),
         hands: num(r.hands),
         vpip: num(r.vpip),
         pfr: num(r.pfr),
@@ -1156,6 +1283,16 @@ export class HorseMind {
         bigBetSDStrong: num(r.bigBetSDStrong),
         riverBetOpps: keep(existing?.riverBetOpps, num(r.riverBetOpps)),
         riverBetFolds: keep(existing?.riverBetFolds, num(r.riverBetFolds)),
+        riverLastToActOpps: keep(existing?.riverLastToActOpps, num(r.riverLastToActOpps)),
+        riverLastToActBets: keep(existing?.riverLastToActBets, num(r.riverLastToActBets)),
+        riverTripleCheckRaiseOpps: keep(
+          existing?.riverTripleCheckRaiseOpps,
+          num(r.riverTripleCheckRaiseOpps)
+        ),
+        riverTripleCheckRaiseFolds: keep(
+          existing?.riverTripleCheckRaiseFolds,
+          num(r.riverTripleCheckRaiseFolds)
+        ),
         rHands: keep(existing?.rHands, num(r.rHands)),
         rFolds: keep(existing?.rFolds, num(r.rFolds)),
         rFacedAggr: keep(existing?.rFacedAggr, num(r.rFacedAggr)),
@@ -2104,6 +2241,105 @@ export class HorseMind {
 
   /** V23: fold-to-river-bet frequency (0..1), or null below an
    *  8-opportunity sample. Memory-only — see the OpponentStats note. */
+  /** Conditional public frequency; unknown stays unknown. A high rate alone
+   * is not proof of a bluff and never forces a call. The consumer must price
+   * the acting holding against a qualified public-range model. */
+  static riverLastToActRead(
+    id: string
+  ): { opportunities: number; bets: number; rate: number; lower99: number } | null {
+    const s = this.readStats(id),
+      n = s?.riverLastToActOpps ?? 0,
+      bets = s?.riverLastToActBets ?? 0;
+    if (!Number.isSafeInteger(n) || n < 8 || !Number.isSafeInteger(bets) || bets < 0 || bets > n)
+      return null;
+    const rate = bets / n,
+      z = 2.3263478740408408,
+      z2 = z * z;
+    const lower99 =
+      (rate + z2 / (2 * n) - z * Math.sqrt((rate * (1 - rate)) / n + z2 / (4 * n * n))) /
+      (1 + z2 / n);
+    return { opportunities: n, bets, rate, lower99: Math.max(0, lower99) };
+  }
+
+  /** Same-size check-raise responses, never ordinary river bet responses. */
+  static riverTripleCheckRaiseRead(
+    id: string
+  ): { opportunities: number; folds: number; lower99: number } | null {
+    const s = this.readStats(id),
+      n = s?.riverTripleCheckRaiseOpps ?? 0,
+      folds = s?.riverTripleCheckRaiseFolds ?? 0;
+    if (!Number.isSafeInteger(n) || n < 8 || !Number.isSafeInteger(folds) || folds < 0 || folds > n)
+      return null;
+    const p = folds / n,
+      z = 2.3263478740408408,
+      z2 = z * z;
+    return {
+      opportunities: n,
+      folds,
+      lower99: Math.max(
+        0,
+        (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n)
+      ),
+    };
+  }
+
+  static multiwayRiverPressureRead(
+    id: string,
+    context: string
+  ): { opportunities: number; bets: number; lower99: number } | null {
+    const row = this.readStats(id)?.riverHu?.entries.find((e) => e[0] === context);
+    if (
+      !row ||
+      row[3] < 8 ||
+      !Number.isSafeInteger(row[3]) ||
+      !Number.isSafeInteger(row[4]) ||
+      row[4] < 0 ||
+      row[4] > row[3]
+    )
+      return null;
+    const n = row[3],
+      bets = row[4],
+      p = bets / n,
+      z = 2.3263478740408408,
+      z2 = z * z;
+    return {
+      opportunities: n,
+      bets,
+      lower99: Math.max(
+        0,
+        (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n)
+      ),
+    };
+  }
+
+  static multiwayRiverRead(
+    id: string,
+    context: string
+  ): { opportunities: number; folds: number; lower99: number } | null {
+    const row = this.readStats(id)?.riverHu?.entries.find((e) => e[0] === context);
+    if (
+      !row ||
+      row[1] < 8 ||
+      !Number.isSafeInteger(row[1]) ||
+      !Number.isSafeInteger(row[2]) ||
+      row[2] < 0 ||
+      row[2] > row[1]
+    )
+      return null;
+    const [, n, folds] = row,
+      p = folds / n,
+      z = 2.3263478740408408,
+      z2 = z * z;
+    return {
+      opportunities: n,
+      folds,
+      lower99: Math.max(
+        0,
+        (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n)
+      ),
+    };
+  }
+
   static riverFoldRate(id: string): number | null {
     const s = this.readStats(id);
     if (!s || s.riverBetOpps < 8) return null;

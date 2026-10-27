@@ -35,6 +35,8 @@ s+="DO $baseline_pins$DECLARE mismatch jsonb;BEGIN SELECT jsonb_agg(jsonb_build_
 s+="REVOKE ALL ON FUNCTION smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;"
 for table,rows in tables.items():
  if rows:s+=f"INSERT INTO public.{table} SELECT(jsonb_populate_record(NULL::public.{table},j)).* FROM jsonb_array_elements($captured_wallet_awards${json.dumps(list(rows.values()),separators=(',',':'))}$captured_wallet_awards$::jsonb)j ON CONFLICT DO NOTHING;\n"
+# Exact live full-flow owner is PostgreSQL-only; snapshot that actual ACL.
+s+="REVOKE ALL ON FUNCTION public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;"
 s+="""CREATE TEMP TABLE wallet_jackpot_original_metadata AS SELECT oid::regprocedure::text signature,jsonb_build_array(proowner,provolatile,prosecdef,proisstrict,proconfig,proacl::text) attributes FROM pg_proc WHERE oid IN('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)'::regprocedure,'smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz)'::regprocedure,'public.fn_union_pnl_week_bbj_stack_awards(uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)'::regprocedure,'smarter_private.original_inventory_proof_sources_match()'::regprocedure);
 CREATE TEMP TABLE wallet_jackpot_original_money AS SELECT md5((SELECT jsonb_agg(to_jsonb(l) ORDER BY id)::text FROM chip_ledger l)) ledger,md5((SELECT jsonb_agg(to_jsonb(b) ORDER BY id)::text FROM bbj_payouts b)) payouts,md5((SELECT jsonb_agg(to_jsonb(b) ORDER BY id)::text FROM bbj_pools b)) pools;
 

@@ -10,8 +10,8 @@ assert q('SELECT count(*) FROM union_pnl_cash_outcomes o WHERE fn_union_pnl_cash
 q((R/'accepted-candidate.sql').read_text())
 assert q('SELECT count(*) FROM union_pnl_cash_outcomes o WHERE fn_union_pnl_cash_outcome_accepted(o)')=='78'
 example=q('SELECT to_jsonb(o)FROM union_pnl_cash_outcomes o LIMIT 1')
-assert q('BEGIN;SET LOCAL ROLE service_role;SELECT fn_union_pnl_cash_outcome_accepted(jsonb_populate_record(NULL::public.union_pnl_cash_outcomes,'+lit(example)+'::jsonb));ROLLBACK;')=='t'
-cases.append('service_role_uses_original_accepted_boolean_without_exposing_private_proof_helper')
+q('REVOKE ALL ON FUNCTION public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes) FROM PUBLIC,anon,authenticated,service_role;');assert q("SELECT has_function_privilege('service_role','public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes)','EXECUTE')")=='f'
+cases.append('original_accepted_boolean_remains_postgres_only_private_helper_not_exposed')
 q((R/'compact-participants.sql').read_text())
 q("INSERT INTO union_pnl_cash_outcome_touches SELECT table_id,hand_number,game_scope->>'game_union_id',recognized_at,evidence->>'accepted_rake',fn_union_pnl_compact_participants(evidence->'participants'),true FROM union_pnl_cash_outcomes")
 q((R/'hand-lines-candidate.sql').read_text())

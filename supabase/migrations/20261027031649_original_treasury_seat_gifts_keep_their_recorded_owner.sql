@@ -206,6 +206,19 @@ IF md5(pg_get_functiondef(to_regprocedure('public.fn_claim_entry_purchase_receip
 IF to_regprocedure('smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid)') IS NOT NULL THEN RAISE EXCEPTION 'treasury_original_owner_changed: smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid)';END IF;
 IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_common_entry_owner_acl_changed';END IF;
 IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_claim_entry_purchase_receipt(text,text,jsonb)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_common_entry_owner_acl_changed';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_ca_cash_seat_club(uuid,uuid)'))IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_ca_cash_seat_club(uuid,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)'))IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamp with time zone,timestamp with time zone,boolean)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamp with time zone,timestamp with time zone,boolean)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid)'))IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_pnl_cash_hand_evidence(uuid,bigint)'))IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_pnl_cash_hand_evidence(uuid,bigint)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_union_pnl_boundary(uuid,timestamp with time zone)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_union_pnl_boundary(uuid,timestamp with time zone)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_union_pnl_cash_outcome_accepted(union_pnl_cash_outcomes)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_union_pnl_cash_outcome_accepted(union_pnl_cash_outcomes)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_union_pnl_original_flow_evidence(uuid,timestamp with time zone,timestamp with time zone)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_union_pnl_original_flow_evidence(uuid,timestamp with time zone,timestamp with time zone)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_union_pnl_week_hand_lines(uuid,timestamp with time zone,timestamp with time zone,boolean)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_union_pnl_week_hand_lines(uuid,timestamp with time zone,timestamp with time zone,boolean)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid)'))IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_claim_entry_purchase_receipt(text,text,jsonb)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_original_public_owner_acl_changed: fn_claim_entry_purchase_receipt(text,text,jsonb)';END IF;
 END$original$;
 
 SET LOCAL timezone='UTC';CREATE SCHEMA IF NOT EXISTS smarter_private;
@@ -2430,6 +2443,27 @@ BEGIN
  WHERE h.game_scope->>'game_union_id'=p_union::text AND h.recognized_at>=p_start AND h.recognized_at<p_end)END);
 END $function$
 ;
+
+-- Preserve exact original public owner ACLs; these are not anonymous RPCs.
+REVOKE ALL ON FUNCTION public.fn_ca_cash_seat_club(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_cash_seat_club(uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamp with time zone,timestamp with time zone,boolean) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_pnl_cash_hand_evidence(uuid,bigint) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_pnl_cash_hand_evidence(uuid,bigint) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_boundary(uuid,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_original_flow_evidence(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_week_hand_lines(uuid,timestamp with time zone,timestamp with time zone,boolean) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_claim_entry_purchase_receipt(text,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION smarter_private.original_inventory_proof_sources_match()
  RETURNS boolean
  LANGUAGE sql

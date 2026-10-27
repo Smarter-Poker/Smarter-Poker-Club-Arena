@@ -54,6 +54,7 @@ cases.append('whole_actual_advance_produces84_original_windows_replay_read_reduc
 signatures=['public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)','smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz)','public.fn_union_pnl_cash_outcome_accepted(union_pnl_cash_outcomes)','public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean)','smarter_private.weekly_hand_parts_witness(uuid,timestamptz,timestamptz,boolean)','smarter_private.weekly_hand_parts_read(uuid,timestamptz,timestamptz,text,boolean)','public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)']
 postimages=json.loads(q('SELECT jsonb_agg(jsonb_build_object(\'signature\',signature,\'body\',pg_get_functiondef(p.oid),\'md5\',md5(pg_get_functiondef(p.oid)),\'owner\',p.proowner::regrole::text,\'security_definer\',p.prosecdef,\'volatility\',p.provolatile,\'config\',p.proconfig,\'acl\',p.proacl::text)ORDER BY signature)FROM(VALUES'+','.join('('+lit(sig)+')'for sig in signatures)+')s(signature)JOIN pg_proc p ON p.oid=to_regprocedure(signature)'))
 (O/'reader-authority-postimages.json').write_text(json.dumps(postimages,indent=2)+'\n')
+q((P.parent/'preserve-public-owner-acls.sql').read_text())
 exec(compile((P/'assert-delivery-owned.py').read_text(),str(P/'assert-delivery-owned.py'),'exec'),globals(),globals())
 # Restore only controlled prerequisite boundary used by later existing regression.
 q('DROP FUNCTION smarter_private.weekly_hand_parts_witness(uuid,timestamptz,timestamptz,boolean)')

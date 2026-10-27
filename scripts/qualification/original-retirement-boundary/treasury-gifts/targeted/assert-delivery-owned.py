@@ -10,3 +10,7 @@ found=json.loads(q("BEGIN;SET LOCAL search_path=pg_catalog;SELECT jsonb_agg(json
 assert len(found)==len(wanted)
 for r in found:assert r['owner']=='postgres'and r['md5']==expected[r['signature']],r
 (O/'actual-delivery-owned-source-match.json').write_text(json.dumps({'actual_delivery':str(delivery.relative_to(W)),'sha256':hashlib.sha256(delivery.read_bytes()).hexdigest(),'exact_matched_owners':found,'controlled_245_trust_sources_not_rebound':True},indent=2)+'\n')
+
+if 'delivery_check_signatures' not in globals():
+ for item in json.loads((P.parent/'public-owner-acls.json').read_text()):
+  signature='public.'+item['signature'];assert q("SELECT proacl::text FROM pg_proc WHERE oid="+lit(signature)+"::regprocedure")==item['acl'],signature

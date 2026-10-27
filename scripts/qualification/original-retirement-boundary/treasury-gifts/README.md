@@ -16,7 +16,7 @@ The targeted native lane uses captured financial-only provenance, never private 
 No installation or payment is performed by this qualifier. Production payment, protected integration, exact migration installation, all-books close and live reconciliation remain root-owned acceptance gates.
 
 The combined existing245 qualifier executes the exact production31649 installer
-from the current40-source baseline, proves its rollback/replay and62-source
+from the current40-source baseline, proves its rollback/replay and65-source
 authority, preserves original245 cases/certificates and all prior refusal tests.
 Its actual source authorities are never replaced by cryptographic test stubs.
 
@@ -38,3 +38,5 @@ windows, calculation pages and paid R2/R3 receipts. The original advance must
 replace stale old-method P&L windows through real recomputation under the genuine
 new inventory generation, leaving those earning/payment identities unchanged.
 No cache row may be relabeled or paid receipt fabricated.
+
+`common-leaf/run-queued-native.py` executes the actual original outer already blocked at its shared gate while an installer owns the exclusive gate. It reproduces the old missing receipt in a rolled-back baseline, then installs the current same-OID leaf and original-claim marker. The original old caller resumes with exactly one completed receipt, bank debit, gift and funding receipt. Its transaction begins before the actual cutover insertion, while original recognition follows commit; it is correctly a future receipt, never a historical exception. The private money core has identical `prosrc`, and claim/leaf/core privileges remain PostgreSQL-only. Native snapshot owners are additionally required to match the exact delivery's65 authority pins; controlled legacy cryptographic boundaries are never renewed into those pins.

@@ -8,7 +8,7 @@ wallet_after_sql=(p.parent/'wallet-jackpot/native-cases.sql').read_text()
 wallet_after_sql=wallet_after_sql.replace('jsonb_array_length(a)<>84','jsonb_array_length(a)<>91').replace("f->>'kind'<>'cash_return' OR (f->>'buyins')::numeric<>0","f->>'kind'NOT IN('cash_return','cash_funding')")
 wallet_after_sql=wallet_after_sql.replace("FROM jsonb_array_elements(a)f)<>33465.32", "FROM jsonb_array_elements(a)f)<>36126.65")
 wallet_after_sql=wallet_after_sql.replace("FROM public.fn_union_pnl_original_flow_evidence('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z')GROUP BY club_id,user_id", "FROM public.fn_union_pnl_original_flow_evidence('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z')WHERE ledger_id IN(SELECT ledger_id FROM union_pnl_original_flows WHERE ledger_snapshot->>'category'='bbj_payout')GROUP BY club_id,user_id")
-wallet_after_sql=wallet_after_sql.replace('count(*)=43','count(*)=62')
+wallet_after_sql=wallet_after_sql.replace('count(*)=43','count(*)=65')
 after_sql="""DO $treasury$
 DECLARE f jsonb;before_digest text;after_digest text;
 BEGIN
@@ -17,6 +17,6 @@ BEGIN
  IF jsonb_array_length(f)<>7 OR EXISTS(SELECT FROM jsonb_array_elements(f)x WHERE x->'valid'IS DISTINCT FROM 'true'::jsonb)
  OR(SELECT sum((x->>'buyins')::numeric)FROM jsonb_array_elements(f)x)IS DISTINCT FROM947::numeric
  OR(SELECT sum((x->>'cashouts')::numeric)FROM jsonb_array_elements(f)x)IS DISTINCT FROM2661.33::numeric THEN RAISE EXCEPTION 'treasury_original7_flow_projection_disagrees';END IF;
- IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'treasury_original62_authority_not_qualified';END IF;
- RAISE NOTICE 'PASS original62 actual authorities finite245unchanged combined84BBJ+7treasury';
+ IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'treasury_original65_authority_not_qualified';END IF;
+ RAISE NOTICE 'PASS original65 actual authorities finite245unchanged combined84BBJ+7treasury';
 END$treasury$;""".replace('FROM947','FROM 947').replace('FROM2661','FROM 2661')

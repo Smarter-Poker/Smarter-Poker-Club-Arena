@@ -196,6 +196,8 @@ try:
  for owner in json.loads((P/'entry-receipt-owners.json').read_text()):q(owner['definition'])
  q((P/'fn_release_entry_purchase_claim.sql').read_text())
  q((P/'original-horse-seat-money-core.sql').read_text())
+ q('REVOKE ALL ON FUNCTION public.fn_claim_entry_purchase_receipt(text,text,jsonb)FROM PUBLIC,anon,authenticated,service_role;REVOKE ALL ON FUNCTION public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)FROM PUBLIC,anon,authenticated,service_role')
+ q((P/'common-leaf/private-money-core.sql').read_text());q((P/'common-leaf/entry-claim.sql').read_text());q((P/'common-leaf/common-leaf.sql').read_text())
  q((P/'fn_horse_seat_from_treasury.sql').read_text())
  tid='11111111-0000-0000-0000-000000000001';uid='22222222-0000-0000-0000-000000000001';op='33333333-0000-0000-0000-000000000001';bank='fade0000-0000-0000-0000-000000000001';benefit='a0000000-0000-0000-0000-000000000001'
  load('tables',[{'id':tid,'club_id':bank,'min_buy_in':100,'max_buy_in':1000}]);load('native_beneficiaries',[{'user_id':uid,'club_id':benefit}]);q('UPDATE clubs SET chip_treasury=10000 WHERE id='+lit(bank)+'::uuid')

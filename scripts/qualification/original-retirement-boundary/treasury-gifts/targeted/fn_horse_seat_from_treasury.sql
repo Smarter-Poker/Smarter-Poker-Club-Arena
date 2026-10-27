@@ -8,10 +8,7 @@ AS $function$
 DECLARE
   v_request jsonb;
   v_response jsonb;
-  v_ledger uuid;
-  v_gift jsonb;
 BEGIN
-  p_op_id:=COALESCE(p_op_id,gen_random_uuid());
   PERFORM pg_advisory_xact_lock_shared(530090, 1);
 
   v_request := jsonb_build_object(
@@ -57,13 +54,8 @@ BEGIN
     );
     RETURN v_response;
   END IF;
-  v_response:=public.fn_record_entry_purchase_receipt(
+  RETURN public.fn_record_entry_purchase_receipt(
     'horse_funding', p_op_id::text, v_request, v_response
   );
-  SELECT id INTO STRICT v_ledger FROM public.chip_ledger WHERE idempotency_key='horse_fund:'||p_op_id::text;
-  v_gift:=smarter_private.admit_original_treasury_gift(v_ledger);
-  PERFORM public.fn_cash_record_original_funding('horse_funding',p_op_id::text,p_user_id,p_table_id,v_ledger,NULL,
-    (v_gift->>'earning_club')::uuid,p_amount,(v_gift->>'bank_balance_after')::numeric,NULL);
-  RETURN v_response;
 END;
 $function$

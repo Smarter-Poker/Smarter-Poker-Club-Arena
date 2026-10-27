@@ -201,6 +201,11 @@ IF md5(pg_get_functiondef(to_regprocedure('public.fn_cash_earning_club(uuid,uuid
 IF md5(pg_get_functiondef(to_regprocedure('public.fn_ca_cash_seat_club(uuid,uuid)'))) IS DISTINCT FROM 'b2a3de2d916158c859ea41cad150d653' OR (SELECT proowner FROM pg_proc WHERE oid=to_regprocedure('public.fn_ca_cash_seat_club(uuid,uuid)')) IS DISTINCT FROM 'postgres'::regrole THEN RAISE EXCEPTION 'treasury_original_owner_changed: public.fn_ca_cash_seat_club(uuid,uuid)';END IF;
 IF md5(pg_get_functiondef(to_regprocedure('public.fn_union_pnl_boundary(uuid,timestamptz)'))) IS DISTINCT FROM 'f3fc54538eb2c19a049c79ce77bfb705' OR (SELECT proowner FROM pg_proc WHERE oid=to_regprocedure('public.fn_union_pnl_boundary(uuid,timestamptz)')) IS DISTINCT FROM 'postgres'::regrole THEN RAISE EXCEPTION 'treasury_original_owner_changed: public.fn_union_pnl_boundary(uuid,timestamptz)';END IF;
 IF md5(pg_get_functiondef(to_regprocedure('smarter_private.original_inventory_basis_generation()'))) IS DISTINCT FROM 'dbf5a3a18da9339ba60083cb2d3aea4c' OR (SELECT proowner FROM pg_proc WHERE oid=to_regprocedure('smarter_private.original_inventory_basis_generation()')) IS DISTINCT FROM 'postgres'::regrole THEN RAISE EXCEPTION 'treasury_original_owner_changed: smarter_private.original_inventory_basis_generation()';END IF;
+IF md5(pg_get_functiondef(to_regprocedure('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)'))) IS DISTINCT FROM '858f5b0c0fc52bec310b8a6630ee5b44' OR (SELECT proowner FROM pg_proc WHERE oid=to_regprocedure('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)')) IS DISTINCT FROM 'postgres'::regrole THEN RAISE EXCEPTION 'treasury_original_owner_changed: public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)';END IF;
+IF md5(pg_get_functiondef(to_regprocedure('public.fn_claim_entry_purchase_receipt(text,text,jsonb)'))) IS DISTINCT FROM '0d1183a2a50441a6a582ea2e5cbb5d2a' OR (SELECT proowner FROM pg_proc WHERE oid=to_regprocedure('public.fn_claim_entry_purchase_receipt(text,text,jsonb)')) IS DISTINCT FROM 'postgres'::regrole THEN RAISE EXCEPTION 'treasury_original_owner_changed: public.fn_claim_entry_purchase_receipt(text,text,jsonb)';END IF;
+IF to_regprocedure('smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid)') IS NOT NULL THEN RAISE EXCEPTION 'treasury_original_owner_changed: smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid)';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_common_entry_owner_acl_changed';END IF;
+IF(SELECT proacl::text FROM pg_proc WHERE oid=to_regprocedure('public.fn_claim_entry_purchase_receipt(text,text,jsonb)'))IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'treasury_common_entry_owner_acl_changed';END IF;
 END$original$;
 
 SET LOCAL timezone='UTC';CREATE SCHEMA IF NOT EXISTS smarter_private;
@@ -1352,6 +1357,276 @@ EXCEPTION WHEN no_data_found OR invalid_text_representation OR numeric_value_out
 END $outcome$;
 REVOKE ALL ON FUNCTION smarter_private.original_treasury_cash_outcome_evidence(jsonb) FROM PUBLIC,anon,authenticated,service_role;
 
+CREATE OR REPLACE FUNCTION smarter_private.original_treasury_seat_money_core(p_table_id uuid, p_user_id uuid, p_seat_number integer, p_amount numeric, p_op_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+DECLARE
+  v_club_id uuid;
+  v_treasury numeric;
+  v_st text;
+  v_msg text;
+  v_floor numeric;
+  v_min numeric;
+  v_max numeric;
+  v_eff numeric;
+BEGIN
+  PERFORM set_config('app.money_path', 'fn_horse_seat_from_treasury', true); -- CHIP STANDARD C2: sanctioned seat creator (trg_ca_guard_seat_creation)
+  IF p_table_id IS NULL OR p_user_id IS NULL OR p_seat_number IS NULL OR p_amount IS NULL OR p_amount <= 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'table, user, seat and positive amount required');
+  END IF;
+
+  /* A KEYED CALL IS ANSWERED ONCE. The engine funds a rebuy from a bust it
+     has already seen; a retry after a lost response must not fund it twice.
+     With no key this is the old behaviour exactly. */
+  IF p_op_id IS NOT NULL AND EXISTS (
+       SELECT 1 FROM public.chip_ledger WHERE idempotency_key = 'horse_fund:' || p_op_id::text) THEN
+    RETURN jsonb_build_object('success', true, 'replayed', true, 'op_id', p_op_id);
+  END IF;
+
+  SELECT club_id, min_buy_in, max_buy_in INTO v_club_id, v_min, v_max FROM tables WHERE id = p_table_id;
+  IF v_club_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'table has no club');
+  END IF;
+
+  IF NOT public.fn_actor_can_manage_club_treasury(v_club_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'not authorized to seat from club treasury');
+  END IF;
+
+  -- CHIP CONTINUITY (I7): the same floor a human meets at atomic_table_buyin.
+  PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:' || p_user_id::text, 0));
+  v_floor := public.fn_cash_rejoin_floor(p_user_id, p_table_id);
+  IF v_max IS NOT NULL AND v_max > 0 AND p_amount > GREATEST(v_max, COALESCE(v_floor, 0)) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'BUYIN_ABOVE_MAX');
+  END IF;
+  IF v_floor IS NOT NULL THEN
+    v_eff := GREATEST(COALESCE(v_min, 0), v_floor);
+    -- The return floor is never reduced to the ordinary maximum.
+    IF p_amount < v_eff THEN
+      RETURN jsonb_build_object('success', false, 'error', 'BUYIN_BELOW_FLOOR', 'required', v_eff);
+    END IF;
+  END IF;
+
+  SELECT COALESCE(chip_treasury, 0) INTO v_treasury FROM clubs WHERE id = v_club_id FOR UPDATE;
+  IF v_treasury IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'club not found');
+  END IF;
+  IF v_treasury < p_amount THEN
+    RETURN jsonb_build_object('success', false, 'error', 'insufficient club treasury',
+                              'treasury', v_treasury, 'needed', p_amount);
+  END IF;
+
+  BEGIN
+    INSERT INTO table_seats (table_id, user_id, seat_number, stack, is_sitting_out)
+    VALUES (p_table_id, p_user_id, p_seat_number, p_amount, false);
+  EXCEPTION WHEN unique_violation THEN
+    RETURN jsonb_build_object('success', false, 'error', 'seat already taken');
+  END;
+
+  -- CHIP CONTINUITY: the session opens with the seat, baseline = this buy-in.
+  PERFORM public.fn_cash_session_open(p_user_id, p_table_id, p_amount);
+
+  PERFORM set_config('app.ledger_autoskip_clubs', '1', true);
+  UPDATE clubs SET chip_treasury = COALESCE(chip_treasury, 0) - p_amount, updated_at = NOW()
+  WHERE id = v_club_id;
+  PERFORM set_config('app.ledger_autoskip_clubs', '0', true);
+
+  INSERT INTO chip_transactions (
+    id, club_id, from_user_id, to_user_id, amount, transaction_type, notes, balance_after, created_at
+  ) VALUES (
+    gen_random_uuid(), v_club_id, NULL, p_user_id, p_amount,
+    'horse_treasury_funding', 'Horse seated + funded from club treasury',
+    v_treasury - p_amount, NOW()
+  );
+
+  BEGIN
+    /* PHASE 7.2 (2026-09-06): the leg NAMES THE PLAYER and carries the
+       caller's key when it has one. Before this a horse funding said only
+       that a table was funded: 9,252 legs in seven days, none naming the
+       seat, so no per-seat audit could read them and a replay could not be
+       told from a second horse buying in for the same amount at the same
+       table. The key is optional: without it nothing changes but the name. */
+    INSERT INTO public.chip_ledger
+      (performed_by, from_type, from_entity_id, to_type, to_entity_id,
+       amount, category, club_id, table_id, description, idempotency_key, metadata)
+    VALUES (
+      COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),
+      'club_treasury', v_club_id,
+      'table_stack',   p_table_id,
+      p_amount, 'horse_funding', v_club_id, p_table_id,
+      'Seated + funded from club treasury (fn_horse_seat_from_treasury) for ' || p_user_id::text,
+      CASE WHEN p_op_id IS NULL THEN NULL ELSE 'horse_fund:' || p_op_id::text END,
+      jsonb_build_object('user_id', p_user_id, 'op_id', p_op_id, 'door', 'fn_horse_seat_from_treasury'));
+  EXCEPTION WHEN OTHERS THEN
+      -- A journal failure must abort the enclosing chip movement.
+      -- Preserve SQLSTATE so the existing caller can retry the whole operation.
+      RAISE;
+    END;
+
+  RETURN jsonb_build_object('success', true, 'treasury_after', v_treasury - p_amount);
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_claim_entry_purchase_receipt(p_key_domain text, p_idempotency_key text, p_request jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_request jsonb;
+  v_response jsonb;
+BEGIN
+  IF p_idempotency_key IS NULL OR length(btrim(p_idempotency_key)) = 0 THEN
+    RETURN jsonb_build_object('claimed', true);
+  END IF;
+
+  INSERT INTO public.entry_purchase_idempotency_receipts
+    (key_domain, idempotency_key, request)
+  VALUES (p_key_domain, p_idempotency_key, p_request)
+  ON CONFLICT (key_domain, idempotency_key) DO NOTHING
+  RETURNING request, response INTO v_request, v_response;
+  IF FOUND THEN
+    -- Same original successful claim; the marker is transaction-local proof
+    -- for the treasury common leaf, including old outer bodies queued at entry.
+    IF p_key_domain='horse_funding' AND p_request->>'door'='fn_horse_seat_from_treasury' THEN
+      PERFORM set_config('app.original_treasury_entry_claim',jsonb_build_object(
+       'domain',p_key_domain,'key',p_idempotency_key,'request_md5',md5(p_request::text),
+       'transaction_id',pg_current_xact_id()::text)::text,true);
+    END IF;
+    RETURN jsonb_build_object('claimed', true);
+  END IF;
+
+  /* The unique-index wait above cannot observe an uncommitted placeholder.
+     A committed placeholder without a response means some code violated the
+     same-transaction contract, so it is corruption-not permission to rerun
+     a money core. */
+  SELECT r.request, r.response
+    INTO STRICT v_request, v_response
+    FROM public.entry_purchase_idempotency_receipts r
+   WHERE r.key_domain = p_key_domain
+     AND r.idempotency_key = p_idempotency_key;
+  IF v_request IS DISTINCT FROM p_request THEN
+    RAISE EXCEPTION
+      'IDEMPOTENCY_KEY_REUSED: % key is already bound to a different entry purchase',
+      p_key_domain
+      USING ERRCODE = '22023';
+  END IF;
+  IF v_response IS NULL THEN
+    RAISE EXCEPTION
+      'INCOMPLETE_IDEMPOTENCY_RECEIPT: % key was committed without its response',
+      p_key_domain
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN jsonb_build_object('claimed', false, 'response', v_response);
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION public.fn_horse_seat_from_treasury_before_maintenance_gate(p_table_id uuid,p_user_id uuid,p_seat_number integer,p_amount numeric,p_op_id uuid DEFAULT NULL::uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,extensions AS $function$
+DECLARE request jsonb;receipt public.entry_purchase_idempotency_receipts%ROWTYPE;
+ response jsonb;claim jsonb;expected_claim jsonb;ledger_id uuid;gift jsonb;internal_key boolean:=p_op_id IS NULL;
+BEGIN
+ -- Existing supported entry gate, also for a direct privileged leaf call.
+ PERFORM pg_advisory_xact_lock_shared(530090,1);
+ p_op_id:=COALESCE(p_op_id,gen_random_uuid());
+ request:=jsonb_build_object('door','fn_horse_seat_from_treasury','table_id',p_table_id,
+  'user_id',p_user_id,'seat_number',p_seat_number,'amount',p_amount);
+ IF internal_key THEN
+  claim:=public.fn_claim_entry_purchase_receipt('horse_funding',p_op_id::text,request);
+  IF NOT COALESCE((claim->>'claimed')::boolean,false) THEN RETURN claim->'response';END IF;
+ END IF;
+ SELECT * INTO receipt FROM public.entry_purchase_idempotency_receipts
+  WHERE key_domain='horse_funding' AND idempotency_key=p_op_id::text FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'original_treasury_entry_claim_missing' USING ERRCODE='55000';END IF;
+ IF receipt.request IS DISTINCT FROM request THEN RAISE EXCEPTION 'original_treasury_entry_request_disagrees' USING ERRCODE='22023';END IF;
+ IF receipt.response IS NOT NULL THEN RETURN receipt.response;END IF;
+ expected_claim:=jsonb_build_object('domain','horse_funding','key',p_op_id::text,
+  'request_md5',md5(request::text),'transaction_id',pg_current_xact_id()::text);
+ claim:=NULLIF(current_setting('app.original_treasury_entry_claim',true),'')::jsonb;
+ IF claim IS DISTINCT FROM expected_claim THEN RAISE EXCEPTION 'original_treasury_entry_claim_not_owned' USING ERRCODE='55000';END IF;
+ response:=smarter_private.original_treasury_seat_money_core(p_table_id,p_user_id,p_seat_number,p_amount,p_op_id);
+ IF NOT COALESCE((response->>'success')::boolean,false) THEN
+  PERFORM public.fn_release_entry_purchase_claim('horse_funding',p_op_id::text,request);
+  PERFORM set_config('app.original_treasury_entry_claim','',true);
+  RETURN response;
+ END IF;
+ response:=public.fn_record_entry_purchase_receipt('horse_funding',p_op_id::text,request,response);
+ SELECT id INTO STRICT ledger_id FROM public.chip_ledger WHERE idempotency_key='horse_fund:'||p_op_id::text;
+ gift:=smarter_private.admit_original_treasury_gift(ledger_id);
+ PERFORM public.fn_cash_record_original_funding('horse_funding',p_op_id::text,p_user_id,p_table_id,ledger_id,NULL,
+  (gift->>'earning_club')::uuid,p_amount,(gift->>'bank_balance_after')::numeric,NULL);
+ PERFORM set_config('app.original_treasury_entry_claim','',true);
+ RETURN response;
+END$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_horse_seat_from_treasury(p_table_id uuid, p_user_id uuid, p_seat_number integer, p_amount numeric, p_op_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '30s'
+AS $function$
+DECLARE
+  v_request jsonb;
+  v_response jsonb;
+BEGIN
+  PERFORM pg_advisory_xact_lock_shared(530090, 1);
+
+  v_request := jsonb_build_object(
+    'door', 'fn_horse_seat_from_treasury',
+    'table_id', p_table_id,
+    'user_id', p_user_id,
+    'seat_number', p_seat_number,
+    'amount', p_amount
+  );
+  v_response := public.fn_claim_entry_purchase_receipt(
+    'horse_funding', p_op_id::text, v_request
+  );
+  IF NOT COALESCE((v_response->>'claimed')::boolean, false) THEN
+    RETURN v_response->'response';
+  END IF;
+
+  IF p_op_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.chip_ledger l
+     WHERE l.idempotency_key = 'horse_fund:' || p_op_id::text
+  ) THEN
+    RAISE EXCEPTION
+      'IDEMPOTENCY_RECEIPT_UNBOUND: this historical horse key has no exact response receipt'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF public.fn_entry_purchases_frozen() THEN
+    PERFORM public.fn_release_entry_purchase_claim(
+      'horse_funding', p_op_id::text, v_request
+    );
+    RETURN jsonb_build_object(
+      'success', false,
+      'deferred', true,
+      'error', 'PLATFORM_FROZEN: scheduled maintenance has deferred this horse seat'
+    );
+  END IF;
+  PERFORM public.fn_assert_cash_chip_purchase_table(p_table_id);
+  v_response := public.fn_horse_seat_from_treasury_before_maintenance_gate(
+    p_table_id, p_user_id, p_seat_number, p_amount, p_op_id
+  );
+  IF NOT COALESCE((v_response->>'success')::boolean, false) THEN
+    PERFORM public.fn_release_entry_purchase_claim(
+      'horse_funding', p_op_id::text, v_request
+    );
+    RETURN v_response;
+  END IF;
+  RETURN public.fn_record_entry_purchase_receipt(
+    'horse_funding', p_op_id::text, v_request, v_response
+  );
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.fn_accounting_union_earned_plan_advance(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -2161,9 +2436,9 @@ CREATE OR REPLACE FUNCTION smarter_private.original_inventory_proof_sources_matc
  STABLE
  SET search_path TO 'pg_catalog'
 AS $function$
- SELECT count(*)=62 AND bool_and(p.oid IS NOT NULL AND p.proowner='postgres'::regrole AND md5(pg_get_functiondef(p.oid)) IS NOT DISTINCT FROM x.body_md5)
- FROM(VALUES ('public.fn_union_pnl_inventory_state(timestamptz,timestamptz)','d77f5ad055ee433875efed7fd53bd25a'),('public.fn_union_pnl_inventory_population(timestamptz,timestamptz)','449f6f13feefe0d7e26e767a3465bc67'),('public.fn_union_pnl_inventory_as_of(timestamptz)','85513ff85d2b37ad04b79f89e125f1aa'),('smarter_private.original_retirement_boundary_proof(jsonb,timestamptz,timestamptz)','56457798f46f7c06a32b0e52915740a0'),('smarter_private.original_paired_seat_restoration_proof(jsonb,jsonb,timestamptz,timestamptz)','ada80c7f667ca7dad36cf223c80c3a6a'),('smarter_private.original_closed_tournament_rails_proof(jsonb,timestamptz)','a9319182a566e9917353765c414a1aa1'),('smarter_private.original_closed_player_proof(jsonb,timestamptz,timestamptz)','a441c3abe887cc4528268e347916d236'),('smarter_private.original_continued_chair_proof(jsonb,timestamptz,timestamptz)','8876018a8370a99f4012696cb264c740'),('smarter_private.original_returned_cash_base_proof(jsonb,timestamptz,timestamptz)','7ed06b6ccded0d6eb2bc3357742e360d'),('smarter_private.original_erased_cash_base_proof(jsonb,timestamptz)','a2d5ac28a5f07929ed99d6e871dddfa2'),('smarter_private.original_inventory_source_ref_md5(jsonb)','81fba77f13564999931e8a7a47cbd609'),('smarter_private.original_inventory_finite_witness(bigint)','0ef0a8a5b9e85633cf4bf8b0cd15c8d7'),('smarter_private.original_inventory_finite_family_proof(text,jsonb,timestamptz,timestamptz)','dd7861e20f4c90567a704cb2625962b8'),('smarter_private.original_erased_cash_base_request(bigint,text)','1467e44cc7f7871b34eff07f7038019d'),('public.fn_union_pnl_satellite_seat_owner(uuid,uuid)','3beddbfe1e3d204d1907b428d9358f08'),('public.fn_platform_frozen()','ec683805e052fceeae74789e82dce4cc'),('public.fn_active_maintenance_release_boundary()','05b537b57c9f51a5164e20a1cd0e67e0'),('smarter_private.original_inventory_case_insert_guard()','d9bcabf711efa4c81c0ae7567897b722'),('smarter_private.original_inventory_certificate_insert_guard()','d4956b2b4c0a58bb5dc57b35e3e884ce'),('smarter_private.original_inventory_restoration_immutable()','6c939d278f5fad857bd97437dfaa5f4d'),('smarter_private.certify_original_inventory_restoration(bigint,timestamptz)','f5db14badd4a6b07c0f4b82e2ec5cb1e'),('smarter_private.inventory_restoration_issue_accepted(jsonb,timestamptz)','fdba882b3557f6ffd1cc29129773ff04'),('public.fn_union_pnl_boundary(uuid,timestamptz)','5e4e878524a91518de209bc5e008db36'),('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)','0998b0c974aac59fbd4914eef394f1c7'),('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)','c4a17522149bfd879342ccc68dec98f9'),('smarter_private.inventory_basis_cache_read(text,boolean,text,uuid,timestamptz,timestamptz)','058d499ade9d0609f83cc07d551b7f35'),('smarter_private.inventory_basis_cache_write(text,text,uuid,timestamptz,timestamptz,jsonb)','2c3f0af276c29f33d09cdb7ecd86df6a'),('smarter_private.original_inventory_basis_generation()','58dc20e1ba380ccb9b9dee8809731d33'),('public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)','7b4a5f4572a45db069b6058899614021'),('public.fn_accounting_close_problem(text,uuid,timestamptz,timestamptz)','9667c8b8c5aa74bf2ad2c57fbfa3991d'),('public.fn_accounting_close_certify(text,uuid,timestamptz,timestamptz,jsonb)','58501728a93f9f4534dbf26d26aba63f'),('public.fn_union_pnl_inventory_as_of_admitted(timestamptz)','d65a33c20fb224c1dc2cc1ecb8168940'),('smarter_private.original_erased_cash_base_expected_hash(bigint)','afe5941dd7c4bbcccbfadc5d65a4f447'),('smarter_private.original_erased_cash_base_discharge_receipt(bigint,text)','f2c22efcfd9231094732ca82edff9101'),('smarter_private.original_erased_cash_base_discharge_evidence_valid(bigint,text,jsonb)','d4bc8b8d57c9037805a735bc1bb2be21'),('smarter_private.original_erased_cash_base_discharge(bigint,text)','9e6fcbf606004b81353a7704b50f072f'),('smarter_private.original_erased_cash_receivables(uuid,timestamptz)','0c53bd1f7fd7d22117af340ee02769d6'),('smarter_private.original_erased_cash_discharge_returns(uuid,timestamptz,timestamptz)','2a41fe7ccedc2947cf3ab84cead2493c'),('smarter_private.original_restoration_cash_returns(uuid,timestamptz,timestamptz)','e7cecf308d34108e12c0006029c1a3fa'),('public.fn_union_week_start(timestamptz)','103f192a228084dad0e4268c36c82c4b'),('smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz)','cefb154e19a245a5688dbc87fed141f5'),('public.fn_union_pnl_week_bbj_stack_awards(uuid,timestamptz,timestamptz)','faf875701e49db1cf99b481119e87404'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)','c9c79cce604c8f481772149fa2538ab2'),('smarter_private.original_treasury_witness_immutable()','f6326523741592230d149799b876e886'),('smarter_private.original_treasury_gift_evidence(uuid)','df84a641f40ee44d9db83e979398f9af'),('smarter_private.admit_original_treasury_gift(uuid)','07c857f67488e000ecbaf63e083c1c05'),('smarter_private.original_treasury_return_evidence(uuid)','3f2b8626b018cc5d22d9ebe9e6d3fb72'),('smarter_private.admit_original_treasury_return(uuid)','c51b45b085ac1a26f043711804ff8d00'),('smarter_private.cash_initial_funding_receipt(uuid)','e111dad7c0f5d5e3b74710053835caa4'),('smarter_private.original_treasury_participant_gift(jsonb,uuid,timestamptz)','95b9a25f9a422bb7d8df115f86bc5993'),('smarter_private.original_treasury_cash_outcome_evidence(jsonb)','12c94769bbcd6eb2c3349728cdc8512d'),('public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid)','19f215ad6de3c236a20fe8709026b75b'),('public.fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid)','d01404c53405fd1826de26e58b04f4b1'),('public.fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamptz,timestamptz,boolean)','8269577929892d8634e32dcfac08ff77'),('public.fn_pnl_cash_hand_evidence(uuid,bigint)','43820fe60b759bd93f6838f908122c96'),('public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid)','1a5e66c29d3d36e41752589d59daa478'),('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)','2ba3a2891019b46e06b46b4c642e566a'),('public.fn_ca_cash_seat_club(uuid,uuid)','148f2246fc0ee3ab11cd86456765e419'),('public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean)','9dee2921c7b956281be61a3eb9d7df6e'),('smarter_private.weekly_hand_parts_read(uuid,timestamptz,timestamptz,text,boolean)','d427fd27d163ba72a7dc3cd50866163d'),('smarter_private.weekly_hand_parts_witness(uuid,timestamptz,timestamptz,boolean)','a3b1c75ad2b122dc0b0fede8a66813c8'),('public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes)','a7c0b003d24f5ae64cf440ce94d52d93'))x(signature,body_md5) LEFT JOIN pg_proc p ON p.oid=to_regprocedure(x.signature);
+ SELECT count(*)=65 AND bool_and(p.oid IS NOT NULL AND p.proowner='postgres'::regrole AND md5(pg_get_functiondef(p.oid)) IS NOT DISTINCT FROM x.body_md5)
+ FROM(VALUES ('public.fn_union_pnl_inventory_state(timestamptz,timestamptz)','d77f5ad055ee433875efed7fd53bd25a'),('public.fn_union_pnl_inventory_population(timestamptz,timestamptz)','449f6f13feefe0d7e26e767a3465bc67'),('public.fn_union_pnl_inventory_as_of(timestamptz)','85513ff85d2b37ad04b79f89e125f1aa'),('smarter_private.original_retirement_boundary_proof(jsonb,timestamptz,timestamptz)','56457798f46f7c06a32b0e52915740a0'),('smarter_private.original_paired_seat_restoration_proof(jsonb,jsonb,timestamptz,timestamptz)','ada80c7f667ca7dad36cf223c80c3a6a'),('smarter_private.original_closed_tournament_rails_proof(jsonb,timestamptz)','a9319182a566e9917353765c414a1aa1'),('smarter_private.original_closed_player_proof(jsonb,timestamptz,timestamptz)','a441c3abe887cc4528268e347916d236'),('smarter_private.original_continued_chair_proof(jsonb,timestamptz,timestamptz)','8876018a8370a99f4012696cb264c740'),('smarter_private.original_returned_cash_base_proof(jsonb,timestamptz,timestamptz)','7ed06b6ccded0d6eb2bc3357742e360d'),('smarter_private.original_erased_cash_base_proof(jsonb,timestamptz)','a2d5ac28a5f07929ed99d6e871dddfa2'),('smarter_private.original_inventory_source_ref_md5(jsonb)','81fba77f13564999931e8a7a47cbd609'),('smarter_private.original_inventory_finite_witness(bigint)','0ef0a8a5b9e85633cf4bf8b0cd15c8d7'),('smarter_private.original_inventory_finite_family_proof(text,jsonb,timestamptz,timestamptz)','dd7861e20f4c90567a704cb2625962b8'),('smarter_private.original_erased_cash_base_request(bigint,text)','1467e44cc7f7871b34eff07f7038019d'),('public.fn_union_pnl_satellite_seat_owner(uuid,uuid)','3beddbfe1e3d204d1907b428d9358f08'),('public.fn_platform_frozen()','ec683805e052fceeae74789e82dce4cc'),('public.fn_active_maintenance_release_boundary()','05b537b57c9f51a5164e20a1cd0e67e0'),('smarter_private.original_inventory_case_insert_guard()','d9bcabf711efa4c81c0ae7567897b722'),('smarter_private.original_inventory_certificate_insert_guard()','d4956b2b4c0a58bb5dc57b35e3e884ce'),('smarter_private.original_inventory_restoration_immutable()','6c939d278f5fad857bd97437dfaa5f4d'),('smarter_private.certify_original_inventory_restoration(bigint,timestamptz)','f5db14badd4a6b07c0f4b82e2ec5cb1e'),('smarter_private.inventory_restoration_issue_accepted(jsonb,timestamptz)','fdba882b3557f6ffd1cc29129773ff04'),('public.fn_union_pnl_boundary(uuid,timestamptz)','5e4e878524a91518de209bc5e008db36'),('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)','0998b0c974aac59fbd4914eef394f1c7'),('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)','c4a17522149bfd879342ccc68dec98f9'),('smarter_private.inventory_basis_cache_read(text,boolean,text,uuid,timestamptz,timestamptz)','058d499ade9d0609f83cc07d551b7f35'),('smarter_private.inventory_basis_cache_write(text,text,uuid,timestamptz,timestamptz,jsonb)','2c3f0af276c29f33d09cdb7ecd86df6a'),('smarter_private.original_inventory_basis_generation()','58dc20e1ba380ccb9b9dee8809731d33'),('public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)','7b4a5f4572a45db069b6058899614021'),('public.fn_accounting_close_problem(text,uuid,timestamptz,timestamptz)','9667c8b8c5aa74bf2ad2c57fbfa3991d'),('public.fn_accounting_close_certify(text,uuid,timestamptz,timestamptz,jsonb)','58501728a93f9f4534dbf26d26aba63f'),('public.fn_union_pnl_inventory_as_of_admitted(timestamptz)','d65a33c20fb224c1dc2cc1ecb8168940'),('smarter_private.original_erased_cash_base_expected_hash(bigint)','afe5941dd7c4bbcccbfadc5d65a4f447'),('smarter_private.original_erased_cash_base_discharge_receipt(bigint,text)','f2c22efcfd9231094732ca82edff9101'),('smarter_private.original_erased_cash_base_discharge_evidence_valid(bigint,text,jsonb)','d4bc8b8d57c9037805a735bc1bb2be21'),('smarter_private.original_erased_cash_base_discharge(bigint,text)','9e6fcbf606004b81353a7704b50f072f'),('smarter_private.original_erased_cash_receivables(uuid,timestamptz)','0c53bd1f7fd7d22117af340ee02769d6'),('smarter_private.original_erased_cash_discharge_returns(uuid,timestamptz,timestamptz)','2a41fe7ccedc2947cf3ab84cead2493c'),('smarter_private.original_restoration_cash_returns(uuid,timestamptz,timestamptz)','e7cecf308d34108e12c0006029c1a3fa'),('public.fn_union_week_start(timestamptz)','103f192a228084dad0e4268c36c82c4b'),('smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz)','cefb154e19a245a5688dbc87fed141f5'),('public.fn_union_pnl_week_bbj_stack_awards(uuid,timestamptz,timestamptz)','faf875701e49db1cf99b481119e87404'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)','c9c79cce604c8f481772149fa2538ab2'),('smarter_private.original_treasury_witness_immutable()','f6326523741592230d149799b876e886'),('smarter_private.original_treasury_gift_evidence(uuid)','df84a641f40ee44d9db83e979398f9af'),('smarter_private.admit_original_treasury_gift(uuid)','07c857f67488e000ecbaf63e083c1c05'),('smarter_private.original_treasury_return_evidence(uuid)','3f2b8626b018cc5d22d9ebe9e6d3fb72'),('smarter_private.admit_original_treasury_return(uuid)','c51b45b085ac1a26f043711804ff8d00'),('smarter_private.cash_initial_funding_receipt(uuid)','e111dad7c0f5d5e3b74710053835caa4'),('smarter_private.original_treasury_participant_gift(jsonb,uuid,timestamptz)','95b9a25f9a422bb7d8df115f86bc5993'),('smarter_private.original_treasury_cash_outcome_evidence(jsonb)','12c94769bbcd6eb2c3349728cdc8512d'),('public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid)','4a7cee2cfecdf7a36446c169f754ccd0'),('public.fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid)','d01404c53405fd1826de26e58b04f4b1'),('public.fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamptz,timestamptz,boolean)','8269577929892d8634e32dcfac08ff77'),('public.fn_pnl_cash_hand_evidence(uuid,bigint)','43820fe60b759bd93f6838f908122c96'),('public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid)','1a5e66c29d3d36e41752589d59daa478'),('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)','2ba3a2891019b46e06b46b4c642e566a'),('public.fn_ca_cash_seat_club(uuid,uuid)','148f2246fc0ee3ab11cd86456765e419'),('public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean)','9dee2921c7b956281be61a3eb9d7df6e'),('smarter_private.weekly_hand_parts_read(uuid,timestamptz,timestamptz,text,boolean)','d427fd27d163ba72a7dc3cd50866163d'),('smarter_private.weekly_hand_parts_witness(uuid,timestamptz,timestamptz,boolean)','a3b1c75ad2b122dc0b0fede8a66813c8'),('public.fn_claim_entry_purchase_receipt(text,text,jsonb)','4a10a4e1cfd2794046a6cb8ad1463de6'),('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)','ad64ff6223a433108f4f3625de1be3be'),('smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid)','d768afe805ed480569b44ef107d15675'),('public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes)','a7c0b003d24f5ae64cf440ce94d52d93'))x(signature,body_md5) LEFT JOIN pg_proc p ON p.oid=to_regprocedure(x.signature);
 $function$
 ;
-DO $qualified$BEGIN IF smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true THEN PERFORM pg_catalog.set_config('search_path','pg_catalog',true);RAISE EXCEPTION 'treasury_qualified_original_sources_failed: %',(SELECT jsonb_agg(jsonb_build_object('signature',x.signature,'expected',x.body_md5,'actual',md5(pg_get_functiondef(p.oid)),'owner',p.proowner::regrole::text))FROM(VALUES ('public.fn_union_pnl_inventory_state(timestamptz,timestamptz)','d77f5ad055ee433875efed7fd53bd25a'),('public.fn_union_pnl_inventory_population(timestamptz,timestamptz)','449f6f13feefe0d7e26e767a3465bc67'),('public.fn_union_pnl_inventory_as_of(timestamptz)','85513ff85d2b37ad04b79f89e125f1aa'),('smarter_private.original_retirement_boundary_proof(jsonb,timestamptz,timestamptz)','56457798f46f7c06a32b0e52915740a0'),('smarter_private.original_paired_seat_restoration_proof(jsonb,jsonb,timestamptz,timestamptz)','ada80c7f667ca7dad36cf223c80c3a6a'),('smarter_private.original_closed_tournament_rails_proof(jsonb,timestamptz)','a9319182a566e9917353765c414a1aa1'),('smarter_private.original_closed_player_proof(jsonb,timestamptz,timestamptz)','a441c3abe887cc4528268e347916d236'),('smarter_private.original_continued_chair_proof(jsonb,timestamptz,timestamptz)','8876018a8370a99f4012696cb264c740'),('smarter_private.original_returned_cash_base_proof(jsonb,timestamptz,timestamptz)','7ed06b6ccded0d6eb2bc3357742e360d'),('smarter_private.original_erased_cash_base_proof(jsonb,timestamptz)','a2d5ac28a5f07929ed99d6e871dddfa2'),('smarter_private.original_inventory_source_ref_md5(jsonb)','81fba77f13564999931e8a7a47cbd609'),('smarter_private.original_inventory_finite_witness(bigint)','0ef0a8a5b9e85633cf4bf8b0cd15c8d7'),('smarter_private.original_inventory_finite_family_proof(text,jsonb,timestamptz,timestamptz)','dd7861e20f4c90567a704cb2625962b8'),('smarter_private.original_erased_cash_base_request(bigint,text)','1467e44cc7f7871b34eff07f7038019d'),('public.fn_union_pnl_satellite_seat_owner(uuid,uuid)','3beddbfe1e3d204d1907b428d9358f08'),('public.fn_platform_frozen()','ec683805e052fceeae74789e82dce4cc'),('public.fn_active_maintenance_release_boundary()','05b537b57c9f51a5164e20a1cd0e67e0'),('smarter_private.original_inventory_case_insert_guard()','d9bcabf711efa4c81c0ae7567897b722'),('smarter_private.original_inventory_certificate_insert_guard()','d4956b2b4c0a58bb5dc57b35e3e884ce'),('smarter_private.original_inventory_restoration_immutable()','6c939d278f5fad857bd97437dfaa5f4d'),('smarter_private.certify_original_inventory_restoration(bigint,timestamptz)','f5db14badd4a6b07c0f4b82e2ec5cb1e'),('smarter_private.inventory_restoration_issue_accepted(jsonb,timestamptz)','fdba882b3557f6ffd1cc29129773ff04'),('public.fn_union_pnl_boundary(uuid,timestamptz)','5e4e878524a91518de209bc5e008db36'),('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)','0998b0c974aac59fbd4914eef394f1c7'),('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)','c4a17522149bfd879342ccc68dec98f9'),('smarter_private.inventory_basis_cache_read(text,boolean,text,uuid,timestamptz,timestamptz)','058d499ade9d0609f83cc07d551b7f35'),('smarter_private.inventory_basis_cache_write(text,text,uuid,timestamptz,timestamptz,jsonb)','2c3f0af276c29f33d09cdb7ecd86df6a'),('smarter_private.original_inventory_basis_generation()','58dc20e1ba380ccb9b9dee8809731d33'),('public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)','7b4a5f4572a45db069b6058899614021'),('public.fn_accounting_close_problem(text,uuid,timestamptz,timestamptz)','9667c8b8c5aa74bf2ad2c57fbfa3991d'),('public.fn_accounting_close_certify(text,uuid,timestamptz,timestamptz,jsonb)','58501728a93f9f4534dbf26d26aba63f'),('public.fn_union_pnl_inventory_as_of_admitted(timestamptz)','d65a33c20fb224c1dc2cc1ecb8168940'),('smarter_private.original_erased_cash_base_expected_hash(bigint)','afe5941dd7c4bbcccbfadc5d65a4f447'),('smarter_private.original_erased_cash_base_discharge_receipt(bigint,text)','f2c22efcfd9231094732ca82edff9101'),('smarter_private.original_erased_cash_base_discharge_evidence_valid(bigint,text,jsonb)','d4bc8b8d57c9037805a735bc1bb2be21'),('smarter_private.original_erased_cash_base_discharge(bigint,text)','9e6fcbf606004b81353a7704b50f072f'),('smarter_private.original_erased_cash_receivables(uuid,timestamptz)','0c53bd1f7fd7d22117af340ee02769d6'),('smarter_private.original_erased_cash_discharge_returns(uuid,timestamptz,timestamptz)','2a41fe7ccedc2947cf3ab84cead2493c'),('smarter_private.original_restoration_cash_returns(uuid,timestamptz,timestamptz)','e7cecf308d34108e12c0006029c1a3fa'),('public.fn_union_week_start(timestamptz)','103f192a228084dad0e4268c36c82c4b'),('smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz)','cefb154e19a245a5688dbc87fed141f5'),('public.fn_union_pnl_week_bbj_stack_awards(uuid,timestamptz,timestamptz)','faf875701e49db1cf99b481119e87404'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)','c9c79cce604c8f481772149fa2538ab2'),('smarter_private.original_treasury_witness_immutable()','f6326523741592230d149799b876e886'),('smarter_private.original_treasury_gift_evidence(uuid)','df84a641f40ee44d9db83e979398f9af'),('smarter_private.admit_original_treasury_gift(uuid)','07c857f67488e000ecbaf63e083c1c05'),('smarter_private.original_treasury_return_evidence(uuid)','3f2b8626b018cc5d22d9ebe9e6d3fb72'),('smarter_private.admit_original_treasury_return(uuid)','c51b45b085ac1a26f043711804ff8d00'),('smarter_private.cash_initial_funding_receipt(uuid)','e111dad7c0f5d5e3b74710053835caa4'),('smarter_private.original_treasury_participant_gift(jsonb,uuid,timestamptz)','95b9a25f9a422bb7d8df115f86bc5993'),('smarter_private.original_treasury_cash_outcome_evidence(jsonb)','12c94769bbcd6eb2c3349728cdc8512d'),('public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid)','19f215ad6de3c236a20fe8709026b75b'),('public.fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid)','d01404c53405fd1826de26e58b04f4b1'),('public.fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamptz,timestamptz,boolean)','8269577929892d8634e32dcfac08ff77'),('public.fn_pnl_cash_hand_evidence(uuid,bigint)','43820fe60b759bd93f6838f908122c96'),('public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid)','1a5e66c29d3d36e41752589d59daa478'),('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)','2ba3a2891019b46e06b46b4c642e566a'),('public.fn_ca_cash_seat_club(uuid,uuid)','148f2246fc0ee3ab11cd86456765e419'),('public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean)','9dee2921c7b956281be61a3eb9d7df6e'),('smarter_private.weekly_hand_parts_read(uuid,timestamptz,timestamptz,text,boolean)','d427fd27d163ba72a7dc3cd50866163d'),('smarter_private.weekly_hand_parts_witness(uuid,timestamptz,timestamptz,boolean)','a3b1c75ad2b122dc0b0fede8a66813c8'),('public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes)','a7c0b003d24f5ae64cf440ce94d52d93'))x(signature,body_md5)LEFT JOIN pg_proc p ON p.oid=to_regprocedure(x.signature)WHERE p.oid IS NULL OR p.proowner<>'postgres'::regrole OR md5(pg_get_functiondef(p.oid))IS DISTINCT FROM x.body_md5);END IF;END$qualified$;
+DO $qualified$BEGIN IF smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true THEN PERFORM pg_catalog.set_config('search_path','pg_catalog',true);RAISE EXCEPTION 'treasury_qualified_original_sources_failed: %',(SELECT jsonb_agg(jsonb_build_object('signature',x.signature,'expected',x.body_md5,'actual',md5(pg_get_functiondef(p.oid)),'owner',p.proowner::regrole::text))FROM(VALUES ('public.fn_union_pnl_inventory_state(timestamptz,timestamptz)','d77f5ad055ee433875efed7fd53bd25a'),('public.fn_union_pnl_inventory_population(timestamptz,timestamptz)','449f6f13feefe0d7e26e767a3465bc67'),('public.fn_union_pnl_inventory_as_of(timestamptz)','85513ff85d2b37ad04b79f89e125f1aa'),('smarter_private.original_retirement_boundary_proof(jsonb,timestamptz,timestamptz)','56457798f46f7c06a32b0e52915740a0'),('smarter_private.original_paired_seat_restoration_proof(jsonb,jsonb,timestamptz,timestamptz)','ada80c7f667ca7dad36cf223c80c3a6a'),('smarter_private.original_closed_tournament_rails_proof(jsonb,timestamptz)','a9319182a566e9917353765c414a1aa1'),('smarter_private.original_closed_player_proof(jsonb,timestamptz,timestamptz)','a441c3abe887cc4528268e347916d236'),('smarter_private.original_continued_chair_proof(jsonb,timestamptz,timestamptz)','8876018a8370a99f4012696cb264c740'),('smarter_private.original_returned_cash_base_proof(jsonb,timestamptz,timestamptz)','7ed06b6ccded0d6eb2bc3357742e360d'),('smarter_private.original_erased_cash_base_proof(jsonb,timestamptz)','a2d5ac28a5f07929ed99d6e871dddfa2'),('smarter_private.original_inventory_source_ref_md5(jsonb)','81fba77f13564999931e8a7a47cbd609'),('smarter_private.original_inventory_finite_witness(bigint)','0ef0a8a5b9e85633cf4bf8b0cd15c8d7'),('smarter_private.original_inventory_finite_family_proof(text,jsonb,timestamptz,timestamptz)','dd7861e20f4c90567a704cb2625962b8'),('smarter_private.original_erased_cash_base_request(bigint,text)','1467e44cc7f7871b34eff07f7038019d'),('public.fn_union_pnl_satellite_seat_owner(uuid,uuid)','3beddbfe1e3d204d1907b428d9358f08'),('public.fn_platform_frozen()','ec683805e052fceeae74789e82dce4cc'),('public.fn_active_maintenance_release_boundary()','05b537b57c9f51a5164e20a1cd0e67e0'),('smarter_private.original_inventory_case_insert_guard()','d9bcabf711efa4c81c0ae7567897b722'),('smarter_private.original_inventory_certificate_insert_guard()','d4956b2b4c0a58bb5dc57b35e3e884ce'),('smarter_private.original_inventory_restoration_immutable()','6c939d278f5fad857bd97437dfaa5f4d'),('smarter_private.certify_original_inventory_restoration(bigint,timestamptz)','f5db14badd4a6b07c0f4b82e2ec5cb1e'),('smarter_private.inventory_restoration_issue_accepted(jsonb,timestamptz)','fdba882b3557f6ffd1cc29129773ff04'),('public.fn_union_pnl_boundary(uuid,timestamptz)','5e4e878524a91518de209bc5e008db36'),('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)','0998b0c974aac59fbd4914eef394f1c7'),('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)','c4a17522149bfd879342ccc68dec98f9'),('smarter_private.inventory_basis_cache_read(text,boolean,text,uuid,timestamptz,timestamptz)','058d499ade9d0609f83cc07d551b7f35'),('smarter_private.inventory_basis_cache_write(text,text,uuid,timestamptz,timestamptz,jsonb)','2c3f0af276c29f33d09cdb7ecd86df6a'),('smarter_private.original_inventory_basis_generation()','58dc20e1ba380ccb9b9dee8809731d33'),('public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)','7b4a5f4572a45db069b6058899614021'),('public.fn_accounting_close_problem(text,uuid,timestamptz,timestamptz)','9667c8b8c5aa74bf2ad2c57fbfa3991d'),('public.fn_accounting_close_certify(text,uuid,timestamptz,timestamptz,jsonb)','58501728a93f9f4534dbf26d26aba63f'),('public.fn_union_pnl_inventory_as_of_admitted(timestamptz)','d65a33c20fb224c1dc2cc1ecb8168940'),('smarter_private.original_erased_cash_base_expected_hash(bigint)','afe5941dd7c4bbcccbfadc5d65a4f447'),('smarter_private.original_erased_cash_base_discharge_receipt(bigint,text)','f2c22efcfd9231094732ca82edff9101'),('smarter_private.original_erased_cash_base_discharge_evidence_valid(bigint,text,jsonb)','d4bc8b8d57c9037805a735bc1bb2be21'),('smarter_private.original_erased_cash_base_discharge(bigint,text)','9e6fcbf606004b81353a7704b50f072f'),('smarter_private.original_erased_cash_receivables(uuid,timestamptz)','0c53bd1f7fd7d22117af340ee02769d6'),('smarter_private.original_erased_cash_discharge_returns(uuid,timestamptz,timestamptz)','2a41fe7ccedc2947cf3ab84cead2493c'),('smarter_private.original_restoration_cash_returns(uuid,timestamptz,timestamptz)','e7cecf308d34108e12c0006029c1a3fa'),('public.fn_union_week_start(timestamptz)','103f192a228084dad0e4268c36c82c4b'),('smarter_private.union_pnl_original_flow_evidence_window(uuid,timestamptz,timestamptz,timestamptz,timestamptz)','cefb154e19a245a5688dbc87fed141f5'),('public.fn_union_pnl_week_bbj_stack_awards(uuid,timestamptz,timestamptz)','faf875701e49db1cf99b481119e87404'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)','c9c79cce604c8f481772149fa2538ab2'),('smarter_private.original_treasury_witness_immutable()','f6326523741592230d149799b876e886'),('smarter_private.original_treasury_gift_evidence(uuid)','df84a641f40ee44d9db83e979398f9af'),('smarter_private.admit_original_treasury_gift(uuid)','07c857f67488e000ecbaf63e083c1c05'),('smarter_private.original_treasury_return_evidence(uuid)','3f2b8626b018cc5d22d9ebe9e6d3fb72'),('smarter_private.admit_original_treasury_return(uuid)','c51b45b085ac1a26f043711804ff8d00'),('smarter_private.cash_initial_funding_receipt(uuid)','e111dad7c0f5d5e3b74710053835caa4'),('smarter_private.original_treasury_participant_gift(jsonb,uuid,timestamptz)','95b9a25f9a422bb7d8df115f86bc5993'),('smarter_private.original_treasury_cash_outcome_evidence(jsonb)','12c94769bbcd6eb2c3349728cdc8512d'),('public.fn_horse_seat_from_treasury(uuid,uuid,integer,numeric,uuid)','4a7cee2cfecdf7a36446c169f754ccd0'),('public.fn_cash_record_original_funding(text,text,uuid,uuid,uuid,uuid,uuid,numeric,numeric,uuid)','d01404c53405fd1826de26e58b04f4b1'),('public.fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamptz,timestamptz,boolean)','8269577929892d8634e32dcfac08ff77'),('public.fn_pnl_cash_hand_evidence(uuid,bigint)','43820fe60b759bd93f6838f908122c96'),('public.fn_cash_capture_hand_manifest(uuid,bigint,jsonb,text,uuid)','1a5e66c29d3d36e41752589d59daa478'),('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)','2ba3a2891019b46e06b46b4c642e566a'),('public.fn_ca_cash_seat_club(uuid,uuid)','148f2246fc0ee3ab11cd86456765e419'),('public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean)','9dee2921c7b956281be61a3eb9d7df6e'),('smarter_private.weekly_hand_parts_read(uuid,timestamptz,timestamptz,text,boolean)','d427fd27d163ba72a7dc3cd50866163d'),('smarter_private.weekly_hand_parts_witness(uuid,timestamptz,timestamptz,boolean)','a3b1c75ad2b122dc0b0fede8a66813c8'),('public.fn_claim_entry_purchase_receipt(text,text,jsonb)','4a10a4e1cfd2794046a6cb8ad1463de6'),('public.fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)','ad64ff6223a433108f4f3625de1be3be'),('smarter_private.original_treasury_seat_money_core(uuid,uuid,integer,numeric,uuid)','d768afe805ed480569b44ef107d15675'),('public.fn_union_pnl_cash_outcome_accepted(public.union_pnl_cash_outcomes)','a7c0b003d24f5ae64cf440ce94d52d93'))x(signature,body_md5)LEFT JOIN pg_proc p ON p.oid=to_regprocedure(x.signature)WHERE p.oid IS NULL OR p.proowner<>'postgres'::regrole OR md5(pg_get_functiondef(p.oid))IS DISTINCT FROM x.body_md5);END IF;END$qualified$;
 COMMIT;

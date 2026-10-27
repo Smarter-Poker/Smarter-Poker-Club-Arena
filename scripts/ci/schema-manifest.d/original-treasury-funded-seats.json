@@ -13,6 +13,7 @@
     "smarter_private.admit_original_treasury_return",
     "smarter_private.cash_initial_funding_receipt",
     "smarter_private.original_treasury_participant_gift",
-    "smarter_private.original_treasury_cash_outcome_evidence"
+    "smarter_private.original_treasury_cash_outcome_evidence",
+    "smarter_private.original_treasury_seat_money_core"
   ]
 }

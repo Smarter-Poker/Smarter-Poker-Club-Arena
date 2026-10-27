@@ -76,6 +76,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-original-hands.py --reader-composition scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-readers.py --output "${{ runner.temp }}/treasury-financial-owners"
+      - name: Old queued treasury entry resumes through the current atomic leaf
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/common-leaf/run-queued-native.py --output "${{ runner.temp }}/treasury-queued-old-leaf"
       - name: Earned windows retain every complete hand cardinality
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

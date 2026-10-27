@@ -8,7 +8,7 @@ SET LOCAL timezone='UTC';
 DO $admit$
 DECLARE c record;p jsonb;g numeric:=0;r numeric:=0;gn int:=0;rn int:=0;
 BEGIN
- IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true OR position('count(*)=62' IN pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure))=0 THEN RAISE EXCEPTION 'original62_treasury_authority_required';END IF;
+ IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true OR position('count(*)=65' IN pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure))=0 THEN RAISE EXCEPTION 'original65_treasury_authority_required';END IF;
  FOR c IN SELECT * FROM(VALUES
 ('1b4eab8b-d46d-4f54-a825-340d50d9e6e2'::uuid,'gift',200.0::numeric,'2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid,'29199f64-bb8e-40ce-994b-651a7af38567'::uuid),
 ('68e2c834-49cb-4917-aa9d-95355b0cebfc'::uuid,'return',628.65::numeric,'2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid,'29199f64-bb8e-40ce-994b-651a7af38567'::uuid),

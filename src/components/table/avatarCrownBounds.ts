@@ -218,3 +218,38 @@ export function paintedAvatarTop(image: HTMLImageElement): number {
   const box = image.getBoundingClientRect();
   return box.top + box.height * avatarCrownTop(image.currentSrc || image.src);
 }
+
+/**
+ * Seat placement must not capture a breathing/gesture frame. Project the
+ * image's static bust framing from layout coordinates instead. The visible
+ * avatar keeps playing every animation; only its pod's baseline is stable.
+ */
+export function avatarRestPose(image: HTMLImageElement): string {
+  const wrap = image.closest<HTMLElement>('.seat__avatar-wrap');
+  return wrap ? getComputedStyle(wrap).getPropertyValue('--sp-avatar-rest-transform').trim() : '';
+}
+
+export function restingAvatarTop(image: HTMLImageElement, scale: number): number {
+  const seat = image.closest<HTMLElement>('.seat');
+  const wrap = image.closest<HTMLElement>('.seat__avatar-wrap');
+  if (!seat || !wrap || !image.offsetHeight) return paintedAvatarTop(image);
+  let y = image.offsetHeight * avatarCrownTop(image.currentSrc || image.src);
+  let element: HTMLElement | null = image;
+  while (element && element !== seat) {
+    const style = getComputedStyle(element);
+    // The image owns permanent bust scale/clip. Ancestors own temporary
+    // active/winner scales and gestures, never the pod's resting geometry.
+    const transform =
+      element === image ? style.transform : element === wrap ? avatarRestPose(image) : '';
+    if (transform && transform !== 'none') {
+      const matrix = new DOMMatrix(transform);
+      const originY = parseFloat(style.transformOrigin.split(' ')[1]) || 0;
+      y = originY + (y - originY) * matrix.d + matrix.f;
+    }
+    const parent = element.offsetParent as HTMLElement | null;
+    y += element.offsetTop + (parent?.clientTop || 0);
+    element = parent;
+  }
+  // Detached/non-seat fixtures retain their rendered-box projection.
+  return element === seat ? seat.getBoundingClientRect().top + y * scale : paintedAvatarTop(image);
+}

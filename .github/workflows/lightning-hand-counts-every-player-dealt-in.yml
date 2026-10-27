@@ -28,6 +28,12 @@ on:
       - server/src/services/supabase/handFacts.ts
       - supabase/migrations/*_lightning_top_up_original_intents_finish_at_the_final_hand_*.sql
       - scripts/ci/test-lightning-topup-postgres.py
+      - supabase/migrations/*_lightning_retains_the_anchor_until_every_original_hand_is_te.sql
+      - scripts/ci/test-lightning-unsettled-anchor-exit.py
+      - scripts/ci/fixtures/lightning-unsettled-anchor-preimages.json
+      - supabase/migrations/*_lightning_plo4_pool_recovers_after_the_unsettled_anchor_exit*.sql
+      - scripts/ci/test-lightning-void-recovery.py
+      - scripts/ci/fixtures/lightning-void-recovery-unfreeze.sql
       - scripts/ci/fixtures/lightning-topup-*.json
       - server/src/GameServer.ts
       - server/src/lightning/LightningHandHost.ts
@@ -101,6 +107,30 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-lightning-topup-postgres.py --output artifacts/lightning-topup
+      - name: Lightning departure retains every unsettled original anchor
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-unsettled-anchor-exit.py --output artifacts/lightning-unsettled-anchor
+      - name: Retain the unsettled anchor regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning-unsettled-anchor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/lightning-unsettled-anchor/RESULTS.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Lightning void recovery uses the original money-neutral door
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-void-recovery.py --output artifacts/lightning-void-recovery
+      - name: Retain the guarded void recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning-void-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/lightning-void-recovery/RESULTS.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Retain the original top-up regression evidence
         if: always()
         uses: actions/upload-artifact@v4

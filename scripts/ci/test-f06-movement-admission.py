@@ -13,6 +13,7 @@ sys.dont_write_bytecode = True
 from satellite_qualifier_fixture import module, sha, function_sql
 
 MIGRATION = 'supabase/migrations/20260918095135_parked_tournament_movement_requires_canonical_custody.sql'
+PARK_CREATED = 'supabase/migrations/20261027150946_tournament_park_grace_survives_manager_custody_changes.sql'
 DECIDED = 'supabase/migrations/20260922152219_a_decided_hand_does_not_hold_a_parked_table.sql'
 PROBE = 'scripts/ci/probes/f06-movement-admission.sql'
 SPEC = 'scripts/ci/probes/f06-movement-admission.spec'
@@ -241,6 +242,78 @@ def decided_installer_refusal(e, db, root, fixture):
                                            'atomic_rollback': True})
 
 
+def park_created_probe(root):
+    """Retain the existing public movement proof and add original-age evidence."""
+    probe = (root / PROBE).read_text()
+    start = probe.index('-- The original custody RPC')
+    end = probe.index('-- A DECIDED HAND', start)
+    block = probe[start:end]
+    block = block.replace('a jsonb; b jsonb; BEGIN',
+                          'a jsonb; b jsonb; original_age timestamptz; original_state jsonb; BEGIN')
+    needle = " PERFORM public.fn_f06_claim_custody(o.tournament_id"
+    checks = """ original_age:=o.created_at;
+ original_state:=smarter_private.f06_state(o.break_id);
+ IF (original_state->>'park_created_at')::timestamptz IS DISTINCT FROM original_age THEN
+  RAISE EXCEPTION 'PARK_CREATED_AT_MISSING_OR_CHANGED'; END IF;
+ RAISE NOTICE 'PARK_CREATED_AT_PASS: original exact timestamp';
+"""
+    block = block.replace(needle, checks + needle, 1)
+    needle = " a:=pg_temp.movement_admit("
+    checks = """ IF (smarter_private.f06_state(o.break_id)->>'park_created_at')::timestamptz IS DISTINCT FROM original_age
+    OR (SELECT created_at FROM smarter_private.f06_operations WHERE break_id=o.break_id) IS DISTINCT FROM original_age THEN
+  RAISE EXCEPTION 'PARK_CREATED_AT_RESET_BY_CUSTODY'; END IF;
+ RAISE NOTICE 'PARK_CREATED_AT_PASS: custody replacement retains original exact timestamp';
+"""
+    block = block.replace(needle, checks + needle, 1)
+    needle = " PERFORM pg_temp.assert_movement(a=b"
+    checks = """ IF (smarter_private.f06_state(o.break_id)->>'park_created_at')::timestamptz IS DISTINCT FROM original_age THEN
+  RAISE EXCEPTION 'PARK_CREATED_AT_RESET_BY_ADMISSION'; END IF;
+ RAISE NOTICE 'PARK_CREATED_AT_PASS: admitted and replayed movement retains original exact timestamp';
+"""
+    block = block.replace(needle, checks + needle, 1)
+    needle = " RAISE EXCEPTION 'FIXTURE_FLOW_ROLLBACK';"
+    checks = """ PERFORM public.fn_f06_claim_custody(o.tournament_id,'b7500000-0000-4000-8000-000000000004',
+  o.break_id,'b7700000-0000-4000-8000-000000000005',1);
+ original_state:=smarter_private.f06_state(o.break_id);
+ IF (original_state->>'park_created_at')::timestamptz IS DISTINCT FROM original_age
+    OR original_state->>'custody_id'<>'b7700000-0000-4000-8000-000000000005'
+    OR original_state->>'revision'<>'2' THEN
+  RAISE EXCEPTION 'PARK_CREATED_AT_RESET_BY_SUCCESSOR'; END IF;
+ RAISE NOTICE 'PARK_CREATED_AT_PASS: new successor custody retains original exact timestamp';
+"""
+    block = block.replace(needle, checks + needle, 1)
+    if block.count('PARK_CREATED_AT_PASS:') != 4:
+        raise ValueError('exact age/custody probe binding differs')
+    return probe[:start] + block + probe[end:]
+
+
+def qualify_park_created(e, db, root, fixture):
+    # Only the newly added assertion is expected to fail on the exact predecessor;
+    # that psql connection closes with its synthetic transaction rolled back.
+    code, _, err = e.sql(db, file=e.output / 'park-created-public-flow.sql', label='park-created-before', check=False, seconds=120)
+    if code == 0 or 'PARK_CREATED_AT_MISSING_OR_CHANGED' not in err:
+        raise RuntimeError('original state reader did not reproduce missing park age')
+    e.report['park_created_before'] = 'PARK_CREATED_AT_MISSING_OR_CHANGED'
+    case = e.database(db)
+    e.sql(case, "ALTER FUNCTION smarter_private.f06_state(uuid) SET work_mem='64kB';", label='park-created-preimage-drift')
+    before = e.catalog_snapshot(case, 'park-created-refusal-before')
+    private = fixture.private_snapshot(e, case, 'park-created-refusal-private-before')
+    code, _, err = e.sql(case, file=root / PARK_CREATED, label='park-created-preimage-refusal', check=False)
+    if code == 0 or 'F06_PARK_CREATED_AT_PREIMAGE_DRIFT' not in err:
+        raise RuntimeError('park age installer accepted a changed owner')
+    if (e.catalog_snapshot(case, 'park-created-refusal-after') != before
+            or fixture.private_snapshot(e, case, 'park-created-refusal-private-after') != private):
+        raise RuntimeError('park age refused installer changed state or authority')
+    e.discard(case)
+    before = e.snapshot(db, 'park-created-install-before-data')
+    private = fixture.private_snapshot(e, db, 'park-created-install-before-private')['data']
+    e.sql(db, file=root / PARK_CREATED, label='park-created-install')
+    if (e.snapshot(db, 'park-created-install-after-data') != before
+            or fixture.private_snapshot(e, db, 'park-created-install-after-private')['data'] != private):
+        raise RuntimeError('park age metadata installer changed business data')
+    e.report['park_created_install'] = {'preimage_refusal_atomic': True, 'business_data_unchanged': True}
+
+
 def qualify_races(e, root, native, db):
     spec = (root / SPEC).read_text()
     permutations = re.findall(r'^permutation .+$', spec, re.M)
@@ -274,13 +347,14 @@ def main():
         raise ValueError('executed movement owner differs from source binding')
     fixture = module(root / 'scripts/ci/test-f06-accepted-elimination.py', 'movement_fixture')
     manifest = fixture.prepare(root, out)
-    manifest['source_sha256'].update({p: sha(root / p) for p in [MIGRATION, DECIDED, PROBE, SPEC, OPENING, RECEIPT, AUTHORITIES, PUBLIC_F06, DEPENDENCY_FUNCTIONS, DEPENDENCY_CATALOG, FINAL_RELATIONS, PRIVATE, CONTROL, CONTINUATION, RESULT_TEST, 'scripts/ci/test-f06-movement-admission.py']})
+    manifest['source_sha256'].update({p: sha(root / p) for p in [MIGRATION, DECIDED, PARK_CREATED, PROBE, SPEC, OPENING, RECEIPT, AUTHORITIES, PUBLIC_F06, DEPENDENCY_FUNCTIONS, DEPENDENCY_CATALOG, FINAL_RELATIONS, PRIVATE, CONTROL, CONTINUATION, RESULT_TEST, 'scripts/ci/test-f06-movement-admission.py']})
     if dependency_preflight(root) not in (root / MIGRATION).read_text():
         raise ValueError('movement installer dependencies differ from actual captured graph')
     (out / 'movement-catalog.sql').write_text(movement_catalog(root))
     (out / 'source-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    (out / 'park-created-public-flow.sql').write_text(park_created_probe(root))
     native = module(root / 'scripts/ci/test-mtt-unlimited.py', 'movement_execution')
-    e = native.Execution(root, out, args.pg_bin.resolve(), out, 600)
+    e = native.Execution(root, out, args.pg_bin.resolve(), out, 600, socket_parent=out.parent)
     e.report.update(source_sha256=manifest['source_sha256'], fixture_identity='real-canonical-hand-and-eliminated-source')
     for sig in native.CANCELLATION_SIGNALS:
         signal.signal(sig, native.interrupted)
@@ -305,12 +379,16 @@ def main():
         e.sql(db, file=root / MIGRATION, label='movement-admission-install')
         decided_installer_refusal(e, db, root, fixture)
         e.sql(db, file=root / DECIDED, label='decided-hand-movement-install')
+        qualify_park_created(e, db, root, fixture)
         before = e.snapshot(db, 'before-probe-data')
         catalog = e.catalog_snapshot(db, 'before-probe-catalog')
         private = fixture.private_snapshot(e, db, 'before-probe-private')
-        code, stdout, stderr = e.sql(db, file=root / PROBE, label='movement-public-flow', check=False, seconds=120)
+        code, stdout, stderr = e.sql(db, file=out / 'park-created-public-flow.sql', label='movement-public-flow', check=False, seconds=120)
         e.report.update(case_output=stdout, case_errors=stderr)
         validate_probe(code, stdout, stderr)
+        if stderr.count('PARK_CREATED_AT_PASS:') != 4:
+            raise RuntimeError('all four exact original age assertions required')
+        e.report['park_created_assertions'] = 4
         if e.snapshot(db, 'after-probe-data') != before or e.catalog_snapshot(db, 'after-probe-catalog') != catalog or fixture.private_snapshot(e, db, 'after-probe-private') != private:
             raise RuntimeError('movement qualification did not fully roll back')
         e.report.update(assertions=stderr.count('MOVEMENT PASS:'), data_rollback=True, catalog_rollback=True)

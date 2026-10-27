@@ -1,0 +1,20 @@
+[
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "858f5b0c0fc52bec310b8a6630ee5b44",
+    "owner": "postgres",
+    "config": ["search_path=public, extensions"],
+    "signature": "fn_horse_seat_from_treasury_before_maintenance_gate(uuid,uuid,integer,numeric,uuid)",
+    "volatility": "v",
+    "security_definer": true
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "md5": "0d1183a2a50441a6a582ea2e5cbb5d2a",
+    "owner": "postgres",
+    "config": ["search_path=public, pg_temp"],
+    "signature": "fn_claim_entry_purchase_receipt(text,text,jsonb)",
+    "volatility": "v",
+    "security_definer": true
+  }
+]

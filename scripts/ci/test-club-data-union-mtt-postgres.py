@@ -5,6 +5,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,10 +156,10 @@ try:
     require(before == after and before.count('"fee"') > 0, "union reads counted once return exactly the figures they replaced")
     # Owner 2026-10-26: arbitrary-depth downlines, exact per-user totals,
     # and refusal of the whole report/union for every agent rank.
-    # Pin setup and assertions to one reporting day. The fixture session is UTC;
-    # after UTC midnight CURRENT_DATE is tomorrow for Chicago and the real
-    # reader correctly clamps it away, producing a false zero-total failure.
-    report_day = q("live", "SELECT (now() AT TIME ZONE 'America/Chicago')::date")
+    # Setup and authenticated assertions use separate connections. Bind their
+    # shared reporting date once in Chicago, including across local midnight.
+    # UTC CURRENT_DATE can be tomorrow, which the real reader clamps away.
+    report_day = date.fromisoformat(q("live", "SELECT (now() AT TIME ZONE 'America/Chicago')::date::text")).isoformat()
     boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text().replace("@REPORT_DAY@", report_day)
     setup, checks = boundary.split("-- AFTER MIGRATION", 1)
     run(psql("live"), setup)

@@ -1,3 +1,3 @@
 # tests/the-horse-roster-keeps-its-rules.law.test.ts
 
-The latest October23 owner instruction opens all games to the full registered active horse fleet while preserving existing schedules. Fixed cash/PLO rosters, performance history and variant/stake/persona gates do not restrict eligibility. Bankroll, membership and normal player admission remain authoritative. Pin the last SQL definitions and engine schedule wiring.
+The October 26 owner instruction supersedes full-fleet cash eligibility: the strongest half of measured cash performers may play cash, in every club and variant. The entire daily cash occupancy schedule and total cluster table ceiling are halved. Preserve tournament eligibility, ordinary bankroll and player safeguards, schedules, existing hand settlement and safe exits. No new repair loop or scheduler.

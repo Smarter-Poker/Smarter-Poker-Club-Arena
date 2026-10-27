@@ -121,6 +121,13 @@ export const HAND_COMPLETION = {
    * reads no horse marker and is the same for every table.
    */
   ALL_IN_SHOWDOWN_EXTRA_MS: 2000,
+  /** Owner 2026-10-26: extra winning-card display AFTER identification.
+   * Keep SHOWDOWN_READ_BASE_MS unchanged: the engine also uses that value
+   * to delay pot_win, which first identifies and highlights the winning five.
+   * Increasing both that delay and the total hold would cancel the extra
+   * highlighted-card time. RIT reads instead gain this time per board below.
+   */
+  WINNING_CARDS_EXTRA_MS: 1500,
   /** A big multiway showdown must still not stall the table forever. */
   SHOWDOWN_READ_MAX_MS: 2200,
   /**
@@ -399,7 +406,8 @@ export const HAND_COMPLETION = {
    * beat, the ship, and a settle before the next run takes the stage
    * (measured ~2.5-3.2s per run in the reference).
    */
-  RIT_RESULT_RUN_MS: 2600,
+  // Owner 2026-10-26: each board gets the same additional 1500ms read.
+  RIT_RESULT_RUN_MS: 4100,
 } as const;
 
 /**
@@ -509,7 +517,7 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
     return t.doneAt + push + allInTail;
   }
 
-  return read + push + allInTail;
+  return read + push + allInTail + H.WINNING_CARDS_EXTRA_MS;
 }
 
 /**

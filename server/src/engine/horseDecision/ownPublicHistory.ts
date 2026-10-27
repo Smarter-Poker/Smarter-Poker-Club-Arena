@@ -14,6 +14,7 @@ import {
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_BYTES = 256 * 1024;
 const MAX_HANDS = 64;
+export const HORSE_HISTORY_RETRY_COOLDOWN_MS = 60_000;
 let activeLoads = 0;
 const actions = new Set([
   'fold',
@@ -278,7 +279,12 @@ export function ownPublicHistoryIsValid(
 export class HorseOwnPublicHistoryCache {
   private readonly entries = new Map<
     string,
-    { packet?: HorseOwnPublicHistoryPacket; acknowledged: boolean; settled: boolean }
+    {
+      packet?: HorseOwnPublicHistoryPacket;
+      acknowledged: boolean;
+      settled: boolean;
+      retryAfterMs: number;
+    }
   >();
 
   constructor(
@@ -296,21 +302,34 @@ export class HorseOwnPublicHistoryCache {
     const key = horseObserverReadContextKey(context);
     if (!key || !clock(cutoffMs)) return undefined;
     const known = this.entries.get(key);
-    if (known)
+    if (known && (!known.settled || known.packet || cutoffMs < known.retryAfterMs))
       return known.packet && !known.acknowledged && known.packet.availableAtMs <= cutoffMs
         ? structuredClone(known.packet)
         : undefined;
     if (activeLoads >= 16) return undefined;
-    if (this.entries.size >= this.maxEntries)
+    if (!known && this.entries.size >= this.maxEntries)
       this.entries.delete(this.entries.keys().next().value!);
-    const entry: { packet?: HorseOwnPublicHistoryPacket; acknowledged: boolean; settled: boolean } =
-      { acknowledged: false, settled: false };
+    const entry: {
+      packet?: HorseOwnPublicHistoryPacket;
+      acknowledged: boolean;
+      settled: boolean;
+      retryAfterMs: number;
+    } = {
+      acknowledged: false,
+      settled: false,
+      retryAfterMs: cutoffMs + HORSE_HISTORY_RETRY_COOLDOWN_MS,
+    };
     this.entries.set(key, entry);
     activeLoads++;
     const settle = () => {
       if (entry.settled) return;
       entry.settled = true;
       activeLoads--;
+      try {
+        entry.retryAfterMs = this.now() + HORSE_HISTORY_RETRY_COOLDOWN_MS;
+      } catch {
+        /* retain request boundary */
+      }
     };
     try {
       void this.load(Object.freeze({ ...context }))

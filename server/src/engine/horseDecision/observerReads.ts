@@ -48,6 +48,7 @@ type Entry = {
   historyAckDigest?: string;
   completedHandIds?: Set<string>;
   pendingCompletions?: ObserveCompletedHandRequest[];
+  historyTailCapped?: boolean;
 };
 /** Individual memory with owner-authorized public aggregate notes.
  * Pooled notes carry separate provenance and are never labelled independent. A missing
@@ -180,58 +181,69 @@ export class HorseObserverReads {
     } catch {
       entry.historyError = true;
     }
-    entry.pendingCompletions = [];
   }
   private hydrate(entry: Entry, packet: HorseOwnPublicHistoryPacket): void {
     entry.historyAckDigest = packet.digest; // acknowledgement is not a loaded-history claim
     if (
-      entry.historyPhase !== 'pending' ||
+      entry.historyPhase === 'loaded' ||
       !ownPublicHistoryIsValid(packet, entry.context, packet.availableAtMs)
     )
       return;
     // Pending turns retain plans in the real entry, but observe into temporary
     // views. Historical observations therefore precede live tails, and no
     // already-counted recent hand is reclassified as older data arriving last.
-    const staged = structuredClone(entry.state);
+    // Rebuild observations in chronological order after a failed initial load.
+    // Plans remain on the original state; only public observation fields merge.
+    const staged = HorseMind.createSandbox();
     const ids = new Set<string>();
+    const observations: Array<{ at: number; hand: ObserveCompletedHandRequest }> = [];
     const pending = new Map(
       (entry.pendingCompletions ?? []).map((hand) => [hand.committedHandId!.toLowerCase(), hand])
     );
     for (const h of packet.hands) {
       ids.add(h.handId);
       const live = pending.get(h.handId);
-      // The original bound live completion has public showdown evidence that
-      // the optional history category read may lack. Learn it once at this
-      // hand's chronological position, rather than marking incomplete history
-      // done and then discarding the richer live completion as a duplicate.
+      // Preserve the original bound live showdown evidence at its historical
+      // position; optional history categories can contain less information.
       if (live?.handKey === `${h.tableId}:${h.handNumber}`) {
-        this.learnPublic(entry, staged, live);
+        observations.push({ at: h.playedAtMs, hand: live });
         continue;
       }
-      this.learnPublic(entry, staged, {
-        type: 'OBSERVE_COMPLETED_HAND',
-        requestId: 0,
-        generation: h.handNumber,
-        // Historical learning has no current lease or plan authority.
-        fence: '',
-        handKey: `${h.tableId}:${h.handNumber}`,
-        committedHandId: h.handId,
-        bigBlind: h.bigBlind,
-        actions: h.actions,
-        results: h.results ?? undefined,
-        showdown: null,
-        ...(h.riverCalls === undefined
-          ? {}
-          : {
-              riverCallContext: { variant: h.variant, boardCount: 1 },
-              retainedRiverCalls: h.riverCalls,
-            }),
+      observations.push({
+        at: h.playedAtMs,
+        hand: {
+          type: 'OBSERVE_COMPLETED_HAND',
+          requestId: 0,
+          generation: h.handNumber,
+          // Historical learning has no current lease or plan authority.
+          fence: '',
+          handKey: `${h.tableId}:${h.handNumber}`,
+          committedHandId: h.handId,
+          bigBlind: h.bigBlind,
+          actions: h.actions,
+          results: h.results ?? undefined,
+          showdown: null,
+          ...(h.riverCalls === undefined
+            ? {}
+            : {
+                riverCallContext: { variant: h.variant, boardCount: 1 },
+                retainedRiverCalls: h.riverCalls,
+              }),
+        },
       });
     }
     for (const hand of entry.pendingCompletions ?? []) {
-      if (!ids.has(hand.committedHandId!)) this.learnPublic(entry, staged, hand);
+      if (!ids.has(hand.committedHandId!))
+        observations.push({
+          at: Math.max(0, ...(hand.actions ?? []).map((a) => a.timestamp ?? 0)),
+          hand,
+        });
       ids.add(hand.committedHandId!);
     }
+    observations.sort(
+      (a, b) => a.at - b.at || a.hand.committedHandId!.localeCompare(b.hand.committedHandId!)
+    );
+    for (const { hand } of observations) this.learnPublic(entry, staged, hand);
     if (
       staged.stats.size > 512 ||
       staged.seenActions.size > 8192 ||
@@ -242,7 +254,7 @@ export class HorseObserverReads {
       (staged.winnerReads?.rows.size ?? 0) > 512 ||
       (staged.winnerReads?.seen.size ?? 0) > 8192
     ) {
-      this.flushPending(entry);
+      if (entry.historyPhase === 'pending') this.flushPending(entry);
       entry.historyPhase = 'unavailable';
       return;
     }
@@ -251,11 +263,12 @@ export class HorseObserverReads {
     entry.completedHandIds = ids;
     entry.pendingCompletions = [];
     entry.historyPhase = 'loaded';
+    entry.historyError = false;
     entry.history = {
       digest: packet.digest,
       availableAtMs: packet.availableAtMs,
       hands: packet.hands.length,
-      capped: packet.capped,
+      capped: packet.capped || entry.historyTailCapped === true,
     };
     entry.observedAt = Math.max(entry.observedAt, packet.availableAtMs);
   }
@@ -314,6 +327,7 @@ export class HorseObserverReads {
         historyEntry.historyPhase = undefined;
         historyEntry.historyAckDigest = undefined;
         historyEntry.historyError = false;
+        historyEntry.historyTailCapped = false;
         historyEntry.completedHandIds = new Set();
         historyEntry.pendingCompletions = [];
       }
@@ -346,7 +360,7 @@ export class HorseObserverReads {
         try {
           this.hydrate(historyEntry, request.ownPublicHistory);
         } catch {
-          this.flushPending(historyEntry);
+          if (historyEntry.historyPhase === 'pending') this.flushPending(historyEntry);
           historyEntry.historyError = true;
           historyEntry.historyPhase = 'unavailable';
         }
@@ -486,19 +500,28 @@ export class HorseObserverReads {
       const id = request.committedHandId.toLowerCase();
       if (entry.completedHandIds?.has(id)) continue;
       (entry.completedHandIds ??= new Set()).add(id);
-      if (entry.historyPhase === 'pending') {
+      if (entry.historyPhase !== 'loaded') {
         const tail = this.publicCopy(request);
         (entry.pendingCompletions ??= []).push(tail);
+        const wasPending = entry.historyPhase === 'pending';
         if (
           entry.pendingCompletions.length > 64 ||
           Buffer.byteLength(JSON.stringify(entry.pendingCompletions)) > 256 * 1024
         ) {
-          this.flushPending(entry);
+          if (entry.historyPhase === 'pending') this.flushPending(entry);
           entry.historyPhase = 'unavailable';
+          while (
+            entry.pendingCompletions.length > 64 ||
+            Buffer.byteLength(JSON.stringify(entry.pendingCompletions)) > 256 * 1024
+          )
+            entry.pendingCompletions.shift();
+          entry.historyTailCapped = true;
         }
-        entry.observedAt = Math.max(entry.observedAt, this.now());
-        learned++;
-        continue;
+        if (wasPending) {
+          entry.observedAt = Math.max(entry.observedAt, this.now());
+          learned++;
+          continue;
+        }
       }
       HorseMind.runInSandbox(entry.state, () => {
         const mode = entry.context.format === 'cash' ? 'cash' : 'tournament';

@@ -33,7 +33,9 @@ def timestamp(value):
 def parse_logs(raw,started):
     if len(raw)>MAX_BYTES:raise ValueError('log_bound')
     start=timestamp(started);rows={}
-    for line in raw.decode('utf8',errors='strict').splitlines():
+    lines=raw.decode('utf8',errors='strict').splitlines()
+    if len(lines)>20000:raise ValueError('log_line_bound')
+    for line in lines:
         match=re.fullmatch(r'(\S+) \[HorseDecisionWorker\] shard ([0-7]) (.+)',line)
         if not match:continue
         at=timestamp(match[1]);index=int(match[2]);body=match[3]
@@ -71,7 +73,7 @@ def remote(source):
     image=bounded(['docker','image','inspect','--format','{{index .Config.Labels "org.opencontainers.image.revision"}}',before[1]],4096).decode().strip()
     if image!=source:raise ValueError('image_identity')
     until=datetime.datetime.fromtimestamp(timestamp(before[4])+120,datetime.timezone.utc).isoformat()
-    rows=parse_logs(bounded(['docker','logs','--timestamps','--since',before[4],'--until',until,'--tail','20000',before[0]]),before[4])
+    rows=parse_logs(bounded(['docker','logs','--timestamps','--since',before[4],'--until',until,before[0]]),before[4])
     if identity()!=before or health()!=instance:raise ValueError('identity_changed')
     return {'version':1,'status':'observed','sourceSha':source,'instanceId':instance,'containerId':before[0],'containerStartedAt':before[4],'startupIntervalSeconds':120,'workersReadyAtObservation':8,'shards':rows,'readyMessageOrder':'not_logged','cacheAdmission':'unknown','completePopulation':False,'allPhasesVerified':False}
 

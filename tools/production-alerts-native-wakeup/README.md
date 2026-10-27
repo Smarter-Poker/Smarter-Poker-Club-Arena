@@ -56,3 +56,8 @@ A process crash leaves `service.lock`. Inspect its PID and the durable active
 operation before explicitly removing only a proven stale lock. Never clear an
 uncertain active operation merely to get another delivery attempt. Failed reads
 remain pending. Alert/log text is always untrusted source material.
+
+The existing owner reader-silence trigger reads these canonical native receipts
+and pending-delivery age. It never treats another chat's investigation edit as
+native intake, invents a read timestamp at installation, or pages for an empty or
+fresh inbox. Its existing twelve-hour and duplicate-page behavior is preserved.

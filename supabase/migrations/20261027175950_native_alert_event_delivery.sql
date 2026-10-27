@@ -122,4 +122,52 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_ack_native_alert(uuid[],uuid) TO service_
 INSERT INTO public.ca_browser_definer_allowlist(proname,reason) VALUES
  ('fn_ca_native_alert_capability','Receive-only native alert capability verifier used by ca_native_alert_receive on realtime.messages. Requires the fixed random256-bit Vault/Keychain receive credential; returns only possession boolean, never secret material, schema, operator metrics, alerts or write authority.'),
  ('fn_ca_native_alert_pending','Native receive credential is required before any read. Returns at most32 opaque wake UUIDs plus acknowledgement for caller-supplied opaque IDs, no original inbox IDs or contents. Full evidence and acknowledgement remain service-only; no public client key alone can observe pending state.');
+
+DO $reader_preimage$
+BEGIN
+  IF md5(pg_get_functiondef('public.fn_ca_owner_route_reader_silence()'::regprocedure)) IS DISTINCT FROM '8168687b9e9d4440a4c8a3c3773243da' THEN
+    RAISE EXCEPTION 'native reader silence source changed; review current owner';
+  END IF;
+END $reader_preimage$;
+CREATE INDEX ca_native_alert_read_receipt ON smarter_private.ca_native_alert_deliveries(read_at DESC)
+ WHERE read_at IS NOT NULL AND reader_task_id='01a09b86-5ba8-7290-8657-1041f13dd3ca';
+CREATE OR REPLACE FUNCTION public.fn_ca_owner_route_reader_silence()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'pg_catalog','public' AS $function$
+DECLARE
+  c_silence CONSTANT interval := interval '12 hours';
+  c_title CONSTANT text := 'Production Alerts Has Stopped Reading';
+  v_last timestamptz;
+  v_oldest_pending timestamptz;
+  v_basis timestamptz;
+  v_waiting integer;
+BEGIN
+  -- Only actual complete native intake receipts count. An investigation edit
+  -- by another chat cannot establish that the canonical consumer ran.
+  SELECT max(d.read_at) INTO v_last FROM smarter_private.ca_native_alert_deliveries d
+   WHERE d.reader_task_id='01a09b86-5ba8-7290-8657-1041f13dd3ca' AND d.read_at IS NOT NULL;
+  SELECT min(d.created_at),count(*) INTO v_oldest_pending,v_waiting
+    FROM smarter_private.ca_native_alert_deliveries d WHERE d.read_at IS NULL;
+  IF v_oldest_pending IS NULL THEN RETURN NULL; END IF;
+  -- A quiet inbox is not a broken reader. On first install, the first actual
+  -- pending delivery starts the observation interval; it is never called read.
+  v_basis:=greatest(v_oldest_pending,coalesce(v_last,v_oldest_pending));
+  IF v_basis > now()-c_silence THEN RETURN NULL; END IF;
+  IF EXISTS (SELECT 1 FROM public.notifications n
+    WHERE n.user_id=NEW.recipient_user_id AND n.type='system'
+      AND n.title=c_title AND n.created_at>v_basis) THEN RETURN NULL; END IF;
+  PERFORM public.fn_raise_notification(
+    NEW.recipient_user_id,'system',c_title,
+    format('Production Alerts has %s unread inbox event(s). Last complete native intake: %s. Oldest unread event: %s UTC. The latest: %s',
+      v_waiting,coalesce(to_char(v_last AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI')||' UTC','not recorded'),
+      to_char(v_oldest_pending AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI'),
+      left(coalesce(NEW.original_notification->>'title','an owner alert'),200)),
+    '/hub/club-arena/financial-incidents',
+    jsonb_build_object('source','owner-route-reader-silence','last_read_at',v_last,
+      'oldest_unread_at',v_oldest_pending,'waiting',v_waiting,'notification_id',NEW.notification_id));
+  RETURN NULL;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'fn_ca_owner_route_reader_silence failed for %: %',NEW.notification_id,SQLERRM;
+  RETURN NULL;
+END;
+$function$;
 COMMIT;

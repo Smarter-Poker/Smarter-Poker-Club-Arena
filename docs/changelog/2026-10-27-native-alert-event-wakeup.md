@@ -23,3 +23,11 @@ and automatic live event/read/ack remain separate required delivery evidence.
 
 This repairs intake delivery only. It does not establish the original 09:12 lease
 expiry cause, resolve financial incidents, or certify the engine source fixes live.
+
+The existing reader-silence notification now measures complete canonical native
+read receipts and actual pending-event age. An unrelated investigation edit no
+longer establishes reader liveness; successful native ACKs no longer look silent.
+Fresh or empty intake is not called stalled. The exact retained production
+preimage reproduces both incorrect verdicts in isolated PostgreSQL; the actual
+replacement preserves the twelve-hour threshold and one-page-per-silence rule.
+Its preimage assertion refuses an unreviewed concurrent source change.

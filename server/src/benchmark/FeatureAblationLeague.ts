@@ -1,3 +1,9 @@
+import {
+  authenticateIncrementalPlan,
+  incrementalQualificationRules,
+  isIncrementalQualificationTarget,
+  TOURNAMENT_RESERVED_HOLDOUT_SEEDS,
+} from './IncrementalPressureQualification.js';
 /** Shared physical, after-rake flag-ablation runner. Development evidence only
  * until a separately protected, locked experiment supplies its exact matrix.
  * This module has no production writer or policy activation capability. */
@@ -224,6 +230,7 @@ export async function runFeatureAblationDevelopment(
     (V53_PRESSURE_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     (INCREMENTAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     (ADDITIONAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    (TOURNAMENT_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     request.reservedSeeds?.includes(seed)
   )
     throw new Error('Development never deals a held-out or invalid seed');
@@ -255,20 +262,52 @@ export async function runFeatureAblationContract(
   onPair?: (record: FeatureAblationPairRecord) => void | Promise<void>,
   shouldContinue = () => true
 ): Promise<FeatureAblationResult & { mode: 'contract' }> {
-  assertAblationArms(spec);
   const {
     qualificationPlan,
     qualificationPlanDigest,
     assertProtectedFeatureAblationSource,
     featureQualificationCanonical: canonical,
   } = await import('./FeatureAblationQualification.js');
+  const { INCREMENTAL_FLAGS } = await import('./IncrementalPressureDevelopment.js');
+  const keys = Object.keys(spec.candidate);
+  const target =
+    keys.length === 5
+      ? 'pressure_package'
+      : keys[0] === 'v24PloDefense'
+        ? 'plo6_v24'
+        : keys[0] === 'v53Pressure'
+          ? 'v53_pressure'
+          : Object.entries(INCREMENTAL_FLAGS).find(([, flag]) => flag === keys[0])?.[0];
   if (
-    !Object.hasOwn(spec.candidate, 'v24PloDefense') &&
-    !Object.hasOwn(spec.candidate, 'v53Pressure')
+    !target ||
+    (!isIncrementalQualificationTarget(target) &&
+      target !== 'plo6_v24' &&
+      target !== 'v53_pressure')
   )
-    throw new Error('Incremental candidate has no protected locked heldout plan');
-  const target = Object.hasOwn(spec.candidate, 'v24PloDefense') ? 'plo6_v24' : 'v53_pressure';
+    throw Error('Incremental candidate has no protected locked heldout plan');
+  if (target === 'pressure_package') {
+    const rules = incrementalQualificationRules(target);
+    if (
+      canonical(spec.candidate) !== canonical(rules.flags.candidate) ||
+      canonical(spec.reference) !== canonical(rules.flags.reference) ||
+      spec.population !== rules.population
+    )
+      throw Error('Unregistered package');
+    assertAblationArms({
+      ...spec,
+      candidate: { comboDrawPressure: true },
+      reference: { comboDrawPressure: false },
+    });
+  } else assertAblationArms(spec);
   const plan = qualificationPlan(target);
+  if (isIncrementalQualificationTarget(target)) {
+    const { isActualFeatureAblationWorker } = await import('./FeatureAblationWorker.js');
+    if (
+      !isActualFeatureAblationWorker(spec.brain) ||
+      spec.population !== incrementalQualificationRules(target).population
+    )
+      throw Error('Incremental original worker/population required');
+  }
   const cell = plan.matrix.find((c) => c.key === request.cellKey);
   const profile = plan.profiles.find((p) => p.id === cell?.profileId);
   if (
@@ -306,6 +345,7 @@ export async function runFeatureAblationContract(
   if (canonical(spec.profile) !== canonical(expected))
     throw new Error('Contract physical profile changed');
   assertProtectedFeatureAblationSource(plan);
+  await authenticateIncrementalPlan(plan);
   if (typeof authorizedGuard !== 'function')
     throw new Error('Original provider authorization unavailable');
   await authorizedGuard();

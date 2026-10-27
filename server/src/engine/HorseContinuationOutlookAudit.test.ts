@@ -1,3 +1,4 @@
+import { acceptedContinuationOutlook } from '../benchmark/FeatureAblationWorker.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HorseLogic, type HorseDecideOpts } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
@@ -88,6 +89,49 @@ describe('a planned turn barrel retains its private river outlook', () => {
       good: expect.arrayContaining(['6h']),
     });
     expect(after.effects.some((e) => e.type === 'plan')).toBe(false);
+    const request = {
+      player: after.hero,
+      gameState: after.gs,
+      opts: { barrelContinuationOutlook: true },
+    } as Parameters<typeof acceptedContinuationOutlook>[0];
+    expect(
+      acceptedContinuationOutlook(
+        request,
+        after.effects,
+        'COMMIT_DECISION_EFFECTS',
+        'applied_volatile'
+      )
+    ).toBe(true);
+    expect(
+      acceptedContinuationOutlook(
+        request,
+        before.effects,
+        'COMMIT_DECISION_EFFECTS',
+        'applied_volatile'
+      )
+    ).toBe(false);
+    expect(
+      acceptedContinuationOutlook(request, after.effects, 'RETIRE_DECISION_EFFECTS', 'retired')
+    ).toBe(false);
+    expect(
+      acceptedContinuationOutlook(
+        { ...request, opts: { barrelContinuationOutlook: false } },
+        after.effects,
+        'COMMIT_DECISION_EFFECTS',
+        'applied_volatile'
+      )
+    ).toBe(false);
+    expect(
+      acceptedContinuationOutlook(
+        request,
+        [
+          ...after.effects,
+          { type: 'plan', handKey: after.key, userId: 'hero', barrelIntent: true },
+        ],
+        'COMMIT_DECISION_EFFECTS',
+        'applied_volatile'
+      )
+    ).toBe(false);
     expect(HorseMind.getPlan(after.key, 'hero')).toBe(true);
     expect(HorseMind.outlookOf(after.key, 'hero', 'turn', '6h')).toBeUndefined();
     HorseMind.applyDecisionEffects(after.effects);

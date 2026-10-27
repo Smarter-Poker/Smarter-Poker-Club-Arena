@@ -16,9 +16,18 @@ import { positionForOffset } from '../engine/plo4/Plo4PolicyPack.js';
 import type { FeatureAblationResult } from './FeatureAblationLeague.js';
 import { PLO6_V24_DEVELOPMENT_DESIGN } from './Plo6V24Qualification.js';
 import { V53_PRESSURE_RESERVED_HOLDOUT_SEEDS } from './PressureQualificationContract.js';
+import {
+  incrementalComponentCoverage,
+  assertIncrementalWorkerFlags,
+  incrementalQualificationRules,
+  isIncrementalQualificationTarget,
+} from './IncrementalPressureQualification.js';
 import { V53_PRESSURE_POPULATION_ID } from './V53PressurePopulation.js';
 
-export type FeatureAblationTarget = 'plo6_v24' | 'v53_pressure';
+export type LegacyFeatureAblationTarget = 'plo6_v24' | 'v53_pressure';
+export type FeatureAblationTarget =
+  | LegacyFeatureAblationTarget
+  | import('./IncrementalPressureDevelopment.js').IncrementalTarget;
 export type FeatureVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6';
 export interface FeatureQualificationProfile {
   id: string;
@@ -37,7 +46,7 @@ export interface FeatureQualificationCell {
   pairs: number;
 }
 export interface FeatureAblationQualificationPlan {
-  schema: 'horse-feature-ablation-plan-v1';
+  schema: 'horse-feature-ablation-plan-v1' | 'horse-incremental-ablation-plan-v2';
   version: string;
   state: 'heldout_locked';
   target: FeatureAblationTarget;
@@ -184,13 +193,17 @@ function positive(n: unknown) {
   return int(n) && n > 0;
 }
 export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificationPlan): string[] {
+  const incremental = isIncrementalQualificationTarget(p?.target)
+    ? incrementalQualificationRules(p.target)
+    : null;
   const reasons: string[] = [];
   const bad = (s: string) => reasons.push(s);
   if (
     !p ||
-    p.schema !== 'horse-feature-ablation-plan-v1' ||
+    p.schema !==
+      (incremental ? 'horse-incremental-ablation-plan-v2' : 'horse-feature-ablation-plan-v1') ||
     p.state !== 'heldout_locked' ||
-    !['plo6_v24', 'v53_pressure'].includes(p.target) ||
+    (!incremental && !['plo6_v24', 'v53_pressure'].includes(p.target)) ||
     !p.version
   )
     return ['heldout_plan_not_locked'];
@@ -232,22 +245,28 @@ export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificatio
     bad('controlled_public_pool_input');
   const flag = p.target === 'plo6_v24' ? 'v24PloDefense' : 'v53Pressure';
   if (
-    !equal(p.flags, {
-      candidate: { [flag]: true },
-      reference: { [flag]: false },
-    })
+    !equal(
+      p.flags,
+      incremental?.flags ?? {
+        candidate: { [flag]: true },
+        reference: { [flag]: false },
+      }
+    )
   )
     bad('one_flag_contrast');
   if (
     p.population !==
-    (p.target === 'v53_pressure' ? V53_PRESSURE_POPULATION_ID : 'current_horse_production_styles')
+    (incremental?.population.id ??
+      (p.target === 'v53_pressure'
+        ? V53_PRESSURE_POPULATION_ID
+        : 'current_horse_production_styles'))
   )
     bad('population');
   if (
     !equal(p.clock, {
       policyDateMs: Date.UTC(2026, 9, 26),
       publicHistoryAvailableAtMs: Date.UTC(2026, 9, 25, 23),
-      warmSeed: 24307777,
+      warmSeed: incremental?.warmSeed ?? 24307777,
     })
   )
     bad('clock');
@@ -266,9 +285,10 @@ export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificatio
   )
     bad('mandatory_critical_cells');
   const seeds =
-    p.target === 'plo6_v24'
+    incremental?.seeds ??
+    (p.target === 'plo6_v24'
       ? PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds
-      : V53_PRESSURE_RESERVED_HOLDOUT_SEEDS;
+      : V53_PRESSURE_RESERVED_HOLDOUT_SEEDS);
   if (!equal(p.heldoutSeeds, seeds)) bad('unregistered_holdout_seeds');
   if (
     !Array.isArray(p.profiles) ||
@@ -278,7 +298,10 @@ export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificatio
   for (const v of variants(p.target)) {
     const ps = p.profiles.filter((x) => x.variant === v);
     if (
-      !equal(ps.map((x) => `${x.seats}:${x.stackBB}`).sort(), [...SHAPES].sort()) ||
+      !equal(
+        ps.map((x) => `${x.seats}:${x.stackBB}`).sort(),
+        [...(incremental?.shapes ?? SHAPES)].sort()
+      ) ||
       !ps.every((x) => x.id && Number.isFinite(x.weight) && x.weight > 0) ||
       !ps.every((x) => x.weight === ps[0]?.weight)
     )
@@ -343,6 +366,7 @@ export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificatio
       )
         bad('coverage_minima:' + profile.id);
     }
+  if (incremental) reasons.push(...incremental.validate(p));
   return [...new Set(reasons)];
 }
 function freeze<T>(v: T): T {
@@ -355,9 +379,14 @@ function freeze<T>(v: T): T {
 export function qualificationPlan(
   target: FeatureAblationTarget
 ): Readonly<FeatureAblationQualificationPlan> {
-  if (!['plo6_v24', 'v53_pressure'].includes(target))
+  if (!isIncrementalQualificationTarget(target) && !['plo6_v24', 'v53_pressure'].includes(target))
     throw Error('Unknown feature qualification target');
-  const file = new URL('./FeatureAblationQualificationPlans.json', import.meta.url);
+  const file = new URL(
+    isIncrementalQualificationTarget(target)
+      ? './IncrementalPressureQualificationPlans.json'
+      : './FeatureAblationQualificationPlans.json',
+    import.meta.url
+  );
   let registry: Record<string, FeatureAblationQualificationPlan>;
   try {
     registry = JSON.parse(readFileSync(file, 'utf8'));
@@ -487,9 +516,7 @@ export function validateFeatureAblationCell(
       bad('evaluation_counter_shape:' + arm);
   }
   const expectedReceipts =
-    plan.target === 'v53_pressure'
-      ? r.candidateHeroDecisions + r.referenceHeroDecisions
-      : r.decisions;
+    plan.target !== 'plo6_v24' ? r.candidateHeroDecisions + r.referenceHeroDecisions : r.decisions;
   if (
     !e.execution ||
     Object.keys(e.execution).some(
@@ -504,6 +531,23 @@ export function validateFeatureAblationCell(
     e.execution.sampledWorkerReceipts.length > expectedReceipts
   )
     bad('actual_validated_fast_receipts_missing');
+  if (isIncrementalQualificationTarget(plan.target)) {
+    try {
+      for (const receipt of e.execution?.sampledWorkerReceipts ?? []) {
+        if (
+          !receipt ||
+          typeof receipt !== 'object' ||
+          !('inputFlags' in receipt) ||
+          !receipt.inputFlags ||
+          typeof receipt.inputFlags !== 'object'
+        )
+          throw Error('missing flags');
+        assertIncrementalWorkerFlags(plan.target, receipt.inputFlags as Record<string, unknown>);
+      }
+    } catch {
+      bad('incremental_actual_worker_flags');
+    }
+  }
   if (e.rawPairCount !== cell.pairs || !digest(e.rawPairsSha256) || !digest(r.pairDigest))
     bad('raw_pair_binding');
   const profile = plan.profiles.find((p) => p.id === cell.profileId)!;
@@ -621,7 +665,7 @@ export function summarizeFeatureAblationQualification(
           position
         )
       ),
-      ...[40, 100, 200].map((depth) =>
+      ...[...new Set(profiles.map((p) => p.stackBB))].map((depth) =>
         statistic(
           `${variant}:depth:${depth}`,
           profiles.filter((p) => p.stackBB === depth)
@@ -681,9 +725,22 @@ export function summarizeFeatureAblationQualification(
     byVariant,
     opportunityDenominator: 'not_measured',
     scope:
-      plan.target === 'v53_pressure'
+      plan.target !== 'plo6_v24'
         ? 'Registered after-rake contrast against the versioned adversarial stress workload; not calibrated human or market profitability'
         : 'Registered PLO6 V24 after-rake contrast against current horse production styles; not absolute profitability',
+    ...(isIncrementalQualificationTarget(plan.target)
+      ? {
+          componentApplicability: plan.profiles.map((p) => ({
+            profile: p.id,
+            components: incrementalComponentCoverage(
+              plan.target as import('./IncrementalPressureDevelopment.js').IncrementalTarget,
+              p.seats
+            ),
+          })),
+          componentScope:
+            'Package qualification is only the exact combined contrast; no individual component qualification is inferred from pooled effects',
+        }
+      : {}),
     intervalScope:
       'Original per-cell 99 percent intervals; every registered critical cell must clear its original trust/nonregression gate',
   };

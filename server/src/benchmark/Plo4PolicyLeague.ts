@@ -756,6 +756,16 @@ export async function playPlo4PolicyHand(
       }
       if (ablation && !(hero.seat !== heroSeat && ablation.population)) {
         await ablation.brain.accepted?.(selected, acceptedRecords);
+        // Accepted-effect evidence is emitted only after the controller and
+        // original worker ACK agree. The pre-action drain already consumed
+        // ordinary evaluation counters, so these cannot be counted twice.
+        const acceptedCounters = ablation.brain.takeEvaluationFires?.() ?? {};
+        const acceptedTarget =
+          hero.seat === heroSeat
+            ? receipt.ablationEvaluationFires!.hero
+            : receipt.ablationEvaluationFires!.opponents;
+        for (const [feature, count] of Object.entries(acceptedCounters))
+          acceptedTarget[feature] = (acceptedTarget[feature] ?? 0) + count;
         for (const [disposition, count] of Object.entries(
           ablation.brain.takePlanDispositions?.() ?? {}
         ))

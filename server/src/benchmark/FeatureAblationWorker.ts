@@ -92,6 +92,28 @@ export function validateFeatureAblationPlanAck(
     throw Error(`Offline plan refused: ${response.planDisposition ?? 'missing'}`);
   return response.planDisposition;
 }
+/** The only existing turn-outlook producer without a new plan is the
+ * continuation repair. Count only its exact accepted, applied original effect. */
+export function acceptedContinuationOutlook(
+  request: Pick<FastHorseDecisionRequest, 'opts' | 'player' | 'gameState'>,
+  effects: FastHorseDecisionResult['effects'],
+  operation: string,
+  disposition: string
+): boolean {
+  const own = effects.filter((e) => 'userId' in e && e.userId === request.player.user_id);
+  return (
+    request.opts?.barrelContinuationOutlook === true &&
+    request.gameState.stage === 'turn' &&
+    operation === 'COMMIT_DECISION_EFFECTS' &&
+    disposition === 'applied_volatile' &&
+    own.some((e) => e.type === 'outlook' && e.street === 'turn') &&
+    !own.some((e) => e.type === 'plan')
+  );
+}
+const actualFeatureWorkers = new WeakSet<object>();
+export function isActualFeatureAblationWorker(value: object): boolean {
+  return actualFeatureWorkers.has(value);
+}
 export function createFeatureAblationWorker(
   onReceipt: (r: FeatureAblationWorkerReceipt) => void = () => {},
   onPlanResolved: (disposition: string, effects: number) => void = () => {},
@@ -176,13 +198,20 @@ export function createFeatureAblationWorker(
         fence: request.fence,
         operation,
       });
+      if (
+        collectEvaluationFires &&
+        acceptedContinuationOutlook(request, result.effects, operation, disposition)
+      ) {
+        evaluationFires.barrel_continuation_outlook_accepted =
+          (evaluationFires.barrel_continuation_outlook_accepted ?? 0) + 1;
+      }
       planDispositions[disposition] = (planDispositions[disposition] ?? 0) + result.effects.length;
       onPlanResolved(disposition, result.effects.length);
     } finally {
       pending = undefined;
     }
   };
-  return {
+  const brain: Plo4AblationBrain = {
     id: 'current-worker-original-observer-controlled-crn-v1',
     takePlanDispositions() {
       const out = planDispositions;
@@ -418,4 +447,6 @@ export function createFeatureAblationWorker(
       }
     },
   };
+  actualFeatureWorkers.add(brain);
+  return brain;
 }

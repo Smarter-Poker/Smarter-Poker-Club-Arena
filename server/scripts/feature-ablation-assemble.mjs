@@ -819,7 +819,19 @@ function sourceAuthority(sourceSha) {
   return server;
 }
 async function lockedContract(target, sourceSha) {
-  if (!['plo6_v24', 'v53_pressure'].includes(target)) throw new Error('unknown_target');
+  if (
+    ![
+      'plo6_v24',
+      'v53_pressure',
+      'combo_draw_pressure',
+      'targeted_river_bluff',
+      'river_position_defense',
+      'river_bluff_checkraise',
+      'barrel_continuation_outlook',
+      'pressure_package',
+    ].includes(target)
+  )
+    throw new Error('unknown_target');
   const server = sourceAuthority(sourceSha),
     contract = await import(
       pathToFileURL(path.join(server, 'src/benchmark/FeatureAblationQualification.ts')).href
@@ -842,6 +854,12 @@ async function lockedContract(target, sourceSha) {
     Number(process.env.GITHUB_RUN_ATTEMPT) > plan.maxAttempts
   )
     throw new Error('contract_attempt_bound');
+  if (plan.schema === 'horse-incremental-ablation-plan-v2') {
+    const incremental = await import(
+      pathToFileURL(path.join(server, 'src/benchmark/IncrementalPressureQualification.ts')).href
+    );
+    await incremental.authenticateIncrementalPlan(plan);
+  }
   return { contract, plan, planDigest };
 }
 async function main(argv) {
@@ -895,6 +913,11 @@ async function main(argv) {
   if (!args.runs) throw new Error('runs_required');
   const runs = path.resolve(String(args.runs)),
     attempts = [];
+  if (plan.schema === 'horse-incremental-ablation-plan-v2') {
+    const { authenticateFeatureArtifacts } =
+      await import('./feature-ablation-artifact-custody.mjs');
+    await authenticateFeatureArtifacts(runs, plan.target, provider.run.id);
+  }
   // Read metadata first, then incomplete prefixes, then complete runs. Each
   // raw file is streamed once; prior valid-row counts become hash checkpoints.
   const records = readdirSync(runs)

@@ -1,4 +1,4 @@
--- @live-proof: md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='88d62643e1e2a96e1bb58daa7a032f36' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='adcb4312740429737a2880721ff5e4a1' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 DO $pre$ BEGIN
@@ -6,7 +6,7 @@ DO $pre$ BEGIN
 END $pre$;
 CREATE FUNCTION smarter_private.deleted_reserve_certificate_payers(p_calculation bigint)
 RETURNS TABLE(payer_kind text,payer_user uuid,payer_entity uuid,owed numeric)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $function$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $function$
 DECLARE cert_tid tid;cert_xid text;v_contracts_version text;cached jsonb;cache_oid oid;
 BEGIN
  -- Re-read physical row versions on every call. xmin alone is insufficient:
@@ -121,5 +121,5 @@ BEGIN
 END;
 $function$;
 REVOKE ALL ON FUNCTION smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)FROM PUBLIC,anon,authenticated,service_role;
-DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='88d62643e1e2a96e1bb58daa7a032f36' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261')THEN RAISE EXCEPTION 'deleted_reserve_reuse_postimage_changed';END IF;END $post$;
+DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='adcb4312740429737a2880721ff5e4a1' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261')THEN RAISE EXCEPTION 'deleted_reserve_reuse_postimage_changed';END IF;END $post$;
 COMMIT;

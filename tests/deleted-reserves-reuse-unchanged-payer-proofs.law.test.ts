@@ -40,6 +40,9 @@ describe('deleted reserves retain original authority while reusing unchanged out
       'CREATE OR REPLACE FUNCTION smarter_private.rakeback_certificate_payers'
     );
     expect(sql).toContain('FROM PUBLIC,anon,authenticated,service_role');
+    expect(sql).toContain('SET search_path=pg_catalog,public,pg_temp');
+    for (const n of ['pg_class', 'pg_attribute', 'pg_trigger', 'pg_rewrite'])
+      expect(sql).toContain('pg_catalog.' + n);
   });
   it('executes native original owners, invalidation and concurrent lock proof in the accounting shard', () => {
     expect(text('scripts/dev/test-agent-accounting-statements.sh')).toContain(

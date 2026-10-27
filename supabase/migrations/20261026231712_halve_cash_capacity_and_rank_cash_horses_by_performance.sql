@@ -380,7 +380,7 @@ BEGIN
     v_actions := v_actions || jsonb_build_object('lifecycle_followed_status', v_n);
   END IF;
 
-  UPDATE public.tables SET status = 'closed', current_players = 0, updated_at = now()
+  UPDATE public.tables SET status = 'closed', lifecycle = 'closed', current_players = 0, updated_at = now()
    WHERE cluster_id = g.id AND lifecycle = 'closed' AND status <> 'closed'
      AND coalesce(is_deleted, false) = false
      AND NOT EXISTS (SELECT 1 FROM public.table_seats ts WHERE ts.table_id = public.tables.id AND ts.left_at IS NULL);

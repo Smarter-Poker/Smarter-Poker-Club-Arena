@@ -48,6 +48,7 @@ FROM scoped_refusals s JOIN public.accounting_cash_source_receipts r ON r.id=s.i
 END $function$
 ;
 
+REVOKE ALL ON FUNCTION public.fn_cash_source_refusals_for_period(uuid,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
 DO $verify$
 DECLARE p pg_proc%ROWTYPE;
 BEGIN

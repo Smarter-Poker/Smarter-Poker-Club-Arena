@@ -3043,11 +3043,13 @@ export abstract class TournamentManagerBase {
     // A decided field is served from the decided lane (requestDecidedEliminationSweep),
     // never the one-slot consolidation lane: 208 decided Spins marked consolidating
     // starved every real consolidation on 2026-10-01 (aDecidedFieldDoesNotHoldTheConsolidationLane).
-    const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
-    if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
+    // A committed wake belongs to this manager even before its scheduler
+    // registration can accept it. Registration admits its own first pass;
+    // retaining the reason here lets that pass serve the original receipt.
+    if (Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));
     }
-    return accepted;
+    return tournamentEliminationScheduler.wake(this.tournamentId);
   }
 
   /**

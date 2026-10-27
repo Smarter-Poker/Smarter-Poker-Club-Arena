@@ -1478,6 +1478,30 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8357",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: two original fresh raw completeness assertions totaled166.440seconds and exhausted a guarded remaining-player payout attempt. Actual plan already used the raw positive-week cover but seqscanned all3.7m accrual-batch heap rows (~4GiB) only for identity/status; no existing batch index covered both,99.66percent all-visible. This exact nonpartial nonunique status cover preserves the original0df assertion body, authorization, fresh checks twice, metadata, financial rules, source pins, paid math/cache identity and budgets. Native actual whole owner24cases/full qualifying ID sets,9auth/input cases,7catalog faults including real INVALID CCI, frozen/rollback/replay and real2sessionMVCC visibility fallback passed; unchanged query naturally chose IndexOnlyScan with zero heap fetches in the bounded fixture. Root installed exact qualified bytes once through the maintained active-outage concurrent route while hosted checks pending. This is the very next source recording after verified installation; actual original production timing and remaining player credits/no-double readback remain separate proof."
+    },
+    {
+      "version": "20261027171556",
+      "name": "zero_rakeback_receipts_need_no_player_wallet",
+      "file": "supabase/migrations/20261027171556_zero_rakeback_receipts_need_no_player_wallet.sql",
+      "md5": "01d82114dfe8cfc016f540020663a2bc",
+      "appliedToProductionAt": "2026-10-27T17:22:49.404Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained one-transaction installer; exact full-file history/R3 postimage/all metadata/ACL and unchanged original financial source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8341",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original guarded rollback reached R3 but its player wallet cohort included one certified zero-entitlement pending period without a current membership, blocking every positive payout. This migration changes only that original temporary wallet cohort SELECT to WHERE owed>0. Zero entitlement still closes through the original certificate/source and zero paid-receipt path, without a wallet or chips; positive wallet admission, funding, invoice, conservation, held-player discharge, atomicity and replay remain unchanged. Actual original whole R2/R3/discharge family46cases passed, including old-fails/new-passes regression, no zero wallet or financial leg, original positive monetary assertions and concurrent commits. All original pg_proc metadata/ACL preserved. No R2 reset, source-pin renewal, math/certificate/cache retag or data repair. Exact source installed through maintained active-outage route while hosted checks pending. This is the VERY NEXT source recording after exact verified installation; actual R3 payment/wallet no-double readback remain separate proof."
+    },
+    {
+      "version": "20261027175926",
+      "name": "rakeback_batches_honor_the_original_close_deadline",
+      "file": "supabase/migrations/20261027175926_rakeback_batches_honor_the_original_close_deadline.sql",
+      "md5": "c00c36efb241676ec7fae4ecbddef191",
+      "appliedToProductionAt": "2026-10-27T18:09:45.943Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file installer; full-file history and R3 owner body/metadata/ACL plus original source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8352",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original R3 starts a fresh90-second payment slice even when the existing attempt deadline has nearly elapsed, so mandatory postlude/deferred validation can lose all progress at the hard statement timeout. This exact owner now clamps only chunked batches to the original existing deadline. No new budget, reserve, cap, loop, source/math/cache retag or financial condition is introduced; each atomic period and every unchanged postlude/deferred check still completes. Native45 including old-fail/new-partial genuine progress, complete/replay, original money family, invalid chunk deadline and unchanged malformed nonchunk mode passed, with metadata preserved. Installed once via qualified active-outage route, immediate next exact source recording. Actual remaining payment and normal-budget capacity still require live verification."
     }
   ]
 }

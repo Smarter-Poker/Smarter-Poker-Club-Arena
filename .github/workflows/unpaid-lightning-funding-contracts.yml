@@ -33,6 +33,10 @@ on:
       - scripts/ci/test-daily-reporting-attribution-change-postgres.py
       - scripts/ci/fixtures/daily-reporting-original-owners.sql
       - scripts/ci/test-unpaid-lightning-funding-contracts-postgres.py
+      - scripts/ci/test-zero-rakeback-wallet-postgres.py
+      - scripts/ci/test-existing-transfer-discharge-postgres.py
+      - scripts/ci/fixtures/existing-transfer-discharge/**
+      - tests/zero-rakeback-receipts-need-no-player-wallet.law.test.ts
       - .github/workflows/unpaid-lightning-funding-contracts.yml
       - tests/unpaid-lightning-follows-original-funding.law.test.ts
 
@@ -115,3 +119,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-original-week-clubs-cover-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Zero rakeback receipts preserve every original positive payment guard
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-zero-rakeback-wallet-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"

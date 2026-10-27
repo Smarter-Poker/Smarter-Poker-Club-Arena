@@ -143,6 +143,26 @@ describe('useInterfaceThemeHydration', () => {
     expect(readTableSettingIntent('user-a', 'interface-theme')).toBeNull();
   });
 
+  it('does not send an older recovery when a newer choice arrives while its writer loads', async () => {
+    mocks.localUserId = 'user-a';
+    beginTableSettingIntent('user-a', 'interface-theme', 'light');
+    mocks.reads.set('user-a', resolvedTheme('light'));
+    renderHook(() => useInterfaceThemeHydration());
+
+    let latestId = '';
+    act(() => {
+      latestId = beginTableSettingIntent('user-a', 'interface-theme', 'dark');
+      useSettingsStore.getState().receiveTheme('dark', 'user-a');
+    });
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+
+    expect(mocks.persistTheme).not.toHaveBeenCalled();
+    expect(useSettingsStore.getState().theme).toBe('dark');
+    expect(readTableSettingIntent('user-a', 'interface-theme')?.id).toBe(latestId);
+  });
+
   it('preserves Auto as the durable preference while resolving the current device mode', async () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     mocks.localUserId = 'user-a';

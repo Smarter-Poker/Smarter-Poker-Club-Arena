@@ -37,7 +37,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buyInBBFor } from './HorseBehavior.js';
+import { horseMaximumBuyIn } from './HorseBehavior.js';
 import { allocateBuyers, FULL_TABLE_BUYER_PROBE } from './HorseBuyerAllocation.js';
 
 const SRC = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
@@ -54,32 +54,22 @@ const OPEN_PLANNED = SRC.slice(
   SRC.indexOf('/* spawnOverflowTables is GONE')
 );
 
-describe('1. the buy-in is one roll per sitting, so the count and the chair size the same number', () => {
-  it('the same sitting returns the same buy-in, every time', () => {
-    for (const id of ['horse-a', 'horse-b', 'horse-c', 'horse-d', 'horse-e']) {
-      const first = buyInBBFor(id, 'table-1|1757170800000');
-      for (let i = 0; i < 20; i++) expect(buyInBBFor(id, 'table-1|1757170800000')).toBe(first);
-    }
-  });
-
-  it('a different sitting can still roll differently - the jitter is per sitting, not gone', () => {
-    const seen = new Set<number>();
-    for (let cycle = 0; cycle < 40; cycle++) seen.add(buyInBBFor('horse-a', `table-1|${cycle}`));
-    expect(seen.size).toBeGreaterThan(1);
-  });
-
-  it('every roll stays inside the profile band the id hash chose', () => {
+describe('1. the count and chair choose the same table maximum', () => {
+  it('has no personality or cycle jitter, including a non-grid maximum', () => {
     for (let cycle = 0; cycle < 200; cycle++) {
-      const bb = buyInBBFor('horse-a', `t|${cycle}`);
-      expect(bb).toBeGreaterThanOrEqual(40);
-      expect(bb).toBeLessThanOrEqual(200);
+      expect(horseMaximumBuyIn(200, 400)).toBe(400);
+      expect(horseMaximumBuyIn(80, 397.25)).toBe(397.25);
     }
   });
-
-  it('the fleet sizes with the table id and the cycle seed, set once at the top of the cycle', () => {
-    expect(BUY_IN).toContain('buyInBBFor(horseId, `${String(table.id)}|${this.cycleSittingSeed}`)');
-    expect(SEED).toContain('this.cycleSittingSeed = String(cycleStartedAt);');
-    expect(BUY_IN).not.toContain('buyInBBFor(horseId)');
+  it('refuses malformed limits', () => {
+    for (const max of [NaN, Infinity, -1, 0, 199, 400.001])
+      expect(horseMaximumBuyIn(200, max)).toBe(0);
+  });
+  it('the live shared chooser uses the maximum and refuses a smaller bankroll cap', () => {
+    expect(BUY_IN).toContain('const buyIn = horseMaximumBuyIn(minB, maxB);');
+    expect(BUY_IN).toContain('if (capped < buyIn)');
+    expect(BUY_IN).not.toContain('buyInBBFor');
+    expect(BUY_IN).not.toContain('Math.random');
   });
 });
 

@@ -159,10 +159,10 @@ describe('WIRING - both engine sites ask, and a zero is a decision to leave', ()
     expect(POLICY).not.toMatch(/^import .*supabase\/wallets\.js/m);
   });
 
-  it('an unreadable balance returns the legacy amount, never zero', () => {
-    expect(POLICY).toMatch(/if \(roll === undefined\) return legacy;/);
-    expect(POLICY).toMatch(/\} catch \{\s*return legacy;/);
-    expect(POLICY).toMatch(/if \(!clubId \|\| !userId\) return legacy;/);
+  it('an unreadable balance requests the maximum through the normal funding door', () => {
+    expect(POLICY).toMatch(/if \(roll === undefined\) return maxB;/);
+    expect(POLICY).toMatch(/\} catch \{\s*return maxB;/);
+    expect(POLICY).toMatch(/if \(!clubId \|\| !userId\) return maxB;/);
   });
 
   for (const [name, SRC] of [

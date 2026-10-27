@@ -218,7 +218,14 @@ export function bindTournamentDataAuthorityMethods<ObjectType extends object>(
  * marked as ordinary service work.
  */
 export function dataActorHeaders(headersInit?: ConstructorParameters<typeof Headers>[0]): Headers {
-  const headers = new Headers(headersInit);
+  return stampOwnedDataActorHeaders(new Headers(headersInit));
+}
+
+/** Stamp a newly owned request collection, after merging caller overrides.
+ * Never pass shared SDK/caller headers: dataActorHeaders preserves those.
+ * The fetch owner already copied its inputs; copying again on every database
+ * attempt only adds main-thread header work and garbage collection. */
+export function stampOwnedDataActorHeaders(headers: Headers): Headers {
   headers.delete(DATA_ACTOR_HEADER);
   headers.delete(DATA_ACTOR_PROTOCOL_HEADER);
   headers.delete(TOURNAMENT_ID_HEADER);

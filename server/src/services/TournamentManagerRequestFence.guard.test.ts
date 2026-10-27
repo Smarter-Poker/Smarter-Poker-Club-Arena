@@ -134,11 +134,11 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     const attemptStart = client.indexOf('const attemptOnce = async () => {');
     const attempt = client.slice(attemptStart, client.indexOf('const RETRYABLE =', attemptStart));
     expect(attemptStart).toBeGreaterThan(-1);
-    expect(client).toContain("import { dataActorHeaders } from './dataActorContext.js'");
+    expect(client).toContain("import { stampOwnedDataActorHeaders } from './dataActorContext.js'");
     // Private ACL reads and the fixed original-player join input device are
     // unmarked. Ordinary service/manager traffic still stamps each attempt.
     expect(attempt).toMatch(
-      /}\s*else\s*{\s*authoritativeHeaders = dataActorHeaders\(headers\);\s*}/
+      /}\s*else\s*{\s*authoritativeHeaders = stampOwnedDataActorHeaders\(headers\);\s*}/
     );
     expect(attempt).toContain('if (actorToken) {');
     expect(attempt).toContain('url.origin !== new URL(SUPABASE_URL).origin');

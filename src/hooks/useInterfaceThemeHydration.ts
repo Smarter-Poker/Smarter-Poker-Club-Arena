@@ -1,5 +1,4 @@
 import { readTableSettingIntent, tableSettingRevision } from '../lib/tableSettingIntents';
-import { persistInterfaceTheme } from '../lib/persistInterfaceTheme';
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { readLocalSession } from '../lib/authUtils';
@@ -98,6 +97,7 @@ export function useInterfaceThemeHydration(enabled = true): void {
     const load = async () => {
       if (pending && (pending.value === 'light' || pending.value === 'dark')) {
         useSettingsStore.getState().receiveTheme(pending.value, userId);
+        const { persistInterfaceTheme } = await import('../lib/persistInterfaceTheme');
         const result = await persistInterfaceTheme(userId, pending.value, pending.id);
         if (!result.ok) throw result.error;
       }

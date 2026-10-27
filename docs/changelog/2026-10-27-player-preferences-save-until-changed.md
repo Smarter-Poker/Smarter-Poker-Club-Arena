@@ -38,3 +38,5 @@ reviewed source and digest. No production financial behavior or required
 assertion is weakened.
 
 Delivery and exact evidence are recorded in CHECKPOINT-player-preferences.md.
+
+The preference journal and mutation identity are synchronous first-paint dependencies: hydration must see unsynced choices before accepting older database values, and a gesture must stage its durable identity immediately. Their small entry cost is declared in the branch-owned entry fragment. The interface-mode network writer loads only when the existing async recovery branch needs it. All existing bundle and route budgets remain enforced.

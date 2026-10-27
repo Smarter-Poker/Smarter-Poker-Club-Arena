@@ -13,7 +13,7 @@
   {
     "signature": "public.fn_process_weekly_accounting_scope(uuid,uuid)",
     "before_md5": "72ab1c8c7e8408119bf670db527e8e64",
-    "after_md5": "6821fb176cf93637cc2820602d93cd56",
+    "after_md5": "aa771409420704b6dd05cfaef9d2f8dc",
     "replacements": [
       [
         "  v_preparation jsonb; v_club record;",
@@ -39,7 +39,7 @@
       ],
       [
         "        IF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'\n",
-        "        IF v_preparing_before_due AND v_preparation->>'success'='true' THEN\n          -- A closed week may prepare from02; the04 financial gate remains.\n          v_result:=jsonb_build_object('success',false,'chunk_committed',true,'committed_round',0,'stage','prepared',\n            'purpose','fees_before_due','union_id',v_union.id,'period_start',v_from,'period_end',v_end);\n        ELSIF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'\n"
+        "        IF v_preparing_before_due AND v_preparation->>'success'='true' THEN\n          -- Closed-week commission/player proof windows advance before due.\n          -- This original owner is nonfinancial; the04 money gate remains.\n          PERFORM public.fn_accounting_close_windows_pending(v_union.id,NULL,v_from,v_end);\n          v_result:=jsonb_build_object('success',false,'chunk_committed',true,'committed_round',0,'stage','prepared',\n            'purpose','fees_before_due','union_id',v_union.id,'period_start',v_from,'period_end',v_end);\n        ELSIF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'\n"
       ],
       [
         "          AND v_preparation#>'{problems,0,pnl_evidence,issues}'='[\"union_pnl_certification_in_progress\"]'::jsonb THEN",
@@ -47,7 +47,7 @@
       ],
       [
         "          IF v_chunked AND (CASE WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true",
-        "          IF v_chunked AND (CASE WHEN v_preparing_before_due THEN true\n            WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true"
+        "          IF v_preparing_before_due AND v_preparation->>'success'='true' THEN\n            PERFORM public.fn_accounting_close_windows_pending(NULL,v_club.id,v_from,v_end);\n          END IF;\n          IF v_chunked AND (CASE WHEN v_preparing_before_due THEN true\n            WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true"
       ],
       [
         "      SELECT result INTO v_previous FROM public.union_accounting_runs\n",

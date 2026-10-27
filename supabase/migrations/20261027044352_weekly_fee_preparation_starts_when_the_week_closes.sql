@@ -1,4 +1,4 @@
--- @live-proof: (md5(pg_get_functiondef('public.fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='62c444b0953cced8a4f3144fc86af51b' AND md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))='6821fb176cf93637cc2820602d93cd56' AND md5(pg_get_functiondef('public.fn_weekly_close_first_visits_pending()'::regprocedure))='7185f43f5cb8dc23606ef5e486da9c5d')
+-- @live-proof: (md5(pg_get_functiondef('public.fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='62c444b0953cced8a4f3144fc86af51b' AND md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))='aa771409420704b6dd05cfaef9d2f8dc' AND md5(pg_get_functiondef('public.fn_weekly_close_first_visits_pending()'::regprocedure))='7185f43f5cb8dc23606ef5e486da9c5d')
 -- Closed fee preparation starts at02; payment remains gated at04 Chicago.
 -- Original fee-window owner and all financial writers remain unchanged.
 BEGIN;
@@ -62,7 +62,9 @@ $old1_5$,'')))/length($old1_5$        IF v_chunked AND v_preparation->>'success'
 $old1_5$)<>1 THEN RAISE EXCEPTION 'weekly_fee_preparation_anchor_changed';END IF;
  d:=replace(d,$old1_5$        IF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'
 $old1_5$,$new1_5$        IF v_preparing_before_due AND v_preparation->>'success'='true' THEN
-          -- A closed week may prepare from02; the04 financial gate remains.
+          -- Closed-week commission/player proof windows advance before due.
+          -- This original owner is nonfinancial; the04 money gate remains.
+          PERFORM public.fn_accounting_close_windows_pending(v_union.id,NULL,v_from,v_end);
           v_result:=jsonb_build_object('success',false,'chunk_committed',true,'committed_round',0,'stage','prepared',
             'purpose','fees_before_due','union_id',v_union.id,'period_start',v_from,'period_end',v_end);
         ELSIF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'
@@ -71,7 +73,10 @@ $new1_5$);
  d:=replace(d,$old1_6$          AND v_preparation#>'{problems,0,pnl_evidence,issues}'='["union_pnl_certification_in_progress"]'::jsonb THEN$old1_6$,$new1_6$          AND (v_preparation#>'{problems,0,pnl_evidence,issues}'='["union_pnl_certification_in_progress"]'::jsonb
            OR v_preparation#>>'{problems,0,reason}'='earned_fee_certification_in_progress') THEN$new1_6$);
  IF (length(d)-length(replace(d,$old1_7$          IF v_chunked AND (CASE WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true$old1_7$,'')))/length($old1_7$          IF v_chunked AND (CASE WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true$old1_7$)<>1 THEN RAISE EXCEPTION 'weekly_fee_preparation_anchor_changed';END IF;
- d:=replace(d,$old1_7$          IF v_chunked AND (CASE WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true$old1_7$,$new1_7$          IF v_chunked AND (CASE WHEN v_preparing_before_due THEN true
+ d:=replace(d,$old1_7$          IF v_chunked AND (CASE WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true$old1_7$,$new1_7$          IF v_preparing_before_due AND v_preparation->>'success'='true' THEN
+            PERFORM public.fn_accounting_close_windows_pending(NULL,v_club.id,v_from,v_end);
+          END IF;
+          IF v_chunked AND (CASE WHEN v_preparing_before_due THEN true
             WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true$new1_7$);
  IF (length(d)-length(replace(d,$old1_8$      SELECT result INTO v_previous FROM public.union_accounting_runs
 $old1_8$,'')))/length($old1_8$      SELECT result INTO v_previous FROM public.union_accounting_runs
@@ -117,7 +122,7 @@ $old1_9$,$new1_9$        -- A paid older standalone book also yields to current 
         SELECT result INTO v_previous FROM public.union_accounting_runs q
 $new1_9$);
  EXECUTE d;
- IF md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))<>'6821fb176cf93637cc2820602d93cd56' THEN RAISE EXCEPTION 'weekly_fee_preparation_postimage_changed';END IF;
+ IF md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))<>'aa771409420704b6dd05cfaef9d2f8dc' THEN RAISE EXCEPTION 'weekly_fee_preparation_postimage_changed';END IF;
  d:=pg_get_functiondef('public.fn_weekly_close_first_visits_pending()'::regprocedure);
  IF md5(d)<>'eb386885eb1a705358951fd94dbeca73' THEN RAISE EXCEPTION 'weekly_fee_preparation_owner_changed: public.fn_weekly_close_first_visits_pending()';END IF;
  IF (length(d)-length(replace(d,$old2_0$clock_timestamp() >= d.due AND clock_timestamp() < d.due$old2_0$,'')))/length($old2_0$clock_timestamp() >= d.due AND clock_timestamp() < d.due$old2_0$)<>1 THEN RAISE EXCEPTION 'weekly_fee_preparation_anchor_changed';END IF;

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse,json,os,socket,subprocess,tempfile,shutil,hashlib,sys
 from pathlib import Path
+from datetime import datetime,timedelta
 R=Path(__file__).resolve().parents[2];W=R/'scripts/ci/fixtures/weekly-fee-preparation'
 p=argparse.ArgumentParser(description='Actual original fee prefix and complete coordinator control-flow qualification; not a monetary-writer or capacity certificate.')
 p.add_argument('--pg-bin',type=Path,default=Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin' if sys.platform=='darwin' else '/usr/lib/postgresql/17/bin')))
@@ -85,7 +86,7 @@ try:
  for instant,expected in [('2026-10-26 06:59Z','before_boundary'),('2026-10-26 07:00Z','certifying'),('2026-10-26 08:59Z','prepared')]:
   out=json.loads(q("SET test.now='"+instant+"';"+scope));None
   if expected=='before_boundary':assert out['checked']==0,out
-  else:assert out['detail'][0]['result']['stage']==expected and out['detail'][0]['result']['committed_round']==0,out
+  else:assert out['detail'][0]['result']['stage']==expected and out['detail'][0]['result'].get('committed_round')==0,out
  rec('actual_scope_before02_closed02_and_before04_no_payment')
  check("(SELECT last_value=0 AND NOT is_called FROM fixture_financial_calls)")
  # A prepared tick at04 reaches only the controlled actual financial boundary.
@@ -97,7 +98,7 @@ try:
  out=json.loads(q("SET test.now='2026-10-26 08:00Z';SET app.weekly_accounting_chunked='off';"+scope));assert out['checked']==0;rec('legacy_unchunked_pre04_gate_unchanged')
  # Native current automatic selector and recursive scope visitor, not a copied
  # query: the default job reaches02 preparation with its normal scope budget.
- out=json.loads(q("SET test.now='2026-10-26 08:00Z';SET app.weekly_accounting_attempt_budget='1';SELECT fn_process_weekly_accounting_scope(NULL,NULL)"));assert out['checked']==1 and out['failed']==0 and out['detail'][0]['result']['committed_round']==0,out
+ out=json.loads(q("SET test.now='2026-10-26 08:00Z';SET app.weekly_accounting_attempt_budget='1';SELECT fn_process_weekly_accounting_scope(NULL,NULL)"));assert out['checked']==1 and out['failed']==0 and out['detail'][0]['result'].get('committed_round')==0,out
  check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('actual_automatic_selector_and_recursive_visitor_prepare_before04')
  # First-visits gate admits the existing job from02, not before, across DST.
  q("TRUNCATE weekly_accounting_scheduler_visits;INSERT INTO weekly_accounting_scheduler_visits VALUES('union',u(),'2026-10-25 12:00Z','visited',NULL,0);")
@@ -116,14 +117,14 @@ try:
  q("TRUNCATE union_accounting_runs,accounting_routed_settlement_runs,accounting_close_partials,fixture_certificates,accounting_period_recompute_requests;UPDATE union_settlement_floor SET earliest_period_start='2026-10-26 07:00Z';UPDATE daemon_state SET high_water_mark='2026-11-02 08:00Z';")
  for instant,want in [('2026-11-02 07:59Z',0),('2026-11-02 08:00Z',1),('2026-11-02 09:59Z',1)]:
   out=json.loads(q("SET test.now='"+instant+"';"+scope));assert out['checked']==want and out['failed']==0,out
-  if want:assert out['detail'][0]['result']['committed_round']==0,out
+  if want:assert out['detail'][0]['result'].get('committed_round')==0,out
  check("(SELECT NOT is_called FROM fixture_financial_calls)")
  out=json.loads(q("SET test.now='2026-11-02 10:00Z';"+scope));assert out['detail'][0]['result']['error']=='fixture_financial_boundary_reached',out
  rec('actual_DST_fall_week_closed02CST_payment04CST')
  # Standalone alternate path respects the same02-preparation/04 money gate.
  q("TRUNCATE union_accounting_runs,accounting_routed_settlement_runs,accounting_close_partials,fixture_certificates,accounting_period_recompute_requests;SELECT setval('fixture_financial_calls',0,false);INSERT INTO accounting_cash_rake_sources(club_id,coordinator_union_id,earned_at)VALUES(c(),NULL,'2026-10-19 12:00Z');")
  clubscope="SELECT fn_process_weekly_accounting_scope(NULL,c())"
- out=json.loads(q("SET test.now='2026-10-26 08:59Z';"+clubscope));assert out['checked']==1 and out['failed']==0 and out['detail'][0]['result']['committed_round']==0,out
+ out=json.loads(q("SET test.now='2026-10-26 08:59Z';"+clubscope));assert out['checked']==1 and out['failed']==0 and out['detail'][0]['result'].get('committed_round')==0,out
  check("(SELECT NOT is_called FROM fixture_financial_calls)")
  out=json.loads(q("SET test.now='2026-10-26 09:00Z';"+clubscope));assert out['detail'][0]['result']['error']=='fixture_standalone_financial_boundary_reached',out
  rec('actual_standalone02_preparation04_money_gate')
@@ -154,7 +155,94 @@ try:
   else:assert snap['runs']==0,snap
  output=q("SET test.now='2026-10-26 09:00Z';"+fresh_job_context+controlled(job['command'])+snapshot).splitlines();snap=json.loads(output[-1]);assert snap['paid_boundary'] and snap['error']=='fixture_financial_boundary_reached',snap
  rec('actual_captured_business_job_and_dispatch_chain_prepare02_pay_not_before04')
- result={'passed':True,'case_count':len(report),'cases':report,'migration_sha256':hashlib.sha256(a.candidate.read_bytes()).hexdigest(),'owner_postimages':{c['signature']:c['after_md5'] for c in changes},'limits':'Actual changed owner definitions; only clock substitutions, controlled source-window and downstream monetary boundaries. Not whole monetary-stage, wall-clock cron, or capacity qualification.'}
+ # Follow-up: actual original windows_pending in the actual whole Scope.
+ # R2/R3 producers below are explicit controlled NONFINANCIAL boundaries.
+ q((W/'original-windows-pending.sql').read_text())
+ windows_owner_md5=q("SELECT md5(pg_get_functiondef('fn_accounting_close_windows_pending(uuid,uuid,timestamptz,timestamptz)'::regprocedure))")
+ q(controlled((W/'original-windows-pending.sql').read_text()))
+ q(controlled((W/'original-deadline-check.sql').read_text().replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1)))
+ q("""CREATE FUNCTION fixture_proof_advance(rnd int,k text,s uuid,p_from timestamptz,p_to timestamptz)RETURNS boolean LANGUAGE plpgsql AS $$
+ DECLARE w record;did boolean:=false;v_proof_kind text:='round'||rnd||'_'||k||'_window';deadline timestamptz:=NULLIF(current_setting('app.weekly_accounting_scope_deadline',true),'')::timestamptz;
+ BEGIN
+  IF p_to>fixture_clock()THEN RAISE EXCEPTION 'proof_requires_closed_week';END IF;
+  IF current_setting('test.proof_source_bad',true)='round'||rnd THEN RAISE EXCEPTION 'original_round_source_refused';END IF;
+  IF deadline IS NULL OR fixture_clock()>=deadline THEN RETURN false;END IF;
+  INSERT INTO phase_trace(event)VALUES('proof_round'||rnd);
+  FOR w IN SELECT * FROM fn_accounting_close_windows(p_from,p_to)LOOP
+   IF NOT EXISTS(SELECT FROM accounting_close_partials p WHERE p.kind=v_proof_kind AND p.union_id=s AND p.period_start=p_from AND p.period_end=p_to
+    AND p.window_start=w.window_start AND p.window_end=w.window_end AND p.computed_at>=p_to AND p.computed_at>fixture_clock()-fn_accounting_close_proof_lifetime())THEN
+    INSERT INTO accounting_close_partials(kind,union_id,period_start,period_end,window_start,window_end,value,computed_at)
+    VALUES(v_proof_kind,s,p_from,p_to,w.window_start,w.window_end,'{"controlled_nonfinancial_source":true}',fixture_clock())
+    ON CONFLICT(kind,union_id,period_start,period_end,window_start)DO UPDATE SET window_end=EXCLUDED.window_end,value=EXCLUDED.value,computed_at=EXCLUDED.computed_at;
+    did:=true;
+   END IF;
+  END LOOP;
+  RETURN did;
+ END$$;
+ CREATE OR REPLACE FUNCTION fn_settle_accounting_commission_advance(text,uuid,timestamptz,timestamptz)RETURNS boolean LANGUAGE sql AS $$SELECT fixture_proof_advance(2,$1,$2,$3,$4)$$;
+ CREATE OR REPLACE FUNCTION fn_settle_accounting_rakeback_advance(text,uuid,timestamptz,timestamptz)RETURNS boolean LANGUAGE sql AS $$SELECT fixture_proof_advance(3,$1,$2,$3,$4)$$;
+ CREATE OR REPLACE FUNCTION fn_union_settlement_cascade(uuid,timestamptz,timestamptz)RETURNS jsonb LANGUAGE plpgsql AS $$BEGIN PERFORM fn_weekly_accounting_deadline_check();PERFORM nextval('fixture_financial_calls');RAISE EXCEPTION 'fixture_financial_boundary_reached';END$$;
+ CREATE OR REPLACE FUNCTION fn_bank_standalone_week_rake(uuid,timestamptz,timestamptz)RETURNS void LANGUAGE plpgsql AS $$BEGIN PERFORM fn_weekly_accounting_deadline_check();PERFORM nextval('fixture_financial_calls');RAISE EXCEPTION 'fixture_standalone_financial_boundary_reached';END$$;
+ """)
+ def reset_for_proofs(start='2026-10-19 07:00Z',end='2026-10-26 07:00Z',instant='2026-10-26 08:30Z'):
+  q("TRUNCATE union_accounting_runs,accounting_routed_settlement_runs,accounting_close_partials,fixture_certificates,accounting_period_recompute_requests,phase_trace;UPDATE union_settlement_floor SET earliest_period_start='"+start+"';UPDATE daemon_state SET high_water_mark='"+end+"';SELECT setval('fixture_financial_calls',0,false);")
+  prime_deadline=(datetime.fromisoformat(instant.replace('Z','+00:00'))+timedelta(minutes=3)).isoformat()
+  for attempt in range(2):
+   prepared=json.loads(q("SET test.now='"+instant+"';SET app.weekly_accounting_scope_deadline='"+prime_deadline+"';SELECT fn_prepare_accounting_week(u(),NULL,'"+start+"','"+end+"')"))
+  assert prepared['success'],prepared
+ def part_count(rnd):return int(q("SELECT count(*)FROM accounting_close_partials WHERE kind='round"+str(rnd)+"_union_window'"))
+ reset_for_proofs()
+ # Demonstrate the frozen269f gap before qualifying this new Scope body.
+ old_scope=(W/'scope-pre-proof-windows.sql').read_text();assert hashlib.md5(old_scope.encode()).hexdigest()=='6821fb176cf93637cc2820602d93cd56'
+ q(controlled(old_scope));out=json.loads(q("SET test.now='2026-10-26 08:30Z';"+scope));assert out['detail'][0]['result'].get('committed_round')==0 and out['detail'][0]['result'].get('stage')=='prepared' and part_count(2)==part_count(3)==0,out
+ rec('frozen269f_reproduces_ready_pre04_scope_without_R2_R3_progress')
+ q(controlled(next(c for c in changes if'fn_process_weekly_accounting_scope('in c['signature'])['after']))
+ for expected2,expected3 in[(84,0),(84,84),(84,84)]:
+  out=json.loads(q("SET test.now='2026-10-26 08:30Z';"+scope));assert out['detail'][0]['result'].get('committed_round')==0 and out['failed']==0,out
+  assert(part_count(2),part_count(3))==(expected2,expected3),(expected2,expected3,part_count(2),part_count(3))
+ check("(SELECT NOT is_called FROM fixture_financial_calls)")
+ rec('actual_windows_pending_pre04_union_advances_R2_then_R3_and_ready_no_money')
+ out=json.loads(q("SET test.now='2026-10-26 09:00Z';"+scope));assert out['detail'][0]['result']['error']=='fixture_financial_boundary_reached',out
+ rec('actual_windows_pending_ready_original04_money_gate_retained')
+ q("SELECT setval('fixture_financial_calls',0,false)")
+ out=json.loads(q("SET test.now='2026-10-26 09:00Z';SET app.weekly_accounting_scope_budget='-1 second';"+scope));assert out['failed']==1 and out['detail'][0]['result']['error']=='weekly_scope_time_budget_exhausted',out
+ check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('actual_original_deadline_refuses_ready_proofs_before_money')
+ reset_for_proofs();before=q('SELECT count(*)FROM accounting_close_partials')
+ out=json.loads(q("SET test.now='2026-10-26 08:30Z';SET test.source_bad='on';"+scope));assert out['failed']==1 and part_count(2)==part_count(3)==0,out
+ check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('full_original_preparation_source_refusal_precedes_pre04_proof_windows')
+ reset_for_proofs()
+ out=json.loads(q("SET test.now='2026-10-26 08:30Z';SET test.proof_source_bad='round2';"+scope));assert out['failed']==1 and part_count(2)==part_count(3)==0,out
+ rec('original_nonfinancial_R2_source_failure_refuses_before_money')
+ q("SET test.now='2026-10-26 08:30Z';"+scope)
+ out=json.loads(q("SET test.now='2026-10-26 08:30Z';SET test.proof_source_bad='round3';"+scope));assert out['failed']==1 and part_count(3)==0,out
+ check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('original_nonfinancial_R3_source_failure_refuses_before_money')
+ reset_for_proofs()
+ out=json.loads(q("SET test.now='2026-10-26 08:30Z';SET app.weekly_accounting_scope_budget='0 seconds';"+scope));assert part_count(2)==part_count(3)==0,out
+ check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('original_attempt_deadline_not_extended_for_pre04_proofs')
+ out=json.loads(q("SET test.now='2026-10-26 08:30Z';SET test.frozen='on';"+scope));assert out['reason']=='maintenance_window'and part_count(2)==part_count(3)==0,out
+ q("SET test.now='2026-10-26 08:30Z';SET test.engine='false';"+scope,'not_authorised');assert part_count(2)==part_count(3)==0
+ rec('actual_scope_freeze_and_authorization_precede_original_pre04_proof_owner')
+ # Real expired/wrong-bound R2 partials cannot masquerade as proof-ready.
+ q("SET test.now='2026-10-26 08:30Z';"+scope)
+ q("UPDATE accounting_close_partials SET computed_at='2026-10-01Z'WHERE kind='round2_union_window';")
+ q("SET test.now='2026-10-26 08:30Z';"+scope);check("(SELECT bool_and(computed_at>='2026-10-26 07:00Z')FROM accounting_close_partials WHERE kind='round2_union_window')")
+ q("UPDATE accounting_close_partials SET window_end=window_end-interval '1 minute'WHERE kind='round2_union_window';")
+ q("SET test.now='2026-10-26 08:30Z';"+scope);check("NOT EXISTS(SELECT FROM accounting_close_partials p JOIN fn_accounting_close_windows('2026-10-19 07:00Z','2026-10-26 07:00Z')w USING(window_start)WHERE p.kind='round2_union_window'AND p.window_end<>w.window_end)")
+ rec('actual_pending_owner_rejects_expired_or_wrong_bound_R2_windows')
+ reset_for_proofs()
+ q("INSERT INTO accounting_cash_rake_sources(club_id,coordinator_union_id,earned_at)VALUES(c(),NULL,'2026-10-19 12:00Z');")
+ for attempt in range(2):
+  out=json.loads(q("SET test.now='2026-10-26 08:30Z';"+clubscope));assert out['failed']==0 and out['detail'][0]['result'].get('committed_round')==0,out
+ check("(SELECT count(*)=84 FROM accounting_close_partials WHERE kind='round2_club_window')AND(SELECT count(*)=84 FROM accounting_close_partials WHERE kind='round3_club_window')")
+ check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('actual_windows_pending_pre04_standalone_advances_both_rounds_no_money')
+ reset_for_proofs('2026-10-26 07:00Z','2026-11-02 08:00Z','2026-11-02 09:30Z')
+ for attempt in range(2):
+  out=json.loads(q("SET test.now='2026-11-02 09:30Z';"+scope));assert out['failed']==0 and out['detail'][0]['result'].get('committed_round')==0,out
+ assert(part_count(2),part_count(3))==(85,85),(part_count(2),part_count(3))
+ check("(SELECT NOT is_called FROM fixture_financial_calls)");rec('actual_windows_pending_DST169hour_week_pre04_all85windows_no_money')
+ out=json.loads(q("SET test.now='2026-11-02 10:00Z';"+scope));assert out['detail'][0]['result']['error']=='fixture_financial_boundary_reached',out
+ rec('actual_windows_pending_DST04CST_financial_gate_unchanged')
+ result={'passed':True,'case_count':len(report),'cases':report,'migration_sha256':hashlib.sha256(a.candidate.read_bytes()).hexdigest(),'actual_windows_pending_source_md5':windows_owner_md5,'owner_postimages':{c['signature']:c['after_md5'] for c in changes},'limits':'Actual changed owner definitions; only clock substitutions, controlled source-window and downstream monetary boundaries. Not whole monetary-stage, wall-clock cron, or capacity qualification.'}
  print(json.dumps(result))
  if a.output:
   assert not a.output.exists(),'new output required';a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(result,indent=2)+'\n')

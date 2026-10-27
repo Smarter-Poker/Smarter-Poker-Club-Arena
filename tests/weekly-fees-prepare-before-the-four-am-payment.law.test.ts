@@ -40,6 +40,37 @@ describe('Closed fees prepare before the four AM payment', () => {
     expect(runAt.definition).toContain("time '04:00'");
     expect(runAt.definition).toContain("'America/Chicago'");
   });
+  it('advances the original nonfinancial R2/R3 proof owner after successful pre04 preparation for both scopes', () => {
+    expect(after).toContain(
+      'PERFORM public.fn_accounting_close_windows_pending(v_union.id,NULL,v_from,v_end);'
+    );
+    expect(after).toContain(
+      'PERFORM public.fn_accounting_close_windows_pending(NULL,v_club.id,v_from,v_end);'
+    );
+    const originalPending = read(fixture + 'original-windows-pending.sql');
+    expect(originalPending).toContain('public.fn_settle_accounting_commission_advance');
+    expect(originalPending).toContain('public.fn_settle_accounting_rakeback_advance');
+    expect(originalPending).not.toMatch(
+      /INSERT INTO public\.chip_ledger|fn_settle_accounting_rakeback_stage/
+    );
+    const standaloneMoney = (body: string) => {
+      const start = body.indexOf(
+        '          PERFORM public.fn_assert_cash_commission_period(NULL,v_club.id,v_from,v_end);'
+      );
+      expect(start).toBeGreaterThan(0);
+      return body.slice(start, body.indexOf('        EXCEPTION WHEN OTHERS THEN', start));
+    };
+    expect(standaloneMoney(after)).toBe(standaloneMoney(before));
+    const native = read('scripts/ci/test-weekly-fee-preparation-postgres.py');
+    for (const proof of [
+      'frozen269f_reproduces_ready_pre04_scope_without_R2_R3_progress',
+      'actual_windows_pending_pre04_union_advances_R2_then_R3_and_ready_no_money',
+      'actual_windows_pending_pre04_standalone_advances_both_rounds_no_money',
+      'actual_windows_pending_DST169hour_week_pre04_all85windows_no_money',
+      'actual_original_deadline_refuses_ready_proofs_before_money',
+    ])
+      expect(native).toContain(proof);
+  });
   it('enforces the actual owner/native clock, restart and source-refusal regression', () => {
     const ci = read('.github/workflows/unpaid-lightning-funding-contracts.yml');
     expect(ci).toContain('python3 -B scripts/ci/test-weekly-fee-preparation-postgres.py');

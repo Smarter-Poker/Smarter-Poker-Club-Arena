@@ -27,3 +27,7 @@ python3 -B "$root/scripts/ci/test-commission-agent-wallet-postgres.py" --pg-bin 
 # Owner-confirmed prior sends are discharged in those same R2/R3 owners once.
 python3 -B "$root/scripts/ci/test-existing-transfer-discharge-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# A former standalone zero book verifies the paid foreign original R2 receipts.
+python3 -B "$root/scripts/ci/test-zero-standalone-foreign-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

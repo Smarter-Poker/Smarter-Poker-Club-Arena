@@ -755,7 +755,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
         };
       });
       expect(measured.width).toBe(width <= 480 ? 52 : 100);
-      expect(measured.height).toBe(width <= 480 ? 44 : 36);
+      expect(measured.height).toBe(52);
       expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);

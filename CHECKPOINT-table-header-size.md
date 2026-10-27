@@ -9,3 +9,5 @@ Final validation reader 2026-10-27T04:51:37.996Z unchanged version/hash. Local C
 Pending ordinary hook, PR protected checks/merge and client publication/live proof.
 
 Ordinary pre-push caught a source-test selector tied to the previous sub-line font literal. Updated that selector for the intentionally enlarged text; nowrap/overflow/ellipsis/max-width assertions remain intact. 329/330 related checks passed before correction; rerunning owning test and normal hook. No bypass.
+
+Ordinary pre-push passed: 330 related checks. Existing tracker-centre browser assertion updated from old36/44px height to52px; Chromium/WebKit pass across375/393/430/1024 and0/28px insets.

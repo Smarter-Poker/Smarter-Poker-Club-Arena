@@ -46,7 +46,7 @@ def reset():
  INSERT INTO cash_cluster_conversion VALUES('{G}','pending',NULL,NULL);
  INSERT INTO lightning_hand_player VALUES('{H}','{U}',1,160.52,now(),'normal');""")
 def money():return q("SELECT jsonb_build_array((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM table_seats s),(SELECT jsonb_agg(to_jsonb(w) ORDER BY user_id) FROM wallets w),(SELECT jsonb_agg(to_jsonb(h) ORDER BY hand_id) FROM lightning_hand h),(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM hand_history h),(SELECT jsonb_agg(to_jsonb(h) ORDER BY hand_id) FROM lightning_hand_player h))")
-def authority():return q("SELECT jsonb_build_array((SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM cash_games g),(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM financial_alerts a),(SELECT count(*) FROM cash_cluster_events),(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM lightning_pool_session p))")
+def authority():return q("SELECT jsonb_build_array((SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM cash_games g),(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM financial_alerts a),(SELECT count(*) FROM cash_cluster_events),(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM lightning_pool_session p),(SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM lightning_instance i),(SELECT jsonb_agg(to_jsonb(s) ORDER BY pool_session_id) FROM lightning_pool_slot s),(SELECT jsonb_agg(to_jsonb(c) ORDER BY cluster_id) FROM cash_cluster_conversion c),(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM tables t))")
 try:
  cmd(owner+[pg/'initdb','-D',cluster/'d','-U','postgres','--auth-local=trust','--auth-host=reject','--no-locale','--encoding=UTF8'])
  cmd(owner+[pg/'pg_ctl','-D',cluster/'d','-l',cluster/'log','-o',f"-k {sock} -p 55851 -c listen_addresses='' -c shared_buffers=16MB",'-w','start']);started=True
@@ -78,6 +78,7 @@ try:
  check('old-sessions-slots-conversion-halts-retired',q("SELECT (SELECT bool_and(state='closed' AND exited_at IS NOT NULL) FROM lightning_pool_session) AND (SELECT bool_and(closed_at IS NOT NULL) FROM lightning_pool_slot) AND (SELECT bool_and(status='aborted') FROM cash_cluster_conversion) AND (SELECT bool_and(dealing_halted_at IS NULL AND dealing_halt_observed_at IS NULL) FROM tables)")=='t')
  snapshot=authority();q(sql);check('replay-is-idempotent-without-new-recovery',authority()==snapshot and money()==before)
  for name,change,expected in [
+  ('another-live-instance',f"INSERT INTO lightning_instance VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000011','{G}','dealing',now(),NULL,NULL)",'live instance remains'),
   ('wrong-incident',"UPDATE financial_alerts SET context=context||'{\"invariant\":\"other\"}'",'exact frozen incident changed'),
   ('accepted-hand',f"INSERT INTO hand_history VALUES('{H}')",'uncommitted void'),
   ('settlement-receipt',"UPDATE lightning_hand SET settle_receipt='{}'",'uncommitted void'),

@@ -55,6 +55,12 @@ BEGIN
      OR EXISTS(SELECT 1 FROM public.hand_history WHERE id=c_hand) THEN
     RAISE EXCEPTION 'The original hand is not the independently observed uncommitted void';
   END IF;
+  -- This incident's original hand and every other hand have already reached
+  -- a terminal state. The qualified recovery must not void another live hand.
+  IF EXISTS(SELECT 1 FROM public.lightning_instance WHERE cluster_id=c_game
+       AND state IN ('forming','reserved','dealing','settling')) THEN
+    RAISE EXCEPTION 'A live instance remains in the frozen incident cluster';
+  END IF;
   result := public.fn_cash_cluster_unfreeze(c_game,c_actor,c_reason);
   IF result->>'ok' IS DISTINCT FROM 'true' OR result->>'unfrozen' IS DISTINCT FROM 'true'
      OR result->>'epoch_before' IS DISTINCT FROM '3' OR result->>'epoch_after' IS DISTINCT FROM '4' THEN

@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/**
+      - scripts/ci/fixtures/foreign-certificate-cash-cover/**
+      - scripts/ci/test-foreign-certificate-cash-cover-postgres.py
+      - scripts/ci/test-zero-standalone-foreign-postgres.py
+      - scripts/ci/fixtures/zero-standalone-foreign/**
+      - tests/foreign-certificates-read-original-cash-cover.law.test.ts
       - scripts/ci/fixtures/fees-before-club-books/**
       - scripts/ci/fixtures/weekly-fee-preparation/**
       - scripts/ci/test-weekly-fee-preparation-postgres.py
@@ -123,3 +128,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-zero-rakeback-wallet-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Foreign certificates retain all original sources through the cash cover
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-foreign-certificate-cash-cover-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}/foreign-certificate-cover" --output "${{ runner.temp }}/foreign-certificate-cover/result.json"

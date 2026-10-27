@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "7c0200b6b9f91d70f8412b67b871b50de53f1667dca033e5d0e3707c05b64a0f",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "84d7a7327d1d1270cd7d20e34c09f731da7c122a0354f3703bc99d71c2f3632e",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -367,5 +367,35 @@
   "wholeHandCoverIntegrationWorkflowAudit": {
     "reviewed": "2026-10-27",
     "reason": "Current main adds only existing qualified player-index paths/native step to unpaid workflow; original finite245 commands unchanged. Same reviewed9ed-to74d5 correction as8336, no financial function/fixture pin changed."
+  },
+  "foreignCertificateCoverWorkflowQualificationAudit": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "currentSHA256": "9b05678d6ac22e8b5fcf9abcec8b29db717393da1f330896fc4fa2b2292c413d",
+    "reason": "Add only the maintained index-only foreign certificate native lane and its triggers. All previous qualification steps retained; no original financial function, source authority, certificate, cache, generation, fixture pin or production verdict retagged.",
+    "qualification": "Exact194250 concurrent installer, original zero/foreign monetary family, unchanged154b8 helper/views, natural covering projection, source bags, boundaries and MVCC. Native timing is not production runtime."
+  },
+  "rakebackConsolidationForeignCertificate194250WorkflowAudit20261027": {
+    "reason": "Normal same-task merge retains every prior native command and original financial/source pin. Only additive qualified foreign-certificate lane and resulting workflow identity integrated. Incoming stale merge-base pins never overwrite qualified184348 source.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "ours": "7c0200b6b9f91d70f8412b67b871b50de53f1667dca033e5d0e3707c05b64a0f",
+        "incoming": "9b05678d6ac22e8b5fcf9abcec8b29db717393da1f330896fc4fa2b2292c413d",
+        "combined": "84d7a7327d1d1270cd7d20e34c09f731da7c122a0354f3703bc99d71c2f3632e"
+      }
+    ],
+    "retained_later_pins": [
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-native.py",
+        "reason": "incoming pin is unchanged merge-base; preserve already-qualified local later source",
+        "retained": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3"
+      },
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-wrapper-native.py",
+        "reason": "incoming pin is unchanged merge-base; preserve already-qualified local later source",
+        "retained": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
+      }
+    ]
   }
 }

@@ -1526,6 +1526,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Active weekly accounting outage: Lightning full counts90s and all-club whole-hand attribution phase30s timed out after86197 selected keys. Exact native-qualified nonpartial six-column record-leading index installed through maintained CCI route. Full-file history, complete index metadata, unchanged cc867 original counts body, unchanged original Scope72ab and live65 source authority read back. No functions, earning rows, rate, paid proofs, source pins, ACLs or budgets changed. Native73/bags/catalog/MVCC and local prechecks passed. Actual post-install timing, original Lightning preparation/payment and global closure remain separate unverified work; no new payment or 4AM guarantee claimed."
+    },
+    {
+      "version": "20261027194250",
+      "name": "foreign_certificates_read_their_original_cash_cover",
+      "file": "supabase/migrations/20261027194250_foreign_certificates_read_their_original_cash_cover.sql",
+      "md5": "059a7ca4303b58798f4c33ea9b143560",
+      "appliedToProductionAt": "2026-10-27T20:08:18.036Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained one-shot qualified-outage CCI installation; full-file history, seven-column/two-key complete index metadata and actual pre/post original source metadata readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly accounting outage: the former Deep Stack Society standalone original strict foreign-certificate Round3 timed out285s while its required original club/week rawcash heap scan estimated1328676 rows. The exact native-qualified nonpartial seven-column club/earned covering index was installed through the maintained one-shot CCI route. Full-file history and VALID/READY/LIVE metadata, both default key opclasses/collations/options, original154b8 helper wholemetadata, both original effective/payable views including owner/ACL/definition, all source columns and all earlier indexes were read back against the actual preinstall baseline. Original Scope72ab, countscc867 and65-source authority remain unchanged. Native37/12boundaries/9catalog faults/RR/MVCC and normal809prepush checks passed. No function, earning row, rate, paid certificate, source pin, cache, generation, ACL or budget was changed by this index source. This readback queries no wallet or source data and makes no payment, closure, actual helper timing or4AMcapacity claim; these remain separate live verification."
     }
   ]
 }

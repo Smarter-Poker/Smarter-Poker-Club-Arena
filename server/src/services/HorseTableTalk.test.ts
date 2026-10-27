@@ -946,10 +946,24 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
     expect(silent).toBeGreaterThan(spoke);
   });
 
+  it('does not write after-hand chat before five seconds, then writes once after typing', async () => {
+    _setHumanPacingForTests(true);
+    const pending = speakAtTheFelt(bigPotHand(8000));
+    // Flush the gate/history/claim awaits and start the real typing timer.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(inserts('horse_table_talk_ledger')).toHaveLength(1);
+    expect(inserts('table_chat')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(inserts('table_chat')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5_001);
+    expect(await pending).toBe('spoken');
+    expect(inserts('table_chat')).toHaveLength(1);
+  });
+
   it('a line lands a human beat after the hand, spread across a range', () => {
     const typed = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'typed'));
-    expect(Math.min(...typed)).toBeGreaterThanOrEqual(1_400);
-    expect(Math.max(...typed)).toBeLessThan(5_200);
+    expect(Math.min(...typed)).toBeGreaterThanOrEqual(5_000);
+    expect(Math.max(...typed)).toBeLessThan(10_000);
     expect(new Set(typed).size).toBeGreaterThan(150);
     const quick = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'quick'));
     expect(Math.max(...quick)).toBeLessThan(900);

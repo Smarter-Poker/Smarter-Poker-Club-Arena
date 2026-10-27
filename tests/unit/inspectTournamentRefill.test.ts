@@ -962,10 +962,16 @@ const snapshot={type:'DECIDE_FAST',generation:7,requestId:9,decisionTimeMs:1000,
  fence:c.tableId+':123:1:'+c.leaseGeneration+':7',handJournalContext:binding.captureHorseHandJournalContext([]),
  decisionKey:'private-decision-id',player:{seat:1,user_id:actor,stack:100,bet:20},gameState:{currentBet:120,gameVariant:'nlh'}};
 if(mode==='zero-stack') snapshot.player.stack=0;
-if(mode==='chips-behind') snapshot.player.stack=101;
+if(mode==='chips-behind'||mode==='diagnostic-call-price') snapshot.player.stack=101;
+if(mode==='diagnostic-stack') snapshot.player.stack=0;
+if(mode==='diagnostic-bet') snapshot.player.bet='20';
+if(mode==='diagnostic-overflow') {snapshot.player.bet=-Number.MAX_VALUE;snapshot.gameState.currentBet=Number.MAX_VALUE;}
+if(mode==='diagnostic-anchor') snapshot.fence=snapshot.fence.replace(':123:',':124:');
 const decision={action:'all_in',tournamentPreflopAttribution:{route:'variant_price',referenceProposal:{action:'all_in',amount:null}}};
-if(mode==='wrong-route') decision.tournamentPreflopAttribution.route='chart_open_jam';
-if(mode==='sized-reference') decision.tournamentPreflopAttribution.referenceProposal.amount=100;
+if(mode==='wrong-route'||mode==='diagnostic-route') decision.tournamentPreflopAttribution.route='chart_open_jam';
+if(mode==='diagnostic-final-action') decision.action='call';
+if(mode==='diagnostic-reference-action') decision.tournamentPreflopAttribution.referenceProposal.action='call';
+if(mode==='sized-reference'||mode==='diagnostic-amount') decision.tournamentPreflopAttribution.referenceProposal.amount=100;
 const acceptedAction={seat:1,userId:actor,action:'all_in',amount:100,timestamp:1001,stage:'preflop'};
 const witness={handAnchor:binding.anchorHorseDecisionHand(snapshot),identity:{stage:'preflop'},
  executionStatus:'intended',retirementReason:null,selected:{action:'all_in'},executedAction:'all_in',
@@ -976,15 +982,16 @@ let sequence=0;
 const make=(kind,body,turnKey='b'.repeat(64))=>records.makeHorseJournalRecord({producerId:'42345678-abcd-4321-abcd-123456789abc',
  sequence:++sequence,atMs:1000,sourceRelease:input.sourceRelease,kind,handKey:c.handKey,turnKey},body);
 const d=make('decision',{snapshot,decision,private:'private-secret'});
-c.decisionRecordSha256=['discover','discovery-ambiguous'].includes(mode)?null:d.sha256;
+c.decisionRecordSha256=(['discover','discovery-ambiguous'].includes(mode)||mode.startsWith('diagnostic-'))?null:d.sha256;
 const e=make('execution',witness,mode==='wrong-turn'?'c'.repeat(64):d.turnKey);
 const hand={generation:123,fence:c.tableId+':123:'+c.leaseGeneration+':observe',handKey:c.tableId+':123',
  committedHandId:c.handId,actions:[{...acceptedAction,origin:'horse_policy',
  publicNode:{version:1,status:'captured',actorSeat:1,street:'preflop'},
  observationIdentity:{version:1,status:'bound',handId:c.handId,actionOrdinal:0,observationId:c.handId+':0',sessionKey:'a'.repeat(64)}}]};
 if(mode==='unbound') hand.actions[0].observationIdentity.actionOrdinal=1;
+if(mode==='diagnostic-accepted') hand.committedHandId=actor;
 const a=make('accepted_hand',hand,c.handKey);
-let rows=[d,e,a];
+let rows=mode==='diagnostic-empty'?[e,a]:[d,e,a];
 if(mode==='duplicate-execution') rows.push(make('execution',witness));
 if(mode==='discovery-ambiguous') rows.push(make('decision',{snapshot,decision}));
 if(mode==='tampered-record') rows[0]={...d,body:d.body+' '};
@@ -1171,4 +1178,102 @@ print(json.dumps({'parsed':parsed,'history':history,'bounded':parse('\\n'.join([
   expect(result.bounded.events).toHaveLength(128);
   expect(result.history.bookingCapRefusals).toEqual(result.parsed);
   expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|111111111111|222222222222|Traceback/);
+});
+
+const emptySelectionCounts = {
+  decisionRecords: 1,
+  selectedRecords: 1,
+  finalActionMismatch: 0,
+  referenceRouteMismatch: 0,
+  referenceActionMismatch: 0,
+  referenceAmountMismatch: 0,
+  stackShapeMismatch: 0,
+  callPriceShapeMismatch: 0,
+  notWholeStackCall: 0,
+  matchingShape: 0,
+};
+it.each([
+  ['diagnostic-empty', { ...emptySelectionCounts, decisionRecords: 0, selectedRecords: 0 }],
+  ['wrong-decision', { ...emptySelectionCounts, selectedRecords: 0 }],
+  ['diagnostic-final-action', { ...emptySelectionCounts, finalActionMismatch: 1 }],
+  ['diagnostic-route', { ...emptySelectionCounts, referenceRouteMismatch: 1 }],
+  ['diagnostic-reference-action', { ...emptySelectionCounts, referenceActionMismatch: 1 }],
+  ['diagnostic-amount', { ...emptySelectionCounts, referenceAmountMismatch: 1 }],
+  ['diagnostic-stack', { ...emptySelectionCounts, stackShapeMismatch: 1 }],
+  ['diagnostic-bet', { ...emptySelectionCounts, callPriceShapeMismatch: 1 }],
+  ['diagnostic-overflow', { ...emptySelectionCounts, callPriceShapeMismatch: 1 }],
+  ['diagnostic-call-price', { ...emptySelectionCounts, notWholeStackCall: 1 }],
+] as const)(
+  'explains %s only with bounded validated selection counts, preserving unknown',
+  (mode, counts) => {
+    const { input, result } = acceptedCalloffFixture(mode);
+    expect(result.status).toBe('unknown');
+    expect(result.cases[0]).toEqual({
+      handKey: input.cases[0].handKey,
+      status: 'unknown',
+      reason: 'matching_decision_missing',
+      selectionCounts: counts,
+    });
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read()); print(json.dumps(m["sanitize_reference_result"](d["result"],d["input"])))',
+        script,
+      ],
+      { input: JSON.stringify({ input, result }), encoding: 'utf8', timeout: 5000 }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual(result);
+  }
+);
+it.each(['diagnostic-anchor', 'diagnostic-accepted', 'tampered-record', 'wrong-source'])(
+  'does not emit selection counts before %s validation',
+  (mode) => {
+    const { result } = acceptedCalloffFixture(mode);
+    expect(result.status).toBe('unknown');
+    expect(result.cases?.[0]?.selectionCounts).toBeUndefined();
+  }
+);
+
+it('refuses private or inconsistent diagnostic counts without emitting child output', () => {
+  const { input, result } = acceptedCalloffFixture('diagnostic-final-action');
+  const row = result.cases[0];
+  const counts = row.selectionCounts;
+  for (const bad of [
+    { ...row, selectionCounts: { ...counts, private: 'private-secret' } },
+    { ...row, selectionCounts: { ...counts, decisionRecords: true } },
+    { ...row, selectionCounts: { ...counts, decisionRecords: 257 } },
+    { ...row, selectionCounts: { ...counts, finalActionMismatch: -1 } },
+    { ...row, selectionCounts: { ...counts, referenceRouteMismatch: 1 } },
+    { ...row, selectionCounts: { ...counts, matchingShape: 1, finalActionMismatch: 0 } },
+    { ...row, selectionCounts: { ...counts, selectedRecords: 0, finalActionMismatch: 0 } },
+    { ...row, reason: 'original_snapshot_binding_mismatch' },
+    { ...row, reason: 'calloff_shape_not_observed' },
+    { ...row, status: 'observed' },
+  ]) {
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read());m['reference_diagnostic'].__globals__['bounded_command']=lambda *a,**k:json.dumps(d['result'])
+print(json.dumps(m['reference_diagnostic'](d['input'])))`,
+        script,
+      ],
+      {
+        input: JSON.stringify({ input, result: { ...result, cases: [bad] } }),
+        encoding: 'utf8',
+        timeout: 5000,
+      }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual({
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+    });
+    expect(checked.stdout + checked.stderr).not.toContain('private-secret');
+  }
 });

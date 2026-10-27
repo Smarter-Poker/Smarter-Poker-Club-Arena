@@ -320,12 +320,219 @@ export function readMobileTableLayout(crowns: Readonly<Record<string, number>>) 
       h * (1 - crown)
     );
   };
+  // Bounds include transparent canvas and the clipped baked-in nameplate.
+  // Inspect the actual decoded bytes when those bounds touch the board. Each
+  // alpha row is conservatively enclosed, transformed through the real 2D
+  // ancestor matrices, and clipped before projection. Unknown pixels or 3D
+  // transforms retain the old conservative refusal; they never become a pass.
+  const imagePaintTouches = (image: HTMLImageElement, target: DOMRect): boolean => {
+    try {
+      const style = getComputedStyle(image);
+      const width = parseFloat(style.width),
+        height = parseFloat(style.height);
+      const nw = image.naturalWidth,
+        nh = image.naturalHeight;
+      if (!(width > 0 && height > 0 && nw > 0 && nh > 0) || nw * nh > 4_000_000) return true;
+      if (!['contain', 'scale-down', 'cover'].includes(style.objectFit)) return true;
+      if (
+        [
+          'paddingLeft',
+          'paddingRight',
+          'paddingTop',
+          'paddingBottom',
+          'borderLeftWidth',
+          'borderRightWidth',
+          'borderTopWidth',
+          'borderBottomWidth',
+        ].some((key) => parseFloat(style[key as keyof CSSStyleDeclaration] as string) > 0)
+      )
+        return true;
+      let linear = new DOMMatrix();
+      for (let node: Element | null = image; node; node = node.parentElement) {
+        const css = getComputedStyle(node);
+        if (css.rotate && css.rotate !== 'none' && css.rotate !== '0deg') return true;
+        if (css.scale && css.scale !== 'none' && css.scale !== '1') return true;
+        const matrix = new DOMMatrix(css.transform === 'none' ? undefined : css.transform);
+        if (
+          [
+            matrix.m13,
+            matrix.m14,
+            matrix.m23,
+            matrix.m24,
+            matrix.m31,
+            matrix.m32,
+            matrix.m34,
+            matrix.m43,
+          ].some((value) => value !== 0) ||
+          matrix.m33 !== 1 ||
+          matrix.m44 !== 1
+        )
+          return true;
+        linear = new DOMMatrix([matrix.a, matrix.b, matrix.c, matrix.d, 0, 0]).multiply(linear);
+      }
+      const corners = [
+        [0, 0],
+        [width, 0],
+        [width, height],
+        [0, height],
+      ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(linear));
+      const rect = box(image);
+      if (
+        Math.abs(
+          Math.max(...corners.map((point) => point.x)) -
+            Math.min(...corners.map((point) => point.x)) -
+            rect.width
+        ) > 0.5 ||
+        Math.abs(
+          Math.max(...corners.map((point) => point.y)) -
+            Math.min(...corners.map((point) => point.y)) -
+            rect.height
+        ) > 0.5
+      )
+        return true;
+      const dx = rect.left - Math.min(...corners.map((point) => point.x));
+      const dy = rect.top - Math.min(...corners.map((point) => point.y));
+      const scale =
+        style.objectFit === 'cover'
+          ? Math.max(width / nw, height / nh)
+          : Math.min(width / nw, height / nh, style.objectFit === 'scale-down' ? 1 : Infinity);
+      const coordinate = (token: string, space: number) =>
+        token.endsWith('%')
+          ? (parseFloat(token) * space) / 100
+          : token.endsWith('px')
+            ? parseFloat(token)
+            : token === 'center'
+              ? space / 2
+              : token === 'left' || token === 'top'
+                ? 0
+                : token === 'right' || token === 'bottom'
+                  ? space
+                  : NaN;
+      const [px = '50%', py = '50%'] = style.objectPosition.split(/\s+/);
+      const ox = coordinate(px, width - nw * scale),
+        oy = coordinate(py, height - nh * scale);
+      if (![ox, oy, scale].every(Number.isFinite)) return true;
+      let left = 0,
+        top = 0,
+        right = width,
+        bottom = height;
+      if (style.clipPath && style.clipPath !== 'none') {
+        const inset = /^inset\(([^)]*)\)$/.exec(style.clipPath);
+        if (!inset || inset[1].includes('round')) return true;
+        const values = inset[1].trim().split(/\s+/);
+        const expanded =
+          values.length === 1
+            ? [values[0], values[0], values[0], values[0]]
+            : values.length === 2
+              ? [values[0], values[1], values[0], values[1]]
+              : values.length === 3
+                ? [values[0], values[1], values[2], values[1]]
+                : values;
+        if (expanded.length !== 4) return true;
+        top = coordinate(expanded[0], height);
+        right = width - coordinate(expanded[1], width);
+        bottom = height - coordinate(expanded[2], height);
+        left = coordinate(expanded[3], width);
+        if (![left, top, right, bottom].every(Number.isFinite)) return true;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = nw;
+      canvas.height = nh;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return true;
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, nw, nh).data;
+      for (let row = 0; row < nh; row++) {
+        const y0 = Math.max(top, oy + row * scale),
+          y1 = Math.min(bottom, oy + (row + 1) * scale);
+        if (!(y1 > y0)) continue;
+        let lo = nw,
+          hi = -1;
+        for (let column = 0; column < nw; column++)
+          if (pixels[(row * nw + column) * 4 + 3] >= 16) {
+            lo = Math.min(lo, column);
+            hi = column;
+          }
+        if (hi < lo) continue;
+        const x0 = Math.max(left, ox + lo * scale),
+          x1 = Math.min(right, ox + (hi + 1) * scale);
+        if (!(x1 > x0)) continue;
+        const points = [
+          [x0, y0],
+          [x1, y0],
+          [x1, y1],
+          [x0, y1],
+        ].map(([x, y]) => new DOMPoint(x, y).matrixTransform(linear));
+        if (
+          Math.max(...points.map((point) => point.x)) + dx > target.left + 0.5 &&
+          Math.min(...points.map((point) => point.x)) + dx < target.right - 0.5 &&
+          Math.max(...points.map((point) => point.y)) + dy > target.top + 0.5 &&
+          Math.min(...points.map((point) => point.y)) + dy < target.bottom - 0.5
+        )
+          return true;
+      }
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const paintTouches = (element: Element, target: DOMRect): boolean => {
+    if (!intersects(box(element), target)) return false;
+    if (element instanceof HTMLImageElement) return imagePaintTouches(element, target);
+    if (!element.classList.contains('seat__action')) return true;
+    if ((element as HTMLElement).scrollWidth > (element as HTMLElement).clientWidth + 0.5)
+      return true;
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const css = getComputedStyle(node);
+      const matrix = new DOMMatrix(css.transform === 'none' ? undefined : css.transform);
+      if (
+        !matrix.is2D ||
+        matrix.b !== 0 ||
+        matrix.c !== 0 ||
+        (css.rotate && css.rotate !== 'none' && css.rotate !== '0deg') ||
+        (css.scale && css.scale !== 'none' && css.scale !== '1')
+      )
+        return true;
+    }
+    const rect = box(element),
+      style = getComputedStyle(element);
+    const radii = [
+      style.borderTopLeftRadius,
+      style.borderTopRightRadius,
+      style.borderBottomLeftRadius,
+      style.borderBottomRightRadius,
+    ];
+    if (!radii.every((radius) => radius === radii[0]) || !radii[0].endsWith('px')) return true;
+    const cssWidth = parseFloat(style.width),
+      cssHeight = parseFloat(style.height);
+    const scaleX = rect.width / cssWidth,
+      scaleY = rect.height / cssHeight;
+    if (![scaleX, scaleY].every(Number.isFinite) || Math.abs(scaleX - scaleY) > 0.01) return true;
+    const radius = Math.min(parseFloat(radii[0]) * scaleX, rect.width / 2, rect.height / 2);
+    if (!(radius > 0)) return true;
+    // The same half-pixel tolerance as the original rectangle predicate.
+    const x0 = Math.max(rect.left, target.left + 0.5),
+      x1 = Math.min(rect.right, target.right - 0.5);
+    const y0 = Math.max(rect.top, target.top + 0.5),
+      y1 = Math.min(rect.bottom, target.bottom - 0.5);
+    if (!(x1 > x0 && y1 > y0)) return false;
+    if (
+      (x1 > rect.left + radius && x0 < rect.right - radius) ||
+      (y1 > rect.top + radius && y0 < rect.bottom - radius)
+    )
+      return true;
+    const cx = x1 <= rect.left + radius ? rect.left + radius : rect.right - radius;
+    const cy = y1 <= rect.top + radius ? rect.top + radius : rect.bottom - radius;
+    const x = Math.max(x0, Math.min(cx, x1)),
+      y = Math.max(y0, Math.min(cy, y1));
+    return (x - cx) ** 2 + (y - cy) ** 2 < radius ** 2;
+  };
   const board = table.querySelector('.community-area');
   if (board && visible(board)) {
     for (const node of table.querySelectorAll(
       '.seat__info, .seat__avatar-img, .seat__action, .seat__bet-chips'
     ))
-      if (visible(node) && intersects(paintedBox(node), box(board)))
+      if (visible(node) && paintTouches(node, box(board)))
         violations.push(
           `Player Or Bet Covers Board: ${node.className} ${JSON.stringify({
             seat: node.closest('.seat')?.getAttribute('data-seat-num'),

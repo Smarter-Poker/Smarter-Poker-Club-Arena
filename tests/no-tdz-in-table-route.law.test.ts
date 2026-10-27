@@ -36,6 +36,9 @@ const BASELINE: Record<string, string[]> = {
   'src/pages/TablePage.tsx': [
     // Read only when Join Lightning is tapped on a Lightning table (2026-10-24).
     'anchorLightningClusterId',
+    // Called only by a menu event after render; immediate leave cancels the queue.
+    'requestLeaveAtNextHand',
+    'leaveNextHand',
     // Called from a seat tap or a buy-in refusal at a Lightning table, never during render.
     'openLightningAnchorEntry',
     'bustRebuyOpenRef',

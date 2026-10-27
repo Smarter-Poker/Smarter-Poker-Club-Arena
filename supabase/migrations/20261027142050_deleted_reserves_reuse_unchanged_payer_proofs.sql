@@ -1,4 +1,4 @@
--- @live-proof: md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='e4c45e406cded539576419ac7c2c9b67' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='88d62643e1e2a96e1bb58daa7a032f36' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 DO $pre$ BEGIN
@@ -21,13 +21,13 @@ BEGIN
   REVOKE ALL ON TABLE pg_temp._deleted_reserve_payer_proofs FROM PUBLIC,anon,authenticated,service_role;
   cache_oid:=to_regclass('pg_temp._deleted_reserve_payer_proofs');
  END IF;
- IF NOT EXISTS(SELECT FROM pg_class c WHERE c.oid=cache_oid AND c.relnamespace=pg_my_temp_schema()
+ IF NOT EXISTS(SELECT FROM pg_catalog.pg_class c WHERE c.oid=cache_oid AND c.relnamespace=pg_my_temp_schema()
    AND c.relkind='r'AND c.relpersistence='t'AND pg_get_userbyid(c.relowner)='postgres'AND NOT c.relrowsecurity)
-  OR EXISTS(SELECT FROM pg_trigger WHERE tgrelid=cache_oid AND NOT tgisinternal)
-  OR EXISTS(SELECT FROM pg_rewrite WHERE ev_class=cache_oid)
-  OR (SELECT count(*)FROM pg_attribute WHERE attrelid=cache_oid AND attnum>0 AND NOT attisdropped)<>5
+  OR EXISTS(SELECT FROM pg_catalog.pg_trigger WHERE tgrelid=cache_oid AND NOT tgisinternal)
+  OR EXISTS(SELECT FROM pg_catalog.pg_rewrite WHERE ev_class=cache_oid)
+  OR (SELECT count(*)FROM pg_catalog.pg_attribute WHERE attrelid=cache_oid AND attnum>0 AND NOT attisdropped)<>5
   OR EXISTS(SELECT FROM(VALUES('calculation_id','bigint'::regtype),('certificate_tid','tid'::regtype),('certificate_xid','text'::regtype),('contracts_version','text'::regtype),('payers','jsonb'::regtype))v(n,t)
-   WHERE NOT EXISTS(SELECT FROM pg_attribute a WHERE a.attrelid=cache_oid AND a.attname=v.n AND a.atttypid=v.t AND a.attnotnull AND a.attnum>0 AND NOT a.attisdropped))
+   WHERE NOT EXISTS(SELECT FROM pg_catalog.pg_attribute a WHERE a.attrelid=cache_oid AND a.attname=v.n AND a.atttypid=v.t AND a.attnotnull AND a.attnum>0 AND NOT a.attisdropped))
   OR EXISTS(SELECT FROM(VALUES('anon'),('authenticated'),('service_role'))roles(n)
    WHERE has_table_privilege(roles.n,cache_oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')OR has_any_column_privilege(roles.n,cache_oid,'SELECT,INSERT,UPDATE,REFERENCES'))
  THEN RAISE EXCEPTION 'deleted_reserve_payer_proof_temp_not_authoritative' USING ERRCODE='42501';END IF;
@@ -121,5 +121,5 @@ BEGIN
 END;
 $function$;
 REVOKE ALL ON FUNCTION smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)FROM PUBLIC,anon,authenticated,service_role;
-DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='e4c45e406cded539576419ac7c2c9b67' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261')THEN RAISE EXCEPTION 'deleted_reserve_reuse_postimage_changed';END IF;END $post$;
+DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='88d62643e1e2a96e1bb58daa7a032f36' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261')THEN RAISE EXCEPTION 'deleted_reserve_reuse_postimage_changed';END IF;END $post$;
 COMMIT;

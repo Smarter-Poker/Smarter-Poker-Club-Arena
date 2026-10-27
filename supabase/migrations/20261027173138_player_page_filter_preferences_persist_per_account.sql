@@ -13,9 +13,9 @@ CREATE TABLE public.user_page_preferences (
   PRIMARY KEY (user_id, preference_key)
 );
 ALTER TABLE public.user_page_preferences ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.user_page_preferences FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.user_page_preferences FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE ON public.user_page_preferences TO authenticated;
-GRANT ALL ON public.user_page_preferences TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_page_preferences TO service_role;
 CREATE POLICY own_page_preference_read ON public.user_page_preferences
   FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
 CREATE POLICY own_page_preference_insert ON public.user_page_preferences

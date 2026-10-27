@@ -732,6 +732,16 @@ async function v56Mode(args, argv) {
   };
 }
 
+/** Exit only after the pipe acknowledges the entire sanitized receipt. */
+export function writeV56Output(
+  value,
+  exitCode,
+  output = process.stdout,
+  finish = (code) => process.exit(code)
+) {
+  output.write(JSON.stringify(value) + '\n', (error) => finish(error ? 1 : exitCode));
+}
+
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const argv = process.argv.slice(2);
@@ -740,8 +750,8 @@ if (isMain) {
       .then(() => v56Mode(parseArgs(argv), argv))
       .then(
         (result) => {
-          process.stdout.write(JSON.stringify(result) + '\n');
-          process.exit(
+          writeV56Output(
+            result,
             result.status === 'unavailable' ||
               result.results?.some((row) => row.status !== 'computed')
               ? 1
@@ -749,8 +759,7 @@ if (isMain) {
           );
         },
         () => {
-          process.stdout.write(JSON.stringify(v56Failure('unavailable')) + '\n');
-          process.exit(1);
+          writeV56Output(v56Failure('unavailable'), 1);
         }
       );
   } else {

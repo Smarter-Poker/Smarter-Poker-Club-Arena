@@ -48,8 +48,10 @@ BEGIN
   END IF;
 
   -- chip_balance = 0 written EXPLICITLY: the default was 1000 until 2026-08-26.
-  INSERT INTO club_members (club_id, user_id, role, status, tier, rank_level, orange_ball_status, chip_balance)
-  VALUES (p_club_id, v_uid, v_role, v_status, 'bronze', 0, 'cold', 0)
+  -- Dan, 2026-10-25: a member with no agent sits under the club owner.
+  INSERT INTO club_members (club_id, user_id, role, status, tier, rank_level, orange_ball_status, chip_balance, agent_id)
+  VALUES (p_club_id, v_uid, v_role, v_status, 'bronze', 0, 'cold', 0,
+          CASE WHEN v_uid = v_owner THEN NULL ELSE v_owner END)
   ON CONFLICT (club_id, user_id) DO NOTHING
   RETURNING * INTO v_row;
 

@@ -25,8 +25,21 @@ CREATE TABLE ca_horse_fleet_register(horse_id uuid primary key,retired_at timest
 CREATE TABLE horse_daily_nets(horse_user_id uuid, hands bigint,net_bb numeric,format text,day date,game_variant text);
 CREATE TABLE ca_horse_active_roster(horse_id uuid primary key,rank integer,hands bigint,bb100 numeric);
 CREATE TABLE ca_horse_plo_roster(horse_id uuid primary key,rank integer,plo_hands bigint,plo_bb100 numeric);
-CREATE TABLE stable_hand_membership_tags(horse_id uuid,club_id uuid,mode text,cash_freeroll boolean,persona_cash text,persona_mtt text,variants text[],preferred_stakes numeric[],max_tables integer,primary key(horse_id,club_id));
-CREATE TABLE ca_horse_roster_cash_tag_backup(LIKE stable_hand_membership_tags INCLUDING ALL);
+CREATE TABLE stable_hand_membership_tags(
+ horse_id uuid NOT NULL,club_id uuid NOT NULL,mode text NOT NULL,cash_freeroll boolean NOT NULL DEFAULT false,
+ persona_cash text,persona_mtt text,variants text[] NOT NULL DEFAULT '{}',preferred_stakes numeric[] NOT NULL DEFAULT '{}',
+ max_tables smallint NOT NULL DEFAULT 1,tagged_at timestamptz NOT NULL DEFAULT now(),tag_seed text NOT NULL,
+ PRIMARY KEY(horse_id,club_id),
+ CONSTRAINT sh_cash_persona_presence CHECK (((mode='tourney') AND persona_cash IS NULL) OR ((mode<>'tourney') AND persona_cash IS NOT NULL)),
+ CONSTRAINT sh_freeroll_is_cash_only CHECK (NOT cash_freeroll OR mode='cash'),
+ CONSTRAINT sh_tourney_only_one_table CHECK (mode<>'tourney' OR max_tables=1),
+ CHECK (max_tables BETWEEN 0 AND 4),CHECK (mode IN ('cash','tourney','both')),
+ CHECK (persona_cash IN ('grinder','regular','mixer','night_owl','weekend_heavy')),
+ CHECK (persona_mtt IN ('mtt_grinder','mtt_regular','mtt_late_reg')));
+CREATE TABLE ca_horse_roster_cash_tag_backup(
+ horse_id uuid NOT NULL,club_id uuid NOT NULL,mode text NOT NULL,cash_freeroll boolean NOT NULL,
+ persona_cash text,persona_mtt text,variants text[] NOT NULL,preferred_stakes numeric[] NOT NULL,max_tables smallint NOT NULL,
+ saved_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(horse_id,club_id));
 CREATE TABLE ca_horse_roster_log(size integer,demand integer,active uuid[],plo uuid[],result jsonb);
 CREATE TABLE tables(id uuid primary key,tournament_id uuid);
 CREATE TABLE table_seats(user_id uuid,table_id uuid,left_at timestamptz,active_game_scope uuid,stack numeric);
@@ -35,7 +48,10 @@ INSERT INTO ca_horse_fleet_register SELECT id,case when id=lpad('14',32,'0')::uu
 INSERT INTO horse_daily_nets SELECT id,case when id=lpad('12',32,'0')::uuid then 10 else 6000 end,
   case when id in(lpad('12',32,'0')::uuid,lpad('13',32,'0')::uuid,lpad('14',32,'0')::uuid) then 999999 else 1000-i*100 end,
   'cash',current_date,'nlh' FROM profiles p JOIN generate_series(1,14) i ON p.id=lpad(i::text,32,'0')::uuid WHERE i<>11;
-INSERT INTO stable_hand_membership_tags SELECT id,lpad('99',32,'0')::uuid,'both',false,'regular','mtt_regular',array['nlh'],array[1]::numeric[],4 FROM profiles;
+INSERT INTO stable_hand_membership_tags(horse_id,club_id,mode,cash_freeroll,persona_cash,persona_mtt,variants,preferred_stakes,max_tables,tag_seed)
+ SELECT id,lpad('99',32,'0')::uuid,CASE WHEN id=lpad('1',32,'0')::uuid THEN 'cash' ELSE 'both' END,
+ id=lpad('1',32,'0')::uuid,'grinder','mtt_regular',array['nlh'],array[1]::numeric[],4,'roster-cash' FROM profiles;
+CREATE TEMP TABLE original_tags AS SELECT * FROM stable_hand_membership_tags;
 """
 capacity = re.search(r"  v_table_cap := g.cap_mains \+ 1;[\s\S]*?v_table_cap := greatest\(1, floor\(v_table_cap \* 0.5\)::integer\);", definition("fn_cash_cluster_tick")).group(0)
 capacity_proof = """
@@ -62,6 +78,11 @@ DO $proof$ BEGIN
   IF (SELECT count(*) FROM stable_hand_membership_tags WHERE mode='tourney')<>8
     OR (SELECT count(*) FROM ca_horse_roster_cash_tag_backup)<>8
   THEN RAISE EXCEPTION 'cash bench not persisted'; END IF;
+  IF EXISTS(SELECT 1 FROM stable_hand_membership_tags WHERE mode='tourney' AND (persona_cash IS NOT NULL OR cash_freeroll OR max_tables<>1))
+  THEN RAISE EXCEPTION 'benched tag violates live cash/tournament constraints'; END IF;
+  IF EXISTS(SELECT 1 FROM stable_hand_membership_tags t JOIN original_tags o USING(horse_id,club_id)
+    WHERE t.persona_mtt IS DISTINCT FROM o.persona_mtt OR t.tag_seed IS DISTINCT FROM o.tag_seed OR t.tagged_at IS DISTINCT FROM o.tagged_at)
+  THEN RAISE EXCEPTION 'bench changed tournament persona or tag provenance'; END IF;
   IF EXISTS(SELECT 1 FROM ca_horse_plo_roster WHERE plo_hands<>0 OR plo_bb100 IS NOT NULL)
   THEN RAISE EXCEPTION 'PLO measurements fabricated from NLH'; END IF;
 END $proof$;
@@ -88,7 +109,7 @@ UPDATE table_seats SET left_at=now() WHERE user_id=lpad('1',32,'0')::uuid;
 UPDATE horse_daily_nets SET net_bb=9999 WHERE horse_user_id=lpad('1',32,'0')::uuid;
 SELECT fn_ca_horse_roster_refresh();
 DO $proof$ BEGIN
- IF NOT EXISTS(SELECT 1 FROM stable_hand_membership_tags WHERE horse_id=lpad('1',32,'0')::uuid AND mode='both' AND variants=array['nlh'] AND max_tables=4)
+ IF NOT EXISTS(SELECT 1 FROM stable_hand_membership_tags t JOIN original_tags o USING(horse_id,club_id) WHERE t.horse_id=lpad('1',32,'0')::uuid AND to_jsonb(t)=to_jsonb(o))
  THEN RAISE EXCEPTION 'returned performer lost original tag'; END IF;
  IF (SELECT count(*) FROM table_seats)<>2 THEN RAISE EXCEPTION 'existing seats changed'; END IF;
  IF (SELECT count(*) FROM profiles WHERE horse_status='disabled')<>1 THEN RAISE EXCEPTION 'global horse state changed'; END IF;

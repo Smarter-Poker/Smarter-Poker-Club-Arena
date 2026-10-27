@@ -491,6 +491,97 @@ def worker_receipt_errors(raw):
     return result
 
 
+def tournament_yields(raw):
+    """Only the original successful tournament-departure event, never nearby text.
+
+    Prefixes are the reporter's actual eight hex characters, not full IDs.
+    A pending hand-boundary leave is not a completed cashout receipt.
+    """
+    result = {'matchingRecords': 0, 'events': [], 'eventsTruncated': False,
+              'cashoutCompletionProven': False}
+    expression = re.compile(
+        r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) '
+        r'\[SessionRotator\] horse=([0-9a-f]{8}) leaving table=([0-9a-f]{8}) '
+        r'for a tournament in ([0-9]{1,3}) min '
+        r'\((certain|hazard_fired), ([1-9][0-9]{0,2}) over four games\)$')
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        match = expression.fullmatch(line)
+        if not match:
+            continue
+        try:
+            datetime.datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+        except ValueError:
+            continue
+        result['matchingRecords'] += 1
+        if len(result['events']) == 128:
+            result['events'].pop(0)
+            result['eventsTruncated'] = True
+        result['events'].append({'timestamp': match.group(1),
+            'horseIdPrefix': match.group(2), 'tableIdPrefix': match.group(3),
+            'minutesToStart': int(match.group(4)), 'reason': match.group(5),
+            'excess': int(match.group(6))})
+    return result
+
+
+def booking_cap_refusals(raw):
+    """Typed original caller failures, not generic 23514 or nearby tournament text."""
+    result = {'matchingRecords': 0, 'events': [], 'eventsTruncated': False,
+              'runningEntryProven': False}
+    uuid = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    expression = re.compile(
+        r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) '
+        r'\[TournamentRecurring\] horse_entry_cap_refused (\{[^\r\n]*\})$')
+
+    def unique_object(pairs):
+        value = dict(pairs)
+        if len(value) != len(pairs):
+            raise ValueError('duplicate field')
+        return value
+
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        match = expression.fullmatch(line)
+        if not match:
+            continue
+        try:
+            value = json.loads(match.group(2), object_pairs_hook=unique_object)
+            if (set(value) != {'version', 'tournamentId', 'horseId', 'sqlstate', 'load', 'attemptedAt'} or
+                    type(value['version']) is not int or value['version'] != 1 or
+                    value['sqlstate'] != '23514' or type(value['load']) is not int or
+                    not 4 <= value['load'] <= 2147483647 or
+                    not all(isinstance(value[k], str) and uuid.fullmatch(value[k])
+                            for k in ('tournamentId', 'horseId')) or
+                    not isinstance(value['attemptedAt'], str) or
+                    not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', value['attemptedAt'])):
+                continue
+            logged = datetime.datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+            attempted = datetime.datetime.fromisoformat(value['attemptedAt'].replace('Z', '+00:00'))
+            if attempted > logged:
+                continue
+        except (ValueError, TypeError, KeyError):
+            continue
+        result['matchingRecords'] += 1
+        if len(result['events']) == 128:
+            result['events'].pop(0)
+            result['eventsTruncated'] = True
+        result['events'].append({'timestamp': match.group(1),
+            'attemptedAt': value['attemptedAt'], 'horseIdPrefix': value['horseId'][:8],
+            'tournamentIdPrefix': value['tournamentId'][:8], 'sqlstate': '23514',
+            'load': value['load']})
+    return result
+
+
+def merge_bounded_events(target, addition):
+    target['matchingRecords'] += addition['matchingRecords']
+    combined = target['events'] + addition['events']
+    target['eventsTruncated'] = (target['eventsTruncated'] or
+                                addition['eventsTruncated'] or len(combined) > 128)
+    target['events'] = combined[-128:]
+
+
 def merge_worker_receipt_errors(target, addition):
     target['matchingRecords'] += addition['matchingRecords']
     combined = target['events'] + addition['events']
@@ -685,6 +776,8 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     deadline = time.monotonic() + seconds
     signals = {}
     worker_errors = worker_receipt_errors('')
+    yields = tournament_yields('')
+    cap_refusals = booking_cap_refusals('')
     block = []
     pending = b''
     dropping = False
@@ -712,6 +805,10 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 flush_block()
             return
         line = raw.decode('utf-8', errors='replace')
+        if '[SessionRotator] horse=' in line:
+            merge_bounded_events(yields, tournament_yields(line))
+        if '[TournamentRecurring] horse_entry_cap_refused ' in line:
+            merge_bounded_events(cap_refusals, booking_cap_refusals(line))
         stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
         if stamp:
             try:
@@ -762,6 +859,8 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
         if block:
             flush_block()
         return {'signals': signals, 'workerReceiptErrors': worker_errors,
+                'tournamentYields': yields,
+                'bookingCapRefusals': cap_refusals,
                 'coverage': {'status': outcome,
                 'bytesRead': total, 'recordsRead': records,
                 'oldestTimestamp': oldest + 'Z' if oldest else None,
@@ -915,7 +1014,7 @@ def main(expected, selected_cases=None):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'tournamentYields': tournament_yields(raw), 'bookingCapRefusals': booking_cap_refusals(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

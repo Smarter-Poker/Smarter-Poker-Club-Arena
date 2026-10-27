@@ -109,6 +109,8 @@ import type {
 } from '../types.js';
 import {
   RANK_VALUES,
+  RANKS,
+  SUITS,
   validateAction,
   calculateBettingState,
   HEADS_UP_RAKE_PERCENT,
@@ -2061,6 +2063,10 @@ export interface HorseDecideOpts {
    *  to ablate (default: enabled; league matchups v53_pressure, plo4/plo5/
    *  plo6_v53_pressure). */
   v53Pressure?: boolean;
+  /** Qualified-candidate switch: price legal strong combo-draw re-pot/jam
+   * choices against the existing call on flop/turn. Default off until the
+   * incremental current-brain comparison qualifies and protected adoption. */
+  comboDrawPressure?: boolean;
   /** V58 (2026-10-25): PLO6 river nut discipline on a paired board. Facing a
    *  river bet, a hand one random hand beats 15%+ of the time folds (unless
    *  the price is tiny), and one beaten 5%+ calls instead of raising. Disable to ablate (default: enabled; league
@@ -3338,6 +3344,63 @@ function pairedBoardFoldOutsideGraph(
   return decision.policyGraph === undefined
     ? pairedBoardFold(decision, player, gs, opts)
     : decision;
+}
+
+/** Physical high-only single-board combo draws. Only the acting holding
+ * and public board are used; a naked dominated flush draw is not a combo. */
+export function hasStrongPressureDraw(
+  hole: Card[],
+  board: Card[],
+  variant: string,
+  cached?: OmahaDrawInfo | null
+): boolean {
+  if (
+    !['nlh', 'plo4', 'plo5', 'plo6'].includes(variant) ||
+    board.length < 3 ||
+    board.length > 4 ||
+    new Set(board.map((c) => c.rank)).size !== board.length
+  )
+    return false;
+  const vi = variantInfo(variant);
+  if (hole.length !== vi.holeCount) return false;
+  if ([...hole, ...board].some((c) => !RANKS.includes(c.rank) || !SUITS.includes(c.suit)))
+    return false;
+  const keys = [...hole, ...board].map((c) => c.rank + ':' + c.suit);
+  if (new Set(keys).size !== keys.length) return false;
+  if (vi.isOmaha) {
+    const d = cached ?? omahaDrawQuality(hole, board, false);
+    const made = Math.floor(scoreOmahaHiPartial(hole, board) / 0x100000);
+    if (made >= 5) return false;
+    return (
+      (d.nutFlushDraw && (d.straightOuts >= 4 || made >= 2)) ||
+      (d.bigWrap && made >= 2 && !d.dominatedFlushDraw)
+    );
+  }
+  const made = Math.floor(
+    scoreHoldem([...hole, ...board], hole.length + board.length, false) / 0x100000
+  );
+  if (made >= 5) return false;
+  let nutFlush = false;
+  for (const suit of SUITS) {
+    const suitedBoard = board.filter((c) => c.suit === suit);
+    if (suitedBoard.length !== 2 || hole.filter((c) => c.suit === suit).length !== 2) continue;
+    const highest = [...RANKS].reverse().find((rank) => !suitedBoard.some((c) => c.rank === rank));
+    if (hole.some((c) => c.suit === suit && c.rank === highest)) nutFlush = true;
+  }
+  let straightOuts = 0;
+  const known = new Set(keys);
+  for (const rank of RANKS)
+    for (const suit of SUITS) {
+      if (known.has(rank + ':' + suit)) continue;
+      // The same card can complete both draws. A made flush must not hide
+      // its straight component; this classifies the shape, never adds equity.
+      const mask = (cards: Card[]) => cards.reduce((m, c) => m | (1 << RANK_VALUES[c.rank]), 0);
+      const next = { rank, suit };
+      const top = straightTop(mask([...hole, ...board, next]), false);
+      const boardTop = straightTop(mask([...board, next]), false);
+      if (top > 0 && top > boardTop) straightOuts++;
+    }
+  return (nutFlush && (straightOuts >= 4 || made >= 2)) || (straightOuts >= 8 && made >= 2);
 }
 
 export class HorseLogic {
@@ -9422,8 +9485,33 @@ export class HorseLogic {
         });
       }
     }
+    // The old randomized gates could decline a strong draw and then ask
+    // an EV menu containing only fold/call. Consider the legal pressure
+    // choices too, using the same continuing-range and net-price arithmetic.
+    const comboRaise38 =
+      opts.comboDrawPressure === true &&
+      useEv38 &&
+      useMind &&
+      pressure53 !== null &&
+      drawsLive &&
+      !isTournamentMode(gs) &&
+      !gs.bombPot &&
+      !multiBoard36 &&
+      opponents.length === 1 &&
+      !opponents[0].is_all_in &&
+      opponents[0].stack > 0 &&
+      !planCallOnly23 &&
+      !raisedAfterAggr &&
+      gs.legalActions?.includes('raise') === true &&
+      typeof gs.minRaiseTo === 'number' &&
+      Number.isFinite(gs.minRaiseTo) &&
+      typeof gs.maxRaiseTo === 'number' &&
+      Number.isFinite(gs.maxRaiseTo) &&
+      gs.maxRaiseTo >= gs.minRaiseTo &&
+      gs.minRaiseTo > currentBet &&
+      hasStrongPressureDraw(player.cards, board, gs.gameVariant, vi.isOmaha ? drawInfo40() : null);
     const solverless38 = vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit;
-    if (useEv38 && (isRiver || solverless38 || continuation38) && !solverCall32) {
+    if (useEv38 && (isRiver || solverless38 || continuation38 || comboRaise38) && !solverCall32) {
       // the exploit reads, as an equity shift instead of a margin
       const readShift38 = -(respect - 1) * 0.08;
       const eqRead38 = clamp01(
@@ -9458,26 +9546,67 @@ export class HorseLogic {
         inPosition: ip,
         drawy: drawy38,
       });
+      let comboFoldMul38 = 1;
+      if (comboRaise38) {
+        try {
+          comboFoldMul38 = v53BarrelFoldMul(
+            HorseMind.exploit(opponents[0].user_id, useCounterAdapt).bluffMod,
+            opponents[0].user_id
+          );
+        } catch {
+          /* retain neutral model */
+        }
+        if (tele15) noteFire('combo_draw_pressure_evaluated');
+      }
       const verdict38 = evaluateSpot({
         equity: eqRead38,
         pot,
         toCall,
         stack,
-        effectiveStack: stack,
+        effectiveStack: comboRaise38
+          ? Math.min(stack, Math.max(0, opponents[0].stack + opponents[0].bet - player.bet))
+          : stack,
         street: street === 'turn' ? 'turn' : 'flop',
         inPosition: ip,
         opponents: oppCount,
+        ...(comboRaise38 ? { models: [{ foldMul: comboFoldMul38, canRespond: true }] } : {}),
         realization: realization38,
         continuation: continuation38,
         rakeMarg,
         callDeductionFraction,
         riskPremium: risk38,
-        minBet: Math.max(gs.minRaise || 0, 0.01),
-        maxBet: 0, // fold/call only here: the raise gates above already rolled
-        sizes: [],
+        minBet: comboRaise38 ? gs.minRaiseTo! - currentBet : Math.max(gs.minRaise || 0, 0.01),
+        maxBet: comboRaise38 ? gs.maxRaiseTo! - currentBet : 0,
+        sizes: comboRaise38 ? [0.75, 1] : [],
         rand: fastRandom,
       });
       const callEv = verdict38.candidates.find((a) => a.kind === 'call');
+      if (
+        comboRaise38 &&
+        verdict38.pick.kind === 'raise' &&
+        verdict38.pick.ev > Math.max(0, callEv?.ev ?? 0) + 1e-9
+      ) {
+        const pricedTo = currentBet + verdict38.pick.amount;
+        const legal = this.legalize(
+          { action: 'raise', amount: pricedTo, thinkTime: 0 },
+          player,
+          gs,
+          vi
+        );
+        const executedTo = legal.action === 'all_in' ? player.bet + stack : legal.amount;
+        // Never claim the EV of one size for a different legalized size.
+        // Verify without writing intent; only the selected final raise does.
+        if (
+          (legal.action === 'raise' || legal.action === 'all_in') &&
+          typeof executedTo === 'number' &&
+          Math.abs(executedTo - pricedTo) <= 0.005
+        ) {
+          const decision = this.raiseTo(planHandKey, pricedTo, player, gs, vi);
+          planBarrel(equity);
+          if (tele15) noteFire('combo_draw_pressure_raise');
+          return decision;
+        }
+      }
       if (continuation38 && tele15)
         noteFire(
           callEv && callEv.ev >= 0

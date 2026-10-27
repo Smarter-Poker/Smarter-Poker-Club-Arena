@@ -17,7 +17,7 @@ BEGIN
  IF public.fn_platform_frozen() THEN RAISE EXCEPTION 'cash_status_cover_install_frozen';END IF;
  SELECT * INTO p FROM pg_proc WHERE oid='public.fn_assert_cash_commission_period(uuid,uuid,timestamptz,timestamptz)'::regprocedure;
  IF md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM '0df1c3e9fe3e1a0e53a043baf57127d7'
- OR p.proowner<>'postgres'::regrole OR p.proacl::text<>'{postgres=X/postgres,service_role=X/postgres}'
+ OR p.proowner<>'postgres'::regrole OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'
  OR p.proconfig IS DISTINCT FROM ARRAY['search_path=public']::text[] OR p.provolatile<>'s' OR NOT p.prosecdef OR p.proparallel<>'u' OR p.proisstrict
  THEN RAISE EXCEPTION 'cash_status_cover_original_owner_changed';END IF;
  SELECT i.*,c.relowner,c.relkind,c.relpersistence,am.amname INTO ix

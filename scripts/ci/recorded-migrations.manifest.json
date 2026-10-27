@@ -1382,6 +1382,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8309",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original Round2 rejects burls recorded same-agent role promotion (113 agent sources62.39 plus68 super-agent sources18.99, independently matched181 original contracts81.38). Round1 club banks already credited but all agents and players remain unpaid. Exact53 native cases, original invoice/discharge/concurrency/fault guards, local TSC/law1177/normal hooks passed; required hosted checks queued. Qualified exact three-predicate correction preserves identity, original per-source roles, rates, amounts, parents, edges, fingerprints and all84 proof windows. Installed once through maintained applier under PUBLISHING active-outage exception; no payout or current-book completion is inferred. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Historical same-agent promotion changes no monetary source edges. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027173150",
+      "name": "deferred_payout_checks_reuse_validated_payers",
+      "file": "supabase/migrations/20261027173150_deferred_payout_checks_reuse_validated_payers.sql",
+      "md5": "ee2a9c070dffc202a3de6e19a95a5fcb",
+      "appliedToProductionAt": "2026-10-27T17:38:04.099Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and split receipt/cache/validator owners postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8345",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: the original complete R3 attempt and mandatory deferred leg validation exhausted285 seconds; repeated immutable payer calculation consumed106.9 seconds. Only two pure payer computation calls now reuse the installed PostgreSQL-owned transaction cache. Every live payout, transfer, ledger, wallet, invoice and duplicate check remains fresh on every call; native warmed-cache financial and certificate tampering still aborts. Exact split receipt/cache/validator function postimages/metadata/runtime ACLs and original source authority were read back. Only two pure payer reads use existing authoritative request-local reuse; every per-leg payout/wallet/ledger/invoice check remains live. No amounts/certificates/source proofs change. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     }
   ]
 }

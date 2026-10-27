@@ -14,6 +14,7 @@ import { remainingInitialTableReadinessMs } from './support/initialTableReadines
 import {
   installNaturalMultiRunWitness,
   completedNaturalRuns,
+  naturalMultiRunTiming,
   naturalMultiRunEngineIdentity,
   readNaturalMultiRunHistory,
   initializeNaturalMultiRunObserver,
@@ -233,12 +234,18 @@ test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => 
             for (const packet of completedNaturalRuns(item.packets, witness)) {
               if (!requestedRuns.includes(packet.runs as 2 | 3) || coverage.has(packet.runs))
                 continue;
+              const timing = naturalMultiRunTiming(packet, witness);
+              expect(
+                timing.violations,
+                `Natural run timing at ${item.tableId}, hand ${packet.hand}`
+              ).toEqual([]);
+              if (!timing.ready) continue;
               const name = `mobile-live-table-natural-${packet.runs}-runs`;
               const imagePath = testInfo.outputPath(`${name}.png`);
               await mkdir(dirname(imagePath), { recursive: true });
               await item.page.screenshot({ path: imagePath });
               await testInfo.attach(name, { path: imagePath, contentType: 'image/png' });
-              coverage.set(packet.runs, { tableId: item.tableId, packet, witness });
+              coverage.set(packet.runs, { tableId: item.tableId, packet, witness, timing });
             }
           }
           return [...coverage.keys()].sort();

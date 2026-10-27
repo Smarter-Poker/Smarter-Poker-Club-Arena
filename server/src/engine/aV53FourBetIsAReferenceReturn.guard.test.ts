@@ -151,7 +151,7 @@ describe('the V53 pressure 4-bet on the variant_price route', () => {
     expect(referenceReturnShape(receipt('fold', null), s)).toBe(true);
     expect(referenceReturnShape(receipt('call', 110), s)).toBe(true);
     expect(referenceReturnShape(receipt('call', 100), s)).toBe(false);
-    // The producer shoves only with another live responder; HU it never does.
+    // A 21bb heads-up shove is neither a V58 short-stack jam nor a call-off.
     expect(referenceReturnShape(receipt('all_in', null), s)).toBe(false);
   });
 

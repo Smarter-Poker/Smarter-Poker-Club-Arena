@@ -971,6 +971,7 @@ import {
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
 import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib/handHistoryLive';
+import { startHandHistoryHydration } from '../lib/handHistoryHydration';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
@@ -9951,40 +9952,37 @@ function LiveTablePage({
     ) {
       return;
     }
-    let cancelled = false;
     // Another table's list must not linger under this table's name while it loads.
     if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);
-    setHandHistoryState('loading');
-    (async () => {
-      try {
+    return startHandHistoryHydration({
+      load: () =>
         // THIS table's hands, in play order (Dan 2026-09-04). See
         // HandHistoryService.getPlayerHands for what the missing tableId did.
-        const hands = await handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
+        handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
           tableId,
-        });
-        if (cancelled) return;
+          throwOnError: true,
+        }),
+      commit: (hands) => {
         /* An empty answer is an answer. `hands.length > 0` used to gate this,
            which left whatever was on screen (a cache, another table's list) in
            place when the truth was "no hands here yet". */
         setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
         handHistoryFetchedAtRef.current = Date.now();
         handHistoryTableRef.current = tableId ?? null;
-        handHistoryStateRef.current = 'ready';
-        setHandHistoryState('ready');
+      },
+      setState: (state) => {
+        handHistoryStateRef.current = state;
+        setHandHistoryState(state);
+      },
+      onReady: () => {
         /* Hands the engine announced during the fetch: the query may have run
            before their rows landed. Take them now (de-duplicated by id). */
         const pending = pendingSavedIdsRef.current;
         pendingSavedIdsRef.current = [];
         for (const id of pending) void takeSavedHandRef.current(id);
-      } catch (e) {
-        if (cancelled) return;
-        setHandHistoryState('failed');
-        reportError(e, 'TablePage.loadHandHistoryPanel');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      },
+      onError: (error) => reportError(error, 'TablePage.loadHandHistoryPanel'),
+    });
     /* `tableId` IS a dependency: a TablePage instance in the multi-table
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
@@ -15298,6 +15296,8 @@ function LiveTablePage({
               },
               (payload: any) => {
                 applyDurableFinalTableState(payload.new);
+                if (typeof payload.new?.on_break === 'boolean')
+                  void refreshTournamentBreakRef.current();
                 if (payload.new?.status === 'COMPLETED') {
                   terminalCompletionWitnessed = true;
                   void exitFromDurableCompletion();

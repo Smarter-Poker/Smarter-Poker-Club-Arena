@@ -8,6 +8,9 @@ const h = vi.hoisted(() => ({
   absent: '',
   metadataChanged: false,
   missingCount: false,
+  wrongAuthority: false,
+  authorityFailure: false,
+  inheritedAgent: null as string | null,
   cleanup: 0,
   fetcher: null as any,
 }));
@@ -54,6 +57,9 @@ beforeEach(() => {
   h.metadataChanged = false;
   h.missingCount = false;
   h.cleanup = 0;
+  h.wrongAuthority = false;
+  h.authorityFailure = false;
+  h.inheritedAgent = null;
   h.fetcher = async (input: any, init: any) => {
     const url = new URL(String(input)),
       body = init?.body ? JSON.parse(String(init.body)) : null;
@@ -70,6 +76,11 @@ beforeEach(() => {
       });
     if (url.pathname === '/auth/v1/admin/users/' + row.horseId)
       return response({ ...user(), user_metadata: h.metadataChanged ? {} : user().user_metadata });
+    if (
+      url.pathname === '/rest/v1/profiles' &&
+      url.searchParams.get('id') === 'eq.' + REPLACEMENT_OWNER
+    )
+      return response([{ id: REPLACEMENT_OWNER, player_number: h.wrongAuthority ? '2' : '1' }]);
     if (url.pathname === '/rest/v1/profiles') {
       expect(url.searchParams.get('id')).toBe('eq.' + row.horseId);
       return response(
@@ -83,6 +94,7 @@ beforeEach(() => {
     if (url.pathname === '/rest/v1/ca_horse_active_roster')
       return response(h.absent === 'roster' ? [] : [{ horse_id: row.horseId }]);
     if (url.pathname === '/rest/v1/clubs') {
+      if (h.authorityFailure) return response({ message: 'authority unavailable' }, 503);
       expect(url.searchParams.get('id')).toBe('eq.' + REPLACEMENT_BOARD);
       return response([
         {
@@ -93,6 +105,20 @@ beforeEach(() => {
           lifecycle_status: 'active',
           max_members: 500,
           settlement_locked: false,
+        },
+      ]);
+    }
+    if (
+      url.pathname === '/rest/v1/club_members' &&
+      url.searchParams.get('user_id') === 'eq.' + REPLACEMENT_OWNER
+    ) {
+      expect(url.searchParams.get('club_id')).toBe('eq.' + REPLACEMENT_BOARD);
+      return response([
+        {
+          club_id: REPLACEMENT_BOARD,
+          user_id: REPLACEMENT_OWNER,
+          status: 'active',
+          agent_id: h.inheritedAgent,
         },
       ]);
     }
@@ -169,6 +195,27 @@ function adapter() {
   );
 }
 describe('real Supabase original subject boarding transport', () => {
+  it('derives normal owner placement from fresh club, named-referral and settled-owner authority', async () => {
+    expect(await adapter().referralAgent()).toBe(REPLACEMENT_OWNER);
+    expect(h.requests).toHaveLength(3);
+    expect(h.requests.every((r) => r.method === 'GET')).toBe(true);
+    expect(h.requests.some((r) => r.path.startsWith('/auth/'))).toBe(false);
+  });
+  it('refuses wrong named-referral authority without a subject session', async () => {
+    h.wrongAuthority = true;
+    await expect(adapter().referralAgent()).rejects.toThrow('authority unavailable');
+    expect(h.requests.every((r) => r.method === 'GET')).toBe(true);
+  });
+  it('refuses inherited arbitrary upline instead of the verified club owner', async () => {
+    h.inheritedAgent = '8b27a10f-e57b-47d9-9af0-000000000099';
+    await expect(adapter().referralAgent()).rejects.toThrow('authority unavailable');
+    expect(h.requests.every((r) => r.method === 'GET')).toBe(true);
+  });
+  it('preserves an unavailable authority read as refusal before any subject session', async () => {
+    h.authorityFailure = true;
+    await expect(adapter().referralAgent()).rejects.toBeDefined();
+    expect(h.requests.every((r) => r.method === 'GET')).toBe(true);
+  });
   it('reads actual DSS settings and its exact HEAD count before any subject session', async () => {
     await expect(adapter().board()).resolves.toEqual({ count: 434, maximum: 500 });
     expect(h.requests.map((r) => [r.path, r.method])).toEqual([

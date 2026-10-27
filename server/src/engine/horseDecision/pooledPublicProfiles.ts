@@ -1,0 +1,200 @@
+import { createHash } from 'node:crypto';
+import {
+  opponentMemoryKey,
+  opponentProfileVersion,
+  validOpponentProfile,
+  type DurableOpponentProfile,
+} from '../HorseOpponentMemory.js';
+import { horseCompletedHandKey } from '../HorseDecisionHandBinding.js';
+import { horseObserverReadContextFromRequest } from '../HorseObserverReadContext.js';
+import { observerParticipantsBind } from './observerParticipants.js';
+import type { FastHorseDecisionRequest, ObserveCompletedHandRequest } from './protocol.js';
+
+export interface PooledPublicProfileReceipt {
+  version: 1;
+  source: 'accepted_hand_public_profiles' | 'saved_and_accepted_public_profiles';
+  availableAtMs: number;
+  digest: string;
+  profiles: number;
+}
+/** Owner-authorized herd notes. Public aggregate counters only; no card,
+ * decision-plan, wager or caller-authored FAST packet enters this cache.
+ * The existing accepted-hand broadcaster supplies every worker. No IO,
+ * timer, donor inference or private observer state is needed on the turn. */
+export class PooledPublicProfiles {
+  private readonly rows = new Map<string, { profile: DurableOpponentProfile; at: number }>();
+  private readonly seen = new Set<string>();
+  private lastAt = 0;
+  private bootstrapped = false;
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly capacity = 32768
+  ) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 32768)
+      throw Error('Invalid public profile capacity');
+  }
+  bootstrap(snapshot: { availableAtMs: number; profiles: DurableOpponentProfile[] }): boolean {
+    if (
+      this.bootstrapped ||
+      this.rows.size ||
+      this.seen.size ||
+      !Number.isSafeInteger(snapshot?.availableAtMs) ||
+      snapshot.availableAtMs < 0 ||
+      !Array.isArray(snapshot.profiles) ||
+      snapshot.profiles.length > this.capacity
+    )
+      return false;
+    const staged = new Map<string, { profile: DurableOpponentProfile; at: number }>();
+    for (const p of snapshot.profiles) {
+      if (!validOpponentProfile(p)) return false;
+      const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
+      if (staged.has(key)) return false;
+      staged.set(key, {
+        profile: {
+          user_id: p.user_id,
+          variant: p.variant,
+          mode: p.mode,
+          size: p.size,
+          observed_hands: p.observed_hands,
+          initialized: p.initialized,
+          counters: { ...p.counters },
+        },
+        at: snapshot.availableAtMs,
+      });
+    }
+    for (const [key, row] of staged) this.rows.set(key, row);
+    this.lastAt = snapshot.availableAtMs;
+    this.bootstrapped = true;
+    return true;
+  }
+  observe(hand: ObserveCompletedHandRequest): number {
+    const key = horseCompletedHandKey(hand);
+    const participants = hand.observerParticipants;
+    const at = this.now();
+    const profiles = hand.durableOpponentProfiles;
+    if (
+      !key ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+        hand.committedHandId ?? ''
+      ) ||
+      !Number.isSafeInteger(at) ||
+      at < this.lastAt ||
+      this.seen.has(key) ||
+      !observerParticipantsBind(participants, hand) ||
+      participants.status !== 'bound' ||
+      !Array.isArray(hand.actions) ||
+      hand.actions.length > 4096 ||
+      hand.actions.some((a) => !a || typeof a !== 'object' || Array.isArray(a))
+    )
+      return 0;
+    const context = participants.contexts[0]!;
+    const mode = context.format === 'cash' ? 'cash' : 'tournament';
+    const size = context.dealtCount <= 2 ? 'hu' : context.dealtCount <= 5 ? 'short' : 'full';
+    const actors = new Set(
+      hand.actions.map((a) => a.userId).filter((id): id is string => typeof id === 'string')
+    );
+    this.lastAt = at;
+    this.seen.add(key);
+    while (this.seen.size > this.capacity) this.seen.delete(this.seen.values().next().value!);
+    const rowKey = (id: string) =>
+      opponentMemoryKey(id, context.variant as DurableOpponentProfile['variant'], mode, size);
+    const valid =
+      Array.isArray(profiles) &&
+      profiles.length <= 10 &&
+      new Set(profiles.map((p) => p?.user_id)).size === profiles.length &&
+      profiles.every(
+        (p) =>
+          validOpponentProfile(p) &&
+          p.variant === context.variant &&
+          p.mode === mode &&
+          p.size === size &&
+          actors.has(p.user_id)
+      );
+    // A newer accepted action is known even when its profile read failed.
+    // Never let stale aggregate counters suppress fresher individual learning.
+    const returned = new Set(valid ? profiles.map((p) => p.user_id) : []);
+    for (const id of actors) if (!returned.has(id)) this.rows.delete(rowKey(id));
+    if (!valid) return 0;
+    let learned = 0;
+    for (const p of profiles) {
+      const k = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
+      const previous = this.rows.get(k);
+      if (previous) {
+        const previousVersion = opponentProfileVersion(previous.profile),
+          version = opponentProfileVersion(p);
+        if (previousVersion > version) continue; // an out-of-order older hand cannot erase newer notes
+        if (previousVersion === version) {
+          this.rows.delete(k); // this new hand has no confirmed fresh profile
+          continue;
+        }
+      }
+      this.rows.delete(k);
+      this.rows.set(k, {
+        profile: {
+          user_id: p.user_id,
+          variant: p.variant,
+          mode: p.mode,
+          size: p.size,
+          observed_hands: p.observed_hands,
+          initialized: p.initialized,
+          counters: { ...p.counters },
+        },
+        at,
+      });
+      learned++;
+    }
+    while (this.rows.size > this.capacity) this.rows.delete(this.rows.keys().next().value!);
+    return learned;
+  }
+  read(
+    request: FastHorseDecisionRequest
+  ): { rows: DurableOpponentProfile[]; receipt: PooledPublicProfileReceipt } | null {
+    const context = horseObserverReadContextFromRequest(request);
+    if (!context || !Number.isSafeInteger(request.decisionTimeMs) || request.decisionTimeMs < 0)
+      return null;
+    const mode = context.format === 'cash' ? 'cash' : 'tournament';
+    const size = context.dealtCount <= 2 ? 'hu' : context.dealtCount <= 5 ? 'short' : 'full';
+    const rows: DurableOpponentProfile[] = [];
+    let availableAtMs = 0;
+    for (const player of request.gameState.players) {
+      if (
+        !request.gameState.dealtSeatIds?.includes(player.seat) ||
+        player.user_id === context.observerId
+      )
+        continue;
+      const found = this.rows.get(
+        opponentMemoryKey(
+          player.user_id,
+          context.variant as DurableOpponentProfile['variant'],
+          mode,
+          size
+        )
+      );
+      // A newer receipt is unavailable to an older queued snapshot. Never
+      // substitute it or relabel its availability with the decision clock.
+      if (!found || found.at > request.decisionTimeMs) continue;
+      rows.push(structuredClone(found.profile));
+      availableAtMs = Math.max(availableAtMs, found.at);
+    }
+    if (!rows.length) return null;
+    rows.sort((a, b) => a.user_id.localeCompare(b.user_id));
+    return {
+      rows,
+      receipt: {
+        version: 1,
+        source: this.bootstrapped
+          ? 'saved_and_accepted_public_profiles'
+          : 'accepted_hand_public_profiles',
+        availableAtMs,
+        digest: createHash('sha256').update(JSON.stringify(rows)).digest('hex'),
+        profiles: rows.length,
+      },
+    };
+  }
+  clear(): void {
+    this.rows.clear();
+    this.seen.clear();
+    this.lastAt = 0;
+    this.bootstrapped = false;
+  }
+}

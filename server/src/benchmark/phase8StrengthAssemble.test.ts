@@ -220,8 +220,8 @@ describe('phase8-strength-assemble', () => {
           '-e',
           `
       import {guardPolicyDigest,guardQualificationSourceDigest,GUARD_RUNTIME_POLICY_SOURCE_FILES,GUARD_QUALIFICATION_SOURCE_FILES} from './scripts/phase8-strength-assemble.mjs';
-      import {horseCatastropheGuardPolicyDigest,HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES} from './src/engine/HorseCatastropheGuardPolicyDigest.ts';
-      import {HORSE_CATASTROPHE_GUARD_QUALIFICATION_SOURCE_FILES} from './src/engine/HorseTournamentCatastropheGuardAuthority.ts';
+      import {horseCatastropheGuardPolicyDigest,HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES} from './src/engine/HorseCatastropheGuardPolicyDigest.js';
+      import {HORSE_CATASTROPHE_GUARD_QUALIFICATION_SOURCE_FILES} from './src/engine/HorseTournamentCatastropheGuardAuthority.js';
       import {readFileSync} from 'node:fs';
       import path from 'node:path';
       const read=p=>readFileSync(path.resolve('..',p));

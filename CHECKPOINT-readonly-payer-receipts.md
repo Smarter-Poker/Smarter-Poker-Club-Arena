@@ -7,3 +7,9 @@ Native18 PASS includes genuine post-COMMIT READONLY success without TEMP, invali
 Parent8315 protected main integrated; manifest records unioned with duplicate versions required byte-identical. Parent8345 dependency installed/recorded8735b9b2ca; this follow-up preserves it.
 
 2026-10-27 hosted currentf44 source-binding check failed only inherited retirement workflow9ed→74d pin. Exact old/new workflow diff already reviewed and retained by this task; one SHA plus binding-owned audit corrected. No installed SQL, helper metadata, source40/65 or financial proof pins changed. Canonical four reread18:13:26Z version2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b.
+
+## Owner-authorized finite source consolidation into PR8349
+
+Root explicitly authorized this task's sole integration writer to combine exact qualified/installed PR8334,8337,8345,8349 with qualified8331,8336,8357,8352 (including8341) and qualified not-yet-installed clock8306, then run one final candidate through full required CI. No intermediate head is published while184348 waits for root's qualified installation/immediate recording/release. Unqualified50916/52055 are excluded. Other PRs close only after protected8349 merge proves exact inclusion; only verified obsolete same-task runs may then be cancelled. No production operation belongs to this child.
+
+Normal main merge and owned8334 head50bc8feb29 /8337d1fd72bca1 are incorporated. Incoming8345 head44b78327ae has no additional content after exact record/pin union; its merge records ancestry and this real ownership checkpoint. All installed SQL remains byte-identical. Distinct recording rows and audit blocks are retained, duplicate version objects must match exactly, and only the genuinely composed workflow's SHA/bytes are refreshed with an additive-commands audit. Final source/native/required-provider verification is still pending the complete candidate.

@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/alert-native-event-01a17df2 / Production Alerts native event delivery",
+  "_comment": "Source declaration only: NOT INSTALLED. Migration20261027175950 must merge through protected main and install through Apply Merged Migration. This fragment is not catalog/history/subscription/native delivery evidence. The local plugin must remain disabled until exact installation and ACL readback; no serving engine calls these new functions.",
+  "tables": ["smarter_private.ca_native_alert_deliveries"],
+  "functions": [
+    "smarter_private.ca_native_alert_signal",
+    "fn_ca_native_alert_pending",
+    "fn_ca_read_native_alert",
+    "fn_ca_ack_native_alert"
+  ]
+}

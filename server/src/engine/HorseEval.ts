@@ -710,11 +710,13 @@ export interface OmahaDrawInfo {
   dominatedFlushDraw: boolean;
   /** deck cards that improve hero to a straight or straight flush */
   straightOuts: number;
-  /** 9+ straight outs — a true wrap */
+  /** 9+ raw straight outs, which may still be dominated or dirty. */
   bigWrap: boolean;
+  /** Straight completions to the nut straight on unpaired, non-flush boards. */
+  nutStraightOuts: number;
   /** V16 plo8: one card from the NUT LOW with A-2 live in hand */
   nutLowDraw: boolean;
-  /** the draw is worth fighting for: nut flush draw, big wrap, or nut-low draw */
+  /** Nut flush/low draw, or 9+ usable nut-straight completions. */
   nutty: boolean;
 }
 
@@ -722,6 +724,7 @@ const NO_DRAW_INFO: OmahaDrawInfo = {
   nutFlushDraw: false,
   dominatedFlushDraw: false,
   straightOuts: 0,
+  nutStraightOuts: 0,
   bigWrap: false,
   nutLowDraw: false,
   nutty: false,
@@ -768,6 +771,7 @@ export function omahaDrawQuality(
     // Straight outs by enumeration (straight family only: 5, 9, 10 — flushes
     // and boats are tracked separately and would double-count otherwise).
     let straightOuts = 0;
+    let nutStraightOuts = 0;
     const cur = scoreOmahaHiPartial(hole, board);
     if (Math.floor(cur / 0x100000) < 5) {
       const used = new Set<string>();
@@ -779,6 +783,13 @@ export function omahaDrawQuality(
         extended[extended.length - 1] = c;
         const cat = Math.floor(scoreOmahaHiPartial(hole, extended) / 0x100000);
         if (cat === 5 || cat >= 9) straightOuts++;
+        // Raw wrap size is not nut quality: a higher straight, a flush or a
+        // full house can beat the completion. Reuse the exact-two-hole
+        // straight authority; no opponent holdings or additional draws.
+        if (cat === 5 && new Set(extended.map((card) => card.rank)).size === extended.length) {
+          const status = omahaNutStatus(hole, extended);
+          if (status.straightIsNut && !status.flushPossible) nutStraightOuts++;
+        }
       }
     }
 
@@ -814,9 +825,10 @@ export function omahaDrawQuality(
       nutFlushDraw,
       dominatedFlushDraw,
       straightOuts,
+      nutStraightOuts,
       bigWrap,
       nutLowDraw,
-      nutty: nutFlushDraw || bigWrap || nutLowDraw,
+      nutty: nutFlushDraw || nutStraightOuts >= 9 || nutLowDraw,
     };
   } catch {
     return NO_DRAW_INFO;

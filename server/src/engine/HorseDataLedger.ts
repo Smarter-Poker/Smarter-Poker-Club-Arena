@@ -381,6 +381,12 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V24'
   ),
   tag(
+    'one_pair_turn_stackoff',
+    'measurement',
+    'one pair of hero own (overpair or a good-kicker hit) committed on the turn on an unpaired, not three-suited board, 40bb+',
+    'V24'
+  ),
+  tag(
     'board_paired_two_pair_stackoff',
     'measurement',
     'two pair where one pair is the board own, so board cards counterfeit or outkick it, 40bb+',

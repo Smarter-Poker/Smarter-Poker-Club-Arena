@@ -238,6 +238,10 @@
     opacity 0.3s ease,
     filter 0.3s ease;
   will-change: transform, opacity;
+  /* iPhone mobile energy: isolate seat updates (stack changes, VIP rings,
+     decision timers) so changes within a seat do not trigger whole-table
+     style and layout recalculation across the remaining 8 seats or the felt. */
+  contain: layout style;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

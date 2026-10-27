@@ -381,6 +381,12 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V24'
   ),
   tag(
+    'one_pair_turn_stackoff',
+    'measurement',
+    'single-board showdown one-pair shape with turn commitment, mirrored on wins; not turn decision EV or strategy authority',
+    'V24'
+  ),
+  tag(
     'board_paired_two_pair_stackoff',
     'measurement',
     'two pair where one pair is the board own, so board cards counterfeit or outkick it, 40bb+',

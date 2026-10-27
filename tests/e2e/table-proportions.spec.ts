@@ -2269,3 +2269,168 @@ test('painted action coverage protects the pill face without inventing paint in 
   });
   expect(await covered(), 'The opaque pill face still refuses coverage').toBe(true);
 });
+
+test('the phone action clock uses stationary ink and compositor clips at its real deadline', async ({
+  page,
+}) => {
+  const { buildSync } = await import('esbuild');
+  const built = buildSync({
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {ActionTimerRing} from './src/components/table/ActionTimerRing';const root=createRoot(document.getElementById('root'));window.clockRender=(seconds,delay)=>root.render(<div className="seat seat--active"><div className="seat__info" data-motion="keep" style={{width:120,height:60,position:'relative','--sp-timer-duration':seconds+'s','--sp-timer-delay':delay+'s'}}><ActionTimerRing timing={{'--sp-timer-duration':seconds+'s','--sp-timer-delay':delay+'s'}}/></div></div>);window.clockRender(15,0);`,
+      resolveDir: process.cwd(),
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    jsx: 'automatic',
+    // The fixture installs the real stylesheet below.
+    loader: { '.css': 'empty' },
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.setContent('<div id="root"></div>');
+  await page.addStyleTag({
+    content: readFileSync(resolve(ROOT, 'src/components/table/SeatSlot.css'), 'utf8'),
+  });
+  await page.addScriptTag({ content: built.outputFiles[0].text });
+  await expect(page.locator('.seat__timer-wipe')).toHaveCount(5);
+  await page.waitForFunction(
+    () => (document.querySelector('.seat__timer-wipe')?.getBoundingClientRect().width ?? 0) > 0
+  );
+  const sample = async (ms: number) =>
+    page.evaluate((ms) => {
+      for (const a of document.getAnimations()) {
+        a.pause();
+        a.currentTime = ms;
+      }
+      return [...document.querySelectorAll<HTMLElement>('.seat__timer-wipe')].map((w) => {
+        const ink = w.querySelector<HTMLElement>('.seat__timer-ink')!;
+        const wt = new DOMMatrixReadOnly(getComputedStyle(w).transform),
+          it = new DOMMatrixReadOnly(getComputedStyle(ink).transform);
+        const sector = w.parentElement!;
+        const endX = parseFloat(getComputedStyle(sector).getPropertyValue('--sp-wipe-x'));
+        const endY = parseFloat(getComputedStyle(sector).getPropertyValue('--sp-wipe-y'));
+        return {
+          spent: endX ? wt.m41 / endX : wt.m42 / endY,
+          xDrift: wt.m41 + it.m41,
+          yDrift: wt.m42 + it.m42,
+          duration: parseFloat(getComputedStyle(sector).getPropertyValue('--sp-segment-duration')),
+        };
+      });
+    }, ms);
+  for (const ms of [0, 1875, 3750, 7500, 10000, 14999, 15000]) {
+    const runs = await sample(ms);
+    expect(runs.reduce((n, r) => n + r.duration, 0)).toBeCloseTo(15, 5);
+    const spent = runs.reduce((n, r) => n + r.spent * r.duration, 0);
+    expect(spent, `clock at ${ms}ms`).toBeCloseTo(ms / 1000, 3);
+    for (const run of runs) {
+      expect(run.xDrift).toBeCloseTo(0, 4);
+      expect(run.yDrift).toBeCloseTo(0, 4);
+    }
+  }
+  const first = await page.locator('.seat__timer-wipe').first().elementHandle();
+  await page.evaluate(() => (window as any).clockRender(35, 0));
+  await expect(page.locator('.seat__info')).toHaveCSS('--sp-timer-duration', '35s');
+  expect(await first!.evaluate((el) => el === document.querySelector('.seat__timer-wipe'))).toBe(
+    true
+  );
+  expect((await sample(7500)).reduce((n, r) => n + r.spent * r.duration, 0)).toBeCloseTo(7.5, 3);
+  await page.evaluate(() =>
+    ['width', 'min-width', 'max-width'].forEach((p) =>
+      document.querySelector<HTMLElement>('.seat__info')!.style.setProperty(p, '180px', 'important')
+    )
+  );
+  await expect(page.locator('.seat__timer-ring')).toHaveCSS('width', '184px');
+  expect((await sample(10000)).reduce((n, r) => n + r.spent * r.duration, 0)).toBeCloseTo(10, 3);
+});
+
+test('the phone pot shine and on-turn avatar scan retain their paths without repainting backgrounds', async ({
+  page,
+}, testInfo) => {
+  const { buildSync } = await import('esbuild');
+  const built = buildSync({
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import SeatSlot from './src/components/table/SeatSlot';import PotDisplay from './src/components/table/PotDisplay';const now=Date.now();createRoot(document.getElementById('root')).render(<><SeatSlot seatNumber={1} position="BTN" player={{id:'energy',name:'Player',stack:100,status:'active',showCards:false,isHero:true,avatar:'https://smarter.poker/avatars/table/vip_wolf@2x.webp'}} isActive lastAction={null} turnStartTimeMs={now} turnDeadlineMs={now+15000}/><PotDisplay mainPot={82} bigBlind={2}/></>);`,
+      resolveDir: ROOT,
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    outfile: 'energy.js',
+    format: 'iife',
+    jsx: 'automatic',
+    loader: { '.css': 'empty', '.png': 'dataurl', '.webp': 'dataurl', '.svg': 'dataurl' },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      'import.meta.env': JSON.stringify({
+        DEV: false,
+        PROD: true,
+        VITE_SUPABASE_URL: 'https://dummy.supabase.co',
+        VITE_SUPABASE_ANON_KEY: 'fixture',
+      }),
+    },
+  });
+  await page.route('**/avatars/table/**', (route) =>
+    route.fulfill({ path: tableArtFixture('vip_wolf@2x.webp') })
+  );
+  await page.route('**/rest/v1/**', (route) => route.fulfill({ json: [] }));
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.setContent('<div id="root"></div>');
+  for (const file of ['SeatSlot.css', 'avatarChoreography.css', 'PotDisplay.css'])
+    await page.addStyleTag({
+      content: readFileSync(resolve(ROOT, 'src/components/table', file), 'utf8'),
+    });
+  await page.addStyleTag({
+    content:
+      'body{background:black;color:white}.seat{position:relative!important;left:0!important;top:0!important;margin:80px 100px;--table-w:366px}.pot-display{position:relative!important;left:0!important;top:0!important}',
+  });
+  await page.addScriptTag({ content: built.outputFiles[0].text });
+  await expect(page.locator('.seat__holo')).toHaveCount(1);
+  await expect(page.locator('.seat__avatar-img')).toBeVisible();
+  const result = await page.evaluate(() => {
+    const holo = document.querySelector<HTMLElement>('.seat__holo')!;
+    const pot = document.querySelector<HTMLElement>('.pot-display__main')!;
+    const animations = document.getAnimations();
+    const scan = animations.find((a) => (a as CSSAnimation).animationName === 'spAvatarHolo')!;
+    const shine = animations.find((a) => (a as CSSAnimation).animationName === 'pdGlassSweep')!;
+    const scanFrames = (scan.effect as KeyframeEffect).getKeyframes();
+    const shineFrames = (shine.effect as KeyframeEffect).getKeyframes();
+    for (const a of animations) {
+      a.pause();
+      a.currentTime = 3700;
+    }
+    const style = getComputedStyle(holo, '::after');
+    return {
+      mask: getComputedStyle(holo).maskImage,
+      scanDuration: scan.effect!.getTiming().duration,
+      scanDelay: scan.effect!.getTiming().delay,
+      shineDuration: shine.effect!.getTiming().duration,
+      scanTransforms: scanFrames.map((f) => f.transform).filter(Boolean),
+      shineTransforms: shineFrames.map((f) => f.transform).filter(Boolean),
+      scanPaintsBackground: scanFrames.some((f) => 'backgroundPosition' in f),
+      shineMovesLayout: shineFrames.some((f) => 'left' in f),
+      opacity: Number(style.opacity),
+      scanY: new DOMMatrixReadOnly(style.transform).m42,
+      stripHeight: parseFloat(style.height),
+      potWidth: pot.getBoundingClientRect().width,
+    };
+  });
+  expect(result.mask).toContain('vip_wolf');
+  expect(result.scanDuration).toBe(7000);
+  expect(result.scanDelay).toBeCloseTo(3000, -1);
+  expect(result.shineDuration).toBe(8000);
+  expect(result.scanTransforms).toContain('translateY(480%)');
+  expect(result.shineTransforms).toEqual([
+    'translateX(-200%)',
+    'translateX(400%)',
+    'translateX(-200%)',
+    'translateX(-200%)',
+  ]);
+  expect(result.scanPaintsBackground).toBe(false);
+  expect(result.shineMovesLayout).toBe(false);
+  expect(result.opacity).toBe(1);
+  expect(result.scanY / result.stripHeight).toBeCloseTo(2.4, 1);
+  expect(result.potWidth).toBeGreaterThan(0);
+  await page.screenshot({ path: testInfo.outputPath('phone-energy-cues.png') });
+});

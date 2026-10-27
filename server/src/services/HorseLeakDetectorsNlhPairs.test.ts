@@ -117,3 +117,25 @@ describe('plo_paired_board_nut_stackoff', () => {
     expect(plo('2h 9d 8h Ad', '4d Qd Th 5d 6c')).not.toContain('plo_paired_board_nut_stackoff');
   });
 });
+
+// The retained audit proposal was never integrated. Record both outcomes of
+// this showdown shape without treating either as decision EV or a strategy dial.
+describe('one_pair_turn_stackoff', () => {
+  it.each([-500, 500])('records the turn commitment shape with net %s', (netBB) => {
+    const tags = hand('Ks Kc', 'Jh 4d Tc 2c 3h', { heroActions: TURN_JAM, netBB });
+    expect(tags).toContain(netBB > 0 ? 'one_pair_turn_stackoff_won' : 'one_pair_turn_stackoff');
+    expect(tags).not.toContain(
+      netBB > 0 ? 'one_pair_river_stackoff_won' : 'one_pair_river_stackoff'
+    );
+  });
+  it('does not label river commitments, rag kickers, folds or multiple boards as this shape', () => {
+    for (const tags of [
+      hand('Ks Kc', 'Jh 4d Tc 2c 3h'),
+      hand('Ks 7d', 'Kc 9h 4d 2s 3c', { heroActions: TURN_JAM }),
+      hand('Ks Kc', 'Jh 4d Tc 2c 3h', { heroActions: TURN_JAM, wentToShowdown: false }),
+      hand('Ks Kc', 'Jh 4d Tc 2c 3h', { heroActions: TURN_JAM, multiBoard: true }),
+    ]) {
+      expect(tags).not.toContain('one_pair_turn_stackoff');
+    }
+  });
+});

@@ -6,6 +6,9 @@ on:
     paths:
       - supabase/migrations/**
       - scripts/ci/fixtures/fees-before-club-books/**
+      - scripts/ci/fixtures/grouped-rakeback-counts/**
+      - scripts/ci/test-grouped-rakeback-counts-keeper-postgres.py
+      - tests/rakeback-counts-group-the-original-week.law.test.ts
       - scripts/ci/fixtures/rakeback-counts-bulk-joins/**
       - scripts/ci/test-rakeback-counts-bulk-joins-postgres.py
       - tests/rakeback-counts-read-each-keyset-once.law.test.ts
@@ -84,3 +87,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-rakeback-counts-bulk-joins-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Original keeper groups exact closed-week rakeback counts
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-grouped-rakeback-counts-keeper-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"

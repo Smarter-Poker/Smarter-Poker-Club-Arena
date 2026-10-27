@@ -2188,3 +2188,116 @@ it('reports a rolled-back maintenance refusal without retaining an uncertain tra
   );
   expect(readCashierTransferRecovery(USER_ID, CLUB_A)).toBeNull();
 });
+
+describe('management claims from the selected member wallet', () => {
+  async function openClaim() {
+    mountCashier();
+    await synchronized();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Player 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    return screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+  }
+
+  it.each([
+    ['player_wallet', 'Player Wallet', '12.25'],
+    ['agent_wallet', 'Agent Wallet', '340.00'],
+    ['promo_wallet', 'Promo Wallet', '80.00'],
+  ])('binds %s balance, Claim All and durable claim source', async (source, label, balance) => {
+    state.roster = [{ ...player(0, 12.25), role: 'agent' }];
+    const original = vi.mocked(supabase.rpc).getMockImplementation()!;
+    vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
+      if (name !== 'fn_club_bank_claim_back') return original(name, args);
+      state.rpcCalls.push({ name, args: args as Record<string, unknown> });
+      return Promise.resolve({ data: { success: true }, error: null }) as never;
+    });
+    const dialog = await openClaim();
+    const select = within(dialog).getByRole('combobox', { name: 'Claim From' });
+    await within(select).findByRole('option', { name: `${label}: ${balance}` });
+    fireEvent.change(select, { target: { value: source } });
+    const all = within(dialog).getByRole('button', { name: `Claim All ${balance}` });
+    expect(all).toBeEnabled();
+    fireEvent.click(all);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Back', exact: true }));
+    await waitFor(() =>
+      expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(true)
+    );
+    const claim = state.rpcCalls.find((call) => call.name === 'fn_club_bank_claim_back')!;
+    expect(claim.args).toMatchObject({
+      p_source: source,
+      p_amount: Number(balance),
+      p_from_user_id: PLAYER_IDS[0],
+    });
+    const reservation = state.rpcCalls.find(
+      (call) =>
+        call.name === 'fn_cashier_browser_recovery_reserve' &&
+        (call.args.p_envelope as any)?.action === 'fn_club_bank_claim_back'
+    );
+    const { p_op_id: operationId, ...intent } = claim.args;
+    const canonical = JSON.stringify(
+      Object.keys(intent)
+        .sort()
+        .map((key) => [key, intent[key]])
+    );
+    const digest = Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)))
+    )
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+    expect(reservation?.args.p_envelope).toMatchObject({ digest, operationId });
+  });
+
+  it('clears an amount when switching wallets and checks the selected balance', async () => {
+    state.roster = [{ ...player(0, 0), role: 'agent' }];
+    const dialog = await openClaim();
+    const select = within(dialog).getByRole('combobox', { name: 'Claim From' });
+    await within(select).findByRole('option', { name: 'Agent Wallet: 340.00' });
+    expect(within(dialog).getByRole('button', { name: 'Claim All 0.00' })).toBeDisabled();
+    fireEvent.change(select, { target: { value: 'agent_wallet' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Claim All 340.00' }));
+    fireEvent.change(select, { target: { value: 'promo_wallet' } });
+    const amount = within(dialog).getByRole('textbox', { name: 'Claim Back Amount' });
+    expect(amount).toHaveValue('');
+    fireEvent.change(amount, { target: { value: '81' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Back', exact: true }));
+    expect(toastMocks.error).toHaveBeenCalledWith('Promo Wallet Only Holds 80');
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(false);
+  });
+
+  it('never treats a missing wallet as a zero balance or falls back to the player balance', async () => {
+    state.roster = [player(0, 75)];
+    const dialog = await openClaim();
+    const select = within(dialog).getByRole('combobox', { name: 'Claim From' });
+    await within(select).findByRole('option', { name: 'Player Wallet: 75.00' });
+    fireEvent.change(select, { target: { value: 'agent_wallet' } });
+    expect(within(dialog).getByRole('button', { name: 'Claim All Unavailable' })).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Claim Back Amount' }), {
+      target: { value: '1' },
+    });
+    expect(within(dialog).getByRole('button', { name: 'Claim Back', exact: true })).toBeDisabled();
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(false);
+  });
+  it('blocks claims during a delayed read, reports failure and recovers through Retry', async () => {
+    state.roster = [{ ...player(0, 75), role: 'agent' }];
+    const read = deferred<any>();
+    const original = vi.mocked(supabase.rpc).getMockImplementation()!;
+    let failed = true;
+    vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
+      if (name === 'fn_cashier_recipient_wallet_balances' && failed) return read.promise as never;
+      return original(name, args);
+    });
+    const dialog = await openClaim();
+    const amount = within(dialog).getByRole('textbox', { name: 'Claim Back Amount' });
+    fireEvent.change(amount, { target: { value: '1' } });
+    expect(within(dialog).getByRole('button', { name: 'Claim Back', exact: true })).toBeDisabled();
+    await act(async () => read.resolve({ data: null, error: { message: 'Read Refused' } }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Wallet Balances Could Not Be Verified'
+    );
+    failed = false;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    await within(dialog).findByRole('button', { name: 'Claim All 75.00' });
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Claim Back', exact: true })).toBeEnabled();
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(false);
+  });
+});

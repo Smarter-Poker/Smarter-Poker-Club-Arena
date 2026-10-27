@@ -1,4 +1,4 @@
-# Rakeback counts group the original closed week
+# tests/rakeback-counts-group-the-original-week.law.test.ts
 
 The original keeper may compute its three exact source-evidence counts once for the club's closed week, grouped by the original two-hour windows. Record-created evidence/incomplete windows and source-earned drift windows are separate. Incomplete matches retain the club's full launch-adjusted week. Preserve nullable joins, attribution/source/batch bags, house proofs, historical source contracts and original exceptions.
 

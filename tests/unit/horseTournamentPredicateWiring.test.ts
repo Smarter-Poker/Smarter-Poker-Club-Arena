@@ -58,7 +58,7 @@ it('rejects duplicate, foreign, private and oversized metadata without echoing i
     expect(result.stderr).not.toContain('private-sentinel');
   }
 });
-it('embeds fixed helper source and preserves reviewed validators and intentional flush-only reference bytes', () => {
+it('embeds fixed helper source and preserves reviewed v1/v2/v3 validators and awaited reference output', () => {
   const result = spawnSync('python3', ['-B', inspector, '--host-script'], { encoding: 'utf8' });
   expect(result.status, result.stderr).toBe(0);
   const extracted = spawnSync(
@@ -77,14 +77,14 @@ it('embeds fixed helper source and preserves reviewed validators and intentional
       'utf8'
     )
   );
-  // Independent source pins from reviewed 3269; CI requires no Git history.
+  // Independent pins bind the reviewed 361ec63 v3 composition; CI needs no Git history.
   const pins = {
-    reference_cases: '31259cb18806e1e6c430efc46a9f9bdd1ca71bb18f88e52a81b516554cc5e544',
-    // Protected #8360 adds bounded unknown-selection diagnostics only; the
-    // observed-result guards and original binding checks remain unchanged.
+    reference_cases: 'e3f25a6cc8cd650f69a4c5e2fd224e6eae861a5999d7049ca4c1ca19662d06dc',
+    // V3 adds exact actor/seat/stage and a closed scalar summary; v1/v2
+    // retain their original binding, witness, reconciliation and privacy guards.
     sanitize_positive_calloff_result:
-      '560fd66bde654a23933989342565d7da366b91e216cacec69715fa266bcf1d03',
-    sanitize_reference_result: '5b78b3c9dc042dff103861c75050e97912bdcd020abcefb3fb9ead3e37d96e66',
+      '43a342da367225e9b41bffbbb6f68b90e353a8fa24e68f56207469fa1f2d0ad9',
+    sanitize_reference_result: '1ceef5c9bdc0f46c9ea45c312ac4a300dc90dcb41c8ecb2086710462d7c885b2',
     reference_diagnostic: '808e49bea3a0f1f411191bc9bbd5efe8d831fe308765bdcf5ea6ff91bb45e592',
     tournament_yields: '87d7b1c052ca72140bb659d31f3078f08c1ea7b4a867160b26ed440b8af511d4',
     booking_cap_refusals: '87a4f0a5a46c70db39f4449934b707fdf93198e14ca452db45e3959002335359',
@@ -107,10 +107,10 @@ it('embeds fixed helper source and preserves reviewed validators and intentional
   const currentFunctions = functions(current);
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');
   for (const [key, pin] of Object.entries(pins)) expect(sha(currentFunctions[key]), key).toBe(pin);
-  // The same reviewed #8360 diagnostics compose with this branch's unchanged
-  // awaited stdout flush; keep the exact composed helper bound.
+  // Exact reviewed v3 helper, including the shared awaited stdout flush.
+  // Original tournament helpers are independently checked below.
   expect(sha(current.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0])).toBe(
-    'd9d3b2dd3fa0e634422748f439c44ee9783bb99315d58c690d7d08486eaec6c2'
+    '55990741042849ad2984fc3b6dec83d3b96896bec1e1884336adb4d128e5107b'
   );
 });
 it('keeps unavailable runtime and untrusted child output sanitized unknown', () => {

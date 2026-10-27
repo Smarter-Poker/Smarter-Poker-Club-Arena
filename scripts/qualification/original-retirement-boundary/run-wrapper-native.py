@@ -23,6 +23,10 @@ s+="INSERT INTO public.union_pnl_inventory_checkpoint_issues SELECT(jsonb_popula
 s+="INSERT INTO public.union_pnl_inventory_checkpoints VALUES('2026-10-12 07:00:00Z','2026-10-05 07:00:00Z',63116879,3352453,245,'5ae24d37326afb43bf598385c2ce24c5','9492245970312d6ac027287a5126c114','dd5e733acc7ed72e69b98d009ac124a6',false,771495,'postgres','2026-10-12 11:40:53.278694Z');"
 for row in json.loads((b/'inventory245-actual-cache-functions.json').read_text())['rows']:s+=row['body']+';'
 s+=(p/'basis-generation-cache-proposal.sql').read_text()+(p/'original-erased-discharge-flow-proposal.sql').read_text()+(p/'flow-consumer-proposal.sql').read_text()+(p/'report-consumer-cache-proposal.sql').read_text()+(p/'boundary-consumer-proposal.sql').read_text()+';'+(p.parent/'original-seven-discharge'/'discharge.sql').read_text()+(p/'admitted-wrapper-proposal.sql').read_text()+(p/'global-proof-source-guard-proposal.sql').read_text()
+if os.environ.get('ORB_INVENTORY_STATE_READ_MIGRATION'):
+ candidate=Path(os.environ['ORB_INVENTORY_STATE_READ_MIGRATION']).read_text().strip()
+ assert candidate.endswith('COMMIT;')
+ s+=candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')+'\n'
 s+="DO $cert$DECLARE c record;started timestamptz:=clock_timestamp();BEGIN FOR c IN SELECT event_id FROM smarter_private.original_inventory_restoration_cases LOOP PERFORM smarter_private.certify_original_inventory_restoration(c.event_id,'2026-10-12 07:00:00Z');END LOOP;RAISE NOTICE 'QUALIFICATION finite245 certificate elapsed_ms=% count=%',(extract(epoch FROM(clock_timestamp()-started))*1000)::numeric(15,3),(SELECT count(*) FROM smarter_private.original_inventory_restoration_certificates);END$cert$;"
 s+=(p/'admitted-wrapper-proposal.sql').read_text()
 s+="""DO $test$DECLARE old jsonb;raw jsonb;warm jsonb;a jsonb;BEGIN SELECT r INTO old FROM native_original_raw;raw:=public.fn_union_pnl_inventory_as_of('2026-10-12 07:00:00Z');IF raw IS DISTINCT FROM old OR md5(raw::text)<>'0b5f26fa2d7ec5aa15097b1f64d2c67b' THEN RAISE EXCEPTION 'originalrawfiniteactiveprojection differs %',md5(raw::text);END IF;

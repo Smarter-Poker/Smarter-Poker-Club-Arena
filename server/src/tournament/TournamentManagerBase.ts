@@ -1,3 +1,4 @@
+import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import { channelHub } from '../hub/ChannelHub.js';
@@ -2977,6 +2978,9 @@ export abstract class TournamentManagerBase {
     // An adopted cohort satellite holds its qualifier boundary before this
     // registration exists; the fresh entry starts in the general lanes.
     if (this.satelliteQualifierBoundaryPending) this.declareConsolidationOutstanding(true);
+    // A resumed field may already have one player per dealer. Its first
+    // balance admission must not wait for a blind level or the general queue.
+    this.askForConsolidationIfSpread();
   }
 
   /** Remove only this manager's scheduler entry; safe from lifecycle catches. */
@@ -3043,11 +3047,13 @@ export abstract class TournamentManagerBase {
     // A decided field is served from the decided lane (requestDecidedEliminationSweep),
     // never the one-slot consolidation lane: 208 decided Spins marked consolidating
     // starved every real consolidation on 2026-10-01 (aDecidedFieldDoesNotHoldTheConsolidationLane).
-    const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
-    if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
+    // A committed wake belongs to this manager even before its scheduler
+    // registration can accept it. Registration admits its own first pass;
+    // retaining the reason here lets that pass serve the original receipt.
+    if (Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));
     }
-    return accepted;
+    return tournamentEliminationScheduler.wake(this.tournamentId);
   }
 
   /**
@@ -3091,15 +3097,47 @@ export abstract class TournamentManagerBase {
    * balancer merges them. That is consolidation work, so this manager moves
    * to the lane and asks for one pass; the balance stage then keeps or clears
    * the mark on what it reads. Checked on the held level's own 15 s recheck,
-   * which already runs; it adds no timer and no query.
+   * which already runs; it adds no timer and no query. Also asked at manager
+   * registration and at the hand that removes the last playable pair, so the
+   * first balance pass need not wait for that later clock observation.
    */
-  protected askForConsolidationIfSpread(): void {
-    if (this.consolidationDeclared) return;
+  protected askForConsolidationIfSpread(completed?: {
+    engine: ServerTableEngine;
+    finalStacks: readonly { user_id: string; stack: number }[];
+  }): void {
+    if (this.consolidationDeclared || !this.tableEngines || this.tableEngines.size < 2) return;
+    // A late callback from a retired manager/dealer cannot promote the
+    // successor's scheduler registration. Unknown rosters remain ordinary.
+    if (completed) {
+      try {
+        const tableId = this.tableIdForManagedEngine(completed.engine);
+        if (
+          !tableId ||
+          !this.isRunning() ||
+          this.gameServer.getTableEngine(tableId) !== completed.engine
+        )
+          return;
+      } catch {
+        return; // A scheduling hint cannot prevent the original bust wake.
+      }
+    }
     let loneTables = 0;
     for (const engine of this.tableEngines.values()) {
       let seated: number;
       try {
         seated = engine.getOccupiedSeatNumbers().length;
+        if (completed?.engine === engine) {
+          // Zero-stack players still occupy chairs before elimination. The
+          // complete final stacks say how many opponents can actually deal.
+          const stacks = completed.finalStacks;
+          if (
+            stacks.length < seated ||
+            new Set(stacks.map((player) => player.user_id)).size !== stacks.length ||
+            stacks.some((player) => !Number.isFinite(player.stack) || player.stack < 0)
+          )
+            return;
+          seated = stacks.filter((player) => player.stack > 0).length;
+        }
       } catch {
         return;
       }
@@ -3108,7 +3146,9 @@ export abstract class TournamentManagerBase {
     }
     if (loneTables < 2) return;
     this.declareConsolidationOutstanding(true);
-    if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
+    // The hand callback already owes exactly one bust wake immediately below.
+    if (this.consolidationDeclared && !completed)
+      this.requestEliminationSweep('spread_field_cannot_deal');
   }
 
   /** What this manager last told the scheduler about its field being decided. */
@@ -3223,8 +3263,7 @@ export abstract class TournamentManagerBase {
 
   /** Purchases in flight at once while the add-on break holds the field. */
   static readonly ADD_ON_BREAK_CONCURRENCY = 8;
-  /** One held-field pass ends here and the next admission continues it, well
-   *  inside ELIMINATION_SWEEP_STUCK_MS, so a scheduler slot is never held long. */
+  /** Eligibility reads must finish inside this bounded preparation budget. */
   static readonly ADD_ON_BREAK_PASS_MS = 20_000;
 
   /**
@@ -3239,15 +3278,19 @@ export abstract class TournamentManagerBase {
   /**
    * Offer the add-on to every listed horse through a pool of
    * ADD_ON_BREAK_CONCURRENCY requests, until the list is done or the
-   * persisted offer closes or ADD_ON_BREAK_PASS_MS has passed (the next
-   * admission continues from the cursor). Same RPC, same receipts, same retained identity on
+   * persisted offer closes or the existing sweep lifetime ends. The captured
+   * cohort stays on this owner: re-admission can lose most of a one-minute
+   * window to the shared queue. Same RPC, same receipts, same retained identity on
    * an ambiguous reply as the ordinary batch; only the pacing differs. The
    * mutation batch keeps the sweep's work budget from cutting the field short;
    * manager stop, the sweep's abort signal and the freeze still end it.
    */
   protected async offerAddOnsWhileTheFieldIsHeld(
     horseRows: Array<{ id: string }>,
-    passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS
+    passEndsAt = Math.min(
+      Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? '')),
+      Date.now() + ELIMINATION_SWEEP_STUCK_MS
+    )
   ): Promise<{ taken: number; completed: number; declined: Map<string, number> }> {
     const declined = new Map<string, number>();
     let taken = 0;
@@ -3353,6 +3396,7 @@ export abstract class TournamentManagerBase {
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
         if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
+        this.askForConsolidationIfSpread({ engine, finalStacks });
         this.bustAwaitsItsStage();
         this.horseRebuyOfferMayHaveOpened();
         this.requestEliminationSweep();
@@ -11592,9 +11636,15 @@ export abstract class TournamentManagerBase {
   protected async tryTournamentAddOns(): Promise<void> {
     // The held-field pass includes its eligibility reads. A slow snapshot
     // must not spend the ordinary five-second budget before the pool starts.
-    // Keep one bounded deadline across reads and purchases; lifecycle, the
-    // persisted offer deadline and maintenance remain authoritative.
-    const heldPassEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    // Preparation retains its twenty-second bound. Once captured, purchases
+    // stay on this owner until the earlier persisted deadline or existing
+    // sweep lifetime. Lifecycle and maintenance remain authoritative.
+    const heldOperationStartedAt = Date.now();
+    const heldPassEndsAt = heldOperationStartedAt + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    const heldPurchaseEndsAt = Math.min(
+      Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? '')),
+      heldOperationStartedAt + ELIMINATION_SWEEP_STUCK_MS
+    );
     const addOnWorkAllowed = () =>
       !isMaintenanceFrozen() &&
       this.running &&
@@ -11739,7 +11789,7 @@ export abstract class TournamentManagerBase {
       if (this.addOnBreakHoldsTheField(Date.now())) {
         const rotated = pendingHorseRows.slice(start).concat(pendingHorseRows.slice(0, start));
         if (rotated.length === 0) return;
-        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPassEndsAt);
+        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPurchaseEndsAt);
         completedOffers += served.completed;
         if (served.taken > 0 || served.declined.size > 0) {
           console.log(

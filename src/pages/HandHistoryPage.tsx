@@ -20,6 +20,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { handAssetTotals, historyAssetLabel } from '../lib/handAssetTotals';
 import { handHistoryService } from '../services/HandHistoryService';
@@ -30,6 +31,7 @@ import { useToast } from '../components/common/Toast';
 import { exportToCSV } from '../lib/export';
 import { masterBus } from '../core/MasterBus';
 import HandReplay from '../components/replay/HandReplay';
+import HandDetailModal from '../components/table/HandDetailModal';
 import HandDetailView from '../components/handdetail/HandDetailView';
 import HandNoteEditor from '../components/handdetail/HandNoteEditor';
 import HandFlagControl from '../components/handdetail/HandFlagControl';
@@ -193,6 +195,11 @@ export default function HandHistoryPage() {
   const [flagsKnown, setFlagsKnown] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replayId, setReplayId] = useState<string | null>(null);
+  const [detailSelection, setDetailSelection] = useState<{
+    scope: string;
+    hand: HandRecord;
+  } | null>(null);
+  const detailHand = detailSelection?.scope === archiveScope ? detailSelection.hand : null;
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const firstPageSequenceRef = useRef(0);
@@ -230,6 +237,7 @@ export default function HandHistoryPage() {
     linkedScrolledRef.current = null;
     setExpandedId(null);
     setReplayId(null);
+    setDetailSelection(null);
     setShareHand(null);
     setNotes(new Map());
     setFlags(new Map());
@@ -1138,6 +1146,13 @@ export default function HandHistoryPage() {
                     <div className="hand-card__actions">
                       <button
                         type="button"
+                        className="replay-btn"
+                        onClick={() => setDetailSelection({ scope: archiveScope, hand })}
+                      >
+                        Open Hand Detail
+                      </button>
+                      <button
+                        type="button"
                         className="analyze-btn"
                         onClick={() => analyzeWithJarvis(hand)}
                       >
@@ -1179,27 +1194,54 @@ export default function HandHistoryPage() {
         </button>
       )}
 
-      {replayId && (
-        <div className="replay-modal-overlay" onClick={() => setReplayId(null)}>
-          <div
-            className="replay-modal-content"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Hand Replay"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="modal-close"
-              aria-label="Close"
-              onClick={() => setReplayId(null)}
+      {detailHand &&
+        createPortal(
+          <HandDetailModal
+            isOpen
+            onClose={() => setDetailSelection(null)}
+            hands={[detailHand]}
+            initialHandId={detailHand.id}
+            heroId={userId ?? ''}
+            onReplay={(hand) => {
+              setDetailSelection(null);
+              setReplayId(hand.id);
+            }}
+            onShare={(hand) => {
+              try {
+                setShareHand(panelHandToShareable(hand, hand.tableName || 'Club Arena'));
+                setDetailSelection(null);
+              } catch (error) {
+                reportError(error, 'HandHistoryPage.shareHandFromDetail');
+                toast.error('Could Not Build A Share Link For That Hand');
+              }
+            }}
+          />,
+          document.body
+        )}
+
+      {replayId &&
+        createPortal(
+          <div className="replay-modal-overlay" onClick={() => setReplayId(null)}>
+            <div
+              className="replay-modal-content"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Hand Replay"
+              onClick={(e) => e.stopPropagation()}
             >
-              ✕
-            </button>
-            <HandReplay handId={replayId} onClose={() => setReplayId(null)} />
-          </div>
-        </div>
-      )}
+              <button
+                type="button"
+                className="modal-close"
+                aria-label="Close"
+                onClick={() => setReplayId(null)}
+              >
+                ✕
+              </button>
+              <HandReplay handId={replayId} onClose={() => setReplayId(null)} />
+            </div>
+          </div>,
+          document.body
+        )}
 
       {shareHand && (
         <ShareHand

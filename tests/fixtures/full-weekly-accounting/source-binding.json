@@ -482,10 +482,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
+    "scripts/ci/classify-ci-changes.mjs": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "a705cfffedd0343b9a7ef8d1626cb24e05494eb8eae57bcc1f2cee20ae722fd9",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "b6ef5f7f9e1324d2ac3744c2a9ce2afe62bdf312b680423daf1e264b5d20106d",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -504,7 +504,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "95f09fe2904d40416631847b624b4c80048dd6c596b5080d55f69f51c66a38b5",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "a60a0ef77be8fb2a1bcc49c7a9f2f0b0347c9550e550cf51982f328583587e02",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5410,6 +5410,25 @@
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
         "previousSha256": "0c7caa5dab92742607cb26ca149ac0972189513c536cca6fd08fda6defa6550f",
         "currentSha256": "fa61a9a0453a485d990d8e55d207af70125f214070343f9ba16d3dd9c702e305"
+      }
+    }
+  },
+  "cashHalfInputBinding20261026": {
+    "reason": "Add only exact top-half cash native runner routing to existing required accounting. Current classifier binding changes; preserve financial source, historical receipts and verdicts. No financial recertification.",
+    "changes": {
+      "repository_fixtures": {
+        "previous": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
+        "current": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+      }
+    },
+    "dependentBindings": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "a705cfffedd0343b9a7ef8d1626cb24e05494eb8eae57bcc1f2cee20ae722fd9",
+        "current": "b6ef5f7f9e1324d2ac3744c2a9ce2afe62bdf312b680423daf1e264b5d20106d"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "95f09fe2904d40416631847b624b4c80048dd6c596b5080d55f69f51c66a38b5",
+        "current": "a60a0ef77be8fb2a1bcc49c7a9f2f0b0347c9550e550cf51982f328583587e02"
       }
     }
   }

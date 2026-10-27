@@ -16,7 +16,7 @@
 import { resolveClientTimeoutMs } from '../cashAccountingBatchBudget.js';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
-import { dataActorHeaders } from './dataActorContext.js';
+import { stampOwnedDataActorHeaders } from './dataActorContext.js';
 import { bindRealtimeCallbacksToRegistration } from './realtimeCallbackContext.js';
 import { observeFenceInResponse } from './tournamentManagerFence.js';
 import { measureLightningFoldFetch } from '../../lightning/LightningFoldTiming.js';
@@ -159,13 +159,15 @@ function createBoundedServiceClient(
             callerSignal?.addEventListener('abort', onAbort, { once: true });
             callerSignal?.throwIfAborted();
             const operation = measureLightningFoldFetch(async (timing) => {
-              const headers = new Headers(
+              const requestHeaders =
                 typeof Request !== 'undefined' && attemptInput instanceof Request
                   ? attemptInput.headers
-                  : undefined
-              );
+                  : undefined;
+              const headers = new Headers(requestHeaders ?? init.headers);
               // Preserve caller headers, then stamp the immutable actor last.
-              new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+              if (requestHeaders && init.headers) {
+                new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+              }
               // The DB guard rejects server actor markers paired with a viewer JWT.
               let authoritativeHeaders: Headers;
               if (actorToken) {
@@ -183,7 +185,7 @@ function createBoundedServiceClient(
                   (init.method || 'GET').toUpperCase() !== 'POST'
                 )
                   throw new Error('private_record_acl_request_boundary');
-                authoritativeHeaders = new Headers(headers);
+                authoritativeHeaders = headers;
                 for (const name of [
                   'x-smarter-data-actor',
                   'x-smarter-data-protocol',
@@ -218,7 +220,7 @@ function createBoundedServiceClient(
                   (url.pathname === '/auth/v1/logout' && url.searchParams.get('scope') !== 'local')
                 )
                   throw new Error('original_subject_request_boundary');
-                authoritativeHeaders = new Headers(headers);
+                authoritativeHeaders = headers;
                 for (const name of [
                   'x-smarter-data-actor',
                   'x-smarter-data-protocol',
@@ -227,7 +229,7 @@ function createBoundedServiceClient(
                 ])
                   authoritativeHeaders.delete(name);
               } else {
-                authoritativeHeaders = dataActorHeaders(headers);
+                authoritativeHeaders = stampOwnedDataActorHeaders(headers);
               }
               const response = await fetch(attemptInput, {
                 ...init,

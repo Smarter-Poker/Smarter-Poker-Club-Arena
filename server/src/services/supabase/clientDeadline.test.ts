@@ -293,6 +293,53 @@ describe('database deadline includes response body and caller cancellation', () 
 });
 
 describe('database transport compatibility', () => {
+  it('owns one header collection per URL attempt without mutating or trusting caller authority', async () => {
+    const NativeHeaders = globalThis.Headers;
+    const caller = new NativeHeaders({
+      authorization: 'Bearer original-service-key',
+      'x-smarter-tournament-id': 'forged',
+      'x-smarter-tournament-lease-generation': 'forged',
+      'x-smarter-data-actor': 'tournament-manager',
+    });
+    const response = new Response(null, { status: 204 });
+    let allocations = 0;
+    vi.stubGlobal(
+      'Headers',
+      class extends NativeHeaders {
+        constructor(init?: ConstructorParameters<typeof NativeHeaders>[0]) {
+          super(init);
+          allocations++;
+        }
+      }
+    );
+    const transport = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal('fetch', transport);
+    await ordinaryDatabaseFetch()('https://example.test/rpc', { headers: caller });
+    const sent = transport.mock.calls[0][1].headers as Headers;
+    expect(sent.get('authorization')).toBe('Bearer original-service-key');
+    expect(sent.get('x-smarter-data-actor')).toBe('service');
+    expect(sent.has('x-smarter-tournament-id')).toBe(false);
+    expect(sent.has('x-smarter-tournament-lease-generation')).toBe(false);
+    expect(caller.get('x-smarter-tournament-id')).toBe('forged');
+    expect(allocations).toBe(1);
+  });
+
+  it('merges Request overrides before stamping authority without changing either input', async () => {
+    const request = new Request('https://example.test/rpc', {
+      headers: { 'x-base': 'retained', 'x-overridden': 'base' },
+    });
+    const overrides = new Headers({ 'x-overridden': 'override', 'x-smarter-data-actor': 'forged' });
+    const transport = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', transport);
+    await ordinaryDatabaseFetch()(request, { headers: overrides });
+    const sent = transport.mock.calls[0][1].headers as Headers;
+    expect(sent.get('x-base')).toBe('retained');
+    expect(sent.get('x-overridden')).toBe('override');
+    expect(sent.get('x-smarter-data-actor')).toBe('service');
+    expect(request.headers.get('x-overridden')).toBe('base');
+    expect(overrides.get('x-smarter-data-actor')).toBe('forged');
+  });
+
   it('retries only a proven pre-execution rejection and keeps the response readable', async () => {
     const transport = vi
       .fn()
@@ -351,8 +398,12 @@ describe('database transport compatibility', () => {
 
     vi.stubGlobal('fetch', nativeFetch);
     let requests = 0;
-    const server = createServer((_request, response) => {
+    let receivedActor: string | string[] | undefined;
+    let receivedGeneration: string | string[] | undefined;
+    const server = createServer((request, response) => {
       requests++;
+      receivedActor = request.headers['x-smarter-data-actor'];
+      receivedGeneration = request.headers['x-smarter-tournament-lease-generation'];
       response.writeHead(200, { 'content-type': 'application/json' });
       response.write('['); // Deliberately never finish the body.
     });
@@ -363,12 +414,20 @@ describe('database transport compatibility', () => {
         await vi.importActual<typeof import('@supabase/supabase-js')>('@supabase/supabase-js');
       const client = actual.createClient(`http://127.0.0.1:${address.port}`, 'test-key', {
         auth: { persistSession: false, autoRefreshToken: false },
-        global: { fetch: ordinaryDatabaseFetch() },
+        global: {
+          fetch: ordinaryDatabaseFetch(),
+          headers: {
+            'x-smarter-data-actor': 'forged',
+            'x-smarter-tournament-lease-generation': 'forged',
+          },
+        },
       });
       const { data, error } = await client.from('deadline_probe').select('id');
       expect(data).toBeNull();
       expect(error).not.toBeNull();
       expect(requests).toBe(1);
+      expect(receivedActor).toBe('service');
+      expect(receivedGeneration).toBeUndefined();
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -905,3 +905,270 @@ m=runpy.run_path(sys.argv[1]); print(json.dumps(m['kernel_oom_signals'](json.loa
   expect(data.fullHistoryProven).toBe(false);
   expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|other/);
 });
+
+const positiveCase = {
+  handKey: originalCase.handKey,
+  tableId,
+  handId: originalCase.handId,
+  handNumber: originalCase.handNumber,
+  leaseGeneration: originalLease,
+  decisionRecordSha256: 'd'.repeat(64),
+};
+const positiveInput = { version: 2, sourceRelease: 'a'.repeat(40), cases: [positiveCase] };
+it('accepts explicit positive-calloff metadata without pretending it was an error', () => {
+  const result = encodeCases(JSON.stringify(positiveInput));
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(Buffer.from(result.stdout.trim(), 'base64').toString())).toEqual(positiveInput);
+  for (const bad of [
+    { ...positiveCase, errorAt: originalCase.errorAt },
+    { ...positiveCase, decisionRecordSha256: 'not-a-record-hash' },
+    { ...positiveCase, decisionRecordSha256: undefined },
+  ])
+    expect(encodeCases(JSON.stringify({ ...positiveInput, cases: [bad] })).status).toBe(1);
+});
+
+function acceptedCalloffFixture(mode: string) {
+  const extract = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; print(json.dumps(runpy.run_path(sys.argv[1])["REFERENCE_DIAGNOSTIC_JS"]))',
+      script,
+    ],
+    { encoding: 'utf8', timeout: 5000 }
+  );
+  expect(extract.status, extract.stderr).toBe(0);
+  const program = JSON.parse(extract.stdout);
+  const recordJs = ts.transpileModule(
+    readFileSync(
+      resolve(__dirname, '../../server/src/services/horseDecisionJournal/record.ts'),
+      'utf8'
+    ),
+    { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }
+  ).outputText;
+  const bindingJs = ts.transpileModule(
+    readFileSync(resolve(__dirname, '../../server/src/engine/HorseDecisionHandBinding.ts'), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }
+  ).outputText;
+  const fixture = `
+const {inspectAcceptedCalloffRecords}=await import('data:text/javascript;base64,${Buffer.from(program).toString('base64')}');
+const records=await import('data:text/javascript;base64,${Buffer.from(recordJs).toString('base64')}');
+const binding=await import('data:text/javascript;base64,${Buffer.from(bindingJs).toString('base64')}');
+const mode=${JSON.stringify(mode)}, input=${JSON.stringify(positiveInput)},c=input.cases[0];
+const coordinate=${JSON.stringify(originalCoordinate)};
+const actor='52345678-abcd-4321-abcd-123456789abc';
+const snapshot={type:'DECIDE_FAST',generation:7,requestId:9,decisionTimeMs:1000,
+ fence:c.tableId+':123:1:'+c.leaseGeneration+':7',handJournalContext:binding.captureHorseHandJournalContext([]),
+ decisionKey:'private-decision-id',player:{seat:1,user_id:actor,stack:100,bet:20},gameState:{currentBet:120,gameVariant:'nlh'}};
+if(mode==='zero-stack') snapshot.player.stack=0;
+if(mode==='chips-behind') snapshot.player.stack=101;
+const decision={action:'all_in',tournamentPreflopAttribution:{route:'variant_price',referenceProposal:{action:'all_in',amount:null}}};
+if(mode==='wrong-route') decision.tournamentPreflopAttribution.route='chart_open_jam';
+if(mode==='sized-reference') decision.tournamentPreflopAttribution.referenceProposal.amount=100;
+const acceptedAction={seat:1,userId:actor,action:'all_in',amount:100,timestamp:1001,stage:'preflop'};
+const witness={handAnchor:binding.anchorHorseDecisionHand(snapshot),identity:{stage:'preflop'},
+ executionStatus:'intended',retirementReason:null,selected:{action:'all_in'},executedAction:'all_in',
+ acceptedActions:[{intended:true,record:acceptedAction}]};
+if(mode==='coerced') witness.executionStatus='coerced';
+if(mode==='fold-executed') witness.executedAction='fold';
+let sequence=0;
+const make=(kind,body,turnKey='b'.repeat(64))=>records.makeHorseJournalRecord({producerId:'42345678-abcd-4321-abcd-123456789abc',
+ sequence:++sequence,atMs:1000,sourceRelease:input.sourceRelease,kind,handKey:c.handKey,turnKey},body);
+const d=make('decision',{snapshot,decision,private:'private-secret'});
+c.decisionRecordSha256=['discover','discovery-ambiguous'].includes(mode)?null:d.sha256;
+const e=make('execution',witness,mode==='wrong-turn'?'c'.repeat(64):d.turnKey);
+const hand={generation:123,fence:c.tableId+':123:'+c.leaseGeneration+':observe',handKey:c.tableId+':123',
+ committedHandId:c.handId,actions:[{...acceptedAction,origin:'horse_policy',
+ publicNode:{version:1,status:'captured',actorSeat:1,street:'preflop'},
+ observationIdentity:{version:1,status:'bound',handId:c.handId,actionOrdinal:0,observationId:c.handId+':0',sessionKey:'a'.repeat(64)}}]};
+if(mode==='unbound') hand.actions[0].observationIdentity.actionOrdinal=1;
+const a=make('accepted_hand',hand,c.handKey);
+let rows=[d,e,a];
+if(mode==='duplicate-execution') rows.push(make('execution',witness));
+if(mode==='discovery-ambiguous') rows.push(make('decision',{snapshot,decision}));
+if(mode==='tampered-record') rows[0]={...d,body:d.body+' '};
+if(mode==='wrong-decision') c.decisionRecordSha256='f'.repeat(64);
+const api={...records,...binding,
+ horsePhase6AttributionMismatch:()=>mode==='phase6-refused'?'reference_shape':null,
+ horseDecisionReceiptIsValid:()=>mode!=='invalid-receipt',
+ reconcileHorseJournalHand:()=>({status:mode==='unreconciled'?'incomplete':'reconciled',gaps:mode==='unreconciled'?['input_mismatch']:[],
+ matchedActions:1,acceptedHorseActions:1})};
+const batch={status:'canonical_journal_export',sourceRelease:mode==='wrong-source'?'e'.repeat(40):input.sourceRelease,
+ recordsByHand:[{handKey:c.handKey,records:rows}]};
+console.log(JSON.stringify({input,result:inspectAcceptedCalloffRecords(input,batch,api)}));`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', fixture], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  expect(run.status, run.stderr).toBe(0);
+  expect(run.stdout + run.stderr).not.toMatch(
+    /private-secret|private-decision-id|"player"|"stack"|currentBet/
+  );
+  return JSON.parse(run.stdout);
+}
+
+it('observes only an exact successful calloff joined to its intended same-turn execution and hand', () => {
+  const { input, result } = acceptedCalloffFixture('ok');
+  expect(result.status).toBe('observed');
+  expect(result.cases[0]).toMatchObject({
+    observation: 'accepted_variant_price_whole_stack_calloff',
+    decisionRecordSha256: input.cases[0].decisionRecordSha256,
+    guards: {
+      exactDecisionBound: true,
+      positiveStackCalloff: true,
+      sameTurnExecution: true,
+      intendedAllInAccepted: true,
+      handReconciled: true,
+    },
+  });
+  const checked = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read()); print(json.dumps(m["sanitize_reference_result"](d["result"],d["input"])))',
+      script,
+    ],
+    { input: JSON.stringify({ input, result }), encoding: 'utf8', timeout: 5000 }
+  );
+  expect(checked.status, checked.stderr).toBe(0);
+  expect(JSON.parse(checked.stdout)).toEqual(result);
+});
+it.each([
+  'zero-stack',
+  'chips-behind',
+  'wrong-route',
+  'sized-reference',
+  'coerced',
+  'fold-executed',
+  'wrong-turn',
+  'duplicate-execution',
+  'tampered-record',
+  'wrong-decision',
+  'phase6-refused',
+  'invalid-receipt',
+  'unbound',
+  'unreconciled',
+  'wrong-source',
+  'discovery-ambiguous',
+])('does not convert %s into positive calloff proof', (mode) => {
+  const { result } = acceptedCalloffFixture(mode);
+  expect(result.status).toBe('unknown');
+  expect(result.cases?.[0]?.status).not.toBe('observed');
+});
+it('refuses private, false-guard and hash-substituted positive child output', () => {
+  const { input, result } = acceptedCalloffFixture('ok');
+  for (const tamper of [
+    { ...result, private: 'private-secret' },
+    { ...result, cases: [{ ...result.cases[0], amount: 100 }] },
+    { ...result, cases: [{ ...result.cases[0], decisionRecordSha256: 'e'.repeat(64) }] },
+    {
+      ...result,
+      cases: [{ ...result.cases[0], guards: { ...result.cases[0].guards, receiptValid: false } }],
+    },
+  ]) {
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read());m['reference_diagnostic'].__globals__['bounded_command']=lambda *a,**k:json.dumps(d['result'])
+print(json.dumps(m['reference_diagnostic'](d['input'])))`,
+        script,
+      ],
+      { input: JSON.stringify({ input, result: tamper }), encoding: 'utf8', timeout: 5000 }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual({
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+    });
+    expect(checked.stdout + checked.stderr).not.toContain('private-secret');
+  }
+  expect(source).toContain("await import('/app/dist/services/horseDecisionJournal/review.js')");
+  expect(source).toContain('api.reconcileHorseJournalHand(entry.records,c.handKey)');
+  expect(source).toContain('api.bindHorseDecisionToCommittedHand(w,hand)');
+});
+
+it('discovers one positive calloff within an explicitly bound accepted hand without exporting private records', () => {
+  const { input, result } = acceptedCalloffFixture('discover');
+  expect(input.cases[0].decisionRecordSha256).toBeNull();
+  expect(result.status).toBe('observed');
+  expect(result.cases[0].decisionRecordSha256).toMatch(/^[0-9a-f]{64}$/);
+});
+
+it('exports only exact bounded original tournament cash-yield events, including retained stream history', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); line='2026-10-27T01:54:54.957590Z [SessionRotator] horse=4ea2c47b leaving table=e5904da2 for a tournament in 1 min (certain, 1 over four games)'
+invalid=[line+' private-secret',line.replace('certain','other-private-reason'),line.replace('2026-10-27','2026-99-99'),line.replace('horse=4ea2c47b','horse=private-user'),line.replace(', 1 over',', 0 over')]
+parsed=m['tournament_yields']('\\n'.join([line,*invalid]))
+producer='print('+repr(line)+'); '+"[print('2026-10-27T02:00:00Z private-secret') for _ in range(12000)]"
+history=m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)
+print(json.dumps({'parsed':parsed,'history':history,'bounded':m['tournament_yields']('\\n'.join([line]*130))}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 7000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const result = JSON.parse(ran.stdout);
+  expect(result.parsed).toMatchObject({ matchingRecords: 1, eventsTruncated: false });
+  expect(result.parsed.events).toEqual([
+    {
+      timestamp: '2026-10-27T01:54:54.957590Z',
+      horseIdPrefix: '4ea2c47b',
+      tableIdPrefix: 'e5904da2',
+      minutesToStart: 1,
+      reason: 'certain',
+      excess: 1,
+    },
+  ]);
+  expect(result.bounded).toMatchObject({
+    matchingRecords: 130,
+    eventsTruncated: true,
+    cashoutCompletionProven: false,
+  });
+  expect(result.bounded.events).toHaveLength(128);
+  expect(result.history.tournamentYields).toEqual(result.parsed);
+  expect(result.history.coverage.status).toBe('complete');
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|Traceback/);
+});
+
+it('keeps only typed original booking-cap request context and never infers RUNNING status', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); prefix='2026-10-27T02:54:01.000000Z [TournamentRecurring] horse_entry_cap_refused '
+record={'version':1,'tournamentId':'bbbbbbbb-2222-4222-8222-222222222222','horseId':'aaaaaaaa-1111-4111-8111-111111111111','sqlstate':'23514','load':4,'attemptedAt':'2026-10-27T02:54:00.000Z'}
+line=prefix+json.dumps(record)
+invalid=[prefix+json.dumps(dict(record, private='secret')),prefix+json.dumps(dict(record, load=True)),prefix+json.dumps(dict(record, sqlstate='55000')),prefix+json.dumps(dict(record, horseId='private-user')),line+' private-secret',line.replace('02:54:01','02:54:00').replace('02:54:00.000Z','02:55:00.000Z'),prefix+json.dumps(record)[:-1]+',"load":5}']
+parse=m.get('booking_cap_refusals',lambda raw:{'matchingRecords':0,'events':[]})
+parsed=parse('\\n'.join([line,*invalid]))
+producer='print('+repr(line)+'); '+"[print('2026-10-27T02:55:00Z private-secret') for _ in range(12000)]"
+history=m['process_history']([sys.executable,'-c',producer],max_bytes=2000000,seconds=5)
+print(json.dumps({'parsed':parsed,'history':history,'bounded':parse('\\n'.join([line]*130))}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 7000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const result = JSON.parse(ran.stdout);
+  expect(result.parsed).toMatchObject({ matchingRecords: 1, runningEntryProven: false });
+  expect(result.parsed.events).toEqual([
+    {
+      timestamp: '2026-10-27T02:54:01.000000Z',
+      attemptedAt: '2026-10-27T02:54:00.000Z',
+      horseIdPrefix: 'aaaaaaaa',
+      tournamentIdPrefix: 'bbbbbbbb',
+      sqlstate: '23514',
+      load: 4,
+    },
+  ]);
+  expect(result.bounded).toMatchObject({ matchingRecords: 130, eventsTruncated: true });
+  expect(result.bounded.events).toHaveLength(128);
+  expect(result.history.bookingCapRefusals).toEqual(result.parsed);
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|111111111111|222222222222|Traceback/);
+});

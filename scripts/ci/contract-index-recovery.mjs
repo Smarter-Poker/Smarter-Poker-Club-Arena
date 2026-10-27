@@ -21,7 +21,17 @@ export const EXPECTED_DEFINITION =
 export const CHICAGO_FILE = '20261023213635_today_win_loss_resets_at_chicago_midnight.sql';
 export const CHICAGO_INDEX = 'public.ca_hand_facts_cash_member_time_idx';
 export const CHICAGO_SHA = '3fb827d597941a0fe32260d9b0172e005cf86eea375d2bacaa888625a5339b5f';
+export const FUNDING_FILE = '20261026161532_unpaid_lightning_earnings_follow_the_original_funding_club.sql';
+export const FUNDING_INDEX = 'public.accounting_cash_club_week_player_cover';
+export const FUNDING_SHA = 'c3206fd79746fcb8151e5aadfb074723b30aed8ca76904e3e694313a2c514d24';
 export function recoveryRequest(file, sql, index, oid, before, transientOid = null) {
+  if (file === FUNDING_FILE && index === FUNDING_INDEX) {
+    if (transientOid || !validRecoveryCutoff(before) || !/^[1-9][0-9]*$/.test(oid || '') ||
+        BigInt(oid) > 4294967295n || createHash('sha256').update(sql).digest('hex') !== FUNDING_SHA)
+      throw new Error('Funding cover recovery requires exact migration bytes and observed OID');
+    return { index, oid, before, transientOid: null };
+  }
+
   if (file === CHICAGO_FILE && index === CHICAGO_INDEX) {
     if (
       transientOid ||
@@ -135,6 +145,10 @@ export function recoverySnapshotDiagnostic(rows) {
   return `category=${category}; holders=${holders}; unknown_age=${unknownAge}; oldest_age_seconds=${oldest}; prepared=${prepared}`;
 }
 export function recoveryCatalog(request) {
+  if (request?.index === FUNDING_INDEX) return RECOVERY_CATALOG
+    .replaceAll('managed_game_contract_versions_game_id_id_idx', 'accounting_cash_club_week_player_cover')
+    .replaceAll('managed_game_contract_versions', 'accounting_cash_rake_sources');
+
   if (request?.index !== CHICAGO_INDEX) return RECOVERY_CATALOG;
   return RECOVERY_CATALOG.replaceAll(
     'managed_game_contract_versions_game_id_id_idx',
@@ -142,6 +156,18 @@ export function recoveryCatalog(request) {
   ).replaceAll('managed_game_contract_versions', 'ca_hand_facts');
 }
 export function validateRecoveryCatalog(rows, request, recovered = false) {
+  if (request?.index === FUNDING_INDEX) {
+    if (!Array.isArray(rows) || rows.length !== 1) throw new Error('unknown funding cover catalog');
+    const r = rows[0];
+    if (r.name !== 'accounting_cash_club_week_player_cover' || r.table_name !== 'accounting_cash_rake_sources' ||
+        r.definition !== 'CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)' || r.attribute_count !== 4)
+      throw new Error('Funding cover index shape differs');
+    validateRecoveryCatalog([{ ...r, name:'managed_game_contract_versions_game_id_id_idx',
+      table_name:'managed_game_contract_versions', definition:EXPECTED_DEFINITION, attribute_count:2 }],
+      { ...request,index:RECOVERY_INDEX },recovered);
+    return r;
+  }
+
   if (request?.index === CHICAGO_INDEX) {
     if (!Array.isArray(rows) || rows.length !== 1) throw new Error('unknown Chicago catalog');
     const r = rows[0];
@@ -224,6 +250,12 @@ export function validateRecoverySnapshots(rows) {
 }
 
 export function recoveryStatement(request) {
+  if (request?.index === FUNDING_INDEX) {
+    recoveryStatement({ ...request,index:RECOVERY_INDEX });
+    if (request.transientOid) throw new Error('Funding transient recovery is not admitted');
+    return 'REINDEX INDEX CONCURRENTLY public.accounting_cash_club_week_player_cover';
+  }
+
   if (request?.index === CHICAGO_INDEX) {
     recoveryStatement({ ...request, index: RECOVERY_INDEX });
     if (request.transientOid) throw new Error('Chicago transient recovery is not admitted');

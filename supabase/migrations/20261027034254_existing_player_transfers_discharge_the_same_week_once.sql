@@ -184,7 +184,10 @@ BEGIN
    WHERE rp.id=a.obligation_id AND rp.status='paid'AND rp.paid_at IS NOT NULL AND rp.user_id=a.beneficiary_id AND rp.club_id=a.club_id AND rp.rakeback_amount=a.amount
    AND c.id=a.certificate_id AND c.id=(SELECT max(z.id)FROM public.accounting_rakeback_period_calculations z WHERE z.period_id=rp.id)
    AND c.source_fingerprint=a.source_fingerprint AND c.rakeback_amount=a.amount AND c.player_id=a.beneficiary_id AND c.club_id=a.club_id
-   AND pp.status='paid'AND pp.paid_at IS NOT NULL AND pp.user_id=a.beneficiary_id AND pp.club_id=a.club_id AND pp.payout_amount=a.amount AND pp.wallet_transaction_id IS NULL);
+   AND pp.status='paid'AND pp.paid_at IS NOT NULL AND pp.user_id=a.beneficiary_id AND pp.club_id=a.club_id AND pp.payout_amount=a.amount AND pp.wallet_transaction_id IS NULL
+   AND NOT EXISTS(SELECT FROM public.wallet_transactions w WHERE w.related_entity_id=a.payout_id AND w.category='rakeback')
+   AND NOT EXISTS(SELECT FROM public.accounting_rakeback_payer_transfers pt WHERE pt.payout_id=a.payout_id)
+   AND NOT EXISTS(SELECT FROM public.chip_ledger extra WHERE extra.club_id=a.club_id AND extra.to_entity_id=a.beneficiary_id AND extra.category='rakeback'AND extra.metadata->>'payout_id'=a.payout_id::text));
  END IF;
  RETURN a.obligation_role='commission'AND a.certificate_id IS NULL AND a.payout_id IS NULL
  AND(SELECT count(*)FROM public.agent_commission_settlements cs WHERE cs.club_id=a.club_id AND cs.user_id=a.beneficiary_id AND cs.period_start=a.period_start AND cs.period_end=a.period_end AND cs.amount=a.amount AND cs.paid_at IS NOT NULL)=1;
@@ -195,7 +198,7 @@ REVOKE ALL ON FUNCTION smarter_private.existing_rakeback_transfer_complete(text,
 CREATE FUNCTION smarter_private.apply_existing_rakeback_transfer(p_scope_kind text,p_scope_id uuid,p_start timestamptz,p_end timestamptz,p_role text,p_club uuid,p_user uuid,p_period uuid DEFAULT NULL,p_certificate bigint DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,smarter_private SET TimeZone='UTC' AS $body$
 DECLARE plan jsonb;scope record;a smarter_private.existing_rakeback_transfer_allocations%ROWTYPE;
- payer_before numeric;payer_after numeric;recipient_before numeric;recipient_after numeric;paid_before numeric;paid_after numeric;
+ payer_before numeric;payer_after numeric;recipient_before numeric;recipient_after numeric;
  saved_club text;saved_member text;saved_agent text;docs bigint;
 BEGIN
  SELECT * INTO scope FROM public.fn_resolve_accounting_routing_scope(p_scope_kind,p_scope_id,p_start,p_end);
@@ -220,8 +223,7 @@ BEGIN
  PERFORM id FROM public.agents WHERE club_id=p_club AND user_id=a.original_payer_id FOR NO KEY UPDATE;
  SELECT chip_treasury INTO payer_before FROM public.clubs WHERE id=p_club;
  SELECT agent_wallet_balance INTO recipient_before FROM public.agents WHERE club_id=p_club AND user_id=a.original_payer_id;
- SELECT chip_balance INTO paid_before FROM public.club_members WHERE club_id=p_club AND user_id=p_user;
- IF payer_before IS NULL OR recipient_before IS NULL OR paid_before IS NULL OR payer_before<a.amount
+ IF payer_before IS NULL OR recipient_before IS NULL OR payer_before<a.amount
  OR payer_before<>round(payer_before,2)OR recipient_before<>round(recipient_before,2)OR payer_before::text IN('NaN','Infinity','-Infinity')OR recipient_before::text IN('NaN','Infinity','-Infinity')
  THEN RAISE EXCEPTION 'existing_transfer_reimbursement_accounts_invalid' USING ERRCODE='23514';END IF;
  saved_club:=current_setting('app.ledger_autoskip_clubs',true);saved_member:=current_setting('app.ledger_autoskip_club_members',true);saved_agent:=current_setting('app.ledger_autoskip_agents',true);
@@ -247,8 +249,6 @@ BEGIN
  IF docs<>1 THEN RAISE EXCEPTION 'existing_transfer_reimbursement_invoice_required' USING ERRCODE='23514';END IF;
  INSERT INTO smarter_private.existing_rakeback_transfer_allocations SELECT a.*;
  IF p_role='player'THEN UPDATE public.rakeback_periods SET status='paid',paid_at=clock_timestamp()WHERE id=p_period;END IF;
- SELECT chip_balance INTO paid_after FROM public.club_members WHERE club_id=p_club AND user_id=p_user;
- IF paid_after IS DISTINCT FROM paid_before THEN RAISE EXCEPTION 'existing_transfer_beneficiary_was_credited_twice' USING ERRCODE='23514';END IF;
  PERFORM set_config('app.ledger_autoskip_clubs',COALESCE(saved_club,''),true);PERFORM set_config('app.ledger_autoskip_club_members',COALESCE(saved_member,''),true);PERFORM set_config('app.ledger_autoskip_agents',COALESCE(saved_agent,''),true);
  IF p_role='player'AND NOT smarter_private.existing_rakeback_transfer_complete(p_role,a.obligation_id)THEN RAISE EXCEPTION 'existing_transfer_final_receipt_incomplete' USING ERRCODE='23514';END IF;
  RETURN to_jsonb(a)||jsonb_build_object('duplicate',false);
@@ -1724,8 +1724,8 @@ DO $postimage$ BEGIN
  IF md5(pg_get_functiondef('public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)) IS DISTINCT FROM '9742b2ff89b72cf4d9f77f6db085af3e'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)';END IF;
  IF md5(pg_get_functiondef('public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)) IS DISTINCT FROM '1d9bcaa16d4bb9ae26eeb172fe7c3535'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)';END IF;
  IF md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)) IS DISTINCT FROM '38e8a0bf0b309b973391107e3bd934d0'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)';END IF;
- IF md5(pg_get_functiondef('smarter_private.apply_existing_rakeback_transfer(text,uuid,timestamp with time zone,timestamp with time zone,text,uuid,uuid,uuid,bigint)'::regprocedure)) IS DISTINCT FROM '4e9f2af239d76039367c6cd7864754b3'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.apply_existing_rakeback_transfer(text,uuid,timestamp with time zone,timestamp with time zone,text,uuid,uuid,uuid,bigint)';END IF;
- IF md5(pg_get_functiondef('smarter_private.existing_rakeback_transfer_complete(text,uuid)'::regprocedure)) IS DISTINCT FROM '74956867ed71a467035dce0390cd47b3'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.existing_rakeback_transfer_complete(text,uuid)';END IF;
+ IF md5(pg_get_functiondef('smarter_private.apply_existing_rakeback_transfer(text,uuid,timestamp with time zone,timestamp with time zone,text,uuid,uuid,uuid,bigint)'::regprocedure)) IS DISTINCT FROM '3b27d25933b16459d01452d50d919209'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.apply_existing_rakeback_transfer(text,uuid,timestamp with time zone,timestamp with time zone,text,uuid,uuid,uuid,bigint)';END IF;
+ IF md5(pg_get_functiondef('smarter_private.existing_rakeback_transfer_complete(text,uuid)'::regprocedure)) IS DISTINCT FROM 'adf0cee5b8c0cee59bcaae1ed49d1c25'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.existing_rakeback_transfer_complete(text,uuid)';END IF;
  IF md5(pg_get_functiondef('smarter_private.existing_rakeback_transfer_plan(uuid,uuid,timestamp with time zone,timestamp with time zone,text,uuid,bigint)'::regprocedure)) IS DISTINCT FROM '07067e8f2a841a8339d3bdde73a5f296'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.existing_rakeback_transfer_plan(uuid,uuid,timestamp with time zone,timestamp with time zone,text,uuid,bigint)';END IF;
  IF md5(pg_get_functiondef('smarter_private.existing_rakeback_transfer_player_receipt(uuid)'::regprocedure)) IS DISTINCT FROM '93080527dcbe86ffa904af596040833d'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.existing_rakeback_transfer_player_receipt(uuid)';END IF;
  IF md5(pg_get_functiondef('smarter_private.existing_rakeback_transfer_scope_economic_plan(text,uuid,timestamp with time zone,timestamp with time zone,text)'::regprocedure)) IS DISTINCT FROM '9a9eadead5e586774b86f7873fe1b08d'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: smarter_private.existing_rakeback_transfer_scope_economic_plan(text,uuid,timestamp with time zone,timestamp with time zone,text)';END IF;

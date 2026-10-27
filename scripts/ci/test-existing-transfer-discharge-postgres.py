@@ -8,7 +8,7 @@ an isolated native adapter. Positive direct-player liability from the commission
 subject is deliberately refused pending net-discharge support. No production access.
 Financial rollback probes force SET CONSTRAINTS ALL IMMEDIATE before ROLLBACK.
 """
-import argparse, concurrent.futures, json, os, shutil, socket, subprocess, sys, tempfile
+import argparse, concurrent.futures, json, os, shutil, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 from decimal import Decimal
 
@@ -72,7 +72,7 @@ try:
     for row in json.loads((R/'scripts/ci/fixtures/unpaid-atomic-cash-contract-dependencies.json').read_text())['definitions']:
         if row['signature']=='fn_accounting_agreement_history_immutable()':q(row['definition'])
     q("DROP TRIGGER wcs_receipt ON chip_ledger;ALTER TABLE agents ADD COLUMN role text DEFAULT 'agent';CREATE TABLE union_wallets(id uuid,union_id uuid);CREATE TABLE accounting_correction_documents(id uuid,source_ledger_id uuid,invoice_id uuid,club_id uuid,issuer_type text,issuer_id uuid,payee_type text,payee_id uuid,amount numeric,issued_at timestamptz);CREATE FUNCTION fn_ca_launch_is_internal_transfer(uuid)RETURNS boolean LANGUAGE sql AS $$SELECT false$$;")
-    q("CREATE FUNCTION fn_deliver_accounting_invoice(p_id uuid)RETURNS void LANGUAGE plpgsql AS $$DECLARE i settlement_invoices%ROWTYPE;msg uuid;note uuid;BEGIN IF current_setting('dr.refuse_invoice',true)='on'THEN RETURN;END IF;SELECT * INTO i FROM settlement_invoices WHERE id=p_id;IF i.message_sent THEN RETURN;END IF;INSERT INTO social_messages(content,message_type,media_metadata)VALUES('receipt','invoice',jsonb_build_object('invoice_id',i.id))RETURNING id INTO msg;INSERT INTO notifications(user_id,type,title,data,metadata)VALUES(i.to_entity_id::uuid,'accounting_invoice','Invoice',jsonb_build_object('invoice_id',i.id),jsonb_build_object('invoice_id',i.id))RETURNING id INTO note;INSERT INTO accounting_invoice_deliveries(invoice_id,recipient_id,message_id,notification_id)VALUES(i.id,i.to_entity_id::uuid,msg,note);UPDATE settlement_invoices SET message_sent=true WHERE id=i.id;END$$;")
+    q("CREATE FUNCTION fn_deliver_accounting_invoice(p_id uuid)RETURNS void LANGUAGE plpgsql AS $$DECLARE i settlement_invoices%ROWTYPE;msg uuid;note uuid;BEGIN IF current_setting('dr.refuse_invoice',true)='on'THEN RETURN;END IF;SELECT * INTO i FROM settlement_invoices WHERE id=p_id;IF i.message_sent THEN RETURN;END IF;IF current_setting('ed.pause_woo_invoice',true)='on'AND EXISTS(SELECT FROM chip_ledger l WHERE l.id=i.source_ledger_id AND l.metadata->>'beneficiary_id'=caw_u('P3')::text AND l.metadata->>'payment_method'='owner_confirmed_existing_transfer')THEN PERFORM pg_advisory_xact_lock(8934254);END IF;INSERT INTO social_messages(content,message_type,media_metadata)VALUES('receipt','invoice',jsonb_build_object('invoice_id',i.id))RETURNING id INTO msg;INSERT INTO notifications(user_id,type,title,data,metadata)VALUES(i.to_entity_id::uuid,'accounting_invoice','Invoice',jsonb_build_object('invoice_id',i.id),jsonb_build_object('invoice_id',i.id))RETURNING id INTO note;INSERT INTO accounting_invoice_deliveries(invoice_id,recipient_id,message_id,notification_id)VALUES(i.id,i.to_entity_id::uuid,msg,note);UPDATE settlement_invoices SET message_sent=true WHERE id=i.id;END$$;")
     load(R/'scripts/ci/fixtures/existing-transfer-discharge/original-ledger-invoice.sql')
     load(R/'scripts/ci/fixtures/existing-transfer-discharge/original-transfer-document.sql')
     q("CREATE TRIGGER actual_accounting_transfer_document AFTER INSERT ON chip_ledger FOR EACH ROW WHEN(NEW.status='posted'AND NEW.from_type IN('club_treasury','player_wallet','agent_wallet')AND NEW.to_type IN('club_treasury','player_wallet','agent_wallet'))EXECUTE FUNCTION fn_accounting_transfer_document_on_insert();")
@@ -163,13 +163,35 @@ try:
     concurrent_open=q('SELECT caw_balances()').stdout.strip()
     concurrent_open_legs=q("SELECT jsonb_agg(id ORDER BY id)FROM chip_ledger").stdout.strip()
     for phase,call in [('R2',R2),('R3',R3)]:
-        def concurrent_call(_):return json.loads(q('BEGIN;SELECT '+call+';COMMIT;').stdout.strip())
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2)as pool:answers=list(pool.map(concurrent_call,[0,1]))
+        pause=None
+        if phase=='R3':
+            pause=subprocess.Popen([str(A.pg_bin/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-h','127.0.0.1','-p',port,'-d','postgres'],env=E,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=1)
+            pause.stdin.write("SELECT pg_advisory_lock(8934254);SELECT 'locked';\n");pause.stdin.flush()
+            assert pause.stdout.readline().strip()=='' and pause.stdout.readline().strip()=='locked'
+        def concurrent_call(_):return json.loads(q("BEGIN;SET LOCAL application_name='ed-unrelated-beneficiary-concurrency';"+("SET LOCAL ed.pause_woo_invoice='on';"if phase=='R3'else'')+'SELECT '+call+';SET CONSTRAINTS ALL IMMEDIATE;COMMIT;').stdout.strip())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2)as pool:
+            pending=[pool.submit(concurrent_call,i)for i in range(2)]
+            if phase=='R3':
+                try:
+                    deadline=time.monotonic()+10
+                    while q("SELECT EXISTS(SELECT FROM pg_stat_activity WHERE application_name='ed-unrelated-beneficiary-concurrency'AND wait_event='advisory')").stdout.strip()!='t':
+                        assert time.monotonic()<deadline,'R3 did not reach the real reimbursement invoice barrier'
+                        time.sleep(.02)
+                    # Genuine concurrent unrelated member-to-member credit with its
+                    # own balanced ledger; no club-bank/owner-agent lock is taken.
+                    q("BEGIN;SET LOCAL lock_timeout='2s';SET LOCAL app.ledger_autoskip_club_members='1';UPDATE club_members SET chip_balance=chip_balance-1 WHERE club_id=caw_u('club')AND user_id=caw_u('A');UPDATE club_members SET chip_balance=chip_balance+1 WHERE club_id=caw_u('club')AND user_id=caw_u('P3');INSERT INTO chip_ledger(id,performed_by,from_type,from_entity_id,to_type,to_entity_id,amount,category,club_id,description,idempotency_key,metadata,pre_from_balance,post_from_balance,pre_to_balance,post_to_balance)VALUES(caw_u('unrelated-leg'),caw_u('A'),'player_wallet',caw_u('A'),'player_wallet',caw_u('P3'),1,'treasury_transfer',caw_u('club'),'Unrelated concurrent wallet transfer','native-unrelated-wallet-transfer','{}',1000,999,1000,1001);INSERT INTO wallet_transactions(user_id,wallet_type,amount,type,category,related_entity_id,balance_after)VALUES(caw_u('P3'),'PLAYER',1,'credit','transfer',caw_u('unrelated-leg'),1001);SET CONSTRAINTS ALL IMMEDIATE;COMMIT;")
+                finally:
+                    pause.stdin.write("SELECT pg_advisory_unlock(8934254);\n\\q\n");pause.stdin.flush();pause.communicate(timeout=10)
+            answers=[f.result(timeout=30)for f in pending]
         assert sum(v.get('duplicate',False)for v in answers)==1,(phase,answers)
         results.append({'case':'concurrent-original-'+phase+'-one-settlement-one-replay','passed':True})
+    assert q("SELECT chip_balance FROM club_members WHERE user_id=caw_u('P3')").stdout.strip()=='1001.00'
+    assert q("SELECT chip_balance FROM club_members WHERE user_id=caw_u('A')").stdout.strip()=='999.00'
+    assert q("SELECT count(*)FROM chip_ledger WHERE id=caw_u('unrelated-leg')").stdout.strip()=='1'
+    results.append({'case':'actual-concurrent-unrelated-beneficiary-credit-does-not-abort-or-lose-update','passed':True})
     assert q("SELECT count(*)||':'||sum(amount)FROM smarter_private.existing_rakeback_transfer_allocations").stdout.strip()=='3:468.02'
     assert q("SELECT count(*)FROM chip_ledger WHERE metadata->>'payment_method'='owner_confirmed_existing_transfer'").stdout.strip()=='3'
-    assert q("SELECT count(*)FROM wallet_transactions WHERE user_id IN(caw_u('S'),caw_u('P3'))AND type='credit'").stdout.strip()=='0'
+    assert q("SELECT count(*)FROM wallet_transactions WHERE user_id IN(caw_u('S'),caw_u('P3'))AND type='credit'AND category='rakeback'").stdout.strip()=='0'
     assert Decimal(q("SELECT agent_wallet_balance FROM agents WHERE user_id=caw_u('S')").stdout.strip())==0
     q("CREATE TEMP TABLE caw_open_legs AS SELECT value::uuid id FROM jsonb_array_elements_text('"+concurrent_open_legs.replace("'","''")+"'::jsonb);SELECT caw_assert_conserved('"+concurrent_open.replace("'","''")+"'::jsonb);")
     print('PASS concurrent-committed-R2-then-R3-no-double-allocation-or-reimbursement',flush=True)

@@ -5184,3 +5184,16 @@
   visibility: hidden;
   pointer-events: none;
 }
+
+/* The scaled desktop phone layout leaves a subpixel CALL-pill intrusion at
+   the board-side edge (0.672px at 600x1065). Move each outboard caption one
+   whole CSS pixel toward its own lane. Keep type, full amounts, pill size,
+   seat positions and every existing pop/gesture transform unchanged. */
+@media (min-width: 481px) and (max-width: 768px) and (orientation: portrait) {
+  .seat--cards-left > .seat__action {
+    left: calc(50% - 1px);
+  }
+  .seat--cards-right > .seat__action {
+    left: calc(50% + 1px);
+  }
+}

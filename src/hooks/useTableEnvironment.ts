@@ -190,7 +190,10 @@ function writeTableViewport() {
     document.documentElement.style.removeProperty(STABLE_TABLE_VIEWPORT_HEIGHT);
   }
   const next = tableViewportContent(phoneWidth, desktopLayoutHolders > 0);
-  if (meta.getAttribute('content') !== next) meta.setAttribute('content', next);
+  if (meta.getAttribute('content') !== next) {
+    meta.setAttribute('content', next);
+    requestAnimationFrame(refreshStableTableViewport);
+  }
 }
 
 /**

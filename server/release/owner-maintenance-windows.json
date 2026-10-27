@@ -176,6 +176,14 @@
       "migrations": []
     },
     {
+      "id": "2026-10-27-winning-card-timing-8275-now",
+      "ownerOrder": "Dan, directly in Codex chat 01a17b12, ordered: \"FINISH PR #8275. GET ALL CHECKS PASSING, MERGE IT, PUBLISH NOW, AND VERIFY BOTH CHANGES LIVE. DON'T LEAVE IT PENDING.\" After the hosted runner queue and protected merge, the same owner continued on October 27: \"Please pick up where you left off, complete the task in full and do not claim success until you have verified that everything is 100% accomplished for this task\" and \"FINISH ANY AND ALL TASKS USING THE FASTEST, MOST EFFICiENT ROUTE.\" One immediate certified activation of protected main containing the actual #8275 squash 857b756726fecd4948938ed8cf537dbb5f128e2c: extend ordinary winning-card display and each multi-run result by 1500ms. The final 1500ms run-count confirmation is an independently published client change. Stage run40478252105 proved the old admission anchor already serving and skipped dispatch; at preparation healthy serving bf0e33aee46a342f977cba6bc7c10da3b2b2a03b is three commits behind #8275 and excludes it. This separate admission-only follow-up remedies that demonstrated gap; all earlier windows are expired. Prove the protected timing squash is included, the immutable selected release is serving, and both live timing measurements independently. This entry expires within six hours and grants nothing once its exact anchor is serving. Preserve existing operation ownership, every required check, exact-SHA immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, full 285-second cutover and rollback reserve, rolling one-window-per-hour seal, forward-only publication and v3 thaw. No migrations, unrelated gameplay or strategy changes, second publisher, watcher, timer or direct restart.",
+      "contains": "857b756726fecd4948938ed8cf537dbb5f128e2c",
+      "notBefore": "2026-10-27T14:40:02Z",
+      "notAfter": "2026-10-27T20:30:02Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-24-v52-range-advantage-1555",
       "ownerOrder": "Dan, 2026-10-24 14:33 Chicago, on the V52 range-advantage measurement (#7915) being left for the routine 04:00 release: \"NO LAUNCH IT AT THE 3:55 BREAK.\" Applies only to making protected ebe9363e (#7915, v52RangeAdvantage switch default on and its nightly league cards) live at the 15:55 Chicago break, with 16:55 as the fallback if 15:55 is missed.",
       "contains": "ebe9363ec3189b17c655f8c87954cae1010c21f4",

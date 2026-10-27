@@ -2,6 +2,9 @@ import {
   readHorsePooledPublicBootstrap,
   type HorsePooledPublicBootstrap,
 } from '../../services/HorsePooledPublicBootstrap.js';
+import { admitHorsePhase8GuardAuthority } from '../HorseTournamentCatastropheGuardAuthority.js';
+import { CATASTROPHE_GUARD_VERSION } from '../HorseTournamentCatastropheGuard.js';
+import { PHASE8_GUARD_PROTECTED_RELEASE_SELECTION } from '../HorseTournamentCatastropheGuardSelection.js';
 import { horsePhase14RunningCatalogVersion } from '../HorsePhase14Authority.js';
 import { functionalKernelSnapshotRefusal } from '../../services/horseCorrectiveReview/kernelObjective.js';
 import { correctiveBaselineCompositionIsUsable } from '../../services/horseCorrectiveReview/kernelComposition.js';
@@ -234,7 +237,7 @@ import {
 
 /** Trusted in-process construction seam; never part of the live wire protocol. */
 export type HorseDecisionWorkerAuthorityHolderFactory = (
-  owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14',
+  owner: 'phase8_guard' | 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14',
   variant: string | null,
   runningVersion: string,
   freshEpoch: string
@@ -298,6 +301,7 @@ export interface HorseDecisionWorkerDependencies {
    * injected test runtime means no selection: every decision stays shadow.
    */
   admitPhase8Authority?(): HorseAuthorityAdmission;
+  admitPhase8GuardAuthority?(): HorseAuthorityAdmission;
   /** The worker's live Phase 8 safety sentinel; a reason withdraws authority. */
   phase8SafetyDisabledReason?(): string | null;
   /**
@@ -521,6 +525,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   },
   stopServices: stopOwnedServices,
   admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
+  admitPhase8GuardAuthority: () => admitHorsePhase8GuardAuthority(),
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
   admitPhase10Authority: () => admitHorsePhase10LiveAuthority(),
   admitPhase11Authority: (variant) => admitHorsePhase11LiveAuthority(variant),
@@ -739,6 +744,8 @@ export class HorseDecisionWorkerRuntime {
   /** Worker-owned Phase 8 authority. Admitted once from the committed release
    * selection; never from a request. A new worker is a new epoch. */
   private readonly phase8Authority: HorseQualifiedAuthorityHolder;
+  private readonly phase8GuardAuthority: HorseQualifiedAuthorityHolder;
+  private phase8GuardAuthorityAdmitted = false;
   private phase8AuthorityAdmitted = false;
   private readonly phase10Authority: HorseQualifiedAuthorityHolder;
   private phase10AuthorityAdmitted = false;
@@ -772,6 +779,12 @@ export class HorseDecisionWorkerRuntime {
     ) => new HorseQualifiedAuthorityHolder(epoch, version)
   ) {
     this.phase8Authority = authorityHolder('phase8', null, PHASE8_POLICY.version, randomUUID());
+    this.phase8GuardAuthority = authorityHolder(
+      'phase8_guard',
+      null,
+      CATASTROPHE_GUARD_VERSION,
+      randomUUID()
+    );
     this.phase10Authority = authorityHolder(
       'phase10',
       null,
@@ -835,6 +848,7 @@ export class HorseDecisionWorkerRuntime {
     if (this.readyPromise) return this.readyPromise;
     this.started = true;
     this.admitPhase8Authority();
+    this.admitPhase8GuardAuthority();
     this.admitPhase10Authority();
     this.admitPhase11Authority();
     this.admitPhase12Authority();
@@ -849,7 +863,7 @@ export class HorseDecisionWorkerRuntime {
       if (saved && !this.observerReads.bootstrapPublicProfiles(saved))
         this.deps.noteFeature('horse_pooled_public_bootstrap_refused');
       this.noteAuthorityAdmissions();
-      return readiness;
+      return { ...readiness, phase8GuardAuthority: this.phase8GuardAuthority.receipt() };
     });
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
@@ -1900,6 +1914,47 @@ export class HorseDecisionWorkerRuntime {
       );
   }
 
+  private admitPhase8GuardAuthority(): void {
+    if (this.phase8GuardAuthorityAdmitted) return;
+    this.phase8GuardAuthorityAdmitted = true;
+    let admission: HorseAuthorityAdmission;
+    try {
+      admission = this.deps.admitPhase8GuardAuthority?.() ?? {
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      };
+    } catch {
+      admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+    }
+    this.phase8GuardAuthority.apply(admission);
+  }
+  private phase8GuardAdmission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: Phase8Mode;
+    receipt: HorseAuthorityReceipt;
+    selected: boolean;
+  } {
+    this.admitPhase8GuardAuthority();
+    const receipt = this.phase8GuardAuthority.receipt();
+    const selected =
+      PHASE8_GUARD_PROTECTED_RELEASE_SELECTION !== null ||
+      ['usable', 'withdrawn', 'refresh_failed'].includes(receipt.state);
+    return {
+      receipt,
+      selected,
+      mode:
+        !selected || request.opts?.phase8Postflop === 'off'
+          ? 'off'
+          : this.phase8GuardAuthority.verdict(receipt, Date.now()) === 'usable'
+            ? 'candidate'
+            : 'shadow',
+    };
+  }
+  private bindPhase8GuardAuthority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
+    if (decision.tournamentCatastropheGuard)
+      decision.tournamentCatastropheGuard.authority = receipt;
+  }
+
   private admitPhase8Authority(): void {
     if (this.phase8AuthorityAdmitted) return;
     this.phase8AuthorityAdmitted = true;
@@ -2344,7 +2399,13 @@ export class HorseDecisionWorkerRuntime {
         baselineAuthorities: NonNullable<
           NonNullable<HorseDecision['correctivePolicy']>['baselineAuthorities']
         > = {};
-      if (correctiveDomain.mode === 'tournament' && PHASE8_PROTECTED_RELEASE_SELECTION)
+      if (correctiveDomain.mode === 'tournament' && PHASE8_GUARD_PROTECTED_RELEASE_SELECTION)
+        baselineAuthorities.phase8_guard = this.phase8GuardAuthority.receipt();
+      if (
+        correctiveDomain.mode === 'tournament' &&
+        PHASE8_PROTECTED_RELEASE_SELECTION &&
+        !PHASE8_GUARD_PROTECTED_RELEASE_SELECTION
+      )
         baselineAuthorities.phase8 = this.phase8Authority.receipt();
       if (variant === 'plo4' && PHASE10_PROTECTED_RELEASE_SELECTION)
         baselineAuthorities.phase10 = this.phase10Authority.receipt();
@@ -2405,6 +2466,7 @@ export class HorseDecisionWorkerRuntime {
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
     const phase8 = this.phase8Admission(request);
+    const phase8Guard = this.phase8GuardAdmission(request);
     const phase10 = this.phase10Admission(request);
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
@@ -2423,7 +2485,8 @@ export class HorseDecisionWorkerRuntime {
     // only; the decision below reads the same values it always has.
     const replayState = horseDecisionReplayState(
       {
-        phase8Postflop: phase8.mode,
+        phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+        ...(phase8Guard.selected ? { phase8CatastropheGuard: phase8Guard.mode } : {}),
         phase10Plo4: phase10.mode,
         phase11Omaha: phase11.mode,
         phase12Remaining: phase12.mode,
@@ -2464,7 +2527,8 @@ export class HorseDecisionWorkerRuntime {
         this.deps.captureDecisionEffects(() =>
           this.deps.decide(player, gameState, request.style, request.mods, {
             ...request.opts,
-            phase8Postflop: phase8.mode,
+            phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+            phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
             phase10Plo4: phase10.mode,
             phase11Omaha: phase11.mode,
             phase12Remaining: phase12.mode,
@@ -2485,6 +2549,7 @@ export class HorseDecisionWorkerRuntime {
       this.deps.restoreRng(canonicalRng);
     }
     this.bindPhase8Authority(captured.value, phase8.receipt);
+    this.bindPhase8GuardAuthority(captured.value, phase8Guard.receipt);
     this.bindPhase10Authority(captured.value, phase10.receipt);
     this.bindPhase11Authority(captured.value, phase11.receipt);
     this.bindPhase12Authority(captured.value, phase12.receipt);
@@ -2621,6 +2686,7 @@ export class HorseDecisionWorkerRuntime {
         computeMs,
         governorScale,
         phase8Authority: this.phase8Authority.receipt(),
+        phase8GuardAuthority: this.phase8GuardAuthority.receipt(),
         phase10Authority: this.phase10Authority.receipt(),
         phase11Authority: this.phase11AuthorityReceipts(),
         phase12Authority: this.phase12AuthorityReceipts(),
@@ -2698,6 +2764,7 @@ export class HorseDecisionWorkerRuntime {
     // Deep work admits authority afresh when it runs: a withdrawal while it
     // waited behind think time turns it back to shadow.
     const phase8 = this.phase8Admission(request);
+    const phase8Guard = this.phase8GuardAdmission(request);
     const phase10 = this.phase10Admission(request);
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
@@ -2708,7 +2775,8 @@ export class HorseDecisionWorkerRuntime {
     }));
     const replayState = horseDecisionReplayState(
       {
-        phase8Postflop: phase8.mode,
+        phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+        ...(phase8Guard.selected ? { phase8CatastropheGuard: phase8Guard.mode } : {}),
         phase10Plo4: phase10.mode,
         phase11Omaha: phase11.mode,
         phase12Remaining: phase12.mode,
@@ -2736,7 +2804,10 @@ export class HorseDecisionWorkerRuntime {
             this.deps.captureDecisionEffects(() =>
               this.deps.decide(player, gameState, request.style, request.mods, {
                 ...request.opts,
-                phase8Postflop: phase8.mode,
+                phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+                phase8PolicyFamily: phase8Guard.selected
+                  ? 'catastrophe_guard_v1'
+                  : 'continuation_v2',
                 phase10Plo4: phase10.mode,
                 phase11Omaha: phase11.mode,
                 phase12Remaining: phase12.mode,
@@ -2758,6 +2829,7 @@ export class HorseDecisionWorkerRuntime {
       this.deps.restoreRng(canonicalRng);
     }
     this.bindPhase8Authority(decision, phase8.receipt);
+    this.bindPhase8GuardAuthority(decision, phase8Guard.receipt);
     this.bindPhase10Authority(decision, phase10.receipt);
     this.bindPhase11Authority(decision, phase11.receipt);
     this.bindPhase12Authority(decision, phase12.receipt);
@@ -2819,6 +2891,7 @@ export class HorseDecisionWorkerRuntime {
       computeMs,
       governorScale,
       phase8Authority: this.phase8Authority.receipt(),
+      phase8GuardAuthority: this.phase8GuardAuthority.receipt(),
       phase10Authority: this.phase10Authority.receipt(),
       phase11Authority: this.phase11AuthorityReceipts(),
       phase12Authority: this.phase12AuthorityReceipts(),

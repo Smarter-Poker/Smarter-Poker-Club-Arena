@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 238958,
-      "sha256": "a5b0395029028357aa0848ae9c679c300fc5467e3a931958b3bfcbabcf974876"
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -448,5 +448,17 @@
       "bytes": 238958,
       "sha256": "a5b0395029028357aa0848ae9c679c300fc5467e3a931958b3bfcbabcf974876"
     }
+  },
+  "horsePoolGuardSourceIntegration20261027": {
+    "reason": "Preserve additive river-call persistence Accounting4 with current protected-main qualification workflow; refresh only active combined CI source identity, retaining historical receipts and qualification verdicts. Not execution or installation evidence.",
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 239346,
+      "sha256": "d4763691771f3b3433574b72e0ee61a74d80197f661c4be0da1d521292f19ce0"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+    },
+    "execution_performed": false
   }
 }

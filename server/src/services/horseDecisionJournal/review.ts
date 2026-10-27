@@ -628,6 +628,8 @@ export function reconcileHorseJournalHand(
         // A Phase 8, 10, 11 or 12 authority withdrawal re-selected the
         // reference before acceptance; the executed intent and its amount follow it.
         const phase8Withdrawn = w.phase8Authority?.selection === 'withdrawn_before_acceptance';
+        const phase8GuardWithdrawn =
+          w.phase8GuardAuthority?.selection === 'withdrawn_before_acceptance';
         const phase10Withdrawn = w.phase10Authority?.selection === 'withdrawn_before_acceptance';
         const phase11Withdrawn = w.phase11Authority?.selection === 'withdrawn_before_acceptance';
         const phase12Withdrawn = w.phase12Authority?.selection === 'withdrawn_before_acceptance';
@@ -635,19 +637,22 @@ export function reconcileHorseJournalHand(
         const phase14Withdrawn = w.phase14Authority?.selection === 'withdrawn_before_acceptance';
         const expectedSelected = phase14Withdrawn
           ? expectedWitness.phase14Authority?.reference
-          : phase8Withdrawn
-            ? expectedWitness.phase8Authority?.reference
-            : phase10Withdrawn
-              ? expectedWitness.phase10Authority?.reference
-              : phase11Withdrawn
-                ? expectedWitness.phase11Authority?.reference
-                : phase12Withdrawn
-                  ? expectedWitness.phase12Authority?.reference
-                  : phase13Withdrawn
-                    ? expectedWitness.phase13Authority?.reference
-                    : expectedWitness.selected;
+          : phase8GuardWithdrawn
+            ? expectedWitness.phase8GuardAuthority?.reference
+            : phase8Withdrawn
+              ? expectedWitness.phase8Authority?.reference
+              : phase10Withdrawn
+                ? expectedWitness.phase10Authority?.reference
+                : phase11Withdrawn
+                  ? expectedWitness.phase11Authority?.reference
+                  : phase12Withdrawn
+                    ? expectedWitness.phase12Authority?.reference
+                    : phase13Withdrawn
+                      ? expectedWitness.phase13Authority?.reference
+                      : expectedWitness.selected;
         const expectedAmount =
           (phase8Withdrawn ||
+            phase8GuardWithdrawn ||
             phase10Withdrawn ||
             phase11Withdrawn ||
             phase12Withdrawn ||
@@ -666,6 +671,8 @@ export function reconcileHorseJournalHand(
           !same(w.identity, expectedWitness.identity) ||
           !same(w.selected, expectedSelected) ||
           !phase8BindingMatches(w.phase8Authority, expectedWitness.phase8Authority) ||
+          !phase8BindingMatches(w.phase8GuardAuthority, expectedWitness.phase8GuardAuthority) ||
+          !qualifiedOutcomeIsCoherent(w, w.phase8GuardAuthority) ||
           !phase8BindingMatches(w.phase10Authority, expectedWitness.phase10Authority) ||
           !qualifiedOutcomeIsCoherent(w, w.phase10Authority) ||
           !phase8BindingMatches(w.phase11Authority, expectedWitness.phase11Authority) ||

@@ -346,6 +346,7 @@ EVENTS = (
 LITERALS = {
     'service_started': 'Service started - MTTs every 5 min',
     'register_no_candidates': 'registerHorses found no candidates:',
+    'horse_registration_summary': 'Horse registration:',
     'seat_first_no_fill': 'seat-first fill added nobody',
     'seat_first_precheck': 'seat-first-precheck ',
     'seat_first_rpc_noop': 'the seat RPC answered ok:false',
@@ -360,7 +361,7 @@ CATEGORIES = ('insufficient_chips', 'insufficient_balance', 'fleet_held',
               'SEAT_FIRST_CREATE_INVALID_REQUEST', 'SEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY',
               'SEAT_FIRST_CREATE_INVALID_CONFIG', 'SEAT_FIRST_CREATE_INVALID_BLINDS',
               'SEAT_FIRST_CREATE_IDEMPOTENCY_MISMATCH', 'SEAT_FIRST_ATOMIC_PARTIAL_STATE',
-              'platform_frozen', 'invalid response')
+              'platform_frozen', 'invalid response', 'horse_tournament_reservation_budget')
 COUNT_LABELS = ('fleet', 'at-capacity/entered', 'not-a-club-member',
                 'lane/window-excluded', 'shortfall', 'rpc_called', 'skipped_already_seated',
                 'skipped_table_full', 'verify_reads', 'seated', 'rpc_already_seated',

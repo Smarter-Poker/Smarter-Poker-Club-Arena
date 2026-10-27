@@ -751,6 +751,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase7'
   ),
   flag(
+    'phase8PolicyFamily',
+    'internal Phase 8 family: isolated benchmark selection or worker-derived genuine protected guard authority; omitted from public live options and overwritten at the worker boundary',
+    'Phase8'
+  ),
+  flag(
     'phase8Postflop',
     'tournament postflop counterfactual; shadow by default; live candidate mode only under protected-release qualified authority (worker-owned, never caller-supplied)',
     'Phase8'
@@ -2663,27 +2668,39 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase13'
   ),
   receipt(
+    'phase8_family_catastrophe_guard_v1',
+    'HorseLogic -> HorseTournamentCatastropheGuard',
+    'an actual bounded guard assessment at the tournament continuation node, distinct from legacy continuation work',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_work_kind_phase7_candidate_guard',
+    'HorseLogic -> HorseTournamentCatastropheGuard',
+    'a Phase 7 candidate guard assessment; no rollout, future-hand or continuation work is claimed',
+    'Phase8'
+  ),
+  receipt(
     'phase8_seen',
-    'HorseLogic -> HorseTournamentPostflop',
-    'natural tournament postflop decisions entering the Phase 8 gate',
+    'HorseLogic -> HorseTournamentPostflop or HorseTournamentCatastropheGuard',
+    'natural tournament postflop decisions entering the selected Phase 8 family; guard assessments carry an exact family and work-kind counter',
     'Phase8'
   ),
   receipt(
     'phase8_eligible',
-    'HorseTournamentPostflop',
-    'canonical NLH single-board decisions with action-specific utility',
+    'HorseTournamentPostflop or HorseTournamentCatastropheGuard',
+    'canonical NLH single-board decisions with action-specific utility admitted by the selected family',
     'Phase8'
   ),
   receipt(
     'phase8_fired',
-    'HorseTournamentPostflop',
-    'continuation evaluations before final legality and time-budget gates',
+    'HorseTournamentPostflop or HorseTournamentCatastropheGuard',
+    'selected-family continuation evaluations or bounded guard assessments; the guard family claims no future-hand work',
     'Phase8'
   ),
   receipt(
     'phase8_completed',
-    'HorseLogic -> HorseTournamentPostflop',
-    'useful continuation survives final legality and time-budget gates; not controller acceptance',
+    'HorseLogic -> HorseTournamentPostflop or HorseTournamentCatastropheGuard',
+    'completed selected-family work: useful continuation or bounded guard assessment, never controller acceptance',
     'Phase8',
     'phase8_eligible'
   ),

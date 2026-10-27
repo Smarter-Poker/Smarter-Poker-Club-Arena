@@ -15298,6 +15298,8 @@ function LiveTablePage({
               },
               (payload: any) => {
                 applyDurableFinalTableState(payload.new);
+                if (typeof payload.new?.on_break === 'boolean')
+                  void refreshTournamentBreakRef.current();
                 if (payload.new?.status === 'COMPLETED') {
                   terminalCompletionWitnessed = true;
                   void exitFromDurableCompletion();

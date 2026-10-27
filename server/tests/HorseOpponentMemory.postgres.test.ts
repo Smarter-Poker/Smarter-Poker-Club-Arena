@@ -134,10 +134,10 @@ async function insert(row: ReturnType<typeof hand>) {
     ]
   );
 }
-async function profile(variant = 'plo5', mode = 'cash') {
+async function profile(variant = 'plo5', mode = 'cash', actor = uid) {
   return (
     await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
-      [uid],
+      [actor],
       variant,
       mode,
       'short',
@@ -765,15 +765,6 @@ describe('durable opponent memory with real PostgreSQL', () => {
       expect(next.counters[field]).toBeCloseTo(base[field], 10);
   });
 
-  it('keeps every PLO variant and tournament history separate', async () => {
-    for (const variant of MEMORY_VARIANTS) {
-      const p = await profile(variant);
-      expect(p.variant).toBe(variant);
-      if (variant !== 'plo5') expect(p.counters.hands).toBe(0);
-    }
-    expect((await profile('plo5', 'tournament')).counters.hands).toBe(0);
-  });
-
   it('uses the authoritative dealt count rather than the access-control roster size', async () => {
     const roster = Array.from({ length: 8 }, (_, n) => ({
       userId: n === 0 ? uid : `91000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
@@ -1092,6 +1083,22 @@ describe('Pineapple public opponent memory exact schema extension', () => {
           .body
       );
     await client.query(migration);
+  });
+  it('keeps every PLO variant and tournament history separate', async () => {
+    // This case runs only after the exact ninth-variant schema extension.
+    // Its own actor avoids earlier concurrency fixtures' accepted PLO6 hands.
+    const actor = 'd3000000-0000-4000-8000-000000000001';
+    const row = hand('d4000000-0000-4000-8000-000000000001');
+    row.actions = [{ userId: actor, action: 'raise', stage: 'preflop' }];
+    row.players = [{ userId: actor }, { userId: other }, { userId: uid }];
+    await insert(row);
+    expect((await profile('plo5', 'cash', actor)).counters.hands).toBe(1);
+    for (const variant of MEMORY_VARIANTS) {
+      const p = await profile(variant, 'cash', actor);
+      expect(p.variant).toBe(variant);
+      if (variant !== 'plo5') expect(p.counters.hands).toBe(0);
+    }
+    expect((await profile('plo5', 'tournament', actor)).counters.hands).toBe(0);
   });
   it('changes only the exact variant literal and preserves service-only grants', async () => {
     for (const [name, body] of before) {

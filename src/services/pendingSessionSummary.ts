@@ -181,12 +181,12 @@ export interface SessionSummaryPayload {
   pendingCashout?: {
     tableId: string;
     userId: string;
-    /** Epoch ms of the leave — bounds the ledger query so a cashout row from
-     *  an earlier session at the same table can never be mistaken for this
-     *  settlement. */
+    /** Epoch ms of the leave, used only to bound legacy ledger reads. */
     sinceMs: number;
-    /** Exact seat generation required for a Diamond cash-out receipt. */
+    /** Exact seat generation for current chip and Diamond settlements. */
     occupancyId?: string;
+    /** Current producers never fall back to an ambiguous legacy ledger read. */
+    requireOccupancy?: boolean;
   };
 }
 

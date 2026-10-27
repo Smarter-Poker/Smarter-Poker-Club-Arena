@@ -11402,6 +11402,7 @@ function LiveTablePage({
               ? {
                   tableId: leaveTableId,
                   userId,
+                  requireOccupancy: true,
                   sinceMs: Date.now(),
                   occupancyId: result.occupancyId,
                 }
@@ -11568,6 +11569,7 @@ function LiveTablePage({
         pendingCashout: {
           tableId,
           userId,
+          requireOccupancy: true,
           sinceMs: Date.now(),
           occupancyId:
             ownSeatIdentity?.tableId === tableId && ownSeatIdentity.userId === userId
@@ -11776,6 +11778,7 @@ function LiveTablePage({
               ? {
                   tableId: forceTableId,
                   userId,
+                  requireOccupancy: true,
                   sinceMs: Date.now(),
                   occupancyId: forced.occupancyId,
                 }

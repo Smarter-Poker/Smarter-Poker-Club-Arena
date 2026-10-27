@@ -247,7 +247,7 @@ export function SessionSummaryHost() {
      which remains an honest card. */
   useEffect(() => {
     const pc = payload?.plPending ? payload.pendingCashout : undefined;
-    if (!pc) return undefined;
+    if (!pc || (pc.requireOccupancy && !pc.occupancyId)) return undefined;
 
     const totalBuyIn = payload?.totalBuyIn ?? 0;
     /* 2 min of slack: the engine stamps the row from its own clock, which can

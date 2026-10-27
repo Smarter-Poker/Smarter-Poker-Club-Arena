@@ -412,4 +412,31 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
       }
     }
   );
+  it('keeps a modern missing-identity leave pending without reading a prior cashout', async () => {
+    ledgerRows.push({ amount: 1400, created_at: new Date().toISOString() });
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
+    await act(async () => {
+      publishSessionSummary(
+        cashPayload({
+          plPending: true,
+          pendingCashout: {
+            tableId: 't-1',
+            userId: 'u-hero',
+            sinceMs: Date.now(),
+            requireOccupancy: true,
+          },
+        })
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Pending Settlement')).toBeTruthy();
+    expect(peekSessionSummary()?.profitLoss).toBe(157);
+    expect(fromCalls).toBe(0);
+    expect(fromTables).toEqual([]);
+  });
 });

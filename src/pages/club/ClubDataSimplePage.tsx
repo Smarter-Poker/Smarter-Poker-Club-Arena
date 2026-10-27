@@ -39,6 +39,9 @@ import { reportError } from '../../utils/errorReporter';
 import styles from './ClubDataSimplePage.module.css';
 import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { ClubRosterService, type RosterMember } from '../../services/ClubRosterService';
+import { titleCase } from '../../utils/titleCase';
+import { useFitText } from '../../components/lobby/game-cards/useFitText';
 import {
   CLUB_DATA_ZONE_LABEL,
   addCalendarDays,
@@ -90,6 +93,12 @@ export interface ClubDataRow {
 interface Snapshot {
   range: { start: string; end: string; days: number };
   summary: ClubDataSummary;
+  member_fees?: {
+    cash_fees: number;
+    tournament_fees: number;
+    total_fees: number;
+    day_basis: string;
+  } | null;
   rows: ClubDataRow[];
   generated_at?: string;
   /** 'club' for the owner, co-owner and admins; 'downline' for an agent. */
@@ -210,6 +219,11 @@ export default function ClubDataSimplePage() {
   const [stakes, setStakes] = useState<StakesFilter>('ALL');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [playerResults, setPlayerResults] = useState<{
+    key: string;
+    items: RosterMember[];
+    failed: boolean;
+  } | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [snapshotScope, setSnapshotScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -237,7 +251,7 @@ export default function ClubDataSimplePage() {
   ]);
   const activeScopeRef = useRef(scopeKey);
   activeScopeRef.current = scopeKey;
-  const visibleSnapshot = snapshotScope === scopeKey ? snapshot : null;
+  const visibleSnapshot = !isHydrating && userId && snapshotScope === scopeKey ? snapshot : null;
 
   // Retire private figures and pending completions before another account or
   // club can paint. A request number alone does not cover an account switch
@@ -376,6 +390,40 @@ export default function ClubDataSimplePage() {
     scopeKey,
   ]);
 
+  // Server roster permissions remain authoritative. Bind results to the exact
+  // viewer, club and query, and retire them before a changed identity paints.
+  useEffect(() => {
+    if (!clubUuid || !userId || isHydrating || !search || !visibleSnapshot) return;
+    const controller = new AbortController();
+    let dead = false;
+    const key = scopeKey;
+    void ClubRosterService.getRosterPage(clubUuid, {
+      search,
+      sort: 'name',
+      limit: 20,
+      signal: controller.signal,
+    })
+      .then((page) => {
+        if (!dead && activeScopeRef.current === key) {
+          setPlayerResults({
+            key,
+            items: page.items.filter((p) => p.can_view_financials),
+            failed: false,
+          });
+        }
+      })
+      .catch((err) => {
+        if (!dead && activeScopeRef.current === key) {
+          reportError(err, 'ClubDataSimplePage.player_search');
+          setPlayerResults({ key, items: [], failed: true });
+        }
+      });
+    return () => {
+      dead = true;
+      controller.abort();
+    };
+  }, [clubUuid, userId, isHydrating, search, scopeKey, !!visibleSnapshot]);
+
   // Read now, then keep reading while the screen is in view.
   useEffect(() => {
     void load();
@@ -428,6 +476,12 @@ export default function ClubDataSimplePage() {
 
   const summary = visibleSnapshot?.summary ?? null;
   const isDownline = visibleSnapshot?.scope === 'downline';
+  const feeText = isDownline
+    ? formatMoney(visibleSnapshot?.member_fees?.total_fees)
+    : summary
+      ? formatMoney(summary.fee)
+      : '-';
+  const feeRef = useFitText<HTMLElement>(feeText, 1, 0.3);
   const factsFrom = visibleSnapshot?.facts_from ?? null;
   const rows = useMemo(() => visibleSnapshot?.rows ?? [], [visibleSnapshot]);
   const liveCount = summary?.live_games ?? rows.filter((r) => r.live).length;
@@ -540,16 +594,37 @@ export default function ClubDataSimplePage() {
           </dd>
         </div>
         <div className={styles.stat}>
-          <dt className={styles.statLabel}>Fee</dt>
+          <dt className={styles.statLabel}>
+            {visibleSnapshot?.scope === 'downline' ? 'My Fees Earned' : 'Fee'}
+          </dt>
           <dd
             className={styles.statValue}
-            title={summary ? formatMoney(summary.fee) : undefined}
-            aria-label={summary ? formatMoney(summary.fee) : undefined}
+            ref={feeRef}
+            title={
+              visibleSnapshot?.scope === 'downline'
+                ? formatMoney(visibleSnapshot.member_fees?.total_fees)
+                : summary
+                  ? formatMoney(summary.fee)
+                  : undefined
+            }
+            aria-label={
+              visibleSnapshot?.scope === 'downline'
+                ? formatMoney(visibleSnapshot.member_fees?.total_fees)
+                : summary
+                  ? formatMoney(summary.fee)
+                  : undefined
+            }
           >
-            {summary ? formatTotal(summary.fee) : '-'}
+            {feeText}
           </dd>
         </div>
       </dl>
+      {visibleSnapshot?.scope === 'downline' && (
+        <p className={styles.liveLine}>
+          Your Fees After Shares And Adjustments, Across All Games For These UTC Dates. Game Rows
+          Show Downline Fees Generated.
+        </p>
+      )}
       {summary &&
         summary.running_mtt_entries !== undefined &&
         summary.running_mtt_entries !== null && (
@@ -599,14 +674,51 @@ export default function ClubDataSimplePage() {
           type="search"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search Game, Creator Or ID"
-          aria-label="Search Games"
+          placeholder="Search Player, Game, Creator Or ID"
+          aria-label="Search Players And Games"
         />
         <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.searchIcon}>
           <circle cx="10.5" cy="10.5" r="6.5" />
           <path d="M15.5 15.5 L21 21" />
         </svg>
       </label>
+
+      {visibleSnapshot &&
+        search &&
+        searchInput.trim() === search &&
+        playerResults?.key === scopeKey && (
+          <section aria-label="Matching Players">
+            {playerResults.failed ? (
+              <p role="status" className={styles.liveLine}>
+                Player Search Could Not Be Read.
+              </p>
+            ) : (
+              <ul className={styles.list}>
+                {playerResults.items.map((player) => (
+                  <li key={player.user_id}>
+                    <button
+                      type="button"
+                      className={`${styles.row} ${styles.playerResult}`}
+                      onClick={() =>
+                        navigate(
+                          `/clubs/${player.management_club_id || clubUuid}/members/${player.user_id}`
+                        )
+                      }
+                    >
+                      <span className={styles.rowName}>
+                        {titleCase(player.alias || player.display_name || player.username)}
+                      </span>
+                      <span className={styles.rowFee}>View Player Data</span>
+                    </button>
+                  </li>
+                ))}
+                {playerResults.items.length === 0 && (
+                  <li className={styles.more}>No Matching Players In Your Data Scope.</li>
+                )}
+              </ul>
+            )}
+          </section>
+        )}
 
       <div className={styles.tabs} role="group" aria-label="Game Type">
         {GAME_FILTERS.map((f) => (

@@ -12,8 +12,10 @@ const chicagoToday = (): string =>
 
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
-const { rpcMock, authState, clubRow, unionRow } = vi.hoisted(() => ({
+const { rpcMock, authState, clubRow, unionRow, rosterMock, navigateMock } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
+  rosterMock: vi.fn(),
+  navigateMock: vi.fn(),
   unionRow: {
     current: { unions: { name: 'Midway Union' } } as { unions: { name: string } } | null,
   },
@@ -21,9 +23,13 @@ const { rpcMock, authState, clubRow, unionRow } = vi.hoisted(() => ({
   authState: { current: { user: { id: 'owner-1' }, isHydrating: false } as any },
 }));
 
+vi.mock('../../src/services/ClubRosterService', () => ({
+  ClubRosterService: { getRosterPage: rosterMock },
+}));
+
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => authState.current }));
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
   useParams: () => ({ clubId: CLUB_ID }),
   useSearchParams: () => [new URLSearchParams()],
 }));
@@ -92,6 +98,8 @@ afterEach(() => {
 
 beforeEach(() => {
   rpcMock.mockReset();
+  rosterMock.mockReset().mockResolvedValue({ items: [] });
+  navigateMock.mockReset();
   clubRow.current = { name: 'Club JAQK' };
   unionRow.current = { unions: { name: 'Midway Union' } };
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
@@ -386,5 +394,79 @@ describe('ClubDataSimplePage', () => {
     render(<ClubDataSimplePage />);
     expect(await screen.findByText(/You And Your Downline/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Report' })).toBeNull();
+  });
+});
+
+describe('earned fees and direct player lookup', () => {
+  it('prints the canonical personal share instead of gross downline rake', async () => {
+    rpcMock.mockResolvedValue({
+      data: {
+        ...live,
+        scope: 'downline',
+        member_fees: {
+          cash_fees: 924.25,
+          tournament_fees: 3.5,
+          total_fees: 927.75,
+          day_basis: 'UTC',
+        },
+        summary: { ...live.summary, fee: 2163.29 },
+      },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText('927.75')).toBeVisible();
+    expect(screen.getByText('My Fees Earned')).toBeVisible();
+    expect(screen.queryByText('2,163.29')).not.toBeInTheDocument();
+  });
+
+  it('prints full large club fees', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, summary: { ...live.summary, fee: 31400.25 } },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText('31,400.25')).toBeVisible();
+  });
+
+  it('finds a named permitted player and opens their actual record', async () => {
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    rosterMock.mockResolvedValue({
+      items: [
+        {
+          user_id: 'woo-id',
+          alias: 'WooWoo',
+          can_view_financials: true,
+          management_club_id: CLUB_ID,
+        },
+        { user_id: 'private-id', alias: 'Private', can_view_financials: false },
+      ],
+    });
+    render(<ClubDataSimplePage />);
+    await screen.findByText('Shark Tank');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'WooWoo' } });
+    fireEvent.click(await screen.findByRole('button', { name: /WooWoo.*View Player Data/i }));
+    expect(navigateMock).toHaveBeenCalledWith(`/clubs/${CLUB_ID}/members/woo-id`);
+    expect(screen.queryByText('Private')).not.toBeInTheDocument();
+  });
+
+  it('discards player results after account hydration begins', async () => {
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    let finish!: (value: unknown) => void;
+    rosterMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const view = render(<ClubDataSimplePage />);
+    await screen.findByText('Shark Tank');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'WooWoo' } });
+    await waitFor(() => expect(rosterMock).toHaveBeenCalled());
+    authState.current = { user: { id: 'other-account' }, isHydrating: true };
+    view.rerender(<ClubDataSimplePage />);
+    await act(async () =>
+      finish({ items: [{ user_id: 'woo', alias: 'WooWoo', can_view_financials: true }] })
+    );
+    expect(screen.queryByRole('button', { name: /View Player Data/i })).not.toBeInTheDocument();
   });
 });

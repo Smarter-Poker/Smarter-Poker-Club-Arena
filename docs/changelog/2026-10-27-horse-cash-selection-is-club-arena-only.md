@@ -25,3 +25,5 @@ Production installation, engine publication and natural play evidence remain
 separate from these isolated checks.
 
 The full hosted server shard caught an older strict projection pin that still required max_buy_in to be the final selected column. The canonical Diamond identity is additive; the pin now requires every previous field plus the exact joined asset/platform/union identity. All21 lone-table controls and4 roster controls pass. No runtime predicate or refusal safeguard changed.
+
+Protected-main integration at 21c9a36e187da7acebf9a14a3b2a63b2f878fce1 resolves only the duplicate financial-binding changelog and the public-history fixture namespace comment. The protected main versions retain both earlier explanations and the same corrected UUID namespace. Arena runtime predicates, the scope migration and its accounting qualification are byte-identical to the previously tested 409d candidate. Focused roster/admission/rotation checks pass (97 assertions); full compiler and normal submission checks remain required.

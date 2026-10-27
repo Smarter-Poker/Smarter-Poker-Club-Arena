@@ -66,13 +66,22 @@ describe('the correct hands', () => {
   it('a live table asks for ITS hands, in play order', () => {
     const svc = read('src/services/HandHistoryService.ts');
     expect(svc).toContain("if (opts.tableId) query = query.eq('table_id', opts.tableId);");
+    expect(svc).toContain(".contains('players', containmentJson)");
     expect(svc).toContain(".order('hand_number', { ascending: false })");
     expect(svc).not.toContain(".order('created_at', { ascending: false })\n      .limit(limit)");
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(
-      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*throwOnError: true,?\s*\}\)/
+      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,?\s*\}\)/
     );
-    expect(page).toContain('handHistoryService.getPlayerHands(userId, 1, { tableId })');
+    expect(page).toMatch(
+      /handHistoryService\.getPlayerHands\(userId, 1, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,?\s*\}\)/
+    );
+    // A Lightning room is a session rather than a physical table. Its existing
+    // self-only RPC resolves exact canonical rows through the same RLS reader.
+    expect(svc).toMatch(
+      /fetchLightningRecentHands\(\{\s*poolSessionId: opts\.lightningPoolSessionId,/
+    );
+    expect(svc).toContain('const hands = await this.getHandsByIds(ids);');
   });
 
   it('the record is read, never cached: no localStorage hand list at all', () => {
@@ -89,7 +98,9 @@ describe('the correct hands', () => {
     );
     expect(page).not.toContain('if (!cancelled && hands && hands.length > 0) {');
     // and the table id is a dependency of the fetch
-    expect(page).toMatch(/\}, \[showHandHistory, showHandDetail, userId, tableId\]\);/);
+    expect(page).toMatch(
+      /\}, \[showHandHistory, showHandDetail, userId, tableId, lightningRoom\?\.poolSessionId, lastHandId\]\);/
+    );
   });
 
   it('played_at is when the hand was played, not when the row landed', () => {
